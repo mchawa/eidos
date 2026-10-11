@@ -7,11 +7,11 @@ JSON schema validation (Draft 2020-12), and cross-reference integrity.
 """
 
 import argparse
+import contextlib
 import json
-import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import yaml
 
@@ -35,7 +35,7 @@ except ImportError:
     SpecValidator = None
 
 
-def find_workspace_root(payload: Optional[Dict[str, Any]] = None) -> Path:
+def find_workspace_root(payload: dict[str, Any] | None = None) -> Path:
     """Determine the active workspace root directory."""
     if payload:
         ws_paths = payload.get("workspacePaths", [])
@@ -46,13 +46,13 @@ def find_workspace_root(payload: Optional[Dict[str, Any]] = None) -> Path:
 
     # Fallback to traversing current working directory
     cwd = Path.cwd().resolve()
-    for parent in [cwd] + list(cwd.parents):
+    for parent in [cwd, *list(cwd.parents)]:
         if (parent / ".git").exists() or (parent / "eidos").exists():
             return parent
     return cwd
 
 
-def handle_pre_tool_use(payload: Dict[str, Any]) -> Dict[str, Any]:
+def handle_pre_tool_use(payload: dict[str, Any]) -> dict[str, Any]:
     """Validate YAML frontmatter syntax before file modification tools execute."""
     tool_call = payload.get("toolCall", {})
     tool_name = tool_call.get("name", "")
@@ -66,18 +66,16 @@ def handle_pre_tool_use(payload: Dict[str, Any]) -> Dict[str, Any]:
     if target_path.suffix.lower() != ".adoc":
         return {"decision": "allow"}
 
-    content_to_check: Optional[str] = None
+    content_to_check: str | None = None
     if tool_name == "write_to_file":
         content_to_check = args.get("CodeContent", "")
     elif tool_name == "replace_file_content" and target_path.exists():
-        try:
+        with contextlib.suppress(OSError, UnicodeDecodeError):
             curr_text = target_path.read_text(encoding="utf-8")
             target_str = args.get("TargetContent", "")
             replace_str = args.get("ReplacementContent", "")
             if target_str in curr_text:
                 content_to_check = curr_text.replace(target_str, replace_str, 1)
-        except Exception:
-            pass
 
     if content_to_check is not None:
         stripped = content_to_check.lstrip()
@@ -111,7 +109,7 @@ def handle_pre_tool_use(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"decision": "allow"}
 
 
-def handle_post_invocation(payload: Dict[str, Any], workspace_root: Path) -> Dict[str, Any]:
+def handle_post_invocation(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]:
     """Inject ephemeral diagnostics into agent context if specs are invalid."""
     eidos_dir = workspace_root / "eidos"
     if not eidos_dir.exists() or SpecValidator is None:
@@ -121,7 +119,7 @@ def handle_post_invocation(payload: Dict[str, Any], workspace_root: Path) -> Dic
         validator = SpecValidator()
         report = validator.validate_directory(eidos_dir)
         if not report.is_clean:
-            errors: List[str] = []
+            errors: list[str] = []
             for f, errs in report.schema_errors.items():
                 fname = Path(f).name
                 for e in errs[:2]:
@@ -136,13 +134,13 @@ def handle_post_invocation(payload: Dict[str, Any], workspace_root: Path) -> Dic
                 f"Please correct these errors before proceeding."
             )
             return {"injectSteps": [{"ephemeralMessage": msg}]}
-    except Exception:
+    except (OSError, yaml.YAMLError, ValueError, TypeError):
         pass
 
     return {"injectSteps": []}
 
 
-def handle_stop(payload: Dict[str, Any], workspace_root: Path) -> Dict[str, Any]:
+def handle_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]:
     """Block agent completion if any living specifications are invalid."""
     eidos_dir = workspace_root / "eidos"
     if not eidos_dir.exists() or SpecValidator is None:
@@ -152,7 +150,7 @@ def handle_stop(payload: Dict[str, Any], workspace_root: Path) -> Dict[str, Any]
         validator = SpecValidator()
         report = validator.validate_directory(eidos_dir)
         if not report.is_clean:
-            errors: List[str] = []
+            errors: list[str] = []
             for f, errs in report.schema_errors.items():
                 fname = Path(f).name
                 for e in errs[:3]:
@@ -167,7 +165,7 @@ def handle_stop(payload: Dict[str, Any], workspace_root: Path) -> Dict[str, Any]
                 f"According to Eidos Rule #5, all specifications in eidos/ must strictly conform to their schema with zero broken references before concluding your work."
             )
             return {"decision": "continue", "reason": reason}
-    except Exception as exc:
+    except (OSError, yaml.YAMLError, ValueError, TypeError, KeyError) as exc:
         return {
             "decision": "continue",
             "reason": f"🛑 [Eidos Doc Linter] Validator execution error: {exc}",
@@ -176,7 +174,7 @@ def handle_stop(payload: Dict[str, Any], workspace_root: Path) -> Dict[str, Any]
     return {"decision": "allow"}
 
 
-def run_standalone(target_path: Optional[Path] = None) -> int:
+def run_standalone(target_path: Path | None = None) -> int:
     """Run doc linter in interactive terminal mode."""
     target = (target_path or Path("eidos")).resolve()
     if not target.exists():
@@ -190,7 +188,7 @@ def run_standalone(target_path: Optional[Path] = None) -> int:
     validator = SpecValidator()
     report = validator.validate_directory(target)
 
-    print(f"\n--- Eidos Living Documentation Lint Report ---")
+    print("\n--- Eidos Living Documentation Lint Report ---")
     print(f"Target: {target}")
     print(f"Total specs scanned: {report.total_docs}")
     print(f"Valid specs: {report.valid_docs}")
@@ -226,15 +224,13 @@ def main() -> int:
     # Check if input is coming from stdin pipe (Agent Hook invocation)
     is_piped = not sys.stdin.isatty()
     stdin_content = ""
-    payload: Dict[str, Any] = {}
+    payload: dict[str, Any] = {}
 
     if is_piped:
-        try:
+        with contextlib.suppress(json.JSONDecodeError, ValueError):
             stdin_content = sys.stdin.read().strip()
             if stdin_content:
                 payload = json.loads(stdin_content)
-        except Exception:
-            payload = {}
 
     # If no piped JSON payload and no explicit hook event, run standalone
     if not payload and not args.event:
