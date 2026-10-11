@@ -1,0 +1,57 @@
+---
+type: tech/architecture
+schema: schemas/v1/architecture.schema.yaml
+id: ARCH-EIDOS-001
+title: "Eidos Global Technical Architecture"
+topology_style: "monorepo_orchestrator"
+
+cross_cutting_standards:
+  authentication_and_authz: "Git token credentials (GITHUB_TOKEN / GITLAB_TOKEN) scoped via environment or local Git credentials."
+  error_handling: "Structured CLI exit codes (0 = Success, 1 = Validation failure, 2 = Execution error) with Rich diagnostic output."
+  telemetry_and_logging: "Local stdout/stderr streaming with optional structured JSON log output for CI pipelines."
+
+data_architecture:
+  primary_persistence: "Git repository filesystem (.adoc files + YAML frontmatter). No external database required."
+  event_transport: "In-memory event dispatcher for local execution; Webhook event payloads for CI/CD runners."
+  caching_layer: "Local in-memory schema and document graph cache during validation and planning runs."
+
+deployment_topology:
+  hosting_model: "Distributed: Local developer workstation (CLI) and CI/CD Runner environments (GitHub Actions / GitLab CI)."
+  ci_cd_engine: "GitHub Actions workflows and GitLab CI pipelines executing eidos validate and test runners."
+---
+= Eidos Global Technical Architecture
+:doctype: book
+:toc: left
+:icons: font
+:sectnums:
+
+== Architectural Overview
+
+Eidos is architected as a lightweight, Git-native execution and validation engine. It enforces zero external database dependencies: all state, domain models, technical architectures, and task mutations are persisted directly inside the version-controlled Git repository.
+
+== C4 Model Level 1: System Context
+
+[mermaid]
+----
+flowchart TD
+    User["Product Lead / Engineer"] -->|CLI commands / Git commits| Git["Git Repository (Local / Remote)"]
+    Agent["Autonomous Coding Agent (agy, claude, codex)"] -->|Reads Specs / Submits PRs| Git
+    Git -->|Webhook Events| CI["CI / CD Pipeline (GitHub / GitLab)"]
+    CI -->|Runs 'eidos validate'| EidosEngine["Eidos Engine"]
+    EidosEngine -->|Pass / Fail Gate| CI
+----
+
+== C4 Model Level 2: Container / Package Topology
+
+Eidos is delivered as a monorepo consisting of:
+1. **Core Package (`src/eidos`)**: The Python orchestration engine, schema validator, and CLI tool.
+2. **Specification Tree (`eidos/`)**: The living business and technical specifications.
+3. **Test Harness (`tests/`)**: Automated test suites verifying invariant compliance.
+
+== Monorepo Component Catalog
+
+[cols="1,2,2", options="header"]
+|===
+| Component ID | Container Type | Source Package Path
+| `CMP-EIDOS-ENGINE` | CLI & Core Library | `src/eidos`
+|===

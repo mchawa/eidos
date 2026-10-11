@@ -17,6 +17,9 @@ TYPE_TO_SCHEMA_NAME = {
     "product/persona": "persona.schema.yaml",
     "product/exploration": "exploration.schema.yaml",
     "delta/mutation": "delta.schema.yaml",
+    "tech/architecture": "architecture.schema.yaml",
+    "tech/component": "component.schema.yaml",
+    "tech/contract": "contract.schema.yaml",
 }
 
 
@@ -90,7 +93,10 @@ class SpecValidator:
         adoc_files = sorted(root_dir.rglob("*.adoc"))
 
         for file_path in adoc_files:
-            # Skip README and non-spec files if any
+            # Skip README and partial include files
+            if file_path.name.lower() == "readme.adoc" or file_path.name.startswith("_"):
+                continue
+
             doc = parse_spec_file(file_path)
             self.validate_document(doc)
             report.documents.append(doc)
@@ -123,3 +129,4 @@ class SpecValidator:
                 report.broken_references.append(
                     f"Broken reference in {source_file.name}: cannot locate '{val}'"
                 )
+

@@ -1,0 +1,36 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: ContractSchema
+description: "Defines an explicit protocol, API, or interface boundary contract (OpenAPI, gRPC Protobuf, GraphQL, AsyncAPI, or CLI interfaces)."
+type: object
+required:
+  - type
+  - schema
+  - id
+  - title
+  - protocol
+  - owning_component
+  - specification_file
+properties:
+  type:
+    type: string
+    const: "tech/contract"
+    description: "The fixed document type identifier. Must always be 'tech/contract'."
+  schema:
+    type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
+  id:
+    type: string
+    pattern: "^CTR-[A-Z0-9_-]+$"
+    description: "Unique contract identifier (e.g. CTR-EIDOS-CLI, CTR-AUTH-OPENAPI)."
+  title:
+    type: string
+    description: "Human-readable title of this interface contract."
+  protocol:
+    type: string
+    description: "Protocol format: openapi, protobuf, graphql, asyncapi, json_schema, or cli_args."
+  owning_component:
+    type: string
+    description: "The component ID (CMP-*) that owns, implements, and provides this contract."
+  specification_file:
+    type: string
+    description: "Relative path from repository root to the raw interface schema file (e.g. contracts/api.openapi.yaml)."

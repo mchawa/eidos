@@ -20,6 +20,9 @@ def test_bundled_schemas_loaded(validator):
         "persona.schema.yaml",
         "exploration.schema.yaml",
         "delta.schema.yaml",
+        "architecture.schema.yaml",
+        "component.schema.yaml",
+        "contract.schema.yaml",
     ]
     for schema_name in expected_schemas:
         assert schema_name in validator._schema_cache, f"Missing schema: {schema_name}"
@@ -37,3 +40,4 @@ def test_validate_eidos_specifications(validator):
         f"Errors: {report.schema_errors}\n"
         f"Broken references: {report.broken_references}"
     )
+

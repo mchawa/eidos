@@ -40,3 +40,4 @@ class BaseAgentAdapter(ABC):
     def execute_task(self, context: AgentExecutionContext) -> AgentExecutionResult:
         """Dispatch task to the agent in its workspace sandbox."""
         pass
+

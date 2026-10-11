@@ -56,3 +56,4 @@ def extract_frontmatter(content: str) -> Tuple[Optional[dict], str, Optional[str
         return data, body, None
     except yaml.YAMLError as exc:
         return None, body, str(exc)
+

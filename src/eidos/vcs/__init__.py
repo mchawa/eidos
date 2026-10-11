@@ -1,1 +1,2 @@
 """VCS integration bridge package."""
+

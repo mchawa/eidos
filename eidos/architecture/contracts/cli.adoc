@@ -1,0 +1,24 @@
+---
+type: tech/contract
+schema: schemas/v1/contract.schema.yaml
+id: CTR-EIDOS-CLI
+title: "Eidos Command-Line Interface Contract"
+protocol: "cli_args"
+owning_component: "CMP-EIDOS-ENGINE"
+specification_file: "src/eidos/cli/main.py"
+---
+= Contract: Eidos CLI Interface
+:toc: left
+
+== Command Specifications
+
+=== `eidos info`
+Displays current engine version, loaded v1 schemas, supported VCS platforms, and available agent harnesses.
+* **Exit Code**: 0
+
+=== `eidos validate [PATH]`
+Validates all specification documents under `PATH` (defaults to `./eidos`) against the bundled JSON/YAML schemas.
+* **Arguments**: `PATH` (Optional directory path)
+* **Exit Codes**:
+  - `0`: All specifications are valid.
+  - `1`: One or more validation errors or broken cross-references found.

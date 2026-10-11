@@ -60,3 +60,7 @@ eidos/
 * **Policies**:
 ** Link to link:file://eidos/policies/POL-001-git-as-single-source-of-truth.adoc[`POL-001: Git Source of Truth`]
 ** Link to link:file://eidos/policies/POL-002-invariant-test-enforcement.adoc[`POL-002: Invariant Test Enforcement`]
+* **Technical Architecture**:
+** Link to link:file://eidos/architecture/system-architecture.adoc[`Global System Architecture`]
+** Link to link:file://eidos/architecture/components/engine.adoc[`Component: Eidos Engine`]
+** Link to link:file://eidos/architecture/contracts/cli.adoc[`Contract: Eidos CLI`]

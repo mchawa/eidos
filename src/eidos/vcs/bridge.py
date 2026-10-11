@@ -37,3 +37,4 @@ class VCSBridge(ABC):
     @abstractmethod
     def create_pull_request(self, title: str, body: str, source_branch: str, target_branch: str) -> VCSPullRequest:
         pass
+

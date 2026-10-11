@@ -1,0 +1,86 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: ComponentSchema
+description: "Defines an individual deployable unit, package, or library in a monorepo or modular architecture. Supports both centralized (under eidos/architecture/components/) and co-located (inside package directory) layouts."
+type: object
+required:
+  - type
+  - schema
+  - id
+  - name
+  - container_type
+  - runtime
+  - package_path
+properties:
+  type:
+    type: string
+    const: "tech/component"
+    description: "The fixed document type identifier. Must always be 'tech/component'."
+  schema:
+    type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
+  id:
+    type: string
+    pattern: "^CMP-[A-Z0-9_-]+$"
+    description: "Unique component identifier following CMP-<NAME> (e.g. CMP-EIDOS-ENGINE, CMP-AUTH-SERVICE)."
+  name:
+    type: string
+    description: "Human-readable name of the component, service, or library."
+  container_type:
+    type: string
+    description: "The structural nature of this component: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon, or driver."
+  runtime:
+    type: string
+    description: "Execution environment and primary framework (e.g. 'Python 3.12 / Typer', 'TypeScript / React', 'Rust / Tokio')."
+  package_path:
+    type: string
+    description: >
+      Relative path from repository root to the package source code (e.g. 'src/eidos' or 'packages/auth').
+      This enables dual-layout support: component documents can live centralized under 'eidos/architecture/components/'
+      OR co-located inside the package directory (e.g. 'packages/auth/component.adoc').
+  domain_binding:
+    type: string
+    description: "The product domain ID (DOM-*) this technical component primarily belongs to."
+  dependencies:
+    type: object
+    description: "Explicit internal monorepo dependencies and external service dependencies."
+    properties:
+      internal_components:
+        type: array
+        description: "List of other component IDs (CMP-*) in this repository that this component directly imports or calls."
+        items:
+          type: string
+      external_services:
+        type: array
+        description: "Third-party services, databases, or external APIs consumed (e.g. PostgreSQL, Redis, GitHub API)."
+        items:
+          type: string
+  contracts:
+    type: object
+    description: "Exposed and consumed interface contracts."
+    properties:
+      provides:
+        type: array
+        description: "Paths to contract files or protocol specifications exposed by this component."
+        items:
+          type: string
+      consumes:
+        type: array
+        description: "Paths to contract files or external protocols consumed by this component."
+        items:
+          type: string
+  quality_attributes:
+    type: object
+    description: "Key operational constraints (e.g. statelessness, idempotency, maximum memory, latency)."
+    properties:
+      stateless:
+        type: boolean
+        description: "Whether the component instances are completely stateless."
+      idempotent:
+        type: boolean
+        description: "Whether mutations handled by this component are idempotent."
+      concurrency_model:
+        type: string
+        description: "Concurrency paradigm (e.g. async_event_loop, multi_thread, multi_process, actor)."
+      max_memory_mb:
+        type: integer
+        description: "Maximum allowable memory allocation limit in MB."

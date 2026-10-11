@@ -1,0 +1,77 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: ArchitectureSchema
+description: "Defines the global technical architecture, system topology, cross-cutting standards, and data choreography."
+type: object
+required:
+  - type
+  - schema
+  - id
+  - title
+  - topology_style
+  - cross_cutting_standards
+  - data_architecture
+  - deployment_topology
+properties:
+  type:
+    type: string
+    const: "tech/architecture"
+    description: "The fixed document type identifier. Must always be 'tech/architecture'."
+  schema:
+    type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
+  id:
+    type: string
+    pattern: "^ARCH-[A-Z0-9_-]+$"
+    description: "Unique architecture document identifier (e.g. ARCH-EIDOS-001)."
+  title:
+    type: string
+    description: "Human-readable title of the system architecture specification."
+  topology_style:
+    type: string
+    description: "The foundational architectural pattern (e.g. monorepo, microservices, modular_monolith, distributed_mesh, embedded_firmware)."
+  cross_cutting_standards:
+    type: object
+    description: "System-wide technical conventions and patterns shared across all packages/services."
+    required:
+      - authentication_and_authz
+      - error_handling
+      - telemetry_and_logging
+    properties:
+      authentication_and_authz:
+        type: string
+        description: "Global authentication and authorization strategy (e.g. JWT with RS256, OAuth2, RBAC middleware)."
+      error_handling:
+        type: string
+        description: "Universal error schema and exception handling convention (e.g. RFC 7807 Problem Details)."
+      telemetry_and_logging:
+        type: string
+        description: "Structured logging, distributed tracing, and metrics standards (e.g. OpenTelemetry, JSON structured logs)."
+  data_architecture:
+    type: object
+    description: "Global persistence, caching, and event transport topologies."
+    required:
+      - primary_persistence
+      - event_transport
+    properties:
+      primary_persistence:
+        type: string
+        description: "Primary database engines and data isolation rules."
+      event_transport:
+        type: string
+        description: "Message broker or asynchronous communication bus (e.g. Kafka, RabbitMQ, Redis Streams, or In-Process Event Bus)."
+      caching_layer:
+        type: string
+        description: "Caching strategy and invalidation mechanisms (e.g. Redis with write-through cache)."
+  deployment_topology:
+    type: object
+    description: "Runtime hosting, containerization, and orchestration environments."
+    required:
+      - hosting_model
+      - ci_cd_engine
+    properties:
+      hosting_model:
+        type: string
+        description: "Target infrastructure topology (e.g. Local Workstation + Cloud CI Runners, Kubernetes Cluster, AWS Serverless)."
+      ci_cd_engine:
+        type: string
+        description: "Automation pipelines for build, test, and release (e.g. GitHub Actions, GitLab CI)."
