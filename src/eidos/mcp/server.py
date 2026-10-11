@@ -8,6 +8,12 @@ from typing import Any, Dict, List
 import eidos
 from eidos.core.validator import SpecValidator
 from eidos.core.parser import parse_spec_file
+from eidos.core.scaffolder import (
+    create_spec,
+    delete_spec,
+    list_specs,
+    apply_delta,
+)
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
@@ -82,6 +88,113 @@ TOOLS = [
                 "path": {
                     "type": "string",
                     "description": "Relative or absolute path to the .adoc specification file."
+                }
+            }
+        }
+    },
+    {
+        "name": "eidos_list_specs",
+        "description": "List all living specifications and SpecDeltas in the repository.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to specifications directory (defaults to 'eidos')."
+                },
+                "type": {
+                    "type": "string",
+                    "description": "Filter by type (capability, policy, contract, component, domain, persona, delta)."
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Filter by status (active, draft, proposed, applied)."
+                }
+            }
+        }
+    },
+    {
+        "name": "eidos_create_spec",
+        "description": "Scaffold a new living specification document (capability, policy, contract, component, domain, persona, delta).",
+        "inputSchema": {
+            "type": "object",
+            "required": ["type", "id", "title"],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "description": "Specification type: capability, policy, contract, component, domain, persona, delta, exploration."
+                },
+                "id": {
+                    "type": "string",
+                    "description": "Unique identifier (e.g. 'CAP-AUTH-001', 'POL-003', 'DLT-2026-002')."
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Human-readable title."
+                },
+                "domain": {
+                    "type": "string",
+                    "description": "Parent domain ID for capabilities (e.g. 'DOM-PRODUCT-CORE')."
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Path to specifications directory (defaults to 'eidos')."
+                },
+                "kind": {
+                    "type": "string",
+                    "description": "Mutation kind for SpecDeltas."
+                },
+                "motivation": {
+                    "type": "string",
+                    "description": "Motivation / problem statement."
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Category for policies."
+                },
+                "rule": {
+                    "type": "string",
+                    "description": "Rule statement for policies."
+                }
+            }
+        }
+    },
+    {
+        "name": "eidos_delete_spec",
+        "description": "Safely delete a living specification or SpecDelta with reference safety checks.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["target"],
+            "properties": {
+                "target": {
+                    "type": "string",
+                    "description": "Document ID, path, or filename to delete."
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Path to specifications directory (defaults to 'eidos')."
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "Force deletion even if references exist (defaults to false)."
+                }
+            }
+        }
+    },
+    {
+        "name": "eidos_apply_delta",
+        "description": "Reconcile an active SpecDelta and move it to eidos/deltas/applied/ with status 'applied'.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["target"],
+            "properties": {
+                "target": {
+                    "type": "string",
+                    "description": "Delta ID, path, or filename of the active SpecDelta to apply."
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Path to specifications directory (defaults to 'eidos')."
                 }
             }
         }
@@ -202,6 +315,63 @@ Describe the exact behavioral diffs and invariant updates here.
             return [{"type": "text", "text": json.dumps(res, indent=2)}]
         except Exception as e:
             return [{"type": "text", "text": f"Error parsing '{file_path}': {str(e)}"}]
+
+    elif name == "eidos_list_specs":
+        path = Path(arguments.get("path") or "eidos")
+        specs = list_specs(path, type_filter=arguments.get("type"), status_filter=arguments.get("status"))
+        serialized = [
+            {
+                "id": s["id"],
+                "type": s["type"],
+                "title": s["title"],
+                "status": s["status"],
+                "path": str(s["path"]),
+                "relative_path": str(s["relative_path"])
+            }
+            for s in specs
+        ]
+        return [{"type": "text", "text": json.dumps(serialized, indent=2)}]
+
+    elif name == "eidos_create_spec":
+        path = Path(arguments.get("path") or "eidos")
+        try:
+            dest_file = create_spec(
+                eidos_dir=path,
+                doc_type_key=arguments["type"],
+                raw_id=arguments["id"],
+                title=arguments["title"],
+                domain=arguments.get("domain"),
+                kind=arguments.get("kind", "feature_addition"),
+                motivation=arguments.get("motivation", "Motivation statement."),
+                category=arguments.get("category", "governance"),
+                rule=arguments.get("rule", "Rule statement."),
+            )
+            return [{"type": "text", "text": f"Created and validated specification: {dest_file}"}]
+        except Exception as e:
+            return [{"type": "text", "text": f"Error creating specification: {str(e)}"}]
+
+    elif name == "eidos_delete_spec":
+        path = Path(arguments.get("path") or "eidos")
+        target = arguments["target"]
+        force = arguments.get("force", False)
+        success, msg, refs = delete_spec(path, target, force=force)
+        res = {
+            "success": success,
+            "message": msg,
+            "references": [str(r) for r in refs]
+        }
+        return [{"type": "text", "text": json.dumps(res, indent=2)}]
+
+    elif name == "eidos_apply_delta":
+        path = Path(arguments.get("path") or "eidos")
+        target = arguments["target"]
+        success, msg, applied_file = apply_delta(path, target)
+        res = {
+            "success": success,
+            "message": msg,
+            "applied_file": str(applied_file) if applied_file else None
+        }
+        return [{"type": "text", "text": json.dumps(res, indent=2)}]
 
     return [{"type": "text", "text": f"Unknown tool: {name}"}]
 

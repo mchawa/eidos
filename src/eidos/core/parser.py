@@ -15,7 +15,7 @@ def parse_spec_file(path: Path) -> SpecDocument:
     doc_type = frontmatter_dict.get("type", "unknown") if frontmatter_dict else "unknown"
     doc_id = frontmatter_dict.get("id", path.stem) if frontmatter_dict else path.stem
     schema_ref = frontmatter_dict.get("schema") if frontmatter_dict else None
-    title = frontmatter_dict.get("title") if frontmatter_dict else None
+    title = (frontmatter_dict.get("title") or frontmatter_dict.get("name")) if frontmatter_dict else None
 
     doc = SpecDocument(
         file_path=path,

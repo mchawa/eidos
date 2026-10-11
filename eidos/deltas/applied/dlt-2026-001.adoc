@@ -1,0 +1,48 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-001
+title: CLI Spec Document Lifecycle Management and Plugin Multi-Skill Expansion
+status: applied
+intent:
+  kind: feature_addition
+  motivation: Expand the CLI with commands to create, list, and delete living specifications
+    and manage SpecDelta lifecycles, and expand the Agent Plugin with specialized
+    skills.
+mutations:
+- action: modify_contract
+  target_component: CMP-EIDOS-ENGINE
+  details: Expand CTR-EIDOS-CLI with 'spec', 'delta', 'create', 'delete', 'list' command
+    suites.
+- action: add_component
+  target_component: CMP-EIDOS-ENGINE
+  details: Introduce eidos.core.scaffolder for template generation, reference safety
+    checks, and delta lifecycle management.
+- action: extend_capability
+  target_capability: CAP-AGENT-001
+  details: 'Add specialized agent skills: eidos-delta, eidos-architecture, and eidos-invariants
+    alongside eidos master skill.'
+---
+
+= SpecDelta: CLI Spec Document Lifecycle Management and Plugin Multi-Skill Expansion
+:toc: left
+
+== Problem Statement
+While Eidos already validates specifications, scans components, runs an MCP server, and installs agent plugins, developers and AI agents need first-class CLI commands to scaffold new specifications (capabilities, domains, policies, contracts, components, deltas), safely delete old specifications with reference checking, and transition SpecDeltas from proposed to applied. Furthermore, AI agents require distinct, focused skills for delta authoring, architectural modeling, and invariant testing rather than a single monolithic skill.
+
+== Proposed Specification Changes
+1. Expand CTR-EIDOS-CLI contract with:
+   - `eidos spec list [--type] [--status]`
+   - `eidos spec show <id_or_path>`
+   - `eidos spec create <type> <id> --title <title> ...`
+   - `eidos spec delete <id_or_path> [--force]`
+   - `eidos delta create <id> --title <title> --kind <kind> --motivation <motivation>`
+   - `eidos delta list [--status]`
+   - `eidos delta apply <id>`
+   - `eidos delta delete <id> [--force]`
+   - Convenient top-level shortcuts: `eidos create`, `eidos delete`, `eidos list`.
+2. Expand Agent Plugin bundle with 4 specialized skills:
+   - `skills/eidos/SKILL.md` (Master orchestrator)
+   - `skills/eidos-delta/SKILL.md` (SpecDelta mutation authoring & reconciliation)
+   - `skills/eidos-architecture/SKILL.md` (Arc42 building blocks & C4 Level 1-3 modeling)
+   - `skills/eidos-invariants/SKILL.md` (Policy guardrails & invariant-test traceability)

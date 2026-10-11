@@ -26,6 +26,15 @@ from eidos.plugin.version import (
     get_installed_plugin_version,
 )
 
+from eidos.core.scaffolder import (
+    create_spec,
+    delete_spec,
+    list_specs,
+    list_deltas,
+    apply_delta,
+    find_spec_by_id_or_path,
+)
+
 app = typer.Typer(
     name="eidos",
     help="Eidos: Git-Native, Agent-Agnostic Development AI Ecosystem & Lifecycle Orchestrator.",
@@ -36,7 +45,20 @@ plugin_app = typer.Typer(
     help="Manage, install, and validate Eidos agent plugins (agent-plugins.org v1.0.0).",
     add_completion=False,
 )
+spec_app = typer.Typer(
+    name="spec",
+    help="Manage living specifications (list, create, delete, show).",
+    add_completion=False,
+)
+delta_app = typer.Typer(
+    name="delta",
+    help="Manage SpecDeltas through their mutation lifecycle (list, create, apply, delete).",
+    add_completion=False,
+)
+
 app.add_typer(plugin_app, name="plugin")
+app.add_typer(spec_app, name="spec")
+app.add_typer(delta_app, name="delta")
 console = Console()
 
 
@@ -165,6 +187,385 @@ def components(
 def mcp():
     """Launch the stdio Model Context Protocol (MCP) server for AI agents."""
     run_mcp_server()
+
+
+# -------------------------------------------------------------------------
+# Spec Living Specifications Management Commands
+# -------------------------------------------------------------------------
+
+@spec_app.command("list")
+def spec_list_cmd(
+    path: Path = typer.Option(
+        Path("eidos"),
+        "--path", "-p",
+        help="Path to eidos specifications directory.",
+    ),
+    type_filter: Optional[str] = typer.Option(
+        None,
+        "--type", "-t",
+        help="Filter by spec type (capability, policy, contract, component, domain, persona, delta).",
+    ),
+    status_filter: Optional[str] = typer.Option(
+        None,
+        "--status", "-s",
+        help="Filter by status (active, draft, proposed, applied).",
+    ),
+):
+    """List living specifications in the repository."""
+    specs = list_specs(path, type_filter=type_filter, status_filter=status_filter)
+    if not specs:
+        console.print(f"[yellow]No specifications found under '{path}'.[/yellow]")
+        return
+
+    table = Table(title=f"Eidos Living Specifications ({len(specs)} found)", show_header=True)
+    table.add_column("Document ID", style="bold cyan")
+    table.add_column("Type", style="magenta")
+    table.add_column("Status", style="green")
+    table.add_column("Title", style="white")
+    table.add_column("Relative Path", style="dim")
+
+    for s in specs:
+        table.add_row(
+            s["id"],
+            s["type"],
+            str(s["status"]),
+            s["title"],
+            str(s["relative_path"]),
+        )
+    console.print(table)
+
+
+@spec_app.command("show")
+def spec_show_cmd(
+    target: str = typer.Argument(
+        ...,
+        help="Document ID, relative path, or filename of the specification.",
+    ),
+    path: Path = typer.Option(
+        Path("eidos"),
+        "--path", "-p",
+        help="Path to eidos specifications directory.",
+    ),
+):
+    """Display frontmatter metadata and preview of a specification document."""
+    file_path = find_spec_by_id_or_path(path, target)
+    if not file_path:
+        console.print(f"[bold red]Error:[/bold red] Specification '{target}' not found under '{path}'.")
+        raise typer.Exit(code=1)
+
+    doc = parse_spec_file(file_path)
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="bold cyan", justify="right")
+    grid.add_column(style="white")
+
+    grid.add_row("Document ID:", f"[bold green]{doc.doc_id}[/bold green]")
+    grid.add_row("Type:", doc.doc_type)
+    grid.add_row("Title:", doc.title or "N/A")
+    grid.add_row("Status:", str(doc.frontmatter.get("status", "N/A")))
+    grid.add_row("Path:", str(file_path))
+
+    console.print(Panel(grid, title=f"[bold blue]{doc.title or doc.doc_id}[/bold blue]", expand=False))
+
+
+@spec_app.command("create")
+def spec_create_cmd(
+    doc_type: str = typer.Argument(
+        ...,
+        help="Specification type: capability, domain, policy, contract, component, persona, delta, exploration.",
+    ),
+    doc_id: str = typer.Argument(
+        ...,
+        help="Unique identifier (e.g. CAP-AUTH-001, POL-003, CTR-PAYMENT-API).",
+    ),
+    title: str = typer.Option(
+        ...,
+        "--title", "-t",
+        help="Human-readable title for the specification document.",
+    ),
+    path: Path = typer.Option(
+        Path("eidos"),
+        "--path", "-p",
+        help="Path to eidos specifications directory.",
+    ),
+    domain: Optional[str] = typer.Option(
+        None,
+        "--domain", "-d",
+        help="Parent domain ID for capabilities (e.g. DOM-PRODUCT-CORE).",
+    ),
+    kind: str = typer.Option(
+        "feature_addition",
+        "--kind", "-k",
+        help="Mutation kind for SpecDeltas (feature_addition, bugfix, refactor, modification).",
+    ),
+    motivation: str = typer.Option(
+        "Proposed specification change.",
+        "--motivation", "-m",
+        help="Motivation/problem statement for deltas.",
+    ),
+    category: str = typer.Option(
+        "governance",
+        "--category", "-c",
+        help="Category for policies (governance, architectural, security, testing).",
+    ),
+    rule: str = typer.Option(
+        "Authoritative rule statement.",
+        "--rule", "-r",
+        help="Rule statement for policies.",
+    ),
+    protocol: str = typer.Option(
+        "cli_args",
+        "--protocol",
+        help="Protocol for contracts (cli_args, openapi, protobuf, graphql, json_rpc_stdio).",
+    ),
+    owning_component: str = typer.Option(
+        "CMP-EIDOS-ENGINE",
+        "--owning-component",
+        help="Owning component ID for contracts.",
+    ),
+):
+    """Scaffold a new living specification or SpecDelta."""
+    try:
+        dest_file = create_spec(
+            eidos_dir=path,
+            doc_type_key=doc_type,
+            raw_id=doc_id,
+            title=title,
+            domain=domain,
+            kind=kind,
+            motivation=motivation,
+            category=category,
+            rule=rule,
+            protocol=protocol,
+            owning_component=owning_component,
+        )
+        rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
+        console.print(f"[bold green]✓ Created and validated specification ({doc_id}):[/bold green] [bold]{dest_file.name}[/bold]")
+        console.print(f"  [dim]Location: {rel}[/dim]")
+    except Exception as e:
+        console.print(f"[bold red]Failed to create specification:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@spec_app.command("delete")
+def spec_delete_cmd(
+    target: str = typer.Argument(
+        ...,
+        help="Document ID, path, or filename of the specification to delete.",
+    ),
+    path: Path = typer.Option(
+        Path("eidos"),
+        "--path", "-p",
+        help="Path to eidos specifications directory.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force", "-f",
+        help="Force deletion even if other specifications reference this document.",
+    ),
+):
+    """Safely delete a living specification with reference checks."""
+    success, msg, refs = delete_spec(path, target, force=force)
+    if not success:
+        console.print(f"[bold red]✗ Deletion Blocked:[/bold red] {msg}")
+        if refs:
+            console.print("\n[yellow]Referencing specifications:[/yellow]")
+            for r in refs:
+                rel = r.relative_to(path) if r.is_relative_to(path) else r
+                console.print(f"  • {rel}")
+        raise typer.Exit(code=1)
+
+    console.print(f"[bold green]✓[/bold green] {msg}")
+    if refs:
+        console.print(f"[yellow]Warning:[/yellow] Deleted despite {len(refs)} reference(s) (--force used).")
+
+
+# -------------------------------------------------------------------------
+# SpecDelta Lifecycle Management Commands
+# -------------------------------------------------------------------------
+
+@delta_app.command("list")
+def delta_list_cmd(
+    path: Path = typer.Option(
+        Path("eidos"),
+        "--path", "-p",
+        help="Path to eidos directory.",
+    ),
+    status_filter: Optional[str] = typer.Option(
+        None,
+        "--status", "-s",
+        help="Filter deltas by status (e.g. proposed, in_review, applied, rejected).",
+    ),
+):
+    """List SpecDeltas in active/ and applied/ states."""
+    deltas = list_deltas(path, status_filter=status_filter)
+    if not deltas:
+        console.print(f"[yellow]No SpecDeltas found under '{path}/deltas'.[/yellow]")
+        return
+
+    table = Table(title=f"Eidos SpecDeltas ({len(deltas)} found)", show_header=True)
+    table.add_column("Delta ID", style="bold cyan")
+    table.add_column("Status", style="green")
+    table.add_column("Kind", style="magenta")
+    table.add_column("Title", style="white")
+    table.add_column("State", style="yellow")
+    table.add_column("Path", style="dim")
+
+    for d in deltas:
+        state_str = "[bold green]ACTIVE[/bold green]" if d["is_active"] else "[dim]APPLIED[/dim]"
+        table.add_row(
+            d["id"],
+            str(d["status"]),
+            d["kind"],
+            d["title"],
+            state_str,
+            str(d["relative_path"]),
+        )
+    console.print(table)
+
+
+@delta_app.command("create")
+def delta_create_cmd(
+    delta_id: str = typer.Argument(
+        ...,
+        help="Unique delta identifier (e.g. DLT-2026-002).",
+    ),
+    title: str = typer.Option(
+        ...,
+        "--title", "-t",
+        help="Title of the proposed change.",
+    ),
+    kind: str = typer.Option(
+        "feature_addition",
+        "--kind", "-k",
+        help="Mutation kind: feature_addition, bugfix, refactor, modification, feature_removal.",
+    ),
+    motivation: str = typer.Option(
+        "Problem statement and motivation.",
+        "--motivation", "-m",
+        help="Problem statement and motivation.",
+    ),
+    path: Path = typer.Option(
+        Path("eidos"),
+        "--path", "-p",
+        help="Path to eidos directory.",
+    ),
+):
+    """Create a new active SpecDelta (eidos/deltas/active/)."""
+    try:
+        dest_file = create_spec(
+            eidos_dir=path,
+            doc_type_key="delta",
+            raw_id=delta_id,
+            title=title,
+            kind=kind,
+            motivation=motivation,
+        )
+        rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
+        console.print(f"[bold green]✓ Created active SpecDelta:[/bold green] [bold]{dest_file.name}[/bold]")
+        console.print(f"  [dim]Location: {rel}[/dim]")
+        console.print(f"  [dim]Next step: Edit mutations in {rel} and update living specs.[/dim]")
+    except Exception as e:
+        console.print(f"[bold red]Failed to create SpecDelta:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@delta_app.command("apply")
+def delta_apply_cmd(
+    target: str = typer.Argument(
+        ...,
+        help="Delta ID, path, or filename of the active SpecDelta to apply.",
+    ),
+    path: Path = typer.Option(
+        Path("eidos"),
+        "--path", "-p",
+        help="Path to eidos directory.",
+    ),
+):
+    """Reconcile an active SpecDelta and move it to eidos/deltas/applied/ with status 'applied'."""
+    success, msg, applied_file = apply_delta(path, target)
+    if not success:
+        console.print(f"[bold red]✗ Failed to apply SpecDelta:[/bold red] {msg}")
+        raise typer.Exit(code=1)
+
+    console.print(f"[bold green]✓[/bold green] {msg}")
+    if applied_file:
+        rel = applied_file.relative_to(path) if applied_file.is_relative_to(path) else applied_file
+        console.print(f"  [dim]Archived at: {rel}[/dim]")
+
+
+@delta_app.command("delete")
+def delta_delete_cmd(
+    target: str = typer.Argument(
+        ...,
+        help="Delta ID, path, or filename to delete.",
+    ),
+    path: Path = typer.Option(
+        Path("eidos"),
+        "--path", "-p",
+        help="Path to eidos directory.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force", "-f",
+        help="Force deletion.",
+    ),
+):
+    """Delete a SpecDelta file."""
+    success, msg, _ = delete_spec(path, target, force=force)
+    if not success:
+        console.print(f"[bold red]✗ Failed to delete SpecDelta:[/bold red] {msg}")
+        raise typer.Exit(code=1)
+    console.print(f"[bold green]✓[/bold green] {msg}")
+
+
+# -------------------------------------------------------------------------
+# Top-Level Convenience Shortcuts
+# -------------------------------------------------------------------------
+
+@app.command("create")
+def create_shortcut(
+    doc_type: str = typer.Argument(..., help="Specification type: capability, domain, policy, contract, component, persona, delta."),
+    doc_id: str = typer.Argument(..., help="Document ID (e.g. CAP-AUTH-001, POL-002, DLT-2026-002)."),
+    title: str = typer.Option(..., "--title", "-t", help="Title of the document."),
+    path: Path = typer.Option(Path("eidos"), "--path", "-p", help="Path to eidos specifications directory."),
+    domain: Optional[str] = typer.Option(None, "--domain", "-d", help="Parent domain for capabilities."),
+    kind: str = typer.Option("feature_addition", "--kind", "-k", help="Mutation kind for deltas."),
+    motivation: str = typer.Option("Motivation statement.", "--motivation", "-m", help="Motivation statement."),
+    category: str = typer.Option("governance", "--category", "-c", help="Category for policies."),
+    rule: str = typer.Option("Rule statement.", "--rule", "-r", help="Rule statement for policies."),
+):
+    """Shortcut to scaffold a new living specification or SpecDelta."""
+    spec_create_cmd(
+        doc_type=doc_type,
+        doc_id=doc_id,
+        title=title,
+        path=path,
+        domain=domain,
+        kind=kind,
+        motivation=motivation,
+        category=category,
+        rule=rule,
+    )
+
+
+@app.command("delete")
+def delete_shortcut(
+    target: str = typer.Argument(..., help="Document ID or path to delete."),
+    path: Path = typer.Option(Path("eidos"), "--path", "-p", help="Path to eidos specifications directory."),
+    force: bool = typer.Option(False, "--force", "-f", help="Force deletion even if referenced."),
+):
+    """Shortcut to safely delete a specification document or delta."""
+    spec_delete_cmd(target=target, path=path, force=force)
+
+
+@app.command("list")
+def list_shortcut(
+    path: Path = typer.Option(Path("eidos"), "--path", "-p", help="Path to eidos specifications directory."),
+    type_filter: Optional[str] = typer.Option(None, "--type", "-t", help="Filter by type."),
+    status_filter: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status."),
+):
+    """Shortcut to list all living specifications."""
+    spec_list_cmd(path=path, type_filter=type_filter, status_filter=status_filter)
 
 
 @plugin_app.command("install")

@@ -14,6 +14,10 @@ def test_mcp_tools_declared():
     assert "eidos_list_components" in tool_names
     assert "eidos_create_delta" in tool_names
     assert "eidos_read_spec" in tool_names
+    assert "eidos_list_specs" in tool_names
+    assert "eidos_create_spec" in tool_names
+    assert "eidos_delete_spec" in tool_names
+    assert "eidos_apply_delta" in tool_names
 
 
 def test_mcp_info_tool():
