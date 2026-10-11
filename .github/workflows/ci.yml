@@ -3,8 +3,11 @@ name: CI
 on:
   push:
     branches: [main]
+    tags:
+      - "v*.*.*"
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -96,7 +99,7 @@ jobs:
           test -f site/portal/data.json
 
       - name: Upload Pages artifact
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
         uses: actions/upload-pages-artifact@v5
         with:
           path: site/
@@ -104,7 +107,7 @@ jobs:
   deploy-pages:
     name: Deploy to GitHub Pages 🌐
     needs: [validate, test, build-site]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     environment:
       name: github-pages

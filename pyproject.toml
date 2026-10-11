@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "eidos-ai"
 version = "0.1.0"
 description = "Git-Native, Agent-Agnostic Development AI Ecosystem & Lifecycle Orchestrator"
-readme = { file = "README.adoc", content-type = "text/plain" }
+readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
