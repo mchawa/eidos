@@ -74,4 +74,4 @@ eidos/
 
 == License
 
-Licensed under the link:LICENSE[GNU Affero General Public License v3.0 (AGPLv3)].
+Licensed under the link:LICENSE[MIT License].

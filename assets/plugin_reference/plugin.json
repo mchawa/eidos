@@ -9,7 +9,7 @@
   },
   "homepage": "https://github.com/eidos-ai/eidos",
   "repository": "https://github.com/eidos-ai/eidos",
-  "license": "AGPL-3.0-or-later",
+  "license": "MIT",
   "keywords": [
     "eidos",
     "agent-plugins",
