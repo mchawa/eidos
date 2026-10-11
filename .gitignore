@@ -18,6 +18,11 @@ dist/
 build/
 *.egg-info/
 
+# Documentation
+site/
+.cache/
+.ruff_cache/
+
 # Local agent plugins installation
 .agents/
 .cursor/

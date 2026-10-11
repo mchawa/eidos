@@ -88,3 +88,31 @@ jobs:
         run: |
           test -f public/index.html
           test -f public/data.json
+
+  build-docs:
+    name: Build User Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Build documentation site with Zensical
+        run: uv run zensical build --strict
+
+      - name: Verify generated documentation assets
+        run: |
+          test -f site/index.html
+          test -f site/sitemap.xml
+          test -f site/search.json

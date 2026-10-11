@@ -26,6 +26,9 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.4.0",
 ]
+docs = [
+    "zensical>=0.0.69",
+]
 
 [project.scripts]
 eidos = "eidos.cli.main:app"
