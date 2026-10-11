@@ -24,7 +24,9 @@ site/
 .ruff_cache/
 
 # Local agent plugins installation
-.agents/
 .cursor/
 .claude/
+.agents/*
+!.agents/plugins/
+!.agents/plugins/eidos/
 

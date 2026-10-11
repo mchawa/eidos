@@ -382,7 +382,8 @@ def test_assets_and_installed_plugin_parity():
     ref_plugin = Path("assets/plugin_reference")
     installed_plugin = Path(".agents/plugins/eidos")
     assert ref_plugin.exists()
-    assert installed_plugin.exists()
+    if not installed_plugin.exists():
+        pytest.skip(".agents/plugins/eidos not installed in this environment")
 
     ref_files = {p.relative_to(ref_plugin) for p in ref_plugin.rglob("*") if p.is_file()}
     inst_files = {p.relative_to(installed_plugin) for p in installed_plugin.rglob("*") if p.is_file()}
