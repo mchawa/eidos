@@ -9,6 +9,23 @@ package_path: "src/eidos"
 
 domain_binding: DOM-PRODUCT-CORE
 
+c4_internal_components:
+  - name: "SpecParser"
+    responsibility: "Extracts YAML frontmatter metadata and body text from AsciiDoc documents."
+    source_path: "src/eidos/core/parser.py"
+  - name: "SpecValidator"
+    responsibility: "Resolves bundled JSON/YAML schemas, validates document frontmatters, and verifies cross-references."
+    source_path: "src/eidos/core/validator.py"
+  - name: "CliInterface"
+    responsibility: "Provides the user-facing command-line interface with formatted Rich diagnostics."
+    source_path: "src/eidos/cli/main.py"
+  - name: "AgentHarness"
+    responsibility: "Provides the abstract adapter interface and task execution context for autonomous coding agents."
+    source_path: "src/eidos/agent/base.py"
+  - name: "VCSBridge"
+    responsibility: "Provides the normalized API interface bridging GitHub and GitLab repositories."
+    source_path: "src/eidos/vcs/bridge.py"
+
 dependencies:
   internal_components: []
   external_services:
@@ -27,21 +44,24 @@ quality_attributes:
   concurrency_model: "synchronous_cli_with_asyncio_support"
   max_memory_mb: 256
 ---
-= Component: Eidos Orchestration & Validation Engine
+= Component: Eidos Orchestration & Validation Engine (C4 Level 3 Whitebox)
 :toc: left
 
 == Architectural Boundary
-This component represents the core Python codebase under `src/eidos/`. It is responsible for parsing AsciiDoc files with YAML frontmatter, validating metadata against JSON/YAML schemas, executing CLI commands, and bridging autonomous agent execution harnesses.
+This component represents the core Python codebase under `src/eidos/`. It parses AsciiDoc files with YAML frontmatter, validates metadata against JSON/YAML schemas, executes CLI commands, and coordinates autonomous agent execution harnesses.
 
-== Internal Package Anatomy
+== Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
 
-[cols="1,3", options="header"]
+[cols="1,2,2", options="header"]
 |===
-| Module | Responsibility
-| `src/eidos/core/parser.py` | Robust extraction of YAML frontmatters from AsciiDoc content.
-| `src/eidos/core/validator.py` | Schema resolution via `importlib.resources` and JSON Schema Draft 2020-12 validation.
-| `src/eidos/cli/main.py` | Typer and Rich user interface, formatted diagnostic reporting, exit codes.
-| `src/eidos/agent/base.py` | Abstract protocol for pluggable agent execution drivers.
-| `src/eidos/vcs/bridge.py` | Normalized contract across GitHub and GitLab VCS platforms.
+| Internal Module | Responsibility | Source Path
+| **SpecParser** | Robust extraction of YAML frontmatters from AsciiDoc content | `src/eidos/core/parser.py`
+| **SpecValidator** | Schema resolution via `importlib.resources` and Draft 2020-12 validation | `src/eidos/core/validator.py`
+| **CliInterface** | Typer and Rich user interface, formatted diagnostic reporting, exit codes | `src/eidos/cli/main.py`
+| **AgentHarness** | Abstract protocol for pluggable agent execution drivers | `src/eidos/agent/base.py`
+| **VCSBridge** | Normalized contract across GitHub and GitLab VCS platforms | `src/eidos/vcs/bridge.py`
 |===
 
+== Operational Invariants & Quality Attributes
+* **Stateless Operation**: The engine persists zero runtime state outside of the target Git repository.
+* **Deterministic Validation**: Identical repository specifications must always produce identical validation reports across all environments.

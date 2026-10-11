@@ -1,6 +1,6 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: ComponentSchema
-description: "Defines an individual deployable unit, package, or library in a monorepo or modular architecture. Supports both centralized (under eidos/architecture/components/) and co-located (inside package directory) layouts."
+description: "Defines a deployable unit, package, or service following Arc42 Building Block View (Section 5) and C4 Model Level 3 (Components & Internal Modules). Supports centralized and co-located layouts."
 type: object
 required:
   - type
@@ -10,6 +10,7 @@ required:
   - container_type
   - runtime
   - package_path
+  - c4_internal_components
 properties:
   type:
     type: string
@@ -24,25 +25,44 @@ properties:
     description: "Unique component identifier following CMP-<NAME> (e.g. CMP-EIDOS-ENGINE, CMP-AUTH-SERVICE)."
   name:
     type: string
-    description: "Human-readable name of the component, service, or library."
+    description: "Human-readable display name of the container/package."
   container_type:
     type: string
-    description: "The structural nature of this component: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon, or driver."
+    description: "The C4 Container classification: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon, or driver."
   runtime:
     type: string
-    description: "Execution environment and primary framework (e.g. 'Python 3.12 / Typer', 'TypeScript / React', 'Rust / Tokio')."
+    description: "Execution environment and primary framework (e.g. 'Python 3.12 / Typer / Hatchling', 'TypeScript / React', 'Rust / Tokio')."
   package_path:
     type: string
     description: >
       Relative path from repository root to the package source code (e.g. 'src/eidos' or 'packages/auth').
-      This enables dual-layout support: component documents can live centralized under 'eidos/architecture/components/'
-      OR co-located inside the package directory (e.g. 'packages/auth/component.adoc').
+      Enables dual-layout support: component documents can live centralized under 'eidos/architecture/components/'
+      OR co-located inside the package directory (e.g. 'src/eidos/component.adoc').
   domain_binding:
     type: string
-    description: "The product domain ID (DOM-*) this technical component primarily belongs to."
+    description: "The product domain ID (DOM-*) this technical component primarily realizes."
+  c4_internal_components:
+    type: array
+    description: "Arc42 Section 5.2 / C4 Level 3: Component Whitebox View. The internal modules, classes, or building blocks that constitute this package."
+    items:
+      type: object
+      required:
+        - name
+        - responsibility
+        - source_path
+      properties:
+        name:
+          type: string
+          description: "Internal component/module name (e.g. 'SpecParser', 'SchemaValidator', 'CliEntrypoint')."
+        responsibility:
+          type: string
+          description: "What this internal module does and what domain logic it encapsulates."
+        source_path:
+          type: string
+          description: "Relative file path to the source file implementing this component (e.g. 'src/eidos/core/parser.py')."
   dependencies:
     type: object
-    description: "Explicit internal monorepo dependencies and external service dependencies."
+    description: "Explicit monorepo dependencies and external platform dependencies."
     properties:
       internal_components:
         type: array
@@ -51,7 +71,7 @@ properties:
           type: string
       external_services:
         type: array
-        description: "Third-party services, databases, or external APIs consumed (e.g. PostgreSQL, Redis, GitHub API)."
+        description: "External APIs, databases, or brokers consumed (e.g. PostgreSQL, Redis, GitHub API)."
         items:
           type: string
   contracts:
@@ -70,11 +90,11 @@ properties:
           type: string
   quality_attributes:
     type: object
-    description: "Key operational constraints (e.g. statelessness, idempotency, maximum memory, latency)."
+    description: "Arc42 Section 10: Quality Requirements and Operational Invariants."
     properties:
       stateless:
         type: boolean
-        description: "Whether the component instances are completely stateless."
+        description: "Whether component instances are completely stateless."
       idempotent:
         type: boolean
         description: "Whether mutations handled by this component are idempotent."
@@ -84,4 +104,3 @@ properties:
       max_memory_mb:
         type: integer
         description: "Maximum allowable memory allocation limit in MB."
-

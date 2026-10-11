@@ -5,54 +5,100 @@ id: ARCH-EIDOS-001
 title: "Eidos Global Technical Architecture"
 topology_style: "monorepo_orchestrator"
 
-cross_cutting_standards:
+c4_context:
+  actors:
+    - "eidos/personas/product-lead.adoc"
+    - "eidos/personas/autonomous-agent.adoc"
+  external_systems:
+    - name: "GitHub / GitLab"
+      role: "Git hosting, Issue/PR webhook synchronization, and CI/CD execution"
+      protocol: "REST / GraphQL Webhooks"
+
+c4_containers:
+  - component_ref: "CMP-EIDOS-ENGINE"
+    name: "Eidos Orchestration & Validation Engine"
+    container_type: "library_and_cli"
+    runtime: "Python 3.12 / Typer / Hatchling"
+    package_path: "src/eidos"
+
+solution_strategy:
+  - "GitOps State Machine: Git repository is the sole source of authoritative truth."
+  - "Specification-as-Code: YAML frontmatter + AsciiDoc technical specifications validated against JSON Schemas."
+  - "Pluggable Agent Execution: Standard adapter protocol supporting Antigravity (agy), Claude Code, and Codex."
+  - "Living Architecture (Arc42 + C4): Real-time component manifests and topologies without dead ADR graveyards."
+
+cross_cutting_concepts:
   authentication_and_authz: "Git token credentials (GITHUB_TOKEN / GITLAB_TOKEN) scoped via environment or local Git credentials."
   error_handling: "Structured CLI exit codes (0 = Success, 1 = Validation failure, 2 = Execution error) with Rich diagnostic output."
   telemetry_and_logging: "Local stdout/stderr streaming with optional structured JSON log output for CI pipelines."
 
-data_architecture:
-  primary_persistence: "Git repository filesystem (.adoc files + YAML frontmatter). No external database required."
-  event_transport: "In-memory event dispatcher for local execution; Webhook event payloads for CI/CD runners."
-  caching_layer: "Local in-memory schema and document graph cache during validation and planning runs."
-
-deployment_topology:
+deployment_view:
   hosting_model: "Distributed: Local developer workstation (CLI) and CI/CD Runner environments (GitHub Actions / GitLab CI)."
   ci_cd_engine: "GitHub Actions workflows and GitLab CI pipelines executing eidos validate and test runners."
 ---
-= Eidos Global Technical Architecture
+= Eidos Global System Architecture (Arc42 & C4 Blueprint)
 :doctype: book
 :toc: left
 :icons: font
 :sectnums:
 
-== Architectural Overview
+== 1. Introduction & Goals
+Eidos is an open, Git-native development AI ecosystem and orchestration framework.
+* **Target Personas**: Refer to link:../personas/product-lead.adoc[Product Lead Persona] and link:../personas/autonomous-agent.adoc[Autonomous Agent Persona].
+* **System Goals**: Refer to link:../system.adoc[Root System Specification].
 
-Eidos is architected as a lightweight, Git-native execution and validation engine. It enforces zero external database dependencies: all state, domain models, technical architectures, and task mutations are persisted directly inside the version-controlled Git repository.
+== 2. Constraints & Quality Invariants
+* link:../policies/POL-001-git-as-single-source-of-truth.adoc[POL-001: Git as Single Source of Truth]
+* link:../policies/POL-002-invariant-test-enforcement.adoc[POL-002: Mandatory Invariant Test Enforcement]
 
-== C4 Model Level 1: System Context
+== 3. Context & Scope (C4 Model Level 1: System Context)
+
+The system boundaries, human/agent actors, and external system integrations:
 
 [mermaid]
 ----
-flowchart TD
-    User["Product Lead / Engineer"] -->|CLI commands / Git commits| Git["Git Repository (Local / Remote)"]
-    Agent["Autonomous Coding Agent (agy, claude, codex)"] -->|Reads Specs / Submits PRs| Git
-    Git -->|Webhook Events| CI["CI / CD Pipeline (GitHub / GitLab)"]
-    CI -->|Runs 'eidos validate'| EidosEngine["Eidos Engine"]
-    EidosEngine -->|Pass / Fail Gate| CI
+C4Context
+  title System Context for Eidos (C4 Level 1)
+  Person(user, "Product Lead / Engineer", "Authors specifications, reviews PRs, triggers agent tasks")
+  Person_Ext(agent, "AI Coding Agent", "Autonomous worker (agy, claude, codex) generating code and tests")
+  System(eidos, "Eidos Ecosystem", "Git-native SDLC orchestration and specification engine")
+  System_Ext(vcs, "GitHub / GitLab", "VCS repository, PR/MR discussions, and CI/CD pipelines")
+
+  Rel(user, eidos, "Runs CLI commands, writes living specs")
+  Rel(agent, eidos, "Consumes targeted task context, returns code diffs")
+  Rel(eidos, vcs, "Bidirectional sync of issues, PRs, and status checks")
 ----
 
-== C4 Model Level 2: Container / Package Topology
+== 4. Solution Strategy
+* **Git as the OS**: All states (PRDs, ADR-free architectures, task graphs, test bindings) reside in Git.
+* **SpecDelta Diff Engine**: Evolutionary changes are semantic mutations (`add`, `modify`, `remove`, `patch`).
+* **Arc42 & C4 Hierarchical Zoom**: High-level system context down to C4 Level 3 internal package components.
 
-Eidos is delivered as a monorepo consisting of:
-1. **Core Package (`src/eidos`)**: The Python orchestration engine, schema validator, and CLI tool.
-2. **Specification Tree (`eidos/`)**: The living business and technical specifications.
-3. **Test Harness (`tests/`)**: Automated test suites verifying invariant compliance.
+== 5. Building Block View (C4 Level 2: Container Topology)
 
-== Monorepo Component Catalog
+=== 5.1 Monorepo Container Topology
+Eidos is distributed as a monorepo consisting of the following primary containers:
 
-[cols="1,2,2", options="header"]
+[cols="1,2,2,2", options="header"]
 |===
-| Component ID | Container Type | Source Package Path
-| `CMP-EIDOS-ENGINE` | CLI & Core Library | `src/eidos`
+| Container ID | Name | Type | Source Path
+| `CMP-EIDOS-ENGINE` | Eidos Orchestration Engine | Library & CLI | `src/eidos`
 |===
 
+=== 5.2 Level 3 Component Whitebox View
+Internal component manifests for each container:
+* link:components/engine.adoc[`CMP-EIDOS-ENGINE` Component Specification]
+
+== 6. Runtime View
+Runtime execution choreographies are defined in:
+* link:../domains/product-core/capabilities/spec-delta-mutations.adoc[SpecDelta Mutation Flow]
+* link:../domains/product-core/capabilities/exploration-discovery.adoc[Exploration & Spike Flow]
+
+== 7. Deployment View (Infrastructure & Delivery)
+* **Local Workstation**: Developers run the CLI directly via `uv run eidos validate`.
+* **CI/CD Automation**: GitHub Actions or GitLab CI runners execute validation gates on every PR.
+
+== 8. Cross-Cutting Concepts
+* **Interface Contracts**: Defined under link:contracts/cli.adoc[`CTR-EIDOS-CLI`].
+* **Error Diagnostics**: Standardized exit codes and formatted terminal tables using Rich.
+* **Data Storage**: Entirely Git filesystem backed with YAML frontmatter + AsciiDoc.

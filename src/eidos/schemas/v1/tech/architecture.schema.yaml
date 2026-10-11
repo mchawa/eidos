@@ -1,6 +1,6 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: ArchitectureSchema
-description: "Defines the global technical architecture, system topology, cross-cutting standards, and data choreography."
+description: "Defines the global technical architecture following Arc42 sections (Context, Solution Strategy, Building Blocks, Deployment, Cross-cutting) and C4 Model Levels 1 & 2."
 type: object
 required:
   - type
@@ -8,9 +8,11 @@ required:
   - id
   - title
   - topology_style
-  - cross_cutting_standards
-  - data_architecture
-  - deployment_topology
+  - c4_context
+  - c4_containers
+  - solution_strategy
+  - cross_cutting_concepts
+  - deployment_view
 properties:
   type:
     type: string
@@ -28,10 +30,72 @@ properties:
     description: "Human-readable title of the system architecture specification."
   topology_style:
     type: string
-    description: "The foundational architectural pattern (e.g. monorepo, microservices, modular_monolith, distributed_mesh, embedded_firmware)."
-  cross_cutting_standards:
+    description: "The foundational architectural pattern (e.g. monorepo_orchestrator, microservices, modular_monolith, distributed_mesh, embedded_firmware)."
+  c4_context:
     type: object
-    description: "System-wide technical conventions and patterns shared across all packages/services."
+    description: "Arc42 Section 3 / C4 Level 1: System Context. Identifies human/agent actors and external systems."
+    required:
+      - actors
+      - external_systems
+    properties:
+      actors:
+        type: array
+        description: "List of existing persona document paths (type: product/persona) representing human or agent actors interacting with the system."
+        items:
+          type: string
+          description: "Relative path to a defined persona (e.g. eidos/personas/product-lead.adoc)."
+      external_systems:
+        type: array
+        description: "Third-party platforms, external APIs, or upstream/downstream services outside system boundaries."
+        items:
+          type: object
+          required:
+            - name
+            - role
+          properties:
+            name:
+              type: string
+              description: "Name of the external system (e.g. 'GitHub / GitLab', 'Stripe Gateway')."
+            role:
+              type: string
+              description: "How the system interacts with this external entity."
+            protocol:
+              type: string
+              description: "Communication protocol (e.g. 'REST Webhooks', 'OAuth2', 'Kafka Topic')."
+  c4_containers:
+    type: array
+    description: "Arc42 Section 5.1 / C4 Level 2: Container Topology. The high-level deployable units, services, monorepo packages, or applications comprising the system."
+    items:
+      type: object
+      required:
+        - component_ref
+        - name
+        - container_type
+      properties:
+        component_ref:
+          type: string
+          description: "Component ID (CMP-*) or relative path to component specification (e.g. CMP-EIDOS-ENGINE or eidos/architecture/components/engine.adoc)."
+        name:
+          type: string
+          description: "Display name of the container/package."
+        container_type:
+          type: string
+          description: "Type of container: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon."
+        runtime:
+          type: string
+          description: "Execution runtime and primary framework."
+        package_path:
+          type: string
+          description: "Relative source code directory in the repository."
+  solution_strategy:
+    type: array
+    description: "Arc42 Section 4: Solution Strategy. Fundamental architectural decisions and paradigms shaping the system."
+    items:
+      type: string
+      description: "A foundational architectural strategy (e.g. 'GitOps State Machine: Git is the single source of truth')."
+  cross_cutting_concepts:
+    type: object
+    description: "Arc42 Section 8: Cross-cutting Concepts. Shared conventions and patterns across all containers/packages."
     required:
       - authentication_and_authz
       - error_handling
@@ -39,32 +103,16 @@ properties:
     properties:
       authentication_and_authz:
         type: string
-        description: "Global authentication and authorization strategy (e.g. JWT with RS256, OAuth2, RBAC middleware)."
+        description: "Global authentication and authorization strategy."
       error_handling:
         type: string
-        description: "Universal error schema and exception handling convention (e.g. RFC 7807 Problem Details)."
+        description: "Universal error schemas, diagnostic formats, and exception rules."
       telemetry_and_logging:
         type: string
-        description: "Structured logging, distributed tracing, and metrics standards (e.g. OpenTelemetry, JSON structured logs)."
-  data_architecture:
+        description: "Structured logging, distributed tracing, and metrics standards."
+  deployment_view:
     type: object
-    description: "Global persistence, caching, and event transport topologies."
-    required:
-      - primary_persistence
-      - event_transport
-    properties:
-      primary_persistence:
-        type: string
-        description: "Primary database engines and data isolation rules."
-      event_transport:
-        type: string
-        description: "Message broker or asynchronous communication bus (e.g. Kafka, RabbitMQ, Redis Streams, or In-Process Event Bus)."
-      caching_layer:
-        type: string
-        description: "Caching strategy and invalidation mechanisms (e.g. Redis with write-through cache)."
-  deployment_topology:
-    type: object
-    description: "Runtime hosting, containerization, and orchestration environments."
+    description: "Arc42 Section 7: Deployment View. Target infrastructure, environments, and CI/CD pipelines."
     required:
       - hosting_model
       - ci_cd_engine
@@ -75,4 +123,3 @@ properties:
       ci_cd_engine:
         type: string
         description: "Automation pipelines for build, test, and release (e.g. GitHub Actions, GitLab CI)."
-
