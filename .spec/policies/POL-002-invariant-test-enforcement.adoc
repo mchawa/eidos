@@ -14,3 +14,4 @@ enforcement:
 
 == Rationale
 Specifications without verifiable test bindings are merely aspirations. By binding every system invariant (e.g. "Guests cannot delete projects") to an automated test, the system ensures that AI agents cannot claim completion without providing green regression tests.
+

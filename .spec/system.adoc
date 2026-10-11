@@ -61,3 +61,4 @@ ____
 | **Quality** | Business Policies & SLAs | Invariant test bindings & CI pipelines
 | **Execution** | Developer & Agent collaboration | Pluggable Agent Adapters (CLI / MCP / API)
 |===
+

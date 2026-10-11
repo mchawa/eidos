@@ -24,3 +24,4 @@ technical_mapping:
 
 == Domain Overview
 Decouples Eidos from any specific LLM provider or coding CLI. Agents act as pluggable compute units that receive structured tasks, run in isolated sandboxes, and are evaluated against deterministic test invariants.
+

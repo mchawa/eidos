@@ -1,6 +1,6 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: DeltaSchema
-description: "Defines semantic mutations applied to the product baseline (features, bugs, modifications, removals)."
+description: "Defines declarative semantic mutations applied to the product baseline (feature additions, behavior changes, bug fixes, and deprecations/removals)."
 type: object
 required:
   - type
@@ -14,35 +14,65 @@ properties:
   type:
     type: string
     const: "delta/mutation"
+    description: "The fixed document type identifier. Must always be 'delta/mutation'."
   schema:
     type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^DLT-[A-Z0-9_-]+$"
+    description: "Unique mutation identifier following the DLT-<YEAR>-<NUMBER> convention (e.g. DLT-2026-089)."
   title:
     type: string
+    description: "Short, descriptive summary of the proposed product or technical mutation."
   status:
     type: string
-    enum: [proposed, in_review, approved, applied, rejected]
+    enum:
+      - proposed
+      - in_review
+      - approved
+      - applied
+      - rejected
+    description: "Lifecycle status: 'proposed' (initial draft), 'in_review' (under team/agent review), 'approved' (ready for implementation), 'applied' (merged into main and applied to baseline), or 'rejected' (declined)."
   intent:
     type: object
-    required: [kind, motivation]
+    description: "The strategic motivation and nature of the proposed change."
+    required:
+      - kind
+      - motivation
     properties:
       kind:
         type: string
-        enum: [feature_addition, feature_removal, modification, bugfix]
-      motivation: { type: string }
+        enum:
+          - feature_addition
+          - feature_removal
+          - modification
+          - bugfix
+        description: "The functional nature of the mutation."
+      motivation:
+        type: string
+        description: "Why this change is needed and the problem it resolves."
       bug_classification:
         type: string
-        enum: [spec_violation, spec_gap]
+        enum:
+          - spec_violation
+          - spec_gap
+        description: "Only for bugfixes: 'spec_violation' means code diverged from valid spec; 'spec_gap' means spec lacked coverage for an edge condition."
       severity:
         type: string
-        enum: [low, medium, high, critical]
+        enum:
+          - low
+          - medium
+          - high
+          - critical
+        description: "Impact severity rating, particularly for bugfixes and security patches."
   mutations:
     type: array
+    description: "Ordered list of atomic semantic operations to perform against the baseline .spec/ documents."
     items:
       type: object
-      required: [action]
+      required:
+        - action
       properties:
         action:
           type: string
@@ -56,14 +86,41 @@ properties:
             - remove_capability
             - add_entity_field
             - remove_entity_field
-        target_domain: { type: string }
-        target_capability: { type: string }
-        target_invariant_id: { type: string }
-        new_capability_id: { type: string }
-        details: { type: string }
+          description: "Semantic operation type indicating the exact mutation being executed against the baseline."
+        target_domain:
+          type: string
+          description: "Target domain ID or relative path (e.g. DOM-PRODUCT-CORE or domains/auth/domain.adoc)."
+        target_capability:
+          type: string
+          description: "Target capability ID or relative path (e.g. CAP-AUTH-004)."
+        target_invariant_id:
+          type: string
+          description: "Target invariant ID being patched or removed (e.g. INV-GUEST-001)."
+        new_capability_id:
+          type: string
+          description: "New capability ID being created if action is add_capability."
+        details:
+          type: string
+          description: "Additional operational notes, migration directives, or deprecation sunset timeline."
   blast_radius:
     type: object
+    description: "Automated or computed impact analysis across personas, architecture components, and invariants."
     properties:
-      impacted_personas: { type: array, items: { type: string } }
-      impacted_components: { type: array, items: { type: string } }
-      invariants_to_enforce: { type: array, items: { type: string } }
+      impacted_personas:
+        type: array
+        description: "List of persona document paths affected by this change."
+        items:
+          type: string
+          description: "Persona document path."
+      impacted_components:
+        type: array
+        description: "List of code packages, modules, or services that must be modified."
+        items:
+          type: string
+          description: "Component path or service name."
+      invariants_to_enforce:
+        type: array
+        description: "List of invariant IDs that must have green passing tests before this delta can merge."
+        items:
+          type: string
+          description: "Invariant ID (e.g. INV-GUEST-001)."

@@ -1,6 +1,6 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: CapabilitySchema
-description: "Defines a concrete product capability combining business intent and technical invariants."
+description: "Defines a concrete product capability, bridging human Jobs-To-Be-Done (JTBD) with technical invariants and test bindings."
 type: object
 required:
   - type
@@ -15,44 +15,110 @@ properties:
   type:
     type: string
     const: "product/capability"
+    description: "The fixed document type identifier. Must always be 'product/capability'."
   schema:
     type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^CAP-[A-Z0-9_-]+$"
+    description: "Unique capability identifier following the CAP-<DOMAIN>-<NUMBER> convention (e.g. CAP-PROD-001)."
   title:
     type: string
+    description: "Descriptive human-readable title of this capability."
   domain:
     type: string
+    description: "The parent domain ID (DOM-*) that owns this capability."
   status:
     type: string
-    enum: [draft, proposed, active, deprecated]
+    enum:
+      - draft
+      - proposed
+      - active
+      - deprecated
+    description: "Lifecycle state: 'draft' (in creation), 'proposed' (under review), 'active' (in production), or 'deprecated' (scheduled for removal)."
   version:
     type: string
+    description: "Semantic version of this capability specification (e.g. 1.0.0)."
   business:
     type: object
-    required: [personas, jtbd]
+    description: "Business lens: personas served, jobs-to-be-done, monetization tiers, and applicable policies."
+    required:
+      - personas
+      - jtbd
     properties:
-      personas: { type: array, items: { type: string } }
-      jtbd: { type: string }
-      policies: { type: array, items: { type: string } }
+      personas:
+        type: array
+        description: "List of persona document paths that benefit from or use this capability."
+        items:
+          type: string
+          description: "Relative path to a persona document (e.g. .spec/personas/product-lead.adoc)."
+      jtbd:
+        type: string
+        description: "Core Job-To-Be-Done statement ('When [situation], I want to [action], so that [outcome]')."
+      pricing_tiers:
+        type: array
+        description: "Product pricing or subscription tiers where this capability is accessible (e.g. free, pro, enterprise)."
+        items:
+          type: string
+          description: "Tier name."
+      policies:
+        type: array
+        description: "List of system policy document paths that govern or constrain this capability."
+        items:
+          type: string
+          description: "Relative path to a policy document (e.g. .spec/policies/POL-001-git-as-single-source-of-truth.adoc)."
   technical:
     type: object
-    required: [components, invariants]
+    description: "Technical lens: implementing components, interface contracts, and non-negotiable test-bound invariants."
+    required:
+      - components
+      - invariants
     properties:
-      components: { type: array, items: { type: string } }
+      components:
+        type: array
+        description: "Source code modules, packages, or services that implement this capability."
+        items:
+          type: string
+          description: "Package or module path (e.g. packages/spec-parser)."
       contracts:
         type: object
+        description: "External API endpoints, CLI interfaces, and async event contracts."
         properties:
-          interfaces: { type: array, items: { type: string } }
-          events_published: { type: array, items: { type: string } }
-          events_consumed: { type: array, items: { type: string } }
+          interfaces:
+            type: array
+            description: "Exposed CLI commands, REST endpoints, or RPC procedures."
+            items:
+              type: string
+              description: "Interface signature (e.g. 'eidos spec validate' or 'POST /api/v1/invites')."
+          events_published:
+            type: array
+            description: "Domain events emitted by this capability."
+            items:
+              type: string
+              description: "Event name (e.g. 'auth.guest.invited')."
+          events_consumed:
+            type: array
+            description: "Domain events listened to by this capability."
+            items:
+              type: string
+              description: "Event name (e.g. 'workspace.deleted')."
       invariants:
         type: array
+        description: "Deterministic rules and constraints that must never be broken, bound directly to automated tests."
         items:
           type: object
-          required: [id, rule, test_binding]
+          required:
+            - id
+            - rule
+            - test_binding
           properties:
-            id: { type: string }
-            rule: { type: string }
-            test_binding: { type: string }
+            id:
+              type: string
+              description: "Unique invariant identifier (e.g. INV-SPEC-VALIDATION)."
+            rule:
+              type: string
+              description: "Clear, unambiguous statement of the invariant condition."
+            test_binding:
+              type: string
+              description: "Target test file and test function verifying this invariant (e.g. tests/specs/test_schema_validation.py::test_all_specs_conform_to_schema)."

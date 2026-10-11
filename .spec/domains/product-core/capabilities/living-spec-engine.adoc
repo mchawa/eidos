@@ -41,3 +41,4 @@ Traditional product requirements documents (PRDs) quickly become obsolete. This 
 * Parsing YAML frontmatter combined with AsciiDoc technical specifications.
 * Schema validation ensuring strict adherence to typing rules.
 * Graph construction linking Personas, Domains, Capabilities, Invariants, and Tests.
+

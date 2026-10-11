@@ -1,6 +1,6 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: PolicySchema
-description: "Defines non-negotiable system invariants, compliance rules, or structural guardrails."
+description: "Defines non-negotiable system invariants, compliance rules, structural guardrails, and quality gates."
 type: object
 required:
   - type
@@ -14,23 +14,42 @@ properties:
   type:
     type: string
     const: "product/policy"
+    description: "The fixed document type identifier. Must always be 'product/policy'."
   schema:
     type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^POL-[A-Z0-9_-]+$"
+    description: "Unique policy identifier following the POL-<NUMBER>-<NAME> convention (e.g. POL-001-GIT-SOURCE-OF-TRUTH)."
   title:
     type: string
+    description: "Short human-readable title of the policy."
   category:
     type: string
-    enum: [governance, architectural, security, testing, lifecycle]
+    enum:
+      - governance
+      - architectural
+      - security
+      - testing
+      - lifecycle
+    description: "Policy domain: 'governance' (process/truth rules), 'architectural' (design patterns), 'security' (access/data safety), 'testing' (verification standards), or 'lifecycle' (release/merge gates)."
   rule:
     type: string
+    description: "The exact, authoritative rule statement that must be adhered to across the entire ecosystem."
   enforcement:
     type: object
-    required: [mechanism, severity]
+    description: "Specification of how this policy is verified and enforced programmatically."
+    required:
+      - mechanism
+      - severity
     properties:
-      mechanism: { type: string }
+      mechanism:
+        type: string
+        description: "The tooling, CI pipeline step, or linter that programmatically evaluates compliance."
       severity:
         type: string
-        enum: [blocking, warning]
+        enum:
+          - blocking
+          - warning
+        description: "Enforcement level: 'blocking' (fails CI / prevents PR merge) or 'warning' (alerts engineers but permits merge)."

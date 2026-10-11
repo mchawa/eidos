@@ -25,3 +25,4 @@ technical_mapping:
 
 == Domain Overview
 Provides native, transparent integration into developers' existing collaboration hubs. It ensures teams don't have to leave GitHub or GitLab to interact with Eidos.
+

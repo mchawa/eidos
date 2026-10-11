@@ -1,6 +1,6 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: PersonaSchema
-description: "Defines an actor (human or AI agent) interacting with the ecosystem."
+description: "Defines an actor (human product lead, software engineer, or autonomous AI agent) interacting with the ecosystem."
 type: object
 required:
   - type
@@ -14,22 +14,40 @@ properties:
   type:
     type: string
     const: "product/persona"
+    description: "The fixed document type identifier. Must always be 'product/persona'."
   schema:
     type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^PER-[A-Z0-9_-]+$"
+    description: "Unique persona identifier following the PER-<ROLE> convention (e.g. PER-PRODUCT-LEAD)."
   name:
     type: string
+    description: "Descriptive name of the persona role (e.g. 'Product Lead', 'Autonomous Coding Agent')."
   role_type:
     type: string
-    enum: [human_product, human_engineer, autonomous_agent, external_system]
+    enum:
+      - human_product
+      - human_engineer
+      - autonomous_agent
+      - external_system
+    description: "Classification of actor: 'human_product' (PM/Designer), 'human_engineer' (Developer/Architect), 'autonomous_agent' (AI LLM/Runner), or 'external_system' (CI/Third-party bot)."
   goals:
     type: array
-    items: { type: string }
+    description: "Key motivations, objectives, and success criteria for this persona."
+    items:
+      type: string
+      description: "A specific outcome or capability this actor strives to achieve."
   pain_points:
     type: array
-    items: { type: string }
+    description: "Frictions, risks, or frustrations this persona experiences in conventional workflows."
+    items:
+      type: string
+      description: "A specific workflow friction or risk."
   interaction_modes:
     type: array
-    items: { type: string }
+    description: "Mechanisms through which this persona interacts with Eidos (e.g. CLI, Web UI, Git PRs, MCP tools)."
+    items:
+      type: string
+      description: "An interface or workflow channel."

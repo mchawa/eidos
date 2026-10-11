@@ -22,3 +22,4 @@ interaction_modes:
 
 == Profile
 The Product Lead is responsible for the product vision, customer needs, feature scoping, and business priorities. In Eidos, they interact with the product definition using structured AsciiDoc and declarative frontmatters, collaborating seamlessly with engineers and AI agents via Git pull requests.
+

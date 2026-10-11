@@ -22,3 +22,4 @@ interaction_modes:
 
 == Profile
 The Autonomous Coding Agent represents any AI worker (such as Antigravity `agy`, Claude Code, OpenAI Codex, or SWE-agent) plugged into Eidos. It consumes parsed `SpecDelta` instructions, inspects relevant invariants, executes TDD workflows, and reports verification results.
+

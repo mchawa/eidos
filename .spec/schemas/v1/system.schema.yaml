@@ -1,6 +1,6 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: SystemSchema
-description: "Defines the root system archetype, runtime, business goals, and architecture profile."
+description: "Defines the root software system archetype, strategic identity, architectural profile, and supported platforms."
 type: object
 required:
   - type
@@ -14,27 +14,71 @@ properties:
   type:
     type: string
     const: "product/system"
+    description: "The fixed document type identifier. Must always be 'product/system'."
   schema:
     type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^SYS-[A-Z0-9_-]+$"
+    description: "Unique system identifier following the SYS-<NAME> convention (e.g. SYS-EIDOS-001)."
   title:
     type: string
+    description: "Full human-readable display title of the software product or platform."
   archetype:
     type: string
-    enum: [framework, cli_tool, saas_platform, library, mobile_app, embedded_system, data_platform]
+    enum:
+      - framework
+      - cli_tool
+      - saas_platform
+      - library
+      - mobile_app
+      - embedded_system
+      - data_platform
+    description: "The primary structural archetype, dictating lifecycle rules, deployment topology, and runtime constraints."
   business_identity:
     type: object
-    required: [vision, target_users, value_proposition]
+    description: "High-level strategic business intent, target market, and value proposition."
+    required:
+      - vision
+      - target_users
+      - value_proposition
     properties:
-      vision: { type: string }
-      target_users: { type: array, items: { type: string } }
-      value_proposition: { type: string }
+      vision:
+        type: string
+        description: "The long-term aspirational goal and purpose of the product."
+      target_users:
+        type: array
+        description: "List of primary user classes, customer segments, or autonomous actors served."
+        items:
+          type: string
+          description: "A specific user role or market demographic."
+      value_proposition:
+        type: string
+        description: "The core distinct value delivered to users that sets this system apart from alternatives."
   technical_profile:
     type: object
-    required: [primary_languages, vcs_platforms, agent_support]
+    description: "Foundational technical characteristics, VCS environments, and AI agent compatibility."
+    required:
+      - primary_languages
+      - vcs_platforms
+      - agent_support
     properties:
-      primary_languages: { type: array, items: { type: string } }
-      vcs_platforms: { type: array, items: { type: string } }
-      agent_support: { type: array, items: { type: string } }
+      primary_languages:
+        type: array
+        description: "Primary programming and specification languages used in the codebase."
+        items:
+          type: string
+          description: "Programming language name (e.g. Python, TypeScript, Go, Rust, AsciiDoc)."
+      vcs_platforms:
+        type: array
+        description: "Source control platforms supported for workflows, issues, and pipelines."
+        items:
+          type: string
+          description: "VCS platform identifier (e.g. GitHub, GitLab)."
+      agent_support:
+        type: array
+        description: "List of coding agents and LLM harnesses supported natively."
+        items:
+          type: string
+          description: "Agent or harness identifier (e.g. Antigravity (agy), Claude Code, OpenAI Codex)."

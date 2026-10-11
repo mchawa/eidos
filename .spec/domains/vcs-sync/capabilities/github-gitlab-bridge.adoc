@@ -31,3 +31,4 @@ technical:
 
 == Intent
 Normalizes interactions across GitHub and GitLab. When an issue is labeled `ai:explore` or `ai:refine-spec`, Eidos triggers the appropriate workflow, posts structured plan diffs back to the discussion, and opens a Pull Request / Merge Request when implementation is ready.
+

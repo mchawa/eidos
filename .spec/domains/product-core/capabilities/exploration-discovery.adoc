@@ -32,3 +32,4 @@ technical:
 
 == Intent
 Allows product managers and engineers to conduct high-uncertainty research without being burdened by strict acceptance criteria prematurely. When an exploration validates its hypothesis, it graduates into a formal `SpecDelta`. If discarded, its findings and benchmarks are archived to prevent repeated failed attempts in the future.
+

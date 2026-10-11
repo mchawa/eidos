@@ -14,3 +14,4 @@ enforcement:
 
 == Rationale
 External systems create split-brain development: engineers work from Jira tickets, designers from Figma, product managers from Notion, while the actual code lives in Git. Eidos mandates that product definitions and technical architectures are code assets versioned, diffed, and reviewed within Git.
+

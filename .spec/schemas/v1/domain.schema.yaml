@@ -1,6 +1,6 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: DomainSchema
-description: "Defines a bounded context, domain boundaries, invariants, and architectural components."
+description: "Defines a bounded context (Domain-Driven Design), its architectural boundaries, responsibilities, and components."
 type: object
 required:
   - type
@@ -13,24 +13,56 @@ properties:
   type:
     type: string
     const: "product/domain"
+    description: "The fixed document type identifier. Must always be 'product/domain'."
   schema:
     type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^DOM-[A-Z0-9_-]+$"
+    description: "Unique domain identifier following the DOM-<NAME> convention (e.g. DOM-PRODUCT-CORE)."
   name:
     type: string
+    description: "Human-readable name of the domain or bounded context."
   classification:
     type: string
-    enum: [core, supporting, generic]
+    enum:
+      - core
+      - supporting
+      - generic
+    description: "Domain-Driven Design categorization: 'core' (differentiating business logic), 'supporting' (custom internal helper), or 'generic' (off-the-shelf standard utility like auth/billing)."
   boundaries:
     type: object
-    required: [responsibilities, out_of_scope]
+    description: "Strict functional boundaries defining what this domain does and does not own."
+    required:
+      - responsibilities
+      - out_of_scope
     properties:
-      responsibilities: { type: array, items: { type: string } }
-      out_of_scope: { type: array, items: { type: string } }
+      responsibilities:
+        type: array
+        description: "Explicit list of business and technical capabilities owned exclusively by this domain."
+        items:
+          type: string
+          description: "A specific area of responsibility."
+      out_of_scope:
+        type: array
+        description: "Explicit list of tasks, features, or concerns that this domain does NOT handle and delegates elsewhere."
+        items:
+          type: string
+          description: "A specific excluded responsibility."
   technical_mapping:
     type: object
+    description: "Mapping of this business domain to concrete software packages, repositories, or services."
     properties:
-      components: { type: array, items: { type: string } }
-      dependencies: { type: array, items: { type: string } }
+      components:
+        type: array
+        description: "Source code directories, modules, or services that realize this domain."
+        items:
+          type: string
+          description: "Relative path or module name (e.g. packages/spec-parser)."
+      dependencies:
+        type: array
+        description: "Other domain IDs that this domain depends on or communicates with."
+        items:
+          type: string
+          description: "Referenced domain ID (e.g. DOM-VCS-SYNC)."

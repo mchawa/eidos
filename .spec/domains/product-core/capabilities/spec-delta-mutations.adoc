@@ -37,3 +37,4 @@ technical:
 
 == Intent
 Replaces traditional essay-style RFCs with declarative, machine-executable mutations. When a feature is added, changed, or removed, a `SpecDelta` specifies the precise mutations and impacted invariants. Upon PR merge, the mutations are applied to update the living baseline documents automatically.
+

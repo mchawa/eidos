@@ -1,6 +1,6 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: ExplorationSchema
-description: "Defines spikes, technical feasibility investigations, and product ideation."
+description: "Defines hypothesis-driven spikes, architectural feasibility research, and early product discovery before committing to formal specifications."
 type: object
 required:
   - type
@@ -14,39 +14,73 @@ properties:
   type:
     type: string
     const: "product/exploration"
+    description: "The fixed document type identifier. Must always be 'product/exploration'."
   schema:
     type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^EXP-[A-Z0-9_-]+$"
+    description: "Unique exploration identifier following the EXP-<YEAR>-<NUMBER> convention (e.g. EXP-2026-014)."
   title:
     type: string
+    description: "Human-readable title describing the research topic or spike investigation."
   status:
     type: string
-    enum: [proposed, in_progress, adopted, discarded]
+    enum:
+      - proposed
+      - in_progress
+      - adopted
+      - discarded
+    description: "Exploration lifecycle state: 'proposed' (queued), 'in_progress' (spike active on experimental branch), 'adopted' (hypothesis proven, graduates to SpecDelta), or 'discarded' (infeasible/rejected, archived with learnings)."
   hypothesis:
     type: string
+    description: "The central testable assumption or question being investigated (e.g. 'Using CRDTs will reduce WebSocket latency by 50%')."
   questions_to_answer:
     type: array
-    items: { type: string }
+    description: "Specific unknowns or risks that must be resolved before making an architectural commitment."
+    items:
+      type: string
+      description: "A focused technical or business question."
   spikes_to_run:
     type: array
+    description: "Isolated code experiments or prototypes conducted in temporary branches."
     items:
       type: object
-      required: [name, target]
+      required:
+        - name
+        - target
       properties:
-        name: { type: string }
-        target: { type: string }
+        name:
+          type: string
+          description: "Identifier for the spike task or branch name."
+        target:
+          type: string
+          description: "Concrete deliverable of the spike (e.g. 'Prototype 50 concurrent cursors on a single canvas')."
   exit_criteria:
     type: object
+    description: "Quantitative benchmarks or timeboxes that determine when the exploration must conclude."
     properties:
-      max_duration: { type: string }
-      benchmark: { type: string }
+      max_duration:
+        type: string
+        description: "Timebox limit for the spike (e.g. '3_days' or '1_week')."
+      benchmark:
+        type: string
+        description: "Target performance, memory, or throughput metric (e.g. 'p95_latency < 50ms')."
   decision:
     type: object
+    description: "Retrospective outcome and transition path upon conclusion of the exploration."
     properties:
       outcome:
         type: string
-        enum: [adopted, discarded, pivoted]
-      resulting_delta_id: { type: string }
-      learnings: { type: string }
+        enum:
+          - adopted
+          - discarded
+          - pivoted
+        description: "Final verdict: 'adopted' (graduates), 'discarded' (rejected), or 'pivoted' (spawned new follow-up exploration)."
+      resulting_delta_id:
+        type: string
+        description: "If adopted, the ID of the formal SpecDelta created (e.g. DLT-2026-095)."
+      learnings:
+        type: string
+        description: "Key findings, trade-offs, and reasons for the final decision, retained permanently to prevent duplicate dead-end explorations."
