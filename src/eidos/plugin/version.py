@@ -90,7 +90,22 @@ def compare_semver(v1: str, v2: str) -> int:
 
 def get_bundled_plugin_version() -> str:
     """Return the bundled plugin version (synchronized with eidos engine package version)."""
-    # 1. Check embedded in package bundle
+    # 1. Check canonical plugin bundle (via locate_plugin_bundle)
+    try:
+        from eidos.core.assets import get_plugin_reference_dir
+
+        ref_dir = get_plugin_reference_dir()
+        manifest = ref_dir / "plugin.json"
+        if manifest.exists():
+            with open(manifest, encoding="utf-8") as f:
+                data = json.load(f)
+                v = data.get("version")
+                if v and is_valid_semver(v):
+                    return v
+    except Exception:
+        pass
+
+    # 2. Check embedded in package bundle
     pkg_bundle = Path(__file__).parent.parent / "plugin_bundle" / "plugin.json"
     if pkg_bundle.exists():
         try:
@@ -102,11 +117,11 @@ def get_bundled_plugin_version() -> str:
         except Exception:
             pass
 
-    # 2. Fall back to eidos package version
-    pkg_ver = getattr(eidos, "__version__", "0.1.0")
+    # 3. Fall back to eidos package version
+    pkg_ver = getattr(eidos, "__version__", "0.2.0")
     if is_valid_semver(pkg_ver):
         return pkg_ver
-    return "0.1.0"
+    return "0.2.0"
 
 
 def get_installed_plugin_version(project_dir: Path | None = None, dest_path: Path | None = None) -> str | None:

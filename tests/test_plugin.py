@@ -19,6 +19,7 @@ from eidos.plugin.validator import PLUGIN_NAME_PATTERN, validate_plugin_package
 from eidos.plugin.version import (
     check_plugin_version_status,
     compare_semver,
+    get_bundled_plugin_version,
     is_valid_semver,
     parse_semver,
 )
@@ -45,7 +46,7 @@ def test_bundled_plugin_conformance():
 
     assert report.is_valid, f"Plugin validation failed: {report.errors}"
     assert report.plugin_name == "eidos"
-    assert report.plugin_version == "0.1.0"
+    assert report.plugin_version == get_bundled_plugin_version()
     assert "eidos" in report.skills
     assert "eidos" in report.mcp_servers
     assert "com.google.antigravity" in report.extensions
@@ -275,7 +276,7 @@ def test_plugin_version_status_check(tmp_path):
     status_installed = check_plugin_version_status(project_dir=tmp_path)
     assert status_installed["status"] == "up_to_date"
     assert status_installed["is_installed"]
-    assert status_installed["installed_version"] == "0.1.0"
+    assert status_installed["installed_version"] == get_bundled_plugin_version()
 
     # 3. Outdated
     plugin_json = tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json"
@@ -290,13 +291,13 @@ def test_plugin_version_status_check(tmp_path):
     assert status_outdated["installed_version"] == "0.0.9"
 
     # 4. Newer
-    data["version"] = "0.2.0"
+    data["version"] = "9.9.9"
     with open(plugin_json, "w", encoding="utf-8") as f:
         json.dump(data, f)
 
     status_newer = check_plugin_version_status(project_dir=tmp_path)
     assert status_newer["status"] == "newer"
-    assert status_newer["installed_version"] == "0.2.0"
+    assert status_newer["installed_version"] == "9.9.9"
 
 
 def test_cli_plugin_version(tmp_path):
@@ -311,7 +312,7 @@ def test_cli_plugin_version(tmp_path):
     res_inst = runner.invoke(app, ["plugin", "version", "--project-dir", str(tmp_path)])
     assert res_inst.exit_code == 0
     assert "Up to date" in res_inst.stdout
-    assert "0.1.0" in res_inst.stdout
+    assert get_bundled_plugin_version() in res_inst.stdout
 
     # Outdated
     plugin_json = tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json"
@@ -345,12 +346,12 @@ def test_cli_plugin_update(tmp_path):
     assert res.exit_code == 0
     assert "Upgraded Eidos Agent Plugin" in res.stdout
     assert "0.0.5" in res.stdout
-    assert "0.1.0" in res.stdout
+    assert get_bundled_plugin_version() in res.stdout
 
     # Verify plugin.json was updated
     with open(plugin_json, encoding="utf-8") as f:
         updated_data = json.load(f)
-    assert updated_data["version"] == "0.1.0"
+    assert updated_data["version"] == get_bundled_plugin_version()
 
 
 def test_cli_plugin_upgrade_alias(tmp_path):
