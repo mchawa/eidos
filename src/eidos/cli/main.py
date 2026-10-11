@@ -163,14 +163,19 @@ def mcp():
 @plugin_app.command("install")
 def plugin_install(
     target: PluginInstallTarget = typer.Option(
-        PluginInstallTarget.AUTO,
+        PluginInstallTarget.PROJECT,
         "--target", "-t",
-        help="Installation target: antigravity, workspace, claude, cursor, auto.",
+        help="Installation target in project scope: project, workspace, antigravity, cursor, claude, all.",
+    ),
+    project_dir: Optional[Path] = typer.Option(
+        None,
+        "--project-dir", "-p",
+        help="Root directory of the project (defaults to current working directory).",
     ),
     dest: Optional[Path] = typer.Option(
         None,
         "--dest", "-d",
-        help="Custom destination directory to copy the plugin bundle to.",
+        help="Custom destination directory within the project.",
     ),
     force: bool = typer.Option(
         True,
@@ -178,11 +183,11 @@ def plugin_install(
         help="Overwrite existing files at destination.",
     ),
 ):
-    """Install the Eidos agent plugin into AI agent environments."""
-    console.print(f"[bold cyan]Installing Eidos Agent Plugin[/bold cyan] (target: [bold green]{target.value}[/bold green])...\n")
+    """Install the Eidos agent plugin strictly inside project scope (workspace)."""
+    console.print(f"[bold cyan]Installing Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{target.value}[/bold green])...\n")
 
     try:
-        results = install_plugin(target=target, dest_path=dest, force=force)
+        results = install_plugin(target=target, project_dir=project_dir, dest_path=dest, force=force)
         for res in results:
             if res.success:
                 console.print(f"[bold green]✓[/bold green] [bold]{res.target.upper()}:[/bold] {res.message}")

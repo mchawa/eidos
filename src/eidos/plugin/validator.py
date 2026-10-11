@@ -164,3 +164,4 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
                     report.add_error(f"Error parsing skill '{item.name}' SKILL.md: {e}")
 
     return report
+

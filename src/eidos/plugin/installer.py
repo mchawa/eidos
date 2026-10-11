@@ -1,4 +1,4 @@
-"""Installer for Eidos Agent Plugin across AI agent clients and environments."""
+"""Project-scoped installer for Eidos Agent Plugins across AI agent environments."""
 
 import enum
 import json
@@ -9,11 +9,12 @@ from typing import List, Optional
 
 
 class PluginInstallTarget(str, enum.Enum):
-    ANTIGRAVITY = "antigravity"
-    WORKSPACE = "workspace"
-    CLAUDE = "claude"
-    CURSOR = "cursor"
-    AUTO = "auto"
+    PROJECT = "project"          # Installs to .agent-plugins/eidos and .gemini/plugins/eidos
+    ANTIGRAVITY = "antigravity"  # Installs to .gemini/plugins/eidos (workspace-scoped)
+    WORKSPACE = "workspace"      # Installs to .agent-plugins/eidos (agent-plugins.org standard)
+    CLAUDE = "claude"            # Configures local .claude/mcp.json
+    CURSOR = "cursor"            # Configures local .cursor/mcp.json
+    ALL = "all"                  # Configures all project-scoped targets
 
 
 @dataclass
@@ -43,12 +44,8 @@ def locate_plugin_bundle() -> Path:
 
 
 def _copy_plugin_tree(source_dir: Path, target_dir: Path, force: bool = False) -> List[Path]:
-    """Copy all plugin files to target destination."""
-    if target_dir.exists() and not force:
-        # Overwrite files without deleting whole directory
-        pass
+    """Copy all plugin files to target destination within the project."""
     target_dir.mkdir(parents=True, exist_ok=True)
-
     created = []
     for item in source_dir.rglob("*"):
         if item.is_file():
@@ -60,8 +57,8 @@ def _copy_plugin_tree(source_dir: Path, target_dir: Path, force: bool = False) -
     return created
 
 
-def _update_mcp_json_file(file_path: Path, server_name: str, command: str, args: List[str]) -> bool:
-    """Safely update an MCP configuration file with the eidos stdio server."""
+def _update_project_mcp_json(file_path: Path, server_name: str, command: str, args: List[str]) -> bool:
+    """Safely update a project-level MCP configuration file with the eidos stdio server."""
     file_path.parent.mkdir(parents=True, exist_ok=True)
     data = {}
     if file_path.exists():
@@ -84,119 +81,94 @@ def _update_mcp_json_file(file_path: Path, server_name: str, command: str, args:
     return True
 
 
-def _enable_antigravity_plugin_live(plugin_dir_name: str) -> bool:
-    """Notify running Antigravity Language Server to enable the plugin live."""
-    import os
-    import urllib.request
-
-    ls_address = os.environ.get("ANTIGRAVITY_LS_ADDRESS", "localhost:5387")
-    csrf_token = os.environ.get("ANTIGRAVITY_CSRF_TOKEN", "")
-    url = f"http://{ls_address}/exa.language_server_pb.LanguageServerService/JetboxWriteState"
-    payload = json.dumps({"userConfig": {"plugins": {plugin_dir_name: {"enabled": True}}}}).encode("utf-8")
-
-    req = urllib.request.Request(
-        url,
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "x-codeium-csrf-token": csrf_token
-        },
-        method="POST"
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=1.5) as resp:
-            return resp.status == 200
-    except Exception:
-        return False
-
-
 def install_plugin(
-    target: PluginInstallTarget = PluginInstallTarget.AUTO,
+    target: PluginInstallTarget = PluginInstallTarget.PROJECT,
+    project_dir: Optional[Path] = None,
     dest_path: Optional[Path] = None,
     force: bool = True
 ) -> List[InstallResult]:
-    """Install the Eidos agent plugin into the specified target client environment."""
+    """Install the Eidos agent plugin strictly inside project scope (workspace root)."""
     source_dir = locate_plugin_bundle()
+    root = (project_dir or Path.cwd()).resolve()
     results = []
 
     # If explicit destination provided, install there directly
     if dest_path is not None:
-        created = _copy_plugin_tree(source_dir, dest_path, force=force)
+        target_path = dest_path if dest_path.is_absolute() else (root / dest_path)
+        created = _copy_plugin_tree(source_dir, target_path, force=force)
         results.append(
             InstallResult(
                 target="custom",
-                destination=dest_path,
+                destination=target_path,
                 success=True,
-                message=f"Installed plugin bundle to custom path: {dest_path}",
+                message=f"Installed plugin bundle to custom project path: {target_path}",
                 created_files=created
             )
         )
         return results
 
+    # Determine project targets
     targets_to_run = []
-    if target == PluginInstallTarget.AUTO:
-        targets_to_run = [PluginInstallTarget.ANTIGRAVITY, PluginInstallTarget.WORKSPACE]
+    if target in (PluginInstallTarget.PROJECT, PluginInstallTarget.ALL):
+        targets_to_run = [
+            PluginInstallTarget.WORKSPACE,
+            PluginInstallTarget.ANTIGRAVITY,
+            PluginInstallTarget.CURSOR,
+            PluginInstallTarget.CLAUDE,
+        ]
     else:
         targets_to_run = [target]
 
-    home = Path.home()
-
     for t in targets_to_run:
-        if t == PluginInstallTarget.ANTIGRAVITY:
-            antigravity_plugin_dir = home / ".gemini" / "config" / "plugins" / "eidos"
-            created = _copy_plugin_tree(source_dir, antigravity_plugin_dir, force=force)
-            live_enabled = _enable_antigravity_plugin_live("eidos")
-            msg = "Installed to Antigravity global plugins (~/.gemini/config/plugins/eidos)."
-            if live_enabled:
-                msg += " Enabled live via Antigravity Language Server."
-            else:
-                msg += " Restart Antigravity IDE to discover."
-            results.append(
-                InstallResult(
-                    target="antigravity",
-                    destination=antigravity_plugin_dir,
-                    success=True,
-                    message=msg,
-                    created_files=created
-                )
-            )
-
-        elif t == PluginInstallTarget.WORKSPACE:
-            ws_plugin_dir = Path.cwd() / ".agent-plugins" / "eidos"
+        if t == PluginInstallTarget.WORKSPACE:
+            ws_plugin_dir = root / ".agent-plugins" / "eidos"
             created = _copy_plugin_tree(source_dir, ws_plugin_dir, force=force)
             results.append(
                 InstallResult(
                     target="workspace",
                     destination=ws_plugin_dir,
                     success=True,
-                    message="Installed to workspace .agent-plugins/eidos conforming to agent-plugins.org v1.0.0.",
+                    message="Installed to project scope .agent-plugins/eidos (agent-plugins.org v1.0.0).",
                     created_files=created
                 )
             )
 
-        elif t == PluginInstallTarget.CLAUDE:
-            claude_config = home / ".claude.json"
-            _update_mcp_json_file(claude_config, "eidos", "eidos", ["mcp"])
+        elif t == PluginInstallTarget.ANTIGRAVITY:
+            antigravity_plugin_dir = root / ".gemini" / "plugins" / "eidos"
+            created = _copy_plugin_tree(source_dir, antigravity_plugin_dir, force=force)
             results.append(
                 InstallResult(
-                    target="claude",
-                    destination=claude_config,
+                    target="antigravity",
+                    destination=antigravity_plugin_dir,
                     success=True,
-                    message="Configured Eidos MCP server in ~/.claude.json",
-                    created_files=[claude_config]
+                    message="Installed to project scope .gemini/plugins/eidos (Antigravity workspace plugin).",
+                    created_files=created
                 )
             )
 
         elif t == PluginInstallTarget.CURSOR:
-            cursor_config = Path.cwd() / ".cursor" / "mcp.json"
-            _update_mcp_json_file(cursor_config, "eidos", "eidos", ["mcp"])
+            cursor_config = root / ".cursor" / "mcp.json"
+            _update_project_mcp_json(cursor_config, "eidos", "eidos", ["mcp"])
             results.append(
                 InstallResult(
                     target="cursor",
                     destination=cursor_config,
                     success=True,
-                    message="Configured Eidos MCP server in .cursor/mcp.json",
+                    message="Configured project MCP server in .cursor/mcp.json.",
                     created_files=[cursor_config]
+                )
+            )
+
+        elif t == PluginInstallTarget.CLAUDE:
+            claude_config = root / ".claude" / "mcp.json"
+            _update_project_mcp_json(claude_config, "eidos", "eidos", ["mcp"])
+            results.append(
+                InstallResult(
+                    target="claude",
+                    destination=claude_config,
+                    success=True,
+                    message="Configured project MCP server in .claude/mcp.json.",
+                    created_files=[claude_config]
                 )
             )
 

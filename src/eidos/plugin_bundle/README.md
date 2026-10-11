@@ -29,22 +29,19 @@ This plugin equips AI agents (Antigravity `agy`, Claude Code, Cursor, GitHub Cop
 
 ---
 
-## Installation via CLI
+## Installation via CLI (Project Scope)
 
-You can install this plugin into your preferred AI agent environment using the `eidos` CLI:
+You can install this plugin into your local repository/workspace using the `eidos` CLI:
 
 ```bash
-# Auto-detect or install to Google Antigravity IDE:
-eidos plugin install --target antigravity
+# Install to project scope (installs .agent-plugins/eidos and workspace configurations):
+eidos plugin install
 
-# Install into current project workspace (.agent-plugins/eidos):
-eidos plugin install --target workspace
-
-# Configure Claude Code / Claude Desktop:
-eidos plugin install --target claude
-
-# Configure Cursor IDE:
-eidos plugin install --target cursor
+# Or target specific project configurations:
+eidos plugin install --target workspace     # .agent-plugins/eidos (agent-plugins.org v1.0.0)
+eidos plugin install --target antigravity   # .gemini/plugins/eidos (Antigravity workspace plugin)
+eidos plugin install --target claude        # .claude/mcp.json (Claude Code project MCP)
+eidos plugin install --target cursor        # .cursor/mcp.json (Cursor project MCP)
 ```
 
 ## Conformance Verification
@@ -54,3 +51,4 @@ You can validate this plugin package against the official `agent-plugins.org` v1
 ```bash
 eidos plugin validate
 ```
+

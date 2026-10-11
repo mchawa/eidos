@@ -1,6 +1,7 @@
-"""Tests verifying Agent Plugin conformance to agent-plugins.org v1.0.0 and CLI installer."""
+"""Tests verifying Agent Plugin conformance to agent-plugins.org v1.0.0 and project-scoped CLI installer."""
 
 from pathlib import Path
+import json
 import pytest
 from typer.testing import CliRunner
 from eidos.cli.main import app
@@ -45,8 +46,46 @@ def test_repo_plugin_conformance():
     assert len(report.errors) == 0
 
 
+def test_plugin_install_to_project_scope(tmp_path):
+    """Verify project-scoped installation into workspace directories."""
+    results = install_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path, force=True)
+
+    assert len(results) == 4
+    targets = [r.target for r in results]
+    assert "workspace" in targets
+    assert "antigravity" in targets
+    assert "cursor" in targets
+    assert "claude" in targets
+
+    # Check .agent-plugins/eidos
+    ws_dir = tmp_path / ".agent-plugins" / "eidos"
+    assert (ws_dir / "plugin.json").exists()
+    assert (ws_dir / "mcp.json").exists()
+    assert (ws_dir / "skills" / "eidos" / "SKILL.md").exists()
+    ws_report = validate_plugin_package(ws_dir)
+    assert ws_report.is_valid
+
+    # Check .gemini/plugins/eidos
+    gemini_dir = tmp_path / ".gemini" / "plugins" / "eidos"
+    assert (gemini_dir / "plugin.json").exists()
+    assert (gemini_dir / "rules" / "AGENTS.md").exists()
+
+    # Check project-level MCP files
+    cursor_mcp = tmp_path / ".cursor" / "mcp.json"
+    assert cursor_mcp.exists()
+    with open(cursor_mcp, "r", encoding="utf-8") as f:
+        cursor_data = json.load(f)
+    assert "eidos" in cursor_data["mcpServers"]
+
+    claude_mcp = tmp_path / ".claude" / "mcp.json"
+    assert claude_mcp.exists()
+    with open(claude_mcp, "r", encoding="utf-8") as f:
+        claude_data = json.load(f)
+    assert "eidos" in claude_data["mcpServers"]
+
+
 def test_plugin_install_to_custom_directory(tmp_path):
-    """Verify installing plugin to a custom path."""
+    """Verify installing plugin to a custom project-relative path."""
     dest = tmp_path / "installed_plugin"
     results = install_plugin(dest_path=dest, force=True)
 
@@ -57,7 +96,6 @@ def test_plugin_install_to_custom_directory(tmp_path):
     assert (dest / "skills" / "eidos" / "SKILL.md").exists()
     assert (dest / "rules" / "AGENTS.md").exists()
 
-    # Re-validate the newly installed copy
     report = validate_plugin_package(dest)
     assert report.is_valid
 
@@ -78,10 +116,11 @@ def test_cli_plugin_info():
     assert "eidos" in res.stdout
 
 
-def test_cli_plugin_install_custom(tmp_path):
-    """Verify 'eidos plugin install --dest' CLI command."""
-    dest = tmp_path / "cli_plugin_dest"
-    res = runner.invoke(app, ["plugin", "install", "--dest", str(dest)])
+def test_cli_plugin_install_project(tmp_path):
+    """Verify 'eidos plugin install --project-dir' CLI command."""
+    res = runner.invoke(app, ["plugin", "install", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert "Success!" in res.stdout
-    assert (dest / "plugin.json").exists()
+    assert "project" in res.stdout
+    assert (tmp_path / ".agent-plugins" / "eidos" / "plugin.json").exists()
+    assert (tmp_path / ".gemini" / "plugins" / "eidos" / "plugin.json").exists()
