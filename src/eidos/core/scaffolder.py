@@ -70,7 +70,7 @@ def create_spec(
     category: str = "governance",
     rule: str = "Rule statement for this policy.",
     protocol: str = "cli_args",
-    owning_component: str = "CMP-EIDOS-ENGINE",
+    owning_component: str = "CMP-EIDOS-CORE",
     specification_file: str = "src/eidos/cli/main.py",
     container_type: str = "library",
     runtime: str = "Python 3.12 / Typer / Hatchling",

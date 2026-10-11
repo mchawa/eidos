@@ -1,0 +1,53 @@
+---
+type: tech/component
+schema: schemas/v1/tech/component.schema.yaml
+id: CMP-EIDOS-PLUGIN
+name: "Eidos Agent Plugin & Extension Manager"
+container_type: "library"
+runtime: "Python 3.12 / agent-plugins.org v1.0.0"
+package_path: "src/eidos/plugin"
+
+domain_binding: DOM-AGENT-HARNESS
+
+c4_internal_components:
+  - name: "PluginInstaller"
+    responsibility: "Installs, updates, and removes portable agent plugins into project and workspace scopes."
+    source_path: "src/eidos/plugin/installer.py"
+  - name: "PluginValidator"
+    responsibility: "Validates plugin packages against agent-plugins.org v1.0.0 and enforces SemVer 2.0.0 versioning."
+    source_path: "src/eidos/plugin/validator.py"
+  - name: "McpConfigSync"
+    responsibility: "Injects and updates project-scoped MCP server configurations for Cursor, Claude, and Antigravity."
+    source_path: "src/eidos/plugin/installer.py"
+
+dependencies:
+  internal_components:
+    - "CMP-EIDOS-CORE"
+  external_services:
+    - "Host IDE Configs (.cursor/mcp.json, .claude/mcp.json)"
+
+contracts:
+  provides: []
+  consumes: []
+
+quality_attributes:
+  stateless: true
+  idempotent: true
+  concurrency_model: "synchronous_installer"
+  max_memory_mb: 128
+---
+= Component: Eidos Agent Plugin & Extension Manager (C4 Level 3 Whitebox)
+:toc: left
+
+== Architectural Boundary
+This container represents the plugin distribution and validation system under `src/eidos/plugin/`. It packages living specification skills, MCP server definitions, and validation rules into standard bundles adhering to `agent-plugins.org v1.0.0`.
+
+== Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
+
+[cols="1,2,2", options="header"]
+|===
+| Internal Module | Responsibility | Source Path
+| **PluginInstaller** | Manages installation and file synchronization into `.agents/plugins/eidos` | `src/eidos/plugin/installer.py`
+| **PluginValidator** | Enforces JSON Schema conformance and SemVer 2.0.0 rules for plugins | `src/eidos/plugin/validator.py`
+| **McpConfigSync** | Automatically configures client MCP entries in `.cursor/mcp.json` and `.claude/mcp.json` | `src/eidos/plugin/installer.py`
+|===

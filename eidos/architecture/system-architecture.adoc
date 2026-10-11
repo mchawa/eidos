@@ -18,11 +18,26 @@ c4_context:
       protocol: "JSON-RPC 2.0 stdio"
 
 c4_containers:
-  - component_ref: "CMP-EIDOS-ENGINE"
-    name: "Eidos Orchestration & Validation Engine"
-    container_type: "library_and_cli"
-    runtime: "Python 3.12 / Typer / Hatchling"
-    package_path: "src/eidos"
+  - component_ref: "CMP-EIDOS-CORE"
+    name: "Eidos Living Specification & Design Core Engine"
+    container_type: "library"
+    runtime: "Python 3.12 / Hatchling / PyYAML / jsonschema"
+    package_path: "src/eidos/core"
+  - component_ref: "CMP-EIDOS-CLI"
+    name: "Eidos Command-Line Interface"
+    container_type: "cli_app"
+    runtime: "Python 3.12 / Typer / Rich"
+    package_path: "src/eidos/cli"
+  - component_ref: "CMP-EIDOS-MCP"
+    name: "Eidos Model Context Protocol Server"
+    container_type: "daemon"
+    runtime: "Python 3.12 / JSON-RPC 2.0 stdio"
+    package_path: "src/eidos/mcp"
+  - component_ref: "CMP-EIDOS-PLUGIN"
+    name: "Eidos Agent Plugin & Extension Manager"
+    container_type: "library"
+    runtime: "Python 3.12 / agent-plugins.org v1.0.0"
+    package_path: "src/eidos/plugin"
 
 solution_strategy:
   - "GitOps State Machine: Git repository is the sole source of authoritative truth."
@@ -91,12 +106,18 @@ Eidos is distributed as a monorepo consisting of the following primary container
 [cols="1,2,2,2", options="header"]
 |===
 | Container ID | Name | Type | Source Path
-| `CMP-EIDOS-ENGINE` | Eidos Orchestration Engine | Library & CLI | `src/eidos`
+| `CMP-EIDOS-CORE` | Eidos Living Spec & Design Core Engine | Library | `src/eidos/core`
+| `CMP-EIDOS-CLI` | Eidos Command-Line Interface | CLI Application | `src/eidos/cli`
+| `CMP-EIDOS-MCP` | Eidos Model Context Protocol Server | Daemon / Service | `src/eidos/mcp`
+| `CMP-EIDOS-PLUGIN` | Eidos Agent Plugin & Extension Manager | Library | `src/eidos/plugin`
 |===
 
 === 5.2 Level 3 Component Whitebox View
 Internal component manifests for each container:
-* link:components/engine.adoc[`CMP-EIDOS-ENGINE` Component Specification]
+* link:components/core.adoc[`CMP-EIDOS-CORE` Component Specification]
+* link:components/cli.adoc[`CMP-EIDOS-CLI` Component Specification]
+* link:components/mcp.adoc[`CMP-EIDOS-MCP` Component Specification]
+* link:components/plugin.adoc[`CMP-EIDOS-PLUGIN` Component Specification]
 
 == 6. Runtime View
 Runtime execution choreographies are defined in:

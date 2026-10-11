@@ -4,7 +4,7 @@ schema: schemas/v1/tech/contract.schema.yaml
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 protocol: "cli_args"
-owning_component: "CMP-EIDOS-ENGINE"
+owning_component: "CMP-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
 ---
 = Contract: Eidos CLI Interface

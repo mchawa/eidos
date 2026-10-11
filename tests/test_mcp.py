@@ -45,10 +45,12 @@ def test_mcp_list_components_tool():
     res = handle_tool_call("eidos_list_components", {"path": "eidos/architecture"})
     assert len(res) == 1
     data = json.loads(res[0]["text"])
-    assert len(data) >= 1
-    component = data[0]
-    assert component["id"] == "CMP-EIDOS-ENGINE"
-    assert component["package_path"] == "src/eidos"
+    assert len(data) >= 4
+    comp_ids = {c["id"] for c in data}
+    assert "CMP-EIDOS-CORE" in comp_ids
+    assert "CMP-EIDOS-CLI" in comp_ids
+    assert "CMP-EIDOS-MCP" in comp_ids
+    assert "CMP-EIDOS-PLUGIN" in comp_ids
 
 
 def test_mcp_read_spec_tool():

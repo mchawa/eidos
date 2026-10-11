@@ -382,7 +382,7 @@ def spec_create_cmd(
         help="Protocol for contracts (cli_args, openapi, protobuf, graphql, json_rpc_stdio).",
     ),
     owning_component: str = typer.Option(
-        "CMP-EIDOS-ENGINE",
+        "CMP-EIDOS-CORE",
         "--owning-component",
         help="Owning component ID for contracts.",
     ),
