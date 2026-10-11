@@ -116,3 +116,49 @@ jobs:
           test -f site/index.html
           test -f site/sitemap.xml
           test -f site/search.json
+
+  deploy-pages:
+    name: Deploy to GitHub Pages 🌐
+    needs: [validate, test, build-portal, build-docs]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Build documentation site with Zensical
+        run: uv run zensical build --strict
+
+      - name: Build Living Architecture Portal into site/portal
+        run: uv run eidos build-site --path eidos --out site/portal
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

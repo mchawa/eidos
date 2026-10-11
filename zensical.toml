@@ -23,6 +23,7 @@ nav = [
     { "Living Architecture Portal" = "guides/living-portal.md" },
   ]},
   { "Contributing" = "contributing.md" },
+  { "Architecture Portal ↗" = "https://mchawa.github.io/eidos/portal/" },
 ]
 
 [project.theme]

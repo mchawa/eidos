@@ -96,3 +96,4 @@ We follow the Conventional Commits specification:
 * `ci(...)`: CI/CD workflows and automation
 * `refactor(...)`: Code changes that neither fix a bug nor add a feature
 * `test(...)`: Adding or updating test suites
+

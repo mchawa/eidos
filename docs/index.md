@@ -87,3 +87,4 @@ eidos --help
 * **[5-Minute Quickstart](getting-started/quickstart.md)**: Bootstrap your repository and inspect your first living specifications.
 * **[Core Concepts](concepts/living-specs.md)**: Learn about Living Specs, SpecDeltas, and Invariant Traceability.
 * **[CLI Reference](guides/cli.md)**: Explore the complete command-line interface.
+

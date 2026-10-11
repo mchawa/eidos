@@ -82,3 +82,4 @@ When the Eidos plugin is active, your AI agent automatically accesses specialize
 * `eidos-invariants`: Enforcing policy invariants and test traceability.
 * `eidos-extract`: Reverse-engineering living specifications from existing repositories.
 * `eidos-init`: Bootstrapping new projects with Eidos governance.
+

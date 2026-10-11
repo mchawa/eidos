@@ -93,3 +93,4 @@ eidos delta apply dlt-2026-xxx
 * Learn why Eidos enforces **[Living Specifications over ADRs](../concepts/living-specs.md)**.
 * Understand the **[SpecDelta Mutation Lifecycle](../concepts/specdeltas.md)**.
 * Configure the **[AI Agent Plugin](../guides/agent-plugin.md)** for your coding assistants.
+

@@ -147,3 +147,4 @@ eidos plugin validate
 # Install the Eidos plugin into an agent client
 eidos plugin install --target antigravity
 ```
+

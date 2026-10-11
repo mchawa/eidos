@@ -72,3 +72,4 @@ and templating mechanisms for all Eidos operations.
 * **`schema`**: Formal schema validation reference ensuring structural integrity.
 * **`provides` / `consumes`**: Explicit declaration of interface contracts.
 * **Body text**: Rich AsciiDoc documentation that evolves continuously with the code.
+

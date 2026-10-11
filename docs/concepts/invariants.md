@@ -51,3 +51,4 @@ When an AI agent modifies code or adds a feature:
 * The agent can query which invariants (`POL-*`, `INV-*`) govern that component.
 * The agent cannot conclude its task until the corresponding invariant tests pass.
 * The agent cannot delete tests or bypass architectural invariants without failing CI spec validation.
+
