@@ -1,5 +1,5 @@
 {
-  "name": "Eidos (Ubuntu 26.04)",
+  "name": "Eidos Devcontainer",
   "image": "ubuntu:26.04",
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {
@@ -24,8 +24,7 @@
   "containerEnv": {
     // uv cannot use hardlinks across the /tmp → workspace boundary in Codespaces;
     // copy mode avoids "Invalid cross-device link" errors.
-    "UV_LINK_MODE": "copy",
-    "GITLAB_TOKEN": "${localEnv:GITLAB_TOKEN}"
+    "UV_LINK_MODE": "copy"
   },
   "mounts": [
     "source=eidos-gemini,target=/home/vscode/.gemini,type=volume"
