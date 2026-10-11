@@ -27,13 +27,24 @@ properties:
     description: "Short human-readable title of the policy."
   category:
     type: string
-    enum:
-      - governance
-      - architectural
-      - security
-      - testing
-      - lifecycle
-    description: "Policy domain: 'governance' (process/truth rules), 'architectural' (design patterns), 'security' (access/data safety), 'testing' (verification standards), or 'lifecycle' (release/merge gates)."
+    pattern: "^[a-z0-9_-]+$"
+    description: >
+      Policy category. Open and extensible to support any governance or architectural domain.
+      
+      Common conventions include:
+        - governance (Process, ground truth, and workflow rules)
+        - architectural (Design patterns, dependency constraints, layering)
+        - security (Access control, data protection, token rules)
+        - compliance (Regulatory, privacy, GDPR, SOC2 standards)
+        - testing (Verification standards, test coverage gates)
+        - performance (SLAs, resource utilization, latency budgets)
+        - lifecycle (Release gates, deprecation timelines)
+    examples:
+      - "governance"
+      - "architectural"
+      - "security"
+      - "compliance"
+      - "testing"
   rule:
     type: string
     description: "The exact, authoritative rule statement that must be adhered to across the entire ecosystem."
@@ -49,7 +60,10 @@ properties:
         description: "The tooling, CI pipeline step, or linter that programmatically evaluates compliance."
       severity:
         type: string
-        enum:
-          - blocking
-          - warning
-        description: "Enforcement level: 'blocking' (fails CI / prevents PR merge) or 'warning' (alerts engineers but permits merge)."
+        pattern: "^[a-z0-9_-]+$"
+        description: "Enforcement level: 'blocking' (fails CI / blocks PR), 'warning' (alerts engineers), 'advisory', or 'info'."
+        examples:
+          - "blocking"
+          - "warning"
+          - "advisory"
+          - "info"

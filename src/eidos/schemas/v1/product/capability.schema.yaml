@@ -31,12 +31,13 @@ properties:
     description: "The parent domain ID (DOM-*) that owns this capability."
   status:
     type: string
-    enum:
-      - draft
-      - proposed
-      - active
-      - deprecated
-    description: "Lifecycle state: 'draft' (in creation), 'proposed' (under review), 'active' (in production), or 'deprecated' (scheduled for removal)."
+    pattern: "^[a-z0-9_-]+$"
+    description: "Lifecycle state: draft, proposed, active, deprecated, or custom state slug."
+    examples:
+      - "draft"
+      - "proposed"
+      - "active"
+      - "deprecated"
   version:
     type: string
     description: "Semantic version of this capability specification (e.g. 1.0.0)."
@@ -52,7 +53,7 @@ properties:
         description: "List of persona document paths that benefit from or use this capability."
         items:
           type: string
-          description: "Relative path to a persona document (e.g. .spec/personas/product-lead.adoc)."
+          description: "Relative path to a persona document (e.g. eidos/personas/product-lead.adoc)."
       jtbd:
         type: string
         description: "Core Job-To-Be-Done statement ('When [situation], I want to [action], so that [outcome]')."
@@ -67,13 +68,12 @@ properties:
         description: "List of system policy document paths that govern or constrain this capability."
         items:
           type: string
-          description: "Relative path to a policy document (e.g. .spec/policies/POL-001-git-as-single-source-of-truth.adoc)."
+          description: "Relative path to a policy document (e.g. eidos/policies/POL-001-git-as-single-source-of-truth.adoc)."
   technical:
     type: object
     description: "Technical lens: implementing components, interface contracts, and non-negotiable test-bound invariants."
     required:
       - components
-      - invariants
     properties:
       components:
         type: array
@@ -83,7 +83,7 @@ properties:
           description: "Package or module path (e.g. packages/spec-parser)."
       contracts:
         type: object
-        description: "External API endpoints, CLI interfaces, and async event contracts."
+        description: "External API endpoints, CLI interfaces, and async event contracts (optional)."
         properties:
           interfaces:
             type: array
@@ -105,7 +105,7 @@ properties:
               description: "Event name (e.g. 'workspace.deleted')."
       invariants:
         type: array
-        description: "Deterministic rules and constraints that must never be broken, bound directly to automated tests."
+        description: "Deterministic rules and constraints bound directly to automated tests (optional during draft, mandatory for active status)."
         items:
           type: object
           required:

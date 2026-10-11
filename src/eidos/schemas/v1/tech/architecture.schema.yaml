@@ -36,7 +36,6 @@ properties:
     description: "Arc42 Section 3 / C4 Level 1: System Context. Identifies human/agent actors and external systems."
     required:
       - actors
-      - external_systems
     properties:
       actors:
         type: array
@@ -46,7 +45,7 @@ properties:
           description: "Relative path to a defined persona (e.g. eidos/personas/product-lead.adoc)."
       external_systems:
         type: array
-        description: "Third-party platforms, external APIs, or upstream/downstream services outside system boundaries."
+        description: "Third-party platforms, external APIs, or upstream/downstream services outside system boundaries (optional)."
         items:
           type: object
           required:
@@ -66,27 +65,28 @@ properties:
     type: array
     description: "Arc42 Section 5.1 / C4 Level 2: Container Topology. The high-level deployable units, services, monorepo packages, or applications comprising the system."
     items:
-      type: object
-      required:
-        - component_ref
-        - name
-        - container_type
-      properties:
-        component_ref:
-          type: string
-          description: "Component ID (CMP-*) or relative path to component specification (e.g. CMP-EIDOS-ENGINE or eidos/architecture/components/engine.adoc)."
-        name:
-          type: string
-          description: "Display name of the container/package."
-        container_type:
-          type: string
-          description: "Type of container: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon."
-        runtime:
-          type: string
-          description: "Execution runtime and primary framework."
-        package_path:
-          type: string
-          description: "Relative source code directory in the repository."
+      anyOf:
+        - type: string
+          description: "Component ID (CMP-*) or relative path to a tech/component document (e.g. CMP-EIDOS-ENGINE or eidos/architecture/components/engine.adoc)."
+        - type: object
+          required:
+            - component_ref
+          properties:
+            component_ref:
+              type: string
+              description: "Component ID (CMP-*) or relative path to component specification."
+            name:
+              type: string
+              description: "Display name of the container/package (optional)."
+            container_type:
+              type: string
+              description: "Type of container: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon (optional)."
+            runtime:
+              type: string
+              description: "Execution runtime and primary framework (optional)."
+            package_path:
+              type: string
+              description: "Relative source code directory in the repository (optional)."
   solution_strategy:
     type: array
     description: "Arc42 Section 4: Solution Strategy. Fundamental architectural decisions and paradigms shaping the system."

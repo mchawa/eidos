@@ -54,6 +54,7 @@ properties:
       - vision
       - target_users
       - value_proposition
+    additionalProperties: true
     properties:
       vision:
         type: string
@@ -72,8 +73,7 @@ properties:
     description: "Foundational technical characteristics, VCS environments, runtimes, and AI agent compatibility."
     required:
       - primary_languages
-      - vcs_platforms
-      - agent_support
+    additionalProperties: true
     properties:
       primary_languages:
         type: array
@@ -100,4 +100,3 @@ properties:
         description: "List of coding agents and LLM harnesses supported natively (e.g. Antigravity (agy), Claude Code, OpenAI Codex)."
         items:
           type: string
-

@@ -26,17 +26,27 @@ properties:
     description: "Human-readable name of the domain or bounded context."
   classification:
     type: string
-    enum:
-      - core
-      - supporting
-      - generic
-    description: "Domain-Driven Design categorization: 'core' (differentiating business logic), 'supporting' (custom internal helper), or 'generic' (off-the-shelf standard utility like auth/billing)."
+    pattern: "^[a-z0-9_-]+$"
+    description: >
+      Domain classification. Intentionally open to support any DDD taxonomy.
+      
+      Common conventions include:
+        - core (Differentiating business logic giving competitive advantage)
+        - supporting (Custom internal helper domain tailored to the core)
+        - generic (Standard off-the-shelf capability like auth or billing)
+        - platform (Cross-cutting infrastructure or developer platform)
+        - shared_kernel (Subdomain shared across multiple bounded contexts)
+        - integration (Adapter or gateway domain connecting external legacy systems)
+    examples:
+      - "core"
+      - "supporting"
+      - "generic"
+      - "platform"
   boundaries:
     type: object
-    description: "Strict functional boundaries defining what this domain does and does not own."
+    description: "Functional boundaries defining what this domain owns."
     required:
       - responsibilities
-      - out_of_scope
     properties:
       responsibilities:
         type: array
@@ -46,13 +56,13 @@ properties:
           description: "A specific area of responsibility."
       out_of_scope:
         type: array
-        description: "Explicit list of tasks, features, or concerns that this domain does NOT handle and delegates elsewhere."
+        description: "Explicit list of concerns that this domain does NOT handle and delegates elsewhere (optional)."
         items:
           type: string
           description: "A specific excluded responsibility."
   technical_mapping:
     type: object
-    description: "Mapping of this business domain to concrete software packages, repositories, or services."
+    description: "Mapping of this business domain to concrete software packages, repositories, or services (optional)."
     properties:
       components:
         type: array

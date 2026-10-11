@@ -1,6 +1,6 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: DeltaSchema
-description: "Defines declarative semantic mutations applied to the product baseline (feature additions, behavior changes, bug fixes, and deprecations/removals)."
+description: "Defines declarative semantic mutations applied to the product baseline (feature additions, behavior changes, bug fixes, refactorings, and deprecations)."
 type: object
 required:
   - type
@@ -27,13 +27,14 @@ properties:
     description: "Short, descriptive summary of the proposed product or technical mutation."
   status:
     type: string
-    enum:
-      - proposed
-      - in_review
-      - approved
-      - applied
-      - rejected
-    description: "Lifecycle status: 'proposed' (initial draft), 'in_review' (under team/agent review), 'approved' (ready for implementation), 'applied' (merged into main and applied to baseline), or 'rejected' (declined)."
+    pattern: "^[a-z0-9_-]+$"
+    description: "Lifecycle status: proposed, in_review, approved, applied, rejected, or custom workflow state."
+    examples:
+      - "proposed"
+      - "in_review"
+      - "approved"
+      - "applied"
+      - "rejected"
   intent:
     type: object
     description: "The strategic motivation and nature of the proposed change."
@@ -43,29 +44,36 @@ properties:
     properties:
       kind:
         type: string
-        enum:
-          - feature_addition
-          - feature_removal
-          - modification
-          - bugfix
-        description: "The functional nature of the mutation."
+        pattern: "^[a-z0-9_-]+$"
+        description: >
+          The functional nature of the mutation. Open to any engineering workflow.
+          
+          Common conventions include:
+            - feature_addition (New user-facing or technical capability)
+            - feature_removal (Deprecating or deleting a capability)
+            - modification (Changing existing business logic or behavior)
+            - bugfix (Correcting an anomaly)
+            - refactor (Internal code or spec cleanup without behavioral change)
+            - security_patch (Addressing a vulnerability)
+            - performance_optimization (Speed, throughput, or memory improvement)
+            - chore / documentation (Tooling or doc adjustments)
+        examples:
+          - "feature_addition"
+          - "feature_removal"
+          - "modification"
+          - "bugfix"
+          - "refactor"
       motivation:
         type: string
         description: "Why this change is needed and the problem it resolves."
       bug_classification:
         type: string
-        enum:
-          - spec_violation
-          - spec_gap
+        pattern: "^[a-z0-9_-]+$"
         description: "Only for bugfixes: 'spec_violation' means code diverged from valid spec; 'spec_gap' means spec lacked coverage for an edge condition."
       severity:
         type: string
-        enum:
-          - low
-          - medium
-          - high
-          - critical
-        description: "Impact severity rating, particularly for bugfixes and security patches."
+        pattern: "^[a-z0-9_-]+$"
+        description: "Impact severity rating (e.g. low, medium, high, critical)."
   mutations:
     type: array
     description: "Ordered list of atomic semantic operations to perform against the baseline .spec/ documents."
@@ -76,23 +84,35 @@ properties:
       properties:
         action:
           type: string
-          enum:
-            - add_capability
-            - extend_capability
-            - patch_invariant
-            - add_invariant
-            - remove_invariant
-            - deprecate_capability
-            - remove_capability
-            - add_entity_field
-            - remove_entity_field
-          description: "Semantic operation type indicating the exact mutation being executed against the baseline."
+          pattern: "^[a-z0-9_-]+$"
+          description: >
+            Semantic operation type indicating the exact mutation being executed against the baseline.
+            
+            Common conventions include:
+              - Capabilities: add_capability, extend_capability, deprecate_capability, remove_capability
+              - Invariants: add_invariant, patch_invariant, remove_invariant
+              - Components: add_component, modify_component, remove_component
+              - Policies: add_policy, patch_policy, deprecate_policy
+              - Contracts: add_contract, modify_contract, remove_contract
+              - Entities: add_entity, add_entity_field, remove_entity_field
+          examples:
+            - "add_capability"
+            - "extend_capability"
+            - "patch_invariant"
+            - "add_component"
+            - "modify_component"
         target_domain:
           type: string
-          description: "Target domain ID or relative path (e.g. DOM-PRODUCT-CORE or domains/auth/domain.adoc)."
+          description: "Target domain ID or relative path (e.g. DOM-PRODUCT-CORE or eidos/domains/auth/domain.adoc)."
         target_capability:
           type: string
           description: "Target capability ID or relative path (e.g. CAP-AUTH-004)."
+        target_component:
+          type: string
+          description: "Target component ID or relative path (e.g. CMP-EIDOS-ENGINE)."
+        target_policy:
+          type: string
+          description: "Target policy ID or relative path (e.g. POL-001)."
         target_invariant_id:
           type: string
           description: "Target invariant ID being patched or removed (e.g. INV-GUEST-001)."
@@ -104,23 +124,20 @@ properties:
           description: "Additional operational notes, migration directives, or deprecation sunset timeline."
   blast_radius:
     type: object
-    description: "Automated or computed impact analysis across personas, architecture components, and invariants."
+    description: "Automated or computed impact analysis across personas, architecture components, and invariants (optional)."
     properties:
       impacted_personas:
         type: array
         description: "List of persona document paths affected by this change."
         items:
           type: string
-          description: "Persona document path."
       impacted_components:
         type: array
         description: "List of code packages, modules, or services that must be modified."
         items:
           type: string
-          description: "Component path or service name."
       invariants_to_enforce:
         type: array
         description: "List of invariant IDs that must have green passing tests before this delta can merge."
         items:
           type: string
-          description: "Invariant ID (e.g. INV-GUEST-001)."

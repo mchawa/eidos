@@ -10,7 +10,6 @@ required:
   - container_type
   - runtime
   - package_path
-  - c4_internal_components
 properties:
   type:
     type: string
@@ -28,7 +27,7 @@ properties:
     description: "Human-readable display name of the container/package."
   container_type:
     type: string
-    description: "The C4 Container classification: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon, or driver."
+    description: "The C4 Container classification: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon, driver, or custom slug."
   runtime:
     type: string
     description: "Execution environment and primary framework (e.g. 'Python 3.12 / Typer / Hatchling', 'TypeScript / React', 'Rust / Tokio')."
@@ -40,10 +39,10 @@ properties:
       OR co-located inside the package directory (e.g. 'src/eidos/component.adoc').
   domain_binding:
     type: string
-    description: "The product domain ID (DOM-*) this technical component primarily realizes."
+    description: "The product domain ID (DOM-*) this technical component primarily realizes (optional)."
   c4_internal_components:
     type: array
-    description: "Arc42 Section 5.2 / C4 Level 3: Component Whitebox View. The internal modules, classes, or building blocks that constitute this package."
+    description: "Arc42 Section 5.2 / C4 Level 3: Component Whitebox View (optional). The internal modules, classes, or building blocks that constitute this package."
     items:
       type: object
       required:
@@ -62,7 +61,7 @@ properties:
           description: "Relative file path to the source file implementing this component (e.g. 'src/eidos/core/parser.py')."
   dependencies:
     type: object
-    description: "Explicit monorepo dependencies and external platform dependencies."
+    description: "Explicit monorepo dependencies and external platform dependencies (optional)."
     properties:
       internal_components:
         type: array
@@ -76,7 +75,7 @@ properties:
           type: string
   contracts:
     type: object
-    description: "Exposed and consumed interface contracts."
+    description: "Exposed and consumed interface contracts (optional)."
     properties:
       provides:
         type: array
@@ -90,7 +89,7 @@ properties:
           type: string
   quality_attributes:
     type: object
-    description: "Arc42 Section 10: Quality Requirements and Operational Invariants."
+    description: "Arc42 Section 10: Quality Requirements and Operational Invariants (optional)."
     properties:
       stateless:
         type: boolean
