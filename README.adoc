@@ -71,3 +71,7 @@ eidos/
 ** Link to link:file://eidos/architecture/system-architecture.adoc[`Global System Architecture`]
 ** Link to link:file://eidos/architecture/components/engine.adoc[`Component: Eidos Engine`]
 ** Link to link:file://eidos/architecture/contracts/cli.adoc[`Contract: Eidos CLI`]
+
+== License
+
+Licensed under the link:LICENSE[Apache License, Version 2.0].
