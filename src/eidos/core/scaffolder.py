@@ -440,6 +440,30 @@ def list_specs(
     return results
 
 
+def _ensure_eidos_gitignore(eidos_dir: Path) -> None:
+    """Ensure eidos/.gitignore is present and ignores generated symlink views so host projects remain unpolluted."""
+    gitignore_path = eidos_dir / ".gitignore"
+    rule = "deltas/by-status/"
+    if not gitignore_path.exists():
+        try:
+            gitignore_path.write_text(
+                f"# Eidos living specification lifecycle views (generated symlinks)\n{rule}\n",
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+    else:
+        try:
+            content = gitignore_path.read_text(encoding="utf-8")
+            if "deltas/by-status" not in content and "by-status" not in content:
+                gitignore_path.write_text(
+                    f"{content.rstrip()}\n\n# Eidos living specification lifecycle views (generated symlinks)\n{rule}\n",
+                    encoding="utf-8",
+                )
+        except Exception:
+            pass
+
+
 def sync_delta_views(eidos_dir: Path) -> Dict[str, List[Path]]:
     """Synchronize gitignored symlink views in eidos/deltas/by-status/ based on frontmatter status.
 
@@ -448,6 +472,9 @@ def sync_delta_views(eidos_dir: Path) -> Dict[str, List[Path]]:
     deltas_dir = eidos_dir / "deltas"
     if not deltas_dir.exists():
         return {}
+
+    # Ensure self-contained eidos/.gitignore
+    _ensure_eidos_gitignore(eidos_dir)
 
     views_dir = deltas_dir / "by-status"
     categories = ["proposed", "in_review", "approved", "applied", "rejected", "active"]

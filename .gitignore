@@ -23,6 +23,3 @@ build/
 .cursor/
 .claude/
 
-# Eidos Delta status views (gitignored symlinks)
-**/deltas/by-status/
-

@@ -346,3 +346,18 @@ def test_all_five_skills_in_bundle():
         "eidos-extract",
     }
     assert expected_skills.issubset(set(report.skills))
+
+
+def test_self_contained_eidos_gitignore(tmp_path):
+    """Verify eidos/.gitignore is automatically created and isolates status views from project root."""
+    create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="delta",
+        raw_id="DLT-2026-999",
+        title="Gitignore Isolation",
+        motivation="Self-contained eidos/.gitignore",
+    )
+    gitignore = tmp_path / ".gitignore"
+    assert gitignore.exists()
+    content = gitignore.read_text(encoding="utf-8")
+    assert "deltas/by-status/" in content
