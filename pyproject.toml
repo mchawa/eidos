@@ -34,7 +34,7 @@ eidos = "eidos.cli.main:app"
 packages = ["src/eidos"]
 
 [tool.hatch.build.targets.wheel.package-data]
-"eidos" = ["schemas/**/*.yaml"]
+"eidos" = ["schemas/**/*.yaml", "schemas/**/*.json", "plugin_bundle/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

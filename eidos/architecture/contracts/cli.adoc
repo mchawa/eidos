@@ -23,3 +23,22 @@ Validates all specification documents under `PATH` (defaults to `./eidos`) again
   - `0`: All specifications are valid.
   - `1`: One or more validation errors or broken cross-references found.
 
+=== `eidos components [PATH]`
+Scans and displays all monorepo containers, C4 components, internal modules, dependencies, and package paths.
+* **Arguments**: `PATH` (Optional directory path, defaults to `eidos/architecture`)
+* **Exit Codes**:
+  - `0`: Scan complete.
+
+=== `eidos mcp`
+Launches the stdio Model Context Protocol (MCP) server for AI agent clients.
+* **Protocol**: JSON-RPC 2.0 stdio
+* **Exit Codes**:
+  - `0`: Clean termination.
+
+=== `eidos plugin`
+Manages, validates, and installs Eidos Agent Plugins conforming to `agent-plugins.org` v1.0.0.
+* **Sub-commands**:
+  - `install [--target <target>] [--dest <path>]`: Installs the plugin into Antigravity, workspace, Claude, Cursor, or custom directory.
+  - `validate [PATH]`: Validates an Agent Plugin against canonical JSON schemas.
+  - `info [PATH]`: Displays plugin metadata, skills, MCP servers, and extensions.
+

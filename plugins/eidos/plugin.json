@@ -1,0 +1,31 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "eidos",
+  "version": "0.1.0",
+  "description": "Git-native, agent-agnostic development AI ecosystem and lifecycle orchestration framework.",
+  "author": {
+    "name": "Eidos Contributors",
+    "url": "https://github.com/eidos-ai/eidos"
+  },
+  "homepage": "https://github.com/eidos-ai/eidos",
+  "repository": "https://github.com/eidos-ai/eidos",
+  "license": "Apache-2.0",
+  "keywords": [
+    "eidos",
+    "agent-plugins",
+    "arc42",
+    "c4-model",
+    "specs",
+    "ai-orchestration"
+  ],
+  "extensions": {
+    "com.google.antigravity": {
+      "displayName": "Eidos AI Lifecycle Ecosystem",
+      "suggestedPrompts": [
+        "Validate all Eidos living specifications in eidos/",
+        "List all monorepo components and interface contracts",
+        "Propose a SpecDelta for an architectural change"
+      ]
+    }
+  }
+}
