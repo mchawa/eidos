@@ -1,0 +1,111 @@
+# Eidos: Git-Native AI Software Development Ecosystem
+
+[![CI](https://github.com/mchawa/eidos/actions/workflows/ci.yml/badge.svg)](https://github.com/mchawa/eidos/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/eidos-ai.svg)](https://pypi.org/project/eidos-ai/)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue.svg)](https://pypi.org/project/eidos-ai/)
+[![Documentation](https://img.shields.io/badge/docs-zensical-blue.svg)](https://mchawa.github.io/eidos/)
+[![Living Portal](https://img.shields.io/badge/portal-c4--explorer-green.svg)](https://mchawa.github.io/eidos/portal/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Eidos is an open, Git-native, agent-agnostic development framework designed to unify product definition, architectural invariants, and autonomous coding agents under executable living specifications.
+
+This repository dogfoods the **Eidos Specification Standard** to define Eidos itself.
+
+---
+
+## Quickstart
+
+```bash
+# Install with uv (recommended)
+uv add --dev eidos-ai
+
+# Or with pip
+pip install eidos-ai
+
+# Initialize Eidos in your repository
+eidos init
+
+# Validate living specifications
+eidos validate eidos
+
+# Launch interactive C4 architecture portal
+eidos serve --path eidos --port 8080
+
+# Install AI agent plugin (Antigravity, Claude, Cursor, Copilot)
+eidos plugin install --target all
+```
+
+---
+
+## Repository Architecture
+
+```text
+eidos/
+├── pyproject.toml                 # Modern Python package definition (eidos-ai on PyPI)
+├── zensical.toml                  # Zensical documentation site configuration
+│
+├── src/eidos/                     # [THE ENGINE / SOLUTION]
+│   ├── cli/                       # CLI commands (`eidos validate`, `eidos delta`, etc.)
+│   ├── core/                      # AsciiDoc + YAML frontmatter parser & schema validator
+│   ├── mcp/                       # Model Context Protocol stdio server
+│   ├── plugin/                    # Agent plugin packager, validator, and installer
+│   ├── portal/                    # Interactive Living Architecture static portal generator
+│   └── schemas/v1/                # Portable JSON/YAML Schemas bundled as package data
+│
+├── eidos/                         # [THE LIVING SPECIFICATION / REAL USAGE]
+│   ├── system.adoc                # Root system descriptor
+│   ├── personas/                  # Human & AI actor roles
+│   ├── policies/                  # Non-negotiable architectural invariants (POL-*)
+│   ├── domains/                   # Bounded contexts & capabilities (CAP-*)
+│   ├── architecture/              # System architecture, components, & contracts
+│   └── deltas/                    # In-flight and applied mutations (DLT-*)
+│
+├── docs/                          # User documentation site (Zensical)
+└── tests/                         # Engine & specification test suites
+```
+
+---
+
+## Key Distinctions from Existing Tools
+
+| Dimension | Traditional / Existing Tools | Eidos Approach |
+| :--- | :--- | :--- |
+| **Scope** | Coding loop only (Aider, Claude Code) or monolithic bot (Devin) | Full SDLC: Exploration → Product Baseline → SpecDelta → Code → CI |
+| **Specifications** | Ephemeral Jira tickets, stale Confluence/Notion pages | Versioned YAML frontmatter + AsciiDoc living in Git |
+| **Change Management** | Narrative RFC essays that rot in archive folders | Declarative `SpecDelta` mutations applied automatically upon merge |
+| **Agent Support** | Vendor-locked to a single proprietary LLM | Agent-agnostic via agent-plugins.org v1.0.0 & Model Context Protocol (MCP) |
+| **VCS Support** | GitHub-only or closed web UI | Native bidirectional support for both GitHub and GitLab |
+
+---
+
+## Navigating the Specifications
+
+* **Root System**: [`eidos/system.adoc`](eidos/system.adoc)
+* **Product Domains**:
+  * [`Product Intelligence Domain`](eidos/domains/product-core/domain.adoc)
+  * [`Agent Harness Domain`](eidos/domains/agent-harness/domain.adoc)
+  * [`VCS Sync Domain`](eidos/domains/vcs-sync/domain.adoc)
+* **Policies**:
+  * [`POL-001: Git Source of Truth`](eidos/policies/POL-001-git-as-single-source-of-truth.adoc)
+  * [`POL-002: Invariant Test Enforcement`](eidos/policies/POL-002-invariant-test-enforcement.adoc)
+* **Technical Architecture**:
+  * [`Global System Architecture`](eidos/architecture/system-architecture.adoc)
+  * [`Components Directory`](eidos/architecture/components/)
+  * [`Contracts Directory`](eidos/architecture/contracts/)
+* **SpecDeltas**:
+  * [`SpecDeltas Directory`](eidos/deltas/)
+
+---
+
+## Documentation & Living Portal
+
+* **User Documentation**: [https://mchawa.github.io/eidos/](https://mchawa.github.io/eidos/)
+* **Interactive Living Architecture Portal**: [https://mchawa.github.io/eidos/portal/](https://mchawa.github.io/eidos/portal/)
+* **PyPI Package**: [https://pypi.org/project/eidos-ai/](https://pypi.org/project/eidos-ai/)
+* **AI Agent Plugin Guide**: [https://mchawa.github.io/eidos/guides/agent-plugin/](https://mchawa.github.io/eidos/guides/agent-plugin/)
+
+---
+
+## License
+
+Licensed under the [MIT License](LICENSE).
