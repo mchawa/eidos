@@ -95,27 +95,49 @@ properties:
       description: "A foundational architectural strategy (e.g. 'GitOps State Machine: Git is the single source of truth')."
   cross_cutting_concepts:
     type: object
-    description: "Arc42 Section 8: Cross-cutting Concepts. Shared conventions and patterns across all containers/packages."
-    required:
-      - authentication_and_authz
-      - error_handling
-      - telemetry_and_logging
+    description: >
+      Arc42 Section 8: Cross-cutting Concepts. Open, flexible catalog of system-wide conventions,
+      patterns, and mechanisms. Architects declare only the concepts that apply to their specific system.
+      
+      Common examples include:
+        - authentication_and_authz (Identity, scopes, tokens)
+        - error_handling (Standard schemas, exit codes, exceptions)
+        - telemetry_and_logging (Structured logs, traces, metrics)
+        - concurrency_and_threading (Async event loop, worker threads, actors)
+        - persistence_and_caching (Data storage, cache invalidation, ORM)
+        - security_and_sandboxing (Process isolation, least privilege)
+        - data_serialization (Protobuf, JSON, FlatBuffers)
+        - power_and_resources (Memory limits, sleep cycles for embedded/IoT)
+    additionalProperties:
+      anyOf:
+        - type: string
+        - type: object
     properties:
       authentication_and_authz:
         type: string
-        description: "Global authentication and authorization strategy."
+        description: "Global authentication and authorization strategy (optional)."
       error_handling:
         type: string
-        description: "Universal error schemas, diagnostic formats, and exception rules."
+        description: "Universal error schemas, diagnostic formats, and exception rules (optional)."
       telemetry_and_logging:
         type: string
-        description: "Structured logging, distributed tracing, and metrics standards."
+        description: "Structured logging, distributed tracing, and metrics standards (optional)."
+      concurrency_and_threading:
+        type: string
+        description: "Concurrency model and thread-safety rules (optional)."
+      persistence_and_caching:
+        type: string
+        description: "Shared persistence mechanisms and caching strategies (optional)."
+      security_and_sandboxing:
+        type: string
+        description: "Process isolation, memory safety, and security guardrails (optional)."
   deployment_view:
     type: object
     description: "Arc42 Section 7: Deployment View. Target infrastructure, environments, and CI/CD pipelines."
     required:
       - hosting_model
       - ci_cd_engine
+    additionalProperties: true
     properties:
       hosting_model:
         type: string
