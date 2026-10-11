@@ -14,7 +14,7 @@ uv python install --default 3.15
 # 2. Set up Python virtual environment and install Eidos in editable mode
 echo "==> Setting up Eidos virtual environment with Python 3.15..."
 uv venv --python 3.15 .venv
-uv pip install -e ".[dev]"
+uv pip install -e ".[dev,docs]"
 
 # 3. Configure persistent AI tool directories and migrate initial backups
 echo "==> Configuring persistent volumes (~/.gemini)..."

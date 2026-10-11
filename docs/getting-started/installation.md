@@ -1,6 +1,6 @@
 # Installation
 
-Eidos is packaged as `eidos-ai` on PyPI and supports Python 3.11, 3.12, 3.13, and 3.14.
+Eidos is packaged as `eidos-ai` on PyPI and supports Python 3.11, 3.12, 3.13, 3.14, and 3.15.
 
 ---
 

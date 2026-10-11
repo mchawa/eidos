@@ -25,7 +25,7 @@ jobs:
           version: "latest"
 
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install 3.15
 
       - name: Install dependencies
         run: uv sync --all-extras --dev
@@ -42,7 +42,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -76,7 +76,7 @@ jobs:
           version: "latest"
 
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install 3.15
 
       - name: Install dependencies
         run: uv sync --all-extras --dev
