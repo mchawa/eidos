@@ -638,3 +638,212 @@ def apply_delta(eidos_dir: Path, delta_id_or_path: str) -> Tuple[bool, str, Opti
     sync_delta_views(eidos_dir)
 
     return True, f"Successfully applied SpecDelta '{doc.doc_id}' in-place -> {file_path.name}.", file_path
+
+
+def init_repository(
+    project_dir: Path,
+    name: Optional[str] = None,
+    title: Optional[str] = None,
+    eidos_dir_name: str = "eidos",
+    with_plugin: bool = True,
+    force: bool = False,
+) -> Tuple[bool, str, List[Path]]:
+    """Initialize a repository with Eidos living specifications, baseline architecture, and governance."""
+    eidos_dir = project_dir / eidos_dir_name
+    created_files: List[Path] = []
+
+    if eidos_dir.exists() and any(eidos_dir.rglob("*.adoc")) and not force:
+        return (
+            False,
+            f"Eidos specifications already exist at '{eidos_dir}'. Use --force to re-initialize.",
+            [],
+        )
+
+    # Clean name and title
+    clean_name = (name or project_dir.resolve().name).lower().replace("_", "-").replace(" ", "-")
+    clean_title = title or clean_name.replace("-", " ").title()
+    sys_id = f"SYS-{clean_name.upper().replace('-', '_')}"
+    arch_id = f"ARCH-{clean_name.upper().replace('-', '_')}-001"
+
+    # Directory layout
+    subdirs = [
+        eidos_dir / "architecture" / "components",
+        eidos_dir / "architecture" / "contracts",
+        eidos_dir / "domains",
+        eidos_dir / "policies",
+        eidos_dir / "personas",
+        eidos_dir / "deltas",
+        eidos_dir / "explorations",
+    ]
+    for d in subdirs:
+        d.mkdir(parents=True, exist_ok=True)
+
+    # 1. system.adoc
+    sys_file = eidos_dir / "system.adoc"
+    sys_content = f"""---
+type: product/system
+schema: schemas/v1/product/system.schema.yaml
+id: {sys_id}
+title: "{clean_title}"
+archetypes:
+  - library
+  - cli_tool
+
+business_identity:
+  vision: "A synchronized, self-describing software system governed by living specifications."
+  target_users:
+    - "Software Engineers"
+    - "Autonomous AI Coding Agents"
+  value_proposition: "Maintains continuous alignment between technical implementation and architectural requirements."
+
+technical_profile:
+  primary_languages:
+    - "AsciiDoc"
+    - "YAML"
+---
+= {clean_title}: System Vision & Strategy
+:toc: left
+
+== Executive Summary
+{clean_title} is governed under Eidos living specifications, maintaining continuous alignment between technical implementation and architectural requirements.
+"""
+    sys_file.write_text(sys_content, encoding="utf-8")
+    created_files.append(sys_file)
+
+    # 2. POL-001
+    pol1_file = eidos_dir / "policies" / "POL-001-git-as-single-source-of-truth.adoc"
+    pol1_content = """---
+type: product/policy
+schema: schemas/v1/product/policy.schema.yaml
+id: POL-001-GIT-SOURCE-OF-TRUTH
+title: "Git Repository as Single Source of Truth"
+category: governance
+rule: "All product specifications, architecture topologies, component manifests, contracts, and code changes must reside strictly in Git."
+enforcement:
+  mechanism: "CI validation checks ensuring all code changes map to living specs and passing tests"
+  severity: blocking
+---
+= Policy: Git Repository as Single Source of Truth
+:toc: left
+
+== Intent & Scope
+Guarantees that product requirements, architectural contracts, and invariant policies are version-controlled in the same Git repository as the code.
+"""
+    pol1_file.write_text(pol1_content, encoding="utf-8")
+    created_files.append(pol1_file)
+
+    # 3. POL-002
+    pol2_file = eidos_dir / "policies" / "POL-002-invariant-test-enforcement.adoc"
+    pol2_content = """---
+type: product/policy
+schema: schemas/v1/product/policy.schema.yaml
+id: POL-002-INVARIANT-TEST-ENFORCEMENT
+title: "Bidirectional Invariant-Test Traceability"
+category: testing
+rule: "Every capability and policy invariant must have corresponding automated verification in the test suite."
+enforcement:
+  mechanism: "Automated test suites executing test bindings defined in specifications"
+  severity: blocking
+---
+= Policy: Bidirectional Invariant-Test Traceability
+:toc: left
+
+== Intent & Scope
+Enforces bidirectional traceability: specifications reference test locations, and automated test functions reference invariant IDs.
+"""
+    pol2_file.write_text(pol2_content, encoding="utf-8")
+    created_files.append(pol2_file)
+
+    # 4. personas/autonomous-agent.adoc
+    per_file = eidos_dir / "personas" / "autonomous-agent.adoc"
+    per_content = """---
+type: product/persona
+schema: schemas/v1/product/persona.schema.yaml
+id: PER-AUTONOMOUS-AGENT
+name: "Autonomous Coding Agent"
+role_type: autonomous_agent
+goals:
+  - "Implement features while strictly preserving architectural invariants"
+  - "Maintain bidirectional traceability between code and specifications"
+  - "Propose and reconcile SpecDeltas for semantic changes"
+pain_points:
+  - "Out-of-date or contradictory documentation"
+  - "Hidden architectural decisions without test coverage"
+interaction_modes:
+  - "CLI invocation"
+  - "MCP tool execution"
+  - "Direct Git PR creation"
+---
+= Persona: Autonomous Coding Agent
+:toc: left
+
+== Profile & Capabilities
+Autonomous AI agents operating in this repository adhere strictly to Eidos living specifications, Zero-ADR policies, and SpecDelta lifecycles.
+"""
+    per_file.write_text(per_content, encoding="utf-8")
+    created_files.append(per_file)
+
+    # 5. architecture/system-architecture.adoc
+    arch_file = eidos_dir / "architecture" / "system-architecture.adoc"
+    arch_content = f"""---
+type: tech/architecture
+schema: schemas/v1/tech/architecture.schema.yaml
+id: {arch_id}
+title: "{clean_title} System Architecture"
+topology_style: "modular_monolith"
+
+c4_context:
+  actors:
+    - "{eidos_dir_name}/personas/autonomous-agent.adoc"
+  external_systems:
+    - name: "Git Remote"
+      role: "Source code repository and CI/CD pipelines"
+
+c4_containers: []
+
+solution_strategy:
+  - "GitOps State Machine: Git repository is the sole source of authoritative truth."
+  - "Specification-as-Code: YAML frontmatter + AsciiDoc technical specifications validated against schemas."
+  - "Bidirectional Invariant-Test Traceability: Every invariant is bound to automated tests."
+
+cross_cutting_concepts:
+  error_handling: "Structured CLI exit codes with rich diagnostic output."
+  telemetry_and_logging: "Local stdout/stderr streaming and automated validation reports."
+
+deployment_view:
+  hosting_model: "Developer Workstation and CI/CD Runners"
+  ci_cd_engine: "GitHub Actions / GitLab CI"
+---
+= {clean_title}: System Architecture (Arc42 + C4)
+:toc: left
+
+== System Context & Scope
+This document defines the structural topology and architectural governance for {clean_title}.
+"""
+    arch_file.write_text(arch_content, encoding="utf-8")
+    created_files.append(arch_file)
+
+    # 6. Ensure self-contained eidos/.gitignore and status symlink views
+    _ensure_eidos_gitignore(eidos_dir)
+    sync_delta_views(eidos_dir)
+
+    # 7. Validate all generated specifications immediately
+    validator = SpecValidator()
+    report = validator.validate_directory(eidos_dir)
+    if not report.is_clean:
+        errs = []
+        for p, elist in report.schema_errors.items():
+            errs.extend(elist)
+        for b in report.broken_references:
+            errs.append(f"Broken ref: {b}")
+        return False, f"Scaffolded specifications failed validation: {'; '.join(errs)}", created_files
+
+    # 8. Optional Agent Plugin installation
+    if with_plugin:
+        try:
+            from eidos.plugin.installer import install_plugin, PluginInstallTarget
+            install_plugin(target=PluginInstallTarget.PROJECT, project_dir=project_dir, force=force)
+        except Exception:
+            pass
+
+    return True, f"Successfully initialized Eidos living specifications at '{eidos_dir}'.", created_files

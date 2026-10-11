@@ -13,6 +13,7 @@ from eidos.core.scaffolder import (
     delete_spec,
     list_specs,
     apply_delta,
+    init_repository,
 )
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
@@ -198,6 +199,39 @@ TOOLS = [
                 }
             }
         }
+    },
+    {
+        "name": "eidos_init_repo",
+        "description": "Initialize a repository with Eidos living specifications, baseline architecture, and governance.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_dir": {
+                    "type": "string",
+                    "description": "Project root directory (defaults to current working directory '.')."
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Machine-readable name of the system/project."
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Human-readable title of the system/project."
+                },
+                "eidos_dir_name": {
+                    "type": "string",
+                    "description": "Directory name for specifications (defaults to 'eidos')."
+                },
+                "with_plugin": {
+                    "type": "boolean",
+                    "description": "Automatically install Eidos agent plugin into project (defaults to true)."
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "Overwrite existing files if present (defaults to false)."
+                }
+            }
+        }
     }
 ]
 
@@ -352,6 +386,29 @@ def handle_tool_call(name: str, arguments: Dict[str, Any]) -> List[Dict[str, Any
             "success": success,
             "message": msg,
             "applied_file": str(applied_file) if applied_file else None
+        }
+        return [{"type": "text", "text": json.dumps(res, indent=2)}]
+
+    elif name == "eidos_init_repo":
+        project_dir = Path(arguments.get("project_dir") or ".")
+        name_val = arguments.get("name")
+        title_val = arguments.get("title")
+        eidos_dir_name = arguments.get("eidos_dir_name") or "eidos"
+        with_plugin = arguments.get("with_plugin", True)
+        force = arguments.get("force", False)
+
+        success, msg, created_files = init_repository(
+            project_dir=project_dir,
+            name=name_val,
+            title=title_val,
+            eidos_dir_name=eidos_dir_name,
+            with_plugin=with_plugin,
+            force=force,
+        )
+        res = {
+            "success": success,
+            "message": msg,
+            "created_files": [str(f) for f in created_files]
         }
         return [{"type": "text", "text": json.dumps(res, indent=2)}]
 

@@ -35,6 +35,7 @@ from eidos.core.scaffolder import (
     find_spec_by_id_or_path,
     sync_delta_views,
     get_delta_status_summary,
+    init_repository,
 )
 
 app = typer.Typer(
@@ -83,6 +84,67 @@ def info():
     grid.add_row("Plugin Standard:", "agent-plugins.org v1.0.0 & agentskills.io")
 
     console.print(Panel(grid, title="[bold blue]Eidos AI Ecosystem[/bold blue]", expand=False))
+
+
+@app.command("init")
+def init_cmd(
+    target_path: Optional[Path] = typer.Argument(
+        None,
+        help="Target project directory to initialize with Eidos (defaults to current directory).",
+    ),
+    name: Optional[str] = typer.Option(
+        None,
+        "--name", "-n",
+        help="System identifier (e.g. 'my-app'). Defaults to directory name.",
+    ),
+    title: Optional[str] = typer.Option(
+        None,
+        "--title", "-t",
+        help="Human-readable system title (e.g. 'My Application').",
+    ),
+    with_plugin: bool = typer.Option(
+        True,
+        "--with-plugin/--no-plugin",
+        help="Install the Eidos Agent Plugin into .agents/plugins/eidos.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force", "-f",
+        help="Force initialization even if eidos/ directory already exists.",
+    ),
+):
+    """Initialize a repository with Eidos living specifications, Arc42/C4 architecture, and governance."""
+    project_dir = target_path or Path.cwd()
+    console.print(f"[bold cyan]Initializing Eidos living specifications in:[/bold cyan] {project_dir.resolve()}\n")
+
+    success, msg, created_files = init_repository(
+        project_dir=project_dir,
+        name=name,
+        title=title,
+        with_plugin=with_plugin,
+        force=force,
+    )
+
+    if not success:
+        console.print(f"[bold red]✗ Initialization Failed:[/bold red] {msg}")
+        raise typer.Exit(code=1)
+
+    table = Table(title="Scaffolded Eidos Living Specifications", show_header=True)
+    table.add_column("Specification Document", style="bold cyan")
+    table.add_column("Path", style="dim")
+
+    for f in created_files:
+        rel = f.relative_to(project_dir) if f.is_relative_to(project_dir) else f
+        table.add_row(f.name, str(rel))
+
+    console.print(table)
+    console.print(f"\n[bold green]✓[/bold green] {msg}")
+    console.print("[dim]Next steps:[/dim]")
+    console.print("  • Edit [cyan]eidos/system.adoc[/cyan] to tailor system vision and strategic pillars.")
+    console.print("  • Edit [cyan]eidos/architecture/system-architecture.adoc[/cyan] to map C4 containers.")
+    console.print("  • Run [cyan]eidos validate eidos[/cyan] to verify specification compliance.")
+    if with_plugin:
+        console.print("  • Eidos Agent Plugin installed at [cyan].agents/plugins/eidos[/cyan].")
 
 
 @app.command()

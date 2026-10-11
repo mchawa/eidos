@@ -329,8 +329,8 @@ def test_mcp_spec_lifecycle_tools(tmp_path):
     assert del_data["success"]
 
 
-def test_all_five_skills_in_bundle():
-    """Verify that the plugin contains all 5 specialized skills (CAP-AGENT-001)."""
+def test_all_skills_in_bundle():
+    """Verify that the plugin contains all 6 specialized skills (CAP-AGENT-001)."""
     from eidos.plugin.installer import locate_plugin_bundle
     from eidos.plugin.validator import validate_plugin_package
 
@@ -344,6 +344,7 @@ def test_all_five_skills_in_bundle():
         "eidos-architecture",
         "eidos-invariants",
         "eidos-extract",
+        "eidos-init",
     }
     assert expected_skills.issubset(set(report.skills))
 
@@ -361,3 +362,68 @@ def test_self_contained_eidos_gitignore(tmp_path):
     assert gitignore.exists()
     content = gitignore.read_text(encoding="utf-8")
     assert "deltas/by-status/" in content
+
+
+def test_init_repository_programmatic(tmp_path):
+    """Verify init_repository scaffolds a full, schema-compliant living specification ecosystem (CTR-EIDOS-CLI)."""
+    from eidos.core.scaffolder import init_repository
+    from eidos.core.validator import SpecValidator
+
+    success, msg, files = init_repository(
+        project_dir=tmp_path,
+        name="test-project",
+        title="Test Project System",
+        with_plugin=True,
+    )
+    assert success
+    assert len(files) == 5
+
+    eidos_dir = tmp_path / "eidos"
+    assert (eidos_dir / ".gitignore").exists()
+    assert (eidos_dir / "system.adoc").exists()
+    assert (eidos_dir / "architecture" / "system-architecture.adoc").exists()
+    assert (eidos_dir / "policies" / "POL-001-git-as-single-source-of-truth.adoc").exists()
+    assert (eidos_dir / "policies" / "POL-002-invariant-test-enforcement.adoc").exists()
+    assert (eidos_dir / "personas" / "autonomous-agent.adoc").exists()
+    assert (tmp_path / ".agents" / "plugins" / "eidos").exists()
+
+    # Re-init without force must fail
+    success2, msg2, _ = init_repository(project_dir=tmp_path, force=False)
+    assert not success2
+    assert "already exist" in msg2
+
+    # Re-init with force succeeds
+    success3, _, _ = init_repository(project_dir=tmp_path, force=True)
+    assert success3
+
+    # Validate directory
+    validator = SpecValidator()
+    report = validator.validate_directory(eidos_dir)
+    assert report.is_clean
+    assert report.total_docs == 5
+    assert report.valid_docs == 5
+
+
+def test_init_repository_cli(tmp_path):
+    """Verify eidos init CLI command (CTR-EIDOS-CLI)."""
+    target = tmp_path / "cli_init_target"
+    result = runner.invoke(app, ["init", str(target), "--name", "my-app", "--title", "My Application", "--no-plugin"])
+    assert result.exit_code == 0
+    assert "Successfully initialized" in result.stdout
+    assert (target / "eidos" / "system.adoc").exists()
+
+
+def test_init_repository_mcp(tmp_path):
+    """Verify eidos_init_repo MCP tool call."""
+    target = tmp_path / "mcp_init_target"
+    res = handle_tool_call("eidos_init_repo", {
+        "project_dir": str(target),
+        "name": "mcp-service",
+        "title": "MCP Service",
+        "with_plugin": False,
+    })
+    data = json.loads(res[0]["text"])
+    assert data["success"]
+    assert len(data["created_files"]) == 5
+    assert (target / "eidos" / "system.adoc").exists()
+
