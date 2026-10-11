@@ -17,7 +17,11 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     specs_by_type: dict[str, list[dict[str, Any]]] = {}
 
     for doc in report.documents:
-        rel_path = str(doc.file_path.relative_to(eidos_path.parent)) if doc.file_path.is_relative_to(eidos_path.parent) else str(doc.file_path)
+        rel_path = (
+            str(doc.file_path.relative_to(eidos_path.parent))
+            if doc.file_path.is_relative_to(eidos_path.parent)
+            else str(doc.file_path)
+        )
         item = {
             "id": doc.doc_id,
             "title": doc.title or doc.doc_id,
@@ -45,31 +49,35 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     components: list[dict[str, Any]] = []
     for c in raw_components:
         fm = c["frontmatter"]
-        components.append({
-            "id": c["id"],
-            "name": fm.get("name", c["id"]),
-            "container_type": fm.get("container_type", "library"),
-            "runtime": fm.get("runtime", "N/A"),
-            "package_path": fm.get("package_path", "N/A"),
-            "internal_components": fm.get("c4_internal_components", []),
-            "dependencies": fm.get("dependencies", {}),
-            "contracts": fm.get("contracts", {}),
-            "description": c["body"],
-        })
+        components.append(
+            {
+                "id": c["id"],
+                "name": fm.get("name", c["id"]),
+                "container_type": fm.get("container_type", "library"),
+                "runtime": fm.get("runtime", "N/A"),
+                "package_path": fm.get("package_path", "N/A"),
+                "internal_components": fm.get("c4_internal_components", []),
+                "dependencies": fm.get("dependencies", {}),
+                "contracts": fm.get("contracts", {}),
+                "description": c["body"],
+            }
+        )
 
     # Contracts
     raw_contracts = specs_by_type.get("tech/contract", [])
     contracts: list[dict[str, Any]] = []
     for ct in raw_contracts:
         fm = ct["frontmatter"]
-        contracts.append({
-            "id": ct["id"],
-            "title": ct["title"],
-            "protocol": fm.get("protocol", "cli_args"),
-            "owning_component": fm.get("owning_component", "N/A"),
-            "specification_file": fm.get("specification_file", "N/A"),
-            "description": ct["body"],
-        })
+        contracts.append(
+            {
+                "id": ct["id"],
+                "title": ct["title"],
+                "protocol": fm.get("protocol", "cli_args"),
+                "owning_component": fm.get("owning_component", "N/A"),
+                "specification_file": fm.get("specification_file", "N/A"),
+                "description": ct["body"],
+            }
+        )
 
     # 2. Product Domains, Capabilities, Personas, Policies
     domains = [s["frontmatter"] for s in specs_by_type.get("product/domain", [])]
@@ -80,26 +88,30 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     # Invariants list
     invariants: list[dict[str, Any]] = []
     for pol in policies:
-        invariants.append({
-            "id": pol.get("id"),
-            "title": pol.get("title"),
-            "rule": pol.get("rule", "System policy invariant rule."),
-            "category": pol.get("category", "governance"),
-            "source_type": "policy",
-            "test_binding": "tests/test_validator.py",
-        })
+        invariants.append(
+            {
+                "id": pol.get("id"),
+                "title": pol.get("title"),
+                "rule": pol.get("rule", "System policy invariant rule."),
+                "category": pol.get("category", "governance"),
+                "source_type": "policy",
+                "test_binding": "tests/test_validator.py",
+            }
+        )
 
     for cap in capabilities:
         cap_id = cap.get("id", "CAP")
         for inv in cap.get("technical", {}).get("invariants", []):
-            invariants.append({
-                "id": inv.get("id"),
-                "title": inv.get("id"),
-                "rule": inv.get("rule"),
-                "category": "capability",
-                "source_type": f"capability ({cap_id})",
-                "test_binding": inv.get("test_binding", "N/A"),
-            })
+            invariants.append(
+                {
+                    "id": inv.get("id"),
+                    "title": inv.get("id"),
+                    "rule": inv.get("rule"),
+                    "category": "capability",
+                    "source_type": f"capability ({cap_id})",
+                    "test_binding": inv.get("test_binding", "N/A"),
+                }
+            )
 
     # 3. SpecDeltas & Kanban status columns
     deltas_by_status: dict[str, list[dict[str, Any]]] = {
@@ -189,13 +201,15 @@ def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict
             except (json.JSONDecodeError, OSError):
                 tokens_data = {}
 
-        systems.append({
-            "id": sys_id,
-            "title": ds["title"],
-            "client": fm.get("client", "core"),
-            "extends": fm.get("extends"),
-            "tokens": tokens_data,
-        })
+        systems.append(
+            {
+                "id": sys_id,
+                "title": ds["title"],
+                "client": fm.get("client", "core"),
+                "extends": fm.get("extends"),
+                "tokens": tokens_data,
+            }
+        )
 
     # Screens and state machines
     screens: list[dict[str, Any]] = []
@@ -204,15 +218,17 @@ def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict
         states = fm.get("states", [])
         transitions = fm.get("transitions", [])
         mermaid_state = _generate_screen_state_mermaid(scr["id"], states, transitions)
-        screens.append({
-            "id": scr["id"],
-            "title": scr["title"],
-            "route": fm.get("route", "/"),
-            "system_ref": fm.get("system_ref", "DS-CORE"),
-            "states": states,
-            "transitions": transitions,
-            "mermaid": mermaid_state,
-        })
+        screens.append(
+            {
+                "id": scr["id"],
+                "title": scr["title"],
+                "route": fm.get("route", "/"),
+                "system_ref": fm.get("system_ref", "DS-CORE"),
+                "states": states,
+                "transitions": transitions,
+                "mermaid": mermaid_state,
+            }
+        )
 
     if not systems and not screens:
         return []
@@ -242,7 +258,9 @@ def _generate_c4_context_mermaid(personas: list[dict[str, Any]], system_id: str,
         lines.append(f'  {node_id} -->|Interacts & Collaborates| SYS["{system_id}<br/><b>{system_title}</b>"]:::system')
 
     lines.append('  SYS -->|Syncs Issues, PRs, Webhooks| EXT_GIT["GitHub / GitLab<br/>[VCS Platform]"]:::external')
-    lines.append('  SYS -->|JSON-RPC Stdio Protocol| EXT_IDE["AI IDEs & MCP Clients<br/>(Antigravity, Cursor, Claude)"]:::external')
+    lines.append(
+        '  SYS -->|JSON-RPC Stdio Protocol| EXT_IDE["AI IDEs & MCP Clients<br/>(Antigravity, Cursor, Claude)"]:::external'
+    )
 
     return "\n".join(lines)
 

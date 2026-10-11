@@ -1,20 +1,20 @@
 """Eidos Agent Plugin ecosystem integration."""
 
-from eidos.plugin.validator import validate_plugin_package, PluginValidationReport
 from eidos.plugin.installer import (
+    InstallResult,
+    PluginInstallTarget,
+    UninstallResult,
     install_plugin,
     uninstall_plugin,
-    PluginInstallTarget,
-    InstallResult,
-    UninstallResult,
 )
+from eidos.plugin.validator import PluginValidationReport, validate_plugin_package
 
 __all__ = [
-    "validate_plugin_package",
+    "InstallResult",
+    "PluginInstallTarget",
     "PluginValidationReport",
+    "UninstallResult",
     "install_plugin",
     "uninstall_plugin",
-    "PluginInstallTarget",
-    "InstallResult",
-    "UninstallResult",
+    "validate_plugin_package",
 ]

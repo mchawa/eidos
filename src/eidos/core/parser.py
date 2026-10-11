@@ -1,7 +1,7 @@
 """Parser for AsciiDoc files containing YAML frontmatter."""
 
 from pathlib import Path
-from typing import Optional, Tuple
+
 import yaml
 
 from eidos.core.models import SpecDocument
@@ -35,7 +35,7 @@ def parse_spec_file(path: Path) -> SpecDocument:
     return doc
 
 
-def extract_frontmatter(content: str) -> Tuple[Optional[dict], str, Optional[str]]:
+def extract_frontmatter(content: str) -> tuple[dict | None, str, str | None]:
     """Extract YAML frontmatter between leading '---' markers."""
     stripped = content.lstrip()
     if not stripped.startswith("---"):
@@ -56,4 +56,3 @@ def extract_frontmatter(content: str) -> Tuple[Optional[dict], str, Optional[str
         return data, body, None
     except yaml.YAMLError as exc:
         return None, body, str(exc)
-

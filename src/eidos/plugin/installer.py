@@ -1,26 +1,26 @@
 """Project-scoped installer and uninstaller for Eidos Agent Plugins across AI agent environments."""
 
+import contextlib
 import enum
 import json
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
 
+from eidos.core.assets import get_plugin_reference_dir
 from eidos.plugin.version import (
     get_bundled_plugin_version,
     get_installed_plugin_version,
-    check_plugin_version_status,
 )
 
 
-class PluginInstallTarget(str, enum.Enum):
-    PROJECT = "project"          # Installs/removes .agents/plugins/eidos and configures project MCPs
-    WORKSPACE = "workspace"      # Installs/removes .agents/plugins/eidos
+class PluginInstallTarget(enum.StrEnum):
+    PROJECT = "project"  # Installs/removes .agents/plugins/eidos and configures project MCPs
+    WORKSPACE = "workspace"  # Installs/removes .agents/plugins/eidos
     ANTIGRAVITY = "antigravity"  # Installs/removes .agents/plugins/eidos
-    CLAUDE = "claude"            # Configures/removes local .claude/mcp.json
-    CURSOR = "cursor"            # Configures/removes local .cursor/mcp.json
-    ALL = "all"                  # Same as project
+    CLAUDE = "claude"  # Configures/removes local .claude/mcp.json
+    CURSOR = "cursor"  # Configures/removes local .cursor/mcp.json
+    ALL = "all"  # Same as project
 
 
 @dataclass
@@ -29,7 +29,7 @@ class InstallResult:
     destination: Path
     success: bool
     message: str
-    created_files: List[Path] = field(default_factory=list)
+    created_files: list[Path] = field(default_factory=list)
 
 
 @dataclass
@@ -39,9 +39,6 @@ class UninstallResult:
     success: bool
     message: str
     removed: bool = True
-
-
-from eidos.core.assets import get_plugin_reference_dir
 
 
 def locate_plugin_bundle() -> Path:
@@ -69,12 +66,10 @@ def locate_plugin_bundle() -> Path:
     if pkg_bundle.exists() and (pkg_bundle / "plugin.json").exists():
         return pkg_bundle
 
-    raise FileNotFoundError(
-        "Could not locate Eidos plugin reference in assets or repository."
-    )
+    raise FileNotFoundError("Could not locate Eidos plugin reference in assets or repository.")
 
 
-def _copy_plugin_tree(source_dir: Path, target_dir: Path, force: bool = False) -> List[Path]:
+def _copy_plugin_tree(source_dir: Path, target_dir: Path, force: bool = False) -> list[Path]:
     """Copy all plugin files to target destination within the project."""
     target_dir.mkdir(parents=True, exist_ok=True)
     created = []
@@ -90,7 +85,7 @@ def _copy_plugin_tree(source_dir: Path, target_dir: Path, force: bool = False) -
     target_manifest = target_dir / "plugin.json"
     if target_manifest.exists():
         try:
-            with open(target_manifest, "r", encoding="utf-8") as f:
+            with open(target_manifest, encoding="utf-8") as f:
                 data = json.load(f)
             bundled_ver = get_bundled_plugin_version()
             if data.get("version") != bundled_ver:
@@ -103,13 +98,13 @@ def _copy_plugin_tree(source_dir: Path, target_dir: Path, force: bool = False) -
     return created
 
 
-def _update_project_mcp_json(file_path: Path, server_name: str, command: str, args: List[str]) -> bool:
+def _update_project_mcp_json(file_path: Path, server_name: str, command: str, args: list[str]) -> bool:
     """Safely update a project-level MCP configuration file with the eidos stdio server."""
     file_path.parent.mkdir(parents=True, exist_ok=True)
     data = {}
     if file_path.exists():
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 data = json.load(f)
         except Exception:
             data = {}
@@ -117,10 +112,7 @@ def _update_project_mcp_json(file_path: Path, server_name: str, command: str, ar
     if "mcpServers" not in data or not isinstance(data["mcpServers"], dict):
         data["mcpServers"] = {}
 
-    data["mcpServers"][server_name] = {
-        "command": command,
-        "args": args
-    }
+    data["mcpServers"][server_name] = {"command": command, "args": args}
 
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
@@ -132,7 +124,7 @@ def _remove_project_mcp_server(file_path: Path, server_name: str) -> bool:
     if not file_path.exists():
         return False
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             data = json.load(f)
     except Exception:
         return False
@@ -144,15 +136,13 @@ def _remove_project_mcp_server(file_path: Path, server_name: str) -> bool:
     del servers[server_name]
     data["mcpServers"] = servers
 
-    if not servers and len(data.keys()) == 1:
+    if not servers and len(data) == 1:
         # If mcpServers was the only key and is now empty, delete the file
         file_path.unlink()
         parent = file_path.parent
         if parent.exists() and not any(parent.iterdir()):
-            try:
+            with contextlib.suppress(OSError):
                 parent.rmdir()
-            except OSError:
-                pass
     else:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
@@ -161,10 +151,10 @@ def _remove_project_mcp_server(file_path: Path, server_name: str) -> bool:
 
 def install_plugin(
     target: PluginInstallTarget = PluginInstallTarget.PROJECT,
-    project_dir: Optional[Path] = None,
-    dest_path: Optional[Path] = None,
-    force: bool = True
-) -> List[InstallResult]:
+    project_dir: Path | None = None,
+    dest_path: Path | None = None,
+    force: bool = True,
+) -> list[InstallResult]:
     """Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos)."""
     source_dir = locate_plugin_bundle()
     root = (project_dir or Path.cwd()).resolve()
@@ -180,7 +170,7 @@ def install_plugin(
                 destination=target_path,
                 success=True,
                 message=f"Installed plugin bundle to custom project path: {target_path}",
-                created_files=created
+                created_files=created,
             )
         )
         return results
@@ -206,7 +196,7 @@ def install_plugin(
                     destination=plugin_dir,
                     success=True,
                     message="Installed to project scope .agents/plugins/eidos (agent-plugins.org v1.0.0).",
-                    created_files=created
+                    created_files=created,
                 )
             )
 
@@ -219,7 +209,7 @@ def install_plugin(
                     destination=cursor_config,
                     success=True,
                     message="Configured project MCP server in .cursor/mcp.json.",
-                    created_files=[cursor_config]
+                    created_files=[cursor_config],
                 )
             )
 
@@ -232,7 +222,7 @@ def install_plugin(
                     destination=claude_config,
                     success=True,
                     message="Configured project MCP server in .claude/mcp.json.",
-                    created_files=[claude_config]
+                    created_files=[claude_config],
                 )
             )
 
@@ -241,9 +231,9 @@ def install_plugin(
 
 def uninstall_plugin(
     target: PluginInstallTarget = PluginInstallTarget.PROJECT,
-    project_dir: Optional[Path] = None,
-    dest_path: Optional[Path] = None,
-) -> List[UninstallResult]:
+    project_dir: Path | None = None,
+    dest_path: Path | None = None,
+) -> list[UninstallResult]:
     """Uninstall / remove the Eidos agent plugin strictly from project scope."""
     root = (project_dir or Path.cwd()).resolve()
     results = []
@@ -262,7 +252,7 @@ def uninstall_plugin(
                     destination=target_path,
                     success=True,
                     message=f"Removed custom plugin path: {target_path}",
-                    removed=True
+                    removed=True,
                 )
             )
         else:
@@ -272,7 +262,7 @@ def uninstall_plugin(
                     destination=target_path,
                     success=True,
                     message=f"Custom path '{target_path}' does not exist.",
-                    removed=False
+                    removed=False,
                 )
             )
         return results
@@ -295,16 +285,12 @@ def uninstall_plugin(
                 # Clean up empty parent directories
                 plugins_dir = plugin_dir.parent
                 if plugins_dir.exists() and not any(plugins_dir.iterdir()):
-                    try:
+                    with contextlib.suppress(OSError):
                         plugins_dir.rmdir()
-                    except OSError:
-                        pass
                 agents_dir = plugins_dir.parent
                 if agents_dir.exists() and not any(agents_dir.iterdir()):
-                    try:
+                    with contextlib.suppress(OSError):
                         agents_dir.rmdir()
-                    except OSError:
-                        pass
                 rel = plugin_dir.relative_to(root) if plugin_dir.is_relative_to(root) else plugin_dir
                 results.append(
                     UninstallResult(
@@ -312,7 +298,7 @@ def uninstall_plugin(
                         destination=plugin_dir,
                         success=True,
                         message=f"Removed plugin directory at {rel}.",
-                        removed=True
+                        removed=True,
                     )
                 )
             else:
@@ -323,7 +309,7 @@ def uninstall_plugin(
                         destination=plugin_dir,
                         success=True,
                         message=f"No plugin found at {rel} (already removed).",
-                        removed=False
+                        removed=False,
                     )
                 )
 
@@ -335,8 +321,10 @@ def uninstall_plugin(
                     target="cursor",
                     destination=cursor_config,
                     success=True,
-                    message="Removed 'eidos' from .cursor/mcp.json." if removed else "No 'eidos' entry in .cursor/mcp.json.",
-                    removed=removed
+                    message="Removed 'eidos' from .cursor/mcp.json."
+                    if removed
+                    else "No 'eidos' entry in .cursor/mcp.json.",
+                    removed=removed,
                 )
             )
 
@@ -348,8 +336,10 @@ def uninstall_plugin(
                     target="claude",
                     destination=claude_config,
                     success=True,
-                    message="Removed 'eidos' from .claude/mcp.json." if removed else "No 'eidos' entry in .claude/mcp.json.",
-                    removed=removed
+                    message="Removed 'eidos' from .claude/mcp.json."
+                    if removed
+                    else "No 'eidos' entry in .claude/mcp.json.",
+                    removed=removed,
                 )
             )
 
@@ -358,9 +348,9 @@ def uninstall_plugin(
 
 def update_plugin(
     target: PluginInstallTarget = PluginInstallTarget.PROJECT,
-    project_dir: Optional[Path] = None,
-    dest_path: Optional[Path] = None,
-) -> Tuple[Optional[str], str, List[InstallResult]]:
+    project_dir: Path | None = None,
+    dest_path: Path | None = None,
+) -> tuple[str | None, str, list[InstallResult]]:
     """Update the installed Eidos agent plugin to the latest bundled version.
 
     Returns:

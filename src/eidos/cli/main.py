@@ -2,43 +2,40 @@
 
 import json
 from pathlib import Path
-from typing import Optional
+
 import typer
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 
 import eidos
-from eidos.core.validator import SpecValidator
 from eidos.core.parser import parse_spec_file
-from eidos.mcp.server import run_mcp_server
-from eidos.plugin.validator import validate_plugin_package
-from eidos.plugin.installer import (
-    install_plugin,
-    uninstall_plugin,
-    update_plugin,
-    PluginInstallTarget,
-    locate_plugin_bundle,
-)
-from eidos.plugin.version import (
-    check_plugin_version_status,
-    get_bundled_plugin_version,
-    get_installed_plugin_version,
-)
-
 from eidos.core.scaffolder import (
+    apply_delta,
     create_spec,
     delete_spec,
-    list_specs,
-    list_deltas,
-    apply_delta,
     find_spec_by_id_or_path,
-    sync_delta_views,
     get_delta_status_summary,
     init_repository,
+    list_deltas,
+    list_specs,
+    sync_delta_views,
 )
-from eidos.portal.server import run_portal_server
+from eidos.core.validator import SpecValidator
+from eidos.mcp.server import run_mcp_server
+from eidos.plugin.installer import (
+    PluginInstallTarget,
+    install_plugin,
+    locate_plugin_bundle,
+    uninstall_plugin,
+    update_plugin,
+)
+from eidos.plugin.validator import validate_plugin_package
+from eidos.plugin.version import (
+    check_plugin_version_status,
+)
 from eidos.portal.builder import build_static_portal
+from eidos.portal.server import run_portal_server
 
 app = typer.Typer(
     name="eidos",
@@ -71,7 +68,7 @@ console = Console()
 def info():
     """Display Eidos engine version, bundled schemas, and platform status."""
     validator = SpecValidator()
-    schemas = sorted(set(s for s in validator._schema_cache.keys() if "/" not in s))
+    schemas = sorted({s for s in validator._schema_cache if "/" not in s})
 
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style="bold cyan", justify="right")
@@ -90,18 +87,20 @@ def info():
 
 @app.command("init")
 def init_cmd(
-    target_path: Optional[Path] = typer.Argument(
+    target_path: Path | None = typer.Argument(
         None,
         help="Target project directory to initialize with Eidos (defaults to current directory).",
     ),
-    name: Optional[str] = typer.Option(
+    name: str | None = typer.Option(
         None,
-        "--name", "-n",
+        "--name",
+        "-n",
         help="System identifier (e.g. 'my-app'). Defaults to directory name.",
     ),
-    title: Optional[str] = typer.Option(
+    title: str | None = typer.Option(
         None,
-        "--title", "-t",
+        "--title",
+        "-t",
         help="Human-readable system title (e.g. 'My Application').",
     ),
     with_plugin: bool = typer.Option(
@@ -111,7 +110,8 @@ def init_cmd(
     ),
     force: bool = typer.Option(
         False,
-        "--force", "-f",
+        "--force",
+        "-f",
         help="Force initialization even if eidos/ directory already exists.",
     ),
 ):
@@ -151,10 +151,10 @@ def init_cmd(
 
 @app.command()
 def validate(
-    target_path: Optional[Path] = typer.Argument(
+    target_path: Path | None = typer.Argument(
         None,
         help="Path to the directory containing .adoc specifications (defaults to ./eidos).",
-    )
+    ),
 ):
     """Validate all specification documents against their schemas and verify cross-references."""
     if target_path is None:
@@ -179,7 +179,11 @@ def validate(
 
     for doc in report.documents:
         status_label = "[bold green]PASS[/bold green]" if doc.is_valid else "[bold red]FAIL[/bold red]"
-        rel_path = str(doc.file_path.relative_to(Path.cwd())) if doc.file_path.is_relative_to(Path.cwd()) else str(doc.file_path)
+        rel_path = (
+            str(doc.file_path.relative_to(Path.cwd()))
+            if doc.file_path.is_relative_to(Path.cwd())
+            else str(doc.file_path)
+        )
         table.add_row(doc.doc_id, doc.doc_type, status_label, rel_path)
 
     console.print(table)
@@ -204,10 +208,10 @@ def validate(
 
 @app.command("lint")
 def lint_cmd(
-    target_path: Optional[Path] = typer.Argument(
+    target_path: Path | None = typer.Argument(
         None,
         help="Path to directory containing .adoc specifications (defaults to ./eidos).",
-    )
+    ),
 ):
     """Lint and validate all specification documents against schemas and link integrity."""
     validate(target_path)
@@ -215,14 +219,16 @@ def lint_cmd(
 
 @app.command("serve")
 def serve_cmd(
-    target_path: Optional[Path] = typer.Option(
+    target_path: Path | None = typer.Option(
         None,
-        "--path", "-p",
+        "--path",
+        "-p",
         help="Path to directory containing .adoc specifications (defaults to ./eidos).",
     ),
     host: str = typer.Option(
         "127.0.0.1",
-        "--host", "-h",
+        "--host",
+        "-h",
         help="Host interface to bind the portal server to.",
     ),
     port: int = typer.Option(
@@ -247,14 +253,16 @@ def serve_cmd(
 
 @app.command("build-site")
 def build_site_cmd(
-    target_path: Optional[Path] = typer.Option(
+    target_path: Path | None = typer.Option(
         None,
-        "--path", "-p",
+        "--path",
+        "-p",
         help="Path to directory containing .adoc specifications (defaults to ./eidos).",
     ),
     out_dir: Path = typer.Option(
         Path("site"),
-        "--out", "-o",
+        "--out",
+        "-o",
         help="Target output directory for the static site (defaults to ./site).",
     ),
 ):
@@ -272,10 +280,10 @@ def build_site_cmd(
 
 @app.command()
 def components(
-    target_path: Optional[Path] = typer.Argument(
+    target_path: Path | None = typer.Argument(
         None,
         help="Path to scan for component manifests (defaults to eidos/architecture).",
-    )
+    ),
 ):
     """List all C4 components, internal modules, dependencies, and monorepo package mappings."""
     search_dir = target_path or Path("eidos/architecture")
@@ -327,21 +335,25 @@ def mcp():
 # Spec Living Specifications Management Commands
 # -------------------------------------------------------------------------
 
+
 @spec_app.command("list")
 def spec_list_cmd(
     path: Path = typer.Option(
         Path("eidos"),
-        "--path", "-p",
+        "--path",
+        "-p",
         help="Path to eidos specifications directory.",
     ),
-    type_filter: Optional[str] = typer.Option(
+    type_filter: str | None = typer.Option(
         None,
-        "--type", "-t",
+        "--type",
+        "-t",
         help="Filter by spec type (capability, policy, contract, component, domain, persona, delta).",
     ),
-    status_filter: Optional[str] = typer.Option(
+    status_filter: str | None = typer.Option(
         None,
-        "--status", "-s",
+        "--status",
+        "-s",
         help="Filter by status (active, draft, proposed, applied).",
     ),
 ):
@@ -377,7 +389,8 @@ def spec_show_cmd(
     ),
     path: Path = typer.Option(
         Path("eidos"),
-        "--path", "-p",
+        "--path",
+        "-p",
         help="Path to eidos specifications directory.",
     ),
 ):
@@ -413,37 +426,44 @@ def spec_create_cmd(
     ),
     title: str = typer.Option(
         ...,
-        "--title", "-t",
+        "--title",
+        "-t",
         help="Human-readable title for the specification document.",
     ),
     path: Path = typer.Option(
         Path("eidos"),
-        "--path", "-p",
+        "--path",
+        "-p",
         help="Path to eidos specifications directory.",
     ),
-    domain: Optional[str] = typer.Option(
+    domain: str | None = typer.Option(
         None,
-        "--domain", "-d",
+        "--domain",
+        "-d",
         help="Parent domain ID for capabilities (e.g. DOM-PRODUCT-CORE).",
     ),
     kind: str = typer.Option(
         "feature_addition",
-        "--kind", "-k",
+        "--kind",
+        "-k",
         help="Mutation kind for SpecDeltas (feature_addition, bugfix, refactor, modification).",
     ),
     motivation: str = typer.Option(
         "Proposed specification change.",
-        "--motivation", "-m",
+        "--motivation",
+        "-m",
         help="Motivation/problem statement for deltas.",
     ),
     category: str = typer.Option(
         "governance",
-        "--category", "-c",
+        "--category",
+        "-c",
         help="Category for policies (governance, architectural, security, testing).",
     ),
     rule: str = typer.Option(
         "Authoritative rule statement.",
-        "--rule", "-r",
+        "--rule",
+        "-r",
         help="Rule statement for policies.",
     ),
     protocol: str = typer.Option(
@@ -456,12 +476,12 @@ def spec_create_cmd(
         "--owning-component",
         help="Owning component ID for contracts.",
     ),
-    client_id: Optional[str] = typer.Option(
+    client_id: str | None = typer.Option(
         None,
         "--client",
         help="Client or brand identifier for client-specific design systems (e.g. acme).",
     ),
-    extends_system: Optional[str] = typer.Option(
+    extends_system: str | None = typer.Option(
         None,
         "--extends",
         help="Base design system ID or path to extend (e.g. DS-CORE).",
@@ -476,7 +496,7 @@ def spec_create_cmd(
         "--system",
         help="Owning design system ID for UI components.",
     ),
-    implements_component: Optional[str] = typer.Option(
+    implements_component: str | None = typer.Option(
         None,
         "--implements",
         help="Base component ID being overridden/specialized by a UI component.",
@@ -503,11 +523,13 @@ def spec_create_cmd(
             implements_component=implements_component,
         )
         rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
-        console.print(f"[bold green]✓ Created and validated specification ({doc_id}):[/bold green] [bold]{dest_file.name}[/bold]")
+        console.print(
+            f"[bold green]✓ Created and validated specification ({doc_id}):[/bold green] [bold]{dest_file.name}[/bold]"
+        )
         console.print(f"  [dim]Location: {rel}[/dim]")
     except Exception as e:
         console.print(f"[bold red]Failed to create specification:[/bold red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @spec_app.command("delete")
@@ -518,12 +540,14 @@ def spec_delete_cmd(
     ),
     path: Path = typer.Option(
         Path("eidos"),
-        "--path", "-p",
+        "--path",
+        "-p",
         help="Path to eidos specifications directory.",
     ),
     force: bool = typer.Option(
         False,
-        "--force", "-f",
+        "--force",
+        "-f",
         help="Force deletion even if other specifications reference this document.",
     ),
 ):
@@ -547,16 +571,19 @@ def spec_delete_cmd(
 # SpecDelta Lifecycle Management Commands
 # -------------------------------------------------------------------------
 
+
 @delta_app.command("list")
 def delta_list_cmd(
     path: Path = typer.Option(
         Path("eidos"),
-        "--path", "-p",
+        "--path",
+        "-p",
         help="Path to eidos directory.",
     ),
-    status_filter: Optional[str] = typer.Option(
+    status_filter: str | None = typer.Option(
         None,
-        "--status", "-s",
+        "--status",
+        "-s",
         help="Filter deltas by status (e.g. proposed, in_review, applied, rejected).",
     ),
 ):
@@ -595,22 +622,26 @@ def delta_create_cmd(
     ),
     title: str = typer.Option(
         ...,
-        "--title", "-t",
+        "--title",
+        "-t",
         help="Title of the proposed change.",
     ),
     kind: str = typer.Option(
         "feature_addition",
-        "--kind", "-k",
+        "--kind",
+        "-k",
         help="Mutation kind: feature_addition, bugfix, refactor, modification, feature_removal.",
     ),
     motivation: str = typer.Option(
         "Problem statement and motivation.",
-        "--motivation", "-m",
+        "--motivation",
+        "-m",
         help="Problem statement and motivation.",
     ),
     path: Path = typer.Option(
         Path("eidos"),
-        "--path", "-p",
+        "--path",
+        "-p",
         help="Path to eidos directory.",
     ),
 ):
@@ -627,11 +658,11 @@ def delta_create_cmd(
         rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
         console.print(f"[bold green]✓ Created SpecDelta:[/bold green] [bold]{dest_file.name}[/bold]")
         console.print(f"  [dim]Location: {rel}[/dim]")
-        console.print(f"  [dim]Status: proposed (symlinked in eidos/deltas/by-status/active/ and proposed/)[/dim]")
+        console.print("  [dim]Status: proposed (symlinked in eidos/deltas/by-status/active/ and proposed/)[/dim]")
         console.print(f"  [dim]Next step: Edit mutations in {rel} and update living specs.[/dim]")
     except Exception as e:
         console.print(f"[bold red]Failed to create SpecDelta:[/bold red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @delta_app.command("apply")
@@ -642,7 +673,8 @@ def delta_apply_cmd(
     ),
     path: Path = typer.Option(
         Path("eidos"),
-        "--path", "-p",
+        "--path",
+        "-p",
         help="Path to eidos directory.",
     ),
 ):
@@ -663,7 +695,8 @@ def delta_apply_cmd(
 def delta_status_cmd(
     path: Path = typer.Option(
         Path("eidos"),
-        "--path", "-p",
+        "--path",
+        "-p",
         help="Path to eidos directory.",
     ),
 ):
@@ -683,18 +716,18 @@ def delta_status_cmd(
 
     summary_table.add_row("Proposed", str(len(by_status.get("proposed", []))), "Draft mutations awaiting review")
     summary_table.add_row("In Review", str(len(by_status.get("in_review", []))), "Under review by team or agents")
-    summary_table.add_row("Approved", str(len(by_status.get("approved", []))), "Approved, awaiting implementation/merge")
+    summary_table.add_row(
+        "Approved", str(len(by_status.get("approved", []))), "Approved, awaiting implementation/merge"
+    )
     summary_table.add_row("Applied", str(len(by_status.get("applied", []))), "Reconciled into living specifications")
     summary_table.add_row("Rejected", str(len(by_status.get("rejected", []))), "Abandoned or rejected proposals")
-    summary_table.add_row("In-Flight (Active)", f"[bold yellow]{active_count}[/bold yellow]", "Total active/unmerged deltas")
+    summary_table.add_row(
+        "In-Flight (Active)", f"[bold yellow]{active_count}[/bold yellow]", "Total active/unmerged deltas"
+    )
 
     console.print(summary_table)
 
-    active_deltas = (
-        by_status.get("proposed", [])
-        + by_status.get("in_review", [])
-        + by_status.get("approved", [])
-    )
+    active_deltas = by_status.get("proposed", []) + by_status.get("in_review", []) + by_status.get("approved", [])
     if active_deltas:
         console.print("\n[bold yellow]In-Flight SpecDeltas:[/bold yellow]")
         active_table = Table(show_header=True)
@@ -716,7 +749,8 @@ def delta_status_cmd(
 def delta_sync_views_cmd(
     path: Path = typer.Option(
         Path("eidos"),
-        "--path", "-p",
+        "--path",
+        "-p",
         help="Path to eidos directory.",
     ),
 ):
@@ -739,12 +773,14 @@ def delta_delete_cmd(
     ),
     path: Path = typer.Option(
         Path("eidos"),
-        "--path", "-p",
+        "--path",
+        "-p",
         help="Path to eidos directory.",
     ),
     force: bool = typer.Option(
         False,
-        "--force", "-f",
+        "--force",
+        "-f",
         help="Force deletion.",
     ),
 ):
@@ -760,13 +796,16 @@ def delta_delete_cmd(
 # Top-Level Convenience Shortcuts
 # -------------------------------------------------------------------------
 
+
 @app.command("create")
 def create_shortcut(
-    doc_type: str = typer.Argument(..., help="Specification type: capability, domain, policy, contract, component, persona, delta."),
+    doc_type: str = typer.Argument(
+        ..., help="Specification type: capability, domain, policy, contract, component, persona, delta."
+    ),
     doc_id: str = typer.Argument(..., help="Document ID (e.g. CAP-AUTH-001, POL-002, DLT-2026-002)."),
     title: str = typer.Option(..., "--title", "-t", help="Title of the document."),
     path: Path = typer.Option(Path("eidos"), "--path", "-p", help="Path to eidos specifications directory."),
-    domain: Optional[str] = typer.Option(None, "--domain", "-d", help="Parent domain for capabilities."),
+    domain: str | None = typer.Option(None, "--domain", "-d", help="Parent domain for capabilities."),
     kind: str = typer.Option("feature_addition", "--kind", "-k", help="Mutation kind for deltas."),
     motivation: str = typer.Option("Motivation statement.", "--motivation", "-m", help="Motivation statement."),
     category: str = typer.Option("governance", "--category", "-c", help="Category for policies."),
@@ -799,8 +838,8 @@ def delete_shortcut(
 @app.command("list")
 def list_shortcut(
     path: Path = typer.Option(Path("eidos"), "--path", "-p", help="Path to eidos specifications directory."),
-    type_filter: Optional[str] = typer.Option(None, "--type", "-t", help="Filter by type."),
-    status_filter: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status."),
+    type_filter: str | None = typer.Option(None, "--type", "-t", help="Filter by type."),
+    status_filter: str | None = typer.Option(None, "--status", "-s", help="Filter by status."),
 ):
     """Shortcut to list all living specifications."""
     spec_list_cmd(path=path, type_filter=type_filter, status_filter=status_filter)
@@ -810,17 +849,20 @@ def list_shortcut(
 def plugin_install(
     target: PluginInstallTarget = typer.Option(
         PluginInstallTarget.PROJECT,
-        "--target", "-t",
+        "--target",
+        "-t",
         help="Installation target in project scope: project, workspace, antigravity, cursor, claude, all.",
     ),
-    project_dir: Optional[Path] = typer.Option(
+    project_dir: Path | None = typer.Option(
         None,
-        "--project-dir", "-p",
+        "--project-dir",
+        "-p",
         help="Root directory of the project (defaults to current working directory).",
     ),
-    dest: Optional[Path] = typer.Option(
+    dest: Path | None = typer.Option(
         None,
-        "--dest", "-d",
+        "--dest",
+        "-d",
         help="Custom destination directory within the project.",
     ),
     force: bool = typer.Option(
@@ -830,7 +872,9 @@ def plugin_install(
     ),
 ):
     """Install the Eidos agent plugin strictly inside project scope (workspace)."""
-    console.print(f"[bold cyan]Installing Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{target.value}[/bold green])...\n")
+    console.print(
+        f"[bold cyan]Installing Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{target.value}[/bold green])...\n"
+    )
 
     try:
         results = install_plugin(target=target, project_dir=project_dir, dest_path=dest, force=force)
@@ -845,29 +889,34 @@ def plugin_install(
         console.print("AI agents can now discover Eidos living specifications, C4 architectures, and MCP tools.\n")
     except Exception as e:
         console.print(f"[bold red]Installation Failed:[/bold red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @plugin_app.command("uninstall")
 def plugin_uninstall(
     target: PluginInstallTarget = typer.Option(
         PluginInstallTarget.PROJECT,
-        "--target", "-t",
+        "--target",
+        "-t",
         help="Target to remove in project scope: project, workspace, antigravity, cursor, claude, all.",
     ),
-    project_dir: Optional[Path] = typer.Option(
+    project_dir: Path | None = typer.Option(
         None,
-        "--project-dir", "-p",
+        "--project-dir",
+        "-p",
         help="Root directory of the project (defaults to current working directory).",
     ),
-    dest: Optional[Path] = typer.Option(
+    dest: Path | None = typer.Option(
         None,
-        "--dest", "-d",
+        "--dest",
+        "-d",
         help="Custom destination directory within the project to remove.",
     ),
 ):
     """Uninstall / remove the Eidos agent plugin from project scope."""
-    console.print(f"[bold cyan]Uninstalling Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{target.value}[/bold green])...\n")
+    console.print(
+        f"[bold cyan]Uninstalling Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{target.value}[/bold green])...\n"
+    )
 
     try:
         results = uninstall_plugin(target=target, project_dir=project_dir, dest_path=dest)
@@ -880,24 +929,27 @@ def plugin_uninstall(
         console.print("\n[bold green]Success![/bold green] Plugin cleanup complete.")
     except Exception as e:
         console.print(f"[bold red]Uninstall Failed:[/bold red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @plugin_app.command("remove")
 def plugin_remove(
     target: PluginInstallTarget = typer.Option(
         PluginInstallTarget.PROJECT,
-        "--target", "-t",
+        "--target",
+        "-t",
         help="Target to remove in project scope: project, workspace, antigravity, cursor, claude, all.",
     ),
-    project_dir: Optional[Path] = typer.Option(
+    project_dir: Path | None = typer.Option(
         None,
-        "--project-dir", "-p",
+        "--project-dir",
+        "-p",
         help="Root directory of the project (defaults to current working directory).",
     ),
-    dest: Optional[Path] = typer.Option(
+    dest: Path | None = typer.Option(
         None,
-        "--dest", "-d",
+        "--dest",
+        "-d",
         help="Custom destination directory within the project to remove.",
     ),
 ):
@@ -907,14 +959,16 @@ def plugin_remove(
 
 @plugin_app.command("version")
 def plugin_version(
-    project_dir: Optional[Path] = typer.Option(
+    project_dir: Path | None = typer.Option(
         None,
-        "--project-dir", "-p",
+        "--project-dir",
+        "-p",
         help="Root directory of the project (defaults to current working directory).",
     ),
-    dest: Optional[Path] = typer.Option(
+    dest: Path | None = typer.Option(
         None,
-        "--dest", "-d",
+        "--dest",
+        "-d",
         help="Custom plugin directory within the project to inspect.",
     ),
 ):
@@ -952,38 +1006,43 @@ def plugin_version(
     console.print(table)
 
     if status == "outdated":
-        console.print("\n[bold yellow]Update Available:[/bold yellow] Run [bold green]eidos plugin update[/bold green] to upgrade to the latest bundled version.\n")
+        console.print(
+            "\n[bold yellow]Update Available:[/bold yellow] Run [bold green]eidos plugin update[/bold green] to upgrade to the latest bundled version.\n"
+        )
     elif status == "not_installed":
-        console.print("\n[dim]Note:[/dim] Run [bold green]eidos plugin install[/bold green] to install the plugin into this project.\n")
+        console.print(
+            "\n[dim]Note:[/dim] Run [bold green]eidos plugin install[/bold green] to install the plugin into this project.\n"
+        )
 
 
 @plugin_app.command("update")
 def plugin_update(
     target: PluginInstallTarget = typer.Option(
         PluginInstallTarget.PROJECT,
-        "--target", "-t",
+        "--target",
+        "-t",
         help="Target to update in project scope: project, workspace, antigravity, cursor, claude, all.",
     ),
-    project_dir: Optional[Path] = typer.Option(
+    project_dir: Path | None = typer.Option(
         None,
-        "--project-dir", "-p",
+        "--project-dir",
+        "-p",
         help="Root directory of the project (defaults to current working directory).",
     ),
-    dest: Optional[Path] = typer.Option(
+    dest: Path | None = typer.Option(
         None,
-        "--dest", "-d",
+        "--dest",
+        "-d",
         help="Custom destination directory within the project to update.",
     ),
 ):
     """Update project-scoped Agent Plugin to the latest bundled version."""
-    console.print(f"[bold cyan]Updating Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{target.value}[/bold green])...\n")
+    console.print(
+        f"[bold cyan]Updating Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{target.value}[/bold green])...\n"
+    )
 
     try:
-        prev_ver, current_ver, results = update_plugin(
-            target=target,
-            project_dir=project_dir,
-            dest_path=dest
-        )
+        prev_ver, current_ver, results = update_plugin(target=target, project_dir=project_dir, dest_path=dest)
         for res in results:
             if res.success:
                 console.print(f"[bold green]✓[/bold green] [bold]{res.target.upper()}:[/bold] {res.message}")
@@ -991,31 +1050,40 @@ def plugin_update(
                 console.print(f"[bold red]✗[/bold red] [bold]{res.target.upper()}:[/bold] {res.message}")
 
         if prev_ver is None:
-            console.print(f"\n[bold green]Success![/bold green] Installed Eidos Agent Plugin at [bold cyan]v{current_ver}[/bold cyan].\n")
+            console.print(
+                f"\n[bold green]Success![/bold green] Installed Eidos Agent Plugin at [bold cyan]v{current_ver}[/bold cyan].\n"
+            )
         elif prev_ver == current_ver:
-            console.print(f"\n[bold green]Success![/bold green] Plugin is already at latest version [bold cyan]v{current_ver}[/bold cyan] (files refreshed).\n")
+            console.print(
+                f"\n[bold green]Success![/bold green] Plugin is already at latest version [bold cyan]v{current_ver}[/bold cyan] (files refreshed).\n"
+            )
         else:
-            console.print(f"\n[bold green]Success![/bold green] Upgraded Eidos Agent Plugin from [bold yellow]v{prev_ver}[/bold yellow] to [bold cyan]v{current_ver}[/bold cyan]!\n")
+            console.print(
+                f"\n[bold green]Success![/bold green] Upgraded Eidos Agent Plugin from [bold yellow]v{prev_ver}[/bold yellow] to [bold cyan]v{current_ver}[/bold cyan]!\n"
+            )
     except Exception as e:
         console.print(f"[bold red]Update Failed:[/bold red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @plugin_app.command("upgrade")
 def plugin_upgrade(
     target: PluginInstallTarget = typer.Option(
         PluginInstallTarget.PROJECT,
-        "--target", "-t",
+        "--target",
+        "-t",
         help="Target to update in project scope: project, workspace, antigravity, cursor, claude, all.",
     ),
-    project_dir: Optional[Path] = typer.Option(
+    project_dir: Path | None = typer.Option(
         None,
-        "--project-dir", "-p",
+        "--project-dir",
+        "-p",
         help="Root directory of the project (defaults to current working directory).",
     ),
-    dest: Optional[Path] = typer.Option(
+    dest: Path | None = typer.Option(
         None,
-        "--dest", "-d",
+        "--dest",
+        "-d",
         help="Custom destination directory within the project to update.",
     ),
 ):
@@ -1023,13 +1091,12 @@ def plugin_upgrade(
     plugin_update(target=target, project_dir=project_dir, dest=dest)
 
 
-
 @plugin_app.command("validate")
 def plugin_validate(
-    plugin_path: Optional[Path] = typer.Argument(
+    plugin_path: Path | None = typer.Argument(
         None,
         help="Path to plugin directory (defaults to assets/plugin_reference or bundled).",
-    )
+    ),
 ):
     """Validate an Agent Plugin against agent-plugins.org v1.0.0 and agentskills.io specifications."""
     target_dir = plugin_path
@@ -1048,7 +1115,10 @@ def plugin_validate(
 
     table.add_row("Plugin Name", str(report.plugin_name or "N/A"))
     table.add_row("Plugin Version", str(report.plugin_version or "N/A"))
-    table.add_row("Overall Status", "[bold green]CONFORMANT[/bold green]" if report.is_valid else "[bold red]NON-CONFORMANT[/bold red]")
+    table.add_row(
+        "Overall Status",
+        "[bold green]CONFORMANT[/bold green]" if report.is_valid else "[bold red]NON-CONFORMANT[/bold red]",
+    )
     table.add_row("Discovered Skills", ", ".join(report.skills) if report.skills else "None")
     table.add_row("Configured MCP Servers", ", ".join(report.mcp_servers) if report.mcp_servers else "None")
     table.add_row("Lifecycle Hooks", ", ".join(report.hooks) if report.hooks else "None")
@@ -1072,10 +1142,10 @@ def plugin_validate(
 
 @plugin_app.command("info")
 def plugin_info(
-    plugin_path: Optional[Path] = typer.Argument(
+    plugin_path: Path | None = typer.Argument(
         None,
         help="Path to plugin directory (defaults to assets/plugin_reference or bundled).",
-    )
+    ),
 ):
     """Display metadata and configuration for the Eidos Agent Plugin."""
     target_dir = plugin_path
@@ -1089,7 +1159,7 @@ def plugin_info(
     manifest_file = target_dir / "plugin.json"
     manifest_data = {}
     if manifest_file.exists():
-        with open(manifest_file, "r", encoding="utf-8") as f:
+        with open(manifest_file, encoding="utf-8") as f:
             manifest_data = json.load(f)
 
     grid = Table.grid(padding=(0, 2))

@@ -1,2 +1,1 @@
 """Eidos test suite."""
-

@@ -3,7 +3,8 @@
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
+
 import eidos
 
 # Official SemVer 2.0.0 Regular Expression (RFC 3986 / semver.org)
@@ -21,7 +22,7 @@ def is_valid_semver(version: str) -> bool:
     return bool(SEMVER_PATTERN.match(version.strip()))
 
 
-def parse_semver(version: str) -> Optional[Tuple[int, int, int, Optional[str], Optional[str]]]:
+def parse_semver(version: str) -> tuple[int, int, int, str | None, str | None] | None:
     """Parse a SemVer string into (major, minor, patch, prerelease, build)."""
     if not isinstance(version, str):
         return None
@@ -67,7 +68,7 @@ def compare_semver(v1: str, v2: str) -> int:
     # Both have pre-release strings
     parts1 = p1[3].split(".")
     parts2 = p2[3].split(".")
-    for part1, part2 in zip(parts1, parts2):
+    for part1, part2 in zip(parts1, parts2, strict=False):
         if part1 == part2:
             continue
         is_num1, is_num2 = part1.isdigit(), part2.isdigit()
@@ -93,7 +94,7 @@ def get_bundled_plugin_version() -> str:
     pkg_bundle = Path(__file__).parent.parent / "plugin_bundle" / "plugin.json"
     if pkg_bundle.exists():
         try:
-            with open(pkg_bundle, "r", encoding="utf-8") as f:
+            with open(pkg_bundle, encoding="utf-8") as f:
                 data = json.load(f)
                 v = data.get("version")
                 if v and is_valid_semver(v):
@@ -108,10 +109,7 @@ def get_bundled_plugin_version() -> str:
     return "0.1.0"
 
 
-def get_installed_plugin_version(
-    project_dir: Optional[Path] = None,
-    dest_path: Optional[Path] = None
-) -> Optional[str]:
+def get_installed_plugin_version(project_dir: Path | None = None, dest_path: Path | None = None) -> str | None:
     """Retrieve installed plugin version from project scope or custom destination."""
     root = (project_dir or Path.cwd()).resolve()
     if dest_path is not None:
@@ -123,17 +121,14 @@ def get_installed_plugin_version(
     if not manifest_path.exists():
         return None
     try:
-        with open(manifest_path, "r", encoding="utf-8") as f:
+        with open(manifest_path, encoding="utf-8") as f:
             data = json.load(f)
             return data.get("version")
     except Exception:
         return None
 
 
-def check_plugin_version_status(
-    project_dir: Optional[Path] = None,
-    dest_path: Optional[Path] = None
-) -> Dict[str, Any]:
+def check_plugin_version_status(project_dir: Path | None = None, dest_path: Path | None = None) -> dict[str, Any]:
     """Check version status between bundled plugin and installed project plugin."""
     root = (project_dir or Path.cwd()).resolve()
     if dest_path is not None:

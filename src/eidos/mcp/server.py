@@ -3,18 +3,18 @@
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import eidos
-from eidos.core.validator import SpecValidator
 from eidos.core.parser import parse_spec_file
 from eidos.core.scaffolder import (
+    apply_delta,
     create_spec,
     delete_spec,
-    list_specs,
-    apply_delta,
     init_repository,
+    list_specs,
 )
+from eidos.core.validator import SpecValidator
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
@@ -27,18 +27,15 @@ TOOLS = [
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Relative or absolute directory path containing specifications (defaults to 'eidos')."
+                    "description": "Relative or absolute directory path containing specifications (defaults to 'eidos').",
                 }
-            }
-        }
+            },
+        },
     },
     {
         "name": "eidos_info",
         "description": "Get Eidos engine version, loaded v1 schemas, supported platforms, and available agent adapters.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {}
-        }
+        "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "eidos_list_components",
@@ -48,10 +45,10 @@ TOOLS = [
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Path to scan for component manifests (defaults to 'eidos/architecture/components')."
+                    "description": "Path to scan for component manifests (defaults to 'eidos/architecture/components').",
                 }
-            }
-        }
+            },
+        },
     },
     {
         "name": "eidos_create_delta",
@@ -60,24 +57,15 @@ TOOLS = [
             "type": "object",
             "required": ["delta_id", "title", "kind", "motivation"],
             "properties": {
-                "delta_id": {
-                    "type": "string",
-                    "description": "Unique delta ID (e.g. 'DLT-2026-001')."
-                },
-                "title": {
-                    "type": "string",
-                    "description": "Short title describing the change."
-                },
+                "delta_id": {"type": "string", "description": "Unique delta ID (e.g. 'DLT-2026-001')."},
+                "title": {"type": "string", "description": "Short title describing the change."},
                 "kind": {
                     "type": "string",
-                    "description": "Nature of change: feature_addition, bugfix, modification, feature_removal, refactor."
+                    "description": "Nature of change: feature_addition, bugfix, modification, feature_removal, refactor.",
                 },
-                "motivation": {
-                    "type": "string",
-                    "description": "Why this change is needed."
-                }
-            }
-        }
+                "motivation": {"type": "string", "description": "Why this change is needed."},
+            },
+        },
     },
     {
         "name": "eidos_read_spec",
@@ -86,12 +74,9 @@ TOOLS = [
             "type": "object",
             "required": ["path"],
             "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Relative or absolute path to the .adoc specification file."
-                }
-            }
-        }
+                "path": {"type": "string", "description": "Relative or absolute path to the .adoc specification file."}
+            },
+        },
     },
     {
         "name": "eidos_list_specs",
@@ -99,20 +84,14 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to specifications directory (defaults to 'eidos')."
-                },
+                "path": {"type": "string", "description": "Path to specifications directory (defaults to 'eidos')."},
                 "type": {
                     "type": "string",
-                    "description": "Filter by type (capability, policy, contract, component, domain, persona, delta)."
+                    "description": "Filter by type (capability, policy, contract, component, domain, persona, delta).",
                 },
-                "status": {
-                    "type": "string",
-                    "description": "Filter by status (active, draft, proposed, applied)."
-                }
-            }
-        }
+                "status": {"type": "string", "description": "Filter by status (active, draft, proposed, applied)."},
+            },
+        },
     },
     {
         "name": "eidos_create_spec",
@@ -123,62 +102,38 @@ TOOLS = [
             "properties": {
                 "type": {
                     "type": "string",
-                    "description": "Specification type: capability, policy, contract, component, domain, persona, delta, exploration, design-system, ui-component, screen."
+                    "description": "Specification type: capability, policy, contract, component, domain, persona, delta, exploration, design-system, ui-component, screen.",
                 },
                 "id": {
                     "type": "string",
-                    "description": "Unique identifier (e.g. 'CAP-AUTH-001', 'POL-003', 'DS-CORE', 'UIC-BUTTON', 'SCR-CHECKOUT')."
+                    "description": "Unique identifier (e.g. 'CAP-AUTH-001', 'POL-003', 'DS-CORE', 'UIC-BUTTON', 'SCR-CHECKOUT').",
                 },
-                "title": {
-                    "type": "string",
-                    "description": "Human-readable title."
-                },
+                "title": {"type": "string", "description": "Human-readable title."},
                 "domain": {
                     "type": "string",
-                    "description": "Parent domain ID for capabilities (e.g. 'DOM-PRODUCT-CORE')."
+                    "description": "Parent domain ID for capabilities (e.g. 'DOM-PRODUCT-CORE').",
                 },
-                "path": {
-                    "type": "string",
-                    "description": "Path to specifications directory (defaults to 'eidos')."
-                },
-                "kind": {
-                    "type": "string",
-                    "description": "Mutation kind for SpecDeltas."
-                },
-                "motivation": {
-                    "type": "string",
-                    "description": "Motivation / problem statement."
-                },
-                "category": {
-                    "type": "string",
-                    "description": "Category for policies."
-                },
-                "rule": {
-                    "type": "string",
-                    "description": "Rule statement for policies."
-                },
+                "path": {"type": "string", "description": "Path to specifications directory (defaults to 'eidos')."},
+                "kind": {"type": "string", "description": "Mutation kind for SpecDeltas."},
+                "motivation": {"type": "string", "description": "Motivation / problem statement."},
+                "category": {"type": "string", "description": "Category for policies."},
+                "rule": {"type": "string", "description": "Rule statement for policies."},
                 "client_id": {
                     "type": "string",
-                    "description": "Client or brand identifier for client-specific design systems (e.g. 'acme')."
+                    "description": "Client or brand identifier for client-specific design systems (e.g. 'acme').",
                 },
                 "extends_system": {
                     "type": "string",
-                    "description": "Base design system ID or path to extend (e.g. 'DS-CORE')."
+                    "description": "Base design system ID or path to extend (e.g. 'DS-CORE').",
                 },
-                "route": {
-                    "type": "string",
-                    "description": "URL route or screen identifier for screens."
-                },
-                "design_system": {
-                    "type": "string",
-                    "description": "Owning design system ID for UI components."
-                },
+                "route": {"type": "string", "description": "URL route or screen identifier for screens."},
+                "design_system": {"type": "string", "description": "Owning design system ID for UI components."},
                 "implements_component": {
                     "type": "string",
-                    "description": "Base component ID being overridden/specialized by a UI component."
-                }
-            }
-        }
+                    "description": "Base component ID being overridden/specialized by a UI component.",
+                },
+            },
+        },
     },
     {
         "name": "eidos_delete_spec",
@@ -187,20 +142,14 @@ TOOLS = [
             "type": "object",
             "required": ["target"],
             "properties": {
-                "target": {
-                    "type": "string",
-                    "description": "Document ID, path, or filename to delete."
-                },
-                "path": {
-                    "type": "string",
-                    "description": "Path to specifications directory (defaults to 'eidos')."
-                },
+                "target": {"type": "string", "description": "Document ID, path, or filename to delete."},
+                "path": {"type": "string", "description": "Path to specifications directory (defaults to 'eidos')."},
                 "force": {
                     "type": "boolean",
-                    "description": "Force deletion even if references exist (defaults to false)."
-                }
-            }
-        }
+                    "description": "Force deletion even if references exist (defaults to false).",
+                },
+            },
+        },
     },
     {
         "name": "eidos_apply_delta",
@@ -209,16 +158,10 @@ TOOLS = [
             "type": "object",
             "required": ["target"],
             "properties": {
-                "target": {
-                    "type": "string",
-                    "description": "Delta ID, path, or filename of the SpecDelta to apply."
-                },
-                "path": {
-                    "type": "string",
-                    "description": "Path to specifications directory (defaults to 'eidos')."
-                }
-            }
-        }
+                "target": {"type": "string", "description": "Delta ID, path, or filename of the SpecDelta to apply."},
+                "path": {"type": "string", "description": "Path to specifications directory (defaults to 'eidos')."},
+            },
+        },
     },
     {
         "name": "eidos_init_repo",
@@ -228,44 +171,35 @@ TOOLS = [
             "properties": {
                 "project_dir": {
                     "type": "string",
-                    "description": "Project root directory (defaults to current working directory '.')."
+                    "description": "Project root directory (defaults to current working directory '.').",
                 },
-                "name": {
-                    "type": "string",
-                    "description": "Machine-readable name of the system/project."
-                },
-                "title": {
-                    "type": "string",
-                    "description": "Human-readable title of the system/project."
-                },
+                "name": {"type": "string", "description": "Machine-readable name of the system/project."},
+                "title": {"type": "string", "description": "Human-readable title of the system/project."},
                 "eidos_dir_name": {
                     "type": "string",
-                    "description": "Directory name for specifications (defaults to 'eidos')."
+                    "description": "Directory name for specifications (defaults to 'eidos').",
                 },
                 "with_plugin": {
                     "type": "boolean",
-                    "description": "Automatically install Eidos agent plugin into project (defaults to true)."
+                    "description": "Automatically install Eidos agent plugin into project (defaults to true).",
                 },
-                "force": {
-                    "type": "boolean",
-                    "description": "Overwrite existing files if present (defaults to false)."
-                }
-            }
-        }
-    }
+                "force": {"type": "boolean", "description": "Overwrite existing files if present (defaults to false)."},
+            },
+        },
+    },
 ]
 
 
-def handle_tool_call(name: str, arguments: Dict[str, Any]) -> List[Dict[str, Any]]:
+def handle_tool_call(name: str, arguments: dict[str, Any]) -> list[dict[str, Any]]:
     """Execute an MCP tool and return content blocks."""
     if name == "eidos_info":
         validator = SpecValidator()
-        schemas = sorted(set(s for s in validator._schema_cache.keys() if "/" in s))
+        schemas = sorted({s for s in validator._schema_cache if "/" in s})
         payload = {
             "engine_version": eidos.__version__,
             "bundled_schemas": schemas,
             "supported_vcs": ["GitHub", "GitLab"],
-            "supported_agents": ["Antigravity (agy)", "Claude Code", "OpenAI Codex", "Copilot"]
+            "supported_agents": ["Antigravity (agy)", "Claude Code", "OpenAI Codex", "Copilot"],
         }
         return [{"type": "text", "text": json.dumps(payload, indent=2)}]
 
@@ -282,16 +216,10 @@ def handle_tool_call(name: str, arguments: Dict[str, Any]) -> List[Dict[str, Any
             "valid_documents": report.valid_docs,
             "is_clean": report.is_clean,
             "documents": [
-                {
-                    "id": d.doc_id,
-                    "type": d.doc_type,
-                    "valid": d.is_valid,
-                    "path": str(d.file_path),
-                    "errors": d.errors
-                }
+                {"id": d.doc_id, "type": d.doc_type, "valid": d.is_valid, "path": str(d.file_path), "errors": d.errors}
                 for d in report.documents
             ],
-            "broken_references": report.broken_references
+            "broken_references": report.broken_references,
         }
         return [{"type": "text", "text": json.dumps(res, indent=2)}]
 
@@ -302,16 +230,18 @@ def handle_tool_call(name: str, arguments: Dict[str, Any]) -> List[Dict[str, Any
             for p in search_dir.rglob("*.adoc"):
                 doc = parse_spec_file(p)
                 if doc.doc_type == "tech/component":
-                    components.append({
-                        "id": doc.doc_id,
-                        "name": doc.frontmatter.get("name"),
-                        "container_type": doc.frontmatter.get("container_type"),
-                        "runtime": doc.frontmatter.get("runtime"),
-                        "package_path": doc.frontmatter.get("package_path"),
-                        "dependencies": doc.frontmatter.get("dependencies", {}),
-                        "c4_internal_components": doc.frontmatter.get("c4_internal_components", []),
-                        "file_path": str(p)
-                    })
+                    components.append(
+                        {
+                            "id": doc.doc_id,
+                            "name": doc.frontmatter.get("name"),
+                            "container_type": doc.frontmatter.get("container_type"),
+                            "runtime": doc.frontmatter.get("runtime"),
+                            "package_path": doc.frontmatter.get("package_path"),
+                            "dependencies": doc.frontmatter.get("dependencies", {}),
+                            "c4_internal_components": doc.frontmatter.get("c4_internal_components", []),
+                            "file_path": str(p),
+                        }
+                    )
         return [{"type": "text", "text": json.dumps(components, indent=2)}]
 
     elif name == "eidos_create_delta":
@@ -346,11 +276,11 @@ def handle_tool_call(name: str, arguments: Dict[str, Any]) -> List[Dict[str, Any
                 "frontmatter": doc.frontmatter,
                 "body_length": len(doc.body),
                 "body_preview": doc.body[:500] if len(doc.body) > 500 else doc.body,
-                "full_body": doc.body
+                "full_body": doc.body,
             }
             return [{"type": "text", "text": json.dumps(res, indent=2)}]
         except Exception as e:
-            return [{"type": "text", "text": f"Error parsing '{file_path}': {str(e)}"}]
+            return [{"type": "text", "text": f"Error parsing '{file_path}': {e!s}"}]
 
     elif name == "eidos_list_specs":
         path = Path(arguments.get("path") or "eidos")
@@ -362,7 +292,7 @@ def handle_tool_call(name: str, arguments: Dict[str, Any]) -> List[Dict[str, Any
                 "title": s["title"],
                 "status": s["status"],
                 "path": str(s["path"]),
-                "relative_path": str(s["relative_path"])
+                "relative_path": str(s["relative_path"]),
             }
             for s in specs
         ]
@@ -389,29 +319,21 @@ def handle_tool_call(name: str, arguments: Dict[str, Any]) -> List[Dict[str, Any
             )
             return [{"type": "text", "text": f"Created and validated specification: {dest_file}"}]
         except Exception as e:
-            return [{"type": "text", "text": f"Error creating specification: {str(e)}"}]
+            return [{"type": "text", "text": f"Error creating specification: {e!s}"}]
 
     elif name == "eidos_delete_spec":
         path = Path(arguments.get("path") or "eidos")
         target = arguments["target"]
         force = arguments.get("force", False)
         success, msg, refs = delete_spec(path, target, force=force)
-        res = {
-            "success": success,
-            "message": msg,
-            "references": [str(r) for r in refs]
-        }
+        res = {"success": success, "message": msg, "references": [str(r) for r in refs]}
         return [{"type": "text", "text": json.dumps(res, indent=2)}]
 
     elif name == "eidos_apply_delta":
         path = Path(arguments.get("path") or "eidos")
         target = arguments["target"]
         success, msg, applied_file = apply_delta(path, target)
-        res = {
-            "success": success,
-            "message": msg,
-            "applied_file": str(applied_file) if applied_file else None
-        }
+        res = {"success": success, "message": msg, "applied_file": str(applied_file) if applied_file else None}
         return [{"type": "text", "text": json.dumps(res, indent=2)}]
 
     elif name == "eidos_init_repo":
@@ -430,11 +352,7 @@ def handle_tool_call(name: str, arguments: Dict[str, Any]) -> List[Dict[str, Any
             with_plugin=with_plugin,
             force=force,
         )
-        res = {
-            "success": success,
-            "message": msg,
-            "created_files": [str(f) for f in created_files]
-        }
+        res = {"success": success, "message": msg, "created_files": [str(f) for f in created_files]}
         return [{"type": "text", "text": json.dumps(res, indent=2)}]
 
     return [{"type": "text", "text": f"Unknown tool: {name}"}]
@@ -462,14 +380,9 @@ def run_mcp_server():
                 "id": req_id,
                 "result": {
                     "protocolVersion": MCP_PROTOCOL_VERSION,
-                    "capabilities": {
-                        "tools": {}
-                    },
-                    "serverInfo": {
-                        "name": "eidos-mcp-server",
-                        "version": eidos.__version__
-                    }
-                }
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "eidos-mcp-server", "version": eidos.__version__},
+                },
             }
             sys.stdout.write(json.dumps(resp) + "\n")
             sys.stdout.flush()
@@ -479,13 +392,7 @@ def run_mcp_server():
             pass
 
         elif method == "tools/list":
-            resp = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "tools": TOOLS
-                }
-            }
+            resp = {"jsonrpc": "2.0", "id": req_id, "result": {"tools": TOOLS}}
             sys.stdout.write(json.dumps(resp) + "\n")
             sys.stdout.flush()
 
@@ -493,25 +400,12 @@ def run_mcp_server():
             tool_name = params.get("name")
             tool_args = params.get("arguments", {})
             content = handle_tool_call(tool_name, tool_args)
-            resp = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "content": content
-                }
-            }
+            resp = {"jsonrpc": "2.0", "id": req_id, "result": {"content": content}}
             sys.stdout.write(json.dumps(resp) + "\n")
             sys.stdout.flush()
 
         elif req_id is not None:
             # Unhandled method with ID
-            resp = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "error": {
-                    "code": -32601,
-                    "message": f"Method not found: {method}"
-                }
-            }
+            resp = {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": f"Method not found: {method}"}}
             sys.stdout.write(json.dumps(resp) + "\n")
             sys.stdout.flush()

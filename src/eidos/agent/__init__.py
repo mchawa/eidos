@@ -1,2 +1,1 @@
 """Agent adapter harness package."""
-

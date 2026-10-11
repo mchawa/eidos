@@ -4,11 +4,13 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 import jsonschema
 import yaml
 
-from eidos.plugin.version import SEMVER_PATTERN, is_valid_semver
+from eidos.core.assets import get_agent_plugins_schemas_dir
+from eidos.plugin.version import is_valid_semver
 
 PLUGIN_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 MCP_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
@@ -18,16 +20,17 @@ PLUGIN_NAME_PATTERN = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0
 @dataclass
 class PluginValidationReport:
     """Summary of plugin package validation."""
+
     plugin_path: Path
     is_valid: bool = True
-    plugin_name: Optional[str] = None
-    plugin_version: Optional[str] = None
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
-    skills: List[str] = field(default_factory=list)
-    mcp_servers: List[str] = field(default_factory=list)
-    extensions: List[str] = field(default_factory=list)
-    hooks: List[str] = field(default_factory=list)
+    plugin_name: str | None = None
+    plugin_version: str | None = None
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    skills: list[str] = field(default_factory=list)
+    mcp_servers: list[str] = field(default_factory=list)
+    extensions: list[str] = field(default_factory=list)
+    hooks: list[str] = field(default_factory=list)
 
     def add_error(self, message: str) -> None:
         self.errors.append(message)
@@ -37,10 +40,7 @@ class PluginValidationReport:
         self.warnings.append(message)
 
 
-from eidos.core.assets import get_agent_plugins_schemas_dir
-
-
-def _load_bundled_schema(schema_name: str) -> Dict[str, Any]:
+def _load_bundled_schema(schema_name: str) -> dict[str, Any]:
     """Load bundled JSON schema from assets."""
     try:
         schema_path = get_agent_plugins_schemas_dir() / schema_name
@@ -48,7 +48,7 @@ def _load_bundled_schema(schema_name: str) -> Dict[str, Any]:
         raise FileNotFoundError(f"Bundled schema '{schema_name}' not found: {e}") from e
     if not schema_path.exists():
         raise FileNotFoundError(f"Bundled schema '{schema_name}' not found at {schema_path}")
-    with open(schema_path, "r", encoding="utf-8") as f:
+    with open(schema_path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -71,7 +71,7 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
         return report
 
     try:
-        with open(manifest_path, "r", encoding="utf-8") as f:
+        with open(manifest_path, encoding="utf-8") as f:
             manifest = json.load(f)
     except json.JSONDecodeError as e:
         report.add_error(f"Invalid JSON in 'plugin.json': {e}")
@@ -124,7 +124,7 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
 
     if mcp_config_path.exists():
         try:
-            with open(mcp_config_path, "r", encoding="utf-8") as f:
+            with open(mcp_config_path, encoding="utf-8") as f:
                 mcp_data = json.load(f)
             servers = mcp_data.get("mcpServers", {})
             if isinstance(servers, dict):
@@ -136,7 +136,7 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
 
     elif mcp_path.exists():
         try:
-            with open(mcp_path, "r", encoding="utf-8") as f:
+            with open(mcp_path, encoding="utf-8") as f:
                 mcp_data = json.load(f)
 
             mcp_schema = _load_bundled_schema("mcp.schema.json")
@@ -149,15 +149,13 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
             if isinstance(servers, dict):
                 report.mcp_servers.extend(list(servers.keys()))
                 for s_name, s_conf in servers.items():
-                    if isinstance(s_conf, dict):
-                        # Verify stdio command token rule
-                        if s_conf.get("type") == "stdio":
-                            cmd = s_conf.get("command", "")
-                            if " " in cmd.strip() and not (cmd.startswith("./") or cmd.startswith("/")):
-                                report.add_warning(
-                                    f"MCP server '{s_name}' command '{cmd}' contains spaces. "
-                                    "Spec requires a single executable token, not a shell command string."
-                                )
+                    if isinstance(s_conf, dict) and s_conf.get("type") == "stdio":
+                        cmd = s_conf.get("command", "")
+                        if " " in cmd.strip() and not cmd.startswith(("./", "/")):
+                            report.add_warning(
+                                f"MCP server '{s_name}' command '{cmd}' contains spaces. "
+                                "Spec requires a single executable token, not a shell command string."
+                            )
         except json.JSONDecodeError as e:
             report.add_error(f"Invalid JSON in 'mcp.json': {e}")
         except Exception as e:
@@ -185,7 +183,9 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
                                 if not s_name:
                                     report.add_error(f"Skill '{item.name}' SKILL.md missing 'name' in frontmatter.")
                                 if not s_desc:
-                                    report.add_warning(f"Skill '{item.name}' SKILL.md missing 'description' in frontmatter.")
+                                    report.add_warning(
+                                        f"Skill '{item.name}' SKILL.md missing 'description' in frontmatter."
+                                    )
                                 report.skills.append(s_name or item.name)
                             else:
                                 report.add_error(f"Skill '{item.name}' SKILL.md frontmatter is not a dictionary.")
@@ -200,7 +200,7 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
     hooks_path = plugin_dir / "hooks.json"
     if hooks_path.exists():
         try:
-            with open(hooks_path, "r", encoding="utf-8") as f:
+            with open(hooks_path, encoding="utf-8") as f:
                 hooks_data = json.load(f)
 
             if not isinstance(hooks_data, dict):
@@ -218,7 +218,9 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
                         if event_key not in valid_events:
                             report.add_warning(f"Hook '{hook_name}' defines unrecognized event '{event_key}'.")
                         if not isinstance(handlers, list):
-                            report.add_error(f"Hook '{hook_name}' event '{event_key}' must be a list of handler configs.")
+                            report.add_error(
+                                f"Hook '{hook_name}' event '{event_key}' must be a list of handler configs."
+                            )
                             continue
 
                         for handler in handlers:
@@ -240,7 +242,7 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
 
 
 def _verify_hook_command(
-    handler: Dict[str, Any],
+    handler: dict[str, Any],
     hook_name: str,
     event_key: str,
     plugin_dir: Path,
@@ -257,5 +259,3 @@ def _verify_hook_command(
             script_path = plugin_dir / cleaned
             if not script_path.exists():
                 report.add_error(f"Hook '{hook_name}' event '{event_key}' references non-existent script: '{token}'")
-
-

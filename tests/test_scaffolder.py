@@ -2,20 +2,18 @@
 
 import json
 from pathlib import Path
-import pytest
+
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
+from eidos.core.parser import parse_spec_file
 from eidos.core.scaffolder import (
+    apply_delta,
     create_spec,
     delete_spec,
-    list_specs,
-    list_deltas,
-    apply_delta,
     find_spec_by_id_or_path,
-    find_references_to_spec,
+    list_specs,
 )
-from eidos.core.parser import parse_spec_file
 from eidos.core.validator import SpecValidator
 from eidos.mcp.server import handle_tool_call
 
@@ -156,7 +154,7 @@ def test_spec_deletion_safety_with_references(tmp_path):
     assert len(refs) == 1
 
     # Attempt delete with force
-    success_force, msg_force, _ = delete_spec(tmp_path, "CMP-CORE", force=True)
+    success_force, _msg_force, _ = delete_spec(tmp_path, "CMP-CORE", force=True)
     assert success_force
     assert not find_spec_by_id_or_path(tmp_path, "CMP-CORE")
 
@@ -179,7 +177,7 @@ def test_delta_lifecycle_apply(tmp_path):
     assert (tmp_path / "deltas" / "by-status" / "proposed" / "dlt-2026-100.adoc").exists()
 
     # Apply delta
-    success, msg, applied_path = apply_delta(tmp_path, "DLT-2026-100")
+    success, _msg, applied_path = apply_delta(tmp_path, "DLT-2026-100")
     assert success
     assert applied_path is not None
     assert applied_path.resolve() == dlt_file.resolve()
@@ -200,11 +198,19 @@ def test_delta_lifecycle_apply(tmp_path):
 def test_cli_spec_commands(tmp_path):
     """Verify 'eidos spec' CLI command suite (CTR-EIDOS-CLI)."""
     # 1. Create capability
-    res_create = runner.invoke(app, [
-        "spec", "create", "capability", "CAP-TEST-001",
-        "--title", "Test Capability",
-        "--path", str(tmp_path),
-    ])
+    res_create = runner.invoke(
+        app,
+        [
+            "spec",
+            "create",
+            "capability",
+            "CAP-TEST-001",
+            "--title",
+            "Test Capability",
+            "--path",
+            str(tmp_path),
+        ],
+    )
     assert res_create.exit_code == 0
     assert "Created and validated" in res_create.stdout
 
@@ -227,13 +233,22 @@ def test_cli_spec_commands(tmp_path):
 def test_cli_delta_commands(tmp_path):
     """Verify 'eidos delta' CLI command suite (CTR-EIDOS-CLI)."""
     # 1. Create delta
-    res_create = runner.invoke(app, [
-        "delta", "create", "DLT-2026-555",
-        "--title", "CLI Expansion",
-        "--kind", "feature_addition",
-        "--motivation", "Add delta management.",
-        "--path", str(tmp_path),
-    ])
+    res_create = runner.invoke(
+        app,
+        [
+            "delta",
+            "create",
+            "DLT-2026-555",
+            "--title",
+            "CLI Expansion",
+            "--kind",
+            "feature_addition",
+            "--motivation",
+            "Add delta management.",
+            "--path",
+            str(tmp_path),
+        ],
+    )
     assert res_create.exit_code == 0
     assert "Created SpecDelta" in res_create.stdout
 
@@ -268,11 +283,18 @@ def test_cli_delta_commands(tmp_path):
 def test_cli_top_level_shortcuts(tmp_path):
     """Verify top-level 'eidos create', 'eidos list', and 'eidos delete' shortcuts (CTR-EIDOS-CLI)."""
     # Create shortcut
-    res_create = runner.invoke(app, [
-        "create", "policy", "POL-009-RULE",
-        "--title", "Shortcut Policy",
-        "--path", str(tmp_path),
-    ])
+    res_create = runner.invoke(
+        app,
+        [
+            "create",
+            "policy",
+            "POL-009-RULE",
+            "--title",
+            "Shortcut Policy",
+            "--path",
+            str(tmp_path),
+        ],
+    )
     assert res_create.exit_code == 0
     assert "POL-009-RULE" in res_create.stdout
 
@@ -290,13 +312,16 @@ def test_cli_top_level_shortcuts(tmp_path):
 def test_mcp_spec_lifecycle_tools(tmp_path):
     """Verify MCP tools for spec creation, listing, applying delta, and deletion (CTR-EIDOS-CLI)."""
     # 1. eidos_create_spec
-    create_res = handle_tool_call("eidos_create_spec", {
-        "path": str(tmp_path),
-        "type": "policy",
-        "id": "POL-100-MCP",
-        "title": "MCP Governed Policy",
-        "rule": "MCP tools must be tested."
-    })
+    create_res = handle_tool_call(
+        "eidos_create_spec",
+        {
+            "path": str(tmp_path),
+            "type": "policy",
+            "id": "POL-100-MCP",
+            "title": "MCP Governed Policy",
+            "rule": "MCP tools must be tested.",
+        },
+    )
     assert "Created and validated" in create_res[0]["text"]
 
     # 2. eidos_list_specs
@@ -305,26 +330,23 @@ def test_mcp_spec_lifecycle_tools(tmp_path):
     assert any(s["id"] == "POL-100-MCP" for s in specs)
 
     # 3. eidos_create_delta & eidos_apply_delta
-    handle_tool_call("eidos_create_spec", {
-        "path": str(tmp_path),
-        "type": "delta",
-        "id": "DLT-2026-888",
-        "title": "MCP Delta",
-        "kind": "feature_addition",
-        "motivation": "Test MCP delta."
-    })
-    apply_res = handle_tool_call("eidos_apply_delta", {
-        "path": str(tmp_path),
-        "target": "DLT-2026-888"
-    })
+    handle_tool_call(
+        "eidos_create_spec",
+        {
+            "path": str(tmp_path),
+            "type": "delta",
+            "id": "DLT-2026-888",
+            "title": "MCP Delta",
+            "kind": "feature_addition",
+            "motivation": "Test MCP delta.",
+        },
+    )
+    apply_res = handle_tool_call("eidos_apply_delta", {"path": str(tmp_path), "target": "DLT-2026-888"})
     apply_data = json.loads(apply_res[0]["text"])
     assert apply_data["success"]
 
     # 4. eidos_delete_spec
-    del_res = handle_tool_call("eidos_delete_spec", {
-        "path": str(tmp_path),
-        "target": "POL-100-MCP"
-    })
+    del_res = handle_tool_call("eidos_delete_spec", {"path": str(tmp_path), "target": "POL-100-MCP"})
     del_data = json.loads(del_res[0]["text"])
     assert del_data["success"]
 
@@ -370,7 +392,7 @@ def test_init_repository_programmatic(tmp_path):
     from eidos.core.scaffolder import init_repository
     from eidos.core.validator import SpecValidator
 
-    success, msg, files = init_repository(
+    success, _msg, files = init_repository(
         project_dir=tmp_path,
         name="test-project",
         title="Test Project System",
@@ -417,12 +439,15 @@ def test_init_repository_cli(tmp_path):
 def test_init_repository_mcp(tmp_path):
     """Verify eidos_init_repo MCP tool call."""
     target = tmp_path / "mcp_init_target"
-    res = handle_tool_call("eidos_init_repo", {
-        "project_dir": str(target),
-        "name": "mcp-service",
-        "title": "MCP Service",
-        "with_plugin": False,
-    })
+    res = handle_tool_call(
+        "eidos_init_repo",
+        {
+            "project_dir": str(target),
+            "name": "mcp-service",
+            "title": "MCP Service",
+            "with_plugin": False,
+        },
+    )
     data = json.loads(res[0]["text"])
     assert data["success"]
     assert len(data["created_files"]) == 5
@@ -520,7 +545,7 @@ def test_scaffold_screen_and_capability_experience(tmp_path):
     content = cap_file.read_text(encoding="utf-8")
     updated = content.replace(
         "technical:\n",
-        f"experience:\n  screens:\n    - \"{screen_file.name}\"\n  design_systems:\n    - \"DS-CORE\"\ntechnical:\n"
+        f'experience:\n  screens:\n    - "{screen_file.name}"\n  design_systems:\n    - "DS-CORE"\ntechnical:\n',
     )
     cap_file.write_text(updated, encoding="utf-8")
     assert_valid_spec(validator, cap_file)
@@ -529,25 +554,36 @@ def test_scaffold_screen_and_capability_experience(tmp_path):
 def test_cli_and_mcp_design_spec_scaffolding(tmp_path):
     """Verify CLI and MCP tools for design specifications."""
     # CLI screen creation
-    res = runner.invoke(app, [
-        "spec", "create", "screen", "SCR-SETTINGS",
-        "--title", "Settings Screen",
-        "--route", "/settings",
-        "--path", str(tmp_path),
-    ])
+    res = runner.invoke(
+        app,
+        [
+            "spec",
+            "create",
+            "screen",
+            "SCR-SETTINGS",
+            "--title",
+            "Settings Screen",
+            "--route",
+            "/settings",
+            "--path",
+            str(tmp_path),
+        ],
+    )
     assert res.exit_code == 0
     assert "Created and validated" in res.stdout
     assert (tmp_path / "design" / "screens" / "settings.adoc").exists()
 
     # MCP design system creation
-    mcp_res = handle_tool_call("eidos_create_spec", {
-        "path": str(tmp_path),
-        "type": "design-system",
-        "id": "DS-TEST",
-        "title": "Test System",
-        "client_id": "test-client",
-        "extends_system": "DS-CORE",
-    })
+    mcp_res = handle_tool_call(
+        "eidos_create_spec",
+        {
+            "path": str(tmp_path),
+            "type": "design-system",
+            "id": "DS-TEST",
+            "title": "Test System",
+            "client_id": "test-client",
+            "extends_system": "DS-CORE",
+        },
+    )
     assert "Created and validated" in mcp_res[0]["text"]
     assert (tmp_path / "design" / "systems" / "test" / "system.adoc").exists()
-

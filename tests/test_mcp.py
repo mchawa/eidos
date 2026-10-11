@@ -1,9 +1,8 @@
 """Tests verifying Eidos Model Context Protocol (MCP) tool execution."""
 
 import json
-from pathlib import Path
-import pytest
-from eidos.mcp.server import handle_tool_call, TOOLS
+
+from eidos.mcp.server import TOOLS, handle_tool_call
 
 
 def test_mcp_tools_declared():
@@ -74,8 +73,8 @@ def test_mcp_create_delta_tool(tmp_path, monkeypatch):
             "delta_id": "DLT-TEST-001",
             "title": "Test Mutation",
             "kind": "feature_addition",
-            "motivation": "Testing MCP delta creation"
-        }
+            "motivation": "Testing MCP delta creation",
+        },
     )
     assert len(res) == 1
     assert "Created new SpecDelta" in res[0]["text"]

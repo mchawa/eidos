@@ -1,7 +1,9 @@
 """Tests verifying the Eidos specification validator and repo dogfooding."""
 
 from pathlib import Path
+
 import pytest
+
 from eidos.core.validator import SpecValidator
 
 
@@ -40,4 +42,3 @@ def test_validate_eidos_specifications(validator):
         f"Errors: {report.schema_errors}\n"
         f"Broken references: {report.broken_references}"
     )
-

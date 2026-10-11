@@ -1,13 +1,14 @@
 """Lifecycle management, scaffolding, and deletion for Eidos living specifications and SpecDeltas."""
 
+import contextlib
 import json
 import os
-import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
+
 import yaml
 
-from eidos.core.parser import parse_spec_file, extract_frontmatter
+from eidos.core.parser import extract_frontmatter, parse_spec_file
 from eidos.core.validator import SpecValidator
 
 VALID_SPEC_TYPES = {
@@ -64,7 +65,7 @@ def create_spec(
     doc_type_key: str,
     raw_id: str,
     title: str,
-    domain: Optional[str] = None,
+    domain: str | None = None,
     kind: str = "feature_addition",
     motivation: str = "Proposed change motivation.",
     category: str = "governance",
@@ -77,11 +78,11 @@ def create_spec(
     package_path: str = "src/eidos",
     role_type: str = "human_engineer",
     jtbd: str = "When executing lifecycle commands, I want automated scaffolding so that specs are valid.",
-    client_id: Optional[str] = None,
-    extends_system: Optional[str] = None,
+    client_id: str | None = None,
+    extends_system: str | None = None,
     route: str = "/view",
     design_system: str = "DS-CORE",
-    implements_component: Optional[str] = None,
+    implements_component: str | None = None,
 ) -> Path:
     """Scaffold a new living specification document with valid schema frontmatter."""
     type_key = doc_type_key.lower().replace("_", "/")
@@ -332,7 +333,7 @@ Document prototyping discoveries, trade-offs, and research findings.
                         "primary": {
                             "$value": "#0052cc",
                             "$type": "color",
-                            "$description": f"Primary brand color for {title}"
+                            "$description": f"Primary brand color for {title}",
                         }
                     }
                 }
@@ -340,10 +341,14 @@ Document prototyping discoveries, trade-offs, and research findings.
             tokens_file.write_text(json.dumps(base_tokens, indent=2), encoding="utf-8")
 
         client_yaml = f'client_id: "{client_id}"\nbrand_name: "{title}"\n' if client_id else ""
-        extends_yaml = f"""inheritance:
+        extends_yaml = (
+            f"""inheritance:
   extends: "{extends_system}"
   override_mode: "token_and_component"
-""" if extends_system else ""
+"""
+            if extends_system
+            else ""
+        )
 
         content = f"""---
 type: design/system
@@ -406,7 +411,7 @@ accessibility:
   keyboard_nav: "Enter and Space activate; Tab traverses focus."
 
 test_bindings:
-  storybook: "packages/ui/src/{title.replace(' ', '')}.stories.tsx"
+  storybook: "packages/ui/src/{title.replace(" ", "")}.stories.tsx"
 ---
 = UI Component: {title}
 :toc: left
@@ -476,10 +481,10 @@ This specification defines the route, layout slots, and state transitions for {t
     return dest_file
 
 
-def find_spec_by_id_or_path(eidos_dir: Path, target: str) -> Optional[Path]:
+def find_spec_by_id_or_path(eidos_dir: Path, target: str) -> Path | None:
     """Resolve a document ID, relative path, or filename to an existing spec path."""
     target_clean = target.strip()
-    
+
     # 1. Exact path or relative path
     direct_path = Path(target_clean)
     if direct_path.exists() and direct_path.is_file():
@@ -509,11 +514,13 @@ def find_spec_by_id_or_path(eidos_dir: Path, target: str) -> Optional[Path]:
     return None
 
 
-def find_references_to_spec(eidos_dir: Path, target_id: str, target_path: Path) -> List[Path]:
+def find_references_to_spec(eidos_dir: Path, target_id: str, target_path: Path) -> list[Path]:
     """Find other specification documents that reference target_id or target_path."""
     referencing_files = []
     target_id_lower = target_id.lower()
-    rel_path_str = str(target_path.relative_to(eidos_dir)) if target_path.is_relative_to(eidos_dir) else target_path.name
+    rel_path_str = (
+        str(target_path.relative_to(eidos_dir)) if target_path.is_relative_to(eidos_dir) else target_path.name
+    )
 
     for p in eidos_dir.rglob("*.adoc"):
         if p.resolve() == target_path.resolve():
@@ -528,7 +535,7 @@ def find_references_to_spec(eidos_dir: Path, target_id: str, target_path: Path) 
     return referencing_files
 
 
-def delete_spec(eidos_dir: Path, target: str, force: bool = False) -> Tuple[bool, str, List[Path]]:
+def delete_spec(eidos_dir: Path, target: str, force: bool = False) -> tuple[bool, str, list[Path]]:
     """Safely delete a specification document with cross-reference safety checks."""
     file_path = find_spec_by_id_or_path(eidos_dir, target)
     if not file_path:
@@ -543,7 +550,7 @@ def delete_spec(eidos_dir: Path, target: str, force: bool = False) -> Tuple[bool
         return (
             False,
             f"Cannot delete '{doc_id}': referenced by {len(references)} specification(s) ({refs_str}). Use --force to delete anyway.",
-            references
+            references,
         )
 
     file_path.unlink()
@@ -551,10 +558,8 @@ def delete_spec(eidos_dir: Path, target: str, force: bool = False) -> Tuple[bool
     # Clean up empty parent directory if not a top-level dir
     parent = file_path.parent
     if parent != eidos_dir and parent.exists() and not any(parent.iterdir()):
-        try:
+        with contextlib.suppress(OSError):
             parent.rmdir()
-        except OSError:
-            pass
 
     if doc.doc_type == "delta/mutation":
         sync_delta_views(eidos_dir)
@@ -564,9 +569,9 @@ def delete_spec(eidos_dir: Path, target: str, force: bool = False) -> Tuple[bool
 
 def list_specs(
     eidos_dir: Path,
-    type_filter: Optional[str] = None,
-    status_filter: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    type_filter: str | None = None,
+    status_filter: str | None = None,
+) -> list[dict[str, Any]]:
     """List all specifications under eidos_dir with optional filters."""
     results = []
     if not eidos_dir.exists():
@@ -583,21 +588,26 @@ def list_specs(
             doc_type = doc.doc_type
             status = doc.frontmatter.get("status", "active")
 
-            if type_filter_clean:
-                if type_filter_clean not in doc_type.lower() and type_filter_clean not in p.name.lower():
-                    continue
+            if (
+                type_filter_clean
+                and type_filter_clean not in doc_type.lower()
+                and type_filter_clean not in p.name.lower()
+            ):
+                continue
 
             if status_filter_clean and str(status).lower() != status_filter_clean:
                 continue
 
-            results.append({
-                "id": doc.doc_id,
-                "type": doc_type,
-                "title": doc.title or "Untitled",
-                "status": status,
-                "path": p.resolve(),
-                "relative_path": p.relative_to(eidos_dir) if p.is_relative_to(eidos_dir) else p,
-            })
+            results.append(
+                {
+                    "id": doc.doc_id,
+                    "type": doc_type,
+                    "title": doc.title or "Untitled",
+                    "status": status,
+                    "path": p.resolve(),
+                    "relative_path": p.relative_to(eidos_dir) if p.is_relative_to(eidos_dir) else p,
+                }
+            )
         except Exception:
             continue
 
@@ -609,26 +619,22 @@ def _ensure_eidos_gitignore(eidos_dir: Path) -> None:
     gitignore_path = eidos_dir / ".gitignore"
     rule = "deltas/by-status/"
     if not gitignore_path.exists():
-        try:
+        with contextlib.suppress(Exception):
             gitignore_path.write_text(
                 f"# Eidos living specification lifecycle views (generated symlinks)\n{rule}\n",
                 encoding="utf-8",
             )
-        except Exception:
-            pass
     else:
-        try:
+        with contextlib.suppress(Exception):
             content = gitignore_path.read_text(encoding="utf-8")
             if "deltas/by-status" not in content and "by-status" not in content:
                 gitignore_path.write_text(
                     f"{content.rstrip()}\n\n# Eidos living specification lifecycle views (generated symlinks)\n{rule}\n",
                     encoding="utf-8",
                 )
-        except Exception:
-            pass
 
 
-def sync_delta_views(eidos_dir: Path) -> Dict[str, List[Path]]:
+def sync_delta_views(eidos_dir: Path) -> dict[str, list[Path]]:
     """Synchronize gitignored symlink views in eidos/deltas/by-status/ based on frontmatter status.
 
     Categories: proposed, in_review, approved, applied, rejected, active (in-flight).
@@ -652,12 +658,10 @@ def sync_delta_views(eidos_dir: Path) -> Dict[str, List[Path]]:
         cat_dir = views_dir / cat
         for item in cat_dir.iterdir():
             if item.is_symlink() or item.is_file():
-                try:
+                with contextlib.suppress(Exception):
                     item.unlink()
-                except Exception:
-                    pass
 
-    synced: Dict[str, List[Path]] = {cat: [] for cat in categories}
+    synced: dict[str, list[Path]] = {cat: [] for cat in categories}
 
     for p in sorted(deltas_dir.rglob("*.adoc")):
         if "by-status" in p.parts:
@@ -691,10 +695,10 @@ def sync_delta_views(eidos_dir: Path) -> Dict[str, List[Path]]:
     return synced
 
 
-def get_delta_status_summary(eidos_dir: Path) -> Dict[str, Any]:
+def get_delta_status_summary(eidos_dir: Path) -> dict[str, Any]:
     """Get count and listing breakdown of deltas grouped by lifecycle status."""
     deltas = list_deltas(eidos_dir)
-    by_status: Dict[str, List[dict]] = {
+    by_status: dict[str, list[dict]] = {
         "proposed": [],
         "in_review": [],
         "approved": [],
@@ -717,7 +721,7 @@ def get_delta_status_summary(eidos_dir: Path) -> Dict[str, Any]:
     }
 
 
-def list_deltas(eidos_dir: Path, status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+def list_deltas(eidos_dir: Path, status_filter: str | None = None) -> list[dict[str, Any]]:
     """List all SpecDeltas from eidos/deltas/ with optional status filtering."""
     deltas_dir = eidos_dir / "deltas"
     results = []
@@ -737,31 +741,33 @@ def list_deltas(eidos_dir: Path, status_filter: Optional[str] = None) -> List[Di
             status = str(doc.frontmatter.get("status", "proposed")).lower().strip()
             is_active = status in ("proposed", "in_review", "approved", "in_progress", "draft")
 
-            if status_filter_clean:
-                if status_filter_clean == "active" and not is_active:
-                    continue
-                elif status_filter_clean != "active" and status != status_filter_clean:
-                    continue
+            if status_filter_clean and (
+                (status_filter_clean == "active" and not is_active)
+                or (status_filter_clean != "active" and status != status_filter_clean)
+            ):
+                continue
 
             intent = doc.frontmatter.get("intent", {})
             kind = intent.get("kind", "mutation") if isinstance(intent, dict) else "mutation"
 
-            results.append({
-                "id": doc.doc_id,
-                "title": doc.title or "Untitled",
-                "status": status,
-                "kind": kind,
-                "is_active": is_active,
-                "path": p.resolve(),
-                "relative_path": p.relative_to(eidos_dir) if p.is_relative_to(eidos_dir) else p,
-            })
+            results.append(
+                {
+                    "id": doc.doc_id,
+                    "title": doc.title or "Untitled",
+                    "status": status,
+                    "kind": kind,
+                    "is_active": is_active,
+                    "path": p.resolve(),
+                    "relative_path": p.relative_to(eidos_dir) if p.is_relative_to(eidos_dir) else p,
+                }
+            )
         except Exception:
             continue
 
     return results
 
 
-def apply_delta(eidos_dir: Path, delta_id_or_path: str) -> Tuple[bool, str, Optional[Path]]:
+def apply_delta(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool, str, Path | None]:
     """Transition a SpecDelta to applied status in-place and sync gitignored symlink views."""
     file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id_or_path)
     if not file_path:
@@ -806,15 +812,15 @@ def apply_delta(eidos_dir: Path, delta_id_or_path: str) -> Tuple[bool, str, Opti
 
 def init_repository(
     project_dir: Path,
-    name: Optional[str] = None,
-    title: Optional[str] = None,
+    name: str | None = None,
+    title: str | None = None,
     eidos_dir_name: str = "eidos",
     with_plugin: bool = True,
     force: bool = False,
-) -> Tuple[bool, str, List[Path]]:
+) -> tuple[bool, str, list[Path]]:
     """Initialize a repository with Eidos living specifications, baseline architecture, and governance."""
     eidos_dir = project_dir / eidos_dir_name
-    created_files: List[Path] = []
+    created_files: list[Path] = []
 
     if eidos_dir.exists() and any(eidos_dir.rglob("*.adoc")) and not force:
         return (
@@ -999,7 +1005,7 @@ This document defines the structural topology and architectural governance for {
     report = validator.validate_directory(eidos_dir)
     if not report.is_clean:
         errs = []
-        for p, elist in report.schema_errors.items():
+        for elist in report.schema_errors.values():
             errs.extend(elist)
         for b in report.broken_references:
             errs.append(f"Broken ref: {b}")
@@ -1008,7 +1014,8 @@ This document defines the structural topology and architectural governance for {
     # 8. Optional Agent Plugin installation
     if with_plugin:
         try:
-            from eidos.plugin.installer import install_plugin, PluginInstallTarget
+            from eidos.plugin.installer import PluginInstallTarget, install_plugin
+
             install_plugin(target=PluginInstallTarget.PROJECT, project_dir=project_dir, force=force)
         except Exception:
             pass

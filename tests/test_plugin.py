@@ -1,28 +1,26 @@
 """Tests verifying Agent Plugin conformance to agent-plugins.org v1.0.0 and project-scoped CLI installer."""
 
-from pathlib import Path
 import json
 import subprocess
 import sys
+from pathlib import Path
+
 import pytest
 from typer.testing import CliRunner
+
 from eidos.cli.main import app
-from eidos.plugin.validator import validate_plugin_package, PLUGIN_NAME_PATTERN
+from eidos.plugin.installer import (
+    PluginInstallTarget,
+    install_plugin,
+    locate_plugin_bundle,
+    uninstall_plugin,
+)
+from eidos.plugin.validator import PLUGIN_NAME_PATTERN, validate_plugin_package
 from eidos.plugin.version import (
-    SEMVER_PATTERN,
+    check_plugin_version_status,
+    compare_semver,
     is_valid_semver,
     parse_semver,
-    compare_semver,
-    get_bundled_plugin_version,
-    get_installed_plugin_version,
-    check_plugin_version_status,
-)
-from eidos.plugin.installer import (
-    install_plugin,
-    uninstall_plugin,
-    update_plugin,
-    PluginInstallTarget,
-    locate_plugin_bundle,
 )
 
 runner = CliRunner()
@@ -86,13 +84,13 @@ def test_plugin_install_to_project_scope(tmp_path):
     # Check project-level MCP files
     cursor_mcp = tmp_path / ".cursor" / "mcp.json"
     assert cursor_mcp.exists()
-    with open(cursor_mcp, "r", encoding="utf-8") as f:
+    with open(cursor_mcp, encoding="utf-8") as f:
         cursor_data = json.load(f)
     assert "eidos" in cursor_data["mcpServers"]
 
     claude_mcp = tmp_path / ".claude" / "mcp.json"
     assert claude_mcp.exists()
-    with open(claude_mcp, "r", encoding="utf-8") as f:
+    with open(claude_mcp, encoding="utf-8") as f:
         claude_data = json.load(f)
     assert "eidos" in claude_data["mcpServers"]
 
@@ -159,12 +157,12 @@ def test_plugin_uninstall_project_scope(tmp_path):
     assert not plugin_dir.exists()
     # If cursor/claude had only eidos, files are removed or cleaned
     if cursor_mcp.exists():
-        with open(cursor_mcp, "r", encoding="utf-8") as f:
+        with open(cursor_mcp, encoding="utf-8") as f:
             c_data = json.load(f)
         assert "eidos" not in c_data.get("mcpServers", {})
 
     if claude_mcp.exists():
-        with open(claude_mcp, "r", encoding="utf-8") as f:
+        with open(claude_mcp, encoding="utf-8") as f:
             cl_data = json.load(f)
         assert "eidos" not in cl_data.get("mcpServers", {})
 
@@ -244,10 +242,7 @@ def test_plugin_manifest_semver_enforcement(tmp_path):
 
     # Missing version
     (plugin_dir / "plugin.json").write_text(
-        json.dumps({
-            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-            "name": "test-plugin"
-        })
+        json.dumps({"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", "name": "test-plugin"})
     )
     report_missing = validate_plugin_package(plugin_dir)
     assert not report_missing.is_valid
@@ -255,11 +250,13 @@ def test_plugin_manifest_semver_enforcement(tmp_path):
 
     # Invalid SemVer
     (plugin_dir / "plugin.json").write_text(
-        json.dumps({
-            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-            "name": "test-plugin",
-            "version": "v1.0"
-        })
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "test-plugin",
+                "version": "v1.0",
+            }
+        )
     )
     report_invalid = validate_plugin_package(plugin_dir)
     assert not report_invalid.is_valid
@@ -282,7 +279,7 @@ def test_plugin_version_status_check(tmp_path):
 
     # 3. Outdated
     plugin_json = tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json"
-    with open(plugin_json, "r", encoding="utf-8") as f:
+    with open(plugin_json, encoding="utf-8") as f:
         data = json.load(f)
     data["version"] = "0.0.9"
     with open(plugin_json, "w", encoding="utf-8") as f:
@@ -318,7 +315,7 @@ def test_cli_plugin_version(tmp_path):
 
     # Outdated
     plugin_json = tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json"
-    with open(plugin_json, "r", encoding="utf-8") as f:
+    with open(plugin_json, encoding="utf-8") as f:
         data = json.load(f)
     data["version"] = "0.0.8"
     with open(plugin_json, "w", encoding="utf-8") as f:
@@ -337,7 +334,7 @@ def test_cli_plugin_update(tmp_path):
 
     # Mock older installed version
     plugin_json = tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json"
-    with open(plugin_json, "r", encoding="utf-8") as f:
+    with open(plugin_json, encoding="utf-8") as f:
         data = json.load(f)
     data["version"] = "0.0.5"
     with open(plugin_json, "w", encoding="utf-8") as f:
@@ -351,7 +348,7 @@ def test_cli_plugin_update(tmp_path):
     assert "0.1.0" in res.stdout
 
     # Verify plugin.json was updated
-    with open(plugin_json, "r", encoding="utf-8") as f:
+    with open(plugin_json, encoding="utf-8") as f:
         updated_data = json.load(f)
     assert updated_data["version"] == "0.1.0"
 
@@ -409,20 +406,23 @@ def test_doc_lint_hook_pre_tool_use():
     assert script_path.exists()
 
     # 1. Invalid YAML
-    bad_payload = json.dumps({
-        "toolCall": {
-            "name": "write_to_file",
-            "args": {
-                "TargetFile": "eidos/policies/test.adoc",
-                "CodeContent": "---\ntype: [unclosed flow\n---\n",
-            },
+    bad_payload = json.dumps(
+        {
+            "toolCall": {
+                "name": "write_to_file",
+                "args": {
+                    "TargetFile": "eidos/policies/test.adoc",
+                    "CodeContent": "---\ntype: [unclosed flow\n---\n",
+                },
+            }
         }
-    })
+    )
     res_bad = subprocess.run(
         [sys.executable, str(script_path), "--event", "pre_tool"],
         input=bad_payload,
         text=True,
         capture_output=True,
+        check=False,
     )
     assert res_bad.returncode == 0
     data_bad = json.loads(res_bad.stdout)
@@ -430,20 +430,23 @@ def test_doc_lint_hook_pre_tool_use():
     assert "YAML Syntax Error" in data_bad["reason"]
 
     # 2. Missing required fields
-    incomplete_payload = json.dumps({
-        "toolCall": {
-            "name": "write_to_file",
-            "args": {
-                "TargetFile": "eidos/policies/test.adoc",
-                "CodeContent": "---\nfoo: bar\n---\n",
-            },
+    incomplete_payload = json.dumps(
+        {
+            "toolCall": {
+                "name": "write_to_file",
+                "args": {
+                    "TargetFile": "eidos/policies/test.adoc",
+                    "CodeContent": "---\nfoo: bar\n---\n",
+                },
+            }
         }
-    })
+    )
     res_inc = subprocess.run(
         [sys.executable, str(script_path), "--event", "pre_tool"],
         input=incomplete_payload,
         text=True,
         capture_output=True,
+        check=False,
     )
     assert res_inc.returncode == 0
     data_inc = json.loads(res_inc.stdout)
@@ -451,20 +454,23 @@ def test_doc_lint_hook_pre_tool_use():
     assert "missing required fields" in data_inc["reason"]
 
     # 3. Valid frontmatter
-    good_payload = json.dumps({
-        "toolCall": {
-            "name": "write_to_file",
-            "args": {
-                "TargetFile": "eidos/policies/test.adoc",
-                "CodeContent": "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-999\ntitle: Sample Policy\n---\n",
-            },
+    good_payload = json.dumps(
+        {
+            "toolCall": {
+                "name": "write_to_file",
+                "args": {
+                    "TargetFile": "eidos/policies/test.adoc",
+                    "CodeContent": "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-999\ntitle: Sample Policy\n---\n",
+                },
+            }
         }
-    })
+    )
     res_good = subprocess.run(
         [sys.executable, str(script_path), "--event", "pre_tool"],
         input=good_payload,
         text=True,
         capture_output=True,
+        check=False,
     )
     assert res_good.returncode == 0
     data_good = json.loads(res_good.stdout)
@@ -477,18 +483,24 @@ def test_doc_lint_hook_stop_event(tmp_path):
     eidos_dir = tmp_path / "eidos"
     eidos_dir.mkdir()
     bad_spec = eidos_dir / "invalid.adoc"
-    bad_spec.write_text("---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: BAD-POLICY\n---\n", encoding="utf-8")
+    bad_spec.write_text(
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: BAD-POLICY\n---\n",
+        encoding="utf-8",
+    )
 
-    stop_payload = json.dumps({
-        "executionNum": 1,
-        "terminationReason": "model_stop",
-        "workspacePaths": [str(tmp_path)],
-    })
+    stop_payload = json.dumps(
+        {
+            "executionNum": 1,
+            "terminationReason": "model_stop",
+            "workspacePaths": [str(tmp_path)],
+        }
+    )
     res = subprocess.run(
         [sys.executable, str(script_path), "--event", "stop"],
         input=stop_payload,
         text=True,
         capture_output=True,
+        check=False,
     )
     assert res.returncode == 0
     data = json.loads(res.stdout)
@@ -502,17 +514,23 @@ def test_doc_lint_hook_post_invocation(tmp_path):
     eidos_dir = tmp_path / "eidos"
     eidos_dir.mkdir()
     bad_spec = eidos_dir / "invalid.adoc"
-    bad_spec.write_text("---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: BAD-POLICY\n---\n", encoding="utf-8")
+    bad_spec.write_text(
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: BAD-POLICY\n---\n",
+        encoding="utf-8",
+    )
 
-    inv_payload = json.dumps({
-        "invocationNum": 2,
-        "workspacePaths": [str(tmp_path)],
-    })
+    inv_payload = json.dumps(
+        {
+            "invocationNum": 2,
+            "workspacePaths": [str(tmp_path)],
+        }
+    )
     res = subprocess.run(
         [sys.executable, str(script_path), "--event", "post_invocation"],
         input=inv_payload,
         text=True,
         capture_output=True,
+        check=False,
     )
     assert res.returncode == 0
     data = json.loads(res.stdout)
@@ -527,6 +545,3 @@ def test_cli_lint_command():
     res = runner.invoke(app, ["lint", "eidos"])
     assert res.exit_code == 0
     assert "Success! All" in res.stdout
-
-
-

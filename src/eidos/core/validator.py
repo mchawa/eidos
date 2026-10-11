@@ -1,8 +1,7 @@
 """Validator for Eidos specifications against JSON/YAML schemas."""
 
-from importlib.resources import files
 from pathlib import Path
-from typing import Dict, List, Optional
+
 import jsonschema
 import yaml
 
@@ -31,7 +30,7 @@ class SpecValidator:
     """Validates specification documents using bundled and custom schemas."""
 
     def __init__(self):
-        self._schema_cache: Dict[str, dict] = {}
+        self._schema_cache: dict[str, dict] = {}
         self._load_bundled_schemas()
 
     def _load_bundled_schemas(self):
@@ -70,7 +69,7 @@ class SpecValidator:
                 self._schema_cache[f"schemas/v1/{sub_rel}"] = data
                 self._schema_cache[f"schemas/v1/{item.name}"] = data
 
-    def resolve_schema(self, doc: SpecDocument) -> Optional[dict]:
+    def resolve_schema(self, doc: SpecDocument) -> dict | None:
         """Resolve the JSON schema for a document based on its type or explicit schema attribute."""
         # 1. Check explicit schema reference
         if doc.schema_ref:
@@ -88,7 +87,7 @@ class SpecValidator:
 
         return None
 
-    def validate_document(self, doc: SpecDocument) -> List[str]:
+    def validate_document(self, doc: SpecDocument) -> list[str]:
         """Validate a single parsed document against its schema."""
         if not doc.frontmatter:
             return doc.errors
@@ -152,7 +151,4 @@ class SpecValidator:
             ref_path_from_root = root_dir.parent / val if root_dir.name in ["eidos", ".spec"] else root_dir / val
             ref_path_from_doc = source_file.parent / val
             if not (ref_path_from_root.exists() or ref_path_from_doc.exists()):
-                report.broken_references.append(
-                    f"Broken reference in {source_file.name}: cannot locate '{val}'"
-                )
-
+                report.broken_references.append(f"Broken reference in {source_file.name}: cannot locate '{val}'")

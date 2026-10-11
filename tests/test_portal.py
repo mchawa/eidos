@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
@@ -65,7 +66,7 @@ def test_static_portal_builder(tmp_path: Path):
     assert "window.__EIDOS_DATA__ =" in index_html
     assert "SYS-EIDOS-001" in index_html
 
-    with open(data_file, "r", encoding="utf-8") as f:
+    with open(data_file, encoding="utf-8") as f:
         json_data = json.load(f)
     assert json_data["overview"]["system_id"] == "SYS-EIDOS-001"
 
@@ -118,7 +119,7 @@ def test_portal_http_server():
     # 6. GET /unknown -> 404
     try:
         urllib.request.urlopen(f"{base_url}/unknown-endpoint")
-        assert False, "Expected 404"
+        pytest.fail("Expected 404")
     except urllib.error.HTTPError as exc:
         assert exc.code == 404
 

@@ -1,7 +1,6 @@
 """Centralized asset locator and loader for Eidos schemas and plugin reference assets."""
 
 from pathlib import Path
-from typing import Optional
 
 
 def get_assets_root() -> Path:
@@ -56,4 +55,3 @@ def get_agent_plugins_schemas_dir() -> Path:
 def get_plugin_reference_dir() -> Path:
     """Return the directory containing the canonical Eidos Agent Plugin reference."""
     return get_assets_path("plugin_reference")
-
