@@ -164,7 +164,7 @@ eidos plugin install --target workspace     # Installs to .agents/plugins/eidos 
 eidos plugin install --target antigravity   # Installs to .agents/plugins/eidos (workspace plugin)
 eidos plugin install --target claude        # Configures project .claude/mcp.json
 eidos plugin install --target cursor        # Configures project .cursor/mcp.json
-
+ 
 # Remove / uninstall Eidos agent plugin from project scope:
 eidos plugin remove                         # Cleans up .agents/plugins/eidos and project MCPs
 # Or:
@@ -173,4 +173,3 @@ eidos plugin uninstall --target cursor      # Removes only .cursor/mcp.json entr
 # Validate a plugin package against agent-plugins.org v1.0.0
 eidos plugin validate plugins/eidos
 ```
-

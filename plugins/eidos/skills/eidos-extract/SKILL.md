@@ -252,3 +252,4 @@ Assemble the top-level System Context and validate the extracted specification.
 | Test suite functions, test files | `test_binding` in capability invariant | `path/to/test.py::test_fn` |
 | Security rules, multi-tenancy rules, quality gates | `eidos/policies/POL-*.adoc` | `product/policy` |
 | User roles, auth token scopes | `eidos/personas/<name>.adoc` | `product/persona` |
+

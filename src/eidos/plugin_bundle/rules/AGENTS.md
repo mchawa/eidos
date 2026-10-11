@@ -32,4 +32,3 @@ Whenever a repository contains an `eidos/` directory, adhere strictly to the fol
   - Run CLI: `eidos validate eidos`
   - Or MCP tool: `eidos_validate`
 * All documents must strictly conform to their schema and have zero broken cross-references.
-
