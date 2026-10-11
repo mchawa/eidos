@@ -98,3 +98,21 @@ When the Eidos MCP server is active, you have access to:
 - `eidos_apply_delta(target="<delta-id>")`: Reconcile a SpecDelta in-place to `status: applied`.
 - `eidos_create_spec(...)`: Scaffold a new living specification document.
 - `eidos_read_spec(path="...")`: Parse and read an Eidos specification.
+
+---
+
+## 5. Specialized Eidos Skills Portfolio
+
+Depending on the specific phase of work, consult or invoke the specialized skill:
+- **`eidos-init`**: Bootstrap a repository with Eidos living specifications, C4 topology, and governance policies.
+- **`eidos-extract`**: Reverse-engineer and extract living specifications from brownfield codebases.
+- **`eidos-product`**: Model business domains (`DOM-*`), capabilities (`CAP-*`), and personas (`PER-*`).
+- **`eidos-architecture`**: Maintain Arc42 system context, C4 container topologies, component manifests, and interface contracts (`CTR-*`).
+- **`eidos-design`**: Author multi-design systems, W3C Design Tokens, and UI component state machines.
+- **`eidos-explore`**: Conduct spikes, technical feasibility studies, and hypothesis-driven discovery (`EXP-*`).
+- **`eidos-delta`**: Author, execute, and verify SpecDeltas (`DLT-*`) in Planned Mode.
+- **`eidos-invariants`**: Formulate policy invariants (`POL-*`), capability invariants (`INV-*`), and maintain invariant-test traceability.
+- **`eidos-review`**: Staff Architect architectural review, blast radius auditing, and contract SemVer evaluation.
+- **`eidos-drift`**: Detect spec-to-code drift across branches or uncommitted changes, run the PR gate, and check test coverage via the `eidos_detect_drift` AI tool.
+- **`eidos-reconcile`**: Reconcile code changes to living specifications in Direct Mode.
+- **`eidos-portal`**: Preview, serve (`eidos serve`), and build static documentation sites (`eidos build-site`) with interactive C4 diagrams and token studios.
