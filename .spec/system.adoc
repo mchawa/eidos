@@ -3,7 +3,10 @@ type: product/system
 schema: .spec/schemas/v1/system.schema.yaml
 id: SYS-EIDOS-001
 title: "Eidos: Agent-Agnostic Git-Native Development Ecosystem"
-archetype: framework
+archetypes:
+  - framework
+  - cli_tool
+  - library
 
 business_identity:
   vision: "Provide an open, GitOps-driven AI development ecosystem where product definition, architectural invariants, and autonomous coding agents operate as a unified, living state machine."

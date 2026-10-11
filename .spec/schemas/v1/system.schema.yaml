@@ -7,7 +7,7 @@ required:
   - schema
   - id
   - title
-  - archetype
+  - archetypes
   - business_identity
   - technical_profile
 properties:
@@ -25,17 +25,25 @@ properties:
   title:
     type: string
     description: "Full human-readable display title of the software product or platform."
-  archetype:
-    type: string
-    enum:
-      - framework
-      - cli_tool
-      - saas_platform
-      - library
-      - mobile_app
-      - embedded_system
-      - data_platform
-    description: "The primary structural archetype, dictating lifecycle rules, deployment topology, and runtime constraints."
+  archetypes:
+    type: array
+    description: "The architectural archetypes and delivery surfaces that comprise this product. Modern software systems frequently combine multiple archetypes (e.g. a SaaS platform with an accompanying CLI tool and client SDK libraries)."
+    minItems: 1
+    items:
+      type: string
+      enum:
+        - framework
+        - cli_tool
+        - saas_platform
+        - web_app
+        - api_service
+        - library
+        - mobile_app
+        - desktop_app
+        - embedded_system
+        - data_platform
+        - extension_plugin
+        - background_daemon
   business_identity:
     type: object
     description: "High-level strategic business intent, target market, and value proposition."
