@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "eidos"
+version = "0.1.0"
+description = "Git-Native, Agent-Agnostic Development AI Ecosystem & Lifecycle Orchestrator"
+readme = { file = "README.adoc", content-type = "text/plain" }
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Eidos Contributors" }
+]
+dependencies = [
+    "typer>=0.12.0",
+    "rich>=13.7.0",
+    "pyyaml>=6.0.1",
+    "jsonschema>=4.20.0",
+    "pydantic>=2.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.4.0",
+]
+
+[project.scripts]
+eidos = "eidos.cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/eidos"]
+
+[tool.hatch.build.targets.wheel.package-data]
+"eidos" = ["schemas/**/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

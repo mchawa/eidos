@@ -1,0 +1,28 @@
+---
+type: product/domain
+schema: schemas/v1/domain.schema.yaml
+id: DOM-PRODUCT-CORE
+name: "Product Intelligence & Spec Management"
+classification: core
+boundaries:
+  responsibilities:
+    - "Manage and validate the living product baseline (domains, personas, capabilities, policies)."
+    - "Calculate blast-radius and impact analysis when new SpecDeltas or bugs are submitted."
+    - "Apply semantic mutations (add, modify, remove, patch) upon PR merge to keep specs synchronized with code."
+    - "Coordinate hypothesis-driven product explorations and technical spikes."
+  out_of_scope:
+    - "Direct process execution of coding agents (delegated to DOM-AGENT-HARNESS)."
+    - "Direct webhook and API sync with GitHub/GitLab (delegated to DOM-VCS-SYNC)."
+technical_mapping:
+  components:
+    - "packages/spec-parser"
+    - "packages/spec-graph"
+    - "packages/spec-validator"
+  dependencies:
+    - "DOM-VCS-SYNC"
+---
+= Domain: Product Intelligence & Spec Management
+:toc: left
+
+== Domain Overview
+This is the central brain of Eidos. It transforms vague human requirements into rigorous, schema-backed, test-bound specifications, and maintains the living truth of the system over time.

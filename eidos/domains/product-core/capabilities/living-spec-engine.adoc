@@ -1,0 +1,44 @@
+---
+type: product/capability
+schema: schemas/v1/capability.schema.yaml
+id: CAP-PROD-001
+title: "Living Baseline Specification Engine"
+domain: DOM-PRODUCT-CORE
+status: active
+version: "1.0.0"
+
+business:
+  personas:
+    - eidos/personas/product-lead.adoc
+    - eidos/personas/autonomous-agent.adoc
+  jtbd: "Maintain an accurate, non-drifting representation of what the software product currently does across both business and technical dimensions."
+  policies:
+    - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
+
+technical:
+  components:
+    - "packages/spec-parser"
+    - "packages/spec-validator"
+  contracts:
+    interfaces:
+      - "eidos spec validate"
+      - "eidos spec graph --json"
+  invariants:
+    - id: INV-SPEC-VALIDATION
+      rule: "Every .adoc file with a YAML frontmatter must validate against its referenced JSON/YAML schema."
+      test_binding: "tests/specs/test_schema_validation.py::test_all_specs_conform_to_schema"
+    - id: INV-SPEC-GRAPH-INTEGRITY
+      rule: "All cross-document references (personas, policies, domain IDs) must resolve to existing files."
+      test_binding: "tests/specs/test_schema_validation.py::test_graph_references_exist"
+---
+= Capability: Living Baseline Specification Engine
+:toc: left
+
+== Intent
+Traditional product requirements documents (PRDs) quickly become obsolete. This capability ensures that the `eidos/` directory is treated as living code: every document has an explicit type and JSON/YAML schema, is validated continuously, and forms an in-memory knowledge graph that AI agents can query to understand the system state.
+
+== Key Responsibilities
+* Parsing YAML frontmatter combined with AsciiDoc technical specifications.
+* Schema validation ensuring strict adherence to typing rules.
+* Graph construction linking Personas, Domains, Capabilities, Invariants, and Tests.
+

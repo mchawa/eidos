@@ -5,54 +5,37 @@
 
 Eidos is an open, Git-native, agent-agnostic development framework designed to unify product definition, architectural invariants, and autonomous coding agents under executable specifications.
 
-This repository dogfoods the **Eidos Specification Standard** (`YAML` + `AsciiDoc` + `JSON/YAML Schemas`) to define Eidos itself.
+This repository dogfoods the **Eidos Specification Standard** to define Eidos itself.
 
 == Repository Architecture
 
-The living product specification is organized under `.spec/`:
-
 [source,text]
 ----
-.spec/
-├── schemas/                       # Reusable JSON/YAML Schemas (v1)
-│   └── v1/
-│       ├── system.schema.yaml     # Root system archetype & profile
-│       ├── domain.schema.yaml     # Bounded contexts & boundaries
-│       ├── capability.schema.yaml # Business JTBD + technical invariants
-│       ├── policy.schema.yaml     # System non-negotiables & rules
-│       ├── persona.schema.yaml    # Human & AI actor roles
-│       ├── exploration.schema.yaml# Hypothesis-driven spikes & research
-│       └── delta.schema.yaml      # Semantic mutations (SpecDelta)
+eidos/
+├── pyproject.toml                 # Modern Python package definition (uv/hatchling)
 │
-├── system.adoc                    # Root Eidos system descriptor
+├── src/eidos/                     # [THE ENGINE / SOLUTION]
+│   ├── cli/                       # CLI commands (`eidos validate`, `eidos delta`, etc.)
+│   ├── core/                      # AsciiDoc + YAML frontmatter parser & validator
+│   ├── agent/                     # Pluggable agent adapters (agy, claude, codex)
+│   ├── vcs/                       # GitHub & GitLab sync engine
+│   └── schemas/v1/                # Portable JSON/YAML Schemas bundled as package data
+│       ├── system.schema.yaml
+│       ├── domain.schema.yaml
+│       ├── capability.schema.yaml
+│       ├── policy.schema.yaml
+│       ├── persona.schema.yaml
+│       ├── exploration.schema.yaml
+│       └── delta.schema.yaml
 │
-├── personas/                      # Defined actors
-│   ├── product-lead.adoc          # Human product manager / founder
-│   └── autonomous-agent.adoc      # AI coding agent (agy, claude, codex)
+├── eidos/                         # [THE LIVING SPECIFICATION / REAL USAGE]
+│   ├── system.adoc                # Root system descriptor
+│   ├── personas/                  # Human & AI actor roles
+│   ├── policies/                  # Non-negotiable architectural invariants
+│   ├── domains/                   # Bounded contexts & capabilities
+│   └── deltas/                    # In-flight and applied mutations
 │
-├── policies/                      # Core architectural policies
-│   ├── POL-001-git-as-single-source-of-truth.adoc
-│   └── POL-002-invariant-test-enforcement.adoc
-│
-├── domains/                       # Bounded contexts & capabilities
-│   ├── product-core/              # Product intelligence & spec management
-│   │   ├── domain.adoc
-│   │   └── capabilities/
-│   │       ├── living-spec-engine.adoc
-│   │       ├── spec-delta-mutations.adoc
-│   │       └── exploration-discovery.adoc
-│   ├── agent-harness/             # Universal agent execution
-│   │   ├── domain.adoc
-│   │   └── capabilities/
-│   │       └── agent-adapter.adoc
-│   └── vcs-sync/                  # GitHub & GitLab integration
-│       ├── domain.adoc
-│       └── capabilities/
-│           └── github-gitlab-bridge.adoc
-│
-└── deltas/                        # Spec mutations (applied & active)
-    ├── active/                    # In-flight proposals and bugfixes
-    └── applied/                   # Merged mutations
+└── tests/                         # Engine & specification test suites
 ----
 
 == Key Distinctions from Existing Tools
@@ -69,12 +52,11 @@ The living product specification is organized under `.spec/`:
 
 == Navigating the Specifications
 
-* **Root System**: Link to link:file://.spec/system.adoc[`system.adoc`]
+* **Root System**: Link to link:file://eidos/system.adoc[`system.adoc`]
 * **Product Domains**:
-** Link to link:file://.spec/domains/product-core/domain.adoc[`Product Intelligence Domain`]
-** Link to link:file://.spec/domains/agent-harness/domain.adoc[`Agent Harness Domain`]
-** Link to link:file://.spec/domains/vcs-sync/domain.adoc[`VCS Sync Domain`]
+** Link to link:file://eidos/domains/product-core/domain.adoc[`Product Intelligence Domain`]
+** Link to link:file://eidos/domains/agent-harness/domain.adoc[`Agent Harness Domain`]
+** Link to link:file://eidos/domains/vcs-sync/domain.adoc[`VCS Sync Domain`]
 * **Policies**:
-** Link to link:file://.spec/policies/POL-001-git-as-single-source-of-truth.adoc[`POL-001: Git Source of Truth`]
-** Link to link:file://.spec/policies/POL-002-invariant-test-enforcement.adoc[`POL-002: Invariant Test Enforcement`]
-
+** Link to link:file://eidos/policies/POL-001-git-as-single-source-of-truth.adoc[`POL-001: Git Source of Truth`]
+** Link to link:file://eidos/policies/POL-002-invariant-test-enforcement.adoc[`POL-002: Invariant Test Enforcement`]

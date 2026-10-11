@@ -1,0 +1,40 @@
+---
+type: product/capability
+schema: schemas/v1/capability.schema.yaml
+id: CAP-PROD-002
+title: "SpecDelta Semantic Mutation Engine"
+domain: DOM-PRODUCT-CORE
+status: active
+version: "1.0.0"
+
+business:
+  personas:
+    - eidos/personas/product-lead.adoc
+    - eidos/personas/autonomous-agent.adoc
+  jtbd: "Define, review, and apply explicit mutations (add, modify, patch, remove, deprecate) to features and invariants without leaving stale documentation."
+  policies:
+    - eidos/policies/POL-002-invariant-test-enforcement.adoc
+
+technical:
+  components:
+    - "packages/spec-mutator"
+    - "packages/impact-analyzer"
+  contracts:
+    interfaces:
+      - "eidos delta create --kind [feature|bugfix|removal]"
+      - "eidos delta apply <delta-id>"
+      - "eidos delta impact <delta-id>"
+  invariants:
+    - id: INV-MUTATION-REVERSIBILITY
+      rule: "Applying a SpecDelta must either cleanly mutate the baseline .adoc files or abort without leaving partial state."
+      test_binding: "tests/specs/test_delta_engine.py::test_atomic_spec_mutation"
+    - id: INV-REMOVAL-TOMBSTONE
+      rule: "Removing a capability via SpecDelta must archive the spec with a tombstone entry rather than silently deleting history."
+      test_binding: "tests/specs/test_delta_engine.py::test_capability_removal_tombstone"
+---
+= Capability: SpecDelta Semantic Mutation Engine
+:toc: left
+
+== Intent
+Replaces traditional essay-style RFCs with declarative, machine-executable mutations. When a feature is added, changed, or removed, a `SpecDelta` specifies the precise mutations and impacted invariants. Upon PR merge, the mutations are applied to update the living baseline documents automatically.
+
