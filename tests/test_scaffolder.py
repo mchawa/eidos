@@ -306,8 +306,8 @@ def test_mcp_spec_lifecycle_tools(tmp_path):
     assert del_data["success"]
 
 
-def test_all_four_skills_in_bundle():
-    """Verify that the plugin contains all 4 specialized skills (CAP-AGENT-001)."""
+def test_all_five_skills_in_bundle():
+    """Verify that the plugin contains all 5 specialized skills (CAP-AGENT-001)."""
     from eidos.plugin.installer import locate_plugin_bundle
     from eidos.plugin.validator import validate_plugin_package
 
@@ -315,5 +315,11 @@ def test_all_four_skills_in_bundle():
     report = validate_plugin_package(bundle_dir)
 
     assert report.is_valid
-    expected_skills = {"eidos", "eidos-delta", "eidos-architecture", "eidos-invariants"}
+    expected_skills = {
+        "eidos",
+        "eidos-delta",
+        "eidos-architecture",
+        "eidos-invariants",
+        "eidos-extract",
+    }
     assert expected_skills.issubset(set(report.skills))

@@ -18,11 +18,13 @@ This plugin equips AI agents (Antigravity `agy`, Claude Code, Cursor, GitHub Cop
    - `eidos_read_spec`: Parses and extracts structured frontmatter and AsciiDoc sections.
    - `eidos_create_delta`: Scaffolds a new SpecDelta change file in `eidos/deltas/active/`.
 
-2. **Agent Skill (`skills/eidos/SKILL.md`)**:
-   - Conforms to `agentskills.io` standard.
-   - Guides the AI agent through the Eidos 6-step lifecycle: Orient -> Policies -> SpecDelta -> Code & Invariant Tests -> Validate -> Reconcile.
-   - Teaches the agent to navigate Arc42 sections 1-8, C4 Level 1/2/3 models, and monorepo configurations.
-   - Strictly enforces the **NO ADRs** rule.
+2. **Agent Skills Suite (`skills/`)**:
+   - Conforms strictly to the `agentskills.io` standard.
+   - `skills/eidos/SKILL.md`: **Master Orchestrator** covering the 6-step lifecycle (Orient -> Policies -> SpecDelta -> Code & Invariants -> Validate -> Reconcile).
+   - `skills/eidos-delta/SKILL.md`: **SpecDelta Lifecycle** covering atomic mutation authoring (`add_capability`, `patch_invariant`, `modify_component`), validation, and reconciliation.
+   - `skills/eidos-architecture/SKILL.md`: **Arc42 & C4 Topology Modeling** covering component manifests (`tech/component`), whitebox modules, and interface contracts (`tech/contract`), enforcing **NO ADRs**.
+   - `skills/eidos-invariants/SKILL.md`: **Policy Governance & Invariant Traceability** covering system policies (`product/policy`), capability invariants (`INV-*`), and test bindings (`POL-002`).
+   - `skills/eidos-extract/SKILL.md`: **Codebase Reverse-Engineering & Extraction** guiding agents through an 8-phase pipeline to extract complete Eidos living specs from brownfield/legacy codebases.
 
 3. **Continuous Agent Awareness Rules (`rules/AGENTS.md`)**:
    - Automatically injected into agents working in an Eidos repository.
