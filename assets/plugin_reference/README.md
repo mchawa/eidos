@@ -1,7 +1,7 @@
 # Eidos Agent Plugin
 
 [![Agent Plugins 1.0.0](https://img.shields.io/badge/agent--plugins-1.0.0-blue)](https://agent-plugins.org/)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
 A portable Agent Plugin conforming strictly to the [Agent Plugins 1.0.0 specification](https://agent-plugins.org/) and the [Agent Skills specification](https://agentskills.io/).
 

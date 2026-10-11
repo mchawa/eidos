@@ -9,7 +9,7 @@
   },
   "homepage": "https://github.com/eidos-ai/eidos",
   "repository": "https://github.com/eidos-ai/eidos",
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-or-later",
   "keywords": [
     "eidos",
     "agent-plugins",
