@@ -1,0 +1,16 @@
+---
+type: product/policy
+schema: .spec/schemas/v1/policy.schema.yaml
+id: POL-002-INVARIANT-TEST-ENFORCEMENT
+title: "Mandatory Invariant Test Binding"
+category: testing
+rule: "Every technical invariant declared in a Capability or SpecDelta must specify a concrete test_binding path. A PR cannot merge if any bound test fails or is missing."
+enforcement:
+  mechanism: "Eidos CI Runner executes pytest/jest/cargo test targeting all test_binding paths specified in the touched SpecDelta"
+  severity: blocking
+---
+= Policy: Mandatory Invariant Test Binding
+:toc: left
+
+== Rationale
+Specifications without verifiable test bindings are merely aspirations. By binding every system invariant (e.g. "Guests cannot delete projects") to an automated test, the system ensures that AI agents cannot claim completion without providing green regression tests.

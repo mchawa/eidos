@@ -1,0 +1,34 @@
+---
+type: product/capability
+schema: .spec/schemas/v1/capability.schema.yaml
+id: CAP-PROD-003
+title: "Product Exploration & Hypothesis Spikes"
+domain: DOM-PRODUCT-CORE
+status: active
+version: "1.0.0"
+
+business:
+  personas:
+    - .spec/personas/product-lead.adoc
+    - .spec/personas/autonomous-agent.adoc
+  jtbd: "Investigate early ideas, technical feasibility, and architectural benchmarks in sandboxed spikes before committing to formal specifications."
+  policies:
+    - .spec/policies/POL-001-git-as-single-source-of-truth.adoc
+
+technical:
+  components:
+    - "packages/spike-runner"
+  contracts:
+    interfaces:
+      - "eidos explore create <hypothesis>"
+      - "eidos explore graduate <exploration-id> --to-delta"
+  invariants:
+    - id: INV-SPIKE-ISOLATION
+      rule: "Exploration spikes must execute on isolated Git branches and never mutate production specifications directly."
+      test_binding: "tests/specs/test_exploration.py::test_spike_isolation"
+---
+= Capability: Product Exploration & Hypothesis Spikes
+:toc: left
+
+== Intent
+Allows product managers and engineers to conduct high-uncertainty research without being burdened by strict acceptance criteria prematurely. When an exploration validates its hypothesis, it graduates into a formal `SpecDelta`. If discarded, its findings and benchmarks are archived to prevent repeated failed attempts in the future.

@@ -1,0 +1,79 @@
+= Eidos: Git-Native AI Software Development Ecosystem
+:toc: left
+:icons: font
+:source-highlighter: highlight.js
+
+Eidos is an open, Git-native, agent-agnostic development framework designed to unify product definition, architectural invariants, and autonomous coding agents under executable specifications.
+
+This repository dogfoods the **Eidos Specification Standard** (`YAML` + `AsciiDoc` + `JSON/YAML Schemas`) to define Eidos itself.
+
+== Repository Architecture
+
+The living product specification is organized under `.spec/`:
+
+[source,text]
+----
+.spec/
+├── schemas/                       # Reusable JSON/YAML Schemas (v1)
+│   └── v1/
+│       ├── system.schema.yaml     # Root system archetype & profile
+│       ├── domain.schema.yaml     # Bounded contexts & boundaries
+│       ├── capability.schema.yaml # Business JTBD + technical invariants
+│       ├── policy.schema.yaml     # System non-negotiables & rules
+│       ├── persona.schema.yaml    # Human & AI actor roles
+│       ├── exploration.schema.yaml# Hypothesis-driven spikes & research
+│       └── delta.schema.yaml      # Semantic mutations (SpecDelta)
+│
+├── system.adoc                    # Root Eidos system descriptor
+│
+├── personas/                      # Defined actors
+│   ├── product-lead.adoc          # Human product manager / founder
+│   └── autonomous-agent.adoc      # AI coding agent (agy, claude, codex)
+│
+├── policies/                      # Core architectural policies
+│   ├── POL-001-git-as-single-source-of-truth.adoc
+│   └── POL-002-invariant-test-enforcement.adoc
+│
+├── domains/                       # Bounded contexts & capabilities
+│   ├── product-core/              # Product intelligence & spec management
+│   │   ├── domain.adoc
+│   │   └── capabilities/
+│   │       ├── living-spec-engine.adoc
+│   │       ├── spec-delta-mutations.adoc
+│   │       └── exploration-discovery.adoc
+│   ├── agent-harness/             # Universal agent execution
+│   │   ├── domain.adoc
+│   │   └── capabilities/
+│   │       └── agent-adapter.adoc
+│   └── vcs-sync/                  # GitHub & GitLab integration
+│       ├── domain.adoc
+│       └── capabilities/
+│           └── github-gitlab-bridge.adoc
+│
+└── deltas/                        # Spec mutations (applied & active)
+    ├── active/                    # In-flight proposals and bugfixes
+    └── applied/                   # Merged mutations
+----
+
+== Key Distinctions from Existing Tools
+
+[cols="1,2,2", options="header"]
+|===
+| Dimension | Traditional / Existing Tools | Eidos Approach
+| **Scope** | Coding loop only (Aider, Claude Code) or monolithic bot (Devin) | Full SDLC: Exploration -> Product Baseline -> SpecDelta -> Code -> CI
+| **Specifications** | Ephemeral Jira tickets, stale Confluence/Notion pages | Versioned YAML frontmatter + AsciiDoc living in Git
+| **Change Management** | Narrative RFC essays that rot in archive folders | Declarative `SpecDelta` mutations applied automatically upon merge
+| **Agent Support** | Vendor-locked to a single proprietary LLM | Pluggable adapter layer supporting `agy`, Claude Code, Codex, Copilot
+| **VCS Support** | GitHub-only or closed web UI | Native bidirectional support for both GitHub and GitLab
+|===
+
+== Navigating the Specifications
+
+* **Root System**: Link to link:file://.spec/system.adoc[`system.adoc`]
+* **Product Domains**:
+** Link to link:file://.spec/domains/product-core/domain.adoc[`Product Intelligence Domain`]
+** Link to link:file://.spec/domains/agent-harness/domain.adoc[`Agent Harness Domain`]
+** Link to link:file://.spec/domains/vcs-sync/domain.adoc[`VCS Sync Domain`]
+* **Policies**:
+** Link to link:file://.spec/policies/POL-001-git-as-single-source-of-truth.adoc[`POL-001: Git Source of Truth`]
+** Link to link:file://.spec/policies/POL-002-invariant-test-enforcement.adoc[`POL-002: Invariant Test Enforcement`]

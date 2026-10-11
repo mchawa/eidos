@@ -1,0 +1,69 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: DeltaSchema
+description: "Defines semantic mutations applied to the product baseline (features, bugs, modifications, removals)."
+type: object
+required:
+  - type
+  - schema
+  - id
+  - title
+  - status
+  - intent
+  - mutations
+properties:
+  type:
+    type: string
+    const: "delta/mutation"
+  schema:
+    type: string
+  id:
+    type: string
+    pattern: "^DLT-[A-Z0-9_-]+$"
+  title:
+    type: string
+  status:
+    type: string
+    enum: [proposed, in_review, approved, applied, rejected]
+  intent:
+    type: object
+    required: [kind, motivation]
+    properties:
+      kind:
+        type: string
+        enum: [feature_addition, feature_removal, modification, bugfix]
+      motivation: { type: string }
+      bug_classification:
+        type: string
+        enum: [spec_violation, spec_gap]
+      severity:
+        type: string
+        enum: [low, medium, high, critical]
+  mutations:
+    type: array
+    items:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum:
+            - add_capability
+            - extend_capability
+            - patch_invariant
+            - add_invariant
+            - remove_invariant
+            - deprecate_capability
+            - remove_capability
+            - add_entity_field
+            - remove_entity_field
+        target_domain: { type: string }
+        target_capability: { type: string }
+        target_invariant_id: { type: string }
+        new_capability_id: { type: string }
+        details: { type: string }
+  blast_radius:
+    type: object
+    properties:
+      impacted_personas: { type: array, items: { type: string } }
+      impacted_components: { type: array, items: { type: string } }
+      invariants_to_enforce: { type: array, items: { type: string } }

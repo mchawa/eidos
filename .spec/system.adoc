@@ -1,0 +1,63 @@
+---
+type: product/system
+schema: .spec/schemas/v1/system.schema.yaml
+id: SYS-EIDOS-001
+title: "Eidos: Agent-Agnostic Git-Native Development Ecosystem"
+archetype: framework
+
+business_identity:
+  vision: "Provide an open, GitOps-driven AI development ecosystem where product definition, architectural invariants, and autonomous coding agents operate as a unified, living state machine."
+  target_users:
+    - "Product Managers & Technical Founders"
+    - "Software Engineers & Architects"
+    - "Autonomous AI Coding Agents"
+  value_proposition: "Eliminates context drift, stale documentation, and hallucinated code by anchoring product deltas, invariants, and multi-agent execution directly in Git."
+
+technical_profile:
+  primary_languages:
+    - "YAML / AsciiDoc (Spec Layer)"
+    - "Python / Go / TypeScript (Orchestration Engine)"
+  vcs_platforms:
+    - "GitHub"
+    - "GitLab"
+  agent_support:
+    - "Antigravity (agy)"
+    - "Claude Code"
+    - "OpenAI Codex / Operators"
+    - "GitHub Copilot / Workspace"
+    - "Custom MCP / CLI Agents"
+---
+= Eidos System Definition
+:doctype: book
+:toc: left
+:icons: font
+:sectnums:
+
+== Executive Summary
+
+Eidos is an open, Git-native development AI ecosystem and orchestration framework. Unlike fragmented tools that only assist in terminal coding (e.g. Aider, Claude Code) or monolithic cloud black-boxes (e.g. Devin), Eidos manages the **full lifecycle of software creation**:
+
+1. **Product Exploration & Discovery**: Rapid spikes, feasibility research, and hypothesis validation.
+2. **Product Baseline (Living Spec)**: Domain-driven definitions of business value, actors, entities, and non-negotiable invariants.
+3. **Product Deltas (SpecDelta)**: Declarative, machine-verifiable diffs for features, bugs, modifications, and deprecations.
+4. **Architectural Guardrails**: Test-bound system invariants and contract-first API definitions.
+5. **Multi-Agent Execution**: Pluggable coding harnesses that dispatch tasks to any agent (`agy`, Claude Code, Codex, etc.).
+6. **Native VCS Integration**: Full bidirectional synchronization with GitHub Issues / PRs and GitLab Epics / MRs.
+
+== Architectural Philosophy
+
+[quote, Eidos Manifesto]
+____
+Git is the single source of truth. Every business requirement must have a technical invariant; every invariant must have a test binding; every product evolution must be an auditable mutation.
+____
+
+== Core Facets Matrix
+
+[cols="1,2,2", options="header"]
+|===
+| Dimension | Business Perspective | Technical Reality
+| **System State** | Living Product Catalog & Domain Maps | Git repository `.spec/` tree + Schemas
+| **Evolution** | User Needs & Business RFCs | `SpecDelta` semantic mutations
+| **Quality** | Business Policies & SLAs | Invariant test bindings & CI pipelines
+| **Execution** | Developer & Agent collaboration | Pluggable Agent Adapters (CLI / MCP / API)
+|===

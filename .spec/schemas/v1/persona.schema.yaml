@@ -1,0 +1,35 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: PersonaSchema
+description: "Defines an actor (human or AI agent) interacting with the ecosystem."
+type: object
+required:
+  - type
+  - schema
+  - id
+  - name
+  - role_type
+  - goals
+  - pain_points
+properties:
+  type:
+    type: string
+    const: "product/persona"
+  schema:
+    type: string
+  id:
+    type: string
+    pattern: "^PER-[A-Z0-9_-]+$"
+  name:
+    type: string
+  role_type:
+    type: string
+    enum: [human_product, human_engineer, autonomous_agent, external_system]
+  goals:
+    type: array
+    items: { type: string }
+  pain_points:
+    type: array
+    items: { type: string }
+  interaction_modes:
+    type: array
+    items: { type: string }

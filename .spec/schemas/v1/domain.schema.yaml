@@ -1,0 +1,36 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: DomainSchema
+description: "Defines a bounded context, domain boundaries, invariants, and architectural components."
+type: object
+required:
+  - type
+  - schema
+  - id
+  - name
+  - classification
+  - boundaries
+properties:
+  type:
+    type: string
+    const: "product/domain"
+  schema:
+    type: string
+  id:
+    type: string
+    pattern: "^DOM-[A-Z0-9_-]+$"
+  name:
+    type: string
+  classification:
+    type: string
+    enum: [core, supporting, generic]
+  boundaries:
+    type: object
+    required: [responsibilities, out_of_scope]
+    properties:
+      responsibilities: { type: array, items: { type: string } }
+      out_of_scope: { type: array, items: { type: string } }
+  technical_mapping:
+    type: object
+    properties:
+      components: { type: array, items: { type: string } }
+      dependencies: { type: array, items: { type: string } }

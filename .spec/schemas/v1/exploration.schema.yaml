@@ -1,0 +1,52 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: ExplorationSchema
+description: "Defines spikes, technical feasibility investigations, and product ideation."
+type: object
+required:
+  - type
+  - schema
+  - id
+  - title
+  - status
+  - hypothesis
+  - exit_criteria
+properties:
+  type:
+    type: string
+    const: "product/exploration"
+  schema:
+    type: string
+  id:
+    type: string
+    pattern: "^EXP-[A-Z0-9_-]+$"
+  title:
+    type: string
+  status:
+    type: string
+    enum: [proposed, in_progress, adopted, discarded]
+  hypothesis:
+    type: string
+  questions_to_answer:
+    type: array
+    items: { type: string }
+  spikes_to_run:
+    type: array
+    items:
+      type: object
+      required: [name, target]
+      properties:
+        name: { type: string }
+        target: { type: string }
+  exit_criteria:
+    type: object
+    properties:
+      max_duration: { type: string }
+      benchmark: { type: string }
+  decision:
+    type: object
+    properties:
+      outcome:
+        type: string
+        enum: [adopted, discarded, pivoted]
+      resulting_delta_id: { type: string }
+      learnings: { type: string }

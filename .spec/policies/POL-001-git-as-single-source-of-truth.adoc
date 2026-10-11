@@ -1,0 +1,16 @@
+---
+type: product/policy
+schema: .spec/schemas/v1/policy.schema.yaml
+id: POL-001-GIT-SOURCE-OF-TRUTH
+title: "Git Repository as the Single Source of Truth"
+category: governance
+rule: "All product requirements, architectural contracts, invariants, and execution logs must reside inside the version-controlled Git repository. No external platform (Notion, Jira, Google Docs) holds authoritative state."
+enforcement:
+  mechanism: "CI linting checks that validate all proposed code changes map to an active SpecDelta or existing Capability in .spec/"
+  severity: blocking
+---
+= Policy: Git as the Single Source of Truth
+:toc: left
+
+== Rationale
+External systems create split-brain development: engineers work from Jira tickets, designers from Figma, product managers from Notion, while the actual code lives in Git. Eidos mandates that product definitions and technical architectures are code assets versioned, diffed, and reviewed within Git.

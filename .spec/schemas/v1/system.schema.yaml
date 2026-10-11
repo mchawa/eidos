@@ -1,0 +1,40 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: SystemSchema
+description: "Defines the root system archetype, runtime, business goals, and architecture profile."
+type: object
+required:
+  - type
+  - schema
+  - id
+  - title
+  - archetype
+  - business_identity
+  - technical_profile
+properties:
+  type:
+    type: string
+    const: "product/system"
+  schema:
+    type: string
+  id:
+    type: string
+    pattern: "^SYS-[A-Z0-9_-]+$"
+  title:
+    type: string
+  archetype:
+    type: string
+    enum: [framework, cli_tool, saas_platform, library, mobile_app, embedded_system, data_platform]
+  business_identity:
+    type: object
+    required: [vision, target_users, value_proposition]
+    properties:
+      vision: { type: string }
+      target_users: { type: array, items: { type: string } }
+      value_proposition: { type: string }
+  technical_profile:
+    type: object
+    required: [primary_languages, vcs_platforms, agent_support]
+    properties:
+      primary_languages: { type: array, items: { type: string } }
+      vcs_platforms: { type: array, items: { type: string } }
+      agent_support: { type: array, items: { type: string } }

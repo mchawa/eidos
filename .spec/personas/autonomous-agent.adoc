@@ -1,0 +1,24 @@
+---
+type: product/persona
+schema: .spec/schemas/v1/persona.schema.yaml
+id: PER-AUTONOMOUS-AGENT
+name: "Autonomous Coding Agent"
+role_type: autonomous_agent
+goals:
+  - "Receive unambiguous, context-rich task descriptions without irrelevant repository clutter."
+  - "Understand explicit invariants, contracts, and test bindings before writing code."
+  - "Produce deterministic test-backed pull requests that satisfy acceptance criteria."
+pain_points:
+  - "Vague human prompts leading to hallucinated assumptions or architectural violations."
+  - "Massive context windows polluted with unrelated documentation."
+  - "Unclear definition of done or how to verify changes."
+interaction_modes:
+  - "CLI invocation (e.g. agy, claude, aider)"
+  - "MCP (Model Context Protocol) tool execution"
+  - "Direct Git branch / PR creation and automated review updates"
+---
+= Persona: Autonomous Coding Agent
+:toc: left
+
+== Profile
+The Autonomous Coding Agent represents any AI worker (such as Antigravity `agy`, Claude Code, OpenAI Codex, or SWE-agent) plugged into Eidos. It consumes parsed `SpecDelta` instructions, inspects relevant invariants, executes TDD workflows, and reports verification results.

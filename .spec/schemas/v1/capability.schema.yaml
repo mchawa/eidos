@@ -1,0 +1,58 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: CapabilitySchema
+description: "Defines a concrete product capability combining business intent and technical invariants."
+type: object
+required:
+  - type
+  - schema
+  - id
+  - title
+  - domain
+  - status
+  - business
+  - technical
+properties:
+  type:
+    type: string
+    const: "product/capability"
+  schema:
+    type: string
+  id:
+    type: string
+    pattern: "^CAP-[A-Z0-9_-]+$"
+  title:
+    type: string
+  domain:
+    type: string
+  status:
+    type: string
+    enum: [draft, proposed, active, deprecated]
+  version:
+    type: string
+  business:
+    type: object
+    required: [personas, jtbd]
+    properties:
+      personas: { type: array, items: { type: string } }
+      jtbd: { type: string }
+      policies: { type: array, items: { type: string } }
+  technical:
+    type: object
+    required: [components, invariants]
+    properties:
+      components: { type: array, items: { type: string } }
+      contracts:
+        type: object
+        properties:
+          interfaces: { type: array, items: { type: string } }
+          events_published: { type: array, items: { type: string } }
+          events_consumed: { type: array, items: { type: string } }
+      invariants:
+        type: array
+        items:
+          type: object
+          required: [id, rule, test_binding]
+          properties:
+            id: { type: string }
+            rule: { type: string }
+            test_binding: { type: string }

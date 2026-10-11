@@ -1,0 +1,33 @@
+---
+type: product/capability
+schema: .spec/schemas/v1/capability.schema.yaml
+id: CAP-VCS-001
+title: "Bidirectional GitHub & GitLab Sync Bridge"
+domain: DOM-VCS-SYNC
+status: active
+version: "1.0.0"
+
+business:
+  personas:
+    - .spec/personas/product-lead.adoc
+    - .spec/personas/autonomous-agent.adoc
+  jtbd: "Interact with AI agents and specifications natively through GitHub Issues/PRs and GitLab Epics/MRs without context switching."
+  policies:
+    - .spec/policies/POL-001-git-as-single-source-of-truth.adoc
+
+technical:
+  components:
+    - "packages/vcs-bridge"
+  contracts:
+    interfaces:
+      - "eidos vcs sync --platform [github|gitlab]"
+  invariants:
+    - id: INV-VCS-PARITY
+      rule: "All capabilities, status labels, and comment triggers supported on GitHub must have direct feature parity on GitLab."
+      test_binding: "tests/vcs/test_bridge.py::test_github_gitlab_parity"
+---
+= Capability: Bidirectional GitHub & GitLab Sync Bridge
+:toc: left
+
+== Intent
+Normalizes interactions across GitHub and GitLab. When an issue is labeled `ai:explore` or `ai:refine-spec`, Eidos triggers the appropriate workflow, posts structured plan diffs back to the discussion, and opens a Pull Request / Merge Request when implementation is ready.
