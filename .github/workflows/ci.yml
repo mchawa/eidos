@@ -62,76 +62,9 @@ jobs:
       - name: Run test suite with coverage
         run: uv run pytest -v --cov=src/eidos --cov-report=term-missing
 
-  build-portal:
-    name: Build Living Portal
+  build-site:
+    name: Build Documentation & Living Portal
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
-        with:
-          enable-cache: true
-          version: "latest"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync --all-extras --dev
-
-      - name: Generate static living portal
-        run: uv run eidos build-site --path eidos --out public
-
-      - name: Verify generated static portal assets
-        run: |
-          test -f public/index.html
-          test -f public/data.json
-
-  build-docs:
-    name: Build User Documentation
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
-        with:
-          enable-cache: true
-          version: "latest"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync --all-extras --dev
-
-      - name: Build documentation site with Zensical
-        run: uv run zensical build --strict
-
-      - name: Verify generated documentation assets
-        run: |
-          test -f site/index.html
-          test -f site/sitemap.xml
-          test -f site/search.json
-
-  deploy-pages:
-    name: Deploy to GitHub Pages 🌐
-    needs: [validate, test, build-portal, build-docs]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    concurrency:
-      group: pages
-      cancel-in-progress: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -154,11 +87,35 @@ jobs:
       - name: Build Living Architecture Portal into site/portal
         run: uv run eidos build-site --path eidos --out site/portal
 
+      - name: Verify generated static assets
+        run: |
+          test -f site/index.html
+          test -f site/sitemap.xml
+          test -f site/search.json
+          test -f site/portal/index.html
+          test -f site/portal/data.json
+
       - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: actions/upload-pages-artifact@v5
         with:
           path: site/
 
+  deploy-pages:
+    name: Deploy to GitHub Pages 🌐
+    needs: [validate, test, build-site]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
