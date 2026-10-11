@@ -39,7 +39,7 @@ eidos plugin install
 
 # Or target specific project configurations:
 eidos plugin install --target workspace     # .agent-plugins/eidos (agent-plugins.org v1.0.0)
-eidos plugin install --target antigravity   # .gemini/plugins/eidos (Antigravity workspace plugin)
+eidos plugin install --target antigravity   # .agents/plugins/eidos (Antigravity workspace plugin)
 eidos plugin install --target claude        # .claude/mcp.json (Claude Code project MCP)
 eidos plugin install --target cursor        # .cursor/mcp.json (Cursor project MCP)
 ```

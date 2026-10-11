@@ -20,7 +20,7 @@ build/
 
 # Local agent plugins installation
 .agent-plugins/
-.gemini/
+.agents/
 .cursor/
 .claude/
 

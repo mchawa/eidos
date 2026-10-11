@@ -9,8 +9,8 @@ from typing import List, Optional
 
 
 class PluginInstallTarget(str, enum.Enum):
-    PROJECT = "project"          # Installs to .agent-plugins/eidos and .gemini/plugins/eidos
-    ANTIGRAVITY = "antigravity"  # Installs to .gemini/plugins/eidos (workspace-scoped)
+    PROJECT = "project"          # Installs to .agent-plugins/eidos and .agents/plugins/eidos
+    ANTIGRAVITY = "antigravity"  # Installs to .agents/plugins/eidos (workspace-scoped)
     WORKSPACE = "workspace"      # Installs to .agent-plugins/eidos (agent-plugins.org standard)
     CLAUDE = "claude"            # Configures local .claude/mcp.json
     CURSOR = "cursor"            # Configures local .cursor/mcp.json
@@ -134,14 +134,14 @@ def install_plugin(
             )
 
         elif t == PluginInstallTarget.ANTIGRAVITY:
-            antigravity_plugin_dir = root / ".gemini" / "plugins" / "eidos"
+            antigravity_plugin_dir = root / ".agents" / "plugins" / "eidos"
             created = _copy_plugin_tree(source_dir, antigravity_plugin_dir, force=force)
             results.append(
                 InstallResult(
                     target="antigravity",
                     destination=antigravity_plugin_dir,
                     success=True,
-                    message="Installed to project scope .gemini/plugins/eidos (Antigravity workspace plugin).",
+                    message="Installed to project scope .agents/plugins/eidos (Antigravity workspace plugin).",
                     created_files=created
                 )
             )

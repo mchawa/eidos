@@ -65,10 +65,10 @@ def test_plugin_install_to_project_scope(tmp_path):
     ws_report = validate_plugin_package(ws_dir)
     assert ws_report.is_valid
 
-    # Check .gemini/plugins/eidos
-    gemini_dir = tmp_path / ".gemini" / "plugins" / "eidos"
-    assert (gemini_dir / "plugin.json").exists()
-    assert (gemini_dir / "rules" / "AGENTS.md").exists()
+    # Check .agents/plugins/eidos
+    antigravity_dir = tmp_path / ".agents" / "plugins" / "eidos"
+    assert (antigravity_dir / "plugin.json").exists()
+    assert (antigravity_dir / "rules" / "AGENTS.md").exists()
 
     # Check project-level MCP files
     cursor_mcp = tmp_path / ".cursor" / "mcp.json"
@@ -123,4 +123,4 @@ def test_cli_plugin_install_project(tmp_path):
     assert "Success!" in res.stdout
     assert "project" in res.stdout
     assert (tmp_path / ".agent-plugins" / "eidos" / "plugin.json").exists()
-    assert (tmp_path / ".gemini" / "plugins" / "eidos" / "plugin.json").exists()
+    assert (tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json").exists()
