@@ -51,6 +51,7 @@ def test_mcp_list_components_tool():
     assert "CMP-EIDOS-CLI" in comp_ids
     assert "CMP-EIDOS-MCP" in comp_ids
     assert "CMP-EIDOS-PLUGIN" in comp_ids
+    assert "CMP-EIDOS-PORTAL" in comp_ids
 
 
 def test_mcp_read_spec_tool():

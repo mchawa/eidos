@@ -30,6 +30,9 @@ technical:
     - id: INV-SPEC-GRAPH-INTEGRITY
       rule: "All cross-document references (personas, policies, domain IDs) must resolve to existing files."
       test_binding: "tests/specs/test_schema_validation.py::test_graph_references_exist"
+    - id: INV-LIVING-PORTAL-VISUALIZATION
+      rule: "The system must generate an interactive web portal and static site visualizing C4 architecture, domains, and SpecDeltas without external Node.js dependencies."
+      test_binding: "tests/test_portal.py::test_portal_data_generation"
 ---
 = Capability: Living Baseline Specification Engine
 :toc: left

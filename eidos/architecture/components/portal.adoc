@@ -1,0 +1,62 @@
+---
+type: tech/component
+schema: schemas/v1/tech/component.schema.yaml
+id: CMP-EIDOS-PORTAL
+name: "Eidos Living Web Portal & Static Site Generator"
+container_type: "web_app"
+runtime: "Python 3.12 / HTTP / HTML5 / Mermaid.js"
+package_path: "src/eidos/portal"
+
+domain_binding: DOM-PRODUCT-CORE
+
+c4_internal_components:
+  - name: "PortalServer"
+    responsibility: "Hosts lightweight local multi-threaded HTTP server exposing web UI and JSON endpoints."
+    source_path: "src/eidos/portal/server.py"
+  - name: "PortalGenerator"
+    responsibility: "Synthesizes living specifications into unified portal data model with auto-generated Mermaid diagrams."
+    source_path: "src/eidos/portal/generator.py"
+  - name: "StaticSiteBuilder"
+    responsibility: "Compiles self-contained static documentation portals for GitHub Pages and GitLab Pages."
+    source_path: "src/eidos/portal/builder.py"
+  - name: "PortalAssets"
+    responsibility: "Delivers responsive single-page web UI, Mermaid.js visualization, and dark/light themes."
+    source_path: "src/eidos/portal/assets.py"
+
+dependencies:
+  internal_components:
+    - "CMP-EIDOS-CORE"
+  external_services:
+    - "Web Browsers (Chrome, Firefox, Safari, Edge)"
+
+contracts:
+  provides:
+    - "CTR-EIDOS-PORTAL"
+  consumes: []
+
+quality_attributes:
+  stateless: true
+  idempotent: true
+  concurrency_model: "threaded_http_server"
+  max_memory_mb: 256
+---
+= Component: Eidos Living Web Portal (C4 Level 3 Whitebox)
+:toc: left
+
+== Architectural Boundary
+This container represents the graphical web interface under `src/eidos/portal/`. It enables non-IDE stakeholders (product managers, architects, designers, and compliance officers) to visually navigate the living architecture, inspect C4 topologies, monitor SpecDelta lifecycles, and explore multi-design system tokens.
+
+== Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
+
+[cols="1,2,2", options="header"]
+|===
+| Internal Module | Responsibility | Source Path
+| **PortalServer** | Multi-threaded HTTP daemon hosting the portal UI and REST endpoints | `src/eidos/portal/server.py`
+| **PortalGenerator** | Synthesizes specs, C4 Mermaid graphs, and SpecDelta Kanban state | `src/eidos/portal/generator.py`
+| **StaticSiteBuilder** | Exports zero-dependency static documentation sites for GitHub/GitLab Pages | `src/eidos/portal/builder.py`
+| **PortalAssets** | Single-page HTML5/CSS3/ES-modules responsive interface with Mermaid.js | `src/eidos/portal/assets.py`
+|===
+
+== Operational Invariants & Quality Attributes
+* **Zero-Node.js Dependency**: Runs entirely using standard Python without requiring Node.js, npm, or build step compilation.
+* **Offline Resiliency**: Injects serialized JSON directly into static exports for offline execution and zero-CORS file system viewing.

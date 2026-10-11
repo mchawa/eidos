@@ -1,0 +1,26 @@
+---
+type: tech/contract
+schema: schemas/v1/tech/contract.schema.yaml
+id: CTR-EIDOS-PORTAL
+title: "Eidos Living Web Portal HTTP Interface Contract"
+protocol: "http_json"
+owning_component: "CMP-EIDOS-PORTAL"
+specification_file: "src/eidos/portal/server.py"
+---
+= Contract: Eidos Living Web Portal HTTP Interface
+:toc: left
+
+== Architectural Boundary
+This contract defines the HTTP endpoints exposed by the Eidos Living Web Portal server (`CMP-EIDOS-PORTAL`).
+
+== Endpoints
+
+[cols="1,1,2,2", options="header"]
+|===
+| Method | Path | Response Type | Description
+| `GET` | `/` | `text/html` | Serves the interactive single-page web portal application.
+| `GET` | `/api/data` | `application/json` | Returns the complete unified living specification data graph.
+| `GET` | `/api/overview` | `application/json` | Returns aggregate statistics and document counts.
+| `GET` | `/api/validate` | `application/json` | Executes dynamic specification validation and returns the report.
+| `GET` | `/health` | `application/json` | Health check endpoint returning server availability status.
+|===

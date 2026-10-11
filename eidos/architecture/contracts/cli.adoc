@@ -42,6 +42,26 @@ Launches the stdio Model Context Protocol (MCP) server for AI agent clients.
 * **Exit Codes**:
   - `0`: Clean termination.
 
+=== `eidos serve [--path PATH] [--host HOST] [--port PORT] [--open]`
+Launches the local interactive Eidos Living Web Portal HTTP server.
+* **Options**:
+  - `--path, -p`: Path to eidos specs directory (defaults to `./eidos`).
+  - `--host, -h`: Host interface (defaults to `127.0.0.1`).
+  - `--port`: Port number (defaults to `3000`).
+  - `--open`: Open portal in browser automatically.
+* **Exit Codes**:
+  - `0`: Clean termination.
+  - `1`: Target directory not found.
+
+=== `eidos build-site [--path PATH] [--out OUT_DIR]`
+Exports the Eidos Living Web Portal as a self-contained static site for GitHub/GitLab Pages.
+* **Options**:
+  - `--path, -p`: Path to eidos specs directory (defaults to `./eidos`).
+  - `--out, -o`: Output folder (defaults to `./site`).
+* **Exit Codes**:
+  - `0`: Site generated successfully.
+  - `1`: Target directory not found.
+
 === `eidos plugin`
 Manages, validates, installs, updates, and removes Eidos Agent Plugins conforming to `agent-plugins.org` v1.0.0.
 * **Sub-commands**:
