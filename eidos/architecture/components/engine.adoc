@@ -31,6 +31,9 @@ c4_internal_components:
   - name: "PluginManager"
     responsibility: "Manages portable agent plugins adhering to agent-plugins.org v1.0.0, SemVer 2.0.0 validation, and project MCP configs."
     source_path: "src/eidos/plugin/installer.py"
+  - name: "AssetLocator"
+    responsibility: "Locates externalized specification schemas and canonical plugin reference assets across local checkouts and wheels."
+    source_path: "src/eidos/core/assets.py"
 
 dependencies:
   internal_components: []
@@ -62,10 +65,13 @@ This component represents the core Python codebase under `src/eidos/`. It parses
 |===
 | Internal Module | Responsibility | Source Path
 | **SpecParser** | Robust extraction of YAML frontmatters from AsciiDoc content | `src/eidos/core/parser.py`
-| **SpecValidator** | Schema resolution via `importlib.resources` and Draft 2020-12 validation | `src/eidos/core/validator.py`
+| **SpecValidator** | Schema resolution via dynamic asset loading and Draft 2020-12 validation | `src/eidos/core/validator.py`
 | **CliInterface** | Typer and Rich user interface, formatted diagnostic reporting, exit codes | `src/eidos/cli/main.py`
 | **AgentHarness** | Abstract protocol for pluggable agent execution drivers | `src/eidos/agent/base.py`
 | **VCSBridge** | Normalized contract across GitHub and GitLab VCS platforms | `src/eidos/vcs/bridge.py`
+| **LifecycleScaffolder** | Scaffolding living specifications, reference safety, and delta lifecycles | `src/eidos/core/scaffolder.py`
+| **PluginManager** | Agent-plugins.org v1.0.0 and project-scoped MCP installer | `src/eidos/plugin/installer.py`
+| **AssetLocator** | Centralized locator for schemas and plugin reference in assets/ | `src/eidos/core/assets.py`
 |===
 
 == Operational Invariants & Quality Attributes

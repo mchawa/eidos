@@ -790,7 +790,7 @@ def plugin_upgrade(
 def plugin_validate(
     plugin_path: Optional[Path] = typer.Argument(
         None,
-        help="Path to plugin directory (defaults to bundled or ./plugins/eidos).",
+        help="Path to plugin directory (defaults to assets/plugin_reference or bundled).",
     )
 ):
     """Validate an Agent Plugin against agent-plugins.org v1.0.0 and agentskills.io specifications."""
@@ -799,7 +799,7 @@ def plugin_validate(
         try:
             target_dir = locate_plugin_bundle()
         except FileNotFoundError:
-            target_dir = Path("plugins/eidos")
+            target_dir = Path("assets/plugin_reference")
 
     console.print(f"[bold cyan]Validating Agent Plugin at:[/bold cyan] {target_dir.resolve()}\n")
     report = validate_plugin_package(target_dir)
@@ -835,7 +835,7 @@ def plugin_validate(
 def plugin_info(
     plugin_path: Optional[Path] = typer.Argument(
         None,
-        help="Path to plugin directory (defaults to bundled or ./plugins/eidos).",
+        help="Path to plugin directory (defaults to assets/plugin_reference or bundled).",
     )
 ):
     """Display metadata and configuration for the Eidos Agent Plugin."""
@@ -844,7 +844,7 @@ def plugin_info(
         try:
             target_dir = locate_plugin_bundle()
         except FileNotFoundError:
-            target_dir = Path("plugins/eidos")
+            target_dir = Path("assets/plugin_reference")
 
     report = validate_plugin_package(target_dir)
     manifest_file = target_dir / "plugin.json"

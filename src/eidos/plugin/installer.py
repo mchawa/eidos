@@ -41,20 +41,36 @@ class UninstallResult:
     removed: bool = True
 
 
-def locate_plugin_bundle() -> Path:
-    """Find the bundled Eidos plugin package."""
-    # 1. Check embedded in package
-    pkg_bundle = Path(__file__).parent.parent / "plugin_bundle"
-    if pkg_bundle.exists() and (pkg_bundle / "plugin.json").exists():
-        return pkg_bundle
+from eidos.core.assets import get_plugin_reference_dir
 
-    # 2. Check repo root plugins/eidos
+
+def locate_plugin_bundle() -> Path:
+    """Find the canonical Eidos plugin reference package."""
+    # 1. Check assets/plugin_reference via asset locator
+    try:
+        ref_dir = get_plugin_reference_dir()
+        if ref_dir.exists() and (ref_dir / "plugin.json").exists():
+            return ref_dir
+    except Exception:
+        pass
+
+    # 2. Check repo root assets/plugin_reference
+    local_assets = Path.cwd() / "assets" / "plugin_reference"
+    if local_assets.exists() and (local_assets / "plugin.json").exists():
+        return local_assets
+
+    # 3. Check legacy repo root plugins/eidos
     repo_bundle = Path.cwd() / "plugins" / "eidos"
     if repo_bundle.exists() and (repo_bundle / "plugin.json").exists():
         return repo_bundle
 
+    # 4. Check embedded legacy package directory
+    pkg_bundle = Path(__file__).parent.parent / "plugin_bundle"
+    if pkg_bundle.exists() and (pkg_bundle / "plugin.json").exists():
+        return pkg_bundle
+
     raise FileNotFoundError(
-        "Could not locate Eidos plugin bundle in package resources or repo root."
+        "Could not locate Eidos plugin reference in assets or repository."
     )
 
 

@@ -36,9 +36,15 @@ class PluginValidationReport:
         self.warnings.append(message)
 
 
+from eidos.core.assets import get_agent_plugins_schemas_dir
+
+
 def _load_bundled_schema(schema_name: str) -> Dict[str, Any]:
-    """Load bundled JSON schema from package."""
-    schema_path = Path(__file__).parent.parent / "schemas" / "agent_plugins" / schema_name
+    """Load bundled JSON schema from assets."""
+    try:
+        schema_path = get_agent_plugins_schemas_dir() / schema_name
+    except Exception as e:
+        raise FileNotFoundError(f"Bundled schema '{schema_name}' not found: {e}") from e
     if not schema_path.exists():
         raise FileNotFoundError(f"Bundled schema '{schema_name}' not found at {schema_path}")
     with open(schema_path, "r", encoding="utf-8") as f:

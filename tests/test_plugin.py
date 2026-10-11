@@ -361,3 +361,34 @@ def test_cli_plugin_upgrade_alias(tmp_path):
     assert (tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json").exists()
 
 
+def test_no_assets_in_src():
+    """Verify schemas and plugin bundles are relocated out of src/ into assets/."""
+    assert not Path("src/eidos/schemas").exists(), "src/eidos/schemas should not exist"
+    assert not Path("src/eidos/plugin_bundle").exists(), "src/eidos/plugin_bundle should not exist"
+
+
+def test_assets_plugin_reference_conformance():
+    """Verify that assets/plugin_reference satisfies agent-plugins.org v1.0.0."""
+    ref_plugin = Path("assets/plugin_reference")
+    assert ref_plugin.exists(), "assets/plugin_reference missing"
+    report = validate_plugin_package(ref_plugin)
+    assert report.is_valid, f"assets/plugin_reference invalid: {report.errors}"
+
+
+def test_assets_and_installed_plugin_parity():
+    """Verify assets/plugin_reference and .agents/plugins/eidos have identical structure and content."""
+    ref_plugin = Path("assets/plugin_reference")
+    installed_plugin = Path(".agents/plugins/eidos")
+    assert ref_plugin.exists()
+    assert installed_plugin.exists()
+
+    ref_files = {p.relative_to(ref_plugin) for p in ref_plugin.rglob("*") if p.is_file()}
+    inst_files = {p.relative_to(installed_plugin) for p in installed_plugin.rglob("*") if p.is_file()}
+    assert ref_files == inst_files, f"File mismatch: {ref_files ^ inst_files}"
+
+    for rel in sorted(ref_files):
+        f1 = (ref_plugin / rel).read_text(encoding="utf-8")
+        f2 = (installed_plugin / rel).read_text(encoding="utf-8")
+        assert f1 == f2, f"Content mismatch in {rel}"
+
+

@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 import jsonschema
 import yaml
 
+from eidos.core.assets import get_v1_schemas_dir
 from eidos.core.models import SpecDocument, ValidationReport
 from eidos.core.parser import parse_spec_file
 
@@ -31,23 +32,27 @@ class SpecValidator:
         self._load_bundled_schemas()
 
     def _load_bundled_schemas(self):
-        """Preload standard schemas recursively from the eidos package data."""
-        local_schema_dir = Path(__file__).parent.parent / "schemas" / "v1"
-        if local_schema_dir.exists():
-            for p in local_schema_dir.rglob("*.schema.yaml"):
+        """Preload standard schemas recursively from the assets directory or package data."""
+        try:
+            schema_dir = get_v1_schemas_dir()
+            for p in schema_dir.rglob("*.schema.yaml"):
                 content = p.read_text(encoding="utf-8")
                 data = yaml.safe_load(content)
-                rel_path = str(p.relative_to(local_schema_dir))
+                rel_path = str(p.relative_to(schema_dir))
                 self._schema_cache[p.name] = data
                 self._schema_cache[rel_path] = data
                 self._schema_cache[f"schemas/v1/{rel_path}"] = data
                 self._schema_cache[f"schemas/v1/{p.name}"] = data
-        else:
-            try:
-                schema_root = files("eidos.schemas.v1")
-                self._walk_traversable(schema_root, "")
-            except Exception:
-                pass
+            for p in schema_dir.rglob("*.schema.json"):
+                content = p.read_text(encoding="utf-8")
+                data = yaml.safe_load(content)
+                rel_path = str(p.relative_to(schema_dir))
+                self._schema_cache[p.name] = data
+                self._schema_cache[rel_path] = data
+                self._schema_cache[f"schemas/v1/{rel_path}"] = data
+                self._schema_cache[f"schemas/v1/{p.name}"] = data
+        except Exception:
+            pass
 
     def _walk_traversable(self, node, rel_prefix: str):
         """Recursively walk an importlib Traversable directory."""

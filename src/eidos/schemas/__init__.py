@@ -1,2 +1,0 @@
-"""Eidos schemas package."""
-
