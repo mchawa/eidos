@@ -6,9 +6,19 @@ import pytest
 from typer.testing import CliRunner
 from eidos.cli.main import app
 from eidos.plugin.validator import validate_plugin_package, PLUGIN_NAME_PATTERN
+from eidos.plugin.version import (
+    SEMVER_PATTERN,
+    is_valid_semver,
+    parse_semver,
+    compare_semver,
+    get_bundled_plugin_version,
+    get_installed_plugin_version,
+    check_plugin_version_status,
+)
 from eidos.plugin.installer import (
     install_plugin,
     uninstall_plugin,
+    update_plugin,
     PluginInstallTarget,
     locate_plugin_bundle,
 )
@@ -181,4 +191,173 @@ def test_cli_plugin_remove_alias(tmp_path):
     assert res.exit_code == 0
     assert "Success!" in res.stdout
     assert not (tmp_path / ".agents" / "plugins" / "eidos").exists()
+
+
+def test_semver_validation_and_parsing():
+    """Verify SemVer 2.0.0 validation and tuple extraction (CTR-EIDOS-CLI)."""
+    valid_versions = [
+        "0.1.0",
+        "1.0.0",
+        "1.2.3-alpha.1",
+        "2.0.0+build.184",
+        "0.0.1-rc1",
+        "1.0.0-0.3.7",
+        "1.0.0-x.7.z.92",
+    ]
+    invalid_versions = [
+        "v1.0.0",
+        "1.0",
+        "1",
+        "1.0.0.0",
+        "1.0.0-",
+        "01.1.0",
+        "alpha",
+        "",
+    ]
+    for v in valid_versions:
+        assert is_valid_semver(v), f"Expected valid semver: {v}"
+        parsed = parse_semver(v)
+        assert parsed is not None
+
+    for v in invalid_versions:
+        assert not is_valid_semver(v), f"Expected invalid semver: {v}"
+        assert parse_semver(v) is None
+
+
+def test_semver_comparison():
+    """Verify SemVer 2.0.0 precedence rules (CTR-EIDOS-CLI)."""
+    assert compare_semver("0.1.0", "0.1.0") == 0
+    assert compare_semver("0.1.0", "0.2.0") == -1
+    assert compare_semver("0.2.0", "0.1.0") == 1
+    assert compare_semver("1.0.0-alpha", "1.0.0") == -1
+    assert compare_semver("1.0.0", "1.0.0-alpha") == 1
+    assert compare_semver("1.0.0-alpha.1", "1.0.0-alpha.2") == -1
+    assert compare_semver("1.0.0", "1.0.1") == -1
+
+
+def test_plugin_manifest_semver_enforcement(tmp_path):
+    """Verify validate_plugin_package rejects invalid SemVer in plugin.json (CTR-EIDOS-CLI)."""
+    plugin_dir = tmp_path / "test_plugin"
+    plugin_dir.mkdir()
+
+    # Missing version
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps({
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": "test-plugin"
+        })
+    )
+    report_missing = validate_plugin_package(plugin_dir)
+    assert not report_missing.is_valid
+    assert any("missing required 'version' field" in err for err in report_missing.errors)
+
+    # Invalid SemVer
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps({
+            "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            "name": "test-plugin",
+            "version": "v1.0"
+        })
+    )
+    report_invalid = validate_plugin_package(plugin_dir)
+    assert not report_invalid.is_valid
+    assert any("not a valid Semantic Version" in err for err in report_invalid.errors)
+
+
+def test_plugin_version_status_check(tmp_path):
+    """Verify version status resolution (not installed, up to date, outdated, newer) (CTR-EIDOS-CLI)."""
+    # 1. Not installed
+    status = check_plugin_version_status(project_dir=tmp_path)
+    assert status["status"] == "not_installed"
+    assert not status["is_installed"]
+
+    # 2. Installed up-to-date
+    install_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path)
+    status_installed = check_plugin_version_status(project_dir=tmp_path)
+    assert status_installed["status"] == "up_to_date"
+    assert status_installed["is_installed"]
+    assert status_installed["installed_version"] == "0.1.0"
+
+    # 3. Outdated
+    plugin_json = tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json"
+    with open(plugin_json, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    data["version"] = "0.0.9"
+    with open(plugin_json, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+    status_outdated = check_plugin_version_status(project_dir=tmp_path)
+    assert status_outdated["status"] == "outdated"
+    assert status_outdated["installed_version"] == "0.0.9"
+
+    # 4. Newer
+    data["version"] = "0.2.0"
+    with open(plugin_json, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+    status_newer = check_plugin_version_status(project_dir=tmp_path)
+    assert status_newer["status"] == "newer"
+    assert status_newer["installed_version"] == "0.2.0"
+
+
+def test_cli_plugin_version(tmp_path):
+    """Verify 'eidos plugin version' CLI command across different states (CTR-EIDOS-CLI)."""
+    # Not installed
+    res_not_inst = runner.invoke(app, ["plugin", "version", "--project-dir", str(tmp_path)])
+    assert res_not_inst.exit_code == 0
+    assert "Not installed" in res_not_inst.stdout
+
+    # Installed
+    runner.invoke(app, ["plugin", "install", "--project-dir", str(tmp_path)])
+    res_inst = runner.invoke(app, ["plugin", "version", "--project-dir", str(tmp_path)])
+    assert res_inst.exit_code == 0
+    assert "Up to date" in res_inst.stdout
+    assert "0.1.0" in res_inst.stdout
+
+    # Outdated
+    plugin_json = tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json"
+    with open(plugin_json, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    data["version"] = "0.0.8"
+    with open(plugin_json, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+    res_outdated = runner.invoke(app, ["plugin", "version", "--project-dir", str(tmp_path)])
+    assert res_outdated.exit_code == 0
+    assert "Outdated" in res_outdated.stdout
+    assert "eidos plugin update" in res_outdated.stdout
+
+
+def test_cli_plugin_update(tmp_path):
+    """Verify 'eidos plugin update' CLI command upgrades older plugin versions (CTR-EIDOS-CLI)."""
+    # Install initially
+    runner.invoke(app, ["plugin", "install", "--project-dir", str(tmp_path)])
+
+    # Mock older installed version
+    plugin_json = tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json"
+    with open(plugin_json, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    data["version"] = "0.0.5"
+    with open(plugin_json, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+    # Run update
+    res = runner.invoke(app, ["plugin", "update", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    assert "Upgraded Eidos Agent Plugin" in res.stdout
+    assert "0.0.5" in res.stdout
+    assert "0.1.0" in res.stdout
+
+    # Verify plugin.json was updated
+    with open(plugin_json, "r", encoding="utf-8") as f:
+        updated_data = json.load(f)
+    assert updated_data["version"] == "0.1.0"
+
+
+def test_cli_plugin_upgrade_alias(tmp_path):
+    """Verify 'eidos plugin upgrade' alias CLI command (CTR-EIDOS-CLI)."""
+    res = runner.invoke(app, ["plugin", "upgrade", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    assert (tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json").exists()
+
 

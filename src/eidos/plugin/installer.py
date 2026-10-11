@@ -5,7 +5,13 @@ import json
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
+
+from eidos.plugin.version import (
+    get_bundled_plugin_version,
+    get_installed_plugin_version,
+    check_plugin_version_status,
+)
 
 
 class PluginInstallTarget(str, enum.Enum):
@@ -63,6 +69,21 @@ def _copy_plugin_tree(source_dir: Path, target_dir: Path, force: bool = False) -
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(item, dest)
             created.append(dest)
+
+    # Ensure plugin.json reflects the bundled plugin version
+    target_manifest = target_dir / "plugin.json"
+    if target_manifest.exists():
+        try:
+            with open(target_manifest, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            bundled_ver = get_bundled_plugin_version()
+            if data.get("version") != bundled_ver:
+                data["version"] = bundled_ver
+                with open(target_manifest, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+        except Exception:
+            pass
+
     return created
 
 
@@ -317,3 +338,19 @@ def uninstall_plugin(
             )
 
     return results
+
+
+def update_plugin(
+    target: PluginInstallTarget = PluginInstallTarget.PROJECT,
+    project_dir: Optional[Path] = None,
+    dest_path: Optional[Path] = None,
+) -> Tuple[Optional[str], str, List[InstallResult]]:
+    """Update the installed Eidos agent plugin to the latest bundled version.
+
+    Returns:
+        (previous_version, current_version, install_results)
+    """
+    prev_version = get_installed_plugin_version(project_dir=project_dir, dest_path=dest_path)
+    bundled_version = get_bundled_plugin_version()
+    results = install_plugin(target=target, project_dir=project_dir, dest_path=dest_path, force=True)
+    return prev_version, bundled_version, results

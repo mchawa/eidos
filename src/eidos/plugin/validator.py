@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 import jsonschema
 import yaml
 
+from eidos.plugin.version import SEMVER_PATTERN, is_valid_semver
+
 PLUGIN_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 MCP_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
 PLUGIN_NAME_PATTERN = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
@@ -93,7 +95,17 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
     else:
         report.add_error("plugin.json is missing required 'name' field.")
 
-    report.plugin_version = manifest.get("version")
+    # Validate version strictly with SemVer 2.0.0
+    version = manifest.get("version")
+    if version:
+        report.plugin_version = version
+        if not is_valid_semver(version):
+            report.add_error(
+                f"Plugin version '{version}' is not a valid Semantic Version (SemVer 2.0.0). "
+                "Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD] (e.g. 0.1.0, 1.0.0-beta.1)"
+            )
+    else:
+        report.add_error("plugin.json is missing required 'version' field.")
 
     # Discover extensions in manifest
     if "extensions" in manifest and isinstance(manifest["extensions"], dict):

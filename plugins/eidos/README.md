@@ -49,9 +49,23 @@ eidos plugin remove
 eidos plugin uninstall --target cursor      # removes only cursor MCP entry
 ```
 
+## Versioning and Updates
+
+Inspect the installed vs bundled plugin version and SemVer 2.0.0 synchronization status:
+
+```bash
+# Check version status in current workspace:
+eidos plugin version
+
+# Update installed plugin to match latest bundled engine version:
+eidos plugin update
+# Or using the upgrade alias:
+eidos plugin upgrade
+```
+
 ## Conformance Verification
 
-You can validate this plugin package against the official `agent-plugins.org` v1.0.0 JSON schemas at any time:
+You can validate this plugin package against the official `agent-plugins.org` v1.0.0 JSON schemas and SemVer 2.0.0 rules at any time:
 
 ```bash
 eidos plugin validate
