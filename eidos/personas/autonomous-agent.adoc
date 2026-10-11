@@ -1,6 +1,6 @@
 ---
 type: product/persona
-schema: schemas/v1/persona.schema.yaml
+schema: schemas/v1/product/persona.schema.yaml
 id: PER-AUTONOMOUS-AGENT
 name: "Autonomous Coding Agent"
 role_type: autonomous_agent

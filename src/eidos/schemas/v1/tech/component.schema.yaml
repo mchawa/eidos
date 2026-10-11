@@ -84,3 +84,4 @@ properties:
       max_memory_mb:
         type: integer
         description: "Maximum allowable memory allocation limit in MB."
+

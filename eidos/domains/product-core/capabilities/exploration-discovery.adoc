@@ -1,6 +1,6 @@
 ---
 type: product/capability
-schema: schemas/v1/capability.schema.yaml
+schema: schemas/v1/product/capability.schema.yaml
 id: CAP-PROD-003
 title: "Product Exploration & Hypothesis Spikes"
 domain: DOM-PRODUCT-CORE

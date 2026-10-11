@@ -34,3 +34,4 @@ properties:
   specification_file:
     type: string
     description: "Relative path from repository root to the raw interface schema file (e.g. contracts/api.openapi.yaml)."
+

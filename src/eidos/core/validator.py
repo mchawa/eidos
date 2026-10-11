@@ -10,16 +10,16 @@ from eidos.core.models import SpecDocument, ValidationReport
 from eidos.core.parser import parse_spec_file
 
 TYPE_TO_SCHEMA_NAME = {
-    "product/system": "system.schema.yaml",
-    "product/domain": "domain.schema.yaml",
-    "product/capability": "capability.schema.yaml",
-    "product/policy": "policy.schema.yaml",
-    "product/persona": "persona.schema.yaml",
-    "product/exploration": "exploration.schema.yaml",
-    "delta/mutation": "delta.schema.yaml",
-    "tech/architecture": "architecture.schema.yaml",
-    "tech/component": "component.schema.yaml",
-    "tech/contract": "contract.schema.yaml",
+    "product/system": "product/system.schema.yaml",
+    "product/domain": "product/domain.schema.yaml",
+    "product/capability": "product/capability.schema.yaml",
+    "product/policy": "product/policy.schema.yaml",
+    "product/persona": "product/persona.schema.yaml",
+    "product/exploration": "product/exploration.schema.yaml",
+    "delta/mutation": "delta/delta.schema.yaml",
+    "tech/architecture": "tech/architecture.schema.yaml",
+    "tech/component": "tech/component.schema.yaml",
+    "tech/contract": "tech/contract.schema.yaml",
 }
 
 
@@ -31,23 +31,36 @@ class SpecValidator:
         self._load_bundled_schemas()
 
     def _load_bundled_schemas(self):
-        """Preload standard schemas from the eidos package data."""
-        try:
-            schema_dir = files("eidos.schemas.v1")
-            for item in schema_dir.iterdir():
-                if item.name.endswith(".schema.yaml") or item.name.endswith(".schema.json"):
-                    content = item.read_text(encoding="utf-8")
-                    data = yaml.safe_load(content)
-                    self._schema_cache[item.name] = data
-                    self._schema_cache[f"schemas/v1/{item.name}"] = data
-        except Exception:
-            # Fallback if package is not installed as site-packages yet
-            local_schema_dir = Path(__file__).parent.parent / "schemas" / "v1"
-            if local_schema_dir.exists():
-                for p in local_schema_dir.glob("*.schema.yaml"):
-                    data = yaml.safe_load(p.read_text(encoding="utf-8"))
-                    self._schema_cache[p.name] = data
-                    self._schema_cache[f"schemas/v1/{p.name}"] = data
+        """Preload standard schemas recursively from the eidos package data."""
+        local_schema_dir = Path(__file__).parent.parent / "schemas" / "v1"
+        if local_schema_dir.exists():
+            for p in local_schema_dir.rglob("*.schema.yaml"):
+                content = p.read_text(encoding="utf-8")
+                data = yaml.safe_load(content)
+                rel_path = str(p.relative_to(local_schema_dir))
+                self._schema_cache[p.name] = data
+                self._schema_cache[rel_path] = data
+                self._schema_cache[f"schemas/v1/{rel_path}"] = data
+                self._schema_cache[f"schemas/v1/{p.name}"] = data
+        else:
+            try:
+                schema_root = files("eidos.schemas.v1")
+                self._walk_traversable(schema_root, "")
+            except Exception:
+                pass
+
+    def _walk_traversable(self, node, rel_prefix: str):
+        """Recursively walk an importlib Traversable directory."""
+        for item in node.iterdir():
+            sub_rel = f"{rel_prefix}/{item.name}".lstrip("/")
+            if item.is_dir():
+                self._walk_traversable(item, sub_rel)
+            elif item.name.endswith(".schema.yaml") or item.name.endswith(".schema.json"):
+                data = yaml.safe_load(item.read_text(encoding="utf-8"))
+                self._schema_cache[item.name] = data
+                self._schema_cache[sub_rel] = data
+                self._schema_cache[f"schemas/v1/{sub_rel}"] = data
+                self._schema_cache[f"schemas/v1/{item.name}"] = data
 
     def resolve_schema(self, doc: SpecDocument) -> Optional[dict]:
         """Resolve the JSON schema for a document based on its type or explicit schema attribute."""

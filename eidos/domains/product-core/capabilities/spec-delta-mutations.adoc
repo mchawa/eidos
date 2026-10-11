@@ -1,6 +1,6 @@
 ---
 type: product/capability
-schema: schemas/v1/capability.schema.yaml
+schema: schemas/v1/product/capability.schema.yaml
 id: CAP-PROD-002
 title: "SpecDelta Semantic Mutation Engine"
 domain: DOM-PRODUCT-CORE

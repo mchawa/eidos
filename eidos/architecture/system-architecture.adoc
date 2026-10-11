@@ -1,6 +1,6 @@
 ---
 type: tech/architecture
-schema: schemas/v1/architecture.schema.yaml
+schema: schemas/v1/tech/architecture.schema.yaml
 id: ARCH-EIDOS-001
 title: "Eidos Global Technical Architecture"
 topology_style: "monorepo_orchestrator"
@@ -55,3 +55,4 @@ Eidos is delivered as a monorepo consisting of:
 | Component ID | Container Type | Source Package Path
 | `CMP-EIDOS-ENGINE` | CLI & Core Library | `src/eidos`
 |===
+

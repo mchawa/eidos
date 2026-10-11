@@ -1,6 +1,6 @@
 ---
 type: product/capability
-schema: schemas/v1/capability.schema.yaml
+schema: schemas/v1/product/capability.schema.yaml
 id: CAP-AGENT-001
 title: "Universal Agent Adapter Layer"
 domain: DOM-AGENT-HARNESS

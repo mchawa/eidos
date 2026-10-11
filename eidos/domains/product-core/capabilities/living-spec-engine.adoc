@@ -1,6 +1,6 @@
 ---
 type: product/capability
-schema: schemas/v1/capability.schema.yaml
+schema: schemas/v1/product/capability.schema.yaml
 id: CAP-PROD-001
 title: "Living Baseline Specification Engine"
 domain: DOM-PRODUCT-CORE

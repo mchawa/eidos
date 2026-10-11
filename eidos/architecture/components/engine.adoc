@@ -1,6 +1,6 @@
 ---
 type: tech/component
-schema: schemas/v1/component.schema.yaml
+schema: schemas/v1/tech/component.schema.yaml
 id: CMP-EIDOS-ENGINE
 name: "Eidos Orchestration & Validation Engine"
 container_type: "library_and_cli"
@@ -44,3 +44,4 @@ This component represents the core Python codebase under `src/eidos/`. It is res
 | `src/eidos/agent/base.py` | Abstract protocol for pluggable agent execution drivers.
 | `src/eidos/vcs/bridge.py` | Normalized contract across GitHub and GitLab VCS platforms.
 |===
+

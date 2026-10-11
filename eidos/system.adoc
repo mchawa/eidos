@@ -1,6 +1,6 @@
 ---
 type: product/system
-schema: schemas/v1/system.schema.yaml
+schema: schemas/v1/product/system.schema.yaml
 id: SYS-EIDOS-001
 title: "Eidos: Agent-Agnostic Git-Native Development Ecosystem"
 archetypes:

@@ -20,19 +20,26 @@ eidos/
 │   ├── agent/                     # Pluggable agent adapters (agy, claude, codex)
 │   ├── vcs/                       # GitHub & GitLab sync engine
 │   └── schemas/v1/                # Portable JSON/YAML Schemas bundled as package data
-│       ├── system.schema.yaml
-│       ├── domain.schema.yaml
-│       ├── capability.schema.yaml
-│       ├── policy.schema.yaml
-│       ├── persona.schema.yaml
-│       ├── exploration.schema.yaml
-│       └── delta.schema.yaml
+│       ├── product/               # Product definition schemas
+│       │   ├── system.schema.yaml
+│       │   ├── domain.schema.yaml
+│       │   ├── capability.schema.yaml
+│       │   ├── policy.schema.yaml
+│       │   ├── persona.schema.yaml
+│       │   └── exploration.schema.yaml
+│       ├── tech/                  # Technical architecture schemas
+│       │   ├── architecture.schema.yaml
+│       │   ├── component.schema.yaml
+│       │   └── contract.schema.yaml
+│       └── delta/                 # Mutation & evolution schemas
+│           └── delta.schema.yaml
 │
 ├── eidos/                         # [THE LIVING SPECIFICATION / REAL USAGE]
 │   ├── system.adoc                # Root system descriptor
 │   ├── personas/                  # Human & AI actor roles
 │   ├── policies/                  # Non-negotiable architectural invariants
 │   ├── domains/                   # Bounded contexts & capabilities
+│   ├── architecture/              # System architecture, components, & contracts
 │   └── deltas/                    # In-flight and applied mutations
 │
 └── tests/                         # Engine & specification test suites

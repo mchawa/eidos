@@ -1,6 +1,6 @@
 ---
 type: product/domain
-schema: schemas/v1/domain.schema.yaml
+schema: schemas/v1/product/domain.schema.yaml
 id: DOM-PRODUCT-CORE
 name: "Product Intelligence & Spec Management"
 classification: core

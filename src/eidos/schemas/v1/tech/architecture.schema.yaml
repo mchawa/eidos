@@ -75,3 +75,4 @@ properties:
       ci_cd_engine:
         type: string
         description: "Automation pipelines for build, test, and release (e.g. GitHub Actions, GitLab CI)."
+

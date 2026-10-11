@@ -1,6 +1,6 @@
 ---
 type: tech/contract
-schema: schemas/v1/contract.schema.yaml
+schema: schemas/v1/tech/contract.schema.yaml
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 protocol: "cli_args"
@@ -22,3 +22,4 @@ Validates all specification documents under `PATH` (defaults to `./eidos`) again
 * **Exit Codes**:
   - `0`: All specifications are valid.
   - `1`: One or more validation errors or broken cross-references found.
+

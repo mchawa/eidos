@@ -1,6 +1,6 @@
 ---
 type: product/persona
-schema: schemas/v1/persona.schema.yaml
+schema: schemas/v1/product/persona.schema.yaml
 id: PER-PRODUCT-LEAD
 name: "Product Lead"
 role_type: human_product
