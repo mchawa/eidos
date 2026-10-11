@@ -35,10 +35,10 @@ uv venv --python 3.15 .venv
 uv pip install -e ".[dev]"
 
 # 5. Configure persistent AI tool directories and migrate initial backups
-echo "==> Configuring persistent volumes (~/.gemini, ~/.claude)..."
-sudo mkdir -p "${HOME}/.gemini" "${HOME}/.claude"
-sudo chown -R vscode:vscode "${HOME}/.gemini" "${HOME}/.claude"
-chmod 700 "${HOME}/.gemini" "${HOME}/.claude"
+echo "==> Configuring persistent volumes (~/.gemini)..."
+sudo mkdir -p "${HOME}/.gemini"
+sudo chown -R vscode:vscode "${HOME}/.gemini"
+chmod 700 "${HOME}/.gemini"
 
 BACKUP_DIR="${PWD}/backups"
 if [ -d "${BACKUP_DIR}/.gemini" ]; then
@@ -51,21 +51,11 @@ elif [ -d "${BACKUP_DIR}/gemini" ]; then
   rm -rf "${BACKUP_DIR}/gemini"
 fi
 
-if [ -d "${BACKUP_DIR}/.claude" ]; then
-  echo "    Migrating initial Claude data from ${BACKUP_DIR}/.claude..."
-  cp -a "${BACKUP_DIR}/.claude/." "${HOME}/.claude/"
-  rm -rf "${BACKUP_DIR}/.claude"
-elif [ -d "${BACKUP_DIR}/claude" ]; then
-  echo "    Migrating initial Claude data from ${BACKUP_DIR}/claude..."
-  cp -a "${BACKUP_DIR}/claude/." "${HOME}/.claude/"
-  rm -rf "${BACKUP_DIR}/claude"
-fi
-
 if [ -d "${BACKUP_DIR}" ]; then
   rmdir "${BACKUP_DIR}" 2>/dev/null || true
 fi
 
-sudo chown -R vscode:vscode "${HOME}/.gemini" "${HOME}/.claude"
+sudo chown -R vscode:vscode "${HOME}/.gemini"
 
 # 6. Validate Eidos specifications
 if [ -f ".venv/bin/eidos" ]; then

@@ -25,12 +25,10 @@
     // uv cannot use hardlinks across the /tmp → workspace boundary in Codespaces;
     // copy mode avoids "Invalid cross-device link" errors.
     "UV_LINK_MODE": "copy",
-    "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN}",
     "GITLAB_TOKEN": "${localEnv:GITLAB_TOKEN}"
   },
   "mounts": [
-    "source=eidos-gemini,target=/home/vscode/.gemini,type=volume",
-    "source=eidos-claude,target=/home/vscode/.claude,type=volume"
+    "source=eidos-gemini,target=/home/vscode/.gemini,type=volume"
   ],
   "remoteUser": "vscode",
   "postCreateCommand": "bash .devcontainer/post-create.sh",
@@ -75,8 +73,7 @@
         "mhutchie.git-graph",
         "donjayamanne.githistory",
         // --- AI Agents & Harness ---
-        "google.google-antigravity",
-        "anthropic.claude-code"
+        "google.google-antigravity"
       ]
     }
   }
