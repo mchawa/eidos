@@ -45,8 +45,8 @@ class InvariantTrace:
 
 
 @dataclass
-class PRCheckResult:
-    """Consolidated outcome of the Eidos PR verification gate."""
+class DriftCheckResult:
+    """Consolidated outcome of the Eidos drift detection analysis."""
 
     is_clean: bool
     drift_detected: bool
@@ -57,6 +57,10 @@ class PRCheckResult:
     invariants: list[InvariantTrace] = field(default_factory=list)
     remediation_suggestions: list[str] = field(default_factory=list)
     summary_markdown: str = ""
+
+
+# Backwards compatibility alias
+PRCheckResult = DriftCheckResult
 
 
 @dataclass
@@ -377,14 +381,14 @@ def get_living_specs_catalog(eidos_dir: Path) -> dict[str, list[dict]]:
     return catalog
 
 
-def check_pr_drift(
+def detect_drift(
     repo_root: Path,
     base_ref: str | None = None,
     head_ref: str = "HEAD",
     eidos_dir: Path | None = None,
     uncommitted: bool = False,
-) -> PRCheckResult:
-    """Run full PR gate verification: spec-code drift detection, schema validation, and invariant check."""
+) -> DriftCheckResult:
+    """Run drift detection: evaluate spec-code synchronization, schema validation, and invariant check."""
     root = repo_root.resolve()
     target_eidos = (eidos_dir or (root / "eidos")).resolve()
 
@@ -432,9 +436,9 @@ def check_pr_drift(
     # Overall clean status
     is_clean = (not drift_detected) and validation_report.is_clean
 
-    # 6. Generate Markdown Summary for PR comments
+    # 6. Generate Markdown Summary for reports and PR comments
     summary_lines = [
-        "## 🧭 Eidos Living Specification & Drift Gate Summary",
+        "## 🧭 Eidos Living Specification Drift Detection Summary",
         "",
     ]
 
@@ -468,13 +472,13 @@ def check_pr_drift(
         summary_lines.append(f"**Impacted Components:** `{', '.join(touched_components)}`\n")
 
     if classification.spec_files:
-        summary_lines.append("### 📄 Touched Living Specifications in PR:")
+        summary_lines.append("### 📄 Touched Living Specifications:")
         for sf in classification.spec_files:
             summary_lines.append(f"- `{sf}`")
         summary_lines.append("")
 
     if classification.delta_files:
-        summary_lines.append("### 📋 Associated SpecDeltas in PR:")
+        summary_lines.append("### 📋 Associated SpecDeltas:")
         for df in classification.delta_files:
             summary_lines.append(f"- `{df}`")
         summary_lines.append("")
@@ -487,7 +491,7 @@ def check_pr_drift(
 
     summary_markdown = "\n".join(summary_lines)
 
-    return PRCheckResult(
+    return DriftCheckResult(
         is_clean=is_clean,
         drift_detected=drift_detected,
         workflow_mode=workflow_mode,
@@ -498,6 +502,10 @@ def check_pr_drift(
         remediation_suggestions=remediation,
         summary_markdown=summary_markdown,
     )
+
+
+# Backwards compatibility alias
+check_pr_drift = detect_drift
 
 
 def reconcile_specs(
@@ -556,7 +564,7 @@ def reconcile_specs(
             "1. Inspect the Git diff of the modified code files.",
             "2. Think deeply about the architectural implications, touched contracts, capabilities, and invariant tests.",
             "3. Update the appropriate living specifications in 'eidos/' directly (or create a SpecDelta if this is a complex, breaking change).",
-            "4. Verify that 'eidos validate eidos' and 'eidos check-pr' pass cleanly.",
+            "4. Verify that 'eidos validate eidos' and 'eidos drift' (or AI tool 'eidos_detect_drift') pass cleanly.",
         ]
     )
 

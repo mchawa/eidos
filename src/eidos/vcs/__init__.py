@@ -3,12 +3,14 @@
 from eidos.vcs.bridge import VCSBridge, VCSIssue, VCSPullRequest
 from eidos.vcs.drift import (
     ChangedFilesClassification,
+    DriftCheckResult,
     InvariantTrace,
     PRCheckResult,
     ReconcileResult,
     ReconcileSuggestion,
     check_pr_drift,
     classify_changed_files,
+    detect_drift,
     get_living_specs_catalog,
     map_code_to_components,
     reconcile_specs,
@@ -16,6 +18,7 @@ from eidos.vcs.drift import (
 
 __all__ = [
     "ChangedFilesClassification",
+    "DriftCheckResult",
     "InvariantTrace",
     "PRCheckResult",
     "ReconcileResult",
@@ -25,6 +28,7 @@ __all__ = [
     "VCSPullRequest",
     "check_pr_drift",
     "classify_changed_files",
+    "detect_drift",
     "get_living_specs_catalog",
     "map_code_to_components",
     "reconcile_specs",

@@ -17,19 +17,19 @@ def test_mcp_tools_declared():
     assert "eidos_create_spec" in tool_names
     assert "eidos_delete_spec" in tool_names
     assert "eidos_apply_delta" in tool_names
-    assert "eidos_check_pr" in tool_names
+    assert "eidos_detect_drift" in tool_names
     assert "eidos_reconcile" in tool_names
 
 
-def test_mcp_check_pr_and_reconcile_tools():
-    """Verify eidos_check_pr and eidos_reconcile execution via MCP."""
-    res_pr = handle_tool_call("eidos_check_pr", {"path": "eidos"})
-    assert len(res_pr) == 1
-    data_pr = json.loads(res_pr[0]["text"])
-    assert "is_clean" in data_pr
-    assert "drift_detected" in data_pr
-    assert "workflow_mode" in data_pr
-    assert "summary_markdown" in data_pr
+def test_mcp_detect_drift_and_reconcile_tools():
+    """Verify eidos_detect_drift and eidos_reconcile execution via MCP."""
+    res_drift = handle_tool_call("eidos_detect_drift", {"path": "eidos"})
+    assert len(res_drift) == 1
+    data_drift = json.loads(res_drift[0]["text"])
+    assert "is_clean" in data_drift
+    assert "drift_detected" in data_drift
+    assert "workflow_mode" in data_drift
+    assert "summary_markdown" in data_drift
 
     res_rec = handle_tool_call("eidos_reconcile", {"path": "eidos"})
     assert len(res_rec) == 1

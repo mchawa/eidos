@@ -34,5 +34,7 @@ The Eidos MCP server implements the Model Context Protocol (MCP) specification (
 | `eidos_read_spec` | Parses an AsciiDoc specification and returns frontmatter metadata and body | `path`
 | `eidos_list_specs` | Lists all living specifications and SpecDeltas with optional filtering | `path`, `type`, `status`
 | `eidos_delete_spec` | Safely deletes a specification with cross-reference safety checks | `target`, `path`, `force`
+| `eidos_detect_drift` | Detects spec-to-code drift and evaluates living spec synchronization | `base`, `head`, `uncommitted`, `path`
+| `eidos_reconcile` | Analyzes changed code and generates candidate specs and tailored AI prompts | `base`, `uncommitted`, `path`
 |===
 

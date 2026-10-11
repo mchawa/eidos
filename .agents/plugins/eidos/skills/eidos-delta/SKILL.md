@@ -33,7 +33,7 @@ When tasked with a complex feature or assigned a GitHub/GitLab issue:
        │ Scaffold  │      │ Review     │      │ & Verify  │      │  (Apply)  │
        └───────────┘      └────────────┘      └───────────┘      └───────────┘
          DLT-*.adoc        Sign-off on           Pytest /            eidos
-        with vcs link      intent diff          check-pr          delta apply
+        with vcs link      intent diff            drift           delta apply
 ```
 
 ### Step 1: Think Deeply & Scaffold

@@ -23,7 +23,7 @@ c4_internal_components:
     responsibility: "Agent plugin lifecycle commands: install, update, validate, inspect, and remove."
     source_path: "src/eidos/cli/main.py"
   - name: "DriftCommands"
-    responsibility: "PR verification gate (check-pr / drift) and living spec reconciliation assistant (reconcile / sync)."
+    responsibility: "Spec-to-code drift detection (drift) and living spec reconciliation assistant (reconcile / sync)."
     source_path: "src/eidos/cli/main.py"
   - name: "InitCommand"
     responsibility: "CLI entrypoint for repository bootstrapping and agent plugin installation."

@@ -15,7 +15,7 @@ from eidos.core.scaffolder import (
     list_specs,
 )
 from eidos.core.validator import SpecValidator
-from eidos.vcs import check_pr_drift, reconcile_specs
+from eidos.vcs import detect_drift, reconcile_specs
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
@@ -189,14 +189,14 @@ TOOLS = [
         },
     },
     {
-        "name": "eidos_check_pr",
-        "description": "Inspect spec-to-code drift between git branches or uncommitted changes, validate living specification schema integrity, and verify invariant test bindings.",
+        "name": "eidos_detect_drift",
+        "description": "Detect spec-to-code drift by inspecting git diffs or uncommitted working tree changes. Evaluates workflow mode (Direct Mode vs Planned Mode), checks living spec updates, and verifies invariant test coverage.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "base": {
                     "type": "string",
-                    "description": "Base git reference to compare against (e.g. 'origin/main', 'main').",
+                    "description": "Base git reference to compare against (defaults to 'origin/main' or 'main').",
                 },
                 "head": {
                     "type": "string",
@@ -402,12 +402,12 @@ def handle_tool_call(name: str, arguments: dict[str, Any]) -> list[dict[str, Any
         res = {"success": success, "message": msg, "created_files": [str(f) for f in created_files]}
         return [{"type": "text", "text": json.dumps(res, indent=2)}]
 
-    elif name == "eidos_check_pr":
+    elif name in ("eidos_detect_drift", "eidos_check_pr"):
         base_ref = arguments.get("base")
         head_ref = arguments.get("head") or "HEAD"
         uncommitted = arguments.get("uncommitted", False)
         eidos_path = Path(arguments.get("path") or "eidos")
-        result = check_pr_drift(
+        result = detect_drift(
             repo_root=Path.cwd(),
             base_ref=base_ref,
             head_ref=head_ref,

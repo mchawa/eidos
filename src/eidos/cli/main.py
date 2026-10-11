@@ -36,7 +36,7 @@ from eidos.plugin.version import (
 )
 from eidos.portal.builder import build_static_portal
 from eidos.portal.server import run_portal_server
-from eidos.vcs import check_pr_drift, reconcile_specs
+from eidos.vcs import detect_drift, reconcile_specs
 
 app = typer.Typer(
     name="eidos",
@@ -218,8 +218,8 @@ def lint_cmd(
     validate(target_path)
 
 
-@app.command("check-pr")
-def check_pr_cmd(
+@app.command("drift")
+def drift_cmd(
     base: str | None = typer.Option(
         None,
         "--base",
@@ -252,7 +252,7 @@ def check_pr_cmd(
         None,
         "--markdown",
         "-m",
-        help="Write markdown summary to file (e.g. for GitHub Actions PR comment).",
+        help="Write markdown summary to file (e.g. for CI/CD reports).",
     ),
     json_output: bool = typer.Option(
         False,
@@ -260,11 +260,11 @@ def check_pr_cmd(
         help="Output raw JSON verification result.",
     ),
 ):
-    """Verify PR spec-code drift, schema validity, and invariant test coverage."""
+    """Detect spec-to-code drift, schema validity, and invariant test coverage."""
     eidos_dir = path or Path("eidos")
     repo_root = Path.cwd()
 
-    result = check_pr_drift(
+    result = detect_drift(
         repo_root=repo_root,
         base_ref=base,
         head_ref=head,
@@ -294,7 +294,7 @@ def check_pr_cmd(
             if result.workflow_mode == "planned"
             else "[bold green]Direct Mode (Co-Evolution)[/bold green]"
         )
-        console.print(f"[bold cyan]Eidos Living Specification & Drift Gate[/bold cyan] ({mode_badge})\n")
+        console.print(f"[bold cyan]Eidos Spec-to-Code Drift Detection[/bold cyan] ({mode_badge})\n")
 
         table = Table(title="Spec-Code Synchronization Summary", show_header=True)
         table.add_column("Metric", style="bold cyan")
@@ -358,17 +358,6 @@ def check_pr_cmd(
 
     if not result.is_clean and not warn_only:
         raise typer.Exit(code=1)
-
-
-@app.command("drift")
-def drift_shortcut(
-    base: str | None = typer.Option(None, "--base", "-b", help="Base git reference to compare against."),
-    uncommitted: bool = typer.Option(False, "--uncommitted", "-u", help="Analyze uncommitted working tree changes."),
-    path: Path | None = typer.Option(None, "--path", "-p", help="Path to eidos directory."),
-    warn_only: bool = typer.Option(False, "--warn-only", help="Do not exit with code 1 on drift."),
-):
-    """Shortcut alias for 'eidos check-pr' to inspect spec-code drift."""
-    check_pr_cmd(base=base, uncommitted=uncommitted, path=path, warn_only=warn_only)
 
 
 @app.command("reconcile")

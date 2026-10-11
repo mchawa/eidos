@@ -90,14 +90,13 @@ Orchestrates SpecDeltas throughout their semantic mutation lifecycle using flat 
   - `apply <id_or_path>`: Reconciles a delta in-place, updates frontmatter status to `applied`, and updates symlink views without moving files.
   - `delete <id_or_path> [--force]`: Deletes a SpecDelta file and cleans up symlink views.
 
-=== `eidos check-pr [--base REF] [--head REF] [--uncommitted] [--markdown FILE] [--json]`
-Verifies PR spec-code drift, schema validity, and invariant test coverage across both Planned Mode and Direct Mode.
-* **Alias**: `eidos drift`
+=== `eidos drift [--base REF] [--head REF] [--uncommitted] [--markdown FILE] [--json]`
+Detects spec-to-code drift, schema validity, and invariant test coverage across both Planned Mode and Direct Mode.
 * **Options**:
   - `--base, -b`: Base git reference to compare against (defaults to `origin/main` or `main`).
   - `--head`: Head git reference (defaults to `HEAD`).
   - `--uncommitted, -u`: Analyze uncommitted working tree and staged changes instead of branch diff.
-  - `--markdown, -m`: Path to write the markdown summary comment (e.g. for GitHub Actions step summary / PR comment).
+  - `--markdown, -m`: Path to write the markdown summary comment (e.g. for CI/CD reports).
   - `--json`: Output raw JSON verification result.
   - `--warn-only`: Do not exit with code 1 on drift.
 * **Exit Codes**:
@@ -128,7 +127,7 @@ Bootstraps a repository with a complete, schema-conforming Eidos living specific
   - `1`: Directory already initialized without `--force`, or validation failed.
 
 === Convenience Shortcuts
-* `eidos check-pr`: Runs PR drift gate verification (`eidos drift`).
+* `eidos drift`: Runs spec-to-code drift detection.
 * `eidos reconcile`: Runs spec reconciliation assistant (`eidos sync`).
 * `eidos create <type> <id> --title <title>`: Direct shortcut to `eidos spec create`.
 * `eidos delete <id_or_path> [--force]`: Direct shortcut to `eidos spec delete`.

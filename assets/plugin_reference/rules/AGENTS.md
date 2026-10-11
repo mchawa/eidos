@@ -34,6 +34,6 @@ Whenever a repository contains an `eidos/` directory, adhere strictly to the fol
 ## 5. Reconciliation & Specification Integrity
 * If code was modified before specs, run `eidos reconcile` (or use the `eidos-reconcile` skill) to inspect the Git diff and synchronize the living specifications.
 * Before concluding your work, always validate all specifications and check for drift:
-  - Run CLI: `eidos validate eidos` and `eidos check-pr`
-  - Or MCP tools: `eidos_validate` and `eidos_check_pr`
+  - Run CLI: `eidos validate eidos` and `eidos drift`
+  - Or MCP tools: `eidos_validate` and `eidos_detect_drift`
 * All documents must strictly conform to their schema and have zero broken cross-references.

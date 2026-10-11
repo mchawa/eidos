@@ -50,14 +50,15 @@ Do not rely on naive path matching. **Think deeply** about the semantic behavior
 Use standard file editing tools (`replace_file_content` / `write_to_file`) to update the target `.adoc` files in `eidos/`.
 
 ### Step 4: Verify Zero Drift & Invariant Test Coverage
-Run the verification gate:
+Run drift detection via CLI or AI tool:
 ```bash
 # 1. Verify schema compliance and cross-references:
 eidos validate eidos
 
 # 2. Verify spec-code synchronization:
-eidos check-pr
+eidos drift
 ```
+Or call MCP tool `eidos_detect_drift(uncommitted=True)`.
 Ensure all checks pass with exit code `0`.
 
 ---
@@ -65,14 +66,14 @@ Ensure all checks pass with exit code `0`.
 ## 3. CLI Commands Reference
 
 ```bash
-# Run PR verification gate (compares origin/main...HEAD)
-eidos check-pr
+# Detect drift (compares origin/main...HEAD)
+eidos drift
 
-# Run verification gate on uncommitted working tree changes
-eidos check-pr --uncommitted
+# Detect drift on uncommitted working tree changes
+eidos drift --uncommitted
 
-# Generate Markdown PR summary file (for CI/CD comments)
-eidos check-pr --markdown pr_summary.md
+# Generate Markdown drift summary file
+eidos drift --markdown drift_summary.md
 
 # Inspect Git diff and suggest candidate specs to update
 eidos reconcile

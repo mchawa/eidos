@@ -6,8 +6,8 @@ from typer.testing import CliRunner
 
 from eidos.cli.main import app
 from eidos.vcs.drift import (
-    check_pr_drift,
     classify_changed_files,
+    detect_drift,
     reconcile_specs,
 )
 
@@ -47,7 +47,7 @@ def test_drift_detection_code_without_specs(monkeypatch):
         ],
     )
 
-    result = check_pr_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    result = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
     assert result.drift_detected is True
     assert result.is_clean is False
     assert result.workflow_mode == "direct"
@@ -65,7 +65,7 @@ def test_pr_check_gate_pass_direct(monkeypatch):
         ],
     )
 
-    result = check_pr_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    result = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
     assert result.drift_detected is False
     assert result.is_clean is True
     assert result.workflow_mode == "direct"
@@ -82,7 +82,7 @@ def test_pr_check_gate_pass_planned(monkeypatch):
         ],
     )
 
-    result = check_pr_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    result = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
     assert result.drift_detected is False
     assert result.workflow_mode == "planned"
     assert "Mode: **Planned (SpecDelta)**" in result.summary_markdown
@@ -106,8 +106,8 @@ def test_reconcile_specs_catalog_and_prompt(monkeypatch):
     assert len(result.catalog["capabilities"]) > 0
 
 
-def test_cli_check_pr_and_reconcile_commands(monkeypatch, tmp_path):
-    """Verify CLI check-pr, drift, reconcile, and sync commands."""
+def test_cli_drift_and_reconcile_commands(monkeypatch, tmp_path):
+    """Verify CLI drift, reconcile, and sync commands."""
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
         lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
@@ -116,18 +116,22 @@ def test_cli_check_pr_and_reconcile_commands(monkeypatch, tmp_path):
         ],
     )
 
-    # 1. check-pr passing
-    md_file = tmp_path / "pr_summary.md"
-    res_pr = runner.invoke(app, ["check-pr", "--markdown", str(md_file)])
-    assert res_pr.exit_code == 0
-    assert "Verification Passed!" in res_pr.output
+    # 1. drift passing
+    md_file = tmp_path / "drift_summary.md"
+    res_drift = runner.invoke(app, ["drift", "--markdown", str(md_file)])
+    assert res_drift.exit_code == 0
+    assert "Verification Passed!" in res_drift.output
     assert md_file.exists()
     assert "PASSED" in md_file.read_text(encoding="utf-8")
 
-    # 2. check-pr json output
-    res_json = runner.invoke(app, ["check-pr", "--json"])
+    # 2. drift json output
+    res_json = runner.invoke(app, ["drift", "--json"])
     assert res_json.exit_code == 0
     assert '"is_clean": true' in res_json.output
+
+    # 3. check-pr is removed from CLI
+    res_removed = runner.invoke(app, ["check-pr"])
+    assert res_removed.exit_code != 0
 
     # 3. reconcile command
     res_rec = runner.invoke(app, ["reconcile"])

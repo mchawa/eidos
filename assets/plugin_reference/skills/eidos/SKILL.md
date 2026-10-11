@@ -21,7 +21,7 @@ Eidos replaces fragmented documentation, stale wikis, and historical write-only 
    - **Direct Mode (Default):** For fast, routine, or flow-state tasks, co-evolve living specs and code directly. **Git diffs** serve as the change delta.
    - **Planned Mode (Optional):** For complex or breaking changes, **think deeply** and author an explicit SpecDelta (`DLT-*`), review with human/team, implement against the checklist, and reconcile.
 5. **Invariant-Test Traceability**: Product capabilities (`CAP-*`) and architectural policies (`POL-*`) declare invariants. Automated tests in `tests/` explicitly reference these invariants.
-6. **Automated Drift Governance**: `eidos check-pr` verifies that code modifications are accompanied by living spec updates before merging.
+6. **Automated Drift Governance**: `eidos drift` (or AI tool `eidos_detect_drift`) verifies that code modifications are accompanied by living spec updates before merging.
 
 ---
 
@@ -80,7 +80,7 @@ eidos/
 Run the verification gate:
 ```bash
 eidos validate eidos
-eidos check-pr
+eidos drift
 ```
 Ensure all checks pass with exit code `0`.
 
@@ -89,7 +89,7 @@ Ensure all checks pass with exit code `0`.
 ## 4. Available MCP Tools
 
 When the Eidos MCP server is active, you have access to:
-- `eidos_check_pr`: Inspect spec-to-code drift between git branches or uncommitted changes, validate schemas, and verify invariant test bindings.
+- `eidos_detect_drift`: Inspect spec-to-code drift between git branches or uncommitted changes, validate schemas, and verify invariant test bindings.
 - `eidos_reconcile`: Analyze recent code changes against the living spec catalog and return candidate specs to update.
 - `eidos_validate(path="eidos")`: Validate all `.adoc` files in a path against schemas and verify cross-references.
 - `eidos_info()`: Return engine version, loaded v1 schemas, and supported platforms.
