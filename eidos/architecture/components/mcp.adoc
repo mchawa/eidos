@@ -52,3 +52,4 @@ This container represents the autonomous agent interface under `src/eidos/mcp/`.
 | **ToolCatalog** | Defines input schemas and capabilities for all 10 callable tools | `src/eidos/mcp/server.py`
 | **ToolDispatcher** | Routes tool executions to CMP-EIDOS-CORE and formats JSON response payloads | `src/eidos/mcp/server.py`
 |===
+

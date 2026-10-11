@@ -61,3 +61,4 @@ This container represents the user-facing CLI under `src/eidos/cli/`. It provide
 | **PluginCommands** | Agent plugin management conforming to agent-plugins.org v1.0.0 | `src/eidos/cli/main.py`
 | **InitCommand** | Repository bootstrapping and baseline spec scaffolding | `src/eidos/cli/main.py`
 |===
+

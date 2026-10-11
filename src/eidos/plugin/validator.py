@@ -27,6 +27,7 @@ class PluginValidationReport:
     skills: List[str] = field(default_factory=list)
     mcp_servers: List[str] = field(default_factory=list)
     extensions: List[str] = field(default_factory=list)
+    hooks: List[str] = field(default_factory=list)
 
     def add_error(self, message: str) -> None:
         self.errors.append(message)
@@ -195,5 +196,66 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
                 except Exception as e:
                     report.add_error(f"Error parsing skill '{item.name}' SKILL.md: {e}")
 
+    # 4. Validate Lifecycle Hooks: hooks.json (optional)
+    hooks_path = plugin_dir / "hooks.json"
+    if hooks_path.exists():
+        try:
+            with open(hooks_path, "r", encoding="utf-8") as f:
+                hooks_data = json.load(f)
+
+            if not isinstance(hooks_data, dict):
+                report.add_error("Invalid 'hooks.json': root must be a dictionary of hook configurations.")
+            else:
+                valid_events = {"PreToolUse", "PostToolUse", "PreInvocation", "PostInvocation", "Stop", "enabled"}
+                for hook_name, hook_spec in hooks_data.items():
+                    if not isinstance(hook_spec, dict):
+                        report.add_error(f"Hook '{hook_name}' in 'hooks.json' must be an object.")
+                        continue
+                    report.hooks.append(hook_name)
+                    for event_key, handlers in hook_spec.items():
+                        if event_key == "enabled":
+                            continue
+                        if event_key not in valid_events:
+                            report.add_warning(f"Hook '{hook_name}' defines unrecognized event '{event_key}'.")
+                        if not isinstance(handlers, list):
+                            report.add_error(f"Hook '{hook_name}' event '{event_key}' must be a list of handler configs.")
+                            continue
+
+                        for handler in handlers:
+                            if not isinstance(handler, dict):
+                                report.add_error(f"Hook '{hook_name}' in '{event_key}' contains invalid handler item.")
+                                continue
+                            if "hooks" in handler and isinstance(handler["hooks"], list):
+                                for sub_h in handler["hooks"]:
+                                    _verify_hook_command(sub_h, hook_name, event_key, plugin_dir, report)
+                            else:
+                                _verify_hook_command(handler, hook_name, event_key, plugin_dir, report)
+
+        except json.JSONDecodeError as e:
+            report.add_error(f"Invalid JSON in 'hooks.json': {e}")
+        except Exception as e:
+            report.add_error(f"Error reading 'hooks.json': {e}")
+
     return report
+
+
+def _verify_hook_command(
+    handler: Dict[str, Any],
+    hook_name: str,
+    event_key: str,
+    plugin_dir: Path,
+    report: PluginValidationReport,
+) -> None:
+    cmd = handler.get("command")
+    if not cmd:
+        report.add_error(f"Hook '{hook_name}' event '{event_key}' handler missing required 'command' field.")
+        return
+    tokens = cmd.split()
+    for token in tokens:
+        cleaned = token.lstrip("./")
+        if cleaned.startswith("scripts/"):
+            script_path = plugin_dir / cleaned
+            if not script_path.exists():
+                report.add_error(f"Hook '{hook_name}' event '{event_key}' references non-existent script: '{token}'")
+
 

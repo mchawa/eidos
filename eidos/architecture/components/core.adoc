@@ -66,3 +66,4 @@ This container represents the foundational library under `src/eidos/core/`. It o
 == Operational Invariants & Quality Attributes
 * **Stateless Operation**: The engine persists zero runtime state outside of the target Git repository.
 * **Deterministic Validation**: Identical repository specifications must always produce identical validation reports across all environments.
+

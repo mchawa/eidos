@@ -25,6 +25,9 @@ technical:
     - id: INV-AGENT-DRIVER-ISOLATION
       rule: "Switching the agent driver from 'agy' to 'claude' must not alter task inputs, test invariants, or git output contracts."
       test_binding: "tests/agents/test_adapters.py::test_driver_parity"
+    - id: INV-AGENT-LINT-HOOK
+      rule: "The AI agent plugin lifecycle hooks must enforce living specification syntax, schema validity, and link integrity on edit and before task completion."
+      test_binding: "tests/test_plugin.py::test_doc_lint_hook_stop_event"
 ---
 = Capability: Universal Agent Adapter Layer
 :toc: left

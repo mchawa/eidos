@@ -1,0 +1,42 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-008
+title: AI Plugin Lifecycle Hooks for Automated Documentation Linting
+status: applied
+intent:
+  kind: feature_addition
+  motivation: Introduce lifecycle hooks in the AI agent plugin to enforce syntax and
+    schema validation of living documentation on edit and task completion.
+mutations:
+- action: modify_component
+  target_component: CMP-EIDOS-PLUGIN
+  details: Integrate lifecycle hooks configuration (hooks.json) and script (scripts/lint_docs.py)
+    for living documentation syntax and schema validation into the plugin reference
+    bundle.
+- action: add_invariant
+  target_capability: CAP-AGENT-001
+  target_invariant_id: INV-AGENT-LINT-HOOK
+  details: Require the AI agent plugin to enforce living specification syntax, schema
+    validity, and cross-reference integrity before task completion.
+- action: modify_contract
+  target_component: CMP-EIDOS-CLI
+  details: Add 'eidos lint' CLI command as an alias to validate specifications and
+    report syntax/schema diagnostics.
+---
+
+= SpecDelta: AI Plugin Lifecycle Hooks for Automated Documentation Linting
+:toc: left
+
+== Problem Statement
+When autonomous AI agents make code and documentation modifications in Eidos-governed repositories, mistakes such as malformed YAML frontmatters, broken cross-references, or missing required schema properties can occur. Without immediate feedback, an agent might conclude its session leaving invalid specifications.
+
+== Proposed Specification Changes
+1. Provide an AI plugin lifecycle hook configuration (`hooks.json`) and executable hook runner (`scripts/lint_docs.py`) bundled within `assets/plugin_reference` and installed to `.agents/plugins/eidos/`.
+2. Hook into agent lifecycle events:
+   - `PreToolUse`: Intercepts `write_to_file` and `replace_file_content` targeting `.adoc` specifications, denying writes if YAML frontmatter syntax is malformed.
+   - `PostInvocation`: Injects diagnostic ephemeral messages into the conversation if specifications fail validation.
+   - `Stop`: Blocks agent completion (`decision: continue`) if living specifications in `eidos/` fail schema or reference validation.
+3. Expose standalone execution support in `scripts/lint_docs.py` and CLI alias `eidos lint` under `CTR-EIDOS-CLI`.
+4. Add invariant `INV-AGENT-LINT-HOOK` under `CAP-AGENT-001`.
+5. Update `CMP-EIDOS-PLUGIN` validator to verify `hooks.json` structure and script references.

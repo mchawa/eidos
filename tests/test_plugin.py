@@ -2,6 +2,8 @@
 
 from pathlib import Path
 import json
+import subprocess
+import sys
 import pytest
 from typer.testing import CliRunner
 from eidos.cli.main import app
@@ -390,5 +392,140 @@ def test_assets_and_installed_plugin_parity():
         f1 = (ref_plugin / rel).read_text(encoding="utf-8")
         f2 = (installed_plugin / rel).read_text(encoding="utf-8")
         assert f1 == f2, f"Content mismatch in {rel}"
+
+
+def test_plugin_hooks_conformance():
+    """Verify that hooks.json in assets/plugin_reference satisfies agent plugin hook specifications."""
+    ref_plugin = Path("assets/plugin_reference")
+    report = validate_plugin_package(ref_plugin)
+    assert report.is_valid, f"Plugin validation failed: {report.errors}"
+    assert "eidos-doc-linter" in report.hooks
+
+
+def test_doc_lint_hook_pre_tool_use():
+    """Verify pre_tool linting intercepts and blocks malformed YAML frontmatters."""
+    script_path = Path("assets/plugin_reference/scripts/lint_docs.py")
+    assert script_path.exists()
+
+    # 1. Invalid YAML
+    bad_payload = json.dumps({
+        "toolCall": {
+            "name": "write_to_file",
+            "args": {
+                "TargetFile": "eidos/policies/test.adoc",
+                "CodeContent": "---\ntype: [unclosed flow\n---\n",
+            },
+        }
+    })
+    res_bad = subprocess.run(
+        [sys.executable, str(script_path), "--event", "pre_tool"],
+        input=bad_payload,
+        text=True,
+        capture_output=True,
+    )
+    assert res_bad.returncode == 0
+    data_bad = json.loads(res_bad.stdout)
+    assert data_bad["decision"] == "deny"
+    assert "YAML Syntax Error" in data_bad["reason"]
+
+    # 2. Missing required fields
+    incomplete_payload = json.dumps({
+        "toolCall": {
+            "name": "write_to_file",
+            "args": {
+                "TargetFile": "eidos/policies/test.adoc",
+                "CodeContent": "---\nfoo: bar\n---\n",
+            },
+        }
+    })
+    res_inc = subprocess.run(
+        [sys.executable, str(script_path), "--event", "pre_tool"],
+        input=incomplete_payload,
+        text=True,
+        capture_output=True,
+    )
+    assert res_inc.returncode == 0
+    data_inc = json.loads(res_inc.stdout)
+    assert data_inc["decision"] == "deny"
+    assert "missing required fields" in data_inc["reason"]
+
+    # 3. Valid frontmatter
+    good_payload = json.dumps({
+        "toolCall": {
+            "name": "write_to_file",
+            "args": {
+                "TargetFile": "eidos/policies/test.adoc",
+                "CodeContent": "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-999\ntitle: Sample Policy\n---\n",
+            },
+        }
+    })
+    res_good = subprocess.run(
+        [sys.executable, str(script_path), "--event", "pre_tool"],
+        input=good_payload,
+        text=True,
+        capture_output=True,
+    )
+    assert res_good.returncode == 0
+    data_good = json.loads(res_good.stdout)
+    assert data_good["decision"] == "allow"
+
+
+def test_doc_lint_hook_stop_event(tmp_path):
+    """Verify stop hook blocks completion if eidos/ specifications fail validation (INV-AGENT-LINT-HOOK)."""
+    script_path = Path("assets/plugin_reference/scripts/lint_docs.py")
+    eidos_dir = tmp_path / "eidos"
+    eidos_dir.mkdir()
+    bad_spec = eidos_dir / "invalid.adoc"
+    bad_spec.write_text("---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: BAD-POLICY\n---\n", encoding="utf-8")
+
+    stop_payload = json.dumps({
+        "executionNum": 1,
+        "terminationReason": "model_stop",
+        "workspacePaths": [str(tmp_path)],
+    })
+    res = subprocess.run(
+        [sys.executable, str(script_path), "--event", "stop"],
+        input=stop_payload,
+        text=True,
+        capture_output=True,
+    )
+    assert res.returncode == 0
+    data = json.loads(res.stdout)
+    assert data["decision"] == "continue"
+    assert "failed validation" in data["reason"] or "validation failed" in data["reason"]
+
+
+def test_doc_lint_hook_post_invocation(tmp_path):
+    """Verify post_invocation hook injects ephemeral warning message when living docs are invalid."""
+    script_path = Path("assets/plugin_reference/scripts/lint_docs.py")
+    eidos_dir = tmp_path / "eidos"
+    eidos_dir.mkdir()
+    bad_spec = eidos_dir / "invalid.adoc"
+    bad_spec.write_text("---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: BAD-POLICY\n---\n", encoding="utf-8")
+
+    inv_payload = json.dumps({
+        "invocationNum": 2,
+        "workspacePaths": [str(tmp_path)],
+    })
+    res = subprocess.run(
+        [sys.executable, str(script_path), "--event", "post_invocation"],
+        input=inv_payload,
+        text=True,
+        capture_output=True,
+    )
+    assert res.returncode == 0
+    data = json.loads(res.stdout)
+    assert "injectSteps" in data
+    assert len(data["injectSteps"]) == 1
+    assert "ephemeralMessage" in data["injectSteps"][0]
+    assert "Living specification" in data["injectSteps"][0]["ephemeralMessage"]
+
+
+def test_cli_lint_command():
+    """Verify 'eidos lint' CLI command executes and reports clean validation (CTR-EIDOS-CLI)."""
+    res = runner.invoke(app, ["lint", "eidos"])
+    assert res.exit_code == 0
+    assert "Success! All" in res.stdout
+
 
 

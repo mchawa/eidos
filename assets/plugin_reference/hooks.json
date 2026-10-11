@@ -1,0 +1,30 @@
+{
+  "eidos-doc-linter": {
+    "PreToolUse": [
+      {
+        "matcher": "write_to_file|replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 scripts/lint_docs.py --event pre_tool",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "python3 scripts/lint_docs.py --event post_invocation",
+        "timeout": 30
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python3 scripts/lint_docs.py --event stop",
+        "timeout": 30
+      }
+    ]
+  }
+}

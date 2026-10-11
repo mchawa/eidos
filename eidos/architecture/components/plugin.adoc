@@ -19,6 +19,9 @@ c4_internal_components:
   - name: "McpConfigSync"
     responsibility: "Injects and updates project-scoped MCP server configurations for Cursor, Claude, and Antigravity."
     source_path: "src/eidos/plugin/installer.py"
+  - name: "HookManager"
+    responsibility: "Validates and orchestrates agent lifecycle hooks (hooks.json) and documentation linters."
+    source_path: "src/eidos/plugin/validator.py"
 
 dependencies:
   internal_components:
@@ -50,4 +53,6 @@ This container represents the plugin distribution and validation system under `s
 | **PluginInstaller** | Manages installation and file synchronization into `.agents/plugins/eidos` | `src/eidos/plugin/installer.py`
 | **PluginValidator** | Enforces JSON Schema conformance and SemVer 2.0.0 rules for plugins | `src/eidos/plugin/validator.py`
 | **McpConfigSync** | Automatically configures client MCP entries in `.cursor/mcp.json` and `.claude/mcp.json` | `src/eidos/plugin/installer.py`
+| **HookManager** | Validates and coordinates lifecycle hooks (`hooks.json`) and linter runners | `src/eidos/plugin/validator.py`
 |===
+

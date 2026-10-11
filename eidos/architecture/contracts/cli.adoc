@@ -23,6 +23,13 @@ Validates all specification documents under `PATH` (defaults to `./eidos`) again
   - `0`: All specifications are valid.
   - `1`: One or more validation errors or broken cross-references found.
 
+=== `eidos lint [PATH]`
+Alias for `eidos validate`: Lints and validates all specification documents under `PATH` against their schemas, frontmatter syntax rules, and cross-reference links.
+* **Arguments**: `PATH` (Optional directory path)
+* **Exit Codes**:
+  - `0`: All specifications are valid and have correct syntax.
+  - `1`: One or more validation errors, syntax failures, or broken cross-references found.
+
 === `eidos components [PATH]`
 Scans and displays all monorepo containers, C4 components, internal modules, dependencies, and package paths.
 * **Arguments**: `PATH` (Optional directory path, defaults to `eidos/architecture`)

@@ -200,6 +200,17 @@ def validate(
     console.print(f"\n[bold green]Success![/bold green] All {report.total_docs} specification documents are valid.")
 
 
+@app.command("lint")
+def lint_cmd(
+    target_path: Optional[Path] = typer.Argument(
+        None,
+        help="Path to directory containing .adoc specifications (defaults to ./eidos).",
+    )
+):
+    """Lint and validate all specification documents against schemas and link integrity."""
+    validate(target_path)
+
+
 @app.command()
 def components(
     target_path: Optional[Path] = typer.Argument(
@@ -981,6 +992,7 @@ def plugin_validate(
     table.add_row("Overall Status", "[bold green]CONFORMANT[/bold green]" if report.is_valid else "[bold red]NON-CONFORMANT[/bold red]")
     table.add_row("Discovered Skills", ", ".join(report.skills) if report.skills else "None")
     table.add_row("Configured MCP Servers", ", ".join(report.mcp_servers) if report.mcp_servers else "None")
+    table.add_row("Lifecycle Hooks", ", ".join(report.hooks) if report.hooks else "None")
     table.add_row("Client Extensions", ", ".join(report.extensions) if report.extensions else "None")
 
     console.print(table)
@@ -1032,6 +1044,7 @@ def plugin_info(
     grid.add_row("Specification:", "agent-plugins.org v1.0.0")
     grid.add_row("Skills:", ", ".join(report.skills) or "None")
     grid.add_row("MCP Servers:", ", ".join(report.mcp_servers) or "None")
+    grid.add_row("Lifecycle Hooks:", ", ".join(report.hooks) or "None")
     grid.add_row("Extensions:", ", ".join(report.extensions) or "None")
 
     console.print(Panel(grid, title="[bold blue]Eidos Agent Plugin Manifest[/bold blue]", expand=False))
