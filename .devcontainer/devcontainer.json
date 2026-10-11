@@ -1,6 +1,36 @@
 {
   "name": "Eidos (Ubuntu 26.04)",
   "image": "ubuntu:26.04",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true,
+      "installOhMyZsh": true,
+      "installOhMyZshConfig": true,
+      "upgradePackages": true,
+      "nonFreePackages": true,
+      "username": "vscode"
+    },
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/git-lfs:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainer-community/devcontainer-features/astral.sh-uv:1": {
+      "shellautocompletion": true
+    }
+  },
+  "containerEnv": {
+    // uv cannot use hardlinks across the /tmp → workspace boundary in Codespaces;
+    // copy mode avoids "Invalid cross-device link" errors.
+    "UV_LINK_MODE": "copy",
+    "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN}",
+    "GITLAB_TOKEN": "${localEnv:GITLAB_TOKEN}"
+  },
+  "mounts": [
+    "source=eidos-gemini,target=/home/vscode/.gemini,type=volume",
+    "source=eidos-claude,target=/home/vscode/.claude,type=volume"
+  ],
+  "remoteUser": "vscode",
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
   "customizations": {
     "vscode": {
       "settings": {
@@ -19,15 +49,30 @@
         }
       },
       "extensions": [
+        // --- Python & Astral Toolchain ---
         "ms-python.python",
         "ms-python.vscode-pylance",
+        "ms-python.debugpy",
         "charliermarsh.ruff",
         "astral-sh.ty",
+        // --- Living Architecture & Specifications ---
         "asciidoctor.asciidoctor-vscode",
+        "bierner.markdown-mermaid",
+        "davidanson.vscode-markdownlint",
+        "mathematic.vscode-pdf",
+        // --- Configuration & Schemas ---
+        "tamasfe.even-better-toml",
         "redhat.vscode-yaml",
-        "bierner.markdown-mermaid"
+        "timonwong.shellcheck",
+        "foxundermoon.shell-format",
+        "mikestead.dotenv",
+        // --- Git & Source Control ---
+        "mhutchie.git-graph",
+        "donjayamanne.githistory",
+        // --- AI Agents & Harness ---
+        "google.google-antigravity",
+        "anthropic.claude-code"
       ]
     }
-  },
-  "postCreateCommand": "apt-get update && apt-get install -y --no-install-recommends build-essential ca-certificates curl git python3 python3-pip python3-venv && curl -LsSf https://astral.sh/uv/install.sh | env CARGO_DIST_FORCE_INSTALL_DIR=/usr/local/bin sh && uv tool install --install-dir /usr/local/bin ty && uv venv .venv && uv pip install -e '.[dev]'"
+  }
 }
