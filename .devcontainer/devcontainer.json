@@ -16,6 +16,9 @@
     "ghcr.io/devcontainers/features/github-cli:1": {},
     "ghcr.io/devcontainer-community/devcontainer-features/astral.sh-uv:1": {
       "shellautocompletion": true
+    },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "moby": false
     }
   },
   "containerEnv": {
@@ -55,6 +58,8 @@
         "ms-python.debugpy",
         "charliermarsh.ruff",
         "astral-sh.ty",
+        // --- Containers & Virtualization ---
+        "ms-azuretools.vscode-docker",
         // --- Living Architecture & Specifications ---
         "asciidoctor.asciidoctor-vscode",
         "bierner.markdown-mermaid",

@@ -21,33 +21,20 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 sudo apt-get clean
 sudo rm -rf /var/lib/apt/lists/*
 
-# 2. Install Python
-echo "==> Ensuring Python 3.14 via uv..."
-uv python install --default 3.14
+# 2. Install Python 3.15 via uv
+echo "==> Ensuring Python 3.15 via uv..."
+uv python install --default 3.15
 
 # 3. Install CLI tools via uv tool
 echo "==> Installing ty static type checker via uv tool..."
 uv tool install --upgrade ty
 
-# 4. Install just command runner
-echo "==> Installing just command runner..."
-if ! command -v just > /dev/null 2>&1; then
-  curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to "${HOME}/.local/bin"
-else
-  echo "    just already installed ($(just --version))."
-fi
-
-echo "==> Installing shell completions for just..."
-sudo install -d -m 0755 /usr/share/bash-completion/completions /usr/share/zsh/vendor-completions
-just --completions bash | sudo tee /usr/share/bash-completion/completions/just > /dev/null || true
-just --completions zsh | sudo tee /usr/share/zsh/vendor-completions/_just > /dev/null || true
-
-# 5. Set up Python virtual environment and install Eidos in editable mode
-echo "==> Setting up Eidos virtual environment and dependencies..."
-uv venv .venv
+# 4. Set up Python virtual environment and install Eidos in editable mode
+echo "==> Setting up Eidos virtual environment with Python 3.15..."
+uv venv --python 3.15 .venv
 uv pip install -e ".[dev]"
 
-# 6. Configure persistent AI tool directories and migrate initial backups
+# 5. Configure persistent AI tool directories and migrate initial backups
 echo "==> Configuring persistent volumes (~/.gemini, ~/.claude)..."
 sudo mkdir -p "${HOME}/.gemini" "${HOME}/.claude"
 sudo chown -R vscode:vscode "${HOME}/.gemini" "${HOME}/.claude"
@@ -80,7 +67,7 @@ fi
 
 sudo chown -R vscode:vscode "${HOME}/.gemini" "${HOME}/.claude"
 
-# 7. Validate Eidos specifications
+# 6. Validate Eidos specifications
 if [ -f ".venv/bin/eidos" ]; then
   echo "==> Validating Eidos living specifications..."
   .venv/bin/eidos validate eidos || true
@@ -91,7 +78,6 @@ echo "✅ Eidos Dev Container Ready!"
 echo "   - uv:         $(uv --version)"
 echo "   - ty:         $(ty --version 2>/dev/null || echo 'installed')"
 echo "   - python:     $(python --version 2>/dev/null || echo 'not on PATH')"
-echo "   - just:       $(just --version 2>/dev/null || echo 'installed')"
 echo "   - shellcheck: $(shellcheck --version | grep version: || echo 'installed')"
 echo "   - yamllint:   $(yamllint --version || echo 'installed')"
 echo "========================================================"
