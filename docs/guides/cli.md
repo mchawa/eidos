@@ -141,10 +141,28 @@ eidos delta delete dlt-2026-005
 Manage and validate Eidos agent plugins complying with the `agent-plugins.org v1.0.0` specification:
 
 ```bash
-# Validate plugin conformance
+# Install plugin for all supported AI agents (Antigravity, Claude, Cursor)
+eidos plugin install --target all
+
+# Or install for a specific target:
+eidos plugin install --target antigravity
+eidos plugin install --target claude
+eidos plugin install --target cursor
+
+# Inspect installed vs bundled plugin version
+eidos plugin version
+
+# Validate plugin conformance against agent-plugins.org standard
 eidos plugin validate
 
-# Install the Eidos plugin into an agent client
-eidos plugin install --target antigravity
+# Display detailed plugin metadata and manifest
+eidos plugin info
+
+# Update installed plugin to latest bundled engine version
+eidos plugin update --target all
+
+# Uninstall / remove plugin files and MCP configurations
+eidos plugin uninstall --target all
 ```
+
 
