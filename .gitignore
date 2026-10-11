@@ -30,3 +30,7 @@ site/
 !.agents/plugins/
 !.agents/plugins/eidos/
 
+# Dynamic VCS version file
+src/eidos/_version.py
+
+
