@@ -1,0 +1,32 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-003
+title: Flat SpecDelta Storage with Gitignored Lifecycle Symlink Views
+status: applied
+intent:
+  kind: architectural_refactor
+  motivation: Store SpecDeltas at permanent flat file paths under eidos/deltas/ and
+    manage browseable lifecycle views via gitignored symlinks in eidos/deltas/by-status/.
+mutations:
+- action: modify_contract
+  target_component: CMP-EIDOS-ENGINE
+  details: Update CTR-EIDOS-CLI with flat delta lifecycle commands and status/sync-views
+    commands.
+- action: modify_component
+  target_component: CMP-EIDOS-ENGINE
+  details: Update LifecycleScaffolder with sync_delta_views and get_delta_status_summary.
+---
+
+= SpecDelta: Flat SpecDelta Storage with Gitignored Lifecycle Symlink Views
+:toc: left
+
+== Problem Statement
+Previously, SpecDeltas were physically split into `eidos/deltas/active/` and `eidos/deltas/applied/` subdirectories. While this separated in-flight work from merged baseline mutations, physically moving files on lifecycle transitions causes Git rename churn, potential merge conflicts across parallel branches, and broke existing links.
+
+== Proposed Specification Changes
+1. Store all SpecDeltas in flat storage under `eidos/deltas/<id>.adoc`.
+2. Treat YAML frontmatter `status` as the single source of truth for lifecycle state.
+3. Automatically generate and maintain gitignored relative symlinks under `eidos/deltas/by-status/` (proposed, in_review, approved, applied, rejected, active).
+4. Provide `eidos delta status` to display an interactive lifecycle status dashboard.
+5. Provide `eidos delta sync-views` to refresh gitignored status symlink views on demand.

@@ -1,5 +1,6 @@
 """Lifecycle management, scaffolding, and deletion for Eidos living specifications and SpecDeltas."""
 
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -92,7 +93,7 @@ def create_spec(
 
     # Determine destination directory and content
     if canonical_key == "delta":
-        dest_dir = eidos_dir / "deltas" / "active"
+        dest_dir = eidos_dir / "deltas"
         dest_file = dest_dir / f"{slug}.adoc"
         content = f"""---
 type: delta/mutation
@@ -305,6 +306,9 @@ Document prototyping discoveries, trade-offs, and research findings.
         err_msg = "; ".join(errors)
         raise ValueError(f"Generated specification failed validation: {err_msg}")
 
+    if canonical_key == "delta":
+        sync_delta_views(eidos_dir)
+
     return dest_file
 
 
@@ -388,6 +392,9 @@ def delete_spec(eidos_dir: Path, target: str, force: bool = False) -> Tuple[bool
         except OSError:
             pass
 
+    if doc.doc_type == "delta/mutation":
+        sync_delta_views(eidos_dir)
+
     return True, f"Successfully deleted specification '{doc_id}' ({file_path.name}).", references
 
 
@@ -405,6 +412,8 @@ def list_specs(
     status_filter_clean = status_filter.lower() if status_filter else None
 
     for p in sorted(eidos_dir.rglob("*.adoc")):
+        if "by-status" in p.parts:
+            continue
         try:
             doc = parse_spec_file(p)
             doc_type = doc.doc_type
@@ -431,29 +440,121 @@ def list_specs(
     return results
 
 
-def list_deltas(eidos_dir: Path, status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
-    """List all SpecDeltas from active/ and applied/ directories."""
-    deltas_dir = eidos_dir / "deltas"
-    results = []
-    if not deltas_dir.exists():
-        return results
+def sync_delta_views(eidos_dir: Path) -> Dict[str, List[Path]]:
+    """Synchronize gitignored symlink views in eidos/deltas/by-status/ based on frontmatter status.
 
-    status_filter_clean = status_filter.lower() if status_filter else None
+    Categories: proposed, in_review, approved, applied, rejected, active (in-flight).
+    """
+    deltas_dir = eidos_dir / "deltas"
+    if not deltas_dir.exists():
+        return {}
+
+    views_dir = deltas_dir / "by-status"
+    categories = ["proposed", "in_review", "approved", "applied", "rejected", "active"]
+
+    # Ensure target category directories exist
+    for cat in categories:
+        (views_dir / cat).mkdir(parents=True, exist_ok=True)
+
+    # Clean existing symlinks in by-status
+    for cat in categories:
+        cat_dir = views_dir / cat
+        for item in cat_dir.iterdir():
+            if item.is_symlink() or item.is_file():
+                try:
+                    item.unlink()
+                except Exception:
+                    pass
+
+    synced: Dict[str, List[Path]] = {cat: [] for cat in categories}
 
     for p in sorted(deltas_dir.rglob("*.adoc")):
+        if "by-status" in p.parts:
+            continue
         try:
             doc = parse_spec_file(p)
             if doc.doc_type != "delta/mutation":
                 continue
 
-            status = doc.frontmatter.get("status", "proposed")
-            if status_filter_clean and str(status).lower() != status_filter_clean:
+            status = str(doc.frontmatter.get("status", "proposed")).lower().strip()
+            cat_name = status if status in categories else "proposed"
+            link_path = views_dir / cat_name / p.name
+            rel_target = os.path.relpath(p, views_dir / cat_name)
+            try:
+                link_path.symlink_to(rel_target)
+                synced[cat_name].append(p)
+            except Exception:
+                pass
+
+            if status in ("proposed", "in_review", "approved", "in_progress", "draft"):
+                active_link = views_dir / "active" / p.name
+                rel_active = os.path.relpath(p, views_dir / "active")
+                try:
+                    active_link.symlink_to(rel_active)
+                    synced["active"].append(p)
+                except Exception:
+                    pass
+        except Exception:
+            continue
+
+    return synced
+
+
+def get_delta_status_summary(eidos_dir: Path) -> Dict[str, Any]:
+    """Get count and listing breakdown of deltas grouped by lifecycle status."""
+    deltas = list_deltas(eidos_dir)
+    by_status: Dict[str, List[dict]] = {
+        "proposed": [],
+        "in_review": [],
+        "approved": [],
+        "applied": [],
+        "rejected": [],
+    }
+    for d in deltas:
+        st = str(d.get("status", "proposed")).lower().strip()
+        if st not in by_status:
+            by_status[st] = []
+        by_status[st].append(d)
+
+    active_count = sum(len(by_status.get(s, [])) for s in ("proposed", "in_review", "approved"))
+
+    return {
+        "total": len(deltas),
+        "active_count": active_count,
+        "by_status": by_status,
+        "views_dir": eidos_dir / "deltas" / "by-status",
+    }
+
+
+def list_deltas(eidos_dir: Path, status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+    """List all SpecDeltas from eidos/deltas/ with optional status filtering."""
+    deltas_dir = eidos_dir / "deltas"
+    results = []
+    if not deltas_dir.exists():
+        return results
+
+    status_filter_clean = status_filter.lower().strip() if status_filter else None
+
+    for p in sorted(deltas_dir.rglob("*.adoc")):
+        if "by-status" in p.parts:
+            continue
+        try:
+            doc = parse_spec_file(p)
+            if doc.doc_type != "delta/mutation":
                 continue
+
+            status = str(doc.frontmatter.get("status", "proposed")).lower().strip()
+            is_active = status in ("proposed", "in_review", "approved", "in_progress", "draft")
+
+            if status_filter_clean:
+                if status_filter_clean == "active" and not is_active:
+                    continue
+                elif status_filter_clean != "active" and status != status_filter_clean:
+                    continue
 
             intent = doc.frontmatter.get("intent", {})
             kind = intent.get("kind", "mutation") if isinstance(intent, dict) else "mutation"
 
-            is_active = "active" in p.parts
             results.append({
                 "id": doc.doc_id,
                 "title": doc.title or "Untitled",
@@ -470,7 +571,7 @@ def list_deltas(eidos_dir: Path, status_filter: Optional[str] = None) -> List[Di
 
 
 def apply_delta(eidos_dir: Path, delta_id_or_path: str) -> Tuple[bool, str, Optional[Path]]:
-    """Transition an active SpecDelta to applied status and move it to eidos/deltas/applied/."""
+    """Transition a SpecDelta to applied status in-place and sync gitignored symlink views."""
     file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id_or_path)
     if not file_path:
         file_path = find_spec_by_id_or_path(eidos_dir, delta_id_or_path)
@@ -482,11 +583,12 @@ def apply_delta(eidos_dir: Path, delta_id_or_path: str) -> Tuple[bool, str, Opti
     if doc.doc_type != "delta/mutation":
         return False, f"Document at '{file_path}' is not a SpecDelta (type: {doc.doc_type}).", None
 
-    current_status = doc.frontmatter.get("status", "proposed")
+    current_status = str(doc.frontmatter.get("status", "proposed")).lower().strip()
     if current_status == "applied":
+        sync_delta_views(eidos_dir)
         return True, f"SpecDelta '{doc.doc_id}' is already marked as applied.", file_path
 
-    # Read and update frontmatter status to applied
+    # Read and update frontmatter status to applied in-place
     content = file_path.read_text(encoding="utf-8")
     fm, body, err = extract_frontmatter(content)
     if err or not fm:
@@ -496,20 +598,16 @@ def apply_delta(eidos_dir: Path, delta_id_or_path: str) -> Tuple[bool, str, Opti
     new_yaml = yaml.dump(fm, sort_keys=False, default_flow_style=False)
     new_content = f"---\n{new_yaml}---\n{body}"
 
-    # Target path in eidos/deltas/applied/
-    applied_dir = eidos_dir / "deltas" / "applied"
-    applied_dir.mkdir(parents=True, exist_ok=True)
-    target_path = applied_dir / file_path.name
+    file_path.write_text(new_content, encoding="utf-8")
 
-    target_path.write_text(new_content, encoding="utf-8")
-    if file_path.resolve() != target_path.resolve():
-        file_path.unlink()
-
-    # Validate applied document
-    doc_applied = parse_spec_file(target_path)
+    # Validate applied document in-place
+    doc_applied = parse_spec_file(file_path)
     validator = SpecValidator()
     errors = validator.validate_document(doc_applied)
     if errors:
-        return False, f"Delta moved to applied but failed validation: {'; '.join(errors)}", target_path
+        return False, f"Delta updated to applied but failed validation: {'; '.join(errors)}", file_path
 
-    return True, f"Successfully applied SpecDelta '{doc.doc_id}' -> {target_path.name}.", target_path
+    # Synchronize gitignored symlink views
+    sync_delta_views(eidos_dir)
+
+    return True, f"Successfully applied SpecDelta '{doc.doc_id}' in-place -> {file_path.name}.", file_path

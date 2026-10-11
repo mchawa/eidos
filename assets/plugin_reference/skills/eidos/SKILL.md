@@ -100,8 +100,9 @@ When you are asked to implement a feature, fix a bug, or refactor an Eidos repos
 
 ### Step 3: Propose Changes via SpecDelta
 Before writing code for non-trivial features or structural refactors:
-1. Scaffold a new delta in `eidos/deltas/active/<delta_id>.adoc`:
+1. Scaffold a new delta in flat `eidos/deltas/<delta_id>.adoc`:
    - Call MCP tool `eidos_create_delta(delta_id="DLT-2026-001", title="...", kind="feature_addition", motivation="...")`.
+   - Or CLI `eidos delta create DLT-2026-001 --title "..."`.
    - Or write the `.adoc` file directly with `type: delta/mutation`.
 2. Document the proposed mutations: which living specs will be updated and which code paths will be touched.
 
@@ -124,11 +125,10 @@ Ensure output reports `PASS` for all documents and 0 broken references.
 
 ### Step 6: Reconcile Living Specifications
 1. Apply the specification diffs to the living specs (e.g. update `component.adoc` or add new capabilities in `eidos/domains/`).
-2. Set the delta's status to `applied`:
-   ```yaml
-   status: applied
-   ```
-3. Move the delta file from `eidos/deltas/active/` to `eidos/deltas/applied/`.
+2. Reconcile the delta in-place:
+   - CLI: `eidos delta apply <delta_id>`
+   - Or MCP: `eidos_apply_delta(target="<delta_id>")`
+   - This sets frontmatter `status: applied` in-place and synchronizes gitignored `by-status/` symlinks without moving the file.
 
 ---
 
@@ -139,7 +139,8 @@ When the Eidos MCP server is active, you have access to:
 - `eidos_info()`: Return engine version, loaded v1 schemas, and supported platforms.
 - `eidos_list_components(path="eidos/architecture")`: List all C4 containers, internal components, runtime dependencies, and monorepo package paths.
 - `eidos_read_spec(path="eidos/system.adoc")`: Parse and read an `.adoc` spec, returning structured frontmatter and body.
-- `eidos_create_delta(delta_id, title, kind, motivation)`: Scaffold a new SpecDelta file in `eidos/deltas/active/`.
+- `eidos_create_delta(delta_id, title, kind, motivation)`: Scaffold a new SpecDelta file in flat `eidos/deltas/`.
+- `eidos_apply_delta(target)`: Reconcile a SpecDelta in-place with status 'applied' and sync status views.
 
 ---
 

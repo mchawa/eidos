@@ -56,3 +56,4 @@ def get_agent_plugins_schemas_dir() -> Path:
 def get_plugin_reference_dir() -> Path:
     """Return the directory containing the canonical Eidos Agent Plugin reference."""
     return get_assets_path("plugin_reference")
+

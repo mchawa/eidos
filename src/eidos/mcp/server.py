@@ -183,14 +183,14 @@ TOOLS = [
     },
     {
         "name": "eidos_apply_delta",
-        "description": "Reconcile an active SpecDelta and move it to eidos/deltas/applied/ with status 'applied'.",
+        "description": "Reconcile a SpecDelta in-place with status 'applied' and synchronize gitignored symlink views.",
         "inputSchema": {
             "type": "object",
             "required": ["target"],
             "properties": {
                 "target": {
                     "type": "string",
-                    "description": "Delta ID, path, or filename of the active SpecDelta to apply."
+                    "description": "Delta ID, path, or filename of the SpecDelta to apply."
                 },
                 "path": {
                     "type": "string",
@@ -265,34 +265,16 @@ def handle_tool_call(name: str, arguments: Dict[str, Any]) -> List[Dict[str, Any
         title = arguments["title"]
         kind = arguments["kind"]
         motivation = arguments["motivation"]
+        path = Path(arguments.get("path", "eidos"))
 
-        deltas_dir = Path("eidos/deltas/active")
-        deltas_dir.mkdir(parents=True, exist_ok=True)
-        file_path = deltas_dir / f"{delta_id.lower()}.adoc"
-
-        content = f"""---
-type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
-id: {delta_id}
-title: "{title}"
-status: proposed
-
-intent:
-  kind: {kind}
-  motivation: "{motivation}"
-
-mutations: []
----
-= SpecDelta: {title}
-:toc: left
-
-== Problem Statement
-{motivation}
-
-== Proposed Specification Changes
-Describe the exact behavioral diffs and invariant updates here.
-"""
-        file_path.write_text(content, encoding="utf-8")
+        file_path = create_spec(
+            eidos_dir=path,
+            doc_type_key="delta",
+            raw_id=delta_id,
+            title=title,
+            kind=kind,
+            motivation=motivation,
+        )
         return [{"type": "text", "text": f"Created new SpecDelta at {file_path}"}]
 
     elif name == "eidos_read_spec":

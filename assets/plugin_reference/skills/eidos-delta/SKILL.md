@@ -41,17 +41,24 @@ Always create a SpecDelta when:
 Use the Eidos CLI to manage deltas:
 
 ```bash
-# 1. Scaffold a new active SpecDelta:
+# 1. Scaffold a new SpecDelta in flat storage (eidos/deltas/<id>.adoc):
 eidos delta create DLT-2026-002 --title "Payment Gateway Integration" --kind feature_addition --motivation "Enable Stripe payments"
 
-# 2. List all active and applied deltas:
-eidos delta list
-eidos delta list --status proposed
+# 2. View the lifecycle status dashboard:
+eidos delta status
 
-# 3. Reconcile and apply a completed delta:
+# 3. List all or filtered deltas:
+eidos delta list
+eidos delta list --status active      # In-flight (proposed, in_review, approved)
+eidos delta list --status applied     # Reconciled baseline mutations
+
+# 4. Regenerate gitignored status symlink views (eidos/deltas/by-status/):
+eidos delta sync-views
+
+# 5. Reconcile and apply a completed delta in-place:
 eidos delta apply DLT-2026-002
 
-# 4. Safely delete a rejected or abandoned delta:
+# 6. Safely delete a rejected or abandoned delta:
 eidos delta delete DLT-2026-002
 ```
 
@@ -59,7 +66,7 @@ eidos delta delete DLT-2026-002
 
 ## 3. SpecDelta Schema Anatomy (`delta.schema.yaml`)
 
-Every SpecDelta lives in `eidos/deltas/active/<delta-id>.adoc` and strictly satisfies `schemas/v1/delta/delta.schema.yaml`:
+Every SpecDelta lives in flat storage at `eidos/deltas/<delta-id>.adoc` (with gitignored browseable views in `eidos/deltas/by-status/`) and strictly satisfies `schemas/v1/delta/delta.schema.yaml`:
 
 ```yaml
 ---
@@ -111,8 +118,8 @@ Detailed textual diffs, API endpoint updates, and policy amendments.
 Once code is written and verified with passing invariant tests:
 1. Update all target living specifications (`eidos/architecture/`, `eidos/domains/`, `eidos/policies/`) to incorporate the delta changes.
 2. Run `eidos delta apply <delta-id>`:
-   - Sets frontmatter `status: applied`.
-   - Moves the file to `eidos/deltas/applied/<delta-id>.adoc`.
+   - Sets frontmatter `status: applied` in-place (the file path remains stable at `eidos/deltas/<delta-id>.adoc`).
+   - Automatically synchronizes gitignored symlink views (`by-status/applied/`).
 3. Validate repository integrity:
    ```bash
    eidos validate eidos

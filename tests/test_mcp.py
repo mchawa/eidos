@@ -77,8 +77,9 @@ def test_mcp_create_delta_tool(tmp_path, monkeypatch):
     assert len(res) == 1
     assert "Created new SpecDelta" in res[0]["text"]
 
-    delta_file = tmp_path / "eidos" / "deltas" / "active" / "dlt-test-001.adoc"
+    delta_file = tmp_path / "eidos" / "deltas" / "dlt-test-001.adoc"
     assert delta_file.exists()
+    assert (tmp_path / "eidos" / "deltas" / "by-status" / "active" / "dlt-test-001.adoc").exists()
     content = delta_file.read_text(encoding="utf-8")
     assert "DLT-TEST-001" in content
     assert "feature_addition" in content

@@ -54,12 +54,14 @@ Manages the living specification catalog: listing, authoring, inspecting, and de
   - `delete <id_or_path> [--force]`: Safely deletes a specification document with cross-reference safety checks.
 
 === `eidos delta`
-Orchestrates SpecDeltas throughout their semantic mutation lifecycle.
+Orchestrates SpecDeltas throughout their semantic mutation lifecycle using flat storage and gitignored symlink views.
 * **Sub-commands**:
-  - `list [--path <path>] [--status <status>]`: Lists active and applied SpecDeltas.
-  - `create <id> --title <title> [--kind <kind>] [--motivation <text>]`: Scaffolds a new active SpecDelta in `eidos/deltas/active/<id>.adoc`.
-  - `apply <id_or_path>`: Reconciles an active delta, updates its status to `applied`, and moves it to `eidos/deltas/applied/`.
-  - `delete <id_or_path> [--force]`: Deletes an active or applied SpecDelta.
+  - `list [--path <path>] [--status <status>]`: Lists SpecDeltas from flat `eidos/deltas/` with optional status filter (e.g. `--status active`).
+  - `status [--path <path>]`: Displays lifecycle status dashboard, breakdown of in-flight vs. reconciled deltas, and symlink views.
+  - `sync-views [--path <path>]`: Regenerates gitignored symlinks in `eidos/deltas/by-status/` partitioned by lifecycle state.
+  - `create <id> --title <title> [--kind <kind>] [--motivation <text>]`: Scaffolds a new SpecDelta in flat storage `eidos/deltas/<id>.adoc` with status `proposed` and syncs views.
+  - `apply <id_or_path>`: Reconciles a delta in-place, updates frontmatter status to `applied`, and updates symlink views without moving files.
+  - `delete <id_or_path> [--force]`: Deletes a SpecDelta file and cleans up symlink views.
 
 === Convenience Shortcuts
 * `eidos create <type> <id> --title <title>`: Direct shortcut to `eidos spec create`.

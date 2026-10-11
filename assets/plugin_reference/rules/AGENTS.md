@@ -15,12 +15,12 @@ Whenever a repository contains an `eidos/` directory, adhere strictly to the fol
   - Component Manifests: `eidos/architecture/components/<name>.adoc` (or monorepo package `packages/<name>/component.adoc`).
   - Interface Contracts: `eidos/architecture/contracts/<contract>.adoc`.
   - Invariants & Policies: `eidos/policies/<policy>.adoc`.
-  - Proposed Changes: `eidos/deltas/active/<delta-id>.adoc`.
+  - Semantic Mutations: `eidos/deltas/<delta-id>.adoc` (browseable views in `eidos/deltas/by-status/`).
 
 ## 3. SpecDelta Mutation Lifecycle
 * Before writing code for non-trivial features, refactors, or fixes, verify if a SpecDelta is needed.
-* Scaffold deltas using MCP `eidos_create_delta` or in `eidos/deltas/active/<delta_id>.adoc` with `type: delta/mutation`.
-* Once implemented and verified, update the living specs and reconcile the delta status to `applied`.
+* Scaffold deltas using MCP `eidos_create_delta` or `eidos delta create` in flat `eidos/deltas/<delta_id>.adoc` with `type: delta/mutation`.
+* Once implemented and verified, update the living specs and reconcile the delta status to `applied` in-place using `eidos delta apply <delta_id>`.
 
 ## 4. Invariant-Test Traceability
 * Every policy (`POL-*`) and capability (`CAP-*`) has defined invariants.

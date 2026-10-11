@@ -26,7 +26,7 @@ c4_internal_components:
     responsibility: "Provides the normalized API interface bridging GitHub and GitLab repositories."
     source_path: "src/eidos/vcs/bridge.py"
   - name: "LifecycleScaffolder"
-    responsibility: "Scaffolds living specifications, conducts reference safety checks, and manages SpecDelta lifecycles."
+    responsibility: "Scaffolds living specifications, conducts reference safety checks, manages flat SpecDelta lifecycles, and synchronizes gitignored status views."
     source_path: "src/eidos/core/scaffolder.py"
   - name: "PluginManager"
     responsibility: "Manages portable agent plugins adhering to agent-plugins.org v1.0.0, SemVer 2.0.0 validation, and project MCP configs."

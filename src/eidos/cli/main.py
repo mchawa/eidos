@@ -33,6 +33,8 @@ from eidos.core.scaffolder import (
     list_deltas,
     apply_delta,
     find_spec_by_id_or_path,
+    sync_delta_views,
+    get_delta_status_summary,
 )
 
 app = typer.Typer(
@@ -450,7 +452,7 @@ def delta_create_cmd(
         help="Path to eidos directory.",
     ),
 ):
-    """Create a new active SpecDelta (eidos/deltas/active/)."""
+    """Create a new SpecDelta in flat storage (eidos/deltas/<id>.adoc) and sync views."""
     try:
         dest_file = create_spec(
             eidos_dir=path,
@@ -461,8 +463,9 @@ def delta_create_cmd(
             motivation=motivation,
         )
         rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
-        console.print(f"[bold green]✓ Created active SpecDelta:[/bold green] [bold]{dest_file.name}[/bold]")
+        console.print(f"[bold green]✓ Created SpecDelta:[/bold green] [bold]{dest_file.name}[/bold]")
         console.print(f"  [dim]Location: {rel}[/dim]")
+        console.print(f"  [dim]Status: proposed (symlinked in eidos/deltas/by-status/active/ and proposed/)[/dim]")
         console.print(f"  [dim]Next step: Edit mutations in {rel} and update living specs.[/dim]")
     except Exception as e:
         console.print(f"[bold red]Failed to create SpecDelta:[/bold red] {e}")
@@ -473,7 +476,7 @@ def delta_create_cmd(
 def delta_apply_cmd(
     target: str = typer.Argument(
         ...,
-        help="Delta ID, path, or filename of the active SpecDelta to apply.",
+        help="Delta ID, path, or filename of the SpecDelta to apply.",
     ),
     path: Path = typer.Option(
         Path("eidos"),
@@ -481,7 +484,7 @@ def delta_apply_cmd(
         help="Path to eidos directory.",
     ),
 ):
-    """Reconcile an active SpecDelta and move it to eidos/deltas/applied/ with status 'applied'."""
+    """Reconcile a SpecDelta in-place, updating status to 'applied' and syncing symlink views."""
     success, msg, applied_file = apply_delta(path, target)
     if not success:
         console.print(f"[bold red]✗ Failed to apply SpecDelta:[/bold red] {msg}")
@@ -490,7 +493,80 @@ def delta_apply_cmd(
     console.print(f"[bold green]✓[/bold green] {msg}")
     if applied_file:
         rel = applied_file.relative_to(path) if applied_file.is_relative_to(path) else applied_file
-        console.print(f"  [dim]Archived at: {rel}[/dim]")
+        console.print(f"  [dim]Updated in-place: {rel}[/dim]")
+        console.print(f"  [dim]Symlink moved to: eidos/deltas/by-status/applied/{applied_file.name}[/dim]")
+
+
+@delta_app.command("status")
+def delta_status_cmd(
+    path: Path = typer.Option(
+        Path("eidos"),
+        "--path", "-p",
+        help="Path to eidos directory.",
+    ),
+):
+    """Display a status summary of all SpecDeltas and their lifecycle states."""
+    summary = get_delta_status_summary(path)
+    total = summary["total"]
+    active_count = summary["active_count"]
+    by_status = summary["by_status"]
+    views_dir = summary["views_dir"]
+
+    console.print(f"[bold cyan]SpecDelta Lifecycle Status Dashboard[/bold cyan] ({total} total)\n")
+
+    summary_table = Table(title="SpecDelta Lifecycle Summary", show_header=True)
+    summary_table.add_column("Lifecycle State", style="bold cyan")
+    summary_table.add_column("Count", style="bold white", justify="right")
+    summary_table.add_column("Description", style="dim")
+
+    summary_table.add_row("Proposed", str(len(by_status.get("proposed", []))), "Draft mutations awaiting review")
+    summary_table.add_row("In Review", str(len(by_status.get("in_review", []))), "Under review by team or agents")
+    summary_table.add_row("Approved", str(len(by_status.get("approved", []))), "Approved, awaiting implementation/merge")
+    summary_table.add_row("Applied", str(len(by_status.get("applied", []))), "Reconciled into living specifications")
+    summary_table.add_row("Rejected", str(len(by_status.get("rejected", []))), "Abandoned or rejected proposals")
+    summary_table.add_row("In-Flight (Active)", f"[bold yellow]{active_count}[/bold yellow]", "Total active/unmerged deltas")
+
+    console.print(summary_table)
+
+    active_deltas = (
+        by_status.get("proposed", [])
+        + by_status.get("in_review", [])
+        + by_status.get("approved", [])
+    )
+    if active_deltas:
+        console.print("\n[bold yellow]In-Flight SpecDeltas:[/bold yellow]")
+        active_table = Table(show_header=True)
+        active_table.add_column("Delta ID", style="bold cyan")
+        active_table.add_column("Status", style="yellow")
+        active_table.add_column("Kind", style="dim")
+        active_table.add_column("Title", style="white")
+        for d in active_deltas:
+            active_table.add_row(d["id"], str(d["status"]), str(d["kind"]), d["title"])
+        console.print(active_table)
+    else:
+        console.print("\n[dim]No in-flight SpecDeltas. Living specifications are up to date.[/dim]")
+
+    rel_views = views_dir.relative_to(path.parent) if views_dir.is_relative_to(path.parent) else views_dir
+    console.print(f"\n[dim]Gitignored symlink views: {rel_views} (use 'eidos delta sync-views' to refresh)[/dim]")
+
+
+@delta_app.command("sync-views")
+def delta_sync_views_cmd(
+    path: Path = typer.Option(
+        Path("eidos"),
+        "--path", "-p",
+        help="Path to eidos directory.",
+    ),
+):
+    """Regenerate gitignored symlinks in eidos/deltas/by-status/ categorized by lifecycle state."""
+    synced = sync_delta_views(path)
+    total_symlinks = sum(len(v) for v in synced.values())
+    views_dir = path / "deltas" / "by-status"
+    rel_views = views_dir.relative_to(path.parent) if views_dir.is_relative_to(path.parent) else views_dir
+    console.print(f"[bold green]✓ Synchronized {total_symlinks} symlinks in {rel_views}[/bold green]")
+    for cat, items in synced.items():
+        if items:
+            console.print(f"  • [bold cyan]{cat}[/bold cyan]: {len(items)} deltas")
 
 
 @delta_app.command("delete")

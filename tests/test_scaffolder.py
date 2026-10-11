@@ -162,7 +162,7 @@ def test_spec_deletion_safety_with_references(tmp_path):
 
 
 def test_delta_lifecycle_apply(tmp_path):
-    """Verify SpecDelta transition from active/ to applied/ with status update (CTR-EIDOS-CLI, CAP-AGENT-001)."""
+    """Verify SpecDelta transition in flat storage with in-place status update and symlink views (CTR-EIDOS-CLI, CAP-AGENT-001)."""
     dlt_file = create_spec(
         eidos_dir=tmp_path,
         doc_type_key="delta",
@@ -170,17 +170,29 @@ def test_delta_lifecycle_apply(tmp_path):
         title="Rate Limiter",
         motivation="DDoS mitigation.",
     )
-    assert "active" in dlt_file.parts
+    assert dlt_file.exists()
+    assert dlt_file.name == "dlt-2026-100.adoc"
+    assert dlt_file.parent == tmp_path / "deltas"
+
+    # Verify initial symlink in active/ and proposed/
+    assert (tmp_path / "deltas" / "by-status" / "active" / "dlt-2026-100.adoc").exists()
+    assert (tmp_path / "deltas" / "by-status" / "proposed" / "dlt-2026-100.adoc").exists()
 
     # Apply delta
     success, msg, applied_path = apply_delta(tmp_path, "DLT-2026-100")
     assert success
     assert applied_path is not None
-    assert applied_path.exists()
-    assert "applied" in applied_path.parts
-    assert not dlt_file.exists()
+    assert applied_path.resolve() == dlt_file.resolve()
 
-    # Verify content status is updated
+    # Verify content status is updated in-place
+    doc = parse_spec_file(applied_path)
+    assert doc.frontmatter.get("status") == "applied"
+
+    # Verify symlink moved to applied/ and removed from active/
+    assert (tmp_path / "deltas" / "by-status" / "applied" / "dlt-2026-100.adoc").exists()
+    assert not (tmp_path / "deltas" / "by-status" / "active" / "dlt-2026-100.adoc").exists()
+
+    # Verify content status is updated and valid
     validator = SpecValidator()
     assert_valid_spec(validator, applied_path)
 
@@ -223,7 +235,7 @@ def test_cli_delta_commands(tmp_path):
         "--path", str(tmp_path),
     ])
     assert res_create.exit_code == 0
-    assert "Created active SpecDelta" in res_create.stdout
+    assert "Created SpecDelta" in res_create.stdout
 
     # 2. List deltas
     res_list = runner.invoke(app, ["delta", "list", "--path", str(tmp_path)])
@@ -231,12 +243,23 @@ def test_cli_delta_commands(tmp_path):
     assert "DLT-2026-555" in res_list.stdout
     assert "ACTIVE" in res_list.stdout
 
-    # 3. Apply delta
+    # 3. Status dashboard
+    res_status = runner.invoke(app, ["delta", "status", "--path", str(tmp_path)])
+    assert res_status.exit_code == 0
+    assert "SpecDelta Lifecycle Status Dashboard" in res_status.stdout
+    assert "DLT-2026-555" in res_status.stdout
+
+    # 4. Sync views
+    res_sync = runner.invoke(app, ["delta", "sync-views", "--path", str(tmp_path)])
+    assert res_sync.exit_code == 0
+    assert "Synchronized" in res_sync.stdout
+
+    # 5. Apply delta
     res_apply = runner.invoke(app, ["delta", "apply", "DLT-2026-555", "--path", str(tmp_path)])
     assert res_apply.exit_code == 0
     assert "Successfully applied" in res_apply.stdout
 
-    # 4. Delete applied delta
+    # 6. Delete applied delta
     res_delete = runner.invoke(app, ["delta", "delete", "DLT-2026-555", "--path", str(tmp_path)])
     assert res_delete.exit_code == 0
     assert "Successfully deleted" in res_delete.stdout
