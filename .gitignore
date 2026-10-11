@@ -19,7 +19,6 @@ build/
 *.egg-info/
 
 # Local agent plugins installation
-.agent-plugins/
 .agents/
 .cursor/
 .claude/

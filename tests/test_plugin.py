@@ -47,28 +47,23 @@ def test_repo_plugin_conformance():
 
 
 def test_plugin_install_to_project_scope(tmp_path):
-    """Verify project-scoped installation into workspace directories."""
+    """Verify project-scoped installation into workspace directories (.agents)."""
     results = install_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path, force=True)
 
-    assert len(results) == 4
+    assert len(results) == 3
     targets = [r.target for r in results]
-    assert "workspace" in targets
-    assert "antigravity" in targets
+    assert "project" in targets
     assert "cursor" in targets
     assert "claude" in targets
 
-    # Check .agent-plugins/eidos
-    ws_dir = tmp_path / ".agent-plugins" / "eidos"
-    assert (ws_dir / "plugin.json").exists()
-    assert (ws_dir / "mcp.json").exists()
-    assert (ws_dir / "skills" / "eidos" / "SKILL.md").exists()
-    ws_report = validate_plugin_package(ws_dir)
-    assert ws_report.is_valid
-
     # Check .agents/plugins/eidos
-    antigravity_dir = tmp_path / ".agents" / "plugins" / "eidos"
-    assert (antigravity_dir / "plugin.json").exists()
-    assert (antigravity_dir / "rules" / "AGENTS.md").exists()
+    agent_dir = tmp_path / ".agents" / "plugins" / "eidos"
+    assert (agent_dir / "plugin.json").exists()
+    assert (agent_dir / "mcp.json").exists()
+    assert (agent_dir / "skills" / "eidos" / "SKILL.md").exists()
+    assert (agent_dir / "rules" / "AGENTS.md").exists()
+    agent_report = validate_plugin_package(agent_dir)
+    assert agent_report.is_valid
 
     # Check project-level MCP files
     cursor_mcp = tmp_path / ".cursor" / "mcp.json"
@@ -121,6 +116,4 @@ def test_cli_plugin_install_project(tmp_path):
     res = runner.invoke(app, ["plugin", "install", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert "Success!" in res.stdout
-    assert "project" in res.stdout
-    assert (tmp_path / ".agent-plugins" / "eidos" / "plugin.json").exists()
     assert (tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json").exists()

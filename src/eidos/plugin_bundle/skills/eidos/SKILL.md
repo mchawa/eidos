@@ -158,9 +158,9 @@ eidos components
 # Start stdio MCP server for agent clients
 eidos mcp
 
-# Install Eidos agent plugin into project scope (workspace):
-eidos plugin install                        # Installs to .agent-plugins/eidos and .agents/plugins/eidos
-eidos plugin install --target workspace     # Installs to .agent-plugins/eidos (agent-plugins.org v1.0.0)
+# Install Eidos agent plugin into project scope (.agents):
+eidos plugin install                        # Installs to .agents/plugins/eidos and workspace MCPs
+eidos plugin install --target workspace     # Installs to .agents/plugins/eidos (agent-plugins.org v1.0.0)
 eidos plugin install --target antigravity   # Installs to .agents/plugins/eidos (workspace plugin)
 eidos plugin install --target claude        # Configures project .claude/mcp.json
 eidos plugin install --target cursor        # Configures project .cursor/mcp.json
