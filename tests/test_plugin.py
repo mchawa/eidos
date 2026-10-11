@@ -6,7 +6,12 @@ import pytest
 from typer.testing import CliRunner
 from eidos.cli.main import app
 from eidos.plugin.validator import validate_plugin_package, PLUGIN_NAME_PATTERN
-from eidos.plugin.installer import install_plugin, PluginInstallTarget, locate_plugin_bundle
+from eidos.plugin.installer import (
+    install_plugin,
+    uninstall_plugin,
+    PluginInstallTarget,
+    locate_plugin_bundle,
+)
 
 runner = CliRunner()
 
@@ -117,3 +122,61 @@ def test_cli_plugin_install_project(tmp_path):
     assert res.exit_code == 0
     assert "Success!" in res.stdout
     assert (tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json").exists()
+
+
+def test_plugin_uninstall_project_scope(tmp_path):
+    """Verify uninstalling plugin from project scope removes plugin dir and MCP configs."""
+    # Install first
+    install_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path, force=True)
+    plugin_dir = tmp_path / ".agents" / "plugins" / "eidos"
+    cursor_mcp = tmp_path / ".cursor" / "mcp.json"
+    claude_mcp = tmp_path / ".claude" / "mcp.json"
+
+    assert plugin_dir.exists()
+    assert cursor_mcp.exists()
+    assert claude_mcp.exists()
+
+    # Uninstall
+    results = uninstall_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path)
+    assert len(results) == 3
+    for r in results:
+        assert r.success
+
+    assert not plugin_dir.exists()
+    # If cursor/claude had only eidos, files are removed or cleaned
+    if cursor_mcp.exists():
+        with open(cursor_mcp, "r", encoding="utf-8") as f:
+            c_data = json.load(f)
+        assert "eidos" not in c_data.get("mcpServers", {})
+
+    if claude_mcp.exists():
+        with open(claude_mcp, "r", encoding="utf-8") as f:
+            cl_data = json.load(f)
+        assert "eidos" not in cl_data.get("mcpServers", {})
+
+
+def test_cli_plugin_uninstall_project(tmp_path):
+    """Verify 'eidos plugin uninstall --project-dir' CLI command."""
+    # Install
+    runner.invoke(app, ["plugin", "install", "--project-dir", str(tmp_path)])
+    assert (tmp_path / ".agents" / "plugins" / "eidos").exists()
+
+    # Uninstall
+    res = runner.invoke(app, ["plugin", "uninstall", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    assert "Success!" in res.stdout
+    assert not (tmp_path / ".agents" / "plugins" / "eidos").exists()
+
+
+def test_cli_plugin_remove_alias(tmp_path):
+    """Verify 'eidos plugin remove --project-dir' CLI alias command."""
+    # Install
+    runner.invoke(app, ["plugin", "install", "--project-dir", str(tmp_path)])
+    assert (tmp_path / ".agents" / "plugins" / "eidos").exists()
+
+    # Remove via alias
+    res = runner.invoke(app, ["plugin", "remove", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    assert "Success!" in res.stdout
+    assert not (tmp_path / ".agents" / "plugins" / "eidos").exists()
+

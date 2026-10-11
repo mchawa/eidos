@@ -15,6 +15,7 @@ from eidos.mcp.server import run_mcp_server
 from eidos.plugin.validator import validate_plugin_package
 from eidos.plugin.installer import (
     install_plugin,
+    uninstall_plugin,
     PluginInstallTarget,
     locate_plugin_bundle,
 )
@@ -200,6 +201,63 @@ def plugin_install(
     except Exception as e:
         console.print(f"[bold red]Installation Failed:[/bold red] {e}")
         raise typer.Exit(code=1)
+
+
+@plugin_app.command("uninstall")
+def plugin_uninstall(
+    target: PluginInstallTarget = typer.Option(
+        PluginInstallTarget.PROJECT,
+        "--target", "-t",
+        help="Target to remove in project scope: project, workspace, antigravity, cursor, claude, all.",
+    ),
+    project_dir: Optional[Path] = typer.Option(
+        None,
+        "--project-dir", "-p",
+        help="Root directory of the project (defaults to current working directory).",
+    ),
+    dest: Optional[Path] = typer.Option(
+        None,
+        "--dest", "-d",
+        help="Custom destination directory within the project to remove.",
+    ),
+):
+    """Uninstall / remove the Eidos agent plugin from project scope."""
+    console.print(f"[bold cyan]Uninstalling Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{target.value}[/bold green])...\n")
+
+    try:
+        results = uninstall_plugin(target=target, project_dir=project_dir, dest_path=dest)
+        for res in results:
+            if res.removed:
+                console.print(f"[bold green]✓[/bold green] [bold]{res.target.upper()}:[/bold] {res.message}")
+            else:
+                console.print(f"[bold yellow]•[/bold yellow] [bold]{res.target.upper()}:[/bold] {res.message}")
+
+        console.print("\n[bold green]Success![/bold green] Plugin cleanup complete.")
+    except Exception as e:
+        console.print(f"[bold red]Uninstall Failed:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@plugin_app.command("remove")
+def plugin_remove(
+    target: PluginInstallTarget = typer.Option(
+        PluginInstallTarget.PROJECT,
+        "--target", "-t",
+        help="Target to remove in project scope: project, workspace, antigravity, cursor, claude, all.",
+    ),
+    project_dir: Optional[Path] = typer.Option(
+        None,
+        "--project-dir", "-p",
+        help="Root directory of the project (defaults to current working directory).",
+    ),
+    dest: Optional[Path] = typer.Option(
+        None,
+        "--dest", "-d",
+        help="Custom destination directory within the project to remove.",
+    ),
+):
+    """Alias for 'eidos plugin uninstall'."""
+    plugin_uninstall(target=target, project_dir=project_dir, dest=dest)
 
 
 @plugin_app.command("validate")

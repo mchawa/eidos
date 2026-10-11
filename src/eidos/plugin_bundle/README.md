@@ -42,6 +42,11 @@ eidos plugin install --target workspace     # .agents/plugins/eidos (agent-plugi
 eidos plugin install --target antigravity   # .agents/plugins/eidos (Antigravity workspace plugin)
 eidos plugin install --target claude        # .claude/mcp.json (Claude Code project MCP)
 eidos plugin install --target cursor        # .cursor/mcp.json (Cursor project MCP)
+
+# Remove / uninstall from project scope:
+eidos plugin remove
+# Or:
+eidos plugin uninstall --target cursor      # removes only cursor MCP entry
 ```
 
 ## Conformance Verification

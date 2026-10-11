@@ -36,9 +36,10 @@ Launches the stdio Model Context Protocol (MCP) server for AI agent clients.
   - `0`: Clean termination.
 
 === `eidos plugin`
-Manages, validates, and installs Eidos Agent Plugins conforming to `agent-plugins.org` v1.0.0.
+Manages, validates, installs, and removes Eidos Agent Plugins conforming to `agent-plugins.org` v1.0.0.
 * **Sub-commands**:
-  - `install [--target <target>] [--dest <path>]`: Installs the plugin into Antigravity, workspace, Claude, Cursor, or custom directory.
+  - `install [--target <target>] [--project-dir <path>] [--dest <path>]`: Installs the plugin into `.agents/plugins/eidos` and local workspace MCP configurations.
+  - `uninstall / remove [--target <target>] [--project-dir <path>] [--dest <path>]`: Uninstalls and cleans up the plugin from project scope.
   - `validate [PATH]`: Validates an Agent Plugin against canonical JSON schemas.
   - `info [PATH]`: Displays plugin metadata, skills, MCP servers, and extensions.
 
