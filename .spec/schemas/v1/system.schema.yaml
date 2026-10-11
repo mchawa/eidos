@@ -27,23 +27,26 @@ properties:
     description: "Full human-readable display title of the software product or platform."
   archetypes:
     type: array
-    description: "The architectural archetypes and delivery surfaces that comprise this product. Modern software systems frequently combine multiple archetypes (e.g. a SaaS platform with an accompanying CLI tool and client SDK libraries)."
+    description: >
+      Open, extensible list of architectural archetypes, system disciplines, and delivery surfaces
+      comprising this product. Never artificially restricted to a closed enum.
+      
+      Common conventions include:
+        - AI & Data: ml_model, inference_service, data_pipeline, agent_swarm, vector_search
+        - Apps & Services: saas_platform, web_app, api_service, mobile_app, desktop_app, daemon
+        - Tooling & Core: cli_tool, library, sdk, framework, compiler, extension_plugin
+        - Systems & Edge: firmware, embedded_system, os_kernel, device_driver, iot_device
+        - Distributed & Web3: p2p_protocol, smart_contract, event_mesh
     minItems: 1
     items:
       type: string
-      enum:
-        - framework
-        - cli_tool
-        - saas_platform
-        - web_app
-        - api_service
-        - library
-        - mobile_app
-        - desktop_app
-        - embedded_system
-        - data_platform
-        - extension_plugin
-        - background_daemon
+      pattern: "^[a-z0-9_-]+$"
+      description: "A machine-readable slug identifying an architectural archetype or delivery surface."
+    examples:
+      - ["framework", "cli_tool", "library"]
+      - ["ml_model", "inference_service", "data_pipeline"]
+      - ["embedded_system", "firmware"]
+      - ["saas_platform", "mobile_app", "api_service"]
   business_identity:
     type: object
     description: "High-level strategic business intent, target market, and value proposition."
@@ -66,7 +69,7 @@ properties:
         description: "The core distinct value delivered to users that sets this system apart from alternatives."
   technical_profile:
     type: object
-    description: "Foundational technical characteristics, VCS environments, and AI agent compatibility."
+    description: "Foundational technical characteristics, VCS environments, runtimes, and AI agent compatibility."
     required:
       - primary_languages
       - vcs_platforms
@@ -74,19 +77,26 @@ properties:
     properties:
       primary_languages:
         type: array
-        description: "Primary programming and specification languages used in the codebase."
+        description: "Primary programming, modeling, and specification languages used in the codebase (e.g. Python, Rust, C++, AsciiDoc)."
         items:
           type: string
-          description: "Programming language name (e.g. Python, TypeScript, Go, Rust, AsciiDoc)."
+      runtimes_and_frameworks:
+        type: array
+        description: "Execution runtimes, ML frameworks, or virtualization environments (e.g. PyTorch, CUDA, Node.js, JVM, Docker, FreeRTOS)."
+        items:
+          type: string
+      deployment_targets:
+        type: array
+        description: "Hardware, cloud, or edge execution targets (e.g. GPU Cluster, Kubernetes, Bare Metal MCU, WebAssembly, iOS/Android)."
+        items:
+          type: string
       vcs_platforms:
         type: array
-        description: "Source control platforms supported for workflows, issues, and pipelines."
+        description: "Source control platforms supported for workflows, issues, and pipelines (e.g. GitHub, GitLab)."
         items:
           type: string
-          description: "VCS platform identifier (e.g. GitHub, GitLab)."
       agent_support:
         type: array
-        description: "List of coding agents and LLM harnesses supported natively."
+        description: "List of coding agents and LLM harnesses supported natively (e.g. Antigravity (agy), Claude Code, OpenAI Codex)."
         items:
           type: string
-          description: "Agent or harness identifier (e.g. Antigravity (agy), Claude Code, OpenAI Codex)."

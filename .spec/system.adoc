@@ -20,6 +20,12 @@ technical_profile:
   primary_languages:
     - "YAML / AsciiDoc (Spec Layer)"
     - "Python / Go / TypeScript (Orchestration Engine)"
+  runtimes_and_frameworks:
+    - "Container / Docker"
+    - "Node.js / Python 3.12+"
+  deployment_targets:
+    - "Local Workstation (Developer CLI)"
+    - "Cloud CI/CD Runners (GitHub Actions / GitLab CI)"
   vcs_platforms:
     - "GitHub"
     - "GitLab"
