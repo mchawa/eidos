@@ -66,8 +66,6 @@
         // --- Configuration & Schemas ---
         "tamasfe.even-better-toml",
         "redhat.vscode-yaml",
-        "timonwong.shellcheck",
-        "foxundermoon.shell-format",
         "mikestead.dotenv",
         // --- Git & Source Control ---
         "mhutchie.git-graph",
