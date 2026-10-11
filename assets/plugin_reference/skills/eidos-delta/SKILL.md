@@ -1,73 +1,55 @@
 ---
 name: eidos-delta
-description: Orchestrate the Eidos SpecDelta mutation lifecycle (DLT-*). Propose, author, verify, and reconcile semantic mutations against living specifications.
+description: Orchestrate the Eidos SpecDelta mutation lifecycle (DLT-*). Propose, author, verify, and reconcile semantic mutations against living specifications in Planned Mode.
 ---
 
 # Eidos SpecDelta Lifecycle Orchestration (`eidos-delta`)
 
-This skill equips AI agents to safely propose, author, execute, and reconcile semantic mutations against an Eidos living specification repository.
+This skill equips AI agents to author, verify, and reconcile **SpecDeltas** (`type: delta/mutation`) when operating in **Planned Mode**.
 
-## The SpecDelta Lifecycle
+---
 
-In Eidos, code and specifications evolve together through **SpecDeltas** (`type: delta/mutation`).
-SpecDeltas capture the *intent*, *mutations*, and *impact* of changes before implementation.
+## 1. When to Use SpecDelta (Planned Mode)
+
+In Eidos, SpecDeltas are **optional architectural change plans**. You do **not** need a SpecDelta for everyday routine tasks or small fixes (which use Direct Mode with Git diffs).
+
+### Ideal Scenarios for SpecDelta:
+1. **Complex or Breaking Changes:** Multi-service migrations, new domains (`DOM-*`), breaking API contract changes (`CTR-*`), or system-wide security policies (`POL-*`).
+2. **The Architect / Builder (Tiered Model) Pattern:**
+   - A **strong reasoning model** activates deep thinking to analyze architectural impact and author the SpecDelta.
+   - A human/lead reviews and approves the compact 40-line document.
+   - A **faster/cheaper model** implements the code and tests against the deterministic delta checklist.
+3. **Human Alignment:** When team leads or clients require pre-implementation design sign-off.
+
+---
+
+## 2. Authoring Workflow: Think Deeply Before Coding
+
+When tasked with a complex feature or assigned a GitHub/GitLab issue:
 
 ```
        ┌───────────┐      ┌────────────┐      ┌───────────┐      ┌───────────┐
-       │  Propose  │ ───> │ Authoring  │ ───> │ Implement │ ───> │ Reconcile │
-       │ (Scaffold)│      │  (Intent)  │      │ & Verify  │      │  (Apply)  │
+       │ Think &   │ ───> │ Human      │ ───> │ Implement │ ───> │ Reconcile │
+       │ Scaffold  │      │ Review     │      │ & Verify  │      │  (Apply)  │
        └───────────┘      └────────────┘      └───────────┘      └───────────┘
-         DLT-*.adoc         Mutations            Pytest /            eidos
-        in active/         & Invariants          Validate         delta apply
+         DLT-*.adoc        Sign-off on           Pytest /            eidos
+        with vcs link      intent diff          check-pr          delta apply
 ```
 
----
+### Step 1: Think Deeply & Scaffold
+Activate internal reasoning to deliberate on:
+- *Which existing components (`CMP-*`) are impacted?*
+- *What new capabilities (`CAP-*`) or interface contracts (`CTR-*`) are introduced?*
+- *What policy invariants (`INV-*`) must be tested?*
+- *What is the blast radius across personas and downstream modules?*
 
-## 1. When to Create a SpecDelta
-
-Always create a SpecDelta when:
-- Adding a new product capability (`CAP-*`) or domain context (`DOM-*`).
-- Introducing or altering an architectural component (`CMP-*`) or interface contract (`CTR-*`).
-- Adding or modifying a system policy (`POL-*`) or invariant (`INV-*`).
-- Performing non-trivial refactorings that shift module boundaries.
-
-> [!NOTE]
-> Minor typo corrections, non-functional documentation tweaks, and test fixture updates do not require a SpecDelta.
-
----
-
-## 2. CLI Delta Commands
-
-Use the Eidos CLI to manage deltas:
-
+Scaffold the delta with VCS linkage:
 ```bash
-# 1. Scaffold a new SpecDelta in flat storage (eidos/deltas/<id>.adoc):
-eidos delta create DLT-2026-002 --title "Payment Gateway Integration" --kind feature_addition --motivation "Enable Stripe payments"
-
-# 2. View the lifecycle status dashboard:
-eidos delta status
-
-# 3. List all or filtered deltas:
-eidos delta list
-eidos delta list --status active      # In-flight (proposed, in_review, approved)
-eidos delta list --status applied     # Reconciled baseline mutations
-
-# 4. Regenerate gitignored status symlink views (eidos/deltas/by-status/):
-eidos delta sync-views
-
-# 5. Reconcile and apply a completed delta in-place:
-eidos delta apply DLT-2026-002
-
-# 6. Safely delete a rejected or abandoned delta:
-eidos delta delete DLT-2026-002
+eidos delta create DLT-2026-042 --title "Tenant Rate Limiting and Quota Enforcement" --kind feature_addition --motivation "Prevent noisy neighbor issues on multitenant clusters."
 ```
 
----
-
-## 3. SpecDelta Schema Anatomy (`delta.schema.yaml`)
-
-Every SpecDelta lives in flat storage at `eidos/deltas/<delta-id>.adoc` (with gitignored browseable views in `eidos/deltas/by-status/`) and strictly satisfies `schemas/v1/delta/delta.schema.yaml`:
-
+### Step 2: Author the SpecDelta Frontmatter
+Edit `eidos/deltas/DLT-2026-042.adoc`:
 ```yaml
 ---
 type: delta/mutation
@@ -76,8 +58,12 @@ id: DLT-2026-042
 title: "Tenant Rate Limiting and Quota Enforcement"
 status: proposed  # proposed | in_review | approved | applied | rejected
 
+vcs:
+  issue: "#42"
+  branch: "feat/tenant-quotas"
+
 intent:
-  kind: feature_addition  # feature_addition | bugfix | refactor | modification | feature_removal
+  kind: feature_addition
   motivation: "Prevent noisy neighbor problems across multitenant clusters."
 
 mutations:
@@ -88,40 +74,47 @@ mutations:
   - action: add_policy
     target_policy: POL-004-RATE-LIMIT-CEILING
     details: "Enforce 1000 req/min default per tier."
-  - action: patch_invariant
-    target_capability: CAP-TENANT-001
-    target_invariant_id: INV-QUOTA-BURST-001
-    details: "Allow 20% burst over 10 seconds."
 
 blast_radius:
-  impacted_personas:
-    - eidos/personas/workspace-admin.adoc
   impacted_components:
     - CMP-GATEWAY-SERVICE
   invariants_to_enforce:
     - INV-QUOTA-BURST-001
 ---
 = SpecDelta: Tenant Rate Limiting and Quota Enforcement
-:toc: left
-
-== Problem Statement
-Contextual explanation of why the change is necessary.
-
-== Proposed Specification Changes
-Detailed textual diffs, API endpoint updates, and policy amendments.
 ```
+
+### Step 3: Implement & Verify
+1. Update target living specs in `eidos/architecture/`, `eidos/policies/`, etc.
+2. Implement code in `src/` and tests covering `INV-*` in `tests/`.
+3. Verify with `pytest tests/` and `eidos validate eidos`.
+
+### Step 4: Reconcile Delta
+Reconcile the delta in-place:
+```bash
+eidos delta apply DLT-2026-042
+```
+This sets `status: applied` in the frontmatter.
 
 ---
 
-## 4. Reconciliation Workflow (Rule 3)
+## 3. CLI Delta Commands
 
-Once code is written and verified with passing invariant tests:
-1. Update all target living specifications (`eidos/architecture/`, `eidos/domains/`, `eidos/policies/`) to incorporate the delta changes.
-2. Run `eidos delta apply <delta-id>`:
-   - Sets frontmatter `status: applied` in-place (the file path remains stable at `eidos/deltas/<delta-id>.adoc`).
-   - Automatically synchronizes gitignored symlink views (`by-status/applied/`).
-3. Validate repository integrity:
-   ```bash
-   eidos validate eidos
-   ```
-4. Commit both the living specs and the applied delta in the same git commit.
+```bash
+# 1. Create a new delta
+eidos delta create DLT-2026-042 --title "..." --kind feature_addition
+
+# 2. View lifecycle status dashboard
+eidos delta status
+
+# 3. List deltas
+eidos delta list
+eidos delta list --status active      # in-flight proposals
+eidos delta list --status applied     # reconciled baselines
+
+# 4. Apply a completed delta
+eidos delta apply DLT-2026-042
+
+# 5. Delete an abandoned proposal
+eidos delta delete DLT-2026-042
+```

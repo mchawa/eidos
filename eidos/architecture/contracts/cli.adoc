@@ -90,6 +90,31 @@ Orchestrates SpecDeltas throughout their semantic mutation lifecycle using flat 
   - `apply <id_or_path>`: Reconciles a delta in-place, updates frontmatter status to `applied`, and updates symlink views without moving files.
   - `delete <id_or_path> [--force]`: Deletes a SpecDelta file and cleans up symlink views.
 
+=== `eidos check-pr [--base REF] [--head REF] [--uncommitted] [--markdown FILE] [--json]`
+Verifies PR spec-code drift, schema validity, and invariant test coverage across both Planned Mode and Direct Mode.
+* **Alias**: `eidos drift`
+* **Options**:
+  - `--base, -b`: Base git reference to compare against (defaults to `origin/main` or `main`).
+  - `--head`: Head git reference (defaults to `HEAD`).
+  - `--uncommitted, -u`: Analyze uncommitted working tree and staged changes instead of branch diff.
+  - `--markdown, -m`: Path to write the markdown summary comment (e.g. for GitHub Actions step summary / PR comment).
+  - `--json`: Output raw JSON verification result.
+  - `--warn-only`: Do not exit with code 1 on drift.
+* **Exit Codes**:
+  - `0`: Specifications and code are synchronized, all schemas valid, invariant tests green.
+  - `1`: Spec-to-code drift detected or specification validation errors.
+
+=== `eidos reconcile [--base REF] [--uncommitted] [--prompt] [--json]`
+Analyzes recent code changes against the living specification catalog and generates candidate specs and tailored AI prompts for synchronization.
+* **Alias**: `eidos sync`
+* **Options**:
+  - `--base, -b`: Base git reference to compare against.
+  - `--uncommitted, -u`: Analyze uncommitted working tree changes.
+  - `--prompt`: Output structured markdown AI prompt for copy-pasting into chat.
+  - `--json`: Output raw JSON reconcile suggestions and catalog.
+* **Exit Codes**:
+  - `0`: Analysis complete.
+
 === `eidos init [PATH]`
 Bootstraps a repository with a complete, schema-conforming Eidos living specification directory, baseline Arc42/C4 architecture, core policies, personas, and self-contained gitignore.
 * **Arguments**: `PATH` (Optional directory path, defaults to `.`)
@@ -103,6 +128,8 @@ Bootstraps a repository with a complete, schema-conforming Eidos living specific
   - `1`: Directory already initialized without `--force`, or validation failed.
 
 === Convenience Shortcuts
+* `eidos check-pr`: Runs PR drift gate verification (`eidos drift`).
+* `eidos reconcile`: Runs spec reconciliation assistant (`eidos sync`).
 * `eidos create <type> <id> --title <title>`: Direct shortcut to `eidos spec create`.
 * `eidos delete <id_or_path> [--force]`: Direct shortcut to `eidos spec delete`.
 * `eidos list [--type <type>] [--status <status>]`: Direct shortcut to `eidos spec list`.

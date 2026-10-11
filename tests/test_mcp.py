@@ -17,6 +17,27 @@ def test_mcp_tools_declared():
     assert "eidos_create_spec" in tool_names
     assert "eidos_delete_spec" in tool_names
     assert "eidos_apply_delta" in tool_names
+    assert "eidos_check_pr" in tool_names
+    assert "eidos_reconcile" in tool_names
+
+
+def test_mcp_check_pr_and_reconcile_tools():
+    """Verify eidos_check_pr and eidos_reconcile execution via MCP."""
+    res_pr = handle_tool_call("eidos_check_pr", {"path": "eidos"})
+    assert len(res_pr) == 1
+    data_pr = json.loads(res_pr[0]["text"])
+    assert "is_clean" in data_pr
+    assert "drift_detected" in data_pr
+    assert "workflow_mode" in data_pr
+    assert "summary_markdown" in data_pr
+
+    res_rec = handle_tool_call("eidos_reconcile", {"path": "eidos"})
+    assert len(res_rec) == 1
+    data_rec = json.loads(res_rec[0]["text"])
+    assert "changed_code_files" in data_rec
+    assert "suggestions" in data_rec
+    assert "ai_prompt" in data_rec
+    assert "catalog" in data_rec
 
 
 def test_mcp_info_tool():

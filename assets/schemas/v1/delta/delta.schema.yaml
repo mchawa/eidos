@@ -164,3 +164,24 @@ properties:
         description: "List of invariant IDs that must have green passing tests before this delta can merge."
         items:
           type: string
+  vcs:
+    type: object
+    description: "Traceability link to human issue tracker and pull request."
+    properties:
+      issue:
+        type: string
+        description: "External issue identifier (e.g. '#42', 'PROJ-123')."
+      issue_url:
+        type: string
+        format: uri
+        description: "Direct URL to external issue."
+      pull_request:
+        type: string
+        description: "External pull request / merge request identifier (e.g. '#105')."
+      pull_request_url:
+        type: string
+        format: uri
+        description: "Direct URL to pull request."
+      branch:
+        type: string
+        description: "Git branch name."

@@ -15,6 +15,7 @@ from eidos.core.scaffolder import (
     list_specs,
 )
 from eidos.core.validator import SpecValidator
+from eidos.vcs import check_pr_drift, reconcile_specs
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
@@ -187,6 +188,52 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "eidos_check_pr",
+        "description": "Inspect spec-to-code drift between git branches or uncommitted changes, validate living specification schema integrity, and verify invariant test bindings.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "base": {
+                    "type": "string",
+                    "description": "Base git reference to compare against (e.g. 'origin/main', 'main').",
+                },
+                "head": {
+                    "type": "string",
+                    "description": "Head git reference (defaults to 'HEAD').",
+                },
+                "uncommitted": {
+                    "type": "boolean",
+                    "description": "Check uncommitted working tree and staged changes instead of branch diff (defaults to false).",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Path to eidos directory (defaults to 'eidos').",
+                },
+            },
+        },
+    },
+    {
+        "name": "eidos_reconcile",
+        "description": "Analyze recent code changes against the living specification catalog and return target components, contracts, and capabilities to update.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "base": {
+                    "type": "string",
+                    "description": "Base git reference to compare against.",
+                },
+                "uncommitted": {
+                    "type": "boolean",
+                    "description": "Analyze uncommitted working tree changes.",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Path to eidos directory (defaults to 'eidos').",
+                },
+            },
+        },
+    },
 ]
 
 
@@ -353,6 +400,59 @@ def handle_tool_call(name: str, arguments: dict[str, Any]) -> list[dict[str, Any
             force=force,
         )
         res = {"success": success, "message": msg, "created_files": [str(f) for f in created_files]}
+        return [{"type": "text", "text": json.dumps(res, indent=2)}]
+
+    elif name == "eidos_check_pr":
+        base_ref = arguments.get("base")
+        head_ref = arguments.get("head") or "HEAD"
+        uncommitted = arguments.get("uncommitted", False)
+        eidos_path = Path(arguments.get("path") or "eidos")
+        result = check_pr_drift(
+            repo_root=Path.cwd(),
+            base_ref=base_ref,
+            head_ref=head_ref,
+            eidos_dir=eidos_path,
+            uncommitted=uncommitted,
+        )
+        res = {
+            "is_clean": result.is_clean,
+            "drift_detected": result.drift_detected,
+            "workflow_mode": result.workflow_mode,
+            "code_files": result.classification.code_files,
+            "spec_files": result.classification.spec_files,
+            "delta_files": result.classification.delta_files,
+            "test_files": result.classification.test_files,
+            "touched_components": result.touched_components,
+            "valid_specs": result.validation_report.valid_docs,
+            "total_specs": result.validation_report.total_docs,
+            "remediation_suggestions": result.remediation_suggestions,
+            "summary_markdown": result.summary_markdown,
+        }
+        return [{"type": "text", "text": json.dumps(res, indent=2)}]
+
+    elif name == "eidos_reconcile":
+        base_ref = arguments.get("base")
+        uncommitted = arguments.get("uncommitted", False)
+        eidos_path = Path(arguments.get("path") or "eidos")
+        result = reconcile_specs(
+            repo_root=Path.cwd(),
+            base_ref=base_ref,
+            eidos_dir=eidos_path,
+            uncommitted=uncommitted,
+        )
+        res = {
+            "changed_code_files": result.changed_code_files,
+            "suggestions": [
+                {
+                    "code_file": s.code_file,
+                    "candidate_specs": s.candidate_specs,
+                    "reason": s.reason,
+                }
+                for s in result.suggestions
+            ],
+            "catalog": result.catalog,
+            "ai_prompt": result.ai_prompt,
+        }
         return [{"type": "text", "text": json.dumps(res, indent=2)}]
 
     return [{"type": "text", "text": f"Unknown tool: {name}"}]
