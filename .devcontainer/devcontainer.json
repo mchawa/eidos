@@ -57,7 +57,7 @@
         "charliermarsh.ruff",
         "astral-sh.ty",
         // --- Containers & Virtualization ---
-        "ms-azuretools.vscode-docker",
+        "ms-azuretools.vscode-containers",
         // --- Living Architecture & Specifications ---
         "asciidoctor.asciidoctor-vscode",
         "bierner.markdown-mermaid",

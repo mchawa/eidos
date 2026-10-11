@@ -15,7 +15,6 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   openssl \
   iputils-ping \
   dnsutils \
-  yamllint \
   build-essential
 sudo apt-get clean
 sudo rm -rf /var/lib/apt/lists/*
@@ -67,5 +66,4 @@ echo "✅ Eidos Dev Container Ready!"
 echo "   - uv:         $(uv --version)"
 echo "   - ty:         $(ty --version 2>/dev/null || echo 'installed')"
 echo "   - python:     $(python --version 2>/dev/null || echo 'not on PATH')"
-echo "   - yamllint:   $(yamllint --version || echo 'installed')"
 echo "========================================================"
