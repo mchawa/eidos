@@ -102,3 +102,4 @@ properties:
       figma_node_url:
         type: string
         description: "Direct URL to Figma component or frame."
+

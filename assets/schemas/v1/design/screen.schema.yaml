@@ -80,3 +80,4 @@ properties:
       figma_frame_url:
         type: string
         description: "URL to Figma screen frame or prototype flow."
+

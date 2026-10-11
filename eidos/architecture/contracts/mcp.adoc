@@ -1,0 +1,37 @@
+---
+type: tech/contract
+schema: schemas/v1/tech/contract.schema.yaml
+id: CTR-EIDOS-MCP
+title: "Eidos Model Context Protocol (MCP) Interface Contract"
+protocol: "json_rpc_stdio"
+owning_component: "CMP-EIDOS-ENGINE"
+specification_file: "src/eidos/mcp/server.py"
+---
+= Contract: Eidos MCP stdio Interface
+:toc: left
+
+== Protocol Specification
+The Eidos MCP server implements the Model Context Protocol (MCP) specification (protocol version `2024-11-05`) over JSON-RPC 2.0 stdio transport.
+
+=== Supported Methods
+* `initialize`: Negotiates protocol version, server identity, and tool execution capabilities.
+* `notifications/initialized`: Handshake confirmation notification.
+* `tools/list`: Returns the complete catalog of callable tools with their JSON Schema parameters.
+* `tools/call`: Dispatches and executes an MCP tool with structured input arguments and returns typed content blocks.
+
+=== Tool Catalog
+
+[cols="1,2,2", options="header"]
+|===
+| Tool Name | Description | Key Parameters
+| `eidos_validate` | Validates living specifications against schemas and verifies cross-references | `path` (default: `eidos`)
+| `eidos_info` | Returns engine version, loaded schemas, and supported agent platforms | _None_
+| `eidos_list_components` | Lists C4 containers, internal building blocks, and interface contracts | `path`
+| `eidos_create_delta` | Scaffolds a new SpecDelta mutation file in flat storage | `delta_id`, `title`, `kind`, `motivation`
+| `eidos_apply_delta` | Reconciles a SpecDelta in-place with status `applied` and updates symlink views | `target`, `path`
+| `eidos_init_repo` | Bootstraps a repository with baseline living specs, policies, and architecture | `project_dir`, `name`, `title`, `with_plugin`, `force`
+| `eidos_create_spec` | Scaffolds any living specification document with schema validation | `type`, `id`, `title`, `client_id`, `extends_system`, `route`, `design_system`
+| `eidos_read_spec` | Parses an AsciiDoc specification and returns frontmatter metadata and body | `path`
+| `eidos_list_specs` | Lists all living specifications and SpecDeltas with optional filtering | `path`, `type`, `status`
+| `eidos_delete_spec` | Safely deletes a specification with cross-reference safety checks | `target`, `path`, `force`
+|===

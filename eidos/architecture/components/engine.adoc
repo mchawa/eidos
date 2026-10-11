@@ -31,20 +31,31 @@ c4_internal_components:
   - name: "PluginManager"
     responsibility: "Manages portable agent plugins adhering to agent-plugins.org v1.0.0, SemVer 2.0.0 validation, and project MCP configs."
     source_path: "src/eidos/plugin/installer.py"
+  - name: "PluginValidator"
+    responsibility: "Validates agent plugins against agent-plugins.org v1.0.0 and enforces SemVer 2.0.0 rules."
+    source_path: "src/eidos/plugin/validator.py"
   - name: "AssetLocator"
     responsibility: "Locates externalized specification schemas and canonical plugin reference assets across local checkouts and wheels."
     source_path: "src/eidos/core/assets.py"
+  - name: "McpServer"
+    responsibility: "Implements the JSON-RPC 2.0 stdio Model Context Protocol server exposing tool capabilities to autonomous agents."
+    source_path: "src/eidos/mcp/server.py"
+  - name: "DesignEngine"
+    responsibility: "Manages Multi-Design Systems, W3C DTCG tokens, UI component contracts, and screen layout/state machines."
+    source_path: "src/eidos/core/scaffolder.py"
 
 dependencies:
   internal_components: []
   external_services:
     - "Git CLI (local)"
+    - "JSON-RPC 2.0 Stdio Host (Antigravity / Cursor / Claude Code)"
     - "GitHub REST/GraphQL API (optional remote)"
     - "GitLab REST/GraphQL API (optional remote)"
 
 contracts:
   provides:
     - "eidos/architecture/contracts/cli.adoc"
+    - "eidos/architecture/contracts/mcp.adoc"
   consumes: []
 
 quality_attributes:
@@ -57,7 +68,7 @@ quality_attributes:
 :toc: left
 
 == Architectural Boundary
-This component represents the core Python codebase under `src/eidos/`. It parses AsciiDoc files with YAML frontmatter, validates metadata against JSON/YAML schemas, executes CLI commands, and coordinates autonomous agent execution harnesses.
+This component represents the core Python codebase under `src/eidos/`. It parses AsciiDoc files with YAML frontmatter, validates metadata against JSON/YAML schemas, executes CLI commands, hosts an MCP stdio server, and coordinates autonomous agent execution harnesses.
 
 == Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
 
@@ -69,9 +80,12 @@ This component represents the core Python codebase under `src/eidos/`. It parses
 | **CliInterface** | Typer and Rich user interface, formatted diagnostic reporting, exit codes | `src/eidos/cli/main.py`
 | **AgentHarness** | Abstract protocol for pluggable agent execution drivers | `src/eidos/agent/base.py`
 | **VCSBridge** | Normalized contract across GitHub and GitLab VCS platforms | `src/eidos/vcs/bridge.py`
-| **LifecycleScaffolder** | Scaffolding living specifications, reference safety, and delta lifecycles | `src/eidos/core/scaffolder.py`
+| **LifecycleScaffolder** | Scaffolding living specifications, reference safety, repository initialization, and delta lifecycles | `src/eidos/core/scaffolder.py`
+| **DesignEngine** | Multi-Design Systems, W3C DTCG tokens, UI component contracts, and screen state machines | `src/eidos/core/scaffolder.py`
 | **PluginManager** | Agent-plugins.org v1.0.0 and project-scoped MCP installer | `src/eidos/plugin/installer.py`
+| **PluginValidator** | Validation of agent plugins and SemVer 2.0.0 synchronization | `src/eidos/plugin/validator.py`
 | **AssetLocator** | Centralized locator for schemas and plugin reference in assets/ | `src/eidos/core/assets.py`
+| **McpServer** | Standard JSON-RPC 2.0 Model Context Protocol (MCP) server | `src/eidos/mcp/server.py`
 |===
 
 == Operational Invariants & Quality Attributes
