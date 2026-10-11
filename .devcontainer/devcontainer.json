@@ -22,11 +22,12 @@
         "ms-python.python",
         "ms-python.vscode-pylance",
         "charliermarsh.ruff",
+        "astral-sh.ty",
         "asciidoctor.asciidoctor-vscode",
         "redhat.vscode-yaml",
         "bierner.markdown-mermaid"
       ]
     }
   },
-  "postCreateCommand": "apt-get update && apt-get install -y --no-install-recommends build-essential ca-certificates curl git python3 python3-pip python3-venv && python3 -m venv .venv && .venv/bin/pip install --upgrade pip && .venv/bin/pip install -e '.[dev]'"
+  "postCreateCommand": "apt-get update && apt-get install -y --no-install-recommends build-essential ca-certificates curl git python3 python3-pip python3-venv && curl -LsSf https://astral.sh/uv/install.sh | env CARGO_DIST_FORCE_INSTALL_DIR=/usr/local/bin sh && uv tool install --install-dir /usr/local/bin ty && uv venv .venv && uv pip install -e '.[dev]'"
 }
