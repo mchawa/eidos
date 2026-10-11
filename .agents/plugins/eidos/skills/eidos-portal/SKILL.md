@@ -137,3 +137,4 @@ eidos build-site --out /tmp/portal-test
 test -f /tmp/portal-test/index.html
 ```
 Ensures zero broken references or rendering errors before public deployment.
+

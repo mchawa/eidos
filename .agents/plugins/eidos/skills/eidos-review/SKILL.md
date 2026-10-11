@@ -111,3 +111,4 @@ During review, the agent should invoke:
 1. `eidos_detect_drift`: Inspect git diff and verify invariant test bindings.
 2. `eidos_validate`: Check schema compliance and broken cross-references.
 3. `eidos_list_components`: Verify architectural dependencies.
+

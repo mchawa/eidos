@@ -72,13 +72,19 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ├── rules/
     │   └── AGENTS.md             # System prompt architectural guidelines
     ├── skills/
-    │   ├── eidos/                # Living spec navigation & orchestration
-    │   ├── eidos-architecture/   # Arc42 / C4 topology authoring
-    │   ├── eidos-delta/          # SpecDelta mutation lifecycle
-    │   ├── eidos-design/         # Design systems & UI contracts
-    │   ├── eidos-extract/        # Reverse-engineering living specs
-    │   ├── eidos-init/           # Repository bootstrapping
-    │   └── eidos-invariants/     # Policy invariants & test traceability
+    │   ├── eidos/                # Living spec navigation & dual workflows
+    │   ├── eidos-architecture/   # Arc42 & C4 Level 1-3 topology (NO ADRs)
+    │   ├── eidos-delta/          # SpecDelta mutation lifecycle (DLT-*)
+    │   ├── eidos-design/         # Multi-Design Systems & W3C Tokens
+    │   ├── eidos-drift/          # Spec-to-code drift detection & PR gate
+    │   ├── eidos-explore/        # Spikes, feasibility & technical discovery (EXP-*)
+    │   ├── eidos-extract/        # Brownfield living spec reverse-engineering
+    │   ├── eidos-init/           # Greenfield repository bootstrapping
+    │   ├── eidos-invariants/     # Policy invariants (POL-*) & test traceability
+    │   ├── eidos-portal/         # Living Web Portal & static documentation
+    │   ├── eidos-product/        # Domains (DOM-*), capabilities (CAP-*), personas
+    │   ├── eidos-reconcile/      # Direct Mode spec reconciliation
+    │   └── eidos-review/         # Staff Architect review & blast radius audit
     └── hooks/
         └── eidos-doc-linter/     # Document linting & quality checks
     ```
@@ -210,7 +216,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ### 4. Verification in Cursor
 
-    Open **Cursor Settings > Features > MCP Servers**. You will see `eidos` listed with a green status indicator and the 6 available tools (`eidos_validate`, `eidos_get_architecture`, etc.).
+    Open **Cursor Settings > Features > MCP Servers**. You will see `eidos` listed with a green status indicator and the 12 available tools (`eidos_validate`, `eidos_detect_drift`, `eidos_reconcile`, etc.).
 
 === "Generic MCP Clients (Windsurf, Roo Code, Cline)"
 
@@ -229,9 +235,9 @@ Select your AI coding assistant below for step-by-step setup instructions and co
           "disabled": false,
           "autoApprove": [
             "eidos_validate",
-            "eidos_get_architecture",
-            "eidos_get_component",
-            "eidos_get_invariants"
+            "eidos_detect_drift",
+            "eidos_reconcile",
+            "eidos_list_components"
           ]
         }
       }
@@ -257,16 +263,22 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
 ## Exposed MCP Tools Reference
 
-When connected, the Eidos MCP server exposes 6 high-level architectural tools to your AI assistant:
+When connected, the Eidos MCP server exposes 12 high-level architectural tools to your AI assistant:
 
 | MCP Tool | Arguments | Description |
 | :--- | :--- | :--- |
+| `eidos_detect_drift` | `base_ref`, `head_ref`, `uncommitted`, `path` | Inspects spec-to-code drift between git branches or uncommitted changes, validates schemas, and checks test bindings. |
+| `eidos_reconcile` | `base_ref`, `uncommitted`, `path`, `as_prompt` | Analyzes code modifications against the living spec catalog and proposes candidate specs or structured prompt. |
 | `eidos_validate` | `path` *(optional)* | Validates all living specifications against their bundled JSON Schemas and checks bidirectional cross-references. |
-| `eidos_get_architecture` | `path` *(optional)* | Returns the complete Arc42/C4 Level 1–3 topology, system boundaries, containers, and component inventory. |
-| `eidos_get_component` | `component_id`, `path` *(optional)* | Retrieves a specific component manifest (`CMP-*`), its incoming/outgoing contracts, and invariant requirements. |
-| `eidos_get_invariants` | `policy_id` *(optional)*, `path` *(optional)* | Queries all active system policies (`POL-*`), capability invariants (`INV-*`), and their linked automated test suites. |
-| `eidos_create_delta` | `title`, `description` *(optional)*, `path` *(optional)* | Scaffolds a new SpecDelta mutation document (`DLT-*`) before code implementation begins. |
-| `eidos_apply_delta` | `delta_id`, `path` *(optional)* | Reconciles an applied SpecDelta in-place, updating its lifecycle state to `applied` and synchronizing living specs. |
+| `eidos_info` | — | Returns current engine version, loaded v1 schemas, and supported platforms. |
+| `eidos_list_components` | `path` *(optional)* | Lists monorepo containers, internal modules, dependencies, and monorepo package paths. |
+| `eidos_read_spec` | `path` | Reads and parses structured frontmatter metadata and AsciiDoc content of a specification. |
+| `eidos_list_specs` | `type`, `status`, `path` *(optional)* | Lists living specifications matching optional type and lifecycle filters. |
+| `eidos_create_spec` | `type`, `id`, `title`, ... | Scaffolds a new specification document (capability, domain, policy, contract, component, design system, etc.). |
+| `eidos_delete_spec` | `target`, `path`, `force` | Safely deletes a living specification with cross-reference safety checks. |
+| `eidos_create_delta` | `id`, `title`, `kind`, `motivation` | Scaffolds a new SpecDelta mutation document (`DLT-*`) for Planned Mode. |
+| `eidos_apply_delta` | `target`, `path` | Reconciles a SpecDelta in-place, updating its lifecycle state to `applied` and synchronizing symlink views. |
+| `eidos_init_repo` | `path`, `name`, `title`, `with_plugin` | Programmatically bootstraps a repository with living specs and agent plugin. |
 
 ---
 

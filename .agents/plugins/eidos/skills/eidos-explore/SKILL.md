@@ -150,3 +150,4 @@ Always verify schema validity before concluding:
 eidos validate eidos
 ```
 Ensures status, exit criteria, and hypotheses conform strictly to `exploration.schema.yaml`.
+

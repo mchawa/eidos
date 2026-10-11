@@ -192,3 +192,4 @@ After adding or modifying domains, capabilities, or personas:
    eidos drift --uncommitted
    ```
    Ensure every `INV-*` declared in the capability has matching test coverage in `tests/`.
+

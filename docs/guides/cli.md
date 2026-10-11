@@ -136,6 +136,67 @@ eidos delta delete dlt-2026-005
 
 ---
 
+## Drift Detection & Quality Gates (`eidos drift`)
+
+Detect spec-to-code drift between git branches or uncommitted changes, validate schema conformance, and verify invariant test coverage across both Planned Mode and Direct Mode:
+
+```bash
+# Compare current branch against base branch (e.g. origin/main):
+eidos drift --base origin/main
+
+# Inspect uncommitted working tree and staged changes:
+eidos drift --uncommitted
+
+# Generate a markdown summary comment (ideal for CI step summary or PR comment):
+eidos drift --base origin/main --markdown drift-report.md
+
+# Output structured JSON for automation:
+eidos drift --json
+
+# Run as non-blocking warning check:
+eidos drift --warn-only
+```
+
+Options:
+* `--base, -b REF`: Base git reference to compare against (defaults to `origin/main` or `main`).
+* `--head REF`: Head git reference (defaults to `HEAD`).
+* `--uncommitted, -u`: Analyze uncommitted working tree and staged changes instead of branch diff.
+* `--markdown, -m FILE`: Path to write the markdown summary comment.
+* `--json`: Output raw JSON verification result.
+* `--warn-only`: Do not exit with code 1 when drift is detected.
+
+Exit Codes:
+* `0`: Specifications and code are synchronized, all schemas valid, invariant tests green.
+* `1`: Spec-to-code drift detected or specification validation errors found.
+
+---
+
+## Living Spec Reconciliation (`eidos reconcile`)
+
+Analyze recent code changes against the living specification catalog and generate candidate specs to update or tailored AI prompts for synchronization:
+
+```bash
+# Inspect branch changes and suggest candidate specs to update:
+eidos reconcile --base origin/main
+
+# Inspect uncommitted working tree changes:
+eidos reconcile --uncommitted
+
+# Generate a structured AI prompt for copy-pasting into chat:
+eidos reconcile --prompt
+
+# Output candidate specs as machine-readable JSON:
+eidos reconcile --json
+```
+
+Options:
+* `--base, -b REF`: Base git reference to compare against.
+* `--uncommitted, -u`: Analyze uncommitted working tree changes.
+* `--prompt`: Output structured markdown AI prompt for copy-pasting into agent chat.
+* `--json`: Output raw JSON reconcile suggestions and catalog.
+
+---
+
 ## Agent Plugin Management (`eidos plugin`)
 
 Manage and validate Eidos agent plugins complying with the `agent-plugins.org v1.0.0` specification:
@@ -164,5 +225,18 @@ eidos plugin update --target all
 # Uninstall / remove plugin files and MCP configurations
 eidos plugin uninstall --target all
 ```
+
+---
+
+## Convenience Shortcuts
+
+Eidos provides intuitive root-level shortcuts for common workflows:
+
+* `eidos drift`: Runs spec-to-code drift detection.
+* `eidos reconcile`: Runs the spec reconciliation assistant (`eidos sync`).
+* `eidos create <type> <id> --title <title>`: Direct shortcut to `eidos spec create`.
+* `eidos delete <id_or_path> [--force]`: Direct shortcut to `eidos spec delete`.
+* `eidos list [--type <type>] [--status <status>]`: Direct shortcut to `eidos spec list`.
+
 
 

@@ -6,7 +6,18 @@ A **SpecDelta** is a semantic mutation artifact describing an architectural chan
 
 ---
 
-## The SpecDelta Mutation Lifecycle
+## Dual Workflows: Direct Mode vs. Planned Mode
+
+Eidos recognizes that software development cannot be burdened by unnecessary paperwork for every small fix. It introduces **Dual Workflows**:
+
+| Mode | When to Use | How It Works |
+| :--- | :--- | :--- |
+| **Direct Mode** *(Default)* | Fast, routine tasks, bug fixes, small features, refactoring | Co-evolve code in `src/` and living specs in `eidos/` directly in the same commit. Git diffs serve as the change delta. `eidos drift` verifies synchronization automatically. |
+| **Planned Mode** *(Optional)* | Complex, breaking, multi-component, or high-risk changes | Author a formal SpecDelta (`DLT-*`) before writing code, review blast radius and contracts with the team, implement against the checklist, and reconcile. |
+
+---
+
+## The SpecDelta Mutation Lifecycle (Planned Mode)
 
 ```mermaid
 stateDiagram-v2
@@ -17,10 +28,10 @@ stateDiagram-v2
     Applied --> [*]
 ```
 
-1. **Proposed**: A new delta is created to document the planned architectural mutation.
+1. **Proposed**: A new delta is created (`eidos delta create`) to document the planned architectural mutation and its motivation.
 2. **Implementing**: Code is authored alongside in-place updates to the living specs (`eidos/architecture/`, `eidos/policies/`, etc.).
-3. **Verified**: The test suite confirms all invariants pass, and `eidos validate eidos` confirms specification integrity.
-4. **Applied**: The delta is reconciled in-place to `status: applied`, recording the historical audit trail without fragmenting the system context.
+3. **Verified**: The test suite confirms all invariants pass, and `eidos drift` confirms specification integrity.
+4. **Applied**: The delta is reconciled in-place to `status: applied` (`eidos delta apply`), recording the historical audit trail without fragmenting the system context.
 
 ---
 

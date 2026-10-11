@@ -28,10 +28,13 @@ eidos init
 # Validate living specifications
 eidos validate eidos
 
+# Verify zero drift between code and living specs
+eidos drift
+
 # Launch interactive C4 architecture portal
 eidos serve --path eidos --port 8080
 
-# Install AI agent plugin (Antigravity, Claude, Cursor, Copilot)
+# Install AI agent plugin (13 skills for Antigravity, Claude, Cursor, Copilot)
 eidos plugin install --target all
 ```
 
@@ -45,11 +48,12 @@ eidos/
 ├── zensical.toml                  # Zensical documentation site configuration
 │
 ├── src/eidos/                     # [THE ENGINE / SOLUTION]
-│   ├── cli/                       # CLI commands (`eidos validate`, `eidos delta`, etc.)
+│   ├── cli/                       # CLI commands (`eidos validate`, `eidos drift`, `eidos delta`, etc.)
 │   ├── core/                      # AsciiDoc + YAML frontmatter parser & schema validator
-│   ├── mcp/                       # Model Context Protocol stdio server
-│   ├── plugin/                    # Agent plugin packager, validator, and installer
+│   ├── mcp/                       # Model Context Protocol stdio server (12 AI tools)
+│   ├── plugin/                    # Agent plugin packager, validator, and installer (13 skills)
 │   ├── portal/                    # Interactive Living Architecture static portal generator
+│   ├── vcs/                       # Git spec-to-code drift detection & reconciliation engine
 │   └── schemas/v1/                # Portable JSON/YAML Schemas bundled as package data
 │
 ├── eidos/                         # [THE LIVING SPECIFICATION / REAL USAGE]
