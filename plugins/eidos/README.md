@@ -11,7 +11,7 @@ This plugin equips AI agents (Antigravity `agy`, Claude Code, Cursor, GitHub Cop
 
 ## What It Provides
 
-1. **Standard MCP Server (`mcp.json`)**:
+1. **MCP Server (`mcp_config.json`)**:
    - `eidos_validate`: Validates all `.adoc` specifications against JSON/YAML schemas and checks cross-references.
    - `eidos_info`: Inspects Eidos engine version and loaded v1 schemas.
    - `eidos_list_components`: Lists monorepo containers, C4 components, internal modules, and package paths.

@@ -99,9 +99,23 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
     if "extensions" in manifest and isinstance(manifest["extensions"], dict):
         report.extensions = list(manifest["extensions"].keys())
 
-    # 2. Validate MCP configuration: mcp.json (optional)
+    # 2. Validate MCP configuration: mcp_config.json (Antigravity) or mcp.json (agent-plugins.org)
+    mcp_config_path = plugin_dir / "mcp_config.json"
     mcp_path = plugin_dir / "mcp.json"
-    if mcp_path.exists():
+
+    if mcp_config_path.exists():
+        try:
+            with open(mcp_config_path, "r", encoding="utf-8") as f:
+                mcp_data = json.load(f)
+            servers = mcp_data.get("mcpServers", {})
+            if isinstance(servers, dict):
+                report.mcp_servers.extend(list(servers.keys()))
+        except json.JSONDecodeError as e:
+            report.add_error(f"Invalid JSON in 'mcp_config.json': {e}")
+        except Exception as e:
+            report.add_error(f"Error reading 'mcp_config.json': {e}")
+
+    elif mcp_path.exists():
         try:
             with open(mcp_path, "r", encoding="utf-8") as f:
                 mcp_data = json.load(f)
@@ -114,7 +128,7 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
 
             servers = mcp_data.get("mcpServers", {})
             if isinstance(servers, dict):
-                report.mcp_servers = list(servers.keys())
+                report.mcp_servers.extend(list(servers.keys()))
                 for s_name, s_conf in servers.items():
                     if isinstance(s_conf, dict):
                         # Verify stdio command token rule

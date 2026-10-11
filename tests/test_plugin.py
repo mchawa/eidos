@@ -64,7 +64,8 @@ def test_plugin_install_to_project_scope(tmp_path):
     # Check .agents/plugins/eidos
     agent_dir = tmp_path / ".agents" / "plugins" / "eidos"
     assert (agent_dir / "plugin.json").exists()
-    assert (agent_dir / "mcp.json").exists()
+    assert (agent_dir / "mcp_config.json").exists()
+    assert not (agent_dir / "mcp.json").exists()
     assert (agent_dir / "skills" / "eidos" / "SKILL.md").exists()
     assert (agent_dir / "rules" / "AGENTS.md").exists()
     agent_report = validate_plugin_package(agent_dir)
@@ -92,7 +93,8 @@ def test_plugin_install_to_custom_directory(tmp_path):
     assert len(results) == 1
     assert results[0].success
     assert (dest / "plugin.json").exists()
-    assert (dest / "mcp.json").exists()
+    assert (dest / "mcp_config.json").exists()
+    assert not (dest / "mcp.json").exists()
     assert (dest / "skills" / "eidos" / "SKILL.md").exists()
     assert (dest / "rules" / "AGENTS.md").exists()
 
