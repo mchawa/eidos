@@ -11,16 +11,12 @@ export PATH="$HOME/.local/bin:$PATH"
 echo "==> Ensuring Python 3.15 via uv..."
 uv python install --default 3.15
 
-# 2. Install CLI tools via uv tool
-echo "==> Installing ty static type checker via uv tool..."
-uv tool install --upgrade ty
-
-# 3. Set up Python virtual environment and install Eidos in editable mode
+# 2. Set up Python virtual environment and install Eidos in editable mode
 echo "==> Setting up Eidos virtual environment with Python 3.15..."
 uv venv --python 3.15 .venv
 uv pip install -e ".[dev]"
 
-# 4. Configure persistent AI tool directories and migrate initial backups
+# 3. Configure persistent AI tool directories and migrate initial backups
 echo "==> Configuring persistent volumes (~/.gemini)..."
 sudo mkdir -p "${HOME}/.gemini"
 sudo chown -R vscode:vscode "${HOME}/.gemini"
@@ -43,7 +39,7 @@ fi
 
 sudo chown -R vscode:vscode "${HOME}/.gemini"
 
-# 5. Validate Eidos specifications
+# 4. Validate Eidos specifications
 if [ -f ".venv/bin/eidos" ]; then
   echo "==> Validating Eidos living specifications..."
   .venv/bin/eidos validate eidos || true
@@ -52,6 +48,5 @@ fi
 echo "========================================================"
 echo "✅ Eidos Dev Container Ready!"
 echo "   - uv:         $(uv --version)"
-echo "   - ty:         $(ty --version 2>/dev/null || echo 'installed')"
 echo "   - python:     $(python --version 2>/dev/null || echo 'not on PATH')"
 echo "========================================================"

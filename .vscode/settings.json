@@ -1,5 +1,5 @@
 {
-  "remote.autoForwardPortsSource": "hybrid",
+  "remote.autoForwardPortsSource": "process",
   "python-envs.defaultEnvManager": "ms-python.python:system",
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
   "python.languageServer": "None",

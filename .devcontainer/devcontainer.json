@@ -37,21 +37,18 @@
       "extensions": [
         // --- Python & Astral Toolchain ---
         "ms-python.python",
-        "ms-python.vscode-pylance",
         "ms-python.debugpy",
+        "ms-python.vscode-python-envs",
         "charliermarsh.ruff",
         "astral-sh.ty",
         // --- Containers & Virtualization ---
         "ms-azuretools.vscode-containers",
         // --- Living Architecture & Specifications ---
         "asciidoctor.asciidoctor-vscode",
-        "bierner.markdown-mermaid",
-        "davidanson.vscode-markdownlint",
         "mathematic.vscode-pdf",
         // --- Configuration & Schemas ---
         "tamasfe.even-better-toml",
         "redhat.vscode-yaml",
-        "mikestead.dotenv",
         // --- Git & Source Control ---
         "mhutchie.git-graph",
         "donjayamanne.githistory",
