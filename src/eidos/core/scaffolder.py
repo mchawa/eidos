@@ -1,5 +1,6 @@
 """Lifecycle management, scaffolding, and deletion for Eidos living specifications and SpecDeltas."""
 
+import json
 import os
 import re
 from pathlib import Path
@@ -19,6 +20,14 @@ VALID_SPEC_TYPES = {
     "component": "tech/component",
     "persona": "product/persona",
     "exploration": "product/exploration",
+    "design-system": "design/system",
+    "design_system": "design/system",
+    "design/system": "design/system",
+    "ui-component": "design/ui-component",
+    "ui_component": "design/ui-component",
+    "design/ui-component": "design/ui-component",
+    "screen": "design/screen",
+    "design/screen": "design/screen",
 }
 
 
@@ -35,6 +44,14 @@ def normalize_id(doc_type_key: str, raw_id: str) -> str:
         "component": "CMP-",
         "persona": "PER-",
         "exploration": "EXP-",
+        "design-system": "DS-",
+        "design_system": "DS-",
+        "design/system": "DS-",
+        "ui-component": "UIC-",
+        "ui_component": "UIC-",
+        "design/ui-component": "UIC-",
+        "screen": "SCR-",
+        "design/screen": "SCR-",
     }
     pfx = prefix_map.get(doc_type_key.lower())
     if pfx and not cleaned.startswith(pfx):
@@ -60,6 +77,11 @@ def create_spec(
     package_path: str = "src/eidos",
     role_type: str = "human_engineer",
     jtbd: str = "When executing lifecycle commands, I want automated scaffolding so that specs are valid.",
+    client_id: Optional[str] = None,
+    extends_system: Optional[str] = None,
+    route: str = "/view",
+    design_system: str = "DS-CORE",
+    implements_component: Optional[str] = None,
 ) -> Path:
     """Scaffold a new living specification document with valid schema frontmatter."""
     type_key = doc_type_key.lower().replace("_", "/")
@@ -82,6 +104,14 @@ def create_spec(
         "product/persona": "persona",
         "exploration": "exploration",
         "product/exploration": "exploration",
+        "design-system": "design-system",
+        "design_system": "design-system",
+        "design/system": "design-system",
+        "ui-component": "ui-component",
+        "ui_component": "ui-component",
+        "design/ui-component": "ui-component",
+        "screen": "screen",
+        "design/screen": "screen",
     }
     canonical_key = key_aliases.get(type_key)
     if not canonical_key:
@@ -285,6 +315,140 @@ exit_criteria:
 
 == Investigation & Hypotheses
 Document prototyping discoveries, trade-offs, and research findings.
+"""
+
+    elif canonical_key == "design-system":
+        clean_sys = slug.replace("ds-", "")
+        dest_dir = eidos_dir / "design" / "systems" / clean_sys
+        dest_file = dest_dir / "system.adoc"
+
+        # Ensure baseline W3C tokens.json exists in dest_dir
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        tokens_file = dest_dir / "tokens.json"
+        if not tokens_file.exists():
+            base_tokens = {
+                "color": {
+                    "brand": {
+                        "primary": {
+                            "$value": "#0052cc",
+                            "$type": "color",
+                            "$description": f"Primary brand color for {title}"
+                        }
+                    }
+                }
+            }
+            tokens_file.write_text(json.dumps(base_tokens, indent=2), encoding="utf-8")
+
+        client_yaml = f'client_id: "{client_id}"\nbrand_name: "{title}"\n' if client_id else ""
+        extends_yaml = f"""inheritance:
+  extends: "{extends_system}"
+  override_mode: "token_and_component"
+""" if extends_system else ""
+
+        content = f"""---
+type: design/system
+schema: schemas/v1/design/system.schema.yaml
+id: {doc_id}
+title: "{title}"
+status: active
+{client_yaml}{extends_yaml}tokens:
+  spec_format: "w3c_design_tokens"
+  manifest: "tokens.json"
+
+theme_capabilities:
+  color_modes:
+    - light
+    - dark
+  density_modes:
+    - comfortable
+---
+= Design System: {title}
+:toc: left
+
+== Foundations & W3C Tokens
+This specification defines visual primitives, brand tokens, and inheritance rules for {title}.
+Tokens are defined in W3C DTCG format at `tokens.json`.
+"""
+
+    elif canonical_key == "ui-component":
+        clean_comp = slug.replace("uic-", "")
+        sys_slug = (design_system or "ds-core").lower().replace("ds-", "")
+        dest_dir = eidos_dir / "design" / "systems" / sys_slug / "components"
+        dest_file = dest_dir / f"{clean_comp}.adoc"
+
+        implements_yaml = f'implements: "{implements_component}"\n' if implements_component else ""
+
+        content = f"""---
+type: design/ui-component
+schema: schemas/v1/design/ui-component.schema.yaml
+id: {doc_id}
+title: "{title}"
+design_system: "{design_system}"
+{implements_yaml}status: active
+category: inputs
+
+variants:
+  - name: "primary"
+    description: "Default visual emphasis."
+  - name: "secondary"
+    description: "Subtle visual emphasis."
+
+states:
+  - default
+  - hover
+  - active
+  - focus
+  - disabled
+
+accessibility:
+  wcag_level: "AA"
+  aria_role: "button"
+  keyboard_nav: "Enter and Space activate; Tab traverses focus."
+
+test_bindings:
+  storybook: "packages/ui/src/{title.replace(' ', '')}.stories.tsx"
+---
+= UI Component: {title}
+:toc: left
+
+== Component Contract
+Describes variants, interactive states, accessibility contracts, and visual test bindings for {title}.
+"""
+
+    elif canonical_key == "screen":
+        clean_screen = slug.replace("scr-", "")
+        dest_dir = eidos_dir / "design" / "screens"
+        dest_file = dest_dir / f"{clean_screen}.adoc"
+
+        content = f"""---
+type: design/screen
+schema: schemas/v1/design/screen.schema.yaml
+id: {doc_id}
+title: "{title}"
+route: "{route}"
+status: active
+
+capabilities: []
+
+supported_design_systems:
+  - "DS-CORE"
+
+slots:
+  main_content: "Primary view content"
+
+states:
+  - name: "loading"
+    description: "Skeleton loader displayed during data fetch."
+  - name: "active"
+    description: "Standard interactive screen state."
+  - name: "error"
+    description: "Fallback error message if request fails."
+---
+= Screen: {title}
+:toc: left
+
+== View Layout & State Machine
+This specification defines the route, layout slots, and state transitions for {title}.
 """
 
     else:
@@ -674,6 +838,9 @@ def init_repository(
         eidos_dir / "personas",
         eidos_dir / "deltas",
         eidos_dir / "explorations",
+        eidos_dir / "design" / "systems" / "core" / "components",
+        eidos_dir / "design" / "screens",
+        eidos_dir / "design" / "flows",
     ]
     for d in subdirs:
         d.mkdir(parents=True, exist_ok=True)

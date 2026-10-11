@@ -1,0 +1,82 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: ScreenSchema
+description: "Defines a user-facing product screen/view, route, layout slots, state machine (loading, empty, active, error), and bidirectional links to capabilities and design systems."
+type: object
+required:
+  - type
+  - schema
+  - id
+  - title
+  - route
+  - status
+properties:
+  type:
+    type: string
+    const: "design/screen"
+    description: "The fixed document type identifier. Must always be 'design/screen'."
+  schema:
+    type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
+  id:
+    type: string
+    pattern: "^SCR-[A-Z0-9_-]+$"
+    description: "Unique screen identifier following the SCR-<NAME> convention (e.g. SCR-CHECKOUT, SCR-DASHBOARD)."
+  title:
+    type: string
+    description: "Display title of the screen or view."
+  route:
+    type: string
+    description: "URL path, view surface, or deep link identifier (e.g. '/checkout', '/settings/billing', 'App > CheckoutModal')."
+  status:
+    type: string
+    pattern: "^[a-z0-9_-]+$"
+    description: "Lifecycle status: active, proposed, draft, deprecated."
+    examples:
+      - "active"
+      - "proposed"
+      - "draft"
+      - "deprecated"
+  capabilities:
+    type: array
+    description: "List of product capability document paths delivering value on this screen."
+    items:
+      type: string
+      description: "Relative path to a capability document (e.g. eidos/domains/checkout/capabilities/express-checkout.adoc)."
+  supported_design_systems:
+    type: array
+    description: "List of design system document paths or IDs verified to support and style this screen."
+    items:
+      type: string
+      description: "Relative path or ID of a design system (e.g. eidos/design/systems/core/system.adoc or DS-CORE)."
+  slots:
+    type: object
+    description: "Named layout slots and abstract UI component assignments composing this screen view."
+    additionalProperties: true
+  states:
+    type: array
+    description: "Explicit screen state matrix: loading, empty, active/success, error, partial."
+    items:
+      type: object
+      required:
+        - name
+      additionalProperties: true
+      properties:
+        name:
+          type: string
+          description: "State name (e.g. loading, empty, active, error, payment_failed)."
+        description:
+          type: string
+          description: "Visual and behavioral specification for this state."
+  user_flows:
+    type: array
+    description: "List of user flow document paths that transition through this screen."
+    items:
+      type: string
+  external_references:
+    type: object
+    description: "Design mockups, Figma frames, or live prototypes."
+    additionalProperties: true
+    properties:
+      figma_frame_url:
+        type: string
+        description: "URL to Figma screen frame or prototype flow."

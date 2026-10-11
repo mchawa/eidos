@@ -386,6 +386,31 @@ def spec_create_cmd(
         "--owning-component",
         help="Owning component ID for contracts.",
     ),
+    client_id: Optional[str] = typer.Option(
+        None,
+        "--client",
+        help="Client or brand identifier for client-specific design systems (e.g. acme).",
+    ),
+    extends_system: Optional[str] = typer.Option(
+        None,
+        "--extends",
+        help="Base design system ID or path to extend (e.g. DS-CORE).",
+    ),
+    route: str = typer.Option(
+        "/view",
+        "--route",
+        help="URL route or view identifier for screens.",
+    ),
+    design_system: str = typer.Option(
+        "DS-CORE",
+        "--system",
+        help="Owning design system ID for UI components.",
+    ),
+    implements_component: Optional[str] = typer.Option(
+        None,
+        "--implements",
+        help="Base component ID being overridden/specialized by a UI component.",
+    ),
 ):
     """Scaffold a new living specification or SpecDelta."""
     try:
@@ -401,6 +426,11 @@ def spec_create_cmd(
             rule=rule,
             protocol=protocol,
             owning_component=owning_component,
+            client_id=client_id,
+            extends_system=extends_system,
+            route=route,
+            design_system=design_system,
+            implements_component=implements_component,
         )
         rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
         console.print(f"[bold green]✓ Created and validated specification ({doc_id}):[/bold green] [bold]{dest_file.name}[/bold]")

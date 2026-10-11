@@ -150,3 +150,4 @@ Once initialization is complete and validated:
    - Use `eidos-architecture` to model components and interface contracts.
    - Use `eidos-invariants` to define domain policies and test bindings.
    - Use `eidos-delta` to orchestrate new feature additions via SpecDeltas.
+

@@ -123,11 +123,11 @@ TOOLS = [
             "properties": {
                 "type": {
                     "type": "string",
-                    "description": "Specification type: capability, policy, contract, component, domain, persona, delta, exploration."
+                    "description": "Specification type: capability, policy, contract, component, domain, persona, delta, exploration, design-system, ui-component, screen."
                 },
                 "id": {
                     "type": "string",
-                    "description": "Unique identifier (e.g. 'CAP-AUTH-001', 'POL-003', 'DLT-2026-002')."
+                    "description": "Unique identifier (e.g. 'CAP-AUTH-001', 'POL-003', 'DS-CORE', 'UIC-BUTTON', 'SCR-CHECKOUT')."
                 },
                 "title": {
                     "type": "string",
@@ -156,6 +156,26 @@ TOOLS = [
                 "rule": {
                     "type": "string",
                     "description": "Rule statement for policies."
+                },
+                "client_id": {
+                    "type": "string",
+                    "description": "Client or brand identifier for client-specific design systems (e.g. 'acme')."
+                },
+                "extends_system": {
+                    "type": "string",
+                    "description": "Base design system ID or path to extend (e.g. 'DS-CORE')."
+                },
+                "route": {
+                    "type": "string",
+                    "description": "URL route or screen identifier for screens."
+                },
+                "design_system": {
+                    "type": "string",
+                    "description": "Owning design system ID for UI components."
+                },
+                "implements_component": {
+                    "type": "string",
+                    "description": "Base component ID being overridden/specialized by a UI component."
                 }
             }
         }
@@ -361,6 +381,11 @@ def handle_tool_call(name: str, arguments: Dict[str, Any]) -> List[Dict[str, Any
                 motivation=arguments.get("motivation", "Motivation statement."),
                 category=arguments.get("category", "governance"),
                 rule=arguments.get("rule", "Rule statement."),
+                client_id=arguments.get("client_id"),
+                extends_system=arguments.get("extends_system"),
+                route=arguments.get("route", "/view"),
+                design_system=arguments.get("design_system", "DS-CORE"),
+                implements_component=arguments.get("implements_component"),
             )
             return [{"type": "text", "text": f"Created and validated specification: {dest_file}"}]
         except Exception as e:

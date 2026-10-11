@@ -21,6 +21,9 @@ TYPE_TO_SCHEMA_NAME = {
     "tech/architecture": "tech/architecture.schema.yaml",
     "tech/component": "tech/component.schema.yaml",
     "tech/contract": "tech/contract.schema.yaml",
+    "design/system": "design/system.schema.yaml",
+    "design/ui-component": "design/ui-component.schema.yaml",
+    "design/screen": "design/screen.schema.yaml",
 }
 
 

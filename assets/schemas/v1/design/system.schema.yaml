@@ -1,0 +1,100 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: DesignSystemSchema
+description: "Defines a visual design system, brand identity, W3C tokens manifest, theme capabilities, and inheritance hierarchy for multi-brand/multi-client products."
+type: object
+required:
+  - type
+  - schema
+  - id
+  - title
+  - status
+  - tokens
+properties:
+  type:
+    type: string
+    const: "design/system"
+    description: "The fixed document type identifier. Must always be 'design/system'."
+  schema:
+    type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
+  id:
+    type: string
+    pattern: "^DS-[A-Z0-9_-]+$"
+    description: "Unique design system identifier following the DS-<NAME> convention (e.g. DS-CORE, DS-ACME)."
+  title:
+    type: string
+    description: "Display title of the design system (e.g. 'Core Product Design System', 'Acme Enterprise Theme')."
+  status:
+    type: string
+    pattern: "^[a-z0-9_-]+$"
+    description: "Lifecycle status: active, proposed, draft, deprecated."
+    examples:
+      - "active"
+      - "proposed"
+      - "draft"
+      - "deprecated"
+  client_id:
+    type: string
+    pattern: "^[a-z0-9_-]+$"
+    description: "Optional client, brand, or tenant identifier for multi-client systems (e.g. 'acme', 'globex')."
+  brand_name:
+    type: string
+    description: "Human-readable client or brand name (e.g. 'Acme Corporation')."
+  inheritance:
+    type: object
+    description: "Inheritance topology: allows client design systems to extend a base system and override tokens or components."
+    additionalProperties: true
+    properties:
+      extends:
+        type: string
+        description: "ID or relative path of the parent design system (e.g. 'DS-CORE' or 'eidos/design/systems/core/system.adoc')."
+      override_mode:
+        type: string
+        pattern: "^[a-z0-9_-]+$"
+        description: "Override strategy: 'token_only' (only token values differ), 'token_and_component' (custom components allowed), or 'standalone'."
+        examples:
+          - "token_only"
+          - "token_and_component"
+          - "standalone"
+  tokens:
+    type: object
+    description: "W3C Design Tokens Community Group (DTCG) standard tokens manifest and configuration."
+    required:
+      - spec_format
+      - manifest
+    additionalProperties: true
+    properties:
+      spec_format:
+        type: string
+        description: "Format identifier for design tokens. Recommended standard: 'w3c_design_tokens'."
+        examples:
+          - "w3c_design_tokens"
+      manifest:
+        type: string
+        description: "Relative path to the W3C tokens JSON file (e.g. 'tokens.json' or 'tokens/brand-overrides.json')."
+  theme_capabilities:
+    type: object
+    description: "Supported color modes, visual density modes, and accessibility presets."
+    additionalProperties: true
+    properties:
+      color_modes:
+        type: array
+        description: "Supported color schemes (e.g. light, dark, high_contrast)."
+        items:
+          type: string
+      density_modes:
+        type: array
+        description: "Supported UI density presets (e.g. comfortable, compact)."
+        items:
+          type: string
+  external_references:
+    type: object
+    description: "Upstream design tools, team libraries, or documentation portals."
+    additionalProperties: true
+    properties:
+      figma_team_library:
+        type: string
+        description: "URL to Figma team library or file."
+      storybook_url:
+        type: string
+        description: "URL to deployed Storybook or component documentation."

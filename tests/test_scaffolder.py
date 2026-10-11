@@ -345,6 +345,7 @@ def test_all_skills_in_bundle():
         "eidos-invariants",
         "eidos-extract",
         "eidos-init",
+        "eidos-design",
     }
     assert expected_skills.issubset(set(report.skills))
 
@@ -426,4 +427,127 @@ def test_init_repository_mcp(tmp_path):
     assert data["success"]
     assert len(data["created_files"]) == 5
     assert (target / "eidos" / "system.adoc").exists()
+
+
+def test_scaffold_design_system_and_tokens(tmp_path):
+    """Verify scaffolding of base and client design systems with W3C tokens (CAP-AGENT-001)."""
+    validator = SpecValidator()
+
+    # 1. Base Core Design System
+    core_file = create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="design-system",
+        raw_id="DS-CORE",
+        title="Core Design System",
+    )
+    assert core_file.exists()
+    assert (core_file.parent / "tokens.json").exists()
+    assert_valid_spec(validator, core_file)
+
+    # 2. Client Acme Design System extending Core
+    acme_file = create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="design-system",
+        raw_id="DS-ACME",
+        title="Acme Brand System",
+        client_id="acme",
+        extends_system="DS-CORE",
+    )
+    assert acme_file.exists()
+    assert_valid_spec(validator, acme_file)
+
+
+def test_scaffold_ui_component(tmp_path):
+    """Verify scaffolding of UI components under a design system (CAP-AGENT-001)."""
+    validator = SpecValidator()
+
+    # Scaffold core component
+    btn_file = create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="ui-component",
+        raw_id="UIC-CORE-BUTTON",
+        title="Action Button",
+        design_system="DS-CORE",
+    )
+    assert btn_file.exists()
+    assert_valid_spec(validator, btn_file)
+
+    # Scaffold client override component
+    hdr_file = create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="ui-component",
+        raw_id="UIC-ACME-HEADER",
+        title="Acme Header",
+        design_system="DS-ACME",
+        implements_component="UIC-CORE-HEADER",
+    )
+    assert hdr_file.exists()
+    assert_valid_spec(validator, hdr_file)
+
+
+def test_scaffold_screen_and_capability_experience(tmp_path):
+    """Verify screen specification and capability experience linkage (CAP-AGENT-001)."""
+    validator = SpecValidator()
+
+    # Create screen
+    screen_file = create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="screen",
+        raw_id="SCR-CHECKOUT",
+        title="Checkout View",
+        route="/checkout",
+    )
+    assert screen_file.exists()
+    assert_valid_spec(validator, screen_file)
+
+    # Create capability linking to screen
+    create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="domain",
+        raw_id="DOM-CHECKOUT",
+        title="Checkout Domain",
+    )
+    cap_file = create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="capability",
+        raw_id="CAP-CHK-001",
+        title="Express Checkout",
+        domain="DOM-CHECKOUT",
+    )
+    assert cap_file.exists()
+
+    # Modify capability with experience linkage
+    content = cap_file.read_text(encoding="utf-8")
+    updated = content.replace(
+        "technical:\n",
+        f"experience:\n  screens:\n    - \"{screen_file.name}\"\n  design_systems:\n    - \"DS-CORE\"\ntechnical:\n"
+    )
+    cap_file.write_text(updated, encoding="utf-8")
+    assert_valid_spec(validator, cap_file)
+
+
+def test_cli_and_mcp_design_spec_scaffolding(tmp_path):
+    """Verify CLI and MCP tools for design specifications."""
+    # CLI screen creation
+    res = runner.invoke(app, [
+        "spec", "create", "screen", "SCR-SETTINGS",
+        "--title", "Settings Screen",
+        "--route", "/settings",
+        "--path", str(tmp_path),
+    ])
+    assert res.exit_code == 0
+    assert "Created and validated" in res.stdout
+    assert (tmp_path / "design" / "screens" / "settings.adoc").exists()
+
+    # MCP design system creation
+    mcp_res = handle_tool_call("eidos_create_spec", {
+        "path": str(tmp_path),
+        "type": "design-system",
+        "id": "DS-TEST",
+        "title": "Test System",
+        "client_id": "test-client",
+        "extends_system": "DS-CORE",
+    })
+    assert "Created and validated" in mcp_res[0]["text"]
+    assert (tmp_path / "design" / "systems" / "test" / "system.adoc").exists()
 

@@ -95,12 +95,16 @@ properties:
               - Policies: add_policy, patch_policy, deprecate_policy
               - Contracts: add_contract, modify_contract, remove_contract
               - Entities: add_entity, add_entity_field, remove_entity_field
+              - Design: add_design_system, modify_design_system, add_ui_component, modify_ui_component, add_screen, modify_screen, remove_screen
           examples:
             - "add_capability"
             - "extend_capability"
             - "patch_invariant"
             - "add_component"
             - "modify_component"
+            - "modify_screen"
+            - "add_ui_component"
+            - "modify_design_system"
         target_domain:
           type: string
           description: "Target domain ID or relative path (e.g. DOM-PRODUCT-CORE or eidos/domains/auth/domain.adoc)."
@@ -116,6 +120,15 @@ properties:
         target_invariant_id:
           type: string
           description: "Target invariant ID being patched or removed (e.g. INV-GUEST-001)."
+        target_design_system:
+          type: string
+          description: "Target design system ID or relative path (e.g. DS-CORE or eidos/design/systems/core/system.adoc)."
+        target_screen:
+          type: string
+          description: "Target screen ID or relative path (e.g. SCR-CHECKOUT or eidos/design/screens/checkout.adoc)."
+        target_ui_component:
+          type: string
+          description: "Target UI component ID or relative path (e.g. UIC-BUTTON or eidos/design/systems/core/components/button.adoc)."
         new_capability_id:
           type: string
           description: "New capability ID being created if action is add_capability."
@@ -134,6 +147,16 @@ properties:
       impacted_components:
         type: array
         description: "List of code packages, modules, or services that must be modified."
+        items:
+          type: string
+      impacted_design_systems:
+        type: array
+        description: "List of design systems impacted by this change (e.g. DS-CORE, DS-ACME)."
+        items:
+          type: string
+      impacted_screens:
+        type: array
+        description: "List of screen specifications modified or affected."
         items:
           type: string
       invariants_to_enforce:

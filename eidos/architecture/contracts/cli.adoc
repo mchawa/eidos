@@ -50,7 +50,7 @@ Manages the living specification catalog: listing, authoring, inspecting, and de
 * **Sub-commands**:
   - `list [--path <path>] [--type <type>] [--status <status>]`: Lists all living specifications in tabular format.
   - `show <id_or_path> [--path <path>]`: Displays detailed frontmatter metadata and preview of a specification document.
-  - `create <type> <id> --title <title> [options]`: Scaffolds a new specification document (capability, domain, policy, contract, component, persona, delta, exploration) with schema validation.
+  - `create <type> <id> --title <title> [options]`: Scaffolds a new specification document (capability, domain, policy, contract, component, persona, delta, exploration, design-system, ui-component, screen) with schema validation and W3C design tokens support.
   - `delete <id_or_path> [--force]`: Safely deletes a specification document with cross-reference safety checks.
 
 === `eidos delta`

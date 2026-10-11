@@ -69,6 +69,35 @@ properties:
         items:
           type: string
           description: "Relative path to a policy document (e.g. eidos/policies/POL-001-git-as-single-source-of-truth.adoc)."
+  experience:
+    type: object
+    description: "Design & UI/UX lens: screens, user flows, UI components, and supporting design systems (optional for headless/backend capabilities)."
+    additionalProperties: true
+    properties:
+      design_systems:
+        type: array
+        description: "List of design system paths or IDs supporting this capability (e.g. eidos/design/systems/core/system.adoc or DS-CORE)."
+        items:
+          type: string
+          description: "Relative path to design system specification or design system ID."
+      screens:
+        type: array
+        description: "List of screen specification document paths delivering this capability."
+        items:
+          type: string
+          description: "Relative path to screen specification (e.g. eidos/design/screens/checkout.adoc)."
+      flows:
+        type: array
+        description: "List of user flow document paths delivering this capability."
+        items:
+          type: string
+          description: "Relative path to user flow specification (e.g. eidos/design/flows/onboarding.adoc)."
+      ui_components:
+        type: array
+        description: "Key UI component manifests utilized by this capability."
+        items:
+          type: string
+          description: "Relative path to UI component specification or component ID (e.g. UIC-CORE-BUTTON)."
   technical:
     type: object
     description: "Technical lens: implementing components, interface contracts, and non-negotiable test-bound invariants."
