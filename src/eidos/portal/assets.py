@@ -2404,22 +2404,24 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
               <span class="badge badge-neutral">Container: ${client.container}</span>
             </div>
           </div>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; border-top: 1px solid var(--border); padding-top: 0.85rem; font-size: 0.82rem;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.75rem; border-top: 1px solid var(--border); padding-top: 0.85rem; font-size: 0.82rem;">
             <div>
               <span style="color: var(--text-dim); display: block; font-size: 0.72rem; text-transform: uppercase;">Bound Design System</span>
               <span class="code-pill" style="margin-top: 2px;">${client.design_system}</span>
             </div>
             <div>
-              <span style="color: var(--text-dim); display: block; font-size: 0.72rem; text-transform: uppercase;">C4 Monorepo Container</span>
+              <span style="color: var(--text-dim); display: block; font-size: 0.72rem; text-transform: uppercase;">Supported Themes</span>
+              <div style="margin-top: 2px; display: flex; gap: 0.25rem; flex-wrap: wrap;">
+                ${(client.supported_themes || ['dark', 'light']).map(t => `<span class="badge ${t === client.default_theme ? 'badge-primary' : 'badge-neutral'}">${t}</span>`).join('')}
+              </div>
+            </div>
+            <div>
+              <span style="color: var(--text-dim); display: block; font-size: 0.72rem; text-transform: uppercase;">C4 Container</span>
               <span class="code-pill" style="margin-top: 2px;">${client.container}</span>
             </div>
             <div>
-              <span style="color: var(--text-dim); display: block; font-size: 0.72rem; text-transform: uppercase;">Scoped Screens</span>
-              <span class="badge badge-primary" style="margin-top: 2px;">${clientScreens.length} Screens</span>
-            </div>
-            <div>
-              <span style="color: var(--text-dim); display: block; font-size: 0.72rem; text-transform: uppercase;">Internal Interaction Flows</span>
-              <span class="badge badge-accent" style="margin-top: 2px;">${clientFlows.length} Flows</span>
+              <span style="color: var(--text-dim); display: block; font-size: 0.72rem; text-transform: uppercase;">Screens & Flows</span>
+              <span class="badge badge-accent" style="margin-top: 2px;">${clientScreens.length} Screens • ${clientFlows.length} Flows</span>
             </div>
           </div>
         </div>

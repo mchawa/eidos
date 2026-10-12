@@ -257,6 +257,8 @@ def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict
                 "title": clt["title"],
                 "platform": fm.get("platform", "web"),
                 "design_system": fm.get("design_system", "DS-CORE"),
+                "supported_themes": fm.get("supported_themes", ["dark", "light"]),
+                "default_theme": fm.get("default_theme", "dark"),
                 "container": fm.get("container", "CMP-EIDOS-PORTAL"),
                 "capabilities": fm.get("capabilities", []),
                 "screens": fm.get("screens", []),

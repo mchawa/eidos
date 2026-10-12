@@ -190,7 +190,11 @@ Detailed component behavior and rendering rules.
 
 ## 5. Client Application Manifest Anatomy (`client.schema.yaml`)
 
-Client manifests live in `eidos/design/clients/<client-name>/client.adoc`:
+Client manifests live in `eidos/design/clients/<client-name>/client.adoc`.
+
+### Design System vs. Supported Themes
+* **`design_system`**: The primary component library (`UIC-*`) and token foundation the client imports and compiles against (e.g. `DS-CORE`).
+* **`supported_themes`**: The specific token modes or visual themes defined by that design system that the client supports switching between at runtime (e.g. `["dark", "light"]`). Components remain identical; only CSS variables swap.
 
 ```yaml
 ---
@@ -201,6 +205,10 @@ title: "Living Web Portal Client"
 status: active
 platform: web
 design_system: "eidos/design/systems/core/system.adoc"
+supported_themes:
+  - "dark"
+  - "light"
+default_theme: "dark"
 container: "eidos/architecture/components/portal.adoc"
 
 capabilities:

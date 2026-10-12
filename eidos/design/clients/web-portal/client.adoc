@@ -8,7 +8,9 @@ platform: "web"
 
 design_system: "DS-CORE"
 supported_themes:
-  - "DS-CORE"
+  - "dark"
+  - "light"
+default_theme: "dark"
 
 container: "CMP-EIDOS-PORTAL"
 
@@ -39,3 +41,4 @@ The Web Living Documentation Portal (`CLT-WEB-PORTAL`) is the primary desktop an
 * **Shell Navigation**: Collapsible responsive sidebar (`UIC-PORTAL-SIDEBAR`), top breadcrumbs, and real-time search.
 * **Layout Breakpoints**: Desktop (>1024px), Tablet (768px-1024px), Mobile (<768px).
 * **Accessibility**: WCAG 2.1 Level AA compliant with full keyboard navigation and high-contrast color tokens.
+

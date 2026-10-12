@@ -74,9 +74,16 @@ properties:
         description: "Relative path to the W3C tokens JSON file (e.g. 'tokens.json' or 'tokens/brand-overrides.json')."
   theme_capabilities:
     type: object
-    description: "Supported color modes, visual density modes, and accessibility presets."
+    description: "Supported themes, color modes, visual density modes, and accessibility presets defined by this design system."
     additionalProperties: true
     properties:
+      themes:
+        type: array
+        description: "List of named themes defined by this design system (e.g. ['dark', 'light'] or ['default', 'acme-brand'])."
+        items:
+          type: string
+        examples:
+          - ["dark", "light"]
       color_modes:
         type: array
         description: "Supported color schemes (e.g. light, dark, high_contrast)."

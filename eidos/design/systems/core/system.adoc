@@ -9,6 +9,9 @@ tokens:
   spec_format: "w3c_design_tokens"
   manifest: "tokens.json"
 theme_capabilities:
+  themes:
+    - "dark"
+    - "light"
   color_modes:
     - "dark"
     - "light"
