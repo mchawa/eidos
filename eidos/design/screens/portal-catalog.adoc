@@ -13,39 +13,51 @@ supported_design_systems:
   - "eidos/design/systems/core/system.adoc"
 
 slots:
-  search_filter_bar: "UIC-PORTAL-SHELL"
-  catalog_tree_pane: "UIC-PORTAL-SHELL"
-  catalog_detail_pane: "UIC-PORTAL-SHELL"
-  specs_table: "UIC-PORTAL-SHELL"
+  tree_filter_toolbar: "UIC-PORTAL-SHELL"
+  specs_tree_grid_table: "UIC-PORTAL-SHELL"
   spec_detail_modal: "UIC-PORTAL-SHELL"
 
 states:
   - name: "loading"
     description: "Skeleton loader displayed during specification index parsing."
   - name: "active"
-    description: "Interactive master-detail tree explorer and searchable table listing all repository living specifications."
+    description: "Interactive collapsible tree-grid table listing all repository living specifications organized by System, Pillars, Domains, and Capabilities."
   - name: "error"
     description: "Alert state when spec repository indexing fails."
 ---
 = Screen: Living Specifications Master Catalog View
 :toc: left
 
-== 1. View Purpose & Master-Detail Tree Architecture
-The Catalog View (`SCR-PORTAL-CATALOG`) provides a hierarchical, interactive master-detail explorer for every living specification document in the repository:
-* **Master Tree Navigation Pane**: Left-hand collapsible directory tree matching the Git repository structure or categorical domain taxonomy.
-* **Specification Inspector Pane**: Persistent right-hand viewer displaying document metadata chips, YAML frontmatter with copy controls, document body source preview, and bidirectional cross-reference links.
-* **Dual View Modes**: Seamless toggle between hierarchical **Tree View** (default) and flat sortable **Table View**.
+== 1. View Purpose & Unified Hierarchical Tree-Grid Architecture
+The Catalog View (`SCR-PORTAL-CATALOG`) provides an interactive, unified hierarchical tree-grid (tree-table) representing the entire Living Specification topology:
+* **Level 0 (System Root)**: Represents the top-level repository system archetype (`SYS-EIDOS-001`).
+* **Level 1 (Core Pillars)**: Groups specifications into the three core architectural dimensions plus mutations:
+  - **Business & Governance**: Product Domains (`DOM-*`), System Policies (`POL-*`), Personas (`PER-*`), Explorations (`EXP-*`).
+  - **Design & Experience**: Design Systems (`DS-*`), Screens (`SCR-*`), UI Component Contracts (`UIC-*`).
+  - **Technical Architecture**: System Architecture (`ARCH-*`), Containers (`CMP-*`), Protocol Contracts (`CTR-*`).
+  - **SpecDeltas & Mutations**: Active and completed mutation deltas (`DLT-*`).
+* **Level 2 (Domains & Sub-Pillars)**: Domain boundaries (`DOM-PRODUCT-CORE`, `DOM-AGENT-HARNESS`, `DOM-VCS-SYNC`), Container manifests, Screen groups, and Policy invariants.
+* **Level 3 (Leaf Living Specifications)**: Individual Capabilities (`CAP-*`), Screen State Machines (`SCR-*`), Container Manifests (`CMP-*`), and Contracts (`CTR-*`).
 
-== 2. Tree Organization Modes
-1. **Repository Hierarchy (Path Mode)**: Mirroring the real filesystem structure (`eidos/architecture/components/`, `eidos/domains/...`, etc.) with folder icons, item counts, and expand/collapse chevrons.
-2. **Categorical Taxonomy Mode**: Grouped by architectural dimension: Business & Governance, Design & Experience, Technical Architecture, and Mutation Lifecycle.
+== 2. Collapsible Navigation & Level Zooming
+The tree-grid toolbar provides instant macro/micro zoom controls:
+1. **Level 1 (Pillars)**: Folds all sub-trees, displaying high-level system pillars with aggregated child counts.
+2. **Level 2 (Domains)**: Expands pillars to reveal domain packages and container modules.
+3. **Level 3 (All Specs)**: Unfolds all leaf specifications for complete system inspection.
+4. **Expand All / Collapse All**: One-click toggles across all nesting depths.
 
-== 3. Interactive Inspector & Traceability
-Selecting any tree node instantly populates the inspector without navigating away from the tree:
-* **Header & Status**: Document ID, display title, validation health (`● VALID`), lifecycle status, and relative path with clipboard copy.
-* **Metadata Cards**: Schema reference, architectural category, domain/owning component, and invariant test bindings.
-* **Cross-Specification Relations**: Detects referenced IDs across domains and provides one-click pills to jump across the specification graph.
+== 3. Table Column Integrity & Traceability
+Each row preserves structured, tabular alignment across columns:
+* **Specification Hierarchy**: Indented node hierarchy with animated disclosure chevrons (`▼` / `▶`), category icons, specification titles, and badge counts.
+* **Document ID**: Unique kebab-cased or prefixed ID with one-click clipboard copy (`SYS-*`, `DOM-*`, `CAP-*`, `DS-*`, `SCR-*`, `ARCH-*`, `CMP-*`, `CTR-*`, `POL-*`, `DLT-*`).
+* **Type & Category**: Color-coded badges indicating schema archetype.
+* **Invariants / Tests**: Direct count of test bindings and policy invariant coverage.
+* **Status**: Validation health indicator (`● VALID`, `active`, `proposed`).
+* **Actions**: One-click button to open the rich Spec Inspector Modal or view raw frontmatter.
 
-== 4. Real-Time Search & Branch Unfolding
-Typing into the global or catalog search input dynamically filters tree branches in real time, automatically expanding folders containing matching documents and highlighting results.
+== 4. Real-Time Branch Unfolding & Search
+Typing into the catalog search input filters the entire tree-grid dynamically:
+* Matches across document titles, IDs, summaries, and paths are highlighted.
+* Ancestor parent branches of any matching item are automatically unfolded.
+* Non-matching subtrees are collapsed and hidden until the filter is cleared.
 
