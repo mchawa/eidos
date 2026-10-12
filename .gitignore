@@ -22,6 +22,7 @@ build/
 site/
 .cache/
 .ruff_cache/
+.eidos/
 
 # Local agent plugins installation
 .cursor/

@@ -1,0 +1,71 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-011
+title: "Integrate Embedded Architectural Knowledge Graph & Hybrid Context Retrieval Index"
+status: proposed
+
+vcs:
+  branch: "spike/exp-2026-002"
+
+intent:
+  kind: feature_addition
+  motivation: "Graduated from validated feasibility exploration EXP-2026-002 to transition Eidos context slicing from linear filesystem scanning to an embedded SQLite knowledge graph with FTS5 lexical retrieval and tiered token-budgeted compression."
+
+mutations:
+  - action: modify_component
+    target_component: CMP-EIDOS-CORE
+    details: "Integrate ArchitecturalIndex SQLite graph store, FTS5 virtual table, and incremental dirty checking scanner in src/eidos/core/graph_index.py."
+  - action: extend_capability
+    target_capability: CAP-AGENT-001
+    details: "Bind FTS5 hybrid retrieval and tiered context slicing (Anchor, Guardrails, Deep) to CAP-AGENT-001."
+  - action: add_invariant
+    target_capability: CAP-AGENT-001
+    details: "Enforce sub-10ms context slice resolution and sub-5ms dirty checking with zero external runtime dependencies."
+
+blast_radius:
+  impacted_personas:
+    - eidos/personas/software-architect.adoc
+    - eidos/personas/software-engineer.adoc
+    - eidos/personas/autonomous-agent.adoc
+  impacted_components:
+    - CMP-EIDOS-CORE
+    - CMP-EIDOS-MCP
+    - CMP-EIDOS-CLI
+  invariants_to_enforce:
+    - INV-AGENT-CONTEXT-SLICING
+    - INV-SPEC-GRAPH-INTEGRITY
+    - INV-SPEC-VALIDATION
+---
+= SpecDelta: Integrate Embedded Architectural Knowledge Graph & Hybrid Context Retrieval Index
+:toc: left
+
+== Problem Statement
+As repositories scale beyond 50+ living specifications and thousands of source files, on-the-fly directory scanning (`rglob("*.adoc")`) and naive token set-intersection introduce noticeable latency (>100ms) and lexical fragility. Furthermore, loading entire specification documents into LLM context windows causes severe token bloating and dilutes attention on critical policy invariants.
+
+Feasibility exploration `EXP-2026-002` empirically proved that an embedded SQLite knowledge graph (`.eidos/cache/index.db`) using Python's standard library `sqlite3` achieves:
+* **1.22 ms** query resolution with FTS5 BM25 search and recursive CTE graph traversals.
+* **3.30 ms** incremental mtime/SHA-256 dirty checking on clean state.
+* **96.0% - 98.9%** token reduction via hierarchical context tiers (Anchor, Guardrails, Deep Spec).
+* **Zero external dependencies** and zero drift from Git-tracked specifications.
+
+== Proposed Architecture & Specification Changes
+
+=== 1. Architectural Knowledge Graph Schema (`CMP-EIDOS-CORE`)
+Embed `ArchitecturalIndex` under `src/eidos/core/graph_index.py`:
+* **`entities`**: Typed nodes (`CMP`, `CTR`, `CAP`, `DOM`, `POL`, `INV`, `DS`, `CLT`, `SCR`, `FLOW`) with title, domain, and file path.
+* **`edges`**: Directed relations (`depends_on`, `provides`, `consumes`, `governs`, `asserts`, `tests`).
+* **`symbol_mappings`**: Reverse code-to-spec mappings from source files and AST symbols to owning components and invariants.
+* **`specs_fts`**: FTS5 virtual table with BM25 full-text indexing over title, domain, body text, and invariants.
+* **`indexed_files`**: Modification timestamp and SHA-256 hash manifest enabling sub-5ms incremental synchronization.
+
+=== 2. Universal Agent Capability Extension (`CAP-AGENT-001`)
+* Extend context extraction in `CMP-EIDOS-CORE` and `CMP-EIDOS-MCP` to query `ArchitecturalIndex`.
+* Expose tiered context slicing:
+  - **Tier 1 (Anchor - ~140 tokens):** Matched component metadata, container type, runtime, and direct contract signatures.
+  - **Tier 2 (Guardrails - ~260 tokens):** Active invariants (`INV-*`), test bindings, and governing policies (`POL-*`).
+  - **Tier 3 (Deep Spec - ~500 tokens):** Full requirement details, C4 internal building blocks, and schema definitions.
+
+=== 3. Verification & Invariants
+* Bound to `tests/test_graph_index.py` verifying all Spikes (A, B, C), dirty-checking cache invalidation, and exit criteria.
+* Zero external runtime dependencies preserved (`sqlite3` stdlib only).
