@@ -43,6 +43,10 @@ Activate internal reasoning to deliberate on:
 - *What policy invariants (`INV-*`) must be tested?*
 - *What is the blast radius across personas and downstream modules?*
 
+**Leverage Architectural Graph Tools:**
+- Run `eidos_search_architecture(query="...")` or `eidos index search "..."` to locate related specs and existing invariants.
+- Run `eidos_get_blast_radius(symbol_or_path="...", max_hops=2)` or `eidos index blast-radius <component>` to compute the impacted components and contracts for `blast_radius.impacted_components`.
+
 Scaffold the delta with VCS linkage:
 ```bash
 eidos delta create DLT-2026-042 --title "Tenant Rate Limiting and Quota Enforcement" --kind feature_addition --motivation "Prevent noisy neighbor issues on multitenant clusters."

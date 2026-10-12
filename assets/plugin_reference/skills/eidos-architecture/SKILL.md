@@ -30,11 +30,15 @@ Use the Eidos CLI to inspect and scaffold architecture:
 eidos components
 eidos components packages/
 
-# 2. Scaffold a new technical component manifest:
+# 2. Search architectural topology and compute dependency blast radius:
+eidos index search "authentication"
+eidos index blast-radius CMP-AUTH-SERVICE --hops 2
+
+# 3. Scaffold a new technical component manifest:
 eidos spec create component CMP-AUTH-SERVICE --title "Authentication & Token Service" \
   --container-type service --runtime "Rust / Axum" --package-path "packages/auth"
 
-# 3. Scaffold an interface contract:
+# 4. Scaffold an interface contract:
 eidos spec create contract CTR-AUTH-API --title "Auth REST API" \
   --protocol openapi --owning-component CMP-AUTH-SERVICE --specification-file "packages/auth/openapi.yaml"
 ```

@@ -573,45 +573,47 @@ def list_specs(
     status_filter: str | None = None,
 ) -> list[dict[str, Any]]:
     """List all specifications under eidos_dir with optional filters."""
-    results = []
     if not eidos_dir.exists():
-        return results
+        return []
+
+    from eidos.core.graph_index import get_architectural_index
+
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    entities = idx.get_entities(status=status_filter)
+    results = []
 
     type_filter_clean = type_filter.lower() if type_filter else None
     status_filter_clean = status_filter.lower() if status_filter else None
 
-    for p in sorted(eidos_dir.rglob("*.adoc")):
-        if "by-status" in p.parts:
-            continue
-        try:
-            doc = parse_spec_file(p)
-            doc_type = doc.doc_type
-            status = doc.frontmatter.get("status", "active")
-
-            if (
-                type_filter_clean
-                and type_filter_clean not in doc_type.lower()
-                and type_filter_clean not in p.name.lower()
-            ):
-                continue
-
-            if status_filter_clean and str(status).lower() != status_filter_clean:
-                continue
-
-            results.append(
-                {
-                    "id": doc.doc_id,
-                    "type": doc_type,
-                    "title": doc.title or "Untitled",
-                    "status": status,
-                    "path": p.resolve(),
-                    "relative_path": p.relative_to(eidos_dir) if p.is_relative_to(eidos_dir) else p,
-                }
-            )
-        except Exception:
+    for ent in entities:
+        doc_type = ent.get("type", "")
+        eid = ent.get("id", "")
+        if doc_type == "invariant":
             continue
 
-    return results
+        if type_filter_clean:
+            if type_filter_clean not in doc_type.lower() and type_filter_clean not in eid.lower():
+                continue
+
+        status = ent.get("status", "active")
+        if status_filter_clean and str(status).lower() != status_filter_clean:
+            continue
+
+        file_p = Path(ent.get("file_path", ""))
+        rel_p = file_p.relative_to(eidos_dir) if file_p.is_relative_to(eidos_dir) else file_p
+
+        results.append(
+            {
+                "id": eid,
+                "type": doc_type,
+                "title": ent.get("title") or "Untitled",
+                "status": status,
+                "path": file_p.resolve() if file_p.exists() else file_p,
+                "relative_path": rel_p,
+            }
+        )
+
+    return sorted(results, key=lambda x: str(x.get("id", "")))
 
 
 def _ensure_eidos_gitignore(eidos_dir: Path) -> None:

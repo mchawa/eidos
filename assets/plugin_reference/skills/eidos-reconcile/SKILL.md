@@ -37,7 +37,7 @@ Eidos deterministically extracts:
 3. The catalog of current living specifications (Capabilities, Contracts, Policies).
 
 ### Step 2: Think Deeply & Map Semantically
-Do not rely on naive path matching. **Think deeply** about the semantic behavior introduced in the Git diff:
+Do not rely on naive path matching. **Think deeply** about the semantic behavior introduced in the Git diff. If you are unsure which capability or contract governs a change, run `eidos index search "<keywords>"` or invoke `eidos_search_architecture` to search specification text and invariants using BM25.
 
 | Code Change | Target Living Specification | What to Update |
 |---|---|---|

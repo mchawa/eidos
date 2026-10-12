@@ -1,0 +1,125 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-012
+title: "Dynamic Clickable Hierarchical C4 Architecture Explorer (L1-L3)"
+status: proposed
+vcs:
+  branch: "feat/interactive-c4-explorer"
+  issue: "#12"
+intent:
+  kind: feature_addition
+  motivation: "Current C4 diagrams in the Eidos Web Portal and static site export are static, vertically stacked Level 1 and Level 2 views without interactive drill-down navigation or Level 3 (Component Whitebox) visualization. Users cannot click on systems or containers to explore their internal architecture, building blocks, source paths, or bound contracts."
+mutations:
+  - action: modify_component
+    target_component: CMP-EIDOS-PORTAL
+    details: "Extend PortalGenerator (src/eidos/portal/generator.py) to synthesize C4 Level 3 Component Whitebox Mermaid diagrams for each container manifest, and enhance PortalAssets (src/eidos/portal/assets.py) with dynamic SVG click callbacks, interactive hierarchical drill-down state machine (L1 -> L2 -> L3), breadcrumb bar, container selector, and slide-over component inspector drawer."
+  - action: modify_screen
+    target_screen: SCR-PORTAL-ARCHITECTURE
+    details: "Update SCR-PORTAL-ARCHITECTURE slots and states to reflect the unified dynamic C4 explorer: replace static stacked diagrams with a single hierarchical viewport, drill-down level controls (Context, Containers, Components), and an inspector panel slot."
+  - action: extend_capability
+    target_capability: CAP-EXP-001
+    details: "Update capability specification to mandate dynamic, clickable C4 exploration across all 3 levels (L1 System Context, L2 Containers, L3 Components) with interactive breadcrumbs and building block inspection."
+  - action: patch_invariant
+    target_invariant_id: INV-PORTAL-INTERACTIVE-C4
+    details: "Enhance INV-PORTAL-INTERACTIVE-C4 rule to require dynamic clickable drill-down from L1 Context to L2 Containers and L2 Containers to L3 Component Whiteboxes with breadcrumbs and component inspector modal/drawer without external Node.js dependencies."
+  - action: modify_architecture
+    target_component: ARCH-EIDOS-001
+    details: "Update Section 4 (Solution Strategy) and Section 5 (Building Block View) of ARCH-EIDOS-001 to document the dynamic clickable C4 hierarchical zoom and Level 3 whitebox views."
+blast_radius:
+  impacted_personas:
+    - eidos/personas/software-architect.adoc
+    - eidos/personas/software-engineer.adoc
+    - eidos/personas/product-lead.adoc
+  impacted_components:
+    - CMP-EIDOS-PORTAL
+  impacted_screens:
+    - eidos/design/clients/web-portal/screens/portal-architecture.adoc
+  invariants_to_enforce:
+    - INV-PORTAL-INTERACTIVE-C4
+    - INV-PORTAL-ZERO-NODE-DEP
+    - INV-SPEC-GRAPH-INTEGRITY
+    - INV-SPEC-VALIDATION
+---
+= SpecDelta: Dynamic Clickable Hierarchical C4 Architecture Explorer (L1-L3)
+:toc: left
+
+== 1. Problem Statement
+The current Technical Architecture view (`SCR-PORTAL-ARCHITECTURE`) in the Eidos Living Web Portal (`CMP-EIDOS-PORTAL`) displays two static, vertically stacked Mermaid diagrams:
+1. **C4 Level 1: System Context Topology**
+2. **C4 Level 2: Container Topology**
+
+While these diagrams successfully render high-level boundaries, they suffer from three major architectural and usability limitations:
+* **No Interactive Drill-Down**: The diagrams are static SVG images with basic zoom/pan buttons. Clicking on the system node in Level 1 does not drill down into Level 2 containers; clicking on a container in Level 2 does not drill down into its internal components.
+* **Missing C4 Level 3 (Component Whitebox View)**: Although all component specifications (`CMP-*`) author comprehensive `c4_internal_components` metadata (internal module names, responsibilities, and source paths), this rich architectural data is only shown in a static tabular format at the bottom of the page, completely disconnected from the visual graph representation.
+* **Lack of Contextual Inspection**: Developers and architects cannot click on a building block to inspect its direct contract bindings, active invariants, or source files in an integrated slide-over inspector.
+
+== 2. Proposed Architecture & UX Design
+
+=== 2.1 Three-Tier Hierarchical Zoom Model
+Transform the Architecture view from stacked static cards into a unified, interactive **Hierarchical C4 Explorer**:
+* **Level 1 (System Context)**: Shows personas, the root system (`SYS-EIDOS-001`), and external integrations. Clicking the primary system node zooms into Level 2.
+* **Level 2 (Container Topology)**: Shows all monorepo containers (`CMP-EIDOS-CORE`, `CMP-EIDOS-CLI`, `CMP-EIDOS-PORTAL`, etc.) and inter-container protocols. Clicking any container zooms into Level 3 for that container.
+* **Level 3 (Component Whitebox)**: Shows the internal building blocks of the selected container (`SpecParser`, `SpecValidator`, `LifecycleScaffolder`, etc.), their responsibilities, source paths, and contract boundaries. Clicking any internal component opens the Component Inspector Drawer.
+
+=== 2.2 Navigation Controls & Affordances
+* **Interactive Breadcrumbs**:
+  `🌐 System Context (L1) › 📦 Containers (L2) › 🧱 CMP-EIDOS-CORE (L3)`
+  Enables instant jumping to any ancestor level.
+* **Level Switcher Tabs & Container Selector**:
+  A segmented control allowing direct switching between `[L1 Context]`, `[L2 Containers]`, and `[L3 Components]`. When in Level 3, a container dropdown selector allows rapid switching between containers without navigating back up.
+* **Level Up Button**:
+  Quick-action button (`↑ Up to Containers` or `↑ Up to System Context`) positioned next to zoom controls.
+* **Visual Click Affordance**:
+  Clickable nodes display an interactive pointer cursor, hover highlight/glow, and badge indicators hinting that clicking reveals lower architectural levels.
+
+=== 2.3 Slide-Over Component Inspector Drawer
+Clicking a Level 3 component or clicking an "Inspect" action on a Level 2 container reveals a slide-over details drawer showing:
+* **Module Metadata**: Name, owning container, container type, runtime, and source path (clickable file link).
+* **Architectural Responsibility**: Clear description of the module's role in the architecture.
+* **Connected Contracts**: Interface protocols provided or consumed by the module's container.
+* **Governing Policies & Invariants**: Policies and invariants impacting the module.
+* **Living Spec Link**: Direct link to jump to the full specification in the Living Specs Catalog (`SCR-PORTAL-CATALOG`).
+
+== 3. Technical Implementation Plan
+
+=== 3.1 Portal Data Generator (`src/eidos/portal/generator.py`)
+1. Implement `_generate_c4_component_mermaid(component: dict[str, Any], all_components: list[dict[str, Any]]) -> str`:
+   - Extracts `c4_internal_components` from the component manifest.
+   - Generates a styled Mermaid flowchart detailing internal modules, source files, and dependencies to peer containers.
+2. In `get_portal_data()`:
+   - Generate Level 3 diagrams for every container in the catalog.
+   - Store them in `data["diagrams"]["c4_components"]` keyed by container ID (e.g., `data["diagrams"]["c4_components"]["CMP-EIDOS-CORE"]`).
+
+=== 3.2 Web Portal Assets & Interactive State Machine (`src/eidos/portal/assets.py`)
+1. Refactor `#tab-architecture` layout:
+   - Replace the two static stacked `.panel` divs with a unified C4 Explorer panel featuring:
+     - Header with segmented level controls (`L1 Context`, `L2 Containers`, `L3 Components`) and Container selector dropdown.
+     - Breadcrumb navigation bar with clickable trail.
+     - Central Mermaid visualization viewport with zoom, pan, and level-up controls.
+     - Slide-over Component Inspector drawer (`#c4InspectorDrawer`).
+2. Implement Client-Side C4 Explorer State Machine:
+   - State object tracking: `currentLevel` (1, 2, or 3), `selectedContainerId`, `selectedComponentId`.
+   - Functions:
+     - `setC4Level(level, containerId)`: Handles level transitions, breadcrumb updates, and diagram re-rendering.
+     - `drillDownToContainer(containerId)`: Transitions from L2 to L3 for the specified container.
+     - `openC4Inspector(containerId, componentName)`: Populates and opens the inspector drawer.
+     - `closeC4Inspector()`: Dismisses the inspector drawer.
+     - `attachC4DiagramClickHandlers()`: Post-processes rendered SVG to bind click handlers to Mermaid node elements (`SYS` -> L2, `CMP_*` -> L3, internal modules -> open inspector).
+3. Theme Integration:
+   - Ensure all interactive elements, hover states, and inspector drawers support both dark and light modes.
+
+=== 3.3 Living Specification Updates
+1. `eidos/design/clients/web-portal/screens/portal-architecture.adoc` (`SCR-PORTAL-ARCHITECTURE`):
+   - Update `slots` to include `c4_explorer_viewport`, `c4_breadcrumbs`, `c4_level_controls`, and `c4_inspector_drawer`.
+   - Update `states` to document `level_1_context`, `level_2_containers`, `level_3_components`, and `component_inspected`.
+2. `eidos/domains/experience-portal/capabilities/living-web-portal.adoc` (`CAP-EXP-001`):
+   - Update `INV-PORTAL-INTERACTIVE-C4` to enforce interactive clickable navigation across all three C4 levels.
+3. `eidos/architecture/system-architecture.adoc` (`ARCH-EIDOS-001`):
+   - Synchronize Arc42 Section 4 and Section 5 documentation with the interactive C4 Explorer.
+
+== 4. Verification & Invariants
+* **`INV-PORTAL-INTERACTIVE-C4`**: Verified by automated test asserting that `get_portal_data()` produces C4 Level 3 diagrams for all containers and `assets.py` contains the interactive drill-down state machine, breadcrumb navigation, and SVG click handler logic.
+* **`INV-PORTAL-ZERO-NODE-DEP`**: Verified by ensuring all diagram generation and client-side interactions run with standard Python and vanilla ES6 JavaScript without external bundlers.
+* **`INV-SPEC-GRAPH-INTEGRITY`**: Verified by running `eidos validate eidos` with zero broken cross-references.
+* **Test Suite**: Run `uv run pytest tests/` with 100% passing tests including extended portal test cases.

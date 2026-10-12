@@ -464,11 +464,11 @@ class ArchitecturalIndex:
                 biz = fm.get("business", {})
                 if isinstance(biz, dict):
                     for pol in biz.get("policies", []):
-                        pol_id = Path(pol).stem.upper().split(".")[0]
+                        pol_ref = str(pol).strip()
                         conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'governed_by', NULL);", (doc_id, pol_id)
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'governed_by', NULL);", (doc_id, pol_ref)
                         )
-                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'governs', NULL);", (pol_id, doc_id))
+                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'governs', NULL);", (pol_ref, doc_id))
 
                 tech = fm.get("technical", {})
                 invariants = []
@@ -575,27 +575,41 @@ class ArchitecturalIndex:
             conn.execute(
                 """
                 UPDATE OR IGNORE edges
-                SET target_id = (SELECT doc_id FROM indexed_files WHERE rel_path = edges.target_id)
-                WHERE target_id IN (SELECT rel_path FROM indexed_files);
+                SET target_id = (
+                    SELECT doc_id FROM indexed_files
+                    WHERE rel_path = edges.target_id
+                       OR 'eidos/' || rel_path = edges.target_id
+                       OR rel_path = 'eidos/' || edges.target_id
+                       OR rel_path LIKE '%' || edges.target_id
+                    LIMIT 1
+                )
+                WHERE target_id NOT IN (SELECT id FROM entities);
                 """
             )
             conn.execute(
                 """
                 DELETE FROM edges
-                WHERE target_id IN (SELECT rel_path FROM indexed_files);
+                WHERE target_id NOT IN (SELECT id FROM entities);
                 """
             )
             conn.execute(
                 """
                 UPDATE OR IGNORE edges
-                SET source_id = (SELECT doc_id FROM indexed_files WHERE rel_path = edges.source_id)
-                WHERE source_id IN (SELECT rel_path FROM indexed_files);
+                SET source_id = (
+                    SELECT doc_id FROM indexed_files
+                    WHERE rel_path = edges.source_id
+                       OR 'eidos/' || rel_path = edges.source_id
+                       OR rel_path = 'eidos/' || edges.source_id
+                       OR rel_path LIKE '%' || edges.source_id
+                    LIMIT 1
+                )
+                WHERE source_id NOT IN (SELECT id FROM entities);
                 """
             )
             conn.execute(
                 """
                 DELETE FROM edges
-                WHERE source_id IN (SELECT rel_path FROM indexed_files);
+                WHERE source_id NOT IN (SELECT id FROM entities);
                 """
             )
 
@@ -648,8 +662,10 @@ class ArchitecturalIndex:
         except sqlite3.OperationalError:
             return []
 
-    def get_k_hop_neighborhood(self, entity_id: str, max_depth: int = 2) -> list[dict[str, Any]]:
+    def get_k_hop_neighborhood(self, entity_id: str, max_depth: int = 2, max_hops: int | None = None) -> list[dict[str, Any]]:
         """Traverse graph up to k hops in both directions using recursive CTE."""
+        if max_hops is not None:
+            max_depth = max_hops
         self._ensure_synced()
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -702,7 +718,7 @@ class ArchitecturalIndex:
 
         cursor.execute(
             """
-            SELECT s.symbol, s.entity_id, s.kind, e.type, e.title, e.data_json
+            SELECT s.symbol, s.entity_id, s.kind, e.type, e.title, e.file_path, e.data_json
             FROM symbol_mappings s
             JOIN entities e ON e.id = s.entity_id
             WHERE s.symbol = ?
@@ -723,6 +739,7 @@ class ArchitecturalIndex:
                     "kind": row["kind"],
                     "type": row["type"],
                     "title": row["title"],
+                    "file_path": row["file_path"],
                     "data": json.loads(row["data_json"]),
                 }
             )
@@ -1046,6 +1063,81 @@ class ArchitecturalIndex:
         slice_obj.token_estimate = max(1, len(slice_obj.to_markdown()) // 4)
         slice_obj.query_latency_ms = (time.perf_counter() - t0) * 1000
         return slice_obj
+
+    def get_components(self) -> list[dict[str, Any]]:
+        """Retrieve all C4 components from the knowledge graph index."""
+        self._ensure_synced()
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, title, file_path, data_json FROM entities WHERE type = 'tech/component' ORDER BY id;"
+            ).fetchall()
+            components = []
+            for r in rows:
+                data = json.loads(r["data_json"])
+                data["id"] = r["id"]
+                data["file_path"] = r["file_path"]
+                components.append(data)
+            return components
+
+    def get_entities(
+        self,
+        entity_type: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Retrieve entities from the knowledge graph with optional type and status filtering."""
+        self._ensure_synced()
+        query = "SELECT id, title, type, domain, file_path, data_json FROM entities WHERE 1=1"
+        params: list[Any] = []
+        if entity_type:
+            query += " AND type = ?"
+            params.append(entity_type)
+        query += " ORDER BY type, id;"
+        with self._get_connection() as conn:
+            rows = conn.execute(query, params).fetchall()
+            entities = []
+            for r in rows:
+                data = json.loads(r["data_json"])
+                data["id"] = r["id"]
+                data["title"] = r["title"]
+                data["type"] = r["type"]
+                data["domain"] = r["domain"]
+                data["file_path"] = r["file_path"]
+                if status and data.get("status") != status:
+                    continue
+                entities.append(data)
+            return entities
+
+    def get_incoming_references(self, target_id_or_path: str) -> list[dict[str, Any]]:
+        """Find all incoming graph edges pointing to an entity ID or file path."""
+        self._ensure_synced()
+        target = target_id_or_path
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT doc_id FROM indexed_files WHERE rel_path = ? OR 'eidos/' || rel_path = ?;",
+                (target, target),
+            ).fetchone()
+            if row:
+                target = row["doc_id"]
+            rows = conn.execute(
+                """
+                SELECT e.source_id, e.rel_type, ent.type, ent.title, ent.file_path
+                FROM edges e
+                JOIN entities ent ON ent.id = e.source_id
+                WHERE e.target_id = ?
+                ORDER BY ent.type, e.source_id;
+                """,
+                (target,),
+            ).fetchall()
+            return [
+                {
+                    "source_id": r["source_id"],
+                    "rel_type": r["rel_type"],
+                    "type": r["type"],
+                    "title": r["title"],
+                    "file_path": r["file_path"],
+                }
+                for r in rows
+            ]
 
 
 # Global singleton instance for high-speed module reuse

@@ -536,15 +536,13 @@ def components(
 ):
     """List all C4 components, internal modules, dependencies, and monorepo package mappings."""
     search_dir = target_path or Path("eidos/architecture")
-    if not search_dir.exists():
+    eidos_dir = search_dir.parent if search_dir.name == "architecture" else search_dir
+    if not search_dir.exists() and not eidos_dir.exists():
         console.print(f"[bold red]Error:[/bold red] Directory '{search_dir}' not found.")
         raise typer.Exit(code=1)
 
-    found_components = []
-    for p in search_dir.rglob("*.adoc"):
-        doc = parse_spec_file(p)
-        if doc.doc_type == "tech/component":
-            found_components.append(doc)
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    found_components = idx.get_components()
 
     if not found_components:
         console.print(f"[bold yellow]No component specifications found in '{search_dir}'.[/bold yellow]")
@@ -559,14 +557,13 @@ def components(
     table.add_column("Internal C4 Modules", style="white")
 
     for c in found_components:
-        fm = c.frontmatter
-        pkg = fm.get("package_path", "centralized")
-        internals = ", ".join(m.get("name", "") for m in fm.get("c4_internal_components", [])) or "N/A"
+        pkg = c.get("package_path") or "centralized"
+        internals = ", ".join(m.get("name", "") for m in c.get("c4_internal_components", [])) or "N/A"
         table.add_row(
-            c.doc_id,
-            fm.get("name", "N/A"),
-            fm.get("container_type", "N/A"),
-            fm.get("runtime", "N/A"),
+            c.get("id", "N/A"),
+            c.get("name", "N/A"),
+            c.get("container_type", "N/A"),
+            c.get("runtime", "N/A"),
             str(pkg),
             internals,
         )

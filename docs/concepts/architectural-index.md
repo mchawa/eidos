@@ -176,3 +176,4 @@ neighbors = index.get_k_hop_neighborhood("CMP-EIDOS-CORE", max_hops=2)
 for hop, entity in neighbors:
     print(f"Hop {hop}: {entity.id} ({entity.type})")
 ```
+

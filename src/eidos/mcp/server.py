@@ -393,24 +393,10 @@ def handle_tool_call(name: str, arguments: dict[str, Any]) -> list[dict[str, Any
         return [{"type": "text", "text": json.dumps(res, indent=2)}]
 
     elif name == "eidos_list_components":
-        search_dir = Path(arguments.get("path") or "eidos/architecture")
-        components = []
-        if search_dir.exists():
-            for p in search_dir.rglob("*.adoc"):
-                doc = parse_spec_file(p)
-                if doc.doc_type == "tech/component":
-                    components.append(
-                        {
-                            "id": doc.doc_id,
-                            "name": doc.frontmatter.get("name"),
-                            "container_type": doc.frontmatter.get("container_type"),
-                            "runtime": doc.frontmatter.get("runtime"),
-                            "package_path": doc.frontmatter.get("package_path"),
-                            "dependencies": doc.frontmatter.get("dependencies", {}),
-                            "c4_internal_components": doc.frontmatter.get("c4_internal_components", []),
-                            "file_path": str(p),
-                        }
-                    )
+        search_dir = Path(arguments.get("path") or "eidos")
+        eidos_dir = search_dir.parent if search_dir.name == "architecture" else search_dir
+        idx = get_architectural_index(eidos_dir=eidos_dir)
+        components = idx.get_components()
         return [{"type": "text", "text": json.dumps(components, indent=2)}]
 
     elif name == "eidos_create_delta":
