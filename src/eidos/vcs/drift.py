@@ -318,6 +318,13 @@ def classify_changed_files(files: list[str], repo_root: Path | None = None) -> C
         ".tsx",
         ".js",
         ".jsx",
+        ".css",
+        ".scss",
+        ".sass",
+        ".less",
+        ".html",
+        ".vue",
+        ".svelte",
         ".go",
         ".rs",
         ".java",
@@ -398,24 +405,33 @@ def map_code_to_components(
                 matched = True
                 break
 
-        # 2. Package path prefix
+        # 2. Specific path prefixes
+        if not matched and cf.startswith((".agents/plugins", "assets/plugin_reference")):
+            for c in components:
+                    if c.get("id") == "CNT-EIDOS-PLUGIN":
+                        mappings.append((cf, "CNT-EIDOS-PLUGIN", str(c.get("file_path", "eidos/architecture/containers/plugin.adoc"))))
+                        matched = True
+                        break
+
+        # 3. Package path prefix
         if not matched:
             for c in components:
                 cid = c.get("id", "")
                 pkg = c.get("package_path", "")
                 path = c.get("file_path", "")
-                if pkg and (cf.startswith(pkg) or pkg in cf):
+                if pkg and (cf.startswith(pkg) or f"/{pkg}/" in cf or cf.endswith(pkg)):
                     mappings.append((cf, cid, str(path)))
                     matched = True
                     break
 
-        # 3. Component name slug fallback
+        # 4. Component name slug fallback (on path segments, not arbitrary substring)
         if not matched:
+            parts = [p.lower() for p in Path(cf).parts]
             for c in components:
                 cid = c.get("id", "")
                 path = c.get("file_path", "")
-                slug = cid.lower().replace("cmp-eidos-", "").replace("cmp-", "")
-                if slug and slug in cf.lower():
+                slug = cid.lower().replace("cnt-eidos-", "").replace("cmp-eidos-", "").replace("cnt-", "").replace("cmp-", "")
+                if slug and (slug in parts or any(slug == part.split(".")[0] for part in parts)):
                     mappings.append((cf, cid, str(path)))
                     matched = True
                     break
@@ -617,28 +633,98 @@ def detect_drift(
     classification = classify_changed_files(changed_files, repo_root=root)
 
     # Determine workflow mode: Planned (with SpecDelta) vs Direct (pure co-evolution)
+    # Determine workflow mode: Planned (with SpecDelta) vs Direct (pure co-evolution)
     has_deltas = len(classification.delta_files) > 0
     workflow_mode = "planned" if has_deltas else "direct"
 
-    # 1. Spec-Code Drift Evaluation
-    code_changed = len(classification.code_files) > 0
-    specs_changed = len(classification.spec_files) > 0
-    drift_detected = code_changed and not specs_changed and not has_deltas
-
-    # 2. Specification Schema & Link Integrity Validation
-    validator = SpecValidator()
-    validation_report = validator.validate_directory(target_eidos)
-
-    # 3. Component Mapping
+    # 1. Component Mapping
     comp_mappings = map_code_to_components(target_eidos, classification.code_files, repo_root=root)
     touched_components = sorted({cid for _, cid, _ in comp_mappings})
 
-    # 4. Invariant Traceability
+    # 2. Extract declared targets from deltas if deltas exist
+    declared_delta_targets: set[str] = set()
+    if has_deltas:
+        from eidos.core.parser import parse_spec_file
+        for df in classification.delta_files:
+            try:
+                delta_file = (root / df) if not Path(df).is_absolute() else Path(df)
+                if delta_file.exists():
+                    doc = parse_spec_file(delta_file)
+                    fm = doc.frontmatter or {}
+                    for m in fm.get("mutations", []) or []:
+                        if isinstance(m, dict):
+                            for key in (
+                                "target_component",
+                                "target_capability",
+                                "target_domain",
+                                "target_screen",
+                                "target_ui_component",
+                                "target_design_system",
+                                "target_contract",
+                                "target_persona",
+                            ):
+                                val = m.get(key)
+                                if val:
+                                    declared_delta_targets.add(str(val).lower())
+                    br = fm.get("blast_radius", {}) or {}
+                    if isinstance(br, dict):
+                        for sub in ("components", "domains", "capabilities", "screens", "design_systems", "impacted_components"):
+                            for val in br.get(sub, []) or []:
+                                declared_delta_targets.add(str(val).lower())
+            except Exception:
+                pass
+
+    # 3. Spec-Code Drift Evaluation
+    code_changed = len(classification.code_files) > 0
+    specs_changed = len(classification.spec_files) > 0
+
+    # Uncovered code detection in planned mode
+    uncovered_components: list[tuple[str, str, str]] = []
+    if has_deltas and code_changed:
+        for cf, cid, spath in comp_mappings:
+            cid_lower = cid.lower()
+            slug = cid_lower.replace("cnt-eidos-", "").replace("cmp-eidos-", "").replace("cnt-", "").replace("cmp-", "")
+            covered_by_delta = any(
+                target in cid_lower or slug in target or cid_lower in target
+                for target in declared_delta_targets
+            )
+            covered_by_spec = any(cid_lower in s.lower() or slug in s.lower() for s in classification.spec_files)
+            if not covered_by_delta and not covered_by_spec:
+                uncovered_components.append((cf, cid, spath))
+
+    # Domain-specific drift: Design systems & frontend
+    design_drift = False
+    frontend_code_files = [
+        cf for cf in classification.code_files
+        if "frontend" in cf.lower()
+        or cf.endswith((".css", ".scss", ".sass", ".less"))
+        or cf.endswith((".tsx", ".jsx", ".vue", ".svelte", ".html"))
+        or cf.endswith("assets.py")
+    ]
+    if frontend_code_files:
+        has_design_spec_update = any(
+            "eidos/design" in s.replace("\\", "/")
+            or "/design/" in s.replace("\\", "/")
+            or s.endswith("tokens.json")
+            for s in classification.spec_files
+        )
+        if not has_design_spec_update:
+            design_drift = True
+
+    base_direct_drift = code_changed and not specs_changed and not has_deltas
+    uncovered_delta_drift = bool(uncovered_components)
+    drift_detected = base_direct_drift or design_drift or uncovered_delta_drift
+
+    # 4. Specification Schema & Link Integrity Validation
+    validator = SpecValidator()
+    validation_report = validator.validate_directory(target_eidos)
+
+    # 5. Invariant Traceability
     invariants = extract_invariants_and_verify(target_eidos, root)
 
-    # 5. Remediation suggestions
+    # 6. Remediation suggestions
     remediation: list[str] = []
-    if drift_detected:
+    if base_direct_drift:
         remediation.append(
             f"Drift Detected: {len(classification.code_files)} code file(s) changed in src/ without living specification updates in eidos/."
         )
@@ -647,6 +733,21 @@ def detect_drift(
         if not comp_mappings:
             remediation.append(
                 "• Run 'eidos reconcile' or ask your AI agent to update corresponding living specifications."
+            )
+
+    if design_drift:
+        remediation.append(
+            f"Design System Drift Detected: {len(frontend_code_files)} frontend/styling code file(s) were modified without corresponding updates in 'eidos/design/' (tokens.json, UIC-* component manifests, or SCR-* screen specs)."
+        )
+        for fcf in frontend_code_files[:5]:
+            remediation.append(
+                f"• Frontend change in '{fcf}' requires updating 'eidos/design/systems/' tokens or 'eidos/design/clients/' specs."
+            )
+
+    if uncovered_delta_drift:
+        for cf, cid, spath in uncovered_components[:5]:
+            remediation.append(
+                f"Uncovered Delta Drift: '{cf}' relates to {cid}, which is NOT declared in active SpecDelta mutations. Declare it in the SpecDelta or update '{spath}'."
             )
 
     if not validation_report.is_clean:
@@ -805,7 +906,7 @@ def reconcile_specs(
             "1. Inspect the Git diff of the modified code files.",
             "2. Think deeply about the architectural implications, touched contracts, capabilities, and invariant tests.",
             "3. Update the appropriate living specifications in 'eidos/' directly (or create a SpecDelta if this is a complex, breaking change).",
-            "4. Verify that 'eidos validate eidos' and 'eidos drift' (or AI tool 'eidos_detect_drift') pass cleanly.",
+            "4. Verify that 'eidos validate eidos' and 'eidos drift --uncommitted' pass cleanly.",
         ]
     )
 

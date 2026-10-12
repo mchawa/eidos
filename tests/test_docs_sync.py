@@ -54,7 +54,6 @@ def test_documentation_and_schemas_in_sync():
         "components",
         "component",
         "info",
-        "mcp",
         "context",
         "index",
     ]

@@ -31,46 +31,9 @@ To balance token budgets with reasoning depth, context slices are structured int
 
 ---
 
-## 3. Triggering Context Slicing
+## 3. Triggering Context Slicing via CLI
 
-### A. Via Model Context Protocol (MCP)
-
-When operating as an AI agent connected via MCP, invoke `eidos_get_task_context` (or its alias `eidos_context`):
-
-```json
-{
-  "name": "eidos_get_task_context",
-  "arguments": {
-    "files": ["src/eidos/cli/main.py"],
-    "component": "CMP-EIDOS-CLI",
-    "task": "Support polyglot invariant test scanning in drift detection",
-    "tier": "guardrails",
-    "format": "markdown"
-  }
-}
-```
-
-#### Supported Arguments:
-- `files` (`list[str]`, optional): Target source code file paths (e.g. `["src/eidos/cli/main.py"]`).
-- `component` (`str`, optional): Specific component identifier (e.g. `"CMP-EIDOS-CLI"`).
-- `task` (`str`, optional): Free-text engineering prompt or task description.
-- `tier` (`str`, optional): Context slice verbosity tier: `"anchor"`, `"guardrails"` (default), or `"deep"`.
-- `format` (`str`, optional): Serialization format: `"markdown"` (token-optimized for LLMs, default) or `"json"`.
-- `path` (`str`, optional): Custom path to the `eidos/` specifications directory (defaults to `"eidos"`).
-
-#### Specialized Architecture MCP Tools:
-- **`eidos_search_architecture`**: Execute BM25 ranked full-text search (FTS5) across all living specifications, capabilities, and policies.
-  - Arguments: `query` (str, required), `limit` (int, default 10).
-- **`eidos_get_blast_radius`**: Calculate recursive CTE graph walk / blast radius up to $k$ hops for an architectural entity.
-  - Arguments: `entity_id` (str, required), `depth` (int, default 2).
-- **`eidos_index_status`**: Inspect embedded SQLite knowledge graph health, total entities, total edges, and cache size.
-- **`eidos_sync_index`**: Incrementally synchronize or force-rebuild the index.
-
----
-
-### B. Via Command-Line Interface (CLI)
-
-For developers and terminal environments, use the `eidos context` and `eidos index` commands:
+Agents extract architectural context slices directly using the `eidos context` and `eidos index` CLI commands:
 
 ```bash
 # Slice context with default guardrails tier (~260-890 tokens)
@@ -81,6 +44,9 @@ eidos context -f src/eidos/cli/main.py --tier anchor
 
 # Slice deep comprehensive tier with C4 internal modules (~1,500 tokens)
 eidos context -f src/eidos/cli/main.py --tier deep
+
+# Machine-readable JSON output for agent automation
+eidos context -f src/eidos/cli/main.py --format json
 
 # Search architecture via FTS5 BM25 ranked search
 eidos index search "token design system"
@@ -110,27 +76,21 @@ eidos index sync --force
 ## 4. Automatic Zero-Drift Freshness
 
 The context engine is backed by an embedded SQLite knowledge graph (`.eidos/cache/index.db`) using Python's standard library `sqlite3`:
-1. **Sub-3ms Dirty Checking**: Before executing any query or MCP tool call, `is_dirty()` compares disk modification timestamps (`mtime`) and SHA-256 hashes against the cached manifest.
+1. **Sub-3ms Dirty Checking**: Before executing any query or CLI command, `is_dirty()` compares disk modification timestamps (`mtime`) and SHA-256 hashes against the cached manifest.
 2. **Instant Sync**: Only modified or new `.adoc` files are re-parsed into SQLite (<5ms). Clean repositories execute dirty checks in ~1.5ms.
 3. **Transparent Rebuild**: If `.eidos/cache/index.db` is missing or corrupted, it is automatically rebuilt from the living specifications with zero manual developer intervention.
 
 ---
 
-## 3. Interpreting the Architectural Context Slice
+## 5. Interpreting the Architectural Context Slice
 
 The returned markdown context slice contains 5 structured sections:
 
-```
-                  ┌─────────────────────────────────────────┐
-                  │    Architectural Context Subgraph       │
-                  └────────────────────┬────────────────────┘
-                                       │
-         ┌─────────────┬───────────────┼───────────────┬─────────────┐
-         ▼             ▼               ▼               ▼             ▼
-     C4 Level 2/3    Bound        Domain          Active       Governing
-     Components    Contracts    Capabilities    Invariants     Policies
-     (CMP-*)       (CTR-*)      & JTBD (CAP-*)  (INV-*)        (POL-*)
-```
+1. **C4 Level 2 Containers & Level 3 Components (`CNT-*`, `CMP-*`)**: Deployment units, internal modules, and package paths.
+2. **Bound Interface Contracts (`CTR-*`)**: Protocols, parameters, schemas, and SemVer stability rules.
+3. **Domain Capabilities & JTBD (`CAP-*`)**: Business value, actor personas, and Jobs-to-be-Done.
+4. **Active Capability Invariants (`INV-*`)**: Non-negotiable behavioral invariants and test bindings.
+5. **Governing System Policies (`POL-*`)**: Repository-wide architectural rules (e.g. single source of truth, test enforcement).
 
 ### 1. C4 Level 2/3 Components (`CMP-*`)
 - **Container Type & Runtime:** Shows whether the component is a `library`, `service`, `cli_app`, `daemon`, etc., and its runtime stack.
@@ -139,7 +99,7 @@ The returned markdown context slice contains 5 structured sections:
 - **Internal Modules (C4 Level 3):** Key classes/modules and their single responsibilities.
 
 ### 2. Bound Interface Contracts (`CTR-*`)
-- **Owner & Protocol:** Identifies whether the contract is `cli_args`, `openapi`, `protobuf`, `json_rpc_stdio`, etc.
+- **Owner & Protocol:** Identifies whether the contract is `cli_args`, `openapi`, `protobuf`, etc.
 - **Contract Path:** The living specification file defining the interface signature.
 - **Breaking Change Warning:** Modifying public parameters, arguments, or payload schemas requires a backward-compatible migration plan or SemVer major bump.
 
@@ -161,7 +121,7 @@ The returned markdown context slice contains 5 structured sections:
 
 ---
 
-## 4. Transitioning into Dual Workflows
+## 6. Transitioning into Dual Workflows
 
 Once the architectural context slice is analyzed, choose the appropriate workflow mode:
 
@@ -190,13 +150,11 @@ Once the architectural context slice is analyzed, choose the appropriate workflo
 
 ---
 
-## 5. Recommended Agent Workflow Loop
+## 7. Recommended Agent Workflow Loop
 
-```
-1. eidos_get_task_context(task=..., files=...)  ──>  Extract context slice
-2. Review boundaries, contracts, invariants     ──>  Assess blast radius
-3. Select Workflow Mode                         ──>  Direct Mode vs. Planned Mode
-4. Implement code + invariant test coverage     ──>  Polyglot tests referencing INV-*
-5. Reconcile living specifications in eidos/    ──>  Keep specs in sync
-6. Validate integrity (eidos validate & drift)  ──>  Zero drift, 100% pass
-```
+1. **Extract Context Slice**: Run `eidos context -f ... --format json` for targeted progressive disclosure.
+2. **Assess Blast Radius**: Review container boundaries, interface contracts, and capability invariants.
+3. **Select Workflow Mode**: Choose Direct Mode (routine changes) vs. Planned Mode (cross-cutting/breaking changes).
+4. **Implement Code & Tests**: Author code and write polyglot tests referencing `INV-*`.
+5. **Reconcile Living Specifications**: Keep specifications in `eidos/` synchronized with code changes.
+6. **Validate Integrity**: Run `eidos validate eidos` and `eidos drift --uncommitted` to ensure zero drift.

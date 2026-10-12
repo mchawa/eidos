@@ -1,0 +1,122 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-016
+title: Deprecate and Remove MCP Server in Favor of Direct CLI and Progressive Agent
+  Skills
+status: applied
+vcs:
+  branch: refactor/cli-only-agent-architecture
+intent:
+  kind: feature_removal
+  motivation: 'Sunsets the stdio Model Context Protocol (MCP) server (CNT-EIDOS-MCP)
+    and its interface contract (CTR-EIDOS-MCP). Modern AI coding environments (Google
+    Antigravity, Claude Code, Cursor, Cline, GitHub Copilot Agent, Aider) now universally
+    feature native terminal and process execution capabilities. By replacing the background
+    MCP stdio daemon with direct, high-performance CLI commands (''eidos <cmd> --json'')
+    coupled with progressive disclosure via Agent Skills (SKILL.md), Eidos eliminates
+    thousands of tokens of upfront JSON Schema prompt overhead, avoids stdio pipe
+    desynchronization issues, and unifies human and AI workflows under a single, testable
+    Unix CLI surface.
+
+    '
+mutations:
+- action: remove_component
+  target_component: CNT-EIDOS-MCP
+  details: 'Retire the stdio Model Context Protocol daemon and decommission ''src/eidos/mcp/''
+    (CMP-MCP-SERVER-LOOP, CMP-MCP-TOOL-CATALOG, CMP-MCP-TOOL-DISPATCHER).
+
+    '
+- action: remove_contract
+  details: 'Deprecate and remove CTR-EIDOS-MCP (''eidos/architecture/contracts/mcp.adoc'')
+    and its associated JSON-RPC 2.0 stdio protocol specifications.
+
+    '
+- action: modify_component
+  target_component: CNT-EIDOS-CLI
+  details: 'Remove the ''eidos mcp'' command; ensure all inspection commands (validate,
+    drift, context, reconcile, index) expose deterministic ''--json'' output and exit
+    codes for automated consumption by AI coding assistants.
+
+    '
+- action: modify_component
+  target_component: CNT-EIDOS-PLUGIN
+  details: 'Update plugin installer to sunset generation of ''.mcp.json'' configuration
+    files across all targets (Claude, Cursor, Cline, Copilot, Codex, OpenCode), orienting
+    all plugins strictly around flat Agent Skills (SKILL.md) and CLI commands.
+
+    '
+- action: extend_capability
+  target_capability: CAP-AGENT-001
+  details: 'Refocus the agent intelligence capability from stdio MCP daemon management
+    to deterministic CLI-driven subprocess execution, progressive context slicing,
+    and agent skill invocation.
+
+    '
+blast_radius:
+  impacted_components:
+  - CNT-EIDOS-MCP
+  - CNT-EIDOS-CLI
+  - CNT-EIDOS-PLUGIN
+  - CNT-EIDOS-CORE
+  impacted_personas:
+  - eidos/personas/autonomous-agent.adoc
+  - eidos/personas/software-architect.adoc
+  - eidos/personas/software-engineer.adoc
+  invariants_to_enforce:
+  - INV-AGENT-DRIVER-ISOLATION
+  - INV-AGENT-CONTEXT-SLICING
+  - INV-AGENT-GRAPH-INDEX-FRESHNESS
+  - INV-AGENT-LINT-HOOK
+---
+
+= SpecDelta: Deprecate and Remove MCP Server in Favor of Direct CLI and Progressive Agent Skills
+:toc: left
+
+== 1. Intent & Strategic Rationale
+
+When Eidos was originally conceived, the **Model Context Protocol (MCP)** served as an interoperability bridge to expose structured tools to emerging AI coding assistants.
+
+However, the AI agent ecosystem has matured rapidly:
+1. **Universal Shell Execution:** Modern coding assistants—including **Google Antigravity** (`run_command`), **Claude Code** (`Bash`), **Cursor** (`run_terminal_command`), **Cline** (`execute_command`), **GitHub Copilot Agent** (`run_in_terminal`), and **Aider** (`/run`)—all natively feature direct terminal execution.
+2. **Context Window Efficiency:** Injecting 17 MCP tool schemas into the model prompt imposes a massive context tax (~2,000–3,000 tokens per message) on every interaction, even when the agent is performing unrelated edits.
+3. **Progressive Disclosure via Agent Skills:** The industry has decisively shifted towards progressive disclosure using **Agent Skills** (`SKILL.md`), where instructions and commands are loaded only when relevant to the task.
+4. **Single Source of Truth & Zero Redundancy:** Maintaining dual surfaces (`src/eidos/cli/` vs. `src/eidos/mcp/`) creates duplicate documentation, testing overhead, and subtle disparities. Unifying around `eidos <cmd> --json` ensures humans, CI/CD pipelines, and AI assistants operate over the exact same interface.
+
+== 2. Architectural Mutations & Migration Plan
+
+This SpecDelta defines the orderly decommissioning of MCP and the transition to a pure CLI-and-Skills model across five phases:
+
+=== Phase 1: CLI Machine-Readable Output Hardening
+* Audit all primary CLI commands (`eidos validate`, `eidos drift`, `eidos context`, `eidos reconcile`, `eidos index search`, `eidos index blast-radius`) to guarantee robust `--json` output flags.
+* Standardize machine-readable JSON envelopes with deterministic exit codes (`0` for clean/success, `1` for validation/drift error).
+
+=== Phase 2: Agent Skill & Instruction Alignment
+* Update all 14 skills in `.agents/plugins/eidos/skills/` (and their distributed variants across `.claude/`, `.cursor/`, `.github/`, `.cline/`, `.opencode/`, `.codex/`).
+* Replace instructions calling MCP tools (e.g. `eidos_detect_drift`, `eidos_get_task_context`) with explicit CLI commands (e.g. `uv run eidos drift --uncommitted --json`, `uv run eidos context ...`).
+
+=== Phase 3: Plugin Installer Cleanup
+* Update `src/eidos/plugin/installer.py` to stop generating `.mcp.json`, `claude_desktop_config.json`, or MCP server configurations.
+* Strip obsolete MCP schema references from `assets/schemas/agent_plugins/` and template bundles.
+
+=== Phase 4: Component Decommissioning
+* Delete `src/eidos/mcp/` (`server.py`).
+* Remove `app.add_typer(mcp_app, name="mcp")` and the `eidos mcp` CLI entry point in `src/eidos/cli/main.py`.
+* Retire living container specification `eidos/architecture/containers/mcp.adoc` (`CNT-EIDOS-MCP`).
+* Retire interface contract `eidos/architecture/contracts/mcp.adoc` (`CTR-EIDOS-MCP`).
+* Update `eidos/architecture/system-architecture.adoc` and `eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`.
+
+=== Phase 5: Test Suite Modernization
+* Remove `tests/test_mcp.py`.
+* Expand `tests/test_plugin.py` and add dedicated CLI JSON integration tests asserting that agents running terminal commands receive structured output equivalent to previous MCP responses.
+
+== 3. Implementation Checklist
+
+* [x] **Audit CLI `--json` outputs:** Verify `eidos validate --json`, `eidos drift --json`, `eidos context --json`, and `eidos reconcile --json`.
+* [x] **Update Agent Skills:** Refactor 14 `SKILL.md` documents to recommend direct CLI commands instead of MCP tool calls.
+* [x] **Refactor Plugin Installer:** Remove MCP configuration generation across all 8 target ecosystems.
+* [x] **Retire MCP Source Code:** Delete `src/eidos/mcp/` and the `eidos mcp` command.
+* [x] **Update Living Specifications:** Remove `CNT-EIDOS-MCP` and `CTR-EIDOS-MCP`, update `CAP-AGENT-001` and `system-architecture.adoc`.
+* [x] **Modernize Test Suite:** Replace `tests/test_mcp.py` with CLI `--json` integration tests.
+* [x] **Run Quality Gates:** Verify with `uv run eidos validate eidos` and `pytest tests/`.
+* [x] **Reconciliation:** Apply this delta with `eidos delta apply DLT-2026-016`.

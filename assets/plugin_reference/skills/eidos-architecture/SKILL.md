@@ -17,7 +17,7 @@ This skill equips AI agents to navigate, model, and maintain system architecture
    - **Level 2 (Containers)**: Deployable units, services, libraries, CLI apps, SPAs (`eidos/architecture/containers/`, `CNT-*`, `tech/container`).
    - **Level 3 (Components & Modules)**: In-process modular building blocks (`CMP-*`) declared within container manifests.
 3. **Explicit Interface Contracts**:
-   - Every boundary protocol (CLI, OpenAPI, gRPC, JSON-RPC MCP) is defined as a `tech/contract` owned by a container (`owning_container: CNT-*`).
+   - Every boundary protocol (CLI, OpenAPI, gRPC, JSON-RPC) is defined as a `tech/contract` owned by a container (`owning_container: CNT-*`).
 
 ---
 

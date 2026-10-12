@@ -1,0 +1,286 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-md-primary: var(--md-primary);
+  --color-md-on-primary: var(--md-on-primary);
+  --color-md-primary-container: var(--md-primary-container);
+  --color-md-on-primary-container: var(--md-on-primary-container);
+
+  --color-md-secondary: var(--md-secondary);
+  --color-md-on-secondary: var(--md-on-secondary);
+  --color-md-secondary-container: var(--md-secondary-container);
+  --color-md-on-secondary-container: var(--md-on-secondary-container);
+
+  --color-md-tertiary: var(--md-tertiary);
+  --color-md-on-tertiary: var(--md-on-tertiary);
+  --color-md-tertiary-container: var(--md-tertiary-container);
+  --color-md-on-tertiary-container: var(--md-on-tertiary-container);
+
+  --color-md-surface: var(--md-surface);
+  --color-md-on-surface: var(--md-on-surface);
+  --color-md-surface-container: var(--md-surface-container);
+  --color-md-surface-container-low: var(--md-surface-container-low);
+  --color-md-surface-container-high: var(--md-surface-container-high);
+
+  --font-sans: 'Geist', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  --text-xs: 0.8125rem;
+  --text-sm: 0.9375rem;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+}
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+
+  --secondary: #7c3aed;
+  --secondary-foreground: #ffffff;
+
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+
+  --border: #e2e8f0;
+  --input: #cbd5e1;
+  --ring: #2563eb;
+
+  --radius: 0.75rem;
+
+  /* MD3 Color Roles (Light) */
+  --md-primary: #2563eb;
+  --md-on-primary: #ffffff;
+  --md-primary-container: rgba(37, 99, 235, 0.12);
+  --md-on-primary-container: #1e3a8a;
+
+  --md-secondary: #7c3aed;
+  --md-on-secondary: #ffffff;
+  --md-secondary-container: rgba(124, 58, 237, 0.12);
+  --md-on-secondary-container: #4c1d95;
+
+  --md-tertiary: #059669;
+  --md-on-tertiary: #ffffff;
+  --md-tertiary-container: rgba(5, 150, 105, 0.12);
+  --md-on-tertiary-container: #064e3b;
+
+  --md-surface: #f8fafc;
+  --md-on-surface: #0f172a;
+  --md-surface-dim: #f1f5f9;
+  --md-surface-bright: #ffffff;
+  --md-surface-container-lowest: #ffffff;
+  --md-surface-container-low: #f8fafc;
+  --md-surface-container: #ffffff;
+  --md-surface-container-high: #f1f5f9;
+  --md-surface-container-highest: #e2e8f0;
+
+  --md-outline: #94a3b8;
+  --md-outline-variant: #e2e8f0;
+
+  color-scheme: light;
+}
+
+.dark {
+  --background: #090d16;
+  --foreground: #f8fafc;
+
+  --card: #111827;
+  --card-foreground: #f8fafc;
+
+  --popover: #111827;
+  --popover-foreground: #f8fafc;
+
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+
+  --secondary: #8b5cf6;
+  --secondary-foreground: #ffffff;
+
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+
+  --border: #1f2937;
+  --input: #1f2937;
+  --ring: #3b82f6;
+
+  /* MD3 Color Roles (Dark) */
+  --md-primary: #3b82f6;
+  --md-on-primary: #082f49;
+  --md-primary-container: rgba(59, 130, 246, 0.18);
+  --md-on-primary-container: #bfdbfe;
+
+  --md-secondary: #8b5cf6;
+  --md-on-secondary: #2e1065;
+  --md-secondary-container: rgba(139, 92, 246, 0.18);
+  --md-on-secondary-container: #ddd6fe;
+
+  --md-tertiary: #10b981;
+  --md-on-tertiary: #022c22;
+  --md-tertiary-container: rgba(16, 185, 129, 0.18);
+  --md-on-tertiary-container: #a7f3d0;
+
+  --md-surface: #090d16;
+  --md-on-surface: #f8fafc;
+  --md-surface-dim: #060910;
+  --md-surface-bright: #1e293b;
+  --md-surface-container-lowest: #060910;
+  --md-surface-container-low: #0f172a;
+  --md-surface-container: #111827;
+  --md-surface-container-high: #1e293b;
+  --md-surface-container-highest: #334155;
+
+  --md-outline: #475569;
+  --md-outline-variant: #1f2937;
+
+  color-scheme: dark;
+}
+
+html, body {
+  background-color: var(--background);
+  color: var(--foreground);
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+}
+
+/* Material Design 3 Elevation Utility Classes */
+.md-elevation-0 {
+  box-shadow: none;
+}
+.md-elevation-1 {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.2);
+}
+.md-elevation-2 {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.35), 0 2px 4px -2px rgba(0, 0, 0, 0.25);
+}
+.md-elevation-3 {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.25);
+}
+.md-elevation-4 {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.45), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+}
+.md-elevation-5 {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.55);
+}
+
+/* MD3 State Layers */
+.md-state-layer {
+  position: relative;
+  overflow: hidden;
+}
+.md-state-layer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: currentColor;
+  opacity: 0;
+  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+.md-state-layer:hover::before {
+  opacity: 0.08;
+}
+.md-state-layer:focus-visible::before {
+  opacity: 0.12;
+}
+.md-state-layer:active::before {
+  opacity: 0.16;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* C4 Interactive Diagram Viewport & Pan */
+#c4DiagramContainer {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+#c4DiagramContainer:active {
+  cursor: grabbing;
+}
+#c4ActiveDiagram svg {
+  max-width: none !important;
+  display: block;
+  user-select: none;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.12));
+}
+#c4ActiveDiagram .node,
+#c4ActiveDiagram .cluster {
+  cursor: pointer !important;
+  transition: transform 150ms ease, filter 150ms ease;
+}
+#c4ActiveDiagram .node:hover {
+  filter: brightness(1.22) drop-shadow(0 0 8px rgba(59, 130, 246, 0.6));
+}
+#c4ActiveDiagram .cluster:hover {
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.4));
+}

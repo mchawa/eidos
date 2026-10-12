@@ -14,6 +14,10 @@ ENV/
 .coverage
 htmlcov/
 
+# Node & Frontend dependencies
+node_modules/
+**/node_modules/
+
 # Distribution / packaging
 dist/
 build/
@@ -28,11 +32,32 @@ site/
 # Local agent plugins installation
 .cursor/
 .claude/
+.claude-plugin/
+**/.claude-plugin/
+**/.mcp.json
 .agents/*
 !.agents/plugins/
 !.agents/plugins/eidos/
+.agents/plugins/eidos/.claude-plugin/
+.agents/plugins/eidos/.mcp.json
+assets/plugin_reference/.claude-plugin/
+assets/plugin_reference/.mcp.json
+.aider*
+.clinerules
+.cline/
+opencode.json
+.opencode/
+.codex/
+.vscode/
+
+# GitHub Copilot plugin artifacts
+.github/skills/
+.github/copilot/
+.github/plugin/
+.github/copilot-instructions.md
 
 # Dynamic VCS version file
 src/eidos/_version.py
+
 
 

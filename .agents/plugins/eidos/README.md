@@ -11,23 +11,10 @@ This plugin equips AI agents (Antigravity `agy`, Claude Code, Cursor, GitHub Cop
 
 ## What It Provides
 
-1. **Model Context Protocol (MCP) Server (`mcp_config.json`)**:
-   - `eidos_detect_drift`: Inspects spec-to-code drift between git branches or uncommitted changes, validates schemas, and checks test bindings.
-   - `eidos_reconcile`: Analyzes recent code changes against the living spec catalog and proposes candidate specs or tailored AI prompts.
-   - `eidos_validate`: Validates all `.adoc` specifications against JSON/YAML schemas and checks bidirectional cross-references.
-   - `eidos_info`: Returns Eidos engine version, loaded v1 schemas, and supported platforms.
-   - `eidos_list_components`: Lists monorepo containers, internal modules, dependencies, and package paths.
-   - `eidos_read_spec`: Parses and extracts structured frontmatter metadata and AsciiDoc sections.
-   - `eidos_list_specs`: Lists living specifications matching optional type and lifecycle filters.
-   - `eidos_create_spec`: Scaffolds a new living specification document with schema validation.
-   - `eidos_delete_spec`: Safely deletes a living specification with cross-reference safety checks.
-   - `eidos_create_delta`: Scaffolds a new SpecDelta mutation document (`DLT-*`) for Planned Mode.
-   - `eidos_apply_delta`: Reconciles an applied SpecDelta in-place and updates symlink views.
-   - `eidos_init_repo`: Bootstraps a repository with standard living specifications and agent plugin.
-
-2. **Agent Skills Suite (`skills/`)**:
-   - Conforms strictly to the `agentskills.io` standard.
+1. **Agent Skills Suite (`skills/`)**:
+   - Conforms strictly to the `agentskills.io` standard with 14 specialized skills enabling AI agents to drive Eidos via direct CLI execution.
    - `skills/eidos/SKILL.md`: **Master Orchestrator** covering living specs, dual workflows, and specialized skills catalog.
+   - `skills/eidos-context/SKILL.md`: **Context Slicing** extracting targeted C4 Level 2/3 topology, contracts, and active invariants.
    - `skills/eidos-init/SKILL.md`: **Repository Bootstrapping** initializing greenfield repositories with Arc42/C4 topology and core policies.
    - `skills/eidos-extract/SKILL.md`: **Brownfield Reverse-Engineering** guiding agents to systematically extract living specs from existing codebases.
    - `skills/eidos-product/SKILL.md`: **Domain & Capability Modeling** covering domains (`DOM-*`), capabilities (`CAP-*`), and personas (`PER-*`).
@@ -37,9 +24,12 @@ This plugin equips AI agents (Antigravity `agy`, Claude Code, Cursor, GitHub Cop
    - `skills/eidos-delta/SKILL.md`: **SpecDelta Mutation Lifecycle** covering Planned Mode mutations (`DLT-*`), execution, and reconciliation.
    - `skills/eidos-invariants/SKILL.md`: **Policy Governance & Invariant Traceability** covering system policies (`POL-*`), capability invariants (`INV-*`), and test bindings (`POL-002`).
    - `skills/eidos-review/SKILL.md`: **Staff Systems Architect Review** auditing blast radius, SemVer breaking changes, and invariant test coverage.
-   - `skills/eidos-drift/SKILL.md`: **Spec-to-Code Drift Detection** verifying synchronization, schema conformance, and PR gates via `eidos drift` and `eidos_detect_drift`.
+   - `skills/eidos-drift/SKILL.md`: **Spec-to-Code Drift Detection** verifying synchronization, schema conformance, and PR gates via `eidos drift`.
    - `skills/eidos-reconcile/SKILL.md`: **Direct Mode Spec Reconciliation** mapping code modifications to living specifications and syncing docs.
    - `skills/eidos-portal/SKILL.md`: **Living Web Portal & Documentation** serving (`eidos serve`) and exporting static sites (`eidos build-site`).
+
+2. **Direct CLI Tooling & JSON Output**:
+   - Agents interact with Eidos through deterministic CLI commands with `--json` output support (`eidos validate --json`, `eidos drift --uncommitted --json`, `eidos context --format json`).
 
 ---
 
@@ -56,13 +46,11 @@ eidos plugin install
 # Or target specific project configurations:
 eidos install project       # .agents/plugins/eidos (strict agent-plugins.org v1.0.0)
 eidos install antigravity   # .agents/plugins/eidos (Antigravity workspace plugin)
-eidos install claude        # .claude/skills/eidos (Claude Code plugin & MCP)
-eidos install cursor        # .cursor/mcp.json (Cursor project MCP)
+eidos install claude        # .claude/skills/eidos (Claude Code plugin)
+eidos install cursor        # .cursor/skills/eidos (Cursor project skills)
 
 # Remove / uninstall from project scope:
 eidos uninstall
-# Or:
-eidos uninstall cursor      # removes only cursor MCP entry
 ```
 
 ## Versioning and Updates

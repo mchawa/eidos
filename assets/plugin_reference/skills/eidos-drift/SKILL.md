@@ -1,6 +1,6 @@
 ---
 name: eidos-drift
-description: Detect spec-to-code drift, inspect uncommitted or branched code changes, verify living specification synchronization, and check invariant test coverage using the eidos_detect_drift AI tool.
+description: Detect spec-to-code drift, inspect uncommitted or branched code changes, verify living specification synchronization, and check invariant test coverage using the eidos drift CLI command.
 ---
 
 # Eidos Drift Detection (`eidos-drift`)
@@ -14,36 +14,28 @@ This skill empowers AI agents to autonomously detect spec-to-code drift, verify 
 Activate this skill when:
 - The user asks: *"Is my code in sync with specs?"*, *"Check for drift"*, or *"Did I break any spec invariants?"*.
 - Verifying changes before concluding an agent turn or prior to opening a merge request.
-- Checking uncommitted working tree edits (`uncommitted=True`) to determine if living specs or tests need to be updated.
+- Checking uncommitted working tree edits (`--uncommitted`) to determine if living specs or tests need to be updated.
 
 ---
 
-## 2. Triggering via AI Tool (`eidos_detect_drift`)
+## 2. Triggering via CLI (`eidos drift`)
 
-Agents should invoke the MCP tool `eidos_detect_drift` to inspect drift without shell execution:
+Agents run `eidos drift --json` to inspect drift with machine-readable JSON output:
 
-```json
-{
-  "name": "eidos_detect_drift",
-  "arguments": {
-    "uncommitted": true
-  }
-}
+```bash
+# Detect drift on uncommitted working tree changes
+eidos drift --uncommitted --json
 ```
 
 Or for branch comparisons against the default branch:
-```json
-{
-  "name": "eidos_detect_drift",
-  "arguments": {
-    "base": "origin/main"
-  }
-}
+```bash
+# Detect drift against base branch
+eidos drift --base origin/main --json
 ```
 
-### Interpreting the Tool Result
+### Interpreting the Command Result
 
-The tool returns a structured payload:
+The command returns a structured JSON payload:
 
 ```json
 {
@@ -75,7 +67,7 @@ When no `SpecDelta` (`DLT-*`) files are present:
 2. If code was modified but no living specifications were touched -> **Drift Detected!**
 3. If drift is detected, proceed to **Remediation**:
    - Identify owning components in `touched_components`.
-   - Invoke `eidos_reconcile` (or activate `eidos-reconcile` skill) to generate candidate specification updates.
+   - Activate `eidos-reconcile` skill or run `eidos index search` to locate candidate living specifications.
    - Update the relevant living specifications (`CMP-*`, `CTR-*`, `POL-*`, `CAP-*`) in `eidos/`.
 
 ### Planned Mode (SpecDelta Present)
@@ -91,7 +83,7 @@ When `delta_files` are present (e.g., `eidos/deltas/dlt-*.adoc`):
 Every capability invariant (`INV-*`) and policy (`POL-*`) must be bound to automated test coverage in the repository test suite (`POL-002`).
 
 ### Polyglot Test File Discovery
-`eidos drift` (and `eidos_detect_drift`) features an integrated **Polyglot Invariant Test Scanner** that automatically discovers and inspects test files across multiple programming languages and ecosystems:
+`eidos drift` features an integrated **Polyglot Invariant Test Scanner** that automatically discovers and inspects test files across multiple programming languages and ecosystems:
 
 | Language / Framework | Recognized Test File Patterns |
 | :--- | :--- |
@@ -120,9 +112,9 @@ When any declared invariant lacks test mentions and has an invalid or missing `t
 
 ---
 
-## 5. CLI Alternative
+## 5. CLI Command Reference
 
-Human developers and CI/CD pipelines can run the deterministic CLI command:
+Developers and CI/CD pipelines can run the deterministic CLI command:
 
 ```bash
 # Detect drift against base branch
@@ -131,8 +123,8 @@ eidos drift
 # Detect drift on uncommitted working tree changes
 eidos drift --uncommitted
 
-# Emit JSON report for scripts
-eidos drift --json
+# Emit JSON report for scripts or agent reasoning
+eidos drift --uncommitted --json
 
 # Emit Markdown summary report
 eidos drift --markdown drift_summary.md
@@ -142,9 +134,9 @@ eidos drift --markdown drift_summary.md
 
 ## 6. Recommended Agent Loop
 
-1. Run `eidos_detect_drift` with `uncommitted=True` after writing code.
+1. Run `eidos drift --uncommitted --json` after writing code.
 2. If `drift_detected` is `true`:
    - Inspect `touched_components` and `remediation_suggestions`.
    - Update living specifications in `eidos/` directly (Direct Mode).
-3. Run `eidos_validate` to confirm zero schema or link errors.
-4. Run `eidos_detect_drift` again to verify `is_clean: true`.
+3. Run `eidos validate --json` to confirm zero schema or link errors.
+4. Run `eidos drift --uncommitted --json` again to verify `is_clean: true`.

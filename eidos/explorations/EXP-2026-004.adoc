@@ -148,7 +148,7 @@ One of the most critical architectural principles in Eidos is clarifying **who d
 | **Boundary Protocol Contracts**
 | `tech/contract` (`CTR-*`) in `eidos/architecture/contracts/`
 | **Process / Network / CLI Boundary** +
-Exposed externally to other containers, users, or third parties (REST, gRPC, CLI, MCP).
+Exposed externally to other containers, users, or third parties (REST, gRPC, CLI).
 
 | **Component (`CMP-*`)**
 | **In-Process Module APIs**

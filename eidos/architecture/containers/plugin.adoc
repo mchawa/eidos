@@ -12,16 +12,12 @@ domain_binding: DOM-AGENT-INTELLIGENCE
 components:
   - id: CMP-PLUGIN-INSTALLER
     name: "PluginInstaller"
-    responsibility: "Installs, updates, and removes portable agent plugins conforming to agent-plugins.org v1.0.0 and Claude Code plugins."
+    responsibility: "Installs, updates, and removes portable agent plugins conforming to agent-plugins.org v1.0.0, Claude Code, OpenAI Codex, OpenCode, Aider, Cline, and GitHub Copilot."
     source_path: "src/eidos/plugin/installer.py"
   - id: CMP-PLUGIN-VALIDATOR
     name: "PluginValidator"
-    responsibility: "Validates plugin packages against agent-plugins.org v1.0.0 and enforces SemVer 2.0.0 versioning."
+    responsibility: "Validates plugin packages against agent-plugins.org v1.0.0 and enforces SemVer 2.0.0 versioning across host agent environments."
     source_path: "src/eidos/plugin/validator.py"
-  - id: CMP-MCP-CONFIG-SYNC
-    name: "McpConfigSync"
-    responsibility: "Injects and updates project-scoped MCP server configurations and plugin settings for Cursor, Claude, and Antigravity."
-    source_path: "src/eidos/plugin/installer.py"
   - id: CMP-HOOK-MANAGER
     name: "HookManager"
     responsibility: "Validates and orchestrates agent lifecycle hooks (hooks.json) and documentation linters."
@@ -31,7 +27,7 @@ dependencies:
   internal_containers:
     - "CNT-EIDOS-CORE"
   external_services:
-    - "Host IDE Configs (.cursor/mcp.json, .claude/mcp.json, .claude/settings.json)"
+    - "Host IDE & Agent Configs (.cursor/rules/, .cursor/skills/, .claude/plugins/, .claude/settings.json, .claude/skills/, opencode.json, .opencode/plugins/, .opencode/skills/, .codex/plugin.json, .codex/skills/, .aider.conventions.md, .aider/skills/, .cline/plugins/, .cline/skills/, .github/plugin/plugin.json, .github/skills/, .github/copilot/settings.json)"
 
 contracts:
   provides: []
@@ -47,15 +43,14 @@ quality_attributes:
 :toc: left
 
 == Architectural Boundary
-This container represents the plugin distribution and validation system under `src/eidos/plugin/`. It packages living specification skills, MCP server definitions, and validation rules into standard bundles adhering to `agent-plugins.org v1.0.0` as well as Claude Code plugins.
+This container represents the plugin distribution and validation system under `src/eidos/plugin/`. It packages living specification skills, commands, and validation rules into standard bundles adhering to `agent-plugins.org v1.0.0` as well as Claude Code, OpenAI Codex, OpenCode, Aider, Cline, Cursor, and GitHub Copilot environments.
 
 == Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
 
 [cols="1,1,2,2", options="header"]
 |===
 | Component ID | Name | Responsibility | Source Path
-| `CMP-PLUGIN-INSTALLER` | **PluginInstaller** | Manages installation and file synchronization into `.agents/plugins/eidos` and `.claude/skills/eidos` | `src/eidos/plugin/installer.py`
+| `CMP-PLUGIN-INSTALLER` | **PluginInstaller** | Manages installation and file synchronization into `.agents/plugins/eidos`, `.github/plugin/`, `.github/skills/`, `.claude/plugins/`, `.claude/skills/`, `.cursor/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/skills/`, and `.aider/skills/` | `src/eidos/plugin/installer.py`
 | `CMP-PLUGIN-VALIDATOR` | **PluginValidator** | Enforces JSON Schema conformance and SemVer 2.0.0 rules for plugins | `src/eidos/plugin/validator.py`
-| `CMP-MCP-CONFIG-SYNC` | **McpConfigSync** | Automatically configures client MCP entries and enabled plugin settings in `.cursor/mcp.json`, `.claude/mcp.json`, and `.claude/settings.json` | `src/eidos/plugin/installer.py`
 | `CMP-HOOK-MANAGER` | **HookManager** | Validates and coordinates lifecycle hooks (`hooks.json`) and linter runners | `src/eidos/plugin/validator.py`
 |===

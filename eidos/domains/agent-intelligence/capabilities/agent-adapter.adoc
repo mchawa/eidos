@@ -2,10 +2,10 @@
 type: product/capability
 schema: schemas/v1/product/capability.schema.yaml
 id: CAP-AGENT-001
-title: "Model Context Protocol & Context Slicing Engine"
+title: "Universal Agent Adapter & Context Slicing Engine"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.1.0"
+version: "1.2.0"
 
 business:
   personas:
@@ -13,25 +13,27 @@ business:
     - eidos/personas/software-engineer.adoc
     - eidos/personas/product-lead.adoc
     - eidos/personas/autonomous-agent.adoc
-  jtbd: "Enable the team to use any state-of-the-art coding agent (Antigravity agy, Claude Code, Codex, Aider) interchangeably without rewriting project workflows."
+  jtbd: "Enable the team to use any state-of-the-art coding agent (Antigravity agy, Claude Code, Cursor, Cline, Codex, Aider) interchangeably without rewriting project workflows."
   policies:
     - eidos/policies/POL-002-invariant-test-enforcement.adoc
+    - eidos/policies/POL-004-zero-ai-call-dependency.adoc
 
 technical:
   components:
-    - "packages/agent-adapters"
+    - "CNT-EIDOS-CLI"
+    - "CNT-EIDOS-INDEX"
+    - "CNT-EIDOS-PLUGIN"
   contracts:
     interfaces:
-      - "eidos agent run --driver [agy|claude|codex|mcp] --delta <delta-id>"
-      - "eidos context [--file PATH] [--component ID] [--task PROMPT] [--tier TIER]"
-      - "eidos index [status|sync|search|blast-radius]"
-      - "eidos_get_task_context"
-      - "eidos_search_architecture"
-      - "eidos_get_blast_radius"
+      - "eidos context [--file PATH] [--component ID] [--task PROMPT] [--tier TIER] [--format json]"
+      - "eidos index [status|sync|search|blast-radius] [--json]"
+      - "eidos validate [--json]"
+      - "eidos drift [--uncommitted] [--json]"
+      - "eidos reconcile [--json]"
   invariants:
-    - id: INV-AGENT-DRIVER-ISOLATION
-      rule: "Switching the agent driver from 'agy' to 'claude' must not alter task inputs, test invariants, or git output contracts."
-      test_binding: "tests/agents/test_adapters.py::test_driver_parity"
+    - id: INV-AGENT-ZERO-AI-DEPENDENCY
+      rule: "Eidos must never initiate calls to AI/LLM APIs directly, functioning strictly as a deterministic substrate for external coding agents."
+      test_binding: "tests/test_policy_zero_ai.py::test_pyproject_contains_zero_ai_dependencies"
     - id: INV-AGENT-LINT-HOOK
       rule: "The AI agent plugin lifecycle hooks must enforce living specification syntax, schema validity, link integrity, and spec-to-code synchronization (drift gate) before task completion."
       test_binding: "tests/test_plugin.py::test_doc_lint_hook_stop_event"
@@ -46,12 +48,12 @@ technical:
 :toc: left
 
 == Intent
-Avoids vendor lock-in and eliminates context window bloat. Whether an organization prefers running local agents via CLI (like Google Antigravity `agy`), cloud API agents (OpenAI Codex, Claude), or stdio MCP environments, the adapter normalizes input prompts, context windows, and output verification.
+Avoids vendor lock-in and eliminates context window bloat. External AI coding assistants—including Google Antigravity `agy`, Claude Code, Cursor, Cline, OpenAI Codex, GitHub Copilot, and Aider—query the deterministic Eidos CLI to retrieve token-budgeted, graph-indexed architectural slices (`eidos context --format json`) and verify invariant compliance before committing changes.
 
-By replacing raw file dumps with token-budgeted, graph-indexed architectural slices, Eidos ensures that autonomous agents have precisely the right depth of context (C4 topology, interface contracts, governing policies, and test-bound invariants) without overflowing token budgets or hallucinating boundaries.
+In strict adherence to *POL-004*, Eidos never initiates AI/LLM calls itself. Instead, it provides the authoritative, noise-free substrate (C4 topology, interface contracts, governing policies, and test-bound invariants) that grounds external agents and prevents architectural drift.
 
 == Key Responsibilities
-* **Pluggable Agent Drivers**: Standard adapter protocol across Antigravity, Claude Code, and Codex.
+* **Deterministic Substrate for Coding Agents**: Exposing machine-readable JSON envelopes across CLI inspection commands.
 * **Tiered Architectural Context Slicing**: Dynamically extracting token-compressed architectural subgraphs matching task requirements.
 * **Hybrid Lexical-Relational Retrieval**: Combining FTS5 BM25 search with graph-neighborhood traversals to resolve engineering prompts to architectural entities.
 * **Architectural Blast-Radius Analysis**: Recursive CTE impact mapping allowing agents to assess blast radius before proposing code changes.
@@ -71,4 +73,4 @@ Eidos implements a three-tier context compression model:
 
 == Hybrid Retrieval & Freshness Invariant
 * **FTS5 BM25 Lexical Ranking**: Translates natural language engineering tasks (e.g. "update auth token expiration") into exact architectural IDs.
-* **Zero-Drift Freshness (`INV-AGENT-GRAPH-INDEX-FRESHNESS`)**: Every MCP tool and CLI query lazily checks dirty status via SHA-256 and mtime hashing, synchronizing modified specs in sub-5ms so agents never operate on stale architecture.
+* **Zero-Drift Freshness (`INV-AGENT-GRAPH-INDEX-FRESHNESS`)**: Every CLI query lazily checks dirty status via SHA-256 and mtime hashing, synchronizing modified specs in sub-5ms so agents never operate on stale architecture.

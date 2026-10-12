@@ -34,7 +34,7 @@ technical_profile:
     - "Claude Code"
     - "OpenAI Codex / Operators"
     - "GitHub Copilot / Workspace"
-    - "Custom MCP / CLI Agents"
+    - "Custom Autonomous / CLI Agents"
 ---
 = Eidos System Definition
 :doctype: book
@@ -50,7 +50,7 @@ Eidos is an open, Git-native development AI ecosystem and orchestration framewor
 2. **Product Baseline (Living Spec)**: Domain-driven definitions of business value, actors, entities, and non-negotiable invariants.
 3. **Product Deltas (SpecDelta)**: Declarative, machine-verifiable diffs for features, bugs, modifications, and deprecations.
 4. **Architectural Guardrails**: Test-bound system invariants and contract-first API definitions.
-5. **Multi-Agent Execution**: Pluggable coding harnesses that dispatch tasks to any agent (`agy`, Claude Code, Codex, etc.).
+5. **Agent Governance Substrate**: Deterministic CLI context slicing and progressive Agent Skills that ground external coding agents (Google Antigravity `agy`, Claude Code, Cursor, Copilot) without Eidos ever calling AI itself.
 6. **Native VCS Integration**: Full bidirectional synchronization with GitHub Issues / PRs and GitLab Epics / MRs.
 
 == Architectural Philosophy
@@ -68,6 +68,6 @@ ____
 | **System State** | Living Product Catalog & Domain Maps | Git repository `eidos/` tree + Schemas
 | **Evolution** | User Needs & Business RFCs | `SpecDelta` semantic mutations
 | **Quality** | Business Policies & SLAs | Invariant test bindings & CI pipelines
-| **Execution** | Developer & Agent collaboration | Pluggable Agent Adapters (CLI / MCP / API)
+| **Execution** | Developer & Agent collaboration | Deterministic CLI (`--json`) & Progressive Agent Skills (`SKILL.md`)
 |===
 

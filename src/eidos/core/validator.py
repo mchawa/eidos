@@ -166,7 +166,7 @@ class SpecValidator:
 
         for doc in list(report.documents):
             if doc.doc_type == "tech/container" and doc.frontmatter:
-                pkg_path = doc.frontmatter.get("package_path")
+                doc.frontmatter.get("package_path")
                 # 1. Check explicit component refs in components array
                 for comp in doc.frontmatter.get("components", []):
                     if isinstance(comp, dict) and comp.get("ref"):
@@ -362,12 +362,11 @@ class SpecValidator:
 
             # 2. INV-COMPONENT-CONTAINER-AFFINITY: parent container must exist
             cnt_ref = fm.get("container")
-            if cnt_ref:
-                if cnt_ref not in catalog_ids:
-                    report.broken_references.append(
-                        f"INV-COMPONENT-CONTAINER-AFFINITY violation in {doc.file_path.name}: "
-                        f"Component '{doc.doc_id}' references container '{cnt_ref}' which does not exist in catalog"
-                    )
+            if cnt_ref and cnt_ref not in catalog_ids:
+                report.broken_references.append(
+                    f"INV-COMPONENT-CONTAINER-AFFINITY violation in {doc.file_path.name}: "
+                    f"Component '{doc.doc_id}' references container '{cnt_ref}' which does not exist in catalog"
+                )
 
             # 3. INV-INTERFACE-BOUNDARY-GOVERNANCE: Components cannot declare boundary contracts
             if fm.get("contracts"):

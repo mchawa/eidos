@@ -81,22 +81,75 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         )
 
     # 2. Product Domains, Capabilities, Personas, Policies
-    domains = [s["frontmatter"] for s in specs_by_type.get("product/domain", [])]
-    capabilities = [s["frontmatter"] for s in specs_by_type.get("product/capability", [])]
-    personas = [s["frontmatter"] for s in specs_by_type.get("product/persona", [])]
-    policies = [s["frontmatter"] for s in specs_by_type.get("product/policy", [])]
+    domains: list[dict[str, Any]] = []
+    for s in specs_by_type.get("product/domain", []):
+        d = dict(s["frontmatter"])
+        d["body"] = s.get("body", "")
+        d["path"] = s.get("path", "")
+        if not d.get("mission"):
+            m = re.search(r"== Domain Vision\s*\n+([^=\n][^\n]+)", s.get("body", ""))
+            if m:
+                d["mission"] = m.group(1).strip()
+            elif d.get("boundaries", {}).get("responsibilities"):
+                d["mission"] = d["boundaries"]["responsibilities"][0]
+            else:
+                d["mission"] = f"Bounded strategic context {d.get('name', d.get('id', ''))}."
+        domains.append(d)
+
+    capabilities: list[dict[str, Any]] = []
+    for s in specs_by_type.get("product/capability", []):
+        c = dict(s["frontmatter"])
+        c["body"] = s.get("body", "")
+        c["path"] = s.get("path", "")
+        c["name"] = c.get("name") or c.get("title") or c.get("id", "Capability")
+        c["summary"] = c.get("summary") or c.get("business", {}).get("jtbd") or ""
+        c["invariants"] = c.get("technical", {}).get("invariants", [])
+        capabilities.append(c)
+
+    # Link capability IDs to domains if not explicitly set
+    for dom in domains:
+        dom_id = dom.get("id")
+        bound_cap_ids = [c.get("id") for c in capabilities if c.get("domain") == dom_id]
+        if not dom.get("capabilities"):
+            dom["capabilities"] = bound_cap_ids
+
+    personas: list[dict[str, Any]] = []
+    for s in specs_by_type.get("product/persona", []):
+        p = dict(s["frontmatter"])
+        p["body"] = s.get("body", "")
+        p["path"] = s.get("path", "")
+        p["role"] = p.get("role") or (
+            p.get("role_type", "").replace("_", " ").title() if p.get("role_type") else "Actor Persona"
+        )
+        p["archetype"] = p.get("archetype") or p.get("role_type", "persona")
+        personas.append(p)
+
+    policies: list[dict[str, Any]] = []
+    for s in specs_by_type.get("product/policy", []):
+        pol = dict(s["frontmatter"])
+        pol["body"] = s.get("body", "")
+        pol["path"] = s.get("path", "")
+        policies.append(pol)
 
     # Invariants list
     invariants: list[dict[str, Any]] = []
     for pol in policies:
+        pid = pol.get("id", "")
+        tb = "tests/test_validator.py"
+        if "POL-003" in pid:
+            tb = "tests/test_docs_sync.py::test_documentation_and_schemas_in_sync"
+        elif "POL-002" in pid:
+            tb = "tests/test_drift.py::test_drift_detection"
+        elif "POL-001" in pid:
+            tb = "tests/test_drift.py::test_clean_repo"
         invariants.append(
             {
-                "id": pol.get("id"),
+                "id": pid,
                 "title": pol.get("title"),
                 "rule": pol.get("rule", "System policy invariant rule."),
                 "category": pol.get("category", "governance"),
                 "source_type": "policy",
-                "test_binding": "tests/test_validator.py",
+                "test_binding": tb,
             }
         )
 
@@ -137,6 +190,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             "blast_radius": fm.get("blast_radius", {}),
             "vcs": fm.get("vcs"),
             "body": d["body"],
+            "path": d.get("path", ""),
         }
         if status in deltas_by_status:
             deltas_by_status[status].append(delta_item)
@@ -167,6 +221,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 "exit_criteria": fm.get("exit_criteria", {}),
                 "decision": fm.get("decision", {}),
                 "body": exp["body"],
+                "path": exp.get("path", ""),
             }
         )
 
@@ -185,6 +240,8 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "is_clean": report.is_clean,
         "domains_count": len(domains),
         "capabilities_count": len(capabilities),
+        "policies_count": len(policies),
+        "personas_count": len(personas),
         "components_count": len(components),
         "contracts_count": len(contracts),
         "deltas_count": len(raw_deltas),
@@ -352,7 +409,7 @@ def _generate_c4_context_mermaid(personas: list[dict[str, Any]], system_id: str,
         "",
         f'  SYS["<div style=\'padding:10px 14px;font-size:15px;\'><b>{system_id}</b><br/>{clean_title}<br/><i>[Living Specification &amp; Governance Ecosystem]</i></div>"]:::system',
         '  EXT_GIT["<div style=\'padding:8px 12px;\'><b>GitHub / GitLab</b><br/>VCS Platform &amp; CI/CD Pipeline<br/><i>[External Platform]</i></div>"]:::external',
-        '  EXT_IDE["<div style=\'padding:8px 12px;\'><b>AI IDEs &amp; MCP Clients</b><br/>Antigravity, Cursor, Claude Code<br/><i>[Development Environments]</i></div>"]:::external',
+        '  EXT_IDE["<div style=\'padding:8px 12px;\'><b>AI IDEs &amp; Coding Agents</b><br/>Antigravity, Cursor, Claude Code<br/><i>[Development Environments]</i></div>"]:::external',
     ]
 
     for p in personas:
@@ -368,7 +425,7 @@ def _generate_c4_context_mermaid(personas: list[dict[str, Any]], system_id: str,
         lines.append(f'  {node_id} ==>|Interacts & Collaborates| SYS')
 
     lines.append('  SYS ==>|Syncs Specs, Issues, PRs| EXT_GIT')
-    lines.append('  SYS ==>|JSON-RPC Stdio MCP Protocol| EXT_IDE')
+    lines.append('  SYS ==>|CLI Commands &amp; Agent Skills| EXT_IDE')
 
     return "\n".join(lines)
 

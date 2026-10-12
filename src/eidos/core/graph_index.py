@@ -208,6 +208,17 @@ class TieredContextSlice(ArchitecturalContextSlice):
         return "\n".join(lines)
 
 
+def find_repo_root(start_dir: Path | None = None) -> Path:
+    """Find the repository or workspace root containing .git or eidos/ living specifications."""
+    cwd = (start_dir or Path.cwd()).resolve()
+    for parent in [cwd, *cwd.parents]:
+        if (parent / ".git").exists():
+            return parent
+        if (parent / "eidos" / "system.adoc").exists() or (parent / "eidos" / "architecture").is_dir():
+            return parent
+    return cwd
+
+
 class ArchitecturalIndex:
     """Embedded SQLite Architectural Knowledge Graph & Hybrid Retrieval Index."""
 
@@ -221,10 +232,14 @@ class ArchitecturalIndex:
     ) -> None:
         if repo_root is not None:
             self.root = Path(repo_root).resolve()
-        elif eidos_dir is not None and Path(eidos_dir).name == "eidos":
+        elif (eidos_dir is not None and (Path(eidos_dir) / "system.adoc").exists()) or (
+            eidos_dir is not None
+            and Path(eidos_dir).name == "eidos"
+            and not any(p in Path(eidos_dir).parts for p in (".agents", "plugins", "assets"))
+        ):
             self.root = Path(eidos_dir).resolve().parent
         else:
-            self.root = Path.cwd().resolve()
+            self.root = find_repo_root(Path(eidos_dir).resolve() if eidos_dir else None)
 
         self.eidos_dir = (eidos_dir or (self.root / "eidos")).resolve()
 
@@ -338,7 +353,7 @@ class ArchitecturalIndex:
         to_update: list[Path] = []
 
         if not self.eidos_dir.exists():
-            deleted = [Path(rel) for rel in db_files.keys()]
+            deleted = [Path(rel) for rel in db_files]
             return len(deleted) > 0, [], deleted
 
         root_str = str(self.root)
@@ -1261,10 +1276,14 @@ def get_architectural_index(
     global _INDEX_INSTANCE
     if repo_root is not None:
         target_root = Path(repo_root).resolve()
-    elif eidos_dir is not None and Path(eidos_dir).name == "eidos":
+    elif (eidos_dir is not None and (Path(eidos_dir) / "system.adoc").exists()) or (
+        eidos_dir is not None
+        and Path(eidos_dir).name == "eidos"
+        and not any(p in Path(eidos_dir).parts for p in (".agents", "plugins", "assets"))
+    ):
         target_root = Path(eidos_dir).resolve().parent
     else:
-        target_root = Path.cwd().resolve()
+        target_root = find_repo_root(Path(eidos_dir).resolve() if eidos_dir else None)
 
     target_eidos = (eidos_dir or (target_root / "eidos")).resolve()
     if (

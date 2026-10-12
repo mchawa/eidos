@@ -334,14 +334,20 @@ def test_no_circular_import():
     import importlib
     import sys
 
-    # Evict modules to test clean import order
-    for mod in list(sys.modules.keys()):
-        if mod.startswith("eidos.") or mod == "eidos":
-            del sys.modules[mod]
+    # Save existing modules to restore after test
+    saved_modules = {k: v for k, v in sys.modules.items() if k.startswith("eidos.") or k == "eidos"}
 
-    vcs = importlib.import_module("eidos.vcs")
-    assert hasattr(vcs, "detect_drift")
-    assert hasattr(vcs, "reconcile_specs")
+    try:
+        # Evict modules to test clean import order
+        for mod in list(sys.modules.keys()):
+            if mod.startswith("eidos.") or mod == "eidos":
+                del sys.modules[mod]
+
+        vcs = importlib.import_module("eidos.vcs")
+        assert hasattr(vcs, "detect_drift")
+        assert hasattr(vcs, "reconcile_specs")
+    finally:
+        sys.modules.update(saved_modules)
 
 
 def test_is_polyglot_test_file_string_and_ancestor_test():
@@ -394,6 +400,49 @@ def test_classify_changed_files_ancestor_path_named_docs(tmp_path):
     classified = classify_changed_files([str(code_file)], repo_root=repo_dir)
     assert str(code_file) in classified.code_files
     assert str(code_file) not in classified.doc_files
+
+
+def test_design_system_drift_detection(monkeypatch):
+    """Verify frontend code or styling modifications require eidos/design/ living spec updates."""
+    # 1. Frontend CSS changed without eidos/design updates -> drift detected
+    monkeypatch.setattr(
+        "eidos.vcs.drift.get_git_diff_files",
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+            "src/eidos/portal/frontend/src/theme/theme.css",
+        ],
+    )
+    result = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert result.drift_detected is True
+    assert any("Design System Drift Detected" in r for r in result.remediation_suggestions)
+
+    # 2. Frontend CSS changed WITH tokens.json updated -> clean!
+    monkeypatch.setattr(
+        "eidos.vcs.drift.get_git_diff_files",
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+            "src/eidos/portal/frontend/src/theme/theme.css",
+            "eidos/design/systems/core/tokens.json",
+        ],
+    )
+    result = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert result.drift_detected is False
+    assert result.is_clean is True
+
+
+def test_uncovered_delta_drift_detection(monkeypatch):
+    """Verify that presence of an unrelated SpecDelta does not silence drift for uncovered components."""
+    # dlt-2026-001 targets CLI, but portal frontend code was modified without portal/design spec updates
+    monkeypatch.setattr(
+        "eidos.vcs.drift.get_git_diff_files",
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+            "eidos/deltas/dlt-2026-001.adoc",
+            "src/eidos/portal/frontend/src/theme/theme.css",
+        ],
+    )
+    result = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert result.drift_detected is True
+    assert result.workflow_mode == "planned"
+    assert any("Design System Drift Detected" in r for r in result.remediation_suggestions)
+
 
 
 

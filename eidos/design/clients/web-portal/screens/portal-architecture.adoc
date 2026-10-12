@@ -45,4 +45,4 @@ The Technical Architecture View (`SCR-PORTAL-ARCHITECTURE`) visualizes the techn
 * **Interactive Breadcrumbs & Navigation**: Seamless drill-down on click, ancestor navigation trail, container quick-switcher dropdown, and level-up controls.
 * **Component Whitebox Inspector**: Slide-over details drawer revealing module responsibilities, source file links, and contract bindings.
 * **Containers & Modules Matrix (CMP-*)**: Monorepo package manifests and internal C4 modules with direct one-click exploration links.
-* **Interface & Protocol Contracts (CTR-*)**: Formal contract definitions governing CLI, MCP, and HTTP interfaces.
+* **Interface & Protocol Contracts (CTR-*)**: Formal contract definitions governing CLI, REST, and HTTP interfaces.

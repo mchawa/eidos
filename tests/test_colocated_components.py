@@ -20,14 +20,10 @@ Verifies:
    - 100% centralized spec containment under eidos/
 """
 
-import shutil
-import time
-from pathlib import Path
 
 import pytest
-import yaml
 
-from eidos.core.graph_index import ArchitecturalIndex, TieredContextSlice
+from eidos.core.graph_index import ArchitecturalIndex
 from eidos.core.parser import parse_spec_file
 from eidos.core.scaffolder import inline_component, promote_component
 from eidos.core.validator import SpecValidator
@@ -131,7 +127,7 @@ def repo_env(tmp_path):
 
 def test_spike_1_centralized_component_validation(repo_env):
     """Spike 1: Verify valid centralized component and parent container pass schema validation."""
-    repo_root, eidos_dir = repo_env
+    _repo_root, eidos_dir = repo_env
     validator = SpecValidator()
     report = validator.validate_directory(eidos_dir)
 
@@ -142,7 +138,7 @@ def test_spike_1_centralized_component_validation(repo_env):
 
 def test_spike_1_centralization_mandate_enforcement(repo_env):
     """Spike 1: Verify INV-COMPONENT-CENTRALIZATION-MANDATE rejects components placed in src/ code tree."""
-    repo_root, eidos_dir = repo_env
+    repo_root, _eidos_dir = repo_env
     src_core = repo_root / "src" / "sample" / "core"
 
     # Illegally place component manifest in src/ code directory
@@ -171,7 +167,7 @@ def test_spike_1_centralization_mandate_enforcement(repo_env):
 
 def test_spike_1_container_affinity_enforcement(repo_env):
     """Spike 1: Verify INV-COMPONENT-CONTAINER-AFFINITY rejects orphaned components."""
-    repo_root, eidos_dir = repo_env
+    _repo_root, eidos_dir = repo_env
     comp_dir = eidos_dir / "architecture" / "components"
 
     (comp_dir / "orphan.adoc").write_text(
@@ -199,7 +195,7 @@ def test_spike_1_container_affinity_enforcement(repo_env):
 
 def test_spike_1_interface_boundary_governance_enforcement(repo_env):
     """Spike 1: Verify INV-INTERFACE-BOUNDARY-GOVERNANCE enforces container boundary ownership."""
-    repo_root, eidos_dir = repo_env
+    _repo_root, eidos_dir = repo_env
     contracts_dir = eidos_dir / "architecture" / "contracts"
 
     # Contract erroneously owned by a component instead of a container
@@ -302,7 +298,7 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
     assert report.is_clean, f"Errors after promotion: {report.schema_errors}"
 
     # 2. Inline the component back into container
-    updated_container, deleted_spec = inline_component(
+    updated_container, _deleted_spec = inline_component(
         component_id="CMP-CORE-PARSER",
         eidos_dir=eidos_dir,
         repo_root=repo_root,

@@ -66,7 +66,7 @@ def handle_pre_tool_use(payload: dict[str, Any]) -> dict[str, Any]:
         return {"decision": "allow"}
 
     target_path = Path(target_file_str)
-    if target_path.suffix.lower() != ".adoc":
+    if target_path.suffix.lower() not in (".adoc", ".json"):
         return {"decision": "allow"}
 
     content_to_check: str | None = None
@@ -81,8 +81,17 @@ def handle_pre_tool_use(payload: dict[str, Any]) -> dict[str, Any]:
                 content_to_check = curr_text.replace(target_str, replace_str, 1)
 
     if content_to_check is not None:
+        if target_path.suffix.lower() == ".json" and ("eidos" in target_file_str or "tokens.json" in target_file_str):
+            try:
+                json.loads(content_to_check)
+            except json.JSONDecodeError as exc:
+                return {
+                    "decision": "deny",
+                    "reason": f"[Eidos Doc Linter] JSON Syntax Error in '{target_path.name}': {exc}",
+                }
+
         stripped = content_to_check.lstrip()
-        if stripped.startswith("---"):
+        if stripped.startswith("---") and target_path.suffix.lower() == ".adoc":
             parts = stripped.split("---", 2)
             if len(parts) < 3:
                 return {
@@ -139,8 +148,8 @@ def handle_post_invocation(payload: dict[str, Any], workspace_root: Path) -> dic
                     f"Please correct these errors before proceeding."
                 )
                 return {"injectSteps": [{"ephemeralMessage": msg}]}
-        except (OSError, yaml.YAMLError, ValueError, TypeError):
-            pass
+        except Exception as exc:
+            print(f"[Eidos Doc Linter Error] Validator error: {exc}", file=sys.stderr)
 
     # 2. Spec-to-Code Drift Notice (In-Flight)
     if detect_drift is not None:
@@ -150,13 +159,16 @@ def handle_post_invocation(payload: dict[str, Any], workspace_root: Path) -> dic
                 code_count = len(drift_res.classification.code_files)
                 top_files = ", ".join(Path(f).name for f in drift_res.classification.code_files[:3])
                 more = f" (+{code_count - 3} more)" if code_count > 3 else ""
+                remediation_hint = ""
+                if drift_res.remediation_suggestions:
+                    remediation_hint = f"\nAction needed: {drift_res.remediation_suggestions[0]}"
                 msg = (
-                    f"ℹ️ [Eidos Sync Notice] Uncommitted code changes detected in {top_files}{more} without living spec updates in 'eidos/'.\n"
+                    f"ℹ️ [Eidos Sync Notice] Uncommitted code changes detected in {top_files}{more} without living spec updates in 'eidos/'.{remediation_hint}\n"
                     f"Remember to synchronize living specifications in 'eidos/' (or run 'eidos reconcile') before concluding."
                 )
                 return {"injectSteps": [{"ephemeralMessage": msg}]}
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[Eidos Doc Linter Error] Drift detection error: {exc}", file=sys.stderr)
 
     return {"injectSteps": []}
 
@@ -188,11 +200,8 @@ def handle_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]
                     f"According to Eidos Rule #5, all specifications in eidos/ must strictly conform to their schema with zero broken references before concluding your work."
                 )
                 return {"decision": "continue", "reason": reason}
-        except (OSError, yaml.YAMLError, ValueError, TypeError, KeyError) as exc:
-            return {
-                "decision": "continue",
-                "reason": f"🛑 [Eidos Doc Linter] Validator execution error: {exc}",
-            }
+        except Exception as exc:
+            print(f"[Eidos Doc Linter Error] Validator execution error: {exc}", file=sys.stderr)
 
     # 2. Spec-to-code drift detection gate
     if detect_drift is not None:
@@ -214,8 +223,8 @@ def handle_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]
                     f"Please update the relevant living specifications (or scaffold a SpecDelta) before concluding your work."
                 )
                 return {"decision": "continue", "reason": reason}
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[Eidos Doc Linter Error] Drift detection error: {exc}", file=sys.stderr)
 
     return {"decision": "allow"}
 

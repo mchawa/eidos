@@ -12,7 +12,7 @@ domain_binding: DOM-SPEC-ENGINE
 components:
   - id: CMP-GRAPH-STORAGE
     name: "GraphStorage"
-    responsibility: "Manages embedded SQLite schema initialization, connection lifecycle, WAL mode, transaction isolation, and indexed files tracking."
+    responsibility: "Manages embedded SQLite schema initialization, connection lifecycle, WAL mode, transaction isolation, repository root discovery, and indexed files tracking."
     source_path: "src/eidos/core/graph_index.py"
   - id: CMP-INCREMENTAL-SYNC-ENGINE
     name: "IncrementalSyncEngine"
@@ -58,7 +58,7 @@ This container represents the embedded relational and lexical indexing engine un
 [cols="1,1,2,2", options="header"]
 |===
 | Component ID | Name | Responsibility | Source Path
-| `CMP-GRAPH-STORAGE` | **GraphStorage** | SQLite schema (`entities`, `edges`, `indexed_files`, `specs_fts`), WAL mode, and connection pool | `src/eidos/core/graph_index.py`
+| `CMP-GRAPH-STORAGE` | **GraphStorage** | SQLite schema (`entities`, `edges`, `indexed_files`, `specs_fts`), WAL mode, repo root discovery, and connection pool | `src/eidos/core/graph_index.py`
 | `CMP-INCREMENTAL-SYNC-ENGINE` | **IncrementalSyncEngine** | SHA-256 content and mtime dirty checking with lazy incremental sync (<5ms) | `src/eidos/core/graph_index.py`
 | `CMP-FTS-QUERY-ENGINE` | **FTSQueryEngine** | SQLite FTS5 BM25 lexical search mapping natural language tasks to architecture IDs | `src/eidos/core/graph_index.py`
 | `CMP-GRAPH-TRAVERSAL-ENGINE` | **GraphTraversalEngine** | Recursive CTE graph queries evaluating k-hop blast radius and incoming references (<2ms) | `src/eidos/core/graph_index.py`

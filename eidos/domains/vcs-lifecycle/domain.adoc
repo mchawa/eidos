@@ -12,7 +12,7 @@ boundaries:
     - "Provide integration hooks and status checks for GitHub Pull Requests and GitLab Merge Requests."
   out_of_scope:
     - "Parsing and validating specification AST schemas (delegated to DOM-SPEC-ENGINE)."
-    - "MCP server transport execution (delegated to DOM-AGENT-INTELLIGENCE)."
+    - "Agent plugin packaging and skills maintenance (delegated to DOM-AGENT-INTELLIGENCE)."
     - "Serving web portal dashboards (delegated to DOM-EXPERIENCE-PORTAL)."
 technical_mapping:
   components:
