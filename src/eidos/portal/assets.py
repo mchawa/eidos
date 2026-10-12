@@ -1,6 +1,6 @@
 """HTML, CSS, and client-side JavaScript templates for the Eidos Living Web Portal."""
 
-PORTAL_HTML_TEMPLATE = """<!DOCTYPE html>
+PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
@@ -655,13 +655,68 @@ PORTAL_HTML_TEMPLATE = """<!DOCTYPE html>
     .mermaid-box {
       background: var(--bg);
       border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      padding: 1.25rem;
+      border-radius: 0.6rem;
+      padding: 2.25rem 1.5rem;
       overflow-x: auto;
-      min-height: 220px;
+      min-height: 420px;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      position: relative;
+    }
+    .mermaid-box svg {
+      width: 100% !important;
+      max-width: 1100px !important;
+      min-width: 680px;
+      height: auto !important;
+      min-height: 340px;
+      display: block;
+      margin: 0 auto;
+      transform-origin: top center;
+      transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .mermaid-box .node .label {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+      font-size: 15px !important;
+      font-weight: 600 !important;
+      line-height: 1.45 !important;
+    }
+    .mermaid-box .node rect,
+    .mermaid-box .node circle,
+    .mermaid-box .node polygon {
+      stroke-width: 2.5px !important;
+    }
+    .mermaid-box .edgeLabel {
+      font-family: 'Inter', system-ui, sans-serif !important;
+      font-size: 13px !important;
+      font-weight: 500 !important;
+      background: var(--bg-card) !important;
+      color: var(--text-muted) !important;
+      padding: 3px 8px !important;
+      border-radius: 4px !important;
+      border: 1px solid var(--border) !important;
+    }
+    .diagram-controls {
+      display: flex;
+      gap: 0.4rem;
+      align-items: center;
+    }
+    .btn-ctrl {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 0.35rem;
+      padding: 0.25rem 0.55rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-ctrl:hover {
+      color: var(--text);
+      border-color: var(--border-accent);
+      background: var(--bg-card-hover);
     }
 
     /* MODAL DRAWER */
@@ -1159,6 +1214,11 @@ PORTAL_HTML_TEMPLATE = """<!DOCTYPE html>
                 <h2 class="panel-title"><span>🌐</span> C4 Level 1: System Context Topology</h2>
                 <p class="panel-desc">High-level ecosystem context showing human personas, autonomous agents, and external integrations</p>
               </div>
+              <div class="diagram-controls">
+                <button class="btn-ctrl" onclick="zoomDiagram('c4ContextDiagram', 1.25)" title="Zoom in">🔍 +</button>
+                <button class="btn-ctrl" onclick="zoomDiagram('c4ContextDiagram', 0.8)" title="Zoom out">🔍 -</button>
+                <button class="btn-ctrl" onclick="resetZoomDiagram('c4ContextDiagram')" title="Reset zoom">Reset</button>
+              </div>
             </div>
             <div class="mermaid-box">
               <div class="mermaid" id="c4ContextDiagram">graph TD; Loading System Context...</div>
@@ -1170,6 +1230,11 @@ PORTAL_HTML_TEMPLATE = """<!DOCTYPE html>
               <div>
                 <h2 class="panel-title"><span>📦</span> C4 Level 2: Container Topology</h2>
                 <p class="panel-desc">Software containers, libraries, daemon services, and web applications</p>
+              </div>
+              <div class="diagram-controls">
+                <button class="btn-ctrl" onclick="zoomDiagram('c4ContainersDiagram', 1.25)" title="Zoom in">🔍 +</button>
+                <button class="btn-ctrl" onclick="zoomDiagram('c4ContainersDiagram', 0.8)" title="Zoom out">🔍 -</button>
+                <button class="btn-ctrl" onclick="resetZoomDiagram('c4ContainersDiagram')" title="Reset zoom">Reset</button>
               </div>
             </div>
             <div class="mermaid-box">
@@ -1324,7 +1389,17 @@ PORTAL_HTML_TEMPLATE = """<!DOCTYPE html>
     mermaid.initialize({
       startOnLoad: false,
       theme: document.documentElement.classList.contains('dark') ? 'dark' : 'default',
-      securityLevel: 'loose'
+      securityLevel: 'loose',
+      fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+      fontSize: 16,
+      flowchart: {
+        useMaxWidth: false,
+        htmlLabels: true,
+        curve: 'basis',
+        nodeSpacing: 55,
+        rankSpacing: 65,
+        padding: 22
+      }
     });
 
     async function initPortal() {
@@ -1723,19 +1798,45 @@ PORTAL_HTML_TEMPLATE = """<!DOCTYPE html>
       renderCatalog(filtered);
     }
 
+    const diagramScales = {};
+
+    function zoomDiagram(id, factor) {
+      diagramScales[id] = (diagramScales[id] || 1) * factor;
+      diagramScales[id] = Math.max(0.6, Math.min(2.5, diagramScales[id]));
+      applyDiagramZoom(id);
+    }
+
+    function resetZoomDiagram(id) {
+      diagramScales[id] = 1;
+      applyDiagramZoom(id);
+    }
+
+    function applyDiagramZoom(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const svg = el.querySelector('svg');
+      if (svg) {
+        svg.style.transform = `scale(${diagramScales[id] || 1})`;
+      }
+    }
+
     async function renderMermaidDiagram(elementId, code) {
       const el = document.getElementById(elementId);
       if (!el || !code) return;
       try {
         const uid = 'svg_' + elementId.replace(/[^a-zA-Z0-9_]/g, '_') + '_' + Math.random().toString(36).substring(2, 9);
         const { svg } = await mermaid.render(uid, code);
-        el.innerHTML = svg;
+        // Remove restrictive inline max-width so the SVG can expand up to container width
+        const cleanSvg = svg.replace(/max-width:\s*[^;"]+;?/gi, 'max-width: 100%;');
+        el.innerHTML = cleanSvg;
+        applyDiagramZoom(elementId);
       } catch (err) {
         console.warn("Mermaid render error on", elementId, err);
         try {
           el.removeAttribute('data-processed');
           el.textContent = code;
           await mermaid.run({ nodes: [el] });
+          applyDiagramZoom(elementId);
         } catch (err2) {
           console.error("Mermaid fallback error on", elementId, err2);
         }
@@ -1797,7 +1898,17 @@ PORTAL_HTML_TEMPLATE = """<!DOCTYPE html>
       }
       mermaid.initialize({
         theme: isDark ? 'dark' : 'default',
-        securityLevel: 'loose'
+        securityLevel: 'loose',
+        fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+        fontSize: 16,
+        flowchart: {
+          useMaxWidth: false,
+          htmlLabels: true,
+          curve: 'basis',
+          nodeSpacing: 55,
+          rankSpacing: 65,
+          padding: 22
+        }
       });
       renderMermaidDiagram('c4ContextDiagram', PORTAL_DATA.diagrams.c4_context);
       renderMermaidDiagram('c4ContainersDiagram', PORTAL_DATA.diagrams.c4_containers);

@@ -291,29 +291,29 @@ def _generate_c4_context_mermaid(personas: list[dict[str, Any]], system_id: str,
     clean_title = system_title.replace('"', "'")
     lines = [
         "graph TD",
-        "  classDef actor fill:#0284c7,stroke:#0369a1,color:#fff,stroke-width:2px,rx:5px;",
-        "  classDef system fill:#059669,stroke:#047857,color:#fff,stroke-width:2px,rx:5px;",
-        "  classDef external fill:#475569,stroke:#334155,color:#fff,stroke-width:2px,rx:5px;",
+        "  classDef actor fill:#0284c7,stroke:#0369a1,color:#fff,stroke-width:2px,rx:6px;",
+        "  classDef system fill:#059669,stroke:#047857,color:#fff,stroke-width:3px,rx:8px;",
+        "  classDef external fill:#334155,stroke:#475569,color:#fff,stroke-width:2px,rx:6px;",
         "",
-        f'  SYS["<b>{system_id}</b><br/>{clean_title}"]:::system',
-        '  EXT_GIT["<b>GitHub / GitLab</b><br/>VCS & CI/CD Platform"]:::external',
-        '  EXT_IDE["<b>AI IDEs & MCP Clients</b><br/>Antigravity, Cursor, Claude"]:::external',
+        f'  SYS["<div style=\'padding:10px 14px;font-size:15px;\'><b>{system_id}</b><br/>{clean_title}<br/><i>[Living Specification &amp; Governance Ecosystem]</i></div>"]:::system',
+        '  EXT_GIT["<div style=\'padding:8px 12px;\'><b>GitHub / GitLab</b><br/>VCS Platform &amp; CI/CD Pipeline<br/><i>[External Platform]</i></div>"]:::external',
+        '  EXT_IDE["<div style=\'padding:8px 12px;\'><b>AI IDEs &amp; MCP Clients</b><br/>Antigravity, Cursor, Claude Code<br/><i>[Development Environments]</i></div>"]:::external',
     ]
 
     for p in personas:
         pid = p.get("id", "PER")
         pname = p.get("name", pid)
         node_id = pid.replace("-", "_")
-        lines.append(f'  {node_id}["<b>{pname}</b><br/>Persona Actor"]:::actor')
+        lines.append(f'  {node_id}["<div style=\'padding:8px 12px;\'><b>{pname}</b><br/>Persona Actor<br/><i>[Human / Autonomous Lead]</i></div>"]:::actor')
 
     lines.append("")
     for p in personas:
         pid = p.get("id", "PER")
         node_id = pid.replace("-", "_")
-        lines.append(f'  {node_id} -->|Interacts & Collaborates| SYS')
+        lines.append(f'  {node_id} ==>|Interacts & Collaborates| SYS')
 
-    lines.append('  SYS -->|Syncs Issues, PRs, Webhooks| EXT_GIT')
-    lines.append('  SYS -->|JSON-RPC Stdio Protocol| EXT_IDE')
+    lines.append('  SYS ==>|Syncs Specs, Issues, PRs| EXT_GIT')
+    lines.append('  SYS ==>|JSON-RPC Stdio MCP Protocol| EXT_IDE')
 
     return "\n".join(lines)
 
@@ -322,18 +322,20 @@ def _generate_c4_containers_mermaid(components: list[dict[str, Any]]) -> str:
     """Generate Mermaid syntax for C4 Level 2 Containers."""
     lines = [
         "graph TD",
-        "  classDef core fill:#4338ca,stroke:#3730a3,color:#fff,stroke-width:2px,rx:5px;",
-        "  classDef container fill:#0f766e,stroke:#115e59,color:#fff,stroke-width:2px,rx:5px;",
+        "  classDef core fill:#4338ca,stroke:#3730a3,color:#fff,stroke-width:3px,rx:8px;",
+        "  classDef container fill:#0f766e,stroke:#115e59,color:#fff,stroke-width:2px,rx:6px;",
     ]
 
     for c in components:
         cid = c["id"]
         node_id = cid.replace("-", "_")
-        cname = c["name"]
+        cname = c["name"].replace('"', "'")
         ctype = c["container_type"]
         runtime = c["runtime"]
         style_class = "core" if "CORE" in cid else "container"
-        lines.append(f'  {node_id}["<b>{cid}</b><br/>{cname}<br/><i>[{ctype} / {runtime}]</i>"]:::{style_class}')
+        lines.append(
+            f'  {node_id}["<div style=\'padding:8px 12px;\'><b>{cid}</b><br/>{cname}<br/><i>[{ctype} • {runtime}]</i></div>"]:::{style_class}'
+        )
 
     # Standard container interaction relationships
     if any(c["id"] == "CMP-EIDOS-CORE" for c in components):
