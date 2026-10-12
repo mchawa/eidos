@@ -47,17 +47,18 @@ The tree-grid toolbar provides instant macro/micro zoom controls:
 4. **Expand All / Collapse All**: One-click toggles across all nesting depths.
 
 == 3. Table Column Integrity & Traceability
-Each row preserves structured, tabular alignment across columns:
-* **Specification Hierarchy**: Indented node hierarchy with animated disclosure chevrons (`▼` / `▶`), category icons, specification titles, and badge counts.
-* **Document ID**: Unique kebab-cased or prefixed ID with one-click clipboard copy (`SYS-*`, `DOM-*`, `CAP-*`, `DS-*`, `SCR-*`, `ARCH-*`, `CMP-*`, `CTR-*`, `POL-*`, `DLT-*`).
+Each row preserves structured, tabular alignment across 5 clean columns without visual clutter:
+* **Specification Hierarchy**: Indented node hierarchy with hardware-accelerated rotating SVG chevrons (`rotate(0deg)` to `rotate(90deg)`), category icons, specification titles, and badge counts. Clicking on any parent row toggles section expansion.
+* **Document ID**: Unique kebab-cased or prefixed ID with copy-on-click chip and toast confirmation (`SYS-*`, `DOM-*`, `CAP-*`, `DS-*`, `SCR-*`, `ARCH-*`, `CMP-*`, `CTR-*`, `POL-*`, `DLT-*`).
 * **Type & Category**: Color-coded badges indicating schema archetype.
 * **Invariants / Tests**: Direct count of test bindings and policy invariant coverage.
 * **Status**: Validation health indicator (`● VALID`, `active`, `proposed`).
-* **Actions**: One-click button to open the rich Spec Inspector Modal or view raw frontmatter.
+* **Seamless Inspection**: Clicking anywhere on a specification row directly opens the rich Spec Inspector Modal, removing the need for a dedicated actions column.
 
-== 4. Real-Time Branch Unfolding & Search
-Typing into the catalog search input filters the entire tree-grid dynamically:
-* Matches across document titles, IDs, summaries, and paths are highlighted.
-* Ancestor parent branches of any matching item are automatically unfolded.
-* Non-matching subtrees are collapsed and hidden until the filter is cleared.
+== 4. Real-Time Branch Unfolding & Search Experience
+The enhanced search toolbar provides immediate, responsive discoverability:
+* **Modern Search Bar**: Integrated SVG magnifying glass, keyboard shortcut indicator (`/`), and one-click clear button (`✕`).
+* **Custom Dropdown Filter**: Pillar selector with sleek SVG chevron indicator and clean hover states.
+* **Live Match Pill**: Dynamic counter showing active search matches in real time.
+* **Automatic Branch Unfolding**: Ancestor parent branches of any matching item are automatically unfolded while non-matching subtrees are collapsed and hidden until the filter is cleared.
 

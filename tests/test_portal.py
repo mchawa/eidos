@@ -106,6 +106,10 @@ def test_static_portal_builder(tmp_path: Path):
     assert 'id="specsTreeGridBody"' in index_html
     assert 'id="catalogSearchInput"' in index_html
     assert 'id="catalogTypeFilter"' in index_html
+    assert 'class="tree-select-wrapper"' in index_html
+    assert 'id="catalogSearchKbd"' in index_html
+    assert 'id="catalogSearchMatchPill"' in index_html
+    assert "<th>Actions</th>" not in index_html  # Actions column removed
     assert "buildTreeGridData" in index_html
     assert "toggleTreeGridRow" in index_html
     assert "expandTreeGridToLevel" in index_html

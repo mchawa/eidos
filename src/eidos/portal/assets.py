@@ -782,10 +782,12 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       font-weight: 600;
       cursor: pointer;
       transition: all 0.15s ease;
+    }
+
     /* UNIFIED HIERARCHICAL TREE-GRID CATALOG */
     .tree-grid-toolbar {
       display: flex;
-      gap: 0.75rem;
+      gap: 0.85rem;
       align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
@@ -793,13 +795,14 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       padding: 0.85rem 1.15rem;
       background: var(--bg-surface);
       border: 1px solid var(--border);
-      border-radius: 0.55rem;
+      border-radius: 0.75rem;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
     }
     .tree-grid-search-wrap {
       position: relative;
       flex: 1;
-      min-width: 260px;
-      max-width: 480px;
+      min-width: 280px;
+      max-width: 520px;
       display: flex;
       align-items: center;
     }
@@ -807,71 +810,149 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       width: 100%;
       background: var(--bg);
       border: 1px solid var(--border);
-      border-radius: 0.45rem;
-      padding: 0.45rem 2.2rem 0.45rem 2.2rem;
+      border-radius: 0.55rem;
+      padding: 0.52rem 2.6rem 0.52rem 2.5rem;
       color: var(--text);
       font-size: 0.84rem;
-      transition: all 0.15s ease;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+    .tree-grid-search::placeholder {
+      color: var(--text-dim);
+      font-size: 0.82rem;
     }
     .tree-grid-search:focus {
       outline: none;
       border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+      background: var(--bg-card);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
     }
     .search-icon-inside {
       position: absolute;
-      left: 0.75rem;
-      font-size: 0.85rem;
+      left: 0.85rem;
       color: var(--text-dim);
       pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.15s ease;
+    }
+    .tree-grid-search-wrap:focus-within .search-icon-inside {
+      color: var(--primary);
+    }
+    .search-kbd-hint {
+      position: absolute;
+      right: 0.75rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.12rem 0.4rem;
+      font-size: 0.7rem;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-dim);
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
     }
     .tree-grid-clear-btn {
       position: absolute;
-      right: 0.65rem;
-      background: transparent;
-      border: none;
+      right: 0.7rem;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
       color: var(--text-dim);
       cursor: pointer;
-      font-size: 0.85rem;
       display: none;
-      padding: 0.2rem;
+      padding: 0;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
     }
-    .tree-grid-clear-btn:hover { color: var(--text); }
+    .tree-grid-clear-btn:hover {
+      background: var(--danger);
+      color: #fff;
+      border-color: var(--danger);
+    }
+    .search-match-pill {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      background: rgba(59, 130, 246, 0.12);
+      color: var(--primary);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      white-space: nowrap;
+    }
 
     .tree-grid-controls {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.6rem;
       flex-wrap: wrap;
     }
+    .tree-select-wrapper {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
     .tree-grid-select {
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
       background: var(--bg);
       border: 1px solid var(--border);
       color: var(--text);
-      padding: 0.4rem 0.75rem;
-      border-radius: 0.4rem;
-      font-size: 0.8rem;
+      padding: 0.5rem 2.2rem 0.5rem 0.85rem;
+      border-radius: 0.55rem;
+      font-size: 0.82rem;
       font-weight: 500;
       cursor: pointer;
+      transition: all 0.18s ease;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
     }
-    .tree-grid-select:focus { outline: none; border-color: var(--primary); }
+    .tree-grid-select:hover {
+      border-color: var(--border-accent);
+      background: var(--bg-card);
+    }
+    .tree-grid-select:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    }
+    .tree-select-icon {
+      position: absolute;
+      right: 0.75rem;
+      pointer-events: none;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      transition: color 0.15s ease;
+    }
+    .tree-select-wrapper:hover .tree-select-icon {
+      color: var(--text);
+    }
 
     .level-shortcuts {
       display: inline-flex;
       background: var(--bg);
       border: 1px solid var(--border);
-      border-radius: 0.4rem;
-      padding: 2px;
+      border-radius: 0.55rem;
+      padding: 3px;
       gap: 2px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
     }
     .btn-level {
       background: transparent;
       border: none;
       color: var(--text-muted);
-      padding: 0.3rem 0.6rem;
+      padding: 0.35rem 0.65rem;
       font-size: 0.75rem;
       font-weight: 600;
-      border-radius: 0.3rem;
+      border-radius: 0.35rem;
       cursor: pointer;
       transition: all 0.15s ease;
     }
@@ -881,9 +962,9 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
     .tree-grid-wrapper {
       background: var(--bg-surface);
       border: 1px solid var(--border);
-      border-radius: 0.65rem;
+      border-radius: 0.75rem;
       overflow-x: auto;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.06);
     }
     .tree-grid-table {
       width: 100%;
@@ -945,12 +1026,15 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       background: transparent;
       font-size: 0.82rem;
     }
+    .tree-row-leaf:hover {
+      background: rgba(59, 130, 246, 0.05);
+    }
 
     /* Indentation and Guides */
     .tree-cell-title {
       display: flex;
       align-items: center;
-      gap: 0.55rem;
+      gap: 0.6rem;
       padding: 0.75rem 1rem;
     }
     .tree-indent-0 { padding-left: 1rem !important; }
@@ -958,33 +1042,38 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
     .tree-indent-2 { padding-left: 3.5rem !important; }
     .tree-indent-3 { padding-left: 4.8rem !important; }
 
+    /* Modern SVG Tree Expander Chevron */
     .tree-expander {
-      width: 22px;
-      height: 22px;
+      width: 24px;
+      height: 24px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
-      font-size: 0.68rem;
       color: var(--text-dim);
-      background: var(--bg);
-      border: 1px solid var(--border);
-      transition: all 0.15s ease;
+      background: transparent;
+      border: 1px solid transparent;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       flex-shrink: 0;
       user-select: none;
+      padding: 0;
     }
     .tree-expander:hover {
-      color: var(--text);
-      border-color: var(--border-accent);
-      background: var(--bg-card-hover);
-    }
-    .tree-expander.open {
       color: var(--primary);
+      background: rgba(59, 130, 246, 0.12);
+      border-color: rgba(59, 130, 246, 0.25);
+    }
+    .tree-expander svg {
+      transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+      transform: rotate(0deg);
+    }
+    .tree-expander.open svg {
+      transform: rotate(90deg);
     }
 
     .tree-guide-spacer {
-      width: 22px;
+      width: 24px;
       display: inline-block;
       flex-shrink: 0;
     }
@@ -1006,7 +1095,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
     .tree-count-tag {
       font-size: 0.7rem;
       font-weight: 600;
-      padding: 0.1rem 0.45rem;
+      padding: 0.12rem 0.48rem;
       border-radius: 9999px;
       background: var(--code-bg);
       color: var(--text-dim);
@@ -1015,28 +1104,36 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       flex-shrink: 0;
     }
 
-    .action-btn-cell {
+    .code-pill-copy {
       display: inline-flex;
-      gap: 0.35rem;
       align-items: center;
-      justify-content: flex-end;
-      width: 100%;
-    }
-    .btn-table-action {
-      background: var(--bg);
+      gap: 0.35rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.76rem;
+      background: var(--code-bg);
+      padding: 0.22rem 0.55rem;
+      border-radius: 5px;
       border: 1px solid var(--border);
-      color: var(--text-muted);
-      border-radius: 0.35rem;
-      padding: 0.25rem 0.55rem;
-      font-size: 0.72rem;
-      font-weight: 600;
+      color: var(--text);
       cursor: pointer;
       transition: all 0.15s ease;
+      user-select: none;
     }
-    .btn-table-action:hover {
-      color: var(--text);
-      border-color: var(--border-accent);
+    .code-pill-copy:hover {
       background: var(--bg-card-hover);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .code-pill-copy .copy-icon {
+      opacity: 0.4;
+      font-size: 0.7rem;
+      transition: opacity 0.15s ease;
+    }
+    .tree-row:hover .code-pill-copy .copy-icon {
+      opacity: 0.8;
+    }
+    .code-pill-copy:hover .copy-icon {
+      opacity: 1;
     }
 
     /* TOAST */
@@ -1303,7 +1400,12 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
 
         <div class="header-right">
           <div class="search-container">
-            <span class="search-icon">🔍</span>
+            <span class="search-icon">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </span>
             <input type="text" class="search-input" id="globalSearch" placeholder="Search living specs... (/)" oninput="handleSearch(this.value)">
           </div>
           <a href="/api/data" target="_blank" class="btn-header" title="Inspect raw JSON endpoint">API JSON</a>
@@ -1773,19 +1875,38 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
             <!-- Global Search & Level Filter Controls -->
             <div class="tree-grid-toolbar">
               <div class="tree-grid-search-wrap">
-                <span class="search-icon-inside">🔍</span>
-                <input type="text" class="tree-grid-search" id="catalogSearchInput" placeholder="Search specifications by ID, title, domain, invariant, or path..." oninput="handleCatalogTreeSearch(this.value)">
-                <button class="tree-grid-clear-btn" id="catalogClearSearch" onclick="clearCatalogTreeSearch()" title="Clear search">✕</button>
+                <span class="search-icon-inside">
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                </span>
+                <input type="text" class="tree-grid-search" id="catalogSearchInput" placeholder="Search living specs by ID, title, domain, invariant..." oninput="handleCatalogTreeSearch(this.value)">
+                <kbd class="search-kbd-hint" id="catalogSearchKbd">/</kbd>
+                <button class="tree-grid-clear-btn" id="catalogClearSearch" onclick="clearCatalogTreeSearch()" title="Clear search">
+                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
               </div>
+              <span id="catalogSearchMatchPill" class="search-match-pill" style="display:none;"></span>
 
               <div class="tree-grid-controls">
-                <select id="catalogTypeFilter" onchange="handleCatalogTreeSearch(document.getElementById('catalogSearchInput').value)" class="tree-grid-select">
-                  <option value="all">All Architectural Pillars</option>
-                  <option value="business">1. Business & Governance (DOM, CAP, POL, PER, EXP)</option>
-                  <option value="design">2. Design & Experience (DS, UIC, SCR)</option>
-                  <option value="tech">3. Technical Architecture (ARCH, CMP, CTR)</option>
-                  <option value="delta">4. Mutation Lifecycle (DLT)</option>
-                </select>
+                <div class="tree-select-wrapper">
+                  <select id="catalogTypeFilter" onchange="handleCatalogTreeSearch(document.getElementById('catalogSearchInput').value)" class="tree-grid-select">
+                    <option value="all">All Architectural Pillars</option>
+                    <option value="business">🏛️ 1. Business & Governance (DOM, CAP, POL, PER, EXP)</option>
+                    <option value="design">🎨 2. Design & Experience (DS, UIC, SCR)</option>
+                    <option value="tech">⚙️ 3. Technical Architecture (ARCH, CMP, CTR)</option>
+                    <option value="delta">🔄 4. Mutation Lifecycle (DLT)</option>
+                  </select>
+                  <span class="tree-select-icon">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </span>
+                </div>
 
                 <div class="level-shortcuts">
                   <button class="btn-level" onclick="expandTreeGridToLevel(1)" title="Collapse to Pillars">Pillars (L1)</button>
@@ -1805,12 +1926,11 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
               <table class="tree-grid-table" id="specsTreeGridTable">
                 <thead>
                   <tr>
-                    <th style="width: 42%;">Specification Hierarchy</th>
-                    <th style="width: 17%;">Document ID</th>
-                    <th style="width: 14%;">Type</th>
-                    <th style="width: 12%;">Invariants / Tests</th>
-                    <th style="width: 7%;">Status</th>
-                    <th style="width: 8%; text-align: right;">Actions</th>
+                    <th style="width: 48%;">Specification Hierarchy</th>
+                    <th style="width: 20%;">Document ID</th>
+                    <th style="width: 16%;">Type</th>
+                    <th style="width: 10%;">Invariants / Tests</th>
+                    <th style="width: 6%;">Status</th>
                   </tr>
                 </thead>
                 <tbody id="specsTreeGridBody">
@@ -2734,32 +2854,32 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
 
         if (row.spec) {
           tr.style.cursor = 'pointer';
+          tr.title = 'Click to inspect specification details';
           tr.onclick = (e) => {
-            if (!e.target.closest('.tree-expander') && !e.target.closest('.btn-table-action')) {
+            if (!e.target.closest('.tree-expander') && !e.target.closest('.code-pill-copy')) {
               showSpecDetails(row.spec);
+            }
+          };
+        } else if (row.isParent) {
+          tr.style.cursor = 'pointer';
+          tr.title = 'Click to toggle section';
+          tr.onclick = (e) => {
+            if (!e.target.closest('.tree-expander') && !e.target.closest('.code-pill-copy')) {
+              toggleTreeGridRow(row.id);
             }
           };
         }
 
         const expanderBtn = row.isParent ? `
           <button class="tree-expander ${row.defaultExpanded ? 'open' : ''}" onclick="event.stopPropagation(); toggleTreeGridRow('${row.id}')" title="Toggle section">
-            ${row.defaultExpanded ? '▼' : '▶'}
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
           </button>
         ` : `<span class="tree-guide-spacer"></span>`;
 
         const countBadge = row.countTag ? `<span class="tree-count-tag">${row.countTag}</span>` : '';
         const statusBadge = row.status === 'VALID' || row.status === 'PASS' || row.status === 'APPLIED' ? 'badge-success' : 'badge-primary';
-
-        const actions = row.spec ? `
-          <div class="action-btn-cell">
-            <button class="btn-table-action" onclick="event.stopPropagation(); showSpecDetails(PORTAL_DATA.specs.find(s=>s.id==='${row.spec.id}'))" title="Inspect full specification">Inspect</button>
-            <button class="btn-table-action" onclick="event.stopPropagation(); copyToClipboard('${row.spec.path}', 'Path copied!')" title="Copy file path">📋</button>
-          </div>
-        ` : (row.level === 1 ? `
-          <div class="action-btn-cell">
-            <button class="btn-table-action" onclick="event.stopPropagation(); switchTab('${row.pillar}')">View Tab →</button>
-          </div>
-        ` : '');
 
         tr.innerHTML = `
           <td class="tree-cell-title tree-indent-${row.level}">
@@ -2768,11 +2888,15 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
             <span class="tree-row-title-text" title="${escapeHtml(row.title)}">${escapeHtml(row.title)}</span>
             ${countBadge}
           </td>
-          <td><span class="code-pill">${row.docId}</span></td>
+          <td>
+            <span class="code-pill-copy" onclick="event.stopPropagation(); copyToClipboard('${row.docId}', 'Document ID copied!')" title="Click to copy ${row.docId}">
+              <span>${row.docId}</span>
+              <span class="copy-icon">📋</span>
+            </span>
+          </td>
           <td><span class="badge badge-primary">${row.type}</span></td>
           <td><span class="badge badge-neutral" style="font-size: 0.72rem;">${row.invariants}</span></td>
           <td><span class="badge ${statusBadge}">● ${row.status}</span></td>
-          <td style="text-align: right;">${actions}</td>
         `;
 
         tbody.appendChild(tr);
@@ -2799,7 +2923,6 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
 
       const expander = row.querySelector('.tree-expander');
       if (expander) {
-        expander.innerText = newExpanded ? '▼' : '▶';
         expander.classList.toggle('open', newExpanded);
       }
 
@@ -2837,19 +2960,13 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
           row.style.display = '';
           if (isParent) {
             row.setAttribute('data-expanded', 'true');
-            if (expander) {
-              expander.innerText = '▼';
-              expander.classList.add('open');
-            }
+            if (expander) expander.classList.add('open');
           }
         } else if (level === targetLevel) {
           row.style.display = '';
           if (isParent) {
             row.setAttribute('data-expanded', 'false');
-            if (expander) {
-              expander.innerText = '▶';
-              expander.classList.remove('open');
-            }
+            if (expander) expander.classList.remove('open');
           }
         } else {
           row.style.display = 'none';
@@ -2864,10 +2981,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
         if (row.getAttribute('data-is-parent') === 'true') {
           row.setAttribute('data-expanded', 'true');
           const expander = row.querySelector('.tree-expander');
-          if (expander) {
-            expander.innerText = '▼';
-            expander.classList.add('open');
-          }
+          if (expander) expander.classList.add('open');
         }
       });
     }
@@ -2881,12 +2995,17 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       const pillarFilter = document.getElementById('catalogTypeFilter')?.value || 'all';
 
       const clearBtn = document.getElementById('catalogClearSearch');
-      if (clearBtn) clearBtn.style.display = q ? 'inline-block' : 'none';
+      const kbdHint = document.getElementById('catalogSearchKbd');
+      if (clearBtn) clearBtn.style.display = q ? 'flex' : 'none';
+      if (kbdHint) kbdHint.style.display = q ? 'none' : 'inline-flex';
+
+      const matchPill = document.getElementById('catalogSearchMatchPill');
 
       if (!q && pillarFilter === 'all') {
         expandTreeGridToLevel(2);
         const badge = document.getElementById('catalogHeaderBadge');
         if (badge) badge.innerText = `● 44 Living Specs • 100% Valid`;
+        if (matchPill) matchPill.style.display = 'none';
         return;
       }
 
@@ -2929,10 +3048,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
           if (row.getAttribute('data-is-parent') === 'true') {
             row.setAttribute('data-expanded', 'true');
             const expander = row.querySelector('.tree-expander');
-            if (expander) {
-              expander.innerText = '▼';
-              expander.classList.add('open');
-            }
+            if (expander) expander.classList.add('open');
           }
         } else {
           row.style.display = 'none';
@@ -2941,6 +3057,11 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
 
       const badge = document.getElementById('catalogHeaderBadge');
       if (badge) badge.innerText = `${visibleCount} Visible in Hierarchy`;
+
+      if (matchPill) {
+        matchPill.style.display = 'inline-block';
+        matchPill.innerText = `${visibleCount} match${visibleCount === 1 ? '' : 'es'}`;
+      }
     }
 
     function clearCatalogTreeSearch() {
@@ -2950,6 +3071,10 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       if (globalSearch) globalSearch.value = '';
       const clearBtn = document.getElementById('catalogClearSearch');
       if (clearBtn) clearBtn.style.display = 'none';
+      const kbdHint = document.getElementById('catalogSearchKbd');
+      if (kbdHint) kbdHint.style.display = 'inline-flex';
+      const matchPill = document.getElementById('catalogSearchMatchPill');
+      if (matchPill) matchPill.style.display = 'none';
       const filter = document.getElementById('catalogTypeFilter');
       if (filter) filter.value = 'all';
       handleCatalogTreeSearch('');
@@ -3190,9 +3315,22 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
           toggleSidebarCollapse();
           return;
         }
-        if (e.key === '/' && document.activeElement !== document.getElementById('globalSearch')) {
+        if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
           e.preventDefault();
-          document.getElementById('globalSearch').focus();
+          if (CURRENT_TAB === 'catalog') {
+            const catInput = document.getElementById('catalogSearchInput');
+            if (catInput) {
+              catInput.focus();
+              catInput.select();
+            }
+          } else {
+            const globInput = document.getElementById('globalSearch');
+            if (globInput) {
+              globInput.focus();
+              globInput.select();
+            }
+          }
+          return;
         }
         if (e.key === 'Escape') {
           closeModal();
