@@ -350,7 +350,7 @@ def _generate_c4_containers_mermaid(components: list[dict[str, Any]]) -> str:
 def _generate_screen_state_mermaid(screen_id: str, states: list[Any], transitions: list[dict[str, Any]]) -> str:
     """Generate Mermaid stateDiagram-v2 syntax for screen state transitions."""
     clean_id = screen_id.replace("-", "_")
-    lines = ["stateDiagram-v2"]
+    lines = ["stateDiagram-v2", "  direction LR"]
     if not states:
         lines.append(f"  [*] --> {clean_id}")
         return "\n".join(lines)

@@ -656,16 +656,20 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: 0.6rem;
-      padding: 2.25rem 1.5rem;
       overflow-x: auto;
-      min-height: 420px;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       position: relative;
     }
-    .mermaid-box svg {
+
+    /* LARGE ARCHITECTURE TOPOLOGY (C4 LEVEL 1 & 2) */
+    .mermaid-architecture {
+      padding: 2.25rem 1.5rem;
+      min-height: 440px;
+    }
+    .mermaid-architecture svg {
       width: 100% !important;
       max-width: 1100px !important;
       min-width: 680px;
@@ -676,18 +680,18 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       transform-origin: top center;
       transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
-    .mermaid-box .node .label {
+    .mermaid-architecture .node .label {
       font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
       font-size: 15px !important;
       font-weight: 600 !important;
       line-height: 1.45 !important;
     }
-    .mermaid-box .node rect,
-    .mermaid-box .node circle,
-    .mermaid-box .node polygon {
+    .mermaid-architecture .node rect,
+    .mermaid-architecture .node circle,
+    .mermaid-architecture .node polygon {
       stroke-width: 2.5px !important;
     }
-    .mermaid-box .edgeLabel {
+    .mermaid-architecture .edgeLabel {
       font-family: 'Inter', system-ui, sans-serif !important;
       font-size: 13px !important;
       font-weight: 500 !important;
@@ -696,6 +700,34 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       padding: 3px 8px !important;
       border-radius: 4px !important;
       border: 1px solid var(--border) !important;
+    }
+
+    /* COMPACT SCREEN STATE MACHINE DIAGRAMS */
+    .mermaid-compact {
+      padding: 1rem;
+      min-height: 120px;
+      background: var(--bg);
+    }
+    .mermaid-compact svg {
+      width: 100% !important;
+      max-width: 380px !important;
+      min-width: 0 !important;
+      height: auto !important;
+      max-height: 180px !important;
+      display: block;
+      margin: 0 auto;
+    }
+    .mermaid-compact .node .label {
+      font-family: 'Inter', system-ui, sans-serif !important;
+      font-size: 13px !important;
+      font-weight: 600 !important;
+    }
+    .mermaid-compact .edgeLabel {
+      font-family: 'Inter', system-ui, sans-serif !important;
+      font-size: 11px !important;
+      padding: 2px 6px !important;
+      background: var(--bg-card) !important;
+      border-radius: 3px !important;
     }
     .diagram-controls {
       display: flex;
@@ -1202,7 +1234,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
                 <p class="panel-desc">Verified layout slots and finite state machines across product views</p>
               </div>
             </div>
-            <div id="screenStateMachinesContainer" style="display: flex; flex-direction: column; gap: 1.5rem;"></div>
+            <div id="screenStateMachinesContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 1.25rem;"></div>
           </div>
         </section>
 
@@ -1220,7 +1252,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
                 <button class="btn-ctrl" onclick="resetZoomDiagram('c4ContextDiagram')" title="Reset zoom">Reset</button>
               </div>
             </div>
-            <div class="mermaid-box">
+            <div class="mermaid-box mermaid-architecture">
               <div class="mermaid" id="c4ContextDiagram">graph TD; Loading System Context...</div>
             </div>
           </div>
@@ -1237,7 +1269,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
                 <button class="btn-ctrl" onclick="resetZoomDiagram('c4ContainersDiagram')" title="Reset zoom">Reset</button>
               </div>
             </div>
-            <div class="mermaid-box">
+            <div class="mermaid-box mermaid-architecture">
               <div class="mermaid" id="c4ContainersDiagram">graph TD; Loading Container Topology...</div>
             </div>
           </div>
@@ -1686,13 +1718,14 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
         card.className = 'panel';
         card.style.background = 'var(--bg-surface)';
         card.innerHTML = `
-          <div class="panel-header">
+          <div class="panel-header" style="margin-bottom: 0.75rem;">
             <div>
-              <h3 class="panel-title"><span>📱</span> ${s.title} (<span class="code-pill">${s.id}</span>)</h3>
-              <p class="panel-desc">Route: <span class="code-pill">${s.route}</span> • Design System: <span class="badge badge-primary">${s.system_ref}</span></p>
+              <h3 class="panel-title" style="font-size: 0.92rem;"><span>📱</span> ${s.title}</h3>
+              <p class="panel-desc" style="font-size: 0.76rem;"><span class="code-pill">${s.id}</span> • Route: <span class="code-pill">${s.route}</span></p>
             </div>
+            <span class="badge badge-primary" style="font-size: 0.7rem;">${s.system_ref}</span>
           </div>
-          <div class="mermaid-box">
+          <div class="mermaid-box mermaid-compact">
             <div class="mermaid" id="screen_mermaid_${s.id.replace(/-/g, '_')}">${s.mermaid}</div>
           </div>
         `;
