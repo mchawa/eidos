@@ -50,7 +50,6 @@ eidos/
 ├── src/eidos/                     # [THE ENGINE / SOLUTION]
 │   ├── cli/                       # CLI commands (`eidos validate`, `eidos drift`, `eidos delta`, etc.)
 │   ├── core/                      # AsciiDoc + YAML frontmatter parser & schema validator
-│   ├── mcp/                       # Model Context Protocol stdio server (13 AI tools)
 │   ├── plugin/                    # Agent plugin packager, validator, and installer (14 skills)
 │   ├── portal/                    # Interactive Living Architecture static portal generator
 │   ├── vcs/                       # Git spec-to-code drift detection & reconciliation engine
@@ -77,7 +76,7 @@ eidos/
 | **Scope** | Coding loop only (Aider, Claude Code) or monolithic bot (Devin) | Full SDLC: Exploration → Product Baseline → SpecDelta → Code → CI |
 | **Specifications** | Ephemeral Jira tickets, stale Confluence/Notion pages | Versioned YAML frontmatter + AsciiDoc living in Git |
 | **Change Management** | Narrative RFC essays that rot in archive folders | Declarative `SpecDelta` mutations applied automatically upon merge |
-| **Agent Support** | Vendor-locked to a single proprietary LLM | Agent-agnostic via agent-plugins.org v1.0.0 & Model Context Protocol (MCP) |
+| **Agent Support** | Vendor-locked to a single proprietary LLM | Agent-agnostic via agent-plugins.org v1.0.0 & CLI-first Agent Skills |
 | **VCS Support** | GitHub-only or closed web UI | Native bidirectional support for both GitHub and GitLab |
 
 ---
@@ -86,9 +85,10 @@ eidos/
 
 * **Root System**: [`eidos/system.adoc`](eidos/system.adoc)
 * **Product Domains**:
-  * [`Product Intelligence Domain`](eidos/domains/product-core/domain.adoc)
-  * [`Agent Harness Domain`](eidos/domains/agent-harness/domain.adoc)
-  * [`VCS Sync Domain`](eidos/domains/vcs-sync/domain.adoc)
+  * [`Spec Engine Domain`](eidos/domains/spec-engine/domain.adoc)
+  * [`Agent Intelligence Domain`](eidos/domains/agent-intelligence/domain.adoc)
+  * [`VCS Lifecycle Domain`](eidos/domains/vcs-lifecycle/domain.adoc)
+  * [`Experience Portal Domain`](eidos/domains/experience-portal/domain.adoc)
 * **Policies**:
   * [`POL-001: Git Source of Truth`](eidos/policies/POL-001-git-as-single-source-of-truth.adoc)
   * [`POL-002: Invariant Test Enforcement`](eidos/policies/POL-002-invariant-test-enforcement.adoc)

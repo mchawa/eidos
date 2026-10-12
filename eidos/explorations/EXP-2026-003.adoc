@@ -6,7 +6,7 @@ title: "Web Living Portal Modernization: shadcn/ui, Tailwind CSS & Material Desi
 status: adopted
 decision:
   outcome: adopted
-  resulting_delta_id: "DLT-2026-015"
+  resulting_delta_id: "DLT-2026-018"
   learnings: "Vite with vite-plugin-singlefile packages the React 19, Tailwind CSS v4, and Material Design 3 Living Portal into a 95.89 KB gzipped (336.74 KB uncompressed) self-contained HTML bundle with zero external network requests. Cold-boot preview delivery is 1.19 ms, and runtime execution strictly adheres to Python standard library http.server without Node.js or npm runtime dependencies (INV-PORTAL-ZERO-NODE-DEP)."
 hypothesis: "Rebuilding the Eidos Living Web Portal UI layer (CLT-WEB-PORTAL / CMP-EIDOS-PORTAL) with a modern component architecture combining shadcn/ui accessible primitives, Tailwind CSS v4, and Material Design 3 (MD3) tonal elevation systems—while shipping pre-compiled, self-contained single-file bundles within Python package assets—will dramatically elevate visual polish, keyboard accessibility, and design token fidelity without violating INV-PORTAL-ZERO-NODE-DEP or introducing external runtime dependencies for CLI users."
 questions_to_answer:
@@ -160,7 +160,7 @@ The exploration will conclude based on the following quantifiable criteria:
 * [x] **Step 3 (Theme Setup):** Configure MD3 color system variables and configure shadcn/ui components (`Button`, `Card`, `Badge`, `Sheet`, `Tabs`, `Command`).
 * [x] **Step 4 (Port Views):** Port Home, Business, Architecture (Mermaid), Deltas (Kanban), and Catalog views into React components.
 * [x] **Step 5 (Bundle & Embed):** Configure `vite-plugin-singlefile` build and hook output into `CMP-EIDOS-PORTAL`.
-* [x] **Step 6 (Evaluation & Decision):** Measure performance against exit criteria; graduate to formal SpecDelta (`DLT-2026-015`).
+* [x] **Step 6 (Evaluation & Decision):** Measure performance against exit criteria; graduate to formal SpecDelta (`DLT-2026-018`).
 
 == 7. Empirical Benchmark Results & Investigation Log
 
@@ -201,7 +201,7 @@ All four spikes were prototyped and empirically validated in `tests/test_portal_
 == 8. Final Decision & Graduation
 
 * **Outcome:** `adopted`
-* **Graduating SpecDelta:** link:../deltas/dlt-2026-015.adoc[DLT-2026-015]
+* **Graduating SpecDelta:** link:../deltas/dlt-2026-018.adoc[DLT-2026-018]
 * **Summary of Learnings:**
   The exploration proved that modern developer ergonomics (React 19, TypeScript, Tailwind CSS v4, and Material Design 3) can be seamlessly synthesized with Eidos's non-negotiable operational invariant (`INV-PORTAL-ZERO-NODE-DEP`). Shifting compilation to build-time via `vite-plugin-singlefile` yields a micro-bundle of under 96 KB gzipped with sub-2ms delivery latency and instant CMD+K spotlight navigation.
 

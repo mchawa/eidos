@@ -9,19 +9,14 @@ This skill guides AI agents through the systematic reverse-engineering of an exi
 
 ## The Extraction Objective
 
-Transform an unannotated codebase into a synchronized, self-describing Eidos workspace:
+Transform an unannotated codebase into a synchronized, self-describing Eidos workspace by extracting living specifications across 6 core layers:
 
-```
- Existing Codebase                    Eidos Living Specifications
- ┌─────────────────────────┐          ┌────────────────────────────────────────┐
- │ package.json / pyproject │ ──────> │ eidos/architecture/containers/*.adoc   │
- │ src/ routes / handlers  │ ──────> │ eidos/architecture/contracts/*.adoc    │
- │ models / services       │ ──────> │ eidos/domains/<name>/domain.adoc       │
- │ business rules / checks │ ──────> │ eidos/domains/<name>/capabilities/*.adoc│
- │ tests/ directory        │ ──────> │ Invariant test bindings (INV-*)        │
- │ linter / CI / guardrails│ ──────> │ eidos/policies/POL-*.adoc              │
- └─────────────────────────┘          └────────────────────────────────────────┘
-```
+1. **Containers** (`eidos/architecture/containers/*.adoc`) &larr; Harvested from `package.json`, `pyproject.toml`, `Cargo.toml`, and build manifests.
+2. **Contracts** (`eidos/architecture/contracts/*.adoc`) &larr; Harvested from `src/` routes, controllers, CLI parsers, and API definitions.
+3. **Domains** (`eidos/domains/<name>/domain.adoc`) &larr; Harvested from business modules, core models, and service packages.
+4. **Capabilities** (`eidos/domains/<name>/capabilities/*.adoc`) &larr; Harvested from business workflows, domain logic, and user journeys.
+5. **Invariants** (`INV-*` test bindings) &larr; Harvested from assertions, validation logic, and the `tests/` directory.
+6. **Policies** (`eidos/policies/POL-*.adoc`) &larr; Harvested from linter configurations, CI checks, and architectural guardrails.
 
 ---
 

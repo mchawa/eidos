@@ -362,3 +362,23 @@ Always run validation before concluding your work:
 eidos validate eidos
 ```
 
+---
+
+## 10. Design System & Frontend Co-Evolution Checklist (MANDATORY)
+
+Whenever modifying frontend code, stylesheets, typography, UI components, or screen layouts, you MUST co-evolve living design specifications in `eidos/design/` in the same turn/commit:
+
+| Frontend Change | Required Living Specification Update | Specification Path |
+| :--- | :--- | :--- |
+| **Typography, Colors, Spacing, Dimensions** | Update W3C Design Tokens (`$value`, `$type`) | `eidos/design/systems/<system>/tokens.json` |
+| **Reusable UI Component** (Sidebar, Rail, Header, Button, Modal) | Update or author UI Component manifest (`UIC-*`) | `eidos/design/systems/<system>/components/<name>.adoc` |
+| **Screen Layout, Route, States, Filters** | Update or author Screen manifest (`SCR-*`) | `eidos/design/clients/<client>/screens/<name>.adoc` |
+| **New Screen or Flow Added** | Register screen in client application manifest (`CLT-*`) | `eidos/design/clients/<client>/client.adoc` |
+| **Omnichannel or Cross-Client Journey** | Update or author interaction flow (`FLOW-*`) | `eidos/design/flows/<name>.adoc` |
+
+### Pre-Completion Verification Gate
+Before concluding any task involving frontend code:
+1. Run `eidos validate eidos` to ensure all frontmatter schemas and cross-references pass 100%.
+2. Run `eidos drift --uncommitted` to verify zero spec-to-code drift. Any modified frontend file without an `eidos/design/` update will trigger `Design System Drift Detected` and block completion.
+
+

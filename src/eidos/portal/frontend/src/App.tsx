@@ -6,6 +6,7 @@ import { DeltasView } from "@/components/views/DeltasView";
 import { CatalogView } from "@/components/views/CatalogView";
 import { BusinessView } from "@/components/views/BusinessView";
 import { DesignView } from "@/components/views/DesignView";
+import { ExplorationsView } from "@/components/views/ExplorationsView";
 import { CommandDialog, type CommandItem } from "@/components/ui/command";
 import type { PortalData } from "@/types";
 
@@ -158,6 +159,17 @@ export function App() {
       });
     });
 
+    // Explorations
+    (data.explorations || []).forEach((exp) => {
+      items.push({
+        id: exp.id,
+        title: exp.title,
+        subtitle: `${exp.status} • ${exp.hypothesis?.slice(0, 80) || ""}`,
+        category: "explorations",
+        raw: exp,
+      });
+    });
+
     return items;
   }, [data]);
 
@@ -166,6 +178,8 @@ export function App() {
       setActiveTab("architecture");
     } else if (item.category === "deltas") {
       setActiveTab("deltas");
+    } else if (item.category === "explorations") {
+      setActiveTab("explorations");
     } else if (
       item.category === "policies" ||
       item.category === "domains" ||
@@ -203,6 +217,7 @@ export function App() {
         onOpenCommand={() => setCommandOpen(true)}
         totalSpecs={data.overview.total_specs}
         deltasCount={data.overview.deltas_count}
+        explorationsCount={data.explorations?.length || data.overview.explorations_count || 0}
       />
 
       {/* Main Content Area */}
@@ -238,6 +253,14 @@ export function App() {
             <ArchitectureView data={data} darkMode={darkMode} />
           )}
           {activeTab === "deltas" && <DeltasView data={data} />}
+          {activeTab === "explorations" && (
+            <ExplorationsView
+              data={data}
+              onNavigateDelta={(deltaId) => {
+                setActiveTab("deltas");
+              }}
+            />
+          )}
           {activeTab === "catalog" && <CatalogView data={data} />}
           {activeTab === "business" && <BusinessView data={data} />}
           {activeTab === "design" && <DesignView data={data} darkMode={darkMode} />}

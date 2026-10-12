@@ -11,8 +11,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from eidos.core.parser import parse_spec_file
-
 STOP_WORDS = {
     "a",
     "about",

@@ -53,7 +53,6 @@ def test_documentation_and_schemas_in_sync():
         "containers",
         "components",
         "info",
-        "mcp",
         "context",
         "index",
     ]

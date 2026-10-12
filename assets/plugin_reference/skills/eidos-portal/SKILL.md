@@ -11,25 +11,15 @@ This skill empowers AI agents to preview, build, and publish the **Eidos Living 
 
 ## 1. What the Living Portal Provides
 
-The portal is a zero-dependency, single-page application (SPA) generated directly from the repository's `.adoc` and schema files:
+The portal is a zero-dependency, single-page application (SPA) generated directly from the repository's `.adoc` and schema files, organizing the living specification into key views:
 
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        Eidos Living Web Portal                         │
-├─────────────────┬─────────────────┬──────────────────┬─────────────────┤
-│ Architecture    │ Product Domains │ SpecDeltas       │ Invariants      │
-│ (C4 L1-2 Models)│ & Capabilities  │ (Kanban Board)   │ Matrix          │
-├─────────────────┼─────────────────┼──────────────────┼─────────────────┤
-│ Design Systems  │ Living Specs    │ Theme Toggle     │ Live Search     │
-│ (W3C DTCG Tokens│ Catalog (Filter)│ (Dark / Light)   │ & Schema Badges │
-└─────────────────┴─────────────────┴──────────────────┴─────────────────┘
-```
-
-1. **C4 Level 1 & Level 2 Topologies:** Rendered dynamically using Mermaid graphs directly from component manifests and persona declarations.
-2. **SpecDelta Kanban Board:** Visual column cards for `proposed`, `in_review`, `approved`, and `applied` mutations.
-3. **Traceability Matrix:** Bidirectional table mapping policies (`POL-*`) and capability invariants (`INV-*`) to automated test files.
-4. **W3C Design Token Studio:** Visual swatches rendering colors, typography, and spacing tokens from `eidos/design/systems/`.
-5. **Zero-Dependency Architecture:** Zero Node.js or npm dependencies; pure Python standard library HTTP server and static HTML/CSS/JS export.
+1. **Architecture Topologies (C4 L1-2):** Rendered dynamically using Mermaid graphs directly from component manifests and persona declarations.
+2. **Product Domains & Capabilities:** Interactive catalog and detail views into bounded contexts and business capabilities.
+3. **SpecDelta Kanban Board:** Visual column cards for `proposed`, `in_review`, `approved`, and `applied` mutations.
+4. **Invariant Traceability Matrix:** Bidirectional table mapping policies (`POL-*`) and capability invariants (`INV-*`) to automated test files.
+5. **Design Systems & Token Studio:** Visual swatches rendering colors, typography, and spacing tokens from `eidos/design/systems/` (W3C DTCG).
+6. **Living Specs Catalog & Live Search:** Interactive filtering, full-text search, schema badges, and dark/light theme toggle.
+7. **Zero-Dependency Architecture:** Zero Node.js or npm dependencies; pure Python standard library HTTP server and static HTML/CSS/JS export.
 
 ---
 

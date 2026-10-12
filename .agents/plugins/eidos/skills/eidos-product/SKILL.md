@@ -44,7 +44,7 @@ When defining a domain, classify its architectural role:
 * **`platform`**: Foundational developer infrastructure, telemetry, and VCS bridge.
 
 ### Authoring Domains
-Use the Eidos CLI or MCP tool:
+Use the Eidos CLI:
 ```bash
 eidos spec create domain DOM-BILLING --title "Billing & Subscription Management"
 ```
@@ -83,7 +83,7 @@ Every capability must define a clear JTBD:
 $$\text{"When [situation], I want to [action], so that [outcome]."}$$
 
 ### Authoring Capabilities
-Use the Eidos CLI or MCP tool:
+Use the Eidos CLI:
 ```bash
 eidos spec create capability CAP-BILL-001 \
   --title "Self-Service Plan Upgrade" \
@@ -145,7 +145,7 @@ Personas model the human stakeholders and autonomous agents interacting with the
 * **`autonomous_agent`**: AI coding agents (`agy`, Claude, Cursor, CI bots).
 
 ### Authoring Personas
-Use the Eidos CLI or MCP tool:
+Use the Eidos CLI:
 ```bash
 eidos spec create persona PER-WORKSPACE-ADMIN --title "Workspace Administrator"
 ```

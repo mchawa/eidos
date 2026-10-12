@@ -41,14 +41,14 @@ def test_context_slice_by_file():
 
 def test_context_slice_by_component():
     """Verify slicing by component ID extracts the target component, internal deps, and contracts."""
-    res = get_context_slice(component="CNT-EIDOS-MCP")
+    res = get_context_slice(component="CNT-EIDOS-CLI")
 
     comp_ids = {c["id"] for c in res.components}
-    assert "CNT-EIDOS-MCP" in comp_ids
+    assert "CNT-EIDOS-CLI" in comp_ids
     assert "CNT-EIDOS-CORE" in comp_ids
 
     contract_ids = {c["id"] for c in res.contracts}
-    assert "CTR-EIDOS-MCP" in contract_ids
+    assert "CTR-EIDOS-CLI" in contract_ids
 
 
 def test_context_slice_by_task():
@@ -106,10 +106,10 @@ def test_cli_context_command():
     assert "C4 Level 2 Containers & Level 3 Components" in res_f.output
 
     # 2. JSON output with -c and --format json
-    res_json = runner.invoke(app, ["context", "-c", "CNT-EIDOS-MCP", "--format", "json"])
+    res_json = runner.invoke(app, ["context", "-c", "CNT-EIDOS-CLI", "--format", "json"])
     assert res_json.exit_code == 0
     data = json.loads(res_json.output)
-    assert any(c["id"] == "CNT-EIDOS-MCP" for c in data["components"])
+    assert any(c["id"] == "CNT-EIDOS-CLI" for c in data["components"])
 
     # 3. Task search with -t
     res_task = runner.invoke(app, ["context", "-t", "GitLab bridge synchronization"])
@@ -129,10 +129,10 @@ def test_context_slice_substring_no_false_positive():
 
 def test_context_slice_string_and_comma_separated_files():
     """Verify get_context_slice supports string inputs and comma-separated file paths."""
-    res = get_context_slice(files="src/eidos/cli/main.py, src/eidos/mcp/server.py")
+    res = get_context_slice(files="src/eidos/cli/main.py, src/eidos/portal/server.py")
     comp_ids = {c["id"] for c in res.components}
     assert "CNT-EIDOS-CLI" in comp_ids
-    assert "CNT-EIDOS-MCP" in comp_ids
+    assert "CNT-EIDOS-PORTAL" in comp_ids
 
 
 def test_context_slice_non_eidos_project_fallback(tmp_path):

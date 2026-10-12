@@ -27,14 +27,11 @@ In Eidos, SpecDeltas are **optional architectural change plans**. You do **not**
 
 When tasked with a complex feature or assigned a GitHub/GitLab issue:
 
-```
-       ┌───────────┐      ┌────────────┐      ┌───────────┐      ┌───────────┐
-       │ Think &   │ ───> │ Human      │ ───> │ Implement │ ───> │ Reconcile │
-       │ Scaffold  │      │ Review     │      │ & Verify  │      │  (Apply)  │
-       └───────────┘      └────────────┘      └───────────┘      └───────────┘
-         DLT-*.adoc        Sign-off on           Pytest /            eidos
-        with vcs link      intent diff            drift           delta apply
-```
+1. **Think & Scaffold (`DLT-*.adoc`)**: Deliberate on architectural blast radius and scaffold with VCS linkage.
+2. **Review & Alignment**: Lead or human architect reviews and signs off on the intent diff.
+3. **Implement & Verify**: Update living specs, implement code, run test suite (`pytest`), and verify zero drift.
+4. **Audit Deletions (`eidos delta audit`)**: If deleting entities, verify zero unacknowledged leaks.
+5. **Reconcile (`eidos delta apply`)**: Reconcile in-place to update the baseline living specifications.
 
 ### Step 1: Think Deeply & Scaffold
 Activate internal reasoning to deliberate on:
@@ -44,8 +41,8 @@ Activate internal reasoning to deliberate on:
 - *What is the blast radius across personas and downstream modules?*
 
 **Leverage Architectural Graph Tools:**
-- Run `eidos_search_architecture(query="...")` or `eidos index search "..."` to locate related specs and existing invariants.
-- Run `eidos_get_blast_radius(symbol_or_path="...", max_hops=2)` or `eidos index blast-radius <component>` to compute the impacted components and contracts for `blast_radius.impacted_components`.
+- Run `eidos index search "..."` to locate related specs and existing invariants.
+- Run `eidos index blast-radius <component>` to compute the impacted components and contracts for `blast_radius.impacted_components`.
 
 Scaffold the delta with VCS linkage:
 ```bash
@@ -93,6 +90,15 @@ blast_radius:
 2. Implement code in `src/` and tests covering `INV-*` in `tests/`.
 3. Verify with `pytest tests/` and `eidos validate eidos`.
 
+### Step 3.5: Run Deletion / Deprecation Audit (If Deleting Entities)
+If the SpecDelta contains any deletion or deprecation mutations (`remove_*`, `delete_*`, `deprecate_*`), run the context-aware blast-radius audit before applying:
+```bash
+eidos delta audit DLT-2026-042 --strict
+# or inspect machine-readable JSON:
+eidos delta audit DLT-2026-042 --json
+```
+Verify that active specifications, diagrams, and code contain zero unacknowledged leaks. If references were kept on purpose (e.g. uninstaller cleanup routines or negative tests), declare them in `tombstone.allowed_reasons` or annotate them with `# eidos:allow-retired`.
+
 ### Step 4: Reconcile Delta
 Reconcile the delta in-place:
 ```bash
@@ -116,9 +122,12 @@ eidos delta list
 eidos delta list --status active      # in-flight proposals
 eidos delta list --status applied     # reconciled baselines
 
-# 4. Apply a completed delta
+# 4. Audit deleted/deprecated entities for dangling references and leaks
+eidos delta audit DLT-2026-042 --strict
+
+# 5. Apply a completed delta
 eidos delta apply DLT-2026-042
 
-# 5. Delete an abandoned proposal
+# 6. Delete an abandoned proposal
 eidos delta delete DLT-2026-042
 ```

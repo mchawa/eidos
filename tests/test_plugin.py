@@ -51,7 +51,7 @@ def test_bundled_plugin_conformance():
     assert "eidos" in report.skills
     assert "eidos-context" in report.skills
     assert len(report.skills) == 14
-    assert "eidos" in report.mcp_servers
+    assert len(report.mcp_servers) == 0
     assert "com.google.antigravity" in report.extensions
 
 
@@ -79,24 +79,23 @@ def test_plugin_install_to_project_scope(tmp_path):
     # Check .agents/plugins/eidos
     agent_dir = tmp_path / ".agents" / "plugins" / "eidos"
     assert (agent_dir / "plugin.json").exists()
-    assert (agent_dir / "mcp_config.json").exists()
+    assert not (agent_dir / "mcp_config.json").exists()
     assert not (agent_dir / "mcp.json").exists()
     assert (agent_dir / "skills" / "eidos" / "SKILL.md").exists()
     agent_report = validate_plugin_package(agent_dir)
     assert agent_report.is_valid
 
-    # Check project-level MCP files
+    # Check project-level configs
     cursor_mcp = tmp_path / ".cursor" / "mcp.json"
-    assert cursor_mcp.exists()
-    with open(cursor_mcp, encoding="utf-8") as f:
-        cursor_data = json.load(f)
-    assert "eidos" in cursor_data["mcpServers"]
+    cursor_rules = tmp_path / ".cursor" / "rules" / "eidos.mdc"
+    assert not cursor_mcp.exists()
+    assert cursor_rules.exists()
+    assert "alwaysApply: true" in cursor_rules.read_text(encoding="utf-8")
 
     claude_mcp = tmp_path / ".claude" / "mcp.json"
-    assert claude_mcp.exists()
-    with open(claude_mcp, encoding="utf-8") as f:
-        claude_data = json.load(f)
-    assert "eidos" in claude_data["mcpServers"]
+    assert not claude_mcp.exists()
+    claude_settings = tmp_path / ".claude" / "settings.json"
+    assert claude_settings.exists()
 
 
 def test_plugin_install_to_custom_directory(tmp_path):
@@ -107,7 +106,7 @@ def test_plugin_install_to_custom_directory(tmp_path):
     assert len(results) == 1
     assert results[0].success
     assert (dest / "plugin.json").exists()
-    assert (dest / "mcp_config.json").exists()
+    assert not (dest / "mcp_config.json").exists()
     assert not (dest / "mcp.json").exists()
     assert (dest / "skills" / "eidos" / "SKILL.md").exists()
     report = validate_plugin_package(dest)
@@ -139,16 +138,14 @@ def test_cli_plugin_install_project(tmp_path):
 
 
 def test_plugin_uninstall_project_scope(tmp_path):
-    """Verify uninstalling plugin from project scope removes plugin dir and MCP configs."""
+    """Verify uninstalling plugin from project scope removes plugin dir and configs."""
     # Install first
     install_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path, force=True)
     plugin_dir = tmp_path / ".agents" / "plugins" / "eidos"
-    cursor_mcp = tmp_path / ".cursor" / "mcp.json"
-    claude_mcp = tmp_path / ".claude" / "mcp.json"
+    cursor_rules = tmp_path / ".cursor" / "rules" / "eidos.mdc"
 
     assert plugin_dir.exists()
-    assert cursor_mcp.exists()
-    assert claude_mcp.exists()
+    assert cursor_rules.exists()
 
     # Uninstall
     results = uninstall_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path)
@@ -157,16 +154,7 @@ def test_plugin_uninstall_project_scope(tmp_path):
         assert r.success
 
     assert not plugin_dir.exists()
-    # If cursor/claude had only eidos, files are removed or cleaned
-    if cursor_mcp.exists():
-        with open(cursor_mcp, encoding="utf-8") as f:
-            c_data = json.load(f)
-        assert "eidos" not in c_data.get("mcpServers", {})
-
-    if claude_mcp.exists():
-        with open(claude_mcp, encoding="utf-8") as f:
-            cl_data = json.load(f)
-        assert "eidos" not in cl_data.get("mcpServers", {})
+    assert not cursor_rules.exists()
 
 
 def test_cli_plugin_uninstall_project(tmp_path):
@@ -196,19 +184,27 @@ def test_cli_plugin_remove_alias(tmp_path):
 
 
 def test_plugin_install_to_claude_plugin(tmp_path):
-    """Verify installing plugin specifically as Claude Code plugin into .claude/skills/eidos."""
+    """Verify installing plugin specifically as Claude Code plugin into .claude/plugins/eidos."""
     results = install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path, force=True)
 
     assert len(results) == 1
     assert results[0].success
     assert results[0].target == "claude"
 
-    claude_plugin_dir = tmp_path / ".claude" / "skills" / "eidos"
+    claude_plugin_dir = tmp_path / ".claude" / "plugins" / "eidos"
+    assert (claude_plugin_dir / "plugin.json").exists()
     assert (claude_plugin_dir / ".claude-plugin" / "plugin.json").exists()
-    assert (claude_plugin_dir / ".mcp.json").exists()
+    assert not (claude_plugin_dir / ".mcp.json").exists()
+    assert not (claude_plugin_dir / "mcp.json").exists()
+    assert (claude_plugin_dir / "commands" / "validate.md").exists()
+    assert (claude_plugin_dir / "commands" / "drift.md").exists()
     assert (claude_plugin_dir / "skills" / "eidos" / "SKILL.md").exists()
+    # Direct flat skills in .claude/skills/
+    assert (tmp_path / ".claude" / "skills" / "eidos" / "SKILL.md").exists()
+    assert (tmp_path / ".claude" / "skills" / "eidos-architecture" / "SKILL.md").exists()
+    assert len([d for d in (tmp_path / ".claude" / "skills").iterdir() if d.is_dir()]) == 14
 
-    with open(claude_plugin_dir / ".claude-plugin" / "plugin.json", encoding="utf-8") as f:
+    with open(claude_plugin_dir / "plugin.json", encoding="utf-8") as f:
         manifest = json.load(f)
     assert manifest["name"] == "eidos"
 
@@ -217,14 +213,12 @@ def test_plugin_install_to_claude_plugin(tmp_path):
     assert settings_file.exists()
     with open(settings_file, encoding="utf-8") as f:
         settings = json.load(f)
-    assert settings["enabledPlugins"].get("eidos@skills-dir") is True
+    assert settings["enabledPlugins"].get("eidos@plugins-dir") is True
+    assert any(p.get("path") in (".claude/plugins/eidos", "./.claude/plugins/eidos") for p in settings.get("plugins", []))
 
-    # Verify project-level .claude/mcp.json
+    # Verify project-level .claude/mcp.json is NOT created
     claude_mcp = tmp_path / ".claude" / "mcp.json"
-    assert claude_mcp.exists()
-    with open(claude_mcp, encoding="utf-8") as f:
-        mcp_data = json.load(f)
-    assert "eidos" in mcp_data["mcpServers"]
+    assert not claude_mcp.exists()
 
     # Verify get_installed_plugin_version detects Claude plugin
     installed_ver = get_installed_plugin_version(project_dir=tmp_path)
@@ -232,12 +226,11 @@ def test_plugin_install_to_claude_plugin(tmp_path):
 
 
 def test_plugin_uninstall_claude_plugin(tmp_path):
-    """Verify uninstalling Claude Code plugin cleans .claude/skills/eidos and settings.json."""
+    """Verify uninstalling Claude Code plugin cleans .claude/plugins/eidos, skills, and settings.json."""
     # Install first
     install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path, force=True)
-    claude_plugin_dir = tmp_path / ".claude" / "skills" / "eidos"
+    claude_plugin_dir = tmp_path / ".claude" / "plugins" / "eidos"
     settings_file = tmp_path / ".claude" / "settings.json"
-    claude_mcp = tmp_path / ".claude" / "mcp.json"
     assert claude_plugin_dir.exists()
 
     # Uninstall
@@ -246,15 +239,11 @@ def test_plugin_uninstall_claude_plugin(tmp_path):
     assert results[0].success
 
     assert not claude_plugin_dir.exists()
+    assert not (tmp_path / ".claude" / "skills" / "eidos-architecture").exists()
     if settings_file.exists():
         with open(settings_file, encoding="utf-8") as f:
             settings = json.load(f)
-        assert "eidos@skills-dir" not in settings.get("enabledPlugins", {})
-
-    if claude_mcp.exists():
-        with open(claude_mcp, encoding="utf-8") as f:
-            mcp_data = json.load(f)
-        assert "eidos" not in mcp_data.get("mcpServers", {})
+        assert "eidos@plugins-dir" not in settings.get("enabledPlugins", {})
 
 
 def test_cli_install_and_uninstall_shortcut_claude(tmp_path):
@@ -263,13 +252,13 @@ def test_cli_install_and_uninstall_shortcut_claude(tmp_path):
     res = runner.invoke(app, ["install", "claude", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert "Success!" in res.stdout
-    assert (tmp_path / ".claude" / "skills" / "eidos" / ".claude-plugin" / "plugin.json").exists()
+    assert (tmp_path / ".claude" / "plugins" / "eidos" / "plugin.json").exists()
 
     # Uninstall with positional argument
     res = runner.invoke(app, ["uninstall", "claude", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert "Success!" in res.stdout
-    assert not (tmp_path / ".claude" / "skills" / "eidos").exists()
+    assert not (tmp_path / ".claude" / "plugins" / "eidos").exists()
 
 
 def test_cli_install_rejects_workspace_target(tmp_path):
@@ -278,6 +267,245 @@ def test_cli_install_rejects_workspace_target(tmp_path):
     assert res.exit_code != 0
     # Output should contain error indication about invalid choice
     assert "Invalid value" in res.output or "invalid" in res.output.lower()
+
+
+def test_plugin_install_and_uninstall_aider(tmp_path):
+    """Verify Aider installation creates .aider.conventions.md, skills, and updates .aider.conf.yml."""
+    results = install_plugin(target=PluginInstallTarget.AIDER, project_dir=tmp_path, force=True)
+    assert len(results) == 1
+    assert results[0].success
+    assert results[0].target == "aider"
+
+    conventions = tmp_path / ".aider.conventions.md"
+    aider_conf = tmp_path / ".aider.conf.yml"
+    aider_skills = tmp_path / ".aider" / "skills"
+    assert conventions.exists()
+    assert aider_conf.exists()
+    assert (aider_skills / "eidos" / "SKILL.md").exists()
+    assert len([d for d in aider_skills.iterdir() if d.is_dir()]) == 14
+    assert "Single Source of Truth" in conventions.read_text(encoding="utf-8")
+
+    # Uninstall
+    uninst = uninstall_plugin(target=PluginInstallTarget.AIDER, project_dir=tmp_path)
+    assert len(uninst) == 1
+    assert uninst[0].success
+    assert not conventions.exists()
+    assert not aider_conf.exists()
+    assert not (aider_skills / "eidos").exists()
+
+
+def test_plugin_install_and_uninstall_cline(tmp_path):
+    """Verify Cline installation creates plugin bundle and flat skills without MCP configs."""
+    results = install_plugin(target=PluginInstallTarget.CLINE, project_dir=tmp_path, force=True)
+    assert len(results) == 1
+    assert results[0].success
+    assert results[0].target == "cline"
+
+    rules = tmp_path / ".clinerules"
+    mcp_file = tmp_path / ".cline" / "mcp.json"
+    settings_file = tmp_path / ".cline" / "cline_mcp_settings.json"
+    plugin_dir = tmp_path / ".cline" / "plugins" / "eidos"
+    skills_dir = tmp_path / ".cline" / "skills"
+    assert not rules.exists()
+    assert not mcp_file.exists()
+    assert not settings_file.exists()
+    assert plugin_dir.exists()
+    assert (skills_dir / "eidos" / "SKILL.md").exists()
+    assert (skills_dir / "eidos-architecture" / "SKILL.md").exists()
+    assert (skills_dir / "eidos-drift" / "SKILL.md").exists()
+    assert len([d for d in skills_dir.iterdir() if d.is_dir()]) == 14
+
+    # Uninstall
+    uninst = uninstall_plugin(target=PluginInstallTarget.CLINE, project_dir=tmp_path)
+    assert len(uninst) == 1
+    assert uninst[0].success
+    assert not plugin_dir.exists()
+    assert not (skills_dir / "eidos").exists()
+
+
+def test_plugin_install_and_uninstall_opencode(tmp_path):
+    """Verify OpenCode installation creates plugin bundle and flat skills."""
+    results = install_plugin(target=PluginInstallTarget.OPEN_CODE, project_dir=tmp_path, force=True)
+    assert len(results) == 1
+    assert results[0].success
+    assert results[0].target == "open-code"
+
+    cfg = tmp_path / "opencode.json"
+    rules = tmp_path / ".opencode" / "rules.md"
+    plugin_dir = tmp_path / ".opencode" / "plugins" / "eidos"
+    skills_dir = tmp_path / ".opencode" / "skills"
+    assert not cfg.exists()
+    assert not rules.exists()
+    assert plugin_dir.exists()
+    assert (skills_dir / "eidos" / "SKILL.md").exists()
+    assert len([d for d in skills_dir.iterdir() if d.is_dir()]) == 14
+
+    # Uninstall
+    uninst = uninstall_plugin(target=PluginInstallTarget.OPEN_CODE, project_dir=tmp_path)
+    assert len(uninst) == 1
+    assert uninst[0].success
+    assert not plugin_dir.exists()
+    assert not (skills_dir / "eidos").exists()
+
+
+def test_plugin_install_and_uninstall_codex(tmp_path):
+    """Verify OpenAI Codex installation creates .codex/plugin.json, rules, and skills."""
+    results = install_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path, force=True)
+    assert len(results) == 1
+    assert results[0].success
+    assert results[0].target == "codex"
+
+    codex_dir = tmp_path / ".codex"
+    assert (codex_dir / "plugin.json").exists()
+    assert not (codex_dir / "mcp.json").exists()
+    assert (codex_dir / "rules.md").exists()
+    assert (codex_dir / "skills" / "eidos" / "SKILL.md").exists()
+    assert len([d for d in (codex_dir / "skills").iterdir() if d.is_dir()]) == 14
+
+    with open(codex_dir / "plugin.json", encoding="utf-8") as f:
+        manifest = json.load(f)
+    assert manifest["name"] == "eidos"
+    assert "com.openai" in manifest["extensions"]
+
+    # Verify version detection
+    installed_ver = get_installed_plugin_version(project_dir=tmp_path)
+    assert installed_ver == get_bundled_plugin_version()
+
+    # Uninstall
+    uninst = uninstall_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path)
+    assert len(uninst) == 1
+    assert uninst[0].success
+    assert not codex_dir.exists()
+
+
+def test_plugin_install_and_uninstall_copilot(tmp_path):
+    """Verify GitHub Copilot installation creates native plugin (.github/plugin/), skills (.github/skills/), settings, and instructions."""
+    results = install_plugin(target=PluginInstallTarget.COPILOT, project_dir=tmp_path, force=True)
+    assert len(results) == 1
+    assert results[0].success
+    assert results[0].target == "copilot"
+
+    # 1. Native plugin bundle
+    copilot_plugin = tmp_path / ".github" / "plugin"
+    assert (copilot_plugin / "plugin.json").exists()
+    assert not (copilot_plugin / "mcp.json").exists()
+    with open(copilot_plugin / "plugin.json", encoding="utf-8") as f:
+        manifest = json.load(f)
+    assert manifest["name"] == "eidos"
+    assert "com.github.copilot" in manifest["extensions"]
+
+    # 2. Native Copilot Agent Skills
+    copilot_skills = tmp_path / ".github" / "skills"
+    assert (copilot_skills / "eidos" / "SKILL.md").exists()
+    assert (copilot_skills / "eidos-architecture" / "SKILL.md").exists()
+    assert (copilot_skills / "eidos-delta" / "SKILL.md").exists()
+    assert len([d for d in copilot_skills.iterdir() if d.is_dir()]) == 14
+
+    # 3. Copilot settings
+    copilot_settings = tmp_path / ".github" / "copilot" / "settings.json"
+    assert copilot_settings.exists()
+    with open(copilot_settings, encoding="utf-8") as f:
+        settings = json.load(f)
+    assert settings["enabledPlugins"].get("eidos") is True
+
+    # 4. MCP servers are NOT created
+    assert not (tmp_path / ".github" / "copilot" / "mcp.json").exists()
+    assert not (tmp_path / ".vscode" / "mcp.json").exists()
+
+    # 5. Instructions bridge
+    instructions = tmp_path / ".github" / "copilot-instructions.md"
+    assert instructions.exists()
+    text = instructions.read_text(encoding="utf-8")
+    assert "<!-- EIDOS_COPILOT_START -->" in text
+    assert "Single Source of Truth" in text
+
+    # Verify get_installed_plugin_version detects Copilot plugin
+    installed_ver = get_installed_plugin_version(project_dir=tmp_path)
+    assert installed_ver == get_bundled_plugin_version()
+
+    # Uninstall
+    uninst = uninstall_plugin(target=PluginInstallTarget.COPILOT, project_dir=tmp_path)
+    assert len(uninst) == 1
+    assert uninst[0].success
+    assert not copilot_plugin.exists()
+    assert not (copilot_skills / "eidos").exists()
+    assert not copilot_settings.exists()
+    assert not instructions.exists()
+
+    # Test preserving custom instructions
+    custom_header = "# Team Instructions\nFollow our team rules.\n"
+    instructions.parent.mkdir(parents=True, exist_ok=True)
+    instructions.write_text(custom_header, encoding="utf-8")
+
+    install_plugin(target=PluginInstallTarget.COPILOT, project_dir=tmp_path, force=True)
+    content = instructions.read_text(encoding="utf-8")
+    assert "Follow our team rules." in content
+    assert "<!-- EIDOS_COPILOT_START -->" in content
+
+    uninstall_plugin(target=PluginInstallTarget.COPILOT, project_dir=tmp_path)
+    assert instructions.exists()
+    clean_content = instructions.read_text(encoding="utf-8")
+    assert "Follow our team rules." in clean_content
+    assert "<!-- EIDOS_COPILOT_START -->" not in clean_content
+
+
+def test_plugin_install_and_uninstall_all_targets(tmp_path):
+    """Verify installing target 'all' configures all 8 AI agent environments."""
+    results = install_plugin(target=PluginInstallTarget.ALL, project_dir=tmp_path, force=True)
+    targets = [r.target for r in results]
+    assert len(targets) == 8
+    assert "project" in targets
+    assert "cursor" in targets
+    assert "claude" in targets
+    assert "aider" in targets
+    assert "cline" in targets
+    assert "open-code" in targets
+    assert "codex" in targets
+    assert "copilot" in targets
+
+    # Uninstall all
+    uninst = uninstall_plugin(target=PluginInstallTarget.ALL, project_dir=tmp_path)
+    assert len(uninst) == 8
+    for u in uninst:
+        assert u.success
+
+
+def test_cli_install_new_agent_shortcuts(tmp_path):
+    """Verify CLI shortcuts for aider, cline, open-code, opencode, codex, and copilot."""
+    # Aider
+    res = runner.invoke(app, ["install", "aider", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    assert (tmp_path / ".aider.conventions.md").exists()
+
+    # Cline
+    res = runner.invoke(app, ["install", "cline", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    assert (tmp_path / ".cline" / "skills" / "eidos" / "SKILL.md").exists()
+
+    # Open-code
+    res = runner.invoke(app, ["install", "open-code", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    assert (tmp_path / ".opencode" / "skills" / "eidos" / "SKILL.md").exists()
+
+    # Opencode (alias)
+    res = runner.invoke(app, ["install", "opencode", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+
+    # Codex
+    res = runner.invoke(app, ["install", "codex", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    assert (tmp_path / ".codex" / "plugin.json").exists()
+    assert (tmp_path / ".codex" / "skills" / "eidos" / "SKILL.md").exists()
+
+    # Copilot
+    res = runner.invoke(app, ["install", "copilot", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    assert (tmp_path / ".github" / "copilot-instructions.md").exists()
+    assert (tmp_path / ".github" / "skills" / "eidos" / "SKILL.md").exists()
+
+    # Uninstall all
+    res = runner.invoke(app, ["uninstall", "all", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
 
 
 def test_semver_validation_and_parsing():

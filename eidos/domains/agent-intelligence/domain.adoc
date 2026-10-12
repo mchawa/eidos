@@ -2,11 +2,11 @@
 type: product/domain
 schema: schemas/v1/product/domain.schema.yaml
 id: DOM-AGENT-INTELLIGENCE
-name: "Agent Intelligence & Context Protocol Ecosystem"
+name: "Agent Intelligence & Context Slicing Ecosystem"
 classification: core
 boundaries:
   responsibilities:
-    - "Serve the Model Context Protocol (MCP) server exposing tools (eidos_context, eidos_validate, eidos_detect_drift)."
+    - "Provide deterministic CLI tools (eidos context, eidos validate, eidos drift) with structured JSON outputs."
     - "Extract targeted, token-efficient, blast-radius-aware architectural context slices for AI coding agents."
     - "Provide agent-agnostic ecosystem configurations, system prompts, skills, rules, and slash command integrations."
     - "Enforce invariant verification and drift detection feedback loops for autonomous coding workflows."
@@ -16,13 +16,13 @@ boundaries:
     - "Web portal HTML rendering (delegated to DOM-EXPERIENCE-PORTAL)."
 technical_mapping:
   components:
-    - "src/eidos/mcp/server.py"
     - "src/eidos/core/context.py"
+    - "src/eidos/cli/main.py"
     - ".agents/plugins/eidos"
   dependencies:
     - "DOM-SPEC-ENGINE"
 ---
-= Domain: Agent Intelligence & Context Protocol Ecosystem
+= Domain: Agent Intelligence & Context Slicing Ecosystem
 :toc: left
 
 == Domain Vision

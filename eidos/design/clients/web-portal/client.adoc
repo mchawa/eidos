@@ -20,6 +20,7 @@ screens:
   - "eidos/design/clients/web-portal/screens/portal-design.adoc"
   - "eidos/design/clients/web-portal/screens/portal-architecture.adoc"
   - "eidos/design/clients/web-portal/screens/portal-deltas.adoc"
+  - "eidos/design/clients/web-portal/screens/portal-explorations.adoc"
   - "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
 
 flows:

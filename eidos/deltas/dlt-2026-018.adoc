@@ -1,7 +1,7 @@
 ---
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
-id: DLT-2026-015
+id: DLT-2026-018
 title: Modernize Living Web Portal with React 19, Tailwind CSS v4, and Material Design
   3 (MD3)
 status: applied
@@ -77,5 +77,5 @@ By compiling the modern frontend (`src/eidos/portal/frontend`) using Vite and `v
 * [x] **Mutation 2 (Design System Tokens):** Ensure continuous synchronization from `tokens.json` to MD3 CSS custom properties.
 * [x] **Mutation 3 (C4 Mermaid & Kanban Integration):** Verify pan/zoom architecture visualizer and SpecDelta mutation board in production distributions.
 * [x] **Mutation 4 (Test Suite Synchronization):** Update `tests/test_portal.py` to assert against the modernized React SPA structure while keeping all invariants green.
-* [x] **Mutation 5 (Reconciliation):** Run `eidos delta apply DLT-2026-015` upon completion.
+* [x] **Mutation 5 (Reconciliation):** Run `eidos delta apply DLT-2026-018` upon completion.
 

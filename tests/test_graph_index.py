@@ -13,7 +13,11 @@ from pathlib import Path
 
 import pytest
 
-from eidos.core.graph_index import ArchitecturalIndex, TieredContextSlice
+from eidos.core.graph_index import (
+    ArchitecturalIndex,
+    TieredContextSlice,
+    find_repo_root,
+)
 
 
 @pytest.fixture
@@ -196,3 +200,35 @@ def test_exit_criteria_resolution_latency(temp_index):
     avg_latency = sum(latencies) / len(latencies)
     assert avg_latency < 10.0, f"Average context slice latency {avg_latency:.2f}ms exceeded 10ms"
     assert s.query_latency_ms < 10.0
+
+
+def test_repo_root_discovery_and_no_nested_eidos(tmp_path, monkeypatch):
+    """Verify repo root discovery prevents spurious nested .eidos directories (INV-STORAGE-ROOT)."""
+    repo = tmp_path / "mock_repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    specs_dir = repo / "eidos"
+    specs_dir.mkdir()
+    (specs_dir / "system.adoc").write_text(
+        "---\ntype: product/system\nschema: schemas/v1/system.schema.yaml\nid: SYS-MOCK\ntitle: Mock System\n---\n= Mock System\n",
+        encoding="utf-8",
+    )
+    subfolder = repo / ".agents" / "plugins" / "eidos" / "scripts"
+    subfolder.mkdir(parents=True)
+
+    # find_repo_root from subfolder resolves to repo root
+    assert find_repo_root(subfolder) == repo.resolve()
+
+    # Changing cwd to subfolder and instantiating ArchitecturalIndex targets repo root
+    monkeypatch.chdir(subfolder)
+    idx = ArchitecturalIndex()
+    try:
+        assert idx.root == repo.resolve()
+        assert idx.eidos_dir == specs_dir.resolve()
+        assert idx.db_path == repo.resolve() / ".eidos" / "cache" / "index.db"
+        assert not (subfolder / ".eidos").exists()
+        assert not (subfolder.parent / ".eidos").exists()
+        assert not (repo / ".agents" / "plugins" / "eidos" / ".eidos").exists()
+    finally:
+        idx.close()
+

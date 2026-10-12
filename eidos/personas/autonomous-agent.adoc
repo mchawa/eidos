@@ -5,17 +5,17 @@ id: PER-AUTONOMOUS-AGENT
 name: "Autonomous Coding Agent"
 role_type: autonomous_agent
 goals:
-  - "Receive concise, token-efficient architectural context slices via Model Context Protocol (MCP) without noise."
+  - "Receive concise, token-efficient architectural context slices via 'eidos context --format json' without noise."
   - "Inspect explicit system invariants (INV-*), contracts (CTR-*), and test bindings before generating code."
-  - "Self-verify modifications against deterministic gate checks ('eidos validate', 'eidos drift') prior to proposing pull requests."
+  - "Self-verify modifications against deterministic gate checks ('eidos validate --json', 'eidos drift --json') prior to proposing pull requests."
   - "Accurately co-evolve living specifications and test suites alongside source code."
 pain_points:
   - "Massive context windows polluted with unorganized, contradictory, or stale documentation."
   - "Vague prompt instructions leading to hallucinated dependencies, architectural anti-patterns, or policy violations."
   - "Unclear definition of done or inability to discover how to run verification tests locally."
 interaction_modes:
-  - "Model Context Protocol (MCP) tool calls ('eidos_context', 'eidos_validate', 'eidos_detect_drift')"
-  - "AI Agent Harnesses and IDE plugins (Antigravity agy, Claude Code, Cursor, Copilot)"
+  - "CLI commands with structured JSON output ('eidos context', 'eidos validate', 'eidos drift')"
+  - "Progressive disclosure via Agent Skills (SKILL.md) and IDE plugins (Antigravity agy, Claude Code, Cursor, Copilot)"
   - "Executing automated verification test suites (pytest, vitest) bound to invariants"
   - "Branch and pull request creation with machine-validated SpecDelta checklists"
 ---
@@ -23,4 +23,4 @@ interaction_modes:
 :toc: left
 
 == Profile
-The Autonomous Coding Agent represents any AI worker (such as Antigravity `agy`, Claude Code, Cursor Agent, or SWE-agent) plugged into Eidos. It queries the Eidos MCP server for targeted context slices, inspects relevant invariants, executes TDD workflows, and deterministically validates its work before proposing pull requests.
+The Autonomous Coding Agent represents any AI worker (such as Antigravity `agy`, Claude Code, Cursor Agent, or SWE-agent) plugged into Eidos. It queries the Eidos CLI for targeted context slices, inspects relevant invariants, executes TDD workflows, and deterministically validates its work before proposing pull requests.

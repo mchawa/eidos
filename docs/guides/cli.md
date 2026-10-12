@@ -100,15 +100,6 @@ eidos components CNT-EIDOS-CORE
 
 ---
 
-### `eidos mcp`
-Launch the stdio **Model Context Protocol (MCP)** server, enabling AI coding agents (Claude, Cursor, Antigravity) to query and mutate living specifications programmatically.
-
-```bash
-eidos mcp
-```
-
----
-
 ### `eidos context`
 Extract a compact, token-efficient architectural subgraph slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies) given target file paths, a component ID, or a task description. Powered by the embedded SQLite knowledge graph for sub-3ms resolution.
 
@@ -126,7 +117,7 @@ eidos context -c CMP-EIDOS-CORE --tier deep
 eidos context -t "Implement Git and GitLab synchronization bridge"
 
 # Output in JSON format
-eidos context -c CMP-EIDOS-MCP --format json
+eidos context -c CMP-EIDOS-CORE --format json
 ```
 
 Options:
@@ -226,8 +217,29 @@ eidos delta list
 # Create a new SpecDelta
 eidos delta create "Migrate to PostgreSQL 16"
 
-# Apply and reconcile a SpecDelta in-place
+# Verify all mutations declared in a SpecDelta exist in the spec catalog:
+eidos delta verify dlt-2026-005
+
+# Output machine-readable verification results:
+eidos delta verify dlt-2026-005 --json
+
+# Apply a SpecDelta in-place (updates status to 'applied'):
 eidos delta apply dlt-2026-005
+
+# Deterministically scaffold missing specs declared in delta mutations without LLMs:
+eidos delta apply dlt-2026-005 --execute
+
+# Verify all mutations are satisfied before applying:
+eidos delta apply dlt-2026-005 --verify
+
+# Audit removed or deprecated entities for dangling references and active leaks:
+eidos delta audit dlt-2026-016
+
+# Run in strict mode (exit code 1 if unacknowledged leaks exist):
+eidos delta audit dlt-2026-016 --strict
+
+# Output machine-readable JSON audit report for AI agents and CI/CD pipelines:
+eidos delta audit dlt-2026-016 --json
 
 # Safely delete an unapplied SpecDelta
 eidos delta delete dlt-2026-005
@@ -301,13 +313,18 @@ Options:
 Manage and validate Eidos agent plugins complying with the `agent-plugins.org v1.0.0` specification:
 
 ```bash
-# Install plugin for all supported AI agents (Antigravity, Claude, Cursor)
-eidos plugin install --target all
+# Install plugin for all supported AI agents
+eidos install all
 
 # Or install for a specific target:
-eidos plugin install --target antigravity
-eidos plugin install --target claude
-eidos plugin install --target cursor
+eidos install antigravity
+eidos install claude
+eidos install cursor
+eidos install aider
+eidos install cline
+eidos install open-code
+eidos install codex
+eidos install copilot
 
 # Inspect installed vs bundled plugin version
 eidos plugin version
@@ -321,7 +338,7 @@ eidos plugin info
 # Update installed plugin to latest bundled engine version
 eidos plugin update --target all
 
-# Uninstall / remove plugin files and MCP configurations
+# Uninstall / remove plugin files and agent configurations
 eidos plugin uninstall --target all
 ```
 

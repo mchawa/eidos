@@ -11,24 +11,11 @@ This skill equips AI agents to conduct **hypothesis-driven research, feasibility
 
 ## 1. Why Explorations Precede Specifications
 
-```
-                       ┌─────────────────────────┐
-                       │   Uncertainty / Risk    │
-                       └────────────┬────────────┘
-                                    │
-                                    ▼
-                       ┌─────────────────────────┐
-                       │  Exploration (EXP-*)    │
-                       │  Hypothesis + Spikes    │
-                       └────────────┬────────────┘
-                                    │
-                    ┌───────────────┴───────────────┐
-                    ▼ Adopted                       ▼ Discarded
-        ┌───────────────────────┐       ┌───────────────────────┐
-        │  SpecDelta (DLT-*)    │       │  Archived Learnings   │
-        │  Formal Mutation Plan │       │  Preserves Knowledge  │
-        └───────────────────────┘       └───────────────────────┘
-```
+1. **Uncertainty / High Risk**: Encountering unfamiliar frameworks, unverified database engines, or complex architectural trade-offs.
+2. **Exploration Spike (`EXP-*`)**: Formulate a testable hypothesis, spike questions, disposable prototype branch, and quantitative exit criteria.
+3. **Outcome Evaluation**:
+   - **Adopted**: Hypothesis empirically proven &rarr; Graduates to a formal SpecDelta (`DLT-*`).
+   - **Discarded**: Hypothesis rejected &rarr; Archived with post-mortem learnings to preserve institutional knowledge.
 
 1. **Prevent Premature Architecture:** Do not commit to unverified database engines, protocols, or frameworks in living specifications without empirical proof.
 2. **Auditable Spikes:** Prototype in disposable branches, but record the hypothesis, questions, and exit criteria in a validated specification (`eidos/explorations/exp-<year>-<num>.adoc`).
@@ -49,7 +36,7 @@ Explorations follow a 4-state lifecycle defined in `exploration.schema.yaml`:
 
 ## 3. Authoring an Exploration Manifest (`EXP-*`)
 
-Scaffold a new exploration via CLI or MCP tool:
+Scaffold a new exploration via CLI:
 ```bash
 eidos spec create exploration EXP-2026-001 \
   --title "Evaluate SQLite in WAL Mode for Edge Node Caching" \

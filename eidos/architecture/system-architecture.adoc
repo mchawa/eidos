@@ -13,9 +13,9 @@ c4_context:
     - name: "GitHub / GitLab"
       role: "Git hosting, Issue/PR webhook synchronization, and CI/CD execution"
       protocol: "REST / GraphQL Webhooks"
-    - name: "AI IDEs & MCP Clients"
-      role: "Agent pair programming environments (Antigravity, Cursor, Claude Code) invoking Eidos tools via stdio MCP"
-      protocol: "JSON-RPC 2.0 stdio"
+    - name: "AI Coding Environments"
+      role: "Agent pair programming environments (Antigravity, Cursor, Claude Code) executing Eidos CLI tools"
+      protocol: "CLI Subshell / JSON"
 
 c4_containers:
   - container_ref: "CNT-EIDOS-CORE"
@@ -28,11 +28,6 @@ c4_containers:
     container_type: "cli_app"
     runtime: "Python 3.12 / Typer / Rich"
     package_path: "src/eidos/cli"
-  - container_ref: "CNT-EIDOS-MCP"
-    name: "Eidos Model Context Protocol Server"
-    container_type: "daemon"
-    runtime: "Python 3.12 / JSON-RPC 2.0 stdio"
-    package_path: "src/eidos/mcp"
   - container_ref: "CNT-EIDOS-PLUGIN"
     name: "Eidos Agent Plugin & Extension Manager"
     container_type: "library"
@@ -75,7 +70,7 @@ cross_cutting_concepts:
   data_storage: "Entirely Git filesystem backed with YAML frontmatter + AsciiDoc, accelerated by an ephemeral, zero-dependency SQLite knowledge graph cache (.eidos/cache/index.db) for sub-millisecond retrieval."
 
 deployment_view:
-  hosting_model: "Distributed: Local developer workstation (CLI/MCP) and CI/CD Runner environments (GitHub Actions / GitLab CI)."
+  hosting_model: "Distributed: Local developer workstation (CLI) and CI/CD Runner environments (GitHub Actions / GitLab CI)."
   ci_cd_engine: "GitHub Actions workflows and GitLab CI pipelines executing eidos validate and test runners."
 ---
 = Eidos Global System Architecture (Arc42 & C4 Blueprint)
@@ -102,12 +97,12 @@ The system boundaries, human/agent actors, and external system integrations:
 C4Context
   title System Context for Eidos (C4 Level 1)
   Person(user, "Product Lead / Engineer", "Authors specifications, reviews PRs, triggers agent tasks")
-  Person_Ext(agent, "AI Coding Agent", "Autonomous worker (agy, claude, codex) executing tasks via MCP")
+  Person_Ext(agent, "AI Coding Agent", "Autonomous worker (agy, claude, codex) executing tasks via CLI")
   System(eidos, "Eidos Ecosystem", "Git-native SDLC orchestration and specification engine")
   System_Ext(vcs, "GitHub / GitLab", "VCS repository, PR/MR discussions, and CI/CD pipelines")
 
   Rel(user, eidos, "Runs CLI commands, writes living specs")
-  Rel(agent, eidos, "Invokes MCP stdio tools, inspects task context, returns code diffs")
+  Rel(agent, eidos, "Invokes CLI commands, inspects task context, returns code diffs")
   Rel(eidos, vcs, "Bidirectional sync of issues, PRs, and status checks")
 ----
 
@@ -144,7 +139,6 @@ Eidos is distributed as a monorepo consisting of the following primary Level 2 c
 | Container ID | Name | Type | Source Path
 | `CNT-EIDOS-CORE` | Eidos Living Spec & Design Core Engine | Library | `src/eidos/core`
 | `CNT-EIDOS-CLI` | Eidos Command-Line Interface | CLI Application | `src/eidos/cli`
-| `CNT-EIDOS-MCP` | Eidos Model Context Protocol Server | Daemon / Service | `src/eidos/mcp`
 | `CNT-EIDOS-PLUGIN` | Eidos Agent Plugin & Extension Manager | Library | `src/eidos/plugin`
 | `CNT-EIDOS-PORTAL` | Eidos Living Web Portal & Static Generator | Web Application | `src/eidos/portal`
 | `CNT-EIDOS-INDEX` | Eidos Architectural Knowledge Graph & Retrieval Index | Library | `src/eidos/core/graph_index.py`
@@ -155,13 +149,12 @@ Eidos is distributed as a monorepo consisting of the following primary Level 2 c
 Internal component building blocks are declared inline within each container manifest. In Hybrid Mode (see link:../explorations/EXP-2026-004.adoc[EXP-2026-004]), complex promoted components **must be co-located directly with their source code** (e.g. `src/eidos/core/validator.adoc`); centralized component folders are prohibited.
 
 Furthermore, interface ownership strictly distinguishes between deployment boundaries and in-memory linkage:
-* **Containers (`CNT-*`)** define **Boundary Protocol Contracts (`CTR-*`)**: Cross-process, network, or CLI protocols (CLI args, REST OpenAPI, gRPC, MCP).
+* **Containers (`CNT-*`)** define **Boundary Protocol Contracts (`CTR-*`)**: Cross-process, network, or CLI protocols (CLI args, REST OpenAPI, gRPC).
 * **Components (`CMP-*`)** define **In-Process APIs (`interfaces.provides`)**: In-memory language-level function/class signatures internal to the container.
 
 Container manifests interactively explorable in the Living Web Portal's Hierarchical C4 Explorer:
 * link:containers/core.adoc[`CNT-EIDOS-CORE` Container Specification (CMP-SPEC-PARSER, CMP-SPEC-VALIDATOR, ...)]
 * link:containers/cli.adoc[`CNT-EIDOS-CLI` Container Specification (CMP-CLI-APP, CMP-CLI-SPEC-COMMANDS, ...)]
-* link:containers/mcp.adoc[`CNT-EIDOS-MCP` Container Specification (CMP-MCP-SERVER-LOOP, CMP-MCP-TOOL-CATALOG, ...)]
 * link:containers/plugin.adoc[`CNT-EIDOS-PLUGIN` Container Specification (CMP-PLUGIN-INSTALLER, CMP-PLUGIN-VALIDATOR, ...)]
 * link:containers/portal.adoc[`CNT-EIDOS-PORTAL` Container Specification (CMP-PORTAL-SERVER, CMP-PORTAL-GENERATOR, ...)]
 * link:containers/index.adoc[`CNT-EIDOS-INDEX` Container Specification (CMP-GRAPH-STORAGE, CMP-FTS-QUERY-ENGINE, ...)]
@@ -173,13 +166,12 @@ Runtime execution choreographies are defined in:
 * link:../domains/product-core/capabilities/exploration-discovery.adoc[Exploration & Spike Flow]
 
 == 7. Deployment View (Infrastructure & Delivery)
-* **Local Workstation**: Developers run the CLI directly (`uv run eidos`) and IDEs connect via stdio MCP.
+* **Local Workstation**: Developers and AI agents run the CLI directly (`uv run eidos`).
 * **CI/CD Automation**: GitHub Actions or GitLab CI runners execute validation gates on every PR.
 
 == 8. Cross-Cutting Concepts
 * **Interface Contracts**:
   - link:contracts/cli.adoc[`CTR-EIDOS-CLI` (Command-Line Interface Contract)]
-  - link:contracts/mcp.adoc[`CTR-EIDOS-MCP` (Model Context Protocol stdio Contract)]
 * **Design System Standard**: W3C Design Tokens Community Group (`tokens.json`) with multi-brand inheritance.
 * **Lifecycle Isolation**: Self-contained `eidos/.gitignore` isolating generated status symlink views (`deltas/by-status/`).
 * **Error Diagnostics**: Standardized exit codes and formatted terminal tables using Rich.

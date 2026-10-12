@@ -22,20 +22,15 @@ Activate this skill when:
 
 When reviewing a branch, PR, or working tree, audit across these 5 dimensions:
 
-```
-                      ┌─────────────────────────────────┐
-                      │    5-Dimension Review Matrix    │
-                      └───────────────┬─────────────────┘
-                                      │
-        ┌─────────────┬───────────────┼───────────────┬─────────────┐
-        ▼             ▼               ▼               ▼             ▼
-   Blast Radius   Contract SemVer  Policies &   Workflow Mode  Spec & Link
-   & Boundaries   Compatibility   Invariants     Compliance     Integrity
-```
+1. **Blast Radius & Boundary Integrity**: Component boundaries, cross-package imports, and transitive dependencies.
+2. **Interface Contract SemVer Compatibility**: Protocol stability across CLI, REST, gRPC, and messaging contracts.
+3. **Policies & Invariant Guardrails**: Enforcement of repository policies (`POL-*`) and test bindings (`INV-*`).
+4. **Workflow Mode Compliance**: Proper execution of Planned Mode (SpecDeltas) or Direct Mode reconciliation.
+5. **Spec Conformance & Link Integrity**: Zero broken references and valid schemas (`eidos validate`).
 
 ### Dimension 1: Blast Radius & Boundary Integrity
-* **Recommended Step 1:** Invoke MCP tool `eidos_get_task_context(files=touched_files, tier="guardrails")` or run `eidos context -f <file>` on the changed files. This immediately extracts the exact C4 Level 2/3 component slice, bound interface contracts (`CTR-*`), domain capabilities (`CAP-*`), and technical invariants (`INV-*`).
-* **Blast-Radius Graph Traversal:** Invoke MCP tool `eidos_get_blast_radius(symbol_or_path=comp_id, max_hops=2)` or run `eidos index blast-radius <comp_id>` to compute recursive transitive dependencies across containers, interface contracts, and domain capabilities. Verify all impacted downstream entities are accounted for in the change plan.
+* **Recommended Step 1:** Run `eidos context -f <file> --format json` on the changed files. This immediately extracts the exact C4 Level 2/3 component slice, bound interface contracts (`CTR-*`), domain capabilities (`CAP-*`), and technical invariants (`INV-*`).
+* **Blast-Radius Graph Traversal:** Run `eidos index blast-radius <comp_id>` to compute recursive transitive dependencies across containers, interface contracts, and domain capabilities. Verify all impacted downstream entities are accounted for in the change plan.
 * Inspect touched code files and verify they belong strictly to declared container packages ([`CNT-*`](file:///home/MTS/marwan.chawa/WS/eidos/eidos/architecture/containers)).
 * **Red Flag:** A pull request touches files across 4 different components when the SpecDelta only declared mutations for 1 component.
 * **Red Flag:** Introduction of circular module dependencies or unauthorized cross-package imports violating architectural boundaries.
@@ -110,7 +105,7 @@ Deliver structured, actionable review feedback formatted like a Senior/Staff Arc
 ## 4. Automation & Tools
 
 During review, the agent should invoke:
-1. `eidos_get_task_context(files=...)` or `eidos context -f ...`: Immediately slice the architectural subgraph of touched files to inspect impacted C4 components, bound contracts, domain capabilities, and invariants.
-2. `eidos_detect_drift`: Inspect git diff and verify invariant test bindings across polyglot test suites.
-3. `eidos_validate`: Check schema compliance and broken cross-references.
-4. `eidos_list_components`: Verify architectural dependencies.
+1. `eidos context -f <files> --format json`: Immediately slice the architectural subgraph of touched files to inspect impacted C4 components, bound contracts, domain capabilities, and invariants.
+2. `eidos drift --uncommitted --json` (or `--base origin/main --json`): Inspect git diff and verify invariant test bindings across polyglot test suites.
+3. `eidos validate --json`: Check schema compliance and broken cross-references.
+4. `eidos index search` / `eidos index blast-radius`: Verify architectural dependencies and blast radius.

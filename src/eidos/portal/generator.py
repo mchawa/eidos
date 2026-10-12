@@ -190,6 +190,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             "blast_radius": fm.get("blast_radius", {}),
             "vcs": fm.get("vcs"),
             "body": d["body"],
+            "path": d.get("path", ""),
         }
         if status in deltas_by_status:
             deltas_by_status[status].append(delta_item)
@@ -220,6 +221,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 "exit_criteria": fm.get("exit_criteria", {}),
                 "decision": fm.get("decision", {}),
                 "body": exp["body"],
+                "path": exp.get("path", ""),
             }
         )
 
@@ -407,7 +409,7 @@ def _generate_c4_context_mermaid(personas: list[dict[str, Any]], system_id: str,
         "",
         f'  SYS["<div style=\'padding:10px 14px;font-size:15px;\'><b>{system_id}</b><br/>{clean_title}<br/><i>[Living Specification &amp; Governance Ecosystem]</i></div>"]:::system',
         '  EXT_GIT["<div style=\'padding:8px 12px;\'><b>GitHub / GitLab</b><br/>VCS Platform &amp; CI/CD Pipeline<br/><i>[External Platform]</i></div>"]:::external',
-        '  EXT_IDE["<div style=\'padding:8px 12px;\'><b>AI IDEs &amp; MCP Clients</b><br/>Antigravity, Cursor, Claude Code<br/><i>[Development Environments]</i></div>"]:::external',
+        '  EXT_IDE["<div style=\'padding:8px 12px;\'><b>AI IDEs &amp; Coding Agents</b><br/>Antigravity, Cursor, Claude Code<br/><i>[Development Environments]</i></div>"]:::external',
     ]
 
     for p in personas:
@@ -423,7 +425,7 @@ def _generate_c4_context_mermaid(personas: list[dict[str, Any]], system_id: str,
         lines.append(f'  {node_id} ==>|Interacts & Collaborates| SYS')
 
     lines.append('  SYS ==>|Syncs Specs, Issues, PRs| EXT_GIT')
-    lines.append('  SYS ==>|JSON-RPC Stdio MCP Protocol| EXT_IDE')
+    lines.append('  SYS ==>|CLI Commands &amp; Agent Skills| EXT_IDE')
 
     return "\n".join(lines)
 

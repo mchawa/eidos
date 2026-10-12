@@ -1,0 +1,39 @@
+---
+type: design/screen
+schema: schemas/v1/design/screen.schema.yaml
+id: SCR-PORTAL-EXPLORATIONS
+title: "Technical Explorations & Architectural Spikes View"
+route: "/explorations"
+client: "CLT-WEB-PORTAL"
+status: active
+
+capabilities:
+  - "eidos/domains/spec-engine/capabilities/exploration-discovery.adoc"
+
+supported_design_systems:
+  - "eidos/design/systems/core/system.adoc"
+
+slots:
+  explorations_grid: "UIC-PORTAL-SHELL"
+  exploration_detail_modal: "UIC-PORTAL-SHELL"
+
+states:
+  - name: "loading"
+    description: "Skeleton loader displayed during exploration inventory retrieval."
+  - name: "active"
+    description: "Interactive grid displaying EXP-* explorations with status filters, hypotheses, spike lists, and benchmark metrics."
+  - name: "error"
+    description: "Alert state when exploration specification parsing fails."
+---
+= Screen: Technical Explorations & Architectural Spikes View
+:toc: left
+
+== 1. View Purpose & Discovery Lifecycle
+The Technical Explorations View (`SCR-PORTAL-EXPLORATIONS`) tracks hypothesis-driven architectural research and spikes:
+* **Hypotheses & Questions**: Documents core problem statements and research questions under investigation.
+* **Empirical Spikes**: Tracks targeted proof-of-concept tasks and sandboxed Git branch validations.
+* **Exit Criteria**: Enforces explicit time-boxing and validation benchmarks.
+* **Decisions & Learnings**: Displays outcomes (`adopted`, `discarded`, `proposed`) and empirical takeaways.
+* **Resulting SpecDelta Bridge**: 1-click navigation into resulting Planned Mode mutations (`DLT-*`).
+* **Detailed AsciiDoc Specification Inspection**: Centered modal inspection with complete rendered AsciiDoc rationale.
+

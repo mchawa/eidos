@@ -68,7 +68,7 @@ This exploration investigates an **Embedded Architectural Knowledge Graph & Hybr
 
 In compliance with `POL-001-GIT-SOURCE-OF-TRUTH`, the index must never become a stale or desynchronized cache:
 * **Mtime & SHA-256 Tracking:** The database maintains an `indexed_files` manifest recording relative paths, modification timestamps, and content hashes.
-* **Lazy Incremental Refresh:** On any CLI command or MCP tool invocation, Eidos checks file modification timestamps in <5ms. Only modified or newly created files are parsed and updated in SQLite.
+* **Lazy Incremental Refresh:** On any CLI command or agent query invocation, Eidos checks file modification timestamps in <5ms. Only modified or newly created files are parsed and updated in SQLite.
 * **Deterministic Rebuild:** If `.eidos/cache/index.db` is deleted or corrupted, it is automatically rebuilt from scratch from the living specifications and codebase.
 
 === 2.3 Tiered Agent Context Slices

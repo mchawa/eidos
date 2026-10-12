@@ -164,7 +164,7 @@ name: "Autonomous AI Coding Agent"
 role_type: autonomous_agent # human | autonomous_agent | system_service
 goals:
   - "Safely mutate code without violating implicit domain rules."
-  - "Retrieve deterministic schema definitions via Model Context Protocol (MCP)."
+  - "Retrieve deterministic schema definitions and architectural context via CLI."
 pain_points:
   - "Stale wikis and missing context leading to hallucinated APIs."
 ---
@@ -262,7 +262,7 @@ dependencies:
 
 ### `tech/contract`
 * **Schema**: `schemas/v1/tech/contract.schema.yaml`
-* **ID Convention**: `CTR-<NAME>` (e.g., `CTR-EIDOS-CLI`, `CTR-EIDOS-MCP`)
+* **ID Convention**: `CTR-<NAME>` (e.g., `CTR-EIDOS-CLI`, `CTR-REST-API`)
 * **Location**: `eidos/architecture/contracts/<name>.adoc`
 * **Required Properties**: `type`, `schema`, `id`, `title`, `protocol`, `owning_container`, `specification_file`
 * **Intent**: Formal interface protocol boundary contract. Binds APIs, CLI signatures, or RPC services to concrete schemas or specs.
@@ -441,7 +441,7 @@ intent: feature # feature | bugfix | refactor | security | deprecation
 affects:
   components:
     - CMP-EIDOS-CLI
-    - CMP-EIDOS-MCP
+    - CMP-EIDOS-CORE
 mutations:
   - action: add_interface
     target: "CTR-EIDOS-CLI"

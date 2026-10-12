@@ -1,5 +1,5 @@
 import * as React from "react";
-import { CheckCircle2, AlertTriangle, Layers, Box, ShieldCheck, GitPullRequest, ArrowRight } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Layers, Box, ShieldCheck, GitPullRequest, ArrowRight, Lightbulb } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,15 @@ export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) 
       tab: "deltas",
     },
     {
+      label: "Technical Explorations",
+      value: overview.explorations_count ?? (data.explorations?.length || 0),
+      subtext: "Discovery Spikes",
+      icon: Lightbulb,
+      color: "text-amber-600 dark:text-amber-400",
+      bg: "bg-amber-500/10 dark:bg-amber-400/15",
+      tab: "explorations",
+    },
+    {
       label: "Invariants Enforced",
       value: data.invariants?.length || 0,
       subtext: "POL-002 Traceability",
@@ -78,7 +87,7 @@ export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) 
       </div>
 
       {/* Metrics Row (UIC-PORTAL-METRIC-CARD) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {metricCards.map((m, idx) => {
           const Icon = m.icon;
           return (

@@ -97,12 +97,14 @@ def test_spike_c_c4_mermaid_kanban_react(repo_root):
     catalog_file = views_dir / "CatalogView.tsx"
     home_file = views_dir / "HomeView.tsx"
     design_file = views_dir / "DesignView.tsx"
+    explorations_file = views_dir / "ExplorationsView.tsx"
 
     assert arch_file.exists(), "ArchitectureView.tsx must exist"
     assert deltas_file.exists(), "DeltasView.tsx must exist"
     assert catalog_file.exists(), "CatalogView.tsx must exist"
     assert home_file.exists(), "HomeView.tsx must exist"
     assert design_file.exists(), "DesignView.tsx must exist"
+    assert explorations_file.exists(), "ExplorationsView.tsx must exist"
 
     arch_code = arch_file.read_text(encoding="utf-8")
     assert "mermaid" in arch_code
@@ -130,7 +132,7 @@ def test_spike_d_runtime_zero_node_invariant(repo_root):
 
     # 1. Test build_static_portal runs pure Python without Node.js
     tmp_out = repo_root / ".eidos" / "test_portal_out"
-    res_path = build_static_portal(repo_root / "eidos", tmp_out)
+    build_static_portal(repo_root / "eidos", tmp_out)
     assert (tmp_out / "index.html").exists()
     assert (tmp_out / "data.json").exists()
 

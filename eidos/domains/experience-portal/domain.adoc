@@ -14,7 +14,7 @@ boundaries:
   out_of_scope:
     - "Parsing and validating AST schemas (delegated to DOM-SPEC-ENGINE)."
     - "Git drift detection and VCS reconciliation (delegated to DOM-VCS-LIFECYCLE)."
-    - "Serving MCP tool endpoints to AI agents (delegated to DOM-AGENT-INTELLIGENCE)."
+    - "Agent plugin packaging, skills, and intelligence adapters (delegated to DOM-AGENT-INTELLIGENCE)."
 technical_mapping:
   components:
     - "src/eidos/portal/server.py"

@@ -134,10 +134,21 @@ def get_installed_plugin_version(project_dir: Path | None = None, dest_path: Pat
 
     manifest_path = target_dir / "plugin.json"
     if not manifest_path.exists():
-        # Fallback to Claude plugin manifest if installed specifically for Claude
-        claude_manifest = root / ".claude" / "skills" / "eidos" / ".claude-plugin" / "plugin.json"
-        if claude_manifest.exists():
-            manifest_path = claude_manifest
+        # Fallback to other agent manifests if installed specifically for them
+        fallbacks = [
+            root / ".claude" / "plugins" / "eidos" / "plugin.json",
+            root / ".claude" / "plugins" / "eidos" / ".claude-plugin" / "plugin.json",
+            root / ".claude" / "skills" / "eidos" / ".claude-plugin" / "plugin.json",
+            root / ".github" / "plugin" / "plugin.json",
+            root / ".codex" / "plugin.json",
+            root / ".opencode" / "plugins" / "eidos" / "plugin.json",
+            root / ".cline" / "plugins" / "eidos" / "plugin.json",
+            root / ".cline" / "skills" / "eidos" / "plugin.json",
+        ]
+        for fb in fallbacks:
+            if fb.exists():
+                manifest_path = fb
+                break
         else:
             return None
     try:

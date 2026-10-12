@@ -1,0 +1,32 @@
+---
+type: product/policy
+schema: schemas/v1/product/policy.schema.yaml
+id: POL-004-ZERO-AI-CALL-DEPENDENCY
+title: "Zero AI-Call Dependency (Deterministic Governance Substrate)"
+category: architectural
+rule: "Eidos MUST NEVER initiate calls to AI, LLM, or model APIs. Eidos is strictly an authoritative, deterministic specification compiler, validator, and drift verification substrate invoked by external agents and human engineers."
+enforcement:
+  mechanism: "CI dependency auditing (verifying zero AI/LLM SDKs in pyproject.toml), test_policy_zero_ai.py, and architectural drift gating"
+  severity: blocking
+---
+= Policy: Zero AI-Call Dependency (Deterministic Governance Substrate)
+:toc: left
+
+== Rationale
+
+Eidos operates on a fundamental inversion of control: **external AI coding agents and human engineers invoke Eidos; Eidos never invokes an AI model.**
+
+Allowing the core specification and governance engine to call AI directly introduces fatal architectural liabilities:
+
+1. **Non-Determinism**: Living specifications, architectural validation, and drift verification gates must produce 100% reproducible, mathematically deterministic results across runs.
+2. **Environment Brittleness & Secrets**: Requiring LLM API keys (OpenAI, Anthropic, Google) or remote network access breaks air-gapped CI/CD environments, hermetic build systems, and local offline development.
+3. **Unbounded Latency & Token Costs**: Incurring LLM token overhead inside core CLI commands (`validate`, `drift`, `context`, `delta`, `index`) degrades performance and imposes arbitrary financial cost.
+4. **Separation of Concerns**: Autonomous coding agents (such as Google Antigravity `agy`, Claude Code, Cursor, GitHub Copilot, and Aider) are independent clients. Eidos provides the authoritative, structured, and token-budgeted substrate (schemas, SQLite knowledge graph, invariant tests) that grounds those agents.
+
+== Enforcement Rules
+
+1. **Zero LLM SDK Dependencies**: `pyproject.toml` and runtime package dependencies must never require LLM SDKs (e.g., `openai`, `anthropic`, `google-generativeai`, `langchain`, `litellm`).
+2. **Zero Inbound AI Execution**: Eidos CLI commands must never execute LLM inference loops or dispatch tasks to AI models. All CLI commands must execute deterministically using local CPU, standard library tools, and local SQLite caches.
+3. **Structured Substrate Output**: All inspection commands (`context`, `validate`, `drift`, `index`, `reconcile`) must expose deterministic `--json` outputs with stable schemas so external agents can parse and act upon them reliably.
+4. **Automated Verification**: Verified by automated test `tests/test_policy_zero_ai.py` enforcing that no LLM dependencies exist in package manifests and no remote AI endpoints are configured.
+

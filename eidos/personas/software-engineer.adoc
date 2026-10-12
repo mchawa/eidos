@@ -16,7 +16,7 @@ pain_points:
 interaction_modes:
   - "CLI commands: 'eidos drift', 'eidos validate', 'eidos context'"
   - "Direct Mode spec-code co-evolution in Git commits"
-  - "Pair programming with AI agents via Model Context Protocol (MCP) in IDE"
+  - "Pair programming with AI agents via Agent Skills and IDE plugins"
   - "TDD implementation with invariant-linked test suites (pytest, vitest)"
 ---
 = Persona: Software Engineer

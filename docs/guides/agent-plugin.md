@@ -1,6 +1,6 @@
 # AI Agent Integration
 
-Eidos is **agent-agnostic** and **model-agnostic**. It provides a standardized plugin and **Model Context Protocol (MCP)** server so any AI coding assistant—such as **Google Antigravity**, **Claude Code**, **Cursor**, **Windsurf**, or **Cline**—can understand, query, and mutate your living specifications safely.
+Eidos is **agent-agnostic** and **model-agnostic**. It provides a standardized plugin bundle conforming to **[agent-plugins.org v1.0.0](https://agent-plugins.org)** and 14 specialized **Agent Skills** conforming to **[agentskills.io](https://agentskills.io)** so any AI coding assistant—such as **Google Antigravity**, **Claude Code**, **Cursor**, **GitHub Copilot**, **Aider**, **Cline**, **OpenCode**, or **OpenAI Codex**—can understand, query, and mutate your living specifications safely through direct CLI execution.
 
 ```
                     ┌─────────────────────────────────────────┐
@@ -8,16 +8,16 @@ Eidos is **agent-agnostic** and **model-agnostic**. It provides a standardized p
                     │ (Google Antigravity, Claude, Cursor, …) │
                     └────────────────────┬────────────────────┘
                                          │
-                   MCP Tools / Skills    │   Rules & Guidelines
-                   (eidos_validate, …)   │   (AGENTS.md, .mdc)
+                    Direct CLI / Skills  │   Rules & Guidelines
+                    (eidos validate, …)  │   (AGENTS.md, .mdc)
                                          ▼
                     ┌─────────────────────────────────────────┐
-                    │       Eidos Agent Plugin & MCP          │
+                    │           Eidos Agent Plugin            │
                     │        (agent-plugins.org v1)           │
                     └────────────────────┬────────────────────┘
                                          │
-                   Inspect Architecture  │   Scaffold & Apply
-                   & Invariants          │   SpecDeltas (DLT-*)
+                    Inspect Architecture │   Scaffold & Apply
+                    & Invariants         │   SpecDeltas (DLT-*)
                                          ▼
                     ┌─────────────────────────────────────────┐
                     │          Living Specifications          │
@@ -27,24 +27,53 @@ Eidos is **agent-agnostic** and **model-agnostic**. It provides a standardized p
 
 ---
 
+## The CLI-First Architecture for AI Agents
+
+Modern AI coding agents (Claude Code, Cursor Composer, Google Antigravity, Copilot, Cline, Aider) operate inside terminal-capable sandboxes, subshells, and Docker containers. Eidos is built **CLI-first**:
+
+* **Zero Daemon Flakiness**: No long-running background stdio server processes to crash, disconnect, deadlock, or require manual port management.
+* **Universal Cloud & Sandbox Portability**: Works out-of-the-box in GitHub Codespaces, remote SSH sessions, CI/CD runners, and ephemeral cloud devboxes where local stdio daemon connections are unreliable.
+* **Deterministic `--json` Contracts**: Every inspection, validation, and drift check command supports `--json` output, providing deterministic schemas that agents can parse programmatically without regex or LLM hallucination.
+* **Token-Efficient Progressive Disclosure**: Through `eidos context`, agents extract targeted architectural slices (~140 to ~1,500 tokens) rather than dumping thousands of lines of documentation into the context window.
+* **Strict Exit Code Semantics**: Commands return standard Unix exit codes (`0` for success/clean, `1` for validation errors or drift), enabling automated tool loops and pre-commit hooks to halt instantly on failure.
+
+---
+
 ## One-Command Setup
 
-Eidos can automatically configure your project for all supported AI coding assistants in a single step:
+Eidos automatically configures your project for all supported AI coding assistants in a single step:
 
 ```bash
-# Configure all supported AI assistants at once (Antigravity, Claude, Cursor)
+# Default installation (configures project scope, Cursor, and Claude Code):
+eidos install
+# or:
+eidos plugin install
+
+# Full installation across all supported AI assistants:
+eidos install all
+# or:
 eidos plugin install --target all
+
+# Targeted installation for a specific assistant:
+eidos install cursor
+eidos install claude
+eidos install copilot
 ```
 
 ### Installation Targets
 
 | Target Flag | Target Path / Config | Description |
 | :--- | :--- | :--- |
-| `--target all` | All environments below | Installs Antigravity/agent plugin bundle, Claude Code plugin, and generates Cursor MCP config |
-| `--target antigravity` | `.agents/plugins/eidos/` | Installs plugin bundle with rules, skills, hooks, and extensions |
-| `--target claude` | `.claude/skills/eidos/` | Installs Claude Code plugin, skills, `.mcp.json`, and configures `.claude/settings.json` and `.claude/mcp.json` |
-| `--target cursor` | `.cursor/mcp.json` | Configures the project-level MCP server for Cursor |
-| `--target project` | `.agents/plugins/eidos/` | Standard project-scope installation conforming strictly to `agent-plugins.org v1.0.0` |
+| `--target all` | All environments below | Installs plugins and configs for Antigravity, Claude, Cursor, Aider, Cline, OpenCode, Codex, and GitHub Copilot |
+| `--target project` | `.agents/plugins/eidos/` | Standard project-scope installation conforming strictly to `agent-plugins.org v1.0.0` (also configures Cursor and Claude) |
+| `--target antigravity` | `.agents/plugins/eidos/` | Installs plugin bundle with rules, 14 skills, hooks, and extensions (agent-plugins.org v1.0.0) |
+| `--target claude` | `.claude/plugins/eidos/`, `.claude/skills/` | Installs Claude Code plugin, 14 flat skills, slash commands (`/validate`, `/drift`), and configures `.claude/settings.json` |
+| `--target cursor` | `.cursor/skills/`, `.cursor/rules/eidos.mdc` | Installs 14 flat skills and Cursor rules (`.mdc`) for CLI execution |
+| `--target copilot` | `.github/plugin/`, `.github/skills/`, `.github/copilot/` | Installs GitHub Copilot plugin (Agent Plugins 1.0), 14 skills, settings, and instructions |
+| `--target aider` | `.aider/skills/`, `.aider.conventions.md`, `.aider.conf.yml` | Installs 14 skills, conventions index, and auto-read configuration |
+| `--target cline` | `.cline/plugins/`, `.cline/skills/` | Installs plugin bundle, 14 flat skills, and AGENTS.md conventions |
+| `--target open-code` | `.opencode/plugins/`, `.opencode/skills/` | Installs plugin bundle, 14 flat skills, and AGENTS.md instructions |
+| `--target codex` | `.codex/plugin.json`, `.codex/skills/`, `.codex/rules.md` | Installs OpenAI Codex plugin bundle with 14 skills and rules |
 
 ---
 
@@ -93,16 +122,21 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ### 2. How Antigravity Uses Eidos
 
     * **Master Engineering Skill**: Antigravity indexes `skills/eidos/SKILL.md` to guide agent decision-making, strictly enforcing the 5 Eidos architectural invariants (Single Source of Truth, No ADRs, SpecDelta lifecycle, Invariant-Test traceability, and Spec validation).
-    * **Specialized Agent Skills**: Antigravity agents can invoke skills like `/eidos-delta` to scaffold mutations or `/eidos-architecture` to inspect C4 containers.
+    * **Specialized Agent Skills**: Antigravity agents invoke skills like `/eidos-delta` to scaffold mutations, `/eidos-context` to slice architecture, or `/eidos-architecture` to inspect C4 containers.
     * **Quality Hooks**: Quality gates intercept document edits to verify AsciiDoc schemas before changes are finalized.
 
-=== "Claude Code & Claude Desktop"
+=== "Claude Code"
 
-    Claude Code (Anthropic's agentic CLI) and Claude Desktop communicate with Eidos over the **Model Context Protocol (MCP)** using stdio JSON-RPC.
+    Claude Code (Anthropic's agentic CLI) communicates with Eidos via native Agent Skills and direct CLI execution.
 
     ### Claude Code (CLI)
 
-    Claude Code natively supports plugins consisting of `.claude-plugin/plugin.json`, skills, and MCP configurations.
+    Claude Code natively supports a standardized, file-based plugin architecture:
+    1. **Manifest (`plugin.json`)**: Plugin namespace, versioning, and metadata.
+    2. **Commands (`commands/*.md`)**: Native slash commands (`/validate`, `/drift`, `/reconcile`, `/context`).
+    3. **Skills (`skills/*/SKILL.md`)**: Domain expertise triggerable by user tasks.
+    4. **Subagents**: Specialized roles dynamically forked by Claude.
+    5. **Hooks (`hooks.json`)**: Lifecycle event handlers (pre-tool checks, lint gates).
 
     #### 1. Automatic Installation
     Install the Eidos Claude Code plugin into your project using the CLI shortcut or target flag:
@@ -114,38 +148,12 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ```
 
     This automatically:
-    - Installs the plugin into `.claude/skills/eidos/` with `.claude-plugin/plugin.json`, `.mcp.json`, and all 14 skills.
-    - Enables the plugin in `.claude/settings.json` (`enabledPlugins: {"eidos@skills-dir": true}`).
-    - Configures `.claude/mcp.json` with the Eidos MCP server for compatibility.
+    - Installs the full plugin bundle into `.claude/plugins/eidos/` (following Claude Code's Method 2: Project Root Injection) with `plugin.json`, `.claude-plugin/plugin.json`, and `hooks.json`.
+    - Generates Claude Code interactive slash commands in `.claude/plugins/eidos/commands/` (`/validate`, `/drift`, `/reconcile`, `/context`).
+    - Installs all 14 individual Eidos skills into `.claude/skills/<skill-name>/` so they are immediately discoverable by Claude Code's native `/skills` registry and direct command invocations (`/eidos`, `/eidos-architecture`, etc.).
+    - Registers and enables the plugin in `.claude/settings.json` (`plugins: [{"path": ".claude/plugins/eidos"}]`, `enabledPlugins: {"eidos": true, "eidos@plugins-dir": true}`).
 
-    #### 2. Manual Configuration (`.claude/mcp.json` or `.mcp.json`)
-    If you prefer configuring MCP standalone without the plugin bundle, place the following in `.claude/mcp.json` or `.mcp.json` in your repository root:
-
-    ```json
-    {
-      "mcpServers": {
-        "eidos": {
-          "command": "uv",
-          "args": ["run", "eidos", "mcp"]
-        }
-      }
-    }
-    ```
-
-    > [!TIP]
-    > If running outside an existing Python virtualenv, use `uvx` for zero-install execution:
-    > ```json
-    > {
-    >   "mcpServers": {
-    >     "eidos": {
-    >       "command": "uvx",
-    >       "args": ["eidos-ai", "mcp"]
-    >     }
-    >   }
-    > }
-    > ```
-
-    #### 3. Enforcing Rules in `CLAUDE.md`
+    #### 2. Enforcing Rules in `CLAUDE.md`
     To ensure Claude Code adheres to Eidos architectural governance, reference the Eidos rules in your project's `CLAUDE.md`:
 
     ```markdown
@@ -153,147 +161,263 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ## Eidos Architectural Guidelines
     - Adhere strictly to the guidelines in `.agents/plugins/eidos/skills/eidos/SKILL.md`.
     - Treat `eidos/` living specifications as the single source of truth.
-    - Never create ADRs; all mutations must follow the SpecDelta lifecycle (`eidos_create_delta`).
-    - Validate specifications with `eidos_validate` before completing tasks.
-    ```
-
-    ---
-
-    ### Claude Desktop
-
-    To connect Claude Desktop to your local project's Eidos MCP server, edit your configuration file:
-
-    * **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-    * **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-    * **Linux**: `~/.config/Claude/claude_desktop_config.json`
-
-    ```json
-    {
-      "mcpServers": {
-        "eidos": {
-          "command": "uv",
-          "args": ["--directory", "/absolute/path/to/your/project", "run", "eidos", "mcp"]
-        }
-      }
-    }
+    - Never create ADRs; all mutations must follow the SpecDelta lifecycle (`eidos delta create`).
+    - Validate specifications with `eidos validate --json` before completing tasks.
+    - Check for spec-to-code drift with `eidos drift --uncommitted --json`.
     ```
 
 === "Cursor"
 
-    Cursor connects to Eidos via project-level MCP configuration and custom Cursor rules.
+    Cursor connects to Eidos via native Agent Skills (`.cursor/skills/`) and custom Cursor rules (`.cursor/rules/eidos.mdc`), invoking Eidos CLI commands.
 
     ### 1. Automatic Configuration
 
-    Generate the project-level MCP configuration in `.cursor/mcp.json`:
+    Generate Cursor rules and 14 native Agent Skills:
 
     ```bash
+    eidos install cursor
+    # or
     eidos plugin install --target cursor
     ```
 
-    ### 2. Manual Configuration (`.cursor/mcp.json`)
+    This automatically:
+    - Generates `.cursor/rules/eidos.mdc` with `alwaysApply: true`.
+    - Installs all 14 skills into `.cursor/skills/<skill-name>/` enabling Cursor's native Agent Skills progressive disclosure engine.
 
-    Alternatively, create or edit `.cursor/mcp.json` in your repository root:
+    ### 2. Cursor Rules (`.cursor/rules/eidos.mdc`)
 
-    ```json
-    {
-      "mcpServers": {
-        "eidos": {
-          "command": "uv",
-          "args": ["run", "eidos", "mcp"]
-        }
-      }
-    }
-    ```
-
-    ### 3. Cursor Rules (`.cursor/rules/eidos.mdc` or `.cursorrules`)
-
-    Create `.cursor/rules/eidos.mdc` so Cursor Composer and Chat agents understand when and how to call Eidos MCP tools:
+    Cursor Composer and Chat agents follow `.cursor/rules/eidos.mdc`:
 
     ```markdown
     ---
-    description: Eidos living specifications, C4 architecture, and SpecDelta lifecycle
-    globs: ["eidos/**", "src/**", "tests/**"]
+    description: "Eidos living specifications and architectural governance"
     alwaysApply: true
     ---
 
-    # Eidos AI Agent Guidelines
+    # Eidos Living Specifications
 
-    - **Living Specs as Authority**: All system architecture, containers, component manifests, and policies reside in `eidos/`.
-    - **No ADRs**: Never write ADRs. For non-trivial changes, use the `eidos_create_delta` MCP tool.
-    - **Invariant Traceability**: Verify that every policy (`POL-*`) or capability (`CAP-*`) modified has corresponding test coverage in `tests/`.
-    - **Validate Specs**: Always call the `eidos_validate` MCP tool before concluding a task.
+    This repository is governed by Eidos living specifications under `eidos/`.
+
+    ## Core Principles
+    - Consult living specifications before modifying code or proposing architectural changes.
+    - Strictly enforce living specifications (NO ADRs). All architectural mutations follow the SpecDelta lifecycle (`eidos/deltas/`).
+    - Preserve bidirectional invariant-test traceability (`POL-002`).
+    - Verify specification schemas with `eidos validate eidos` (or `eidos validate --json`).
+    - Verify synchronization with `eidos drift --uncommitted` (or `eidos drift --uncommitted --json`) before finalizing tasks.
+    - Use Eidos CLI commands (`eidos context`, `eidos index search`, `eidos drift`) for real-time inspection.
+    - Consult installed Agent Skills in `.cursor/skills/` for specialized architectural workflows.
     ```
 
-    ### 4. Verification in Cursor
+=== "GitHub Copilot"
 
-    Open **Cursor Settings > Features > MCP Servers**. You will see `eidos` listed with a green status indicator and the 17 available tools (`eidos_validate`, `eidos_get_task_context`, `eidos_search_architecture`, etc.).
+    GitHub Copilot integrates with Eidos using native **[GitHub Copilot Plugins](https://docs.github.com/en/copilot/concepts/agents/about-plugins)** adhering to **Agent Plugins 1.0** (`agent-plugins.org v1.0.0`), direct Agent Skills (`.github/skills/`), and repository settings (`.github/copilot/settings.json`).
 
-=== "Generic MCP Clients (Windsurf, Roo Code, Cline)"
-
-    Eidos implements the standard **Model Context Protocol (MCP)** specification over `stdio`. Any MCP-compliant client can connect immediately.
-
-    ### Cline & Roo Code (`cline_mcp_settings.json`)
-
-    Add the `eidos` server to your Cline or Roo Code MCP settings file:
-
-    ```json
-    {
-      "mcpServers": {
-        "eidos": {
-          "command": "uv",
-          "args": ["run", "eidos", "mcp"],
-          "disabled": false,
-          "autoApprove": [
-            "eidos_validate",
-            "eidos_detect_drift",
-            "eidos_reconcile",
-            "eidos_list_components"
-          ]
-        }
-      }
-    }
+    ### 1. Installation
+    ```bash
+    eidos install copilot
+    # or
+    eidos plugin install --target copilot
     ```
 
-    ### Direct CLI Stdio Execution
+    This automatically:
+    - Installs the native Copilot plugin bundle into `.github/plugin/` with `plugin.json` (declaring `com.github.copilot` extension).
+    - Installs all 14 Eidos skills flat into `.github/skills/<skill-name>/SKILL.md` where GitHub Copilot's Agent Skills engine natively scans and indexes them.
+    - Configures `.github/copilot/settings.json` enabling the `eidos` plugin (`enabledPlugins: {"eidos": true}`).
+    - Configures `.github/copilot-instructions.md` with Eidos living specification rules, safely demarcated with comment markers (`<!-- EIDOS_COPILOT_START -->` ... `<!-- EIDOS_COPILOT_END -->`) to preserve any custom user instructions.
 
-    You can run the MCP server directly from the command line:
+    ### 2. Using with Copilot
+    GitHub Copilot automatically discovers the installed skills under `.github/skills/`, activates the plugin declared in `.github/copilot/settings.json`, and loads `.github/copilot-instructions.md` in Copilot Chat and Copilot Agent mode—enforcing the single source of truth under `eidos/`, zero spec-to-code drift, and bidirectional invariant-test traceability.
+
+=== "Aider"
+
+    Aider pairs with Eidos living specifications by loading persistent conventions via `.aider.conf.yml` and `.aider.conventions.md`.
+
+    ### 1. Installation
+    ```bash
+    eidos install aider
+    ```
+
+    This automatically:
+    - Installs all 14 individual Eidos skills into `.aider/skills/<skill-name>/SKILL.md`.
+    - Generates `.aider.conventions.md` in the project root containing core Eidos guidelines (Single Source of Truth, No ADRs, Invariant traceability, spec validation, and drift gate) alongside an interactive index mapping tasks to `/read .aider/skills/<skill>/SKILL.md`.
+    - Configures `.aider.conf.yml` to automatically include `.aider.conventions.md` under `read:`.
+
+    ### 2. Using with Aider
+    Run Aider as usual:
+    ```bash
+    aider
+    ```
+    Aider automatically ingests `.aider.conventions.md` as read-only context on launch. You can verify specifications from within Aider using `/run uv run eidos validate --json` and check drift using `/run uv run eidos drift --uncommitted --json`. When working on specific architectural areas, prompt Aider to load the corresponding skill with `/read .aider/skills/<skill-name>/SKILL.md`.
+
+=== "Cline"
+
+    Cline connects to Eidos through native Agent Skills (`.cline/skills/`) and plugin bundle (`.cline/plugins/eidos`). It natively discovers the repository's root `AGENTS.md` for architectural rules and conventions.
+
+    ### 1. Installation
+    ```bash
+    eidos install cline
+    ```
+
+    This automatically:
+    - Installs the complete plugin bundle into `.cline/plugins/eidos/`.
+    - Installs all 14 individual skills flat into `.cline/skills/<skill-name>/SKILL.md` where Cline's skill discovery engine indexes them for progressive disclosure.
+    - Leverages the root `AGENTS.md` open standard without requiring redundant rule files.
+
+=== "OpenCode"
+
+    OpenCode integrates with Eidos via local plugin discovery under `.opencode/plugins/eidos` and flat skills under `.opencode/skills/`. OpenCode natively reads the root `AGENTS.md` for project instructions.
+
+    ### 1. Installation
+    ```bash
+    eidos install open-code
+    # or
+    eidos install opencode
+    ```
+
+    This automatically:
+    - Installs the Eidos plugin bundle into `.opencode/plugins/eidos`.
+    - Installs all 14 individual skills flat into `.opencode/skills/<skill-name>/SKILL.md`.
+    - Leverages the root `AGENTS.md` open standard without requiring redundant rule files.
+
+=== "OpenAI Codex"
+
+    OpenAI Codex utilizes portable agent plugin packages containing `plugin.json`, skills, and rules.
+
+    ### 1. Installation
+    ```bash
+    eidos install codex
+    ```
+
+    This automatically:
+    - Scaffolds `.codex/plugin.json` declaring `com.openai` agent plugin extension and metadata.
+    - Installs all 14 individual skills flat into `.codex/skills/<skill-name>/SKILL.md`.
+    - Generates `.codex/rules.md` governing living spec workflows.
+
+=== "Generic AI Agents (Windsurf, Roo Code, etc.)"
+
+    Any terminal-capable AI coding assistant or agent can operate against Eidos living specifications by reading the root `AGENTS.md` and invoking Eidos CLI commands directly:
 
     ```bash
-    # Inside a project with eidos installed in the virtualenv:
-    uv run eidos mcp
+    # Check specification validity
+    eidos validate --json
 
-    # Or run via uvx without pre-installing:
-    uvx eidos-ai mcp
+    # Inspect spec-to-code drift
+    eidos drift --uncommitted --json
 
-    # Or when installed globally:
-    eidos mcp
+    # Extract architectural context slice
+    eidos context -f <touched-file> --format json
     ```
 
 ---
 
-## Exposed MCP Tools Reference
+## CLI Automation Commands for AI Agents
 
-When connected, the Eidos MCP server exposes 17 high-level architectural tools to your AI assistant:
+AI agents execute Eidos CLI commands directly from terminal / subshell tools. All core commands support machine-readable `--json` output:
 
-| MCP Tool | Arguments | Description |
+| CLI Command | Flags / Options | Description |
 | :--- | :--- | :--- |
-| `eidos_get_task_context` *(alias `eidos_context`)* | `files`, `component`, `task`, `tier`, `format`, `path` | Extracts a compact, token-efficient architectural subgraph slice (`anchor`, `guardrails`, `deep`). |
-| `eidos_search_architecture` | `query`, `limit`, `path` | Performs BM25 full-text search across living spec titles, requirements, and invariants. |
-| `eidos_get_blast_radius` | `symbol_or_path`, `max_hops`, `path` | Computes transitive dependency and governance blast radius for a symbol or spec path. |
-| `eidos_index_status` | `path` *(optional)* | Reports index health, cache size, total entity/edge counts, and auto-sync freshness state. |
-| `eidos_sync_index` | `path` *(optional)*, `force` | Manually triggers or forces full re-synchronization of the architectural knowledge graph. |
-| `eidos_detect_drift` | `base_ref`, `head_ref`, `uncommitted`, `path` | Inspects spec-to-code drift between git branches or uncommitted changes, validates schemas, and checks test bindings. |
-| `eidos_reconcile` | `base_ref`, `uncommitted`, `path`, `as_prompt` | Analyzes code modifications against the living spec catalog and proposes candidate specs or structured prompt. |
-| `eidos_validate` | `path` *(optional)* | Validates all living specifications against their bundled JSON Schemas and checks bidirectional cross-references. |
-| `eidos_info` | — | Returns current engine version, loaded v1 schemas, and supported platforms. |
-| `eidos_list_components` | `path` *(optional)* | Lists monorepo containers, internal modules, dependencies, and monorepo package paths. |
-| `eidos_read_spec` | `path` | Reads and parses structured frontmatter metadata and AsciiDoc content of a specification. |
-| `eidos_list_specs` | `type`, `status`, `path` *(optional)* | Lists living specifications matching optional type and lifecycle filters. |
-| `eidos_create_spec` | `type`, `id`, `title`, ... | Scaffolds a new specification document (capability, domain, policy, contract, component, design system, etc.). |
-| `eidos_delete_spec` | `target`, `path`, `force` | Safely deletes a living specification with cross-reference safety checks. |
-| `eidos_create_delta` | `id`, `title`, `kind`, `motivation` | Scaffolds a new SpecDelta mutation document (`DLT-*`) for Planned Mode. |
-| `eidos_apply_delta` | `target`, `path` | Reconciles a SpecDelta in-place, updating its lifecycle state to `applied` and synchronizing symlink views. |
-| `eidos_init_repo` | `path`, `name`, `title`, `with_plugin` | Programmatically bootstraps a repository with living specs and agent plugin. |
+| `eidos context` | `-f <file>`, `-c <cmp>`, `-t <task>`, `--format json` | Slices a compact architectural context subgraph (`anchor`, `guardrails`, `deep`). |
+| `eidos index search` | `"<query>"` | Performs BM25 full-text search across living spec titles, requirements, and invariants. |
+| `eidos index blast-radius` | `<symbol>`, `--depth 2` | Computes transitive dependency and governance blast radius for a symbol or spec path. |
+| `eidos index status` | | Reports index health, cache size, total entity/edge counts, and auto-sync freshness state. |
+| `eidos index sync` | `--force` | Incrementally synchronizes or force-rebuilds the architectural knowledge graph. |
+| `eidos drift` | `--uncommitted`, `--base <ref>`, `--json` | Inspects spec-to-code drift between git branches or uncommitted changes, validates schemas, and checks test bindings. |
+| `eidos reconcile` | `--uncommitted`, `--prompt` | Analyzes code modifications against the living spec catalog and proposes candidate specs or structured prompt. |
+| `eidos validate` | `[PATH]`, `--json` | Validates all living specifications against their bundled JSON Schemas and checks bidirectional cross-references. |
+| `eidos info` | | Returns current engine version, loaded v1 schemas, and supported platforms. |
+| `eidos components` | `[CONTAINER_ID]` | Lists monorepo containers, internal modules, dependencies, and monorepo package paths. |
+| `eidos spec list` | `--type <type>`, `--status <status>` | Lists living specifications matching optional type and lifecycle filters. |
+| `eidos spec create` | `<type> <id> --title <title>` | Scaffolds a new specification document (capability, domain, policy, contract, component, design system, etc.). |
+| `eidos spec delete` | `<id_or_path> [--force]` | Safely deletes a living specification with cross-reference safety checks. |
+| `eidos delta create` | `<id> --title <title> --kind <kind>` | Scaffolds a new SpecDelta mutation document (`DLT-*`) for Planned Mode. |
+| `eidos delta apply` | `<id>` | Reconciles a SpecDelta in-place, updating its lifecycle state to `applied` and synchronizing symlink views. |
+| `eidos init` | `[PATH] [--no-plugin]` | Bootstraps a repository with living specs and agent plugin. |
+
+---
+
+### Machine-Readable JSON Output Reference
+
+When agents pass `--json` (or `--format json`), Eidos outputs structured JSON payloads designed for programmatic consumption:
+
+#### 1. Specification Validation (`eidos validate --json`)
+```json
+{
+  "valid": true,
+  "total": 62,
+  "passed": 62,
+  "failed": 0,
+  "documents": [
+    {
+      "id": "CNT-EIDOS-CORE",
+      "type": "tech/container",
+      "is_valid": true,
+      "path": "eidos/architecture/containers/core.adoc"
+    }
+  ]
+}
+```
+* **Exit code**: `0` when all documents are valid, `1` when any schema or cross-reference error is detected.
+
+#### 2. Drift Detection (`eidos drift --uncommitted --json`)
+```json
+{
+  "is_clean": true,
+  "drift_detected": false,
+  "workflow_mode": "planned",
+  "code_files": ["src/eidos/cli/main.py"],
+  "spec_files": ["eidos/architecture/containers/cli.adoc"],
+  "delta_files": ["eidos/deltas/dlt-2026-016.adoc"],
+  "test_files": ["tests/test_cli_json.py"],
+  "touched_components": ["CNT-EIDOS-CLI"],
+  "valid_specs": 62,
+  "total_specs": 62,
+  "remediation_suggestions": []
+}
+```
+* **Exit code**: `0` when clean, `1` when unmanaged code changes exist without specification updates in Direct Mode.
+
+#### 3. Context Slicing (`eidos context -f src/eidos/cli/main.py --format json`)
+```json
+{
+  "tier": "guardrails",
+  "components": [
+    {
+      "id": "CMP-EIDOS-CLI",
+      "name": "Eidos CLI",
+      "container": "CNT-EIDOS-CLI",
+      "package_path": "src/eidos/cli"
+    }
+  ],
+  "contracts": [
+    {
+      "id": "CTR-EIDOS-CLI",
+      "protocol": "cli_args",
+      "path": "eidos/architecture/contracts/cli.adoc"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "CAP-AGENT-001",
+      "title": "Agent Adapter & Context Engine",
+      "domain": "DOM-AGENT-INTELLIGENCE"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "INV-AGENT-GRAPH-INDEX-FRESHNESS",
+      "rule": "Every CLI query lazily checks dirty status via SHA-256 and mtime hashing.",
+      "covered": true,
+      "test_path": "tests/test_graph_index.py"
+    }
+  ],
+  "policies": [
+    {
+      "id": "POL-001-GIT-SOURCE-OF-TRUTH",
+      "title": "Git Source of Truth Policy"
+    }
+  ]
+}
+```
 
 ---
 
@@ -313,13 +437,13 @@ Traditional Architecture Decision Records (ADRs) become write-only documentation
 * Semantic Mutations: `eidos/deltas/<delta-id>.adoc`
 
 ### 3. SpecDelta Mutation Lifecycle
-Before writing code for non-trivial features, refactors, or fixes, the agent must check if a SpecDelta is required. It scaffolds a delta using `eidos_create_delta` (or `eidos delta create`). After implementation and test verification, the delta is reconciled using `eidos_apply_delta` (or `eidos delta apply`).
+Before writing code for non-trivial features, refactors, or fixes, the agent must check if a SpecDelta is required. It scaffolds a delta using `eidos delta create`. After implementation and test verification, the delta is reconciled using `eidos delta apply`.
 
 ### 4. Invariant-Test Traceability
 Every policy (`POL-*`) and capability (`CAP-*`) defines explicit, testable invariants. All automated tests in `tests/` must trace back to these IDs in test markers, docstrings, or test function names.
 
 ### 5. Specification Integrity & Validation
-Before concluding any task, the agent must validate all specifications using the CLI (`eidos validate eidos`) or the MCP tool (`eidos_validate`). Specifications must conform to schema with zero broken cross-references.
+Before concluding any task, the agent must validate all specifications using `eidos validate --json` (or `eidos validate eidos`). Specifications must conform to schema with zero broken cross-references.
 
 ---
 
@@ -348,26 +472,40 @@ When using an agent client that supports skill bundles (such as Google Antigravi
 
 Eidos provides a complete suite of commands to manage, inspect, and update the installed agent plugin:
 
+### Inspect Plugin Manifest
+
+Display full metadata and configuration for the Eidos Agent Plugin:
+
+```bash
+eidos plugin info
+```
+
+Output:
+
+```text
+╭──────────────────────── Eidos Agent Plugin Manifest ─────────────────────────╮
+│ Plugin Identifier:  eidos                                                    │
+│           Version:  0.4.0                                                    │
+│       Description:  Git-native, agent-agnostic development AI ecosystem and  │
+│                     lifecycle orchestration framework.                       │
+│           License:  MIT                                                      │
+│     Specification:  agent-plugins.org v1.0.0                                 │
+│            Skills:  eidos, eidos-architecture, eidos-context, eidos-delta,   │
+│                     eidos-design, eidos-drift, eidos-explore, eidos-extract, │
+│                     eidos-init, eidos-invariants, eidos-portal,              │
+│                     eidos-product, eidos-reconcile, eidos-review             │
+│       MCP Servers:  None                                                     │
+│   Lifecycle Hooks:  eidos-doc-linter                                         │
+│        Extensions:  com.google.antigravity                                   │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
 ### Inspect Version Status
 
 Compare the currently installed plugin against the version bundled with the Eidos engine:
 
 ```bash
 eidos plugin version
-```
-
-Output:
-
-```text
-               Eidos Agent Plugin Version Status                
-┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Property          ┃ Value                                    ┃
-┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ Bundled Version   │ 0.3.0 (eidos engine)                     │
-│ Installed Version │ 0.3.0                                    │
-│ Plugin Location   │ /path/to/project/.agents/plugins/eidos   │
-│ Sync Status       │ ✓ Up to date                             │
-└───────────────────┴──────────────────────────────────────────┘
 ```
 
 ### Upgrade the Installed Plugin
@@ -394,22 +532,25 @@ Output:
 ┃ Property               ┃ Value                                               ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
 │ Plugin Name            │ eidos                                               │
-│ Plugin Version         │ 0.3.0                                               │
+│ Plugin Version         │ 0.4.0                                               │
 │ Overall Status         │ CONFORMANT                                          │
 │ Discovered Skills      │ eidos, eidos-architecture, eidos-context,           │
 │                        │ eidos-delta, eidos-design, eidos-drift,             │
 │                        │ eidos-explore, eidos-extract, eidos-init,           │
 │                        │ eidos-invariants, eidos-portal, eidos-product,      │
 │                        │ eidos-reconcile, eidos-review                       │
-│ Configured MCP Servers │ eidos                                               │
+│ Configured MCP Servers │ None                                                │
 │ Lifecycle Hooks        │ eidos-doc-linter                                    │
 │ Client Extensions      │ com.google.antigravity                              │
-└────────────────────────┴────────────────────────────────━━━━━━━━━━━━━━━━━━━━━┘
+└────────────────────────┴─────────────────────────────────────────────────────┘
 ```
+
+> [!NOTE]
+> Under `agent-plugins.org v1.0.0`, MCP servers are strictly optional. Eidos plugins decommissioned local stdio MCP servers in favor of direct CLI execution with machine-readable `--json` output, providing superior reliability in cloud, sandbox, and container environments.
 
 ### Uninstall / Clean Up
 
-To cleanly remove plugin files and project MCP configurations:
+To cleanly remove plugin files and agent configurations:
 
 ```bash
 eidos plugin uninstall --target all

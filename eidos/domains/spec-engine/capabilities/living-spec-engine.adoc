@@ -78,6 +78,6 @@ Through an embedded SQLite Knowledge Graph (`.eidos/cache/index.db`), Eidos brid
 * **Schema Validation & Integrity**: Schema resolution and Draft 2020-12 validation ensuring strict typing across all 15 specification schemas.
 * **Embedded Knowledge Graph**: Relational indexing linking Personas, Domains, Capabilities, Invariants, Components, Contracts, and SpecDeltas into `.eidos/cache/index.db`.
 * **Zero-Drift Incremental Sync**: Mtime and SHA-256 dirty checking that keeps the SQLite graph continuously synchronized with the working tree in under 2ms.
-* **Sub-Millisecond Catalog Resolution**: Powering `eidos components`, `eidos spec list`, and MCP inspection tools with instant relational queries rather than linear disk scans.
+* **Sub-Millisecond Catalog Resolution**: Powering `eidos components`, `eidos spec list`, and CLI inspection commands with instant relational queries rather than linear disk scans.
 * **Recursive Blast-Radius & Search**: SQLite recursive Common Table Expressions (CTEs) traversing k-hop impact boundaries and FTS5 full-text search over titles, descriptions, and keywords.
 

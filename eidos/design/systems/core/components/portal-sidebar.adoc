@@ -34,21 +34,24 @@ test_bindings:
 The Portal Navigation Sidebar (`UIC-PORTAL-SIDEBAR`) establishes the primary information hierarchy of the Eidos Living Web Portal, ordered logically:
 1. **Home**: Executive overview, KPI metric cards, system archetype, and recent deltas.
 2. **Business**: Product personas, business domains, capabilities, and system policy invariants.
-3. **Design**: Multi-design systems catalog, W3C DTCG tokens studio, UI components, and screen state machines.
-4. **Architecture**: C4 Level 1 system context, C4 Level 2 container topologies, component manifests, and contracts.
-5. **SpecDeltas**: Interactive Kanban mutation board (`proposed` -> `in_review` -> `approved` -> `applied`).
+3. **Architecture**: C4 Level 1 system context, C4 Level 2 container topologies, component manifests, and contracts.
+4. **SpecDeltas**: Interactive Kanban mutation board displaying all lifecycle statuses (`proposed`, `in_review`, `approved`, `applied`, `rejected`).
+5. **Explorations**: Technical explorations, architectural discovery spikes (`EXP-*`), hypotheses, benchmarks, and resulting SpecDelta bridges.
 6. **Specs Catalog**: Complete searchable, filterable specification repository inventory.
+7. **Design**: Multi-design systems catalog, W3C DTCG tokens studio, UI components, and screen state machines.
 
 == 2. Visual States & Badges
-Each navigation entry displays an SVG icon or glyph, section label, and live document counter badge. The active view is visually highlighted with high-contrast accent styling.
+Each navigation entry displays an SVG icon or glyph, section label, and live document counter badge. The active view is visually highlighted with high-contrast accent styling and MD3 elevation.
 
 == 3. Desktop Collapsible Behavior & Persistence
-The sidebar supports both full-width (`270px`) and icon-only collapsed (`68px`) modes on desktop displays:
-* **Toggle Trigger**: Interactive collapse button (`#sidebarCollapseBtn`) in the brand row with animated chevron rotation.
+The sidebar supports both full-width (`256px` / `w-64`) and icon-only collapsed (`80px` / `w-20`) modes on desktop displays:
+* **Toggle Trigger**: Interactive collapse button (`#sidebarCollapseBtn`) in the brand row with animated chevron rotation and non-clipping vertical stack.
 * **Shortcut Binding**: `Ctrl+B` or `Cmd+B` toggles the sidebar state from anywhere within the portal.
-* **Condensed Visual Styling**: In collapsed mode, textual titles, group headers, and counter badges are gracefully hidden. Icons are centered into 44x40px interactive target pills.
+* **Material Design 3 Indicator Pills**: In collapsed mode, each destination item renders inside a prominent `48x36px` (`w-12 h-9`) rounded container pill with active tonal elevation (`md-elevation-1`), high-contrast `20px` (`h-5 w-5`) vector icons, and an elevated state layer on hover.
+* **Badge Notification Pills**: Item count badges are repositioned as compact notification badges on the top-right corner of the indicator container pill in collapsed mode.
 * **Tooltips & Accessibility**: Each condensed navigation button provides native `title` and `aria-label` attributes to maintain full WCAG AA accessibility.
 * **State Persistence**: The user's preference is automatically saved to browser `localStorage.getItem('eidos_sidebar_collapsed')` and restored prior to paint to prevent layout flicker.
 
-== 4. Iconography & Home Glyph Specification
-* The **Home** navigation item features a vector SVG house glyph (`M3 9.5L12 3l9 6.5V20a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9.5z`) ensuring crisp high-DPI rendering and dynamic CSS color inheritance across dark and light themes.
+== 4. Iconography & Typography Specification
+* **Typography**: Powered by the living `DS-CORE` design tokens (`Geist` UI sans-serif, `Geist Mono` for codes and IDs) with high-legibility sizing (`15px` navigation labels, `13px` captions).
+* **Vector Iconography**: Clear 20px vector icons with 2px stroke weight (`Home`, `Briefcase`, `Network`, `GitBranch`, `Lightbulb`, `Layers`, `Palette`) ensuring crisp high-DPI rendering and dynamic CSS color inheritance across dark and light themes.

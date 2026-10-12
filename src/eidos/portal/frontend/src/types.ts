@@ -148,7 +148,7 @@ export interface SpecDelta {
   id: string;
   title: string;
   kind: string;
-  status: "proposed" | "in_review" | "approved" | "applied";
+  status: "proposed" | "in_review" | "approved" | "applied" | "rejected" | string;
   motivation?: string;
   mutations?: Array<{
     action: string;
@@ -158,6 +158,10 @@ export interface SpecDelta {
     target_screen?: string;
     details?: string;
   }>;
+  blast_radius?: any;
+  vcs?: { branch?: string };
+  body?: string;
+  path?: string;
 }
 
 export interface SpecUIVariant {
@@ -294,9 +298,10 @@ export interface SpecDesignSystem {
 export interface SpecExploration {
   id: string;
   title: string;
-  status: "proposed" | "in_progress" | "adopted" | "discarded";
+  status: "proposed" | "in_progress" | "adopted" | "discarded" | string;
   hypothesis: string;
   questions_to_answer?: string[];
+  spikes_to_run?: Array<{ name: string; target: string }>;
   exit_criteria?: {
     max_duration?: string;
     benchmark?: string;
@@ -306,6 +311,8 @@ export interface SpecExploration {
     resulting_delta_id?: string;
     learnings?: string;
   };
+  body?: string;
+  path?: string;
 }
 
 export interface SpecItem {
@@ -335,6 +342,8 @@ export interface PortalData {
     in_review: SpecDelta[];
     approved: SpecDelta[];
     applied: SpecDelta[];
+    rejected?: SpecDelta[];
+    [status: string]: SpecDelta[] | undefined;
   };
   design_systems: SpecDesignSystem[];
   ui_components: SpecUIComponent[];

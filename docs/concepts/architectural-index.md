@@ -18,11 +18,11 @@ The index enables sub-3ms architectural queries, intelligent full-text specifica
 │  └── specs_fts (SQLite FTS5 virtual table with BM25)   │
 └───────────────┬────────────────────────┬───────────────┘
                 │                        │
-       CLI Commands               MCP Server & Skills
-  eidos context --tier anchor      eidos_search_architecture
-  eidos index status               eidos_get_blast_radius
-  eidos index search               eidos_get_task_context (tier)
-  eidos index blast-radius         eidos_index_status / sync
+       CLI Commands               Agent Skills
+  eidos context --tier anchor      eidos-context
+  eidos index status               eidos-delta
+  eidos index search               eidos-review
+  eidos index blast-radius         eidos-drift
 ```
 
 ---
@@ -42,7 +42,7 @@ The architectural index requires **zero external dependencies**, zero background
 You never need to remember to run a build or initialization command.
 
 ### 1. Automatic On-Demand Bootstrapping
-The first time any command requiring architectural context is invoked (`eidos context`, `eidos index`, MCP server tools, or agent skills), Eidos automatically:
+The first time any command requiring architectural context is invoked (`eidos context`, `eidos index`, or agent skills), Eidos automatically:
 1. Creates `.eidos/cache/` if it does not exist.
 2. Initializes the SQLite schema (`entities`, `edges`, `symbol_mappings`, `indexed_files`, `specs_fts`).
 3. Indexes all living specifications and builds initial reverse symbol mappings in ~100ms.

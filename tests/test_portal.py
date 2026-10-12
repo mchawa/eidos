@@ -33,7 +33,6 @@ def test_portal_data_generation():
     comp_ids = {c["id"] for c in data["components"]}
     assert "CNT-EIDOS-CORE" in comp_ids
     assert "CNT-EIDOS-CLI" in comp_ids
-    assert "CNT-EIDOS-MCP" in comp_ids
     assert "CNT-EIDOS-PLUGIN" in comp_ids
     assert "CNT-EIDOS-PORTAL" in comp_ids
     assert "CNT-EIDOS-DOCS" in comp_ids
@@ -76,7 +75,7 @@ def test_portal_data_generation():
     c4_components = data["diagrams"]["c4_components"]
     assert isinstance(c4_components, dict)
     assert len(c4_components) >= 5
-    for cid in ["CNT-EIDOS-CORE", "CNT-EIDOS-CLI", "CNT-EIDOS-PORTAL", "CNT-EIDOS-MCP"]:
+    for cid in ["CNT-EIDOS-CORE", "CNT-EIDOS-CLI", "CNT-EIDOS-PORTAL", "CNT-EIDOS-PLUGIN"]:
         assert cid in c4_components
         assert c4_components[cid].startswith("graph TD")
         assert cid.replace("-", "_") in c4_components[cid]

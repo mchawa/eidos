@@ -1,163 +1,321 @@
 import * as React from "react";
-import { GitPullRequest, Clock, CheckCircle2, AlertCircle, ArrowRight, FileDiff } from "lucide-react";
+import {
+  GitPullRequest,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  XCircle,
+  FileDiff,
+  GitBranch,
+  BookOpen,
+  Filter,
+  Sparkles,
+  HelpCircle,
+  Tag,
+  Crosshair,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
+import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
+import { cn } from "@/lib/utils";
 import type { PortalData, SpecDelta } from "@/types";
 
 export interface DeltasViewProps {
   data: PortalData;
 }
 
+interface ColumnConfig {
+  key: string;
+  label: string;
+  icon: any;
+  color: string;
+  bg: string;
+  borderColor: string;
+}
+
+const STANDARD_COLUMNS: ColumnConfig[] = [
+  {
+    key: "proposed",
+    label: "Proposed",
+    icon: Clock,
+    color: "text-amber-500 dark:text-amber-400",
+    bg: "bg-amber-500/10 dark:bg-amber-500/15",
+    borderColor: "border-amber-500/20",
+  },
+  {
+    key: "in_review",
+    label: "In Review",
+    icon: AlertCircle,
+    color: "text-blue-500 dark:text-blue-400",
+    bg: "bg-blue-500/10 dark:bg-blue-500/15",
+    borderColor: "border-blue-500/20",
+  },
+  {
+    key: "approved",
+    label: "Approved",
+    icon: GitPullRequest,
+    color: "text-purple-500 dark:text-purple-400",
+    bg: "bg-purple-500/10 dark:bg-purple-500/15",
+    borderColor: "border-purple-500/20",
+  },
+  {
+    key: "applied",
+    label: "Applied",
+    icon: CheckCircle2,
+    color: "text-emerald-500 dark:text-emerald-400",
+    bg: "bg-emerald-500/10 dark:bg-emerald-500/15",
+    borderColor: "border-emerald-500/20",
+  },
+  {
+    key: "rejected",
+    label: "Rejected",
+    icon: XCircle,
+    color: "text-rose-500 dark:text-rose-400",
+    bg: "bg-rose-500/10 dark:bg-rose-500/15",
+    borderColor: "border-rose-500/20",
+  },
+];
+
 export function DeltasView({ data }: DeltasViewProps) {
   const [selectedDelta, setSelectedDelta] = React.useState<SpecDelta | null>(null);
   const [filterText, setFilterText] = React.useState<string>("");
+  const [selectedStatusFilter, setSelectedStatusFilter] = React.useState<string>("all");
 
-  const columns: Array<{
-    key: "proposed" | "in_review" | "approved" | "applied";
-    label: string;
-    icon: any;
-    color: string;
-    bg: string;
-  }> = [
-    {
-      key: "proposed",
-      label: "Proposed",
-      icon: Clock,
-      color: "text-amber-500",
-      bg: "bg-amber-500/10",
-    },
-    {
-      key: "in_review",
-      label: "In Review",
-      icon: AlertCircle,
-      color: "text-blue-500",
-      bg: "bg-blue-500/10",
-    },
-    {
-      key: "approved",
-      label: "Approved",
-      icon: GitPullRequest,
-      color: "text-purple-500",
-      bg: "bg-purple-500/10",
-    },
-    {
-      key: "applied",
-      label: "Applied",
-      icon: CheckCircle2,
-      color: "text-emerald-500",
-      bg: "bg-emerald-500/10",
-    },
-  ];
+  // Dynamically resolve all columns: standard 5 + any custom status in data.deltas
+  const columns: ColumnConfig[] = React.useMemo(() => {
+    const cols = [...STANDARD_COLUMNS];
+    const standardKeys = new Set(cols.map((c) => c.key));
 
+    if (data.deltas) {
+      Object.keys(data.deltas).forEach((statusKey) => {
+        if (!standardKeys.has(statusKey)) {
+          cols.push({
+            key: statusKey,
+            label: statusKey
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, (c) => c.toUpperCase()),
+            icon: HelpCircle,
+            color: "text-zinc-500 dark:text-zinc-400",
+            bg: "bg-zinc-500/10 dark:bg-zinc-500/15",
+            borderColor: "border-zinc-500/20",
+          });
+        }
+      });
+    }
+
+    return cols;
+  }, [data.deltas]);
+
+  // Index deltas by status with search filter
   const deltasByStatus = React.useMemo(() => {
-    const raw = data.deltas || { proposed: [], in_review: [], approved: [], applied: [] };
+    const raw = data.deltas || {};
     const q = filterText.toLowerCase();
 
-    const filterList = (list: SpecDelta[]) => {
-      if (!q) return list || [];
-      return (list || []).filter(
+    const filterList = (list: SpecDelta[] = []) => {
+      if (!q) return list;
+      return list.filter(
         (d) =>
           d.id.toLowerCase().includes(q) ||
           d.title.toLowerCase().includes(q) ||
-          (d.motivation && d.motivation.toLowerCase().includes(q))
+          (d.motivation && d.motivation.toLowerCase().includes(q)) ||
+          (d.kind && d.kind.toLowerCase().includes(q)) ||
+          (d.vcs?.branch && d.vcs.branch.toLowerCase().includes(q))
       );
     };
 
-    return {
-      proposed: filterList(raw.proposed),
-      in_review: filterList(raw.in_review),
-      approved: filterList(raw.approved),
-      applied: filterList(raw.applied),
-    };
-  }, [data.deltas, filterText]);
+    const record: Record<string, SpecDelta[]> = {};
+    columns.forEach((col) => {
+      record[col.key] = filterList((raw as any)[col.key] || []);
+    });
+    return record;
+  }, [data.deltas, filterText, columns]);
+
+  // Total count
+  const totalCount = React.useMemo(() => {
+    return Object.values(deltasByStatus).reduce((acc, list) => acc + list.length, 0);
+  }, [deltasByStatus]);
+
+  // Filter columns if user selected a single status pill
+  const activeColumns = React.useMemo(() => {
+    if (selectedStatusFilter === "all") return columns;
+    return columns.filter((c) => c.key === selectedStatusFilter);
+  }, [columns, selectedStatusFilter]);
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-200">
-      {/* Header & Filter */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-card border border-border md-elevation-1">
-        <div>
-          <h2 className="text-base font-bold text-foreground tracking-tight">
-            SpecDelta Mutation Board (Planned Mode)
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            Auditable architectural mutations governed by formal SpecDeltas (`DLT-*`).
-          </p>
+    <div className="space-y-5 animate-in fade-in duration-200">
+      {/* Header & Controls */}
+      <div className="space-y-4 p-5 rounded-3xl bg-card border border-border md-elevation-1">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight flex items-center gap-2">
+                <GitBranch className="h-5 w-5 text-primary" />
+                SpecDelta Mutation Board (Planned Mode)
+              </h2>
+              <span className="font-mono text-xs px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-semibold border border-primary/20">
+                {totalCount} Total
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Machine-readable architectural mutations governed by formal SpecDeltas (`DLT-*`). Full status lifecycle visibility.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              placeholder="Filter by ID, title, branch, intent..."
+              className="bg-muted/50 border border-border text-xs rounded-xl px-3 py-1.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-64"
+            />
+          </div>
         </div>
-        <input
-          type="text"
-          value={filterText}
-          onChange={(e) => setFilterText(e.target.value)}
-          placeholder="Filter deltas..."
-          className="bg-muted/50 border border-border text-xs rounded-xl px-3 py-1.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary w-48 sm:w-64"
-        />
+
+        {/* Status Lifecycle Filter Pills */}
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/60">
+          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1 mr-1">
+            <Filter className="h-3 w-3" /> Statuses:
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedStatusFilter("all")}
+            className={cn(
+              "px-3 py-1 rounded-xl text-xs font-medium transition-all cursor-pointer",
+              selectedStatusFilter === "all"
+                ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                : "bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            All ({totalCount})
+          </button>
+          {columns.map((col) => {
+            const count = (deltasByStatus[col.key] || []).length;
+            const Icon = col.icon;
+            const isSelected = selectedStatusFilter === col.key;
+            return (
+              <button
+                key={col.key}
+                type="button"
+                onClick={() => setSelectedStatusFilter(col.key)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-medium transition-all cursor-pointer border",
+                  isSelected
+                    ? `${col.bg} ${col.color} ${col.borderColor} font-bold shadow-xs`
+                    : "border-border/60 bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                )}
+              >
+                <Icon className="h-3 w-3" />
+                <span>{col.label}</span>
+                <span className="font-mono text-[10px] opacity-75">({count})</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Kanban Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
-        {columns.map((col) => {
-          const list = deltasByStatus[col.key] || [];
-          const Icon = col.icon;
-          return (
-            <div
-              key={col.key}
-              className="bg-card/40 rounded-2xl border border-border/80 p-3 flex flex-col space-y-3 min-h-[500px]"
-            >
-              {/* Column Header */}
-              <div className="flex items-center justify-between px-2 py-1">
-                <div className="flex items-center gap-2">
-                  <div className={`p-1.5 rounded-lg ${col.bg} ${col.color}`}>
-                    <Icon className="h-4 w-4" />
+      <div className="overflow-x-auto pb-4">
+        <div
+          className={cn(
+            "grid gap-4 items-start min-w-[320px]",
+            activeColumns.length === 1
+              ? "grid-cols-1 max-w-xl mx-auto"
+              : activeColumns.length === 2
+              ? "grid-cols-1 md:grid-cols-2"
+              : activeColumns.length === 3
+              ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+              : activeColumns.length === 4
+              ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-4"
+              : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+          )}
+          style={
+            activeColumns.length > 5
+              ? { gridTemplateColumns: `repeat(${activeColumns.length}, minmax(280px, 1fr))` }
+              : undefined
+          }
+        >
+          {activeColumns.map((col) => {
+            const list = deltasByStatus[col.key] || [];
+            const Icon = col.icon;
+            return (
+              <div
+                key={col.key}
+                className="bg-card/40 rounded-2xl border border-border/80 p-3 flex flex-col space-y-3 min-h-[500px]"
+              >
+                {/* Column Header */}
+                <div className="flex items-center justify-between px-2 py-1">
+                  <div className="flex items-center gap-2">
+                    <div className={`p-1.5 rounded-lg ${col.bg} ${col.color}`}>
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <span className="font-bold text-xs text-foreground uppercase tracking-wide">
+                      {col.label}
+                    </span>
                   </div>
-                  <span className="font-bold text-xs text-foreground uppercase tracking-wide">
-                    {col.label}
+                  <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                    {list.length}
                   </span>
                 </div>
-                <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                  {list.length}
-                </span>
-              </div>
 
-              {/* Column Cards */}
-              <div className="space-y-2.5 overflow-y-auto max-h-[700px] pr-1">
-                {list.length === 0 ? (
-                  <div className="py-8 text-center text-xs text-muted-foreground/60 border border-dashed border-border/60 rounded-xl">
-                    No {col.label.toLowerCase()} deltas
-                  </div>
-                ) : (
-                  list.map((delta) => (
-                    <Card
-                      key={delta.id}
-                      className="p-3.5 space-y-2 cursor-pointer hover:border-primary/50 transition-all hover:md-elevation-2 group"
-                      onClick={() => setSelectedDelta(delta)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-xs font-bold text-primary group-hover:underline">
-                          {delta.id}
-                        </span>
-                        <Badge variant="outline" className="text-[10px]">
-                          {delta.kind}
-                        </Badge>
-                      </div>
-                      <h4 className="text-xs font-medium text-foreground line-clamp-2 leading-relaxed">
-                        {delta.title}
-                      </h4>
-                      {delta.mutations && delta.mutations.length > 0 && (
-                        <div className="pt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
-                          <FileDiff className="h-3 w-3 text-primary" />
-                          <span>{delta.mutations.length} declared mutation(s)</span>
+                {/* Column Cards */}
+                <div className="space-y-2.5 overflow-y-auto max-h-[700px] pr-1">
+                  {list.length === 0 ? (
+                    <div className="py-12 text-center text-xs text-muted-foreground/60 border border-dashed border-border/60 rounded-xl px-4">
+                      No {col.label.toLowerCase()} deltas
+                    </div>
+                  ) : (
+                    list.map((delta) => (
+                      <Card
+                        key={delta.id}
+                        className="p-3.5 space-y-2.5 cursor-pointer hover:border-primary/50 transition-all hover:md-elevation-2 group"
+                        onClick={() => setSelectedDelta(delta)}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-mono text-xs font-bold text-primary group-hover:underline truncate">
+                            {delta.id}
+                          </span>
+                          <Badge variant="outline" className="text-[10px] shrink-0">
+                            {delta.kind}
+                          </Badge>
                         </div>
-                      )}
-                    </Card>
-                  ))
-                )}
+
+                        <h4 className="text-xs font-medium text-foreground line-clamp-2 leading-relaxed">
+                          {delta.title}
+                        </h4>
+
+                        {delta.vcs?.branch && (
+                          <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground truncate bg-muted/40 px-2 py-1 rounded-lg">
+                            <GitBranch className="h-3 w-3 text-purple-400 shrink-0" />
+                            <span className="truncate">{delta.vcs.branch}</span>
+                          </div>
+                        )}
+
+                        {delta.mutations && delta.mutations.length > 0 && (
+                          <div className="pt-1 flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+                            <div className="flex items-center gap-1">
+                              <FileDiff className="h-3 w-3 text-primary shrink-0" />
+                              <span>{delta.mutations.length} mutation(s)</span>
+                            </div>
+                            {delta.mutations[0]?.target_component && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground truncate max-w-[120px]">
+                                {delta.mutations[0].target_component}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </Card>
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
-      {/* Delta Detail Sheet */}
+      {/* Delta Detail Sheet (Centered Modal with AsciiDocRenderer) */}
       <Sheet
         open={Boolean(selectedDelta)}
         onOpenChange={(open) => !open && setSelectedDelta(null)}
@@ -165,25 +323,57 @@ export function DeltasView({ data }: DeltasViewProps) {
         subtitle={selectedDelta?.id}
       >
         {selectedDelta && (
-          <div className="space-y-5">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="primary">{selectedDelta.status}</Badge>
-              <Badge variant="outline">{selectedDelta.kind}</Badge>
+          <div className="space-y-6">
+            {/* Header Badges */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="primary" className="uppercase font-mono text-[11px]">
+                {selectedDelta.status}
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                Kind: {selectedDelta.kind}
+              </Badge>
+              {selectedDelta.path && (
+                <span className="text-xs font-mono text-muted-foreground bg-muted/50 px-2.5 py-1 rounded-xl">
+                  {selectedDelta.path}
+                </span>
+              )}
             </div>
 
+            {/* VCS Branch Callout */}
+            {selectedDelta.vcs?.branch && (
+              <div className="p-3.5 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <GitBranch className="h-4 w-4 text-purple-400 shrink-0" />
+                  <span className="text-xs font-semibold text-purple-400">Target VCS Branch:</span>
+                  <span className="font-mono text-xs font-bold text-foreground">
+                    {selectedDelta.vcs.branch}
+                  </span>
+                </div>
+                <code className="text-[10px] font-mono bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-md">
+                  git checkout {selectedDelta.vcs.branch}
+                </code>
+              </div>
+            )}
+
+            {/* Motivation & Strategic Intent */}
             <div className="space-y-2">
-              <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
+              <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-amber-500" />
                 Motivation & Strategic Intent
               </h4>
-              <p className="text-xs text-muted-foreground leading-relaxed p-3 rounded-xl bg-muted/20 border border-border/60">
+              <p className="text-xs text-muted-foreground leading-relaxed p-3.5 rounded-2xl bg-muted/20 border border-border/60">
                 {selectedDelta.motivation || "Standard architectural evolution."}
               </p>
             </div>
 
-            <div className="space-y-2">
+            {/* Declared Mutations */}
+            <div className="space-y-2.5">
               <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center justify-between">
-                <span>Declared Mutations</span>
-                <span className="font-mono text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <FileDiff className="h-3.5 w-3.5 text-primary" />
+                  Declared Mutations
+                </span>
+                <span className="font-mono text-muted-foreground text-xs">
                   ({selectedDelta.mutations?.length || 0})
                 </span>
               </h4>
@@ -191,10 +381,10 @@ export function DeltasView({ data }: DeltasViewProps) {
                 {(selectedDelta.mutations || []).map((m, i) => (
                   <div
                     key={i}
-                    className="p-3 rounded-xl border border-border/70 bg-muted/30 text-xs space-y-1"
+                    className="p-3.5 rounded-2xl border border-border/70 bg-card text-xs space-y-1.5"
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-primary uppercase font-mono text-[10px] px-1.5 py-0.5 rounded bg-primary/10">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-primary uppercase font-mono text-[10px] px-2 py-0.5 rounded-lg bg-primary/10 border border-primary/20">
                         {m.action}
                       </span>
                       <span className="font-mono font-semibold text-foreground">
@@ -202,11 +392,11 @@ export function DeltasView({ data }: DeltasViewProps) {
                           m.target_capability ||
                           m.target_domain ||
                           m.target_screen ||
-                          "target"}
+                          "Target Specification"}
                       </span>
                     </div>
                     {m.details && (
-                      <p className="text-muted-foreground text-[11px] leading-relaxed">
+                      <p className="text-muted-foreground text-xs leading-relaxed pl-1">
                         {m.details}
                       </p>
                     )}
@@ -214,6 +404,53 @@ export function DeltasView({ data }: DeltasViewProps) {
                 ))}
               </div>
             </div>
+
+            {/* Blast Radius if present */}
+            {selectedDelta.blast_radius && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <Crosshair className="h-3.5 w-3.5 text-rose-400" />
+                  Calculated Blast Radius
+                </h4>
+                <div className="p-3.5 rounded-2xl bg-muted/20 border border-border/60 text-xs space-y-2">
+                  {selectedDelta.blast_radius.impact_level && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">Impact Level:</span>
+                      <Badge variant="outline" className="font-mono text-[10px] uppercase">
+                        {selectedDelta.blast_radius.impact_level}
+                      </Badge>
+                    </div>
+                  )}
+                  {selectedDelta.blast_radius.domains && selectedDelta.blast_radius.domains.length > 0 && (
+                    <div className="text-xs">
+                      <span className="text-muted-foreground">Affected Domains: </span>
+                      <span className="font-mono font-semibold text-foreground">
+                        {selectedDelta.blast_radius.domains.join(", ")}
+                      </span>
+                    </div>
+                  )}
+                  {selectedDelta.blast_radius.components && selectedDelta.blast_radius.components.length > 0 && (
+                    <div className="text-xs">
+                      <span className="text-muted-foreground">Affected Components: </span>
+                      <span className="font-mono font-semibold text-foreground">
+                        {selectedDelta.blast_radius.components.join(", ")}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Living Specification Body rendered via AsciiDocRenderer */}
+            {selectedDelta.body && (
+              <div className="space-y-2 pt-2 border-t border-border/60">
+                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <BookOpen className="h-3.5 w-3.5 text-purple-400" />
+                  Living Specification Document (`DLT-*`)
+                </h4>
+                <AsciiDocRenderer content={selectedDelta.body} />
+              </div>
+            )}
           </div>
         )}
       </Sheet>
