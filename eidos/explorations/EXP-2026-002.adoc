@@ -1,0 +1,98 @@
+---
+type: product/exploration
+schema: schemas/v1/product/exploration.schema.yaml
+id: EXP-2026-002
+title: "Embedded Architectural Knowledge Graph & Hybrid Context Retrieval Index"
+status: proposed
+hypothesis: "Building an embedded SQLite-backed architectural knowledge graph with FTS5 lexical search and reverse code-symbol mapping will reduce AI agent context slicing latency by >80% on multi-component repositories while ensuring zero drift, token-budgeted context tiers, and zero external runtime dependencies."
+questions_to_answer:
+  - "Can embedded SQLite (FTS5 + recursive CTE graph queries) deliver sub-10ms context slice resolution across 100+ living specifications and source files?"
+  - "How should incremental index invalidation (content-hashing & git mtimes) be designed to guarantee zero spec-to-index drift with negligible I/O overhead (<5ms)?"
+  - "What is the token-compression efficacy of a tiered context model (Summary Anchor vs. Guardrails vs. Deep Spec on-demand) compared to raw file loading?"
+  - "Can reverse code-to-spec mapping resolve AST symbols (classes, functions, test bindings) without requiring heavy language-server or external daemon dependencies?"
+spikes_to_run:
+  - name: "spike-sqlite-graph-fts"
+    target: "Prototype an embedded SQLite schema with FTS5 full-text search and recursive CTEs for k-hop dependency and blast-radius expansion."
+  - name: "spike-incremental-hasher"
+    target: "Benchmark SHA-256 and mtime dirty-checking on specifications and source files to verify <5ms cache hit latency and automatic invalidation."
+  - name: "spike-tiered-agent-context"
+    target: "Measure token count reduction and agent reasoning accuracy across sample engineering prompts comparing ad-hoc scanning against indexed context slices."
+exit_criteria:
+  max_duration: "5_days"
+  benchmark: "Context slice extraction latency < 10ms for 100+ specs; token count reduction >= 60% compared to full file loading; zero external dependencies (standard library sqlite3)."
+---
+= Exploration: Embedded Architectural Knowledge Graph & Hybrid Context Retrieval Index
+:toc: left
+
+== 1. Problem Statement & Motivation
+
+Today, Eidos extracts architectural context slices using `get_context_slice` in `src/eidos/core/context.py`. On every invocation, it:
+1. Performs an ad-hoc traversal of the `eidos/` directory via `rglob("*.adoc")`.
+2. Parses frontmatter and body on the fly for every specification document.
+3. Applies naive set-intersection token matching (`_tokenize_text`) over task descriptions and file path strings.
+4. Performs on-the-fly invariant test scans across the entire test suite.
+
+While this zero-dependency approach works well for small repositories, it exhibits significant architectural limitations as repositories scale:
+* **Linear Latency Growth:** I/O and parsing overhead scale linearly with the number of specifications, containers, and tests.
+* **Lexical Fragility:** Plain keyword token overlap fails to match synonymous engineering prompts (e.g., "secure external webhook ingestion" vs. "INGEST-WEBHOOK").
+* **Flat Representation:** Multi-hop architectural relationships (Component -> Provided Contract -> Consuming Component -> Capability -> Invariants -> Test Bindings) require repeated manual graph walks.
+* **Token Overhead:** Without a structured multi-tiered compression hierarchy, AI agents are either under-informed (missing invariants) or over-burdened with bloated context.
+
+== 2. Hypotheses & Architectural Topology Under Investigation
+
+This exploration investigates an **Embedded Architectural Knowledge Graph & Hybrid Retrieval Index** stored in a deterministic local cache (`.eidos/cache/index.db`) backed by Python's standard library `sqlite3`.
+
+=== 2.1 The 3-Dimensional Index Model
+
+[cols="1,2,2", options="header"]
+|===
+| Dimension | Storage & Engine | Purpose
+| *1. Architectural Graph*
+| SQLite relational tables + Recursive CTEs
+| Models typed nodes (`CMP`, `CTR`, `CAP`, `DOM`, `POL`, `INV`, `DS`) and edges (`depends_on`, `provides`, `consumes`, `governs`, `asserts`, `tests`). Enables sub-millisecond $k$-hop blast radius calculations.
+
+| *2. Reverse Code & Test Mapping*
+| Relational table with index on path & AST symbol
+| Maps source files, package paths, and AST symbols (classes, functions, CLI commands) directly to owning components and active `INV-*` rules.
+
+| *3. Hybrid Search Index*
+| SQLite `FTS5` virtual table (BM25 ranking) + exact ID prefix match
+| Combines exact identifier matching (`INV-001`, `CMP-CLI`) with BM25-ranked full-text search across capability JTBDs, component responsibilities, and policy rules.
+|===
+
+=== 2.2 Git-Native Invalidation & Zero-Drift Guarantee
+
+In compliance with `POL-001-GIT-SOURCE-OF-TRUTH`, the index must never become a stale or desynchronized cache:
+* **Mtime & SHA-256 Tracking:** The database maintains an `indexed_files` manifest recording relative paths, modification timestamps, and content hashes.
+* **Lazy Incremental Refresh:** On any CLI command or MCP tool invocation, Eidos checks file modification timestamps in <5ms. Only modified or newly created files are parsed and updated in SQLite.
+* **Deterministic Rebuild:** If `.eidos/cache/index.db` is deleted or corrupted, it is automatically rebuilt from scratch from the living specifications and codebase.
+
+=== 2.3 Tiered Agent Context Slices
+
+To optimize token consumption in agent context windows, the retrieval engine will support hierarchical context output:
+* **Tier 1 (Anchor):** Minimal footprint (~150 tokens) containing matched component IDs, runtime, container type, and direct contract signatures.
+* **Tier 2 (Guardrails):** Targeted footprint (~500 tokens) detailing active `INV-*` rules, test coverage status, and governing `POL-*` policies.
+* **Tier 3 (Deep Spec on Demand):** Full prose requirements, C4 internal module breakdowns, and schema definitions fetched explicitly via entity ID when needed.
+
+== 3. Key Technical Spikes
+
+=== Spike A: `spike-sqlite-graph-fts`
+* **Objective:** Design and benchmark the SQLite schema (`entities`, `edges`, `specs_fts`, `file_mappings`) using pure Python `sqlite3`.
+* **Verification:** Run recursive CTE queries to traverse from a modified file up through component boundaries, bound contracts, governing capabilities, active invariants, and test bindings. Verify query execution time is <2ms.
+
+=== Spike B: `spike-incremental-hasher`
+* **Objective:** Build and benchmark a fast dirty-checking scanner that compares disk state with SQLite file manifests.
+* **Verification:** Benchmark against a simulated repository with 500 `.adoc` files and 2,000 source files. Verify clean-state check takes <5ms.
+
+=== Spike C: `spike-tiered-agent-context`
+* **Objective:** Compare agent prompt resolution quality and token consumption between current ad-hoc context slicing and tiered indexed slicing.
+* **Verification:** Test against 10 representative engineering tasks (e.g., bugfix, contract update, invariant addition) measuring token savings and agent accuracy.
+
+== 4. Success Metrics & Exit Criteria
+
+The exploration will conclude based on the following quantifiable criteria:
+1. **Resolution Latency:** Slicing context for any arbitrary file or task prompt completes in <10ms on repositories with 100+ living specifications.
+2. **Token Efficiency:** Tier 1 + Tier 2 slices reduce agent prompt token overhead by >=60% compared to loading full raw specification documents.
+3. **Zero External Dependencies:** Built entirely with Python's standard library `sqlite3`, maintaining pure zero-runtime overhead.
+4. **Zero Drift:** Automated test suite proves that modifying any spec file or test immediately reflects in the next context slice without manual reindexing.
+

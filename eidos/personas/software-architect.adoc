@@ -24,3 +24,4 @@ interaction_modes:
 
 == Profile
 The Systems Architect is responsible for the overall technical integrity, component topology, contract boundaries, and architectural governance of the system. In Eidos, they define living C4 models and interface contracts in Git, replacing static ADR graveyards with machine-validated, test-bound living architecture.
+

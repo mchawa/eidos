@@ -55,8 +55,8 @@ The tool returns a structured payload:
   "delta_files": [],
   "test_files": ["tests/test_drift.py"],
   "touched_components": ["CMP-EIDOS-CLI"],
-  "valid_specs": 31,
-  "total_specs": 31,
+  "valid_specs": 47,
+  "total_specs": 47,
   "remediation_suggestions": [
     "Drift Detected: 1 code file(s) changed in src/ without living specification updates in eidos/.",
     "• 'src/eidos/cli/main.py' relates to CMP-EIDOS-CLI -> Update 'eidos/architecture/components/cli.adoc'"
@@ -86,11 +86,37 @@ When `delta_files` are present (e.g., `eidos/deltas/dlt-*.adoc`):
 
 ---
 
-## 4. Invariant Test Coverage
+## 4. Invariant Test Coverage & Polyglot Scanning
 
-Every capability invariant (`INV-*`) and policy (`POL-*`) must be bound to automated test coverage in `tests/`.
-- If an invariant is added or touched without corresponding tests, the check reports missing test coverage.
-- Add or update pytest test functions referencing the invariant ID in docstrings or test names.
+Every capability invariant (`INV-*`) and policy (`POL-*`) must be bound to automated test coverage in the repository test suite (`POL-002`).
+
+### Polyglot Test File Discovery
+`eidos drift` (and `eidos_detect_drift`) features an integrated **Polyglot Invariant Test Scanner** that automatically discovers and inspects test files across multiple programming languages and ecosystems:
+
+| Language / Framework | Recognized Test File Patterns |
+| :--- | :--- |
+| **Python** (`pytest`, `unittest`) | `test_*.py`, `*_test.py`, and `*.py` within `tests/`, `test/`, `__tests__/` |
+| **TypeScript & JavaScript** (`Jest`, `Vitest`, `Mocha`, `Playwright`) | `*.test.ts`, `*.spec.ts`, `*.test.tsx`, `*.spec.tsx`, `*.test.js`, `*.spec.js`, `*.test.jsx`, `*.spec.jsx` |
+| **Go** (`go test`) | `*_test.go` |
+| **Rust** (`cargo test`) | `tests/*.rs`, `*_test.rs`, and `*.rs` inside test directories |
+| **Java & Kotlin** (`JUnit`, `Kotest`) | `*Test.java`, `*Test.kt`, `*Spec.kt` |
+
+### Invariant Marker Placement
+The scanner reads test file contents and validates invariant coverage whenever an invariant identifier (`INV-*`) is discovered in:
+1. **Source Comments:**
+   - C-style single-line or multi-line comments (`// INV-AUTH-001`, `/* INV-RATE-LIMIT */`).
+   - Python / shell comments (`# INV-AUTH-001`).
+2. **Docstrings & Test Descriptions:**
+   - Python docstrings (`"""Verify lockout policy (INV-AUTH-RATE-LIMIT)."""`).
+   - Jest / Vitest / Playwright test titles (`it("INV-AUTH-001: locks after 5 attempts", ...)`).
+   - Go log statements (`t.Log("INV-AUTH-001: checking lockout")`).
+   - Rust test doc comments (`/// INV-AUTH-PASSWORD-HASH`).
+   - JUnit `@DisplayName("INV-AUTH-001: Lockout")` or `@Tag("INV-AUTH-001")`.
+3. **Explicit Test Bindings:**
+   - Declared in capability frontmatter: `test_binding: "tests/auth/test_login.py::test_lockout"`.
+   - Pointing to any valid polyglot test path (e.g. `tests/auth_test.go`, `tests/auth.test.ts`, `tests/auth_test.rs`).
+
+When any declared invariant lacks test mentions and has an invalid or missing `test_binding`, drift detection flags missing invariant test coverage, preventing unverified mutations from slipping through.
 
 ---
 

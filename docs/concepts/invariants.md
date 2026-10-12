@@ -68,7 +68,7 @@ technical:
 
     # 3. Documentation Sync Invariant (POL-003):
     - id: INV-DOCS-SYNCHRONIZATION
-      rule: "All 13 living specification schemas, CLI commands, and C4 components must be accurately documented in docs/ and pass strict static site compilation."
+      rule: "All 15 living specification schemas, CLI commands, and C4 components must be accurately documented in docs/ and pass strict static site compilation."
       test_binding: "tests/test_docs_sync.py::test_documentation_and_schemas_in_sync"
 ```
 

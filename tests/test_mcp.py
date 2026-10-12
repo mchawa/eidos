@@ -19,6 +19,8 @@ def test_mcp_tools_declared():
     assert "eidos_apply_delta" in tool_names
     assert "eidos_detect_drift" in tool_names
     assert "eidos_reconcile" in tool_names
+    assert "eidos_get_task_context" in tool_names
+    assert "eidos_context" in tool_names
 
 
 def test_mcp_detect_drift_and_reconcile_tools():
@@ -106,3 +108,24 @@ def test_mcp_create_delta_tool(tmp_path, monkeypatch):
     content = delta_file.read_text(encoding="utf-8")
     assert "DLT-TEST-001" in content
     assert "feature_addition" in content
+
+
+def test_mcp_context_tool():
+    """Verify Initiative G: eidos_get_task_context and eidos_context via MCP."""
+    # 1. Markdown mode via eidos_get_task_context
+    res_md = handle_tool_call("eidos_get_task_context", {"files": ["src/eidos/cli/main.py"]})
+    assert len(res_md) == 1
+    assert "CMP-EIDOS-CLI" in res_md[0]["text"]
+    assert "C4 Level 2/3 Components" in res_md[0]["text"]
+
+    # 2. JSON mode via alias eidos_context
+    res_json = handle_tool_call("eidos_context", {"component": "CMP-EIDOS-CLI", "format": "json"})
+    assert len(res_json) == 1
+    data = json.loads(res_json[0]["text"])
+    assert len(data["components"]) >= 1
+    assert any(c["id"] == "CMP-EIDOS-CLI" for c in data["components"])
+    assert len(data["contracts"]) >= 1
+    assert len(data["capabilities"]) >= 1
+    assert len(data["invariants"]) >= 1
+    assert len(data["policies"]) >= 1
+

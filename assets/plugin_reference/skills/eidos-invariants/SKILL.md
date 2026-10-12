@@ -99,26 +99,113 @@ technical:
 
 ---
 
-## 4. Test Binding Conventions
+## 4. Polyglot Test Binding Conventions
 
-To satisfy invariant traceability in the test suite:
-1. **Reference the Invariant ID in the test function name**:
-   ```python
-   def test_inv_auth_rate_limit():
-       ...
-   ```
-2. **Reference the Policy or Invariant in the docstring**:
+To satisfy invariant traceability (`POL-002`), every invariant (`INV-*`) must be traceable to automated tests. The Eidos drift engine scans across polyglot test suites. Place invariant markers using the native conventions of your language and framework:
+
+### A. Python (`pytest`, `unittest`)
+1. **In the test docstring (Recommended):**
    ```python
    def test_login_brute_force_lockout():
        """Verify account lock after 5 failed attempts (INV-AUTH-RATE-LIMIT, POL-002)."""
        ...
    ```
-3. **Use Pytest markers**:
+2. **Via Pytest custom markers:**
    ```python
    @pytest.mark.invariant("INV-AUTH-RATE-LIMIT")
    def test_lockout():
        ...
    ```
+3. **In the test function name:**
+   ```python
+   def test_inv_auth_rate_limit():
+       ...
+   ```
+
+### B. TypeScript & JavaScript (`Jest`, `Vitest`, `Playwright`, `Mocha`)
+1. **In test or suite titles (`describe` / `it` / `test`):**
+   ```typescript
+   describe('Authentication Invariants', () => {
+     it('INV-AUTH-RATE-LIMIT: locks account for 15 minutes after 5 failed attempts', async () => {
+       const res = await authService.login(badCredentials);
+       expect(res.status).toBe(429);
+     });
+   });
+   ```
+2. **In source comments inside the test body:**
+   ```typescript
+   test('password hashing strength', async () => {
+     // INV-AUTH-PASSWORD-HASH: Enforce Argon2id with 64MB memory cost
+     const hash = await hashPassword('secret');
+     expect(hash.algorithm).toBe('argon2id');
+   });
+   ```
+
+### C. Go (`testing`)
+1. **Via `t.Log` or assertion output:**
+   ```go
+   func TestAccountLockout(t *testing.T) {
+       t.Log("INV-AUTH-RATE-LIMIT: verifying account lockout threshold")
+       err := authService.AttemptLogin("alice", "wrong-pwd", 6)
+       if err != ErrAccountLocked {
+           t.Fatalf("expected ErrAccountLocked, got %v", err)
+       }
+   }
+   ```
+2. **In test function names or test comments:**
+   ```go
+   // INV-AUTH-RATE-LIMIT: 5 failed attempts locks for 15 minutes
+   func TestInvAuthRateLimit(t *testing.T) {
+       // ...
+   }
+   ```
+
+### D. Rust (`cargo test`)
+1. **In test function doc comments (`///`):**
+   ```rust
+   /// Verifies INV-AUTH-PASSWORD-HASH: Passwords hashed with Argon2id using >= 64MB memory cost.
+   #[test]
+   fn test_argon2_parameters() {
+       let params = argon2::Params::default();
+       assert!(params.m_cost() >= 65536);
+   }
+   ```
+2. **In inline test comments:**
+   ```rust
+   #[test]
+   fn test_lockout() {
+       // INV-AUTH-RATE-LIMIT
+       assert!(account.is_locked());
+   }
+   ```
+
+### E. Java & Kotlin (`JUnit 5`, `Kotest`)
+1. **Using JUnit 5 `@DisplayName` or `@Tag` annotations:**
+   ```java
+   @Test
+   @Tag("INV-AUTH-RATE-LIMIT")
+   @DisplayName("INV-AUTH-RATE-LIMIT: Locks account for 15 minutes after 5 failed attempts")
+   void testBruteForceLockout() {
+       authService.recordFailedAttempt("user@example.com", 5);
+       assertTrue(authService.isLocked("user@example.com"));
+   }
+   ```
+2. **In Kotlin test names and doc comments:**
+   ```kotlin
+   @Test
+   @DisplayName("INV-AUTH-PASSWORD-HASH: Argon2id parameter compliance")
+   fun `test argon2id password hashing strength`() {
+       // INV-AUTH-PASSWORD-HASH
+       val hash = hasher.hash("password")
+       assertEquals("argon2id", hash.algorithm)
+   }
+   ```
+
+### Capability Frontmatter `test_binding`
+In addition to in-file markers, capabilities record explicit test bindings under `technical.invariants[].test_binding`:
+- Relative file path: `test_binding: "tests/auth/test_login.py"`
+- Test target with member selector: `test_binding: "tests/auth/test_login.py::test_brute_force_lockout"`
+- Polyglot targets: `test_binding: "packages/auth/test/auth.test.ts"`, `test_binding: "internal/auth/auth_test.go"`, `test_binding: "tests/auth_test.rs"`
 
 ---
 
@@ -132,5 +219,9 @@ Before completing any task:
 2. Run the test suite:
    ```bash
    pytest -v
+   ```
+3. Run drift verification to verify all invariants are covered:
+   ```bash
+   eidos drift --uncommitted
    ```
 Ensure 100% of declared invariants have passing automated test coverage.

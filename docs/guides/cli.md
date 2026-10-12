@@ -96,6 +96,32 @@ eidos mcp
 
 ---
 
+### `eidos context`
+Extract a compact, token-efficient architectural subgraph slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies) given target file paths, a component ID, or a task description.
+
+```bash
+# Slice context for touched code files
+eidos context -f src/eidos/cli/main.py
+
+# Slice context for a specific component
+eidos context -c CMP-EIDOS-CLI
+
+# Slice context from a free-text task description
+eidos context -t "Implement Git and GitLab synchronization bridge"
+
+# Output in JSON format
+eidos context -c CMP-EIDOS-MCP --format json
+```
+
+Options:
+* `-f, --file TEXT`: Target source code file path(s) to slice context for.
+* `-c, --component TEXT`: Target component identifier (e.g. `CMP-EIDOS-CLI`).
+* `-t, --task TEXT`: Free-text task description or engineering prompt.
+* `--format [markdown|json]`: Output serialization format (default: `markdown`).
+* `-p, --path PATH`: Path to specifications directory (default: `eidos`).
+
+---
+
 ## Specification Management (`eidos spec`)
 
 Manage specification documents:

@@ -42,6 +42,17 @@ Launches the stdio Model Context Protocol (MCP) server for AI agent clients.
 * **Exit Codes**:
   - `0`: Clean termination.
 
+=== `eidos context [--file PATH] [--component ID] [--task PROMPT] [--format FORMAT] [--path PATH]`
+Extracts a compact, token-efficient architectural subgraph context slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies).
+* **Options**:
+  - `--file, -f`: Target source code file path(s).
+  - `--component, -c`: Target component identifier (e.g. `CMP-EIDOS-CLI`).
+  - `--task, -t`: Free-text task description or prompt.
+  - `--format`: Output serialization format: `markdown` (default) or `json`.
+  - `--path, -p`: Path to specifications directory (default: `./eidos`).
+* **Exit Codes**:
+  - `0`: Slice successfully extracted.
+
 === `eidos serve [--path PATH] [--host HOST] [--port PORT] [--open]`
 Launches the local interactive Eidos Living Web Portal HTTP server.
 * **Options**:

@@ -48,6 +48,8 @@ def test_bundled_plugin_conformance():
     assert report.plugin_name == "eidos"
     assert report.plugin_version == get_bundled_plugin_version()
     assert "eidos" in report.skills
+    assert "eidos-context" in report.skills
+    assert len(report.skills) == 14
     assert "eidos" in report.mcp_servers
     assert "com.google.antigravity" in report.extensions
 
@@ -60,6 +62,7 @@ def test_repo_plugin_conformance():
     report = validate_plugin_package(plugin_dir)
     assert report.is_valid, f"Repo plugin validation failed: {report.errors}"
     assert len(report.errors) == 0
+    assert len(report.skills) == 14
 
 
 def test_plugin_install_to_project_scope(tmp_path):

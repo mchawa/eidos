@@ -24,3 +24,4 @@ interaction_modes:
 
 == Profile
 The Design Technologist bridges product design, visual systems, and frontend engineering. In Eidos, they manage multi-design systems, W3C DTCG tokens, client applications, screen state machines, and interaction flows directly in living specifications, ensuring flawless translation from design intent to user experience.
+

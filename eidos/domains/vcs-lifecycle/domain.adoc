@@ -26,3 +26,4 @@ technical_mapping:
 
 == Domain Vision
 This domain anchors Eidos in GitOps reality. It ensures that code and living specifications evolve continuously without divergence. By replacing manual paperwork with automated Git diff inspection and deterministic drift detection, it guarantees that every deployed commit remains 100% faithful to its documented architecture and invariants.
+

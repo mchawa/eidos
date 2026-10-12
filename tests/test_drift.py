@@ -146,3 +146,254 @@ def test_cli_drift_and_reconcile_commands(monkeypatch, tmp_path):
     # 5. sync alias
     res_sync = runner.invoke(app, ["sync"])
     assert res_sync.exit_code == 0
+
+
+def test_polyglot_test_file_classification():
+    """Verify Initiative D: classify_changed_files recognizes polyglot test files."""
+    poly_files = [
+        "src/app.ts",
+        "packages/auth/src/index.test.ts",
+        "packages/auth/src/session.spec.ts",
+        "packages/ui/button.test.tsx",
+        "packages/ui/card.spec.jsx",
+        "pkg/server/server_test.go",
+        "crates/core/src/parser_test.rs",
+        "tests/integration.rs",
+        "src/test/java/UserServiceTest.java",
+        "src/test/kotlin/OrderServiceSpec.kt",
+        "src/test/kotlin/PaymentServiceTest.kt",
+        "tests/test_something.py",
+        "src/utils/test_helper.py",
+    ]
+    classification = classify_changed_files(poly_files)
+    assert "src/app.ts" in classification.code_files
+    assert len(classification.test_files) == 12
+    assert "packages/auth/src/index.test.ts" in classification.test_files
+    assert "packages/ui/button.test.tsx" in classification.test_files
+    assert "pkg/server/server_test.go" in classification.test_files
+    assert "crates/core/src/parser_test.rs" in classification.test_files
+    assert "tests/integration.rs" in classification.test_files
+    assert "src/test/java/UserServiceTest.java" in classification.test_files
+    assert "src/test/kotlin/OrderServiceSpec.kt" in classification.test_files
+    assert "tests/test_something.py" in classification.test_files
+
+
+def test_polyglot_invariant_test_scanning(tmp_path):
+    """Verify Initiative D: extract_invariants_and_verify accurately traces invariants across polyglot test suites."""
+    from eidos.vcs.drift import extract_invariants_and_verify
+
+    eidos_dir = tmp_path / "eidos"
+    cap_dir = eidos_dir / "domains" / "polyglot"
+    cap_dir.mkdir(parents=True)
+
+    # Capability declaring invariants verified across languages
+    (cap_dir / "cap-polyglot.adoc").write_text(
+        "---\n"
+        "type: product/capability\n"
+        "id: CAP-POLY-001\n"
+        "title: Polyglot Test Coverage\n"
+        "domain: DOM-TEST\n"
+        "status: active\n"
+        "business:\n"
+        "  personas: []\n"
+        "  jtbd: Verify polyglot suites\n"
+        "technical:\n"
+        "  components: []\n"
+        "  invariants:\n"
+        "    - id: INV-TS-UNIT\n"
+        "      rule: TS unit tests\n"
+        "    - id: INV-GO-HANDLER\n"
+        "      rule: Go handler tests\n"
+        "    - id: INV-RS-INTEGRATION\n"
+        "      rule: Rust integration tests\n"
+        "    - id: INV-JAVA-SERVICE\n"
+        "      rule: Java service tests\n"
+        "    - id: INV-KT-SPEC\n"
+        "      rule: Kotlin spec tests\n"
+        "    - id: INV-UNCOVERED\n"
+        "      rule: Should be uncovered\n"
+        "---\n"
+        "= Cap\n"
+    )
+
+    # Create polyglot test suite in tmp_path
+    ts_file = tmp_path / "packages" / "client" / "src" / "client.test.ts"
+    ts_file.parent.mkdir(parents=True)
+    ts_file.write_text("// Test implementation verifying INV-TS-UNIT\n")
+
+    go_file = tmp_path / "cmd" / "server" / "handler_test.go"
+    go_file.parent.mkdir(parents=True)
+    go_file.write_text("// Test verifying INV-GO-HANDLER\n")
+
+    rs_file = tmp_path / "tests" / "integration.rs"
+    rs_file.parent.mkdir(parents=True)
+    rs_file.write_text("// Test verifying INV-RS-INTEGRATION\n")
+
+    java_file = tmp_path / "src" / "test" / "java" / "OrderServiceTest.java"
+    java_file.parent.mkdir(parents=True)
+    java_file.write_text("// Test verifying INV-JAVA-SERVICE\n")
+
+    kt_file = tmp_path / "src" / "test" / "kotlin" / "OrderSpec.kt"
+    kt_file.parent.mkdir(parents=True)
+    kt_file.write_text("// Test verifying INV-KT-SPEC\n")
+
+    invariants = extract_invariants_and_verify(eidos_dir, tmp_path)
+    inv_map = {inv.invariant_id: inv for inv in invariants}
+
+    assert inv_map["INV-TS-UNIT"].has_test_coverage
+    assert "packages/client/src/client.test.ts" in inv_map["INV-TS-UNIT"].matching_tests
+
+    assert inv_map["INV-GO-HANDLER"].has_test_coverage
+    assert "cmd/server/handler_test.go" in inv_map["INV-GO-HANDLER"].matching_tests
+
+    assert inv_map["INV-RS-INTEGRATION"].has_test_coverage
+    assert "tests/integration.rs" in inv_map["INV-RS-INTEGRATION"].matching_tests
+
+    assert inv_map["INV-JAVA-SERVICE"].has_test_coverage
+    assert "src/test/java/OrderServiceTest.java" in inv_map["INV-JAVA-SERVICE"].matching_tests
+
+    assert inv_map["INV-KT-SPEC"].has_test_coverage
+    assert "src/test/kotlin/OrderSpec.kt" in inv_map["INV-KT-SPEC"].matching_tests
+
+    assert not inv_map["INV-UNCOVERED"].has_test_coverage
+    assert len(inv_map["INV-UNCOVERED"].matching_tests) == 0
+
+
+def test_is_polyglot_test_file_ancestor_robustness():
+    """Verify is_polyglot_test_file does not falsely classify code files when ancestor path has 'test'."""
+    from pathlib import Path
+
+    from eidos.vcs.drift import is_polyglot_test_file
+
+    repo = Path("/home/testuser/work/test-project")
+    code_file = repo / "src" / "app.py"
+    ts_code = repo / "src" / "index.ts"
+    go_code = repo / "cmd" / "server.go"
+    rs_code = repo / "crates" / "core" / "src" / "lib.rs"
+    java_code = repo / "src" / "main" / "java" / "App.java"
+
+    # Should all be recognized as non-tests
+    assert not is_polyglot_test_file(code_file, repo_root=repo)
+    assert not is_polyglot_test_file(ts_code, repo_root=repo)
+    assert not is_polyglot_test_file(go_code, repo_root=repo)
+    assert not is_polyglot_test_file(rs_code, repo_root=repo)
+    assert not is_polyglot_test_file(java_code, repo_root=repo)
+
+    # Real tests inside the repo should be recognized
+    assert is_polyglot_test_file(repo / "tests" / "test_app.py", repo_root=repo)
+    assert is_polyglot_test_file(repo / "tests" / "integration.rs", repo_root=repo)
+    assert is_polyglot_test_file(repo / "cmd" / "server_test.go", repo_root=repo)
+    assert is_polyglot_test_file(repo / "src" / "app.spec.ts", repo_root=repo)
+
+
+def test_extract_invariants_none_frontmatter(tmp_path):
+    """Verify extract_invariants_and_verify does not crash on None or empty technical frontmatter."""
+    from eidos.vcs.drift import extract_invariants_and_verify
+
+    eidos_dir = tmp_path / "eidos"
+    cap_dir = eidos_dir / "domains" / "sub"
+    pol_dir = eidos_dir / "policies"
+    cap_dir.mkdir(parents=True)
+    pol_dir.mkdir(parents=True)
+
+    # Capability with empty technical section
+    (cap_dir / "cap-empty.adoc").write_text(
+        "---\n"
+        "type: product/capability\n"
+        "id: CAP-EMPTY-001\n"
+        "title: Empty Tech\n"
+        "domain: DOM-TEST\n"
+        "status: active\n"
+        "business:\n"
+        "  personas: []\n"
+        "  jtbd: Test\n"
+        "technical:\n"
+        "---\n"
+        "= Cap\n"
+    )
+
+    # Policy with empty technical section
+    (pol_dir / "pol-empty.adoc").write_text(
+        "---\n"
+        "type: product/policy\n"
+        "id: POL-EMPTY-001\n"
+        "title: Empty Policy\n"
+        "category: testing\n"
+        "rule: Rule\n"
+        "technical:\n"
+        "---\n"
+        "= Policy\n"
+    )
+
+    invariants = extract_invariants_and_verify(eidos_dir, tmp_path)
+    assert isinstance(invariants, list)
+
+
+def test_no_circular_import():
+    """Verify importing eidos.vcs does not cause circular import with eidos.core."""
+    import importlib
+    import sys
+
+    # Evict modules to test clean import order
+    for mod in list(sys.modules.keys()):
+        if mod.startswith("eidos.") or mod == "eidos":
+            del sys.modules[mod]
+
+    vcs = importlib.import_module("eidos.vcs")
+    assert hasattr(vcs, "detect_drift")
+    assert hasattr(vcs, "reconcile_specs")
+
+
+def test_is_polyglot_test_file_string_and_ancestor_test():
+    """Verify is_polyglot_test_file handles str inputs and ignores ancestor /test/ directory components."""
+    from pathlib import Path
+
+    from eidos.vcs.drift import is_polyglot_test_file
+
+    # String input support
+    assert is_polyglot_test_file("tests/test_auth.py")
+    assert is_polyglot_test_file("src/client.test.ts")
+    assert not is_polyglot_test_file("src/client.ts")
+
+    # Ancestor user directory named 'test' should not make code files tests
+    assert not is_polyglot_test_file(Path("/home/test/myproject/src/main.py"))
+    assert not is_polyglot_test_file(Path("/home/test/myproject/src/index.ts"))
+
+
+def test_classify_changed_files_repo_named_eidos(tmp_path):
+    """Verify repo root named eidos does not falsely classify package.json or setup.py as living specs."""
+    from eidos.vcs.drift import classify_changed_files
+
+    repo_dir = tmp_path / "eidos"
+    repo_dir.mkdir()
+
+    # Files at root of repo
+    pkg_json = repo_dir / "package.json"
+    code_file = repo_dir / "src" / "index.js"
+    real_spec = repo_dir / "eidos" / "system.adoc"
+
+    classified = classify_changed_files(
+        [str(pkg_json), str(code_file), str(real_spec)],
+        repo_root=repo_dir,
+    )
+
+    assert str(pkg_json) in classified.other_files
+    assert str(pkg_json) not in classified.spec_files
+    assert str(code_file) in classified.code_files
+    assert str(real_spec) in classified.spec_files
+
+
+def test_classify_changed_files_ancestor_path_named_docs(tmp_path):
+    """Verify paths containing 'docs' above the repo root do not classify code files as doc files."""
+    from eidos.vcs.drift import classify_changed_files
+
+    repo_dir = tmp_path / "docs" / "myproject"
+    repo_dir.mkdir(parents=True)
+    code_file = repo_dir / "src" / "app.py"
+
+    classified = classify_changed_files([str(code_file)], repo_root=repo_dir)
+    assert str(code_file) in classified.code_files
+    assert str(code_file) not in classified.doc_files
+
+
+

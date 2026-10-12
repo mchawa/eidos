@@ -1,0 +1,169 @@
+---
+name: eidos-context
+description: Extract token-efficient architectural context slices (C4 Level 2/3 topology, contracts, capabilities, invariants, and policies) for targeted tasks.
+---
+
+# Eidos Architectural Context Slicing (`eidos-context`)
+
+This skill teaches AI agents how to extract a compact, token-efficient **architectural context slice** before beginning any feature, bugfix, or refactoring task.
+
+---
+
+## 1. When to Use This Skill
+
+Activate this skill as **Step 1** of any engineering task:
+- **At the start of an agent turn:** Before writing code, inspect the architectural boundaries, contracts, and invariants relevant to the requested task.
+- **Token-Efficient Reasoning:** Avoid loading the full codebase or the entire `eidos/` directory into the agent context window. Slicing reduces context overhead while keeping 100% of the critical architectural guardrails.
+- **Blast Radius & Impact Analysis:** Instantly discover which C4 containers, internal modules, provided/consumed interface contracts (`CTR-*`), domain capabilities (`CAP-*`), and technical invariants (`INV-*`) will be affected by a change.
+- **Workflow Mode Selection:** Determine whether the upcoming change qualifies for **Direct Mode** (routine/localized changes) or requires **Planned Mode** (cross-component mutations or breaking contract changes via SpecDelta `DLT-*`).
+
+---
+
+## 2. Triggering Context Slicing
+
+### A. Via Model Context Protocol (MCP)
+
+When operating as an AI agent connected via MCP, invoke `eidos_get_task_context` (or its alias `eidos_context`):
+
+```json
+{
+  "name": "eidos_get_task_context",
+  "arguments": {
+    "files": ["src/eidos/cli/main.py"],
+    "component": "CMP-EIDOS-CLI",
+    "task": "Support polyglot invariant test scanning in drift detection",
+    "format": "markdown"
+  }
+}
+```
+
+#### Supported Arguments:
+- `files` (`list[str]`, optional): Target source code file paths (e.g. `["src/eidos/cli/main.py"]`).
+- `component` (`str`, optional): Specific component identifier (e.g. `"CMP-EIDOS-CLI"`).
+- `task` (`str`, optional): Free-text engineering prompt or task description (e.g. `"Add support for Go and Rust test scanning"`).
+- `format` (`str`, optional): Serialization format: `"markdown"` (token-optimized for LLMs, default) or `"json"` (programmatic AST).
+- `path` (`str`, optional): Custom path to the `eidos/` specifications directory (defaults to `"eidos"`).
+
+Agents can query using any single argument or any combination:
+- Given only `files`: resolves owning C4 components, bound contracts, domain capabilities, and invariants.
+- Given only `component`: extracts the component manifest, provided/consumed contracts, internal dependencies, domain capabilities, and invariants.
+- Given only `task`: performs semantic and keyword matching against component names, contracts, capabilities, and invariants.
+
+---
+
+### B. Via Command-Line Interface (CLI)
+
+For developers and terminal environments, use the `eidos context` command:
+
+```bash
+# Slice context for specific source files
+eidos context -f src/eidos/cli/main.py
+
+# Slice context for a specific component
+eidos context -c CMP-EIDOS-CLI
+
+# Slice context for a task description
+eidos context -t "Implement polyglot invariant scanning"
+
+# Combine multiple files and task prompt
+eidos context -f src/eidos/vcs/drift.py -t "Check test markers across Rust and Go"
+
+# Output structured JSON for automation
+eidos context -c CMP-EIDOS-CLI --format json
+```
+
+#### CLI Options:
+| Flag | Short | Description |
+| :--- | :--- | :--- |
+| `--file` | `-f` | Target source code file path(s) (can be passed multiple times) |
+| `--component` | `-c` | Target component identifier (e.g. `CMP-EIDOS-CLI`) |
+| `--task` | `-t` | Free-text task prompt or issue description |
+| `--format` | | Output format: `markdown` (default) or `json` |
+| `--path` | `-p` | Path to specifications directory (defaults to `./eidos`) |
+
+---
+
+## 3. Interpreting the Architectural Context Slice
+
+The returned markdown context slice contains 5 structured sections:
+
+```
+                  ┌─────────────────────────────────────────┐
+                  │    Architectural Context Subgraph       │
+                  └────────────────────┬────────────────────┘
+                                       │
+         ┌─────────────┬───────────────┼───────────────┬─────────────┐
+         ▼             ▼               ▼               ▼             ▼
+     C4 Level 2/3    Bound        Domain          Active       Governing
+     Components    Contracts    Capabilities    Invariants     Policies
+     (CMP-*)       (CTR-*)      & JTBD (CAP-*)  (INV-*)        (POL-*)
+```
+
+### 1. C4 Level 2/3 Components (`CMP-*`)
+- **Container Type & Runtime:** Shows whether the component is a `library`, `service`, `cli_app`, `daemon`, etc., and its runtime stack.
+- **Monorepo Package Path:** The directory root where the component's code resides.
+- **Internal Dependencies:** Allowed internal component references. Any imports outside these declared dependencies violate architectural boundaries.
+- **Internal Modules (C4 Level 3):** Key classes/modules and their single responsibilities.
+
+### 2. Bound Interface Contracts (`CTR-*`)
+- **Owner & Protocol:** Identifies whether the contract is `cli_args`, `openapi`, `protobuf`, `json_rpc_stdio`, etc.
+- **Contract Path:** The living specification file defining the interface signature.
+- **Breaking Change Warning:** Modifying public parameters, arguments, or payload schemas requires a backward-compatible migration plan or SemVer major bump.
+
+### 3. Domain Capabilities & JTBD (`CAP-*`)
+- **Owning Domain:** Bounded context (`DOM-*`) governing the capability.
+- **Status:** Current lifecycle status (`active`, `proposed`).
+- **Jobs-to-be-Done (JTBD):** The human/business outcome this capability fulfills. Ensures technical changes remain aligned with product intent.
+
+### 4. Active Invariants & Test Coverage (`INV-*`)
+- **Rule Statement:** The non-negotiable architectural or business rule that must hold true.
+- **Coverage Status:**
+  - `[✓ Covered]`: Bound test file/function exists and passes in the test suite.
+  - `[⚠️ Uncovered]`: Invariant lacks automated test coverage.
+- **Test Binding:** Explicit path to the test file or test item (e.g. `tests/test_drift.py::test_reconcile_specs`).
+- **Golden Rule:** Code changes must never cause a covered invariant to become uncovered or fail. New capabilities must declare invariants and provide test coverage.
+
+### 5. Governing Policies (`POL-*`)
+- Non-negotiable repository policies governing the repository (e.g., `POL-001` Git Source of Truth, `POL-002` Invariant Test Enforcement, `POL-003` Continuous Documentation Sync).
+
+---
+
+## 4. Transitioning into Dual Workflows
+
+Once the architectural context slice is analyzed, choose the appropriate workflow mode:
+
+### Route A: Direct Mode (Fast Fixes, Localized Features)
+- **When to Use:**
+  - The change impacts only 1 component.
+  - No interface contracts are broken.
+  - No cross-cutting architectural mutations are introduced.
+- **Action Plan:**
+  1. Modify code in `src/` or `packages/`.
+  2. Implement/update invariant tests matching declared `INV-*` IDs.
+  3. Update the component manifest (`CMP-*`) or capability (`CAP-*`) in `eidos/` within the same turn/commit.
+  4. Verify with `eidos validate eidos` and `eidos drift --uncommitted`.
+
+### Route B: Planned Mode (SpecDelta `DLT-*`)
+- **When to Use:**
+  - The change spans multiple components or introduces a new component.
+  - Interface contracts (`CTR-*`) undergo breaking or major modifications.
+  - A new business domain (`DOM-*`) or high-stakes policy (`POL-*`) is established.
+- **Action Plan:**
+  1. Author a SpecDelta using `eidos delta create DLT-<year>-<seq> --title "..."`.
+  2. Map out the checklist and declare mutations (`add`, `modify`, `deprecate`, `remove`).
+  3. Review the delta plan with team/human lead.
+  4. Execute code changes and invariant tests against the checklist.
+  5. Apply the delta in-place: `eidos delta apply <delta-id>`.
+
+---
+
+## 5. Recommended Agent Workflow Loop
+
+```
+1. eidos_get_task_context(task=..., files=...)  ──>  Extract context slice
+2. Review boundaries, contracts, invariants     ──>  Assess blast radius
+3. Select Workflow Mode                         ──>  Direct Mode vs. Planned Mode
+4. Implement code + invariant test coverage     ──>  Polyglot tests referencing INV-*
+5. Reconcile living specifications in eidos/    ──>  Keep specs in sync
+6. Validate integrity (eidos validate & drift)  ──>  Zero drift, 100% pass
+```

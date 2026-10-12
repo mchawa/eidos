@@ -29,3 +29,4 @@ technical_mapping:
 
 == Domain Vision
 This domain represents the authoritative intellectual core of Eidos. It is responsible for parsing, schema-validating, graph-indexing, and mutating living specifications. It guarantees that every product requirement, architectural boundary, interface contract, and policy invariant remains machine-verifiable, test-bound, and structurally integral across the lifecycle of the software.
+

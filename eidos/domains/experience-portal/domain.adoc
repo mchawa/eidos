@@ -29,3 +29,4 @@ technical_mapping:
 
 == Domain Vision
 This domain empowers product managers, architects, design technologists, and stakeholders to explore, inspect, and experience living specifications through an interactive visual interface. It seamlessly unites W3C design tokens, client application surfaces, interaction flow diagrams, and C4 architecture models without external build tooling or runtime dependencies.
+

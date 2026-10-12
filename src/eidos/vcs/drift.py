@@ -1,5 +1,7 @@
 """Drift detection, PR verification gate, and living spec reconciliation."""
 
+import contextlib
+import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -168,7 +170,145 @@ def get_git_diff_files(
     return get_git_diff_files(repo_root, uncommitted=True)
 
 
-def classify_changed_files(files: list[str]) -> ChangedFilesClassification:
+POLYGLOT_TEST_PATTERNS = [
+    # Python
+    "test_*.py",
+    "*_test.py",
+    # TypeScript / JavaScript
+    "*.test.ts",
+    "*.spec.ts",
+    "*.test.js",
+    "*.spec.js",
+    "*.test.tsx",
+    "*.spec.tsx",
+    # Go
+    "*_test.go",
+    # Rust
+    "*_test.rs",
+    # Java / Kotlin
+    "*Test.java",
+    "*Test.kt",
+    "*Spec.kt",
+]
+
+POLYGLOT_EXCLUDED_DIRS = {
+    ".git",
+    ".venv",
+    "venv",
+    "node_modules",
+    "dist",
+    "build",
+    "target",
+    "__pycache__",
+    ".eidos",
+    ".spec",
+    "site",
+    ".idea",
+    ".vscode",
+    ".ruff_cache",
+    ".pytest_cache",
+}
+
+
+def is_polyglot_test_file(path: Path | str, repo_root: Path | None = None) -> bool:
+    """Determine whether a file path corresponds to an automated test file across polyglot languages."""
+    p = Path(path)
+    name = p.name
+
+    # Determine relative path within project if possible
+    if repo_root is not None:
+        try:
+            rel_path = p.resolve().relative_to(repo_root.resolve())
+        except ValueError:
+            rel_path = p
+    elif p.is_absolute():
+        try:
+            rel_path = p.resolve().relative_to(Path.cwd().resolve())
+        except ValueError:
+            rel_path = p
+    else:
+        rel_path = p
+
+    # If rel_path is still absolute, it's outside repo/cwd:
+    # only check immediate parent directory names, not the whole filesystem tree
+    if rel_path.is_absolute():
+        parent_names = [parent.name.lower() for parent in rel_path.parents[:2]]
+        in_test_dir = any(d in ("tests", "test", "__tests__") for d in parent_names)
+    else:
+        dir_parts = [part.lower() for part in rel_path.parent.parts]
+        in_test_dir = any(part in ("tests", "test", "__tests__") for part in dir_parts) or any(
+            dir_parts[i] == "src" and dir_parts[i + 1] == "test" for i in range(len(dir_parts) - 1)
+        )
+
+    # TypeScript / JavaScript tests
+    if any(
+        name.endswith(ext)
+        for ext in (
+            ".test.ts",
+            ".spec.ts",
+            ".test.js",
+            ".spec.js",
+            ".test.tsx",
+            ".spec.tsx",
+            ".test.jsx",
+            ".spec.jsx",
+        )
+    ):
+        return True
+
+    # Go tests
+    if name.endswith("_test.go"):
+        return True
+
+    # Rust tests
+    if name.endswith("_test.rs") or (in_test_dir and p.suffix == ".rs"):
+        return True
+
+    # Java / Kotlin tests
+    if any(
+        name.endswith(ext)
+        for ext in (
+            "Test.java",
+            "Test.kt",
+            "Spec.kt",
+        )
+    ):
+        return True
+
+    # Python tests
+    if (name.startswith("test_") or name.endswith("_test.py")) and p.suffix == ".py":
+        return True
+
+    # Inside a dedicated test directory, standard code files are considered tests
+    return bool(in_test_dir and p.suffix in {".py", ".ts", ".js", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt"})
+
+
+
+def collect_polyglot_test_files(repo_root: Path) -> dict[str, str]:
+    """Scan the repository for test files across Python, TS/JS, Go, Rust, and Java/Kotlin."""
+    all_tests_content: dict[str, str] = {}
+    root = repo_root.resolve()
+
+    if not root.exists():
+        return all_tests_content
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Prune ignored and heavy directories in-place
+        dirnames[:] = [d for d in dirnames if d not in POLYGLOT_EXCLUDED_DIRS and not d.startswith(".")]
+
+        for fn in filenames:
+            file_path = Path(dirpath) / fn
+            rel = str(file_path.relative_to(root))
+            if is_polyglot_test_file(Path(rel), repo_root=root):
+                try:
+                    all_tests_content[rel] = file_path.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    continue
+
+    return all_tests_content
+
+
+def classify_changed_files(files: list[str], repo_root: Path | None = None) -> ChangedFilesClassification:
     """Classify file paths into code, living specs, deltas, tests, docs, and other."""
     classification = ChangedFilesClassification()
 
@@ -191,25 +331,35 @@ def classify_changed_files(files: list[str]) -> ChangedFilesClassification:
         ".kt",
     }
 
+    effective_root = (repo_root or Path.cwd()).resolve()
+
     for f_str in files:
         f = Path(f_str)
-        parts = [p.lower() for p in f.parts]
+        if f.is_absolute():
+            try:
+                rel_f = f.resolve().relative_to(effective_root)
+            except ValueError:
+                rel_f = f
+        else:
+            rel_f = f
 
-        # Spec / Delta files
-        if "eidos" in parts and f.suffix in {".adoc", ".json", ".yaml", ".yml"}:
+        parts = [p.lower() for p in rel_f.parts]
+
+        # Spec / Delta files (must reside within the project's eidos/ specifications directory)
+        if parts and parts[0] == "eidos" and f.suffix in {".adoc", ".json", ".yaml", ".yml"}:
             if "deltas" in parts:
                 classification.delta_files.append(f_str)
             else:
                 classification.spec_files.append(f_str)
             continue
 
-        # Test files
-        if "tests" in parts or "test" in parts or f.name.startswith("test_") or f.name.endswith("_test.py"):
+        # Test files (polyglot test scanning)
+        if is_polyglot_test_file(rel_f, repo_root=effective_root):
             classification.test_files.append(f_str)
             continue
 
         # Documentation files outside eidos
-        if f.suffix in {".md", ".rst"} or "docs" in parts:
+        if f.suffix in {".md", ".rst"} or (parts and parts[0] == "docs") or "docs" in parts[1:]:
             classification.doc_files.append(f_str)
             continue
 
@@ -266,35 +416,43 @@ def extract_invariants_and_verify(
     eidos_dir: Path,
     repo_root: Path,
 ) -> list[InvariantTrace]:
-    """Extract all invariants declared in capabilities and policies, and check test coverage."""
+    """Extract all invariants declared in capabilities and policies, and check test coverage across polyglot test suites."""
     invariants: list[InvariantTrace] = []
 
-    # 1. Collect tests content to check mentions
-    tests_dir = repo_root / "tests"
-    all_tests_content: dict[str, str] = {}
-    if tests_dir.exists():
-        for tp in tests_dir.rglob("*.py"):
-            try:
-                all_tests_content[str(tp.relative_to(repo_root))] = tp.read_text(encoding="utf-8")
-            except Exception:
-                continue
+    # 1. Collect tests content to check mentions across Python, TS/JS, Go, Rust, Java/Kotlin
+    all_tests_content = collect_polyglot_test_files(repo_root)
 
     # 2. Extract invariants from capabilities
     domains_dir = eidos_dir / "domains"
     if domains_dir.exists():
-        for cap_path in domains_dir.rglob("*.adoc"):
+        for cap_path in sorted(domains_dir.rglob("*.adoc")):
             try:
                 doc = parse_spec_file(cap_path)
                 if doc.doc_type == "product/capability":
-                    tech = doc.frontmatter.get("technical", {})
-                    inv_list = tech.get("invariants", [])
+                    fm = doc.frontmatter or {}
+                    tech = fm.get("technical") if isinstance(fm.get("technical"), dict) else {}
+                    inv_list = tech.get("invariants", []) or []
                     for inv in inv_list:
+                        if not isinstance(inv, dict):
+                            continue
                         iid = inv.get("id")
                         rule = inv.get("rule", "")
                         tb = inv.get("test_binding")
                         if iid:
+                            # If test_binding points to a file, ensure it is in all_tests_content
+                            if tb:
+                                tb_file = tb.split("::")[0].strip()
+                                tb_path = repo_root / tb_file
+                                if tb_path.exists() and tb_file not in all_tests_content:
+                                    with contextlib.suppress(Exception):
+                                        all_tests_content[tb_file] = tb_path.read_text(
+                                            encoding="utf-8", errors="replace"
+                                        )
+
                             matching = [tpath for tpath, content in all_tests_content.items() if iid in content]
-                            has_cov = bool(matching) or (tb is not None and (repo_root / tb.split("::")[0]).exists())
+                            if not matching and tb and (repo_root / tb.split("::")[0].strip()).exists():
+                                matching = [tb.split("::")[0].strip()]
+                            has_cov = bool(matching)
                             invariants.append(
                                 InvariantTrace(
                                     invariant_id=iid,
@@ -310,6 +468,53 @@ def extract_invariants_and_verify(
                                     matching_tests=matching,
                                 )
                             )
+            except Exception:
+                continue
+
+    # 3. Extract invariants from policies
+    policies_dir = eidos_dir / "policies"
+    if policies_dir.exists():
+        for pol_path in sorted(policies_dir.rglob("*.adoc")):
+            try:
+                doc = parse_spec_file(pol_path)
+                if doc.doc_type == "product/policy":
+                    fm = doc.frontmatter or {}
+                    tech = fm.get("technical") if isinstance(fm.get("technical"), dict) else {}
+                    inv_list = fm.get("invariants", []) or tech.get("invariants", []) or []
+                    for inv in inv_list:
+                        if isinstance(inv, dict):
+                            iid = inv.get("id")
+                            rule = inv.get("rule", "")
+                            tb = inv.get("test_binding")
+                            if iid:
+                                if tb:
+                                    tb_file = tb.split("::")[0].strip()
+                                    tb_path = repo_root / tb_file
+                                    if tb_path.exists() and tb_file not in all_tests_content:
+                                        with contextlib.suppress(Exception):
+                                            all_tests_content[tb_file] = tb_path.read_text(
+                                                encoding="utf-8", errors="replace"
+                                            )
+
+                                matching = [tpath for tpath, content in all_tests_content.items() if iid in content]
+                                if not matching and tb and (repo_root / tb.split("::")[0].strip()).exists():
+                                    matching = [tb.split("::")[0].strip()]
+                                has_cov = bool(matching)
+                                invariants.append(
+                                    InvariantTrace(
+                                        invariant_id=iid,
+                                        rule=rule,
+                                        spec_path=str(
+                                            pol_path.relative_to(repo_root)
+                                            if pol_path.is_relative_to(repo_root)
+                                            else pol_path
+                                        ),
+                                        spec_id=doc.doc_id,
+                                        test_binding=tb,
+                                        has_test_coverage=has_cov,
+                                        matching_tests=matching,
+                                    )
+                                )
             except Exception:
                 continue
 
@@ -393,7 +598,7 @@ def detect_drift(
     target_eidos = (eidos_dir or (root / "eidos")).resolve()
 
     changed_files = get_git_diff_files(root, base_ref=base_ref, head_ref=head_ref, uncommitted=uncommitted)
-    classification = classify_changed_files(changed_files)
+    classification = classify_changed_files(changed_files, repo_root=root)
 
     # Determine workflow mode: Planned (with SpecDelta) vs Direct (pure co-evolution)
     has_deltas = len(classification.delta_files) > 0
@@ -519,7 +724,7 @@ def reconcile_specs(
     target_eidos = (eidos_dir or (root / "eidos")).resolve()
 
     changed_files = get_git_diff_files(root, base_ref=base_ref, uncommitted=uncommitted)
-    classification = classify_changed_files(changed_files)
+    classification = classify_changed_files(changed_files, repo_root=root)
     comp_mappings = map_code_to_components(target_eidos, classification.code_files)
     catalog = get_living_specs_catalog(target_eidos)
 

@@ -27,3 +27,4 @@ technical_mapping:
 
 == Domain Vision
 This domain establishes Eidos as an open, agent-agnostic intelligence and context layer. Rather than locking users into a proprietary LLM harness, it empowers any AI assistant (Antigravity agy, Claude Code, Cursor, Copilot, SWE-agent) with high-density, noise-free context slices, architectural guardrails, and deterministic verification protocols.
+

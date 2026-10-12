@@ -24,3 +24,4 @@ interaction_modes:
 
 == Profile
 The Software Engineer is the primary builder implementing features, fixing bugs, and refactoring services. In Eidos, they operate primarily in Direct Mode, co-evolving code, living specifications, and invariant tests within everyday Git commits with zero unnecessary bureaucracy.
+

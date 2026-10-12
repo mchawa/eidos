@@ -102,7 +102,31 @@ Document CLI flags, arguments, exit codes, and JSON-RPC messages here.
 
 ---
 
-## 4. Verification
+## 4. Entity ID Graph Cross-Reference Checking
+
+Eidos enforces strict relational graph integrity across all architectural entities (`INV-SPEC-GRAPH-INTEGRITY`). When authoring or mutating component, contract, and domain specifications, the validator strictly verifies that referenced IDs resolve to real entities registered in the living catalog:
+
+| Spec Relationship Field | Target Entity Type | Validation Rule |
+| :--- | :--- | :--- |
+| `dependencies.internal_components` | `tech/component` (`CMP-*`) | Every listed internal dependency must exist as a registered component in the catalog. |
+| `contracts.provides` | `tech/contract` (`CTR-*`) | Every provided interface contract must exist in the catalog or point to a valid specification file. |
+| `contracts.requires` & `contracts.consumes` | `tech/contract` (`CTR-*`) | Every consumed interface contract must resolve to a valid contract registered in the catalog. |
+| `owning_component` | `tech/component` (`CMP-*`) | Contract specifications must reference a valid, existing owning component ID. |
+| `domain_binding` | `product/domain` (`DOM-*`) | Component manifests must bind to a registered domain in the catalog. |
+| `technical_mapping.dependencies` | `product/domain` (`DOM-*`) | Domain cross-domain dependencies must resolve to existing domains in the catalog. |
+| `technical_mapping.components` | `tech/component` (`CMP-*`) | Domain-to-component mappings must resolve to existing components in the catalog. |
+
+### Diagnostic Reporting
+If any reference fails to resolve, `eidos validate` halts with an explicit error:
+```text
+Broken entity reference in eidos/architecture/components/cli.adoc:
+component 'CMP-NONEXISTENT' in dependencies.internal_components does not exist in catalog
+```
+This guarantees that architectural diagrams, C4 topologies, and blast-radius slices never suffer from phantom dependencies or orphaned contracts.
+
+---
+
+## 5. Verification
 
 Always verify architecture specifications with:
 ```bash

@@ -6,7 +6,7 @@ title: "Mandatory Invariant Test Binding"
 category: testing
 rule: "Every technical invariant declared in a Capability or SpecDelta must specify a concrete test_binding path. A PR cannot merge if any bound test fails or is missing."
 enforcement:
-  mechanism: "Eidos CI Runner executes pytest/jest/cargo test targeting all test_binding paths specified in the touched SpecDelta"
+  mechanism: "Eidos VCS drift engine (eidos drift) scans polyglot test suites (Python, TypeScript/JavaScript, Go, Rust, Java/Kotlin) and verifies that every technical invariant has active automated test coverage."
   severity: blocking
 ---
 = Policy: Mandatory Invariant Test Binding
@@ -14,4 +14,13 @@ enforcement:
 
 == Rationale
 Specifications without verifiable test bindings are merely aspirations. By binding every system invariant (e.g. "Guests cannot delete projects") to an automated test, the system ensures that AI agents cannot claim completion without providing green regression tests.
+
+== Polyglot Test Verification
+Eidos drift detection scans test directories across polyglot ecosystems:
+* **Python**: `*.py` with pytest docstrings, marks, or function names.
+* **TypeScript / JavaScript**: `*.test.ts`, `*.spec.ts`, `*.test.tsx`, `*.spec.tsx` with Jest, Vitest, or Playwright.
+* **Go**: `*_test.go` with `t.Log("INV-...")` or test identifiers.
+* **Rust**: `tests/*.rs`, `*_test.rs` with doc comments.
+* **Java / Kotlin**: `*Test.java`, `*Test.kt` with JUnit `@DisplayName` or `@Tag`.
+
 

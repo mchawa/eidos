@@ -1,0 +1,227 @@
+"""Tests verifying architectural subgraph context slicing (Initiative G)."""
+
+import json
+
+from typer.testing import CliRunner
+
+from eidos.cli.main import app
+from eidos.core.context import (
+    ArchitecturalContextSlice,
+    get_context_slice,
+)
+
+runner = CliRunner()
+
+
+def test_context_slice_by_file():
+    """Verify INV-AGENT-CONTEXT-SLICING: Slicing by file path extracts owning component, dependencies, contracts, and invariants."""
+    res = get_context_slice(files=["src/eidos/cli/main.py"])
+
+    assert isinstance(res, ArchitecturalContextSlice)
+    comp_ids = {c["id"] for c in res.components}
+    assert "CMP-EIDOS-CLI" in comp_ids
+    # 1-hop dependencies included
+    assert "CMP-EIDOS-CORE" in comp_ids
+    assert "CMP-EIDOS-PLUGIN" in comp_ids
+
+    # Bound contract
+    contract_ids = {c["id"] for c in res.contracts}
+    assert "CTR-EIDOS-CLI" in contract_ids
+
+    # Bound capabilities and invariants
+    cap_ids = {c["id"] for c in res.capabilities}
+    assert "CAP-PROD-001" in cap_ids
+    inv_ids = {i["id"] for i in res.invariants}
+    assert "INV-SPEC-VALIDATION" in inv_ids
+
+    # Governing policies
+    policy_ids = {p["id"] for p in res.policies}
+    assert "POL-001-GIT-SOURCE-OF-TRUTH" in policy_ids
+
+
+def test_context_slice_by_component():
+    """Verify slicing by component ID extracts the target component, internal deps, and contracts."""
+    res = get_context_slice(component="CMP-EIDOS-MCP")
+
+    comp_ids = {c["id"] for c in res.components}
+    assert "CMP-EIDOS-MCP" in comp_ids
+    assert "CMP-EIDOS-CORE" in comp_ids
+
+    contract_ids = {c["id"] for c in res.contracts}
+    assert "CTR-EIDOS-MCP" in contract_ids
+
+
+def test_context_slice_by_task():
+    """Verify slicing by task description matches relevant capabilities and invariants."""
+    res = get_context_slice(task="Implement GitLab and GitHub synchronization bridge")
+
+    cap_ids = {c["id"] for c in res.capabilities}
+    assert "CAP-VCS-001" in cap_ids
+
+    inv_ids = {i["id"] for i in res.invariants}
+    assert "INV-VCS-PARITY" in inv_ids
+
+
+def test_context_slice_fallback_and_empty():
+    """Verify fallback behavior when empty or unmatched query is provided."""
+    # Unmatched query
+    res_unmatched = get_context_slice(component="CMP-NONEXISTENT")
+    assert len(res_unmatched.components) >= 1
+    assert any(c["id"] in ["CMP-EIDOS-CLI", "CMP-EIDOS-CORE"] for c in res_unmatched.components)
+
+    # Empty query (all components overview)
+    res_empty = get_context_slice()
+    assert len(res_empty.components) >= 4
+
+
+def test_context_slice_markdown_and_json_serialization():
+    """Verify markdown and JSON rendering formats."""
+    res = get_context_slice(files=["src/eidos/cli/main.py"], component="CMP-EIDOS-CLI")
+
+    # Markdown
+    md = res.to_markdown()
+    assert "# 🧭 Eidos Architectural Context Slice" in md
+    assert "C4 Level 2/3 Components" in md
+    assert "CMP-EIDOS-CLI" in md
+    assert "Bound Interface Contracts" in md
+    assert "Active Invariants" in md
+
+    # JSON
+    js_str = res.to_json()
+    data = json.loads(js_str)
+    assert "components" in data
+    assert "contracts" in data
+    assert "capabilities" in data
+    assert "invariants" in data
+    assert "policies" in data
+    assert data["query"]["component"] == "CMP-EIDOS-CLI"
+
+
+def test_cli_context_command():
+    """Verify eidos context CLI command options and formatting."""
+    # 1. Markdown output with -f
+    res_f = runner.invoke(app, ["context", "-f", "src/eidos/cli/main.py"])
+    assert res_f.exit_code == 0
+    assert "CMP-EIDOS-CLI" in res_f.output
+    assert "C4 Level 2/3 Components" in res_f.output
+
+    # 2. JSON output with -c and --format json
+    res_json = runner.invoke(app, ["context", "-c", "CMP-EIDOS-MCP", "--format", "json"])
+    assert res_json.exit_code == 0
+    data = json.loads(res_json.output)
+    assert any(c["id"] == "CMP-EIDOS-MCP" for c in data["components"])
+
+    # 3. Task search with -t
+    res_task = runner.invoke(app, ["context", "-t", "GitLab bridge synchronization"])
+    assert res_task.exit_code == 0
+    assert "CAP-VCS-001" in res_task.output
+
+
+def test_context_slice_substring_no_false_positive():
+    """Verify that a file like 'packages/client/index.ts' does not match 'CMP-EIDOS-CLI' via substring 'cli'."""
+    res = get_context_slice(files=["packages/client/index.ts"])
+    matched_ids = {c["id"] for c in res.components}
+    # CLI should not be matched via "cli" in "client"
+    assert "CMP-EIDOS-CLI" not in matched_ids or "Fallback baseline component anchor" in res.matched_reasons.get("CMP-EIDOS-CLI", [])
+    if "CMP-EIDOS-CLI" in res.matched_reasons:
+        assert not any("matches slug 'cli'" in r for r in res.matched_reasons["CMP-EIDOS-CLI"])
+
+
+def test_context_slice_string_and_comma_separated_files():
+    """Verify get_context_slice supports string inputs and comma-separated file paths."""
+    res = get_context_slice(files="src/eidos/cli/main.py, src/eidos/mcp/server.py")
+    comp_ids = {c["id"] for c in res.components}
+    assert "CMP-EIDOS-CLI" in comp_ids
+    assert "CMP-EIDOS-MCP" in comp_ids
+
+
+def test_context_slice_non_eidos_project_fallback(tmp_path):
+    """Verify get_context_slice functions and provides baseline anchors in a generic non-Eidos repository."""
+    eidos_dir = tmp_path / "eidos"
+    comps_dir = eidos_dir / "architecture" / "components"
+    pols_dir = eidos_dir / "policies"
+    comps_dir.mkdir(parents=True)
+    pols_dir.mkdir(parents=True)
+
+    (comps_dir / "auth.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-AUTH-SVC\n"
+        "name: AuthService\n"
+        "container_type: service\n"
+        "runtime: python\n"
+        "package_path: src/auth\n"
+        "dependencies:\n"
+        "contracts:\n"
+        "---\n"
+        "= Auth\n"
+    )
+
+    (pols_dir / "security.adoc").write_text(
+        "---\n"
+        "type: product/policy\n"
+        "id: POL-SEC-001\n"
+        "title: Security Policy\n"
+        "category: security\n"
+        "rule: Never log passwords\n"
+        "invariants:\n"
+        "  - id: INV-NO-PASSWORD-LOG\n"
+        "    rule: No password logging\n"
+        "---\n"
+        "= Security\n"
+    )
+
+    # Empty query fallback
+    res = get_context_slice(eidos_dir=eidos_dir, repo_root=tmp_path)
+    assert any(c["id"] == "CMP-AUTH-SVC" for c in res.components)
+    assert any(p["id"] == "POL-SEC-001" for p in res.policies)
+    # Policy invariants should be included
+    assert any(i["id"] == "INV-NO-PASSWORD-LOG" for i in res.invariants)
+
+
+def test_context_slice_absolute_path_normalization():
+    """Verify absolute paths inside workspace resolve cleanly and do not trigger phantom matches."""
+    from pathlib import Path
+
+    abs_cli_file = str((Path.cwd() / "src/eidos/cli/main.py").resolve())
+    res = get_context_slice(files=[abs_cli_file])
+    comp_ids = {c["id"] for c in res.components}
+    assert "CMP-EIDOS-CLI" in comp_ids
+    # Should NOT falsely match CMP-EIDOS-DOCS even if ancestor paths contain words
+    assert "CMP-EIDOS-DOCS" not in comp_ids
+
+
+def test_context_slice_relative_path_with_dots():
+    """Verify relative paths prefixed with ./ resolve cleanly."""
+    res = get_context_slice(files=["./src/eidos/cli/main.py"])
+    comp_ids = {c["id"] for c in res.components}
+    assert "CMP-EIDOS-CLI" in comp_ids
+
+
+def test_context_slice_invariants_policy_id(tmp_path):
+    """Verify policy invariants in slice have policy_id assigned when defined on policies."""
+    eidos_dir = tmp_path / "eidos"
+    pols_dir = eidos_dir / "policies"
+    pols_dir.mkdir(parents=True)
+
+    (pols_dir / "data-retention.adoc").write_text(
+        "---\n"
+        "type: product/policy\n"
+        "id: POL-RET-001\n"
+        "title: Data Retention Policy\n"
+        "category: compliance\n"
+        "rule: Retain data for 90 days\n"
+        "invariants:\n"
+        "  - id: INV-DATA-RETENTION-90D\n"
+        "    rule: Purge logs older than 90 days\n"
+        "---\n"
+        "= Retention\n"
+    )
+
+    res = get_context_slice(eidos_dir=eidos_dir, repo_root=tmp_path)
+    policy_invs = [inv for inv in res.invariants if inv.get("policy_id") == "POL-RET-001"]
+    assert len(policy_invs) == 1
+    assert policy_invs[0]["id"] == "INV-DATA-RETENTION-90D"
+
+
+

@@ -352,7 +352,7 @@ def test_mcp_spec_lifecycle_tools(tmp_path):
 
 
 def test_all_skills_in_bundle():
-    """Verify that the plugin contains all 6 specialized skills (CAP-AGENT-001)."""
+    """Verify that the plugin contains all 14 specialized skills (CAP-AGENT-001)."""
     from eidos.plugin.installer import locate_plugin_bundle
     from eidos.plugin.validator import validate_plugin_package
 
@@ -362,14 +362,22 @@ def test_all_skills_in_bundle():
     assert report.is_valid
     expected_skills = {
         "eidos",
-        "eidos-delta",
         "eidos-architecture",
-        "eidos-invariants",
+        "eidos-context",
+        "eidos-delta",
+        "eidos-design",
+        "eidos-drift",
+        "eidos-explore",
         "eidos-extract",
         "eidos-init",
-        "eidos-design",
+        "eidos-invariants",
+        "eidos-portal",
+        "eidos-product",
+        "eidos-reconcile",
+        "eidos-review",
     }
-    assert expected_skills.issubset(set(report.skills))
+    assert expected_skills == set(report.skills)
+    assert len(report.skills) == 14
 
 
 def test_self_contained_eidos_gitignore(tmp_path):

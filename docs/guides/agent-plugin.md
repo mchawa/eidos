@@ -74,6 +74,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ├── skills/
     │   ├── eidos/                # Living spec navigation & dual workflows
     │   ├── eidos-architecture/   # Arc42 & C4 Level 1-3 topology (NO ADRs)
+    │   ├── eidos-context/        # Token-efficient architectural context slicing
     │   ├── eidos-delta/          # SpecDelta mutation lifecycle (DLT-*)
     │   ├── eidos-design/         # Multi-Design Systems & W3C Tokens
     │   ├── eidos-drift/          # Spec-to-code drift detection & PR gate
@@ -263,10 +264,11 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
 ## Exposed MCP Tools Reference
 
-When connected, the Eidos MCP server exposes 12 high-level architectural tools to your AI assistant:
+When connected, the Eidos MCP server exposes 13 high-level architectural tools to your AI assistant:
 
 | MCP Tool | Arguments | Description |
 | :--- | :--- | :--- |
+| `eidos_get_task_context` *(alias `eidos_context`)* | `files`, `component`, `task`, `format`, `path` | Extracts a compact, token-efficient architectural subgraph slice (C4 components, contracts, capabilities, invariants, policies). |
 | `eidos_detect_drift` | `base_ref`, `head_ref`, `uncommitted`, `path` | Inspects spec-to-code drift between git branches or uncommitted changes, validates schemas, and checks test bindings. |
 | `eidos_reconcile` | `base_ref`, `uncommitted`, `path`, `as_prompt` | Analyzes code modifications against the living spec catalog and proposes candidate specs or structured prompt. |
 | `eidos_validate` | `path` *(optional)* | Validates all living specifications against their bundled JSON Schemas and checks bidirectional cross-references. |
@@ -310,15 +312,22 @@ Before concluding any task, the agent must validate all specifications using the
 
 ## Bundled Skills for AI Agents
 
-When using an agent client that supports skill bundles (such as Google Antigravity), seven specialized skills are available:
+When using an agent client that supports skill bundles (such as Google Antigravity), 14 specialized skills are available:
 
 * **`eidos`**: High-level navigation and orchestration of living specifications and platform workflows.
+* **`eidos-context`**: Extracting token-efficient architectural context slices (C4 Level 2/3 topology, contracts, capabilities, invariants, and policies) for targeted tasks.
 * **`eidos-architecture`**: Authoring, inspecting, and maintaining Arc42 documentation, C4 Level 1–3 topology, container manifests, and interface contracts.
 * **`eidos-delta`**: Managing the SpecDelta mutation lifecycle (`DLT-*`), including proposing mutations, authoring diffs, and reconciling applied deltas.
-* **`eidos-invariants`**: Defining system policies (`POL-*`), capability invariants (`INV-*`), and enforcing bidirectional invariant-test traceability.
 * **`eidos-design`**: Authoring and maintaining Multi-Design Systems, W3C Design Tokens, UI component contracts, and screen state machines.
+* **`eidos-drift`**: Detecting spec-to-code drift across branches or uncommitted changes, running the PR gate, and checking polyglot test coverage.
+* **`eidos-explore`**: Conducting spikes, technical feasibility studies, and hypothesis-driven discovery (`EXP-*`).
 * **`eidos-extract`**: Reverse-engineering and extracting living specifications from existing legacy codebases.
 * **`eidos-init`**: Bootstrapping new Git repositories with baseline Arc42/C4 architecture, core policies, personas, and automated validation.
+* **`eidos-invariants`**: Defining system policies (`POL-*`), capability invariants (`INV-*`), and enforcing bidirectional invariant-test traceability.
+* **`eidos-portal`**: Serving interactive Web Portals (`eidos serve`) and exporting static documentation sites (`eidos build-site`).
+* **`eidos-product`**: Authoring, inspecting, and maintaining product domains (`DOM-*`), capabilities (`CAP-*`), actor personas, and Jobs-to-be-Done (JTBD).
+* **`eidos-reconcile`**: Reconciling code modifications to living specifications in Direct Mode.
+* **`eidos-review`**: Performing rigorous architectural reviews of SpecDeltas, PR diffs, contract changes, and invariant test coverage.
 
 ---
 
@@ -341,8 +350,8 @@ Output:
 ┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ Property          ┃ Value                                    ┃
 ┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ Bundled Version   │ 0.1.0 (eidos engine)                     │
-│ Installed Version │ 0.1.0                                    │
+│ Bundled Version   │ 0.3.0 (eidos engine)                     │
+│ Installed Version │ 0.3.0                                    │
 │ Plugin Location   │ /path/to/project/.agents/plugins/eidos   │
 │ Sync Status       │ ✓ Up to date                             │
 └───────────────────┴──────────────────────────────────────────┘
@@ -372,11 +381,13 @@ Output:
 ┃ Property               ┃ Value                                               ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
 │ Plugin Name            │ eidos                                               │
-│ Plugin Version         │ 0.1.0                                               │
+│ Plugin Version         │ 0.3.0                                               │
 │ Overall Status         │ CONFORMANT                                          │
-│ Discovered Skills      │ eidos, eidos-architecture, eidos-delta,             │
-│                        │ eidos-design, eidos-extract, eidos-init,            │
-│                        │ eidos-invariants                                    │
+│ Discovered Skills      │ eidos, eidos-architecture, eidos-context,           │
+│                        │ eidos-delta, eidos-design, eidos-drift,             │
+│                        │ eidos-explore, eidos-extract, eidos-init,           │
+│                        │ eidos-invariants, eidos-portal, eidos-product,      │
+│                        │ eidos-reconcile, eidos-review                       │
 │ Configured MCP Servers │ eidos                                               │
 │ Lifecycle Hooks        │ eidos-doc-linter                                    │
 │ Client Extensions      │ com.google.antigravity                              │

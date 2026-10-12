@@ -67,3 +67,4 @@ Technical specifications and architecture models are often trapped in raw text f
 * Real-time inspection of C4 context and container diagrams using client-side Mermaid rendering.
 * Interactive SpecDelta Kanban dashboard tracking proposed, in-review, and applied mutations.
 * Full-text fuzzy search and real-time schema filtering across all catalog entities.
+

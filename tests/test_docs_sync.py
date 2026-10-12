@@ -10,7 +10,7 @@ import yaml
 
 
 def test_documentation_and_schemas_in_sync():
-    """Verify INV-DOCS-SYNCHRONIZATION and POL-003: All 13 living specification schemas and CLI commands are accurately documented."""
+    """Verify INV-DOCS-SYNCHRONIZATION and POL-003: All 15 living specification schemas and CLI commands are accurately documented."""
     repo_root = Path(__file__).parent.parent
 
     # 1. Verify all canonical v1 schemas are represented in docs/concepts/schema-glossary.md
@@ -76,6 +76,16 @@ def test_documentation_and_schemas_in_sync():
                 break
         assert comp_id, f"Component file {comp_file} missing id: frontmatter"
         assert comp_id in sys_arch_text, f"Component '{comp_id}' not registered in {sys_arch_path}"
+
+    # 4. Verify all 14 skills are documented in docs/guides/agent-plugin.md
+    agent_plugin_doc = repo_root / "docs/guides/agent-plugin.md"
+    assert agent_plugin_doc.exists(), "agent-plugin.md guide missing"
+    agent_plugin_text = agent_plugin_doc.read_text(encoding="utf-8")
+    skills_dir = repo_root / "assets/plugin_reference/skills"
+    bundled_skills = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+    assert len(bundled_skills) == 14, f"Expected 14 skills, found {len(bundled_skills)}"
+    for skill_name in bundled_skills:
+        assert f"`{skill_name}`" in agent_plugin_text, f"Skill '{skill_name}' missing in {agent_plugin_doc}"
 
 
 def test_zensical_strict_build():
