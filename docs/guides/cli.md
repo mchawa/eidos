@@ -100,6 +100,22 @@ eidos components CNT-EIDOS-CORE
 
 ---
 
+### `eidos component`
+Manage C4 Level 3 in-process components (`CMP-*`) in the Hybrid Co-Located Architecture (promotion and demotion):
+
+```bash
+# Promote an inline component to a co-located specification next to its source code
+eidos component promote CMP-CORE-VALIDATOR
+
+# Demote / inline a co-located component back into its container manifest
+eidos component inline CMP-CORE-VALIDATOR
+
+# List all components
+eidos component list
+```
+
+---
+
 ### `eidos mcp`
 Launch the stdio **Model Context Protocol (MCP)** server, enabling AI coding agents (Claude, Cursor, Antigravity) to query and mutate living specifications programmatically.
 

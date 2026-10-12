@@ -46,4 +46,4 @@ class ValidationReport:
 
     @property
     def is_clean(self) -> bool:
-        return self.invalid_docs == 0 and len(self.broken_references) == 0
+        return self.invalid_docs == 0 and len(self.broken_references) == 0 and len(self.schema_errors) == 0

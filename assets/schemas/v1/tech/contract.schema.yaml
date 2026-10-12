@@ -32,6 +32,7 @@ properties:
     description: "Protocol format: openapi, protobuf, graphql, asyncapi, json_schema, json_rpc_stdio, or cli_args."
   owning_container:
     type: string
+    pattern: "^CNT-[A-Z0-9_-]+$"
     description: "The container ID (CNT-*) that owns, implements, and provides this contract."
   owning_component:
     type: string

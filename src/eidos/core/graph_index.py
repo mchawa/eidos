@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import time
@@ -77,39 +78,71 @@ class TieredContextSlice(ArchitecturalContextSlice):
             ctype = comp.get("container_type", "service")
             runtime = comp.get("runtime", "N/A")
             pkg = comp.get("package_path", "")
-            lines.append(f"### `{cid}` ({name})")
-            lines.append(f"- **Container:** `{ctype}` | **Runtime:** `{runtime}` | **Package:** `{pkg}`")
-            if comp.get("domain_binding"):
-                lines.append(f"- **Domain:** `{comp['domain_binding']}`")
+            is_comp = comp.get("type") == "tech/component" or cid.startswith("CMP-")
 
-            if self.tier in ("guardrails", "deep"):
-                deps = (
-                    (comp.get("dependencies") or {}).get("internal_containers", [])
-                    or (comp.get("dependencies") or {}).get("internal_components", [])
-                    if isinstance(comp.get("dependencies"), dict)
-                    else []
-                )
-                if deps:
-                    lines.append(f"- **Internal Dependencies:** {', '.join(f'`{d}`' for d in deps)}")
-                contracts = comp.get("contracts") or {}
-                prov = contracts.get("provides", []) if isinstance(contracts, dict) else []
-                if prov:
-                    lines.append(f"- **Provides Contracts:** {', '.join(f'`{p}`' for p in prov)}")
-                req = (
-                    (contracts.get("requires") or contracts.get("consumes") or [])
-                    if isinstance(contracts, dict)
-                    else []
-                )
-                if req:
-                    lines.append(f"- **Requires Contracts:** {', '.join(f'`{r}`' for r in req)}")
+            if is_comp:
+                parent_cnt = comp.get("container", "N/A")
+                lines.append(f"### `{cid}` ({name}) [C4 Level 3 Component]")
+                lines.append(f"- **Owning Container:** `{parent_cnt}` | **Package:** `{pkg}`")
+                if comp.get("file_path"):
+                    lines.append(f"- **Co-Located Specification:** `{comp['file_path']}`")
+                if comp.get("responsibility"):
+                    lines.append(f"- **Responsibility:** {comp['responsibility']}")
+                if self.tier in ("guardrails", "deep"):
+                    ifaces = comp.get("interfaces", {})
+                    if isinstance(ifaces, dict) and ifaces.get("provides"):
+                        lines.append("- **In-Process APIs (`interfaces.provides`):**")
+                        for p in ifaces["provides"]:
+                            sig = p.get("signature", "")
+                            desc = f": {p.get('description', '')}" if p.get("description") else ""
+                            lines.append(f"  - `{sig}`{desc}")
+                    invs = comp.get("invariants", [])
+                    if invs:
+                        lines.append("- **Component Invariants (`INV-*`):**")
+                        for inv in invs:
+                            lines.append(f"  - `{inv.get('id')}`: {inv.get('rule')}")
+                if self.tier == "deep":
+                    qas = comp.get("quality_attributes", {})
+                    if qas:
+                        qa_str = ", ".join(f"{k}: {v}" for k, v in qas.items())
+                        lines.append(f"- **Quality Attributes:** {qa_str}")
+            else:
+                lines.append(f"### `{cid}` ({name})")
+                lines.append(f"- **Container:** `{ctype}` | **Runtime:** `{runtime}` | **Package:** `{pkg}`")
+                if comp.get("domain_binding"):
+                    lines.append(f"- **Domain:** `{comp['domain_binding']}`")
 
-            if self.tier == "deep":
-                modules = comp.get("components", []) or comp.get("c4_internal_components", [])
-                if modules:
-                    lines.append("- **C4 Level 3 Components:**")
-                    for m in modules:
-                        mid = f"`{m['id']}` " if m.get("id") else ""
-                        lines.append(f"  - {mid}**{m.get('name', '')}**: {m.get('responsibility', '')}")
+                if self.tier in ("guardrails", "deep"):
+                    deps = (
+                        (comp.get("dependencies") or {}).get("internal_containers", [])
+                        or (comp.get("dependencies") or {}).get("internal_components", [])
+                        if isinstance(comp.get("dependencies"), dict)
+                        else []
+                    )
+                    if deps:
+                        lines.append(f"- **Internal Dependencies:** {', '.join(f'`{d}`' for d in deps)}")
+                    contracts = comp.get("contracts") or {}
+                    prov = contracts.get("provides", []) if isinstance(contracts, dict) else []
+                    if prov:
+                        lines.append(f"- **Provides Contracts:** {', '.join(f'`{p}`' for p in prov)}")
+                    req = (
+                        (contracts.get("requires") or contracts.get("consumes") or [])
+                        if isinstance(contracts, dict)
+                        else []
+                    )
+                    if req:
+                        lines.append(f"- **Requires Contracts:** {', '.join(f'`{r}`' for r in req)}")
+
+                if self.tier == "deep":
+                    modules = comp.get("components", []) or comp.get("c4_internal_components", [])
+                    if modules:
+                        lines.append("- **C4 Level 3 Components:**")
+                        for m in modules:
+                            mid = f"`{m['id']}` " if m.get("id") else ""
+                            if m.get("ref"):
+                                lines.append(f"  - {mid}**{m.get('name', m.get('id', ''))}** (co-located): `ref: {m['ref']}`")
+                            else:
+                                lines.append(f"  - {mid}**{m.get('name', '')}**: {m.get('responsibility', '')}")
             lines.append("")
 
         # 2. Bound Contracts
@@ -304,26 +337,33 @@ class ArchitecturalIndex:
         disk_files: set[str] = set()
         to_update: list[Path] = []
 
-        if self.eidos_dir.exists():
-            for p in self.eidos_dir.rglob("*.adoc"):
-                if "by-status" in p.parts or p.name.startswith("_") or p.name.lower() == "readme.adoc":
+        if not self.eidos_dir.exists():
+            deleted = [Path(rel) for rel in db_files.keys()]
+            return len(deleted) > 0, [], deleted
+
+        root_str = str(self.root)
+        for dirpath, dirnames, filenames in os.walk(str(self.eidos_dir)):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".") and d != "by-status"]
+            for fn in filenames:
+                if not fn.endswith(".adoc") or fn.startswith("_") or fn.lower() == "readme.adoc":
                     continue
+                full_path = os.path.join(dirpath, fn)
                 try:
-                    rel_p = str(p.relative_to(self.root)).replace("\\", "/")
+                    rel_p = os.path.relpath(full_path, root_str).replace("\\", "/")
                 except ValueError:
-                    rel_p = str(p).replace("\\", "/")
+                    rel_p = full_path.replace("\\", "/")
                 disk_files.add(rel_p)
 
-                stat = p.stat()
+                stat = os.stat(full_path)
                 cached = db_files.get(rel_p)
                 if not cached:
-                    to_update.append(p)
+                    to_update.append(Path(full_path))
                 elif abs(stat.st_mtime - cached[0]) > 0.001:
-                    # mtime changed, compute sha256 to confirm content modification
-                    content = p.read_bytes()
+                    with open(full_path, "rb") as f:
+                        content = f.read()
                     h = hashlib.sha256(content).hexdigest()
                     if h != cached[1]:
-                        to_update.append(p)
+                        to_update.append(Path(full_path))
 
         deleted = [Path(rel) for rel in db_files.keys() - disk_files]
         is_dirty = len(to_update) > 0 or len(deleted) > 0
@@ -331,9 +371,14 @@ class ArchitecturalIndex:
 
     def _ensure_synced(self) -> None:
         """Lazily ensure the index is synchronized (<2ms check when clean)."""
+        now = time.monotonic()
+        last_check = getattr(self, "_last_synced_check", 0.0)
+        if now - last_check < 0.2:
+            return
         dirty, _, _ = self.is_dirty()
         if dirty:
             self.sync()
+        self._last_synced_check = time.monotonic()
 
     def sync(self, force: bool = False) -> IndexSyncStats:
         """Incrementally synchronize the index with specifications on disk."""
@@ -353,6 +398,7 @@ class ArchitecturalIndex:
         if not dirty and not force:
             stats.duration_ms = (time.perf_counter() - t0) * 1000
             stats.was_clean = True
+            self._last_synced_check = time.monotonic()
             return stats
 
         stats.was_clean = False
@@ -495,6 +541,40 @@ class ArchitecturalIndex:
                 if doc_type == "product/policy":
                     invariants = fm.get("invariants", []) or []
 
+                # Dedicated Co-Located Component bindings
+                if doc_type == "tech/component":
+                    cnt_id = fm.get("container")
+                    if cnt_id:
+                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);", (cnt_id, doc_id))
+                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (doc_id, cnt_id))
+
+                    # In-process interfaces
+                    ifaces = fm.get("interfaces", {})
+                    if isinstance(ifaces, dict):
+                        for prov in ifaces.get("provides", []):
+                            if isinstance(prov, dict) and prov.get("signature"):
+                                sig = prov["signature"]
+                                meth = sig.split("(")[0].strip()
+                                conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_method');", (meth, doc_id))
+                                conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_signature');", (sig, doc_id))
+                        for consumed in ifaces.get("consumes", []):
+                            if isinstance(consumed, str):
+                                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api', NULL);", (doc_id, consumed.strip()))
+
+                    # Component invariants
+                    invariants = fm.get("invariants", []) or []
+
+                # Container references to co-located components
+                if doc_type == "tech/container":
+                    for comp_entry in fm.get("components", []):
+                        if isinstance(comp_entry, dict) and comp_entry.get("ref"):
+                            ref_path = comp_entry["ref"]
+                            cid = comp_entry.get("id")
+                            if cid:
+                                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);", (doc_id, cid))
+                                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (cid, doc_id))
+                                conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_ref');", (ref_path, cid))
+
                 # Insert invariants as child entities & edges
                 for inv in invariants:
                     iid = inv.get("id")
@@ -510,6 +590,7 @@ class ArchitecturalIndex:
                             "source_id": doc_id,
                             "capability_id": doc_id if doc_type == "product/capability" else None,
                             "policy_id": doc_id if doc_type == "product/policy" else None,
+                            "component_id": doc_id if doc_type == "tech/component" else None,
                             "has_test_coverage": test_exists,
                             "matching_tests": [test] if test else [],
                         }
@@ -628,6 +709,7 @@ class ArchitecturalIndex:
             )
 
         stats.duration_ms = (time.perf_counter() - t0) * 1000
+        self._last_synced_check = time.monotonic()
         return stats
 
     def query_fts(self, text: str, limit: int = 10) -> list[dict[str, Any]]:
@@ -737,7 +819,7 @@ class ArchitecturalIndex:
             JOIN entities e ON e.id = s.entity_id
             WHERE s.symbol = ?
                OR (? LIKE s.symbol || '/%' AND s.kind = 'package_path')
-               OR (? LIKE '%' || s.symbol AND s.kind IN ('source_path', 'specification_file'))
+               OR (? LIKE '%' || s.symbol AND s.kind IN ('source_path', 'specification_file', 'component_ref', 'interface_method'))
                OR (? LIKE s.symbol || '%' AND s.kind = 'test_binding')
             LIMIT 10;
             """,
@@ -936,33 +1018,39 @@ class ArchitecturalIndex:
 
         # 5. Forward dependency expansion for primary matched components
         primary_cids = list(matched_components.keys())
+        missing_dep_ids: list[str] = []
         for cid in primary_cids:
             comp_data = matched_components.get(cid, {})
             deps_dict = comp_data.get("dependencies") or {}
             deps = deps_dict.get("internal_containers", []) or deps_dict.get("internal_components", [])
             for dep_id in deps:
-                if dep_id not in matched_components:
-                    row = cursor.execute(
-                        "SELECT id, title, type, domain, data_json FROM entities WHERE id = ?;", (dep_id,)
-                    ).fetchone()
-                    if row:
-                        c_data = json.loads(row["data_json"])
-                        c_data["id"] = row["id"]
-                        c_data["title"] = row["title"]
-                        matched_components[row["id"]] = c_data
-                        matched_reasons.setdefault(row["id"], []).append(f"Internal dependency of '{cid}'")
+                if dep_id not in matched_components and dep_id not in missing_dep_ids:
+                    missing_dep_ids.append(dep_id)
+        if missing_dep_ids:
+            ph = ",".join("?" for _ in missing_dep_ids)
+            cursor.execute(
+                f"SELECT id, title, type, domain, data_json FROM entities WHERE id IN ({ph});",
+                tuple(missing_dep_ids),
+            )
+            for row in cursor.fetchall():
+                c_data = json.loads(row["data_json"])
+                c_data["id"] = row["id"]
+                c_data["title"] = row["title"]
+                matched_components[row["id"]] = c_data
+                matched_reasons.setdefault(row["id"], []).append("Internal dependency")
 
         # 6. Include contracts owned by or provided/consumed by primary components
-        for cid in primary_cids:
+        if primary_cids:
+            ph = ",".join("?" for _ in primary_cids)
             cursor.execute(
-                """
+                f"""
                 SELECT id, title, type, domain, data_json FROM entities
                 WHERE type = 'tech/contract' AND (
-                    id IN (SELECT target_id FROM edges WHERE source_id = ? AND rel_type IN ('provides', 'consumes'))
-                    OR id IN (SELECT source_id FROM edges WHERE target_id = ? AND rel_type = 'provides')
+                    id IN (SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type IN ('provides', 'consumes'))
+                    OR id IN (SELECT source_id FROM edges WHERE target_id IN ({ph}) AND rel_type = 'provides')
                 );
                 """,
-                (cid, cid),
+                tuple(primary_cids + primary_cids),
             )
             for row in cursor.fetchall():
                 ctr_data = json.loads(row["data_json"])
@@ -973,13 +1061,11 @@ class ArchitecturalIndex:
         # 7. Include domain capabilities for primary components' domains
         domains = {c.get("domain_binding") or c.get("domain") for c in [matched_components[cid] for cid in primary_cids]}
         domains.discard("")
-        for dom in domains:
+        if domains:
+            ph = ",".join("?" for _ in domains)
             cursor.execute(
-                """
-                SELECT id, title, type, domain, data_json FROM entities
-                WHERE type = 'product/capability' AND domain = ?;
-                """,
-                (dom,),
+                f"SELECT id, title, type, domain, data_json FROM entities WHERE type = 'product/capability' AND domain IN ({ph});",
+                tuple(domains),
             )
             for row in cursor.fetchall():
                 cap_data = json.loads(row["data_json"])
@@ -988,16 +1074,18 @@ class ArchitecturalIndex:
                 matched_capabilities.setdefault(row["id"], cap_data)
 
         # 8. Invariants & Policies expansion from capabilities
-        for cap_id in list(matched_capabilities.keys()):
+        if matched_capabilities:
+            cap_ids = list(matched_capabilities.keys())
+            ph = ",".join("?" for _ in cap_ids)
             # Invariants
             cursor.execute(
-                """
+                f"""
                 SELECT id, title, data_json FROM entities
                 WHERE type = 'invariant' AND id IN (
-                    SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'asserts'
+                    SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type = 'asserts'
                 );
                 """,
-                (cap_id,),
+                tuple(cap_ids),
             )
             for row in cursor.fetchall():
                 inv_data = json.loads(row["data_json"])
@@ -1006,13 +1094,13 @@ class ArchitecturalIndex:
 
             # Policies
             cursor.execute(
-                """
+                f"""
                 SELECT id, title, data_json FROM entities
                 WHERE type = 'product/policy' AND id IN (
-                    SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'governed_by'
+                    SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type = 'governed_by'
                 );
                 """,
-                (cap_id,),
+                tuple(cap_ids),
             )
             for row in cursor.fetchall():
                 pol_data = json.loads(row["data_json"])

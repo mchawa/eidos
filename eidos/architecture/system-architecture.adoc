@@ -152,7 +152,7 @@ Eidos is distributed as a monorepo consisting of the following primary Level 2 c
 |===
 
 === 5.3 Level 3 Component Whitebox View & Interface Governance
-Internal component building blocks are declared inline within each container manifest. In Hybrid Mode (see link:../explorations/EXP-2026-004.adoc[EXP-2026-004]), complex promoted components **must be co-located directly with their source code** (e.g. `src/eidos/core/validator.adoc`); centralized component folders are prohibited.
+Internal component building blocks are declared inline within each container manifest. In Centralized Hybrid Mode (see link:../explorations/EXP-2026-004.adoc[EXP-2026-004]), complex promoted components **reside centrally in `eidos/architecture/components/<component>.adoc`** (linked via `ref:` in the parent container manifest) and point to code via `package_path`. Eidos specifications **never touch or reside within source code directories** (`src/`, `packages/`).
 
 Furthermore, interface ownership strictly distinguishes between deployment boundaries and in-memory linkage:
 * **Containers (`CNT-*`)** define **Boundary Protocol Contracts (`CTR-*`)**: Cross-process, network, or CLI protocols (CLI args, REST OpenAPI, gRPC, MCP).

@@ -20,8 +20,10 @@ from eidos.core.scaffolder import (
     find_spec_by_id_or_path,
     get_delta_status_summary,
     init_repository,
+    inline_component,
     list_deltas,
     list_specs,
+    promote_component,
     sync_delta_views,
 )
 from eidos.core.validator import SpecValidator
@@ -66,11 +68,17 @@ index_app = typer.Typer(
     help="Manage and query the embedded SQLite architectural knowledge graph (.eidos/cache/index.db).",
     add_completion=False,
 )
+component_app = typer.Typer(
+    name="component",
+    help="Manage C4 Level 3 components (promote, inline, list).",
+    add_completion=False,
+)
 
 app.add_typer(plugin_app, name="plugin")
 app.add_typer(spec_app, name="spec")
 app.add_typer(delta_app, name="delta")
 app.add_typer(index_app, name="index")
+app.add_typer(component_app, name="component")
 console = Console()
 
 
@@ -614,16 +622,32 @@ def components(
     count = 0
     for c in found_containers:
         cid = c.get("id", "N/A")
+        ctype = c.get("type", "tech/container")
+
+        if ctype == "tech/component":
+            if cid_filter and cid_filter not in cid.upper():
+                continue
+            count += 1
+            table.add_row(
+                cid,
+                c.get("name", c.get("title", "N/A")),
+                c.get("container", "N/A"),
+                c.get("file_path", c.get("package_path", "N/A")),
+                c.get("responsibility", "N/A"),
+            )
+            continue
+
         if cid_filter and cid_filter not in cid.upper():
             continue
         internals = c.get("components", []) or c.get("c4_internal_components", [])
         for m in internals:
             count += 1
+            spec_ref = m.get("ref", m.get("spec_path", m.get("source_path", "N/A")))
             table.add_row(
                 m.get("id", "CMP-INTERNAL"),
                 m.get("name", "N/A"),
                 cid,
-                m.get("source_path", "N/A"),
+                spec_ref,
                 m.get("responsibility", "N/A"),
             )
 
@@ -632,6 +656,55 @@ def components(
         return
 
     console.print(table)
+
+
+@component_app.command("promote")
+def component_promote_cmd(
+    component_id: Annotated[str, typer.Argument(help="Identifier of the inline component to promote (e.g. CMP-CORE-VALIDATOR).")],
+    eidos_dir: Annotated[Path | None, typer.Option("--eidos-dir", "-d", help="Path to eidos directory.")] = None,
+):
+    """Promote an inline C4 Level 3 component to a dedicated specification in eidos/architecture/components/."""
+    try:
+        comp_path, container_path = promote_component(component_id=component_id, eidos_dir=eidos_dir)
+        console.print(f"[bold green]✓ Created dedicated component manifest:[/bold green] {comp_path}")
+        console.print(f"[bold green]✓ Updated container:[/bold green] {container_path} [dim](referenced via 'ref')[/dim]")
+
+        # Sync index
+        idx = get_architectural_index(eidos_dir=eidos_dir)
+        idx.sync(force=True)
+        console.print("[bold green]✓ Reindexed architectural knowledge graph (zero drift).[/bold green]")
+    except Exception as e:
+        console.print(f"[bold red]Error promoting component:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@component_app.command("inline")
+def component_inline_cmd(
+    component_id: Annotated[str, typer.Argument(help="Identifier of the dedicated component to inline back into its container.")],
+    eidos_dir: Annotated[Path | None, typer.Option("--eidos-dir", "-d", help="Path to eidos directory.")] = None,
+):
+    """Demote / inline a dedicated C4 Level 3 component back into its container manifest."""
+    try:
+        container_path, deleted_path = inline_component(component_id=component_id, eidos_dir=eidos_dir)
+        console.print(f"[bold green]✓ Inlined component into container:[/bold green] {container_path}")
+        console.print(f"[bold green]✓ Safely removed dedicated component manifest:[/bold green] {deleted_path}")
+
+        # Sync index
+        idx = get_architectural_index(eidos_dir=eidos_dir)
+        idx.sync(force=True)
+        console.print("[bold green]✓ Reindexed architectural knowledge graph (zero drift).[/bold green]")
+    except Exception as e:
+        console.print(f"[bold red]Error inlining component:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@component_app.command("list")
+def component_list_cmd(
+    container_id: str | None = typer.Argument(None, help="Optional container ID to filter components."),
+    target_path: Path | None = typer.Option(None, "--path", "-p", help="Path to scan."),
+):
+    """List all C4 Level 3 components across containers."""
+    components(container_id=container_id, target_path=target_path)
 
 
 @app.command()

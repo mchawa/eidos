@@ -42,6 +42,10 @@ components:
     name: "IndexCommands"
     responsibility: "Knowledge graph operations: sync, status inspection, lexical search, and blast-radius impact analysis."
     source_path: "src/eidos/cli/main.py"
+  - id: CMP-CLI-COMPONENT-COMMANDS
+    name: "ComponentCommands"
+    responsibility: "C4 Level 3 component promotion to co-located specs, inlining back to container, and listing."
+    source_path: "src/eidos/cli/main.py"
 
 dependencies:
   internal_containers:
