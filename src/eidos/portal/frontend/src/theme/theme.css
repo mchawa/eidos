@@ -254,3 +254,16 @@ html, body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted-foreground);
 }
+
+/* C4 Interactive Diagram Node Styles */
+#c4ActiveDiagram .node,
+#c4ActiveDiagram .cluster {
+  cursor: pointer !important;
+  transition: transform 150ms ease, filter 150ms ease;
+}
+#c4ActiveDiagram .node:hover {
+  filter: brightness(1.22) drop-shadow(0 0 8px rgba(59, 130, 246, 0.6));
+}
+#c4ActiveDiagram .cluster:hover {
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.4));
+}

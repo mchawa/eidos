@@ -102,16 +102,71 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
     const nodes = diagramRef.current.querySelectorAll(".node");
     nodes.forEach((node) => {
       node.classList.add("cursor-pointer");
-      node.addEventListener("click", () => {
-        const text = node.textContent || "";
-        const matched = data.components.find(
-          (c) =>
-            text.includes(c.id) ||
-            text.includes(c.name) ||
-            c.id.replace(/-/g, "_") === node.id
-        );
-        if (matched) {
-          openC4Inspector(matched);
+      const text = node.textContent || "";
+      const nodeId = node.id || "";
+
+      // Add tooltips to guide user on click actions
+      if (level === 1) {
+        if (text.includes("SYS") || text.includes("Eidos") || nodeId.includes("SYS")) {
+          node.setAttribute("title", "Click to drill down into Level 2: Containers");
+        }
+      } else if (level === 2) {
+        node.setAttribute("title", "Click container to drill down into Level 3: Components");
+      } else if (level === 3) {
+        if (text.includes("Peer") || nodeId.includes("peer_")) {
+          node.setAttribute("title", "Click to navigate to peer container");
+        } else {
+          node.setAttribute("title", "Click to inspect module details");
+        }
+      }
+
+      node.addEventListener("click", (e) => {
+        e.stopPropagation();
+
+        // Level 1: System Context navigation -> drill down to Level 2 Containers
+        if (level === 1) {
+          if (
+            text.includes("SYS") ||
+            text.includes("Eidos") ||
+            nodeId.includes("SYS")
+          ) {
+            setC4Level(2);
+            return;
+          }
+        }
+
+        // Level 2: Container navigation -> drill down to Level 3 Components
+        if (level === 2) {
+          const matched = data.components.find(
+            (c) =>
+              text.includes(c.id) ||
+              text.includes(c.name) ||
+              nodeId.includes(c.id.replace(/-/g, "_")) ||
+              nodeId.includes(c.id)
+          );
+          if (matched) {
+            drillDownToContainer(matched.id);
+            return;
+          }
+        }
+
+        // Level 3: Component navigation -> drill to peer container or inspect
+        if (level === 3) {
+          const peerMatch = data.components.find(
+            (c) =>
+              (text.includes(c.id) && (text.includes("Peer") || nodeId.includes("peer_"))) ||
+              nodeId.includes(`peer_${c.id.replace(/-/g, "_")}`)
+          );
+          if (peerMatch) {
+            drillDownToContainer(peerMatch.id);
+            return;
+          }
+
+          // Inspect container / module
+          const currentComp = data.components.find((c) => c.id === selectedContainerId);
+          if (currentComp) {
+            openC4Inspector(currentComp);
+          }
         }
       });
     });
@@ -142,7 +197,7 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
     return () => {
       isCancelled = true;
     };
-  }, [currentDiagramSource, darkMode]);
+  }, [currentDiagramSource, darkMode, level, selectedContainerId]);
 
   return (
     <div className="space-y-4 animate-in fade-in duration-200">
@@ -185,13 +240,38 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
           </button>
         </div>
 
+        {/* Level 2 Breadcrumbs */}
+        {level === 2 && (
+          <div id="c4Breadcrumbs" className="flex items-center gap-2 text-xs">
+            <button
+              onClick={() => setC4Level(1)}
+              className="p-1 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 cursor-pointer transition-colors"
+              title="Return to System Context"
+            >
+              <ArrowUp className="h-3 w-3" />
+              <span>Context (L1)</span>
+            </button>
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="font-semibold text-primary font-mono text-[11px]">Containers (L2)</span>
+          </div>
+        )}
+
         {/* Level 3 Breadcrumbs and selector */}
         {level === 3 && (
           <div id="c4Breadcrumbs" className="flex items-center gap-2 text-xs">
             <button
+              onClick={() => setC4Level(1)}
+              className="p-1 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 cursor-pointer transition-colors"
+              title="Return to System Context"
+            >
+              <span>Context</span>
+            </button>
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <button
               id="btnC4LevelUp"
               onClick={() => setC4Level(2)}
-              className="p-1 rounded-lg bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 cursor-pointer"
+              className="p-1 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 cursor-pointer transition-colors"
+              title="Return to Containers"
             >
               <ArrowUp className="h-3 w-3" />
               <span>Containers</span>
@@ -201,7 +281,7 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
               id="c4ContainerSelect"
               value={selectedContainerId}
               onChange={(e) => drillDownToContainer(e.target.value)}
-              className="bg-card border border-border text-xs rounded-lg px-2.5 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              className="bg-card border border-border text-xs rounded-lg px-2.5 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
             >
               {data.components.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -241,6 +321,21 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
         </div>
       </div>
 
+      {/* Interactive Navigation Helper Pill */}
+      <div className="flex items-center justify-between px-1">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-medium">
+          <span className="h-2 w-2 rounded-full bg-primary animate-pulse shrink-0" />
+          <span>
+            {level === 1 && "Click 'SYS' (Eidos Ecosystem) in the diagram to navigate to Level 2 Containers"}
+            {level === 2 && "Click any Container node in the diagram to drill down to Level 3 Components"}
+            {level === 3 && "Click peer containers to navigate, or internal modules to inspect details"}
+          </span>
+        </div>
+        <span className="text-[11px] text-muted-foreground font-mono hidden sm:inline">
+          {level === 1 ? "C4 Level 1: System Context" : level === 2 ? "C4 Level 2: Container Topology" : `C4 Level 3: Whitebox (${selectedContainerId})`}
+        </span>
+      </div>
+
       {/* Main Diagram Viewport */}
       <Card className="p-4 sm:p-6 min-h-[500px] flex items-center justify-center overflow-hidden bg-card/60 relative">
         <div
@@ -261,30 +356,39 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
           {data.components.map((comp) => (
             <Card
               key={comp.id}
-              className="cursor-pointer hover:border-primary/50 transition-all p-4 space-y-2 group"
-              onClick={() => openC4Inspector(comp)}
+              className="hover:border-primary/50 transition-all p-4 space-y-3 group flex flex-col justify-between"
             >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold text-primary group-hover:underline">
-                  {comp.id}
-                </span>
-                <Badge variant="outline">{comp.container_type}</Badge>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs font-bold text-primary group-hover:underline">
+                    {comp.id}
+                  </span>
+                  <Badge variant="outline">{comp.container_type}</Badge>
+                </div>
+                <h4 className="text-sm font-semibold text-foreground">{comp.name}</h4>
+                <p className="text-xs text-muted-foreground font-mono truncate">
+                  {comp.package_path}
+                </p>
+                <p className="text-[11px] text-muted-foreground line-clamp-2">
+                  {comp.responsibility || comp.summary || "Core system container"}
+                </p>
               </div>
-              <h4 className="text-sm font-semibold text-foreground">{comp.name}</h4>
-              <p className="text-xs text-muted-foreground font-mono truncate">
-                {comp.package_path}
-              </p>
-              <div className="pt-2 flex items-center justify-between text-[11px] text-muted-foreground border-t border-border/40">
-                <span>{comp.internal_components?.length || 0} internal components</span>
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    drillDownToContainer(comp.id);
-                  }}
-                  className="text-primary hover:underline font-medium"
+              <div className="pt-2 flex items-center justify-between gap-2 border-t border-border/50 text-[11px]">
+                <button
+                  onClick={() => drillDownToContainer(comp.id)}
+                  className="flex-1 py-1.5 px-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                  title={`Navigate to ${comp.id} Level 3 Components`}
                 >
-                  Whitebox →
-                </span>
+                  <span>Explore Level 3</span>
+                  <ChevronRight className="h-3 w-3" />
+                </button>
+                <button
+                  onClick={() => openC4Inspector(comp)}
+                  className="py-1.5 px-2.5 rounded-lg bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground font-medium transition-colors cursor-pointer"
+                  title="Inspect Details"
+                >
+                  Details
+                </button>
               </div>
             </Card>
           ))}
