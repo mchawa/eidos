@@ -1,0 +1,183 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: #f8fafc;
+    --foreground: #0f172a;
+
+    --card: #ffffff;
+    --card-foreground: #0f172a;
+
+    --popover: #ffffff;
+    --popover-foreground: #0f172a;
+
+    --primary: #2563eb;
+    --primary-foreground: #ffffff;
+
+    --secondary: #7c3aed;
+    --secondary-foreground: #ffffff;
+
+    --muted: #f1f5f9;
+    --muted-foreground: #64748b;
+
+    --accent: #f1f5f9;
+    --accent-foreground: #0f172a;
+
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+
+    --border: #e2e8f0;
+    --input: #e2e8f0;
+    --ring: #2563eb;
+
+    --radius: 0.75rem;
+
+    /* MD3 Color Roles (Light) */
+    --md-primary: #2563eb;
+    --md-on-primary: #ffffff;
+    --md-primary-container: rgba(37, 99, 235, 0.12);
+    --md-on-primary-container: #1e3a8a;
+
+    --md-secondary: #7c3aed;
+    --md-on-secondary: #ffffff;
+    --md-secondary-container: rgba(124, 58, 237, 0.12);
+    --md-on-secondary-container: #4c1d95;
+
+    --md-tertiary: #059669;
+    --md-on-tertiary: #ffffff;
+    --md-tertiary-container: rgba(5, 150, 105, 0.12);
+    --md-on-tertiary-container: #064e3b;
+
+    --md-surface: #f8fafc;
+    --md-on-surface: #0f172a;
+    --md-surface-dim: #f1f5f9;
+    --md-surface-bright: #ffffff;
+    --md-surface-container-lowest: #ffffff;
+    --md-surface-container-low: #f8fafc;
+    --md-surface-container: #ffffff;
+    --md-surface-container-high: #f1f5f9;
+    --md-surface-container-highest: #e2e8f0;
+
+    --md-outline: #94a3b8;
+    --md-outline-variant: #e2e8f0;
+  }
+
+  .dark {
+    --background: #090d16;
+    --foreground: #f8fafc;
+
+    --card: #111827;
+    --card-foreground: #f8fafc;
+
+    --popover: #111827;
+    --popover-foreground: #f8fafc;
+
+    --primary: #60a5fa;
+    --primary-foreground: #082f49;
+
+    --secondary: #a78bfa;
+    --secondary-foreground: #2e1065;
+
+    --muted: #1e293b;
+    --muted-foreground: #94a3b8;
+
+    --accent: #1e293b;
+    --accent-foreground: #f8fafc;
+
+    --destructive: #f87171;
+    --destructive-foreground: #450a0a;
+
+    --border: #1e293b;
+    --input: #1e293b;
+    --ring: #60a5fa;
+
+    /* MD3 Color Roles (Dark) */
+    --md-primary: #60a5fa;
+    --md-on-primary: #082f49;
+    --md-primary-container: rgba(59, 130, 246, 0.18);
+    --md-on-primary-container: #bfdbfe;
+
+    --md-secondary: #a78bfa;
+    --md-on-secondary: #2e1065;
+    --md-secondary-container: rgba(139, 92, 246, 0.18);
+    --md-on-secondary-container: #ddd6fe;
+
+    --md-tertiary: #34d399;
+    --md-on-tertiary: #022c22;
+    --md-tertiary-container: rgba(16, 185, 129, 0.18);
+    --md-on-tertiary-container: #a7f3d0;
+
+    --md-surface: #090d16;
+    --md-on-surface: #f8fafc;
+    --md-surface-dim: #060910;
+    --md-surface-bright: #1e293b;
+    --md-surface-container-lowest: #060910;
+    --md-surface-container-low: #0f172a;
+    --md-surface-container: #111827;
+    --md-surface-container-high: #1e293b;
+    --md-surface-container-highest: #334155;
+
+    --md-outline: #475569;
+    --md-outline-variant: #1e293b;
+  }
+}
+
+/* Material Design 3 Elevation Utility Classes */
+.md-elevation-0 {
+  box-shadow: none;
+}
+.md-elevation-1 {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.25), 0 1px 2px -1px rgba(0, 0, 0, 0.2);
+}
+.md-elevation-2 {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+}
+.md-elevation-3 {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.35), 0 4px 6px -4px rgba(0, 0, 0, 0.2);
+}
+.md-elevation-4 {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+}
+.md-elevation-5 {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+/* MD3 State Layers */
+.md-state-layer {
+  position: relative;
+  overflow: hidden;
+}
+.md-state-layer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: currentColor;
+  opacity: 0;
+  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+.md-state-layer:hover::before {
+  opacity: 0.08;
+}
+.md-state-layer:focus-visible::before {
+  opacity: 0.12;
+}
+.md-state-layer:active::before {
+  opacity: 0.16;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
