@@ -26,7 +26,7 @@ This plugin equips AI agents (Antigravity `agy`, Claude Code, Cursor, GitHub Cop
    - `skills/eidos-review/SKILL.md`: **Staff Systems Architect Review** auditing blast radius, SemVer breaking changes, and invariant test coverage.
    - `skills/eidos-drift/SKILL.md`: **Spec-to-Code Drift Detection** verifying synchronization, schema conformance, and PR gates via `eidos drift`.
    - `skills/eidos-reconcile/SKILL.md`: **Direct Mode Spec Reconciliation** mapping code modifications to living specifications and syncing docs.
-   - `skills/eidos-portal/SKILL.md`: **Living Web Portal & Documentation** serving (`eidos serve`) and exporting static sites (`eidos build-site`).
+   - `skills/eidos-portal/SKILL.md`: **Living Web Portal & Documentation** serving (`eidos portal serve` / `eidos serve`) and exporting static sites (`eidos portal build` / `eidos build-site`).
 
 2. **Direct CLI Tooling & JSON Output**:
    - Agents interact with Eidos through deterministic CLI commands with `--json` output support (`eidos validate --json`, `eidos drift --uncommitted --json`, `eidos context --format json`).

@@ -9,7 +9,11 @@ This guide will walk you through initializing, validating, and exploring Eidos l
 Navigate to your project root and run `eidos init`:
 
 ```bash
+# Initialize living specification skeleton
 eidos init
+
+# Populate and synchronize the architectural knowledge graph
+eidos index sync
 ```
 
 This creates the canonical `eidos/` empty directory skeleton, tracked in Git by `.gitkeep` files:
@@ -66,6 +70,10 @@ Success! All specification documents are valid.
 Eidos includes a built-in local development server that compiles your living specifications into a visual C4 architecture portal:
 
 ```bash
+# Using namespaced command:
+eidos portal serve --path eidos --port 8080
+
+# Or using shortcut:
 eidos serve --path eidos --port 8080
 ```
 

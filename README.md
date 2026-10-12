@@ -25,6 +25,9 @@ pip install eidos-ai
 # Initialize Eidos in your repository
 eidos init
 
+# Synchronize knowledge graph index
+eidos index sync
+
 # Validate living specifications
 eidos validate eidos
 
@@ -32,7 +35,7 @@ eidos validate eidos
 eidos drift
 
 # Launch interactive C4 architecture portal
-eidos serve --path eidos --port 8080
+eidos portal serve --path eidos --port 8080
 
 # Install AI agent plugin (14 skills for Antigravity, Claude, Cursor, Copilot)
 eidos plugin install --target all

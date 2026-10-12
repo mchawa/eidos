@@ -28,7 +28,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
-import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
+import { SpecReader } from "@/components/ui/SpecReader";
 import { cn } from "@/lib/utils";
 import type { PortalData, SpecItem } from "@/types";
 
@@ -845,41 +845,14 @@ export function CatalogView({ data }: CatalogViewProps) {
         onOpenChange={(open) => !open && setInspectedSpec(null)}
         title={inspectedSpec?.title || "Specification"}
         subtitle={inspectedSpec?.id}
+        maxWidth="6xl"
       >
         {inspectedSpec && (
-          <div className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="primary">{inspectedSpec.type}</Badge>
-              <Badge variant={inspectedSpec.is_valid ? "success" : "danger"}>
-                {inspectedSpec.is_valid ? "VALID" : "INVALID"}
-              </Badge>
-              <span className="font-mono text-xs text-muted-foreground px-2 py-0.5 rounded bg-muted">
-                {inspectedSpec.path}
-              </span>
-            </div>
-
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                YAML Frontmatter
-              </h4>
-              <pre className="p-3.5 rounded-xl bg-muted/40 border border-border/80 font-mono text-[11px] overflow-x-auto text-foreground leading-relaxed max-h-60 overflow-y-auto">
-                {JSON.stringify(inspectedSpec.frontmatter, null, 2)}
-              </pre>
-            </div>
-
-            {inspectedSpec.body && (
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                  Specification Body
-                </h4>
-                {/* Clean Rendered AsciiDoc Body (No Raw Markup by default, with toggle to raw) */}
-                <AsciiDocRenderer
-                  content={inspectedSpec.body}
-                  title={inspectedSpec.title}
-                />
-              </div>
-            )}
-          </div>
+          <SpecReader
+            spec={inspectedSpec}
+            onClose={() => setInspectedSpec(null)}
+            isModal={true}
+          />
         )}
       </Sheet>
     </div>

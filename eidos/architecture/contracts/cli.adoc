@@ -12,6 +12,11 @@ specification_file: "src/eidos/cli/main.py"
 
 == Command Specifications
 
+=== `eidos --version` / `eidos version`
+Displays current Eidos engine version (e.g. `eidos 0.5.0`).
+* **Options**: `--version`, `-V`
+* **Exit Code**: 0
+
 === `eidos info`
 Displays current engine version, loaded v1 schemas, supported VCS platforms, and available agent harnesses.
 * **Exit Code**: 0
@@ -65,10 +70,19 @@ Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search
   - `status [--path <path>]`: Displays index health, entity/edge counts, file hashes, cache file size, and drift status.
   - `sync [--path <path>] [--force]`: Synchronizes or rebuilds the knowledge graph index.
   - `search <query> [--limit <n>] [--path <path>]`: Performs BM25 full-text search across titles, requirements, and invariants.
-  - `blast-radius <symbol_or_path> [--hops <n>] [--path <path>]`: Computes the transitive dependency and governance blast radius for a symbol or spec path.
+  - `blast-radius <symbol_or_path> [--depth <n>] [--path <path>]`: Computes the transitive dependency and governance blast radius for a symbol or spec path.
+
+=== `eidos portal`
+Manages the interactive Living Web Portal and documentation site export.
+* **Sub-commands**:
+  - `serve [--path PATH] [--host HOST] [--port PORT] [--open]`: Launches the local interactive Eidos Living Web Portal HTTP server.
+  - `build [--path PATH] [--out OUT_DIR]`: Exports the Living Web Portal as a self-contained static site (alias: `build-site`).
+* **Exit Codes**:
+  - `0`: Operation completed successfully.
+  - `1`: Specifications directory not found.
 
 === `eidos serve [--path PATH] [--host HOST] [--port PORT] [--open]`
-Launches the local interactive Eidos Living Web Portal HTTP server.
+Shortcut command for `eidos portal serve`. Launches the local interactive Eidos Living Web Portal HTTP server.
 * **Options**:
   - `--path, -p`: Path to eidos specs directory (defaults to `./eidos`).
   - `--host, -h`: Host interface (defaults to `127.0.0.1`).
@@ -79,7 +93,7 @@ Launches the local interactive Eidos Living Web Portal HTTP server.
   - `1`: Target directory not found.
 
 === `eidos build-site [--path PATH] [--out OUT_DIR]`
-Exports the Eidos Living Web Portal as a self-contained static site for GitHub/GitLab Pages.
+Shortcut command for `eidos portal build`. Exports the Eidos Living Web Portal as a self-contained static site for GitHub/GitLab Pages.
 * **Options**:
   - `--path, -p`: Path to eidos specs directory (defaults to `./eidos`).
   - `--out, -o`: Output folder (defaults to `./site`).
@@ -127,6 +141,8 @@ Manages the living specification catalog: listing, authoring, inspecting, and de
   - `show <id_or_path> [--path <path>]`: Displays detailed frontmatter metadata and preview of a specification document.
   - `create <type> <id> --title <title> [options]`: Scaffolds a new specification document (capability, domain, policy, contract, component, persona, delta, exploration, design-system, ui-component, screen) with schema validation and W3C design tokens support.
   - `delete <id_or_path> [--force]`: Safely deletes a specification document with cross-reference safety checks.
+  - `containers [--path <path>]`: Scans and lists all C4 Level 2 containers (`CNT-*`).
+  - `components [CONTAINER_ID] [--path <path>]`: Scans and lists all C4 Level 3 components (`CMP-*`).
 
 === `eidos delta`
 Orchestrates SpecDeltas throughout their semantic mutation lifecycle using flat storage and gitignored symlink views.
@@ -165,12 +181,11 @@ Analyzes recent code changes against the living specification catalog and genera
   - `0`: Analysis complete.
 
 === `eidos init [PATH]`
-Bootstraps a repository with an empty Eidos living specification skeleton, an empty root `system.adoc`, tracking empty directories with `.gitkeep` files, self-contained gitignore, and optional agent plugin.
+Bootstraps a repository with an empty Eidos living specification skeleton, an empty root `system.adoc`, tracking empty directories with `.gitkeep` files, self-contained gitignore, and runs immediate validation. Note: `eidos init` initializes Eidos specifications and does not install plugins (plugins can be installed separately via `eidos plugin install`).
 * **Arguments**: `PATH` (Optional directory path, defaults to `.`)
 * **Options**:
   - `--name <name>`: Custom machine-readable system name.
   - `--title <title>`: Human-readable display title.
-  - `--with-plugin / --no-plugin`: Controls automatic installation of `.agents/plugins/eidos` (default: true).
   - `--force`: Overwrite existing files if present.
 * **Exit Codes**:
   - `0`: Initialization and immediate validation successful.
@@ -182,5 +197,20 @@ Bootstraps a repository with an empty Eidos living specification skeleton, an em
 * `eidos create <type> <id> --title <title>`: Direct shortcut to `eidos spec create`.
 * `eidos delete <id_or_path> [--force]`: Direct shortcut to `eidos spec delete`.
 * `eidos list [--type <type>] [--status <status>]`: Direct shortcut to `eidos spec list`.
+* `eidos serve`: Direct shortcut to `eidos portal serve`.
+* `eidos build-site`: Direct shortcut to `eidos portal build`.
+* `eidos install`: Direct shortcut to `eidos plugin install`.
+* `eidos uninstall`: Direct shortcut to `eidos plugin uninstall`.
+
+== Command Groups (Rich Help Panels)
+
+Commands are semantically organized into six functional panels in CLI help output (`eidos --help`):
+1. **Setup & Workspace**: `version`, `info`, `init`
+2. **Governance & Verification**: `validate`, `lint`, `drift`, `reconcile`, `sync`
+3. **Living Web Portal**: `portal`, `serve`, `build-site`
+4. **Living Catalog & Mutations**: `spec`, `delta`, `component`, `create`, `delete`, `list`, `containers`, `components`
+5. **Knowledge Graph & AI Context**: `index`, `context`
+6. **Agent Ecosystem & Plugins**: `plugin`, `install`, `uninstall`
+
 
 

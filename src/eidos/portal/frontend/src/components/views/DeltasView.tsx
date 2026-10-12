@@ -321,6 +321,7 @@ export function DeltasView({ data }: DeltasViewProps) {
         onOpenChange={(open) => !open && setSelectedDelta(null)}
         title={selectedDelta?.title || "SpecDelta Details"}
         subtitle={selectedDelta?.id}
+        maxWidth="6xl"
       >
         {selectedDelta && (
           <div className="space-y-6">

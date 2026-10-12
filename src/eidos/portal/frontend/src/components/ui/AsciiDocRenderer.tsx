@@ -10,16 +10,25 @@ import {
   ShieldAlert,
   Sparkles,
   ExternalLink,
-  Table as TableIcon,
   ChevronRight,
   Eye,
+  Hash,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+export interface AsciiDocOutlineItem {
+  id: string;
+  text: string;
+  level: 2 | 3;
+}
 
 export interface AsciiDocRendererProps {
   content: string;
   className?: string;
   title?: string;
+  fontSize?: "compact" | "comfortable" | "large";
+  measure?: "prose" | "full";
+  hideControls?: boolean;
 }
 
 interface ParsedBlock {
@@ -33,6 +42,7 @@ interface ParsedBlock {
     | "table"
     | "list"
     | "paragraph";
+  id?: string;
   text?: string;
   admonitionType?: "NOTE" | "TIP" | "IMPORTANT" | "WARNING" | "CAUTION";
   language?: string;
@@ -42,13 +52,90 @@ interface ParsedBlock {
   listItems?: Array<{ level: number; text: string; ordered?: boolean }>;
 }
 
+export function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .trim();
+}
+
+/**
+ * Extracts hierarchical table of contents items (H2 and H3) from raw AsciiDoc content.
+ */
+export function extractAsciiDocOutline(content: string): AsciiDocOutlineItem[] {
+  if (!content) return [];
+  const lines = content.split("\n");
+  const outline: AsciiDocOutlineItem[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("== ") && !trimmed.startsWith("=== ")) {
+      const text = trimmed.replace(/^==\s+/, "").trim();
+      outline.push({ id: slugify(text), text, level: 2 });
+    } else if (trimmed.startsWith("=== ") && !trimmed.startsWith("==== ")) {
+      const text = trimmed.replace(/^===\s+/, "").trim();
+      outline.push({ id: slugify(text), text, level: 3 });
+    }
+  }
+
+  return outline;
+}
+
+function CodeBlockWithCopy({ code, language }: { code: string; language?: string }) {
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="rounded-xl overflow-hidden border border-border/80 bg-zinc-900 dark:bg-zinc-950 text-zinc-100 my-4 shadow-sm">
+      <div className="px-4 py-2 bg-zinc-800/80 dark:bg-zinc-900 border-b border-zinc-700/60 text-xs font-mono text-zinc-400 flex items-center justify-between">
+        <span className="uppercase tracking-wider text-[11px] font-semibold text-zinc-300">
+          {language && language !== "text" ? language : "code"}
+        </span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-zinc-700/60 text-zinc-300 hover:text-white transition-colors cursor-pointer text-[11px]"
+          title="Copy code to clipboard"
+        >
+          {copied ? (
+            <>
+              <Check className="h-3 w-3 text-emerald-400" />
+              <span className="text-emerald-400 font-semibold">Copied</span>
+            </>
+          ) : (
+            <>
+              <Copy className="h-3 w-3" />
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+      </div>
+      <pre className="p-4 font-mono text-[13px] leading-relaxed overflow-x-auto text-zinc-100 selection:bg-primary/30">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
 export function AsciiDocRenderer({
   content,
   className,
   title,
+  fontSize = "comfortable",
+  measure = "prose",
+  hideControls = false,
 }: AsciiDocRendererProps) {
   const [viewMode, setViewMode] = React.useState<"rendered" | "raw">("rendered");
   const [copied, setCopied] = React.useState(false);
+  const [activeFontSize, setActiveFontSize] = React.useState<"compact" | "comfortable" | "large">(fontSize);
+  const [activeMeasure, setActiveMeasure] = React.useState<"prose" | "full">(measure);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(content);
@@ -85,9 +172,11 @@ export function AsciiDocRenderer({
 
       // Document Title: = Title
       if (trimmed.startsWith("= ") && !trimmed.startsWith("== ")) {
+        const text = trimmed.replace(/^=\s+/, "").trim();
         parsed.push({
           type: "title",
-          text: trimmed.replace(/^=\s+/, "").trim(),
+          text,
+          id: slugify(text),
         });
         i++;
         continue;
@@ -95,9 +184,11 @@ export function AsciiDocRenderer({
 
       // Section H2: == Title
       if (trimmed.startsWith("== ") && !trimmed.startsWith("=== ")) {
+        const text = trimmed.replace(/^==\s+/, "").trim();
         parsed.push({
           type: "h2",
-          text: trimmed.replace(/^==\s+/, "").trim(),
+          text,
+          id: slugify(text),
         });
         i++;
         continue;
@@ -105,9 +196,11 @@ export function AsciiDocRenderer({
 
       // Subsection H3: === Title
       if (trimmed.startsWith("=== ") && !trimmed.startsWith("==== ")) {
+        const text = trimmed.replace(/^===\s+/, "").trim();
         parsed.push({
           type: "h3",
-          text: trimmed.replace(/^===\s+/, "").trim(),
+          text,
+          id: slugify(text),
         });
         i++;
         continue;
@@ -115,9 +208,11 @@ export function AsciiDocRenderer({
 
       // Sub-subsection H4: ==== Title
       if (trimmed.startsWith("==== ")) {
+        const text = trimmed.replace(/^====\s+/, "").trim();
         parsed.push({
           type: "h4",
-          text: trimmed.replace(/^====\s+/, "").trim(),
+          text,
+          id: slugify(text),
         });
         i++;
         continue;
@@ -321,12 +416,6 @@ export function AsciiDocRenderer({
   const renderInline = (rawText: string) => {
     if (!rawText) return null;
 
-    // Tokenize inline markdown / asciidoc
-    // Pattern matches:
-    // 1. URLs with label: https://url[label] or http://url[label]
-    // 2. Bold: *text* or **text**
-    // 3. Monospace: `text` or +text+
-    // 4. Italic: _text_
     const parts: React.ReactNode[] = [];
     const regex =
       /(https?:\/\/[^\s\[]+)\[([^\]]*)\]|(?:\*\*|\*)([^\*]+)(?:\*\*|\*)|(?:`|\+)([^`\+]+)(?:`|\+)|(?:_)([^_]+)(?:_)/g;
@@ -347,10 +436,10 @@ export function AsciiDocRenderer({
             href={match[1]}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-primary hover:underline inline-flex items-center gap-0.5 font-medium"
+            className="text-primary hover:underline inline-flex items-center gap-1 font-medium"
           >
             {match[2] || match[1]}
-            <ExternalLink className="h-2.5 w-2.5 inline" />
+            <ExternalLink className="h-3 w-3 inline text-primary/70" />
           </a>
         );
       } else if (match[3]) {
@@ -365,7 +454,7 @@ export function AsciiDocRenderer({
         parts.push(
           <code
             key={match.index}
-            className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-muted/60 text-primary border border-border/50"
+            className="font-mono text-[12.5px] px-1.5 py-0.5 rounded bg-muted/80 text-primary border border-border/60 font-medium"
           >
             {match[4]}
           </code>
@@ -389,247 +478,333 @@ export function AsciiDocRenderer({
     return parts;
   };
 
-  return (
-    <div className={cn("space-y-3", className)}>
-      {/* Top Controls Bar */}
-      <div className="flex items-center justify-between gap-2 p-1.5 rounded-xl bg-muted/30 border border-border/70 text-xs">
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setViewMode("rendered")}
-            className={cn(
-              "px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors cursor-pointer flex items-center gap-1.5",
-              viewMode === "rendered"
-                ? "bg-card text-foreground shadow-xs font-semibold"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Eye className="h-3 w-3 text-primary" />
-            <span>Rendered Document</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("raw")}
-            className={cn(
-              "px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors cursor-pointer flex items-center gap-1.5",
-              viewMode === "raw"
-                ? "bg-card text-foreground shadow-xs font-semibold"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Code2 className="h-3 w-3" />
-            <span>Raw AsciiDoc</span>
-          </button>
-        </div>
+  // Typography sizing classes
+  const fontClass =
+    activeFontSize === "compact"
+      ? "text-sm leading-relaxed"
+      : activeFontSize === "large"
+      ? "text-[17px] leading-[1.8]"
+      : "text-[15px] sm:text-base leading-[1.75]";
 
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer flex items-center gap-1"
-        >
-          {copied ? (
-            <>
-              <Check className="h-3 w-3 text-emerald-500" />
-              <span className="text-emerald-500 font-semibold">Copied!</span>
-            </>
-          ) : (
-            <>
-              <Copy className="h-3 w-3" />
-              <span>Copy Source</span>
-            </>
-          )}
-        </button>
-      </div>
+  const measureClass =
+    activeMeasure === "prose" ? "max-w-3xl mx-auto" : "max-w-full";
+
+  return (
+    <div className={cn("space-y-4", className)}>
+      {/* Top Controls Bar (if not hidden) */}
+      {!hideControls && (
+        <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-xl bg-muted/40 border border-border/80 text-xs">
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setViewMode("rendered")}
+              className={cn(
+                "px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5",
+                viewMode === "rendered"
+                  ? "bg-card text-foreground shadow-xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Eye className="h-3.5 w-3.5 text-primary" />
+              <span>Rendered View</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("raw")}
+              className={cn(
+                "px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5",
+                viewMode === "raw"
+                  ? "bg-card text-foreground shadow-xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Code2 className="h-3.5 w-3.5" />
+              <span>Raw AsciiDoc</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Font Scaler */}
+            <div className="flex items-center gap-0.5 bg-muted/80 rounded-lg p-0.5 border border-border/60">
+              <button
+                type="button"
+                onClick={() => setActiveFontSize("compact")}
+                className={cn(
+                  "px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer",
+                  activeFontSize === "compact" ? "bg-card text-foreground shadow-xs font-bold" : "text-muted-foreground"
+                )}
+                title="Compact text (14px)"
+              >
+                A-
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveFontSize("comfortable")}
+                className={cn(
+                  "px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer",
+                  activeFontSize === "comfortable" ? "bg-card text-foreground shadow-xs font-bold" : "text-muted-foreground"
+                )}
+                title="Comfortable text (16px)"
+              >
+                A
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveFontSize("large")}
+                className={cn(
+                  "px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer",
+                  activeFontSize === "large" ? "bg-card text-foreground shadow-xs font-bold" : "text-muted-foreground"
+                )}
+                title="Large text (18px)"
+              >
+                A+
+              </button>
+            </div>
+
+            {/* Reading Measure Toggle */}
+            <button
+              type="button"
+              onClick={() => setActiveMeasure((prev) => (prev === "prose" ? "full" : "prose"))}
+              className={cn(
+                "px-2 py-1 rounded-lg text-[11px] font-medium transition-colors cursor-pointer border border-border/60",
+                activeMeasure === "prose" ? "bg-card text-foreground shadow-xs font-semibold" : "text-muted-foreground hover:text-foreground"
+              )}
+              title="Toggle reading measure constraint"
+            >
+              {activeMeasure === "prose" ? "72ch Measure" : "Full Width"}
+            </button>
+
+            {/* Copy Source */}
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="px-2.5 py-1 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer flex items-center gap-1.5 border border-border/60"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-3.5 w-3.5 text-emerald-500" />
+                  <span className="text-emerald-500 font-semibold">Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" />
+                  <span>Copy</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Rendered Document View */}
       {viewMode === "rendered" ? (
-        <div className="p-4 sm:p-5 rounded-2xl bg-card border border-border/80 md-elevation-1 space-y-4 text-xs text-foreground/90 leading-relaxed overflow-x-hidden">
-          {blocks.length === 0 ? (
-            <p className="text-muted-foreground italic text-center py-6">
-              No specification body declared.
-            </p>
-          ) : (
-            blocks.map((block, idx) => {
-              switch (block.type) {
-                case "title":
-                  return (
-                    <div
-                      key={idx}
-                      className="pb-3 border-b border-border/80 flex items-center gap-2"
-                    >
-                      <FileText className="h-5 w-5 text-primary shrink-0" />
-                      <h2 className="text-base sm:text-lg font-extrabold text-foreground tracking-tight">
-                        {block.text}
-                      </h2>
-                    </div>
-                  );
-
-                case "h2":
-                  return (
-                    <h3
-                      key={idx}
-                      className="text-sm font-bold text-foreground tracking-tight pt-3 pb-1 border-b border-border/60 flex items-center gap-2"
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                      <span>{block.text}</span>
-                    </h3>
-                  );
-
-                case "h3":
-                  return (
-                    <h4
-                      key={idx}
-                      className="text-xs font-bold text-primary pt-2 flex items-center gap-1.5"
-                    >
-                      <ChevronRight className="h-3 w-3 text-primary" />
-                      <span>{block.text}</span>
-                    </h4>
-                  );
-
-                case "h4":
-                  return (
-                    <h5
-                      key={idx}
-                      className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider pt-1.5"
-                    >
-                      {block.text}
-                    </h5>
-                  );
-
-                case "admonition": {
-                  const type = block.admonitionType || "NOTE";
-                  let bg = "bg-blue-500/10 border-blue-500/30 text-blue-500";
-                  let Icon = Info;
-
-                  if (type === "TIP") {
-                    bg = "bg-emerald-500/10 border-emerald-500/30 text-emerald-500";
-                    Icon = Sparkles;
-                  } else if (type === "IMPORTANT") {
-                    bg = "bg-purple-500/10 border-purple-500/30 text-purple-400";
-                    Icon = CheckCircle2;
-                  } else if (type === "WARNING") {
-                    bg = "bg-amber-500/10 border-amber-500/30 text-amber-500";
-                    Icon = AlertTriangle;
-                  } else if (type === "CAUTION") {
-                    bg = "bg-rose-500/10 border-rose-500/30 text-rose-500";
-                    Icon = ShieldAlert;
-                  }
-
-                  return (
-                    <div
-                      key={idx}
-                      className={cn(
-                        "p-3.5 rounded-xl border flex items-start gap-2.5 my-2",
-                        bg
-                      )}
-                    >
-                      <Icon className="h-4 w-4 shrink-0 mt-0.5" />
-                      <div className="space-y-1 flex-1">
-                        <span className="font-bold font-mono text-[10px] uppercase tracking-wider block">
-                          {type}
-                        </span>
-                        <div className="text-xs text-foreground/90 font-medium leading-relaxed whitespace-pre-wrap">
+        <div className={cn("p-6 sm:p-8 rounded-2xl bg-card border border-border/80 md-elevation-1 space-y-6 text-foreground/90 overflow-x-hidden", fontClass)}>
+          <div className={cn("w-full transition-all duration-200", measureClass)}>
+            {blocks.length === 0 ? (
+              <p className="text-muted-foreground italic text-center py-10">
+                No specification body declared.
+              </p>
+            ) : (
+              blocks.map((block, idx) => {
+                switch (block.type) {
+                  case "title":
+                    return (
+                      <div
+                        key={idx}
+                        id={block.id}
+                        className="pb-4 mb-6 border-b border-border/80 flex items-center gap-3 spec-heading"
+                      >
+                        <FileText className="h-6 w-6 text-primary shrink-0" />
+                        <h2 className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
                           {block.text}
+                        </h2>
+                      </div>
+                    );
+
+                  case "h2":
+                    return (
+                      <h3
+                        key={idx}
+                        id={block.id}
+                        className="text-xl sm:text-2xl font-bold text-foreground tracking-tight pt-8 pb-2 border-b border-border/60 flex items-center justify-between group spec-heading mt-6"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="h-2 w-2 rounded-full bg-primary shrink-0" />
+                          <span>{block.text}</span>
+                        </div>
+                        {block.id && (
+                          <a
+                            href={`#${block.id}`}
+                            className="heading-anchor-link text-muted-foreground/60 hover:text-primary p-1 rounded"
+                            title="Copy link to section"
+                          >
+                            <Hash className="h-4 w-4" />
+                          </a>
+                        )}
+                      </h3>
+                    );
+
+                  case "h3":
+                    return (
+                      <h4
+                        key={idx}
+                        id={block.id}
+                        className="text-base sm:text-lg font-bold text-primary pt-5 pb-1 flex items-center justify-between group spec-heading mt-3"
+                      >
+                        <div className="flex items-center gap-2">
+                          <ChevronRight className="h-4 w-4 text-primary shrink-0" />
+                          <span>{block.text}</span>
+                        </div>
+                        {block.id && (
+                          <a
+                            href={`#${block.id}`}
+                            className="heading-anchor-link text-muted-foreground/60 hover:text-primary p-1 rounded"
+                            title="Copy link to subsection"
+                          >
+                            <Hash className="h-3.5 w-3.5" />
+                          </a>
+                        )}
+                      </h4>
+                    );
+
+                  case "h4":
+                    return (
+                      <h5
+                        key={idx}
+                        id={block.id}
+                        className="text-xs sm:text-sm font-bold text-muted-foreground uppercase tracking-wider pt-3"
+                      >
+                        {block.text}
+                      </h5>
+                    );
+
+                  case "admonition": {
+                    const type = block.admonitionType || "NOTE";
+                    let borderClass = "border-l-4 border-l-blue-500 bg-blue-500/10 text-blue-500";
+                    let textClass = "text-foreground/90";
+                    let Icon = Info;
+
+                    if (type === "TIP") {
+                      borderClass = "border-l-4 border-l-emerald-500 bg-emerald-500/10 text-emerald-500";
+                      Icon = Sparkles;
+                    } else if (type === "IMPORTANT") {
+                      borderClass = "border-l-4 border-l-purple-500 bg-purple-500/10 text-purple-400";
+                      Icon = CheckCircle2;
+                    } else if (type === "WARNING") {
+                      borderClass = "border-l-4 border-l-amber-500 bg-amber-500/10 text-amber-500";
+                      Icon = AlertTriangle;
+                    } else if (type === "CAUTION") {
+                      borderClass = "border-l-4 border-l-rose-500 bg-rose-500/10 text-rose-500";
+                      Icon = ShieldAlert;
+                    }
+
+                    return (
+                      <div
+                        key={idx}
+                        className={cn(
+                          "p-4 sm:p-5 rounded-r-2xl border border-border/60 flex items-start gap-3.5 my-5 shadow-xs",
+                          borderClass
+                        )}
+                      >
+                        <Icon className="h-5 w-5 shrink-0 mt-0.5" />
+                        <div className="space-y-1.5 flex-1">
+                          <span className="font-bold font-mono text-[11px] uppercase tracking-wider block">
+                            {type}
+                          </span>
+                          <div className={cn("text-sm sm:text-[15px] font-medium leading-relaxed whitespace-pre-wrap", textClass)}>
+                            {block.text}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                }
+                    );
+                  }
 
-                case "code":
-                  return (
-                    <div
-                      key={idx}
-                      className="rounded-xl overflow-hidden border border-border/80 bg-muted/40 my-2"
-                    >
-                      {block.language && block.language !== "text" && (
-                        <div className="px-3 py-1 bg-muted/60 border-b border-border/60 text-[10px] font-mono text-muted-foreground flex items-center justify-between">
-                          <span className="uppercase">{block.language}</span>
-                          <Code2 className="h-3 w-3" />
-                        </div>
-                      )}
-                      <pre className="p-3.5 font-mono text-[11px] overflow-x-auto text-foreground leading-relaxed">
-                        {block.code}
-                      </pre>
-                    </div>
-                  );
+                  case "code":
+                    return (
+                      <CodeBlockWithCopy
+                        key={idx}
+                        code={block.code || ""}
+                        language={block.language}
+                      />
+                    );
 
-                case "table":
-                  return (
-                    <div
-                      key={idx}
-                      className="rounded-xl border border-border/80 overflow-hidden my-3 overflow-x-auto"
-                    >
-                      <table className="w-full text-left text-xs border-collapse">
-                        {block.tableHeaders && (
-                          <thead className="bg-muted/60 border-b border-border text-foreground font-bold">
-                            <tr>
-                              {block.tableHeaders.map((h, hIdx) => (
-                                <th key={hIdx} className="p-2.5 px-3">
-                                  {renderInline(h)}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                        )}
-                        <tbody className="divide-y divide-border/60">
-                          {block.tableRows?.map((row, rIdx) => (
-                            <tr
-                              key={rIdx}
-                              className="hover:bg-muted/30 transition-colors"
+                  case "table":
+                    return (
+                      <div
+                        key={idx}
+                        className="rounded-xl border border-border/80 overflow-hidden my-5 overflow-x-auto shadow-xs"
+                      >
+                        <table className="w-full text-left text-sm border-collapse">
+                          {block.tableHeaders && (
+                            <thead className="bg-muted/70 border-b border-border text-foreground font-semibold">
+                              <tr>
+                                {block.tableHeaders.map((h, hIdx) => (
+                                  <th key={hIdx} className="p-3 px-4 font-semibold tracking-tight">
+                                    {renderInline(h)}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                          )}
+                          <tbody className="divide-y divide-border/60 bg-card">
+                            {block.tableRows?.map((row, rIdx) => (
+                              <tr
+                                key={rIdx}
+                                className="hover:bg-muted/30 transition-colors"
+                              >
+                                {row.map((cell, cIdx) => (
+                                  <td key={cIdx} className="p-3 px-4 leading-relaxed">
+                                    {renderInline(cell)}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+
+                  case "list":
+                    return (
+                      <ul key={idx} className="space-y-2 my-4">
+                        {block.listItems?.map((item, itemIdx) => {
+                          const indentClass =
+                            item.level === 3
+                              ? "pl-8"
+                              : item.level === 2
+                              ? "pl-4"
+                              : "pl-0";
+                          return (
+                            <li
+                              key={itemIdx}
+                              className={cn(
+                                "flex items-start gap-2.5 leading-relaxed",
+                                indentClass
+                              )}
                             >
-                              {row.map((cell, cIdx) => (
-                                <td key={cIdx} className="p-2.5 px-3">
-                                  {renderInline(cell)}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  );
+                              <span className="h-1.5 w-1.5 rounded-full bg-primary mt-2.5 shrink-0" />
+                              <div className="flex-1">{renderInline(item.text)}</div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    );
 
-                case "list":
-                  return (
-                    <ul key={idx} className="space-y-1.5 my-2">
-                      {block.listItems?.map((item, itemIdx) => {
-                        const indentClass =
-                          item.level === 3
-                            ? "pl-8"
-                            : item.level === 2
-                            ? "pl-4"
-                            : "pl-0";
-                        return (
-                          <li
-                            key={itemIdx}
-                            className={cn(
-                              "flex items-start gap-2 leading-relaxed",
-                              indentClass
-                            )}
-                          >
-                            <span className="h-1.5 w-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
-                            <div className="flex-1">{renderInline(item.text)}</div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  );
-
-                case "paragraph":
-                default:
-                  return (
-                    <p key={idx} className="leading-relaxed">
-                      {renderInline(block.text || "")}
-                    </p>
-                  );
-              }
-            })
-          )}
+                  case "paragraph":
+                  default:
+                    return (
+                      <p key={idx} className="leading-relaxed my-3.5 text-foreground/90">
+                        {renderInline(block.text || "")}
+                      </p>
+                    );
+                }
+              })
+            )}
+          </div>
         </div>
       ) : (
         /* Raw Source View */
-        <pre className="p-4 rounded-2xl bg-card border border-border/80 font-mono text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">
+        <pre className="p-6 rounded-2xl bg-zinc-900 dark:bg-zinc-950 border border-border/80 font-mono text-xs text-zinc-100 whitespace-pre-wrap leading-relaxed max-h-[70vh] overflow-y-auto">
           {content}
         </pre>
       )}

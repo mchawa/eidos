@@ -307,7 +307,7 @@ export function BusinessView({ data }: BusinessViewProps) {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {filteredPolicies.map((pol) => {
               const boundCapabilities = capabilities.filter((c) =>
                 c.business?.policies?.some((pRef) => pRef.includes(pol.id))
@@ -317,22 +317,22 @@ export function BusinessView({ data }: BusinessViewProps) {
                 <Card
                   key={pol.id}
                   onClick={() => setSelectedEntity({ type: "policy", item: pol })}
-                  className="p-5 space-y-3.5 cursor-pointer hover:border-blue-500/60 hover:shadow-lg transition-all duration-150 group border border-border/80 bg-card relative overflow-hidden"
+                  className="p-6 sm:p-7 space-y-4 cursor-pointer hover:border-primary/60 hover:shadow-lg transition-all duration-200 group border border-border/80 bg-card rounded-2xl relative overflow-hidden"
                 >
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-bl-full pointer-events-none group-hover:bg-blue-500/10 transition-colors" />
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-full pointer-events-none group-hover:bg-primary/10 transition-colors" />
 
                   {/* Policy Header */}
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="font-mono text-xs font-bold text-blue-500 dark:text-blue-400 group-hover:underline">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="font-mono text-xs sm:text-sm font-bold text-primary px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/25">
                       {pol.id}
                     </span>
-                    <div className="flex items-center gap-1.5">
-                      <Badge variant="outline" className="text-[10px] uppercase">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs font-semibold uppercase px-2 py-0.5">
                         {pol.category}
                       </Badge>
                       {pol.enforcement?.severity && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-rose-500/15 text-rose-500 border border-rose-500/30 flex items-center gap-1">
-                          <Lock className="h-2.5 w-2.5" />
+                        <span className="px-2 py-0.5 rounded-md text-xs font-mono font-bold uppercase bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center gap-1.5">
+                          <Lock className="h-3 w-3" />
                           {pol.enforcement.severity}
                         </span>
                       )}
@@ -340,36 +340,42 @@ export function BusinessView({ data }: BusinessViewProps) {
                   </div>
 
                   {/* Title */}
-                  <h4 className="text-sm font-bold text-foreground leading-snug group-hover:text-blue-500 transition-colors">
+                  <h4 className="text-base sm:text-lg font-bold text-foreground leading-snug group-hover:text-primary transition-colors">
                     {pol.title}
                   </h4>
 
                   {/* Invariant Rule Callout */}
-                  <div className="p-3 rounded-xl bg-blue-500/5 dark:bg-blue-500/10 border-l-2 border-blue-500 text-xs text-foreground/90 font-medium leading-relaxed">
-                    "{pol.rule}"
+                  <div className="p-4 rounded-xl bg-muted/50 dark:bg-muted/30 border-l-4 border-l-primary border border-border/60 space-y-1">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-primary block">
+                      Invariant Rule
+                    </span>
+                    <p className="text-sm sm:text-[15px] font-medium text-foreground leading-relaxed">
+                      "{pol.rule}"
+                    </p>
                   </div>
 
                   {/* Enforcement Mechanism */}
                   {pol.enforcement?.mechanism && (
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    <div className="space-y-1 pt-1">
+                      <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
                         Enforcement Gate
                       </span>
-                      <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
+                      <p className="text-xs sm:text-sm text-foreground/80 leading-relaxed">
                         {pol.enforcement.mechanism}
                       </p>
                     </div>
                   )}
 
                   {/* Card Footer */}
-                  <div className="pt-2 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
-                    <span className="text-[10px] font-mono">
+                  <div className="pt-3 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
+                    <span className="text-xs font-mono text-muted-foreground">
                       {boundCapabilities.length > 0
                         ? `${boundCapabilities.length} bound capability`
-                        : "System-wide Policy"}
+                        : "System-wide Governance Policy"}
                     </span>
-                    <span className="text-blue-500 text-[11px] font-semibold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-                      Inspect Policy <ArrowRight className="h-3 w-3" />
+                    <span className="text-primary text-xs sm:text-sm font-semibold flex items-center gap-1.5 group-hover:translate-x-1 transition-transform">
+                      <span>Inspect Policy</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
                     </span>
                   </div>
                 </Card>
@@ -617,6 +623,7 @@ export function BusinessView({ data }: BusinessViewProps) {
             : selectedEntity?.item.name || "Persona"
         }
         subtitle={selectedEntity?.item.id}
+        maxWidth="6xl"
       >
         {selectedEntity && (
           <div className="space-y-5 text-xs text-foreground">

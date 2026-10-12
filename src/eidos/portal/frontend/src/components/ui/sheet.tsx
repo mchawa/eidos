@@ -60,24 +60,22 @@ export function Sheet({
       ? "max-w-3xl"
       : maxWidth === "4xl"
       ? "max-w-4xl"
-      : maxWidth === "6xl"
-      ? "max-w-6xl"
       : maxWidth === "full"
-      ? "max-w-full"
-      : "max-w-4xl lg:max-w-5xl"; // default 5xl: spacious, centered popup
+      ? "max-w-[98vw] h-[96vh]"
+      : "max-w-[94vw] 2xl:max-w-[1550px] h-[95vh]"; // expansive, roomy reading window
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/70 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
+        className="fixed inset-0 bg-black/75 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
         onClick={() => onOpenChange(false)}
       />
 
-      {/* Centered Popup Dialog with Bigger Width */}
+      {/* Centered Popup Dialog with Bigger Width and Height */}
       <div
         className={cn(
-          "relative z-50 flex flex-col w-full max-h-[90vh] bg-card border border-border md-elevation-5 rounded-3xl shadow-2xl animate-in zoom-in-95 fade-in duration-200 overflow-hidden my-auto",
+          "relative z-50 flex flex-col w-full max-h-[95vh] bg-card border border-border md-elevation-5 rounded-2xl shadow-2xl animate-in zoom-in-95 fade-in duration-200 overflow-hidden my-auto",
           maxWidthClass,
           className
         )}
@@ -106,7 +104,7 @@ export function Sheet({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+        <div className="flex-1 overflow-y-auto px-6 sm:px-8 py-6 space-y-6">
           {children}
         </div>
       </div>

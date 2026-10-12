@@ -404,7 +404,7 @@ def test_self_contained_eidos_gitignore(tmp_path):
 
 
 def test_init_repository_programmatic(tmp_path):
-    """Verify init_repository scaffolds an empty living specification skeleton tracked by .gitkeep (CTR-EIDOS-CLI)."""
+    """Verify init_repository scaffolds an empty living specification skeleton tracked by .gitkeep without installing plugins (CTR-EIDOS-CLI)."""
     from eidos.core.scaffolder import init_repository
     from eidos.core.validator import SpecValidator
 
@@ -412,12 +412,11 @@ def test_init_repository_programmatic(tmp_path):
         project_dir=tmp_path,
         name="test-project",
         title="Test Project System",
-        with_plugin=True,
     )
     assert success
     eidos_dir = tmp_path / "eidos"
     assert (eidos_dir / ".gitignore").exists()
-    assert (tmp_path / ".agents" / "plugins" / "eidos").exists()
+    assert not (tmp_path / ".agents").exists()
 
     # Verify system.adoc exists but is empty
     assert (eidos_dir / "system.adoc").exists()
@@ -462,9 +461,9 @@ def test_init_repository_programmatic(tmp_path):
 
 
 def test_init_repository_cli(tmp_path):
-    """Verify eidos init CLI command (CTR-EIDOS-CLI)."""
+    """Verify eidos init CLI command scaffolds without installing plugins (CTR-EIDOS-CLI)."""
     target = tmp_path / "cli_init_target"
-    result = runner.invoke(app, ["init", str(target), "--name", "my-app", "--title", "My Application", "--no-plugin"])
+    result = runner.invoke(app, ["init", str(target), "--name", "my-app", "--title", "My Application"])
     assert result.exit_code == 0
     assert "Successfully initialized" in result.stdout
     assert (target / "eidos" / ".gitignore").exists()
@@ -474,6 +473,7 @@ def test_init_repository_cli(tmp_path):
     assert (target / "eidos" / "architecture" / "containers" / ".gitkeep").exists()
     assert (target / "eidos" / "architecture" / "components" / ".gitkeep").exists()
     assert not any(p for p in (target / "eidos").rglob("*.adoc") if p.name != "system.adoc")
+    assert not (target / ".agents").exists()
 
 
 def test_init_repository_custom(tmp_path):
@@ -483,7 +483,6 @@ def test_init_repository_custom(tmp_path):
         project_dir=target,
         name="custom-service",
         title="Custom Service",
-        with_plugin=False,
     )
     assert ok
     assert (target / "eidos" / ".gitignore").exists()
@@ -492,6 +491,65 @@ def test_init_repository_custom(tmp_path):
     assert (target / "eidos" / "architecture" / "containers" / ".gitkeep").exists()
     assert (target / "eidos" / "architecture" / "components" / ".gitkeep").exists()
     assert not any(p for p in (target / "eidos").rglob("*.adoc") if p.name != "system.adoc")
+    assert not (target / ".agents").exists()
+
+
+def test_cli_version_command_and_options():
+    """Verify eidos --version, -V, and version commands (CTR-EIDOS-CLI, POL-002)."""
+    import eidos
+
+    # 1. --version
+    res_flag = runner.invoke(app, ["--version"])
+    assert res_flag.exit_code == 0
+    assert f"eidos {eidos.__version__}" in res_flag.output
+
+    # 2. -V
+    res_short = runner.invoke(app, ["-V"])
+    assert res_short.exit_code == 0
+    assert f"eidos {eidos.__version__}" in res_short.output
+
+    # 3. version command
+    res_cmd = runner.invoke(app, ["version"])
+    assert res_cmd.exit_code == 0
+    assert f"eidos {eidos.__version__}" in res_cmd.output
+
+
+def test_cli_index_update_alias(tmp_path):
+    """Verify 'eidos index update' acts as an alias to sync (CTR-EIDOS-CLI)."""
+    from eidos.core.scaffolder import init_repository
+
+    init_repository(project_dir=tmp_path)
+    res = runner.invoke(app, ["index", "update", "--path", str(tmp_path / "eidos")])
+    assert res.exit_code == 0
+    assert "index" in res.output
+
+
+def test_cli_command_groups_help_and_subapps():
+    """Verify semantic command groups in eidos --help and sub-apps (CTR-EIDOS-CLI, POL-002)."""
+    res = runner.invoke(app, ["--help"])
+    assert res.exit_code == 0
+    assert "Setup & Workspace" in res.stdout
+    assert "Governance & Verification" in res.stdout
+    assert "Living Web Portal" in res.stdout
+    assert "Living Catalog & Mutations" in res.stdout
+    assert "Knowledge Graph & AI Context" in res.stdout
+    assert "Agent Ecosystem & Plugins" in res.stdout
+
+    # Verify sub-apps in help
+    assert "spec" in res.stdout
+    assert "delta" in res.stdout
+    assert "component" in res.stdout
+    assert "index" in res.stdout
+    assert "portal" in res.stdout
+    assert "plugin" in res.stdout
+
+    # Verify eidos spec containers and components
+    res_containers = runner.invoke(app, ["spec", "containers"])
+    assert res_containers.exit_code == 0
+    assert "Containers" in res_containers.stdout
+
+    res_components = runner.invoke(app, ["spec", "components"])
+    assert res_components.exit_code == 0
 
 
 def test_scaffold_design_system_and_tokens(tmp_path):

@@ -27,9 +27,13 @@ Use the Eidos CLI to inspect and scaffold architecture:
 
 ```bash
 # 1. Scan monorepo packages, C4 Level 2 containers, runtimes, and dependencies:
+eidos spec containers
+# Or using shortcut:
 eidos containers
 
 # 2. Inspect C4 Level 3 in-process components (optionally filtered by container):
+eidos spec components
+# Or using shortcut:
 eidos components
 eidos components CNT-EIDOS-CORE
 

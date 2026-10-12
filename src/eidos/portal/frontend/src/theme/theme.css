@@ -58,6 +58,14 @@
   --text-xs: 0.8125rem;
   --text-sm: 0.9375rem;
 
+  --text-prose-body: 1rem;
+  --text-prose-lead: 1.125rem;
+  --text-prose-h1: 1.875rem;
+  --text-prose-h2: 1.375rem;
+  --text-prose-h3: 1.125rem;
+  --text-prose-h4: 0.9375rem;
+  --text-prose-code: 0.84375rem;
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -284,3 +292,29 @@ html, body {
 #c4ActiveDiagram .cluster:hover {
   filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.4));
 }
+
+/* Reading-Friendly Living Specification Typography & Ergonomics */
+.prose-measure {
+  max-width: 72ch;
+}
+
+.prose-reading {
+  font-size: 1rem;
+  line-height: 1.75;
+  letter-spacing: -0.011em;
+}
+
+/* Heading Anchor Scroll Margins for Sticky Headers */
+.spec-heading {
+  scroll-margin-top: 5rem;
+}
+
+.heading-anchor-link {
+  opacity: 0;
+  transition: opacity 150ms ease-in-out;
+}
+
+.spec-heading:hover .heading-anchor-link {
+  opacity: 1;
+}
+

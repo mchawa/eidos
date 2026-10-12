@@ -22,7 +22,7 @@ Initializing an Eidos workspace establishes the empty living specification skele
    - `eidos/deltas/` — active and historical SpecDeltas (`DLT-*`).
    - `eidos/explorations/` — spike discoveries and hypothesis documents (`EXP-*`).
    - `eidos/design/` — client applications, screens, flows, and design systems.
-3. **Agent Plugin Installation**: Installs `.agents/plugins/eidos/` for agent toolchains and skills.
+3. **Architectural Index Synchronization**: Update and populate the embedded SQLite architectural knowledge graph index (`.eidos/cache/index.db`) via `eidos index sync`.
 
 ---
 
@@ -35,16 +35,13 @@ eidos init .
 # Initialize specific directory with custom name and title
 eidos init /path/to/project --name my-service --title "My Microservice Platform"
 
-# Initialize without automatically installing agent plugin
-eidos init . --no-plugin
-
 # Force re-initialization (overwrites existing templates)
 eidos init . --force
 ```
 
 ---
 
-## The 6-Step Initialization Workflow
+## The 7-Step Initialization Workflow
 
 When tasked with initializing Eidos in a repository, follow this sequence:
 
@@ -61,8 +58,8 @@ Invoke `eidos init` via CLI:
 - Scaffolds the complete `eidos/` empty directory layout with an empty `system.adoc` (without example specs).
 - Places `.gitkeep` files in empty directories so they are tracked by Git.
 - Creates self-contained `eidos/.gitignore` targeting `deltas/by-status/`.
-- Installs the Eidos Agent Plugin to `.agents/plugins/eidos`.
 - Runs immediate validation check.
+- Note: `eidos init` initializes Eidos specifications and does not install plugins (plugins can be installed separately via `eidos plugin install`).
 
 ### Step 3: Author Root System Vision (`eidos/system.adoc`)
 
@@ -102,6 +99,22 @@ eidos validate eidos
 # Or machine-readable JSON for agents
 eidos validate --json
 ```
+
+### Step 7: Update Architectural Index
+
+At the end of initialization, update and synchronize the embedded SQLite architectural knowledge graph index:
+```bash
+# Synchronize and populate the architectural knowledge graph index
+eidos index sync
+
+# Or force a complete rebuild of the index
+eidos index sync --force
+
+# Verify index status and entity counts
+eidos index status
+```
+
+Updating the index builds `.eidos/cache/index.db` and ensures `eidos context`, `eidos index search`, and dependency blast-radius queries have up-to-date graph metadata immediately available.
 
 ---
 

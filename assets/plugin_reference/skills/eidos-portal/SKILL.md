@@ -23,38 +23,42 @@ The portal is a zero-dependency, single-page application (SPA) generated directl
 
 ---
 
-## 2. Local Live Preview (`eidos serve`)
+## 2. Local Live Preview (`eidos portal serve` / `eidos serve`)
 
-Run the local live preview server during development:
+Run the local live preview server during development using either the namespaced command or its top-level shortcut:
 
 ```bash
-# Serve on default port 8080
+# Serve on default port (eidos portal serve or shortcut eidos serve)
+eidos portal serve
+# Or using shortcut:
 eidos serve
 
 # Serve with custom port and host
-eidos serve --port 3000 --host 0.0.0.0
+eidos portal serve --port 3000 --host 0.0.0.0
 
 # Serve a custom specifications directory
-eidos serve --path packages/service-a/eidos
+eidos portal serve --path packages/service-a/eidos
 ```
 
 ### Endpoints
-* `http://localhost:8080/`: Interactive Web Portal.
-* `http://localhost:8080/api/data`: Full JSON payload dynamically synthesized from living specifications.
-* `http://localhost:8080/health`: Health status and document count.
+* `http://localhost:3000/`: Interactive Web Portal.
+* `http://localhost:3000/api/data`: Full JSON payload dynamically synthesized from living specifications.
+* `http://localhost:3000/health`: Health status and document count.
 
 ---
 
-## 3. Static Site Export (`eidos build-site`)
+## 3. Static Site Export (`eidos portal build` / `eidos build-site`)
 
 Export the portal as a self-contained, offline-capable static site suitable for **GitHub Pages**, **GitLab Pages**, or static web servers:
 
 ```bash
-# Build into default 'site/' folder
+# Build into default 'site/' folder (eidos portal build or shortcut eidos build-site)
+eidos portal build
+# Or using shortcut:
 eidos build-site
 
 # Build into custom destination (e.g. documentation subfolder)
-eidos build-site --path eidos --out site/portal
+eidos portal build --path eidos --out site/portal
 ```
 
 ### What It Generates
@@ -123,7 +127,7 @@ Before exporting or publishing:
 eidos validate eidos
 
 # 2. Test site build
-eidos build-site --out /tmp/portal-test
+eidos portal build --out /tmp/portal-test
 test -f /tmp/portal-test/index.html
 ```
 Ensures zero broken references or rendering errors before public deployment.

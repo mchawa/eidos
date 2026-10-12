@@ -84,14 +84,21 @@ All inspection and mutation commands provide deterministic `--json` outputs for 
 | `eidos drift` | `--uncommitted --json` or `-b <base> --json` | Detect code-to-spec drift, validate schemas, and check test bindings |
 | `eidos reconcile` | `--uncommitted --json` or `--prompt` | Analyze recent Git diffs and suggest living spec updates |
 | `eidos validate` | `eidos --json` | Validate all `.adoc` schemas and cross-reference integrity |
-| `eidos containers`<br>`eidos components` | `[container_id]` | List C4 Level 2 containers and Level 3 in-process components |
+| `eidos portal serve`<br>`eidos serve` | `[--path <path>] [--port <port>] [--host <host>]` | Launch local interactive Living Web Portal live preview |
+| `eidos portal build`<br>`eidos build-site` | `[--path <path>] [--out <dir>]` | Export Living Web Portal as self-contained static site |
+| `eidos index sync` | `[--force] [--path <path>]` | Synchronize SQLite architectural knowledge graph & FTS5 search |
+| `eidos index status` | `[--path <path>]` | Inspect knowledge graph sync state, entity/edge count, and cache size |
+| `eidos index blast-radius` | `<id> [--depth <n>]` | Compute dependency blast radius using recursive graph queries |
+| `eidos spec containers`<br>`eidos spec components` | `[container_id]` | List C4 Level 2 containers and Level 3 in-process components |
 | `eidos delta create` | `<id> -t <title> -k <kind> -m <motivation>` | Scaffold a SpecDelta mutation document (`DLT-*`) for Planned Mode |
 | `eidos delta apply` | `<id>` | Reconcile an applied SpecDelta in-place to `status: applied` |
 | `eidos spec create` | `<type> <id> -t <title> ...` | Scaffold a living specification (`container`, `contract`, `capability`, etc.) |
 | `eidos spec show` | `<id_or_path>` | Parse structured frontmatter metadata and AsciiDoc sections |
 | `eidos spec list` | `[--type <type>] [--status <status>]` | Query specs filtered by type (`tech/container`, `product/capability`) or status |
 | `eidos spec delete` | `<id_or_path> [--force]` | Safely delete a living specification with graph reference checks |
+| `eidos plugin install`<br>`eidos install` | `[target] [--force]` | Install Eidos Agent Plugin into project or agent harness scopes |
 | `eidos info` | — | Inspect engine version, loaded JSON schemas, and platform status |
+| `eidos --version` / `version` | `-V, --version` | Display installed Eidos engine version |
 | `eidos init` | `[path]` | Initialize a repository with standard living specifications |
 
 ---
@@ -129,4 +136,4 @@ When deeper guidance is needed for a specific architectural phase, consult the s
 | **`eidos-review`** | **Architectural Review**: Perform Staff Architect audits on blast radius, SemVer breaking changes, and invariant test coverage. |
 | **`eidos-extract`** | **Brownfield Reverse-Engineering**: Systematically extract Eidos living specifications from pre-existing codebases. |
 | **`eidos-init`** | **Repository Bootstrapping**: Initialize a clean Git repository with living spec skeletons and agent configuration. |
-| **`eidos-portal`** | **Living Web Portal**: Preview (`eidos serve`), build, and publish interactive documentation sites with C4 visualizers. |
+| **`eidos-portal`** | **Living Web Portal**: Preview (`eidos portal serve` / `eidos serve`), build (`eidos portal build` / `eidos build-site`), and publish interactive documentation sites with C4 visualizers. |

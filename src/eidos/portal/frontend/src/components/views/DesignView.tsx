@@ -1051,6 +1051,7 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
         onOpenChange={(open) => !open && setInspectingItem(null)}
         title={inspectingItem?.title}
         subtitle={inspectingItem?.subtitle}
+        maxWidth="6xl"
       >
         <div className="space-y-3">
           <AsciiDocRenderer content={inspectingItem?.body || ""} title={inspectingItem?.title} />

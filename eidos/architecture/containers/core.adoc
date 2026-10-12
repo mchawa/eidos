@@ -28,7 +28,7 @@ components:
     source_path: "src/eidos/core/scaffolder.py"
   - id: CMP-REPO-INITIALIZER
     name: "RepositoryInitializer"
-    responsibility: "Bootstraps repositories with living specification hierarchies (eidos/architecture/containers/, etc.), baseline policies, architecture, and self-contained gitignore."
+    responsibility: "Bootstraps repositories with living specification skeletons, baseline policies, architecture, immediate validation, and self-contained gitignore (plugins managed via eidos plugin)."
     source_path: "src/eidos/core/scaffolder.py"
   - id: CMP-ASSET-LOCATOR
     name: "AssetLocator"

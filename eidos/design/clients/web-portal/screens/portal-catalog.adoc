@@ -16,7 +16,7 @@ supported_design_systems:
 slots:
   tree_filter_toolbar: "UIC-PORTAL-SHELL"
   specs_tree_grid_table: "UIC-PORTAL-SHELL"
-  spec_detail_modal: "UIC-PORTAL-SHELL"
+  spec_detail_reader: "UIC-PORTAL-READER"
 
 states:
   - name: "loading"

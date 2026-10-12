@@ -1308,7 +1308,7 @@ def init_repository(
     name: str | None = None,
     title: str | None = None,
     eidos_dir_name: str = "eidos",
-    with_plugin: bool = True,
+    with_plugin: bool = False,
     force: bool = False,
 ) -> tuple[bool, str, list[Path]]:
     """Initialize a repository with an empty Eidos living specification skeleton and governance."""
@@ -1381,15 +1381,6 @@ def init_repository(
         for b in report.broken_references:
             errs.append(f"Broken ref: {b}")
         return False, f"Scaffolded specifications failed validation: {'; '.join(errs)}", created_files
-
-    # Optional Agent Plugin installation
-    if with_plugin:
-        try:
-            from eidos.plugin.installer import PluginInstallTarget, install_plugin
-
-            install_plugin(target=PluginInstallTarget.PROJECT, project_dir=project_dir, force=force)
-        except Exception:
-            pass
 
     return True, f"Successfully initialized empty Eidos living specification skeleton at '{eidos_dir}'.", created_files
 

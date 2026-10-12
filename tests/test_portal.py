@@ -11,6 +11,7 @@ import pytest
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
+from eidos.portal.assets import PORTAL_HTML_TEMPLATE
 from eidos.portal.builder import build_static_portal
 from eidos.portal.generator import get_portal_data
 from eidos.portal.server import run_portal_server
@@ -184,3 +185,41 @@ def test_cli_build_site_command(tmp_path: Path):
     assert "Successfully generated static portal" in res.stdout
     assert (target_out / "index.html").exists()
     assert (target_out / "data.json").exists()
+
+
+def test_cli_portal_subapp_commands(tmp_path: Path):
+    """Verify 'eidos portal' sub-app commands (CTR-EIDOS-PORTAL, CTR-EIDOS-CLI)."""
+    # 1. portal --help
+    res_help = runner.invoke(app, ["portal", "--help"])
+    assert res_help.exit_code == 0
+    assert "serve" in res_help.stdout
+    assert "build" in res_help.stdout
+
+    # 2. portal build
+    target_out = tmp_path / "portal_dist"
+    res_build = runner.invoke(app, ["portal", "build", "--path", "eidos", "--out", str(target_out)])
+    assert res_build.exit_code == 0
+    assert "Successfully generated static portal" in res_build.stdout
+    assert (target_out / "index.html").exists()
+    assert (target_out / "data.json").exists()
+
+
+def test_portal_reading_ergonomics():
+    """Verify reading-friendly design system tokens and prose reading ergonomics (INV-PORTAL-READING-ERGONOMICS)."""
+    # 1. Verify W3C tokens in tokens.json
+    tokens_path = Path("eidos/design/systems/core/tokens.json")
+    with open(tokens_path, encoding="utf-8") as f:
+        tokens = json.load(f)
+
+    prose_tokens = tokens["typography"]["prose"]
+    assert prose_tokens["body"]["$value"] == "16px"
+    assert prose_tokens["line_height"]["$value"] == "1.75"
+    assert prose_tokens["measure"]["$value"] == "72ch"
+    assert prose_tokens["h1"]["$value"] == "30px"
+    assert prose_tokens["h2"]["$value"] == "22px"
+
+    # 2. Verify pre-compiled portal bundle includes reading ergonomics styles
+    assert "prose-reading" in PORTAL_HTML_TEMPLATE
+    assert "prose-measure" in PORTAL_HTML_TEMPLATE
+    assert "spec-heading" in PORTAL_HTML_TEMPLATE
+

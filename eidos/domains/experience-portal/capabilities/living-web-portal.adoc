@@ -38,6 +38,7 @@ experience:
     - "eidos/design/systems/core/components/portal-shell.adoc"
     - "eidos/design/systems/core/components/portal-sidebar.adoc"
     - "eidos/design/systems/core/components/portal-metric-card.adoc"
+    - "eidos/design/systems/core/components/portal-reader.adoc"
 
 technical:
   components:
@@ -47,8 +48,8 @@ technical:
     - "src/eidos/portal/builder.py"
   contracts:
     interfaces:
-      - "eidos serve [--port <port>]"
-      - "eidos build-site [--out <dir>]"
+      - "eidos portal serve [--port <port>] (shortcut: eidos serve)"
+      - "eidos portal build [--out <dir>] (shortcut: eidos build-site)"
   invariants:
     - id: INV-PORTAL-ZERO-NODE-DEP
       rule: "The web portal daemon and static site builder must operate using Python standard library without external Node.js/npm dependencies."
@@ -56,6 +57,9 @@ technical:
     - id: INV-PORTAL-INTERACTIVE-C4
       rule: "The portal must render a dynamic hierarchical C4 architecture explorer enabling clickable drill-down from L1 System Context to L2 Containers and L3 Component Whiteboxes with breadcrumbs and component inspection."
       test_binding: "tests/test_portal.py::test_static_portal_builder"
+    - id: INV-PORTAL-READING-ERGONOMICS
+      rule: "The portal living specification viewer must enforce a minimum 15px body prose, 72ch optimal reading measure, dynamic in-page Table of Contents (TOC) outlines, and non-blocking metadata headers."
+      test_binding: "tests/test_portal.py::test_portal_reading_ergonomics"
 ---
 = Capability: Interactive Living Web Portal & Visual Documentation Engine
 :toc: left

@@ -1,0 +1,58 @@
+---
+type: design/ui-component
+schema: schemas/v1/design/ui-component.schema.yaml
+id: UIC-PORTAL-READER
+title: "Portal Living Specification Reader"
+design_system: "DS-CORE"
+status: active
+category: content
+
+variants:
+  - name: "focused-prose"
+    description: "Constrained 72ch reading measure optimized for deep narrative comprehension with sticky right-hand outline navigation."
+  - name: "full-width"
+    description: "Expanded viewport utilizing maximum available stage width for wide architectural tables and C4 diagrams."
+  - name: "raw-source"
+    description: "Monospace view presenting raw AsciiDoc source markup and YAML frontmatter."
+
+states:
+  - default
+  - section_active
+  - raw_mode
+  - font_scaled_large
+  - font_scaled_compact
+
+accessibility:
+  wcag_level: "AA"
+  aria_role: "article"
+  keyboard_nav: "Tab and Shift+Tab traverse reading controls and section anchors; Enter navigates via sticky Table of Contents."
+
+test_bindings:
+  unit_test: "tests/test_portal.py::test_portal_reading_ergonomics"
+---
+= UI Component: Portal Living Specification Reader
+:toc: left
+
+== 1. Component Purpose & Reading Ergonomics
+The Portal Living Specification Reader (`UIC-PORTAL-READER`) establishes the reading-friendly stage for long-form technical documentation across the Eidos Living Web Portal:
+* **Optimal Reading Measure**: Bounded to `72ch` (`max-w-3xl`) to minimize ocular fatigue during extended architectural study.
+* **Typographic Hierarchy**: Distinct, readable type sizes based on `DS-CORE` tokens:
+  - Title (H1): `30px` bold with tracking-tight.
+  - Section Headings (H2): `22px` bold with top breathing room and hoverable anchor links.
+  - Subsection Headings (H3): `18px` semibold.
+  - Body Copy: `15px`–`16px` with relaxed `1.75` line-height.
+  - Code Snippets: `13.5px` monospace with syntax highlighting and one-click copy.
+* **Human-Centric Specification Header**: Replaces raw JSON frontmatter dumps with clean status badges, bound invariants (`INV-*`), personas, and a collapsible metadata drawer.
+
+== 2. Dynamic Table of Contents (TOC) & On-This-Page Navigation
+For multi-section specifications with two or more H2 headings:
+* A sticky right-hand navigation rail renders the hierarchical section tree (`== ` and `=== `).
+* Real-time scroll-spy tracks reading progress and highlights the current section.
+* Clicking any outline entry smoothly scrolls the viewport to the target heading anchor.
+
+== 3. Reader Control Affordances
+A sleek top toolbar equips readers with ergonomic preferences:
+* **Font Scaler**: Instant switching between `Compact` (14px), `Comfortable` (16px), and `Large` (18px) reading sizes.
+* **Reading Measure Switcher**: Toggle between `Prose Measure (72ch)` and `Full Width`.
+* **View Mode**: Seamless toggle between `Rendered Prose` and `Raw AsciiDoc`.
+* **Copy Section Link**: Hovering over any section heading reveals an anchor link button for instant permalink sharing.

@@ -9,7 +9,7 @@ This skill guides AI agents through the systematic reverse-engineering of an exi
 
 ## The Extraction Objective
 
-Transform an unannotated codebase into a synchronized, self-describing Eidos workspace by extracting living specifications across 6 core layers:
+Transform an unannotated codebase into a synchronized, self-describing Eidos workspace by extracting living specifications across core layers:
 
 1. **Containers** (`eidos/architecture/containers/*.adoc`) &larr; Harvested from `package.json`, `pyproject.toml`, `Cargo.toml`, and build manifests.
 2. **Contracts** (`eidos/architecture/contracts/*.adoc`) &larr; Harvested from `src/` routes, controllers, CLI parsers, and API definitions.
@@ -17,6 +17,7 @@ Transform an unannotated codebase into a synchronized, self-describing Eidos wor
 4. **Capabilities** (`eidos/domains/<name>/capabilities/*.adoc`) &larr; Harvested from business workflows, domain logic, and user journeys.
 5. **Invariants** (`INV-*` test bindings) &larr; Harvested from assertions, validation logic, and the `tests/` directory.
 6. **Policies** (`eidos/policies/POL-*.adoc`) &larr; Harvested from linter configurations, CI checks, and architectural guardrails.
+7. **Architectural Index** (`.eidos/cache/index.db`) &larr; Populated and synchronized at the end via `eidos index sync` to power AI context slicing and graph queries.
 
 ---
 
@@ -216,9 +217,9 @@ Extract the human and automated actors that interact with the system.
 
 ---
 
-### Phase 8: System Context & Baseline Locking
+### Phase 8: System Context, Validation & Index Synchronization
 
-Assemble the top-level System Context and validate the extracted specification.
+Assemble the top-level System Context, validate the extracted specifications, and synchronize the architectural knowledge graph.
 
 1. **Author `eidos/system.adoc`**:
    - Summarize the global ecosystem mission, primary external actors, and high-level architecture.
@@ -232,7 +233,18 @@ Assemble the top-level System Context and validate the extracted specification.
    Success! All specification documents are valid.
    ```
 
-3. **Commit the Extraction**:
+3. **Update Architectural Knowledge Graph Index**:
+   At the end of extraction, synchronize the newly generated living specifications with the embedded SQLite index:
+   ```bash
+   # Synchronize and populate the architectural knowledge graph
+   eidos index sync --force
+
+   # Verify index status, cache health, and registered entities
+   eidos index status
+   ```
+   This populates `.eidos/cache/index.db` and ensures `eidos context`, `eidos index search`, and dependency blast-radius queries have up-to-date graph metadata immediately available.
+
+4. **Commit the Extraction**:
    Commit the complete `eidos/` specification baseline to git.
 
 ---

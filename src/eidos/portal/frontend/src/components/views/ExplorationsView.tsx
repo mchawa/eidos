@@ -303,6 +303,7 @@ export function ExplorationsView({ data, onNavigateDelta }: ExplorationsViewProp
         onOpenChange={(open) => !open && setSelectedExp(null)}
         title={selectedExp?.title || "Architectural Exploration"}
         subtitle={selectedExp?.id}
+        maxWidth="6xl"
       >
         {selectedExp && (
           <div className="space-y-6">

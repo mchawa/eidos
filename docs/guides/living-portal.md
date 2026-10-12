@@ -18,6 +18,10 @@ Structured around a responsive left sidebar, the portal organizes your architect
 To inspect your architecture locally with live-reload:
 
 ```bash
+# Using namespaced command:
+eidos portal serve --path eidos --port 8080
+
+# Or using shortcut:
 eidos serve --path eidos --port 8080
 ```
 
@@ -30,6 +34,10 @@ Open `http://localhost:8080` in your web browser. Any changes made to your `.ado
 You can export the entire portal as a static site that can be hosted on GitHub Pages, GitLab Pages, AWS S3, or any web server:
 
 ```bash
+# Using namespaced command:
+eidos portal build --path eidos --out public
+
+# Or using shortcut:
 eidos build-site --path eidos --out public
 ```
 

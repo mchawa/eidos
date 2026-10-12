@@ -231,13 +231,6 @@ export function App() {
               {activeTab}
             </span>
           </div>
-
-          <div className="flex items-center gap-3">
-            <span className="text-[11px] font-mono text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 font-semibold">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live Sync Active
-            </span>
-          </div>
         </header>
 
         {/* Viewport Content */}

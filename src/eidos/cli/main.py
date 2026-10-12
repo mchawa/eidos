@@ -74,15 +74,57 @@ component_app = typer.Typer(
     add_completion=False,
 )
 
-app.add_typer(plugin_app, name="plugin")
-app.add_typer(spec_app, name="spec")
-app.add_typer(delta_app, name="delta")
-app.add_typer(index_app, name="index")
-app.add_typer(component_app, name="component")
+portal_app = typer.Typer(
+    name="portal",
+    help="Serve, preview, and build the interactive Eidos Living Web Portal.",
+    add_completion=False,
+)
+
+# Semantic Command Groups (Rich Help Panels)
+PANEL_SETUP = "Setup & Workspace"
+PANEL_GOVERNANCE = "Governance & Verification"
+PANEL_SPECS = "Living Catalog & Mutations"
+PANEL_KNOWLEDGE = "Knowledge Graph & AI Context"
+PANEL_PORTAL = "Living Web Portal"
+PANEL_PLUGINS = "Agent Ecosystem & Plugins"
+
+app.add_typer(spec_app, name="spec", rich_help_panel=PANEL_SPECS)
+app.add_typer(delta_app, name="delta", rich_help_panel=PANEL_SPECS)
+app.add_typer(component_app, name="component", rich_help_panel=PANEL_SPECS)
+app.add_typer(index_app, name="index", rich_help_panel=PANEL_KNOWLEDGE)
+app.add_typer(portal_app, name="portal", rich_help_panel=PANEL_PORTAL)
+app.add_typer(plugin_app, name="plugin", rich_help_panel=PANEL_PLUGINS)
 console = Console()
 
 
-@app.command()
+def version_callback(value: bool):
+    if value:
+        typer.echo(f"eidos {eidos.__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def main(
+    version: bool | None = typer.Option(
+        None,
+        "--version",
+        "-V",
+        help="Show Eidos engine version and exit.",
+        callback=version_callback,
+        is_eager=True,
+    ),
+):
+    """Eidos: Git-Native, Agent-Agnostic Development AI Ecosystem & Lifecycle Orchestrator."""
+    pass
+
+
+@app.command("version", rich_help_panel=PANEL_SETUP)
+def version_cmd():
+    """Display the Eidos engine version."""
+    typer.echo(f"eidos {eidos.__version__}")
+
+
+@app.command(rich_help_panel=PANEL_SETUP)
 def info():
     """Display Eidos engine version, bundled schemas, and platform status."""
     validator = SpecValidator()
@@ -103,7 +145,7 @@ def info():
     console.print(Panel(grid, title="[bold blue]Eidos AI Ecosystem[/bold blue]", expand=False))
 
 
-@app.command("init")
+@app.command("init", rich_help_panel=PANEL_SETUP)
 def init_cmd(
     target_path: Path | None = typer.Argument(
         None,
@@ -121,16 +163,17 @@ def init_cmd(
         "-t",
         help="Human-readable system title (e.g. 'My Application').",
     ),
-    with_plugin: bool = typer.Option(
-        True,
-        "--with-plugin/--no-plugin",
-        help="Install the Eidos Agent Plugin into .agents/plugins/eidos.",
-    ),
     force: bool = typer.Option(
         False,
         "--force",
         "-f",
         help="Force initialization even if eidos/ directory already exists.",
+    ),
+    _with_plugin: bool = typer.Option(
+        False,
+        "--with-plugin/--no-plugin",
+        hidden=True,
+        help="Deprecated: plugins are no longer installed by init.",
     ),
 ):
     """Initialize a repository with an empty Eidos living specification skeleton."""
@@ -141,7 +184,6 @@ def init_cmd(
         project_dir=project_dir,
         name=name,
         title=title,
-        with_plugin=with_plugin,
         force=force,
     )
 
@@ -163,11 +205,11 @@ def init_cmd(
     console.print("  • Author your system vision in [cyan]eidos/system.adoc[/cyan].")
     console.print("  • Create specifications using [cyan]eidos spec create <type> <id> --title <title>[/cyan] or AI agent skills.")
     console.print("  • Run [cyan]eidos validate eidos[/cyan] to verify specification compliance.")
-    if with_plugin:
-        console.print("  • Eidos Agent Plugin installed at [cyan].agents/plugins/eidos[/cyan].")
+    console.print("  • Run [cyan]eidos index sync[/cyan] to initialize the architectural knowledge graph index.")
+    console.print("  • (Optional) Install agent plugins using [cyan]eidos plugin install[/cyan].")
 
 
-@app.command()
+@app.command("validate", rich_help_panel=PANEL_GOVERNANCE)
 def validate(
     target_path: Path | None = typer.Argument(
         None,
@@ -259,7 +301,7 @@ def validate(
     console.print(f"\n[bold green]Success![/bold green] All {report.total_docs} specification documents are valid.")
 
 
-@app.command("lint")
+@app.command("lint", rich_help_panel=PANEL_GOVERNANCE)
 def lint_cmd(
     target_path: Path | None = typer.Argument(
         None,
@@ -275,7 +317,7 @@ def lint_cmd(
     validate(target_path, json_output=json_output)
 
 
-@app.command("drift")
+@app.command("drift", rich_help_panel=PANEL_GOVERNANCE)
 def drift_cmd(
     base: str | None = typer.Option(
         None,
@@ -417,7 +459,7 @@ def drift_cmd(
         raise typer.Exit(code=1)
 
 
-@app.command("reconcile")
+@app.command("reconcile", rich_help_panel=PANEL_GOVERNANCE)
 def reconcile_cmd(
     base: str | None = typer.Option(
         None,
@@ -504,7 +546,7 @@ def reconcile_cmd(
     )
 
 
-@app.command("sync")
+@app.command("sync", rich_help_panel=PANEL_GOVERNANCE)
 def sync_shortcut(
     base: str | None = typer.Option(None, "--base", "-b", help="Base git reference to compare against."),
     uncommitted: bool = typer.Option(False, "--uncommitted", "-u", help="Analyze uncommitted working tree changes."),
@@ -515,7 +557,8 @@ def sync_shortcut(
     reconcile_cmd(base=base, uncommitted=uncommitted, path=path, prompt=prompt)
 
 
-@app.command("serve")
+@portal_app.command("serve")
+@app.command("serve", rich_help_panel=PANEL_PORTAL)
 def serve_cmd(
     target_path: Path | None = typer.Option(
         None,
@@ -549,7 +592,9 @@ def serve_cmd(
     run_portal_server(eidos_dir=target, host=host, port=port, open_browser=open_browser)
 
 
-@app.command("build-site")
+@portal_app.command("build")
+@portal_app.command("build-site")
+@app.command("build-site", rich_help_panel=PANEL_PORTAL)
 def build_site_cmd(
     target_path: Path | None = typer.Option(
         None,
@@ -613,7 +658,8 @@ def _render_containers_table(target_path: Path | None = None) -> None:
     console.print(table)
 
 
-@app.command("containers")
+@spec_app.command("containers")
+@app.command("containers", rich_help_panel=PANEL_SPECS)
 def containers(
     target_path: Path | None = typer.Argument(
         None,
@@ -624,7 +670,8 @@ def containers(
     _render_containers_table(target_path=target_path)
 
 
-@app.command()
+@spec_app.command("components")
+@app.command("components", rich_help_panel=PANEL_SPECS)
 def components(
     container_id: str | None = typer.Argument(
         None,
@@ -747,7 +794,7 @@ def component_list_cmd(
     components(container_id=container_id, target_path=target_path)
 
 
-@app.command("context")
+@app.command("context", rich_help_panel=PANEL_KNOWLEDGE)
 def context_cmd(
     files: list[str] | None = typer.Option(
         None,
@@ -882,6 +929,25 @@ def index_sync_cmd(
             f"[bold green]✓ {mode} index in {stats.duration_ms:.2f}ms.[/bold green] "
             f"[dim](Indexed {stats.indexed_new} new, updated {stats.updated_modified} modified, pruned {stats.pruned_deleted} deleted)[/dim]"
         )
+
+
+@index_app.command("update", help="Alias for 'sync': Synchronize the architectural index with specifications on disk.")
+def index_update_cmd(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force complete rebuild of the index from scratch.",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to eidos directory (defaults to ./eidos).",
+    ),
+):
+    """Synchronize the architectural index with specifications on disk."""
+    return index_sync_cmd(force=force, path=path)
 
 
 @index_app.command("search")
@@ -1663,7 +1729,7 @@ def delta_delete_cmd(
 # -------------------------------------------------------------------------
 
 
-@app.command("create")
+@app.command("create", rich_help_panel=PANEL_SPECS)
 def create_shortcut(
     doc_type: str = typer.Argument(
         ..., help="Specification type: capability, domain, policy, contract, component, persona, delta."
@@ -1691,7 +1757,7 @@ def create_shortcut(
     )
 
 
-@app.command("delete")
+@app.command("delete", rich_help_panel=PANEL_SPECS)
 def delete_shortcut(
     target: str = typer.Argument(..., help="Document ID or path to delete."),
     path: Path = typer.Option(Path("eidos"), "--path", "-p", help="Path to eidos specifications directory."),
@@ -1701,7 +1767,7 @@ def delete_shortcut(
     spec_delete_cmd(target=target, path=path, force=force)
 
 
-@app.command("list")
+@app.command("list", rich_help_panel=PANEL_SPECS)
 def list_shortcut(
     path: Path = typer.Option(Path("eidos"), "--path", "-p", help="Path to eidos specifications directory."),
     type_filter: str | None = typer.Option(None, "--type", "-t", help="Filter by type."),
@@ -1763,7 +1829,7 @@ def plugin_install(
         raise typer.Exit(code=1) from e
 
 
-@app.command("install")
+@app.command("install", rich_help_panel=PANEL_PLUGINS)
 def install_shortcut(
     target: PluginInstallTarget = typer.Option(
         PluginInstallTarget.PROJECT,
@@ -1843,7 +1909,7 @@ def plugin_uninstall(
         raise typer.Exit(code=1) from e
 
 
-@app.command("uninstall")
+@app.command("uninstall", rich_help_panel=PANEL_PLUGINS)
 def uninstall_shortcut(
     target: PluginInstallTarget = typer.Option(
         PluginInstallTarget.PROJECT,

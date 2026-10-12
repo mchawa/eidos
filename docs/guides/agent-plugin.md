@@ -331,7 +331,7 @@ AI agents execute Eidos CLI commands directly from terminal / subshell tools. Al
 | `eidos spec delete` | `<id_or_path> [--force]` | Safely deletes a living specification with cross-reference safety checks. |
 | `eidos delta create` | `<id> --title <title> --kind <kind>` | Scaffolds a new SpecDelta mutation document (`DLT-*`) for Planned Mode. |
 | `eidos delta apply` | `<id>` | Reconciles a SpecDelta in-place, updating its lifecycle state to `applied` and synchronizing symlink views. |
-| `eidos init` | `[PATH] [--no-plugin]` | Bootstraps a repository with living specs and agent plugin. |
+| `eidos init` | `[PATH]` | Bootstraps a repository with an empty living specification skeleton. |
 
 ---
 
@@ -461,7 +461,7 @@ When using an agent client that supports skill bundles (such as Google Antigravi
 * **`eidos-extract`**: Reverse-engineering and extracting living specifications from existing legacy codebases.
 * **`eidos-init`**: Bootstrapping new Git repositories with baseline Arc42/C4 architecture, core policies, personas, and automated validation.
 * **`eidos-invariants`**: Defining system policies (`POL-*`), capability invariants (`INV-*`), and enforcing bidirectional invariant-test traceability.
-* **`eidos-portal`**: Serving interactive Web Portals (`eidos serve`) and exporting static documentation sites (`eidos build-site`).
+* **`eidos-portal`**: Serving interactive Web Portals (`eidos portal serve` / `eidos serve`) and exporting static documentation sites (`eidos portal build` / `eidos build-site`).
 * **`eidos-product`**: Authoring, inspecting, and maintaining product domains (`DOM-*`), capabilities (`CAP-*`), actor personas, and Jobs-to-be-Done (JTBD).
 * **`eidos-reconcile`**: Reconciling code modifications to living specifications in Direct Mode.
 * **`eidos-review`**: Performing rigorous architectural reviews of SpecDeltas, PR diffs, contract changes, and invariant test coverage.

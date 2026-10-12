@@ -46,6 +46,7 @@ def test_documentation_and_schemas_in_sync():
         "validate",
         "serve",
         "build-site",
+        "portal",
         "plugin",
         "spec",
         "delta",

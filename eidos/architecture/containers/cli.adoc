@@ -32,7 +32,7 @@ components:
     source_path: "src/eidos/cli/main.py"
   - id: CMP-CLI-INIT-COMMAND
     name: "InitCommand"
-    responsibility: "CLI entrypoint for repository bootstrapping and agent plugin installation."
+    responsibility: "CLI entrypoint for repository bootstrapping, living spec skeleton generation, and baseline validation."
     source_path: "src/eidos/cli/main.py"
   - id: CMP-CLI-CONTEXT-COMMAND
     name: "ContextCommand"
@@ -46,12 +46,17 @@ components:
     name: "ComponentCommands"
     responsibility: "C4 Level 3 component promotion to co-located specs, inlining back to container, and listing."
     source_path: "src/eidos/cli/main.py"
+  - id: CMP-CLI-PORTAL-COMMANDS
+    name: "PortalCommands"
+    responsibility: "Living Web Portal commands: interactive preview server (`eidos portal serve` / `serve`) and static site compilation (`eidos portal build` / `build-site`)."
+    source_path: "src/eidos/cli/main.py"
 
 dependencies:
   internal_containers:
     - "CNT-EIDOS-CORE"
     - "CNT-EIDOS-INDEX"
     - "CNT-EIDOS-PLUGIN"
+    - "CNT-EIDOS-PORTAL"
   external_services:
     - "Terminal stdout/stderr"
 
@@ -85,6 +90,8 @@ This container represents the developer entrypoint under `src/eidos/cli/`. It pr
 | `CMP-CLI-INIT-COMMAND` | **InitCommand** | Repository bootstrapping and skeleton generation | `src/eidos/cli/main.py`
 | `CMP-CLI-CONTEXT-COMMAND` | **ContextCommand** | Token-budgeted architectural context slicing | `src/eidos/cli/main.py`
 | `CMP-CLI-INDEX-COMMANDS` | **IndexCommands** | Knowledge graph maintenance and blast radius queries | `src/eidos/cli/main.py`
+| `CMP-CLI-COMPONENT-COMMANDS` | **ComponentCommands** | C4 Level 3 component promotion, inlining, and listing | `src/eidos/cli/main.py`
+| `CMP-CLI-PORTAL-COMMANDS` | **PortalCommands** | Living Web Portal interactive preview and static compilation | `src/eidos/cli/main.py`
 |===
 
 == Quality Attributes & Operational Policies
