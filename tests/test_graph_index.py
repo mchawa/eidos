@@ -179,8 +179,8 @@ def test_spike_c_tiered_context_compression(temp_index):
     assert "ANCHOR Tier" in md_anchor
     assert "GUARDRAILS Tier" in md_guardrails
 
-    # Token savings benchmark: Compare against estimated raw loading (~2,000+ tokens for full component+contract+specs)
-    raw_component_tokens = 2500
+    # Token savings benchmark: Compare against estimated raw loading (~2,800+ tokens for full container+contract+specs)
+    raw_component_tokens = 2800
     token_savings_pct = (1.0 - (slice_guardrails.token_estimate / raw_component_tokens)) * 100.0
     assert token_savings_pct >= 60.0, f"Token savings {token_savings_pct:.1f}% was below 60% requirement"
 

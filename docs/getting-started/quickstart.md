@@ -18,7 +18,7 @@ This creates the canonical `eidos/` empty directory skeleton, tracked in Git by 
 eidos/
 ├── system.adoc                   # Empty root system specification
 ├── architecture/
-│   ├── components/               # Component manifests (CMP-*)
+│   ├── containers/               # Container manifests (CNT-*, C4 Level 2)
 │   └── contracts/                # Interface contracts (CTR-*)
 ├── domains/                      # Domain & capability models (DOM-*, CAP-*)
 ├── personas/                     # User & agent personas (PER-*)
@@ -27,6 +27,9 @@ eidos/
 ├── explorations/                 # Spikes and discoveries (EXP-*)
 └── design/                       # Design systems, screens, and flows
 ```
+
+> [!NOTE]
+> **C4 Level 3 Components (`CMP-*`)** are declared inline within container manifests or co-located directly with source code (e.g. `src/<container>/<component>.adoc`). They are never placed in a centralized `architecture/components/` folder.
 
 ---
 
@@ -45,7 +48,7 @@ Output:
 ┏━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ Document ID            ┃ Type               ┃ Status ┃ Path                  ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━┩
-│ CMP-EIDOS-CORE         │ tech/component     │  PASS  │ eidos/architecture/c… │
+│ CNT-EIDOS-CORE         │ tech/container     │  PASS  │ eidos/architecture/c… │
 │ ARCH-EIDOS-001         │ tech/architecture  │  PASS  │ eidos/architecture/s… │
 │ CAP-PROD-001           │ product/capability │  PASS  │ eidos/domains/produc… │
 │ POL-001-GIT-SOURCE-OF… │ product/policy     │  PASS  │ eidos/policies/POL-0… │

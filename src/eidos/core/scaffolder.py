@@ -850,7 +850,7 @@ def init_repository(
 
     # Standard Eidos living specification directory skeleton
     skeleton_dirs = [
-        eidos_dir / "architecture" / "components",
+        eidos_dir / "architecture" / "containers",
         eidos_dir / "architecture" / "contracts",
         eidos_dir / "domains",
         eidos_dir / "policies",

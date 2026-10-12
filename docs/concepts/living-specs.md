@@ -108,9 +108,21 @@ and AST graph generation for all Eidos operations.
 
 ### Key Elements:
 * **`type`**: Canonical specification type matching the Eidos schema taxonomy.
-* **`id`**: Globally unique document identifier (`CMP-*`, `CTR-*`, `CAP-*`, `POL-*`, `EXP-*`, `DS-*`, `DLT-*`).
+* **`id`**: Globally unique document identifier (`CNT-*`, `CMP-*`, `CTR-*`, `CAP-*`, `POL-*`, `EXP-*`, `DS-*`, `DLT-*`).
 * **`schema`**: Reference to the canonical schema file ensuring automated validation.
 * **Frontmatter Metadata**: Strongly-typed architectural properties (contracts, dependencies, invariants, tokens).
 * **Body text**: Rich AsciiDoc documentation that evolves continuously with the code.
+
+---
+
+## Hybrid Co-Located C4 Level 3 Components (`CMP-*`)
+
+Eidos implements a hybrid architecture for C4 Level 3 components:
+* **80% Inline**: Lightweight modules remain inline inside Level 2 container manifests (`eidos/architecture/containers/*.adoc`), keeping macro-architecture clean and compact.
+* **20% Co-Located Promoted Specs**: Highly complex subsystems receive dedicated `type: tech/component` specifications residing directly alongside code in the container's `package_path` (e.g. `src/eidos/core/validator.adoc`).
+* **Strict Co-Location Mandate (`INV-COMPONENT-COLOCATION-MANDATE`)**: Dedicated component manifests must never be placed under `eidos/architecture/`. Centralizing components is forbidden to guarantee maximum code-spec locality and prevent cognitive clutter in macro-architecture.
+* **Interface Separation (`INV-INTERFACE-BOUNDARY-GOVERNANCE`)**: Containers own Boundary Protocol Contracts (`CTR-*`), while components declare local in-process APIs (`interfaces.provides`).
+* **CLI Automation**: Promoted and inlined seamlessly using `eidos component promote <ID>` and `eidos component inline <ID>`.
+
 
 

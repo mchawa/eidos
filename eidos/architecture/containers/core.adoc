@@ -16,11 +16,11 @@ components:
     source_path: "src/eidos/core/parser.py"
   - id: CMP-SPEC-VALIDATOR
     name: "SpecValidator"
-    responsibility: "Resolves bundled JSON/YAML schemas, validates document frontmatters, and verifies cross-references."
+    responsibility: "Resolves bundled JSON/YAML schemas, validates document frontmatters, verifies cross-references, and enforces co-located component invariants (INV-COMPONENT-COLOCATION-MANDATE, INV-COMPONENT-CONTAINER-AFFINITY, INV-INTERFACE-BOUNDARY-GOVERNANCE)."
     source_path: "src/eidos/core/validator.py"
   - id: CMP-LIFECYCLE-SCAFFOLDER
     name: "LifecycleScaffolder"
-    responsibility: "Scaffolds living specifications, conducts reference safety checks, manages flat SpecDelta lifecycles, and maintains symlink views."
+    responsibility: "Scaffolds living specifications, conducts reference safety checks, manages flat SpecDelta lifecycles, and orchestrates C4 component promotion (promote_component) and inlining (inline_component)."
     source_path: "src/eidos/core/scaffolder.py"
   - id: CMP-DESIGN-ENGINE
     name: "DesignEngine"
@@ -28,7 +28,7 @@ components:
     source_path: "src/eidos/core/scaffolder.py"
   - id: CMP-REPO-INITIALIZER
     name: "RepositoryInitializer"
-    responsibility: "Bootstraps repositories with living specification hierarchies, baseline policies, architecture, and self-contained gitignore."
+    responsibility: "Bootstraps repositories with living specification hierarchies (eidos/architecture/containers/, etc.), baseline policies, architecture, and self-contained gitignore."
     source_path: "src/eidos/core/scaffolder.py"
   - id: CMP-ASSET-LOCATOR
     name: "AssetLocator"

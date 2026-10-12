@@ -44,6 +44,15 @@ eidos spec create container CNT-AUTH-SERVICE --title "Authentication & Token Ser
 # 5. Scaffold an interface contract:
 eidos spec create contract CTR-AUTH-API --title "Auth REST API" \
   --protocol openapi --owning-container CNT-AUTH-SERVICE --specification-file "packages/auth/openapi.yaml"
+
+# 6. Promote an inline C4 Level 3 component to a co-located specification:
+eidos component promote CMP-CORE-VALIDATOR
+
+# 7. Demote / inline a co-located component back into its container:
+eidos component inline CMP-CORE-VALIDATOR
+
+# 8. List all C4 Level 3 components and their co-location status:
+eidos component list
 ```
 
 ---
@@ -99,7 +108,46 @@ Internal modules and modular components contained within this deployable.
 
 ---
 
-## 3. Interface Contract Anatomy (`contract.schema.yaml`)
+## 3. Hybrid Co-Located Component Manifests (`tech/component`)
+
+C4 Level 3 components (`CMP-*`) follow a hybrid co-location model:
+1. **Inline by Default (80%)**: Simple internal modules remain inline within `CNT-*.adoc` under `components:` (`id`, `name`, `responsibility`, `source_path`).
+2. **Promoted Co-Located Specs (20%)**: Architecturally complex modules receive dedicated `type: tech/component` specifications residing directly within the parent container's `package_path` (e.g. `src/eidos/core/validator.adoc`) and referenced in the container manifest via `ref:`.
+3. **Mandatory Invariants**:
+   - `INV-COMPONENT-COLOCATION-MANDATE`: Component specifications **MUST** reside within the parent container's `package_path`. Centralizing components under `eidos/architecture/` is strictly rejected.
+   - `INV-COMPONENT-CONTAINER-AFFINITY`: Every dedicated `CMP-*` manifest must declare `container: CNT-*` pointing to an existing container.
+   - `INV-INTERFACE-BOUNDARY-GOVERNANCE`: Boundary Protocol Contracts (`CTR-*`) must be owned by Containers (`CNT-*`). In-process components declare local language-level interfaces via `interfaces.provides`.
+
+```yaml
+---
+type: tech/component
+schema: schemas/v1/tech/component.schema.yaml
+id: CMP-CORE-VALIDATOR
+name: "Specification Validator"
+container: CNT-EIDOS-CORE
+status: active
+package_path: "src/eidos/core/validator.py"
+responsibility: "Validates specifications against canonical Draft 2020-12 schemas."
+interfaces:
+  provides:
+    - signature: "validate_document(doc: SpecDocument) -> list[str]"
+      description: "Validates a single parsed document."
+  consumes:
+    - "CMP-CORE-PARSER"
+quality_attributes:
+  stateless: true
+  reentrant: true
+invariants:
+  - id: INV-SPEC-VALIDATION
+    rule: "All specifications must validate against schema."
+    test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+---
+= Component: Specification Validator
+```
+
+---
+
+## 4. Interface Contract Anatomy (`contract.schema.yaml`)
 
 Interface contracts live in `eidos/architecture/contracts/<contract-name>.adoc`:
 
@@ -122,7 +170,7 @@ Document CLI flags, arguments, exit codes, and JSON-RPC messages here.
 
 ---
 
-## 4. Entity ID Graph Cross-Reference Checking
+## 5. Entity ID Graph Cross-Reference Checking
 
 Eidos enforces strict relational graph integrity across all architectural entities (`INV-SPEC-GRAPH-INTEGRITY`). When authoring or mutating container, component, contract, and domain specifications, the validator strictly verifies that referenced IDs resolve to real entities registered in the living catalog:
 
@@ -146,7 +194,7 @@ This guarantees that architectural diagrams, C4 topologies, and blast-radius sli
 
 ---
 
-## 5. Verification
+## 6. Verification
 
 Always verify architecture specifications with:
 ```bash

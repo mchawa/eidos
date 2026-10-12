@@ -23,7 +23,7 @@ Initializing an Eidos workspace establishes the empty living specification skele
   │ ├── .gitignore                  <- ignores symlink views│
   │ ├── system.adoc                 <- empty root system doc│
   │ ├── architecture/                                      │
-  │ │   ├── components/             <- tracked by .gitkeep │
+  │ │   ├── containers/             <- tracked by .gitkeep │
   │ │   └── contracts/              <- tracked by .gitkeep │
   │ ├── domains/                    <- tracked by .gitkeep │
   │ ├── policies/                   <- tracked by .gitkeep │
@@ -116,7 +116,7 @@ Review and flesh out the C4 Level 1-2 architecture:
 - Set `topology_style`: `monolithic`, `modular_monolith`, `microservices`, `serverless`, `library_or_sdk`, etc.
 - Verify `c4_context.actors`: Ensure all persona links resolve (e.g. `eidos/personas/autonomous-agent.adoc`).
 - Define `c4_context.external_systems`: Third-party APIs, authentication providers, remote databases.
-- Declare `c4_containers`: If containers/services exist, add component references or scaffold manifests via `eidos spec create component`.
+- Declare `c4_containers`: If containers/services exist, scaffold container manifests via `eidos spec create container CNT-*`.
 
 ### Step 5: Review & Enforce Baseline Policies
 

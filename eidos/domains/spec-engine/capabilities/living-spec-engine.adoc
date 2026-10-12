@@ -62,8 +62,17 @@ technical:
       rule: "The system must generate an interactive web portal and static site visualizing C4 architecture, domains, and SpecDeltas without external Node.js dependencies."
       test_binding: "tests/test_portal.py::test_portal_data_generation"
     - id: INV-DOCS-SYNCHRONIZATION
-      rule: "All 15 living specification schemas, CLI command interfaces, and C4 components must be accurately documented in docs/ and pass strict static site compilation."
+      rule: "All 16 living specification schemas, CLI command interfaces, and C4 components must be accurately documented in docs/ and pass strict static site compilation."
       test_binding: "tests/test_docs_sync.py::test_documentation_and_schemas_in_sync"
+    - id: INV-COMPONENT-COLOCATION-MANDATE
+      rule: "Every dedicated tech/component specification MUST reside within its parent container's package_path, never centralized under eidos/architecture/."
+      test_binding: "tests/test_colocated_components.py::test_spike_1_colocation_mandate_enforcement"
+    - id: INV-COMPONENT-CONTAINER-AFFINITY
+      rule: "Every dedicated CMP-* specification must declare a container: CNT-* property binding to an existing Level 2 container."
+      test_binding: "tests/test_colocated_components.py::test_spike_1_container_affinity_enforcement"
+    - id: INV-INTERFACE-BOUNDARY-GOVERNANCE
+      rule: "Boundary Protocol Contracts (CTR-*) must be owned by Containers (CNT-*), while in-process Components (CMP-*) declare local language-level APIs via interfaces.provides."
+      test_binding: "tests/test_colocated_components.py::test_spike_1_interface_boundary_governance_enforcement"
 ---
 = Capability: Living Baseline Specification Engine
 :toc: left
@@ -75,7 +84,7 @@ Through an embedded SQLite Knowledge Graph (`.eidos/cache/index.db`), Eidos brid
 
 == Key Responsibilities
 * **Living Specification Parsing**: Robust extraction of YAML frontmatter combined with AsciiDoc technical specifications.
-* **Schema Validation & Integrity**: Schema resolution and Draft 2020-12 validation ensuring strict typing across all 15 specification schemas.
+* **Schema Validation & Integrity**: Schema resolution and Draft 2020-12 validation ensuring strict typing across all 16 specification schemas.
 * **Embedded Knowledge Graph**: Relational indexing linking Personas, Domains, Capabilities, Invariants, Components, Contracts, and SpecDeltas into `.eidos/cache/index.db`.
 * **Zero-Drift Incremental Sync**: Mtime and SHA-256 dirty checking that keeps the SQLite graph continuously synchronized with the working tree in under 2ms.
 * **Sub-Millisecond Catalog Resolution**: Powering `eidos components`, `eidos spec list`, and MCP inspection tools with instant relational queries rather than linear disk scans.

@@ -421,7 +421,7 @@ def test_init_repository_programmatic(tmp_path):
 
     # Verify all empty directories contain .gitkeep files
     expected_gitkeeps = [
-        eidos_dir / "architecture" / "components" / ".gitkeep",
+        eidos_dir / "architecture" / "containers" / ".gitkeep",
         eidos_dir / "architecture" / "contracts" / ".gitkeep",
         eidos_dir / "domains" / ".gitkeep",
         eidos_dir / "policies" / ".gitkeep",
@@ -462,7 +462,7 @@ def test_init_repository_cli(tmp_path):
     assert (target / "eidos" / "system.adoc").exists()
     assert (target / "eidos" / "system.adoc").read_text(encoding="utf-8") == ""
     assert (target / "eidos" / "policies" / ".gitkeep").exists()
-    assert (target / "eidos" / "architecture" / "components" / ".gitkeep").exists()
+    assert (target / "eidos" / "architecture" / "containers" / ".gitkeep").exists()
     assert not any(p for p in (target / "eidos").rglob("*.adoc") if p.name != "system.adoc")
 
 
@@ -483,7 +483,7 @@ def test_init_repository_mcp(tmp_path):
     assert (target / "eidos" / ".gitignore").exists()
     assert (target / "eidos" / "system.adoc").exists()
     assert (target / "eidos" / "system.adoc").read_text(encoding="utf-8") == ""
-    assert (target / "eidos" / "architecture" / "components" / ".gitkeep").exists()
+    assert (target / "eidos" / "architecture" / "containers" / ".gitkeep").exists()
     assert not any(p for p in (target / "eidos").rglob("*.adoc") if p.name != "system.adoc")
 
 
