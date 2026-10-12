@@ -103,23 +103,27 @@ export function MermaidDiagram({
     const scaleY = containerHeight / svgHeight;
     const naturalFit = Math.min(scaleX, scaleY);
 
-    // If natural fit is between 0.95 and 1.35, it fits comfortably without text shrinking!
-    // If natural fit is >= 1.35, clamp to 1.30 so small diagrams look bold and neat.
-    // If natural fit is < 0.95 (e.g. 0.50 or 0.65), shrinking it would make text tiny and "zoomed-out".
-    // Instead, default to 1.05 - 1.15 so text is crisp and readable, aligned cleanly!
-    let optimalZoom = 1.05;
+    // Balanced zoom logic:
+    // 1. If naturalFit >= 1.0 (diagram is smaller than container):
+    //    Keep at 1.0 exact natural size without blowing up or zooming in excessively.
+    // 2. If naturalFit is between 0.70 and 1.0:
+    //    Use naturalFit so the entire diagram fits neatly inside the card with all nodes visible.
+    // 3. If naturalFit < 0.70 (diagram is very wide):
+    //    Clamp to 0.75 so text stays readable, and align start with left edge.
+    let optimalZoom = 1.0;
     let initialPanX = 0;
     let initialPanY = 0;
 
-    if (naturalFit >= 0.95) {
-      optimalZoom = Math.min(1.30, Number(naturalFit.toFixed(2)));
+    if (naturalFit >= 1.0) {
+      optimalZoom = 1.0;
+      initialPanX = 0;
+      initialPanY = 0;
+    } else if (naturalFit >= 0.70) {
+      optimalZoom = Number(naturalFit.toFixed(2));
       initialPanX = 0;
       initialPanY = 0;
     } else {
-      // Natural fit would shrink text. Keep text readable at 1.05!
-      optimalZoom = 1.05;
-      // If the diagram is wider than the container, align the start (left) with padding
-      // so the user immediately sees the beginning of the flow / state machine
+      optimalZoom = 0.75;
       const renderedWidth = svgWidth * optimalZoom;
       if (renderedWidth > containerWidth) {
         initialPanX = (renderedWidth - containerWidth) / 2 - 20;

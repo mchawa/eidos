@@ -87,12 +87,17 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
     const scaleY = containerHeight / svgHeight;
     const optimalScale = Math.min(scaleX, scaleY);
 
-    // Ensure default zoom is bold and readable (min 1.05, max 1.35)
-    let clampedZoom = 1.1;
-    if (optimalScale >= 0.95) {
-      clampedZoom = Math.min(1.35, Number(optimalScale.toFixed(2)));
+    // Balanced zoom:
+    // 1. If optimalScale >= 1.0 (diagram is smaller than viewport), keep at 1.0 natural size without over-zooming
+    // 2. If optimalScale is between 0.70 and 1.0, fit entire diagram comfortably
+    // 3. If optimalScale < 0.70, clamp to 0.75 so text stays readable
+    let clampedZoom = 1.0;
+    if (optimalScale >= 1.0) {
+      clampedZoom = 1.0;
+    } else if (optimalScale >= 0.70) {
+      clampedZoom = Number(optimalScale.toFixed(2));
     } else {
-      clampedZoom = 1.05;
+      clampedZoom = 0.75;
     }
     setZoom(clampedZoom);
     setPan({ x: 0, y: 0 });
@@ -450,21 +455,11 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
         </div>
       </div>
 
-      {/* Interactive Navigation Helper Pill */}
-      <div className="flex items-center justify-between px-1">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-medium">
-          <span className="h-2 w-2 rounded-full bg-primary animate-pulse shrink-0" />
-          <span>
-            {level === 1 && "Click 'SYS' (Eidos Ecosystem) in the diagram to navigate to Level 2 Containers"}
-            {level === 2 && "Click any Container node in the diagram to drill down to Level 3 Components"}
-            {level === 3 && "Click peer containers to navigate, or internal modules to inspect details"}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] text-muted-foreground font-mono hidden sm:inline">
-            {level === 1 ? "C4 Level 1: System Context" : level === 2 ? "C4 Level 2: Container Topology" : `C4 Level 3: Whitebox (${selectedContainerId})`}
-          </span>
-        </div>
+      {/* C4 View Level Indicator */}
+      <div className="flex items-center justify-end px-1">
+        <span className="text-[11px] text-muted-foreground font-mono hidden sm:inline">
+          {level === 1 ? "C4 Level 1: System Context" : level === 2 ? "C4 Level 2: Container Topology" : `C4 Level 3: Whitebox (${selectedContainerId})`}
+        </span>
       </div>
 
       {/* Main Diagram Viewport Card with Drag-to-Pan */}
