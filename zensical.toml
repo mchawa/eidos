@@ -16,6 +16,8 @@ nav = [
     { "Living Specifications" = "concepts/living-specs.md" },
     { "SpecDeltas (DLT-*)" = "concepts/specdeltas.md" },
     { "Invariant Traceability" = "concepts/invariants.md" },
+    { "Multi-Design Systems" = "concepts/design.md" },
+    { "Schema Glossary" = "concepts/schema-glossary.md" },
   ]},
   { "User Guides" = [
     { "CLI Reference" = "guides/cli.md" },

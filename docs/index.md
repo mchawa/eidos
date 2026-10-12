@@ -46,7 +46,8 @@ Modern software development often suffers from two major problems:
 * **Living Arc42 & C4 Architecture**: Containers, components, and interface contracts are codified as AsciiDoc with YAML frontmatter.
 * **Strictly No ADRs**: Decisions mutate the living architecture directly through auditable **SpecDeltas** (`DLT-*`).
 * **Bidirectional Invariant-Test Traceability**: Every capability and policy enforces invariants (`INV-*`, `POL-*`) that map directly to automated tests in `tests/`.
-* **Agent-Agnostic Plugin & MCP Server**: Equips AI agents (Google Antigravity, Claude Code, Cursor, Codex) with specialized tools and skills to query, mutate, and validate architecture before editing code.
+* **Multi-Design Systems & W3C Tokens**: White-label and multi-brand design systems, official W3C DTCG tokens, UI component contracts, and screen state machines.
+* **Agent-Agnostic Plugin & MCP Server**: Equips AI agents (Google Antigravity, Claude Code, Cursor, Codex) with 12 tools and 13 skills to query, mutate, and validate architecture before editing code.
 * **Interactive Living Portal**: Generates a self-contained static visual architecture explorer and graph directly from your specs.
 
 ---
@@ -85,6 +86,8 @@ eidos --help
 
 * **[Installation Guide](getting-started/installation.md)**: System requirements, optional extras, and devcontainer setup.
 * **[5-Minute Quickstart](getting-started/quickstart.md)**: Bootstrap your repository and inspect your first living specifications.
-* **[Core Concepts](concepts/living-specs.md)**: Learn about Living Specs, SpecDeltas, and Invariant Traceability.
+* **[Core Concepts](concepts/living-specs.md)**: Learn about Living Specs, SpecDeltas, Invariants, and Dual Workflows.
+* **[Multi-Design Systems](concepts/design.md)**: Multi-brand design systems, W3C tokens, and UI component contracts.
+* **[Schema Glossary](concepts/schema-glossary.md)**: Comprehensive reference for all 13 living specification schemas.
 * **[CLI Reference](guides/cli.md)**: Explore the complete command-line interface.
 
