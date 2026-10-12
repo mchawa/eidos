@@ -54,6 +54,7 @@ def test_documentation_and_schemas_in_sync():
         "info",
         "mcp",
         "context",
+        "index",
     ]
     for cmd in expected_commands:
         assert f"eidos {cmd}" in cli_doc_text, f"Command 'eidos {cmd}' is not documented in {cli_doc_path}"

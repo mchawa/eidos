@@ -217,7 +217,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ### 4. Verification in Cursor
 
-    Open **Cursor Settings > Features > MCP Servers**. You will see `eidos` listed with a green status indicator and the 12 available tools (`eidos_validate`, `eidos_detect_drift`, `eidos_reconcile`, etc.).
+    Open **Cursor Settings > Features > MCP Servers**. You will see `eidos` listed with a green status indicator and the 17 available tools (`eidos_validate`, `eidos_get_task_context`, `eidos_search_architecture`, etc.).
 
 === "Generic MCP Clients (Windsurf, Roo Code, Cline)"
 
@@ -264,11 +264,15 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
 ## Exposed MCP Tools Reference
 
-When connected, the Eidos MCP server exposes 13 high-level architectural tools to your AI assistant:
+When connected, the Eidos MCP server exposes 17 high-level architectural tools to your AI assistant:
 
 | MCP Tool | Arguments | Description |
 | :--- | :--- | :--- |
-| `eidos_get_task_context` *(alias `eidos_context`)* | `files`, `component`, `task`, `format`, `path` | Extracts a compact, token-efficient architectural subgraph slice (C4 components, contracts, capabilities, invariants, policies). |
+| `eidos_get_task_context` *(alias `eidos_context`)* | `files`, `component`, `task`, `tier`, `format`, `path` | Extracts a compact, token-efficient architectural subgraph slice (`anchor`, `guardrails`, `deep`). |
+| `eidos_search_architecture` | `query`, `limit`, `path` | Performs BM25 full-text search across living spec titles, requirements, and invariants. |
+| `eidos_get_blast_radius` | `symbol_or_path`, `max_hops`, `path` | Computes transitive dependency and governance blast radius for a symbol or spec path. |
+| `eidos_index_status` | `path` *(optional)* | Reports index health, cache size, total entity/edge counts, and auto-sync freshness state. |
+| `eidos_sync_index` | `path` *(optional)*, `force` | Manually triggers or forces full re-synchronization of the architectural knowledge graph. |
 | `eidos_detect_drift` | `base_ref`, `head_ref`, `uncommitted`, `path` | Inspects spec-to-code drift between git branches or uncommitted changes, validates schemas, and checks test bindings. |
 | `eidos_reconcile` | `base_ref`, `uncommitted`, `path`, `as_prompt` | Analyzes code modifications against the living spec catalog and proposes candidate specs or structured prompt. |
 | `eidos_validate` | `path` *(optional)* | Validates all living specifications against their bundled JSON Schemas and checks bidirectional cross-references. |
