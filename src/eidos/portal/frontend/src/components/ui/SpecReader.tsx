@@ -6,7 +6,6 @@ import {
   Code2,
   ChevronDown,
   ChevronUp,
-  X,
   ShieldCheck,
   Layers,
   GitBranch,
@@ -99,9 +98,9 @@ export function SpecReader({
   const vcs = fm.vcs;
 
   return (
-    <div className={cn("space-y-6 spec-reader-stage w-full", className)}>
+    <div className={cn("space-y-4 spec-reader-stage w-full", className)}>
       {/* Human-Centric Specification Metadata Header Card */}
-      <div className="p-6 rounded-2xl bg-card border border-border/80 md-elevation-1 space-y-4">
+      <div className="p-4 sm:p-5 rounded-2xl bg-card border border-border/80 md-elevation-1 space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-2 flex-1 min-w-[280px]">
             {/* Breadcrumb Path & Badges */}
@@ -148,17 +147,6 @@ export function SpecReader({
             </div>
           </div>
 
-          {/* Close Action (if in modal) */}
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer shrink-0"
-              aria-label="Close reader"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          )}
         </div>
 
         {/* High-Level Relationship Badges */}
@@ -222,7 +210,7 @@ export function SpecReader({
       </div>
 
       {/* Main Reading Stage & Dynamic Outline TOC */}
-      <div className="flex items-start gap-8">
+      <div className="flex items-start gap-5">
         {/* Specification Prose Content */}
         <div className="flex-1 min-w-0">
           {spec.body ? (

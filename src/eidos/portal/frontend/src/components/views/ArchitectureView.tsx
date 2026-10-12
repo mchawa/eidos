@@ -498,17 +498,27 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
         />
       </Card>
 
-      {/* Container Cards List */}
-      <div className="space-y-3 pt-2">
-        <h3 className="text-sm font-bold text-foreground tracking-tight flex items-center gap-2">
-          <Box className="h-4 w-4 text-primary" />
-          Declared Containers & Deployable Units ({data.components.length})
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      {/* Container Cards List & Prominent Section Divider */}
+      <div className="pt-12 mt-10 border-t-2 border-border/80 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
+          <div className="space-y-1">
+            <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
+              <Box className="h-6 w-6 text-primary shrink-0" />
+              <span>Declared Containers & Deployable Units</span>
+              <Badge variant="outline" className="text-xs font-mono px-2 py-0.5">
+                {data.components.length} Containers
+              </Badge>
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              C4 Level 2 architectural boundaries, runtime environments, and deployable service packages
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {data.components.map((comp) => (
             <Card
               key={comp.id}
-              className="hover:border-primary/50 transition-all p-4 space-y-3 group flex flex-col justify-between"
+              className="hover:border-primary/50 transition-all p-5 space-y-3.5 group flex flex-col justify-between border border-border/80 bg-card rounded-2xl"
             >
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -525,7 +535,7 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
                   {comp.responsibility || comp.summary || "Core system container"}
                 </p>
               </div>
-              <div className="pt-2 flex items-center justify-between gap-2 border-t border-border/50 text-[11px]">
+              <div className="pt-3.5 flex items-center justify-between gap-2 border-t-2 border-border/80 text-[11px]">
                 <button
                   onClick={() => drillDownToContainer(comp.id)}
                   className="flex-1 py-1.5 px-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"

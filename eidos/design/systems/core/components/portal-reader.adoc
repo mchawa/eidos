@@ -9,23 +9,18 @@ category: content
 
 variants:
   - name: "focused-prose"
-    description: "Constrained 72ch reading measure optimized for deep narrative comprehension with sticky right-hand outline navigation."
-  - name: "full-width"
-    description: "Expanded viewport utilizing maximum available stage width for wide architectural tables and C4 diagrams."
-  - name: "raw-source"
-    description: "Monospace view presenting raw AsciiDoc source markup and YAML frontmatter."
+    description: "Expansive reading stage with optimal reading typography (max-w-4xl xl:max-w-5xl) and sticky right-hand outline navigation inside an enlarged modal window (max-w-[94vw] 2xl:max-w-[1550px])."
+  - name: "high-contrast-dark"
+    description: "High-contrast dark mode neutral zinc palette with elevated cards (#121215) and crisp structural borders (#27272a)."
 
 states:
   - default
   - section_active
-  - raw_mode
-  - font_scaled_large
-  - font_scaled_compact
 
 accessibility:
   wcag_level: "AA"
   aria_role: "article"
-  keyboard_nav: "Tab and Shift+Tab traverse reading controls and section anchors; Enter navigates via sticky Table of Contents."
+  keyboard_nav: "Tab and Shift+Tab traverse section anchors and interactive code blocks; Enter navigates via sticky Table of Contents."
 
 test_bindings:
   unit_test: "tests/test_portal.py::test_portal_reading_ergonomics"
@@ -35,14 +30,15 @@ test_bindings:
 
 == 1. Component Purpose & Reading Ergonomics
 The Portal Living Specification Reader (`UIC-PORTAL-READER`) establishes the reading-friendly stage for long-form technical documentation across the Eidos Living Web Portal:
-* **Optimal Reading Measure**: Bounded to `72ch` (`max-w-3xl`) to minimize ocular fatigue during extended architectural study.
+* **Expansive Stage & Optimal Measure**: Renders within an enlarged modal dialog (`max-w-[94vw] 2xl:max-w-[1550px] h-[95vh]`) with optimal line length (`max-w-4xl xl:max-w-5xl`) to prevent ocular fatigue while utilizing modern wide displays.
 * **Typographic Hierarchy**: Distinct, readable type sizes based on `DS-CORE` tokens:
-  - Title (H1): `30px` bold with tracking-tight.
-  - Section Headings (H2): `22px` bold with top breathing room and hoverable anchor links.
-  - Subsection Headings (H3): `18px` semibold.
-  - Body Copy: `15px`–`16px` with relaxed `1.75` line-height.
-  - Code Snippets: `13.5px` monospace with syntax highlighting and one-click copy.
+  - Title (H1): `26px`–`30px` bold with tracking-tight.
+  - Section Headings (H2): `20px`–`24px` bold with top breathing room and hoverable anchor links.
+  - Subsection Headings (H3): `18px` semibold with visual hierarchy.
+  - Body Copy: `15.5px`–`16px` with relaxed `1.8` line-height.
+  - Code Snippets: `13px` monospace with syntax styling and one-click copy.
 * **Human-Centric Specification Header**: Replaces raw JSON frontmatter dumps with clean status badges, bound invariants (`INV-*`), personas, and a collapsible metadata drawer.
+* **High-Contrast Dark Theme**: Clean neutral zinc surfaces (`#121215`), elevated popovers (`#18181b`), readable muted foregrounds (`#a1a1aa`), and distinct borders (`#27272a`) ensuring effortless legibility comparable to light mode.
 
 == 2. Dynamic Table of Contents (TOC) & On-This-Page Navigation
 For multi-section specifications with two or more H2 headings:
@@ -50,9 +46,8 @@ For multi-section specifications with two or more H2 headings:
 * Real-time scroll-spy tracks reading progress and highlights the current section.
 * Clicking any outline entry smoothly scrolls the viewport to the target heading anchor.
 
-== 3. Reader Control Affordances
-A sleek top toolbar equips readers with ergonomic preferences:
-* **Font Scaler**: Instant switching between `Compact` (14px), `Comfortable` (16px), and `Large` (18px) reading sizes.
-* **Reading Measure Switcher**: Toggle between `Prose Measure (72ch)` and `Full Width`.
-* **View Mode**: Seamless toggle between `Rendered Prose` and `Raw AsciiDoc`.
-* **Copy Section Link**: Hovering over any section heading reveals an anchor link button for instant permalink sharing.
+== 3. Optimal Reading Ergonomics
+To maximize cognitive focus and remove interface clutter, the reader eliminates redundant view-mode and font-scaling toggles in favor of carefully balanced defaults:
+* **Always-Rendered Clean Prose**: Always presents the rendered specification document directly.
+* **Locked Optimal Typography**: Standardizes on the ideal reading line-height and font size.
+* **Section Permalinks**: Hovering over any section heading reveals an anchor link button for instant permalink copying.

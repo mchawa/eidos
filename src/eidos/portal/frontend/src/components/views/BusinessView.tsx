@@ -293,21 +293,23 @@ export function BusinessView({ data }: BusinessViewProps) {
 
       {/* SECTION 1: SYSTEM GOVERNANCE POLICIES (POL-*) */}
       {(filterCategory === "all" || filterCategory === "policies") && (
-        <div id="businessPoliciesSection" className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-foreground tracking-tight flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-blue-500" />
-              <span>System Governance & Invariant Policies (`POL-*`)</span>
-              <Badge variant="outline" className="text-[10px] font-mono">
-                {filteredPolicies.length} Active
-              </Badge>
-            </h3>
-            <span className="text-xs text-muted-foreground hidden sm:inline">
-              Mandatory quality gates and zero-drift invariants
-            </span>
+        <div id="businessPoliciesSection" className="space-y-6 pt-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
+            <div className="space-y-1">
+              <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
+                <ShieldCheck className="h-6 w-6 text-blue-500 shrink-0" />
+                <span>System Governance & Invariant Policies (`POL-*`)</span>
+                <Badge variant="outline" className="text-xs font-mono px-2 py-0.5">
+                  {filteredPolicies.length} Active
+                </Badge>
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Mandatory quality gates, compliance constraints, and zero-drift invariants
+              </p>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {filteredPolicies.map((pol) => {
               const boundCapabilities = capabilities.filter((c) =>
                 c.business?.policies?.some((pRef) => pRef.includes(pol.id))
@@ -316,66 +318,76 @@ export function BusinessView({ data }: BusinessViewProps) {
               return (
                 <Card
                   key={pol.id}
-                  onClick={() => setSelectedEntity({ type: "policy", item: pol })}
-                  className="p-6 sm:p-7 space-y-4 cursor-pointer hover:border-primary/60 hover:shadow-lg transition-all duration-200 group border border-border/80 bg-card rounded-2xl relative overflow-hidden"
+                  className="p-5 sm:p-6 space-y-4 border border-border/80 bg-card hover:border-primary/40 transition-colors shadow-xs"
                 >
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-full pointer-events-none group-hover:bg-primary/10 transition-colors" />
-
-                  {/* Policy Header */}
+                  {/* Policy Header - Identical to Domain Card */}
                   <div className="flex items-start justify-between gap-3">
-                    <span className="font-mono text-xs sm:text-sm font-bold text-primary px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/25">
-                      {pol.id}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-xs font-semibold uppercase px-2 py-0.5">
-                        {pol.category}
-                      </Badge>
-                      {pol.enforcement?.severity && (
-                        <span className="px-2 py-0.5 rounded-md text-xs font-mono font-bold uppercase bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center gap-1.5">
-                          <Lock className="h-3 w-3" />
-                          {pol.enforcement.severity}
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-primary">
+                          {pol.id}
                         </span>
-                      )}
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] uppercase font-semibold bg-blue-500/10 text-blue-400 border-blue-500/20"
+                        >
+                          {pol.category}
+                        </Badge>
+                        {pol.enforcement?.severity && (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center gap-1">
+                            <Lock className="h-2.5 w-2.5" />
+                            {pol.enforcement.severity}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-base font-bold text-foreground">
+                        {pol.title}
+                      </h3>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEntity({ type: "policy", item: pol })}
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-muted/60 hover:bg-muted text-foreground transition-colors cursor-pointer shrink-0 flex items-center gap-1"
+                    >
+                      <span>Inspect Policy</span>
+                      <ChevronRight className="h-3 w-3" />
+                    </button>
                   </div>
 
-                  {/* Title */}
-                  <h4 className="text-base sm:text-lg font-bold text-foreground leading-snug group-hover:text-primary transition-colors">
-                    {pol.title}
-                  </h4>
-
                   {/* Invariant Rule Callout */}
-                  <div className="p-4 rounded-xl bg-muted/50 dark:bg-muted/30 border-l-4 border-l-primary border border-border/60 space-y-1">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-primary block">
-                      Invariant Rule
-                    </span>
-                    <p className="text-sm sm:text-[15px] font-medium text-foreground leading-relaxed">
+                  <div className="p-3.5 rounded-xl border border-border/80 bg-muted/20 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      <ShieldCheck className="h-3.5 w-3.5 text-blue-400" />
+                      <span>Invariant Rule</span>
+                    </div>
+                    <p className="text-xs sm:text-sm font-medium text-foreground leading-relaxed">
                       "{pol.rule}"
                     </p>
                   </div>
 
                   {/* Enforcement Mechanism */}
                   {pol.enforcement?.mechanism && (
-                    <div className="space-y-1 pt-1">
-                      <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
+                    <div className="space-y-1 text-xs">
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                        <Lock className="h-2.5 w-2.5" />
                         Enforcement Gate
                       </span>
-                      <p className="text-xs sm:text-sm text-foreground/80 leading-relaxed">
+                      <p className="text-xs text-muted-foreground leading-relaxed font-mono">
                         {pol.enforcement.mechanism}
                       </p>
                     </div>
                   )}
 
-                  {/* Card Footer */}
-                  <div className="pt-3 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
-                    <span className="text-xs font-mono text-muted-foreground">
+                  {/* Card Footer / Bound Capabilities */}
+                  <div className="pt-3.5 border-t-2 border-border/80 flex items-center justify-between text-xs text-muted-foreground">
+                    <span className="text-[11px] font-mono text-muted-foreground">
                       {boundCapabilities.length > 0
-                        ? `${boundCapabilities.length} bound capability`
+                        ? `${boundCapabilities.length} bound capability(ies)`
                         : "System-wide Governance Policy"}
                     </span>
-                    <span className="text-primary text-xs sm:text-sm font-semibold flex items-center gap-1.5 group-hover:translate-x-1 transition-transform">
-                      <span>Inspect Policy</span>
-                      <ArrowRight className="h-3.5 w-3.5" />
+                    <span className="text-[10px] font-mono text-muted-foreground">
+                      Scope: {pol.enforcement?.scope || "Global"}
                     </span>
                   </div>
                 </Card>
@@ -387,21 +399,23 @@ export function BusinessView({ data }: BusinessViewProps) {
 
       {/* SECTION 2: BOUNDED PRODUCT DOMAINS & CAPABILITIES (DOM-* & CAP-*) */}
       {(filterCategory === "all" || filterCategory === "domains") && (
-        <div id="businessDomainsSection" className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-foreground tracking-tight flex items-center gap-2">
-              <Briefcase className="h-4 w-4 text-primary" />
-              <span>Bounded Product Domains & Capabilities (`DOM-*`, `CAP-*`)</span>
-              <Badge variant="outline" className="text-[10px] font-mono">
-                {filteredDomains.length} Domains
-              </Badge>
-            </h3>
-            <span className="text-xs text-muted-foreground hidden sm:inline">
-              Click any domain or capability card to inspect its living specification
-            </span>
+        <div id="businessDomainsSection" className="space-y-6 pt-12 mt-12 border-t-2 border-border/80">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
+            <div className="space-y-1">
+              <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
+                <Briefcase className="h-6 w-6 text-primary shrink-0" />
+                <span>Bounded Product Domains & Capabilities (`DOM-*`, `CAP-*`)</span>
+                <Badge variant="outline" className="text-xs font-mono px-2 py-0.5">
+                  {filteredDomains.length} Domains
+                </Badge>
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Domain-Driven Design bounded contexts, product capabilities, and contract specifications
+              </p>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {filteredDomains.map((dom) => {
               const domCaps = capabilities.filter(
                 (c) => c.domain === dom.id || dom.capabilities?.includes(c.id)
@@ -410,7 +424,7 @@ export function BusinessView({ data }: BusinessViewProps) {
               return (
                 <Card
                   key={dom.id}
-                  className="p-5 space-y-4 border border-border/80 bg-card hover:border-primary/40 transition-colors shadow-xs"
+                  className="p-5 sm:p-6 space-y-4 border border-border/80 bg-card hover:border-primary/40 transition-colors shadow-xs"
                 >
                   {/* Domain Header */}
                   <div className="flex items-start justify-between gap-3">
@@ -472,7 +486,7 @@ export function BusinessView({ data }: BusinessViewProps) {
                   )}
 
                   {/* Bound Capabilities Sub-List */}
-                  <div className="space-y-2 pt-2 border-t border-border/60">
+                  <div className="space-y-2 pt-3.5 border-t-2 border-border/80">
                     <div className="flex items-center justify-between">
                       <h4 className="text-[11px] font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                         <Layers className="h-3 w-3 text-emerald-400" />
@@ -547,26 +561,28 @@ export function BusinessView({ data }: BusinessViewProps) {
 
       {/* SECTION 3: TARGET ACTOR PERSONAS (PER-*) */}
       {(filterCategory === "all" || filterCategory === "personas") && (
-        <div id="businessPersonasSection" className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-foreground tracking-tight flex items-center gap-2">
-              <UserCheck className="h-4 w-4 text-purple-400" />
-              <span>Target Actor Personas (`PER-*`)</span>
-              <Badge variant="outline" className="text-[10px] font-mono">
-                {filteredPersonas.length} Personas
-              </Badge>
-            </h3>
-            <span className="text-xs text-muted-foreground hidden sm:inline">
-              Human stakeholders and autonomous AI agents
-            </span>
+        <div id="businessPersonasSection" className="space-y-6 pt-12 mt-12 border-t-2 border-border/80">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
+            <div className="space-y-1">
+              <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
+                <UserCheck className="h-6 w-6 text-purple-400 shrink-0" />
+                <span>Target Actor Personas (`PER-*`)</span>
+                <Badge variant="outline" className="text-xs font-mono px-2 py-0.5">
+                  {filteredPersonas.length} Personas
+                </Badge>
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Human stakeholders, developer personas, and autonomous AI agents
+              </p>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {filteredPersonas.map((per) => (
               <Card
                 key={per.id}
                 onClick={() => setSelectedEntity({ type: "persona", item: per })}
-                className="p-5 space-y-3 cursor-pointer hover:border-purple-400/60 hover:shadow-lg transition-all duration-150 group border border-border/80 bg-card"
+                className="p-5 sm:p-6 space-y-4 cursor-pointer hover:border-purple-400/60 hover:shadow-lg transition-all duration-150 group border border-border/80 bg-card rounded-2xl"
               >
                 <div className="flex items-center justify-between">
                   <span className="font-mono text-xs font-bold text-purple-400 group-hover:underline">

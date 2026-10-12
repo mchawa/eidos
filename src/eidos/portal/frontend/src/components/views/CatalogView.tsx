@@ -80,7 +80,7 @@ const SPEC_CATEGORIES: SpecCategoryDefinition[] = [
   },
   {
     id: "architecture",
-    name: "C4 Architecture & Technology",
+    name: "Architecture & Technology",
     description: "System Arc42 topology, C4 containers, and interface contracts",
     icon: Network,
     color: "text-blue-500",

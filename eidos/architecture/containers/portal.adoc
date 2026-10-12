@@ -24,7 +24,7 @@ components:
     source_path: "src/eidos/portal/builder.py"
   - id: CMP-PORTAL-ASSETS
     name: "PortalAssets"
-    responsibility: "Delivers pre-compiled single-file React 19 / Tailwind CSS v4 / Material Design 3 (MD3) SPA with reading-friendly specification reader stage (UIC-PORTAL-READER), dynamic Table of Contents (TOC) outlines, collapsible Navigation Rail, C4 pan/zoom viewer, SpecDelta Kanban board, and CMD+K spotlight search."
+    responsibility: "Delivers pre-compiled single-file React 19 / Tailwind CSS v4 / Material Design 3 (MD3) SPA with high-contrast dark theme, reading-friendly specification reader stage (UIC-PORTAL-READER), dynamic Table of Contents (TOC) outlines, collapsible Navigation Rail, C4 pan/zoom viewer, SpecDelta Kanban board, and CMD+K spotlight search."
     source_path: "src/eidos/portal/assets.py"
 
 dependencies:

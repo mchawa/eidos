@@ -63,6 +63,31 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
     return screens.find((s) => s.id === selectedScreenId) || screens[0];
   }, [screens, selectedScreenId]);
 
+  if (design_systems.length === 0 && clients.length === 0 && ui_components.length === 0 && screens.length === 0 && flows.length === 0) {
+    return (
+      <div className="space-y-6 animate-in fade-in duration-200">
+        <div className="p-8 sm:p-16 rounded-3xl bg-card border border-border/80 text-center space-y-4 md-elevation-1">
+          <div className="h-16 w-16 rounded-2xl bg-muted/60 border border-border flex items-center justify-center mx-auto text-muted-foreground">
+            <Palette className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <div className="space-y-2 max-w-lg mx-auto">
+            <h2 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight">
+              No Design Systems Configured
+            </h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              This repository does not have any design systems (`DS-*`), W3C design tokens (`tokens.json`), multi-client surfaces (`CLT-*`), or UI components configured in <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">eidos/design/</code>.
+            </p>
+          </div>
+          <div className="pt-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-muted/40 border border-border/60 text-xs text-muted-foreground font-mono">
+              <span>Directory: eidos/design/systems/</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Compatibility methods for test assertions
   const handleDesignClientSwitch = (clientId: string) => {
     setSelectedClientId(clientId);
@@ -146,9 +171,15 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
               <h2 className="text-base font-bold text-foreground tracking-tight">
                 Design Systems & Multi-Client Surfaces
               </h2>
-              <Badge variant="outline" className="text-[10px] font-mono border-primary/40 text-primary">
-                W3C DTCG
-              </Badge>
+              {design_systems.length > 0 ? (
+                <Badge variant="outline" className="text-[10px] font-mono border-primary/40 text-primary">
+                  W3C DTCG
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px] font-mono border-amber-500/40 text-amber-500 bg-amber-500/10">
+                  No Design Systems Configured
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
               Living design tokens, multi-client experience surfaces (`CLT-*`), UI components (`UIC-*`), screen state machines (`SCR-*`), and omnichannel flows (`FLOW-*`).
@@ -179,6 +210,18 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
             </div>
           </div>
         </div>
+
+        {design_systems.length === 0 && (
+          <div className="mt-4 p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-start gap-2.5 text-xs">
+            <Palette className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />
+            <div className="space-y-0.5">
+              <span className="font-bold">No Design Systems Configured</span>
+              <p className="text-muted-foreground text-[11px]">
+                No active design system specification (`DS-*`) or W3C token repository found in <code className="font-mono bg-background/50 px-1 py-0.5 rounded">eidos/design/systems/</code>.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* View Sub-Tabs */}
         <div className="flex items-center gap-1 mt-4 pt-3 border-t border-border/60 overflow-x-auto no-scrollbar">
@@ -220,16 +263,38 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
               <Palette className="h-4 w-4 text-primary" />
               W3C DTCG Living Design Tokens Studio (`tokens.json`)
             </h3>
-            {activeDS && (
+            {activeDS ? (
               <div className="flex items-center gap-2 text-xs">
                 <span className="font-mono text-muted-foreground">{activeDS.id}</span>
                 <span className="text-border">|</span>
                 <span className="text-muted-foreground font-medium">{activeDS.brand_name || activeDS.title}</span>
               </div>
+            ) : (
+              <Badge variant="outline" className="text-xs font-mono text-muted-foreground">
+                No Design System
+              </Badge>
             )}
           </div>
 
-          <Card className="p-5 space-y-6">
+          {!activeDS ? (
+            <Card className="p-8 sm:p-12 text-center border border-dashed border-border/80 bg-card/50 rounded-2xl space-y-4">
+              <div className="h-12 w-12 rounded-2xl bg-muted/60 border border-border flex items-center justify-center mx-auto text-muted-foreground">
+                <Palette className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <div className="space-y-1.5 max-w-md mx-auto">
+                <h4 className="text-base sm:text-lg font-bold text-foreground">No Design Systems Configured</h4>
+                <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                  No living W3C DTCG design tokens or design system specifications (`DS-*`) were found in <code className="font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded">eidos/design/systems/</code>.
+                </p>
+              </div>
+              <div className="pt-1">
+                <p className="text-xs text-muted-foreground">
+                  To configure a design system, declare a specification and <code className="font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded">tokens.json</code> under <code className="font-mono text-[11px] bg-muted px-1.5 py-0.5 rounded">eidos/design/systems/&lt;name&gt;/</code>.
+                </p>
+              </div>
+            </Card>
+          ) : (
+            <Card className="p-5 space-y-6">
             {/* Preserved id="tokenSwatchesGrid" for tests & automated hooks */}
             <div>
               <div className="flex items-center justify-between mb-3">
@@ -392,6 +457,7 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
               </div>
             </div>
           </Card>
+          )}
         </div>
       )}
 

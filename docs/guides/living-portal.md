@@ -1,6 +1,6 @@
-# Living Architecture Portal
+# Eidos Portal
 
-The **Living Architecture Portal** is an interactive, visual web application generated directly from your living specifications.
+The **Eidos Portal** is an interactive, visual web application generated directly from your living specifications.
 
 Structured around a responsive left sidebar, the portal organizes your architecture into a logical information flow:
 

@@ -49,7 +49,7 @@ quality_attributes:
 :toc: left
 
 == Architectural Boundary
-This container represents the public documentation site under `docs/` and its build pipeline configured by `zensical.toml`. It publishes comprehensive guides, conceptual frameworks, schema glossaries, and CLI references to GitHub Pages (`https://mchawa.github.io/eidos/`), while embedding the Living Architecture Portal (`site/portal/`).
+This container represents the public documentation site under `docs/` and its build pipeline configured by `zensical.toml`. It publishes comprehensive guides, conceptual frameworks, schema glossaries, and CLI references to GitHub Pages (`https://mchawa.github.io/eidos/`), while embedding the Eidos Living Portal (`site/portal/`).
 
 == Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
 

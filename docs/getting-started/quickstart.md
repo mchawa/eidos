@@ -67,7 +67,7 @@ Success! All specification documents are valid.
 
 ## Step 3: Launch the Interactive Living Portal
 
-Eidos includes a built-in local development server that compiles your living specifications into a visual C4 architecture portal:
+Eidos includes a built-in local development server that compiles your living specifications into the interactive Eidos Portal:
 
 ```bash
 # Using namespaced command:

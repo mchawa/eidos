@@ -27,6 +27,8 @@ states:
     description: "Skeleton loader displayed during tokens and component extraction."
   - name: "active"
     description: "Interactive tokens studio, UI component inventory, client switcher, interaction flows, and screen state machine visualizer."
+  - name: "empty"
+    description: "Graceful empty state displayed when no design systems (DS-*) or W3C DTCG design tokens are configured in the repository."
   - name: "error"
     description: "Alert state when tokens or design specifications fail validation."
 ---
@@ -36,6 +38,7 @@ states:
 == 1. View Purpose & Design Scope
 The Design Systems View (`SCR-PORTAL-DESIGN`) connects business capabilities with the visual user experience:
 * **Client Applications & Multi-Experience (CLT-*)**: Interactive client switcher (`designClientSelect`), client container bindings, and scoped screen topologies.
+* **Empty State Resilience**: Gracefully handles repositories with zero configured design systems by displaying an informational banner and clean onboarding card instead of empty token swatches.
 * **Interaction Flows (FLOW-*)**: Client-internal journeys (`FLOW-PORTAL-EXPLORATION`) and cross-client omnichannel flows (`FLOW-CLI-SERVE-AND-BROWSE`) with dynamic Mermaid diagrams.
 * **Multi-Design Systems Catalog (DS-*)**: Registered design systems, base inheritance, and client brand overrides.
 * **W3C DTCG Tokens Studio**: Visual swatches for brand palettes, neutral surfaces, functional feedback colors, spacing scales, and typography.

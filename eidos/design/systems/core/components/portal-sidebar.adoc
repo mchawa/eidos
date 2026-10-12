@@ -53,5 +53,6 @@ The sidebar supports both full-width (`256px` / `w-64`) and icon-only collapsed 
 * **State Persistence**: The user's preference is automatically saved to browser `localStorage.getItem('eidos_sidebar_collapsed')` and restored prior to paint to prevent layout flicker.
 
 == 4. Iconography & Typography Specification
+* **The Eidos Brand Mark**: Features the Eidos Form — a single continuous isometric impossible polygon skeleton (`M 16,3 L 27.3,9.5 L 19,14.2 L 27.3,22.5 L 16,29 L 16,19.5 L 4.7,22.5 L 4.7,9.5 L 13,14.3 Z`) rendered with an electric cyan-to-purple gradient (`#38bdf8` → `#6366f1` → `#a855f7`) at `strokeWidth="2.2"` with rounded joins and subtle translucent fill.
 * **Typography**: Powered by the living `DS-CORE` design tokens (`Geist` UI sans-serif, `Geist Mono` for codes and IDs) with high-legibility sizing (`15px` navigation labels, `13px` captions).
-* **Vector Iconography**: Clear 20px vector icons with 2px stroke weight (`Home`, `Briefcase`, `Network`, `GitBranch`, `Lightbulb`, `Layers`, `Palette`) ensuring crisp high-DPI rendering and dynamic CSS color inheritance across dark and light themes.
+* **Vector Iconography**: Clear 20px vector icons with 2px stroke weight (`Home`, `Briefcase`, `Network`, `GitBranch`, `Lightbulb`, `Layers`, `Palette`) ensuring crisp high-DPI rendering and dynamic CSS color inheritance across dark and light themes. Sized consistently across expanded and collapsed states.
