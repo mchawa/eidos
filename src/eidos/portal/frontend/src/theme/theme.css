@@ -255,7 +255,21 @@ html, body {
   background: var(--muted-foreground);
 }
 
-/* C4 Interactive Diagram Node Styles */
+/* C4 Interactive Diagram Viewport & Pan */
+#c4DiagramContainer {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+#c4DiagramContainer:active {
+  cursor: grabbing;
+}
+#c4ActiveDiagram svg {
+  max-width: none !important;
+  display: block;
+  user-select: none;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.12));
+}
 #c4ActiveDiagram .node,
 #c4ActiveDiagram .cluster {
   cursor: pointer !important;

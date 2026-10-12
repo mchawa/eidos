@@ -11,11 +11,16 @@ import {
   FileCode,
   ShieldCheck,
   ChevronRight,
+  Maximize2,
+  Expand,
+  Shrink,
+  Move,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 import type { PortalData, SpecComponent } from "@/types";
 
 export interface ArchitectureViewProps {
@@ -29,10 +34,90 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
     data.components[0]?.id || "CNT-EIDOS-CORE"
   );
   const [zoom, setZoom] = React.useState<number>(1);
+  const [pan, setPan] = React.useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isExpanded, setIsExpanded] = React.useState<boolean>(false);
   const [inspectorOpen, setInspectorOpen] = React.useState<boolean>(false);
   const [inspectedComponent, setInspectedComponent] = React.useState<SpecComponent | null>(null);
 
+  const containerRef = React.useRef<HTMLDivElement>(null);
   const diagramRef = React.useRef<HTMLDivElement>(null);
+  const isDraggingRef = React.useRef(false);
+  const dragStartRef = React.useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+  const hasMovedRef = React.useRef(false);
+
+  // Auto-fit diagram to compute optimal, crisp zoom level
+  const autoFitDiagram = React.useCallback(() => {
+    if (!diagramRef.current || !containerRef.current) return;
+    const svgEl = diagramRef.current.querySelector("svg");
+    if (!svgEl) return;
+
+    let svgWidth = 0;
+    let svgHeight = 0;
+
+    if (svgEl.viewBox && svgEl.viewBox.baseVal && svgEl.viewBox.baseVal.width > 0) {
+      svgWidth = svgEl.viewBox.baseVal.width;
+      svgHeight = svgEl.viewBox.baseVal.height;
+    } else {
+      const bbox = svgEl.getBBox();
+      svgWidth = bbox.width;
+      svgHeight = bbox.height;
+    }
+
+    if (svgWidth === 0 || svgHeight === 0) {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+
+    const containerWidth = containerRef.current.clientWidth - 80;
+    const containerHeight = containerRef.current.clientHeight - 80;
+
+    const scaleX = containerWidth / svgWidth;
+    const scaleY = containerHeight / svgHeight;
+    const optimalScale = Math.min(scaleX, scaleY);
+
+    // Clamp to optimal readable zoom range (min 0.80 so text is always crisp, max 1.25)
+    const clampedZoom = Math.min(Math.max(Number(optimalScale.toFixed(2)), 0.80), 1.25);
+    setZoom(clampedZoom);
+    setPan({ x: 0, y: 0 });
+  }, []);
+
+  // Drag & Pan Event Handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    isDraggingRef.current = true;
+    hasMovedRef.current = false;
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      panX: pan.x,
+      panY: pan.y,
+    };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDraggingRef.current) return;
+    const dx = e.clientX - dragStartRef.current.x;
+    const dy = e.clientY - dragStartRef.current.y;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+      hasMovedRef.current = true;
+    }
+    setPan({
+      x: dragStartRef.current.panX + dx,
+      y: dragStartRef.current.panY + dy,
+    });
+  };
+
+  const handleMouseUp = () => {
+    isDraggingRef.current = false;
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    // Zoom with scroll wheel
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.1 : -0.1;
+    setZoom((prev) => Math.min(3.0, Math.max(0.35, Number((prev + delta).toFixed(2)))));
+  };
 
   // Initialize mermaid and reconfigure when darkMode changes
   React.useEffect(() => {
@@ -183,6 +268,10 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
         if (!isCancelled && diagramRef.current) {
           diagramRef.current.innerHTML = svg;
           attachC4ClickHandlers();
+          // Automatically calculate and apply optimal readable zoom level
+          requestAnimationFrame(() => {
+            autoFitDiagram();
+          });
         }
       } catch (err) {
         if (!isCancelled && diagramRef.current) {
@@ -197,7 +286,7 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
     return () => {
       isCancelled = true;
     };
-  }, [currentDiagramSource, darkMode, level, selectedContainerId]);
+  }, [currentDiagramSource, darkMode, level, selectedContainerId, autoFitDiagram]);
 
   return (
     <div className="space-y-4 animate-in fade-in duration-200">
@@ -292,31 +381,51 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
           </div>
         )}
 
-        {/* Zoom Controls */}
+        {/* Advanced Zoom & Pan Controls */}
         <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-full border border-border/60">
           <button
-            onClick={() => setZoom((z) => Math.min(2.5, z + 0.15))}
+            onClick={() => setZoom((z) => Math.max(0.35, +(z - 0.15).toFixed(2)))}
             className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title="Zoom In"
-          >
-            <ZoomIn className="h-4 w-4" />
-          </button>
-          <span className="text-[11px] font-mono px-2 text-muted-foreground select-none">
-            {Math.round(zoom * 100)}%
-          </span>
-          <button
-            onClick={() => setZoom((z) => Math.max(0.4, z - 0.15))}
-            className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title="Zoom Out"
+            title="Zoom Out (-)"
           >
             <ZoomOut className="h-4 w-4" />
           </button>
+          <span className="text-[11px] font-mono px-2 text-muted-foreground select-none font-semibold min-w-[42px] text-center">
+            {Math.round(zoom * 100)}%
+          </span>
           <button
-            onClick={() => setZoom(1)}
+            onClick={() => setZoom((z) => Math.min(3.0, +(z + 0.15).toFixed(2)))}
             className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title="Reset Zoom"
+            title="Zoom In (+)"
+          >
+            <ZoomIn className="h-4 w-4" />
+          </button>
+          <button
+            onClick={autoFitDiagram}
+            className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+            title="Fit Diagram to Screen (Auto-zoom)"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => {
+              setZoom(1);
+              setPan({ x: 0, y: 0 });
+            }}
+            className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            title="Reset to 100% (1:1)"
           >
             <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => {
+              setIsExpanded((prev) => !prev);
+              setTimeout(autoFitDiagram, 150);
+            }}
+            className="p-1.5 rounded-full hover:bg-card text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            title={isExpanded ? "Collapse Viewport Height" : "Expand Viewport Height"}
+          >
+            {isExpanded ? <Shrink className="h-3.5 w-3.5" /> : <Expand className="h-3.5 w-3.5" />}
           </button>
         </div>
       </div>
@@ -331,18 +440,53 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
             {level === 3 && "Click peer containers to navigate, or internal modules to inspect details"}
           </span>
         </div>
-        <span className="text-[11px] text-muted-foreground font-mono hidden sm:inline">
-          {level === 1 ? "C4 Level 1: System Context" : level === 2 ? "C4 Level 2: Container Topology" : `C4 Level 3: Whitebox (${selectedContainerId})`}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-muted-foreground font-mono hidden sm:inline">
+            {level === 1 ? "C4 Level 1: System Context" : level === 2 ? "C4 Level 2: Container Topology" : `C4 Level 3: Whitebox (${selectedContainerId})`}
+          </span>
+        </div>
       </div>
 
-      {/* Main Diagram Viewport */}
-      <Card className="p-4 sm:p-6 min-h-[500px] flex items-center justify-center overflow-hidden bg-card/60 relative">
+      {/* Main Diagram Viewport Card with Drag-to-Pan */}
+      <Card
+        id="c4DiagramContainer"
+        ref={containerRef}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onWheel={handleWheel}
+        className={cn(
+          "p-4 sm:p-6 flex items-center justify-center overflow-hidden bg-card/60 relative select-none transition-all duration-200",
+          isExpanded ? "min-h-[760px]" : "min-h-[520px]"
+        )}
+      >
+        {/* Floating Pan & Zoom Hint */}
+        <div className="absolute bottom-3 left-3 z-20 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-background/80 backdrop-blur-md border border-border/80 text-[10px] text-muted-foreground font-mono">
+          <Move className="h-3 w-3 text-primary" />
+          <span>Drag to pan • Scroll to zoom</span>
+        </div>
+
+        {/* Floating Fit to View Quick Action */}
+        <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1">
+          <button
+            onClick={autoFitDiagram}
+            className="px-2.5 py-1 rounded-lg bg-background/80 hover:bg-background backdrop-blur-md border border-border/80 text-[11px] text-foreground font-medium flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+            title="Auto-fit Diagram"
+          >
+            <Maximize2 className="h-3 w-3 text-primary" />
+            <span>Fit to View</span>
+          </button>
+        </div>
+
         <div
           id="c4ActiveDiagram"
           ref={diagramRef}
-          style={{ transform: `scale(${zoom})`, transformOrigin: "center center" }}
-          className="transition-transform duration-150 ease-out max-w-full overflow-visible flex items-center justify-center"
+          style={{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: "center center",
+          }}
+          className="transition-transform duration-75 ease-out max-w-full flex items-center justify-center"
         />
       </Card>
 
