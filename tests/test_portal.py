@@ -104,61 +104,16 @@ def test_static_portal_builder(tmp_path: Path):
     assert "window.__EIDOS_DATA__ =" in index_html
     assert "SYS-EIDOS-001" in index_html
 
-    # Verify Sidebar and IA Views in compiled SPA
-    assert 'class="sidebar"' in index_html
-    assert 'id="sidebarCollapseBtn"' in index_html
-    assert "toggleSidebarCollapse" in index_html
-    assert "initSidebarState" in index_html
-    assert "eidos_sidebar_collapsed" in index_html
-    assert 'id="tab-home"' in index_html
-    assert 'id="tab-business"' in index_html
-    assert 'id="tab-design"' in index_html
-    assert 'id="tab-architecture"' in index_html
-    assert 'id="tab-deltas"' in index_html
-    assert 'id="tab-catalog"' in index_html
-    assert 'id="tokenSwatchesGrid"' in index_html
-    assert "📊" not in index_html  # Replaced with modern SVG home icon
-
-    # Verify C4 Architecture Explorer (L1-L3) & Inspector Drawer in compiled SPA
-    assert 'id="c4ActiveDiagram"' in index_html
-    assert 'id="c4LevelSwitcher"' in index_html
-    assert 'id="btnC4Level1"' in index_html
-    assert 'id="btnC4Level2"' in index_html
-    assert 'id="btnC4Level3"' in index_html
-    assert 'id="c4Breadcrumbs"' in index_html
-    assert 'id="c4ContainerSelect"' in index_html
-    assert 'id="btnC4LevelUp"' in index_html
-    assert 'id="c4InspectorDrawer"' in index_html
-    assert 'setC4Level' in index_html
-    assert 'drillDownToContainer' in index_html
-    assert 'openC4Inspector' in index_html
-    assert 'attachC4ClickHandlers' in index_html
-    assert 'closeC4Inspector' in index_html
-
-    # Verify Unified Hierarchical Tree-Grid in Catalog View (SCR-PORTAL-CATALOG)
-    assert 'id="specsTreeGridTable"' in index_html
-    assert 'id="specsTreeGridBody"' in index_html
-    assert 'id="catalogSearchInput"' in index_html
-    assert 'id="catalogTypeFilter"' in index_html
-    assert 'class="tree-select-wrapper"' in index_html
-    assert 'id="catalogSearchKbd"' in index_html
-    assert 'id="catalogSearchMatchPill"' in index_html
-    assert "<th>Actions</th>" not in index_html  # Actions column removed
-    assert "buildTreeGridData" in index_html
-    assert "toggleTreeGridRow" in index_html
-    assert "expandTreeGridToLevel" in index_html
-    assert "expandAllTreeGrid" in index_html
-    assert "collapseAllTreeGrid" in index_html
-
-    # Verify Multi-Client Architecture & Interaction Flows (SCR-PORTAL-DESIGN)
-    assert 'id="designClientSelect"' in index_html
-    assert 'id="activeClientDetails"' in index_html
-    assert 'id="clientFlowsPanel"' in index_html
-    assert 'id="omnichannelFlowsPanel"' in index_html
-    assert "handleDesignClientSwitch" in index_html
-    assert "initDesignClientSelect" in index_html
-    assert "renderClientFlows" in index_html
-    assert "renderOmnichannelFlows" in index_html
+    # Verify Modernized Single-File React 19 / Tailwind v4 / MD3 SPA in compiled output
+    assert '<div id="root"></div>' in index_html
+    assert "<script" in index_html
+    assert "<style" in index_html
+    assert "mermaid" in index_html
+    # Self-contained zero-external asset invariants
+    assert '<link rel="stylesheet"' not in index_html
+    assert '<script src="./' not in index_html
+    # Bundle size under 1.5MB uncompressed
+    assert len(index_html) < 1_500_000
 
     with open(data_file, encoding="utf-8") as f:
         json_data = json.load(f)

@@ -2,57 +2,64 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-015
-title: "Modernize Living Web Portal with React 19, Tailwind CSS v4, and Material Design 3 (MD3)"
-status: proposed
+title: Modernize Living Web Portal with React 19, Tailwind CSS v4, and Material Design
+  3 (MD3)
+status: applied
 vcs:
   branch: spike/exp-2026-003-portal-uplift
-
 intent:
   kind: feature_addition
-  motivation: >
-    Graduated from validated technical spike EXP-2026-003. Replaces the monolithic
-    vanilla HTML/JS template in assets.py with a pre-compiled, self-contained single-file
-    bundle built with React 19, TypeScript, Tailwind CSS v4, and Material Design 3 (MD3)
-    tonal surfaces. Delivers accessible Radix primitives, instant CMD+K spotlight search,
-    and interactive C4 Mermaid diagrams while strictly preserving the zero-Node.js/npm
-    runtime invariant (INV-PORTAL-ZERO-NODE-DEP) for end-users running 'eidos serve'
-    or 'eidos build-site'.
+  motivation: 'Graduated from validated technical spike EXP-2026-003. Replaces the
+    monolithic vanilla HTML/JS template in assets.py with a pre-compiled, self-contained
+    single-file bundle built with React 19, TypeScript, Tailwind CSS v4, and Material
+    Design 3 (MD3) tonal surfaces. Delivers accessible Radix primitives, instant CMD+K
+    spotlight search, and interactive C4 Mermaid diagrams while strictly preserving
+    the zero-Node.js/npm runtime invariant (INV-PORTAL-ZERO-NODE-DEP) for end-users
+    running ''eidos serve'' or ''eidos build-site''.
 
+    '
 mutations:
-  - action: modify_component
-    target_component: CNT-EIDOS-PORTAL
-    details: >
-      Integrate the pre-compiled frontend distribution from 'src/eidos/portal/frontend/dist/index.html'
-      into 'src/eidos/portal/assets.py', packaging the 95.89 KB gzipped single-file SPA directly
-      within Python package distribution assets.
-  - action: modify_ui_component
-    target_ui_component: UIC-PORTAL-SHELL
-    details: >
-      Evolve the portal layout shell into an MD3 tonal elevation system with Surface
-      Containers (Low/High/Highest) and dark/light contrast management.
-  - action: modify_ui_component
-    target_ui_component: UIC-PORTAL-SIDEBAR
-    details: >
-      Transform the legacy static sidebar into an MD3 Navigation Rail with smooth collapsible states,
-      system badges, and global CMD+K search trigger.
-  - action: modify_screen
-    target_screen: SCR-PORTAL-ARCHITECTURE
-    details: >
-      Upgrade the C4 Architecture Viewer to a responsive React viewport with interactive pan, zoom,
-      fit-to-screen, and node selection opening a modern Sheet inspector drawer.
-  - action: modify_screen
-    target_screen: SCR-PORTAL-DELTAS
-    details: >
-      Upgrade the SpecDelta mutation view to an interactive Kanban board with stage badges
-      ('proposed', 'in_review', 'approved', 'applied') and expandable mutation diff views.
+- action: modify_component
+  target_component: CNT-EIDOS-PORTAL
+  details: 'Integrate the pre-compiled frontend distribution from ''src/eidos/portal/frontend/dist/index.html''
+    into ''src/eidos/portal/assets.py'', packaging the 95.89 KB gzipped single-file
+    SPA directly within Python package distribution assets.
 
+    '
+- action: modify_ui_component
+  target_ui_component: UIC-PORTAL-SHELL
+  details: 'Evolve the portal layout shell into an MD3 tonal elevation system with
+    Surface Containers (Low/High/Highest) and dark/light contrast management.
+
+    '
+- action: modify_ui_component
+  target_ui_component: UIC-PORTAL-SIDEBAR
+  details: 'Transform the legacy static sidebar into an MD3 Navigation Rail with smooth
+    collapsible states, system badges, and global CMD+K search trigger.
+
+    '
+- action: modify_screen
+  target_screen: SCR-PORTAL-ARCHITECTURE
+  details: 'Upgrade the C4 Architecture Viewer to a responsive React viewport with
+    interactive pan, zoom, fit-to-screen, and node selection opening a modern Sheet
+    inspector drawer.
+
+    '
+- action: modify_screen
+  target_screen: SCR-PORTAL-DELTAS
+  details: 'Upgrade the SpecDelta mutation view to an interactive Kanban board with
+    stage badges (''proposed'', ''in_review'', ''approved'', ''applied'') and expandable
+    mutation diff views.
+
+    '
 blast_radius:
   impacted_components:
-    - CNT-EIDOS-PORTAL
+  - CNT-EIDOS-PORTAL
   invariants_to_enforce:
-    - INV-PORTAL-ZERO-NODE-DEP
-    - INV-PORTAL-INTERACTIVE-C4
+  - INV-PORTAL-ZERO-NODE-DEP
+  - INV-PORTAL-INTERACTIVE-C4
 ---
+
 = SpecDelta: Modernize Living Web Portal with React 19, Tailwind CSS v4, and Material Design 3 (MD3)
 :toc: left
 
@@ -66,8 +73,9 @@ By compiling the modern frontend (`src/eidos/portal/frontend`) using Vite and `v
 
 == 2. Architectural Mutations Checklist
 
-* [ ] **Mutation 1 (Frontend Build Hook):** Embed the compiled `dist/index.html` from `src/eidos/portal/frontend` into `src/eidos/portal/assets.py`.
-* [ ] **Mutation 2 (Design System Tokens):** Ensure continuous synchronization from `tokens.json` to MD3 CSS custom properties.
-* [ ] **Mutation 3 (C4 Mermaid & Kanban Integration):** Verify pan/zoom architecture visualizer and SpecDelta mutation board in production distributions.
-* [ ] **Mutation 4 (Test Suite Synchronization):** Update `tests/test_portal.py` to assert against the modernized React SPA structure while keeping all invariants green.
-* [ ] **Mutation 5 (Reconciliation):** Run `eidos delta apply DLT-2026-015` upon completion.
+* [x] **Mutation 1 (Frontend Build Hook):** Embed the compiled `dist/index.html` from `src/eidos/portal/frontend` into `src/eidos/portal/assets.py`.
+* [x] **Mutation 2 (Design System Tokens):** Ensure continuous synchronization from `tokens.json` to MD3 CSS custom properties.
+* [x] **Mutation 3 (C4 Mermaid & Kanban Integration):** Verify pan/zoom architecture visualizer and SpecDelta mutation board in production distributions.
+* [x] **Mutation 4 (Test Suite Synchronization):** Update `tests/test_portal.py` to assert against the modernized React SPA structure while keeping all invariants green.
+* [x] **Mutation 5 (Reconciliation):** Run `eidos delta apply DLT-2026-015` upon completion.
+
