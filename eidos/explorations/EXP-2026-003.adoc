@@ -3,7 +3,7 @@ type: product/exploration
 schema: schemas/v1/product/exploration.schema.yaml
 id: EXP-2026-003
 title: "Web Living Portal Modernization: shadcn/ui, Tailwind CSS & Material Design 3 (MD3) Design System Integration"
-status: proposed
+status: in_progress
 hypothesis: "Rebuilding the Eidos Living Web Portal UI layer (CLT-WEB-PORTAL / CMP-EIDOS-PORTAL) with a modern component architecture combining shadcn/ui accessible primitives, Tailwind CSS v4, and Material Design 3 (MD3) tonal elevation systems—while shipping pre-compiled, self-contained single-file bundles within Python package assets—will dramatically elevate visual polish, keyboard accessibility, and design token fidelity without violating INV-PORTAL-ZERO-NODE-DEP or introducing external runtime dependencies for CLI users."
 questions_to_answer:
   - "How can we adopt a modern React / Vite / Tailwind / shadcn/ui frontend stack while strictly preserving Eidos's zero-Node.js runtime invariant (INV-PORTAL-ZERO-NODE-DEP) for end-users running 'eidos serve' or 'eidos build-site'?"
