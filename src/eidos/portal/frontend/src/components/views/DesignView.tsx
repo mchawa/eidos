@@ -818,7 +818,8 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
                     id={`screen-${activeScreen.id}`}
                     code={activeScreen.mermaid}
                     darkMode={darkMode}
-                    minHeight="280px"
+                    minHeight="320px"
+                    expandedHeight="560px"
                   />
                 </div>
               )}
@@ -918,7 +919,8 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
                             id={`flow-${flow.id}`}
                             code={flow.mermaid}
                             darkMode={darkMode}
-                            minHeight="260px"
+                            minHeight="280px"
+                            expandedHeight="520px"
                           />
                         </div>
                       )}
@@ -1000,7 +1002,8 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
                           id={`omni-flow-${flow.id}`}
                           code={flow.mermaid}
                           darkMode={darkMode}
-                          minHeight="320px"
+                          minHeight="360px"
+                          expandedHeight="600px"
                         />
                       </div>
                     )}

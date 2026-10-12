@@ -64,10 +64,21 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
     }
 
     if (svgWidth === 0 || svgHeight === 0) {
-      setZoom(1);
+      setZoom(1.1);
       setPan({ x: 0, y: 0 });
       return;
     }
+
+    // Set SVG and diagramRef to natural dimensions so 1 unit = 1 physical px
+    svgEl.removeAttribute("width");
+    svgEl.removeAttribute("height");
+    svgEl.style.width = `${svgWidth}px`;
+    svgEl.style.height = `${svgHeight}px`;
+    svgEl.style.maxWidth = "none";
+    svgEl.style.maxHeight = "none";
+
+    diagramRef.current.style.width = `${svgWidth}px`;
+    diagramRef.current.style.height = `${svgHeight}px`;
 
     const containerWidth = containerRef.current.clientWidth - 80;
     const containerHeight = containerRef.current.clientHeight - 80;
@@ -76,8 +87,13 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
     const scaleY = containerHeight / svgHeight;
     const optimalScale = Math.min(scaleX, scaleY);
 
-    // Clamp to optimal readable zoom range (min 0.80 so text is always crisp, max 1.25)
-    const clampedZoom = Math.min(Math.max(Number(optimalScale.toFixed(2)), 0.80), 1.25);
+    // Ensure default zoom is bold and readable (min 1.05, max 1.35)
+    let clampedZoom = 1.1;
+    if (optimalScale >= 0.95) {
+      clampedZoom = Math.min(1.35, Number(optimalScale.toFixed(2)));
+    } else {
+      clampedZoom = 1.05;
+    }
     setZoom(clampedZoom);
     setPan({ x: 0, y: 0 });
   }, []);
@@ -267,6 +283,10 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
         const { svg } = await mermaid.render(uniqueId, currentDiagramSource);
         if (!isCancelled && diagramRef.current) {
           diagramRef.current.innerHTML = svg;
+          const svgEl = diagramRef.current.querySelector("svg");
+          if (svgEl) {
+            svgEl.style.maxWidth = "none";
+          }
           attachC4ClickHandlers();
           // Automatically calculate and apply optimal readable zoom level
           requestAnimationFrame(() => {
@@ -486,7 +506,7 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             transformOrigin: "center center",
           }}
-          className="transition-transform duration-75 ease-out max-w-full flex items-center justify-center"
+          className="transition-transform duration-75 ease-out flex items-center justify-center shrink-0"
         />
       </Card>
 

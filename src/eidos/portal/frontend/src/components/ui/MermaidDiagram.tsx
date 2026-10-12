@@ -10,6 +10,7 @@ export interface MermaidDiagramProps {
   className?: string;
   darkMode?: boolean;
   minHeight?: string;
+  expandedHeight?: string;
   showControls?: boolean;
 }
 
@@ -18,7 +19,8 @@ export function MermaidDiagram({
   id,
   className,
   darkMode,
-  minHeight = "260px",
+  minHeight = "300px",
+  expandedHeight = "540px",
   showControls = true,
 }: MermaidDiagramProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -31,72 +33,127 @@ export function MermaidDiagram({
     panY: 0,
   });
 
-  const [zoom, setZoom] = React.useState<number>(1);
+  const [zoom, setZoom] = React.useState<number>(1.05);
   const [pan, setPan] = React.useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isExpanded, setIsExpanded] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string | null>(null);
 
   const isDark = darkMode ?? (typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
 
-  // Auto-fit function with stable identity (empty dependencies)
+  // Helper to extract native SVG dimensions
+  const getSvgDimensions = React.useCallback(() => {
+    if (!diagramRef.current) return { width: 0, height: 0 };
+    const svgEl = diagramRef.current.querySelector("svg");
+    if (!svgEl) return { width: 0, height: 0 };
+
+    let width = 0;
+    let height = 0;
+
+    const viewBox = svgEl.getAttribute("viewBox");
+    if (viewBox) {
+      const parts = viewBox.trim().split(/\s+/).map(Number);
+      if (parts.length >= 4 && parts[2] > 0 && parts[3] > 0) {
+        width = parts[2];
+        height = parts[3];
+      }
+    }
+    if (!width || !height) {
+      try {
+        const bbox = svgEl.getBBox();
+        width = bbox.width;
+        height = bbox.height;
+      } catch {
+        width = svgEl.clientWidth || 800;
+        height = svgEl.clientHeight || 300;
+      }
+    }
+    return { width, height };
+  }, []);
+
+  // Auto-fit function that guarantees text is NEVER tiny or over-zoomed-out
   const autoFit = React.useCallback(() => {
     if (!containerRef.current || !diagramRef.current) return;
     const svgEl = diagramRef.current.querySelector("svg");
     if (!svgEl) return;
 
-    // Ensure the SVG doesn't artificially shrink via Mermaid's inline max-width
-    svgEl.style.maxWidth = "none";
-
-    let svgWidth = 0;
-    let svgHeight = 0;
-
-    if (svgEl.viewBox && svgEl.viewBox.baseVal && svgEl.viewBox.baseVal.width > 0) {
-      svgWidth = svgEl.viewBox.baseVal.width;
-      svgHeight = svgEl.viewBox.baseVal.height;
-    } else {
-      try {
-        const bbox = svgEl.getBBox();
-        svgWidth = bbox.width;
-        svgHeight = bbox.height;
-      } catch {
-        svgWidth = svgEl.clientWidth || 600;
-        svgHeight = svgEl.clientHeight || 260;
-      }
-    }
-
+    const { width: svgWidth, height: svgHeight } = getSvgDimensions();
     if (svgWidth <= 0 || svgHeight <= 0) {
-      setZoom(1);
+      setZoom(1.05);
       setPan({ x: 0, y: 0 });
       return;
     }
+
+    // Set SVG and diagramRef to true natural dimensions so 1 unit = 1 physical px
+    svgEl.removeAttribute("width");
+    svgEl.removeAttribute("height");
+    svgEl.style.width = `${svgWidth}px`;
+    svgEl.style.height = `${svgHeight}px`;
+    svgEl.style.maxWidth = "none";
+    svgEl.style.maxHeight = "none";
+    svgEl.style.minWidth = `${svgWidth}px`;
+    svgEl.style.minHeight = `${svgHeight}px`;
+
+    diagramRef.current.style.width = `${svgWidth}px`;
+    diagramRef.current.style.height = `${svgHeight}px`;
 
     const containerWidth = containerRef.current.clientWidth - 48;
     const containerHeight = containerRef.current.clientHeight - 48;
 
     const scaleX = containerWidth / svgWidth;
     const scaleY = containerHeight / svgHeight;
-    const naturalScale = Math.min(scaleX, scaleY);
+    const naturalFit = Math.min(scaleX, scaleY);
 
-    // Calculate optimal readable zoom:
-    // Text in nodes must remain crisp and readable (>= 0.85),
-    // while preventing overly giant scaling on tiny diagrams (<= 1.25).
-    let optimalZoom = naturalScale;
-    if (naturalScale < 0.85) {
-      // If diagram is horizontally long, prioritize readability at 0.88 - 0.95
-      // The user can drag-to-pan horizontally
-      optimalZoom = Math.min(1.0, Math.max(0.85, naturalScale * 1.3));
-    } else if (naturalScale > 1.25) {
-      optimalZoom = 1.15;
+    // If natural fit is between 0.95 and 1.35, it fits comfortably without text shrinking!
+    // If natural fit is >= 1.35, clamp to 1.30 so small diagrams look bold and neat.
+    // If natural fit is < 0.95 (e.g. 0.50 or 0.65), shrinking it would make text tiny and "zoomed-out".
+    // Instead, default to 1.05 - 1.15 so text is crisp and readable, aligned cleanly!
+    let optimalZoom = 1.05;
+    let initialPanX = 0;
+    let initialPanY = 0;
+
+    if (naturalFit >= 0.95) {
+      optimalZoom = Math.min(1.30, Number(naturalFit.toFixed(2)));
+      initialPanX = 0;
+      initialPanY = 0;
     } else {
-      optimalZoom = Math.max(0.9, naturalScale);
+      // Natural fit would shrink text. Keep text readable at 1.05!
+      optimalZoom = 1.05;
+      // If the diagram is wider than the container, align the start (left) with padding
+      // so the user immediately sees the beginning of the flow / state machine
+      const renderedWidth = svgWidth * optimalZoom;
+      if (renderedWidth > containerWidth) {
+        initialPanX = (renderedWidth - containerWidth) / 2 - 20;
+      }
     }
 
-    setZoom(Number(optimalZoom.toFixed(2)));
-    setPan({ x: 0, y: 0 });
-  }, []);
+    setZoom(optimalZoom);
+    setPan({ x: initialPanX, y: initialPanY });
+  }, [getSvgDimensions]);
 
   const autoFitRef = React.useRef(autoFit);
   autoFitRef.current = autoFit;
+
+  // Fit to screen explicitly (scales entire diagram to fit container regardless of size)
+  const fitToScreen = () => {
+    if (!containerRef.current || !diagramRef.current) return;
+    const { width: svgWidth, height: svgHeight } = getSvgDimensions();
+    if (svgWidth <= 0 || svgHeight <= 0) return;
+
+    const containerWidth = containerRef.current.clientWidth - 48;
+    const containerHeight = containerRef.current.clientHeight - 48;
+    const scaleX = containerWidth / svgWidth;
+    const scaleY = containerHeight / svgHeight;
+    const fitScale = Number(Math.min(scaleX, scaleY).toFixed(2));
+
+    setZoom(Math.max(0.35, Math.min(2.5, fitScale)));
+    setPan({ x: 0, y: 0 });
+  };
+
+  // Reset to 100% (1:1)
+  const resetTo100 = () => {
+    setZoom(1.0);
+    setPan({ x: 0, y: 0 });
+  };
 
   // Render diagram ONLY when code, dark mode, or id changes
   React.useEffect(() => {
@@ -189,8 +246,8 @@ export function MermaidDiagram({
     // Zoom in/out via mouse wheel
     e.preventDefault();
     e.stopPropagation();
-    const delta = e.deltaY < 0 ? 0.1 : -0.1;
-    setZoom((prev) => Math.min(3.0, Math.max(0.35, Number((prev + delta).toFixed(2)))));
+    const delta = e.deltaY < 0 ? 0.12 : -0.12;
+    setZoom((prev) => Math.min(3.5, Math.max(0.35, Number((prev + delta).toFixed(2)))));
   };
 
   return (
@@ -201,7 +258,7 @@ export function MermaidDiagram({
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
-      style={{ minHeight: isExpanded ? "480px" : minHeight }}
+      style={{ minHeight: isExpanded ? expandedHeight : minHeight }}
       className={cn(
         "relative rounded-xl border border-border/70 bg-card/60 overflow-hidden flex items-center justify-center p-4 select-none cursor-grab active:cursor-grabbing transition-all duration-200",
         className
@@ -217,7 +274,7 @@ export function MermaidDiagram({
               setZoom((prev) => Math.max(0.35, Number((prev - 0.15).toFixed(2))));
             }}
             className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title="Zoom Out"
+            title="Zoom Out (-15%)"
           >
             <ZoomOut className="h-3.5 w-3.5" />
           </button>
@@ -228,10 +285,10 @@ export function MermaidDiagram({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              setZoom((prev) => Math.min(3.0, Number((prev + 0.15).toFixed(2))));
+              setZoom((prev) => Math.min(3.5, Number((prev + 0.15).toFixed(2))));
             }}
             className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title="Zoom In"
+            title="Zoom In (+15%)"
           >
             <ZoomIn className="h-3.5 w-3.5" />
           </button>
@@ -239,10 +296,10 @@ export function MermaidDiagram({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              autoFit();
+              fitToScreen();
             }}
             className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-primary transition-colors cursor-pointer"
-            title="Fit to Screen"
+            title="Fit Entire Diagram to Screen"
           >
             <Maximize2 className="h-3.5 w-3.5" />
           </button>
@@ -250,11 +307,10 @@ export function MermaidDiagram({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              setZoom(1);
-              setPan({ x: 0, y: 0 });
+              resetTo100();
             }}
             className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title="Reset to 100% (1:1)"
+            title="Reset to 100% (1:1 Natural Size)"
           >
             <RotateCcw className="h-3 w-3" />
           </button>
@@ -263,7 +319,7 @@ export function MermaidDiagram({
             onClick={(e) => {
               e.stopPropagation();
               setIsExpanded((prev) => !prev);
-              setTimeout(() => autoFitRef.current(), 120);
+              setTimeout(() => autoFitRef.current(), 150);
             }}
             className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             title={isExpanded ? "Collapse Viewport Height" : "Expand Viewport Height"}
