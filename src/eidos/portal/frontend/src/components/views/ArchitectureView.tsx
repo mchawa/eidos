@@ -553,7 +553,6 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
         onOpenChange={setInspectorOpen}
         title={inspectedComponent?.name || "Component Inspector"}
         subtitle={inspectedComponent?.id}
-        className="w-full max-w-xl"
       >
         <div id="c4InspectorDrawer" className="space-y-5">
           {inspectedComponent && (

@@ -21,6 +21,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
+import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
 import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
 import { cn } from "@/lib/utils";
 import type {
@@ -1051,10 +1052,8 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
         title={inspectingItem?.title}
         subtitle={inspectingItem?.subtitle}
       >
-        <div className="p-4 space-y-3 overflow-y-auto max-h-[calc(100vh-80px)]">
-          <pre className="text-xs font-mono bg-muted/40 p-3 rounded-xl border border-border text-foreground whitespace-pre-wrap leading-relaxed">
-            {inspectingItem?.body}
-          </pre>
+        <div className="space-y-3">
+          <AsciiDocRenderer content={inspectingItem?.body || ""} title={inspectingItem?.title} />
         </div>
       </Sheet>
     </div>
