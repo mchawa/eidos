@@ -782,11 +782,452 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       font-weight: 600;
       cursor: pointer;
       transition: all 0.15s ease;
+    /* LIVING SPECS MASTER CATALOG & TREE VIEW */
+    .catalog-toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
     }
-    .btn-ctrl:hover {
+    .view-mode-pills {
+      display: inline-flex;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 0.45rem;
+      padding: 2px;
+      gap: 2px;
+    }
+    .view-pill {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 0.35rem 0.75rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border-radius: 0.35rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: all 0.15s ease;
+    }
+    .view-pill:hover { color: var(--text); }
+    .view-pill.active {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+
+    .catalog-filter-bar {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+      padding: 0.75rem 1rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+    }
+    .catalog-search-box {
+      position: relative;
+      flex: 1;
+      min-width: 240px;
+      max-width: 440px;
+      display: flex;
+      align-items: center;
+    }
+    .catalog-search-input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 0.4rem;
+      padding: 0.4rem 2rem 0.4rem 2rem;
       color: var(--text);
-      border-color: var(--border-accent);
+      font-size: 0.82rem;
+      transition: all 0.15s ease;
+    }
+    .catalog-search-input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    }
+    .clear-search-btn {
+      position: absolute;
+      right: 0.6rem;
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 0.8rem;
+      display: none;
+      padding: 0.2rem;
+    }
+    .clear-search-btn:hover { color: var(--text); }
+
+    .catalog-filter-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .catalog-select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.38rem 0.65rem;
+      border-radius: 0.375rem;
+      font-size: 0.78rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .catalog-select:focus { outline: none; border-color: var(--primary); }
+
+    .tree-group-toggle {
+      display: inline-flex;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 0.375rem;
+      padding: 2px;
+      gap: 2px;
+    }
+    .btn-group-toggle {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 0.25rem 0.55rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border-radius: 0.25rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-group-toggle:hover { color: var(--text); }
+    .btn-group-toggle.active {
+      background: var(--bg-card);
+      color: var(--primary);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+    }
+
+    /* MASTER-DETAIL LAYOUT */
+    .catalog-layout {
+      display: flex;
+      gap: 1.25rem;
+      align-items: flex-start;
+      min-height: 600px;
+    }
+    .catalog-tree-pane {
+      width: 380px;
+      min-width: 320px;
+      flex-shrink: 0;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+      display: flex;
+      flex-direction: column;
+      max-height: calc(100vh - 170px);
+      position: sticky;
+      top: calc(var(--header-height) + 1.25rem);
+      overflow: hidden;
+    }
+    .tree-pane-header {
+      padding: 0.75rem 1rem;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .tree-pane-count {
+      font-size: 0.72rem;
+      background: var(--code-bg);
+      color: var(--text);
+      padding: 0.1rem 0.5rem;
+      border-radius: 9999px;
+      border: 1px solid var(--border);
+    }
+    .tree-scroll-area {
+      padding: 0.5rem;
+      overflow-y: auto;
+      flex: 1;
+      font-size: 0.82rem;
+    }
+
+    /* TREE NODES */
+    .tree-folder {
+      margin-bottom: 0.15rem;
+    }
+    .tree-folder-row {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.35rem 0.5rem;
+      border-radius: 0.375rem;
+      cursor: pointer;
+      color: var(--text);
+      font-weight: 600;
+      transition: background 0.12s ease;
+      user-select: none;
+    }
+    .tree-folder-row:hover { background: var(--bg-card-hover); }
+    .tree-chevron {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      width: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.15s ease;
+    }
+    .tree-folder-icon { font-size: 0.95rem; }
+    .tree-folder-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tree-folder-badge {
+      font-size: 0.68rem;
+      background: var(--code-bg);
+      color: var(--text-dim);
+      padding: 0.08rem 0.4rem;
+      border-radius: 9999px;
+      font-weight: 600;
+    }
+    .tree-children {
+      padding-left: 1.15rem;
+      border-left: 1px dashed var(--border);
+      margin-left: 0.65rem;
+      margin-top: 0.15rem;
+    }
+
+    .tree-leaf {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.38rem 0.55rem;
+      border-radius: 0.375rem;
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: all 0.12s ease;
+      border: 1px solid transparent;
+      user-select: none;
+      margin-bottom: 0.1rem;
+    }
+    .tree-leaf:hover {
+      color: var(--text);
       background: var(--bg-card-hover);
+    }
+    .tree-leaf.selected {
+      background: var(--primary-subtle);
+      color: var(--primary);
+      font-weight: 600;
+      border-color: rgba(59, 130, 246, 0.3);
+    }
+    .tree-leaf-icon { font-size: 0.88rem; flex-shrink: 0; }
+    .tree-leaf-id {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem;
+      flex-shrink: 0;
+    }
+    .tree-leaf-title {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 0.78rem;
+    }
+    .tree-leaf-valid {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .tree-leaf-valid.valid { background: var(--success); }
+    .tree-leaf-valid.invalid { background: var(--danger); }
+
+    /* DETAIL INSPECTOR PANE */
+    .catalog-detail-pane {
+      flex: 1;
+      min-width: 0;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+    .inspector-header {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1.25rem;
+    }
+    .inspector-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .inspector-ids {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .inspector-id {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--primary);
+      padding: 0.2rem 0.55rem;
+    }
+    .inspector-title {
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1.3;
+    }
+    .inspector-path-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .inspector-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.75rem;
+    }
+    .meta-chip {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 0.45rem;
+      padding: 0.6rem 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    .meta-chip-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+    }
+    .meta-chip-val {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .inspector-tabs {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .inspector-tab-nav {
+      display: flex;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+    }
+    .inspector-tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      font-weight: 600;
+      padding: 0.35rem 0.75rem;
+      border-radius: 0.35rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .inspector-tab-btn:hover { color: var(--text); background: var(--bg-card-hover); }
+    .inspector-tab-btn.active {
+      color: var(--primary);
+      background: var(--primary-subtle);
+    }
+    .inspector-tab-pane { display: none; }
+    .inspector-tab-pane.active { display: block; animation: fadeIn 0.15s ease; }
+    .inspector-code-box {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 0.45rem;
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.76rem;
+      line-height: 1.5;
+      overflow-x: auto;
+      max-height: 480px;
+      color: var(--text);
+    }
+    .inspector-body-content {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 0.45rem;
+      padding: 1.25rem;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      max-height: 520px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      font-family: 'Inter', system-ui, sans-serif;
+    }
+    .relation-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.6rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 0.35rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .relation-pill:hover {
+      border-color: var(--primary);
+      background: var(--primary-subtle);
+      color: var(--primary);
+      transform: translateY(-1px);
+    }
+
+    /* TOAST */
+    .toast-popup {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--primary);
+      color: var(--text);
+      padding: 0.6rem 1.1rem;
+      border-radius: 0.45rem;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+      font-size: 0.82rem;
+      font-weight: 600;
+      z-index: 110;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transform: translateY(20px);
+      opacity: 0;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: none;
+    }
+    .toast-popup.show {
+      transform: translateY(0);
+      opacity: 1;
     }
 
     /* MODAL DRAWER */
@@ -903,6 +1344,16 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       .sidebar.collapsed .footer-status {
         justify-content: center;
         padding: 0.25rem 0;
+      }
+    }
+    @media (max-width: 1024px) {
+      .catalog-layout {
+        flex-direction: column;
+      }
+      .catalog-tree-pane {
+        width: 100%;
+        max-height: 380px;
+        position: static;
       }
     }
     @media (max-width: 900px) {
@@ -1476,31 +1927,82 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
             <div class="panel-header">
               <div>
                 <h2 class="panel-title"><span>📑</span> Living Specifications Master Catalog</h2>
-                <p class="panel-desc">All validated AsciiDoc specification documents with YAML frontmatter</p>
+                <p class="panel-desc">Interactive tree navigation and inspector across all validated living specifications</p>
               </div>
-              <div style="display: flex; gap: 0.5rem; align-items: center;">
-                <select id="catalogTypeFilter" onchange="filterCatalog()" style="background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 0.35rem 0.65rem; border-radius: 0.35rem; font-size: 0.8rem;">
-                  <option value="all">All Document Types</option>
-                  <option value="product">Product Specs (DOM, CAP, PER, POL, EXP)</option>
-                  <option value="design">Design Specs (DS, UIC, SCR)</option>
-                  <option value="tech">Tech Architecture (ARCH, CMP, CTR)</option>
-                  <option value="delta">SpecDeltas (DLT)</option>
-                </select>
+              <div class="catalog-toolbar-actions">
+                <div class="view-mode-pills">
+                  <button class="view-pill active" id="btnViewTree" onclick="setCatalogViewMode('tree')" title="Repository Hierarchy Tree">
+                    <span>📂</span> Tree View
+                  </button>
+                  <button class="view-pill" id="btnViewTable" onclick="setCatalogViewMode('table')" title="Tabular Matrix">
+                    <span>📋</span> Table View
+                  </button>
+                </div>
               </div>
             </div>
-            <div class="table-responsive">
-              <table id="specsCatalogTable">
-                <thead>
-                  <tr>
-                    <th>Document ID</th>
-                    <th>Type</th>
-                    <th>Title</th>
-                    <th>Status</th>
-                    <th>File Path</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
+
+            <!-- Global Search & Tree Filter Controls -->
+            <div class="catalog-filter-bar">
+              <div class="catalog-search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" class="catalog-search-input" id="catalogSearchInput" placeholder="Filter specs by ID, title, path, or schema..." oninput="handleCatalogFilter(this.value)">
+                <button class="clear-search-btn" id="catalogClearSearch" onclick="clearCatalogFilter()" title="Clear filter">✕</button>
+              </div>
+              <div class="catalog-filter-controls">
+                <select id="catalogTypeFilter" onchange="handleCatalogFilter(document.getElementById('catalogSearchInput').value)" class="catalog-select">
+                  <option value="all">All Document Types</option>
+                  <option value="product">Business Specs (DOM, CAP, PER, POL, EXP)</option>
+                  <option value="design">Design Specs (DS, UIC, SCR)</option>
+                  <option value="tech">Tech Architecture (ARCH, CMP, CTR, SYS)</option>
+                  <option value="delta">SpecDeltas (DLT)</option>
+                </select>
+                <div class="tree-group-toggle" id="treeGroupToggle">
+                  <button class="btn-group-toggle active" id="btnGroupPath" onclick="setTreeGrouping('path')" title="Organize by Git Directory Tree">Path</button>
+                  <button class="btn-group-toggle" id="btnGroupCategory" onclick="setTreeGrouping('category')" title="Organize by Domain & Type Taxonomy">Category</button>
+                </div>
+                <div class="tree-quick-controls">
+                  <button class="btn-ctrl" onclick="expandAllCatalogTree()" title="Expand all tree folders">Expand All</button>
+                  <button class="btn-ctrl" onclick="collapseAllCatalogTree()" title="Collapse all tree folders">Collapse All</button>
+                </div>
+                <span class="badge badge-primary" id="catalogMatchCount">44 Specs</span>
+              </div>
+            </div>
+
+            <!-- MASTER-DETAIL TREE LAYOUT -->
+            <div class="catalog-layout" id="catalogTreeLayout">
+              <!-- Left Tree Pane -->
+              <div class="catalog-tree-pane">
+                <div class="tree-pane-header">
+                  <span class="tree-pane-title" id="treePaneTitle">Repository Hierarchy (eidos/)</span>
+                  <span class="tree-pane-count" id="treePaneCount">44</span>
+                </div>
+                <div class="tree-scroll-area" id="catalogTreeContainer">
+                  <!-- Dynamic Tree Nodes Rendered Here -->
+                </div>
+              </div>
+
+              <!-- Right Detail Inspector Pane -->
+              <div class="catalog-detail-pane" id="catalogDetailPane">
+                <!-- Selected Spec Inspection Rendered Here -->
+              </div>
+            </div>
+
+            <!-- FLAT TABLE VIEW (Alternate Mode) -->
+            <div class="catalog-table-view" id="catalogTableView" style="display: none;">
+              <div class="table-responsive">
+                <table id="specsCatalogTable">
+                  <thead>
+                    <tr>
+                      <th>Document ID</th>
+                      <th>Type</th>
+                      <th>Title</th>
+                      <th>Status</th>
+                      <th>File Path</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
             </div>
           </div>
         </section>
@@ -1909,30 +2411,70 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       });
     }
 
-    function renderCatalog(specs) {
-      const catBody = document.querySelector('#specsCatalogTable tbody');
-      catBody.innerHTML = '';
-      specs.forEach(s => {
-        const tr = document.createElement('tr');
-        tr.style.cursor = 'pointer';
-        tr.onclick = () => showSpecDetails(s);
-        tr.innerHTML = `
-          <td><span class="code-pill">${s.id}</span></td>
-          <td><span class="badge badge-primary">${s.type}</span></td>
-          <td><b>${s.title}</b></td>
-          <td><span class="badge ${s.is_valid ? 'badge-success' : 'badge-danger'}">${s.is_valid ? 'VALID' : 'INVALID'}</span></td>
-          <td><span class="code-pill" style="font-size: 0.75rem;">${s.path}</span></td>
-        `;
-        catBody.appendChild(tr);
-      });
+    let CATALOG_VIEW_MODE = 'tree';
+    let CATALOG_TREE_GROUPING = 'path';
+    let SELECTED_SPEC_ID = null;
+    let ACTIVE_INSPECTOR_TAB = 'yaml';
+
+    function setCatalogViewMode(mode) {
+      CATALOG_VIEW_MODE = mode;
+      document.getElementById('btnViewTree')?.classList.toggle('active', mode === 'tree');
+      document.getElementById('btnViewTable')?.classList.toggle('active', mode === 'table');
+
+      const treeLayout = document.getElementById('catalogTreeLayout');
+      const tableView = document.getElementById('catalogTableView');
+      const groupToggle = document.getElementById('treeGroupToggle');
+
+      if (mode === 'tree') {
+        if (treeLayout) treeLayout.style.display = 'flex';
+        if (tableView) tableView.style.display = 'none';
+        if (groupToggle) groupToggle.style.display = 'inline-flex';
+      } else {
+        if (treeLayout) treeLayout.style.display = 'none';
+        if (tableView) tableView.style.display = 'block';
+        if (groupToggle) groupToggle.style.display = 'none';
+      }
+      filterAndRenderCatalog();
     }
 
-    function filterCatalog() {
-      if (!PORTAL_DATA) return;
-      const typeFilter = document.getElementById('catalogTypeFilter').value;
-      const query = (document.getElementById('globalSearch').value || '').toLowerCase().trim();
+    function setTreeGrouping(grouping) {
+      CATALOG_TREE_GROUPING = grouping;
+      document.getElementById('btnGroupPath')?.classList.toggle('active', grouping === 'path');
+      document.getElementById('btnGroupCategory')?.classList.toggle('active', grouping === 'category');
 
-      let filtered = PORTAL_DATA.specs;
+      const titleEl = document.getElementById('treePaneTitle');
+      if (titleEl) {
+        titleEl.innerText = grouping === 'path' ? 'Repository Hierarchy (eidos/)' : 'Categorical Taxonomy';
+      }
+      filterAndRenderCatalog();
+    }
+
+    function handleCatalogFilter(query) {
+      const clearBtn = document.getElementById('catalogClearSearch');
+      if (clearBtn) {
+        clearBtn.style.display = query ? 'inline-block' : 'none';
+      }
+      filterAndRenderCatalog();
+    }
+
+    function clearCatalogFilter() {
+      const searchInput = document.getElementById('catalogSearchInput');
+      if (searchInput) searchInput.value = '';
+      const globalSearch = document.getElementById('globalSearch');
+      if (globalSearch) globalSearch.value = '';
+      const clearBtn = document.getElementById('catalogClearSearch');
+      if (clearBtn) clearBtn.style.display = 'none';
+      const typeFilter = document.getElementById('catalogTypeFilter');
+      if (typeFilter) typeFilter.value = 'all';
+      filterAndRenderCatalog();
+    }
+
+    function filterAndRenderCatalog() {
+      if (!PORTAL_DATA) return;
+      const query = (document.getElementById('catalogSearchInput')?.value || document.getElementById('globalSearch')?.value || '').toLowerCase().trim();
+      const typeFilter = document.getElementById('catalogTypeFilter')?.value || 'all';
+
+      let filtered = PORTAL_DATA.specs || [];
       if (typeFilter !== 'all') {
         filtered = filtered.filter(s => s.type.startsWith(typeFilter));
       }
@@ -1941,10 +2483,603 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
           s.id.toLowerCase().includes(query) ||
           s.title.toLowerCase().includes(query) ||
           s.type.toLowerCase().includes(query) ||
-          s.path.toLowerCase().includes(query)
+          s.path.toLowerCase().includes(query) ||
+          (s.frontmatter && JSON.stringify(s.frontmatter).toLowerCase().includes(query))
         );
       }
-      renderCatalog(filtered);
+
+      const countBadge = document.getElementById('catalogMatchCount');
+      if (countBadge) countBadge.innerText = `${filtered.length} Specs`;
+      const paneCount = document.getElementById('treePaneCount');
+      if (paneCount) paneCount.innerText = filtered.length;
+
+      renderCatalogTree(filtered, !!query);
+      renderCatalogTable(filtered);
+
+      if (filtered.length > 0) {
+        if (!SELECTED_SPEC_ID || !filtered.some(s => s.id === SELECTED_SPEC_ID)) {
+          selectCatalogSpec(filtered[0].id, false);
+        } else {
+          const spec = filtered.find(s => s.id === SELECTED_SPEC_ID);
+          if (spec) renderSpecDetailInspector(spec);
+        }
+      } else {
+        renderEmptyInspector(query);
+      }
+    }
+
+    function filterCatalog() {
+      filterAndRenderCatalog();
+    }
+
+    function renderCatalog(specs) {
+      if (!SELECTED_SPEC_ID && specs && specs.length > 0) {
+        SELECTED_SPEC_ID = specs[0].id;
+      }
+      filterAndRenderCatalog();
+    }
+
+    function buildPathTree(specs) {
+      const root = { name: "eidos", isDir: true, path: "eidos", children: {}, specs: [] };
+
+      specs.forEach(s => {
+        const rawParts = s.path.split('/').filter(Boolean);
+        const parts = (rawParts[0] === 'eidos') ? rawParts.slice(1) : rawParts;
+
+        let current = root;
+        let currentPath = "eidos";
+        for (let i = 0; i < parts.length - 1; i++) {
+          const dirName = parts[i];
+          currentPath += "/" + dirName;
+          if (!current.children[dirName]) {
+            current.children[dirName] = {
+              name: dirName,
+              isDir: true,
+              path: currentPath,
+              children: {},
+              specs: []
+            };
+          }
+          current = current.children[dirName];
+        }
+        current.specs.push(s);
+      });
+
+      return root;
+    }
+
+    function getFolderTotalSpecs(folderNode) {
+      let count = folderNode.specs.length;
+      for (const child of Object.values(folderNode.children)) {
+        count += getFolderTotalSpecs(child);
+      }
+      return count;
+    }
+
+    function renderCatalogTree(specs, isFiltering = false) {
+      const container = document.getElementById('catalogTreeContainer');
+      if (!container) return;
+
+      if (specs.length === 0) {
+        container.innerHTML = `
+          <div style="padding: 2.5rem 1rem; text-align: center; color: var(--text-dim);">
+            <div style="font-size: 1.8rem; margin-bottom: 0.5rem;">🔍</div>
+            <div style="font-weight: 700; font-size: 0.88rem; color: var(--text);">No matching specifications</div>
+            <div style="font-size: 0.78rem; margin-top: 0.25rem;">Try adjusting search keywords or type filters</div>
+            <button class="btn-ctrl" onclick="clearCatalogFilter()" style="margin-top: 0.8rem; font-size: 0.75rem;">Clear Filters</button>
+          </div>
+        `;
+        return;
+      }
+
+      if (CATALOG_TREE_GROUPING === 'path') {
+        const rootTree = buildPathTree(specs);
+        container.innerHTML = renderFolderNodeHtml(rootTree, true, isFiltering);
+      } else {
+        container.innerHTML = renderCategoryTreeHtml(specs, isFiltering);
+      }
+
+      if (SELECTED_SPEC_ID) {
+        const safeId = SELECTED_SPEC_ID.replace(/[^a-zA-Z0-9_]/g, '_');
+        const target = document.getElementById(`treeLeaf_${safeId}`);
+        if (target) target.classList.add('selected');
+      }
+    }
+
+    function renderFolderNodeHtml(folderNode, isRoot = false, forceOpen = false) {
+      const folderTotal = getFolderTotalSpecs(folderNode);
+      if (folderTotal === 0) return '';
+
+      const folderIcons = {
+        architecture: '🏛️',
+        components: '⚙️',
+        contracts: '🔌',
+        deltas: '🔄',
+        design: '🎨',
+        screens: '📱',
+        systems: '📐',
+        domains: '💼',
+        capabilities: '⚡',
+        explorations: '🧪',
+        personas: '👥',
+        policies: '⚖️'
+      };
+      const icon = folderIcons[folderNode.name] || '📁';
+      const openIcon = folderIcons[folderNode.name] || '📂';
+
+      const childFolders = Object.values(folderNode.children).sort((a, b) => a.name.localeCompare(b.name));
+      const childSpecs = folderNode.specs.sort((a, b) => a.id.localeCompare(b.id));
+
+      const childrenHtml = `
+        ${childFolders.map(cf => renderFolderNodeHtml(cf, false, forceOpen)).join('')}
+        ${childSpecs.map(s => renderLeafNodeHtml(s)).join('')}
+      `;
+
+      if (isRoot) {
+        return childrenHtml;
+      }
+
+      const isOpen = forceOpen || true;
+
+      return `
+        <div class="tree-folder ${isOpen ? 'open' : ''}" data-path="${folderNode.path}">
+          <div class="tree-folder-row" onclick="toggleFolderNode(this)">
+            <span class="tree-chevron">${isOpen ? '▼' : '▶'}</span>
+            <span class="tree-folder-icon">${isOpen ? openIcon : icon}</span>
+            <span class="tree-folder-name">${folderNode.name}</span>
+            <span class="tree-folder-badge">${folderTotal}</span>
+          </div>
+          <div class="tree-children" style="display: ${isOpen ? 'block' : 'none'};">
+            ${childrenHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCategoryTreeHtml(specs, forceOpen = false) {
+      const taxonomy = [
+        {
+          id: "business",
+          name: "Business & Governance",
+          icon: "💼",
+          subgroups: [
+            { name: "Domains (DOM)", type: "product/domain", icon: "🏢" },
+            { name: "Capabilities (CAP)", type: "product/capability", icon: "⚡" },
+            { name: "Actor Personas (PER)", type: "product/persona", icon: "👤" },
+            { name: "Policies (POL)", type: "product/policy", icon: "⚖️" },
+            { name: "Explorations (EXP)", type: "product/exploration", icon: "🧪" }
+          ]
+        },
+        {
+          id: "design",
+          name: "Design & Experience",
+          icon: "🎨",
+          subgroups: [
+            { name: "Design Systems (DS)", type: "design/system", icon: "📐" },
+            { name: "UI Components (UIC)", type: "design/ui-component", icon: "🧩" },
+            { name: "Screens (SCR)", type: "design/screen", icon: "📱" }
+          ]
+        },
+        {
+          id: "tech",
+          name: "Technical Architecture",
+          icon: "🏛️",
+          subgroups: [
+            { name: "System Archetype (SYS)", type: "product/system", icon: "⚡" },
+            { name: "Architecture (ARCH)", type: "tech/architecture", icon: "🏛️" },
+            { name: "Containers & Modules (CMP)", type: "tech/component", icon: "⚙️" },
+            { name: "Contracts (CTR)", type: "tech/contract", icon: "🔌" }
+          ]
+        },
+        {
+          id: "delta",
+          name: "Mutation Lifecycle",
+          icon: "🔄",
+          subgroups: [
+            { name: "SpecDeltas (DLT)", type: "delta/mutation", icon: "🔄" }
+          ]
+        }
+      ];
+
+      return taxonomy.map(group => {
+        let groupSpecsCount = 0;
+        const subHtml = group.subgroups.map(sub => {
+          const matching = specs.filter(s => s.type === sub.type).sort((a,b) => a.id.localeCompare(b.id));
+          groupSpecsCount += matching.length;
+          if (matching.length === 0) return '';
+          return `
+            <div class="tree-folder open">
+              <div class="tree-folder-row" onclick="toggleFolderNode(this)">
+                <span class="tree-chevron">▼</span>
+                <span class="tree-folder-icon">${sub.icon}</span>
+                <span class="tree-folder-name">${sub.name}</span>
+                <span class="tree-folder-badge">${matching.length}</span>
+              </div>
+              <div class="tree-children" style="display: block;">
+                ${matching.map(s => renderLeafNodeHtml(s)).join('')}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        if (groupSpecsCount === 0) return '';
+
+        return `
+          <div class="tree-folder open" style="margin-bottom: 0.5rem;">
+            <div class="tree-folder-row" onclick="toggleFolderNode(this)" style="background: var(--bg-card); font-weight: 700;">
+              <span class="tree-chevron">▼</span>
+              <span class="tree-folder-icon">${group.icon}</span>
+              <span class="tree-folder-name">${group.name}</span>
+              <span class="tree-folder-badge" style="background: var(--primary-subtle); color: var(--primary);">${groupSpecsCount}</span>
+            </div>
+            <div class="tree-children" style="display: block; border-left-color: var(--primary);">
+              ${subHtml}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderLeafNodeHtml(spec) {
+      const typeIcons = {
+        'product/system': '⚡',
+        'product/domain': '🏢',
+        'product/capability': '⚡',
+        'product/persona': '👤',
+        'product/policy': '⚖️',
+        'product/exploration': '🧪',
+        'design/system': '📐',
+        'design/ui-component': '🧩',
+        'design/screen': '📱',
+        'tech/architecture': '🏛️',
+        'tech/component': '⚙️',
+        'tech/contract': '🔌',
+        'delta/mutation': '🔄'
+      };
+      const icon = typeIcons[spec.type] || '📄';
+      const isSelected = spec.id === SELECTED_SPEC_ID;
+      const safeId = spec.id.replace(/[^a-zA-Z0-9_]/g, '_');
+
+      return `
+        <div class="tree-leaf ${isSelected ? 'selected' : ''}" id="treeLeaf_${safeId}" data-id="${spec.id}" onclick="selectCatalogSpec('${spec.id}')" title="${escapeHtml(spec.title)} (${spec.path})">
+          <span class="tree-leaf-icon">${icon}</span>
+          <span class="tree-leaf-id">${spec.id}</span>
+          <span class="tree-leaf-title">${escapeHtml(spec.title)}</span>
+          <span class="tree-leaf-valid ${spec.is_valid ? 'valid' : 'invalid'}" title="${spec.is_valid ? 'Valid Schema' : 'Schema Errors'}"></span>
+        </div>
+      `;
+    }
+
+    function toggleFolderNode(rowEl) {
+      const folder = rowEl.closest('.tree-folder');
+      if (!folder) return;
+      const isOpen = folder.classList.toggle('open');
+      const chevron = folder.querySelector('.tree-chevron');
+      const icon = folder.querySelector('.tree-folder-icon');
+      const children = folder.querySelector('.tree-children');
+      if (chevron) chevron.innerText = isOpen ? '▼' : '▶';
+      if (icon) {
+        if (icon.innerText === '📁') icon.innerText = '📂';
+        else if (icon.innerText === '📂') icon.innerText = '📁';
+      }
+      if (children) children.style.display = isOpen ? 'block' : 'none';
+    }
+
+    function expandAllCatalogTree() {
+      document.querySelectorAll('#catalogTreeContainer .tree-folder').forEach(folder => {
+        folder.classList.add('open');
+        const chevron = folder.querySelector('.tree-chevron');
+        const icon = folder.querySelector('.tree-folder-icon');
+        const children = folder.querySelector('.tree-children');
+        if (chevron) chevron.innerText = '▼';
+        if (icon && icon.innerText === '📁') icon.innerText = '📂';
+        if (children) children.style.display = 'block';
+      });
+    }
+
+    function collapseAllCatalogTree() {
+      document.querySelectorAll('#catalogTreeContainer .tree-folder').forEach(folder => {
+        folder.classList.remove('open');
+        const chevron = folder.querySelector('.tree-chevron');
+        const icon = folder.querySelector('.tree-folder-icon');
+        const children = folder.querySelector('.tree-children');
+        if (chevron) chevron.innerText = '▶';
+        if (icon && icon.innerText === '📂') icon.innerText = '📁';
+        if (children) children.style.display = 'none';
+      });
+    }
+
+    function selectCatalogSpec(specId, scrollIntoView = true) {
+      if (!PORTAL_DATA) return;
+      const spec = PORTAL_DATA.specs.find(s => s.id === specId);
+      if (!spec) return;
+
+      SELECTED_SPEC_ID = specId;
+
+      document.querySelectorAll('.tree-leaf').forEach(el => el.classList.remove('selected'));
+      const safeId = specId.replace(/[^a-zA-Z0-9_]/g, '_');
+      const targetLeaf = document.getElementById(`treeLeaf_${safeId}`);
+      if (targetLeaf) {
+        targetLeaf.classList.add('selected');
+        let parent = targetLeaf.closest('.tree-folder');
+        while (parent) {
+          parent.classList.add('open');
+          const chevron = parent.querySelector('.tree-chevron');
+          const icon = parent.querySelector('.tree-folder-icon');
+          const children = parent.querySelector('.tree-children');
+          if (chevron) chevron.innerText = '▼';
+          if (icon && icon.innerText === '📁') icon.innerText = '📂';
+          if (children) children.style.display = 'block';
+          parent = parent.parentElement?.closest('.tree-folder');
+        }
+        if (scrollIntoView) {
+          targetLeaf.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
+
+      renderSpecDetailInspector(spec);
+    }
+
+    function renderSpecDetailInspector(spec) {
+      const pane = document.getElementById('catalogDetailPane');
+      if (!pane) return;
+
+      const fm = spec.frontmatter || {};
+      const yamlStr = jsToYamlString(fm);
+      const safeTitle = escapeHtml(spec.title);
+      const categoryKind = fm.category || fm.intent?.kind || fm.classification || spec.type;
+      const ownerDomain = fm.design_system || fm.domain || fm.owning_component || 'Core Engine';
+      const testRef = fm.test_bindings?.unit_test || (fm.technical?.invariants ? `${fm.technical.invariants.length} Invariants` : '100% Traceable');
+
+      const relationsHtml = extractSpecRelationsHtml(spec);
+
+      pane.innerHTML = `
+        <div class="inspector-header">
+          <div class="inspector-top-row">
+            <div class="inspector-ids">
+              <span class="code-pill inspector-id">${spec.id}</span>
+              <span class="badge badge-primary">${spec.type}</span>
+              <span class="badge ${spec.is_valid ? 'badge-success' : 'badge-danger'}">
+                ● ${spec.is_valid ? 'VALID SCHEMA' : 'INVALID'}
+              </span>
+              ${fm.status ? `<span class="badge badge-accent">${fm.status}</span>` : ''}
+            </div>
+            <div class="inspector-actions">
+              <button class="btn-ctrl" onclick="copyToClipboard('${spec.path}', 'Path copied!')" title="Copy relative path">📋 Copy Path</button>
+              <button class="btn-ctrl" onclick="copyToClipboard(jsToYamlString(PORTAL_DATA.specs.find(s=>s.id==='${spec.id}')?.frontmatter || {}), 'YAML copied!')" title="Copy YAML Frontmatter">📄 Copy YAML</button>
+              <button class="btn-ctrl" onclick="showSpecDetails(PORTAL_DATA.specs.find(s=>s.id==='${spec.id}'))" title="Open full modal">🔍 Full Modal</button>
+            </div>
+          </div>
+          <h2 class="inspector-title">${safeTitle}</h2>
+          <div class="inspector-path-row">
+            <span class="inspector-path-icon">📄</span>
+            <span class="inspector-path-text">${spec.path}</span>
+          </div>
+        </div>
+
+        <div class="inspector-meta-grid">
+          <div class="meta-chip">
+            <span class="meta-chip-label">Schema Reference</span>
+            <span class="meta-chip-val" title="${spec.schema || 'schemas/v1/'}">${spec.schema || 'schemas/v1/'}</span>
+          </div>
+          <div class="meta-chip">
+            <span class="meta-chip-label">Category / Classification</span>
+            <span class="meta-chip-val">${categoryKind}</span>
+          </div>
+          <div class="meta-chip">
+            <span class="meta-chip-label">Domain / Component Context</span>
+            <span class="meta-chip-val">${ownerDomain}</span>
+          </div>
+          <div class="meta-chip">
+            <span class="meta-chip-label">Test & Invariant Bindings</span>
+            <span class="meta-chip-val">${testRef}</span>
+          </div>
+        </div>
+
+        <div class="inspector-tabs">
+          <div class="inspector-tab-nav">
+            <button class="inspector-tab-btn ${ACTIVE_INSPECTOR_TAB === 'yaml' ? 'active' : ''}" onclick="switchInspectorTab('yaml')">YAML Frontmatter</button>
+            <button class="inspector-tab-btn ${ACTIVE_INSPECTOR_TAB === 'body' ? 'active' : ''}" onclick="switchInspectorTab('body')">Document Source</button>
+            <button class="inspector-tab-btn ${ACTIVE_INSPECTOR_TAB === 'relations' ? 'active' : ''}" onclick="switchInspectorTab('relations')">Traceability & Cross-Refs</button>
+          </div>
+
+          <div class="inspector-tab-pane ${ACTIVE_INSPECTOR_TAB === 'yaml' ? 'active' : ''}" id="inspectorTabYaml">
+            <pre class="inspector-code-box"><code>${escapeHtml(yamlStr)}</code></pre>
+          </div>
+
+          <div class="inspector-tab-pane ${ACTIVE_INSPECTOR_TAB === 'body' ? 'active' : ''}" id="inspectorTabBody">
+            <div class="inspector-body-content">${formatAsciiDocPreview(spec.body)}</div>
+          </div>
+
+          <div class="inspector-tab-pane ${ACTIVE_INSPECTOR_TAB === 'relations' ? 'active' : ''}" id="inspectorTabRelations">
+            ${relationsHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    function switchInspectorTab(tabId) {
+      ACTIVE_INSPECTOR_TAB = tabId;
+      document.querySelectorAll('.inspector-tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.inspector-tab-pane').forEach(p => p.classList.remove('active'));
+
+      const activeBtn = Array.from(document.querySelectorAll('.inspector-tab-btn')).find(b => b.getAttribute('onclick')?.includes(tabId));
+      if (activeBtn) activeBtn.classList.add('active');
+
+      const targetPane = document.getElementById(`inspectorTab${tabId.charAt(0).toUpperCase() + tabId.slice(1)}`);
+      if (targetPane) targetPane.classList.add('active');
+    }
+
+    function extractSpecRelationsHtml(spec) {
+      if (!PORTAL_DATA) return '<p style="color: var(--text-dim);">No relations data.</p>';
+      const allSpecs = PORTAL_DATA.specs;
+      const strContent = JSON.stringify(spec.frontmatter || {}) + ' ' + (spec.body || '');
+
+      const referenced = [];
+      allSpecs.forEach(other => {
+        if (other.id !== spec.id) {
+          if (strContent.includes(other.id) || (other.filename && strContent.includes(other.filename))) {
+            referenced.push(other);
+          }
+        }
+      });
+
+      if (referenced.length === 0) {
+        return `
+          <div style="padding: 1.5rem; text-align: center; color: var(--text-dim); background: var(--bg-card); border-radius: 0.45rem;">
+            <div>🔗 No direct upstream or downstream document links declared in frontmatter.</div>
+            <div style="font-size: 0.78rem; margin-top: 0.35rem;">Living specifications bridge domains through contracts, capabilities, and system policy invariants.</div>
+          </div>
+        `;
+      }
+
+      return `
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <p style="font-size: 0.82rem; color: var(--text-muted);">
+            Detected <b>${referenced.length}</b> cross-specification references in this document. Click any pill to jump to that specification in the tree:
+          </p>
+          <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+            ${referenced.map(r => `
+              <div class="relation-pill" onclick="selectCatalogSpec('${r.id}')" title="${escapeHtml(r.title)} (${r.type})">
+                <span class="code-pill" style="font-size: 0.7rem; color: var(--primary);">${r.id}</span>
+                <span style="font-weight: 500;">${escapeHtml(r.title)}</span>
+                <span class="badge badge-neutral" style="font-size: 0.65rem;">${r.type.split('/')[1] || r.type}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function formatAsciiDocPreview(body) {
+      if (!body || !body.trim()) {
+        return '<p style="color: var(--text-dim); font-style: italic;">No additional AsciiDoc body text in specification.</p>';
+      }
+      return escapeHtml(body);
+    }
+
+    function renderEmptyInspector(query) {
+      const pane = document.getElementById('catalogDetailPane');
+      if (!pane) return;
+      pane.innerHTML = `
+        <div style="padding: 3rem 1.5rem; text-align: center; color: var(--text-dim); display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
+          <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">📑</div>
+          <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text); margin-bottom: 0.35rem;">No Specifications Found</h3>
+          <p style="font-size: 0.85rem; max-width: 360px; line-height: 1.5;">No living specifications match the query "${escapeHtml(query)}".</p>
+          <button class="btn-ctrl" onclick="clearCatalogFilter()" style="margin-top: 1rem; padding: 0.4rem 0.9rem;">Reset All Filters</button>
+        </div>
+      `;
+    }
+
+    function renderCatalogTable(specs) {
+      const catBody = document.querySelector('#specsCatalogTable tbody');
+      if (!catBody) return;
+      catBody.innerHTML = '';
+      specs.forEach(s => {
+        const tr = document.createElement('tr');
+        tr.style.cursor = 'pointer';
+        tr.onclick = () => selectCatalogSpec(s.id);
+        tr.innerHTML = `
+          <td><span class="code-pill">${s.id}</span></td>
+          <td><span class="badge badge-primary">${s.type}</span></td>
+          <td><b>${escapeHtml(s.title)}</b></td>
+          <td><span class="badge ${s.is_valid ? 'badge-success' : 'badge-danger'}">${s.is_valid ? 'VALID' : 'INVALID'}</span></td>
+          <td><span class="code-pill" style="font-size: 0.75rem;">${s.path}</span></td>
+        `;
+        catBody.appendChild(tr);
+      });
+    }
+
+    function jsToYamlString(obj, indent = 0) {
+      if (obj === null || obj === undefined) return '';
+      const pad = '  '.repeat(indent);
+      if (typeof obj !== 'object') {
+        return String(obj);
+      }
+      if (Array.isArray(obj)) {
+        if (obj.length === 0) return '[]';
+        return obj.map(item => {
+          if (typeof item === 'object' && item !== null) {
+            const inner = jsToYamlString(item, indent + 1).trimStart();
+            return `${pad}- ${inner}`;
+          }
+          return `${pad}- ${jsToYamlString(item)}`;
+        }).join('\n');
+      }
+      const lines = [];
+      for (const [key, val] of Object.entries(obj)) {
+        if (val === null || val === undefined) {
+          lines.push(`${pad}${key}: null`);
+        } else if (typeof val === 'object') {
+          if (Array.isArray(val)) {
+            if (val.length === 0) {
+              lines.push(`${pad}${key}: []`);
+            } else {
+              lines.push(`${pad}${key}:\n${jsToYamlString(val, indent + 1)}`);
+            }
+          } else {
+            lines.push(`${pad}${key}:\n${jsToYamlString(val, indent + 1)}`);
+          }
+        } else if (typeof val === 'string') {
+          if (val.includes('\n') || val.includes(':') || val.includes('"')) {
+            lines.push(`${pad}${key}: "${val.replace(/"/g, '\\"')}"`);
+          } else {
+            lines.push(`${pad}${key}: ${val}`);
+          }
+        } else {
+          lines.push(`${pad}${key}: ${val}`);
+        }
+      }
+      return lines.join('\n');
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function showToast(message) {
+      let toast = document.getElementById('portalToast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'portalToast';
+        toast.className = 'toast-popup';
+        document.body.appendChild(toast);
+      }
+      toast.innerHTML = `<span>✓</span> <span>${message}</span>`;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2000);
+    }
+
+    function copyToClipboard(text, successMsg = 'Copied!') {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(() => {
+          showToast(successMsg);
+        }).catch(() => {
+          fallbackCopyText(text, successMsg);
+        });
+      } else {
+        fallbackCopyText(text, successMsg);
+      }
+    }
+
+    function fallbackCopyText(text, successMsg) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        showToast(successMsg);
+      } catch (e) {}
+      document.body.removeChild(ta);
     }
 
     const diagramScales = {};
@@ -2113,6 +3248,8 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
         switchTab('catalog');
       }
       document.getElementById('globalSearch').value = query;
+      const catSearch = document.getElementById('catalogSearchInput');
+      if (catSearch) catSearch.value = query;
       filterCatalog();
     }
 

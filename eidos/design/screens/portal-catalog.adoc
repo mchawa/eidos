@@ -14,6 +14,8 @@ supported_design_systems:
 
 slots:
   search_filter_bar: "UIC-PORTAL-SHELL"
+  catalog_tree_pane: "UIC-PORTAL-SHELL"
+  catalog_detail_pane: "UIC-PORTAL-SHELL"
   specs_table: "UIC-PORTAL-SHELL"
   spec_detail_modal: "UIC-PORTAL-SHELL"
 
@@ -21,16 +23,29 @@ states:
   - name: "loading"
     description: "Skeleton loader displayed during specification index parsing."
   - name: "active"
-    description: "Interactive searchable table listing all repository living specifications."
+    description: "Interactive master-detail tree explorer and searchable table listing all repository living specifications."
   - name: "error"
     description: "Alert state when spec repository indexing fails."
 ---
 = Screen: Living Specifications Master Catalog View
 :toc: left
 
-== 1. View Purpose & Specification Inventory
-The Catalog View (`SCR-PORTAL-CATALOG`) provides a global, searchable inventory of every living specification document in the repository:
-* **Global Search**: Substring matching across document ID, title, schema, and relative file path.
-* **Type Filtering**: Quick filters by business (DOM, CAP, PER, POL), design (DS, UIC, SCR), tech (CMP, CTR, ARCH), and delta (DLT).
-* **Document Inspection**: Clickable rows opening full specification YAML frontmatter and AsciiDoc content in a detail modal.
+== 1. View Purpose & Master-Detail Tree Architecture
+The Catalog View (`SCR-PORTAL-CATALOG`) provides a hierarchical, interactive master-detail explorer for every living specification document in the repository:
+* **Master Tree Navigation Pane**: Left-hand collapsible directory tree matching the Git repository structure or categorical domain taxonomy.
+* **Specification Inspector Pane**: Persistent right-hand viewer displaying document metadata chips, YAML frontmatter with copy controls, document body source preview, and bidirectional cross-reference links.
+* **Dual View Modes**: Seamless toggle between hierarchical **Tree View** (default) and flat sortable **Table View**.
+
+== 2. Tree Organization Modes
+1. **Repository Hierarchy (Path Mode)**: Mirroring the real filesystem structure (`eidos/architecture/components/`, `eidos/domains/...`, etc.) with folder icons, item counts, and expand/collapse chevrons.
+2. **Categorical Taxonomy Mode**: Grouped by architectural dimension: Business & Governance, Design & Experience, Technical Architecture, and Mutation Lifecycle.
+
+== 3. Interactive Inspector & Traceability
+Selecting any tree node instantly populates the inspector without navigating away from the tree:
+* **Header & Status**: Document ID, display title, validation health (`● VALID`), lifecycle status, and relative path with clipboard copy.
+* **Metadata Cards**: Schema reference, architectural category, domain/owning component, and invariant test bindings.
+* **Cross-Specification Relations**: Detects referenced IDs across domains and provides one-click pills to jump across the specification graph.
+
+== 4. Real-Time Search & Branch Unfolding
+Typing into the global or catalog search input dynamically filters tree branches in real time, automatically expanding folders containing matching documents and highlighting results.
 

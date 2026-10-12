@@ -101,6 +101,16 @@ def test_static_portal_builder(tmp_path: Path):
     assert 'id="tokenSwatchesGrid"' in index_html
     assert "📊" not in index_html  # Replaced with modern SVG home icon
 
+    # Verify Master-Detail Tree Explorer in Catalog View (SCR-PORTAL-CATALOG)
+    assert 'id="catalogTreeLayout"' in index_html
+    assert 'id="catalogTreeContainer"' in index_html
+    assert 'id="catalogDetailPane"' in index_html
+    assert 'id="catalogSearchInput"' in index_html
+    assert "buildPathTree" in index_html
+    assert "selectCatalogSpec" in index_html
+    assert "toggleFolderNode" in index_html
+    assert "setCatalogViewMode" in index_html
+
     with open(data_file, encoding="utf-8") as f:
         json_data = json.load(f)
     assert json_data["overview"]["system_id"] == "SYS-EIDOS-001"
