@@ -182,7 +182,9 @@ export function App() {
               onInspectSpec={() => setActiveTab("catalog")}
             />
           )}
-          {activeTab === "architecture" && <ArchitectureView data={data} />}
+          {activeTab === "architecture" && (
+            <ArchitectureView data={data} darkMode={darkMode} />
+          )}
           {activeTab === "deltas" && <DeltasView data={data} />}
           {activeTab === "catalog" && <CatalogView data={data} />}
           {activeTab === "business" && <BusinessView data={data} />}

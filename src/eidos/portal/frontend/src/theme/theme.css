@@ -1,125 +1,198 @@
 @import "tailwindcss";
 
-@layer base {
-  :root {
-    --background: #f8fafc;
-    --foreground: #0f172a;
+@custom-variant dark (&:where(.dark, .dark *));
 
-    --card: #ffffff;
-    --card-foreground: #0f172a;
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
 
-    --popover: #ffffff;
-    --popover-foreground: #0f172a;
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
 
-    --primary: #2563eb;
-    --primary-foreground: #ffffff;
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
 
-    --secondary: #7c3aed;
-    --secondary-foreground: #ffffff;
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
 
-    --muted: #f1f5f9;
-    --muted-foreground: #64748b;
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
 
-    --accent: #f1f5f9;
-    --accent-foreground: #0f172a;
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
 
-    --destructive: #ef4444;
-    --destructive-foreground: #ffffff;
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
 
-    --border: #e2e8f0;
-    --input: #e2e8f0;
-    --ring: #2563eb;
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
 
-    --radius: 0.75rem;
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 
-    /* MD3 Color Roles (Light) */
-    --md-primary: #2563eb;
-    --md-on-primary: #ffffff;
-    --md-primary-container: rgba(37, 99, 235, 0.12);
-    --md-on-primary-container: #1e3a8a;
+  --color-md-primary: var(--md-primary);
+  --color-md-on-primary: var(--md-on-primary);
+  --color-md-primary-container: var(--md-primary-container);
+  --color-md-on-primary-container: var(--md-on-primary-container);
 
-    --md-secondary: #7c3aed;
-    --md-on-secondary: #ffffff;
-    --md-secondary-container: rgba(124, 58, 237, 0.12);
-    --md-on-secondary-container: #4c1d95;
+  --color-md-secondary: var(--md-secondary);
+  --color-md-on-secondary: var(--md-on-secondary);
+  --color-md-secondary-container: var(--md-secondary-container);
+  --color-md-on-secondary-container: var(--md-on-secondary-container);
 
-    --md-tertiary: #059669;
-    --md-on-tertiary: #ffffff;
-    --md-tertiary-container: rgba(5, 150, 105, 0.12);
-    --md-on-tertiary-container: #064e3b;
+  --color-md-tertiary: var(--md-tertiary);
+  --color-md-on-tertiary: var(--md-on-tertiary);
+  --color-md-tertiary-container: var(--md-tertiary-container);
+  --color-md-on-tertiary-container: var(--md-on-tertiary-container);
 
-    --md-surface: #f8fafc;
-    --md-on-surface: #0f172a;
-    --md-surface-dim: #f1f5f9;
-    --md-surface-bright: #ffffff;
-    --md-surface-container-lowest: #ffffff;
-    --md-surface-container-low: #f8fafc;
-    --md-surface-container: #ffffff;
-    --md-surface-container-high: #f1f5f9;
-    --md-surface-container-highest: #e2e8f0;
+  --color-md-surface: var(--md-surface);
+  --color-md-on-surface: var(--md-on-surface);
+  --color-md-surface-container: var(--md-surface-container);
+  --color-md-surface-container-low: var(--md-surface-container-low);
+  --color-md-surface-container-high: var(--md-surface-container-high);
 
-    --md-outline: #94a3b8;
-    --md-outline-variant: #e2e8f0;
-  }
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 
-  .dark {
-    --background: #090d16;
-    --foreground: #f8fafc;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+}
 
-    --card: #111827;
-    --card-foreground: #f8fafc;
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
 
-    --popover: #111827;
-    --popover-foreground: #f8fafc;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
 
-    --primary: #60a5fa;
-    --primary-foreground: #082f49;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
 
-    --secondary: #a78bfa;
-    --secondary-foreground: #2e1065;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
 
-    --muted: #1e293b;
-    --muted-foreground: #94a3b8;
+  --secondary: #7c3aed;
+  --secondary-foreground: #ffffff;
 
-    --accent: #1e293b;
-    --accent-foreground: #f8fafc;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
 
-    --destructive: #f87171;
-    --destructive-foreground: #450a0a;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
 
-    --border: #1e293b;
-    --input: #1e293b;
-    --ring: #60a5fa;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
 
-    /* MD3 Color Roles (Dark) */
-    --md-primary: #60a5fa;
-    --md-on-primary: #082f49;
-    --md-primary-container: rgba(59, 130, 246, 0.18);
-    --md-on-primary-container: #bfdbfe;
+  --border: #e2e8f0;
+  --input: #cbd5e1;
+  --ring: #2563eb;
 
-    --md-secondary: #a78bfa;
-    --md-on-secondary: #2e1065;
-    --md-secondary-container: rgba(139, 92, 246, 0.18);
-    --md-on-secondary-container: #ddd6fe;
+  --radius: 0.75rem;
 
-    --md-tertiary: #34d399;
-    --md-on-tertiary: #022c22;
-    --md-tertiary-container: rgba(16, 185, 129, 0.18);
-    --md-on-tertiary-container: #a7f3d0;
+  /* MD3 Color Roles (Light) */
+  --md-primary: #2563eb;
+  --md-on-primary: #ffffff;
+  --md-primary-container: rgba(37, 99, 235, 0.12);
+  --md-on-primary-container: #1e3a8a;
 
-    --md-surface: #090d16;
-    --md-on-surface: #f8fafc;
-    --md-surface-dim: #060910;
-    --md-surface-bright: #1e293b;
-    --md-surface-container-lowest: #060910;
-    --md-surface-container-low: #0f172a;
-    --md-surface-container: #111827;
-    --md-surface-container-high: #1e293b;
-    --md-surface-container-highest: #334155;
+  --md-secondary: #7c3aed;
+  --md-on-secondary: #ffffff;
+  --md-secondary-container: rgba(124, 58, 237, 0.12);
+  --md-on-secondary-container: #4c1d95;
 
-    --md-outline: #475569;
-    --md-outline-variant: #1e293b;
-  }
+  --md-tertiary: #059669;
+  --md-on-tertiary: #ffffff;
+  --md-tertiary-container: rgba(5, 150, 105, 0.12);
+  --md-on-tertiary-container: #064e3b;
+
+  --md-surface: #f8fafc;
+  --md-on-surface: #0f172a;
+  --md-surface-dim: #f1f5f9;
+  --md-surface-bright: #ffffff;
+  --md-surface-container-lowest: #ffffff;
+  --md-surface-container-low: #f8fafc;
+  --md-surface-container: #ffffff;
+  --md-surface-container-high: #f1f5f9;
+  --md-surface-container-highest: #e2e8f0;
+
+  --md-outline: #94a3b8;
+  --md-outline-variant: #e2e8f0;
+
+  color-scheme: light;
+}
+
+.dark {
+  --background: #090d16;
+  --foreground: #f8fafc;
+
+  --card: #111827;
+  --card-foreground: #f8fafc;
+
+  --popover: #111827;
+  --popover-foreground: #f8fafc;
+
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+
+  --secondary: #8b5cf6;
+  --secondary-foreground: #ffffff;
+
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+
+  --border: #1f2937;
+  --input: #1f2937;
+  --ring: #3b82f6;
+
+  /* MD3 Color Roles (Dark) */
+  --md-primary: #3b82f6;
+  --md-on-primary: #082f49;
+  --md-primary-container: rgba(59, 130, 246, 0.18);
+  --md-on-primary-container: #bfdbfe;
+
+  --md-secondary: #8b5cf6;
+  --md-on-secondary: #2e1065;
+  --md-secondary-container: rgba(139, 92, 246, 0.18);
+  --md-on-secondary-container: #ddd6fe;
+
+  --md-tertiary: #10b981;
+  --md-on-tertiary: #022c22;
+  --md-tertiary-container: rgba(16, 185, 129, 0.18);
+  --md-on-tertiary-container: #a7f3d0;
+
+  --md-surface: #090d16;
+  --md-on-surface: #f8fafc;
+  --md-surface-dim: #060910;
+  --md-surface-bright: #1e293b;
+  --md-surface-container-lowest: #060910;
+  --md-surface-container-low: #0f172a;
+  --md-surface-container: #111827;
+  --md-surface-container-high: #1e293b;
+  --md-surface-container-highest: #334155;
+
+  --md-outline: #475569;
+  --md-outline-variant: #1f2937;
+
+  color-scheme: dark;
+}
+
+html, body {
+  background-color: var(--background);
+  color: var(--foreground);
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
 }
 
 /* Material Design 3 Elevation Utility Classes */
@@ -127,19 +200,19 @@
   box-shadow: none;
 }
 .md-elevation-1 {
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.25), 0 1px 2px -1px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.2);
 }
 .md-elevation-2 {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.35), 0 2px 4px -2px rgba(0, 0, 0, 0.25);
 }
 .md-elevation-3 {
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.35), 0 4px 6px -4px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.25);
 }
 .md-elevation-4 {
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.45), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
 }
 .md-elevation-5 {
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.55);
 }
 
 /* MD3 State Layers */

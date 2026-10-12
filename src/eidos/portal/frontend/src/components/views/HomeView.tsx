@@ -20,8 +20,8 @@ export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) 
       value: overview.total_specs,
       subtext: `${overview.valid_specs} Validated`,
       icon: Layers,
-      color: "text-blue-500",
-      bg: "bg-blue-500/10",
+      color: "text-blue-600 dark:text-blue-400",
+      bg: "bg-blue-500/10 dark:bg-blue-400/15",
       tab: "catalog",
     },
     {
@@ -29,8 +29,8 @@ export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) 
       value: overview.components_count,
       subtext: "Deployable Units",
       icon: Box,
-      color: "text-indigo-500",
-      bg: "bg-indigo-500/10",
+      color: "text-indigo-600 dark:text-indigo-400",
+      bg: "bg-indigo-500/10 dark:bg-indigo-400/15",
       tab: "architecture",
     },
     {
@@ -38,8 +38,8 @@ export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) 
       value: overview.deltas_count,
       subtext: "Planned Mutations",
       icon: GitPullRequest,
-      color: "text-purple-500",
-      bg: "bg-purple-500/10",
+      color: "text-purple-600 dark:text-purple-400",
+      bg: "bg-purple-500/10 dark:bg-purple-400/15",
       tab: "deltas",
     },
     {
@@ -47,8 +47,8 @@ export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) 
       value: data.invariants?.length || 0,
       subtext: "POL-002 Traceability",
       icon: ShieldCheck,
-      color: "text-emerald-500",
-      bg: "bg-emerald-500/10",
+      color: "text-emerald-600 dark:text-emerald-400",
+      bg: "bg-emerald-500/10 dark:bg-emerald-400/15",
       tab: "catalog",
     },
   ];

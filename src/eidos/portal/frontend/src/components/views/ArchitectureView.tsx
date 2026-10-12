@@ -20,9 +20,10 @@ import type { PortalData, SpecComponent } from "@/types";
 
 export interface ArchitectureViewProps {
   data: PortalData;
+  darkMode?: boolean;
 }
 
-export function ArchitectureView({ data }: ArchitectureViewProps) {
+export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProps) {
   const [level, setLevelState] = React.useState<1 | 2 | 3>(2);
   const [selectedContainerId, setSelectedContainerId] = React.useState<string>(
     data.components[0]?.id || "CNT-EIDOS-CORE"
@@ -33,15 +34,32 @@ export function ArchitectureView({ data }: ArchitectureViewProps) {
 
   const diagramRef = React.useRef<HTMLDivElement>(null);
 
-  // Initialize mermaid
+  // Initialize mermaid and reconfigure when darkMode changes
   React.useEffect(() => {
     mermaid.initialize({
       startOnLoad: false,
-      theme: "dark",
+      theme: darkMode ? "dark" : "default",
       securityLevel: "loose",
       fontFamily: "Inter, system-ui, sans-serif",
+      themeVariables: darkMode
+        ? {
+            darkMode: true,
+            background: "transparent",
+            mainBkg: "#111827",
+            nodeBorder: "#3b82f6",
+            lineColor: "#60a5fa",
+            textColor: "#f8fafc",
+          }
+        : {
+            darkMode: false,
+            background: "transparent",
+            mainBkg: "#ffffff",
+            nodeBorder: "#2563eb",
+            lineColor: "#2563eb",
+            textColor: "#0f172a",
+          },
     });
-  }, []);
+  }, [darkMode]);
 
   // Compute active diagram definition
   const currentDiagramSource = React.useMemo(() => {
@@ -124,7 +142,7 @@ export function ArchitectureView({ data }: ArchitectureViewProps) {
     return () => {
       isCancelled = true;
     };
-  }, [currentDiagramSource]);
+  }, [currentDiagramSource, darkMode]);
 
   return (
     <div className="space-y-4 animate-in fade-in duration-200">

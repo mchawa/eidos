@@ -191,20 +191,41 @@ export function NavigationRail({
       {/* Footer & Theme Switcher */}
       <div className="p-3 border-t border-border/70 space-y-2">
         <button
+          id="themeToggleBtn"
           onClick={onToggleDarkMode}
           className={cn(
-            "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer",
-            collapsed && "justify-center px-0"
+            "w-full flex items-center justify-between p-2.5 rounded-xl text-xs transition-colors cursor-pointer border border-border/60 hover:bg-muted/60",
+            collapsed ? "justify-center px-0" : "px-3"
           )}
           title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+          aria-label="Toggle theme"
         >
-          {darkMode ? (
-            <Sun className="h-4 w-4 text-amber-400 shrink-0" />
-          ) : (
-            <Moon className="h-4 w-4 text-blue-500 shrink-0" />
-          )}
+          <div className="flex items-center gap-2.5 truncate">
+            {darkMode ? (
+              <Moon className="h-4 w-4 text-blue-400 shrink-0" />
+            ) : (
+              <Sun className="h-4 w-4 text-amber-500 shrink-0" />
+            )}
+            {!collapsed && (
+              <span className="font-medium text-foreground truncate">
+                {darkMode ? "Dark Theme" : "Light Theme"}
+              </span>
+            )}
+          </div>
           {!collapsed && (
-            <span className="truncate">{darkMode ? "Light Theme" : "Dark Theme"}</span>
+            <div
+              className={cn(
+                "w-8 h-4 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
+                darkMode ? "bg-primary" : "bg-muted-foreground/30"
+              )}
+            >
+              <div
+                className={cn(
+                  "w-3 h-3 rounded-full bg-white transition-transform shadow-xs",
+                  darkMode ? "translate-x-4" : "translate-x-0"
+                )}
+              />
+            </div>
           )}
         </button>
       </div>
