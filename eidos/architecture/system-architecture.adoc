@@ -59,6 +59,7 @@ solution_strategy:
   - "Portable Agent Plugins: Strict conformance to agent-plugins.org v1.0.0 packaging specialized skills."
   - "Token-Budgeted Context Slicing: Extracts compact, token-efficient architectural subgraphs (C4 Level 2/3 topology, contracts, capabilities, and invariants) for agent context windows."
   - "Polyglot Invariant Verification: Drift engine scans tests across Python, TypeScript, Go, Rust, and Java to guarantee mandatory invariant test bindings."
+  - "Embedded SQLite Knowledge Graph: Auto-synchronizing SQLite index (.eidos/cache/index.db) providing sub-millisecond AST and edge catalog lookups, FTS5 BM25 lexical retrieval, and recursive CTE blast-radius traversal with zero external runtime dependencies."
 
 cross_cutting_concepts:
   authentication_and_authz: "Git token credentials (GITHUB_TOKEN / GITLAB_TOKEN) scoped via environment or local Git credentials."
@@ -66,6 +67,7 @@ cross_cutting_concepts:
   telemetry_and_logging: "Local stdout/stderr streaming with optional structured JSON log output for CI pipelines."
   design_tokens: "W3C Design Tokens Community Group (DTCG) tokens.json standard compiling across web and native targets."
   lifecycle_isolation: "Self-contained eidos/.gitignore isolating generated status symlink views from host project."
+  data_storage: "Entirely Git filesystem backed with YAML frontmatter + AsciiDoc, accelerated by an ephemeral, zero-dependency SQLite knowledge graph cache (.eidos/cache/index.db) for sub-millisecond retrieval."
 
 deployment_view:
   hosting_model: "Distributed: Local developer workstation (CLI/MCP) and CI/CD Runner environments (GitHub Actions / GitLab CI)."
@@ -108,7 +110,10 @@ C4Context
 * **Git as the OS**: All states (PRDs, ADR-free architectures, task graphs, test bindings) reside in Git.
 * **SpecDelta Diff Engine**: Evolutionary changes are semantic mutations (`add`, `modify`, `remove`, `patch`) stored flat with gitignored symlink status views.
 * **Multi-Design Systems & W3C Tokens**: Product capabilities bridge business JTBD with technical code packages and W3C tokenized multi-brand design systems.
-* **Arc42 & C4 Hierarchical Zoom**: High-level system context down to C4 Level 3 internal package components.
+* **Interactive Hierarchical C4 Explorer**: Living Web Portal provides dynamic, clickable drill-down from C4 Level 1 System Context to Level 2 Container Topologies and Level 3 Component Whiteboxes with breadcrumbs and slide-over component inspection.
+* **Embedded SQLite Knowledge Graph & FTS5 Retrieval**: High-speed, zero-dependency caching layer (`.eidos/cache/index.db`) indexing all entities, directed dependency edges, and lexical full-text with sub-2ms dirty checking.
+* **Recursive CTE Blast-Radius & Impact Analysis**: Architectural blast radius and k-hop neighborhood traversal executed natively in SQLite via Common Table Expressions (CTEs).
+* **Tiered Context Compression Model**: Three-tier context extraction (`anchor`, `guardrails`, `deep`) reducing prompt token payloads by 60-80% for AI coding agents.
 * **Token-Budgeted Context Slicing**: Slices bounded C4 topologies, active invariants, and governing policies dynamically for AI agent contexts.
 * **Polyglot Invariant Verification**: Continuous drift detection validating automated test bindings across Python, TypeScript, Go, Rust, and Java.
 
@@ -129,7 +134,7 @@ Eidos is distributed as a monorepo consisting of the following primary container
 |===
 
 === 5.2 Level 3 Component Whitebox View
-Internal component manifests for each container:
+Internal component manifests for each container, interactively explorable in the Living Web Portal's Hierarchical C4 Explorer:
 * link:components/core.adoc[`CMP-EIDOS-CORE` Component Specification]
 * link:components/cli.adoc[`CMP-EIDOS-CLI` Component Specification]
 * link:components/mcp.adoc[`CMP-EIDOS-MCP` Component Specification]
@@ -153,4 +158,4 @@ Runtime execution choreographies are defined in:
 * **Design System Standard**: W3C Design Tokens Community Group (`tokens.json`) with multi-brand inheritance.
 * **Lifecycle Isolation**: Self-contained `eidos/.gitignore` isolating generated status symlink views (`deltas/by-status/`).
 * **Error Diagnostics**: Standardized exit codes and formatted terminal tables using Rich.
-* **Data Storage**: Entirely Git filesystem backed with YAML frontmatter + AsciiDoc.
+* **Data Storage**: Entirely Git filesystem backed with YAML frontmatter + AsciiDoc living specifications, accelerated by an ephemeral, zero-dependency SQLite knowledge graph cache (`.eidos/cache/index.db`).

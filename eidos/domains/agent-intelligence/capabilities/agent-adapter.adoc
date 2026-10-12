@@ -42,8 +42,33 @@ technical:
       rule: "The embedded architectural knowledge graph must automatically detect drift and lazily synchronize before query execution, maintaining sub-10ms response times with zero external runtime dependencies."
       test_binding: "tests/test_graph_index.py::test_spike_b_zero_drift_on_mutation"
 ---
-= Capability: Universal Agent Adapter Layer
+= Capability: Universal Agent Adapter & Context Slicing Layer
 :toc: left
 
 == Intent
-Avoids vendor lock-in. Whether an organization prefers running local agents via CLI (like Google Antigravity `agy`), cloud API agents (OpenAI Codex, Claude), or custom internal models, the adapter normalizes input prompts, context windows, and output verification.
+Avoids vendor lock-in and eliminates context window bloat. Whether an organization prefers running local agents via CLI (like Google Antigravity `agy`), cloud API agents (OpenAI Codex, Claude), or stdio MCP environments, the adapter normalizes input prompts, context windows, and output verification.
+
+By replacing raw file dumps with token-budgeted, graph-indexed architectural slices, Eidos ensures that autonomous agents have precisely the right depth of context (C4 topology, interface contracts, governing policies, and test-bound invariants) without overflowing token budgets or hallucinating boundaries.
+
+== Key Responsibilities
+* **Pluggable Agent Drivers**: Standard adapter protocol across Antigravity, Claude Code, and Codex.
+* **Tiered Architectural Context Slicing**: Dynamically extracting token-compressed architectural subgraphs matching task requirements.
+* **Hybrid Lexical-Relational Retrieval**: Combining FTS5 BM25 search with graph-neighborhood traversals to resolve engineering prompts to architectural entities.
+* **Architectural Blast-Radius Analysis**: Recursive CTE impact mapping allowing agents to assess blast radius before proposing code changes.
+* **Lifecycle Linting & Safety Hooks**: Pre-completion hooks enforcing specification schemas, valid cross-references, and test invariant coverage.
+
+== Tiered Context Slicing Architecture
+
+Eidos implements a three-tier context compression model:
+
+[cols="1,2,3", options="header"]
+|===
+| Tier | Approximate Size | Contents Included
+| `anchor` | ~1,500 tokens | Owning container (`CMP-*`), internal module responsibility, primary interface contracts (`CTR-*`), governing policies (`POL-*`), and immediate capability invariants (`INV-*`).
+| `guardrails` | ~3,500 tokens | Everything in `anchor`, plus 1-hop upstream and downstream peer containers, related domain capabilities, and test bindings. Reduces token payload by >=60% compared to raw file loading.
+| `deep` | ~8,000 tokens | Comprehensive architectural audit slice: recursive CTE blast-radius traversal of all downstream dependents, cross-boundary contracts, full policy texts, and complete invariant test suites.
+|===
+
+== Hybrid Retrieval & Freshness Invariant
+* **FTS5 BM25 Lexical Ranking**: Translates natural language engineering tasks (e.g. "update auth token expiration") into exact architectural IDs.
+* **Zero-Drift Freshness (`INV-AGENT-GRAPH-INDEX-FRESHNESS`)**: Every MCP tool and CLI query lazily checks dirty status via SHA-256 and mtime hashing, synchronizing modified specs in sub-5ms so agents never operate on stale architecture.

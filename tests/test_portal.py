@@ -72,6 +72,15 @@ def test_portal_data_generation():
     assert "CMP_EIDOS_CORE" in data["diagrams"]["c4_containers"]
     assert "CMP_EIDOS_PORTAL" in data["diagrams"]["c4_containers"]
 
+    # C4 Level 3 Component Whitebox diagrams verification
+    c4_components = data["diagrams"]["c4_components"]
+    assert isinstance(c4_components, dict)
+    assert len(c4_components) >= 5
+    for cid in ["CMP-EIDOS-CORE", "CMP-EIDOS-CLI", "CMP-EIDOS-PORTAL", "CMP-EIDOS-MCP"]:
+        assert cid in c4_components
+        assert c4_components[cid].startswith("graph TD")
+        assert cid.replace("-", "_") in c4_components[cid]
+
     # Deltas status tracking
     deltas = data["deltas"]
     assert "applied" in deltas
@@ -109,6 +118,22 @@ def test_static_portal_builder(tmp_path: Path):
     assert 'id="tab-catalog"' in index_html
     assert 'id="tokenSwatchesGrid"' in index_html
     assert "📊" not in index_html  # Replaced with modern SVG home icon
+
+    # Verify C4 Architecture Explorer (L1-L3) & Inspector Drawer in compiled SPA
+    assert 'id="c4ActiveDiagram"' in index_html
+    assert 'id="c4LevelSwitcher"' in index_html
+    assert 'id="btnC4Level1"' in index_html
+    assert 'id="btnC4Level2"' in index_html
+    assert 'id="btnC4Level3"' in index_html
+    assert 'id="c4Breadcrumbs"' in index_html
+    assert 'id="c4ContainerSelect"' in index_html
+    assert 'id="btnC4LevelUp"' in index_html
+    assert 'id="c4InspectorDrawer"' in index_html
+    assert 'setC4Level' in index_html
+    assert 'drillDownToContainer' in index_html
+    assert 'openC4Inspector' in index_html
+    assert 'attachC4ClickHandlers' in index_html
+    assert 'closeC4Inspector' in index_html
 
     # Verify Unified Hierarchical Tree-Grid in Catalog View (SCR-PORTAL-CATALOG)
     assert 'id="specsTreeGridTable"' in index_html

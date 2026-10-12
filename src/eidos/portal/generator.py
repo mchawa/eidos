@@ -173,6 +173,9 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     # 6. Dynamic Mermaid Diagrams
     c4_context_mermaid = _generate_c4_context_mermaid(personas, system_id, system_title)
     c4_containers_mermaid = _generate_c4_containers_mermaid(components)
+    c4_components_mermaid: dict[str, str] = {}
+    for comp in components:
+        c4_components_mermaid[comp["id"]] = _generate_c4_component_mermaid(comp, components)
 
     overview = {
         "system_id": system_id,
@@ -215,6 +218,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "diagrams": {
             "c4_context": c4_context_mermaid,
             "c4_containers": c4_containers_mermaid,
+            "c4_components": c4_components_mermaid,
         },
     }
 
@@ -394,6 +398,70 @@ def _generate_c4_containers_mermaid(components: list[dict[str, Any]]) -> str:
             if c["id"] != "CMP-EIDOS-CORE":
                 node_id = c["id"].replace("-", "_")
                 lines.append(f"  {node_id} -->|In-Process Python API| CMP_EIDOS_CORE")
+
+    return "\n".join(lines)
+
+
+def _generate_c4_component_mermaid(component: dict[str, Any], all_components: list[dict[str, Any]]) -> str:
+    """Generate Mermaid syntax for C4 Level 3 Component Whitebox View of a single container."""
+    cid = component["id"]
+    clean_name = component.get("name", cid).replace('"', "'")
+    ctype = component.get("container_type", "library")
+    runtime = component.get("runtime", "N/A").replace('"', "'")
+    internals = component.get("internal_components", [])
+    box_id = f"subgraph_{cid.replace('-', '_')}"
+
+    lines = [
+        "graph TD",
+        "  classDef module fill:#1e1b4b,stroke:#6366f1,color:#fff,stroke-width:2px,rx:6px;",
+        "  classDef peer fill:#1e293b,stroke:#475569,color:#94a3b8,stroke-width:1.5px,rx:6px,stroke-dasharray: 4 4;",
+        "  classDef contract fill:#064e3b,stroke:#10b981,color:#fff,stroke-width:2px,rx:6px;",
+        "",
+        f'  subgraph {box_id} ["📦 {cid}: {clean_name} [{ctype} • {runtime}]"]',
+    ]
+
+    if not internals:
+        fallback_id = f"mod_{cid.replace('-', '_')}_main"
+        lines.append(f'    {fallback_id}["<div style=\'padding:10px 14px;\'><b>{clean_name}</b><br/><i>Core Container Logic</i></div>"]:::module')
+    else:
+        for idx, mod in enumerate(internals):
+            mname = mod.get("name", f"Module {idx+1}").replace('"', "'")
+            resp = mod.get("responsibility", "").replace('"', "'")
+            short_resp = (resp[:75] + "...") if len(resp) > 75 else resp
+            spath = mod.get("source_path", "").replace('"', "'")
+            mod_id = f"mod_{cid.replace('-', '_')}_{idx}"
+            lines.append(
+                f'    {mod_id}["<div style=\'padding:6px 10px;text-align:left;max-width:260px;\'>'
+                f'<b>{mname}</b><br/><small style=\'color:#93c5fd;font-family:monospace;font-size:10px;\'>{spath}</small><br/>'
+                f'<span style=\'font-size:11px;color:#cbd5e1;\'>{short_resp}</span></div>"]:::module'
+            )
+
+        # Sequential flow representation among modules
+        for idx in range(len(internals) - 1):
+            curr_id = f"mod_{cid.replace('-', '_')}_{idx}"
+            next_id = f"mod_{cid.replace('-', '_')}_{idx+1}"
+            lines.append(f"    {curr_id} -.-> {next_id}")
+
+    lines.append("  end")
+
+    # Inbound / Outbound peer container dependencies
+    deps = component.get("dependencies", {})
+    int_deps = deps.get("internal_components", []) if isinstance(deps, dict) else []
+    for dep_id in int_deps:
+        if dep_id != cid:
+            peer_node = f"peer_{dep_id.replace('-', '_')}"
+            lines.append(f'  {peer_node}["<div style=\'padding:6px 10px;\'><b>{dep_id}</b><br/><i>[Peer Container]</i></div>"]:::peer')
+            first_mod = f"mod_{cid.replace('-', '_')}_0" if internals else f"mod_{cid.replace('-', '_')}_main"
+            lines.append(f"  {first_mod} ==>|Consumes / Depends On| {peer_node}")
+
+    # Provided contracts
+    contracts = component.get("contracts", {})
+    provides = contracts.get("provides", []) if isinstance(contracts, dict) else []
+    for ctr_id in provides:
+        ctr_node = f"ctr_{ctr_id.replace('-', '_')}"
+        lines.append(f'  {ctr_node}["<div style=\'padding:6px 10px;\'><b>{ctr_id}</b><br/><i>[Interface Contract]</i></div>"]:::contract')
+        last_mod = f"mod_{cid.replace('-', '_')}_{len(internals)-1}" if internals else f"mod_{cid.replace('-', '_')}_main"
+        lines.append(f"  {last_mod} -->|Provides Interface| {ctr_node}")
 
     return "\n".join(lines)
 
