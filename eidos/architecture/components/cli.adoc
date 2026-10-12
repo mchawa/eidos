@@ -7,7 +7,7 @@ container_type: "cli_app"
 runtime: "Python 3.12 / Typer / Rich"
 package_path: "src/eidos/cli"
 
-domain_binding: DOM-PRODUCT-CORE
+domain_binding: DOM-SPEC-ENGINE
 
 c4_internal_components:
   - name: "CliApp"
@@ -27,6 +27,9 @@ c4_internal_components:
     source_path: "src/eidos/cli/main.py"
   - name: "InitCommand"
     responsibility: "CLI entrypoint for repository bootstrapping and agent plugin installation."
+    source_path: "src/eidos/cli/main.py"
+  - name: "ContextCommand"
+    responsibility: "Extracts compact, token-efficient architectural subgraph slices for AI agents."
     source_path: "src/eidos/cli/main.py"
 
 dependencies:
@@ -63,5 +66,6 @@ This container represents the user-facing CLI under `src/eidos/cli/`. It provide
 | **DeltaCommands** | SpecDelta mutation lifecycle, status dashboard, and view synchronization | `src/eidos/cli/main.py`
 | **PluginCommands** | Agent plugin management conforming to agent-plugins.org v1.0.0 | `src/eidos/cli/main.py`
 | **InitCommand** | Repository bootstrapping and baseline spec scaffolding | `src/eidos/cli/main.py`
+| **ContextCommand** | Extracts compact architectural subgraph slices for AI agents | `src/eidos/cli/main.py`
 |===
 

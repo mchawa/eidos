@@ -7,7 +7,7 @@ status: active
 flow_type: client_internal
 client: "CLT-WEB-PORTAL"
 capabilities:
-  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
+  - "eidos/domains/spec-engine/capabilities/living-spec-engine.adoc"
 
 steps:
   - step: 1
@@ -49,3 +49,4 @@ flowchart LR
   Filtered -->|Click Row| Modal["Spec Inspector Drawer"]
   Modal -->|Copy Path / ID| Clipboard["Clipboard Notification"]
 ----
+

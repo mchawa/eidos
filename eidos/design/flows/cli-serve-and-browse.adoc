@@ -8,7 +8,7 @@ flow_type: cross_client
 clients:
   - "CLT-WEB-PORTAL"
 capabilities:
-  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
+  - "eidos/domains/spec-engine/capabilities/living-spec-engine.adoc"
 
 steps:
   - step: 1
@@ -54,3 +54,4 @@ sequenceDiagram
   Server-->>Portal: 200 OK (Living Specs JSON)
   Portal-->>Dev: Interactive Living Portal rendered
 ----
+

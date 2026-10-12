@@ -1,0 +1,69 @@
+---
+type: product/capability
+schema: schemas/v1/product/capability.schema.yaml
+id: CAP-EXP-001
+title: "Interactive Living Web Portal & Visual Documentation Engine"
+domain: DOM-EXPERIENCE-PORTAL
+status: active
+version: "1.0.0"
+
+business:
+  personas:
+    - eidos/personas/software-architect.adoc
+    - eidos/personas/software-engineer.adoc
+    - eidos/personas/design-engineer.adoc
+    - eidos/personas/product-lead.adoc
+    - eidos/personas/autonomous-agent.adoc
+  jtbd: "Explore, search, and visually inspect living C4 architecture models, multi-client screens, and SpecDelta lifecycles without opening an IDE or compiling external frontend bundles."
+  policies:
+    - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
+    - eidos/policies/POL-003-continuous-documentation-sync.adoc
+
+experience:
+  clients:
+    - "eidos/design/clients/web-portal/client.adoc"
+  design_systems:
+    - "eidos/design/systems/core/system.adoc"
+  screens:
+    - "eidos/design/clients/web-portal/screens/portal-home.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-business.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-design.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-architecture.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-deltas.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
+  flows:
+    - "eidos/design/clients/web-portal/flows/spec-exploration.adoc"
+    - "eidos/design/flows/cli-serve-and-browse.adoc"
+  ui_components:
+    - "eidos/design/systems/core/components/portal-shell.adoc"
+    - "eidos/design/systems/core/components/portal-sidebar.adoc"
+    - "eidos/design/systems/core/components/portal-metric-card.adoc"
+
+technical:
+  components:
+    - "src/eidos/portal/server.py"
+    - "src/eidos/portal/generator.py"
+    - "src/eidos/portal/assets.py"
+    - "src/eidos/portal/builder.py"
+  contracts:
+    interfaces:
+      - "eidos serve [--port <port>]"
+      - "eidos build-site [--out <dir>]"
+  invariants:
+    - id: INV-PORTAL-ZERO-NODE-DEP
+      rule: "The web portal daemon and static site builder must operate using Python standard library without external Node.js/npm dependencies."
+      test_binding: "tests/test_portal.py::test_portal_data_generation"
+    - id: INV-PORTAL-INTERACTIVE-C4
+      rule: "The portal must render responsive C4 Level 1 Context and Level 2 Container diagrams dynamically generated from living architecture specifications."
+      test_binding: "tests/test_portal.py::test_portal_html_generation"
+---
+= Capability: Interactive Living Web Portal & Visual Documentation Engine
+:toc: left
+
+== Intent
+Technical specifications and architecture models are often trapped in raw text files or separate wikis. This capability provides a local, zero-dependency embedded HTTP server (`eidos serve`) and static site builder (`eidos build-site`) that turns living AsciiDoc files into an interactive single-page application.
+
+== Key Responsibilities
+* Real-time inspection of C4 context and container diagrams using client-side Mermaid rendering.
+* Interactive SpecDelta Kanban dashboard tracking proposed, in-review, and applied mutations.
+* Full-text fuzzy search and real-time schema filtering across all catalog entities.

@@ -7,7 +7,7 @@ container_type: "library"
 runtime: "Python 3.12 / Hatchling / PyYAML / jsonschema"
 package_path: "src/eidos/core"
 
-domain_binding: DOM-PRODUCT-CORE
+domain_binding: DOM-SPEC-ENGINE
 
 c4_internal_components:
   - name: "SpecParser"
@@ -28,6 +28,9 @@ c4_internal_components:
   - name: "AssetLocator"
     responsibility: "Locates externalized specification schemas and canonical plugin reference assets across local checkouts and wheels."
     source_path: "src/eidos/core/assets.py"
+  - name: "ContextSlicer"
+    responsibility: "Extracts compact, token-efficient architectural subgraph slices across C4 components, contracts, capabilities, invariants, and policies."
+    source_path: "src/eidos/core/context.py"
 
 dependencies:
   internal_components: []
@@ -61,6 +64,7 @@ This container represents the foundational library under `src/eidos/core/`. It o
 | **DesignEngine** | Multi-Design Systems, W3C DTCG tokens, UI component contracts, and screen state machines | `src/eidos/core/scaffolder.py`
 | **RepositoryInitializer** | Repository bootstrapping with self-contained gitignore and baseline specs | `src/eidos/core/scaffolder.py`
 | **AssetLocator** | Centralized locator for schemas and plugin reference in assets/ | `src/eidos/core/assets.py`
+| **ContextSlicer** | Extracts compact architectural subgraph slices across living specifications | `src/eidos/core/context.py`
 |===
 
 == Operational Invariants & Quality Attributes

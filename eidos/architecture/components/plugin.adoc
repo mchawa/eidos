@@ -7,7 +7,7 @@ container_type: "library"
 runtime: "Python 3.12 / agent-plugins.org v1.0.0"
 package_path: "src/eidos/plugin"
 
-domain_binding: DOM-AGENT-HARNESS
+domain_binding: DOM-AGENT-INTELLIGENCE
 
 c4_internal_components:
   - name: "PluginInstaller"

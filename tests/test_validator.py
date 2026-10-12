@@ -31,7 +31,7 @@ def test_bundled_schemas_loaded(validator):
 
 
 def test_validate_eidos_specifications(validator):
-    """Verify that all living specifications under eidos/ pass schema validation."""
+    """Verify INV-SPEC-VALIDATION and INV-SPEC-GRAPH-INTEGRITY: all living specifications pass schema validation and entity ID graph integrity."""
     eidos_dir = Path("eidos")
     assert eidos_dir.exists(), "eidos/ specification directory does not exist"
 
@@ -44,7 +44,13 @@ def test_validate_eidos_specifications(validator):
     )
     assert len(report.entity_index) == report.total_docs
     assert "CMP-EIDOS-CLI" in report.entity_index
-    assert "DOM-PRODUCT-CORE" in report.entity_index
+    assert "DOM-SPEC-ENGINE" in report.entity_index
+    assert "DOM-EXPERIENCE-PORTAL" in report.entity_index
+    assert "DOM-AGENT-INTELLIGENCE" in report.entity_index
+    assert "DOM-VCS-LIFECYCLE" in report.entity_index
+    assert "PER-SOFTWARE-ARCHITECT" in report.entity_index
+    assert "PER-SOFTWARE-ENGINEER" in report.entity_index
+    assert "PER-DESIGN-ENGINEER" in report.entity_index
     assert "POL-001-GIT-SOURCE-OF-TRUTH" in report.entity_index
 
 

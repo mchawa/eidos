@@ -3,12 +3,14 @@ type: product/capability
 schema: schemas/v1/product/capability.schema.yaml
 id: CAP-PROD-002
 title: "SpecDelta Semantic Mutation Engine"
-domain: DOM-PRODUCT-CORE
+domain: DOM-SPEC-ENGINE
 status: active
-version: "1.0.0"
+version: "1.1.0"
 
 business:
   personas:
+    - eidos/personas/software-architect.adoc
+    - eidos/personas/software-engineer.adoc
     - eidos/personas/product-lead.adoc
     - eidos/personas/autonomous-agent.adoc
   jtbd: "Define, review, and apply explicit mutations (add, modify, patch, remove, deprecate) to features and invariants without leaving stale documentation."

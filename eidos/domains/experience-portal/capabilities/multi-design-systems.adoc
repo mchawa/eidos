@@ -1,0 +1,56 @@
+---
+type: product/capability
+schema: schemas/v1/product/capability.schema.yaml
+id: CAP-EXP-002
+title: "Multi-Design Systems, W3C Tokens & Client Surface Management"
+domain: DOM-EXPERIENCE-PORTAL
+status: active
+version: "1.0.0"
+
+business:
+  personas:
+    - eidos/personas/design-engineer.adoc
+    - eidos/personas/software-engineer.adoc
+    - eidos/personas/product-lead.adoc
+    - eidos/personas/autonomous-agent.adoc
+  jtbd: "Govern brand tokens, multi-client application targets, UI component contracts, and interaction flows as first-class living specifications synchronized with code."
+  policies:
+    - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
+    - eidos/policies/POL-003-continuous-documentation-sync.adoc
+
+experience:
+  clients:
+    - "eidos/design/clients/web-portal/client.adoc"
+  design_systems:
+    - "eidos/design/systems/core/system.adoc"
+  screens:
+    - "eidos/design/clients/web-portal/screens/portal-design.adoc"
+  flows:
+    - "eidos/design/clients/web-portal/flows/spec-exploration.adoc"
+
+technical:
+  components:
+    - "src/eidos/portal/generator.py"
+    - "src/eidos/core/models.py"
+  contracts:
+    interfaces:
+      - "eidos spec create design-system <id>"
+      - "eidos spec create ui-component <id>"
+  invariants:
+    - id: INV-W3C-DTCG-COMPLIANCE
+      rule: "Design tokens must adhere to W3C Design Tokens Community Group ($value, $type, $description) standard structure."
+      test_binding: "tests/test_portal.py::test_portal_data_generation"
+    - id: INV-CLIENT-DESIGN-BINDING
+      rule: "Every client manifest (CLT-*) must explicitly reference a valid design system (DS-*) and container manifest (CMP-*)."
+      test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+---
+= Capability: Multi-Design Systems, W3C Tokens & Client Surface Management
+:toc: left
+
+== Intent
+Visual design systems, component state machines, and client runtimes frequently suffer from token drift and undocumented edge cases. This capability elevates frontend design into a first-class living specification pillar, enabling multi-client applications (`CLT-*`), canonical UI component contracts (`UIC-*`), screen state machines (`SCR-*`), and interaction flows (`FLOW-*`) directly inside Git.
+
+== Key Responsibilities
+* Cataloging base and branded design systems using standard W3C DTCG tokens.
+* Mapping client targets (web, mobile, desktop, CLI) to their bound design systems and C4 containers.
+* Formalizing multi-step user interaction flows with visual state-transition diagrams.

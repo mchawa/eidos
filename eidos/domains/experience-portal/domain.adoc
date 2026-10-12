@@ -1,0 +1,31 @@
+---
+type: product/domain
+schema: schemas/v1/product/domain.schema.yaml
+id: DOM-EXPERIENCE-PORTAL
+name: "Multi-Design Systems & Living Web Portal"
+classification: supporting
+boundaries:
+  responsibilities:
+    - "Catalog and organize multi-design systems (DS-*) conforming to W3C Design Tokens Community Group (DTCG) standards."
+    - "Manage client applications (CLT-*), screen state machines (SCR-*), UI components (UIC-*), and interaction flows (FLOW-*)."
+    - "Serve an embedded, zero-dependency living web documentation portal (eidos serve) visualizing architecture, specs, and tokens."
+    - "Compile and export static documentation portals (eidos build-site) for CI/CD hosting on GitHub/GitLab Pages."
+    - "Render interactive C4 Mermaid diagrams, dependency graphs, and SpecDelta Kanban boards."
+  out_of_scope:
+    - "Parsing and validating AST schemas (delegated to DOM-SPEC-ENGINE)."
+    - "Git drift detection and VCS reconciliation (delegated to DOM-VCS-LIFECYCLE)."
+    - "Serving MCP tool endpoints to AI agents (delegated to DOM-AGENT-INTELLIGENCE)."
+technical_mapping:
+  components:
+    - "src/eidos/portal/server.py"
+    - "src/eidos/portal/generator.py"
+    - "src/eidos/portal/assets.py"
+    - "src/eidos/portal/builder.py"
+  dependencies:
+    - "DOM-SPEC-ENGINE"
+---
+= Domain: Multi-Design Systems & Living Web Portal
+:toc: left
+
+== Domain Vision
+This domain empowers product managers, architects, design technologists, and stakeholders to explore, inspect, and experience living specifications through an interactive visual interface. It seamlessly unites W3C design tokens, client application surfaces, interaction flow diagrams, and C4 architecture models without external build tooling or runtime dependencies.

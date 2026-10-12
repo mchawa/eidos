@@ -7,7 +7,7 @@ container_type: "daemon"
 runtime: "Python 3.12 / JSON-RPC 2.0 stdio"
 package_path: "src/eidos/mcp"
 
-domain_binding: DOM-AGENT-HARNESS
+domain_binding: DOM-AGENT-INTELLIGENCE
 
 c4_internal_components:
   - name: "McpServerLoop"
@@ -49,7 +49,7 @@ This container represents the autonomous agent interface under `src/eidos/mcp/`.
 |===
 | Internal Module | Responsibility | Source Path
 | **McpServerLoop** | Handles stdin/stdout JSON-RPC framing and protocol initialization | `src/eidos/mcp/server.py`
-| **ToolCatalog** | Defines input schemas and capabilities for all 10 callable tools | `src/eidos/mcp/server.py`
+| **ToolCatalog** | Defines input schemas and capabilities for callable MCP tools including context slicing | `src/eidos/mcp/server.py`
 | **ToolDispatcher** | Routes tool executions to CMP-EIDOS-CORE and formats JSON response payloads | `src/eidos/mcp/server.py`
 |===
 

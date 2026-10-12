@@ -150,7 +150,7 @@ Describe the exact behavioral diffs, mutations, and invariant updates here.
 """
 
     elif canonical_key == "capability":
-        parent_domain = domain or "DOM-PRODUCT-CORE"
+        parent_domain = domain or "DOM-SPEC-ENGINE"
         domain_slug = parent_domain.lower().replace("dom-", "")
         # Find if domains/<domain_slug> exists
         domain_dirs = list(eidos_dir.glob(f"domains/*{domain_slug}*"))

@@ -2,13 +2,15 @@
 type: product/capability
 schema: schemas/v1/product/capability.schema.yaml
 id: CAP-AGENT-001
-title: "Universal Agent Adapter Layer"
-domain: DOM-AGENT-HARNESS
+title: "Model Context Protocol & Context Slicing Engine"
+domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.0.0"
+version: "1.1.0"
 
 business:
   personas:
+    - eidos/personas/software-architect.adoc
+    - eidos/personas/software-engineer.adoc
     - eidos/personas/product-lead.adoc
     - eidos/personas/autonomous-agent.adoc
   jtbd: "Enable the team to use any state-of-the-art coding agent (Antigravity agy, Claude Code, Codex, Aider) interchangeably without rewriting project workflows."
@@ -21,6 +23,8 @@ technical:
   contracts:
     interfaces:
       - "eidos agent run --driver [agy|claude|codex|mcp] --delta <delta-id>"
+      - "eidos context [--file PATH] [--component ID] [--task PROMPT]"
+      - "eidos_get_task_context"
   invariants:
     - id: INV-AGENT-DRIVER-ISOLATION
       rule: "Switching the agent driver from 'agy' to 'claude' must not alter task inputs, test invariants, or git output contracts."
@@ -28,6 +32,9 @@ technical:
     - id: INV-AGENT-LINT-HOOK
       rule: "The AI agent plugin lifecycle hooks must enforce living specification syntax, schema validity, and link integrity on edit and before task completion."
       test_binding: "tests/test_plugin.py::test_doc_lint_hook_stop_event"
+    - id: INV-AGENT-CONTEXT-SLICING
+      rule: "Context slicing must extract compact, token-efficient architectural subgraphs without phantom dependencies or circular module errors."
+      test_binding: "tests/test_context.py::test_context_slice_by_file"
 ---
 = Capability: Universal Agent Adapter Layer
 :toc: left

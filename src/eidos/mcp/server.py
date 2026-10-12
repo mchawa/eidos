@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import eidos
+from eidos.core.context import get_context_slice
 from eidos.core.parser import parse_spec_file
 from eidos.core.scaffolder import (
     apply_delta,
@@ -112,7 +113,7 @@ TOOLS = [
                 "title": {"type": "string", "description": "Human-readable title."},
                 "domain": {
                     "type": "string",
-                    "description": "Parent domain ID for capabilities (e.g. 'DOM-PRODUCT-CORE').",
+                    "description": "Parent domain ID for capabilities (e.g. 'DOM-SPEC-ENGINE').",
                 },
                 "path": {"type": "string", "description": "Path to specifications directory (defaults to 'eidos')."},
                 "kind": {"type": "string", "description": "Mutation kind for SpecDeltas."},
@@ -226,6 +227,68 @@ TOOLS = [
                 "uncommitted": {
                     "type": "boolean",
                     "description": "Analyze uncommitted working tree changes.",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Path to eidos directory (defaults to 'eidos').",
+                },
+            },
+        },
+    },
+    {
+        "name": "eidos_get_task_context",
+        "description": "Extract a compact, token-efficient architectural sub-catalog slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies) given target files, a component ID, or a task description.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Target source code file paths.",
+                },
+                "component": {
+                    "type": "string",
+                    "description": "Target component identifier (e.g. 'CMP-EIDOS-CLI').",
+                },
+                "task": {
+                    "type": "string",
+                    "description": "Free-text task description or engineering prompt.",
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["markdown", "json"],
+                    "description": "Output serialization format ('markdown' or 'json', defaults to 'markdown').",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Path to eidos directory (defaults to 'eidos').",
+                },
+            },
+        },
+    },
+    {
+        "name": "eidos_context",
+        "description": "Alias for eidos_get_task_context. Extract a compact architectural slice (components, contracts, capabilities, invariants, policies).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Target source code file paths.",
+                },
+                "component": {
+                    "type": "string",
+                    "description": "Target component identifier (e.g. 'CMP-EIDOS-CLI').",
+                },
+                "task": {
+                    "type": "string",
+                    "description": "Free-text task description or engineering prompt.",
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["markdown", "json"],
+                    "description": "Output serialization format ('markdown' or 'json', defaults to 'markdown').",
                 },
                 "path": {
                     "type": "string",
@@ -454,6 +517,25 @@ def handle_tool_call(name: str, arguments: dict[str, Any]) -> list[dict[str, Any
             "ai_prompt": result.ai_prompt,
         }
         return [{"type": "text", "text": json.dumps(res, indent=2)}]
+
+    elif name in ("eidos_get_task_context", "eidos_context"):
+        files = arguments.get("files")
+        comp = arguments.get("component")
+        task = arguments.get("task")
+        fmt = arguments.get("format", "markdown")
+        eidos_path = Path(arguments.get("path") or "eidos")
+
+        slice_result = get_context_slice(
+            files=files,
+            component=comp,
+            task=task,
+            eidos_dir=eidos_path,
+            repo_root=Path.cwd(),
+        )
+
+        if fmt == "json":
+            return [{"type": "text", "text": slice_result.to_json()}]
+        return [{"type": "text", "text": slice_result.to_markdown()}]
 
     return [{"type": "text", "text": f"Unknown tool: {name}"}]
 

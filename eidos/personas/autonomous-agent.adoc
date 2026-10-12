@@ -5,21 +5,22 @@ id: PER-AUTONOMOUS-AGENT
 name: "Autonomous Coding Agent"
 role_type: autonomous_agent
 goals:
-  - "Receive unambiguous, context-rich task descriptions without irrelevant repository clutter."
-  - "Understand explicit invariants, contracts, and test bindings before writing code."
-  - "Produce deterministic test-backed pull requests that satisfy acceptance criteria."
+  - "Receive concise, token-efficient architectural context slices via Model Context Protocol (MCP) without noise."
+  - "Inspect explicit system invariants (INV-*), contracts (CTR-*), and test bindings before generating code."
+  - "Self-verify modifications against deterministic gate checks ('eidos validate', 'eidos drift') prior to proposing pull requests."
+  - "Accurately co-evolve living specifications and test suites alongside source code."
 pain_points:
-  - "Vague human prompts leading to hallucinated assumptions or architectural violations."
-  - "Massive context windows polluted with unrelated documentation."
-  - "Unclear definition of done or how to verify changes."
+  - "Massive context windows polluted with unorganized, contradictory, or stale documentation."
+  - "Vague prompt instructions leading to hallucinated dependencies, architectural anti-patterns, or policy violations."
+  - "Unclear definition of done or inability to discover how to run verification tests locally."
 interaction_modes:
-  - "CLI invocation (e.g. agy, claude, aider)"
-  - "MCP (Model Context Protocol) tool execution"
-  - "Direct Git branch / PR creation and automated review updates"
+  - "Model Context Protocol (MCP) tool calls ('eidos_context', 'eidos_validate', 'eidos_detect_drift')"
+  - "AI Agent Harnesses and IDE plugins (Antigravity agy, Claude Code, Cursor, Copilot)"
+  - "Executing automated verification test suites (pytest, vitest) bound to invariants"
+  - "Branch and pull request creation with machine-validated SpecDelta checklists"
 ---
 = Persona: Autonomous Coding Agent
 :toc: left
 
 == Profile
-The Autonomous Coding Agent represents any AI worker (such as Antigravity `agy`, Claude Code, OpenAI Codex, or SWE-agent) plugged into Eidos. It consumes parsed `SpecDelta` instructions, inspects relevant invariants, executes TDD workflows, and reports verification results.
-
+The Autonomous Coding Agent represents any AI worker (such as Antigravity `agy`, Claude Code, Cursor Agent, or SWE-agent) plugged into Eidos. It queries the Eidos MCP server for targeted context slices, inspects relevant invariants, executes TDD workflows, and deterministically validates its work before proposing pull requests.

@@ -1,0 +1,26 @@
+---
+type: product/persona
+schema: schemas/v1/product/persona.schema.yaml
+id: PER-SOFTWARE-ENGINEER
+name: "Software Engineer"
+role_type: software_engineer
+goals:
+  - "Ship high-velocity code and maintain flow state without excessive documentation paperwork (Direct Mode)."
+  - "Instantly verify that implementation changes remain synchronized with specifications using 'eidos drift'."
+  - "Receive concise, targeted context slices when pairing with AI coding agents instead of bloated repository dumps."
+  - "Write deterministic, invariant-bound tests that prove business and technical requirements are satisfied."
+pain_points:
+  - "Cumbersome PR processes requiring manual updates to external wikis, Jira tickets, and stale documentation."
+  - "Context-switching between coding and deciphering ambiguous requirements without test bindings."
+  - "Unclear blast radius when refactoring shared services, components, or utilities."
+interaction_modes:
+  - "CLI commands: 'eidos drift', 'eidos validate', 'eidos context'"
+  - "Direct Mode spec-code co-evolution in Git commits"
+  - "Pair programming with AI agents via Model Context Protocol (MCP) in IDE"
+  - "TDD implementation with invariant-linked test suites (pytest, vitest)"
+---
+= Persona: Software Engineer
+:toc: left
+
+== Profile
+The Software Engineer is the primary builder implementing features, fixing bugs, and refactoring services. In Eidos, they operate primarily in Direct Mode, co-evolving code, living specifications, and invariant tests within everyday Git commits with zero unnecessary bureaucracy.

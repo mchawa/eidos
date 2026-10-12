@@ -8,7 +8,7 @@ client: "CLT-WEB-PORTAL"
 status: active
 
 capabilities:
-  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
+  - "eidos/domains/spec-engine/capabilities/living-spec-engine.adoc"
 
 supported_design_systems:
   - "eidos/design/systems/core/system.adoc"

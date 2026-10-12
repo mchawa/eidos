@@ -7,7 +7,7 @@ container_type: "web_app"
 runtime: "Python 3.12 / HTTP / HTML5 / Mermaid.js"
 package_path: "src/eidos/portal"
 
-domain_binding: DOM-PRODUCT-CORE
+domain_binding: DOM-EXPERIENCE-PORTAL
 
 c4_internal_components:
   - name: "PortalServer"

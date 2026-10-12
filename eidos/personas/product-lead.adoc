@@ -3,23 +3,24 @@ type: product/persona
 schema: schemas/v1/product/persona.schema.yaml
 id: PER-PRODUCT-LEAD
 name: "Product Lead"
-role_type: human_product
+role_type: product_manager
 goals:
-  - "Define and evolve product features without technical drift or regressions."
-  - "Track features from initial concept through PRD, development, and live release."
-  - "Receive automated impact assessments when proposing business changes."
+  - "Define and evolve product capabilities (CAP-*) and Jobs-to-be-Done (JTBD) anchored directly in Git."
+  - "Govern strategic changes through declarative Planned Mode SpecDeltas (DLT-*) with automated blast-radius analysis."
+  - "Conduct hypothesis-driven discovery and technical feasibility spikes through Explorations (EXP-*)."
+  - "Maintain a clear, transparent view of active baseline features vs. in-flight deltas using the Living Web Portal."
 pain_points:
-  - "PRDs in Notion/Confluence drift immediately out of sync with actual code."
-  - "Engineers and AI agents miss subtle edge cases or violate business rules."
-  - "No easy way to see what features are currently active vs planned in Git."
+  - "Product requirement documents in Notion, Confluence, and Google Docs drifting immediately out of sync with production code."
+  - "Engineers and autonomous AI agents missing subtle business edge cases or violating domain policies."
+  - "Opaque roadmap progress with no machine-validated linkage between user stories and merged pull requests."
 interaction_modes:
-  - "Writing SpecDeltas or running `/spec` commands"
-  - "Reviewing PRD diffs on GitHub PRs / GitLab MRs"
-  - "Interactive chat sessions with Eidos exploration agents"
+  - "Authoring capabilities (CAP-*) and hypothesis explorations (EXP-*)"
+  - "Scaffolding and reviewing Planned Mode SpecDeltas (DLT-*)"
+  - "Tracking feature lifecycle and Kanban boards on the Living Web Portal"
+  - "Reviewing specification diffs on GitHub PRs and GitLab MRs"
 ---
 = Persona: Product Lead
 :toc: left
 
 == Profile
-The Product Lead is responsible for the product vision, customer needs, feature scoping, and business priorities. In Eidos, they interact with the product definition using structured AsciiDoc and declarative frontmatters, collaborating seamlessly with engineers and AI agents via Git pull requests.
-
+The Product Lead is responsible for product strategy, customer outcomes, capability definitions, and feature scoping. In Eidos, they express business needs as living capabilities and Jobs-to-be-Done, collaborating seamlessly with architects, engineers, and autonomous AI agents through machine-validated Git workflows.

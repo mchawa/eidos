@@ -1,0 +1,44 @@
+---
+type: product/capability
+schema: schemas/v1/product/capability.schema.yaml
+id: CAP-VCS-001
+title: "Git-Native Drift Detection & GitHub/GitLab Bridge"
+domain: DOM-VCS-LIFECYCLE
+status: active
+version: "1.1.0"
+
+business:
+  personas:
+    - eidos/personas/software-architect.adoc
+    - eidos/personas/software-engineer.adoc
+    - eidos/personas/product-lead.adoc
+    - eidos/personas/autonomous-agent.adoc
+  jtbd: "Detect and reconcile code-to-spec drift continuously across local working trees, and synchronize GitLab and GitHub bridge pull requests without manual documentation maintenance."
+  policies:
+    - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
+
+technical:
+  components:
+    - "src/eidos/vcs/drift.py"
+  contracts:
+    interfaces:
+      - "eidos drift [--strict]"
+      - "eidos reconcile"
+  invariants:
+    - id: INV-DRIFT-DETECTION-ACCURACY
+      rule: "The drift detection engine must accurately identify all uncommitted or branched code modifications and classify spec synchronization status."
+      test_binding: "tests/test_drift.py::test_drift_detector_clean_repo"
+    - id: INV-VCS-PARITY
+      rule: "All capabilities, status labels, and comment triggers supported on GitHub must have direct feature parity on GitLab."
+      test_binding: "tests/test_drift.py::test_drift_status_reporting"
+---
+= Capability: Git-Native Drift Detection & Reconciliation Gate
+:toc: left
+
+== Intent
+Ensures that source code and living specifications never diverge. Through local Git diff analysis and automated CI/CD gating, Eidos continuously verifies that code modifications are paired with living specification updates, preserving system documentation integrity with zero manual overhead.
+
+== Key Responsibilities
+* Inspecting working trees and commits for unmapped architectural changes.
+* Enforcing the Single Source of Truth policy (`POL-001`) during CI/CD checks.
+* Generating human-readable and machine-verifiable drift summaries.

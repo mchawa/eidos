@@ -3,12 +3,14 @@ type: product/capability
 schema: schemas/v1/product/capability.schema.yaml
 id: CAP-PROD-001
 title: "Living Baseline Specification Engine"
-domain: DOM-PRODUCT-CORE
+domain: DOM-SPEC-ENGINE
 status: active
-version: "1.0.0"
+version: "1.1.0"
 
 business:
   personas:
+    - eidos/personas/software-architect.adoc
+    - eidos/personas/software-engineer.adoc
     - eidos/personas/product-lead.adoc
     - eidos/personas/autonomous-agent.adoc
   jtbd: "Maintain an accurate, non-drifting representation of what the software product currently does across both business and technical dimensions."
@@ -47,10 +49,10 @@ technical:
   invariants:
     - id: INV-SPEC-VALIDATION
       rule: "Every .adoc file with a YAML frontmatter must validate against its referenced JSON/YAML schema."
-      test_binding: "tests/specs/test_schema_validation.py::test_all_specs_conform_to_schema"
+      test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
     - id: INV-SPEC-GRAPH-INTEGRITY
-      rule: "All cross-document references (personas, policies, domain IDs) must resolve to existing files."
-      test_binding: "tests/specs/test_schema_validation.py::test_graph_references_exist"
+      rule: "All cross-document references and entity IDs (components, contracts, policies, domains, deltas) must resolve to valid catalog entity IDs with zero collisions."
+      test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
     - id: INV-LIVING-PORTAL-VISUALIZATION
       rule: "The system must generate an interactive web portal and static site visualizing C4 architecture, domains, and SpecDeltas without external Node.js dependencies."
       test_binding: "tests/test_portal.py::test_portal_data_generation"

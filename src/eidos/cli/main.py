@@ -9,6 +9,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 import eidos
+from eidos.core.context import get_context_slice
 from eidos.core.parser import parse_spec_file
 from eidos.core.scaffolder import (
     apply_delta,
@@ -572,6 +573,58 @@ def mcp():
     run_mcp_server()
 
 
+@app.command("context")
+def context_cmd(
+    files: list[str] | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="Target source code file path(s) to slice context for.",
+    ),
+    component: str | None = typer.Option(
+        None,
+        "--component",
+        "-c",
+        help="Target component identifier (e.g. 'CMP-EIDOS-CLI').",
+    ),
+    task: str | None = typer.Option(
+        None,
+        "--task",
+        "-t",
+        help="Free-text task description or prompt to slice architectural context for.",
+    ),
+    format: str = typer.Option(
+        "markdown",
+        "--format",
+        help="Output format: 'markdown' or 'json' (defaults to 'markdown').",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to eidos directory (defaults to ./eidos).",
+    ),
+):
+    """Extract a compact architectural subgraph slice (C4 components, contracts, capabilities, invariants, policies)."""
+    eidos_dir = path or Path("eidos")
+    if not eidos_dir.exists():
+        eidos_dir = Path(".")
+
+    slice_result = get_context_slice(
+        files=files,
+        component=component,
+        task=task,
+        eidos_dir=eidos_dir,
+        repo_root=Path.cwd(),
+    )
+
+    if format.lower() == "json":
+        typer.echo(slice_result.to_json())
+    else:
+        typer.echo(slice_result.to_markdown())
+
+
+
 # -------------------------------------------------------------------------
 # Spec Living Specifications Management Commands
 # -------------------------------------------------------------------------
@@ -681,7 +734,7 @@ def spec_create_cmd(
         None,
         "--domain",
         "-d",
-        help="Parent domain ID for capabilities (e.g. DOM-PRODUCT-CORE).",
+        help="Parent domain ID for capabilities (e.g. DOM-SPEC-ENGINE).",
     ),
     kind: str = typer.Option(
         "feature_addition",
