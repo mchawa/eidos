@@ -43,6 +43,11 @@ c4_containers:
     container_type: "web_app"
     runtime: "Python 3.12 / HTTP / HTML5 / Mermaid.js"
     package_path: "src/eidos/portal"
+  - component_ref: "CMP-EIDOS-INDEX"
+    name: "Eidos Architectural Knowledge Graph & Retrieval Index"
+    container_type: "library"
+    runtime: "Python 3.12 / SQLite3 / FTS5 / CTE"
+    package_path: "src/eidos/core/graph_index.py"
   - component_ref: "CMP-EIDOS-DOCS"
     name: "Eidos User Documentation System"
     container_type: "web_app"
@@ -130,6 +135,7 @@ Eidos is distributed as a monorepo consisting of the following primary container
 | `CMP-EIDOS-MCP` | Eidos Model Context Protocol Server | Daemon / Service | `src/eidos/mcp`
 | `CMP-EIDOS-PLUGIN` | Eidos Agent Plugin & Extension Manager | Library | `src/eidos/plugin`
 | `CMP-EIDOS-PORTAL` | Eidos Living Web Portal & Static Generator | Web Application | `src/eidos/portal`
+| `CMP-EIDOS-INDEX` | Eidos Architectural Knowledge Graph & Retrieval Index | Library | `src/eidos/core/graph_index.py`
 | `CMP-EIDOS-DOCS` | Eidos User Documentation System | Web Application | `docs`
 |===
 
@@ -140,6 +146,7 @@ Internal component manifests for each container, interactively explorable in the
 * link:components/mcp.adoc[`CMP-EIDOS-MCP` Component Specification]
 * link:components/plugin.adoc[`CMP-EIDOS-PLUGIN` Component Specification]
 * link:components/portal.adoc[`CMP-EIDOS-PORTAL` Component Specification]
+* link:components/index.adoc[`CMP-EIDOS-INDEX` Component Specification]
 * link:components/docs.adoc[`CMP-EIDOS-DOCS` Component Specification]
 
 == 6. Runtime View

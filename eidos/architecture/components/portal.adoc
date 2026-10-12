@@ -26,6 +26,7 @@ c4_internal_components:
 dependencies:
   internal_components:
     - "CMP-EIDOS-CORE"
+    - "CMP-EIDOS-INDEX"
   external_services:
     - "Web Browsers (Chrome, Firefox, Safari, Edge)"
 

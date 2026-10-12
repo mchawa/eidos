@@ -23,6 +23,7 @@ c4_internal_components:
 dependencies:
   internal_components:
     - "CMP-EIDOS-CORE"
+    - "CMP-EIDOS-INDEX"
   external_services:
     - "JSON-RPC 2.0 Stdio Host (Antigravity / Cursor / Claude Code)"
 

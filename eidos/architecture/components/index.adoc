@@ -1,0 +1,66 @@
+---
+type: tech/component
+schema: schemas/v1/tech/component.schema.yaml
+id: CMP-EIDOS-INDEX
+name: "Eidos Architectural Knowledge Graph & Retrieval Index"
+container_type: "library"
+runtime: "Python 3.12 / SQLite3 / FTS5 / CTE"
+package_path: "src/eidos/core/graph_index.py"
+
+domain_binding: DOM-SPEC-ENGINE
+
+c4_internal_components:
+  - name: "GraphStorage"
+    responsibility: "Manages embedded SQLite schema initialization, connection lifecycle, WAL mode, transaction isolation, and indexed files tracking."
+    source_path: "src/eidos/core/graph_index.py"
+  - name: "IncrementalSyncEngine"
+    responsibility: "Detects specification mutations via SHA-256 and mtime hashing, lazily updating entities and dependency edges in sub-5ms."
+    source_path: "src/eidos/core/graph_index.py"
+  - name: "FTSQueryEngine"
+    responsibility: "Full-text lexical search and BM25 ranking across titles, descriptions, and keywords using SQLite FTS5."
+    source_path: "src/eidos/core/graph_index.py"
+  - name: "GraphTraversalEngine"
+    responsibility: "Recursive Common Table Expression (CTE) traversal evaluating k-hop blast radius, incoming dependencies, and impact subgraphs in sub-2ms."
+    source_path: "src/eidos/core/graph_index.py"
+  - name: "TieredContextCompressor"
+    responsibility: "Extracts token-compressed architectural slices across anchor, guardrails, and deep tiers for AI coding agents."
+    source_path: "src/eidos/core/graph_index.py"
+
+dependencies:
+  internal_components:
+    - "CMP-EIDOS-CORE"
+  external_services:
+    - "SQLite3 (Python Standard Library)"
+
+contracts:
+  provides: []
+  consumes: []
+
+quality_attributes:
+  stateless: false
+  idempotent: true
+  concurrency_model: "sqlite_wal_multiread"
+  max_memory_mb: 128
+---
+= Component: Architectural Knowledge Graph & Retrieval Index (C4 Level 3 Whitebox)
+:toc: left
+
+== Architectural Boundary
+This container represents the embedded relational and lexical indexing engine under `src/eidos/core/graph_index.py`. It persists and manages the local SQLite knowledge graph (`.eidos/cache/index.db`), providing sub-millisecond catalog lookups, incremental zero-drift synchronization, FTS5 BM25 search, recursive CTE blast-radius traversal, and tiered context slicing for AI coding agents and CLI commands.
+
+== Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
+
+[cols="1,2,2", options="header"]
+|===
+| Internal Module | Responsibility | Source Path
+| **GraphStorage** | SQLite schema (`entities`, `edges`, `indexed_files`, `specs_fts`), WAL mode, and connection pool | `src/eidos/core/graph_index.py`
+| **IncrementalSyncEngine** | SHA-256 content and mtime dirty checking with lazy incremental sync (<5ms) | `src/eidos/core/graph_index.py`
+| **FTSQueryEngine** | SQLite FTS5 BM25 lexical search mapping natural language tasks to architecture IDs | `src/eidos/core/graph_index.py`
+| **GraphTraversalEngine** | Recursive CTE graph queries evaluating k-hop blast radius and incoming references (<2ms) | `src/eidos/core/graph_index.py`
+| **TieredContextCompressor** | 3-tier token-budgeted context extraction (`anchor`, `guardrails`, `deep`) with >=60% reduction | `src/eidos/core/graph_index.py`
+|===
+
+== Operational Invariants & Quality Attributes
+* **Local Cache Persistence**: Persists index state in `.eidos/cache/index.db` without polluting Git tracking (isolated via `.gitignore`).
+* **Zero Runtime Dependencies**: Relies exclusively on Python's built-in `sqlite3` with compiled FTS5 and recursive CTE capabilities.
+* **Deterministic Synchronization**: Identical repository living specifications always produce isomorphic graph states.

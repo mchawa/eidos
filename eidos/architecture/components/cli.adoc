@@ -31,10 +31,14 @@ c4_internal_components:
   - name: "ContextCommand"
     responsibility: "Extracts compact, token-efficient architectural subgraph slices for AI agents."
     source_path: "src/eidos/cli/main.py"
+  - name: "IndexCommands"
+    responsibility: "Knowledge graph operations: sync, status inspection, lexical search, and blast-radius impact analysis."
+    source_path: "src/eidos/cli/main.py"
 
 dependencies:
   internal_components:
     - "CMP-EIDOS-CORE"
+    - "CMP-EIDOS-INDEX"
     - "CMP-EIDOS-PLUGIN"
   external_services:
     - "Terminal stdout/stderr"
@@ -67,5 +71,6 @@ This container represents the user-facing CLI under `src/eidos/cli/`. It provide
 | **PluginCommands** | Agent plugin management conforming to agent-plugins.org v1.0.0 | `src/eidos/cli/main.py`
 | **InitCommand** | Repository bootstrapping and baseline spec scaffolding | `src/eidos/cli/main.py`
 | **ContextCommand** | Extracts compact architectural subgraph slices for AI agents | `src/eidos/cli/main.py`
+| **IndexCommands** | Knowledge graph index commands: sync, status, search, and blast-radius | `src/eidos/cli/main.py`
 |===
 
