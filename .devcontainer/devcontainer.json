@@ -45,6 +45,8 @@
     }
   },
   "containerEnv": {
+    // uv cannot use hardlinks across the /tmp → workspace boundary in Codespaces;
+    // copy mode avoids "Invalid cross-device link" errors.
     "UV_LINK_MODE": "copy"
   },
   "mounts": [
@@ -55,37 +57,45 @@
   "customizations": {
     "vscode": {
       "extensions": [
+        // --- Python & Astral Toolchain ---
         "ms-python.python",
         "ms-python.debugpy",
         "ms-python.vscode-python-envs",
         "charliermarsh.ruff",
         "astral-sh.ty",
+
+        // --- Containers & Virtualization ---
         "ms-azuretools.vscode-containers",
+
+        // --- Living Architecture & Specifications ---
         "asciidoctor.asciidoctor-vscode",
         "mathematic.vscode-pdf",
+
+        // --- Configuration & Schemas ---
         "tamasfe.even-better-toml",
         "redhat.vscode-yaml",
+
+        // --- Living Architecture Portal & Frontend ---
         "bradlc.vscode-tailwindcss",
         "dbaeumer.vscode-eslint",
-        "yzhang.markdown-all-in-one",
-        "davidanson.vscode-markdownlint",
-        "bierner.markdown-mermaid",
-        "bierner.github-markdown-preview",
+
+        // --- Productivity & Spell Checking ---
         "streetsidesoftware.code-spell-checker",
-        "vstirbu.vscode-mermaid-preview",
+
+        // --- Git & Source Control ---
         "mhutchie.git-graph",
         "donjayamanne.githistory",
+
+        // --- AI Agents & Harness ---
         "google.google-antigravity"
       ],
       "settings": {
         "[markdown]": {
-          "editor.defaultFormatter": "yzhang.markdown-all-in-one",
           "editor.wordWrap": "on"
         },
-        "markdownlint.config": {
-          "MD013": false,
-          "MD033": false
-        }
+        "markdown.validate.enabled": true,
+        "markdown.validate.fileLinks.enabled": "warning",
+        "markdown.validate.fragmentLinks.enabled": "warning"
       }
     }
   }

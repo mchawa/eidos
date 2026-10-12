@@ -81,7 +81,12 @@ def handle_pre_tool_use(payload: dict[str, Any]) -> dict[str, Any]:
                 content_to_check = curr_text.replace(target_str, replace_str, 1)
 
     if content_to_check is not None:
-        if target_path.suffix.lower() == ".json" and ("eidos" in target_file_str or "tokens.json" in target_file_str):
+        is_jsonc = (
+            target_path.name in ("devcontainer.json", "tsconfig.json")
+            or ".devcontainer" in target_file_str
+            or ".vscode" in target_file_str
+        )
+        if target_path.suffix.lower() == ".json" and not is_jsonc and ("/eidos/" in target_file_str or "tokens.json" in target_file_str):
             try:
                 json.loads(content_to_check)
             except json.JSONDecodeError as exc:
