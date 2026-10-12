@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import time
@@ -336,45 +337,33 @@ class ArchitecturalIndex:
         disk_files: set[str] = set()
         to_update: list[Path] = []
 
-        scan_dirs: list[Path] = []
-        if self.eidos_dir.exists():
-            scan_dirs.append(self.eidos_dir)
-        for code_dir_name in ("src", "packages", "apps", "libs", "plugins"):
-            cdir = self.root / code_dir_name
-            if cdir.exists() and cdir.is_dir():
-                scan_dirs.append(cdir)
+        if not self.eidos_dir.exists():
+            deleted = [Path(rel) for rel in db_files.keys()]
+            return len(deleted) > 0, [], deleted
 
-        for sdir in scan_dirs:
-            for p in sdir.rglob("*.adoc"):
-                if (
-                    "by-status" in p.parts
-                    or p.name.startswith("_")
-                    or p.name.lower() == "readme.adoc"
-                    or ".venv" in p.parts
-                    or "node_modules" in p.parts
-                    or "__pycache__" in p.parts
-                    or "dist" in p.parts
-                    or "build" in p.parts
-                    or ".cache" in p.parts
-                    or "site" in p.parts
-                ):
+        root_str = str(self.root)
+        for dirpath, dirnames, filenames in os.walk(str(self.eidos_dir)):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".") and d != "by-status"]
+            for fn in filenames:
+                if not fn.endswith(".adoc") or fn.startswith("_") or fn.lower() == "readme.adoc":
                     continue
+                full_path = os.path.join(dirpath, fn)
                 try:
-                    rel_p = str(p.relative_to(self.root)).replace("\\", "/")
+                    rel_p = os.path.relpath(full_path, root_str).replace("\\", "/")
                 except ValueError:
-                    rel_p = str(p).replace("\\", "/")
+                    rel_p = full_path.replace("\\", "/")
                 disk_files.add(rel_p)
 
-                stat = p.stat()
+                stat = os.stat(full_path)
                 cached = db_files.get(rel_p)
                 if not cached:
-                    to_update.append(p)
+                    to_update.append(Path(full_path))
                 elif abs(stat.st_mtime - cached[0]) > 0.001:
-                    # mtime changed, compute sha256 to confirm content modification
-                    content = p.read_bytes()
+                    with open(full_path, "rb") as f:
+                        content = f.read()
                     h = hashlib.sha256(content).hexdigest()
                     if h != cached[1]:
-                        to_update.append(p)
+                        to_update.append(Path(full_path))
 
         deleted = [Path(rel) for rel in db_files.keys() - disk_files]
         is_dirty = len(to_update) > 0 or len(deleted) > 0
@@ -382,9 +371,14 @@ class ArchitecturalIndex:
 
     def _ensure_synced(self) -> None:
         """Lazily ensure the index is synchronized (<2ms check when clean)."""
+        now = time.monotonic()
+        last_check = getattr(self, "_last_synced_check", 0.0)
+        if now - last_check < 0.2:
+            return
         dirty, _, _ = self.is_dirty()
         if dirty:
             self.sync()
+        self._last_synced_check = time.monotonic()
 
     def sync(self, force: bool = False) -> IndexSyncStats:
         """Incrementally synchronize the index with specifications on disk."""
@@ -404,6 +398,7 @@ class ArchitecturalIndex:
         if not dirty and not force:
             stats.duration_ms = (time.perf_counter() - t0) * 1000
             stats.was_clean = True
+            self._last_synced_check = time.monotonic()
             return stats
 
         stats.was_clean = False
@@ -714,6 +709,7 @@ class ArchitecturalIndex:
             )
 
         stats.duration_ms = (time.perf_counter() - t0) * 1000
+        self._last_synced_check = time.monotonic()
         return stats
 
     def query_fts(self, text: str, limit: int = 10) -> list[dict[str, Any]]:
@@ -1022,33 +1018,39 @@ class ArchitecturalIndex:
 
         # 5. Forward dependency expansion for primary matched components
         primary_cids = list(matched_components.keys())
+        missing_dep_ids: list[str] = []
         for cid in primary_cids:
             comp_data = matched_components.get(cid, {})
             deps_dict = comp_data.get("dependencies") or {}
             deps = deps_dict.get("internal_containers", []) or deps_dict.get("internal_components", [])
             for dep_id in deps:
-                if dep_id not in matched_components:
-                    row = cursor.execute(
-                        "SELECT id, title, type, domain, data_json FROM entities WHERE id = ?;", (dep_id,)
-                    ).fetchone()
-                    if row:
-                        c_data = json.loads(row["data_json"])
-                        c_data["id"] = row["id"]
-                        c_data["title"] = row["title"]
-                        matched_components[row["id"]] = c_data
-                        matched_reasons.setdefault(row["id"], []).append(f"Internal dependency of '{cid}'")
+                if dep_id not in matched_components and dep_id not in missing_dep_ids:
+                    missing_dep_ids.append(dep_id)
+        if missing_dep_ids:
+            ph = ",".join("?" for _ in missing_dep_ids)
+            cursor.execute(
+                f"SELECT id, title, type, domain, data_json FROM entities WHERE id IN ({ph});",
+                tuple(missing_dep_ids),
+            )
+            for row in cursor.fetchall():
+                c_data = json.loads(row["data_json"])
+                c_data["id"] = row["id"]
+                c_data["title"] = row["title"]
+                matched_components[row["id"]] = c_data
+                matched_reasons.setdefault(row["id"], []).append("Internal dependency")
 
         # 6. Include contracts owned by or provided/consumed by primary components
-        for cid in primary_cids:
+        if primary_cids:
+            ph = ",".join("?" for _ in primary_cids)
             cursor.execute(
-                """
+                f"""
                 SELECT id, title, type, domain, data_json FROM entities
                 WHERE type = 'tech/contract' AND (
-                    id IN (SELECT target_id FROM edges WHERE source_id = ? AND rel_type IN ('provides', 'consumes'))
-                    OR id IN (SELECT source_id FROM edges WHERE target_id = ? AND rel_type = 'provides')
+                    id IN (SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type IN ('provides', 'consumes'))
+                    OR id IN (SELECT source_id FROM edges WHERE target_id IN ({ph}) AND rel_type = 'provides')
                 );
                 """,
-                (cid, cid),
+                tuple(primary_cids + primary_cids),
             )
             for row in cursor.fetchall():
                 ctr_data = json.loads(row["data_json"])
@@ -1059,13 +1061,11 @@ class ArchitecturalIndex:
         # 7. Include domain capabilities for primary components' domains
         domains = {c.get("domain_binding") or c.get("domain") for c in [matched_components[cid] for cid in primary_cids]}
         domains.discard("")
-        for dom in domains:
+        if domains:
+            ph = ",".join("?" for _ in domains)
             cursor.execute(
-                """
-                SELECT id, title, type, domain, data_json FROM entities
-                WHERE type = 'product/capability' AND domain = ?;
-                """,
-                (dom,),
+                f"SELECT id, title, type, domain, data_json FROM entities WHERE type = 'product/capability' AND domain IN ({ph});",
+                tuple(domains),
             )
             for row in cursor.fetchall():
                 cap_data = json.loads(row["data_json"])
@@ -1074,16 +1074,18 @@ class ArchitecturalIndex:
                 matched_capabilities.setdefault(row["id"], cap_data)
 
         # 8. Invariants & Policies expansion from capabilities
-        for cap_id in list(matched_capabilities.keys()):
+        if matched_capabilities:
+            cap_ids = list(matched_capabilities.keys())
+            ph = ",".join("?" for _ in cap_ids)
             # Invariants
             cursor.execute(
-                """
+                f"""
                 SELECT id, title, data_json FROM entities
                 WHERE type = 'invariant' AND id IN (
-                    SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'asserts'
+                    SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type = 'asserts'
                 );
                 """,
-                (cap_id,),
+                tuple(cap_ids),
             )
             for row in cursor.fetchall():
                 inv_data = json.loads(row["data_json"])
@@ -1092,13 +1094,13 @@ class ArchitecturalIndex:
 
             # Policies
             cursor.execute(
-                """
+                f"""
                 SELECT id, title, data_json FROM entities
                 WHERE type = 'product/policy' AND id IN (
-                    SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'governed_by'
+                    SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type = 'governed_by'
                 );
                 """,
-                (cap_id,),
+                tuple(cap_ids),
             )
             for row in cursor.fetchall():
                 pol_data = json.loads(row["data_json"])
