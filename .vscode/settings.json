@@ -15,6 +15,14 @@
       "source.organizeImports": "explicit"
     }
   },
+  "[markdown]": {
+    "editor.defaultFormatter": "yzhang.markdown-all-in-one",
+    "editor.wordWrap": "on"
+  },
+  "markdownlint.config": {
+    "MD013": false,
+    "MD033": false
+  },
   "editor.formatOnSave": true,
   "files.eol": "\n",
   "files.trimTrailingWhitespace": true,

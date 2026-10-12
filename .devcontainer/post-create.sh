@@ -16,7 +16,13 @@ echo "==> Setting up Eidos virtual environment with Python 3.15..."
 uv venv --python 3.15 .venv
 uv pip install -e ".[dev,docs]"
 
-# 3. Configure persistent AI tool directories and migrate initial backups
+# 3. Install Living Portal frontend dependencies
+if [ -d "src/eidos/portal/frontend" ] && command -v pnpm &>/dev/null; then
+  echo "==> Installing Living Portal frontend dependencies via pnpm..."
+  (cd src/eidos/portal/frontend && pnpm install)
+fi
+
+# 4. Configure persistent AI tool directories and migrate initial backups
 echo "==> Configuring persistent volumes (~/.gemini)..."
 sudo mkdir -p "${HOME}/.gemini"
 sudo chown -R vscode:vscode "${HOME}/.gemini"
@@ -39,7 +45,7 @@ fi
 
 sudo chown -R vscode:vscode "${HOME}/.gemini"
 
-# 4. Validate Eidos specifications
+# 5. Validate Eidos specifications
 if [ -f ".venv/bin/eidos" ]; then
   echo "==> Validating Eidos living specifications..."
   .venv/bin/eidos validate eidos || true
@@ -49,4 +55,6 @@ echo "========================================================"
 echo "✅ Eidos Dev Container Ready!"
 echo "   - uv:         $(uv --version)"
 echo "   - python:     $(python --version 2>/dev/null || echo 'not on PATH')"
+echo "   - node:       $(node --version 2>/dev/null || echo 'not on PATH')"
+echo "   - pnpm:       $(pnpm --version 2>/dev/null || echo 'not on PATH')"
 echo "========================================================"

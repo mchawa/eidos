@@ -19,11 +19,32 @@
     },
     "ghcr.io/devcontainers/features/docker-in-docker:2": {
       "moby": false
+    },
+    "ghcr.io/devcontainers/features/node:2": {
+      "version": "lts",
+      "pnpmVersion": "latest"
+    }
+  },
+  "forwardPorts": [3000, 5173, 8000, 8080],
+  "portsAttributes": {
+    "3000": {
+      "label": "Eidos Portal Server (CLI)",
+      "onAutoForward": "notify"
+    },
+    "5173": {
+      "label": "Eidos Portal Frontend (Vite Dev)",
+      "onAutoForward": "notify"
+    },
+    "8000": {
+      "label": "Eidos Documentation (Zensical)",
+      "onAutoForward": "notify"
+    },
+    "8080": {
+      "label": "Eidos Portal (Alt Port)",
+      "onAutoForward": "silent"
     }
   },
   "containerEnv": {
-    // uv cannot use hardlinks across the /tmp → workspace boundary in Codespaces;
-    // copy mode avoids "Invalid cross-device link" errors.
     "UV_LINK_MODE": "copy"
   },
   "mounts": [
@@ -34,26 +55,38 @@
   "customizations": {
     "vscode": {
       "extensions": [
-        // --- Python & Astral Toolchain ---
         "ms-python.python",
         "ms-python.debugpy",
         "ms-python.vscode-python-envs",
         "charliermarsh.ruff",
         "astral-sh.ty",
-        // --- Containers & Virtualization ---
         "ms-azuretools.vscode-containers",
-        // --- Living Architecture & Specifications ---
         "asciidoctor.asciidoctor-vscode",
         "mathematic.vscode-pdf",
-        // --- Configuration & Schemas ---
         "tamasfe.even-better-toml",
         "redhat.vscode-yaml",
-        // --- Git & Source Control ---
+        "bradlc.vscode-tailwindcss",
+        "dbaeumer.vscode-eslint",
+        "yzhang.markdown-all-in-one",
+        "davidanson.vscode-markdownlint",
+        "bierner.markdown-mermaid",
+        "bierner.github-markdown-preview",
+        "streetsidesoftware.code-spell-checker",
+        "vstirbu.vscode-mermaid-preview",
         "mhutchie.git-graph",
         "donjayamanne.githistory",
-        // --- AI Agents & Harness ---
         "google.google-antigravity"
-      ]
+      ],
+      "settings": {
+        "[markdown]": {
+          "editor.defaultFormatter": "yzhang.markdown-all-in-one",
+          "editor.wordWrap": "on"
+        },
+        "markdownlint.config": {
+          "MD013": false,
+          "MD033": false
+        }
+      }
     }
   }
 }
