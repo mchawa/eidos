@@ -20,19 +20,56 @@ Traditional software engineering teams frequently use ADRs to capture architectu
 
 ## Structure of Living Specs
 
-All living specifications are authored in **AsciiDoc (`.adoc`)** with structured **YAML frontmatter**. This allows them to be human-readable, Git-mergeable, and programmatically validated.
+All living specifications are authored in **AsciiDoc (`.adoc`)** with structured **YAML frontmatter**. This allows them to be human-readable, Git-mergeable, and programmatically validated against canonical JSON/YAML schemas.
 
-```
+```text
 eidos/
-├── system.adoc                   # System boundaries (C4 Level 1)
-├── architecture/
+├── system.adoc                   # Root system descriptor (C4 Level 1)
+├── architecture/                 # Technical architecture (Arc42 + C4)
 │   ├── system-architecture.adoc  # Container topology (C4 Level 2)
 │   ├── components/               # Component manifests (C4 Level 3)
-│   └── contracts/                # Interface contracts (APIs, schemas)
-├── domains/                      # Product domains and capability trees
-├── personas/                     # Target personas (users & autonomous agents)
-└── policies/                     # Inviolable architectural invariants
+│   └── contracts/                # Interface protocol contracts (APIs, CLI)
+├── domains/                      # DDD bounded contexts & capability trees
+│   └── <domain-name>/
+│       ├── domain.adoc           # Bounded context manifest (DOM-*)
+│       └── capabilities/         # Product capabilities (CAP-*)
+├── personas/                     # Human & AI actor roles (PER-*)
+├── policies/                     # Inviolable system governance policies (POL-*)
+├── explorations/                 # Spikes, hypotheses & feasibility discovery (EXP-*)
+├── design/                       # Multi-Design Systems & UI contracts
+│   ├── systems/<system>/         # Design systems (DS-*) & W3C DTCG tokens
+│   ├── screens/                  # Screen views & route state machines (SCR-*)
+│   └── flows/                    # User interaction flows (FLOW-*)
+└── deltas/                       # SpecDelta mutations (DLT-*)
 ```
+
+---
+
+## The Five Living Specification Layers
+
+Eidos models software across five interconnected layers:
+
+1. **Product & Governance Layer**: Defines strategic archetypes ([`SYS-*`](schema-glossary.md#productsystem)), bounded contexts ([`DOM-*`](schema-glossary.md#productdomain)), capabilities ([`CAP-*`](schema-glossary.md#productcapability)), actor personas ([`PER-*`](schema-glossary.md#productpersona)), and non-negotiable policies ([`POL-*`](schema-glossary.md#productpolicy)).
+2. **Exploration & Discovery Layer**: Formalizes hypothesis-driven technical spikes and prototypes ([`EXP-*`](explorations.md)) before committing to architectural baselines.
+3. **Technical Architecture Layer**: Codifies Arc42 system context ([`ARCH-*`](schema-glossary.md#techarchitecture)), C4 component whiteboxes ([`CMP-*`](schema-glossary.md#techcomponent)), and protocol contracts ([`CTR-*`](schema-glossary.md#techcontract)) without ADRs.
+4. **Experience & Design Layer**: Governs multi-brand themes ([`DS-*`](design.md)), official W3C Design Tokens, UI component contracts ([`UIC-*`](design.md#4-ui-component-manifests-uic-)), and screen state machines ([`SCR-*`](design.md#5-screen-state-machines-scr-)).
+5. **Evolution & Mutation Layer**: Orchestrates planned architectural changes through auditable SpecDeltas ([`DLT-*`](specdeltas.md)).
+
+---
+
+## Technical Explorations (`EXP-*`): Hypothesis-Driven Discovery
+
+Before committing to a new database, protocol, or framework in a living specification, teams frequently encounter technical uncertainty. Traditional teams run informal "spikes" that either produce throwaway code with zero institutional memory or result in unreviewed prototype code merging into production.
+
+Eidos solves this by treating spikes as **Explorations (`EXP-*`)**:
+
+* **Hypothesis & Exit Criteria**: Every exploration declares an unambiguous hypothesis, specific questions to answer, benchmark targets, and measurable exit criteria.
+* **Disposable Prototype Branches**: Spikes execute on experimental branches (`spike/exp-*`), recording empirical findings (latency percentiles, memory profiles, locking contention).
+* **Two Deterministic Outcomes**:
+  - **Adopted**: If exit criteria are met, the exploration graduates into a formal **SpecDelta (`DLT-*`)** for production integration.
+  - **Discarded**: If the hypothesis is disproven, the exploration is archived with lessons learned, permanently preventing future engineers and AI agents from repeating the same dead end.
+
+> Learn more in the comprehensive **[Explorations Guide](explorations.md)**.
 
 ---
 
@@ -42,34 +79,33 @@ Here is an example of a Component manifest (`eidos/architecture/components/core.
 
 ```asciidoc
 ---
+type: tech/component
+schema: schemas/v1/tech/component.schema.yaml
 id: CMP-EIDOS-CORE
 name: Eidos Core Engine
-type: tech/component
-schema: /v1/tech/component.schema.yaml
 container_type: library
-runtime: python
-package_path: src/eidos/core
+runtime: "Python 3.12+"
+package_path: "src/eidos/core"
 contracts:
   provides:
-    - CTR-EIDOS-VALIDATOR
-    - CTR-EIDOS-SCAFFOLDER
-  consumes: []
+    - "eidos/architecture/contracts/validator.adoc"
 dependencies:
-  internal: []
-  external:
-    - typer
-    - pyyaml
-    - jsonschema
+  internal_components: []
+  external_services:
+    - "pyyaml"
+    - "jsonschema"
 ---
-= Eidos Core Engine
+= Component: Eidos Core Engine
 
-The Core Engine provides the fundamental schema validation, specification parsing,
-and templating mechanisms for all Eidos operations.
+The Core Engine provides schema validation, specification parsing,
+and AST graph generation for all Eidos operations.
 ```
 
 ### Key Elements:
-* **`id`**: Globally unique document identifier (`CMP-*`, `CTR-*`, `CAP-*`, `POL-*`).
-* **`schema`**: Formal schema validation reference ensuring structural integrity.
-* **`provides` / `consumes`**: Explicit declaration of interface contracts.
+* **`type`**: Canonical specification type matching the Eidos schema taxonomy.
+* **`id`**: Globally unique document identifier (`CMP-*`, `CTR-*`, `CAP-*`, `POL-*`, `EXP-*`, `DS-*`, `DLT-*`).
+* **`schema`**: Reference to the canonical schema file ensuring automated validation.
+* **Frontmatter Metadata**: Strongly-typed architectural properties (contracts, dependencies, invariants, tokens).
 * **Body text**: Rich AsciiDoc documentation that evolves continuously with the code.
+
 

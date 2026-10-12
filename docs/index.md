@@ -87,6 +87,7 @@ eidos --help
 * **[Installation Guide](getting-started/installation.md)**: System requirements, optional extras, and devcontainer setup.
 * **[5-Minute Quickstart](getting-started/quickstart.md)**: Bootstrap your repository and inspect your first living specifications.
 * **[Core Concepts](concepts/living-specs.md)**: Learn about Living Specs, SpecDeltas, Invariants, and Dual Workflows.
+* **[Explorations & Spikes](concepts/explorations.md)**: Hypothesis-driven technical discovery and prototype spikes.
 * **[Multi-Design Systems](concepts/design.md)**: Multi-brand design systems, W3C tokens, and UI component contracts.
 * **[Schema Glossary](concepts/schema-glossary.md)**: Comprehensive reference for all 13 living specification schemas.
 * **[CLI Reference](guides/cli.md)**: Explore the complete command-line interface.
