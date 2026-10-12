@@ -13,7 +13,7 @@ specification_file: "src/eidos/cli/main.py"
 == Command Specifications
 
 === `eidos --version` / `eidos version`
-Displays current Eidos engine version (e.g. `eidos 0.5.0`).
+Displays current Eidos engine version (e.g. `eidos 0.6.0`).
 * **Options**: `--version`, `-V`
 * **Exit Code**: 0
 
