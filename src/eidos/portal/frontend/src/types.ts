@@ -112,48 +112,135 @@ export interface SpecDelta {
   }>;
 }
 
+export interface SpecUIVariant {
+  name: string;
+  description?: string;
+}
+
+export interface SpecUIAccessibility {
+  wcag_level?: string;
+  aria_role?: string;
+  keyboard_nav?: string;
+}
+
 export interface SpecUIComponent {
   id: string;
-  name: string;
+  name?: string;
+  title?: string;
   design_system: string;
-  component_type: string;
-  tokens_used?: string[];
+  category?: string;
+  component_type?: string;
+  status?: string;
+  variants?: SpecUIVariant[];
   states?: string[];
+  accessibility?: SpecUIAccessibility;
+  test_bindings?: Record<string, string>;
+  tokens_used?: string[];
   description?: string;
+  body?: string;
 }
 
 export interface SpecClient {
   id: string;
-  name: string;
-  client_type: string;
-  target_audience: string;
-  supported_screens?: string[];
-  flows?: string[];
+  name?: string;
+  title?: string;
+  platform?: string;
+  client_type?: string;
+  target_audience?: string;
   design_system?: string;
+  container?: string;
+  capabilities?: string[];
+  supported_screens?: string[];
+  screens?: string[];
+  flows?: string[];
   description?: string;
+  body?: string;
+}
+
+export interface SpecFlowStep {
+  step: number;
+  title?: string;
+  action: string;
+  outcome?: string;
+  screen?: string;
+  client?: string;
+  target_screen?: string;
 }
 
 export interface SpecFlow {
   id: string;
+  name?: string;
+  title?: string;
+  client?: string | null;
+  clients?: string[];
+  trigger?: string;
+  status?: string;
+  flow_type?: string;
+  steps?: SpecFlowStep[];
+  capabilities?: string[];
+  mermaid?: string;
+  description?: string;
+  body?: string;
+}
+
+export interface SpecScreenState {
   name: string;
-  client: string;
-  trigger: string;
-  steps?: Array<{
-    step: number;
-    action: string;
-    target_screen?: string;
-  }>;
   description?: string;
 }
 
 export interface SpecScreen {
   id: string;
-  name: string;
-  client: string;
-  route: string;
-  layout: string;
+  name?: string;
+  title?: string;
+  client?: string;
+  route?: string;
+  layout?: string;
+  system_ref?: string;
   components?: string[];
+  states?: SpecScreenState[] | string[];
+  slots?: Record<string, string>;
+  capabilities?: string[];
+  mermaid?: string;
   description?: string;
+  body?: string;
+}
+
+export interface SpecDesignSystemTokenItem {
+  $value: string;
+  $type?: string;
+  $description?: string;
+}
+
+export interface SpecDesignSystemTokens {
+  color?: {
+    brand?: Record<string, SpecDesignSystemTokenItem>;
+    surface?: Record<string, SpecDesignSystemTokenItem>;
+    border?: Record<string, SpecDesignSystemTokenItem>;
+    feedback?: Record<string, SpecDesignSystemTokenItem>;
+    [key: string]: any;
+  };
+  spacing?: Record<string, SpecDesignSystemTokenItem>;
+  border?: {
+    radius?: Record<string, SpecDesignSystemTokenItem>;
+    [key: string]: any;
+  };
+  typography?: {
+    font_family?: Record<string, SpecDesignSystemTokenItem>;
+    [key: string]: any;
+  };
+  [key: string]: any;
+}
+
+export interface SpecDesignSystem {
+  id: string;
+  title?: string;
+  name?: string;
+  client?: string;
+  brand_name?: string;
+  extends?: string | null;
+  version?: string;
+  tokens_file?: string;
+  tokens?: SpecDesignSystemTokens;
 }
 
 export interface SpecExploration {
@@ -201,12 +288,7 @@ export interface PortalData {
     approved: SpecDelta[];
     applied: SpecDelta[];
   };
-  design_systems: Array<{
-    id: string;
-    name: string;
-    version: string;
-    tokens_file: string;
-  }>;
+  design_systems: SpecDesignSystem[];
   ui_components: SpecUIComponent[];
   clients: SpecClient[];
   flows: SpecFlow[];

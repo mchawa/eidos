@@ -188,7 +188,7 @@ export function App() {
           {activeTab === "deltas" && <DeltasView data={data} />}
           {activeTab === "catalog" && <CatalogView data={data} />}
           {activeTab === "business" && <BusinessView data={data} />}
-          {activeTab === "design" && <DesignView data={data} />}
+          {activeTab === "design" && <DesignView data={data} darkMode={darkMode} />}
         </div>
       </main>
 
