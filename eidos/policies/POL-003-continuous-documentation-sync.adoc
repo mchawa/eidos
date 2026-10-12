@@ -1,0 +1,24 @@
+---
+type: product/policy
+schema: schemas/v1/product/policy.schema.yaml
+id: POL-003-CONTINUOUS-DOCUMENTATION-SYNC
+title: "Continuous Documentation Synchronization Policy"
+category: governance
+rule: "All user documentation in docs/ and living specifications in eidos/ must remain continuously synchronized with source code, CLI commands, and schema definitions. Pull requests with outdated docs, missing schema definitions, or failing documentation builds are blocked from merging."
+enforcement:
+  mechanism: "Eidos drift detection (eidos drift), zensical build --strict, and test_docs_sync.py"
+  severity: blocking
+---
+= Policy: Continuous Documentation Synchronization
+:toc: left
+
+== Rationale
+In software development, outdated documentation creates split-brain development: users, developers, and autonomous AI agents act on stale interfaces, leading to misconfiguration, broken integrations, and hallucinated code. 
+
+Eidos mandates that documentation is not an afterthought or an optional marketing artifact; it is an executable component of the system governed by strict quality gates. Every architectural evolution, schema change, and CLI modification must be reflected in the public documentation and verified by automated tests prior to merging.
+
+== Enforcement Rules
+1. **Strict Documentation Build**: The documentation site must compile with zero errors and zero broken cross-references via `zensical build --strict`.
+2. **Schema & Component Parity**: Every canonical schema in `assets/schemas/v1/` and every system component in `eidos/architecture/components/` must be documented in `docs/concepts/schema-glossary.md` and `docs/concepts/living-specs.md`.
+3. **CLI Interface Parity**: Every command exposed by the CLI must be documented in `docs/guides/cli.md`.
+4. **Automated Test Traceability**: The policy is verified by automated test `tests/test_docs_sync.py::test_documentation_and_schemas_in_sync` implementing invariant `INV-DOCS-SYNCHRONIZATION`.

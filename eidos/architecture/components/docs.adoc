@@ -59,6 +59,8 @@ This container represents the public documentation site under `docs/` and its bu
 |===
 
 == Operational Invariants & Quality Attributes
+* **Continuous Documentation Sync (`INV-DOCS-SYNCHRONIZATION`, `POL-003`)**: User documentation in `docs/` must remain in 100% synchronization with schemas and CLI commands, verified by `tests/test_docs_sync.py`.
 * **Strict Validation (`--strict`)**: Documentation must build with zero broken cross-references or missing asset warnings.
 * **Portal Co-Hosting**: The static Living Architecture Portal is compiled directly into `site/portal/` as part of the unified deployment artifact.
 * **Offline-Ready Search**: Emits client-side `search.json` for high-speed offline query resolution without backend server requirements.
+

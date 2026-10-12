@@ -36,6 +36,7 @@ def test_portal_data_generation():
     assert "CMP-EIDOS-MCP" in comp_ids
     assert "CMP-EIDOS-PLUGIN" in comp_ids
     assert "CMP-EIDOS-PORTAL" in comp_ids
+    assert "CMP-EIDOS-DOCS" in comp_ids
 
     # Mermaid diagrams verification
     assert data["diagrams"]["c4_context"].startswith("graph TD")

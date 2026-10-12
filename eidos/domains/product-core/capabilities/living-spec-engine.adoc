@@ -14,6 +14,7 @@ business:
   jtbd: "Maintain an accurate, non-drifting representation of what the software product currently does across both business and technical dimensions."
   policies:
     - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
+    - eidos/policies/POL-003-continuous-documentation-sync.adoc
 
 technical:
   components:
@@ -33,6 +34,9 @@ technical:
     - id: INV-LIVING-PORTAL-VISUALIZATION
       rule: "The system must generate an interactive web portal and static site visualizing C4 architecture, domains, and SpecDeltas without external Node.js dependencies."
       test_binding: "tests/test_portal.py::test_portal_data_generation"
+    - id: INV-DOCS-SYNCHRONIZATION
+      rule: "All 13 living specification schemas, CLI command interfaces, and C4 components must be accurately documented in docs/ and pass strict static site compilation."
+      test_binding: "tests/test_docs_sync.py::test_documentation_and_schemas_in_sync"
 ---
 = Capability: Living Baseline Specification Engine
 :toc: left
