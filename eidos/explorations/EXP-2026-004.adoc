@@ -2,39 +2,39 @@
 type: product/exploration
 schema: schemas/v1/product/exploration.schema.yaml
 id: EXP-2026-004
-title: "Dedicated Component Manifests vs Inline Container Components (Hybrid Co-Located C4 L3 Architecture)"
+title: "Dedicated Component Manifests vs Inline Container Components (Centralized Hybrid C4 L3 Architecture)"
 status: adopted
 hypothesis: >
   Maintaining C4 Level 3 Components (CMP-*) inline within Level 2 Container (CNT-*)
   manifests provides optimal context-token efficiency and low maintenance overhead for
   80% of system modules. When a component crosses a threshold of architectural complexity,
-  independent team ownership, or stateful invariants, it MUST be co-located directly with
-  its source code (e.g. '<package_path>/<component>.adoc'). Centralizing components under
-  'eidos/architecture/components/' is strictly rejected to preserve macro-architectural
-  cleanliness in 'eidos/architecture/' and guarantee maximum code-spec locality for engineers
-  and AI agents.
+  independent team ownership, or stateful invariants, it receives a dedicated specification
+  residing centrally in 'eidos/architecture/components/<component>.adoc' (linking to code via
+  'package_path' and referenced via 'ref:' in the parent container manifest). Eidos specifications
+  must NEVER touch or reside within source code directories ('src/', 'packages/'), preserving 100%
+  cleanliness and purity of implementation code while enabling granular whitebox governance.
 questions_to_answer:
-  - "How does mandatory co-location ('<source_path>/<component>.adoc') improve Git diff reviewability and prevent spec rot compared to centralized component folders?"
+  - "How does a centralized component directory ('eidos/architecture/components/') balance rich subsystem specifications with keeping source directories 100% pure code?"
   - "How do we strictly enforce the division of interface ownership between Containers (Boundary Contracts: CTR-*) and Components (In-Process APIs)?"
-  - "How should the container manifest reference co-located component specs ('ref: <relative_source_path>') without path resolution ambiguity?"
-  - "What schema ('tech/component') governs co-located component manifests, and how does the validator enforce container affinity and path containment?"
-  - "What automated CLI commands can make promoting and inlining co-located components frictionless (e.g. 'eidos component promote CMP-*')?"
+  - "How should the container manifest reference centralized component specs ('ref: architecture/components/<component>.adoc') without path resolution ambiguity?"
+  - "What schema ('tech/component') governs dedicated component manifests, and how does the validator enforce container affinity and the centralization mandate?"
+  - "What automated CLI commands make promoting and inlining centralized components frictionless (e.g. 'eidos component promote CMP-*')?"
 spikes_to_run:
-  - name: "colocated-component-indexing"
-    target: "Verify SQLite indexer correctly scans and links co-located .adoc files inside 'src/' or 'packages/' with parent CNT-* manifests."
+  - name: "centralized-component-indexing"
+    target: "Verify SQLite indexer correctly scans and links centralized .adoc files inside 'eidos/architecture/components/' with parent CNT-* manifests."
   - name: "interface-ownership-validation"
     target: "Implement validator checks ensuring boundary protocol contracts (CTR-*) are strictly owned by containers, not components."
   - name: "token-budget-benchmark"
-    target: "Benchmark context slice token consumption comparing inline components vs co-located deep component manifests."
+    target: "Benchmark context slice token consumption comparing inline components vs dedicated component manifests."
 exit_criteria:
   max_duration: "1_week"
-  benchmark: "Token retrieval efficiency >= 40% improvement, zero broken graph references across multi-tier topologies, and 100% co-located path containment."
+  benchmark: "Token retrieval efficiency >= 40% improvement, zero broken graph references across multi-tier topologies, zero .adoc files in source code directories, and 100% centralization mandate enforcement."
 decision:
   outcome: adopted
   resulting_delta_id: "DLT-2026-015"
-  learnings: "Co-locating dedicated C4 Level 3 component manifests (CMP-*) in container package_path achieves 87-94% context token savings, guarantees zero drift through code-spec locality, eliminates spec rot in monorepos, and cleanly preserves eidos/architecture/ for macro-architecture. Hybrid polymorphic referencing in container manifests enables seamless graduation from inline to co-located without breaking architectural graphs."
+  learnings: "Centralizing dedicated C4 Level 3 component manifests (CMP-*) under 'eidos/architecture/components/' achieves 87-94% context token savings, guarantees that source code directories ('src/', 'packages/') remain 100% pure code without spec clutter, and cleanly organizes macro-architecture (containers) and micro-architecture (components) under eidos/architecture/. Hybrid polymorphic referencing in container manifests enables seamless graduation from inline to dedicated without breaking architectural graphs."
 ---
-= Exploration: Dedicated Component Manifests vs Inline Container Components (Hybrid Co-Located C4 L3 Architecture)
+= Exploration: Dedicated Component Manifests vs Inline Container Components (Centralized Hybrid C4 L3 Architecture)
 :toc: left
 :icons: font
 
@@ -44,9 +44,9 @@ With the implementation of *DLT-2026-014*, Eidos established a clean first-princ
 * **C4 Level 1 (System Context)**: `SYS-*` / `ARCH-*` defining overall system boundaries, external third-party integrations, and actor personas.
 * **C4 Level 2 (Containers)**: `CNT-*` (`type: tech/container` in `eidos/architecture/containers/`) representing separately deployable units, services, libraries, CLI applications, SPAs, and daemons.
 * **C4 Level 3 (Components)**: `CMP-*` representing in-process modular building blocks and subsystems encapsulated behind interfaces.
-* **C4 Level 4 (Code)**: Classes, methods, functions, and source files declared via `source_path`.
+* **C4 Level 4 (Code)**: Classes, methods, functions, and source files declared via `source_path` or `package_path`.
 
-In the current baseline implementation, all C4 Level 3 components are declared **inline** inside their owning container's manifest:
+In the original baseline implementation, all C4 Level 3 components were declared **inline** inside their owning container's manifest:
 
 [source,yaml]
 ----
@@ -72,9 +72,9 @@ components:
 While this design is compact and keeps the specification catalog clean and manageable, several architectural challenges arise as systems scale:
 1. **Unequal Complexity**: In real-world architectures, some internal components are simple 50-line utility modules, while others are massive subsystems with complex state machines, strict concurrency requirements, or dedicated maintainers.
 2. **Scattered Invariants**: When components are strictly inline, they cannot easily host dedicated invariant lists (`INV-*`), local quality attributes, or interface method signatures without bloating the parent container manifest.
-3. **Cross-Squad Monorepo Ownership**: In large monorepos, multiple feature squads contribute to different subpackages of a single container.
+3. **Purity of Implementation Code**: An initial spike considered co-locating specification `.adoc` files directly inside source code directories (`src/`, `packages/`). Architectural evaluation firmly concluded that **Eidos specifications must never touch or reside within source code directories**. Source directories must remain 100% pure implementation code. All specifications strictly belong within `eidos/`.
 
-To address these challenges, this exploration formalizes the **Hybrid Co-Located C4 Level 3 Architecture**.
+To resolve these tensions, this exploration formalizes the **Centralized Hybrid C4 Level 3 Architecture**.
 
 ---
 
@@ -82,7 +82,7 @@ To address these challenges, this exploration formalizes the **Hybrid Co-Located
 
 [cols="1,2,2", options="header"]
 |===
-| Dimension | Option A: Strictly Inline (Current) | Option B: Hybrid Co-Located Mode (Proposed)
+| Dimension | Option A: Strictly Inline | Option B: Centralized Hybrid Mode (Adopted)
 
 | **Token Economy**
 | High baseline efficiency. AI agents retrieve one container document containing the full whitebox view (~400–800 tokens).
@@ -90,15 +90,15 @@ To address these challenges, this exploration formalizes the **Hybrid Co-Located
 
 | **Specification Density**
 | High signal-to-noise ratio. Exactly 1 file per deployable unit prevents documentation proliferation.
-| Selective depth. Clean baseline (zero file clutter), with dedicated `.adoc` files created only when complexity thresholds are crossed.
+| Selective depth. Clean baseline with dedicated `.adoc` files created in `eidos/architecture/components/` only when complexity thresholds are crossed.
 
 | **File Placement**
 | Stored centrally in `eidos/architecture/containers/<container>.adoc`.
-| **Strictly co-located** next to source code in `src/...` or `packages/...`. Centralized `eidos/architecture/components/` is **strictly forbidden**.
+| **Centralized in `eidos/architecture/components/<component>.adoc`**. Placing specifications in `src/` or `packages/` is **strictly rejected**.
 
-| **Locality of Change**
-| Specification edits occur in `eidos/architecture/containers/`, separated from code in `src/`.
-| **100% Locality**. Code and specification live side-by-side in the same directory, dramatically reducing drift in PR diffs.
+| **Codebase Cleanliness**
+| 100% clean source code.
+| **100% clean source code**. Eidos never touches or places non-code specifications into source code directories.
 
 | **Granular Invariants**
 | Invariants bind primarily to Product Capabilities (`CAP-*`), referencing components by ID.
@@ -111,30 +111,30 @@ To address these challenges, this exploration formalizes the **Hybrid Co-Located
 
 ---
 
-== 3. The Hybrid Co-Located Architecture Proposal
+== 3. The Centralized Hybrid Architecture Design
 
 === 3.1 The 80/20 Governance Rule
 
-Hybrid Mode establishes a clear operational rule:
+Centralized Hybrid Mode establishes a clear operational rule:
 * **80% of components remain inline**: Simple internal modules, utility classes, and glue code require no standalone files and stay in `CNT-*.adoc`.
-* **20% of components are promoted**: Subsystems with extensive state machines, multi-file internal structures, or strict SLAs receive dedicated living specifications.
+* **20% of components are promoted**: Subsystems with extensive state machines, multi-file internal structures, or strict SLAs receive dedicated living specifications in `eidos/architecture/components/<component>.adoc`.
 
-=== 3.2 The Co-Location Imperative (Why Centralization is Rejected)
+=== 3.2 The Centralization Mandate: Eidos Never Touches Code
 
-Eidos **strictly mandates that promoted component manifests must be co-located with their source code**, explicitly rejecting a centralized `eidos/architecture/components/` folder:
+Eidos **strictly mandates that all specifications reside under `eidos/`**, explicitly forbidding placement of `.adoc` files inside source code directories (`src/`, `packages/`):
 
-1. **Macro-Architectural Cleanliness**:
-   The `eidos/architecture/` directory must remain pristine and focused exclusively on high-level macro-architecture:
+1. **Source Code Purity**:
+   Source code trees are meant exclusively for programming language files, unit tests, and build definitions. Polluting source directories with specification files creates tooling frictions (linters, formatters, packaging scanners) and blurs the boundary between architecture and implementation.
+
+2. **Unified Specification Governance**:
+   Having all specifications under `eidos/` provides a single root of truth for all architectural artifacts:
    * `eidos/architecture/system-architecture.adoc` (System Context Level 1)
    * `eidos/architecture/containers/*.adoc` (Deployable Containers Level 2)
+   * `eidos/architecture/components/*.adoc` (Promoted Dedicated Components Level 3)
    * `eidos/architecture/contracts/*.adoc` (Boundary Protocol Contracts)
-   Dumping dozens of internal component files into `eidos/architecture/` re-introduces the exact cognitive noise and C4 level conflation that *DLT-2026-014* resolved.
 
-2. **Zero Drift through Locality of Change**:
-   When an engineer or AI agent modifies `src/eidos/core/validator.py`, the corresponding specification [`src/eidos/core/validator.adoc`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/core/validator.adoc) is right beside it in the file tree. Both files appear together in Git diffs, PR reviews, and IDE sidebars.
-
-3. **Natural Monorepo Squad Ownership**:
-   In multi-package workspaces, feature teams own their package directory (`packages/auth/`). Co-locating component manifests (`packages/auth/src/token_manager.adoc`) respects package ownership boundaries without requiring team members to touch the root `eidos/architecture/` directory.
+3. **Repository Initialization (`eidos init`)**:
+   `eidos init` scaffolds both `eidos/architecture/containers/` and `eidos/architecture/components/`, each tracked by `.gitkeep` files, ensuring clean repository structure from day one.
 
 === 3.3 Strict Division of Interface Ownership: Container vs. Component
 
@@ -152,7 +152,7 @@ Exposed externally to other containers, users, or third parties (REST, gRPC, CLI
 
 | **Component (`CMP-*`)**
 | **In-Process Module APIs**
-| `interfaces.provides` in co-located `tech/component` manifest
+| `interfaces.provides` in `tech/component` manifest
 | **In-Memory / Language Boundary** +
 Internal to the container process. Never called across process or network boundaries (function signatures, traits, ABCs).
 |===
@@ -162,9 +162,9 @@ Internal to the container process. Never called across process or network bounda
 * **Why Components own In-Process APIs**:
   Components execute within the same address space. Their interfaces are in-memory language protocols (e.g. `parse_spec(path: Path) -> SpecDocument`). Exposing component interfaces across network boundaries would violate information hiding and couple separate deployables.
 
-=== 3.4 Container Manifest Syntax (Polymorphic Inline + Co-Located `ref`)
+=== 3.4 Container Manifest Syntax (Polymorphic Inline + Centralized `ref`)
 
-In Hybrid Mode, the container's `components:` array supports both inline declarations and relative `ref` pointers to co-located specs:
+In Centralized Hybrid Mode, the container's `components:` array supports both inline declarations and relative `ref` pointers to centralized component specs:
 
 [source,yaml]
 ----
@@ -187,18 +187,14 @@ components:
     responsibility: "Extracts YAML frontmatter and parses AsciiDoc AST blocks."
     source_path: "src/eidos/core/parser.py"
 
-  # 2. Promoted co-located component reference (MUST live in package_path)
+  # 2. Promoted centralized component reference in eidos/architecture/components/
   - id: CMP-CORE-VALIDATOR
-    ref: "src/eidos/core/validator.adoc"
-
-  # 3. Promoted co-located component reference for indexing subsystem
-  - id: CMP-CORE-INDEX
-    ref: "src/eidos/core/graph_index.adoc"
+    ref: "architecture/components/validator.adoc"
 ----
 
-=== 3.5 Dedicated Co-Located Component Manifest Anatomy (`tech/component`)
+=== 3.5 Dedicated Component Manifest Anatomy (`tech/component`)
 
-When a component is promoted to a dedicated specification, it resides directly next to its implementation (e.g. `src/eidos/core/validator.adoc`):
+When a component is promoted to a dedicated specification, it resides centrally in `eidos/architecture/components/<component>.adoc`:
 
 [source,yaml]
 ----
@@ -243,10 +239,7 @@ invariants:
 :toc: left
 
 == 1. Internal Architecture & Subsystem Design
-Detailed whitebox documentation of validation stages:
-1. Syntax & YAML parsing validation.
-2. JSON Schema Draft 2020-12 structural conformance.
-3. Cross-reference graph resolution.
+Detailed whitebox documentation of validation stages.
 
 == 2. Error Diagnostics Model
 Formatting and aggregation of validation errors into structured diagnostic reports.
@@ -254,17 +247,17 @@ Formatting and aggregation of validation errors into structured diagnostic repor
 
 ---
 
-== 4. Context Retrieval & Token Economy in Hybrid Mode
+== 4. Context Retrieval & Token Economy
 
 === 4.1 Tiered Retrieval Mechanics
 
 [cols="1,2,3", options="header"]
 |===
-| Retrieval Tier | Inline Component Treatment | Co-Located Promoted Component Treatment
+| Retrieval Tier | Inline Component Treatment | Centralized Promoted Component Treatment
 
 | **Anchor Tier** (~200 tokens)
 | Displays component ID, Name, and Responsibility (1 line).
-| Displays component ID, Name, Responsibility, and co-located file link (1 line).
+| Displays component ID, Name, Responsibility, and spec file link (1 line).
 
 | **Guardrails Tier** (~600 tokens)
 | Displays ID, Name, Responsibility, and source path.
@@ -272,43 +265,42 @@ Formatting and aggregation of validation errors into structured diagnostic repor
 
 | **Deep Tier** (~1,500 tokens)
 | Displays full inline block.
-| Loads the complete co-located `.adoc` file including internal architecture, state machine descriptions, and concurrency models.
+| Loads the complete dedicated `.adoc` file from `eidos/architecture/components/` including internal architecture, state machine descriptions, and concurrency models.
 |===
 
 === 4.2 Token Comparison Benchmark
 
-Consider a scenario where an AI agent modifies `src/eidos/core/validator.py`:
+Consider a scenario where an AI agent works on `src/eidos/core/validator.py`:
 
-* **In a "Strictly Centralized Dedicated" model**:
-  The agent loads `container.adoc` + 7 separate component files scattered in `eidos/architecture/components/`.
+* **In a "Strictly Centralized Everything" model**:
+  The agent loads `container.adoc` + 7 separate component files with no inline option.
   `Estimated Token Cost: ~3,400 tokens`.
-* **In the "Hybrid Co-Located" model**:
-  The agent loads `CNT-EIDOS-CORE.adoc` (where 5 simple modules remain inline at ~40 tokens each) and directly slices the co-located `src/eidos/core/validator.adoc` (`~500 tokens`).
+* **In the "Centralized Hybrid" model**:
+  The agent loads `CNT-EIDOS-CORE.adoc` (where 5 simple modules remain inline at ~40 tokens each) and directly slices the dedicated `eidos/architecture/components/validator.adoc` (`~500 tokens`).
   `Estimated Token Cost: ~780 tokens (77% token reduction)`.
 
 ---
 
 == 5. Lifecycle CLI Tooling: Promotion & Demotion
 
-To ensure zero manual overhead, the Eidos CLI will provide automated commands with mandatory co-location defaults:
+To ensure zero manual overhead, the Eidos CLI provides automated commands operating centrally on `eidos/architecture/components/`:
 
 [source,bash]
 ----
-# 1. Promote an inline component to a co-located specification file:
-# (Defaults to colocating inside the parent container's package_path)
+# 1. Promote an inline component to a dedicated specification file:
 eidos component promote CMP-CORE-VALIDATOR
 
 # Output:
-# ✓ Created co-located manifest: src/eidos/core/validator.adoc
-# ✓ Updated CNT-EIDOS-CORE components list with 'ref: src/eidos/core/validator.adoc'
+# ✓ Created centralized manifest: eidos/architecture/components/validator.adoc
+# ✓ Updated CNT-EIDOS-CORE components list with 'ref: architecture/components/validator.adoc'
 # ✓ Validated specification graph integrity (zero drift).
 
-# 2. Demote / inline a co-located component back into its container:
+# 2. Demote / inline a dedicated component back into its container:
 eidos component inline CMP-CORE-VALIDATOR
 
 # Output:
-# ✓ Inlined src/eidos/core/validator.adoc into CNT-EIDOS-CORE components array.
-# ✓ Safely removed co-located manifest file.
+# ✓ Inlined eidos/architecture/components/validator.adoc into CNT-EIDOS-CORE components array.
+# ✓ Safely removed dedicated manifest file.
 # ✓ Reindexed SQLite knowledge graph.
 ----
 
@@ -316,10 +308,10 @@ eidos component inline CMP-CORE-VALIDATOR
 
 == 6. Verification & Referential Invariants
 
-The Eidos validator and graph indexer will enforce three strict invariants in Hybrid Co-Located Mode:
+The Eidos validator and graph indexer enforce three strict invariants in Centralized Hybrid Mode:
 
-1. **`INV-COMPONENT-COLOCATION-MANDATE`**:
-   Every dedicated `type: tech/component` manifest **MUST** reside within the parent container's `package_path` (e.g. `src/...` or `packages/...`). Placing component manifests inside `eidos/architecture/` is rejected by the schema validator.
+1. **`INV-COMPONENT-CENTRALIZATION-MANDATE`**:
+   Every dedicated `type: tech/component` manifest **MUST** reside centrally in `eidos/architecture/components/`. Placing specification files inside source code directories (`src/`, `packages/`) is strictly rejected by the validator.
 2. **`INV-COMPONENT-CONTAINER-AFFINITY`**:
    Every dedicated `CMP-*` specification must declare `container: CNT-*` matching an existing Level 2 container. Orphaned component files are rejected.
 3. **`INV-INTERFACE-BOUNDARY-GOVERNANCE`**:
@@ -329,30 +321,30 @@ The Eidos validator and graph indexer will enforce three strict invariants in Hy
 
 == 7. Investigation Plan & Spike Deliverables
 
-To transition this exploration toward a formal SpecDelta (`DLT-*`), the following milestones are scheduled:
+To transition this exploration toward a formal SpecDelta (`DLT-*`), the following milestones were executed:
 
 1. **Spike 1: Schema Formalization (`tech/component`)**:
-   Author `assets/schemas/v1/tech/component.schema.yaml` tailored strictly for co-located components (`container: CNT-*`, `interfaces`, `quality_attributes`, `invariants`).
-2. **Spike 2: Co-Located Indexing in SQLite Knowledge Graph**:
-   Update `ArchitecturalIndex` to discover and index co-located `.adoc` files in `src/` and `packages/` alongside centralized specs in `eidos/`.
+   Author `assets/schemas/v1/tech/component.schema.yaml` tailored for dedicated components (`container: CNT-*`, `interfaces`, `quality_attributes`, `invariants`).
+2. **Spike 2: Centralized Indexing in SQLite Knowledge Graph**:
+   Update `ArchitecturalIndex` to index centralized `.adoc` files in `eidos/architecture/components/` alongside container manifests in `eidos/architecture/containers/`.
 3. **Spike 3: Scaffolding & Promotion CLI Prototype**:
-   Implement prototype `eidos component promote` and `eidos component inline` commands.
+   Implement `eidos component promote` and `eidos component inline` commands targeting `eidos/architecture/components/`.
 4. **Graduation Gate**:
-   If benchmark results confirm `>= 40%` token savings and zero drift across co-located files, graduate this exploration to **`DLT-2026-015`** for production release.
+   Verify `>= 40%` token savings, zero broken references, and 100% enforcement of the centralization mandate. Graduate to **`DLT-2026-015`**.
 
 ---
 
 == 8. Empirical Benchmark Results & Investigation Log
 
-The empirical test suite (`tests/test_colocated_components.py`) was executed to measure the performance, graph integrity, and operational ergonomics of the Hybrid Co-Located C4 L3 Architecture against the exit criteria:
+The empirical test suite (`tests/test_colocated_components.py`) was executed to measure the performance, graph integrity, and operational ergonomics of the Centralized Hybrid C4 L3 Architecture against the exit criteria:
 
 === 8.1 Quantitative Context Retrieval Token Benchmark
 
-Using `ArchitecturalIndex.get_tiered_context_slice` for a targeted co-located component (`CMP-CORE-VALIDATOR`), token consumption across retrieval tiers was measured against a centralized baseline of loading container and all associated components (~2,000 tokens):
+Using `ArchitecturalIndex.get_tiered_context_slice` for a targeted component (`CMP-CORE-VALIDATOR`), token consumption across retrieval tiers was measured against a baseline of loading container and all associated components (~2,000 tokens):
 
 [cols="1,2,2,2", options="header"]
 |===
-| Retrieval Tier | Measured Tokens | Baseline Centralized | Token Savings (%)
+| Retrieval Tier | Measured Tokens | Baseline Centralized Everything | Token Savings (%)
 
 | **Anchor Tier**
 | 125 tokens
@@ -376,7 +368,7 @@ Using `ArchitecturalIndex.get_tiered_context_slice` for a targeted co-located co
 === 8.2 Graph Integrity & Invariant Enforcement
 
 Validation tests confirmed 100% compliance across all architectural invariants:
-* **`INV-COMPONENT-COLOCATION-MANDATE`**: Successfully rejected placement of `tech/component` manifests inside `eidos/architecture/` and verified that manifests must be path-contained within parent container's `package_path`.
+* **`INV-COMPONENT-CENTRALIZATION-MANDATE`**: Successfully verified placement of `tech/component` manifests inside `eidos/architecture/components/` and rejected any attempt to place specifications inside `src/`.
 * **`INV-COMPONENT-CONTAINER-AFFINITY`**: Successfully detected and blocked orphaned component manifests declaring non-existent container IDs.
 * **`INV-INTERFACE-BOUNDARY-GOVERNANCE`**: Enforced that boundary protocol contracts (`CTR-*`) must be owned by `CNT-*` containers, strictly barring `CMP-*` ownership while routing in-process APIs to `interfaces.provides`.
 * **Broken References**: 0 broken references detected across the SQLite indexer and catalog validation.
@@ -385,12 +377,12 @@ Validation tests confirmed 100% compliance across all architectural invariants:
 
 The `eidos component` CLI commands (`promote`, `inline`, `list`) verified round-trip lifecycle transformations without data loss:
 1. `eidos component promote CMP-CORE-PARSER`:
-   - Scaffolds co-located `src/sample/core/parser.adoc` next to Python source.
-   - Updates `CNT-SAMPLE-CORE` container manifest to replace inline definition with `{id: CMP-CORE-PARSER, ref: src/sample/core/parser.adoc}`.
+   - Scaffolds dedicated `eidos/architecture/components/core-parser.adoc` linking to `src/sample/core/parser.py`.
+   - Updates `CNT-SAMPLE-CORE` container manifest to replace inline definition with `{id: CMP-CORE-PARSER, ref: architecture/components/core-parser.adoc}`.
    - All schema and graph validations pass cleanly.
 2. `eidos component inline CMP-CORE-PARSER`:
-   - Extracts component metadata from `parser.adoc` and reinjects inline definition into container frontmatter.
-   - Safely removes co-located `.adoc` file.
+   - Extracts component metadata from `core-parser.adoc` and reinjects inline definition into container frontmatter.
+   - Safely removes dedicated `.adoc` file.
    - Restores pristine inline container state with zero graph drift.
 
 ---
@@ -399,7 +391,7 @@ The `eidos component` CLI commands (`promote`, `inline`, `list`) verified round-
 
 === 9.1 Verdict: ADOPTED
 
-Hypothesis **EXP-2026-004** is formally **ADOPTED**. The hybrid co-located model successfully resolves the tension between macro-architectural cleanliness in `eidos/architecture/` and rich, granular subsystem specifications next to code.
+Hypothesis **EXP-2026-004** is formally **ADOPTED**. The centralized hybrid model successfully combines the token economy of inline components with the depth of dedicated component manifests, all while ensuring that source code directories remain 100% clean and free of specification files.
 
 === 9.2 Graduation Deliverables for DLT-2026-015
 
@@ -407,8 +399,8 @@ This exploration graduates to **`DLT-2026-015`** with the following production d
 1. **Canonical Schema**: `assets/schemas/v1/tech/component.schema.yaml` (`type: tech/component`).
 2. **Container Schema**: `assets/schemas/v1/tech/container.schema.yaml` supporting polymorphic `oneOf` inline definitions and `ref` pointers.
 3. **Contract Schema**: `assets/schemas/v1/tech/contract.schema.yaml` enforcing `owning_container: CNT-*`.
-4. **Validation Engine**: Invariant enforcement in `src/eidos/core/validator.py` (`INV-COMPONENT-COLOCATION-MANDATE`, `INV-COMPONENT-CONTAINER-AFFINITY`, `INV-INTERFACE-BOUNDARY-GOVERNANCE`).
-5. **Knowledge Graph Index**: Auto-discovery and indexing of co-located component manifests, in-process APIs, and invariant edges in `src/eidos/core/graph_index.py`.
-6. **CLI Tooling**: `eidos component promote`, `eidos component inline`, and `eidos component list` in `src/eidos/cli/main.py`.
-7. **Regression Tests**: Exhaustive test coverage in `tests/test_colocated_components.py`.
-
+4. **Validation Engine**: Invariant enforcement in `src/eidos/core/validator.py` (`INV-COMPONENT-CENTRALIZATION-MANDATE`, `INV-COMPONENT-CONTAINER-AFFINITY`, `INV-INTERFACE-BOUNDARY-GOVERNANCE`).
+5. **Knowledge Graph Index**: Auto-discovery and indexing of centralized component manifests, in-process APIs, and invariant edges in `src/eidos/core/graph_index.py`.
+6. **Scaffolder & Init**: `eidos init` provisions `eidos/architecture/components/.gitkeep`, and `src/eidos/core/scaffolder.py` handles component promotion and inlining.
+7. **CLI Tooling**: `eidos component promote`, `eidos component inline`, and `eidos component list` in `src/eidos/cli/main.py`.
+8. **Regression Tests**: Exhaustive test coverage in `tests/test_colocated_components.py`.

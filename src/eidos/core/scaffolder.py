@@ -851,6 +851,7 @@ def init_repository(
     # Standard Eidos living specification directory skeleton
     skeleton_dirs = [
         eidos_dir / "architecture" / "containers",
+        eidos_dir / "architecture" / "components",
         eidos_dir / "architecture" / "contracts",
         eidos_dir / "domains",
         eidos_dir / "policies",
@@ -924,10 +925,10 @@ def promote_component(
     eidos_dir: Path | None = None,
     repo_root: Path | None = None,
 ) -> tuple[Path, Path]:
-    """Promote an inline C4 Level 3 component to a co-located specification file.
+    """Promote an inline C4 Level 3 component to a dedicated specification file in eidos/architecture/components/.
 
     Returns:
-        (colocated_spec_path, container_path)
+        (component_spec_path, container_path)
     """
     root = (repo_root or Path.cwd()).resolve()
     edir = (eidos_dir or (root / "eidos")).resolve()
@@ -964,26 +965,18 @@ def promote_component(
     c_doc = parse_spec_file(target_container_path)
     c_fm = c_doc.frontmatter or {}
     container_id = c_fm.get("id", target_container_path.stem)
-    pkg_path_str = c_fm.get("package_path", "src")
-    pkg_dir = root / pkg_path_str
-
-    # Determine co-located .adoc path
     source_path_str = target_comp_data.get("source_path", "")
-    if source_path_str:
-        src_file = root / source_path_str
-        colocated_path = src_file.with_suffix(".adoc")
-    else:
-        # Fallback to package_path/<component_id_lower>.adoc
-        slug = norm_id.replace("CMP-", "").lower().replace("-", "_")
-        colocated_path = pkg_dir / f"{slug}.adoc"
 
-    colocated_path.parent.mkdir(parents=True, exist_ok=True)
-    rel_colocated = str(colocated_path.relative_to(root)).replace("\\", "/")
+    # Place dedicated component specification centrally in eidos/architecture/components/
+    components_dir = edir / "architecture" / "components"
+    components_dir.mkdir(parents=True, exist_ok=True)
+    slug = norm_id.replace("CMP-", "").lower().replace("_", "-")
+    comp_file_path = components_dir / f"{slug}.adoc"
+    rel_comp_ref = str(comp_file_path.relative_to(root)).replace("\\", "/")
 
-    # Author co-located tech/component specification
+    # Author centralized tech/component specification
     comp_name = target_comp_data.get("name", norm_id)
     responsibility = target_comp_data.get("responsibility", "In-process module logic and domain services.")
-    source_path_rel = source_path_str or str(colocated_path.with_suffix(".py").relative_to(root)).replace("\\", "/")
 
     component_content = f"""---
 type: tech/component
@@ -992,7 +985,7 @@ id: {norm_id}
 name: "{comp_name}"
 container: {container_id}
 status: active
-package_path: "{source_path_rel}"
+package_path: "{source_path_str}"
 responsibility: >
   {responsibility}
 
@@ -1017,9 +1010,9 @@ invariants: []
 Language-level function signatures, traits, and public interfaces provided to the owning container.
 """
 
-    colocated_path.write_text(component_content, encoding="utf-8")
+    comp_file_path.write_text(component_content, encoding="utf-8")
 
-    # Update container document replacing inline dict with {id: norm_id, ref: rel_colocated}
+    # Update container document replacing inline dict with {id: norm_id, ref: rel_comp_ref}
     raw_text = target_container_path.read_text(encoding="utf-8")
     fm_dict, body_raw, _ = extract_frontmatter(raw_text)
     if fm_dict:
@@ -1028,14 +1021,14 @@ Language-level function signatures, traits, and public interfaces provided to th
             if isinstance(item, dict) and item.get("id") == norm_id:
                 parsed_fm["components"][idx] = {
                     "id": norm_id,
-                    "ref": rel_colocated,
+                    "ref": rel_comp_ref,
                 }
                 break
         new_fm_str = yaml.dump(parsed_fm, sort_keys=False, default_flow_style=False).strip()
         new_c_content = f"---\n{new_fm_str}\n---\n{body_raw}"
         target_container_path.write_text(new_c_content, encoding="utf-8")
 
-    return colocated_path, target_container_path
+    return comp_file_path, target_container_path
 
 
 def inline_component(
@@ -1043,7 +1036,7 @@ def inline_component(
     eidos_dir: Path | None = None,
     repo_root: Path | None = None,
 ) -> tuple[Path, Path]:
-    """Demote / inline a co-located C4 Level 3 component back into its container.
+    """Demote / inline a dedicated C4 Level 3 component back into its container.
 
     Returns:
         (container_path, deleted_spec_path)
@@ -1076,17 +1069,20 @@ def inline_component(
             break
 
     if not target_container_path or not target_ref_path:
-        raise ValueError(f"Component '{norm_id}' is not currently promoted with a co-located 'ref' in '{containers_dir}'.")
+        raise ValueError(f"Component '{norm_id}' is not currently promoted with a dedicated 'ref' in '{containers_dir}'.")
 
-    colocated_file = root / target_ref_path
-    if not colocated_file.exists():
-        raise FileNotFoundError(f"Referenced co-located spec file '{colocated_file}' does not exist.")
+    # Locate component specification file
+    comp_file = root / target_ref_path
+    if not comp_file.exists():
+        comp_file = edir / target_ref_path
+    if not comp_file.exists():
+        raise FileNotFoundError(f"Referenced component spec file '{comp_file}' does not exist.")
 
-    comp_doc = parse_spec_file(colocated_file)
+    comp_doc = parse_spec_file(comp_file)
     comp_fm = comp_doc.frontmatter or {}
     name = comp_fm.get("name", norm_id)
     responsibility = comp_fm.get("responsibility", "In-process module logic.")
-    source_path = comp_fm.get("package_path", comp_fm.get("source_path", str(colocated_file.with_suffix(".py").relative_to(root)).replace("\\", "/")))
+    source_path = comp_fm.get("package_path", comp_fm.get("source_path", ""))
 
     # Update container frontmatter
     raw_text = target_container_path.read_text(encoding="utf-8")
@@ -1106,7 +1102,8 @@ def inline_component(
         new_c_content = f"---\n{new_fm_str}\n---\n{body_raw}"
         target_container_path.write_text(new_c_content, encoding="utf-8")
 
-    # Safely remove the co-located .adoc file
-    colocated_file.unlink(missing_ok=True)
+    # Safely remove the dedicated .adoc file
+    comp_file.unlink(missing_ok=True)
 
-    return target_container_path, colocated_file
+    return target_container_path, comp_file
+

@@ -2,32 +2,32 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-015
-title: "Hybrid Co-Located C4 Level 3 Component Manifests"
+title: "Centralized Hybrid C4 Level 3 Component Manifests"
 status: applied
 vcs:
   branch: spike/exp-2026-004
 intent:
   kind: feature_addition
   motivation: >
-    Following the successful conclusion of EXP-2026-004, introduce first-class support for
-    dedicated, co-located C4 Level 3 Component specifications (type: tech/component, CMP-*).
-    Components default to inline definitions inside Level 2 Container (CNT-*) manifests for 80%
-    of lightweight modules. High-complexity modules can be promoted into co-located .adoc specs
-    stored directly within the container's package_path (e.g. 'src/<container>/<component>.adoc').
-    Centralized placement in 'eidos/architecture/components/' is strictly rejected to preserve
-    macro-architectural cleanliness in eidos/architecture/ and ensure code-spec locality.
+    Following the conclusion of EXP-2026-004, introduce first-class support for dedicated
+    C4 Level 3 Component specifications (type: tech/component, CMP-*). Components default to
+    inline definitions inside Level 2 Container (CNT-*) manifests for 80% of lightweight modules.
+    High-complexity modules can be promoted into dedicated .adoc specs stored centrally under
+    'eidos/architecture/components/<component>.adoc' (linking to source code via 'package_path' and
+    referenced in container manifests via 'ref:'). Eidos specifications must NEVER touch or reside
+    within source code directories ('src/', 'packages/'), preserving 100% cleanliness of implementation code.
 mutations:
   - action: add_component
     target_component: CNT-EIDOS-CORE
     details: >
       Introduce 'assets/schemas/v1/tech/component.schema.yaml' (type: tech/component, CMP-*)
-      governing co-located component specifications with container affinity, in-process API
-      signatures (interfaces.provides), quality attributes, and local invariants.
+      governing centralized component specifications with container affinity, in-process API
+      signatures (interfaces.provides), quality attributes, local invariants, and package_path.
   - action: modify_component
     target_component: CNT-EIDOS-CORE
     details: >
       Update 'assets/schemas/v1/tech/container.schema.yaml' to support polymorphic component
-      definitions (oneOf: inline component dictionary or co-located reference with 'ref').
+      definitions (oneOf: inline component dictionary or centralized reference with 'ref').
   - action: modify_contract
     target_component: CTR-EIDOS-CLI
     details: >
@@ -36,19 +36,24 @@ mutations:
   - action: modify_component
     target_component: CNT-EIDOS-CORE
     details: >
-      Enhance SpecValidator to discover co-located component manifests referenced by containers
-      and enforce INV-COMPONENT-COLOCATION-MANDATE, INV-COMPONENT-CONTAINER-AFFINITY, and
+      Enhance SpecValidator to discover centralized component manifests in 'eidos/architecture/components/'
+      and enforce INV-COMPONENT-CENTRALIZATION-MANDATE, INV-COMPONENT-CONTAINER-AFFINITY, and
       INV-INTERFACE-BOUNDARY-GOVERNANCE.
+  - action: modify_component
+    target_component: CNT-EIDOS-CORE
+    details: >
+      Update repository initialization and scaffolder to provision 'eidos/architecture/components/.gitkeep'
+      and support 'promote_component' / 'inline_component' lifecycles in 'eidos/architecture/components/'.
   - action: modify_component
     target_component: CNT-EIDOS-INDEX
     details: >
-      Extend ArchitecturalIndex SQLite knowledge graph to scan code directories ('src', 'packages')
-      for co-located .adoc files, linking them to parent containers and indexing in-process APIs.
+      Extend ArchitecturalIndex SQLite knowledge graph to index centralized component manifests
+      from 'eidos/architecture/components/', linking them to parent containers and indexing in-process APIs.
   - action: modify_component
     target_component: CNT-EIDOS-CLI
     details: >
       Implement 'eidos component' CLI sub-app with 'promote', 'inline', and 'list' commands
-      for frictionless lifecycle management.
+      operating on 'eidos/architecture/components/'.
 blast_radius:
   impacted_personas:
     - eidos/personas/software-architect.adoc
@@ -61,30 +66,31 @@ blast_radius:
   invariants_to_enforce:
     - INV-SPEC-VALIDATION
     - INV-SPEC-GRAPH-INTEGRITY
-    - INV-COMPONENT-COLOCATION-MANDATE
+    - INV-COMPONENT-CENTRALIZATION-MANDATE
     - INV-COMPONENT-CONTAINER-AFFINITY
     - INV-INTERFACE-BOUNDARY-GOVERNANCE
 ---
 
-= SpecDelta: Hybrid Co-Located C4 Level 3 Component Manifests
+= SpecDelta: Centralized Hybrid C4 Level 3 Component Manifests
 :toc: left
 :icons: font
 
 == 1. Context & Motivation
 
-Following empirical validation under *EXP-2026-004*, this SpecDelta formalizes the **Hybrid Co-Located C4 Level 3 Architecture** across Eidos.
+Following architectural discovery under *EXP-2026-004*, this SpecDelta formalizes the **Centralized Hybrid C4 Level 3 Architecture** across Eidos.
 
 Previously, all C4 Level 3 components were declared strictly inline within Level 2 container manifests (`eidos/architecture/containers/*.adoc`). While compact, inline declarations prevent complex modules from documenting internal state machines, granular in-process API signatures, and component-level invariants without bloating container manifests.
 
-This delta establishes a hybrid approach:
+This delta establishes a centralized hybrid approach:
 * **Inline Default (80%)**: Simple internal modules remain inline in `CNT-*.adoc` manifests.
-* **Co-Located Promoted Specs (20%)**: Architecturally complex modules receive dedicated `type: tech/component` specifications residing directly alongside code in the container's `package_path`.
-* **Zero Centralization**: Storing component manifests under `eidos/architecture/components/` is strictly forbidden.
+* **Centralized Promoted Specs (20%)**: Architecturally complex modules receive dedicated `type: tech/component` specifications residing centrally in `eidos/architecture/components/<component>.adoc`, linked via `ref:` in the parent container manifest and pointing to code via `package_path`.
+* **Zero Code Pollution**: Eidos specifications must **NEVER touch or reside within source code directories** (`src/`, `packages/`). Implementation code remains 100% pure source code.
+* **Initialization Guardrail**: `eidos init` provisions `eidos/architecture/components/` tracked by `.gitkeep` even if no promoted components exist initially.
 
 == 2. Delivered Invariants
 
-1. **`INV-COMPONENT-COLOCATION-MANDATE`**:
-   Every dedicated `tech/component` specification MUST reside within its parent container's `package_path` (e.g. `src/` or `packages/`). Centralized placement in `eidos/architecture/` triggers immediate schema validation failure.
+1. **`INV-COMPONENT-CENTRALIZATION-MANDATE`**:
+   Every dedicated `tech/component` specification MUST reside centrally within `eidos/architecture/components/`. Storing specification `.adoc` files inside source code directories (`src/`, `packages/`) triggers immediate validation failure.
 2. **`INV-COMPONENT-CONTAINER-AFFINITY`**:
    Every dedicated `CMP-*` specification must declare a `container: CNT-*` property binding it to an existing Level 2 container.
 3. **`INV-INTERFACE-BOUNDARY-GOVERNANCE`**:

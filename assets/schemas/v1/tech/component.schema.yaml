@@ -1,6 +1,6 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: ComponentSchema
-description: "Defines an in-process C4 Level 3 Component (CMP-*) in a hybrid co-located architecture. Co-located directly within its container's package_path (e.g. 'src/.../<component>.adoc')."
+description: "Defines a dedicated in-process C4 Level 3 Component (CMP-*). Stored centrally in 'eidos/architecture/components/<component>.adoc' with package_path/source_path linking to implementation code."
 type: object
 required:
   - type

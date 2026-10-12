@@ -16,7 +16,7 @@ components:
     source_path: "src/eidos/core/parser.py"
   - id: CMP-SPEC-VALIDATOR
     name: "SpecValidator"
-    responsibility: "Resolves bundled JSON/YAML schemas, validates document frontmatters, verifies cross-references, and enforces co-located component invariants (INV-COMPONENT-COLOCATION-MANDATE, INV-COMPONENT-CONTAINER-AFFINITY, INV-INTERFACE-BOUNDARY-GOVERNANCE)."
+    responsibility: "Resolves bundled JSON/YAML schemas, validates document frontmatters, verifies cross-references, and enforces centralized component invariants (INV-COMPONENT-CENTRALIZATION-MANDATE, INV-COMPONENT-CONTAINER-AFFINITY, INV-INTERFACE-BOUNDARY-GOVERNANCE)."
     source_path: "src/eidos/core/validator.py"
   - id: CMP-LIFECYCLE-SCAFFOLDER
     name: "LifecycleScaffolder"

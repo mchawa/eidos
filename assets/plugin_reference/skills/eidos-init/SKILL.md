@@ -24,6 +24,7 @@ Initializing an Eidos workspace establishes the empty living specification skele
   │ ├── system.adoc                 <- empty root system doc│
   │ ├── architecture/                                      │
   │ │   ├── containers/             <- tracked by .gitkeep │
+  │ │   ├── components/             <- tracked by .gitkeep │
   │ │   └── contracts/              <- tracked by .gitkeep │
   │ ├── domains/                    <- tracked by .gitkeep │
   │ ├── policies/                   <- tracked by .gitkeep │

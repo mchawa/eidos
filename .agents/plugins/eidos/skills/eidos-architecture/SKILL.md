@@ -108,13 +108,13 @@ Internal modules and modular components contained within this deployable.
 
 ---
 
-## 3. Hybrid Co-Located Component Manifests (`tech/component`)
+## 3. Centralized Hybrid Component Manifests (`tech/component`)
 
-C4 Level 3 components (`CMP-*`) follow a hybrid co-location model:
+C4 Level 3 components (`CMP-*`) follow a centralized hybrid model:
 1. **Inline by Default (80%)**: Simple internal modules remain inline within `CNT-*.adoc` under `components:` (`id`, `name`, `responsibility`, `source_path`).
-2. **Promoted Co-Located Specs (20%)**: Architecturally complex modules receive dedicated `type: tech/component` specifications residing directly within the parent container's `package_path` (e.g. `src/eidos/core/validator.adoc`) and referenced in the container manifest via `ref:`.
+2. **Promoted Dedicated Specs (20%)**: Architecturally complex modules receive dedicated `type: tech/component` specifications residing centrally in `eidos/architecture/components/<component>.adoc` (linking to implementation code via `package_path`) and referenced in the container manifest via `ref: architecture/components/<component>.adoc`.
 3. **Mandatory Invariants**:
-   - `INV-COMPONENT-COLOCATION-MANDATE`: Component specifications **MUST** reside within the parent container's `package_path`. Centralizing components under `eidos/architecture/` is strictly rejected.
+   - `INV-COMPONENT-CENTRALIZATION-MANDATE`: Component specifications **MUST** reside centrally within `eidos/architecture/components/`. Specifications must never touch or reside within source code directories (`src/`, `packages/`).
    - `INV-COMPONENT-CONTAINER-AFFINITY`: Every dedicated `CMP-*` manifest must declare `container: CNT-*` pointing to an existing container.
    - `INV-INTERFACE-BOUNDARY-GOVERNANCE`: Boundary Protocol Contracts (`CTR-*`) must be owned by Containers (`CNT-*`). In-process components declare local language-level interfaces via `interfaces.provides`.
 

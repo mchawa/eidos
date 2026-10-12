@@ -173,6 +173,10 @@ class SpecValidator:
                         ref_str = comp["ref"]
                         ref_file = (repo_root / ref_str).resolve()
                         if not ref_file.exists():
+                            ref_file = (root_dir / ref_str).resolve()
+                        if not ref_file.exists():
+                            ref_file = (root_dir / "architecture" / "components" / Path(ref_str).name).resolve()
+                        if not ref_file.exists():
                             report.broken_references.append(
                                 f"Broken component ref in {doc.file_path.name}: cannot locate '{ref_str}'"
                             )
@@ -183,28 +187,6 @@ class SpecValidator:
                             scanned_set.add(str(ref_file))
                             if not comp_doc.is_valid:
                                 report.schema_errors[str(ref_file)] = comp_doc.errors
-
-                # 2. Check package_path for co-located tech/component manifests
-                if pkg_path:
-                    pkg_dir = (repo_root / pkg_path).resolve()
-                    if pkg_dir.exists():
-                        for comp_file in sorted(pkg_dir.rglob("*.adoc")):
-                            if (
-                                comp_file.name.lower() == "readme.adoc"
-                                or comp_file.name.startswith("_")
-                                or "by-status" in comp_file.parts
-                                or comp_file.is_symlink()
-                                or str(comp_file.resolve()) in scanned_set
-                                or not comp_file.read_text(encoding="utf-8").strip()
-                            ):
-                                continue
-                            comp_doc = parse_spec_file(comp_file)
-                            if comp_doc.doc_type == "tech/component":
-                                self.validate_document(comp_doc)
-                                report.documents.append(comp_doc)
-                                scanned_set.add(str(comp_file.resolve()))
-                                if not comp_doc.is_valid:
-                                    report.schema_errors[str(comp_file)] = comp_doc.errors
 
         # Cross-reference validation
         self._validate_cross_references(report, root_dir)
@@ -361,13 +343,19 @@ class SpecValidator:
                 doc.errors.append(err_msg)
                 report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
 
-        # 4. Dedicated Co-Located Components (tech/component)
+        # 4. Dedicated Components (tech/component)
         if dtype == "tech/component":
-            # 1. INV-COMPONENT-COLOCATION-MANDATE: MUST NOT reside in eidos/architecture/
+            # 1. INV-COMPONENT-CENTRALIZATION-MANDATE: MUST reside in eidos/architecture/components/
             rel_parts = doc.file_path.parts
-            if "eidos" in rel_parts and "architecture" in rel_parts:
+            is_centralized = (
+                "architecture" in rel_parts
+                and "components" in rel_parts
+                and any(p in ["eidos", ".spec"] for p in rel_parts)
+            )
+            if not is_centralized or "src" in rel_parts:
                 err_msg = (
-                    f"INV-COMPONENT-COLOCATION-MANDATE violation: Component manifest '{doc.doc_id}' must be co-located with its source code in the container's package_path, not centralized in 'eidos/architecture/'."
+                    f"INV-COMPONENT-CENTRALIZATION-MANDATE violation: Component manifest '{doc.doc_id}' must reside "
+                    f"centrally in 'eidos/architecture/components/'. Eidos specifications must never be placed inside source code directories."
                 )
                 doc.errors.append(err_msg)
                 report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
@@ -380,23 +368,6 @@ class SpecValidator:
                         f"INV-COMPONENT-CONTAINER-AFFINITY violation in {doc.file_path.name}: "
                         f"Component '{doc.doc_id}' references container '{cnt_ref}' which does not exist in catalog"
                     )
-                else:
-                    # Check path containment within parent container's package_path
-                    parent_doc = report.entity_index.get(cnt_ref)
-                    if parent_doc and parent_doc.frontmatter:
-                        pkg_path = parent_doc.frontmatter.get("package_path", "")
-                        if pkg_path:
-                            repo_root = root_dir.parent if root_dir.name in ["eidos", ".spec"] else root_dir
-                            pkg_dir = (repo_root / pkg_path).resolve()
-                            try:
-                                doc.file_path.resolve().relative_to(pkg_dir)
-                            except ValueError:
-                                err_msg = (
-                                    f"INV-COMPONENT-COLOCATION-MANDATE violation: Component '{doc.doc_id}' at '{doc.file_path}' "
-                                    f"is not contained within parent container '{cnt_ref}' package_path '{pkg_path}'."
-                                )
-                                doc.errors.append(err_msg)
-                                report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
 
             # 3. INV-INTERFACE-BOUNDARY-GOVERNANCE: Components cannot declare boundary contracts
             if fm.get("contracts"):

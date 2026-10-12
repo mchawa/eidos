@@ -663,10 +663,10 @@ def component_promote_cmd(
     component_id: Annotated[str, typer.Argument(help="Identifier of the inline component to promote (e.g. CMP-CORE-VALIDATOR).")],
     eidos_dir: Annotated[Path | None, typer.Option("--eidos-dir", "-d", help="Path to eidos directory.")] = None,
 ):
-    """Promote an inline C4 Level 3 component to a co-located dedicated specification."""
+    """Promote an inline C4 Level 3 component to a dedicated specification in eidos/architecture/components/."""
     try:
-        colocated_path, container_path = promote_component(component_id=component_id, eidos_dir=eidos_dir)
-        console.print(f"[bold green]✓ Created co-located manifest:[/bold green] {colocated_path}")
+        comp_path, container_path = promote_component(component_id=component_id, eidos_dir=eidos_dir)
+        console.print(f"[bold green]✓ Created dedicated component manifest:[/bold green] {comp_path}")
         console.print(f"[bold green]✓ Updated container:[/bold green] {container_path} [dim](referenced via 'ref')[/dim]")
 
         # Sync index
@@ -680,14 +680,14 @@ def component_promote_cmd(
 
 @component_app.command("inline")
 def component_inline_cmd(
-    component_id: Annotated[str, typer.Argument(help="Identifier of the co-located component to inline back into its container.")],
+    component_id: Annotated[str, typer.Argument(help="Identifier of the dedicated component to inline back into its container.")],
     eidos_dir: Annotated[Path | None, typer.Option("--eidos-dir", "-d", help="Path to eidos directory.")] = None,
 ):
-    """Demote / inline a co-located C4 Level 3 component back into its container manifest."""
+    """Demote / inline a dedicated C4 Level 3 component back into its container manifest."""
     try:
         container_path, deleted_path = inline_component(component_id=component_id, eidos_dir=eidos_dir)
         console.print(f"[bold green]✓ Inlined component into container:[/bold green] {container_path}")
-        console.print(f"[bold green]✓ Safely removed co-located manifest:[/bold green] {deleted_path}")
+        console.print(f"[bold green]✓ Safely removed dedicated component manifest:[/bold green] {deleted_path}")
 
         # Sync index
         idx = get_architectural_index(eidos_dir=eidos_dir)

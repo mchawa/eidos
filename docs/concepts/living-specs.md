@@ -115,12 +115,12 @@ and AST graph generation for all Eidos operations.
 
 ---
 
-## Hybrid Co-Located C4 Level 3 Components (`CMP-*`)
+## Centralized Hybrid C4 Level 3 Components (`CMP-*`)
 
 Eidos implements a hybrid architecture for C4 Level 3 components:
 * **80% Inline**: Lightweight modules remain inline inside Level 2 container manifests (`eidos/architecture/containers/*.adoc`), keeping macro-architecture clean and compact.
-* **20% Co-Located Promoted Specs**: Highly complex subsystems receive dedicated `type: tech/component` specifications residing directly alongside code in the container's `package_path` (e.g. `src/eidos/core/validator.adoc`).
-* **Strict Co-Location Mandate (`INV-COMPONENT-COLOCATION-MANDATE`)**: Dedicated component manifests must never be placed under `eidos/architecture/`. Centralizing components is forbidden to guarantee maximum code-spec locality and prevent cognitive clutter in macro-architecture.
+* **20% Centralized Promoted Specs**: Highly complex subsystems receive dedicated `type: tech/component` specifications residing centrally in `eidos/architecture/components/<component>.adoc` (linking to source code via `package_path` and referenced in the container manifest via `ref:`).
+* **Strict Centralization Mandate (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Dedicated component manifests must always reside centrally under `eidos/architecture/components/`. Specifications must never touch or reside within source code directories (`src/`, `packages/`) to ensure code remains 100% clean.
 * **Interface Separation (`INV-INTERFACE-BOUNDARY-GOVERNANCE`)**: Containers own Boundary Protocol Contracts (`CTR-*`), while components declare local in-process APIs (`interfaces.provides`).
 * **CLI Automation**: Promoted and inlined seamlessly using `eidos component promote <ID>` and `eidos component inline <ID>`.
 

@@ -19,6 +19,7 @@ eidos/
 ├── system.adoc                   # Empty root system specification
 ├── architecture/
 │   ├── containers/               # Container manifests (CNT-*, C4 Level 2)
+│   ├── components/               # Dedicated component manifests (CMP-*, C4 Level 3)
 │   └── contracts/                # Interface contracts (CTR-*)
 ├── domains/                      # Domain & capability models (DOM-*, CAP-*)
 ├── personas/                     # User & agent personas (PER-*)
@@ -29,7 +30,7 @@ eidos/
 ```
 
 > [!NOTE]
-> **C4 Level 3 Components (`CMP-*`)** are declared inline within container manifests or co-located directly with source code (e.g. `src/<container>/<component>.adoc`). They are never placed in a centralized `architecture/components/` folder.
+> **C4 Level 3 Components (`CMP-*`)** are declared inline within container manifests or promoted to dedicated manifests in `eidos/architecture/components/<component>.adoc`. Eidos specifications **never touch or reside within source code directories** (`src/`, `packages/`).
 
 ---
 

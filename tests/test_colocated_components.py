@@ -1,22 +1,23 @@
 """Empirical Benchmark & Validation Suite for EXP-2026-004:
-Dedicated Component Manifests vs Inline Container Components (Hybrid Co-Located C4 L3 Architecture).
+Dedicated Component Manifests vs Inline Container Components (Centralized C4 L3 Architecture).
 
 Verifies:
 1. Spike 1: Schema Formalization & Invariants Validation:
-   - INV-COMPONENT-COLOCATION-MANDATE: Co-located in package_path, rejected in eidos/architecture/
+   - INV-COMPONENT-CENTRALIZATION-MANDATE: Components must reside in eidos/architecture/components/, never in src/
    - INV-COMPONENT-CONTAINER-AFFINITY: Must bind to valid CNT-* container
    - INV-INTERFACE-BOUNDARY-GOVERNANCE: Boundary contracts (CTR-*) owned by CNT-*, not CMP-*
-2. Spike 2: SQLite Knowledge Graph Co-Located Discovery & Querying:
-   - Discovers co-located .adoc files in source paths
+2. Spike 2: SQLite Knowledge Graph Centralized Discovery & Querying:
+   - Discovers centralized component .adoc files in eidos/architecture/components/
    - Indexes graph edges (contains_component, part_of, consumes_api, asserts)
-   - Resolves reverse source paths and in-process API signatures
+   - Resolves reverse source paths and in-process API signatures without touching src/
 3. Spike 3: Scaffolding, Promotion & Inlining Lifecycle:
-   - promote_component transforms inline entry to co-located .adoc and ref:
-   - inline_component demotes co-located .adoc back to inline representation
+   - promote_component transforms inline entry to eidos/architecture/components/<name>.adoc and ref:
+   - Verifies src/ remains 100% pure code with zero .adoc files
+   - inline_component demotes dedicated spec back to inline representation and removes file
 4. Spike 4 / Exit Criteria:
    - Benchmark token retrieval efficiency >= 40% improvement
    - Zero broken graph references across multi-tier topologies
-   - 100% co-located path containment
+   - 100% centralized spec containment under eidos/
 """
 
 import shutil
@@ -39,11 +40,13 @@ def repo_env(tmp_path):
     repo_root.mkdir()
     eidos_dir = repo_root / "eidos"
     containers_dir = eidos_dir / "architecture" / "containers"
+    components_dir = eidos_dir / "architecture" / "components"
     contracts_dir = eidos_dir / "architecture" / "contracts"
     containers_dir.mkdir(parents=True)
+    components_dir.mkdir(parents=True)
     contracts_dir.mkdir(parents=True)
 
-    # Source code directory structure
+    # Source code directory structure (pure code, zero specs)
     src_core = repo_root / "src" / "sample" / "core"
     src_core.mkdir(parents=True)
     (src_core / "parser.py").write_text("class SpecParser:\n    pass\n", encoding="utf-8")
@@ -54,7 +57,7 @@ def repo_env(tmp_path):
     tests_dir.mkdir(parents=True)
     (tests_dir / "test_core.py").write_text("def test_parser(): pass\n", encoding="utf-8")
 
-    # Container manifest with 1 inline component and 1 co-located ref
+    # Container manifest with 1 inline component and 1 dedicated ref
     (containers_dir / "core.adoc").write_text(
         "---\n"
         "type: tech/container\n"
@@ -73,14 +76,14 @@ def repo_env(tmp_path):
         "    responsibility: Parses specification documents with frontmatter.\n"
         "    source_path: src/sample/core/parser.py\n"
         "  - id: CMP-CORE-VALIDATOR\n"
-        "    ref: src/sample/core/validator.adoc\n"
+        "    ref: eidos/architecture/components/validator.adoc\n"
         "---\n"
         "= Sample Core Engine\n",
         encoding="utf-8",
     )
 
-    # Co-located component manifest in src/sample/core/validator.adoc
-    (src_core / "validator.adoc").write_text(
+    # Centralized dedicated component manifest in eidos/architecture/components/validator.adoc
+    (components_dir / "validator.adoc").write_text(
         "---\n"
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
@@ -126,8 +129,8 @@ def repo_env(tmp_path):
     return repo_root, eidos_dir
 
 
-def test_spike_1_colocated_component_validation(repo_env):
-    """Spike 1: Verify valid co-located component and parent container pass schema validation."""
+def test_spike_1_centralized_component_validation(repo_env):
+    """Spike 1: Verify valid centralized component and parent container pass schema validation."""
     repo_root, eidos_dir = repo_env
     validator = SpecValidator()
     report = validator.validate_directory(eidos_dir)
@@ -137,41 +140,41 @@ def test_spike_1_colocated_component_validation(repo_env):
     assert "CNT-SAMPLE-CORE" in report.entity_index
 
 
-def test_spike_1_colocation_mandate_enforcement(repo_env):
-    """Spike 1: Verify INV-COMPONENT-COLOCATION-MANDATE rejects components inside eidos/architecture/."""
+def test_spike_1_centralization_mandate_enforcement(repo_env):
+    """Spike 1: Verify INV-COMPONENT-CENTRALIZATION-MANDATE rejects components placed in src/ code tree."""
     repo_root, eidos_dir = repo_env
-    bad_comp_dir = eidos_dir / "architecture" / "components"
-    bad_comp_dir.mkdir(parents=True, exist_ok=True)
+    src_core = repo_root / "src" / "sample" / "core"
 
-    # Illegally place component manifest in eidos/architecture/
-    (bad_comp_dir / "bad_comp.adoc").write_text(
+    # Illegally place component manifest in src/ code directory
+    illegal_comp = src_core / "illegal.adoc"
+    illegal_comp.write_text(
         "---\n"
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
-        "id: CMP-BAD-CENTRALIZED\n"
-        "name: Bad Centralized\n"
+        "id: CMP-ILLEGAL-CODE-POLLUTION\n"
+        "name: Illegal Code Pollution\n"
         "container: CNT-SAMPLE-CORE\n"
         "status: active\n"
         "package_path: src/sample/core/parser.py\n"
-        "responsibility: Illegally placed in eidos/architecture.\n"
+        "responsibility: Illegally placed in src/ code tree.\n"
         "---\n"
-        "= Bad\n",
+        "= Illegal\n",
         encoding="utf-8",
     )
 
     validator = SpecValidator()
-    report = validator.validate_directory(eidos_dir)
+    report = validator.validate_directory(repo_root)
     assert not report.is_clean
-    errors_str = " ".join(report.schema_errors.get(str(bad_comp_dir / "bad_comp.adoc"), []))
-    assert "INV-COMPONENT-COLOCATION-MANDATE" in errors_str
+    errors_str = " ".join(report.schema_errors.get(str(illegal_comp), []))
+    assert "INV-COMPONENT-CENTRALIZATION-MANDATE" in errors_str
 
 
 def test_spike_1_container_affinity_enforcement(repo_env):
     """Spike 1: Verify INV-COMPONENT-CONTAINER-AFFINITY rejects orphaned components."""
     repo_root, eidos_dir = repo_env
-    src_core = repo_root / "src" / "sample" / "core"
+    comp_dir = eidos_dir / "architecture" / "components"
 
-    (src_core / "orphan.adoc").write_text(
+    (comp_dir / "orphan.adoc").write_text(
         "---\n"
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
@@ -221,8 +224,8 @@ def test_spike_1_interface_boundary_governance_enforcement(repo_env):
     assert "INV-INTERFACE-BOUNDARY-GOVERNANCE" in errors_str
 
 
-def test_spike_2_colocated_component_indexing(repo_env):
-    """Spike 2: Verify ArchitecturalIndex discovers and indexes co-located components and edges."""
+def test_spike_2_centralized_component_indexing(repo_env):
+    """Spike 2: Verify ArchitecturalIndex discovers and indexes centralized components and edges."""
     repo_root, eidos_dir = repo_env
     db_path = repo_root / "test_index.db"
 
@@ -232,11 +235,11 @@ def test_spike_2_colocated_component_indexing(repo_env):
     assert stats.indexed_new >= 2
     conn = index._get_connection()
 
-    # Verify entities table contains both container and co-located component
+    # Verify entities table contains both container and centralized component
     comp_row = conn.execute("SELECT * FROM entities WHERE id = 'CMP-CORE-VALIDATOR';").fetchone()
     assert comp_row is not None
     assert comp_row["type"] == "tech/component"
-    assert "src/sample/core/validator.adoc" in comp_row["file_path"].replace("\\", "/")
+    assert "architecture/components/validator.adoc" in comp_row["file_path"].replace("\\", "/")
 
     # Verify contains_component and part_of edges
     edge_contains = conn.execute(
@@ -265,26 +268,30 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
     """Spike 3: Verify promote_component and inline_component lifecycle CLI prototype."""
     repo_root, eidos_dir = repo_env
 
-    # 1. Promote inline component CMP-CORE-PARSER to co-located specification
-    colocated_spec, container_spec = promote_component(
+    # 1. Promote inline component CMP-CORE-PARSER to dedicated specification
+    promoted_spec, container_spec = promote_component(
         component_id="CMP-CORE-PARSER",
         eidos_dir=eidos_dir,
         repo_root=repo_root,
     )
 
-    assert colocated_spec.exists()
-    assert colocated_spec.name == "parser.adoc"
-    assert colocated_spec.parent == repo_root / "src" / "sample" / "core"
+    assert promoted_spec.exists()
+    assert promoted_spec.name == "core-parser.adoc"
+    assert promoted_spec.parent == eidos_dir / "architecture" / "components"
+
+    # Verify src/ contains ZERO .adoc files - Eidos never touches code!
+    src_adocs = list((repo_root / "src").rglob("*.adoc"))
+    assert len(src_adocs) == 0, f"Specs illegally created in src/: {src_adocs}"
 
     # Verify container was updated with ref:
     c_doc = parse_spec_file(container_spec)
     comps = c_doc.frontmatter["components"]
     parser_entry = next(c for c in comps if c["id"] == "CMP-CORE-PARSER")
     assert "ref" in parser_entry
-    assert "src/sample/core/parser.adoc" in parser_entry["ref"].replace("\\", "/")
+    assert "architecture/components/core-parser.adoc" in parser_entry["ref"].replace("\\", "/")
 
     # Verify promoted spec is valid tech/component
-    promoted_doc = parse_spec_file(colocated_spec)
+    promoted_doc = parse_spec_file(promoted_spec)
     assert promoted_doc.doc_type == "tech/component"
     assert promoted_doc.frontmatter["container"] == "CNT-SAMPLE-CORE"
     assert promoted_doc.is_valid
@@ -301,7 +308,7 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
         repo_root=repo_root,
     )
 
-    assert not colocated_spec.exists()
+    assert not promoted_spec.exists()
     c_doc_inlined = parse_spec_file(updated_container)
     parser_inlined = next(c for c in c_doc_inlined.frontmatter["components"] if c["id"] == "CMP-CORE-PARSER")
     assert "ref" not in parser_inlined
