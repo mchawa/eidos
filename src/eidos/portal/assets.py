@@ -740,6 +740,248 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       border: 1px solid var(--border) !important;
     }
 
+    /* HIERARCHICAL C4 ARCHITECTURE EXPLORER (L1-L3) */
+    .c4-header-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .c4-level-switcher {
+      display: inline-flex;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 0.2rem;
+      gap: 0.25rem;
+    }
+    .btn-level {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.35rem 0.75rem;
+      border-radius: 0.35rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .btn-level:hover {
+      color: var(--text);
+      background: var(--bg-card-hover);
+    }
+    .btn-level.active {
+      color: #fff;
+      background: var(--primary);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    .c4-select {
+      background: var(--bg-card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 0.4rem;
+      padding: 0.38rem 0.75rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.15s ease;
+    }
+    .c4-select:focus {
+      border-color: var(--primary);
+    }
+    .c4-breadcrumb-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.65rem 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+    .c4-breadcrumbs {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.82rem;
+      font-weight: 500;
+      flex-wrap: wrap;
+    }
+    .c4-crumb {
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: color 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .c4-crumb:hover {
+      color: var(--primary);
+      text-decoration: underline;
+    }
+    .c4-crumb.active {
+      color: var(--text);
+      font-weight: 700;
+      cursor: default;
+      text-decoration: none !important;
+    }
+    .c4-crumb-sep {
+      color: var(--text-dim);
+      font-size: 0.75rem;
+    }
+    .c4-nav-hint {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      background: var(--bg-surface);
+      padding: 0.25rem 0.65rem;
+      border-radius: 9999px;
+      border: 1px solid var(--border);
+    }
+    .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--primary);
+      box-shadow: 0 0 6px var(--primary);
+      animation: pulseAnimation 2s infinite;
+    }
+    @keyframes pulseAnimation {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+    .c4-explorer-stage {
+      position: relative;
+      border-radius: 0.6rem;
+      overflow: hidden;
+      min-height: 480px;
+    }
+    .c4-mermaid-viewport {
+      min-height: 480px;
+      width: 100%;
+      transition: width 0.25s ease;
+    }
+    .c4-inspector-drawer {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 400px;
+      max-width: 90%;
+      height: 100%;
+      background: var(--bg-surface);
+      border-left: 1px solid var(--border);
+      box-shadow: -6px 0 24px rgba(0, 0, 0, 0.35);
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(105%);
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .c4-inspector-drawer.open {
+      transform: translateX(0);
+    }
+    .c4-inspector-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      background: var(--bg-card);
+    }
+    .c4-inspector-title-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 0;
+    }
+    .c4-inspector-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .btn-close-drawer {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      width: 28px;
+      height: 28px;
+      border-radius: 0.35rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      transition: all 0.15s ease;
+    }
+    .btn-close-drawer:hover {
+      color: var(--text);
+      background: var(--bg-card-hover);
+      border-color: var(--border-accent);
+    }
+    .c4-inspector-body {
+      padding: 1.25rem;
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 1.15rem;
+    }
+    .c4-inspect-section {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .c4-inspect-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+    }
+    .c4-inspect-val {
+      font-size: 0.85rem;
+      color: var(--text);
+      line-height: 1.45;
+    }
+    .c4-inspect-code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      background: var(--code-bg);
+      padding: 0.35rem 0.55rem;
+      border-radius: 0.35rem;
+      border: 1px solid var(--border);
+      color: var(--primary);
+      word-break: break-all;
+    }
+
+    /* CLICKABLE C4 NODES IN SVG */
+    .mermaid-architecture .node.c4-clickable {
+      cursor: pointer !important;
+    }
+    .mermaid-architecture .node.c4-clickable rect,
+    .mermaid-architecture .node.c4-clickable polygon,
+    .mermaid-architecture .node.c4-clickable circle {
+      transition: stroke 0.18s ease, filter 0.18s ease, stroke-width 0.18s ease !important;
+    }
+    .mermaid-architecture .node.c4-clickable:hover rect,
+    .mermaid-architecture .node.c4-clickable:hover polygon,
+    .mermaid-architecture .node.c4-clickable:hover circle {
+      stroke: var(--primary) !important;
+      stroke-width: 3.5px !important;
+      filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.55)) !important;
+    }
+
     /* COMPACT SCREEN STATE MACHINE DIAGRAMS */
     .mermaid-compact {
       padding: 1rem;
@@ -1783,37 +2025,64 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
 
         <!-- 4. TECHNICAL ARCHITECTURE VIEW (SCR-PORTAL-ARCHITECTURE) -->
         <section id="tab-architecture" class="tab-content">
-          <div class="panel">
-            <div class="panel-header">
+          <div class="panel c4-explorer-panel">
+            <div class="panel-header" style="flex-wrap: wrap; gap: 0.75rem;">
               <div>
-                <h2 class="panel-title"><span>🌐</span> C4 Level 1: System Context Topology</h2>
-                <p class="panel-desc">High-level ecosystem context showing human personas, autonomous agents, and external integrations</p>
+                <h2 class="panel-title"><span>🏛️</span> C4 Architecture Explorer</h2>
+                <p class="panel-desc">Interactive hierarchical zoom across C4 Level 1 (Context), Level 2 (Containers), and Level 3 (Components)</p>
               </div>
-              <div class="diagram-controls">
-                <button class="btn-ctrl" onclick="zoomDiagram('c4ContextDiagram', 1.25)" title="Zoom in">🔍 +</button>
-                <button class="btn-ctrl" onclick="zoomDiagram('c4ContextDiagram', 0.8)" title="Zoom out">🔍 -</button>
-                <button class="btn-ctrl" onclick="resetZoomDiagram('c4ContextDiagram')" title="Reset zoom">Reset</button>
+              <div class="c4-header-controls">
+                <div class="c4-level-switcher" id="c4LevelSwitcher">
+                  <button class="btn-level active" id="btnC4Level1" onclick="setC4Level(1)" title="C4 Level 1: System Context">🌐 L1 Context</button>
+                  <button class="btn-level" id="btnC4Level2" onclick="setC4Level(2)" title="C4 Level 2: Containers">📦 L2 Containers</button>
+                  <button class="btn-level" id="btnC4Level3" onclick="setC4Level(3)" title="C4 Level 3: Components">🧱 L3 Components</button>
+                </div>
+                <div class="c4-container-select-wrapper" id="c4ContainerSelectWrapper" style="display: none;">
+                  <select id="c4ContainerSelect" class="c4-select" onchange="handleC4ContainerSelectChange(this.value)">
+                    <!-- Populated dynamically with containers -->
+                  </select>
+                </div>
+                <div class="diagram-controls">
+                  <button class="btn-ctrl" id="btnC4LevelUp" onclick="c4LevelUp()" title="Navigate Up one level" style="display: none;">↑ Level Up</button>
+                  <button class="btn-ctrl" onclick="zoomDiagram('c4ActiveDiagram', 1.25)" title="Zoom in">🔍 +</button>
+                  <button class="btn-ctrl" onclick="zoomDiagram('c4ActiveDiagram', 0.8)" title="Zoom out">🔍 -</button>
+                  <button class="btn-ctrl" onclick="resetZoomDiagram('c4ActiveDiagram')" title="Reset zoom">Reset</button>
+                </div>
               </div>
             </div>
-            <div class="mermaid-box mermaid-architecture">
-              <div class="mermaid" id="c4ContextDiagram">graph TD; Loading System Context...</div>
-            </div>
-          </div>
 
-          <div class="panel">
-            <div class="panel-header">
-              <div>
-                <h2 class="panel-title"><span>📦</span> C4 Level 2: Container Topology</h2>
-                <p class="panel-desc">Software containers, libraries, daemon services, and web applications</p>
+            <!-- Breadcrumb Navigation Bar -->
+            <div class="c4-breadcrumb-bar">
+              <div class="c4-breadcrumbs" id="c4Breadcrumbs">
+                <span class="c4-crumb active" onclick="setC4Level(1)">🌐 System Context (L1)</span>
               </div>
-              <div class="diagram-controls">
-                <button class="btn-ctrl" onclick="zoomDiagram('c4ContainersDiagram', 1.25)" title="Zoom in">🔍 +</button>
-                <button class="btn-ctrl" onclick="zoomDiagram('c4ContainersDiagram', 0.8)" title="Zoom out">🔍 -</button>
-                <button class="btn-ctrl" onclick="resetZoomDiagram('c4ContainersDiagram')" title="Reset zoom">Reset</button>
+              <div class="c4-nav-hint" id="c4NavHint">
+                <span class="pulse-dot"></span> Click the system node to drill down into Containers
               </div>
             </div>
-            <div class="mermaid-box mermaid-architecture">
-              <div class="mermaid" id="c4ContainersDiagram">graph TD; Loading Container Topology...</div>
+
+            <!-- Explorer Stage with Diagram & Slide-Over Inspector Drawer -->
+            <div class="c4-explorer-stage">
+              <div class="mermaid-box mermaid-architecture c4-mermaid-viewport" id="c4MermaidViewport">
+                <div class="mermaid" id="c4ActiveDiagram">graph TD; Loading C4 Architecture...</div>
+                <!-- Hidden elements for backward-compatibility -->
+                <div class="mermaid" id="c4ContextDiagram" style="display: none;"></div>
+                <div class="mermaid" id="c4ContainersDiagram" style="display: none;"></div>
+              </div>
+
+              <!-- Slide-over Inspector Drawer for Level 2/3 Component Inspection -->
+              <div class="c4-inspector-drawer" id="c4InspectorDrawer">
+                <div class="c4-inspector-header">
+                  <div class="c4-inspector-title-group">
+                    <span class="badge badge-primary" id="c4InspectTypeBadge">Module</span>
+                    <h3 class="c4-inspector-title" id="c4InspectTitle">Component Details</h3>
+                  </div>
+                  <button class="btn-close-drawer" onclick="closeC4Inspector()" title="Close inspector">✕</button>
+                </div>
+                <div class="c4-inspector-body" id="c4InspectorBody">
+                  <!-- Populated dynamically -->
+                </div>
+              </div>
             </div>
           </div>
 
@@ -2083,9 +2352,9 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       renderUiComponentsTable();
       renderOmnichannelFlows();
 
-      // 4. Architecture View
-      renderMermaidDiagram('c4ContextDiagram', PORTAL_DATA.diagrams.c4_context);
-      renderMermaidDiagram('c4ContainersDiagram', PORTAL_DATA.diagrams.c4_containers);
+      // 4. Architecture View (Hierarchical C4 Explorer)
+      initC4ContainerSelect();
+      renderC4Explorer();
       renderComponentsTable();
       renderContractsTable();
 
@@ -2556,6 +2825,309 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
     }
 
 
+    // -------------------------------------------------------------
+    // C4 HIERARCHICAL ARCHITECTURE EXPLORER STATE MACHINE (L1-L3)
+    // -------------------------------------------------------------
+    const c4State = {
+      level: 1, // 1: System Context, 2: Containers, 3: Components
+      containerId: 'CMP-EIDOS-CORE',
+      inspectedModule: null
+    };
+
+    function initC4ContainerSelect() {
+      const select = document.getElementById('c4ContainerSelect');
+      if (!select) return;
+      select.innerHTML = '';
+      (PORTAL_DATA.components || []).forEach(comp => {
+        const opt = document.createElement('option');
+        opt.value = comp.id;
+        opt.innerText = `${comp.id} (${comp.name})`;
+        if (comp.id === c4State.containerId) opt.selected = true;
+        select.appendChild(opt);
+      });
+    }
+
+    function setC4Level(level, targetContainerId) {
+      c4State.level = level;
+      if (targetContainerId) {
+        c4State.containerId = targetContainerId;
+      } else if (!c4State.containerId && (PORTAL_DATA.components || []).length > 0) {
+        c4State.containerId = PORTAL_DATA.components[0].id;
+      }
+      closeC4Inspector();
+      renderC4Explorer();
+    }
+
+    function drillDownToContainer(containerId) {
+      if (containerId) {
+        c4State.containerId = containerId;
+      }
+      setC4Level(3, containerId);
+    }
+
+    function c4LevelUp() {
+      if (c4State.level === 3) {
+        setC4Level(2);
+      } else if (c4State.level === 2) {
+        setC4Level(1);
+      }
+    }
+
+    function handleC4ContainerSelectChange(newContainerId) {
+      c4State.containerId = newContainerId;
+      if (c4State.level !== 3) {
+        setC4Level(3, newContainerId);
+      } else {
+        closeC4Inspector();
+        renderC4Explorer();
+      }
+    }
+
+    async function renderC4Explorer() {
+      // 1. Update Switcher Button active classes
+      ['btnC4Level1', 'btnC4Level2', 'btnC4Level3'].forEach((btnId, idx) => {
+        const btn = document.getElementById(btnId);
+        if (btn) {
+          if (idx + 1 === c4State.level) {
+            btn.classList.add('active');
+          } else {
+            btn.classList.remove('active');
+          }
+        }
+      });
+
+      // 2. Update Container Select visibility & selected option
+      const selectWrapper = document.getElementById('c4ContainerSelectWrapper');
+      const select = document.getElementById('c4ContainerSelect');
+      if (selectWrapper) {
+        selectWrapper.style.display = (c4State.level === 3) ? 'block' : 'none';
+      }
+      if (select && c4State.containerId) {
+        select.value = c4State.containerId;
+      }
+
+      // 3. Update Level Up Button
+      const btnUp = document.getElementById('btnC4LevelUp');
+      if (btnUp) {
+        if (c4State.level === 1) {
+          btnUp.style.display = 'none';
+        } else if (c4State.level === 2) {
+          btnUp.style.display = 'inline-flex';
+          btnUp.innerText = '↑ Context (L1)';
+          btnUp.title = 'Up to System Context (L1)';
+        } else if (c4State.level === 3) {
+          btnUp.style.display = 'inline-flex';
+          btnUp.innerText = '↑ Containers (L2)';
+          btnUp.title = 'Up to Containers (L2)';
+        }
+      }
+
+      // 4. Update Breadcrumbs & Hint Banner
+      const crumbsEl = document.getElementById('c4Breadcrumbs');
+      const hintEl = document.getElementById('c4NavHint');
+      const compObj = (PORTAL_DATA.components || []).find(c => c.id === c4State.containerId);
+      const compLabel = compObj ? compObj.name : c4State.containerId;
+
+      if (crumbsEl) {
+        if (c4State.level === 1) {
+          crumbsEl.innerHTML = `<span class="c4-crumb active">🌐 System Context (L1)</span>`;
+          if (hintEl) hintEl.innerHTML = `<span class="pulse-dot"></span> Click the system node to explore Level 2 Containers`;
+        } else if (c4State.level === 2) {
+          crumbsEl.innerHTML = `
+            <span class="c4-crumb" onclick="setC4Level(1)">🌐 System Context</span>
+            <span class="c4-crumb-sep">›</span>
+            <span class="c4-crumb active">📦 Containers (L2)</span>
+          `;
+          if (hintEl) hintEl.innerHTML = `<span class="pulse-dot"></span> Click any container to drill down into internal components`;
+        } else if (c4State.level === 3) {
+          crumbsEl.innerHTML = `
+            <span class="c4-crumb" onclick="setC4Level(1)">🌐 System Context</span>
+            <span class="c4-crumb-sep">›</span>
+            <span class="c4-crumb" onclick="setC4Level(2)">📦 Containers</span>
+            <span class="c4-crumb-sep">›</span>
+            <span class="c4-crumb active">🧱 ${c4State.containerId}: ${compLabel} (L3)</span>
+          `;
+          if (hintEl) hintEl.innerHTML = `<span class="pulse-dot"></span> Click any component module to inspect responsibilities & code`;
+        }
+      }
+
+      // 5. Select diagram code to render
+      let diagramCode = '';
+      if (c4State.level === 1) {
+        diagramCode = PORTAL_DATA.diagrams.c4_context;
+      } else if (c4State.level === 2) {
+        diagramCode = PORTAL_DATA.diagrams.c4_containers;
+      } else if (c4State.level === 3) {
+        const compDiagrams = PORTAL_DATA.diagrams.c4_components || {};
+        diagramCode = compDiagrams[c4State.containerId] || `graph TD; No Component Diagram for ${c4State.containerId}`;
+      }
+
+      // Render the diagram and attach click handlers
+      await renderMermaidDiagram('c4ActiveDiagram', diagramCode);
+      attachC4ClickHandlers();
+    }
+
+    function attachC4ClickHandlers() {
+      const container = document.getElementById('c4ActiveDiagram');
+      if (!container) return;
+      const nodes = container.querySelectorAll('.node');
+
+      nodes.forEach(node => {
+        const textContent = node.textContent || '';
+        const nodeId = node.id || '';
+
+        if (c4State.level === 1) {
+          const sysId = (PORTAL_DATA.overview && PORTAL_DATA.overview.system_id) || 'SYS';
+          if (textContent.includes(sysId) || textContent.includes('SYS') || nodeId.includes('SYS')) {
+            node.classList.add('c4-clickable');
+            node.setAttribute('title', 'Click to drill down into C4 Level 2 Containers');
+            node.style.cursor = 'pointer';
+            node.onclick = (e) => {
+              e.stopPropagation();
+              setC4Level(2);
+            };
+          }
+        } else if (c4State.level === 2) {
+          (PORTAL_DATA.components || []).forEach(comp => {
+            const cleanCid = comp.id.replace(/-/g, '_');
+            if (textContent.includes(comp.id) || nodeId.includes(cleanCid)) {
+              node.classList.add('c4-clickable');
+              node.setAttribute('title', `Click to drill down into ${comp.id} internal components`);
+              node.style.cursor = 'pointer';
+              node.onclick = (e) => {
+                e.stopPropagation();
+                drillDownToContainer(comp.id);
+              };
+            }
+          });
+        } else if (c4State.level === 3) {
+          const activeComp = (PORTAL_DATA.components || []).find(c => c.id === c4State.containerId);
+          if (activeComp) {
+            (activeComp.internal_components || []).forEach(mod => {
+              if (textContent.includes(mod.name)) {
+                node.classList.add('c4-clickable');
+                node.setAttribute('title', `Click to inspect module ${mod.name}`);
+                node.style.cursor = 'pointer';
+                node.onclick = (e) => {
+                  e.stopPropagation();
+                  openC4Inspector(activeComp.id, mod.name);
+                };
+              }
+            });
+
+            // If clicking peer container node in L3
+            (PORTAL_DATA.components || []).forEach(peerComp => {
+              const peerClean = peerComp.id.replace(/-/g, '_');
+              if (peerComp.id !== activeComp.id && (textContent.includes(peerComp.id) || nodeId.includes(peerClean))) {
+                node.classList.add('c4-clickable');
+                node.setAttribute('title', `Click to jump to peer container ${peerComp.id}`);
+                node.style.cursor = 'pointer';
+                node.onclick = (e) => {
+                  e.stopPropagation();
+                  drillDownToContainer(peerComp.id);
+                };
+              }
+            });
+          }
+        }
+      });
+    }
+
+    function openC4Inspector(containerId, moduleName) {
+      const drawer = document.getElementById('c4InspectorDrawer');
+      const body = document.getElementById('c4InspectorBody');
+      const titleEl = document.getElementById('c4InspectTitle');
+      const badgeEl = document.getElementById('c4InspectTypeBadge');
+      if (!drawer || !body) return;
+
+      const comp = (PORTAL_DATA.components || []).find(c => c.id === containerId);
+      if (!comp) return;
+
+      const mod = (comp.internal_components || []).find(m => m.name === moduleName);
+
+      if (titleEl) titleEl.innerText = moduleName || containerId;
+      if (badgeEl) badgeEl.innerText = mod ? 'Internal Module' : 'Container';
+
+      let html = '';
+      if (mod) {
+        html += `
+          <div class="c4-inspect-section">
+            <div class="c4-inspect-label">Module Name</div>
+            <div class="c4-inspect-val" style="font-weight: 700; font-size: 1.05rem; color: var(--primary);">${escapeHtml(mod.name)}</div>
+          </div>
+          <div class="c4-inspect-section">
+            <div class="c4-inspect-label">Owning Container</div>
+            <div class="c4-inspect-val"><b>${escapeHtml(comp.id)}</b>: ${escapeHtml(comp.name)}</div>
+            <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.2rem;">${escapeHtml(comp.container_type)} • ${escapeHtml(comp.runtime)}</div>
+          </div>
+          <div class="c4-inspect-section">
+            <div class="c4-inspect-label">Source Implementation Path</div>
+            <div class="c4-inspect-code">${escapeHtml(mod.source_path)}</div>
+          </div>
+          <div class="c4-inspect-section">
+            <div class="c4-inspect-label">Architectural Responsibility</div>
+            <div class="c4-inspect-val" style="background: var(--bg-card); padding: 0.65rem 0.85rem; border-radius: 0.4rem; border: 1px solid var(--border); font-size: 0.82rem; line-height: 1.5;">
+              ${escapeHtml(mod.responsibility)}
+            </div>
+          </div>
+        `;
+      } else {
+        html += `
+          <div class="c4-inspect-section">
+            <div class="c4-inspect-label">Container</div>
+            <div class="c4-inspect-val" style="font-weight: 700; font-size: 1.05rem; color: var(--primary);">${escapeHtml(comp.id)}</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(comp.name)}</div>
+          </div>
+          <div class="c4-inspect-section">
+            <div class="c4-inspect-label">Runtime & Package</div>
+            <div class="c4-inspect-code">${escapeHtml(comp.package_path)} (${escapeHtml(comp.runtime)})</div>
+          </div>
+        `;
+      }
+
+      // Contracts provided / consumed
+      const provides = comp.contracts?.provides || [];
+      const consumes = comp.contracts?.consumes || [];
+      if (provides.length > 0 || consumes.length > 0) {
+        html += `
+          <div class="c4-inspect-section">
+            <div class="c4-inspect-label">Bound Interface Contracts</div>
+            <div style="display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.25rem;">
+              ${provides.map(ctr => `<span class="badge badge-success">Provides: ${escapeHtml(ctr)}</span>`).join('')}
+              ${consumes.map(ctr => `<span class="badge badge-warning">Consumes: ${escapeHtml(ctr)}</span>`).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // Catalog link
+      html += `
+        <div style="margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border);">
+          <button class="btn btn-primary" style="width: 100%; justify-content: center; font-size: 0.82rem;" onclick="viewCatalogSpecForContainer('${escapeHtml(comp.id)}')">
+            Inspect Living Spec in Catalog →
+          </button>
+        </div>
+      `;
+
+      body.innerHTML = html;
+      drawer.classList.add('open');
+    }
+
+    function closeC4Inspector() {
+      const drawer = document.getElementById('c4InspectorDrawer');
+      if (drawer) drawer.classList.remove('open');
+    }
+
+    function viewCatalogSpecForContainer(containerId) {
+      closeC4Inspector();
+      switchTab('catalog');
+      const searchInput = document.getElementById('catalogSearchInput');
+      if (searchInput) {
+        searchInput.value = containerId;
+        filterSpecs();
+      }
+    }
+
     function renderComponentsTable() {
       const compBody = document.querySelector('#componentsTable tbody');
       compBody.innerHTML = '';
@@ -2563,7 +3135,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
         const tr = document.createElement('tr');
         const modules = (c.internal_components || []).map(m => m.name).join(', ') || 'N/A';
         tr.innerHTML = `
-          <td><span class="code-pill">${c.id}</span></td>
+          <td><span class="code-pill" style="cursor: pointer;" onclick="drillDownToContainer('${c.id}'); window.scrollTo({top: 0, behavior: 'smooth'});" title="Click to view in C4 Explorer">${c.id}</span></td>
           <td><b>${c.name}</b></td>
           <td><span class="badge badge-primary">${c.container_type}</span></td>
           <td>${c.runtime}</td>
@@ -3099,21 +3671,21 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
         });
       }
 
-      // Monorepo Containers & Packages Group
-      const cmpSpecs = specs.filter(s => s.type === "tech/component");
+      // Monorepo Containers & Packages Group (C4 Level 2)
+      const cmpSpecs = specs.filter(s => s.type === "tech/container" || s.type === "tech/component");
       if (cmpSpecs.length > 0) {
         rows.push({
           id: "group_components",
           parentId: "p_tech",
           level: 2,
           docId: "CONTAINERS-GROUP",
-          title: "Monorepo Containers & Modular Packages (CMP-*)",
-          type: "tech/component",
-          icon: "⚙️",
-          countTag: `${cmpSpecs.length} Packages`,
-          invariants: "Isolated Subsystems",
+          title: "Monorepo Containers (CNT-*)",
+          type: "tech/container",
+          icon: "📦",
+          countTag: `${cmpSpecs.length} Containers`,
+          invariants: "C4 Level 2 Topologies",
           status: "VALID",
-          path: "eidos/architecture/components/",
+          path: "eidos/architecture/containers/",
           isParent: true,
           defaultExpanded: true,
           pillar: "tech"
@@ -3125,8 +3697,8 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
             level: 3,
             docId: cmp.id,
             title: cmp.title,
-            type: "tech/component",
-            icon: "⚙️",
+            type: cmp.type || "tech/container",
+            icon: "📦",
             countTag: "",
             invariants: cmp.frontmatter?.container_type || "library",
             status: "VALID",
@@ -3599,8 +4171,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       // Re-render diagrams when switching to diagram-bearing views
       if (tabId === 'architecture') {
         setTimeout(() => {
-          renderMermaidDiagram('c4ContextDiagram', PORTAL_DATA.diagrams.c4_context);
-          renderMermaidDiagram('c4ContainersDiagram', PORTAL_DATA.diagrams.c4_containers);
+          renderC4Explorer();
         }, 30);
       } else if (tabId === 'design') {
         setTimeout(() => {
@@ -3640,8 +4211,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
           padding: 22
         }
       });
-      renderMermaidDiagram('c4ContextDiagram', PORTAL_DATA.diagrams.c4_context);
-      renderMermaidDiagram('c4ContainersDiagram', PORTAL_DATA.diagrams.c4_containers);
+      renderC4Explorer();
       (PORTAL_DATA.screens || []).forEach(s => {
         renderMermaidDiagram(`screen_mermaid_${s.id.replace(/-/g, '_')}`, s.mermaid);
       });
@@ -3725,6 +4295,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
         }
         if (e.key === 'Escape') {
           closeModal();
+          closeC4Inspector();
         }
       });
     }

@@ -20,7 +20,7 @@ eidos info
 ---
 
 ### `eidos init`
-Initialize a Git repository with the standard Eidos living specification topology, baseline Arc42/C4 architecture, core policies, and validation rules.
+Initialize a Git repository with an empty Eidos living specification skeleton, tracking empty directories with `.gitkeep` files, self-contained gitignore, and optional agent plugin.
 
 ```bash
 eidos init
@@ -78,11 +78,24 @@ Options:
 
 ---
 
-### `eidos components`
-Inspect and list all C4 containers, internal components, dependencies, and interface contracts.
+### `eidos containers`
+Inspect and list all C4 Level 2 containers (`CNT-*`), their runtimes, package paths, and declared C4 Level 3 components.
 
 ```bash
+eidos containers
+```
+
+---
+
+### `eidos components`
+Inspect and list all C4 Level 3 in-process components (`CMP-*`), responsibilities, and source file paths, optionally filtered by container ID.
+
+```bash
+# List all internal components across all containers
 eidos components
+
+# List internal components belonging to a specific container
+eidos components CNT-EIDOS-CORE
 ```
 
 ---
@@ -97,14 +110,17 @@ eidos mcp
 ---
 
 ### `eidos context`
-Extract a compact, token-efficient architectural subgraph slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies) given target file paths, a component ID, or a task description.
+Extract a compact, token-efficient architectural subgraph slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies) given target file paths, a component ID, or a task description. Powered by the embedded SQLite knowledge graph for sub-3ms resolution.
 
 ```bash
-# Slice context for touched code files
+# Slice context for touched code files (defaults to guardrails tier)
 eidos context -f src/eidos/cli/main.py
 
-# Slice context for a specific component
-eidos context -c CMP-EIDOS-CLI
+# Lightweight anchor context (~140 tokens)
+eidos context -c CMP-EIDOS-CORE --tier anchor
+
+# Deep architectural context including C4 internal modules (~1000 tokens)
+eidos context -c CMP-EIDOS-CORE --tier deep
 
 # Slice context from a free-text task description
 eidos context -t "Implement Git and GitLab synchronization bridge"
@@ -117,7 +133,64 @@ Options:
 * `-f, --file TEXT`: Target source code file path(s) to slice context for.
 * `-c, --component TEXT`: Target component identifier (e.g. `CMP-EIDOS-CLI`).
 * `-t, --task TEXT`: Free-text task description or engineering prompt.
+* `-T, --tier [anchor|guardrails|deep]`: Context compression budget (default: `guardrails`).
+  * `anchor`: Component metadata and direct contract signatures (~140 tokens).
+  * `guardrails`: Adds domain capabilities, active invariants, and policies (~260–890 tokens).
+  * `deep`: Adds internal C4 modules, contract schemas, and full invariant text (~500–1500 tokens).
 * `--format [markdown|json]`: Output serialization format (default: `markdown`).
+* `-p, --path PATH`: Path to specifications directory (default: `eidos`).
+
+---
+
+### `eidos index`
+Manage and query the embedded SQLite architectural knowledge graph and FTS5 hybrid search index (`.eidos/cache/index.db`).
+
+The index initializes automatically on first use and lazily resynchronizes before every query with sub-2ms dirty checking, guaranteeing zero drift.
+
+#### `eidos index status`
+Display database cache size, clean/drift synchronization state, check latency, and entity/edge counts.
+
+```bash
+eidos index status
+```
+
+#### `eidos index sync`
+Manually synchronize or force a full clean rebuild of the SQLite database and FTS5 index.
+
+```bash
+# Incremental synchronization (auto-triggered on queries if dirty)
+eidos index sync
+
+# Force complete rebuild from scratch
+eidos index sync --force
+```
+
+Options:
+* `--force`: Force complete drop and rebuild of all tables and indexes.
+* `-p, --path PATH`: Path to specifications directory (default: `eidos`).
+
+#### `eidos index search`
+Perform BM25 full-text search across specification titles, requirements, and invariants.
+
+```bash
+eidos index search "FTS5 hybrid search" --limit 5
+```
+
+Options:
+* `QUERY`: Search query or keywords.
+* `-l, --limit INTEGER`: Maximum number of search results to return (default: `10`).
+* `-p, --path PATH`: Path to specifications directory (default: `eidos`).
+
+#### `eidos index blast-radius`
+Traverse the architectural knowledge graph using recursive Common Table Expressions (CTE) to calculate forward/reverse dependency blast radius before editing code or contracts.
+
+```bash
+eidos index blast-radius CMP-EIDOS-CORE --hops 2
+```
+
+Options:
+* `SYMBOL_OR_PATH`: Component ID, contract ID, domain ID, symbol, or file path.
+* `-H, --hops INTEGER`: Maximum graph traversal distance (default: `2`).
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
 ---
@@ -258,11 +331,14 @@ eidos plugin uninstall --target all
 
 Eidos provides intuitive root-level shortcuts for common workflows:
 
+* `eidos install [TARGET]`: Direct shortcut to `eidos plugin install` (e.g. `eidos install claude`).
+* `eidos uninstall [TARGET]`: Direct shortcut to `eidos plugin uninstall`.
 * `eidos drift`: Runs spec-to-code drift detection.
 * `eidos reconcile`: Runs the spec reconciliation assistant (`eidos sync`).
 * `eidos create <type> <id> --title <title>`: Direct shortcut to `eidos spec create`.
 * `eidos delete <id_or_path> [--force]`: Direct shortcut to `eidos spec delete`.
 * `eidos list [--type <type>] [--status <status>]`: Direct shortcut to `eidos spec list`.
+
 
 
 

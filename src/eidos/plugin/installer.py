@@ -15,12 +15,11 @@ from eidos.plugin.version import (
 
 
 class PluginInstallTarget(enum.StrEnum):
-    PROJECT = "project"  # Installs/removes .agents/plugins/eidos and configures project MCPs
-    WORKSPACE = "workspace"  # Installs/removes .agents/plugins/eidos
-    ANTIGRAVITY = "antigravity"  # Installs/removes .agents/plugins/eidos
-    CLAUDE = "claude"  # Configures/removes local .claude/mcp.json
-    CURSOR = "cursor"  # Configures/removes local .cursor/mcp.json
-    ALL = "all"  # Same as project
+    PROJECT = "project"  # Installs .agents/plugins/eidos (agent-plugins.org v1.0.0) and client configurations
+    ANTIGRAVITY = "antigravity"  # Installs .agents/plugins/eidos (strict agent-plugins.org v1.0.0)
+    CLAUDE = "claude"  # Installs Claude Code plugin (.claude/skills/eidos) & configures .claude
+    CURSOR = "cursor"  # Configures project-level .cursor/mcp.json
+    ALL = "all"  # Installs all agent plugins and configurations
 
 
 @dataclass
@@ -149,6 +148,100 @@ def _remove_project_mcp_server(file_path: Path, server_name: str) -> bool:
     return True
 
 
+def _ensure_claude_plugin_manifest(target_dir: Path) -> Path:
+    """Ensure .claude-plugin/plugin.json exists in target plugin directory with valid Claude metadata."""
+    claude_meta_dir = target_dir / ".claude-plugin"
+    claude_meta_dir.mkdir(parents=True, exist_ok=True)
+    manifest_file = claude_meta_dir / "plugin.json"
+    bundled_ver = get_bundled_plugin_version()
+
+    manifest_data = {
+        "name": "eidos",
+        "displayName": "Eidos AI Lifecycle Ecosystem",
+        "version": bundled_ver,
+        "description": "Git-native, agent-agnostic development AI ecosystem and lifecycle orchestration framework.",
+        "author": {
+            "name": "Eidos Contributors",
+            "url": "https://github.com/eidos-ai/eidos",
+        },
+        "homepage": "https://github.com/eidos-ai/eidos",
+        "repository": "https://github.com/eidos-ai/eidos",
+        "license": "MIT",
+        "keywords": [
+            "eidos",
+            "agent-plugins",
+            "arc42",
+            "c4-model",
+            "specs",
+            "ai-orchestration",
+        ],
+    }
+
+    if manifest_file.exists():
+        try:
+            with open(manifest_file, encoding="utf-8") as f:
+                existing = json.load(f)
+            existing["version"] = bundled_ver
+            manifest_data = existing
+        except Exception:
+            pass
+
+    with open(manifest_file, "w", encoding="utf-8") as f:
+        json.dump(manifest_data, f, indent=2)
+
+    return manifest_file
+
+
+def _update_project_claude_settings(file_path: Path, plugin_id: str = "eidos@skills-dir") -> bool:
+    """Safely update project-level .claude/settings.json to enable the Eidos plugin."""
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    data = {}
+    if file_path.exists():
+        try:
+            with open(file_path, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+
+    if "enabledPlugins" not in data or not isinstance(data["enabledPlugins"], dict):
+        data["enabledPlugins"] = {}
+
+    data["enabledPlugins"][plugin_id] = True
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    return True
+
+
+def _remove_project_claude_settings(file_path: Path, plugin_id: str = "eidos@skills-dir") -> bool:
+    """Safely remove a plugin from project-level .claude/settings.json."""
+    if not file_path.exists():
+        return False
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return False
+
+    plugins = data.get("enabledPlugins", {})
+    if plugin_id not in plugins:
+        return False
+
+    del plugins[plugin_id]
+    data["enabledPlugins"] = plugins
+
+    if not plugins and len(data) == 1:
+        file_path.unlink()
+        parent = file_path.parent
+        if parent.exists() and not any(parent.iterdir()):
+            with contextlib.suppress(OSError):
+                parent.rmdir()
+    else:
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    return True
+
+
 def install_plugin(
     target: PluginInstallTarget = PluginInstallTarget.PROJECT,
     project_dir: Path | None = None,
@@ -187,7 +280,7 @@ def install_plugin(
         targets_to_run = [target]
 
     for t in targets_to_run:
-        if t in (PluginInstallTarget.PROJECT, PluginInstallTarget.WORKSPACE, PluginInstallTarget.ANTIGRAVITY):
+        if t in (PluginInstallTarget.PROJECT, PluginInstallTarget.ANTIGRAVITY):
             plugin_dir = root / ".agents" / "plugins" / "eidos"
             created = _copy_plugin_tree(source_dir, plugin_dir, force=force)
             results.append(
@@ -214,15 +307,31 @@ def install_plugin(
             )
 
         elif t == PluginInstallTarget.CLAUDE:
+            claude_plugin_dir = root / ".claude" / "skills" / "eidos"
+            created = _copy_plugin_tree(source_dir, claude_plugin_dir, force=force)
+
+            claude_manifest = _ensure_claude_plugin_manifest(claude_plugin_dir)
+            created.append(claude_manifest)
+
+            claude_plugin_mcp = claude_plugin_dir / ".mcp.json"
+            _update_project_mcp_json(claude_plugin_mcp, "eidos", "eidos", ["mcp"])
+            created.append(claude_plugin_mcp)
+
             claude_config = root / ".claude" / "mcp.json"
             _update_project_mcp_json(claude_config, "eidos", "eidos", ["mcp"])
+            created.append(claude_config)
+
+            claude_settings = root / ".claude" / "settings.json"
+            _update_project_claude_settings(claude_settings, "eidos@skills-dir")
+            created.append(claude_settings)
+
             results.append(
                 InstallResult(
                     target="claude",
-                    destination=claude_config,
+                    destination=claude_plugin_dir,
                     success=True,
-                    message="Configured project MCP server in .claude/mcp.json.",
-                    created_files=[claude_config],
+                    message="Installed Claude Code plugin at .claude/skills/eidos and configured .claude/mcp.json & .claude/settings.json.",
+                    created_files=created,
                 )
             )
 
@@ -278,7 +387,7 @@ def uninstall_plugin(
         targets_to_run = [target]
 
     for t in targets_to_run:
-        if t in (PluginInstallTarget.PROJECT, PluginInstallTarget.WORKSPACE, PluginInstallTarget.ANTIGRAVITY):
+        if t in (PluginInstallTarget.PROJECT, PluginInstallTarget.ANTIGRAVITY):
             plugin_dir = root / ".agents" / "plugins" / "eidos"
             if plugin_dir.exists():
                 shutil.rmtree(plugin_dir)
@@ -329,17 +438,37 @@ def uninstall_plugin(
             )
 
         elif t == PluginInstallTarget.CLAUDE:
+            claude_plugin_dir = root / ".claude" / "skills" / "eidos"
+            removed_plugin = False
+            if claude_plugin_dir.exists():
+                shutil.rmtree(claude_plugin_dir)
+                removed_plugin = True
+                skills_parent = claude_plugin_dir.parent
+                if skills_parent.exists() and not any(skills_parent.iterdir()):
+                    with contextlib.suppress(OSError):
+                        skills_parent.rmdir()
+
+            claude_settings = root / ".claude" / "settings.json"
+            removed_settings = _remove_project_claude_settings(claude_settings, "eidos@skills-dir")
+
             claude_config = root / ".claude" / "mcp.json"
-            removed = _remove_project_mcp_server(claude_config, "eidos")
+            removed_mcp = _remove_project_mcp_server(claude_config, "eidos")
+
+            claude_dir = root / ".claude"
+            if claude_dir.exists() and not any(claude_dir.iterdir()):
+                with contextlib.suppress(OSError):
+                    claude_dir.rmdir()
+
+            was_removed = removed_plugin or removed_mcp or removed_settings
             results.append(
                 UninstallResult(
                     target="claude",
-                    destination=claude_config,
+                    destination=claude_plugin_dir,
                     success=True,
-                    message="Removed 'eidos' from .claude/mcp.json."
-                    if removed
-                    else "No 'eidos' entry in .claude/mcp.json.",
-                    removed=removed,
+                    message="Removed Claude Code plugin from .claude/skills/eidos and cleaned up .claude configuration."
+                    if was_removed
+                    else "No Claude Code plugin or MCP config found (already removed).",
+                    removed=was_removed,
                 )
             )
 

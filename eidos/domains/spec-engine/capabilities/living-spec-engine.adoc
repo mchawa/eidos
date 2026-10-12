@@ -42,10 +42,12 @@ technical:
   components:
     - "packages/spec-parser"
     - "packages/spec-validator"
+    - "packages/architectural-index"
   contracts:
     interfaces:
       - "eidos spec validate"
       - "eidos spec graph --json"
+      - "eidos index [status|sync|search|blast-radius]"
   invariants:
     - id: INV-SPEC-VALIDATION
       rule: "Every .adoc file with a YAML frontmatter must validate against its referenced JSON/YAML schema."
@@ -53,6 +55,9 @@ technical:
     - id: INV-SPEC-GRAPH-INTEGRITY
       rule: "All cross-document references and entity IDs (components, contracts, policies, domains, deltas) must resolve to valid catalog entity IDs with zero collisions."
       test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+    - id: INV-KNOWLEDGE-GRAPH-CATALOG
+      rule: "The core engine must maintain an embedded SQLite knowledge graph indexing all living specifications, schemas, and relational edges with sub-2ms dirty checking and query resolution."
+      test_binding: "tests/test_graph_index.py::test_spike_a_schema_initialization_and_sync"
     - id: INV-LIVING-PORTAL-VISUALIZATION
       rule: "The system must generate an interactive web portal and static site visualizing C4 architecture, domains, and SpecDeltas without external Node.js dependencies."
       test_binding: "tests/test_portal.py::test_portal_data_generation"
@@ -64,10 +69,15 @@ technical:
 :toc: left
 
 == Intent
-Traditional product requirements documents (PRDs) quickly become obsolete. This capability ensures that the `eidos/` directory is treated as living code: every document has an explicit type and JSON/YAML schema, is validated continuously, and forms an in-memory knowledge graph that AI agents can query to understand the system state.
+Traditional product requirements documents (PRDs) quickly become obsolete. This capability ensures that the `eidos/` directory is treated as living code: every document has an explicit type and JSON/YAML schema, is validated continuously, and forms an in-memory knowledge graph that AI agents and developer tools can query to understand the system state.
+
+Through an embedded SQLite Knowledge Graph (`.eidos/cache/index.db`), Eidos bridges human-readable AsciiDoc specifications with sub-millisecond relational queries, full-text lexical search (FTS5 BM25), and zero-drift incremental indexing.
 
 == Key Responsibilities
-* Parsing YAML frontmatter combined with AsciiDoc technical specifications.
-* Schema validation ensuring strict adherence to typing rules.
-* Graph construction linking Personas, Domains, Capabilities, Invariants, and Tests.
+* **Living Specification Parsing**: Robust extraction of YAML frontmatter combined with AsciiDoc technical specifications.
+* **Schema Validation & Integrity**: Schema resolution and Draft 2020-12 validation ensuring strict typing across all 15 specification schemas.
+* **Embedded Knowledge Graph**: Relational indexing linking Personas, Domains, Capabilities, Invariants, Components, Contracts, and SpecDeltas into `.eidos/cache/index.db`.
+* **Zero-Drift Incremental Sync**: Mtime and SHA-256 dirty checking that keeps the SQLite graph continuously synchronized with the working tree in under 2ms.
+* **Sub-Millisecond Catalog Resolution**: Powering `eidos components`, `eidos spec list`, and MCP inspection tools with instant relational queries rather than linear disk scans.
+* **Recursive Blast-Radius & Search**: SQLite recursive Common Table Expressions (CTEs) traversing k-hop impact boundaries and FTS5 full-text search over titles, descriptions, and keywords.
 

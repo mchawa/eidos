@@ -12,19 +12,20 @@ Navigate to your project root and run `eidos init`:
 eidos init
 ```
 
-This creates the canonical `eidos/` directory structure:
+This creates the canonical `eidos/` empty directory skeleton, tracked in Git by `.gitkeep` files:
 
 ```
 eidos/
-├── system.adoc                   # C4 Context & System boundaries
+├── system.adoc                   # Empty root system specification
 ├── architecture/
-│   ├── system-architecture.adoc  # Arc42 + C4 Container topology
 │   ├── components/               # Component manifests (CMP-*)
 │   └── contracts/                # Interface contracts (CTR-*)
 ├── domains/                      # Domain & capability models (DOM-*, CAP-*)
 ├── personas/                     # User & agent personas (PER-*)
 ├── policies/                     # Architectural policies (POL-*)
-└── deltas/                       # SpecDelta mutations (DLT-*)
+├── deltas/                       # SpecDelta mutations (DLT-*)
+├── explorations/                 # Spikes and discoveries (EXP-*)
+└── design/                       # Design systems, screens, and flows
 ```
 
 ---

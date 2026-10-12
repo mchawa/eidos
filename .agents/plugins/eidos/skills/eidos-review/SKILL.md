@@ -34,8 +34,9 @@ When reviewing a branch, PR, or working tree, audit across these 5 dimensions:
 ```
 
 ### Dimension 1: Blast Radius & Boundary Integrity
-* **Recommended Step 1:** Invoke MCP tool `eidos_get_task_context(files=touched_files)` or run `eidos context -f <file>` on the changed files. This immediately extracts the exact C4 Level 2/3 component slice, bound interface contracts (`CTR-*`), domain capabilities (`CAP-*`), and technical invariants (`INV-*`).
-* Inspect touched code files and verify they belong strictly to declared component packages ([`CMP-*`](file:///home/MTS/marwan.chawa/WS/eidos/eidos/architecture/components)).
+* **Recommended Step 1:** Invoke MCP tool `eidos_get_task_context(files=touched_files, tier="guardrails")` or run `eidos context -f <file>` on the changed files. This immediately extracts the exact C4 Level 2/3 component slice, bound interface contracts (`CTR-*`), domain capabilities (`CAP-*`), and technical invariants (`INV-*`).
+* **Blast-Radius Graph Traversal:** Invoke MCP tool `eidos_get_blast_radius(symbol_or_path=comp_id, max_hops=2)` or run `eidos index blast-radius <comp_id>` to compute recursive transitive dependencies across containers, interface contracts, and domain capabilities. Verify all impacted downstream entities are accounted for in the change plan.
+* Inspect touched code files and verify they belong strictly to declared container packages ([`CNT-*`](file:///home/MTS/marwan.chawa/WS/eidos/eidos/architecture/containers)).
 * **Red Flag:** A pull request touches files across 4 different components when the SpecDelta only declared mutations for 1 component.
 * **Red Flag:** Introduction of circular module dependencies or unauthorized cross-package imports violating architectural boundaries.
 

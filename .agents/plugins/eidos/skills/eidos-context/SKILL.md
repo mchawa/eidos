@@ -19,7 +19,19 @@ Activate this skill as **Step 1** of any engineering task:
 
 ---
 
-## 2. Triggering Context Slicing
+## 2. The 3-Tier Architectural Context Model
+
+To balance token budgets with reasoning depth, context slices are structured into 3 hierarchical tiers:
+
+| Tier | Token Footprint | Contents | Recommended Usage |
+| :--- | :--- | :--- | :--- |
+| **`anchor`** | **~140 tokens** | Matched C4 components, container types, runtimes, package paths, and bound interface contracts. | Fast triage, quick bugfixes, read-only inspections. |
+| **`guardrails`** *(Default)* | **~260 - 890 tokens** | Everything in Anchor + domain capabilities, active `INV-*` invariants, test coverage status, and governing policies. | Standard agent turns, feature implementations, and PR prep. |
+| **`deep`** | **~500 - 1,500 tokens** | Everything in Guardrails + C4 Level 3 internal modules, JTBD outcomes, full invariant rules, and detailed policy statements. | Complex refactors, SpecDeltas, and cross-component migrations. |
+
+---
+
+## 3. Triggering Context Slicing
 
 ### A. Via Model Context Protocol (MCP)
 
@@ -32,6 +44,7 @@ When operating as an AI agent connected via MCP, invoke `eidos_get_task_context`
     "files": ["src/eidos/cli/main.py"],
     "component": "CMP-EIDOS-CLI",
     "task": "Support polyglot invariant test scanning in drift detection",
+    "tier": "guardrails",
     "format": "markdown"
   }
 }
@@ -40,46 +53,66 @@ When operating as an AI agent connected via MCP, invoke `eidos_get_task_context`
 #### Supported Arguments:
 - `files` (`list[str]`, optional): Target source code file paths (e.g. `["src/eidos/cli/main.py"]`).
 - `component` (`str`, optional): Specific component identifier (e.g. `"CMP-EIDOS-CLI"`).
-- `task` (`str`, optional): Free-text engineering prompt or task description (e.g. `"Add support for Go and Rust test scanning"`).
-- `format` (`str`, optional): Serialization format: `"markdown"` (token-optimized for LLMs, default) or `"json"` (programmatic AST).
+- `task` (`str`, optional): Free-text engineering prompt or task description.
+- `tier` (`str`, optional): Context slice verbosity tier: `"anchor"`, `"guardrails"` (default), or `"deep"`.
+- `format` (`str`, optional): Serialization format: `"markdown"` (token-optimized for LLMs, default) or `"json"`.
 - `path` (`str`, optional): Custom path to the `eidos/` specifications directory (defaults to `"eidos"`).
 
-Agents can query using any single argument or any combination:
-- Given only `files`: resolves owning C4 components, bound contracts, domain capabilities, and invariants.
-- Given only `component`: extracts the component manifest, provided/consumed contracts, internal dependencies, domain capabilities, and invariants.
-- Given only `task`: performs semantic and keyword matching against component names, contracts, capabilities, and invariants.
+#### Specialized Architecture MCP Tools:
+- **`eidos_search_architecture`**: Execute BM25 ranked full-text search (FTS5) across all living specifications, capabilities, and policies.
+  - Arguments: `query` (str, required), `limit` (int, default 10).
+- **`eidos_get_blast_radius`**: Calculate recursive CTE graph walk / blast radius up to $k$ hops for an architectural entity.
+  - Arguments: `entity_id` (str, required), `depth` (int, default 2).
+- **`eidos_index_status`**: Inspect embedded SQLite knowledge graph health, total entities, total edges, and cache size.
+- **`eidos_sync_index`**: Incrementally synchronize or force-rebuild the index.
 
 ---
 
 ### B. Via Command-Line Interface (CLI)
 
-For developers and terminal environments, use the `eidos context` command:
+For developers and terminal environments, use the `eidos context` and `eidos index` commands:
 
 ```bash
-# Slice context for specific source files
+# Slice context with default guardrails tier (~260-890 tokens)
 eidos context -f src/eidos/cli/main.py
 
-# Slice context for a specific component
-eidos context -c CMP-EIDOS-CLI
+# Slice minimal anchor tier (~140 tokens)
+eidos context -f src/eidos/cli/main.py --tier anchor
 
-# Slice context for a task description
-eidos context -t "Implement polyglot invariant scanning"
+# Slice deep comprehensive tier with C4 internal modules (~1,500 tokens)
+eidos context -f src/eidos/cli/main.py --tier deep
 
-# Combine multiple files and task prompt
-eidos context -f src/eidos/vcs/drift.py -t "Check test markers across Rust and Go"
+# Search architecture via FTS5 BM25 ranked search
+eidos index search "token design system"
 
-# Output structured JSON for automation
-eidos context -c CMP-EIDOS-CLI --format json
+# Calculate recursive CTE blast radius up to 2 hops
+eidos index blast-radius CMP-EIDOS-CORE --depth 2
+
+# Check knowledge graph index status and cache size
+eidos index status
+
+# Incrementally synchronize or force-rebuild index
+eidos index sync --force
 ```
 
-#### CLI Options:
+#### CLI Context Options:
 | Flag | Short | Description |
 | :--- | :--- | :--- |
 | `--file` | `-f` | Target source code file path(s) (can be passed multiple times) |
 | `--component` | `-c` | Target component identifier (e.g. `CMP-EIDOS-CLI`) |
 | `--task` | `-t` | Free-text task prompt or issue description |
+| `--tier` | `-T` | Context tier: `anchor`, `guardrails` (default), or `deep` |
 | `--format` | | Output format: `markdown` (default) or `json` |
 | `--path` | `-p` | Path to specifications directory (defaults to `./eidos`) |
+
+---
+
+## 4. Automatic Zero-Drift Freshness
+
+The context engine is backed by an embedded SQLite knowledge graph (`.eidos/cache/index.db`) using Python's standard library `sqlite3`:
+1. **Sub-3ms Dirty Checking**: Before executing any query or MCP tool call, `is_dirty()` compares disk modification timestamps (`mtime`) and SHA-256 hashes against the cached manifest.
+2. **Instant Sync**: Only modified or new `.adoc` files are re-parsed into SQLite (<5ms). Clean repositories execute dirty checks in ~1.5ms.
+3. **Transparent Rebuild**: If `.eidos/cache/index.db` is missing or corrupted, it is automatically rebuilt from the living specifications with zero manual developer intervention.
 
 ---
 

@@ -1,0 +1,88 @@
+---
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
+id: CNT-EIDOS-CLI
+name: "Eidos Command-Line Interface"
+container_type: "cli_app"
+runtime: "Python 3.12 / Typer / Rich"
+package_path: "src/eidos/cli"
+
+domain_binding: DOM-SPEC-ENGINE
+
+components:
+  - id: CMP-CLI-APP
+    name: "CliApp"
+    responsibility: "Root command dispatcher, error code translation, and formatted diagnostic table rendering."
+    source_path: "src/eidos/cli/main.py"
+  - id: CMP-CLI-SPEC-COMMANDS
+    name: "SpecCommands"
+    responsibility: "Commands for catalog listing, showing, creating, and safely deleting living specifications."
+    source_path: "src/eidos/cli/main.py"
+  - id: CMP-CLI-DELTA-COMMANDS
+    name: "DeltaCommands"
+    responsibility: "SpecDelta lifecycle commands: status dashboard, authoring, in-place application, and view synchronization."
+    source_path: "src/eidos/cli/main.py"
+  - id: CMP-CLI-PLUGIN-COMMANDS
+    name: "PluginCommands"
+    responsibility: "Agent plugin lifecycle commands: install, update, validate, inspect, and remove."
+    source_path: "src/eidos/cli/main.py"
+  - id: CMP-CLI-DRIFT-COMMANDS
+    name: "DriftCommands"
+    responsibility: "Spec-to-code drift detection (drift) and living spec reconciliation assistant (reconcile / sync)."
+    source_path: "src/eidos/cli/main.py"
+  - id: CMP-CLI-INIT-COMMAND
+    name: "InitCommand"
+    responsibility: "CLI entrypoint for repository bootstrapping and agent plugin installation."
+    source_path: "src/eidos/cli/main.py"
+  - id: CMP-CLI-CONTEXT-COMMAND
+    name: "ContextCommand"
+    responsibility: "Extracts compact, token-efficient architectural subgraph slices for AI agents."
+    source_path: "src/eidos/cli/main.py"
+  - id: CMP-CLI-INDEX-COMMANDS
+    name: "IndexCommands"
+    responsibility: "Knowledge graph operations: sync, status inspection, lexical search, and blast-radius impact analysis."
+    source_path: "src/eidos/cli/main.py"
+
+dependencies:
+  internal_containers:
+    - "CNT-EIDOS-CORE"
+    - "CNT-EIDOS-INDEX"
+    - "CNT-EIDOS-PLUGIN"
+  external_services:
+    - "Terminal stdout/stderr"
+
+contracts:
+  provides:
+    - "CTR-EIDOS-CLI"
+  consumes: []
+
+quality_attributes:
+  stateless: true
+  idempotent: true
+  concurrency_model: "synchronous_cli"
+  max_memory_mb: 128
+---
+= Container: Eidos Command-Line Interface (C4 Level 2 Container & Level 3 Components)
+:toc: left
+
+== Architectural Boundary
+This container represents the developer entrypoint under `src/eidos/cli/`. It provides commands for authoring, validating, indexing, and reconciling living specifications, executing repository drift detection, inspecting C4 architecture topologies, and synchronizing SpecDeltas.
+
+== Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
+
+[cols="1,1,2,2", options="header"]
+|===
+| Component ID | Name | Responsibility | Source Path
+| `CMP-CLI-APP` | **CliApp** | Command dispatcher, error codes, and Rich terminal output | `src/eidos/cli/main.py`
+| `CMP-CLI-SPEC-COMMANDS` | **SpecCommands** | CRUD commands for living specifications | `src/eidos/cli/main.py`
+| `CMP-CLI-DELTA-COMMANDS` | **DeltaCommands** | SpecDelta lifecycle operations and status views | `src/eidos/cli/main.py`
+| `CMP-CLI-PLUGIN-COMMANDS` | **PluginCommands** | Agent plugin management conforming to agent-plugins.org | `src/eidos/cli/main.py`
+| `CMP-CLI-DRIFT-COMMANDS` | **DriftCommands** | Spec-to-code drift checking and automated reconciliation | `src/eidos/cli/main.py`
+| `CMP-CLI-INIT-COMMAND` | **InitCommand** | Repository bootstrapping and skeleton generation | `src/eidos/cli/main.py`
+| `CMP-CLI-CONTEXT-COMMAND` | **ContextCommand** | Token-budgeted architectural context slicing | `src/eidos/cli/main.py`
+| `CMP-CLI-INDEX-COMMANDS` | **IndexCommands** | Knowledge graph maintenance and blast radius queries | `src/eidos/cli/main.py`
+|===
+
+== Quality Attributes & Operational Policies
+* **Exit Codes**: Exit code `0` on success, `1` on validation failures or detected drift, and `2` on execution errors.
+* **Terminal UI**: Uses Rich formatting to provide human-readable tables, syntax-highlighted diffs, and progress indicators.

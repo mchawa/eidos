@@ -26,8 +26,8 @@ All living specifications are authored in **AsciiDoc (`.adoc`)** with structured
 eidos/
 ├── system.adoc                   # Root system descriptor (C4 Level 1)
 ├── architecture/                 # Technical architecture (Arc42 + C4)
-│   ├── system-architecture.adoc  # Container topology (C4 Level 2)
-│   ├── components/               # Component manifests (C4 Level 3)
+│   ├── system-architecture.adoc  # Global architecture & C4 Container topology (L1 & L2)
+│   ├── containers/               # Container manifests (C4 Level 2)
 │   └── contracts/                # Interface protocol contracts (APIs, CLI)
 ├── domains/                      # DDD bounded contexts & capability trees
 │   └── <domain-name>/
@@ -51,7 +51,7 @@ Eidos models software across five interconnected layers:
 
 1. **Product & Governance Layer**: Defines strategic archetypes ([`SYS-*`](schema-glossary.md#productsystem)), bounded contexts ([`DOM-*`](schema-glossary.md#productdomain)), capabilities ([`CAP-*`](schema-glossary.md#productcapability)), actor personas ([`PER-*`](schema-glossary.md#productpersona)), and non-negotiable policies ([`POL-*`](schema-glossary.md#productpolicy)).
 2. **Exploration & Discovery Layer**: Formalizes hypothesis-driven technical spikes and prototypes ([`EXP-*`](explorations.md)) before committing to architectural baselines.
-3. **Technical Architecture Layer**: Codifies Arc42 system context ([`ARCH-*`](schema-glossary.md#techarchitecture)), C4 component whiteboxes ([`CMP-*`](schema-glossary.md#techcomponent)), and protocol contracts ([`CTR-*`](schema-glossary.md#techcontract)) without ADRs.
+3. **Technical Architecture Layer**: Codifies Arc42 system context ([`ARCH-*`](schema-glossary.md#techarchitecture)), C4 containers ([`CNT-*`](schema-glossary.md#techcontainer)) with internal components ([`CMP-*`]), and protocol contracts ([`CTR-*`](schema-glossary.md#techcontract)) without ADRs.
 4. **Experience & Design Layer**: Governs multi-brand themes ([`DS-*`](design.md)), official W3C Design Tokens, UI component contracts ([`UIC-*`](design.md#4-ui-component-manifests-uic-)), and screen state machines ([`SCR-*`](design.md#5-screen-state-machines-scr-)).
 5. **Evolution & Mutation Layer**: Orchestrates planned architectural changes through auditable SpecDeltas ([`DLT-*`](specdeltas.md)).
 
@@ -75,27 +75,32 @@ Eidos solves this by treating spikes as **Explorations (`EXP-*`)**:
 
 ## Anatomy of a Living Specification
 
-Here is an example of a Component manifest (`eidos/architecture/components/core.adoc`):
+Here is an example of a Container manifest (`eidos/architecture/containers/core.adoc`):
 
 ```asciidoc
 ---
-type: tech/component
-schema: schemas/v1/tech/component.schema.yaml
-id: CMP-EIDOS-CORE
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
+id: CNT-EIDOS-CORE
 name: Eidos Core Engine
 container_type: library
 runtime: "Python 3.12+"
 package_path: "src/eidos/core"
+components:
+  - id: CMP-CORE-PARSER
+    name: SpecParser
+    responsibility: "Parses AsciiDoc files with YAML frontmatter into structured AST models."
+    source_path: "src/eidos/core/parser.py"
 contracts:
   provides:
-    - "eidos/architecture/contracts/validator.adoc"
+    - "CTR-EIDOS-VALIDATOR"
 dependencies:
-  internal_components: []
+  internal_containers: []
   external_services:
     - "pyyaml"
     - "jsonschema"
 ---
-= Component: Eidos Core Engine
+= Container: Eidos Core Engine
 
 The Core Engine provides schema validation, specification parsing,
 and AST graph generation for all Eidos operations.

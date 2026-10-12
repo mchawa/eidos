@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -10,6 +11,7 @@ from rich.table import Table
 
 import eidos
 from eidos.core.context import get_context_slice
+from eidos.core.graph_index import get_architectural_index
 from eidos.core.parser import parse_spec_file
 from eidos.core.scaffolder import (
     apply_delta,
@@ -59,10 +61,16 @@ delta_app = typer.Typer(
     help="Manage SpecDeltas through their mutation lifecycle (list, create, apply, delete).",
     add_completion=False,
 )
+index_app = typer.Typer(
+    name="index",
+    help="Manage and query the embedded SQLite architectural knowledge graph (.eidos/cache/index.db).",
+    add_completion=False,
+)
 
 app.add_typer(plugin_app, name="plugin")
 app.add_typer(spec_app, name="spec")
 app.add_typer(delta_app, name="delta")
+app.add_typer(index_app, name="index")
 console = Console()
 
 
@@ -117,9 +125,9 @@ def init_cmd(
         help="Force initialization even if eidos/ directory already exists.",
     ),
 ):
-    """Initialize a repository with Eidos living specifications, Arc42/C4 architecture, and governance."""
+    """Initialize a repository with an empty Eidos living specification skeleton."""
     project_dir = target_path or Path.cwd()
-    console.print(f"[bold cyan]Initializing Eidos living specifications in:[/bold cyan] {project_dir.resolve()}\n")
+    console.print(f"[bold cyan]Initializing empty Eidos skeleton in:[/bold cyan] {project_dir.resolve()}\n")
 
     success, msg, created_files = init_repository(
         project_dir=project_dir,
@@ -133,8 +141,8 @@ def init_cmd(
         console.print(f"[bold red]✗ Initialization Failed:[/bold red] {msg}")
         raise typer.Exit(code=1)
 
-    table = Table(title="Scaffolded Eidos Living Specifications", show_header=True)
-    table.add_column("Specification Document", style="bold cyan")
+    table = Table(title="Scaffolded Eidos Skeleton", show_header=True)
+    table.add_column("Skeleton File", style="bold cyan")
     table.add_column("Path", style="dim")
 
     for f in created_files:
@@ -144,8 +152,8 @@ def init_cmd(
     console.print(table)
     console.print(f"\n[bold green]✓[/bold green] {msg}")
     console.print("[dim]Next steps:[/dim]")
-    console.print("  • Edit [cyan]eidos/system.adoc[/cyan] to tailor system vision and strategic pillars.")
-    console.print("  • Edit [cyan]eidos/architecture/system-architecture.adoc[/cyan] to map C4 containers.")
+    console.print("  • Author your system vision in [cyan]eidos/system.adoc[/cyan].")
+    console.print("  • Create specifications using [cyan]eidos spec create <type> <id> --title <title>[/cyan] or AI agent skills.")
     console.print("  • Run [cyan]eidos validate eidos[/cyan] to verify specification compliance.")
     if with_plugin:
         console.print("  • Eidos Agent Plugin installed at [cyan].agents/plugins/eidos[/cyan].")
@@ -520,49 +528,108 @@ def build_site_cmd(
     console.print(f"  Data payload: {generated_dir / 'data.json'}")
 
 
-@app.command()
-def components(
-    target_path: Path | None = typer.Argument(
-        None,
-        help="Path to scan for component manifests (defaults to eidos/architecture).",
-    ),
-):
-    """List all C4 components, internal modules, dependencies, and monorepo package mappings."""
+def _render_containers_table(target_path: Path | None = None) -> None:
     search_dir = target_path or Path("eidos/architecture")
-    if not search_dir.exists():
+    eidos_dir = search_dir.parent if search_dir.name == "architecture" else search_dir
+    if not search_dir.exists() and not eidos_dir.exists():
         console.print(f"[bold red]Error:[/bold red] Directory '{search_dir}' not found.")
         raise typer.Exit(code=1)
 
-    found_components = []
-    for p in search_dir.rglob("*.adoc"):
-        doc = parse_spec_file(p)
-        if doc.doc_type == "tech/component":
-            found_components.append(doc)
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    found_containers = idx.get_components()
 
-    if not found_components:
-        console.print(f"[bold yellow]No component specifications found in '{search_dir}'.[/bold yellow]")
+    if not found_containers:
+        console.print(f"[bold yellow]No container specifications found in '{search_dir}'.[/bold yellow]")
         return
 
-    table = Table(title="Eidos Monorepo & System Components (C4 L2/L3)", show_header=True, header_style="bold blue")
-    table.add_column("Component ID", style="bold cyan")
+    table = Table(title="Eidos Monorepo Containers (C4 Level 2)", show_header=True, header_style="bold blue")
+    table.add_column("Container ID", style="bold cyan")
     table.add_column("Name", style="green")
     table.add_column("Container Type", style="yellow")
     table.add_column("Runtime", style="magenta")
     table.add_column("Package Path", style="dim")
-    table.add_column("Internal C4 Modules", style="white")
+    table.add_column("L3 Components", style="white")
 
-    for c in found_components:
-        fm = c.frontmatter
-        pkg = fm.get("package_path", "centralized")
-        internals = ", ".join(m.get("name", "") for m in fm.get("c4_internal_components", [])) or "N/A"
+    for c in found_containers:
+        pkg = c.get("package_path") or "centralized"
+        internals = ", ".join(m.get("name", "") for m in (c.get("components", []) or c.get("c4_internal_components", []))) or "N/A"
         table.add_row(
-            c.doc_id,
-            fm.get("name", "N/A"),
-            fm.get("container_type", "N/A"),
-            fm.get("runtime", "N/A"),
+            c.get("id", "N/A"),
+            c.get("name", "N/A"),
+            c.get("container_type", "N/A"),
+            c.get("runtime", "N/A"),
             str(pkg),
             internals,
         )
+
+    console.print(table)
+
+
+@app.command("containers")
+def containers(
+    target_path: Path | None = typer.Argument(
+        None,
+        help="Path to scan for container manifests (defaults to eidos/architecture).",
+    ),
+):
+    """List all C4 Level 2 containers, runtimes, package paths, and internal building blocks."""
+    _render_containers_table(target_path=target_path)
+
+
+@app.command()
+def components(
+    container_id: str | None = typer.Argument(
+        None,
+        help="Optional container ID to filter components (e.g. CNT-EIDOS-CORE).",
+    ),
+    target_path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to scan for component manifests (defaults to eidos/architecture).",
+    ),
+):
+    """List all C4 Level 3 internal components across containers."""
+    search_dir = target_path or Path("eidos/architecture")
+    eidos_dir = search_dir.parent if search_dir.name == "architecture" else search_dir
+    if not search_dir.exists() and not eidos_dir.exists():
+        console.print(f"[bold red]Error:[/bold red] Directory '{search_dir}' not found.")
+        raise typer.Exit(code=1)
+
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    found_containers = idx.get_components()
+
+    if not found_containers:
+        console.print(f"[bold yellow]No component or container specifications found in '{search_dir}'.[/bold yellow]")
+        return
+
+    table = Table(title="Eidos C4 Level 3 Components (In-Process Building Blocks)", show_header=True, header_style="bold blue")
+    table.add_column("Component ID", style="bold cyan")
+    table.add_column("Name", style="green")
+    table.add_column("Owning Container", style="yellow")
+    table.add_column("Source Path", style="dim")
+    table.add_column("Responsibility", style="white")
+
+    cid_filter = container_id.strip().upper() if container_id else None
+    count = 0
+    for c in found_containers:
+        cid = c.get("id", "N/A")
+        if cid_filter and cid_filter not in cid.upper():
+            continue
+        internals = c.get("components", []) or c.get("c4_internal_components", [])
+        for m in internals:
+            count += 1
+            table.add_row(
+                m.get("id", "CMP-INTERNAL"),
+                m.get("name", "N/A"),
+                cid,
+                m.get("source_path", "N/A"),
+                m.get("responsibility", "N/A"),
+            )
+
+    if count == 0 and cid_filter:
+        console.print(f"[bold yellow]No components found for container '{container_id}'.[/bold yellow]")
+        return
 
     console.print(table)
 
@@ -593,6 +660,12 @@ def context_cmd(
         "-t",
         help="Free-text task description or prompt to slice architectural context for.",
     ),
+    tier: str = typer.Option(
+        "guardrails",
+        "--tier",
+        "-T",
+        help="Context slice verbosity tier: 'anchor' (~140 tokens), 'guardrails' (~260 tokens), 'deep' (~500 tokens). Defaults to 'guardrails'.",
+    ),
     format: str = typer.Option(
         "markdown",
         "--format",
@@ -610,18 +683,181 @@ def context_cmd(
     if not eidos_dir.exists():
         eidos_dir = Path(".")
 
-    slice_result = get_context_slice(
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    slice_result = idx.get_tiered_context_slice(
         files=files,
         component=component,
         task=task,
-        eidos_dir=eidos_dir,
-        repo_root=Path.cwd(),
+        tier=tier,
     )
 
     if format.lower() == "json":
         typer.echo(slice_result.to_json())
     else:
         typer.echo(slice_result.to_markdown())
+
+
+# -------------------------------------------------------------------------
+# Index Embedded Knowledge Graph & Hybrid Retrieval Commands
+# -------------------------------------------------------------------------
+
+
+@index_app.command("status")
+def index_status_cmd(
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to eidos directory (defaults to ./eidos).",
+    ),
+):
+    """Display health, schema version, cache size, and statistics of the architectural index."""
+    eidos_dir = path or Path("eidos")
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    status = idx.get_index_status()
+
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="bold cyan", justify="right")
+    grid.add_column(style="white")
+
+    grid.add_row("Database Path:", f"[dim]{status['db_path']}[/dim]")
+    grid.add_row("Schema Version:", f"[green]{status['schema_version']}[/green]")
+    grid.add_row("Cache Size:", f"[yellow]{status['db_size_bytes'] / 1024:.1f} KB[/yellow]")
+    dirty_label = (
+        "[bold red]DIRTY (Needs sync)[/bold red]"
+        if status["is_dirty"]
+        else "[bold green]SYNCED (Clean)[/bold green]"
+    )
+    grid.add_row("Status:", f"{dirty_label} [dim]({status['dirty_check_latency_ms']:.2f}ms check)[/dim]")
+    grid.add_row("Total Entities:", f"[bold white]{status['total_entities']}[/bold white]")
+    grid.add_row("Total Edges:", f"[bold white]{status['total_edges']}[/bold white]")
+    grid.add_row("Indexed Files:", f"[bold white]{status['total_indexed_files']}[/bold white]")
+    grid.add_row("AST Symbol Mappings:", f"[bold white]{status['total_symbols']}[/bold white]")
+
+    console.print(Panel(grid, title="[bold blue]Eidos Architectural Knowledge Graph Index[/bold blue]", expand=False))
+
+    if status.get("entity_counts_by_type"):
+        table = Table(title="Entities by Type", show_header=True)
+        table.add_column("Type", style="bold cyan")
+        table.add_column("Count", justify="right", style="green")
+        for etype, count in sorted(status["entity_counts_by_type"].items()):
+            table.add_row(etype, str(count))
+        console.print(table)
+
+
+@index_app.command("sync")
+def index_sync_cmd(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force complete rebuild of the index from scratch.",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to eidos directory (defaults to ./eidos).",
+    ),
+):
+    """Synchronize the architectural index with specifications on disk."""
+    eidos_dir = path or Path("eidos")
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    stats = idx.sync(force=force)
+
+    if stats.was_clean and not force:
+        console.print(
+            f"[bold green]✓ Index is up to date.[/bold green] Verified in [dim]{stats.duration_ms:.2f}ms[/dim]."
+        )
+    else:
+        mode = "Rebuilt" if force else "Synchronized"
+        console.print(
+            f"[bold green]✓ {mode} index in {stats.duration_ms:.2f}ms.[/bold green] "
+            f"[dim](Indexed {stats.indexed_new} new, updated {stats.updated_modified} modified, pruned {stats.pruned_deleted} deleted)[/dim]"
+        )
+
+
+@index_app.command("search")
+def index_search_cmd(
+    query: str = typer.Argument(
+        ...,
+        help="Search query keywords or phrase.",
+    ),
+    limit: int = typer.Option(
+        10,
+        "--limit",
+        "-l",
+        help="Maximum number of matches to display.",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to eidos directory (defaults to ./eidos).",
+    ),
+):
+    """Execute BM25 ranked full-text search (FTS5) across all specifications, capabilities, and invariants."""
+    eidos_dir = path or Path("eidos")
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    results = idx.query_fts(query, limit=limit)
+
+    if not results:
+        console.print(f"[yellow]No architectural specifications matched query: '{query}'[/yellow]")
+        return
+
+    table = Table(title=f"Architectural Search Results for '{query}' ({len(results)} matches)", show_header=True)
+    table.add_column("Rank", justify="right", style="dim")
+    table.add_column("Entity ID", style="bold cyan")
+    table.add_column("Type", style="yellow")
+    table.add_column("Title", style="white")
+    table.add_column("Domain", style="dim")
+
+    for r in results:
+        table.add_row(f"{r['rank']:.2f}", r["id"], r["type"], r["title"], r.get("domain", "") or "—")
+
+    console.print(table)
+
+
+@index_app.command("blast-radius")
+def index_blast_radius_cmd(
+    entity_id: str = typer.Argument(
+        ...,
+        help="Target architectural entity ID (e.g. 'CMP-EIDOS-CORE', 'CAP-PROD-001').",
+    ),
+    depth: int = typer.Option(
+        2,
+        "--depth",
+        "-d",
+        help="Maximum graph walk hop distance (defaults to 2).",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to eidos directory (defaults to ./eidos).",
+    ),
+):
+    """Display recursive CTE graph walk / blast radius for an architectural entity."""
+    eidos_dir = path or Path("eidos")
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    neighbors = idx.get_k_hop_neighborhood(entity_id, max_depth=depth)
+
+    if not neighbors:
+        console.print(f"[yellow]Entity '{entity_id}' not found in architectural graph.[/yellow]")
+        return
+
+    table = Table(title=f"Blast Radius for '{entity_id}' (Depth: {depth})", show_header=True)
+    table.add_column("Hop", justify="center", style="bold magenta")
+    table.add_column("Entity ID", style="bold cyan")
+    table.add_column("Type", style="yellow")
+    table.add_column("Title", style="white")
+    table.add_column("Domain", style="dim")
+
+    for n in neighbors:
+        table.add_row(str(n["depth"]), n["id"], n["type"], n["title"], n.get("domain", "") or "—")
+
+    console.print(table)
+
 
 
 
@@ -1145,8 +1381,12 @@ def plugin_install(
         PluginInstallTarget.PROJECT,
         "--target",
         "-t",
-        help="Installation target in project scope: project, workspace, antigravity, cursor, claude, all.",
+        help="Installation target in project scope: project, antigravity, cursor, claude, all.",
     ),
+    target_arg: Annotated[
+        PluginInstallTarget | None,
+        typer.Argument(help="Optional positional target: project, antigravity, cursor, claude, all."),
+    ] = None,
     project_dir: Path | None = typer.Option(
         None,
         "--project-dir",
@@ -1165,13 +1405,14 @@ def plugin_install(
         help="Overwrite existing files at destination.",
     ),
 ):
-    """Install the Eidos agent plugin strictly inside project scope (workspace)."""
+    """Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos, agent-plugins.org v1.0.0)."""
+    resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
     console.print(
-        f"[bold cyan]Installing Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{target.value}[/bold green])...\n"
+        f"[bold cyan]Installing Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{resolved_target.value}[/bold green])...\n"
     )
 
     try:
-        results = install_plugin(target=target, project_dir=project_dir, dest_path=dest, force=force)
+        results = install_plugin(target=resolved_target, project_dir=project_dir, dest_path=dest, force=force)
         for res in results:
             if res.success:
                 console.print(f"[bold green]✓[/bold green] [bold]{res.target.upper()}:[/bold] {res.message}")
@@ -1186,14 +1427,53 @@ def plugin_install(
         raise typer.Exit(code=1) from e
 
 
+@app.command("install")
+def install_shortcut(
+    target: PluginInstallTarget = typer.Option(
+        PluginInstallTarget.PROJECT,
+        "--target",
+        "-t",
+        help="Installation target in project scope: project, antigravity, cursor, claude, all.",
+    ),
+    target_arg: Annotated[
+        PluginInstallTarget | None,
+        typer.Argument(help="Optional positional target: project, antigravity, cursor, claude, all."),
+    ] = None,
+    project_dir: Path | None = typer.Option(
+        None,
+        "--project-dir",
+        "-p",
+        help="Root directory of the project (defaults to current working directory).",
+    ),
+    dest: Path | None = typer.Option(
+        None,
+        "--dest",
+        "-d",
+        help="Custom destination directory within the project.",
+    ),
+    force: bool = typer.Option(
+        True,
+        "--force/--no-force",
+        help="Overwrite existing files at destination.",
+    ),
+):
+    """Shortcut alias for 'eidos plugin install'."""
+    resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
+    plugin_install(target=resolved_target, project_dir=project_dir, dest=dest, force=force)
+
+
 @plugin_app.command("uninstall")
 def plugin_uninstall(
     target: PluginInstallTarget = typer.Option(
         PluginInstallTarget.PROJECT,
         "--target",
         "-t",
-        help="Target to remove in project scope: project, workspace, antigravity, cursor, claude, all.",
+        help="Target to remove in project scope: project, antigravity, cursor, claude, all.",
     ),
+    target_arg: Annotated[
+        PluginInstallTarget | None,
+        typer.Argument(help="Optional positional target: project, antigravity, cursor, claude, all."),
+    ] = None,
     project_dir: Path | None = typer.Option(
         None,
         "--project-dir",
@@ -1208,12 +1488,13 @@ def plugin_uninstall(
     ),
 ):
     """Uninstall / remove the Eidos agent plugin from project scope."""
+    resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
     console.print(
-        f"[bold cyan]Uninstalling Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{target.value}[/bold green])...\n"
+        f"[bold cyan]Uninstalling Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{resolved_target.value}[/bold green])...\n"
     )
 
     try:
-        results = uninstall_plugin(target=target, project_dir=project_dir, dest_path=dest)
+        results = uninstall_plugin(target=resolved_target, project_dir=project_dir, dest_path=dest)
         for res in results:
             if res.removed:
                 console.print(f"[bold green]✓[/bold green] [bold]{res.target.upper()}:[/bold] {res.message}")
@@ -1226,14 +1507,48 @@ def plugin_uninstall(
         raise typer.Exit(code=1) from e
 
 
+@app.command("uninstall")
+def uninstall_shortcut(
+    target: PluginInstallTarget = typer.Option(
+        PluginInstallTarget.PROJECT,
+        "--target",
+        "-t",
+        help="Target to remove in project scope: project, antigravity, cursor, claude, all.",
+    ),
+    target_arg: Annotated[
+        PluginInstallTarget | None,
+        typer.Argument(help="Optional positional target: project, antigravity, cursor, claude, all."),
+    ] = None,
+    project_dir: Path | None = typer.Option(
+        None,
+        "--project-dir",
+        "-p",
+        help="Root directory of the project (defaults to current working directory).",
+    ),
+    dest: Path | None = typer.Option(
+        None,
+        "--dest",
+        "-d",
+        help="Custom destination directory within the project to remove.",
+    ),
+):
+    """Shortcut alias for 'eidos plugin uninstall'."""
+    resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
+    plugin_uninstall(target=resolved_target, project_dir=project_dir, dest=dest)
+
+
 @plugin_app.command("remove")
 def plugin_remove(
     target: PluginInstallTarget = typer.Option(
         PluginInstallTarget.PROJECT,
         "--target",
         "-t",
-        help="Target to remove in project scope: project, workspace, antigravity, cursor, claude, all.",
+        help="Target to remove in project scope: project, antigravity, cursor, claude, all.",
     ),
+    target_arg: Annotated[
+        PluginInstallTarget | None,
+        typer.Argument(help="Optional positional target: project, antigravity, cursor, claude, all."),
+    ] = None,
     project_dir: Path | None = typer.Option(
         None,
         "--project-dir",
@@ -1248,7 +1563,8 @@ def plugin_remove(
     ),
 ):
     """Alias for 'eidos plugin uninstall'."""
-    plugin_uninstall(target=target, project_dir=project_dir, dest=dest)
+    resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
+    plugin_uninstall(target=resolved_target, project_dir=project_dir, dest=dest)
 
 
 @plugin_app.command("version")
@@ -1315,8 +1631,12 @@ def plugin_update(
         PluginInstallTarget.PROJECT,
         "--target",
         "-t",
-        help="Target to update in project scope: project, workspace, antigravity, cursor, claude, all.",
+        help="Target to update in project scope: project, antigravity, cursor, claude, all.",
     ),
+    target_arg: Annotated[
+        PluginInstallTarget | None,
+        typer.Argument(help="Optional positional target: project, antigravity, cursor, claude, all."),
+    ] = None,
     project_dir: Path | None = typer.Option(
         None,
         "--project-dir",
@@ -1331,12 +1651,13 @@ def plugin_update(
     ),
 ):
     """Update project-scoped Agent Plugin to the latest bundled version."""
+    resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
     console.print(
-        f"[bold cyan]Updating Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{target.value}[/bold green])...\n"
+        f"[bold cyan]Updating Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{resolved_target.value}[/bold green])...\n"
     )
 
     try:
-        prev_ver, current_ver, results = update_plugin(target=target, project_dir=project_dir, dest_path=dest)
+        prev_ver, current_ver, results = update_plugin(target=resolved_target, project_dir=project_dir, dest_path=dest)
         for res in results:
             if res.success:
                 console.print(f"[bold green]✓[/bold green] [bold]{res.target.upper()}:[/bold] {res.message}")
@@ -1366,8 +1687,12 @@ def plugin_upgrade(
         PluginInstallTarget.PROJECT,
         "--target",
         "-t",
-        help="Target to update in project scope: project, workspace, antigravity, cursor, claude, all.",
+        help="Target to update in project scope: project, antigravity, cursor, claude, all.",
     ),
+    target_arg: Annotated[
+        PluginInstallTarget | None,
+        typer.Argument(help="Optional positional target: project, antigravity, cursor, claude, all."),
+    ] = None,
     project_dir: Path | None = typer.Option(
         None,
         "--project-dir",
@@ -1382,7 +1707,8 @@ def plugin_upgrade(
     ),
 ):
     """Alias for 'eidos plugin update'."""
-    plugin_update(target=target, project_dir=project_dir, dest=dest)
+    resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
+    plugin_update(target=resolved_target, project_dir=project_dir, dest=dest)
 
 
 @plugin_app.command("validate")

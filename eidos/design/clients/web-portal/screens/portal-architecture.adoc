@@ -9,21 +9,30 @@ status: active
 
 capabilities:
   - "eidos/domains/spec-engine/capabilities/living-spec-engine.adoc"
+  - "eidos/domains/experience-portal/capabilities/living-web-portal.adoc"
 
 supported_design_systems:
   - "eidos/design/systems/core/system.adoc"
 
 slots:
-  c4_context_diagram: "UIC-PORTAL-SHELL"
-  c4_containers_diagram: "UIC-PORTAL-SHELL"
+  c4_explorer_viewport: "UIC-PORTAL-SHELL"
+  c4_breadcrumbs: "UIC-PORTAL-SHELL"
+  c4_level_controls: "UIC-PORTAL-SHELL"
+  c4_inspector_drawer: "UIC-PORTAL-SHELL"
   containers_table: "UIC-PORTAL-SHELL"
   contracts_table: "UIC-PORTAL-SHELL"
 
 states:
   - name: "loading"
     description: "Skeleton loader displayed during topology extraction."
-  - name: "active"
-    description: "Interactive C4 diagrams (L1 System Context, L2 Containers) and contracts tables."
+  - name: "level_1_context"
+    description: "Interactive C4 Level 1 System Context topology with clickable system node to drill into Containers."
+  - name: "level_2_containers"
+    description: "Interactive C4 Level 2 Container topology with clickable containers to drill into Level 3 Components."
+  - name: "level_3_components"
+    description: "Interactive C4 Level 3 Component Whitebox view showing internal building blocks and responsibilities."
+  - name: "component_inspected"
+    description: "Slide-over drawer detailing selected module responsibility, source path, and contract bindings."
   - name: "error"
     description: "Alert state when architecture manifests are invalid."
 ---
@@ -32,8 +41,8 @@ states:
 
 == 1. View Purpose & Engineering Scope
 The Technical Architecture View (`SCR-PORTAL-ARCHITECTURE`) visualizes the technical runtime structures implementing the system's business capabilities:
-* **C4 Level 1 (System Context)**: Interactive Mermaid topology depicting external personas and peer systems.
-* **C4 Level 2 (Container Architecture)**: Container topology showing boundaries, runtimes, and dependencies.
-* **Containers & Components Whitebox (CMP-*)**: Monorepo package manifests and internal C4 modules.
+* **Hierarchical C4 Explorer**: Dynamic clickable zoom across Level 1 (System Context), Level 2 (Container Topology), and Level 3 (Component Whitebox Views).
+* **Interactive Breadcrumbs & Navigation**: Seamless drill-down on click, ancestor navigation trail, container quick-switcher dropdown, and level-up controls.
+* **Component Whitebox Inspector**: Slide-over details drawer revealing module responsibilities, source file links, and contract bindings.
+* **Containers & Modules Matrix (CMP-*)**: Monorepo package manifests and internal C4 modules with direct one-click exploration links.
 * **Interface & Protocol Contracts (CTR-*)**: Formal contract definitions governing CLI, MCP, and HTTP interfaces.
-

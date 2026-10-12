@@ -4,7 +4,7 @@ schema: schemas/v1/tech/contract.schema.yaml
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 protocol: "cli_args"
-owning_component: "CMP-EIDOS-CLI"
+owning_container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
 ---
 = Contract: Eidos CLI Interface
@@ -42,16 +42,25 @@ Launches the stdio Model Context Protocol (MCP) server for AI agent clients.
 * **Exit Codes**:
   - `0`: Clean termination.
 
-=== `eidos context [--file PATH] [--component ID] [--task PROMPT] [--format FORMAT] [--path PATH]`
+=== `eidos context [--file PATH] [--component ID] [--task PROMPT] [--tier TIER] [--format FORMAT] [--path PATH]`
 Extracts a compact, token-efficient architectural subgraph context slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies).
 * **Options**:
   - `--file, -f`: Target source code file path(s).
   - `--component, -c`: Target component identifier (e.g. `CMP-EIDOS-CLI`).
   - `--task, -t`: Free-text task description or prompt.
+  - `--tier, -T`: Context tier budget: `anchor` (~140 tokens), `guardrails` (default, ~260-890 tokens), or `deep` (~500-1500 tokens).
   - `--format`: Output serialization format: `markdown` (default) or `json`.
   - `--path, -p`: Path to specifications directory (default: `./eidos`).
 * **Exit Codes**:
   - `0`: Slice successfully extracted.
+
+=== `eidos index`
+Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search index (`.eidos/cache/index.db`).
+* **Sub-commands**:
+  - `status [--path <path>]`: Displays index health, entity/edge counts, file hashes, cache file size, and drift status.
+  - `sync [--path <path>] [--force]`: Synchronizes or rebuilds the knowledge graph index.
+  - `search <query> [--limit <n>] [--path <path>]`: Performs BM25 full-text search across titles, requirements, and invariants.
+  - `blast-radius <symbol_or_path> [--hops <n>] [--path <path>]`: Computes the transitive dependency and governance blast radius for a symbol or spec path.
 
 === `eidos serve [--path PATH] [--host HOST] [--port PORT] [--open]`
 Launches the local interactive Eidos Living Web Portal HTTP server.
@@ -73,13 +82,36 @@ Exports the Eidos Living Web Portal as a self-contained static site for GitHub/G
   - `0`: Site generated successfully.
   - `1`: Target directory not found.
 
+=== `eidos install [TARGET] [--target <target>] [--project-dir <path>] [--dest <path>] [--force]`
+Shortcut command for `eidos plugin install`. Installs the Eidos Agent Plugin or client integrations into project scope.
+* **Arguments**: `TARGET` (Optional target: `project`, `antigravity`, `claude`, `cursor`, `all`)
+* **Options**:
+  - `--target, -t`: Target environment (`project`, `antigravity`, `claude`, `cursor`, `all`; default: `project`).
+  - `--project-dir`: Project root directory (default: current working directory).
+  - `--dest`: Custom destination directory.
+  - `--force, -f`: Overwrite existing files.
+* **Exit Codes**:
+  - `0`: Plugin successfully installed.
+  - `1`: Installation failed or bundle missing.
+
+=== `eidos uninstall [TARGET] [--target <target>] [--project-dir <path>] [--dest <path>]`
+Shortcut command for `eidos plugin uninstall`. Uninstalls and cleans up the plugin and client MCP configurations from project scope.
+* **Arguments**: `TARGET` (Optional target: `project`, `antigravity`, `claude`, `cursor`, `all`)
+* **Options**:
+  - `--target, -t`: Target environment (`project`, `antigravity`, `claude`, `cursor`, `all`; default: `project`).
+  - `--project-dir`: Project root directory.
+  - `--dest`: Custom destination directory.
+* **Exit Codes**:
+  - `0`: Clean uninstallation.
+  - `1`: Uninstallation error.
+
 === `eidos plugin`
-Manages, validates, installs, updates, and removes Eidos Agent Plugins conforming to `agent-plugins.org` v1.0.0.
+Manages, validates, installs, updates, and removes Eidos Agent Plugins conforming to `agent-plugins.org` v1.0.0 and Claude Code plugins.
 * **Sub-commands**:
-  - `install [--target <target>] [--project-dir <path>] [--dest <path>]`: Installs the plugin into `.agents/plugins/eidos` and local workspace MCP configurations.
-  - `uninstall / remove [--target <target>] [--project-dir <path>] [--dest <path>]`: Uninstalls and cleans up the plugin from project scope.
+  - `install [TARGET] [--target <target>] [--project-dir <path>] [--dest <path>] [--force]`: Installs the plugin into `.agents/plugins/eidos` (strict `agent-plugins.org` v1.0.0), `.claude/skills/eidos/` (Claude Code plugin), or local tool configurations.
+  - `uninstall / remove [TARGET] [--target <target>] [--project-dir <path>] [--dest <path>]`: Uninstalls and cleans up the plugin and tool configurations from project scope.
   - `version [--project-dir <path>] [--dest <path>]`: Displays and compares bundled vs installed plugin version and reports SemVer sync status.
-  - `update / upgrade [--target <target>] [--project-dir <path>] [--dest <path>]`: Updates project-scoped plugin to the latest bundled version and syncs MCP configs.
+  - `update / upgrade [TARGET] [--target <target>] [--project-dir <path>] [--dest <path>]`: Updates project-scoped plugin to the latest bundled version and syncs MCP configs.
   - `validate [PATH]`: Validates an Agent Plugin against canonical JSON schemas and SemVer 2.0.0 rules.
   - `info [PATH]`: Displays plugin metadata, skills, MCP servers, and extensions.
 
@@ -126,7 +158,7 @@ Analyzes recent code changes against the living specification catalog and genera
   - `0`: Analysis complete.
 
 === `eidos init [PATH]`
-Bootstraps a repository with a complete, schema-conforming Eidos living specification directory, baseline Arc42/C4 architecture, core policies, personas, and self-contained gitignore.
+Bootstraps a repository with an empty Eidos living specification skeleton, an empty root `system.adoc`, tracking empty directories with `.gitkeep` files, self-contained gitignore, and optional agent plugin.
 * **Arguments**: `PATH` (Optional directory path, defaults to `.`)
 * **Options**:
   - `--name <name>`: Custom machine-readable system name.

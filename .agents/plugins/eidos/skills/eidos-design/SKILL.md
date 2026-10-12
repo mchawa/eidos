@@ -204,7 +204,7 @@ title: "Living Web Portal Client"
 status: active
 platform: web
 design_system: "eidos/design/systems/core/system.adoc"
-container: "eidos/architecture/components/portal.adoc"
+container: "eidos/architecture/containers/portal.adoc"
 
 capabilities:
   - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"

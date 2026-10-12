@@ -19,7 +19,7 @@ def test_classify_changed_files():
     files = [
         "src/eidos/cli/main.py",
         "packages/billing/src/index.ts",
-        "eidos/architecture/components/cli.adoc",
+        "eidos/architecture/containers/cli.adoc",
         "eidos/deltas/dlt-2026-001.adoc",
         "tests/test_drift.py",
         "docs/index.md",
@@ -29,7 +29,7 @@ def test_classify_changed_files():
 
     assert "src/eidos/cli/main.py" in classification.code_files
     assert "packages/billing/src/index.ts" in classification.code_files
-    assert "eidos/architecture/components/cli.adoc" in classification.spec_files
+    assert "eidos/architecture/containers/cli.adoc" in classification.spec_files
     assert "eidos/deltas/dlt-2026-001.adoc" in classification.delta_files
     assert "tests/test_drift.py" in classification.test_files
     assert "docs/index.md" in classification.doc_files
@@ -61,7 +61,7 @@ def test_pr_check_gate_pass_direct(monkeypatch):
         "eidos.vcs.drift.get_git_diff_files",
         lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
             "src/eidos/cli/main.py",
-            "eidos/architecture/components/cli.adoc",
+            "eidos/architecture/containers/cli.adoc",
         ],
     )
 
@@ -100,7 +100,7 @@ def test_reconcile_specs_catalog_and_prompt(monkeypatch):
     result = reconcile_specs(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
     assert "src/eidos/cli/main.py" in result.changed_code_files
     assert len(result.suggestions) == 1
-    assert "CMP-EIDOS-CLI" in result.suggestions[0].candidate_specs[0]
+    assert "CNT-EIDOS-CLI" in result.suggestions[0].candidate_specs[0]
     assert "Instructions for the AI Agent:" in result.ai_prompt
     assert "Think deeply" in result.ai_prompt
     assert len(result.catalog["capabilities"]) > 0
@@ -112,7 +112,7 @@ def test_cli_drift_and_reconcile_commands(monkeypatch, tmp_path):
         "eidos.vcs.drift.get_git_diff_files",
         lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
             "src/eidos/cli/main.py",
-            "eidos/architecture/components/cli.adoc",
+            "eidos/architecture/containers/cli.adoc",
         ],
     )
 

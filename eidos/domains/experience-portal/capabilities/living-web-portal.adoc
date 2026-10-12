@@ -54,8 +54,8 @@ technical:
       rule: "The web portal daemon and static site builder must operate using Python standard library without external Node.js/npm dependencies."
       test_binding: "tests/test_portal.py::test_portal_data_generation"
     - id: INV-PORTAL-INTERACTIVE-C4
-      rule: "The portal must render responsive C4 Level 1 Context and Level 2 Container diagrams dynamically generated from living architecture specifications."
-      test_binding: "tests/test_portal.py::test_portal_html_generation"
+      rule: "The portal must render a dynamic hierarchical C4 architecture explorer enabling clickable drill-down from L1 System Context to L2 Containers and L3 Component Whiteboxes with breadcrumbs and component inspection."
+      test_binding: "tests/test_portal.py::test_static_portal_builder"
 ---
 = Capability: Interactive Living Web Portal & Visual Documentation Engine
 :toc: left
@@ -64,7 +64,8 @@ technical:
 Technical specifications and architecture models are often trapped in raw text files or separate wikis. This capability provides a local, zero-dependency embedded HTTP server (`eidos serve`) and static site builder (`eidos build-site`) that turns living AsciiDoc files into an interactive single-page application.
 
 == Key Responsibilities
-* Real-time inspection of C4 context and container diagrams using client-side Mermaid rendering.
+* Real-time inspection and clickable hierarchical exploration of C4 Level 1 (Context), Level 2 (Containers), and Level 3 (Component Whitebox) models using client-side Mermaid rendering.
+* Slide-over component inspection drawer revealing module responsibilities, source paths, bound contracts, and catalog specifications.
 * Interactive SpecDelta Kanban dashboard tracking proposed, in-review, and applied mutations.
 * Full-text fuzzy search and real-time schema filtering across all catalog entities.
 

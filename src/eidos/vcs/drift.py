@@ -61,9 +61,6 @@ class DriftCheckResult:
     summary_markdown: str = ""
 
 
-# Backwards compatibility alias
-PRCheckResult = DriftCheckResult
-
 
 @dataclass
 class ReconcileSuggestion:
@@ -118,7 +115,7 @@ def get_git_diff_files(
                 files.update(line.strip() for line in staged_res.stdout.splitlines() if line.strip())
 
             status_res = subprocess.run(
-                ["git", "status", "--porcelain"],
+                ["git", "status", "--porcelain", "-uall"],
                 cwd=repo,
                 capture_output=True,
                 text=True,
@@ -126,8 +123,11 @@ def get_git_diff_files(
             )
             if status_res.returncode == 0:
                 for line in status_res.stdout.splitlines():
-                    if line.startswith("?? ") or line.startswith("A ") or line.startswith("M "):
-                        files.add(line[3:].strip())
+                    if len(line) > 3:
+                        raw_path = line[3:].strip()
+                        if " -> " in raw_path:
+                            raw_path = raw_path.split(" -> ")[1].strip()
+                        files.add(raw_path)
         except Exception:
             pass
         return sorted(files)
@@ -375,34 +375,45 @@ def classify_changed_files(files: list[str], repo_root: Path | None = None) -> C
     return classification
 
 
-def map_code_to_components(eidos_dir: Path, code_files: list[str]) -> list[tuple[str, str, str]]:
+def map_code_to_components(
+    eidos_dir: Path, code_files: list[str], repo_root: Path | None = None
+) -> list[tuple[str, str, str]]:
     """Map changed code files to living component specifications (returns list of (code_file, cmp_id, cmp_spec_path))."""
+    if not eidos_dir.exists():
+        return []
+
+    from eidos.core.graph_index import get_architectural_index
+
+    idx = get_architectural_index(repo_root=repo_root, eidos_dir=eidos_dir)
+    components = idx.get_components()
+
     mappings: list[tuple[str, str, str]] = []
-    components: list[tuple[str, str, Path, str]] = []  # (id, name, path, package_path)
-
-    arch_dir = eidos_dir / "architecture" / "components"
-    if arch_dir.exists():
-        for p in arch_dir.rglob("*.adoc"):
-            try:
-                doc = parse_spec_file(p)
-                if doc.doc_type == "tech/component":
-                    cid = doc.doc_id or p.stem
-                    name = doc.frontmatter.get("name", p.stem)
-                    pkg = doc.frontmatter.get("package_path", "")
-                    components.append((cid, name, p, pkg))
-            except Exception:
-                continue
-
     for cf in code_files:
         matched = False
-        for cid, _name, path, pkg in components:
-            if pkg and (cf.startswith(pkg) or pkg in cf):
-                mappings.append((cf, cid, str(path)))
+        # 1. AST / symbol reverse mapping
+        matches = idx.resolve_symbol_or_path(cf)
+        for m in matches:
+            if m.get("type") in ("tech/container", "tech/component"):
+                mappings.append((cf, m["entity_id"], m["file_path"]))
                 matched = True
                 break
+
+        # 2. Package path prefix
         if not matched:
-            # Fallback heuristic: check if component name slug is in path
-            for cid, _name, path, _ in components:
+            for c in components:
+                cid = c.get("id", "")
+                pkg = c.get("package_path", "")
+                path = c.get("file_path", "")
+                if pkg and (cf.startswith(pkg) or pkg in cf):
+                    mappings.append((cf, cid, str(path)))
+                    matched = True
+                    break
+
+        # 3. Component name slug fallback
+        if not matched:
+            for c in components:
+                cid = c.get("id", "")
+                path = c.get("file_path", "")
                 slug = cid.lower().replace("cmp-eidos-", "").replace("cmp-", "")
                 if slug and slug in cf.lower():
                     mappings.append((cf, cid, str(path)))
@@ -521,7 +532,7 @@ def extract_invariants_and_verify(
     return invariants
 
 
-def get_living_specs_catalog(eidos_dir: Path) -> dict[str, list[dict]]:
+def get_living_specs_catalog(eidos_dir: Path, repo_root: Path | None = None) -> dict[str, list[dict]]:
     """Generate a clean, token-efficient catalog of living capabilities, components, and policies for agents."""
     catalog: dict[str, list[dict]] = {
         "capabilities": [],
@@ -533,55 +544,60 @@ def get_living_specs_catalog(eidos_dir: Path) -> dict[str, list[dict]]:
     if not eidos_dir.exists():
         return catalog
 
-    for p in eidos_dir.rglob("*.adoc"):
-        try:
-            doc = parse_spec_file(p)
-            dtype = doc.doc_type
-            fm = doc.frontmatter
-            rel = str(p.relative_to(eidos_dir))
+    from eidos.core.graph_index import get_architectural_index
 
-            if dtype == "product/capability":
-                catalog["capabilities"].append(
-                    {
-                        "id": doc.doc_id,
-                        "title": doc.title,
-                        "domain": fm.get("domain", ""),
-                        "jtbd": fm.get("business", {}).get("jtbd", ""),
-                        "path": f"eidos/{rel}",
-                    }
-                )
-            elif dtype == "tech/component":
-                catalog["components"].append(
-                    {
-                        "id": doc.doc_id,
-                        "name": fm.get("name", ""),
-                        "package_path": fm.get("package_path", ""),
-                        "runtime": fm.get("runtime", ""),
-                        "path": f"eidos/{rel}",
-                    }
-                )
-            elif dtype == "tech/contract":
-                catalog["contracts"].append(
-                    {
-                        "id": doc.doc_id,
-                        "title": doc.title,
-                        "protocol": fm.get("protocol", ""),
-                        "owning_component": fm.get("owning_component", ""),
-                        "path": f"eidos/{rel}",
-                    }
-                )
-            elif dtype == "product/policy":
-                catalog["policies"].append(
-                    {
-                        "id": doc.doc_id,
-                        "title": doc.title,
-                        "category": fm.get("category", ""),
-                        "rule": fm.get("rule", ""),
-                        "path": f"eidos/{rel}",
-                    }
-                )
-        except Exception:
-            continue
+    idx = get_architectural_index(repo_root=repo_root, eidos_dir=eidos_dir)
+    entities = idx.get_entities()
+
+    for ent in entities:
+        dtype = ent.get("type", "")
+        eid = ent.get("id", "")
+        title = ent.get("title", "")
+        file_p = Path(ent.get("file_path", ""))
+        rel = str(file_p.relative_to(eidos_dir)) if file_p.is_relative_to(eidos_dir) else str(file_p)
+        spec_path = f"eidos/{rel}" if not rel.startswith("eidos/") else rel
+
+        if dtype == "product/capability":
+            biz = ent.get("business", {})
+            catalog["capabilities"].append(
+                {
+                    "id": eid,
+                    "title": title,
+                    "domain": ent.get("domain", ""),
+                    "jtbd": biz.get("jtbd", "") if isinstance(biz, dict) else "",
+                    "path": spec_path,
+                }
+            )
+        elif dtype in ("tech/container", "tech/component"):
+            catalog["components"].append(
+                {
+                    "id": eid,
+                    "name": ent.get("name", title),
+                    "package_path": ent.get("package_path", ""),
+                    "runtime": ent.get("runtime", ""),
+                    "path": spec_path,
+                }
+            )
+        elif dtype == "tech/contract":
+            catalog["contracts"].append(
+                {
+                    "id": eid,
+                    "title": title,
+                    "protocol": ent.get("protocol", ""),
+                    "owning_component": ent.get("owning_component", ""),
+                    "path": spec_path,
+                }
+            )
+        elif dtype == "product/policy":
+            catalog["policies"].append(
+                {
+                    "id": eid,
+                    "title": title,
+                    "category": ent.get("category", ""),
+                    "rule": ent.get("rule", ""),
+                    "path": spec_path,
+                }
+            )
 
     return catalog
 
@@ -614,7 +630,7 @@ def detect_drift(
     validation_report = validator.validate_directory(target_eidos)
 
     # 3. Component Mapping
-    comp_mappings = map_code_to_components(target_eidos, classification.code_files)
+    comp_mappings = map_code_to_components(target_eidos, classification.code_files, repo_root=root)
     touched_components = sorted({cid for _, cid, _ in comp_mappings})
 
     # 4. Invariant Traceability
@@ -725,21 +741,41 @@ def reconcile_specs(
 
     changed_files = get_git_diff_files(root, base_ref=base_ref, uncommitted=uncommitted)
     classification = classify_changed_files(changed_files, repo_root=root)
-    comp_mappings = map_code_to_components(target_eidos, classification.code_files)
-    catalog = get_living_specs_catalog(target_eidos)
+    comp_mappings = map_code_to_components(target_eidos, classification.code_files, repo_root=root)
+    catalog = get_living_specs_catalog(target_eidos, repo_root=root)
 
     suggestions: list[ReconcileSuggestion] = []
     file_to_comps: dict[str, list[str]] = {}
     for cf, cid, spath in comp_mappings:
         file_to_comps.setdefault(cf, []).append(f"{cid} ({spath})")
 
+    from eidos.core.graph_index import get_architectural_index
+
+    idx = get_architectural_index(repo_root=root, eidos_dir=target_eidos) if target_eidos.exists() else None
+
     for cf in classification.code_files:
-        candidates = file_to_comps.get(cf, ["eidos/architecture/system-architecture.adoc"])
+        base_candidates = file_to_comps.get(cf, [])
+        candidates = list(base_candidates)
+        if idx:
+            for entry in base_candidates:
+                cid = entry.split()[0]
+                neighbors = idx.get_k_hop_neighborhood(cid, max_hops=1)
+                for n in neighbors:
+                    ntype = n.get("type")
+                    nid = n.get("id")
+                    npath = n.get("data", {}).get("file_path") or n.get("data", {}).get("path")
+                    if ntype in ("tech/contract", "product/capability") and npath:
+                        cand_str = f"{nid} ({npath})"
+                        if cand_str not in candidates:
+                            candidates.append(cand_str)
+        if not candidates:
+            candidates = ["eidos/architecture/system-architecture.adoc"]
+
         suggestions.append(
             ReconcileSuggestion(
                 code_file=cf,
                 candidate_specs=candidates,
-                reason="Code modified; corresponding architecture manifest or contract must reflect new behaviors.",
+                reason="Code modified; corresponding architecture manifest, contract, or capability must reflect new behaviors.",
             )
         )
 

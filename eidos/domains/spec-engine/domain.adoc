@@ -20,6 +20,7 @@ technical_mapping:
     - "src/eidos/core/models.py"
     - "src/eidos/core/validator.py"
     - "src/eidos/core/scaffolder.py"
+    - "src/eidos/core/graph_index.py"
     - "src/eidos/cli/main.py"
   dependencies:
     - "DOM-VCS-LIFECYCLE"

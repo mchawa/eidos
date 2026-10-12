@@ -1,0 +1,79 @@
+---
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
+id: CNT-EIDOS-CORE
+name: "Eidos Living Specification & Design Core Engine"
+container_type: "library"
+runtime: "Python 3.12 / Hatchling / PyYAML / jsonschema"
+package_path: "src/eidos/core"
+
+domain_binding: DOM-SPEC-ENGINE
+
+components:
+  - id: CMP-SPEC-PARSER
+    name: "SpecParser"
+    responsibility: "Extracts YAML frontmatter metadata and body text from AsciiDoc documents."
+    source_path: "src/eidos/core/parser.py"
+  - id: CMP-SPEC-VALIDATOR
+    name: "SpecValidator"
+    responsibility: "Resolves bundled JSON/YAML schemas, validates document frontmatters, and verifies cross-references."
+    source_path: "src/eidos/core/validator.py"
+  - id: CMP-LIFECYCLE-SCAFFOLDER
+    name: "LifecycleScaffolder"
+    responsibility: "Scaffolds living specifications, conducts reference safety checks, manages flat SpecDelta lifecycles, and maintains symlink views."
+    source_path: "src/eidos/core/scaffolder.py"
+  - id: CMP-DESIGN-ENGINE
+    name: "DesignEngine"
+    responsibility: "Manages Multi-Design Systems, W3C DTCG tokens, UI component contracts, and screen layout/state machines."
+    source_path: "src/eidos/core/scaffolder.py"
+  - id: CMP-REPO-INITIALIZER
+    name: "RepositoryInitializer"
+    responsibility: "Bootstraps repositories with living specification hierarchies, baseline policies, architecture, and self-contained gitignore."
+    source_path: "src/eidos/core/scaffolder.py"
+  - id: CMP-ASSET-LOCATOR
+    name: "AssetLocator"
+    responsibility: "Locates externalized specification schemas and canonical plugin reference assets across local checkouts and wheels."
+    source_path: "src/eidos/core/assets.py"
+  - id: CMP-CONTEXT-SLICER
+    name: "ContextSlicer"
+    responsibility: "Extracts compact, token-efficient architectural subgraph slices across C4 components, contracts, capabilities, invariants, and policies."
+    source_path: "src/eidos/core/context.py"
+
+dependencies:
+  internal_containers: []
+  external_services:
+    - "Git CLI (local)"
+
+contracts:
+  provides: []
+  consumes: []
+
+quality_attributes:
+  stateless: true
+  idempotent: true
+  concurrency_model: "synchronous_library"
+  max_memory_mb: 256
+---
+= Container: Eidos Living Specification Core Engine (C4 Level 2 Container & Level 3 Components)
+:toc: left
+
+== Architectural Boundary
+This container represents the foundational library under `src/eidos/core/`. It owns all specification parsing, JSON Schema validation, multi-design system scaffolding, W3C token management, SpecDelta lifecycle state machines, reference checking, and embedded architectural graph indexing.
+
+== Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
+
+[cols="1,1,2,2", options="header"]
+|===
+| Component ID | Name | Responsibility | Source Path
+| `CMP-SPEC-PARSER` | **SpecParser** | Extracts YAML frontmatter metadata and body text from AsciiDoc documents | `src/eidos/core/parser.py`
+| `CMP-SPEC-VALIDATOR` | **SpecValidator** | Resolves bundled JSON/YAML schemas, validates frontmatters, and checks references | `src/eidos/core/validator.py`
+| `CMP-LIFECYCLE-SCAFFOLDER` | **LifecycleScaffolder** | Manages document lifecycle, template generation, and reference safety checks | `src/eidos/core/scaffolder.py`
+| `CMP-DESIGN-ENGINE` | **DesignEngine** | Multi-design system management, token compilation, and UI state machines | `src/eidos/core/scaffolder.py`
+| `CMP-REPO-INITIALIZER` | **RepositoryInitializer** | Repository scaffolding with living spec hierarchies and gitignore | `src/eidos/core/scaffolder.py`
+| `CMP-ASSET-LOCATOR` | **AssetLocator** | Resolves bundled schemas and plugin assets across packages and repos | `src/eidos/core/assets.py`
+| `CMP-CONTEXT-SLICER` | **ContextSlicer** | Slices token-budgeted architectural subgraphs for AI coding agents | `src/eidos/core/context.py`
+|===
+
+== Quality Attributes & Operational Policies
+* **Statelessness**: The core engine operates statelessly. All state is maintained within the Git repository and accelerated by an ephemeral cache (`.eidos/cache/index.db`).
+* **Validation Determinism**: Schema validation produces deterministic exit codes and structured reports.

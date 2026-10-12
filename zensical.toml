@@ -14,6 +14,7 @@ nav = [
   ]},
   { "Core Concepts" = [
     { "Living Specifications" = "concepts/living-specs.md" },
+    { "Knowledge Graph Index" = "concepts/architectural-index.md" },
     { "Explorations (EXP-*)" = "concepts/explorations.md" },
     { "SpecDeltas (DLT-*)" = "concepts/specdeltas.md" },
     { "Invariant Traceability" = "concepts/invariants.md" },

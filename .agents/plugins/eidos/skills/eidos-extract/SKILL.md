@@ -14,7 +14,7 @@ Transform an unannotated codebase into a synchronized, self-describing Eidos wor
 ```
  Existing Codebase                    Eidos Living Specifications
  ┌─────────────────────────┐          ┌────────────────────────────────────────┐
- │ package.json / pyproject │ ──────> │ eidos/architecture/components/*.adoc   │
+ │ package.json / pyproject │ ──────> │ eidos/architecture/containers/*.adoc   │
  │ src/ routes / handlers  │ ──────> │ eidos/architecture/contracts/*.adoc    │
  │ models / services       │ ──────> │ eidos/domains/<name>/domain.adoc       │
  │ business rules / checks │ ──────> │ eidos/domains/<name>/capabilities/*.adoc│
@@ -43,24 +43,26 @@ Scan package configurations and build manifests to identify deployable container
 2. **Catalog Containers**:
    Identify whether each package is a `service`, `library`, `cli_app`, `frontend_spa`, or `background_worker`.
 
-3. **Scaffold Component Manifests**:
-   For each package, generate `tech/component` manifests:
+3. **Scaffold Container Manifests (C4 Level 2)**:
+   For each package, generate `tech/container` manifests:
    ```bash
-   eidos spec create component CMP-SERVICE-NAME \
+   eidos spec create container CNT-SERVICE-NAME \
      --title "Service Display Name" \
      --container-type service \
      --runtime "Node.js 20 / Fastify" \
      --package-path "packages/service-name"
    ```
 
-4. **Document Internal Modules (C4 Level 3 Whitebox)**:
-   Inspect source directories and record key modules in `c4_internal_components` within each component manifest:
+4. **Document Internal Modules (C4 Level 3 Components)**:
+   Inspect source directories and record key modules in `components` within each container manifest:
    ```yaml
-   c4_internal_components:
-     - name: "TokenManager"
+   components:
+     - id: "CMP-AUTH-TOKEN-MGR"
+       name: "TokenManager"
        responsibility: "Signs and verifies JWT session tokens."
        source_path: "src/auth/tokens.ts"
-     - name: "UserStore"
+     - id: "CMP-AUTH-USER-STORE"
+       name: "UserStore"
        responsibility: "PostgreSQL persistence adapter for account profiles."
        source_path: "src/storage/users.ts"
    ```
@@ -79,7 +81,7 @@ Locate external communication boundaries and translate them into `tech/contract`
      eidos spec create contract CTR-SERVICE-API \
        --title "Service Public REST API" \
        --protocol openapi \
-       --owning-component CMP-SERVICE-NAME \
+       --owning-container CNT-SERVICE-NAME \
        --specification-file "openapi.yaml"
      ```
 
@@ -244,7 +246,7 @@ Assemble the top-level System Context and validate the extracted specification.
 
 | Artifact in Codebase | Target Eidos Specification | Schema |
 | :--- | :--- | :--- |
-| `package.json`, `Cargo.toml`, `pyproject.toml` | `eidos/architecture/components/<name>.adoc` | `tech/component` |
+| `package.json`, `Cargo.toml`, `pyproject.toml` | `eidos/architecture/containers/<name>.adoc` | `tech/container` |
 | `openapi.yaml`, `.proto`, CLI parser | `eidos/architecture/contracts/<name>.adoc` | `tech/contract` |
 | Feature directory, business module | `eidos/domains/<name>/domain.adoc` | `product/domain` |
 | Controller endpoint, user journey, service method | `eidos/domains/<name>/capabilities/<name>.adoc` | `product/capability` |

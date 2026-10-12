@@ -20,6 +20,7 @@ business:
 technical:
   components:
     - "src/eidos/vcs/drift.py"
+    - "src/eidos/core/graph_index.py"
   contracts:
     interfaces:
       - "eidos drift [--strict]"
@@ -36,9 +37,13 @@ technical:
 :toc: left
 
 == Intent
-Ensures that source code and living specifications never diverge. Through local Git diff analysis and automated CI/CD gating, Eidos continuously verifies that code modifications are paired with living specification updates, preserving system documentation integrity with zero manual overhead.
+Ensures that source code and living specifications never diverge. Through local Git diff analysis, embedded knowledge graph lookups, and automated CI/CD gating, Eidos continuously verifies that code modifications are paired with living specification updates, preserving system documentation integrity with zero manual overhead.
+
+By leveraging the SQLite Knowledge Graph (`.eidos/cache/index.db`), drift detection and reconciliation map code diffs directly to architectural components and traverse relational neighborhoods to recommend exact specification targets.
 
 == Key Responsibilities
-* Inspecting working trees and commits for unmapped architectural changes.
-* Enforcing the Single Source of Truth policy (`POL-001`) during CI/CD checks.
-* Generating human-readable and machine-verifiable drift summaries.
+* **Git Diff Inspection**: Inspecting working trees, staged changes, and branch heads for unmapped architectural modifications.
+* **Graph-Powered Reverse Symbol Resolution**: Resolving modified source code file paths to internal C4 modules and owning container IDs (`CMP-*`) in sub-millisecond SQLite queries rather than linear disk crawls.
+* **1-Hop Neighborhood Reconciliation**: Querying the knowledge graph during `eidos reconcile` to discover bound interface contracts (`CTR-*`), domain capabilities (`CAP-*`), and parent containers affected by code changes.
+* **Single Source of Truth Enforcement**: Gating CI/CD pipelines via `eidos drift --strict` to guarantee that no pull request merges with un-synchronized specifications (`POL-001`).
+* **Direct Mode Frictionless Co-evolution**: Enabling developers and autonomous agents to write code first and instantly reconcile specifications in the same commit.

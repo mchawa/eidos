@@ -40,11 +40,11 @@ eidos plugin install --target all
 
 | Target Flag | Target Path / Config | Description |
 | :--- | :--- | :--- |
-| `--target all` | All environments below | Installs Antigravity plugin bundle and generates Claude & Cursor MCP configs |
+| `--target all` | All environments below | Installs Antigravity/agent plugin bundle, Claude Code plugin, and generates Cursor MCP config |
 | `--target antigravity` | `.agents/plugins/eidos/` | Installs plugin bundle with rules, skills, hooks, and extensions |
-| `--target claude` | `.claude/mcp.json` | Configures the project-level MCP server for Claude Code |
+| `--target claude` | `.claude/skills/eidos/` | Installs Claude Code plugin, skills, `.mcp.json`, and configures `.claude/settings.json` and `.claude/mcp.json` |
 | `--target cursor` | `.cursor/mcp.json` | Configures the project-level MCP server for Cursor |
-| `--target project` | `.agents/plugins/eidos/` | Standard project-scope installation (alias for `workspace`) |
+| `--target project` | `.agents/plugins/eidos/` | Standard project-scope installation conforming strictly to `agent-plugins.org v1.0.0` |
 
 ---
 
@@ -92,7 +92,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ### 2. How Antigravity Uses Eidos
 
-    * **Automatic System Rules**: Antigravity automatically loads `.agents/plugins/eidos/rules/AGENTS.md` into the agent's context, strictly enforcing the 5 Eidos architectural invariants (Single Source of Truth, No ADRs, SpecDelta lifecycle, Invariant-Test traceability, and Spec validation).
+    * **Master Engineering Skill**: Antigravity indexes `skills/eidos/SKILL.md` to guide agent decision-making, strictly enforcing the 5 Eidos architectural invariants (Single Source of Truth, No ADRs, SpecDelta lifecycle, Invariant-Test traceability, and Spec validation).
     * **Specialized Agent Skills**: Antigravity agents can invoke skills like `/eidos-delta` to scaffold mutations or `/eidos-architecture` to inspect C4 containers.
     * **Quality Hooks**: Quality gates intercept document edits to verify AsciiDoc schemas before changes are finalized.
 
@@ -102,15 +102,24 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ### Claude Code (CLI)
 
-    #### 1. Automatic Configuration
-    Run the installer to configure `.claude/mcp.json`:
+    Claude Code natively supports plugins consisting of `.claude-plugin/plugin.json`, skills, and MCP configurations.
+
+    #### 1. Automatic Installation
+    Install the Eidos Claude Code plugin into your project using the CLI shortcut or target flag:
 
     ```bash
+    eidos install claude
+    # or
     eidos plugin install --target claude
     ```
 
+    This automatically:
+    - Installs the plugin into `.claude/skills/eidos/` with `.claude-plugin/plugin.json`, `.mcp.json`, and all 14 skills.
+    - Enables the plugin in `.claude/settings.json` (`enabledPlugins: {"eidos@skills-dir": true}`).
+    - Configures `.claude/mcp.json` with the Eidos MCP server for compatibility.
+
     #### 2. Manual Configuration (`.claude/mcp.json` or `.mcp.json`)
-    If you prefer to configure manually, place the following in `.claude/mcp.json` or `.mcp.json` in your repository root:
+    If you prefer configuring MCP standalone without the plugin bundle, place the following in `.claude/mcp.json` or `.mcp.json` in your repository root:
 
     ```json
     {
@@ -142,7 +151,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ```markdown
     <!-- CLAUDE.md -->
     ## Eidos Architectural Guidelines
-    - Adhere strictly to the guidelines in `.agents/plugins/eidos/rules/AGENTS.md`.
+    - Adhere strictly to the guidelines in `.agents/plugins/eidos/skills/eidos/SKILL.md`.
     - Treat `eidos/` living specifications as the single source of truth.
     - Never create ADRs; all mutations must follow the SpecDelta lifecycle (`eidos_create_delta`).
     - Validate specifications with `eidos_validate` before completing tasks.
@@ -217,7 +226,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ### 4. Verification in Cursor
 
-    Open **Cursor Settings > Features > MCP Servers**. You will see `eidos` listed with a green status indicator and the 12 available tools (`eidos_validate`, `eidos_detect_drift`, `eidos_reconcile`, etc.).
+    Open **Cursor Settings > Features > MCP Servers**. You will see `eidos` listed with a green status indicator and the 17 available tools (`eidos_validate`, `eidos_get_task_context`, `eidos_search_architecture`, etc.).
 
 === "Generic MCP Clients (Windsurf, Roo Code, Cline)"
 
@@ -264,11 +273,15 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
 ## Exposed MCP Tools Reference
 
-When connected, the Eidos MCP server exposes 13 high-level architectural tools to your AI assistant:
+When connected, the Eidos MCP server exposes 17 high-level architectural tools to your AI assistant:
 
 | MCP Tool | Arguments | Description |
 | :--- | :--- | :--- |
-| `eidos_get_task_context` *(alias `eidos_context`)* | `files`, `component`, `task`, `format`, `path` | Extracts a compact, token-efficient architectural subgraph slice (C4 components, contracts, capabilities, invariants, policies). |
+| `eidos_get_task_context` *(alias `eidos_context`)* | `files`, `component`, `task`, `tier`, `format`, `path` | Extracts a compact, token-efficient architectural subgraph slice (`anchor`, `guardrails`, `deep`). |
+| `eidos_search_architecture` | `query`, `limit`, `path` | Performs BM25 full-text search across living spec titles, requirements, and invariants. |
+| `eidos_get_blast_radius` | `symbol_or_path`, `max_hops`, `path` | Computes transitive dependency and governance blast radius for a symbol or spec path. |
+| `eidos_index_status` | `path` *(optional)* | Reports index health, cache size, total entity/edge counts, and auto-sync freshness state. |
+| `eidos_sync_index` | `path` *(optional)*, `force` | Manually triggers or forces full re-synchronization of the architectural knowledge graph. |
 | `eidos_detect_drift` | `base_ref`, `head_ref`, `uncommitted`, `path` | Inspects spec-to-code drift between git branches or uncommitted changes, validates schemas, and checks test bindings. |
 | `eidos_reconcile` | `base_ref`, `uncommitted`, `path`, `as_prompt` | Analyzes code modifications against the living spec catalog and proposes candidate specs or structured prompt. |
 | `eidos_validate` | `path` *(optional)* | Validates all living specifications against their bundled JSON Schemas and checks bidirectional cross-references. |
@@ -286,7 +299,7 @@ When connected, the Eidos MCP server exposes 13 high-level architectural tools t
 
 ## The 5 Invariant Architectural Rules
 
-Eidos embeds five golden architectural rules in `.agents/plugins/eidos/rules/AGENTS.md`. When the plugin is installed, every AI assistant is instructed to obey them:
+Eidos embeds five golden architectural rules in its master skill `skills/eidos/SKILL.md`. When working in an Eidos repository, every AI assistant is instructed to obey them:
 
 ### 1. Single Source of Truth
 All product requirements, architectural topologies, component interfaces, and policies are codified inside `eidos/` as living AsciiDoc (`.adoc`) files with YAML frontmatter. The living specs are continuously synchronized with the codebase.
@@ -294,7 +307,7 @@ All product requirements, architectural topologies, component interfaces, and po
 ### 2. Absolutely No ADRs
 Traditional Architecture Decision Records (ADRs) become write-only documentation graveyards. Decisions and evolutions are recorded directly in the living specifications:
 * System Context & Containers: `eidos/architecture/system-architecture.adoc`
-* Component Manifests: `eidos/architecture/components/<name>.adoc`
+* Container Manifests: `eidos/architecture/containers/<name>.adoc`
 * Interface Contracts: `eidos/architecture/contracts/<contract>.adoc`
 * Invariants & Policies: `eidos/policies/<policy>.adoc`
 * Semantic Mutations: `eidos/deltas/<delta-id>.adoc`

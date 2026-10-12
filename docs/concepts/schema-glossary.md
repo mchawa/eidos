@@ -17,7 +17,7 @@ This glossary details all **15 document schemas**, their ID conventions, directo
 | `product/persona` | `PER-*` | `personas/*.adoc` | `product/persona.schema.yaml` | Human and autonomous AI actor roles, goals, and pain points. |
 | `product/exploration` | `EXP-*` | `explorations/*.adoc` | `product/exploration.schema.yaml` | Technical spikes, hypotheses, and feasibility discovery. |
 | `tech/architecture` | `ARCH-*` | `architecture/system-architecture.adoc` | `tech/architecture.schema.yaml` | Global Arc42 architecture, C4 Level 1-2 container topology. |
-| `tech/component` | `CMP-*` | `architecture/components/*.adoc` | `tech/component.schema.yaml` | C4 Level 3 component manifests, runtimes, packages, and contracts. |
+| `tech/container` | `CNT-*` | `architecture/containers/*.adoc` | `tech/container.schema.yaml` | C4 Level 2 Container manifests, deployables, runtimes, and nested components. |
 | `tech/contract` | `CTR-*` | `architecture/contracts/*.adoc` | `tech/contract.schema.yaml` | Interface protocol contracts (OpenAPI, gRPC, CLI, AsyncAPI). |
 | `design/system` | `DS-*` | `design/systems/<system>/system.adoc` | `design/system.schema.yaml` | Multi-design system catalog, brand themes, and W3C DTCG tokens. |
 | `design/ui-component` | `UIC-*` | `design/systems/<system>/components/*.adoc` | `design/ui-component.schema.yaml` | UI component contract: variants, states, accessibility, and tests. |
@@ -115,7 +115,7 @@ business:
 
 technical:
   components:
-    - "CMP-EIDOS-CORE"
+    - "CNT-EIDOS-CORE"
   invariants:
     - id: INV-SPEC-VALIDATION
       rule: "Every .adoc file with YAML frontmatter must validate against schema."
@@ -226,27 +226,32 @@ c4_containers:
 
 ---
 
-### `tech/component`
-* **Schema**: `schemas/v1/tech/component.schema.yaml`
-* **ID Convention**: `CMP-<NAME>` (e.g., `CMP-EIDOS-CORE`, `CMP-EIDOS-CLI`)
-* **Location**: `eidos/architecture/components/<name>.adoc` (or co-located in `packages/<name>/component.adoc`)
+### `tech/container`
+* **Schema**: `schemas/v1/tech/container.schema.yaml`
+* **ID Convention**: `CNT-<NAME>` (e.g., `CNT-EIDOS-CORE`, `CNT-EIDOS-CLI`)
+* **Location**: `eidos/architecture/containers/<name>.adoc`
 * **Required Properties**: `type`, `schema`, `id`, `name`, `container_type`, `runtime`, `package_path`
-* **Intent**: C4 Level 3 Whitebox component manifest. Enumerates internal modules, package dependencies, and provided/consumed interface contracts.
+* **Intent**: C4 Level 2 Container manifest (deployable unit, library, service, or CLI). Declares internal C4 Level 3 components (`CMP-*`), internal container dependencies, and provided/consumed interface contracts.
 
 ```yaml
 ---
-type: tech/component
-schema: schemas/v1/tech/component.schema.yaml
-id: CMP-EIDOS-CORE
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
+id: CNT-EIDOS-CORE
 name: "Eidos Core Engine"
-container_type: library # service | library | cli_app | web_app | worker
+container_type: library # service | library | cli_app | web_app | worker | daemon
 runtime: "Python 3.12+"
 package_path: "src/eidos/core"
+components:
+  - id: CMP-CORE-PARSER
+    name: "SpecParser"
+    responsibility: "Parses AsciiDoc files with YAML frontmatter."
+    source_path: "src/eidos/core/parser.py"
 contracts:
   provides:
     - "eidos/architecture/contracts/validator.adoc"
 dependencies:
-  internal_components: []
+  internal_containers: []
   external_services:
     - "pyyaml"
     - "jsonschema"
@@ -259,7 +264,7 @@ dependencies:
 * **Schema**: `schemas/v1/tech/contract.schema.yaml`
 * **ID Convention**: `CTR-<NAME>` (e.g., `CTR-EIDOS-CLI`, `CTR-EIDOS-MCP`)
 * **Location**: `eidos/architecture/contracts/<name>.adoc`
-* **Required Properties**: `type`, `schema`, `id`, `title`, `protocol`, `owning_component`, `specification_file`
+* **Required Properties**: `type`, `schema`, `id`, `title`, `protocol`, `owning_container`, `specification_file`
 * **Intent**: Formal interface protocol boundary contract. Binds APIs, CLI signatures, or RPC services to concrete schemas or specs.
 
 ```yaml
@@ -269,7 +274,7 @@ schema: schemas/v1/tech/contract.schema.yaml
 id: CTR-EIDOS-CLI
 title: "Eidos CLI Interface Contract"
 protocol: cli # openapi | grpc | graphql | asyncapi | cli | sdk
-owning_component: "CMP-EIDOS-CLI"
+owning_container: "CNT-EIDOS-CLI"
 specification_file: "eidos/architecture/contracts/cli.adoc"
 ---
 ```
@@ -375,7 +380,7 @@ title: "Web Living Documentation Portal"
 status: active
 platform: "web"
 design_system: "DS-CORE"
-container: "CMP-EIDOS-PORTAL"
+container: "CNT-EIDOS-PORTAL"
 screens:
   - "eidos/design/clients/web-portal/screens/portal-home.adoc"
   - "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
