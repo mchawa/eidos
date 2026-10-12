@@ -4,6 +4,7 @@ schema: schemas/v1/design/screen.schema.yaml
 id: SCR-PORTAL-CATALOG
 title: "Living Specifications Master Catalog View"
 route: "/catalog"
+client: "CLT-WEB-PORTAL"
 status: active
 
 capabilities:

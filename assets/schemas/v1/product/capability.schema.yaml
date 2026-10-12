@@ -74,6 +74,12 @@ properties:
     description: "Design & UI/UX lens: screens, user flows, UI components, and supporting design systems (optional for headless/backend capabilities)."
     additionalProperties: true
     properties:
+      clients:
+        type: array
+        description: "List of client application specification paths delivering this capability."
+        items:
+          type: string
+          description: "Relative path to client specification or client ID (e.g. CLT-WEB-PORTAL)."
       design_systems:
         type: array
         description: "List of design system paths or IDs supporting this capability (e.g. eidos/design/systems/core/system.adoc or DS-CORE)."

@@ -1,6 +1,7 @@
 """Unified data generator synthesizing living specifications into the Web Portal data model."""
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -142,11 +143,13 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         else:
             deltas_by_status.setdefault(status, []).append(delta_item)
 
-    # 4. Multi-Design Systems, Tokens, UI Components, and Screens
+    # 4. Multi-Design Systems, Tokens, UI Components, Clients, Flows, and Screens
     design_data = _extract_design_systems(eidos_path, specs_by_type)
     design_systems = design_data.get("systems", [])
     screens = design_data.get("screens", [])
     ui_components = design_data.get("ui_components", [])
+    clients = design_data.get("clients", [])
+    flows = design_data.get("flows", [])
 
     # 5. Product Explorations & Spikes
     raw_explorations = specs_by_type.get("product/exploration", [])
@@ -186,6 +189,8 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "design_systems_count": len(design_systems),
         "ui_components_count": len(ui_components),
         "screens_count": len(screens),
+        "clients_count": len(clients),
+        "flows_count": len(flows),
         "explorations_count": len(explorations),
     }
 
@@ -204,6 +209,8 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "design_systems": design_systems,
         "ui_components": ui_components,
         "screens": screens,
+        "clients": clients,
+        "flows": flows,
         "explorations": explorations,
         "diagrams": {
             "c4_context": c4_context_mermaid,
@@ -213,7 +220,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
 
 
 def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
-    """Scan and parse multi-design systems, W3C tokens.json, UI components, and screens."""
+    """Scan and parse multi-design systems, W3C tokens.json, UI components, clients, flows, and screens."""
     systems: list[dict[str, Any]] = []
     design_specs = specs_by_type.get("design/system", [])
 
@@ -237,6 +244,47 @@ def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict
                 "brand_name": fm.get("brand_name", ds["title"]),
                 "extends": fm.get("inheritance", {}).get("extends") if isinstance(fm.get("inheritance"), dict) else fm.get("extends"),
                 "tokens": tokens_data,
+            }
+        )
+
+    # Clients
+    clients: list[dict[str, Any]] = []
+    for clt in specs_by_type.get("design/client", []):
+        fm = clt["frontmatter"]
+        clients.append(
+            {
+                "id": clt["id"],
+                "title": clt["title"],
+                "platform": fm.get("platform", "web"),
+                "design_system": fm.get("design_system", "DS-CORE"),
+                "container": fm.get("container", "CMP-EIDOS-PORTAL"),
+                "capabilities": fm.get("capabilities", []),
+                "screens": fm.get("screens", []),
+                "flows": fm.get("flows", []),
+                "body": clt["body"],
+            }
+        )
+
+    # Flows
+    flows: list[dict[str, Any]] = []
+    for fl in specs_by_type.get("design/flow", []):
+        fm = fl["frontmatter"]
+        flow_type = fm.get("flow_type", "client_internal")
+        steps = fm.get("steps", [])
+        body = fl.get("body", "")
+        mermaid = _extract_or_generate_flow_mermaid(fl["id"], flow_type, steps, body)
+        flows.append(
+            {
+                "id": fl["id"],
+                "title": fl["title"],
+                "status": fm.get("status", "active"),
+                "flow_type": flow_type,
+                "client": fm.get("client"),
+                "clients": fm.get("clients", ([fm["client"]] if fm.get("client") else [])),
+                "capabilities": fm.get("capabilities", []),
+                "steps": steps,
+                "mermaid": mermaid,
+                "body": body,
             }
         )
 
@@ -271,6 +319,7 @@ def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict
                 "id": scr["id"],
                 "title": scr["title"],
                 "route": fm.get("route", "/"),
+                "client": fm.get("client", "CLT-WEB-PORTAL"),
                 "system_ref": fm.get("supported_design_systems", ["DS-CORE"])[0] if fm.get("supported_design_systems") else "DS-CORE",
                 "states": states,
                 "slots": fm.get("slots", {}),
@@ -283,6 +332,8 @@ def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict
         "systems": systems,
         "ui_components": ui_components,
         "screens": screens,
+        "clients": clients,
+        "flows": flows,
     }
 
 
@@ -368,3 +419,48 @@ def _generate_screen_state_mermaid(screen_id: str, states: list[Any], transition
             lines.append(f"  {state_names[i]} --> {state_names[i+1]}")
 
     return "\n".join(lines)
+
+
+def _extract_or_generate_flow_mermaid(
+    flow_id: str, flow_type: str, steps: list[dict[str, Any]], body: str
+) -> str:
+    """Extract authored Mermaid block from spec body or generate from steps."""
+    match = re.search(r"\[mermaid\]\s*\n----\s*\n(.*?)\n----", body, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+
+    if not steps:
+        return "flowchart LR\n  Start --> End"
+
+    if flow_type == "cross_client":
+        lines = ["sequenceDiagram", "  autonumber"]
+        participants: list[str] = []
+        for s in steps:
+            clt = s.get("client", "Client")
+            if clt not in participants:
+                participants.append(clt)
+        for p in participants:
+            p_clean = p.replace("-", "_")
+            lines.append(f"  participant {p_clean} as {p}")
+        for s in steps:
+            clt = s.get("client", participants[0]).replace("-", "_")
+            title = s.get("title", f"Step {s.get('step', '')}").replace('"', "'")
+            action = s.get("action", "").replace('"', "'")
+            lines.append(f"  Note over {clt}: {title}")
+            lines.append(f"  {clt}->>{clt}: {action}")
+        return "\n".join(lines)
+    else:
+        lines = ["flowchart LR"]
+        for i, s in enumerate(steps):
+            step_num = s.get("step", i + 1)
+            title = s.get("title", f"Step {step_num}").replace('"', "'")
+            screen = s.get("screen", "")
+            scr_label = f"<br/><small>{Path(screen).stem}</small>" if screen else ""
+            lines.append(f'  step{step_num}["<b>Step {step_num}: {title}</b>{scr_label}"]')
+        for i in range(len(steps) - 1):
+            s_curr = steps[i]
+            trigger = s_curr.get("action", "next").replace('"', "'")
+            if len(trigger) > 28:
+                trigger = trigger[:25] + "..."
+            lines.append(f'  step{steps[i].get("step", i+1)} -->|"{trigger}"| step{steps[i+1].get("step", i+2)}')
+        return "\n".join(lines)

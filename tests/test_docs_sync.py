@@ -15,7 +15,7 @@ def test_documentation_and_schemas_in_sync():
 
     # 1. Verify all canonical v1 schemas are represented in docs/concepts/schema-glossary.md
     schema_files = sorted(glob.glob(str(repo_root / "assets/schemas/v1/**/*.yaml"), recursive=True))
-    assert len(schema_files) == 13, f"Expected 13 canonical schemas, found {len(schema_files)}"
+    assert len(schema_files) == 15, f"Expected 15 canonical schemas, found {len(schema_files)}"
 
     glossary_path = repo_root / "docs/concepts/schema-glossary.md"
     assert glossary_path.exists(), "Schema glossary docs/concepts/schema-glossary.md is missing"
@@ -53,6 +53,7 @@ def test_documentation_and_schemas_in_sync():
         "components",
         "info",
         "mcp",
+        "context",
     ]
     for cmd in expected_commands:
         assert f"eidos {cmd}" in cli_doc_text, f"Command 'eidos {cmd}' is not documented in {cli_doc_path}"

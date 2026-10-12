@@ -27,6 +27,9 @@ properties:
   route:
     type: string
     description: "URL path, view surface, or deep link identifier (e.g. '/checkout', '/settings/billing', 'App > CheckoutModal')."
+  client:
+    type: string
+    description: "ID or relative path of the owning client application (e.g. CLT-WEB-PORTAL)."
   status:
     type: string
     pattern: "^[a-z0-9_-]+$"

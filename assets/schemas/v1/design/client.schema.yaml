@@ -1,0 +1,72 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: ClientSchema
+description: "Defines a client application surface (web, mobile, desktop, CLI) or tenant runtime, linking its bound design system, C4 container, owned screens, and internal flows."
+type: object
+required:
+  - type
+  - schema
+  - id
+  - title
+  - status
+  - platform
+  - design_system
+properties:
+  type:
+    type: string
+    const: "design/client"
+    description: "The fixed document type identifier. Must always be 'design/client'."
+  schema:
+    type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
+  id:
+    type: string
+    pattern: "^CLT-[A-Z0-9_-]+$"
+    description: "Unique client identifier following the CLT-<NAME> convention (e.g. CLT-WEB-PORTAL, CLT-MOBILE-APP)."
+  title:
+    type: string
+    description: "Display title of the client application or platform."
+  status:
+    type: string
+    pattern: "^[a-z0-9_-]+$"
+    description: "Lifecycle status: active, proposed, draft, deprecated."
+    examples:
+      - "active"
+      - "proposed"
+      - "draft"
+      - "deprecated"
+  platform:
+    type: string
+    description: "Runtime platform surface: web, mobile-ios, mobile-android, desktop, tui, or multi-platform."
+    enum:
+      - "web"
+      - "mobile-ios"
+      - "mobile-android"
+      - "desktop"
+      - "tui"
+      - "multi-platform"
+  design_system:
+    type: string
+    description: "ID or relative path to the primary design system styling this client (e.g. 'DS-CORE' or 'eidos/design/systems/core/system.adoc')."
+  supported_themes:
+    type: array
+    description: "List of alternative or white-label tenant design systems supported by this client."
+    items:
+      type: string
+  container:
+    type: string
+    description: "ID or relative path to the C4 Level 2 Container manifest implementing this client (e.g. 'CMP-EIDOS-PORTAL')."
+  capabilities:
+    type: array
+    description: "List of product capabilities delivered on this client surface."
+    items:
+      type: string
+  screens:
+    type: array
+    description: "List of screen specifications owned and rendered by this client."
+    items:
+      type: string
+  flows:
+    type: array
+    description: "List of interaction flow specifications native to this client."
+    items:
+      type: string

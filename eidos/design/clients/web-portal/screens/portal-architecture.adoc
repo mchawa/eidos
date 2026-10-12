@@ -4,6 +4,7 @@ schema: schemas/v1/design/screen.schema.yaml
 id: SCR-PORTAL-ARCHITECTURE
 title: "Technical Architecture & C4 Topologies View"
 route: "/architecture"
+client: "CLT-WEB-PORTAL"
 status: active
 
 capabilities:

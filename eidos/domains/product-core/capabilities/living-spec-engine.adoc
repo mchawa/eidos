@@ -17,15 +17,20 @@ business:
     - eidos/policies/POL-003-continuous-documentation-sync.adoc
 
 experience:
+  clients:
+    - "eidos/design/clients/web-portal/client.adoc"
   design_systems:
     - "eidos/design/systems/core/system.adoc"
   screens:
-    - "eidos/design/screens/portal-home.adoc"
-    - "eidos/design/screens/portal-business.adoc"
-    - "eidos/design/screens/portal-design.adoc"
-    - "eidos/design/screens/portal-architecture.adoc"
-    - "eidos/design/screens/portal-deltas.adoc"
-    - "eidos/design/screens/portal-catalog.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-home.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-business.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-design.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-architecture.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-deltas.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
+  flows:
+    - "eidos/design/clients/web-portal/flows/spec-exploration.adoc"
+    - "eidos/design/flows/cli-serve-and-browse.adoc"
   ui_components:
     - "eidos/design/systems/core/components/portal-shell.adoc"
     - "eidos/design/systems/core/components/portal-sidebar.adoc"
@@ -50,7 +55,7 @@ technical:
       rule: "The system must generate an interactive web portal and static site visualizing C4 architecture, domains, and SpecDeltas without external Node.js dependencies."
       test_binding: "tests/test_portal.py::test_portal_data_generation"
     - id: INV-DOCS-SYNCHRONIZATION
-      rule: "All 13 living specification schemas, CLI command interfaces, and C4 components must be accurately documented in docs/ and pass strict static site compilation."
+      rule: "All 15 living specification schemas, CLI command interfaces, and C4 components must be accurately documented in docs/ and pass strict static site compilation."
       test_binding: "tests/test_docs_sync.py::test_documentation_and_schemas_in_sync"
 ---
 = Capability: Living Baseline Specification Engine

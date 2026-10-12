@@ -38,11 +38,20 @@ def test_portal_data_generation():
     assert "CMP-EIDOS-PORTAL" in comp_ids
     assert "CMP-EIDOS-DOCS" in comp_ids
 
-    # Design systems, UI components, and screens verification
+    # Design systems, UI components, clients, flows, and screens verification
     assert ov["design_systems_count"] >= 1
     assert ov["ui_components_count"] >= 3
     assert ov["screens_count"] >= 6
+    assert ov["clients_count"] >= 1
+    assert ov["flows_count"] >= 2
     assert ov["explorations_count"] >= 1
+
+    clt_ids = {c["id"] for c in data["clients"]}
+    assert "CLT-WEB-PORTAL" in clt_ids
+
+    flow_ids = {f["id"] for f in data["flows"]}
+    assert "FLOW-PORTAL-EXPLORATION" in flow_ids
+    assert "FLOW-CLI-SERVE-AND-BROWSE" in flow_ids
 
     uic_ids = {u["id"] for u in data["ui_components"]}
     assert "UIC-PORTAL-SHELL" in uic_ids
@@ -116,9 +125,23 @@ def test_static_portal_builder(tmp_path: Path):
     assert "expandAllTreeGrid" in index_html
     assert "collapseAllTreeGrid" in index_html
 
+    # Verify Multi-Client Architecture & Interaction Flows (SCR-PORTAL-DESIGN)
+    assert 'id="designClientSelect"' in index_html
+    assert 'id="activeClientDetails"' in index_html
+    assert 'id="clientFlowsPanel"' in index_html
+    assert 'id="omnichannelFlowsPanel"' in index_html
+    assert "handleDesignClientSwitch" in index_html
+    assert "initDesignClientSelect" in index_html
+    assert "renderClientFlows" in index_html
+    assert "renderOmnichannelFlows" in index_html
+
     with open(data_file, encoding="utf-8") as f:
         json_data = json.load(f)
     assert json_data["overview"]["system_id"] == "SYS-EIDOS-001"
+    assert json_data["overview"]["clients_count"] >= 1
+    assert json_data["overview"]["flows_count"] >= 2
+    assert any(c["id"] == "CLT-WEB-PORTAL" for c in json_data["clients"])
+    assert any(f["id"] == "FLOW-PORTAL-EXPLORATION" for f in json_data["flows"])
 
 
 def test_portal_http_server():

@@ -4,6 +4,7 @@ schema: schemas/v1/design/screen.schema.yaml
 id: SCR-PORTAL-DESIGN
 title: "Design Systems & Experience View"
 route: "/design"
+client: "CLT-WEB-PORTAL"
 status: active
 
 capabilities:
@@ -13,6 +14,9 @@ supported_design_systems:
   - "eidos/design/systems/core/system.adoc"
 
 slots:
+  client_application_switcher: "UIC-PORTAL-SHELL"
+  client_interaction_flows: "UIC-PORTAL-SHELL"
+  omnichannel_journeys: "UIC-PORTAL-SHELL"
   design_systems_roster: "UIC-PORTAL-SHELL"
   w3c_tokens_studio: "UIC-PORTAL-SHELL"
   ui_components_catalog: "UIC-PORTAL-SHELL"
@@ -22,7 +26,7 @@ states:
   - name: "loading"
     description: "Skeleton loader displayed during tokens and component extraction."
   - name: "active"
-    description: "Interactive tokens studio, UI component inventory, and screen state machine visualizer."
+    description: "Interactive tokens studio, UI component inventory, client switcher, interaction flows, and screen state machine visualizer."
   - name: "error"
     description: "Alert state when tokens or design specifications fail validation."
 ---
@@ -31,6 +35,8 @@ states:
 
 == 1. View Purpose & Design Scope
 The Design Systems View (`SCR-PORTAL-DESIGN`) connects business capabilities with the visual user experience:
+* **Client Applications & Multi-Experience (CLT-*)**: Interactive client switcher (`designClientSelect`), client container bindings, and scoped screen topologies.
+* **Interaction Flows (FLOW-*)**: Client-internal journeys (`FLOW-PORTAL-EXPLORATION`) and cross-client omnichannel flows (`FLOW-CLI-SERVE-AND-BROWSE`) with dynamic Mermaid diagrams.
 * **Multi-Design Systems Catalog (DS-*)**: Registered design systems, base inheritance, and client brand overrides.
 * **W3C DTCG Tokens Studio**: Visual swatches for brand palettes, neutral surfaces, functional feedback colors, spacing scales, and typography.
 * **UI Component Contracts (UIC-*)**: Visual component manifests with variants, supported interaction states, and accessibility invariants (WCAG, ARIA, keyboard navigation).

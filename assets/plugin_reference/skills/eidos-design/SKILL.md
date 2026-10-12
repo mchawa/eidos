@@ -1,11 +1,11 @@
 ---
 name: eidos-design
-description: Author, inspect, and maintain Eidos Multi-Design Systems, W3C Design Tokens, UI component contracts, screen state machines, and bidirectional links to product capabilities and SpecDeltas.
+description: Author, inspect, and maintain Eidos Multi-Design Systems, Client Applications (CLT-*), W3C Design Tokens, UI component contracts, screen state machines, and interaction flows (FLOW-*).
 ---
 
-# Eidos Multi-Design System & UI/UX Authoring (`eidos-design`)
+# Eidos Multi-Design System, Client & UI/UX Authoring (`eidos-design`)
 
-This skill equips AI agents to author, inspect, and maintain **Multi-Design Systems**, **W3C Design Tokens**, **UI Component Manifests**, and **Screen State Machines** within an Eidos repository, bridging the gap between product capabilities, visual design, and frontend code.
+This skill equips AI agents to author, inspect, and maintain **Multi-Design Systems**, **Client Applications (`CLT-*`)**, **W3C Design Tokens**, **UI Component Manifests (`UIC-*`)**, **Screen State Machines (`SCR-*`)**, and **Interaction Flows (`FLOW-*`)** within an Eidos repository, bridging the gap between product capabilities, visual design, and frontend code.
 
 ---
 
@@ -14,13 +14,18 @@ This skill equips AI agents to author, inspect, and maintain **Multi-Design Syst
 1. **Multi-Design System Topology**:
    - A single product can support multiple client or brand design systems (e.g. `DS-CORE`, `DS-ACME`, `DS-GLOBEX`).
    - Client design systems inherit from a base system (`extends: "DS-CORE"`), supplying brand token overrides and optional specialized components.
-2. **Official W3C Design Tokens**:
+2. **Client Application Manifests (`CLT-*`)**:
+   - Dedicated client specifications bind frontend targets (web SPA, iOS, Android, desktop, TUI) to their design system (`design_system: "DS-CORE"`), monorepo container (`container: "CMP-..."`), scoped screens, and flows.
+3. **Client-Internal & Omnichannel Flows (`FLOW-*`)**:
+   - Client-internal user journeys are co-located within the client folder (`eidos/design/clients/<client>/flows/`).
+   - Cross-client omnichannel journeys live at the top level (`eidos/design/flows/`), tracing transitions across CLI, Web, and backend services.
+4. **Official W3C Design Tokens**:
    - Tokens follow the W3C Design Tokens Community Group (DTCG) standard (`$value`, `$type`, `$description`).
    - Interoperable with Style Dictionary, Tailwind CSS, CSS variables, and Figma Token Studio.
-3. **The Product-Experience-Tech Trinity**:
-   - Capabilities (`CAP-*`) link directly to their user-facing screens, flows, and design systems via the `experience` block.
-   - Screens (`SCR-*`) declare their required layout slots, state machines, and supported design systems.
-4. **Enforced Accessibility (a11y) Invariants**:
+5. **The Product-Experience-Tech Trinity**:
+   - Capabilities (`CAP-*`) link directly to their user-facing clients, screens, flows, and design systems via the `experience` block.
+   - Screens (`SCR-*`) declare their required layout slots, state machines, owning client, and supported design systems.
+6. **Enforced Accessibility (a11y) Invariants**:
    - Every UI component specifies WCAG target level (AA/AAA), WAI-ARIA role, and keyboard interaction behavior bound to automated tests.
 
 ---
@@ -38,22 +43,21 @@ eidos/design/
 │   │       ├── modal.adoc
 │   │       └── input.adoc
 │   │
-│   ├── acme/                         <- Client Acme Design System
-│   │   ├── system.adoc               <- extends: "DS-CORE", client_id: "acme"
-│   │   ├── tokens.json               <- Acme brand token overrides
-│   │   └── components/               <- (Optional) Acme-specific custom components
-│   │       └── header.adoc           <- implements: "UIC-CORE-HEADER"
-│   │
-│   └── globex/                       <- Client Globex Design System
-│       ├── system.adoc               <- extends: "DS-CORE", client_id: "globex"
-│       └── tokens.json
+│   └── acme/                         <- White-Label Theme
+│       ├── system.adoc               <- extends: "DS-CORE", client_id: "acme"
+│       └── tokens.json               <- Acme brand token overrides
 │
-├── screens/                          <- Product Screens (SCR-*)
-│   ├── checkout.adoc                 <- route: "/checkout", slots, states
-│   └── dashboard.adoc
+├── clients/                          <- Client Applications (CLT-*)
+│   └── web-portal/                   <- Web Client target
+│       ├── client.adoc               <- type: design/client (id: CLT-WEB-PORTAL)
+│       ├── screens/                  <- Client-owned Screens (SCR-*)
+│       │   ├── portal-home.adoc      <- client: "CLT-WEB-PORTAL", route: "/"
+│       │   └── portal-catalog.adoc   <- client: "CLT-WEB-PORTAL", route: "/catalog"
+│       └── flows/                    <- Client-internal user journeys (FLOW-*)
+│           └── spec-exploration.adoc <- flow_type: client_internal
 │
-└── flows/                            <- User Interaction Flows (FLOW-*)
-    └── onboarding.adoc
+└── flows/                            <- Omnichannel / Cross-Client Journeys
+    └── cli-serve-and-browse.adoc     <- flow_type: cross_client (CLI -> Portal)
 ```
 
 ---
@@ -184,9 +188,88 @@ Detailed component behavior and rendering rules.
 
 ---
 
-## 5. Screen Manifest Anatomy (`screen.schema.yaml`)
+## 5. Client Application Manifest Anatomy (`client.schema.yaml`)
 
-Screen specifications live in `eidos/design/screens/<name>.adoc`:
+Client manifests live in `eidos/design/clients/<client-name>/client.adoc`:
+
+```yaml
+---
+type: design/client
+schema: schemas/v1/design/client.schema.yaml
+id: CLT-WEB-PORTAL
+title: "Living Web Portal Client"
+status: active
+platform: web
+design_system: "eidos/design/systems/core/system.adoc"
+container: "eidos/architecture/components/portal.adoc"
+
+capabilities:
+  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
+
+screens:
+  - "eidos/design/clients/web-portal/screens/portal-home.adoc"
+  - "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
+
+flows:
+  - "eidos/design/clients/web-portal/flows/spec-exploration.adoc"
+---
+= Client: Living Web Portal Client
+:toc: left
+
+== Client Architecture Overview
+Single Page Application (SPA) serving as the interactive visualization dashboard.
+```
+
+---
+
+## 6. Interaction Flow Anatomy (`flow.schema.yaml`)
+
+Interaction flows document step-by-step user journeys and screen transitions:
+* **Client-Internal Flows**: `eidos/design/clients/<client-name>/flows/<name>.adoc`
+* **Omnichannel Journeys**: `eidos/design/flows/<name>.adoc`
+
+```yaml
+---
+type: design/flow
+schema: schemas/v1/design/flow.schema.yaml
+id: FLOW-PORTAL-EXPLORATION
+title: "Specification Discovery & Inspection Flow"
+status: active
+flow_type: client_internal
+client: "CLT-WEB-PORTAL"
+capabilities:
+  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
+
+steps:
+  - step: 1
+    title: "Access Dashboard"
+    screen: "eidos/design/clients/web-portal/screens/portal-home.adoc"
+    action: "User accesses root portal URL"
+    outcome: "Hero metrics and architectural pillars displayed"
+
+  - step: 2
+    title: "Navigate to Master Catalog"
+    screen: "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
+    action: "User clicks Living Specs Catalog in sidebar"
+    outcome: "Hierarchical Tree-Grid loaded at Level 2 zoom"
+---
+= Flow: Specification Discovery & Inspection Flow
+:toc: left
+
+== Visual Interaction Flowchart
+[mermaid]
+----
+flowchart LR
+  Home["SCR-PORTAL-HOME<br/>Dashboard"] -->|Click Catalog| Cat["SCR-PORTAL-CATALOG<br/>Tree-Grid"]
+  Cat -->|Click Row| Modal["Spec Inspector Drawer"]
+----
+```
+
+---
+
+## 7. Screen Manifest Anatomy (`screen.schema.yaml`)
+
+Screen specifications live in `eidos/design/clients/<client-name>/screens/<name>.adoc`:
 
 ```yaml
 ---
@@ -195,6 +278,7 @@ schema: schemas/v1/design/screen.schema.yaml
 id: SCR-CHECKOUT
 title: "Order Checkout Screen"
 route: "/checkout"
+client: "CLT-WEB-APP"
 status: active
 
 capabilities:
@@ -226,34 +310,35 @@ Define structural layout, responsive behavior, and layout slots.
 
 ---
 
-## 6. Linking Capabilities (`CAP-*`) to Experience
+## 8. Linking Capabilities (`CAP-*`) to Experience
 
 Update `eidos/domains/<domain>/capabilities/<name>.adoc` with the `experience` block:
 
 ```yaml
 experience:
+  clients:
+    - "eidos/design/clients/web-portal/client.adoc"
   screens:
-    - "eidos/design/screens/checkout.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
   flows:
-    - "eidos/design/flows/one-click-buy.adoc"
+    - "eidos/design/clients/web-portal/flows/spec-exploration.adoc"
   design_systems:
     - "eidos/design/systems/core/system.adoc"
-    - "eidos/design/systems/acme/system.adoc"
   ui_components:
-    - "eidos/design/systems/core/components/button.adoc"
+    - "eidos/design/systems/core/components/portal-shell.adoc"
 ```
 
 ---
 
-## 7. SpecDelta Mutations for Design
+## 9. SpecDelta Mutations for Design
 
 When modifying design systems or UI in a SpecDelta (`DLT-*`), declare design mutations:
 
 ```yaml
 mutations:
   - action: modify_screen
-    target_screen: "eidos/design/screens/checkout.adoc"
-    details: "Add express payment selector row above standard payment form."
+    target_screen: "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
+    details: "Add client switcher filter to living specs catalog."
   - action: add_ui_component
     target_ui_component: "eidos/design/systems/core/components/wallet-button.adoc"
     details: "New digital wallet action button."
@@ -266,7 +351,7 @@ blast_radius:
     - "DS-CORE"
     - "DS-ACME"
   impacted_screens:
-    - "eidos/design/screens/checkout.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
 ```
 
 Always run validation before concluding your work:

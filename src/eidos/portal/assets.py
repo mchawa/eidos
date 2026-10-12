@@ -1457,7 +1457,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
             <div class="metric-card" onclick="switchTab('design')">
               <div class="metric-label">Design & Experience</div>
               <div class="metric-val" id="statDesign">0 / 0</div>
-              <div class="metric-sub">UI components & screens</div>
+              <div class="metric-sub">Clients, screens & flows</div>
             </div>
             <div class="metric-card" onclick="switchTab('architecture')">
               <div class="metric-label">C4 Containers</div>
@@ -1662,6 +1662,62 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
 
         <!-- 3. DESIGN & EXPERIENCE VIEW (SCR-PORTAL-DESIGN) -->
         <section id="tab-design" class="tab-content">
+          <!-- Client Applications & Multi-Experience (CLT-*) -->
+          <div class="panel">
+            <div class="panel-header" style="flex-wrap: wrap; gap: 1rem;">
+              <div>
+                <h2 class="panel-title"><span>💻</span> Client Applications & Multi-Experience (CLT-*)</h2>
+                <p class="panel-desc">Client applications bound to design systems, monorepo containers, and screen topologies</p>
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.6rem;">
+                <label for="designClientSelect" style="font-size: 0.8rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em;">Client:</label>
+                <div class="tree-select-wrapper">
+                  <select id="designClientSelect" onchange="handleDesignClientSwitch(this.value)" class="tree-grid-select">
+                  </select>
+                  <span class="tree-select-icon">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div id="activeClientDetails"></div>
+          </div>
+
+          <!-- Client-Internal Flows -->
+          <div class="panel" id="clientFlowsPanel">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title"><span>🔀</span> Client Interaction Flows (FLOW-*)</h2>
+                <p class="panel-desc">Interactive user journeys and screen progressions within the client application</p>
+              </div>
+            </div>
+            <div id="clientFlowsContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 1.25rem;"></div>
+          </div>
+
+          <!-- Omnichannel & Cross-Client Journeys -->
+          <div class="panel" id="omnichannelFlowsPanel">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title"><span>🌐</span> Omnichannel Journeys & Cross-Client Flows</h2>
+                <p class="panel-desc">End-to-end interactions crossing terminal CLI, web portal, and backend boundaries</p>
+              </div>
+            </div>
+            <div id="omnichannelFlowsContainer" style="display: grid; grid-template-columns: 1fr; gap: 1.25rem;"></div>
+          </div>
+
+          <!-- Product Screens & State Machines -->
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title"><span>📱</span> Product Screen State Machines (SCR-*)</h2>
+                <p class="panel-desc" id="screenStateSubtitle">Verified layout slots and finite state machines across client product views</p>
+              </div>
+            </div>
+            <div id="screenStateMachinesContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 1.25rem;"></div>
+          </div>
+
           <div class="panel">
             <div class="panel-header">
               <div>
@@ -1722,16 +1778,6 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
                 <tbody></tbody>
               </table>
             </div>
-          </div>
-
-          <div class="panel">
-            <div class="panel-header">
-              <div>
-                <h2 class="panel-title"><span>📱</span> Product Screen State Machines (SCR-*)</h2>
-                <p class="panel-desc">Verified layout slots and finite state machines across product views</p>
-              </div>
-            </div>
-            <div id="screenStateMachinesContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 1.25rem;"></div>
           </div>
         </section>
 
@@ -1868,7 +1914,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
                 <p class="panel-desc">Unified hierarchical tree-grid starting with System Archetype, 3 architectural pillars, bounded domains, and specifications</p>
               </div>
               <div class="tree-grid-controls">
-                <span class="badge badge-success" id="catalogHeaderBadge">● 44 Living Specs • 100% Valid</span>
+                <span class="badge badge-success" id="catalogHeaderBadge">● Living Specs • 100% Valid</span>
               </div>
             </div>
 
@@ -1897,7 +1943,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
                   <select id="catalogTypeFilter" onchange="handleCatalogTreeSearch(document.getElementById('catalogSearchInput').value)" class="tree-grid-select">
                     <option value="all">All Architectural Pillars</option>
                     <option value="business">🏛️ 1. Business & Governance (DOM, CAP, POL, PER, EXP)</option>
-                    <option value="design">🎨 2. Design & Experience (DS, UIC, SCR)</option>
+                    <option value="design">🎨 2. Design & Experience (DS, UIC, CLT, SCR, FLOW)</option>
                     <option value="tech">⚙️ 3. Technical Architecture (ARCH, CMP, CTR)</option>
                     <option value="delta">🔄 4. Mutation Lifecycle (DLT)</option>
                   </select>
@@ -2017,7 +2063,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       document.getElementById('statTotalSpecs').innerText = ov.total_specs;
       document.getElementById('statDomainsCaps').innerText = `${ov.domains_count} / ${ov.capabilities_count}`;
       document.getElementById('statInvariants').innerText = ov.invariants_count;
-      document.getElementById('statDesign').innerText = `${ov.ui_components_count || 0} / ${ov.screens_count || 0}`;
+      document.getElementById('statDesign').innerText = `${ov.clients_count || 1} CLT • ${ov.screens_count || 0} SCR`;
       document.getElementById('statContainers').innerText = ov.components_count;
       document.getElementById('statDeltas').innerText = ov.deltas_count;
 
@@ -2031,10 +2077,11 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       renderExplorationsTable();
 
       // 3. Design View
+      initDesignClientSelect();
       renderDesignSystemsTable();
       renderTokenStudio();
       renderUiComponentsTable();
-      renderScreenStateMachines();
+      renderOmnichannelFlows();
 
       // 4. Architecture View
       renderMermaidDiagram('c4ContextDiagram', PORTAL_DATA.diagrams.c4_context);
@@ -2046,6 +2093,8 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       renderKanbanBoard();
 
       // 6. Specs Catalog
+      const catBadge = document.getElementById('catalogHeaderBadge');
+      if (catBadge) catBadge.innerText = `● ${ov.total_specs} Living Specs • 100% Valid`;
       renderCatalog(PORTAL_DATA.specs);
     }
 
@@ -2262,20 +2311,244 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       });
     }
 
-    function renderScreenStateMachines() {
-      const container = document.getElementById('screenStateMachinesContainer');
+    let CURRENT_DESIGN_CLIENT = 'all';
+
+    function initDesignClientSelect() {
+      const select = document.getElementById('designClientSelect');
+      if (!select) return;
+      const clients = PORTAL_DATA.clients || [];
+      select.innerHTML = '';
+
+      if (clients.length > 1) {
+        const allOpt = document.createElement('option');
+        allOpt.value = 'all';
+        allOpt.innerText = `All Clients (${clients.length})`;
+        select.appendChild(allOpt);
+      }
+
+      clients.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.innerText = `${c.title} (${c.id})`;
+        select.appendChild(opt);
+      });
+
+      if (clients.length > 0) {
+        CURRENT_DESIGN_CLIENT = clients[0].id;
+        select.value = CURRENT_DESIGN_CLIENT;
+      } else {
+        CURRENT_DESIGN_CLIENT = 'all';
+      }
+
+      handleDesignClientSwitch(CURRENT_DESIGN_CLIENT);
+    }
+
+    function handleDesignClientSwitch(clientId) {
+      CURRENT_DESIGN_CLIENT = clientId;
+      renderActiveClientDetails(clientId);
+      renderScreenStateMachines(clientId);
+      renderClientFlows(clientId);
+    }
+
+    function renderActiveClientDetails(clientId) {
+      const container = document.getElementById('activeClientDetails');
+      if (!container) return;
+      if (clientId === 'all') {
+        const clients = PORTAL_DATA.clients || [];
+        container.innerHTML = `
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 0.5rem;">
+            ${clients.map(c => `
+              <div class="card" style="background: var(--bg); border: 1px solid var(--border); border-radius: 0.6rem; padding: 1rem; cursor: pointer;" onclick="document.getElementById('designClientSelect').value='${c.id}'; handleDesignClientSwitch('${c.id}');">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                  <span class="code-pill">${c.id}</span>
+                  <span class="badge badge-accent">${c.platform}</span>
+                </div>
+                <h4 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 0.35rem; color: var(--text);">${escapeHtml(c.title)}</h4>
+                <div style="font-size: 0.78rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 0.25rem;">
+                  <div>Design System: <span class="code-pill">${c.design_system}</span></div>
+                  <div>Container: <span class="code-pill">${c.container}</span></div>
+                  <div>Screens: <span class="badge badge-neutral">${(c.screens || []).length}</span> • Flows: <span class="badge badge-neutral">${(c.flows || []).length}</span></div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+        return;
+      }
+
+      const client = (PORTAL_DATA.clients || []).find(c => c.id === clientId);
+      if (!client) {
+        container.innerHTML = `<p style="color: var(--text-dim); font-size: 0.85rem;">Client not found.</p>`;
+        return;
+      }
+
+      const clientScreens = (PORTAL_DATA.screens || []).filter(s => s.client === clientId);
+      const clientFlows = (PORTAL_DATA.flows || []).filter(f => f.flow_type !== 'cross_client' && (f.client === clientId || (f.clients || []).includes(clientId)));
+
+      container.innerHTML = `
+        <div style="background: var(--bg); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; margin-top: 0.5rem;">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;">
+                <span class="code-pill-copy" onclick="copyToClipboard('${client.id}', 'Client ID copied!')" style="font-weight: 700; font-size: 0.88rem;">
+                  <span>${client.id}</span>
+                  <span class="copy-icon">📋</span>
+                </span>
+                <span class="badge badge-accent">Platform: ${client.platform}</span>
+                <span class="badge badge-success">● Active</span>
+              </div>
+              <h3 style="font-size: 1.15rem; font-weight: 800; color: var(--text);">${escapeHtml(client.title)}</h3>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <span class="badge badge-neutral">DS: ${client.design_system}</span>
+              <span class="badge badge-neutral">Container: ${client.container}</span>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; border-top: 1px solid var(--border); padding-top: 0.85rem; font-size: 0.82rem;">
+            <div>
+              <span style="color: var(--text-dim); display: block; font-size: 0.72rem; text-transform: uppercase;">Bound Design System</span>
+              <span class="code-pill" style="margin-top: 2px;">${client.design_system}</span>
+            </div>
+            <div>
+              <span style="color: var(--text-dim); display: block; font-size: 0.72rem; text-transform: uppercase;">C4 Monorepo Container</span>
+              <span class="code-pill" style="margin-top: 2px;">${client.container}</span>
+            </div>
+            <div>
+              <span style="color: var(--text-dim); display: block; font-size: 0.72rem; text-transform: uppercase;">Scoped Screens</span>
+              <span class="badge badge-primary" style="margin-top: 2px;">${clientScreens.length} Screens</span>
+            </div>
+            <div>
+              <span style="color: var(--text-dim); display: block; font-size: 0.72rem; text-transform: uppercase;">Internal Interaction Flows</span>
+              <span class="badge badge-accent" style="margin-top: 2px;">${clientFlows.length} Flows</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderClientFlows(clientId) {
+      const panel = document.getElementById('clientFlowsPanel');
+      const container = document.getElementById('clientFlowsContainer');
+      if (!panel || !container) return;
+
+      const flows = (PORTAL_DATA.flows || []).filter(f => {
+        if (f.flow_type === 'cross_client') return false;
+        if (!clientId || clientId === 'all') return true;
+        return f.client === clientId || (f.clients || []).includes(clientId);
+      });
+
+      if (flows.length === 0) {
+        panel.style.display = 'none';
+        return;
+      }
+      panel.style.display = 'block';
       container.innerHTML = '';
-      (PORTAL_DATA.screens || []).forEach(s => {
+
+      flows.forEach(fl => {
+        const card = document.createElement('div');
+        card.className = 'panel';
+        card.style.background = 'var(--bg-surface)';
+        card.style.margin = '0';
+
+        const stepsHtml = (fl.steps || []).map(s => `
+          <div style="display: flex; gap: 0.6rem; align-items: baseline; font-size: 0.78rem; padding: 0.35rem 0; border-bottom: 1px solid var(--border);">
+            <span class="badge badge-neutral" style="font-weight: 700; flex-shrink: 0;">${s.step || '#'}</span>
+            <div style="flex: 1;">
+              <div style="font-weight: 600; color: var(--text);">${escapeHtml(s.title || '')}</div>
+              <div style="color: var(--text-muted); font-size: 0.74rem;">${escapeHtml(s.action || '')}</div>
+              ${s.outcome ? `<div style="color: var(--success); font-size: 0.72rem;">↳ ${escapeHtml(s.outcome)}</div>` : ''}
+            </div>
+            ${s.screen ? `<span class="code-pill" style="font-size: 0.68rem; flex-shrink: 0;">${s.screen.split('/').pop().replace('.adoc', '')}</span>` : ''}
+          </div>
+        `).join('');
+
+        card.innerHTML = `
+          <div class="panel-header" style="margin-bottom: 0.75rem;">
+            <div>
+              <h3 class="panel-title" style="font-size: 0.95rem;"><span>🔀</span> ${escapeHtml(fl.title)}</h3>
+              <p class="panel-desc" style="font-size: 0.76rem;"><span class="code-pill">${fl.id}</span> • ${(fl.steps || []).length} Steps</p>
+            </div>
+            <span class="badge badge-success" style="font-size: 0.7rem;">${fl.status || 'active'}</span>
+          </div>
+          <div class="mermaid-box mermaid-compact" style="margin-bottom: 0.85rem;">
+            <div class="mermaid" id="flow_mermaid_${fl.id.replace(/-/g, '_')}">${fl.mermaid}</div>
+          </div>
+          <div style="background: var(--bg); border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.6rem 0.8rem;">
+            <div style="font-size: 0.72rem; text-transform: uppercase; color: var(--text-dim); font-weight: 700; margin-bottom: 0.35rem;">Flow Steps Sequence</div>
+            ${stepsHtml}
+          </div>
+        `;
+        container.appendChild(card);
+        renderMermaidDiagram(`flow_mermaid_${fl.id.replace(/-/g, '_')}`, fl.mermaid);
+      });
+    }
+
+    function renderOmnichannelFlows() {
+      const panel = document.getElementById('omnichannelFlowsPanel');
+      const container = document.getElementById('omnichannelFlowsContainer');
+      if (!panel || !container) return;
+
+      const crossFlows = (PORTAL_DATA.flows || []).filter(f => f.flow_type === 'cross_client');
+      if (crossFlows.length === 0) {
+        panel.style.display = 'none';
+        return;
+      }
+      panel.style.display = 'block';
+      container.innerHTML = '';
+
+      crossFlows.forEach(fl => {
+        const card = document.createElement('div');
+        card.className = 'panel';
+        card.style.background = 'var(--bg-surface)';
+        card.style.margin = '0';
+
+        const clientsPills = (fl.clients || []).map(c => `<span class="code-pill">${c}</span>`).join(' ');
+
+        card.innerHTML = `
+          <div class="panel-header" style="margin-bottom: 0.75rem;">
+            <div>
+              <h3 class="panel-title" style="font-size: 1rem;"><span>🌐</span> ${escapeHtml(fl.title)}</h3>
+              <p class="panel-desc" style="font-size: 0.76rem;"><span class="code-pill">${fl.id}</span> • Clients: ${clientsPills} • ${(fl.steps || []).length} Interactions</p>
+            </div>
+            <span class="badge badge-accent" style="font-size: 0.7rem;">Omnichannel Journey</span>
+          </div>
+          <div class="mermaid-box" style="min-height: 220px; margin-bottom: 0.85rem;">
+            <div class="mermaid" id="flow_mermaid_${fl.id.replace(/-/g, '_')}">${fl.mermaid}</div>
+          </div>
+        `;
+        container.appendChild(card);
+        renderMermaidDiagram(`flow_mermaid_${fl.id.replace(/-/g, '_')}`, fl.mermaid);
+      });
+    }
+
+    function renderScreenStateMachines(clientId) {
+      const container = document.getElementById('screenStateMachinesContainer');
+      const subtitle = document.getElementById('screenStateSubtitle');
+      if (!container) return;
+      container.innerHTML = '';
+
+      let screens = PORTAL_DATA.screens || [];
+      if (clientId && clientId !== 'all') {
+        screens = screens.filter(s => s.client === clientId);
+        if (subtitle) subtitle.innerText = `Verified layout slots and finite state machines for client ${clientId}`;
+      } else {
+        if (subtitle) subtitle.innerText = `Verified layout slots and finite state machines across all client product views`;
+      }
+
+      screens.forEach(s => {
         const card = document.createElement('div');
         card.className = 'panel';
         card.style.background = 'var(--bg-surface)';
         card.innerHTML = `
           <div class="panel-header" style="margin-bottom: 0.75rem;">
             <div>
-              <h3 class="panel-title" style="font-size: 0.92rem;"><span>📱</span> ${s.title}</h3>
+              <h3 class="panel-title" style="font-size: 0.92rem;"><span>📱</span> ${escapeHtml(s.title)}</h3>
               <p class="panel-desc" style="font-size: 0.76rem;"><span class="code-pill">${s.id}</span> • Route: <span class="code-pill">${s.route}</span></p>
             </div>
-            <span class="badge badge-primary" style="font-size: 0.7rem;">${s.system_ref}</span>
+            <div style="display: flex; gap: 0.35rem; align-items: center;">
+              <span class="badge badge-accent" style="font-size: 0.68rem;">${s.client || 'CLT-WEB-PORTAL'}</span>
+              <span class="badge badge-primary" style="font-size: 0.68rem;">${s.system_ref}</span>
+            </div>
           </div>
           <div class="mermaid-box mermaid-compact">
             <div class="mermaid" id="screen_mermaid_${s.id.replace(/-/g, '_')}">${s.mermaid}</div>
@@ -2285,6 +2558,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
         renderMermaidDiagram(`screen_mermaid_${s.id.replace(/-/g, '_')}`, s.mermaid);
       });
     }
+
 
     function renderComponentsTable() {
       const compBody = document.querySelector('#componentsTable tbody');
@@ -2367,7 +2641,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
         title: sysSpec ? sysSpec.title : "Eidos Living Architecture Engine",
         type: "product/system",
         icon: "⚡",
-        countTag: "3 Pillars • 44 Specs",
+        countTag: `3 Pillars • ${specs.length} Specs`,
         invariants: "Root Archetype",
         status: "VALID",
         path: sysSpec ? sysSpec.path : "eidos/system.adoc",
@@ -2574,7 +2848,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
         title: "2. Design Systems & Experience",
         type: "pillar/design",
         icon: "🎨",
-        countTag: `${(PORTAL_DATA.design_systems || []).length} DS • ${designSpecs.length} Specs`,
+        countTag: `${(PORTAL_DATA.clients || []).length} Clients • ${designSpecs.length} Specs`,
         invariants: "W3C DTCG Tokens",
         status: "VALID",
         path: "eidos/design/",
@@ -2630,41 +2904,159 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
         });
       });
 
-      // Product Screen State Machines Group
-      const scrSpecs = specs.filter(s => s.type === "design/screen");
-      if (scrSpecs.length > 0) {
+      // Level 2: Client Applications (CLT-*)
+      const clients = PORTAL_DATA.clients || [];
+      clients.forEach(clt => {
+        const cltSpec = findSpec(clt.id);
+        const cltScreens = (PORTAL_DATA.screens || []).filter(s => s.client === clt.id);
+        const cltFlows = (PORTAL_DATA.flows || []).filter(f => f.flow_type !== 'cross_client' && (f.client === clt.id || (f.clients || []).includes(clt.id)));
+        const cltRowId = `clt_${clt.id.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+
         rows.push({
-          id: "group_screens",
+          id: cltRowId,
           parentId: "p_design",
           level: 2,
-          docId: "SCREENS-GROUP",
-          title: "Product Screen State Machines & UX Views",
+          docId: clt.id,
+          title: clt.title || (cltSpec ? cltSpec.title : clt.id),
+          type: "design/client",
+          icon: "💻",
+          countTag: `${cltScreens.length} Screens • ${cltFlows.length} Flows`,
+          invariants: `${clt.platform} • ${clt.design_system}`,
+          status: "VALID",
+          path: cltSpec ? cltSpec.path : `eidos/design/clients/`,
+          isParent: (cltScreens.length + cltFlows.length) > 0,
+          defaultExpanded: true,
+          spec: cltSpec,
+          pillar: "design"
+        });
+
+        // Level 3: Screens under Client
+        cltScreens.forEach(scr => {
+          const scrSpec = findSpec(scr.id);
+          rows.push({
+            id: `scr_${scr.id.replace(/[^a-zA-Z0-9_]/g, '_')}`,
+            parentId: cltRowId,
+            level: 3,
+            docId: scr.id,
+            title: scr.title,
+            type: "design/screen",
+            icon: "📱",
+            countTag: `Route: ${scr.route}`,
+            invariants: `${scr.states?.length || 3} States (LR Flow)`,
+            status: "VALID",
+            path: scrSpec ? scrSpec.path : "eidos/design/clients/",
+            isParent: false,
+            defaultExpanded: false,
+            spec: scrSpec,
+            pillar: "design"
+          });
+        });
+
+        // Level 3: Internal Flows under Client
+        cltFlows.forEach(fl => {
+          const flSpec = findSpec(fl.id);
+          rows.push({
+            id: `fl_${fl.id.replace(/[^a-zA-Z0-9_]/g, '_')}`,
+            parentId: cltRowId,
+            level: 3,
+            docId: fl.id,
+            title: fl.title,
+            type: "design/flow",
+            icon: "🔀",
+            countTag: `${fl.steps?.length || 0} Steps`,
+            invariants: "Client Flow",
+            status: "VALID",
+            path: flSpec ? flSpec.path : "eidos/design/clients/",
+            isParent: false,
+            defaultExpanded: false,
+            spec: flSpec,
+            pillar: "design"
+          });
+        });
+      });
+
+      // Level 2: Omnichannel Interaction Journeys (Cross-Client Flows)
+      const crossFlows = (PORTAL_DATA.flows || []).filter(f => f.flow_type === 'cross_client');
+      if (crossFlows.length > 0) {
+        rows.push({
+          id: "group_cross_flows",
+          parentId: "p_design",
+          level: 2,
+          docId: "CROSS-FLOWS-GROUP",
+          title: "Omnichannel Interaction Journeys (Cross-Client)",
+          type: "design/flow",
+          icon: "🌐",
+          countTag: `${crossFlows.length} Omnichannel Flows`,
+          invariants: "Multi-Client",
+          status: "VALID",
+          path: "eidos/design/flows/",
+          isParent: true,
+          defaultExpanded: true,
+          pillar: "design"
+        });
+
+        crossFlows.forEach(fl => {
+          const flSpec = findSpec(fl.id);
+          rows.push({
+            id: `fl_${fl.id.replace(/[^a-zA-Z0-9_]/g, '_')}`,
+            parentId: "group_cross_flows",
+            level: 3,
+            docId: fl.id,
+            title: fl.title,
+            type: "design/flow",
+            icon: "🔄",
+            countTag: `${fl.steps?.length || 0} Steps`,
+            invariants: "Omnichannel Journey",
+            status: "VALID",
+            path: flSpec ? flSpec.path : "eidos/design/flows/",
+            isParent: false,
+            defaultExpanded: false,
+            spec: flSpec,
+            pillar: "design"
+          });
+        });
+      }
+
+      // Level 2 Fallback: Any unassigned screens
+      const allClientScreenIds = new Set();
+      clients.forEach(clt => {
+        (PORTAL_DATA.screens || []).filter(s => s.client === clt.id).forEach(s => allClientScreenIds.add(s.id));
+      });
+      const unassignedScreens = (PORTAL_DATA.screens || []).filter(s => !allClientScreenIds.has(s.id));
+      if (unassignedScreens.length > 0) {
+        rows.push({
+          id: "group_unassigned_screens",
+          parentId: "p_design",
+          level: 2,
+          docId: "UNASSIGNED-SCREENS",
+          title: "Unassigned Product Screens",
           type: "design/screen",
           icon: "📱",
-          countTag: `${scrSpecs.length} Screens`,
-          invariants: "UI State Flows",
+          countTag: `${unassignedScreens.length} Screens`,
+          invariants: "General Views",
           status: "VALID",
           path: "eidos/design/screens/",
           isParent: true,
           defaultExpanded: true,
           pillar: "design"
         });
-        scrSpecs.forEach(scr => {
+        unassignedScreens.forEach(scr => {
+          const scrSpec = findSpec(scr.id);
           rows.push({
             id: `scr_${scr.id.replace(/[^a-zA-Z0-9_]/g, '_')}`,
-            parentId: "group_screens",
+            parentId: "group_unassigned_screens",
             level: 3,
             docId: scr.id,
             title: scr.title,
             type: "design/screen",
             icon: "📱",
-            countTag: "",
-            invariants: `${scr.frontmatter?.states?.length || 4} States (LR Flow)`,
+            countTag: `Route: ${scr.route}`,
+            invariants: `${scr.states?.length || 3} States`,
             status: "VALID",
-            path: scr.path,
+            path: scrSpec ? scrSpec.path : "eidos/design/",
             isParent: false,
             defaultExpanded: false,
-            spec: scr,
+            spec: scrSpec,
             pillar: "design"
           });
         });
@@ -3004,7 +3396,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       if (!q && pillarFilter === 'all') {
         expandTreeGridToLevel(2);
         const badge = document.getElementById('catalogHeaderBadge');
-        if (badge) badge.innerText = `● 44 Living Specs • 100% Valid`;
+        if (badge) badge.innerText = `● ${PORTAL_DATA.overview?.total_specs || (PORTAL_DATA.specs || []).length} Living Specs • 100% Valid`;
         if (matchPill) matchPill.style.display = 'none';
         return;
       }
@@ -3218,6 +3610,9 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
         setTimeout(() => {
           (PORTAL_DATA.screens || []).forEach(s => {
             renderMermaidDiagram(`screen_mermaid_${s.id.replace(/-/g, '_')}`, s.mermaid);
+          });
+          (PORTAL_DATA.flows || []).forEach(f => {
+            renderMermaidDiagram(`flow_mermaid_${f.id.replace(/-/g, '_')}`, f.mermaid);
           });
         }, 30);
       }

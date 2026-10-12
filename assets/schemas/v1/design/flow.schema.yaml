@@ -1,0 +1,80 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: FlowSchema
+description: "Defines an interaction flow or user journey connecting multiple screens and actions to achieve a product capability."
+type: object
+required:
+  - type
+  - schema
+  - id
+  - title
+  - status
+  - steps
+properties:
+  type:
+    type: string
+    const: "design/flow"
+    description: "The fixed document type identifier. Must always be 'design/flow'."
+  schema:
+    type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
+  id:
+    type: string
+    pattern: "^FLOW-[A-Z0-9_-]+$"
+    description: "Unique flow identifier following the FLOW-<NAME> convention (e.g. FLOW-SPEC-DISCOVERY, FLOW-CLI-SERVE)."
+  title:
+    type: string
+    description: "Display title of the interaction flow."
+  status:
+    type: string
+    pattern: "^[a-z0-9_-]+$"
+    description: "Lifecycle status: active, proposed, draft, deprecated."
+    examples:
+      - "active"
+      - "proposed"
+      - "draft"
+      - "deprecated"
+  flow_type:
+    type: string
+    description: "Scope: 'client_internal' (contained in 1 client) or 'cross_client' (omnichannel journey)."
+    enum:
+      - "client_internal"
+      - "cross_client"
+    default: "client_internal"
+  clients:
+    type: array
+    description: "List of client IDs or paths participating in this flow."
+    items:
+      type: string
+  client:
+    type: string
+    description: "Primary client ID if flow is client-internal."
+  capabilities:
+    type: array
+    description: "List of product capability IDs or paths delivered by this flow."
+    items:
+      type: string
+  steps:
+    type: array
+    description: "Ordered sequence of steps composing the user journey."
+    items:
+      type: object
+      required:
+        - step
+        - title
+      properties:
+        step:
+          type: integer
+        title:
+          type: string
+        screen:
+          type: string
+          description: "Screen ID or path where this step occurs."
+        client:
+          type: string
+          description: "Client surface for this step (for cross-client flows)."
+        action:
+          type: string
+          description: "User action or trigger."
+        outcome:
+          type: string
+          description: "Resulting state or screen transition."

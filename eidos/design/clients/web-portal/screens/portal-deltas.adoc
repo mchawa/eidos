@@ -4,6 +4,7 @@ schema: schemas/v1/design/screen.schema.yaml
 id: SCR-PORTAL-DELTAS
 title: "SpecDeltas Evolution & Kanban Pipeline View"
 route: "/deltas"
+client: "CLT-WEB-PORTAL"
 status: active
 
 capabilities:

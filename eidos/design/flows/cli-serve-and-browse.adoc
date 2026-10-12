@@ -1,0 +1,56 @@
+---
+type: design/flow
+schema: schemas/v1/design/flow.schema.yaml
+id: FLOW-CLI-SERVE-AND-BROWSE
+title: "CLI to Living Web Portal Interaction Flow"
+status: active
+flow_type: cross_client
+clients:
+  - "CLT-WEB-PORTAL"
+capabilities:
+  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
+
+steps:
+  - step: 1
+    title: "Start Portal Daemon"
+    client: "CLT-WEB-PORTAL"
+    action: "Developer runs eidos serve --path eidos --port 3000"
+    outcome: "Python HTTP/JSON server daemon boots and indexes living specifications"
+
+  - step: 2
+    title: "Open Living Web Portal"
+    screen: "eidos/design/clients/web-portal/screens/portal-home.adoc"
+    client: "CLT-WEB-PORTAL"
+    action: "Browser opens http://127.0.0.1:3000"
+    outcome: "Portal Shell renders Dashboard with system metrics and pillars"
+
+  - step: 3
+    title: "Inspect Visual Topology"
+    screen: "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
+    client: "CLT-WEB-PORTAL"
+    action: "User browses Tree-Grid and clicks specification"
+    outcome: "Real-time spec inspector modal opens"
+---
+= Flow: CLI to Living Web Portal Interaction Flow
+:toc: left
+
+== 1. Cross-Client Journey Overview
+The CLI to Web Portal Flow (`FLOW-CLI-SERVE-AND-BROWSE`) illustrates the omnichannel interaction between the terminal CLI developer workflow and the visual Living Web Portal.
+
+== 2. Sequence Diagram
+[mermaid]
+----
+sequenceDiagram
+  actor Dev as Developer
+  participant CLI as Eidos CLI
+  participant Server as Embedded HTTP Server
+  participant Portal as CLT-WEB-PORTAL
+
+  Dev->>CLI: eidos serve --path eidos
+  CLI->>Server: Start daemon on port 3000
+  Server-->>CLI: Listening on http://127.0.0.1:3000
+  CLI->>Portal: Launch browser session
+  Portal->>Server: GET /api/data
+  Server-->>Portal: 200 OK (Living Specs JSON)
+  Portal-->>Dev: Interactive Living Portal rendered
+----

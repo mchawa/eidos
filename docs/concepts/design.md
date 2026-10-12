@@ -1,8 +1,8 @@
-# Multi-Design Systems & UI Contracts
+# Multi-Design Systems, Client Applications & UI Contracts
 
 Frontend architecture frequently suffers from a severe disconnect: design tokens in Figma, UI components in React/Vue/Svelte, and product requirements in Jira drift apart over time. 
 
-Eidos resolves this by establishing **Design as a First-Class Living Specification**, codifying **Multi-Design Systems (`DS-*`)**, **W3C Design Tokens**, **UI Component Manifests (`UIC-*`)**, and **Screen State Machines (`SCR-*`)** directly inside the repository under `eidos/design/`.
+Eidos resolves this by establishing **Design as a First-Class Living Specification**, codifying **Multi-Design Systems (`DS-*`)**, **Client Applications (`CLT-*`)**, **W3C Design Tokens**, **UI Component Manifests (`UIC-*`)**, **Screen State Machines (`SCR-*`)**, and **Interaction Flows (`FLOW-*`)** directly inside the repository under `eidos/design/`.
 
 ---
 
@@ -15,24 +15,27 @@ graph TD
     PER["PER-* (Persona)<br/><i>User / Agent</i>"] -->|Executes JTBD| CAP["CAP-* (Product Capability)<br/><i>e.g. CAP-CHECKOUT-001</i>"]
     
     subgraph Experience Layer
-        CAP -->|experience.screens| SCR["SCR-* (Screen)<br/><i>Route, Slots, State Machine</i>"]
+        CAP -->|experience.clients| CLT["CLT-* (Client Application)<br/><i>e.g. CLT-WEB-PORTAL</i>"]
+        CLT -->|client.screens| SCR["SCR-* (Screen)<br/><i>Route, Slots, State Machine</i>"]
+        CLT -->|client.flows| FLOW["FLOW-* (Interaction Flow)<br/><i>User Journeys & Sequences</i>"]
         SCR -->|slots| UIC["UIC-* (UI Component)<br/><i>Variants, States, a11y Invariants</i>"]
-        UIC -->|design_system| DS["DS-* (Design System)<br/><i>Tokens: Colors, Spacing, Typography</i>"]
+        CLT -->|design_system| DS["DS-* (Design System)<br/><i>Tokens: Colors, Spacing, Typography</i>"]
     end
     
     subgraph Technical Layer
-        CAP -->|technical.components| CMP["CMP-* (Backend / UI Package)"]
-        UIC -->|test_bindings| TEST["Storybook / Playwright / Jest"]
+        CLT -->|client.container| CMP["CMP-* (Backend / UI Package)"]
+        CAP -->|technical.components| CMP
+        UIC -->|test_bindings| TEST["Storybook / Playwright / Vitest"]
     end
 ```
 
-Every user-facing capability in [`capability.schema.yaml`](schema-glossary.md#productcapability) declares an `experience:` block linking directly to screens, user flows, and design systems.
+Every user-facing capability in [`capability.schema.yaml`](schema-glossary.md#productcapability) declares an `experience:` block linking directly to clients, client-owned screens, interaction flows, and design systems.
 
 ---
 
-## 2. Multi-Design System Topology (`DS-*`)
+## 2. Directory Structure (`eidos/design/`)
 
-Enterprise applications often require multi-brand, white-label, or multi-tenant theming. Eidos supports an **inheritance-based multi-design system hierarchy**:
+Eidos employs a scalable multi-client and multi-design-system hierarchy:
 
 ```text
 eidos/design/
@@ -44,22 +47,21 @@ eidos/design/
 │   │       ├── button.adoc           <- id: UIC-CORE-BUTTON
 │   │       └── modal.adoc            <- id: UIC-CORE-MODAL
 │   │
-│   ├── acme/                         <- Client Acme White-Label Theme
-│   │   ├── system.adoc               <- extends: "DS-CORE", client_id: "acme"
-│   │   ├── tokens.json               <- Acme brand token overrides
-│   │   └── components/               <- (Optional) Client-specific component overrides
-│   │       └── header.adoc           <- implements: "UIC-CORE-HEADER"
-│   │
-│   └── globex/                       <- Client Globex Theme
-│       ├── system.adoc               <- extends: "DS-CORE", client_id: "globex"
-│       └── tokens.json
+│   └── acme/                         <- White-Label / Client Theme
+│       ├── system.adoc               <- extends: "DS-CORE", client_id: "acme"
+│       └── tokens.json               <- Brand token overrides
 │
-├── screens/                          <- Product Screens (SCR-*)
-│   ├── checkout.adoc                 <- route: "/checkout", slots, states
-│   └── dashboard.adoc
+├── clients/                          <- Client Applications (CLT-*)
+│   └── web-portal/                   <- Web Client target
+│       ├── client.adoc               <- type: design/client (id: CLT-WEB-PORTAL)
+│       ├── screens/                  <- Client-owned Screens (SCR-*)
+│       │   ├── portal-home.adoc      <- client: "CLT-WEB-PORTAL", route: "/"
+│       │   └── portal-catalog.adoc   <- client: "CLT-WEB-PORTAL", route: "/catalog"
+│       └── flows/                    <- Client-internal user journeys (FLOW-*)
+│           └── spec-exploration.adoc <- flow_type: client_internal
 │
-└── flows/                            <- User Interaction Flows (FLOW-*)
-    └── onboarding.adoc
+└── flows/                            <- Omnichannel / Cross-Client Journeys
+    └── cli-serve-and-browse.adoc     <- flow_type: cross_client (CLI -> Portal)
 ```
 
 ### Base System vs. Brand Extension
@@ -236,7 +238,90 @@ Coordinates payment form submission, address validation, and express wallet inte
 
 ---
 
-## 6. CLI Commands for Design
+## 6. Client Applications (`CLT-*`)
+
+Client manifests (`type: design/client`) bind frontend client targets (web SPA, iOS, Android, desktop, or terminal CLI) to their assigned design system, C4 monorepo container, screens, and interaction flows.
+
+### Client Manifest Example (`eidos/design/clients/web-portal/client.adoc`):
+
+```asciidoc
+---
+type: design/client
+schema: schemas/v1/design/client.schema.yaml
+id: CLT-WEB-PORTAL
+title: "Living Web Portal Client"
+status: active
+platform: web
+design_system: "eidos/design/systems/core/system.adoc"
+container: "eidos/architecture/components/portal.adoc"
+
+capabilities:
+  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
+
+screens:
+  - "eidos/design/clients/web-portal/screens/portal-home.adoc"
+  - "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
+
+flows:
+  - "eidos/design/clients/web-portal/flows/spec-exploration.adoc"
+---
+= Client: Living Web Portal Client
+:toc: left
+
+== Client Architecture Overview
+Single Page Application (SPA) serving as the interactive visualization dashboard for Eidos living specifications.
+```
+
+---
+
+## 7. Interaction Flows (`FLOW-*`)
+
+Interaction flows (`type: design/flow`) document user journeys across screens and systems. Eidos distinguishes two scopes:
+1. **Client-Internal Flows (`flow_type: client_internal`)**: Co-located within the client folder (`eidos/design/clients/<client-name>/flows/`).
+2. **Omnichannel Journeys (`flow_type: cross_client`)**: Top-level interaction flows spanning multiple clients, CLI, and backend boundaries (`eidos/design/flows/`).
+
+### Flow Specification Example (`eidos/design/clients/web-portal/flows/spec-exploration.adoc`):
+
+```asciidoc
+---
+type: design/flow
+schema: schemas/v1/design/flow.schema.yaml
+id: FLOW-PORTAL-EXPLORATION
+title: "Specification Discovery & Inspection Flow"
+status: active
+flow_type: client_internal
+client: "CLT-WEB-PORTAL"
+capabilities:
+  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
+
+steps:
+  - step: 1
+    title: "Access Dashboard"
+    screen: "eidos/design/clients/web-portal/screens/portal-home.adoc"
+    action: "User accesses root portal URL"
+    outcome: "Hero metrics and architectural pillars displayed"
+
+  - step: 2
+    title: "Navigate to Master Catalog"
+    screen: "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
+    action: "User clicks Living Specs Catalog in sidebar"
+    outcome: "Hierarchical Tree-Grid loaded at Level 2 zoom"
+---
+= Flow: Specification Discovery & Inspection Flow
+:toc: left
+
+== Visual Interaction Flowchart
+[mermaid]
+----
+flowchart LR
+  Home["SCR-PORTAL-HOME<br/>Dashboard"] -->|Click Catalog| Cat["SCR-PORTAL-CATALOG<br/>Tree-Grid"]
+  Cat -->|Click Row| Modal["Spec Inspector Drawer"]
+----
+```
+
+---
+
+## 8. CLI Commands for Design
 
 You can scaffold and manage design systems, components, and screens directly from the command line:
 
@@ -263,16 +348,18 @@ eidos spec create screen SCR-CHECKOUT --title "Order Checkout Screen" \
 
 ---
 
-## 7. Interactive Living Portal & Token Studio
+## 9. Interactive Living Portal & Token Studio
 
 When running the interactive Living Web Portal:
 
 ```bash
-eidos serve --path eidos --port 8080
+eidos serve --path eidos --port 3000
 ```
 
-The portal compiles all W3C Design Tokens into an interactive **Token Studio**, allowing engineers, designers, and AI agents to:
-* Inspect color palettes, spacing ramps, and typography scales across active themes.
-* Compare base tokens against client theme overrides in real time.
-* Inspect UI component state matrices and accessibility criteria.
+The portal compiles all W3C Design Tokens, Client Applications, Screen State Machines, and Interaction Flows into an interactive visual experience:
+* **Client Switcher**: Switch between client targets (`CLT-*`) to view scoped screen topologies and journeys.
+* **Flow Visualizer**: Interactive step sequences and dynamic Mermaid diagrams for client-internal flows and cross-client journeys.
+* **Token Studio**: Inspect color palettes, spacing ramps, and typography scales across active themes.
+* **Screen State Machines**: Finite state machine transitions for each route.
+
 

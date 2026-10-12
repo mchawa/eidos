@@ -1,0 +1,51 @@
+---
+type: design/flow
+schema: schemas/v1/design/flow.schema.yaml
+id: FLOW-PORTAL-EXPLORATION
+title: "Specification Discovery & Inspection Flow"
+status: active
+flow_type: client_internal
+client: "CLT-WEB-PORTAL"
+capabilities:
+  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
+
+steps:
+  - step: 1
+    title: "Access Dashboard"
+    screen: "eidos/design/clients/web-portal/screens/portal-home.adoc"
+    action: "User accesses root portal URL"
+    outcome: "Hero metrics, active SpecDeltas, and architectural pillars displayed"
+
+  - step: 2
+    title: "Navigate to Master Catalog"
+    screen: "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
+    action: "User clicks Quick Nav card or Living Specs Catalog in sidebar"
+    outcome: "Unified Hierarchical Tree-Grid loaded at Level 2 zoom"
+
+  - step: 3
+    title: "Filter by Pillar or Search Term"
+    screen: "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
+    action: "User types query or selects architectural pillar filter"
+    outcome: "Matching nodes and their parent ancestor branches unfold automatically"
+
+  - step: 4
+    title: "Inspect Specification Details"
+    screen: "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
+    action: "User clicks specification row"
+    outcome: "Spec Detail Modal drawer opens with frontmatter and validation status"
+---
+= Flow: Specification Discovery & Inspection Flow
+:toc: left
+
+== 1. User Journey Overview
+The Specification Discovery & Inspection Flow (`FLOW-PORTAL-EXPLORATION`) describes the primary web navigation pattern for developers and architects exploring the living specification topology on `CLT-WEB-PORTAL`.
+
+== 2. Visual Interaction Flowchart
+[mermaid]
+----
+flowchart LR
+  Home["SCR-PORTAL-HOME<br/>Dashboard"] -->|Click Catalog| Cat["SCR-PORTAL-CATALOG<br/>Tree-Grid"]
+  Cat -->|Filter Search / Select Pillar| Filtered["Unfolded Tree Branch"]
+  Filtered -->|Click Row| Modal["Spec Inspector Drawer"]
+  Modal -->|Copy Path / ID| Clipboard["Clipboard Notification"]
+----

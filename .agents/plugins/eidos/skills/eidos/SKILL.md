@@ -98,6 +98,7 @@ When the Eidos MCP server is active, you have access to:
 - `eidos_apply_delta(target="<delta-id>")`: Reconcile a SpecDelta in-place to `status: applied`.
 - `eidos_create_spec(...)`: Scaffold a new living specification document.
 - `eidos_read_spec(path="...")`: Parse and read an Eidos specification.
+- `eidos_get_task_context(...)`: Extract a compact, token-efficient architectural subgraph context slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies).
 
 ---
 

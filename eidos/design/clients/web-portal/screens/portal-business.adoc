@@ -4,6 +4,7 @@ schema: schemas/v1/design/screen.schema.yaml
 id: SCR-PORTAL-BUSINESS
 title: "Business Architecture & Governance View"
 route: "/business"
+client: "CLT-WEB-PORTAL"
 status: active
 
 capabilities:

@@ -2,7 +2,7 @@
 
 Every specification document in an Eidos repository is an **AsciiDoc (`.adoc`)** file containing structured **YAML frontmatter**. Frontmatter syntax and cross-references are strictly validated against canonical schemas bundled with the Eidos engine (`assets/schemas/v1/`).
 
-This glossary details all **13 document schemas**, their ID conventions, directory locations, required fields, and architectural intent.
+This glossary details all **15 document schemas**, their ID conventions, directory locations, required fields, and architectural intent.
 
 ---
 
@@ -21,7 +21,9 @@ This glossary details all **13 document schemas**, their ID conventions, directo
 | `tech/contract` | `CTR-*` | `architecture/contracts/*.adoc` | `tech/contract.schema.yaml` | Interface protocol contracts (OpenAPI, gRPC, CLI, AsyncAPI). |
 | `design/system` | `DS-*` | `design/systems/<system>/system.adoc` | `design/system.schema.yaml` | Multi-design system catalog, brand themes, and W3C DTCG tokens. |
 | `design/ui-component` | `UIC-*` | `design/systems/<system>/components/*.adoc` | `design/ui-component.schema.yaml` | UI component contract: variants, states, accessibility, and tests. |
-| `design/screen` | `SCR-*` | `design/screens/*.adoc` | `design/screen.schema.yaml` | Screen views, routes, layout slots, and interaction state machines. |
+| `design/screen` | `SCR-*` | `design/clients/<client>/screens/*.adoc` | `design/screen.schema.yaml` | Screen views, routes, layout slots, and interaction state machines. |
+| `design/client` | `CLT-*` | `design/clients/<client>/client.adoc` | `design/client.schema.yaml` | Client application platform, runtime surface, design system binding, and owned screens. |
+| `design/flow` | `FLOW-*` | `design/clients/<client>/flows/*.adoc` | `design/flow.schema.yaml` | Interaction user journeys and cross-client flows with visual Mermaid diagrams. |
 | `delta/mutation` | `DLT-*` | `deltas/dlt-*.adoc` | `delta/delta.schema.yaml` | Planned Mode semantic mutations, blast radius, and migration steps. |
 
 ---
@@ -329,8 +331,8 @@ test_bindings:
 
 ### `design/screen`
 * **Schema**: `schemas/v1/design/screen.schema.yaml`
-* **ID Convention**: `SCR-<NAME>` (e.g., `SCR-CHECKOUT`, `SCR-DASHBOARD`)
-* **Location**: `eidos/design/screens/<name>.adoc`
+* **ID Convention**: `SCR-<NAME>` (e.g., `SCR-CHECKOUT`, `SCR-PORTAL-HOME`)
+* **Location**: `eidos/design/clients/<client>/screens/<name>.adoc`
 * **Required Properties**: `type`, `schema`, `id`, `title`, `route`, `status`
 * **Intent**: User-facing view/screen manifest declaring URL routes, component layout slots, and state machines (`loading`, `empty`, `active`, `error`).
 
@@ -341,6 +343,7 @@ schema: schemas/v1/design/screen.schema.yaml
 id: SCR-CHECKOUT
 title: "Order Checkout Screen"
 route: "/checkout"
+client: "CLT-WEB-STORE"
 status: active
 capabilities:
   - "eidos/domains/checkout/capabilities/checkout.adoc"
@@ -351,6 +354,63 @@ states:
     description: "Skeleton placeholder."
   - name: "active"
     description: "Interactive payment form."
+---
+```
+
+---
+
+### `design/client`
+* **Schema**: `schemas/v1/design/client.schema.yaml`
+* **ID Convention**: `CLT-<NAME>` (e.g., `CLT-WEB-PORTAL`, `CLT-MOBILE-APP`)
+* **Location**: `eidos/design/clients/<client-name>/client.adoc`
+* **Required Properties**: `type`, `schema`, `id`, `title`, `status`, `platform`, `design_system`
+* **Intent**: Client application platform or tenant surface manifest. Encapsulates runtime platform (`web`, `mobile-ios`, `mobile-android`, `desktop`, `tui`), binds primary design systems and themes, links to C4 containers (`CMP-*`), and organizes owned screens and internal interaction flows.
+
+```yaml
+---
+type: design/client
+schema: schemas/v1/design/client.schema.yaml
+id: CLT-WEB-PORTAL
+title: "Web Living Documentation Portal"
+status: active
+platform: "web"
+design_system: "DS-CORE"
+container: "CMP-EIDOS-PORTAL"
+screens:
+  - "eidos/design/clients/web-portal/screens/portal-home.adoc"
+  - "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
+flows:
+  - "eidos/design/clients/web-portal/flows/spec-exploration.adoc"
+---
+```
+
+---
+
+### `design/flow`
+* **Schema**: `schemas/v1/design/flow.schema.yaml`
+* **ID Convention**: `FLOW-<NAME>` (e.g., `FLOW-PORTAL-EXPLORATION`, `FLOW-CLI-SERVE-AND-BROWSE`)
+* **Location**: `eidos/design/clients/<client>/flows/<name>.adoc` (client-internal) or `eidos/design/flows/<name>.adoc` (cross-client omnichannel)
+* **Required Properties**: `type`, `schema`, `id`, `title`, `status`, `steps`
+* **Intent**: Multi-step user journey or interaction flow connecting screens and actions across client surfaces to deliver a product capability (`CAP-*`). Features visual Mermaid flowcharts or sequence diagrams.
+
+```yaml
+---
+type: design/flow
+schema: schemas/v1/design/flow.schema.yaml
+id: FLOW-PORTAL-EXPLORATION
+title: "Specification Discovery & Inspection Flow"
+status: active
+flow_type: client_internal # client_internal | cross_client
+client: "CLT-WEB-PORTAL"
+steps:
+  - step: 1
+    title: "Access Dashboard"
+    screen: "eidos/design/clients/web-portal/screens/portal-home.adoc"
+    action: "User accesses root portal URL"
+  - step: 2
+    title: "Navigate to Master Catalog"
+    screen: "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
+    action: "User clicks Quick Nav card or Living Specs Catalog in sidebar"
 ---
 ```
 
