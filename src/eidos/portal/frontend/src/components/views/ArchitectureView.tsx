@@ -29,7 +29,7 @@ export interface ArchitectureViewProps {
 }
 
 export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProps) {
-  const [level, setLevelState] = React.useState<1 | 2 | 3>(2);
+  const [level, setLevelState] = React.useState<1 | 2 | 3>(1);
   const [selectedContainerId, setSelectedContainerId] = React.useState<string>(
     data.components[0]?.id || "CNT-EIDOS-CORE"
   );
@@ -87,18 +87,11 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
     const scaleY = containerHeight / svgHeight;
     const optimalScale = Math.min(scaleX, scaleY);
 
-    // Balanced zoom:
-    // 1. If optimalScale >= 1.0 (diagram is smaller than viewport), keep at 1.0 natural size without over-zooming
-    // 2. If optimalScale is between 0.70 and 1.0, fit entire diagram comfortably
-    // 3. If optimalScale < 0.70, clamp to 0.75 so text stays readable
-    let clampedZoom = 1.0;
-    if (optimalScale >= 1.0) {
-      clampedZoom = 1.0;
-    } else if (optimalScale >= 0.70) {
-      clampedZoom = Number(optimalScale.toFixed(2));
-    } else {
-      clampedZoom = 0.75;
-    }
+    // Natural fit within viewport:
+    // If diagram is smaller than viewport (optimalScale >= 1.0), cap at 1.0 so it never blows up.
+    // If diagram is larger than viewport (optimalScale < 1.0, e.g. Level 2 Containers),
+    // scale to optimalScale so all containers, links, and text fit 100% within the viewport without clipping!
+    const clampedZoom = Number(Math.min(1.0, optimalScale).toFixed(2));
     setZoom(clampedZoom);
     setPan({ x: 0, y: 0 });
   }, []);

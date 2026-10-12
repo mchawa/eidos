@@ -51,6 +51,7 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
   );
   const [selectedVariantByComp, setSelectedVariantByComp] = React.useState<Record<string, string>>({});
   const [copiedToken, setCopiedToken] = React.useState<string | null>(null);
+  const [flowsLayout, setFlowsLayout] = React.useState<"split" | "stacked">("split");
   const [inspectingItem, setInspectingItem] = React.useState<{ title: string; subtitle?: string; body?: string } | null>(null);
 
   const activeClient = React.useMemo(() => {
@@ -831,17 +832,45 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
       {/* SECTION 5: Interaction Flows & Multi-Client Journeys */}
       {(activeTab === "all" || activeTab === "flows") && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-sm font-bold text-foreground tracking-tight flex items-center gap-2">
               <Workflow className="h-4 w-4 text-purple-400" />
               Interaction Flows & Omnichannel User Journeys (`FLOW-*`)
             </h3>
-            <span className="text-xs text-muted-foreground">
-              {flows.length} declared user journeys
-            </span>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-border/60 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setFlowsLayout("split")}
+                  className={cn(
+                    "px-2.5 py-0.5 rounded-md text-[11px] font-medium transition-colors cursor-pointer",
+                    flowsLayout === "split"
+                      ? "bg-card text-foreground shadow-xs font-semibold"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  2-Columns
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFlowsLayout("stacked")}
+                  className={cn(
+                    "px-2.5 py-0.5 rounded-md text-[11px] font-medium transition-colors cursor-pointer",
+                    flowsLayout === "stacked"
+                      ? "bg-card text-foreground shadow-xs font-semibold"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Full Width
+                </button>
+              </div>
+              <span className="text-xs text-muted-foreground hidden sm:inline">
+                {flows.length} declared user journeys
+              </span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className={cn("grid gap-4", flowsLayout === "split" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1")}>
             {/* Client Specific Flows Panel */}
             <div id="clientFlowsPanel" className="space-y-3">
               <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">

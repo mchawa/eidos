@@ -103,35 +103,14 @@ export function MermaidDiagram({
     const scaleY = containerHeight / svgHeight;
     const naturalFit = Math.min(scaleX, scaleY);
 
-    // Balanced zoom logic:
-    // 1. If naturalFit >= 1.0 (diagram is smaller than container):
-    //    Keep at 1.0 exact natural size without blowing up or zooming in excessively.
-    // 2. If naturalFit is between 0.70 and 1.0:
-    //    Use naturalFit so the entire diagram fits neatly inside the card with all nodes visible.
-    // 3. If naturalFit < 0.70 (diagram is very wide):
-    //    Clamp to 0.75 so text stays readable, and align start with left edge.
-    let optimalZoom = 1.0;
-    let initialPanX = 0;
-    let initialPanY = 0;
-
-    if (naturalFit >= 1.0) {
-      optimalZoom = 1.0;
-      initialPanX = 0;
-      initialPanY = 0;
-    } else if (naturalFit >= 0.70) {
-      optimalZoom = Number(naturalFit.toFixed(2));
-      initialPanX = 0;
-      initialPanY = 0;
-    } else {
-      optimalZoom = 0.75;
-      const renderedWidth = svgWidth * optimalZoom;
-      if (renderedWidth > containerWidth) {
-        initialPanX = (renderedWidth - containerWidth) / 2 - 20;
-      }
-    }
+    // Natural fit within container:
+    // 1. If naturalFit >= 1.0 (diagram is smaller than container), cap at 1.0 so it never blows up.
+    // 2. If naturalFit < 1.0 (diagram is wider/taller than container), scale to naturalFit so the
+    //    entire diagram (all nodes, steps, and arrows) fits 100% within the card without clipping!
+    const optimalZoom = Number(Math.min(1.0, naturalFit).toFixed(2));
 
     setZoom(optimalZoom);
-    setPan({ x: initialPanX, y: initialPanY });
+    setPan({ x: 0, y: 0 });
   }, [getSvgDimensions]);
 
   const autoFitRef = React.useRef(autoFit);
