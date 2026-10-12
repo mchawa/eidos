@@ -114,6 +114,50 @@ export function App() {
       });
     });
 
+    // Policies
+    (data.policies || []).forEach((pol) => {
+      items.push({
+        id: pol.id,
+        title: pol.title,
+        subtitle: pol.rule,
+        category: "policies",
+        raw: pol,
+      });
+    });
+
+    // Domains
+    (data.domains || []).forEach((dom) => {
+      items.push({
+        id: dom.id,
+        title: dom.name,
+        subtitle: dom.mission,
+        category: "domains",
+        raw: dom,
+      });
+    });
+
+    // Capabilities
+    (data.capabilities || []).forEach((cap) => {
+      items.push({
+        id: cap.id,
+        title: cap.name || cap.title || cap.id,
+        subtitle: cap.summary,
+        category: "capabilities",
+        raw: cap,
+      });
+    });
+
+    // Personas
+    (data.personas || []).forEach((per) => {
+      items.push({
+        id: per.id,
+        title: per.name,
+        subtitle: per.role,
+        category: "personas",
+        raw: per,
+      });
+    });
+
     return items;
   }, [data]);
 
@@ -122,6 +166,14 @@ export function App() {
       setActiveTab("architecture");
     } else if (item.category === "deltas") {
       setActiveTab("deltas");
+    } else if (
+      item.category === "policies" ||
+      item.category === "domains" ||
+      item.category === "capabilities" ||
+      item.category === "personas" ||
+      item.category === "invariants"
+    ) {
+      setActiveTab("business");
     } else {
       setActiveTab("catalog");
     }

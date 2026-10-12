@@ -14,6 +14,11 @@ export interface SpecOverview {
   clients_count: number;
   flows_count: number;
   explorations_count: number;
+  domains_count?: number;
+  capabilities_count?: number;
+  policies_count?: number;
+  personas_count?: number;
+  invariants_count?: number;
   system_id: string;
   system_title: string;
   repo_status?: string;
@@ -56,27 +61,64 @@ export interface SpecDomain {
   id: string;
   name: string;
   mission: string;
+  classification?: string;
   capabilities?: string[];
+  boundaries?: {
+    responsibilities?: string[];
+    out_of_scope?: string[];
+  };
+  technical_mapping?: {
+    components?: string[];
+    dependencies?: string[];
+  };
+  body?: string;
+  path?: string;
 }
 
 export interface SpecCapability {
   id: string;
   name: string;
+  title?: string;
   domain: string;
   summary: string;
+  status?: string;
+  version?: string;
+  business?: {
+    personas?: string[];
+    jtbd?: string;
+    policies?: string[];
+  };
+  technical?: {
+    components?: string[];
+    contracts?: {
+      interfaces?: string[];
+    };
+    invariants?: Array<{
+      id: string;
+      rule: string;
+      test_binding?: string;
+    }>;
+  };
   invariants?: Array<{
     id: string;
     rule: string;
     test_binding?: string;
   }>;
+  body?: string;
+  path?: string;
 }
 
 export interface SpecPersona {
   id: string;
   name: string;
   role: string;
+  role_type?: string;
   archetype: string;
   goals?: string[];
+  pain_points?: string[];
+  interaction_modes?: string[];
+  body?: string;
+  path?: string;
 }
 
 export interface SpecPolicy {
@@ -85,6 +127,12 @@ export interface SpecPolicy {
   rule: string;
   category: string;
   test_binding?: string;
+  enforcement?: {
+    mechanism?: string;
+    severity?: string;
+  };
+  body?: string;
+  path?: string;
 }
 
 export interface SpecInvariant {

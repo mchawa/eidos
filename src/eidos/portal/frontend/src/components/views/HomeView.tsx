@@ -49,7 +49,7 @@ export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) 
       icon: ShieldCheck,
       color: "text-emerald-600 dark:text-emerald-400",
       bg: "bg-emerald-500/10 dark:bg-emerald-400/15",
-      tab: "catalog",
+      tab: "business",
     },
   ];
 
