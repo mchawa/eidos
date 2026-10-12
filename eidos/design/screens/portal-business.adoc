@@ -36,3 +36,4 @@ The Business Architecture View (`SCR-PORTAL-BUSINESS`) leads the product-enginee
 * **Domains (DOM-*)**: Bounded contexts, core responsibilities, and strategic classification (core, supporting, generic).
 * **Capabilities (CAP-*)**: Customer Jobs-to-be-Done (JTBD), success metrics, and technical capability anchors.
 * **Invariants & Policies Matrix (POL-*, INV-*)**: System governance policies and non-negotiable invariant test bindings.
+

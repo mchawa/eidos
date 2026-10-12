@@ -29,3 +29,4 @@ The hypothesis investigates whether structuring the portal around business domai
 
 == 2. Retrospective & Graduation
 The experiment proved that leading with Business (Personas, Domains, Invariants) and Design (Tokens, Components, Screens) before C4 Topologies gives both humans and AI agents a clearer mental model of the system.
+

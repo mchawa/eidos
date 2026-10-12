@@ -35,3 +35,4 @@ Each card features:
 * Numeric metric value with high visual weight.
 * Categorical uppercase subtitle label.
 * Subtle colored accent border on hover.
+

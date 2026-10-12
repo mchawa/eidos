@@ -33,3 +33,4 @@ The Catalog View (`SCR-PORTAL-CATALOG`) provides a global, searchable inventory 
 * **Global Search**: Substring matching across document ID, title, schema, and relative file path.
 * **Type Filtering**: Quick filters by business (DOM, CAP, PER, POL), design (DS, UIC, SCR), tech (CMP, CTR, ARCH), and delta (DLT).
 * **Document Inspection**: Clickable rows opening full specification YAML frontmatter and AsciiDoc content in a detail modal.
+

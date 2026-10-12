@@ -36,3 +36,4 @@ The Portal Layout Shell (`UIC-PORTAL-SHELL`) establishes the two-pane applicatio
 
 == 2. Responsive Behavior
 On desktop monitors (>1024px), the sidebar remains pinned at `260px` width. On tablets and mobile screens (<768px), the sidebar collapses into an off-canvas drawer toggled via the hamburger trigger.
+

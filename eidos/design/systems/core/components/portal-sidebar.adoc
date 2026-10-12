@@ -41,3 +41,4 @@ The Portal Navigation Sidebar (`UIC-PORTAL-SIDEBAR`) establishes the primary inf
 
 == 2. Visual States & Badges
 Each navigation entry displays an SVG icon, section label, and live document counter badge. The active view is visually highlighted with high-contrast accent styling.
+

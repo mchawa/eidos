@@ -1723,15 +1723,22 @@ PORTAL_HTML_TEMPLATE = """<!DOCTYPE html>
       renderCatalog(filtered);
     }
 
-    function renderMermaidDiagram(elementId, code) {
+    async function renderMermaidDiagram(elementId, code) {
       const el = document.getElementById(elementId);
       if (!el || !code) return;
-      el.removeAttribute('data-processed');
-      el.innerHTML = code;
       try {
-        mermaid.run({ nodes: [el] });
+        const uid = 'svg_' + elementId.replace(/[^a-zA-Z0-9_]/g, '_') + '_' + Math.random().toString(36).substring(2, 9);
+        const { svg } = await mermaid.render(uid, code);
+        el.innerHTML = svg;
       } catch (err) {
-        console.warn("Mermaid render error:", err);
+        console.warn("Mermaid render error on", elementId, err);
+        try {
+          el.removeAttribute('data-processed');
+          el.textContent = code;
+          await mermaid.run({ nodes: [el] });
+        } catch (err2) {
+          console.error("Mermaid fallback error on", elementId, err2);
+        }
       }
     }
 
@@ -1760,6 +1767,20 @@ PORTAL_HTML_TEMPLATE = """<!DOCTYPE html>
       // Close mobile drawer if open
       document.getElementById('sidebar').classList.remove('open');
       window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      // Re-render diagrams when switching to diagram-bearing views
+      if (tabId === 'architecture') {
+        setTimeout(() => {
+          renderMermaidDiagram('c4ContextDiagram', PORTAL_DATA.diagrams.c4_context);
+          renderMermaidDiagram('c4ContainersDiagram', PORTAL_DATA.diagrams.c4_containers);
+        }, 30);
+      } else if (tabId === 'design') {
+        setTimeout(() => {
+          (PORTAL_DATA.screens || []).forEach(s => {
+            renderMermaidDiagram(`screen_mermaid_${s.id.replace(/-/g, '_')}`, s.mermaid);
+          });
+        }, 30);
+      }
     }
 
     function toggleTheme() {

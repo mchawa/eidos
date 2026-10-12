@@ -288,24 +288,32 @@ def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict
 
 def _generate_c4_context_mermaid(personas: list[dict[str, Any]], system_id: str, system_title: str) -> str:
     """Generate Mermaid syntax for C4 Level 1 System Context."""
+    clean_title = system_title.replace('"', "'")
     lines = [
         "graph TD",
         "  classDef actor fill:#0284c7,stroke:#0369a1,color:#fff,stroke-width:2px,rx:5px;",
         "  classDef system fill:#059669,stroke:#047857,color:#fff,stroke-width:2px,rx:5px;",
         "  classDef external fill:#475569,stroke:#334155,color:#fff,stroke-width:2px,rx:5px;",
+        "",
+        f'  SYS["<b>{system_id}</b><br/>{clean_title}"]:::system',
+        '  EXT_GIT["<b>GitHub / GitLab</b><br/>VCS & CI/CD Platform"]:::external',
+        '  EXT_IDE["<b>AI IDEs & MCP Clients</b><br/>Antigravity, Cursor, Claude"]:::external',
     ]
 
     for p in personas:
         pid = p.get("id", "PER")
         pname = p.get("name", pid)
         node_id = pid.replace("-", "_")
-        lines.append(f'  {node_id}["{pname}<br/>[Persona]"]:::actor')
-        lines.append(f'  {node_id} -->|Interacts & Collaborates| SYS["{system_id}<br/><b>{system_title}</b>"]:::system')
+        lines.append(f'  {node_id}["<b>{pname}</b><br/>Persona Actor"]:::actor')
 
-    lines.append('  SYS -->|Syncs Issues, PRs, Webhooks| EXT_GIT["GitHub / GitLab<br/>[VCS Platform]"]:::external')
-    lines.append(
-        '  SYS -->|JSON-RPC Stdio Protocol| EXT_IDE["AI IDEs & MCP Clients<br/>(Antigravity, Cursor, Claude)"]:::external'
-    )
+    lines.append("")
+    for p in personas:
+        pid = p.get("id", "PER")
+        node_id = pid.replace("-", "_")
+        lines.append(f'  {node_id} -->|Interacts & Collaborates| SYS')
+
+    lines.append('  SYS -->|Syncs Issues, PRs, Webhooks| EXT_GIT')
+    lines.append('  SYS -->|JSON-RPC Stdio Protocol| EXT_IDE')
 
     return "\n".join(lines)
 

@@ -33,3 +33,4 @@ The SpecDeltas View (`SCR-PORTAL-DELTAS`) tracks the atomic lifecycle of archite
 * **In Review**: Deltas undergoing review by Human-in-the-Loop or peer agents.
 * **Approved**: Verified deltas ready for implementation.
 * **Applied**: Merged and reconciled deltas whose mutations have been integrated into living specs.
+

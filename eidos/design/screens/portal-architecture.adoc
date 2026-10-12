@@ -35,3 +35,4 @@ The Technical Architecture View (`SCR-PORTAL-ARCHITECTURE`) visualizes the techn
 * **C4 Level 2 (Container Architecture)**: Container topology showing boundaries, runtimes, and dependencies.
 * **Containers & Components Whitebox (CMP-*)**: Monorepo package manifests and internal C4 modules.
 * **Interface & Protocol Contracts (CTR-*)**: Formal contract definitions governing CLI, MCP, and HTTP interfaces.
+

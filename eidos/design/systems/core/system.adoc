@@ -26,3 +26,4 @@ All tokens strictly conform to the W3C Design Tokens Community Group (DTCG) spec
 
 == 2. Supported Themes & Dark/Light Adaptation
 The system provides zero-dependency CSS variable mapping supporting native dark mode (default) and high-legibility light mode, synchronized across all portal views, C4 diagram renderers, and SpecDelta Kanban boards.
+

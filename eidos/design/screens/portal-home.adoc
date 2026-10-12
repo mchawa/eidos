@@ -35,3 +35,4 @@ The Home View (`SCR-PORTAL-HOME`) serves as the central landing page and executi
 * **KPI Metrics Grid**: Surfaces critical system figures at a glance: Total Living Specs, Domains, Capabilities, Invariants, C4 Containers, UI Components, and SpecDeltas.
 * **Quick Navigation Hub**: Direct entry points to Business Architecture, Design Systems, Technical Topologies, and SpecDeltas.
 * **Recent SpecDeltas Feed**: Summarizes active mutations, proposed changes, and recently applied architectural evolutions.
+

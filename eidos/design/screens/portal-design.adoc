@@ -35,3 +35,4 @@ The Design Systems View (`SCR-PORTAL-DESIGN`) connects business capabilities wit
 * **W3C DTCG Tokens Studio**: Visual swatches for brand palettes, neutral surfaces, functional feedback colors, spacing scales, and typography.
 * **UI Component Contracts (UIC-*)**: Visual component manifests with variants, supported interaction states, and accessibility invariants (WCAG, ARIA, keyboard navigation).
 * **Screen State Machines (SCR-*)**: Mermaid-powered state machine diagrams detailing screen transitions.
+
