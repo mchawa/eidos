@@ -715,7 +715,7 @@ def component_promote_cmd(
         console.print("[bold green]✓ Reindexed architectural knowledge graph (zero drift).[/bold green]")
     except Exception as e:
         console.print(f"[bold red]Error promoting component:[/bold red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @component_app.command("inline")
@@ -735,7 +735,7 @@ def component_inline_cmd(
         console.print("[bold green]✓ Reindexed architectural knowledge graph (zero drift).[/bold green]")
     except Exception as e:
         console.print(f"[bold red]Error inlining component:[/bold red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @component_app.command("list")

@@ -11,35 +11,18 @@ This skill guides AI agents through initializing a new or existing Git repositor
 
 Initializing an Eidos workspace establishes the empty living specification skeleton, tracked in Git via `.gitkeep` files, and governance guardrails:
 
-```
-  New or Existing Repository
-  ┌────────────────────────────────────────────────────────┐
-  │  eidos init [PATH]                                     │
-  └────────────────────────┬───────────────────────────────┘
-                           │ Scaffolds Empty Skeleton
-                           ▼
-  ┌────────────────────────────────────────────────────────┐
-  │ eidos/                                                 │
-  │ ├── .gitignore                  <- ignores symlink views│
-  │ ├── system.adoc                 <- empty root system doc│
-  │ ├── architecture/                                      │
-  │ │   ├── containers/             <- tracked by .gitkeep │
-  │ │   ├── components/             <- tracked by .gitkeep │
-  │ │   └── contracts/              <- tracked by .gitkeep │
-  │ ├── domains/                    <- tracked by .gitkeep │
-  │ ├── policies/                   <- tracked by .gitkeep │
-  │ ├── personas/                   <- tracked by .gitkeep │
-  │ ├── deltas/                     <- tracked by .gitkeep │
-  │ ├── explorations/               <- tracked by .gitkeep │
-  │ └── design/                                            │
-  │     ├── clients/                <- tracked by .gitkeep │
-  │     ├── flows/                  <- tracked by .gitkeep │
-  │     ├── screens/                <- tracked by .gitkeep │
-  │     └── systems/core/components/<- tracked by .gitkeep │
-  │                                                        │
-  │ .agents/plugins/eidos/          <- AI agent plugin     │
-  └────────────────────────────────────────────────────────┘
-```
+1. **Execute Initialization**: Run `eidos init [PATH]` in any new or existing repository.
+2. **Skeleton Directory Structure Scaffolding**:
+   - `eidos/.gitignore` — ignores auto-generated symlink views (e.g., `deltas/by-status/`).
+   - `eidos/system.adoc` — root system context document defining business vision and technical profile.
+   - `eidos/architecture/` — containers (`containers/`), components (`components/`), and interface contracts (`contracts/`).
+   - `eidos/domains/` — bounded contexts and business capabilities (`capabilities/`).
+   - `eidos/policies/` — system policies and guardrails (`POL-*`).
+   - `eidos/personas/` — user roles and actor personas (`PER-*`).
+   - `eidos/deltas/` — active and historical SpecDeltas (`DLT-*`).
+   - `eidos/explorations/` — spike discoveries and hypothesis documents (`EXP-*`).
+   - `eidos/design/` — client applications, screens, flows, and design systems.
+3. **Agent Plugin Installation**: Installs `.agents/plugins/eidos/` for agent toolchains and skills.
 
 ---
 
