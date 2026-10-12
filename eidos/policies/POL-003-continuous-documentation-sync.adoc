@@ -22,3 +22,4 @@ Eidos mandates that documentation is not an afterthought or an optional marketin
 2. **Schema & Component Parity**: Every canonical schema in `assets/schemas/v1/` and every system component in `eidos/architecture/components/` must be documented in `docs/concepts/schema-glossary.md` and `docs/concepts/living-specs.md`.
 3. **CLI Interface Parity**: Every command exposed by the CLI must be documented in `docs/guides/cli.md`.
 4. **Automated Test Traceability**: The policy is verified by automated test `tests/test_docs_sync.py::test_documentation_and_schemas_in_sync` implementing invariant `INV-DOCS-SYNCHRONIZATION`.
+

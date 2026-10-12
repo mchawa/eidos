@@ -1,0 +1,35 @@
+---
+type: design/screen
+schema: schemas/v1/design/screen.schema.yaml
+id: SCR-PORTAL-CATALOG
+title: "Living Specifications Master Catalog View"
+route: "/catalog"
+status: active
+
+capabilities:
+  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
+
+supported_design_systems:
+  - "eidos/design/systems/core/system.adoc"
+
+slots:
+  search_filter_bar: "UIC-PORTAL-SHELL"
+  specs_table: "UIC-PORTAL-SHELL"
+  spec_detail_modal: "UIC-PORTAL-SHELL"
+
+states:
+  - name: "loading"
+    description: "Skeleton loader displayed during specification index parsing."
+  - name: "active"
+    description: "Interactive searchable table listing all repository living specifications."
+  - name: "error"
+    description: "Alert state when spec repository indexing fails."
+---
+= Screen: Living Specifications Master Catalog View
+:toc: left
+
+== 1. View Purpose & Specification Inventory
+The Catalog View (`SCR-PORTAL-CATALOG`) provides a global, searchable inventory of every living specification document in the repository:
+* **Global Search**: Substring matching across document ID, title, schema, and relative file path.
+* **Type Filtering**: Quick filters by business (DOM, CAP, PER, POL), design (DS, UIC, SCR), tech (CMP, CTR, ARCH), and delta (DLT).
+* **Document Inspection**: Clickable rows opening full specification YAML frontmatter and AsciiDoc content in a detail modal.

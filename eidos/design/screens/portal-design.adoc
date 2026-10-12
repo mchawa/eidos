@@ -1,0 +1,37 @@
+---
+type: design/screen
+schema: schemas/v1/design/screen.schema.yaml
+id: SCR-PORTAL-DESIGN
+title: "Design Systems & Experience View"
+route: "/design"
+status: active
+
+capabilities:
+  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
+
+supported_design_systems:
+  - "eidos/design/systems/core/system.adoc"
+
+slots:
+  design_systems_roster: "UIC-PORTAL-SHELL"
+  w3c_tokens_studio: "UIC-PORTAL-SHELL"
+  ui_components_catalog: "UIC-PORTAL-SHELL"
+  screen_state_diagrams: "UIC-PORTAL-SHELL"
+
+states:
+  - name: "loading"
+    description: "Skeleton loader displayed during tokens and component extraction."
+  - name: "active"
+    description: "Interactive tokens studio, UI component inventory, and screen state machine visualizer."
+  - name: "error"
+    description: "Alert state when tokens or design specifications fail validation."
+---
+= Screen: Design Systems & Experience View
+:toc: left
+
+== 1. View Purpose & Design Scope
+The Design Systems View (`SCR-PORTAL-DESIGN`) connects business capabilities with the visual user experience:
+* **Multi-Design Systems Catalog (DS-*)**: Registered design systems, base inheritance, and client brand overrides.
+* **W3C DTCG Tokens Studio**: Visual swatches for brand palettes, neutral surfaces, functional feedback colors, spacing scales, and typography.
+* **UI Component Contracts (UIC-*)**: Visual component manifests with variants, supported interaction states, and accessibility invariants (WCAG, ARIA, keyboard navigation).
+* **Screen State Machines (SCR-*)**: Mermaid-powered state machine diagrams detailing screen transitions.

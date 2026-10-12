@@ -1,0 +1,38 @@
+---
+type: design/ui-component
+schema: schemas/v1/design/ui-component.schema.yaml
+id: UIC-PORTAL-SHELL
+title: "Portal Layout Shell"
+design_system: "DS-CORE"
+status: active
+category: layouts
+
+variants:
+  - name: "sidebar-layout"
+    description: "Persistent left-hand navigation sidebar with full-bleed scrollable content stage."
+  - name: "collapsed-sidebar"
+    description: "Compact icon-only sidebar for narrow viewport or high-density views."
+
+states:
+  - default
+  - mobile_drawer_open
+  - mobile_drawer_closed
+
+accessibility:
+  wcag_level: "AA"
+  aria_role: "application"
+  keyboard_nav: "Tab navigates sequentially between sidebar navigation items and main content landmark."
+
+test_bindings:
+  unit_test: "tests/test_portal.py::test_static_portal_builder"
+---
+= UI Component: Portal Layout Shell
+:toc: left
+
+== 1. Structure & Layout Grid
+The Portal Layout Shell (`UIC-PORTAL-SHELL`) establishes the two-pane application framework:
+* **Sidebar Region**: Fixed left navigation drawer containing brand identity, system badges, grouped navigation links, and theme toggle.
+* **Main Viewport Stage**: Scrollable content viewport containing the top context header (search, breadcrumb, export controls) and active page views.
+
+== 2. Responsive Behavior
+On desktop monitors (>1024px), the sidebar remains pinned at `260px` width. On tablets and mobile screens (<768px), the sidebar collapses into an off-canvas drawer toggled via the hamburger trigger.

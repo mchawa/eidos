@@ -1,0 +1,35 @@
+---
+type: design/screen
+schema: schemas/v1/design/screen.schema.yaml
+id: SCR-PORTAL-DELTAS
+title: "SpecDeltas Evolution & Kanban Pipeline View"
+route: "/deltas"
+status: active
+
+capabilities:
+  - "eidos/domains/product-core/capabilities/spec-delta-mutations.adoc"
+
+supported_design_systems:
+  - "eidos/design/systems/core/system.adoc"
+
+slots:
+  kanban_board: "UIC-PORTAL-SHELL"
+  mutation_detail_modal: "UIC-PORTAL-SHELL"
+
+states:
+  - name: "loading"
+    description: "Skeleton loader displayed during SpecDelta history retrieval."
+  - name: "active"
+    description: "Interactive 4-column Kanban board displaying proposed, in-review, approved, and applied mutations."
+  - name: "error"
+    description: "Alert state when delta files fail validation."
+---
+= Screen: SpecDeltas Evolution & Kanban Pipeline View
+:toc: left
+
+== 1. View Purpose & Change Lifecycle
+The SpecDeltas View (`SCR-PORTAL-DELTAS`) tracks the atomic lifecycle of architectural mutations through an interactive Kanban board:
+* **Proposed**: Newly formulated change requests awaiting architectural review.
+* **In Review**: Deltas undergoing review by Human-in-the-Loop or peer agents.
+* **Approved**: Verified deltas ready for implementation.
+* **Applied**: Merged and reconciled deltas whose mutations have been integrated into living specs.

@@ -1,0 +1,37 @@
+---
+type: design/screen
+schema: schemas/v1/design/screen.schema.yaml
+id: SCR-PORTAL-HOME
+title: "Portal Executive Dashboard & Home View"
+route: "/"
+status: active
+
+capabilities:
+  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
+
+supported_design_systems:
+  - "eidos/design/systems/core/system.adoc"
+
+slots:
+  hero_archetype_banner: "UIC-PORTAL-SHELL"
+  hero_stat_grid: "UIC-PORTAL-METRIC-CARD"
+  quick_navigation_cards: "UIC-PORTAL-METRIC-CARD"
+  recent_deltas_stream: "UIC-PORTAL-SHELL"
+
+states:
+  - name: "loading"
+    description: "Skeleton loader displayed during /api/data initial load."
+  - name: "active"
+    description: "Interactive dashboard displaying system metrics, archetype summary, and recent mutation feeds."
+  - name: "error"
+    description: "Graceful error alert when specifications or API payload fails to load."
+---
+= Screen: Portal Executive Dashboard & Home View
+:toc: left
+
+== 1. View Layout & Visual Hierarchy
+The Home View (`SCR-PORTAL-HOME`) serves as the central landing page and executive dashboard of the Eidos Living Web Portal:
+* **System Archetype Banner**: Summarizes the system identity (`SYS-EIDOS-001`), root governance rules, and specification validation health.
+* **KPI Metrics Grid**: Surfaces critical system figures at a glance: Total Living Specs, Domains, Capabilities, Invariants, C4 Containers, UI Components, and SpecDeltas.
+* **Quick Navigation Hub**: Direct entry points to Business Architecture, Design Systems, Technical Topologies, and SpecDeltas.
+* **Recent SpecDeltas Feed**: Summarizes active mutations, proposed changes, and recently applied architectural evolutions.

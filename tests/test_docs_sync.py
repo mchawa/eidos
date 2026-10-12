@@ -108,3 +108,4 @@ def test_zensical_strict_build():
     assert (site_dir / "concepts" / "explorations" / "index.html").exists(), "explorations page missing"
     assert (site_dir / "concepts" / "design" / "index.html").exists(), "design page missing"
     assert (site_dir / "concepts" / "schema-glossary" / "index.html").exists(), "schema-glossary page missing"
+

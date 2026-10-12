@@ -142,10 +142,32 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         else:
             deltas_by_status.setdefault(status, []).append(delta_item)
 
-    # 4. Multi-Design Systems & W3C Tokens
-    design_systems = _extract_design_systems(eidos_path, specs_by_type)
+    # 4. Multi-Design Systems, Tokens, UI Components, and Screens
+    design_data = _extract_design_systems(eidos_path, specs_by_type)
+    design_systems = design_data.get("systems", [])
+    screens = design_data.get("screens", [])
+    ui_components = design_data.get("ui_components", [])
 
-    # 5. Dynamic Mermaid Diagrams
+    # 5. Product Explorations & Spikes
+    raw_explorations = specs_by_type.get("product/exploration", [])
+    explorations: list[dict[str, Any]] = []
+    for exp in raw_explorations:
+        fm = exp["frontmatter"]
+        explorations.append(
+            {
+                "id": exp["id"],
+                "title": exp["title"],
+                "status": fm.get("status", "proposed"),
+                "hypothesis": fm.get("hypothesis", ""),
+                "questions_to_answer": fm.get("questions_to_answer", []),
+                "spikes_to_run": fm.get("spikes_to_run", []),
+                "exit_criteria": fm.get("exit_criteria", {}),
+                "decision": fm.get("decision", {}),
+                "body": exp["body"],
+            }
+        )
+
+    # 6. Dynamic Mermaid Diagrams
     c4_context_mermaid = _generate_c4_context_mermaid(personas, system_id, system_title)
     c4_containers_mermaid = _generate_c4_containers_mermaid(components)
 
@@ -162,6 +184,9 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "deltas_count": len(raw_deltas),
         "invariants_count": len(invariants),
         "design_systems_count": len(design_systems),
+        "ui_components_count": len(ui_components),
+        "screens_count": len(screens),
+        "explorations_count": len(explorations),
     }
 
     return {
@@ -177,6 +202,9 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "invariants": invariants,
         "deltas": deltas_by_status,
         "design_systems": design_systems,
+        "ui_components": ui_components,
+        "screens": screens,
+        "explorations": explorations,
         "diagrams": {
             "c4_context": c4_context_mermaid,
             "c4_containers": c4_containers_mermaid,
@@ -184,7 +212,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     }
 
 
-def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
     """Scan and parse multi-design systems, W3C tokens.json, UI components, and screens."""
     systems: list[dict[str, Any]] = []
     design_specs = specs_by_type.get("design/system", [])
@@ -205,9 +233,29 @@ def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict
             {
                 "id": sys_id,
                 "title": ds["title"],
-                "client": fm.get("client", "core"),
-                "extends": fm.get("extends"),
+                "client": fm.get("client_id", fm.get("client", "core")),
+                "brand_name": fm.get("brand_name", ds["title"]),
+                "extends": fm.get("inheritance", {}).get("extends") if isinstance(fm.get("inheritance"), dict) else fm.get("extends"),
                 "tokens": tokens_data,
+            }
+        )
+
+    # UI Components
+    ui_components: list[dict[str, Any]] = []
+    for uic in specs_by_type.get("design/ui-component", []):
+        fm = uic["frontmatter"]
+        ui_components.append(
+            {
+                "id": uic["id"],
+                "title": uic["title"],
+                "design_system": fm.get("design_system", "DS-CORE"),
+                "category": fm.get("category", "layouts"),
+                "status": fm.get("status", "active"),
+                "variants": fm.get("variants", []),
+                "states": fm.get("states", []),
+                "accessibility": fm.get("accessibility", {}),
+                "test_bindings": fm.get("test_bindings", {}),
+                "body": uic["body"],
             }
         )
 
@@ -223,22 +271,19 @@ def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict
                 "id": scr["id"],
                 "title": scr["title"],
                 "route": fm.get("route", "/"),
-                "system_ref": fm.get("system_ref", "DS-CORE"),
+                "system_ref": fm.get("supported_design_systems", ["DS-CORE"])[0] if fm.get("supported_design_systems") else "DS-CORE",
                 "states": states,
-                "transitions": transitions,
+                "slots": fm.get("slots", {}),
+                "capabilities": fm.get("capabilities", []),
                 "mermaid": mermaid_state,
             }
         )
 
-    if not systems and not screens:
-        return []
-
-    return [
-        {
-            "systems": systems,
-            "screens": screens,
-        }
-    ]
+    return {
+        "systems": systems,
+        "ui_components": ui_components,
+        "screens": screens,
+    }
 
 
 def _generate_c4_context_mermaid(personas: list[dict[str, Any]], system_id: str, system_title: str) -> str:
@@ -292,18 +337,24 @@ def _generate_c4_containers_mermaid(components: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _generate_screen_state_mermaid(screen_id: str, states: list[str], transitions: list[dict[str, Any]]) -> str:
+def _generate_screen_state_mermaid(screen_id: str, states: list[Any], transitions: list[dict[str, Any]]) -> str:
     """Generate Mermaid stateDiagram-v2 syntax for screen state transitions."""
+    clean_id = screen_id.replace("-", "_")
     lines = ["stateDiagram-v2"]
     if not states:
-        lines.append(f"  [*] --> {screen_id}")
+        lines.append(f"  [*] --> {clean_id}")
         return "\n".join(lines)
 
-    lines.append(f"  [*] --> {states[0]}")
+    state_names = [s.get("name", str(s)) if isinstance(s, dict) else str(s) for s in states]
+    lines.append(f"  [*] --> {state_names[0]}")
     for t in transitions:
-        src = t.get("from_state", states[0])
-        dst = t.get("to_state", states[-1])
+        src = t.get("from_state", state_names[0])
+        dst = t.get("to_state", state_names[-1])
         trigger = t.get("action", t.get("event", "action"))
         lines.append(f"  {src} --> {dst}: {trigger}")
+
+    if not transitions and len(state_names) > 1:
+        for i in range(len(state_names) - 1):
+            lines.append(f"  {state_names[i]} --> {state_names[i+1]}")
 
     return "\n".join(lines)

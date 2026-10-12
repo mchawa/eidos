@@ -1,0 +1,37 @@
+---
+type: design/ui-component
+schema: schemas/v1/design/ui-component.schema.yaml
+id: UIC-PORTAL-METRIC-CARD
+title: "Dashboard Metric Card"
+design_system: "DS-CORE"
+status: active
+category: data_display
+
+variants:
+  - name: "standard"
+    description: "Compact KPI card displaying count value, label, and category accent indicator."
+  - name: "actionable"
+    description: "Clickable card that navigates directly to the corresponding portal section."
+
+states:
+  - default
+  - hover
+  - active
+
+accessibility:
+  wcag_level: "AA"
+  aria_role: "region"
+  keyboard_nav: "When clickable, Enter or Space activates navigation to the linked view."
+
+test_bindings:
+  unit_test: "tests/test_portal.py::test_portal_data_generation"
+---
+= UI Component: Dashboard Metric Card
+:toc: left
+
+== 1. Visual Presentation
+The Dashboard Metric Card (`UIC-PORTAL-METRIC-CARD`) displays high-level system indicators (e.g. Total Specs, Domains, Capabilities, Invariants, C4 Containers, SpecDeltas).
+Each card features:
+* Numeric metric value with high visual weight.
+* Categorical uppercase subtitle label.
+* Subtle colored accent border on hover.

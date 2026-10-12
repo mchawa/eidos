@@ -1,0 +1,31 @@
+---
+type: product/exploration
+schema: schemas/v1/product/exploration.schema.yaml
+id: EXP-2026-001
+title: "Responsive Sidebar Information Architecture & Multi-Design System Portal"
+status: adopted
+hypothesis: "Restructuring the living portal navigation around Business -> Design -> Technical Architecture in a responsive sidebar will reduce spec discovery time by over 50% for non-code contributors."
+questions_to_answer:
+  - "Does a left-hand collapsible sidebar provide superior space utilization compared to a top navigation bar on widescreen monitors?"
+  - "Can vanilla CSS variables and HTML5 custom elements deliver smooth dark/light theme switching with zero external UI frameworks?"
+spikes_to_run:
+  - name: "sidebar-layout-spike"
+    target: "Prototype collapsible CSS grid and flexbox sidebar layout."
+  - name: "token-studio-preview"
+    target: "Render visual W3C DTCG color and spacing swatches directly from tokens.json."
+exit_criteria:
+  max_duration: "3_days"
+  benchmark: "Lighthouse Performance > 95, zero npm build dependencies."
+decision:
+  outcome: adopted
+  resulting_delta_id: "DLT-2026-009"
+  learnings: "Sidebar layout vastly improves deep navigation into multi-tier living specifications while keeping zero npm dependency runtime lightweight and fast."
+---
+= Exploration: Responsive Sidebar Information Architecture & Multi-Design System Portal
+:toc: left
+
+== 1. Hypothesis Formulation
+The hypothesis investigates whether structuring the portal around business domains before technical topologies increases comprehension among product and design stakeholders.
+
+== 2. Retrospective & Graduation
+The experiment proved that leading with Business (Personas, Domains, Invariants) and Design (Tokens, Components, Screens) before C4 Topologies gives both humans and AI agents a clearer mental model of the system.

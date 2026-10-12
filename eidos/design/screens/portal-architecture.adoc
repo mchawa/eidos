@@ -1,0 +1,37 @@
+---
+type: design/screen
+schema: schemas/v1/design/screen.schema.yaml
+id: SCR-PORTAL-ARCHITECTURE
+title: "Technical Architecture & C4 Topologies View"
+route: "/architecture"
+status: active
+
+capabilities:
+  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
+
+supported_design_systems:
+  - "eidos/design/systems/core/system.adoc"
+
+slots:
+  c4_context_diagram: "UIC-PORTAL-SHELL"
+  c4_containers_diagram: "UIC-PORTAL-SHELL"
+  containers_table: "UIC-PORTAL-SHELL"
+  contracts_table: "UIC-PORTAL-SHELL"
+
+states:
+  - name: "loading"
+    description: "Skeleton loader displayed during topology extraction."
+  - name: "active"
+    description: "Interactive C4 diagrams (L1 System Context, L2 Containers) and contracts tables."
+  - name: "error"
+    description: "Alert state when architecture manifests are invalid."
+---
+= Screen: Technical Architecture & C4 Topologies View
+:toc: left
+
+== 1. View Purpose & Engineering Scope
+The Technical Architecture View (`SCR-PORTAL-ARCHITECTURE`) visualizes the technical runtime structures implementing the system's business capabilities:
+* **C4 Level 1 (System Context)**: Interactive Mermaid topology depicting external personas and peer systems.
+* **C4 Level 2 (Container Architecture)**: Container topology showing boundaries, runtimes, and dependencies.
+* **Containers & Components Whitebox (CMP-*)**: Monorepo package manifests and internal C4 modules.
+* **Interface & Protocol Contracts (CTR-*)**: Formal contract definitions governing CLI, MCP, and HTTP interfaces.

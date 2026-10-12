@@ -20,7 +20,7 @@ c4_internal_components:
     responsibility: "Compiles self-contained static documentation portals for GitHub Pages and GitLab Pages."
     source_path: "src/eidos/portal/builder.py"
   - name: "PortalAssets"
-    responsibility: "Delivers responsive single-page web UI, Mermaid.js visualization, and dark/light themes."
+    responsibility: "Delivers responsive single-page web UI featuring left sidebar navigation, Executive Home view, Business/Design/Architecture hierarchy, W3C Token Studio, and dark/light themes."
     source_path: "src/eidos/portal/assets.py"
 
 dependencies:

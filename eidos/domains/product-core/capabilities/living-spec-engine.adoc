@@ -16,6 +16,21 @@ business:
     - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
     - eidos/policies/POL-003-continuous-documentation-sync.adoc
 
+experience:
+  design_systems:
+    - "eidos/design/systems/core/system.adoc"
+  screens:
+    - "eidos/design/screens/portal-home.adoc"
+    - "eidos/design/screens/portal-business.adoc"
+    - "eidos/design/screens/portal-design.adoc"
+    - "eidos/design/screens/portal-architecture.adoc"
+    - "eidos/design/screens/portal-deltas.adoc"
+    - "eidos/design/screens/portal-catalog.adoc"
+  ui_components:
+    - "eidos/design/systems/core/components/portal-shell.adoc"
+    - "eidos/design/systems/core/components/portal-sidebar.adoc"
+    - "eidos/design/systems/core/components/portal-metric-card.adoc"
+
 technical:
   components:
     - "packages/spec-parser"

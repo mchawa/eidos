@@ -2,7 +2,14 @@
 
 The **Living Architecture Portal** is an interactive, visual web application generated directly from your living specifications.
 
-It renders C4 architecture diagrams, container dependencies, capability hierarchies, system policies, and SpecDelta timelines without requiring external diagramming tools or manual sync.
+Structured around a responsive left sidebar, the portal organizes your architecture into a logical information flow:
+
+1. **Executive Dashboard (Home)**: System archetype (`SYS-*`), high-level KPI metric cards, and recent SpecDeltas stream.
+2. **Business Architecture**: Actor Personas (`PER-*`), Bounded Domains (`DOM-*`), Capabilities (`CAP-*`) with JTBD statements, System Policies (`POL-*`), and Governance Invariants (`INV-*`).
+3. **Design & Experience**: Multi-Design Systems (`DS-*`), interactive W3C DTCG Token Studio (`tokens.json`), UI Component Manifests (`UIC-*`), and Screen State Machines (`SCR-*`).
+4. **Technical Architecture**: C4 Level 1 System Context, C4 Level 2 Container Topologies, Monorepo Component Manifests (`CMP-*`), and Protocol Contracts (`CTR-*`).
+5. **SpecDeltas Pipeline**: Interactive Kanban board tracking atomic mutations across `proposed`, `in_review`, `approved`, and `applied` states.
+6. **Specs Master Catalog**: Filterable repository inventory with instant search and document inspection.
 
 ---
 

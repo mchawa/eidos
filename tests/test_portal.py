@@ -38,6 +38,25 @@ def test_portal_data_generation():
     assert "CMP-EIDOS-PORTAL" in comp_ids
     assert "CMP-EIDOS-DOCS" in comp_ids
 
+    # Design systems, UI components, and screens verification
+    assert ov["design_systems_count"] >= 1
+    assert ov["ui_components_count"] >= 3
+    assert ov["screens_count"] >= 6
+    assert ov["explorations_count"] >= 1
+
+    uic_ids = {u["id"] for u in data["ui_components"]}
+    assert "UIC-PORTAL-SHELL" in uic_ids
+    assert "UIC-PORTAL-SIDEBAR" in uic_ids
+    assert "UIC-PORTAL-METRIC-CARD" in uic_ids
+
+    scr_ids = {s["id"] for s in data["screens"]}
+    assert "SCR-PORTAL-HOME" in scr_ids
+    assert "SCR-PORTAL-BUSINESS" in scr_ids
+    assert "SCR-PORTAL-DESIGN" in scr_ids
+    assert "SCR-PORTAL-ARCHITECTURE" in scr_ids
+    assert "SCR-PORTAL-DELTAS" in scr_ids
+    assert "SCR-PORTAL-CATALOG" in scr_ids
+
     # Mermaid diagrams verification
     assert data["diagrams"]["c4_context"].startswith("graph TD")
     assert data["diagrams"]["c4_containers"].startswith("graph TD")
@@ -66,6 +85,16 @@ def test_static_portal_builder(tmp_path: Path):
     assert "<!DOCTYPE html>" in index_html
     assert "window.__EIDOS_DATA__ =" in index_html
     assert "SYS-EIDOS-001" in index_html
+
+    # Verify Sidebar and IA Views in compiled SPA
+    assert 'class="sidebar"' in index_html
+    assert 'id="tab-home"' in index_html
+    assert 'id="tab-business"' in index_html
+    assert 'id="tab-design"' in index_html
+    assert 'id="tab-architecture"' in index_html
+    assert 'id="tab-deltas"' in index_html
+    assert 'id="tab-catalog"' in index_html
+    assert 'id="tokenSwatchesGrid"' in index_html
 
     with open(data_file, encoding="utf-8") as f:
         json_data = json.load(f)

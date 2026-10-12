@@ -1,0 +1,38 @@
+---
+type: design/screen
+schema: schemas/v1/design/screen.schema.yaml
+id: SCR-PORTAL-BUSINESS
+title: "Business Architecture & Governance View"
+route: "/business"
+status: active
+
+capabilities:
+  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
+  - "eidos/domains/product-core/capabilities/exploration-discovery.adoc"
+
+supported_design_systems:
+  - "eidos/design/systems/core/system.adoc"
+
+slots:
+  personas_grid: "UIC-PORTAL-SHELL"
+  domains_table: "UIC-PORTAL-SHELL"
+  capabilities_table: "UIC-PORTAL-SHELL"
+  invariants_matrix_table: "UIC-PORTAL-SHELL"
+
+states:
+  - name: "loading"
+    description: "Skeleton loader displayed during domain retrieval."
+  - name: "active"
+    description: "Interactive view presenting personas, product domains, capabilities with JTBD, and policy invariants."
+  - name: "error"
+    description: "Alert state when product specifications are missing or invalid."
+---
+= Screen: Business Architecture & Governance View
+:toc: left
+
+== 1. View Purpose & Business Context
+The Business Architecture View (`SCR-PORTAL-BUSINESS`) leads the product-engineering conversation by establishing who the system serves and what problems it solves:
+* **Personas (PER-*)**: Human and AI agent actors operating within the system lifecycle.
+* **Domains (DOM-*)**: Bounded contexts, core responsibilities, and strategic classification (core, supporting, generic).
+* **Capabilities (CAP-*)**: Customer Jobs-to-be-Done (JTBD), success metrics, and technical capability anchors.
+* **Invariants & Policies Matrix (POL-*, INV-*)**: System governance policies and non-negotiable invariant test bindings.

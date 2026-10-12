@@ -1,0 +1,43 @@
+---
+type: design/ui-component
+schema: schemas/v1/design/ui-component.schema.yaml
+id: UIC-PORTAL-SIDEBAR
+title: "Portal Navigation Sidebar"
+design_system: "DS-CORE"
+status: active
+category: navigation
+
+variants:
+  - name: "expanded"
+    description: "Standard width sidebar displaying section labels, navigation links, and item count badges."
+  - name: "collapsed"
+    description: "Icon-only condensed navigation bar."
+
+states:
+  - default
+  - item_hover
+  - item_active
+  - focused
+
+accessibility:
+  wcag_level: "AA"
+  aria_role: "navigation"
+  keyboard_nav: "Arrow keys (Up/Down) or Tab traverse menu links; Enter activates view switch."
+
+test_bindings:
+  unit_test: "tests/test_portal.py::test_static_portal_builder"
+---
+= UI Component: Portal Navigation Sidebar
+:toc: left
+
+== 1. Navigation Hierarchy & Ordering
+The Portal Navigation Sidebar (`UIC-PORTAL-SIDEBAR`) establishes the primary information hierarchy of the Eidos Living Web Portal, ordered logically:
+1. **Home**: Executive overview, KPI metric cards, system archetype, and recent deltas.
+2. **Business**: Product personas, business domains, capabilities, and system policy invariants.
+3. **Design**: Multi-design systems catalog, W3C DTCG tokens studio, UI components, and screen state machines.
+4. **Architecture**: C4 Level 1 system context, C4 Level 2 container topologies, component manifests, and contracts.
+5. **SpecDeltas**: Interactive Kanban mutation board (`proposed` -> `in_review` -> `approved` -> `applied`).
+6. **Specs Catalog**: Complete searchable, filterable specification repository inventory.
+
+== 2. Visual States & Badges
+Each navigation entry displays an SVG icon, section label, and live document counter badge. The active view is visually highlighted with high-contrast accent styling.
