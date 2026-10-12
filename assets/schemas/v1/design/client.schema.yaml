@@ -47,16 +47,6 @@ properties:
   design_system:
     type: string
     description: "ID or relative path to the primary design system styling this client (e.g. 'DS-CORE' or 'eidos/design/systems/core/system.adoc')."
-  supported_themes:
-    type: array
-    description: "List of theme names supported by this client from its bound design system (e.g. ['dark', 'light'] or ['default', 'acme-brand'])."
-    items:
-      type: string
-    examples:
-      - ["dark", "light"]
-  default_theme:
-    type: string
-    description: "Default theme mode applied on initial client load (e.g. 'dark' or 'light')."
   container:
     type: string
     description: "ID or relative path to the C4 Level 2 Container manifest implementing this client (e.g. 'CMP-EIDOS-PORTAL')."

@@ -7,10 +7,6 @@ status: active
 platform: "web"
 
 design_system: "DS-CORE"
-supported_themes:
-  - "dark"
-  - "light"
-default_theme: "dark"
 
 container: "CMP-EIDOS-PORTAL"
 

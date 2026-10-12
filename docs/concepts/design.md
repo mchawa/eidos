@@ -240,11 +240,9 @@ Coordinates payment form submission, address validation, and express wallet inte
 
 ## 6. Client Applications (`CLT-*`)
 
-Client manifests (`type: design/client`) bind frontend client targets (web SPA, iOS, Android, desktop, or terminal CLI) to their assigned design system, supported themes, C4 monorepo container, screens, and interaction flows.
-
-### Design System vs. Supported Themes
+Client manifests (`type: design/client`) bind frontend client targets (web SPA, iOS, Android, desktop, or terminal CLI) to their assigned design system, C4 monorepo container, screens, and interaction flows:
 * **`design_system`**: The overarching UI framework and component contracts (`UIC-*`) the client compiles against (e.g. `DS-CORE`).
-* **`supported_themes`**: The specific token variations or color modes defined by that design system that this client supports switching between at runtime (e.g. `["dark", "light"]` or `["default", "acme-brand"]`). Components remain structurally identical; only token CSS variables swap.
+* **`container`**: The C4 Level 2 Container manifest implementing this client surface (e.g. `CMP-EIDOS-PORTAL`).
 
 ### Client Manifest Example (`eidos/design/clients/web-portal/client.adoc`):
 
@@ -257,10 +255,6 @@ title: "Living Web Portal Client"
 status: active
 platform: web
 design_system: "eidos/design/systems/core/system.adoc"
-supported_themes:
-  - "dark"
-  - "light"
-default_theme: "dark"
 container: "eidos/architecture/components/portal.adoc"
 
 capabilities:

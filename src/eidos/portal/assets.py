@@ -2410,12 +2410,6 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
               <span class="code-pill" style="margin-top: 2px;">${client.design_system}</span>
             </div>
             <div>
-              <span style="color: var(--text-dim); display: block; font-size: 0.72rem; text-transform: uppercase;">Supported Themes</span>
-              <div style="margin-top: 2px; display: flex; gap: 0.25rem; flex-wrap: wrap;">
-                ${(client.supported_themes || ['dark', 'light']).map(t => `<span class="badge ${t === client.default_theme ? 'badge-primary' : 'badge-neutral'}">${t}</span>`).join('')}
-              </div>
-            </div>
-            <div>
               <span style="color: var(--text-dim); display: block; font-size: 0.72rem; text-transform: uppercase;">C4 Container</span>
               <span class="code-pill" style="margin-top: 2px;">${client.container}</span>
             </div>

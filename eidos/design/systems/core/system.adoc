@@ -9,9 +9,6 @@ tokens:
   spec_format: "w3c_design_tokens"
   manifest: "tokens.json"
 theme_capabilities:
-  themes:
-    - "dark"
-    - "light"
   color_modes:
     - "dark"
     - "light"
@@ -27,6 +24,6 @@ The Eidos Core Design System (`DS-CORE`) defines the visual language, typography
 
 All tokens strictly conform to the W3C Design Tokens Community Group (DTCG) specification.
 
-== 2. Supported Themes & Dark/Light Adaptation
+== 2. Color Modes & Visual Density Adaptation
 The system provides zero-dependency CSS variable mapping supporting native dark mode (default) and high-legibility light mode, synchronized across all portal views, C4 diagram renderers, and SpecDelta Kanban boards.
 
