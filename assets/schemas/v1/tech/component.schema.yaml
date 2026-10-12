@@ -1,0 +1,112 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: ComponentSchema
+description: "Defines an in-process C4 Level 3 Component (CMP-*) in a hybrid co-located architecture. Co-located directly within its container's package_path (e.g. 'src/.../<component>.adoc')."
+type: object
+required:
+  - type
+  - schema
+  - id
+  - name
+  - container
+  - status
+  - responsibility
+properties:
+  type:
+    type: string
+    const: "tech/component"
+    description: "The fixed document type identifier. Must always be 'tech/component'."
+  schema:
+    type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
+  id:
+    type: string
+    pattern: "^CMP-[A-Z0-9_-]+$"
+    description: "Unique C4 Level 3 Component identifier following CMP-<NAME> (e.g. CMP-CORE-VALIDATOR)."
+  name:
+    type: string
+    description: "Human-readable display name of the component."
+  container:
+    type: string
+    pattern: "^CNT-[A-Z0-9_-]+$"
+    description: "Unique identifier of the parent C4 Level 2 Container (CNT-*) that owns this component."
+  status:
+    type: string
+    enum:
+      - proposed
+      - active
+      - deprecated
+      - retired
+    description: "Lifecycle status of the component."
+  package_path:
+    type: string
+    description: "Relative file or package path to the source code implementing this component."
+  source_path:
+    type: string
+    description: "Alias for package_path: relative path to the primary implementation source file."
+  domain_binding:
+    type: string
+    description: "Optional product domain identifier (DOM-*) this component helps realize."
+  responsibility:
+    type: string
+    description: "Detailed description of what domain logic, computation, or operational duties this component encapsulates."
+  interfaces:
+    type: object
+    description: "In-process language protocols and APIs (traits, interfaces, ABCs, function signatures). NOT boundary protocol contracts (CTR-*)."
+    properties:
+      provides:
+        type: array
+        description: "List of exported in-process method/function signatures and API capabilities."
+        items:
+          type: object
+          required:
+            - signature
+          properties:
+            signature:
+              type: string
+              description: "Language-level method or function signature (e.g. 'validate_document(doc: SpecDocument) -> list[str]')."
+            description:
+              type: string
+              description: "Purpose and operational semantics of this in-process method."
+      consumes:
+        type: array
+        description: "List of peer components (CMP-*), libraries, or internal modules consumed by this component."
+        items:
+          type: string
+  quality_attributes:
+    type: object
+    description: "Operational quality attributes, performance ceilings, and concurrency traits."
+    properties:
+      stateless:
+        type: boolean
+        description: "Whether the component instances retain no internal mutable state between invocations."
+      reentrant:
+        type: boolean
+        description: "Whether the component is thread-safe and reentrant."
+      concurrency_model:
+        type: string
+        description: "Concurrency paradigm (e.g. 'synchronous', 'async_event_loop', 'thread_safe', 'actor')."
+      max_memory_mb:
+        type: number
+        description: "Maximum allowable memory allocation ceiling in MB."
+      max_validation_latency_ms:
+        type: number
+        description: "Maximum latency ceiling in milliseconds."
+  invariants:
+    type: array
+    description: "Component-specific operational or architectural invariants."
+    items:
+      type: object
+      required:
+        - id
+        - rule
+      properties:
+        id:
+          type: string
+          pattern: "^INV-[A-Z0-9_-]+$"
+          description: "Unique invariant identifier following INV-<NAME>."
+        rule:
+          type: string
+          description: "Formal normative requirement statement (RFC 2119)."
+        test_binding:
+          type: string
+          description: "Relative test path and test function verifying this invariant (e.g. 'tests/test_validator.py::test_rule')."

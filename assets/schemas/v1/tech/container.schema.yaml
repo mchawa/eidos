@@ -45,28 +45,46 @@ properties:
     description: "Arc42 Section 5.2 / C4 Level 3: Component Whitebox View. The internal modules, services, or building blocks that constitute this container."
     items:
       type: object
-      required:
-        - id
-        - name
-        - responsibility
-        - source_path
-      properties:
-        id:
-          type: string
-          pattern: "^CMP-[A-Z0-9_-]+$"
-          description: "Unique C4 Component identifier following CMP-<NAME> (e.g. CMP-SPEC-PARSER, CMP-AUTH-SERVICE)."
-        name:
-          type: string
-          description: "Internal component name (e.g. 'SpecParser', 'SchemaValidator', 'CliEntrypoint')."
-        responsibility:
-          type: string
-          description: "What this internal component does and what domain logic it encapsulates."
-        source_path:
-          type: string
-          description: "Relative file path to the source file implementing this component (e.g. 'src/eidos/core/parser.py')."
-        spec_path:
-          type: string
-          description: "Relative path to an optional dedicated component specification document (for complex components)."
+      oneOf:
+        - required:
+            - id
+            - name
+            - responsibility
+            - source_path
+          properties:
+            id:
+              type: string
+              pattern: "^CMP-[A-Z0-9_-]+$"
+              description: "Unique C4 Component identifier following CMP-<NAME> (e.g. CMP-SPEC-PARSER, CMP-AUTH-SERVICE)."
+            name:
+              type: string
+              description: "Internal component name (e.g. 'SpecParser', 'SchemaValidator', 'CliEntrypoint')."
+            responsibility:
+              type: string
+              description: "What this internal component does and what domain logic it encapsulates."
+            source_path:
+              type: string
+              description: "Relative file path to the source file implementing this component (e.g. 'src/eidos/core/parser.py')."
+            spec_path:
+              type: string
+              description: "Relative path to an optional dedicated component specification document (for complex components)."
+        - required:
+            - id
+            - ref
+          properties:
+            id:
+              type: string
+              pattern: "^CMP-[A-Z0-9_-]+$"
+              description: "Unique C4 Component identifier following CMP-<NAME> (e.g. CMP-SPEC-PARSER, CMP-AUTH-SERVICE)."
+            ref:
+              type: string
+              description: "Relative file path to the co-located dedicated component specification (e.g. 'src/eidos/core/validator.adoc')."
+            name:
+              type: string
+              description: "Optional cached display name of the referenced component."
+            responsibility:
+              type: string
+              description: "Optional cached responsibility summary of the referenced component."
   dependencies:
     type: object
     description: "Explicit container dependencies and external platform services (optional)."

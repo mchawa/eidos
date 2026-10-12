@@ -77,39 +77,71 @@ class TieredContextSlice(ArchitecturalContextSlice):
             ctype = comp.get("container_type", "service")
             runtime = comp.get("runtime", "N/A")
             pkg = comp.get("package_path", "")
-            lines.append(f"### `{cid}` ({name})")
-            lines.append(f"- **Container:** `{ctype}` | **Runtime:** `{runtime}` | **Package:** `{pkg}`")
-            if comp.get("domain_binding"):
-                lines.append(f"- **Domain:** `{comp['domain_binding']}`")
+            is_comp = comp.get("type") == "tech/component" or cid.startswith("CMP-")
 
-            if self.tier in ("guardrails", "deep"):
-                deps = (
-                    (comp.get("dependencies") or {}).get("internal_containers", [])
-                    or (comp.get("dependencies") or {}).get("internal_components", [])
-                    if isinstance(comp.get("dependencies"), dict)
-                    else []
-                )
-                if deps:
-                    lines.append(f"- **Internal Dependencies:** {', '.join(f'`{d}`' for d in deps)}")
-                contracts = comp.get("contracts") or {}
-                prov = contracts.get("provides", []) if isinstance(contracts, dict) else []
-                if prov:
-                    lines.append(f"- **Provides Contracts:** {', '.join(f'`{p}`' for p in prov)}")
-                req = (
-                    (contracts.get("requires") or contracts.get("consumes") or [])
-                    if isinstance(contracts, dict)
-                    else []
-                )
-                if req:
-                    lines.append(f"- **Requires Contracts:** {', '.join(f'`{r}`' for r in req)}")
+            if is_comp:
+                parent_cnt = comp.get("container", "N/A")
+                lines.append(f"### `{cid}` ({name}) [C4 Level 3 Component]")
+                lines.append(f"- **Owning Container:** `{parent_cnt}` | **Package:** `{pkg}`")
+                if comp.get("file_path"):
+                    lines.append(f"- **Co-Located Specification:** `{comp['file_path']}`")
+                if comp.get("responsibility"):
+                    lines.append(f"- **Responsibility:** {comp['responsibility']}")
+                if self.tier in ("guardrails", "deep"):
+                    ifaces = comp.get("interfaces", {})
+                    if isinstance(ifaces, dict) and ifaces.get("provides"):
+                        lines.append("- **In-Process APIs (`interfaces.provides`):**")
+                        for p in ifaces["provides"]:
+                            sig = p.get("signature", "")
+                            desc = f": {p.get('description', '')}" if p.get("description") else ""
+                            lines.append(f"  - `{sig}`{desc}")
+                    invs = comp.get("invariants", [])
+                    if invs:
+                        lines.append("- **Component Invariants (`INV-*`):**")
+                        for inv in invs:
+                            lines.append(f"  - `{inv.get('id')}`: {inv.get('rule')}")
+                if self.tier == "deep":
+                    qas = comp.get("quality_attributes", {})
+                    if qas:
+                        qa_str = ", ".join(f"{k}: {v}" for k, v in qas.items())
+                        lines.append(f"- **Quality Attributes:** {qa_str}")
+            else:
+                lines.append(f"### `{cid}` ({name})")
+                lines.append(f"- **Container:** `{ctype}` | **Runtime:** `{runtime}` | **Package:** `{pkg}`")
+                if comp.get("domain_binding"):
+                    lines.append(f"- **Domain:** `{comp['domain_binding']}`")
 
-            if self.tier == "deep":
-                modules = comp.get("components", []) or comp.get("c4_internal_components", [])
-                if modules:
-                    lines.append("- **C4 Level 3 Components:**")
-                    for m in modules:
-                        mid = f"`{m['id']}` " if m.get("id") else ""
-                        lines.append(f"  - {mid}**{m.get('name', '')}**: {m.get('responsibility', '')}")
+                if self.tier in ("guardrails", "deep"):
+                    deps = (
+                        (comp.get("dependencies") or {}).get("internal_containers", [])
+                        or (comp.get("dependencies") or {}).get("internal_components", [])
+                        if isinstance(comp.get("dependencies"), dict)
+                        else []
+                    )
+                    if deps:
+                        lines.append(f"- **Internal Dependencies:** {', '.join(f'`{d}`' for d in deps)}")
+                    contracts = comp.get("contracts") or {}
+                    prov = contracts.get("provides", []) if isinstance(contracts, dict) else []
+                    if prov:
+                        lines.append(f"- **Provides Contracts:** {', '.join(f'`{p}`' for p in prov)}")
+                    req = (
+                        (contracts.get("requires") or contracts.get("consumes") or [])
+                        if isinstance(contracts, dict)
+                        else []
+                    )
+                    if req:
+                        lines.append(f"- **Requires Contracts:** {', '.join(f'`{r}`' for r in req)}")
+
+                if self.tier == "deep":
+                    modules = comp.get("components", []) or comp.get("c4_internal_components", [])
+                    if modules:
+                        lines.append("- **C4 Level 3 Components:**")
+                        for m in modules:
+                            mid = f"`{m['id']}` " if m.get("id") else ""
+                            if m.get("ref"):
+                                lines.append(f"  - {mid}**{m.get('name', m.get('id', ''))}** (co-located): `ref: {m['ref']}`")
+                            else:
+                                lines.append(f"  - {mid}**{m.get('name', '')}**: {m.get('responsibility', '')}")
             lines.append("")
 
         # 2. Bound Contracts
@@ -304,9 +336,28 @@ class ArchitecturalIndex:
         disk_files: set[str] = set()
         to_update: list[Path] = []
 
+        scan_dirs: list[Path] = []
         if self.eidos_dir.exists():
-            for p in self.eidos_dir.rglob("*.adoc"):
-                if "by-status" in p.parts or p.name.startswith("_") or p.name.lower() == "readme.adoc":
+            scan_dirs.append(self.eidos_dir)
+        for code_dir_name in ("src", "packages", "apps", "libs", "plugins"):
+            cdir = self.root / code_dir_name
+            if cdir.exists() and cdir.is_dir():
+                scan_dirs.append(cdir)
+
+        for sdir in scan_dirs:
+            for p in sdir.rglob("*.adoc"):
+                if (
+                    "by-status" in p.parts
+                    or p.name.startswith("_")
+                    or p.name.lower() == "readme.adoc"
+                    or ".venv" in p.parts
+                    or "node_modules" in p.parts
+                    or "__pycache__" in p.parts
+                    or "dist" in p.parts
+                    or "build" in p.parts
+                    or ".cache" in p.parts
+                    or "site" in p.parts
+                ):
                     continue
                 try:
                     rel_p = str(p.relative_to(self.root)).replace("\\", "/")
@@ -495,6 +546,40 @@ class ArchitecturalIndex:
                 if doc_type == "product/policy":
                     invariants = fm.get("invariants", []) or []
 
+                # Dedicated Co-Located Component bindings
+                if doc_type == "tech/component":
+                    cnt_id = fm.get("container")
+                    if cnt_id:
+                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);", (cnt_id, doc_id))
+                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (doc_id, cnt_id))
+
+                    # In-process interfaces
+                    ifaces = fm.get("interfaces", {})
+                    if isinstance(ifaces, dict):
+                        for prov in ifaces.get("provides", []):
+                            if isinstance(prov, dict) and prov.get("signature"):
+                                sig = prov["signature"]
+                                meth = sig.split("(")[0].strip()
+                                conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_method');", (meth, doc_id))
+                                conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_signature');", (sig, doc_id))
+                        for consumed in ifaces.get("consumes", []):
+                            if isinstance(consumed, str):
+                                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api', NULL);", (doc_id, consumed.strip()))
+
+                    # Component invariants
+                    invariants = fm.get("invariants", []) or []
+
+                # Container references to co-located components
+                if doc_type == "tech/container":
+                    for comp_entry in fm.get("components", []):
+                        if isinstance(comp_entry, dict) and comp_entry.get("ref"):
+                            ref_path = comp_entry["ref"]
+                            cid = comp_entry.get("id")
+                            if cid:
+                                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);", (doc_id, cid))
+                                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (cid, doc_id))
+                                conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_ref');", (ref_path, cid))
+
                 # Insert invariants as child entities & edges
                 for inv in invariants:
                     iid = inv.get("id")
@@ -510,6 +595,7 @@ class ArchitecturalIndex:
                             "source_id": doc_id,
                             "capability_id": doc_id if doc_type == "product/capability" else None,
                             "policy_id": doc_id if doc_type == "product/policy" else None,
+                            "component_id": doc_id if doc_type == "tech/component" else None,
                             "has_test_coverage": test_exists,
                             "matching_tests": [test] if test else [],
                         }
@@ -737,7 +823,7 @@ class ArchitecturalIndex:
             JOIN entities e ON e.id = s.entity_id
             WHERE s.symbol = ?
                OR (? LIKE s.symbol || '/%' AND s.kind = 'package_path')
-               OR (? LIKE '%' || s.symbol AND s.kind IN ('source_path', 'specification_file'))
+               OR (? LIKE '%' || s.symbol AND s.kind IN ('source_path', 'specification_file', 'component_ref', 'interface_method'))
                OR (? LIKE s.symbol || '%' AND s.kind = 'test_binding')
             LIMIT 10;
             """,

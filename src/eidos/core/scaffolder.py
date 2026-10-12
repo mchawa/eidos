@@ -46,8 +46,8 @@ def normalize_id(doc_type_key: str, raw_id: str) -> str:
         "contract": "CTR-",
         "container": "CNT-",
         "tech/container": "CNT-",
-        "component": "CNT-",
-        "tech/component": "CNT-",
+        "component": "CMP-",
+        "tech/component": "CMP-",
         "persona": "PER-",
         "exploration": "EXP-",
         "design-system": "DS-",
@@ -917,3 +917,196 @@ def init_repository(
             pass
 
     return True, f"Successfully initialized empty Eidos living specification skeleton at '{eidos_dir}'.", created_files
+
+
+def promote_component(
+    component_id: str,
+    eidos_dir: Path | None = None,
+    repo_root: Path | None = None,
+) -> tuple[Path, Path]:
+    """Promote an inline C4 Level 3 component to a co-located specification file.
+
+    Returns:
+        (colocated_spec_path, container_path)
+    """
+    root = (repo_root or Path.cwd()).resolve()
+    edir = (eidos_dir or (root / "eidos")).resolve()
+    containers_dir = edir / "architecture" / "containers"
+
+    if not containers_dir.exists():
+        raise FileNotFoundError(f"Container directory '{containers_dir}' does not exist.")
+
+    norm_id = component_id.strip().upper()
+    if not norm_id.startswith("CMP-"):
+        norm_id = f"CMP-{norm_id}"
+
+    target_container_path: Path | None = None
+    target_comp_data: dict[str, Any] | None = None
+
+    for cfile in sorted(containers_dir.glob("*.adoc")):
+        doc = parse_spec_file(cfile)
+        if doc.doc_type != "tech/container" or not doc.frontmatter:
+            continue
+        comps = doc.frontmatter.get("components", [])
+        for c in comps:
+            if isinstance(c, dict) and c.get("id") == norm_id:
+                if c.get("ref"):
+                    raise ValueError(f"Component '{norm_id}' is already promoted with ref '{c['ref']}'.")
+                target_container_path = cfile
+                target_comp_data = c
+                break
+        if target_container_path:
+            break
+
+    if not target_container_path or not target_comp_data:
+        raise ValueError(f"Component '{norm_id}' not found inline within any container in '{containers_dir}'.")
+
+    c_doc = parse_spec_file(target_container_path)
+    c_fm = c_doc.frontmatter or {}
+    container_id = c_fm.get("id", target_container_path.stem)
+    pkg_path_str = c_fm.get("package_path", "src")
+    pkg_dir = root / pkg_path_str
+
+    # Determine co-located .adoc path
+    source_path_str = target_comp_data.get("source_path", "")
+    if source_path_str:
+        src_file = root / source_path_str
+        colocated_path = src_file.with_suffix(".adoc")
+    else:
+        # Fallback to package_path/<component_id_lower>.adoc
+        slug = norm_id.replace("CMP-", "").lower().replace("-", "_")
+        colocated_path = pkg_dir / f"{slug}.adoc"
+
+    colocated_path.parent.mkdir(parents=True, exist_ok=True)
+    rel_colocated = str(colocated_path.relative_to(root)).replace("\\", "/")
+
+    # Author co-located tech/component specification
+    comp_name = target_comp_data.get("name", norm_id)
+    responsibility = target_comp_data.get("responsibility", "In-process module logic and domain services.")
+    source_path_rel = source_path_str or str(colocated_path.with_suffix(".py").relative_to(root)).replace("\\", "/")
+
+    component_content = f"""---
+type: tech/component
+schema: schemas/v1/tech/component.schema.yaml
+id: {norm_id}
+name: "{comp_name}"
+container: {container_id}
+status: active
+package_path: "{source_path_rel}"
+responsibility: >
+  {responsibility}
+
+# IN-PROCESS INTERFACES (Language-level APIs, NOT boundary contracts)
+interfaces:
+  provides: []
+  consumes: []
+
+quality_attributes:
+  stateless: true
+  reentrant: true
+
+invariants: []
+---
+= Component: {comp_name}
+:toc: left
+
+== 1. Internal Architecture & Subsystem Design
+{responsibility}
+
+== 2. In-Process APIs & Interfaces
+Language-level function signatures, traits, and public interfaces provided to the owning container.
+"""
+
+    colocated_path.write_text(component_content, encoding="utf-8")
+
+    # Update container document replacing inline dict with {id: norm_id, ref: rel_colocated}
+    raw_text = target_container_path.read_text(encoding="utf-8")
+    fm_dict, body_raw, _ = extract_frontmatter(raw_text)
+    if fm_dict:
+        parsed_fm = fm_dict
+        for idx, item in enumerate(parsed_fm.get("components", [])):
+            if isinstance(item, dict) and item.get("id") == norm_id:
+                parsed_fm["components"][idx] = {
+                    "id": norm_id,
+                    "ref": rel_colocated,
+                }
+                break
+        new_fm_str = yaml.dump(parsed_fm, sort_keys=False, default_flow_style=False).strip()
+        new_c_content = f"---\n{new_fm_str}\n---\n{body_raw}"
+        target_container_path.write_text(new_c_content, encoding="utf-8")
+
+    return colocated_path, target_container_path
+
+
+def inline_component(
+    component_id: str,
+    eidos_dir: Path | None = None,
+    repo_root: Path | None = None,
+) -> tuple[Path, Path]:
+    """Demote / inline a co-located C4 Level 3 component back into its container.
+
+    Returns:
+        (container_path, deleted_spec_path)
+    """
+    root = (repo_root or Path.cwd()).resolve()
+    edir = (eidos_dir or (root / "eidos")).resolve()
+    containers_dir = edir / "architecture" / "containers"
+
+    if not containers_dir.exists():
+        raise FileNotFoundError(f"Container directory '{containers_dir}' does not exist.")
+
+    norm_id = component_id.strip().upper()
+    if not norm_id.startswith("CMP-"):
+        norm_id = f"CMP-{norm_id}"
+
+    target_container_path: Path | None = None
+    target_ref_path: str | None = None
+
+    for cfile in sorted(containers_dir.glob("*.adoc")):
+        doc = parse_spec_file(cfile)
+        if doc.doc_type != "tech/container" or not doc.frontmatter:
+            continue
+        comps = doc.frontmatter.get("components", [])
+        for c in comps:
+            if isinstance(c, dict) and c.get("id") == norm_id and c.get("ref"):
+                target_container_path = cfile
+                target_ref_path = c["ref"]
+                break
+        if target_container_path:
+            break
+
+    if not target_container_path or not target_ref_path:
+        raise ValueError(f"Component '{norm_id}' is not currently promoted with a co-located 'ref' in '{containers_dir}'.")
+
+    colocated_file = root / target_ref_path
+    if not colocated_file.exists():
+        raise FileNotFoundError(f"Referenced co-located spec file '{colocated_file}' does not exist.")
+
+    comp_doc = parse_spec_file(colocated_file)
+    comp_fm = comp_doc.frontmatter or {}
+    name = comp_fm.get("name", norm_id)
+    responsibility = comp_fm.get("responsibility", "In-process module logic.")
+    source_path = comp_fm.get("package_path", comp_fm.get("source_path", str(colocated_file.with_suffix(".py").relative_to(root)).replace("\\", "/")))
+
+    # Update container frontmatter
+    raw_text = target_container_path.read_text(encoding="utf-8")
+    fm_dict, body_raw, _ = extract_frontmatter(raw_text)
+    if fm_dict:
+        parsed_fm = fm_dict
+        for idx, item in enumerate(parsed_fm.get("components", [])):
+            if isinstance(item, dict) and item.get("id") == norm_id:
+                parsed_fm["components"][idx] = {
+                    "id": norm_id,
+                    "name": name,
+                    "responsibility": responsibility,
+                    "source_path": source_path,
+                }
+                break
+        new_fm_str = yaml.dump(parsed_fm, sort_keys=False, default_flow_style=False).strip()
+        new_c_content = f"---\n{new_fm_str}\n---\n{body_raw}"
+        target_container_path.write_text(new_c_content, encoding="utf-8")
+
+    # Safely remove the co-located .adoc file
+    colocated_file.unlink(missing_ok=True)
+
+    return target_container_path, colocated_file
