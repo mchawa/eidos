@@ -42,16 +42,25 @@ Launches the stdio Model Context Protocol (MCP) server for AI agent clients.
 * **Exit Codes**:
   - `0`: Clean termination.
 
-=== `eidos context [--file PATH] [--component ID] [--task PROMPT] [--format FORMAT] [--path PATH]`
+=== `eidos context [--file PATH] [--component ID] [--task PROMPT] [--tier TIER] [--format FORMAT] [--path PATH]`
 Extracts a compact, token-efficient architectural subgraph context slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies).
 * **Options**:
   - `--file, -f`: Target source code file path(s).
   - `--component, -c`: Target component identifier (e.g. `CMP-EIDOS-CLI`).
   - `--task, -t`: Free-text task description or prompt.
+  - `--tier, -T`: Context tier budget: `anchor` (~140 tokens), `guardrails` (default, ~260-890 tokens), or `deep` (~500-1500 tokens).
   - `--format`: Output serialization format: `markdown` (default) or `json`.
   - `--path, -p`: Path to specifications directory (default: `./eidos`).
 * **Exit Codes**:
   - `0`: Slice successfully extracted.
+
+=== `eidos index`
+Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search index (`.eidos/cache/index.db`).
+* **Sub-commands**:
+  - `status [--path <path>]`: Displays index health, entity/edge counts, file hashes, cache file size, and drift status.
+  - `sync [--path <path>] [--force]`: Synchronizes or rebuilds the knowledge graph index.
+  - `search <query> [--limit <n>] [--path <path>]`: Performs BM25 full-text search across titles, requirements, and invariants.
+  - `blast-radius <symbol_or_path> [--hops <n>] [--path <path>]`: Computes the transitive dependency and governance blast radius for a symbol or spec path.
 
 === `eidos serve [--path PATH] [--host HOST] [--port PORT] [--open]`
 Launches the local interactive Eidos Living Web Portal HTTP server.

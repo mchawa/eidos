@@ -224,4 +224,44 @@ def test_context_slice_invariants_policy_id(tmp_path):
     assert policy_invs[0]["id"] == "INV-DATA-RETENTION-90D"
 
 
+def test_cli_context_tier_option():
+    """Verify eidos context supports --tier [anchor|guardrails|deep]."""
+    res_anchor = runner.invoke(app, ["context", "-f", "src/eidos/cli/main.py", "--tier", "anchor"])
+    assert res_anchor.exit_code == 0
+    assert "ANCHOR Tier" in res_anchor.output
+
+    res_guard = runner.invoke(app, ["context", "-f", "src/eidos/cli/main.py", "--tier", "guardrails"])
+    assert res_guard.exit_code == 0
+    assert "GUARDRAILS Tier" in res_guard.output
+
+    res_deep = runner.invoke(app, ["context", "-f", "src/eidos/cli/main.py", "--tier", "deep"])
+    assert res_deep.exit_code == 0
+    assert "DEEP Tier" in res_deep.output
+
+
+def test_cli_index_commands():
+    """Verify eidos index status, sync, search, and blast-radius commands."""
+    # 1. status
+    res_status = runner.invoke(app, ["index", "status"])
+    assert res_status.exit_code == 0
+    assert "Eidos Architectural Knowledge Graph Index" in res_status.output
+    assert "Entities by Type" in res_status.output
+
+    # 2. sync
+    res_sync = runner.invoke(app, ["index", "sync"])
+    assert res_sync.exit_code == 0
+    assert "Index is up to date" in res_sync.output or "Synchronized index" in res_sync.output
+
+    # 3. search
+    res_search = runner.invoke(app, ["index", "search", "token design system"])
+    assert res_search.exit_code == 0
+    assert "Architectural Search Results" in res_search.output
+
+    # 4. blast-radius
+    res_blast = runner.invoke(app, ["index", "blast-radius", "CMP-EIDOS-CORE", "--depth", "1"])
+    assert res_blast.exit_code == 0
+    assert "Blast Radius for 'CMP-EIDOS-CORE'" in res_blast.output
+
+
+
 

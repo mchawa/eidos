@@ -191,6 +191,7 @@ def get_context_slice(
     task: str | None = None,
     eidos_dir: Path | None = None,
     repo_root: Path | None = None,
+    tier: str = "guardrails",
 ) -> ArchitecturalContextSlice:
     """Extract an architectural subgraph context slice tailored for an AI agent's current task.
 
@@ -200,6 +201,7 @@ def get_context_slice(
         task: Optional free-text task or feature prompt.
         eidos_dir: Path to the eidos/ living specification catalog.
         repo_root: Path to the repository root.
+        tier: Context slice verbosity tier ('anchor', 'guardrails', 'deep'). Defaults to 'guardrails'.
 
     Returns:
         ArchitecturalContextSlice with matched components, contracts,

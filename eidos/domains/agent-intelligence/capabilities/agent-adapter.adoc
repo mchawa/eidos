@@ -23,8 +23,11 @@ technical:
   contracts:
     interfaces:
       - "eidos agent run --driver [agy|claude|codex|mcp] --delta <delta-id>"
-      - "eidos context [--file PATH] [--component ID] [--task PROMPT]"
+      - "eidos context [--file PATH] [--component ID] [--task PROMPT] [--tier TIER]"
+      - "eidos index [status|sync|search|blast-radius]"
       - "eidos_get_task_context"
+      - "eidos_search_architecture"
+      - "eidos_get_blast_radius"
   invariants:
     - id: INV-AGENT-DRIVER-ISOLATION
       rule: "Switching the agent driver from 'agy' to 'claude' must not alter task inputs, test invariants, or git output contracts."
@@ -35,6 +38,9 @@ technical:
     - id: INV-AGENT-CONTEXT-SLICING
       rule: "Context slicing must extract compact, token-efficient architectural subgraphs without phantom dependencies or circular module errors."
       test_binding: "tests/test_context.py::test_context_slice_by_file"
+    - id: INV-AGENT-GRAPH-INDEX-FRESHNESS
+      rule: "The embedded architectural knowledge graph must automatically detect drift and lazily synchronize before query execution, maintaining sub-10ms response times with zero external runtime dependencies."
+      test_binding: "tests/test_graph_index.py::test_spike_b_zero_drift_on_mutation"
 ---
 = Capability: Universal Agent Adapter Layer
 :toc: left

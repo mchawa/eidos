@@ -129,3 +129,43 @@ def test_mcp_context_tool():
     assert len(data["invariants"]) >= 1
     assert len(data["policies"]) >= 1
 
+    # 3. Tiered options (anchor, guardrails, deep)
+    res_anchor = handle_tool_call("eidos_get_task_context", {"files": ["src/eidos/cli/main.py"], "tier": "anchor"})
+    assert "ANCHOR Tier" in res_anchor[0]["text"]
+
+    res_deep = handle_tool_call("eidos_get_task_context", {"files": ["src/eidos/cli/main.py"], "tier": "deep"})
+    assert "DEEP Tier" in res_deep[0]["text"]
+
+
+def test_mcp_index_tools():
+    """Verify new architectural index MCP tools: search, blast radius, status, sync."""
+    # 1. eidos_search_architecture
+    res_search = handle_tool_call("eidos_search_architecture", {"query": "design system tokens", "limit": 3})
+    assert len(res_search) == 1
+    search_data = json.loads(res_search[0]["text"])
+    assert len(search_data) >= 1
+    assert any("DS-" in item["id"] or "CAP-" in item["id"] or "DLT-" in item["id"] for item in search_data)
+
+    # 2. eidos_get_blast_radius
+    res_blast = handle_tool_call("eidos_get_blast_radius", {"entity_id": "CMP-EIDOS-CORE", "depth": 2})
+    assert len(res_blast) == 1
+    blast_data = json.loads(res_blast[0]["text"])
+    assert len(blast_data) >= 2
+    assert any(n["id"] == "CMP-EIDOS-CORE" and n["depth"] == 0 for n in blast_data)
+
+    # 3. eidos_index_status
+    res_status = handle_tool_call("eidos_index_status", {})
+    assert len(res_status) == 1
+    status_data = json.loads(res_status[0]["text"])
+    assert status_data["total_entities"] >= 50
+    assert status_data["total_edges"] >= 40
+    assert status_data["schema_version"] == "1.0.0"
+
+    # 4. eidos_sync_index
+    res_sync = handle_tool_call("eidos_sync_index", {"force": False})
+    assert len(res_sync) == 1
+    sync_data = json.loads(res_sync[0]["text"])
+    assert "duration_ms" in sync_data
+    assert sync_data["duration_ms"] >= 0.0
+
+

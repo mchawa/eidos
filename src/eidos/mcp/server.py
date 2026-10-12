@@ -2,11 +2,13 @@
 
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 import eidos
 from eidos.core.context import get_context_slice
+from eidos.core.graph_index import get_architectural_index
 from eidos.core.parser import parse_spec_file
 from eidos.core.scaffolder import (
     apply_delta,
@@ -254,6 +256,11 @@ TOOLS = [
                     "type": "string",
                     "description": "Free-text task description or engineering prompt.",
                 },
+                "tier": {
+                    "type": "string",
+                    "enum": ["anchor", "guardrails", "deep"],
+                    "description": "Context slice verbosity tier: 'anchor' (~140 tokens), 'guardrails' (~260 tokens), 'deep' (~500 tokens). Defaults to 'guardrails'.",
+                },
                 "format": {
                     "type": "string",
                     "enum": ["markdown", "json"],
@@ -285,6 +292,11 @@ TOOLS = [
                     "type": "string",
                     "description": "Free-text task description or engineering prompt.",
                 },
+                "tier": {
+                    "type": "string",
+                    "enum": ["anchor", "guardrails", "deep"],
+                    "description": "Context slice verbosity tier: 'anchor' (~140 tokens), 'guardrails' (~260 tokens), 'deep' (~500 tokens). Defaults to 'guardrails'.",
+                },
                 "format": {
                     "type": "string",
                     "enum": ["markdown", "json"],
@@ -294,6 +306,53 @@ TOOLS = [
                     "type": "string",
                     "description": "Path to eidos directory (defaults to 'eidos').",
                 },
+            },
+        },
+    },
+    {
+        "name": "eidos_search_architecture",
+        "description": "Execute BM25 ranked full-text search (FTS5) across all living specifications, capabilities, and policies.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string", "description": "Search keywords or prompt phrase."},
+                "limit": {"type": "integer", "description": "Maximum number of matches (default 10)."},
+                "path": {"type": "string", "description": "Path to specifications directory (defaults to 'eidos')."},
+            },
+        },
+    },
+    {
+        "name": "eidos_get_blast_radius",
+        "description": "Calculate recursive CTE graph walk / blast radius up to k hops for an architectural entity.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["entity_id"],
+            "properties": {
+                "entity_id": {"type": "string", "description": "Target entity ID (e.g. 'CMP-EIDOS-CORE', 'CAP-PROD-001')."},
+                "depth": {"type": "integer", "description": "Maximum hop depth (defaults to 2)."},
+                "path": {"type": "string", "description": "Path to specifications directory (defaults to 'eidos')."},
+            },
+        },
+    },
+    {
+        "name": "eidos_index_status",
+        "description": "Get architectural knowledge graph index health, schema version, cache size, and statistics.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Path to specifications directory (defaults to 'eidos')."},
+            },
+        },
+    },
+    {
+        "name": "eidos_sync_index",
+        "description": "Synchronize the embedded SQLite architectural index with specifications on disk.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "force": {"type": "boolean", "description": "Force complete rebuild of the index (defaults to false)."},
+                "path": {"type": "string", "description": "Path to specifications directory (defaults to 'eidos')."},
             },
         },
     },
@@ -522,20 +581,50 @@ def handle_tool_call(name: str, arguments: dict[str, Any]) -> list[dict[str, Any
         files = arguments.get("files")
         comp = arguments.get("component")
         task = arguments.get("task")
+        tier = arguments.get("tier", "guardrails")
         fmt = arguments.get("format", "markdown")
         eidos_path = Path(arguments.get("path") or "eidos")
 
-        slice_result = get_context_slice(
+        idx = get_architectural_index(eidos_dir=eidos_path)
+        slice_result = idx.get_tiered_context_slice(
             files=files,
             component=comp,
             task=task,
-            eidos_dir=eidos_path,
-            repo_root=Path.cwd(),
+            tier=tier,
         )
 
         if fmt == "json":
             return [{"type": "text", "text": slice_result.to_json()}]
         return [{"type": "text", "text": slice_result.to_markdown()}]
+
+    elif name == "eidos_search_architecture":
+        query = arguments["query"]
+        limit = arguments.get("limit", 10)
+        eidos_path = Path(arguments.get("path") or "eidos")
+        idx = get_architectural_index(eidos_dir=eidos_path)
+        results = idx.query_fts(query, limit=limit)
+        return [{"type": "text", "text": json.dumps(results, indent=2)}]
+
+    elif name == "eidos_get_blast_radius":
+        entity_id = arguments["entity_id"]
+        depth = arguments.get("depth", 2)
+        eidos_path = Path(arguments.get("path") or "eidos")
+        idx = get_architectural_index(eidos_dir=eidos_path)
+        neighbors = idx.get_k_hop_neighborhood(entity_id, max_depth=depth)
+        return [{"type": "text", "text": json.dumps(neighbors, indent=2)}]
+
+    elif name == "eidos_index_status":
+        eidos_path = Path(arguments.get("path") or "eidos")
+        idx = get_architectural_index(eidos_dir=eidos_path)
+        status = idx.get_index_status()
+        return [{"type": "text", "text": json.dumps(status, indent=2)}]
+
+    elif name == "eidos_sync_index":
+        force = arguments.get("force", False)
+        eidos_path = Path(arguments.get("path") or "eidos")
+        idx = get_architectural_index(eidos_dir=eidos_path)
+        stats = idx.sync(force=force)
+        return [{"type": "text", "text": json.dumps(asdict(stats), indent=2)}]
 
     return [{"type": "text", "text": f"Unknown tool: {name}"}]
 

@@ -10,6 +10,7 @@ from rich.table import Table
 
 import eidos
 from eidos.core.context import get_context_slice
+from eidos.core.graph_index import get_architectural_index
 from eidos.core.parser import parse_spec_file
 from eidos.core.scaffolder import (
     apply_delta,
@@ -59,10 +60,16 @@ delta_app = typer.Typer(
     help="Manage SpecDeltas through their mutation lifecycle (list, create, apply, delete).",
     add_completion=False,
 )
+index_app = typer.Typer(
+    name="index",
+    help="Manage and query the embedded SQLite architectural knowledge graph (.eidos/cache/index.db).",
+    add_completion=False,
+)
 
 app.add_typer(plugin_app, name="plugin")
 app.add_typer(spec_app, name="spec")
 app.add_typer(delta_app, name="delta")
+app.add_typer(index_app, name="index")
 console = Console()
 
 
@@ -593,6 +600,12 @@ def context_cmd(
         "-t",
         help="Free-text task description or prompt to slice architectural context for.",
     ),
+    tier: str = typer.Option(
+        "guardrails",
+        "--tier",
+        "-T",
+        help="Context slice verbosity tier: 'anchor' (~140 tokens), 'guardrails' (~260 tokens), 'deep' (~500 tokens). Defaults to 'guardrails'.",
+    ),
     format: str = typer.Option(
         "markdown",
         "--format",
@@ -610,18 +623,181 @@ def context_cmd(
     if not eidos_dir.exists():
         eidos_dir = Path(".")
 
-    slice_result = get_context_slice(
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    slice_result = idx.get_tiered_context_slice(
         files=files,
         component=component,
         task=task,
-        eidos_dir=eidos_dir,
-        repo_root=Path.cwd(),
+        tier=tier,
     )
 
     if format.lower() == "json":
         typer.echo(slice_result.to_json())
     else:
         typer.echo(slice_result.to_markdown())
+
+
+# -------------------------------------------------------------------------
+# Index Embedded Knowledge Graph & Hybrid Retrieval Commands
+# -------------------------------------------------------------------------
+
+
+@index_app.command("status")
+def index_status_cmd(
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to eidos directory (defaults to ./eidos).",
+    ),
+):
+    """Display health, schema version, cache size, and statistics of the architectural index."""
+    eidos_dir = path or Path("eidos")
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    status = idx.get_index_status()
+
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="bold cyan", justify="right")
+    grid.add_column(style="white")
+
+    grid.add_row("Database Path:", f"[dim]{status['db_path']}[/dim]")
+    grid.add_row("Schema Version:", f"[green]{status['schema_version']}[/green]")
+    grid.add_row("Cache Size:", f"[yellow]{status['db_size_bytes'] / 1024:.1f} KB[/yellow]")
+    dirty_label = (
+        "[bold red]DIRTY (Needs sync)[/bold red]"
+        if status["is_dirty"]
+        else "[bold green]SYNCED (Clean)[/bold green]"
+    )
+    grid.add_row("Status:", f"{dirty_label} [dim]({status['dirty_check_latency_ms']:.2f}ms check)[/dim]")
+    grid.add_row("Total Entities:", f"[bold white]{status['total_entities']}[/bold white]")
+    grid.add_row("Total Edges:", f"[bold white]{status['total_edges']}[/bold white]")
+    grid.add_row("Indexed Files:", f"[bold white]{status['total_indexed_files']}[/bold white]")
+    grid.add_row("AST Symbol Mappings:", f"[bold white]{status['total_symbols']}[/bold white]")
+
+    console.print(Panel(grid, title="[bold blue]Eidos Architectural Knowledge Graph Index[/bold blue]", expand=False))
+
+    if status.get("entity_counts_by_type"):
+        table = Table(title="Entities by Type", show_header=True)
+        table.add_column("Type", style="bold cyan")
+        table.add_column("Count", justify="right", style="green")
+        for etype, count in sorted(status["entity_counts_by_type"].items()):
+            table.add_row(etype, str(count))
+        console.print(table)
+
+
+@index_app.command("sync")
+def index_sync_cmd(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force complete rebuild of the index from scratch.",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to eidos directory (defaults to ./eidos).",
+    ),
+):
+    """Synchronize the architectural index with specifications on disk."""
+    eidos_dir = path or Path("eidos")
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    stats = idx.sync(force=force)
+
+    if stats.was_clean and not force:
+        console.print(
+            f"[bold green]✓ Index is up to date.[/bold green] Verified in [dim]{stats.duration_ms:.2f}ms[/dim]."
+        )
+    else:
+        mode = "Rebuilt" if force else "Synchronized"
+        console.print(
+            f"[bold green]✓ {mode} index in {stats.duration_ms:.2f}ms.[/bold green] "
+            f"[dim](Indexed {stats.indexed_new} new, updated {stats.updated_modified} modified, pruned {stats.pruned_deleted} deleted)[/dim]"
+        )
+
+
+@index_app.command("search")
+def index_search_cmd(
+    query: str = typer.Argument(
+        ...,
+        help="Search query keywords or phrase.",
+    ),
+    limit: int = typer.Option(
+        10,
+        "--limit",
+        "-l",
+        help="Maximum number of matches to display.",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to eidos directory (defaults to ./eidos).",
+    ),
+):
+    """Execute BM25 ranked full-text search (FTS5) across all specifications, capabilities, and invariants."""
+    eidos_dir = path or Path("eidos")
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    results = idx.query_fts(query, limit=limit)
+
+    if not results:
+        console.print(f"[yellow]No architectural specifications matched query: '{query}'[/yellow]")
+        return
+
+    table = Table(title=f"Architectural Search Results for '{query}' ({len(results)} matches)", show_header=True)
+    table.add_column("Rank", justify="right", style="dim")
+    table.add_column("Entity ID", style="bold cyan")
+    table.add_column("Type", style="yellow")
+    table.add_column("Title", style="white")
+    table.add_column("Domain", style="dim")
+
+    for r in results:
+        table.add_row(f"{r['rank']:.2f}", r["id"], r["type"], r["title"], r.get("domain", "") or "—")
+
+    console.print(table)
+
+
+@index_app.command("blast-radius")
+def index_blast_radius_cmd(
+    entity_id: str = typer.Argument(
+        ...,
+        help="Target architectural entity ID (e.g. 'CMP-EIDOS-CORE', 'CAP-PROD-001').",
+    ),
+    depth: int = typer.Option(
+        2,
+        "--depth",
+        "-d",
+        help="Maximum graph walk hop distance (defaults to 2).",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to eidos directory (defaults to ./eidos).",
+    ),
+):
+    """Display recursive CTE graph walk / blast radius for an architectural entity."""
+    eidos_dir = path or Path("eidos")
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    neighbors = idx.get_k_hop_neighborhood(entity_id, max_depth=depth)
+
+    if not neighbors:
+        console.print(f"[yellow]Entity '{entity_id}' not found in architectural graph.[/yellow]")
+        return
+
+    table = Table(title=f"Blast Radius for '{entity_id}' (Depth: {depth})", show_header=True)
+    table.add_column("Hop", justify="center", style="bold magenta")
+    table.add_column("Entity ID", style="bold cyan")
+    table.add_column("Type", style="yellow")
+    table.add_column("Title", style="white")
+    table.add_column("Domain", style="dim")
+
+    for n in neighbors:
+        table.add_row(str(n["depth"]), n["id"], n["type"], n["title"], n.get("domain", "") or "—")
+
+    console.print(table)
+
 
 
 

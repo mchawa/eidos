@@ -31,6 +31,9 @@ c4_internal_components:
   - name: "ContextSlicer"
     responsibility: "Extracts compact, token-efficient architectural subgraph slices across C4 components, contracts, capabilities, invariants, and policies."
     source_path: "src/eidos/core/context.py"
+  - name: "ArchitecturalIndex"
+    responsibility: "Embedded SQLite knowledge graph, FTS5 lexical retrieval, incremental dirty-checking, and tiered context compression."
+    source_path: "src/eidos/core/graph_index.py"
 
 dependencies:
   internal_components: []
@@ -51,7 +54,7 @@ quality_attributes:
 :toc: left
 
 == Architectural Boundary
-This container represents the foundational library under `src/eidos/core/`. It owns all specification parsing, JSON Schema validation, multi-design system scaffolding, W3C token management, SpecDelta lifecycle state machines, and reference checking.
+This container represents the foundational library under `src/eidos/core/`. It owns all specification parsing, JSON Schema validation, multi-design system scaffolding, W3C token management, SpecDelta lifecycle state machines, reference checking, and embedded architectural graph indexing.
 
 == Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
 
@@ -65,6 +68,7 @@ This container represents the foundational library under `src/eidos/core/`. It o
 | **RepositoryInitializer** | Repository bootstrapping with self-contained gitignore and baseline specs | `src/eidos/core/scaffolder.py`
 | **AssetLocator** | Centralized locator for schemas and plugin reference in assets/ | `src/eidos/core/assets.py`
 | **ContextSlicer** | Extracts compact architectural subgraph slices across living specifications | `src/eidos/core/context.py`
+| **ArchitecturalIndex** | Embedded SQLite knowledge graph, FTS5 lexical search, auto-sync, and tiered context | `src/eidos/core/graph_index.py`
 |===
 
 == Operational Invariants & Quality Attributes
