@@ -31,6 +31,9 @@ export interface SpecComponent {
   container_type: string;
   runtime: string;
   package_path: string;
+  domain_binding?: string;
+  tier?: string;
+  tier_name?: string;
   internal_components: Array<{
     id: string;
     name: string;
@@ -45,6 +48,7 @@ export interface SpecComponent {
     provides?: string[];
     consumes?: string[];
   };
+  quality_attributes?: Record<string, any>;
   description?: string;
 }
 

@@ -28,7 +28,7 @@ states:
   - name: "level_1_context"
     description: "Interactive C4 Level 1 System Context topology with clickable system node to drill into Containers."
   - name: "level_2_containers"
-    description: "Interactive C4 Level 2 Container topology with clickable containers to drill into Level 3 Components."
+    description: "Interactive C4 Level 2 Container topology structured into semantic architectural tiers with visible inter-container dependency connections and clickable containers to drill into Level 3 Components."
   - name: "level_3_components"
     description: "Interactive C4 Level 3 Component Whitebox view showing internal building blocks and responsibilities."
   - name: "component_inspected"

@@ -40,6 +40,9 @@ properties:
   domain_binding:
     type: string
     description: "The product domain ID (DOM-*) this technical container primarily realizes (optional)."
+  tier:
+    type: string
+    description: "Architectural tier classification (optional: presentation, service, core, persistence, or custom tier slug)."
   components:
     type: array
     description: "Arc42 Section 5.2 / C4 Level 3: Component Whitebox View. The internal modules, services, or building blocks that constitute this container."

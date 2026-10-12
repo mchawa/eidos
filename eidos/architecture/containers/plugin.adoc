@@ -8,6 +8,7 @@ runtime: "Python 3.12 / agent-plugins.org v1.0.0"
 package_path: "src/eidos/plugin"
 
 domain_binding: DOM-AGENT-INTELLIGENCE
+tier: extensibility
 
 components:
   - id: CMP-PLUGIN-INSTALLER

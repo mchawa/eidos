@@ -8,6 +8,7 @@ runtime: "Python 3.12 / HTTP / React 19 / Tailwind v4 / MD3 / Mermaid.js"
 package_path: "src/eidos/portal"
 
 domain_binding: DOM-EXPERIENCE-PORTAL
+tier: presentation
 
 components:
   - id: CMP-PORTAL-SERVER
@@ -16,7 +17,7 @@ components:
     source_path: "src/eidos/portal/server.py"
   - id: CMP-PORTAL-GENERATOR
     name: "PortalGenerator"
-    responsibility: "Synthesizes living specifications into unified portal data model with auto-generated Mermaid diagrams."
+    responsibility: "Synthesizes living specifications into unified portal data model with hierarchical C4 Level 2 container topologies, explicit inter-container dependency connections, and auto-generated Mermaid diagrams."
     source_path: "src/eidos/portal/generator.py"
   - id: CMP-PORTAL-BUILDER
     name: "StaticSiteBuilder"

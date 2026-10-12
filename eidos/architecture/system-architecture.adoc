@@ -132,18 +132,25 @@ Eidos enforces a strict, first-principles mapping to the canonical C4 architectu
 |===
 
 === 5.2 Monorepo Container Topology (C4 Level 2)
-Eidos is distributed as a monorepo consisting of the following primary Level 2 containers:
+Eidos is distributed as a monorepo consisting of the following primary Level 2 containers, structured into four canonical architectural tiers:
 
-[cols="1,2,2,2", options="header"]
+[cols="1,2,2,2,2", options="header"]
 |===
-| Container ID | Name | Type | Source Path
-| `CNT-EIDOS-CORE` | Eidos Living Spec & Design Core Engine | Library | `src/eidos/core`
-| `CNT-EIDOS-CLI` | Eidos Command-Line Interface | CLI Application | `src/eidos/cli`
-| `CNT-EIDOS-PLUGIN` | Eidos Agent Plugin & Extension Manager | Library | `src/eidos/plugin`
-| `CNT-EIDOS-PORTAL` | Eidos Living Web Portal & Static Generator | Web Application | `src/eidos/portal`
-| `CNT-EIDOS-INDEX` | Eidos Architectural Knowledge Graph & Retrieval Index | Library | `src/eidos/core/graph_index.py`
-| `CNT-EIDOS-DOCS` | Eidos User Documentation System | Web Application | `docs`
+| Container ID | Name | Architectural Tier | Type | Source Path
+| `CNT-EIDOS-CLI` | Eidos Command-Line Interface | Tier 1: Presentation & Interface | CLI Application | `src/eidos/cli`
+| `CNT-EIDOS-PORTAL` | Eidos Living Web Portal & Static Generator | Tier 1: Presentation & Interface | Web Application | `src/eidos/portal`
+| `CNT-EIDOS-DOCS` | Eidos User Documentation System | Tier 1: Presentation & Interface | Web Application | `docs`
+| `CNT-EIDOS-PLUGIN` | Eidos Agent Plugin & Extension Manager | Tier 2: Extensibility & Agent Integration | Library | `src/eidos/plugin`
+| `CNT-EIDOS-CORE` | Eidos Living Spec & Design Core Engine | Tier 3: Core Domain & Spec Engine | Library | `src/eidos/core`
+| `CNT-EIDOS-INDEX` | Eidos Architectural Knowledge Graph & Retrieval Index | Tier 4: Knowledge Graph & Persistence | Library | `src/eidos/core/graph_index.py`
 |===
+
+The C4 Level 2 Container Diagram explicitly renders the inter-container dependency connections:
+* `CNT-EIDOS-CLI` invokes Core Engine commands (`CNT-EIDOS-CORE`), queries the knowledge index (`CNT-EIDOS-INDEX`), validates plugins (`CNT-EIDOS-PLUGIN`), and hosts/builds the Living Portal (`CNT-EIDOS-PORTAL`).
+* `CNT-EIDOS-PORTAL` validates and synthesizes living specifications (`CNT-EIDOS-CORE`) and retrieves graph metrics (`CNT-EIDOS-INDEX`).
+* `CNT-EIDOS-DOCS` embeds and links the Living Portal (`CTR-EIDOS-PORTAL`).
+* `CNT-EIDOS-PLUGIN` resolves schemas and plugin reference assets (`CNT-EIDOS-CORE`).
+* `CNT-EIDOS-INDEX` consumes AST models and frontmatter definitions (`CNT-EIDOS-CORE`).
 
 === 5.3 Level 3 Component Whitebox View & Interface Governance
 Internal component building blocks are declared inline within each container manifest. In Centralized Hybrid Mode (see link:../explorations/EXP-2026-004.adoc[EXP-2026-004]), complex promoted components **reside centrally in `eidos/architecture/components/<component>.adoc`** (linked via `ref:` in the parent container manifest) and point to code via `package_path`. Eidos specifications **never touch or reside within source code directories** (`src/`, `packages/`).

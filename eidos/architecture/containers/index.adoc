@@ -8,6 +8,7 @@ runtime: "Python 3.12 / SQLite3 / FTS5 / CTE"
 package_path: "src/eidos/core/graph_index.py"
 
 domain_binding: DOM-SPEC-ENGINE
+tier: persistence
 
 components:
   - id: CMP-GRAPH-STORAGE

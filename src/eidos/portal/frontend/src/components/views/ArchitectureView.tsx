@@ -28,6 +28,23 @@ export interface ArchitectureViewProps {
   darkMode?: boolean;
 }
 
+const getTierStyle = (tierId?: string) => {
+  switch (tierId) {
+    case "tier_presentation":
+      return { bg: "bg-sky-500/15", text: "text-sky-400", border: "border-sky-500/30", dot: "bg-sky-400" };
+    case "tier_service":
+      return { bg: "bg-amber-500/15", text: "text-amber-400", border: "border-amber-500/30", dot: "bg-amber-400" };
+    case "tier_extensibility":
+      return { bg: "bg-purple-500/15", text: "text-purple-400", border: "border-purple-500/30", dot: "bg-purple-400" };
+    case "tier_core":
+      return { bg: "bg-indigo-500/15", text: "text-indigo-400", border: "border-indigo-500/30", dot: "bg-indigo-400" };
+    case "tier_persistence":
+      return { bg: "bg-teal-500/15", text: "text-teal-400", border: "border-teal-500/30", dot: "bg-teal-400" };
+    default:
+      return { bg: "bg-slate-500/15", text: "text-slate-400", border: "border-slate-500/30", dot: "bg-slate-400" };
+  }
+};
+
 export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProps) {
   const [level, setLevelState] = React.useState<1 | 2 | 3>(1);
   const [selectedContainerId, setSelectedContainerId] = React.useState<string>(
@@ -38,6 +55,19 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
   const [isExpanded, setIsExpanded] = React.useState<boolean>(false);
   const [inspectorOpen, setInspectorOpen] = React.useState<boolean>(false);
   const [inspectedComponent, setInspectedComponent] = React.useState<SpecComponent | null>(null);
+
+  // Dynamic active tiers from components
+  const activeTiers = React.useMemo(() => {
+    const tierMap = new Map<string, { id: string; name: string }>();
+    data.components.forEach((c) => {
+      if (c.tier) {
+        if (!tierMap.has(c.tier)) {
+          tierMap.set(c.tier, { id: c.tier, name: c.tier_name || c.tier });
+        }
+      }
+    });
+    return Array.from(tierMap.values());
+  }, [data.components]);
 
   const containerRef = React.useRef<HTMLDivElement>(null);
   const diagramRef = React.useRef<HTMLDivElement>(null);
@@ -89,8 +119,8 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
 
     // Natural fit within viewport:
     // If diagram is smaller than viewport (optimalScale >= 1.0), cap at 1.0 so it never blows up.
-    // If diagram is larger than viewport (optimalScale < 1.0, e.g. Level 2 Containers),
-    // scale to optimalScale so all containers, links, and text fit 100% within the viewport without clipping!
+    // If diagram is larger than viewport (optimalScale < 1.0, e.g. Level 2 Containers or Level 3 Components),
+    // scale to optimalScale so all containers, links, and text fit 100% within the viewport!
     const clampedZoom = Number(Math.min(1.0, optimalScale).toFixed(2));
     setZoom(clampedZoom);
     setPan({ x: 0, y: 0 });
@@ -210,7 +240,21 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
           node.setAttribute("title", "Click to drill down into Level 2: Containers");
         }
       } else if (level === 2) {
-        node.setAttribute("title", "Click container to drill down into Level 3: Components");
+        const matched = data.components.find(
+          (c) =>
+            text.includes(c.id) ||
+            text.includes(c.name) ||
+            nodeId.includes(c.id.replace(/-/g, "_")) ||
+            nodeId.includes(c.id)
+        );
+        if (matched) {
+          node.setAttribute(
+            "title",
+            `Click to drill down into ${matched.id} (${matched.name}) Level 3 Components`
+          );
+        } else {
+          node.setAttribute("title", "Click container to drill down into Level 3: Components");
+        }
       } else if (level === 3) {
         if (text.includes("Peer") || nodeId.includes("peer_")) {
           node.setAttribute("title", "Click to navigate to peer container");
@@ -365,30 +409,30 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
 
         {/* Level 3 Breadcrumbs and selector */}
         {level === 3 && (
-          <div id="c4Breadcrumbs" className="flex items-center gap-2 text-xs">
+          <div id="c4Breadcrumbs" className="flex items-center gap-2 text-xs min-w-0">
             <button
               onClick={() => setC4Level(1)}
-              className="p-1 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 cursor-pointer transition-colors"
+              className="p-1 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 cursor-pointer transition-colors shrink-0"
               title="Return to System Context"
             >
               <span>Context</span>
             </button>
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <button
               id="btnC4LevelUp"
               onClick={() => setC4Level(2)}
-              className="p-1 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 cursor-pointer transition-colors"
+              className="p-1 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center gap-1 px-2 cursor-pointer transition-colors shrink-0"
               title="Return to Containers"
             >
               <ArrowUp className="h-3 w-3" />
               <span>Containers</span>
             </button>
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <select
               id="c4ContainerSelect"
               value={selectedContainerId}
               onChange={(e) => drillDownToContainer(e.target.value)}
-              className="bg-card border border-border text-xs rounded-lg px-2.5 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+              className="bg-card border border-border text-xs rounded-lg px-2.5 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono max-w-[200px] sm:max-w-[280px] md:max-w-[340px] truncate"
             >
               {data.components.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -448,11 +492,41 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
         </div>
       </div>
 
-      {/* C4 View Level Indicator */}
-      <div className="flex items-center justify-end px-1">
-        <span className="text-[11px] text-muted-foreground font-mono hidden sm:inline">
-          {level === 1 ? "C4 Level 1: System Context" : level === 2 ? "C4 Level 2: Container Topology" : `C4 Level 3: Whitebox (${selectedContainerId})`}
-        </span>
+      {/* C4 View Level Indicator & Tier Legend */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+        {level === 2 && activeTiers.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">
+              Tiers:
+            </span>
+            {activeTiers.map((tier) => {
+              const style = getTierStyle(tier.id);
+              return (
+                <span
+                  key={tier.id}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border",
+                    style.bg,
+                    style.text,
+                    style.border
+                  )}
+                >
+                  <span className={cn("w-1.5 h-1.5 rounded-full", style.dot)} />
+                  {tier.name}
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div className="ml-auto">
+          <span className="text-[11px] text-muted-foreground font-mono hidden sm:inline">
+            {level === 1
+              ? "C4 Level 1: System Context"
+              : level === 2
+              ? "C4 Level 2: Container Topology & Hierarchy"
+              : `C4 Level 3: Whitebox (${selectedContainerId})`}
+          </span>
+        </div>
       </div>
 
       {/* Main Diagram Viewport Card with Drag-to-Pan */}
@@ -466,7 +540,7 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
         onWheel={handleWheel}
         className={cn(
           "p-4 sm:p-6 flex items-center justify-center overflow-hidden bg-card/60 relative select-none transition-all duration-200",
-          isExpanded ? "min-h-[760px]" : "min-h-[520px]"
+          isExpanded ? "h-[800px]" : "h-[580px]"
         )}
       >
         {/* Floating Pan & Zoom Hint */}
@@ -515,45 +589,83 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {data.components.map((comp) => (
-            <Card
-              key={comp.id}
-              className="hover:border-primary/50 transition-all p-5 space-y-3.5 group flex flex-col justify-between border border-border/80 bg-card rounded-2xl"
-            >
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs font-bold text-primary group-hover:underline">
-                    {comp.id}
-                  </span>
-                  <Badge variant="outline">{comp.container_type}</Badge>
+          {data.components.map((comp) => {
+            const inboundDeps = data.components.filter((c) =>
+              c.dependencies?.internal_containers?.includes(comp.id)
+            );
+            const outboundDeps = comp.dependencies?.internal_containers || [];
+            return (
+              <Card
+                key={comp.id}
+                className="hover:border-primary/50 transition-all p-5 space-y-3.5 group flex flex-col justify-between border border-border/80 bg-card rounded-2xl"
+              >
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between gap-1 flex-wrap">
+                    <span className="font-mono text-xs font-bold text-primary group-hover:underline">
+                      {comp.id}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {comp.tier && (() => {
+                        const style = getTierStyle(comp.tier);
+                        return (
+                          <span
+                            className={cn(
+                              "text-[10px] font-mono px-2 py-0.5 rounded-full font-semibold border",
+                              style.bg,
+                              style.text,
+                              style.border
+                            )}
+                          >
+                            {comp.tier_name || comp.container_type}
+                          </span>
+                        );
+                      })()}
+                      <Badge variant="outline">{comp.container_type}</Badge>
+                    </div>
+                  </div>
+                  <h4 className="text-sm font-semibold text-foreground">{comp.name}</h4>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
+                    <span className="truncate">{comp.package_path}</span>
+                    {comp.domain_binding && comp.domain_binding !== "N/A" && (
+                      <span className="px-1.5 py-0.5 rounded bg-muted text-[10px] text-muted-foreground shrink-0 font-semibold">
+                        {comp.domain_binding}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground line-clamp-2">
+                    {comp.responsibility || comp.summary || "Core system container"}
+                  </p>
+                  {/* Inter-Container Dependency Metric */}
+                  <div className="flex items-center gap-2 pt-1 text-[10px] text-muted-foreground font-mono">
+                    <span className="bg-muted/50 px-2 py-0.5 rounded border border-border/40">
+                      {outboundDeps.length} dependencies
+                    </span>
+                    <span>•</span>
+                    <span className="bg-muted/50 px-2 py-0.5 rounded border border-border/40">
+                      {inboundDeps.length} dependents
+                    </span>
+                  </div>
                 </div>
-                <h4 className="text-sm font-semibold text-foreground">{comp.name}</h4>
-                <p className="text-xs text-muted-foreground font-mono truncate">
-                  {comp.package_path}
-                </p>
-                <p className="text-[11px] text-muted-foreground line-clamp-2">
-                  {comp.responsibility || comp.summary || "Core system container"}
-                </p>
-              </div>
-              <div className="pt-3.5 flex items-center justify-between gap-2 border-t-2 border-border/80 text-[11px]">
-                <button
-                  onClick={() => drillDownToContainer(comp.id)}
-                  className="flex-1 py-1.5 px-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                  title={`Navigate to ${comp.id} Level 3 Components`}
-                >
-                  <span>Explore Level 3</span>
-                  <ChevronRight className="h-3 w-3" />
-                </button>
-                <button
-                  onClick={() => openC4Inspector(comp)}
-                  className="py-1.5 px-2.5 rounded-lg bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground font-medium transition-colors cursor-pointer"
-                  title="Inspect Details"
-                >
-                  Details
-                </button>
-              </div>
-            </Card>
-          ))}
+                <div className="pt-3.5 flex items-center justify-between gap-2 border-t-2 border-border/80 text-[11px]">
+                  <button
+                    onClick={() => drillDownToContainer(comp.id)}
+                    className="flex-1 py-1.5 px-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                    title={`Navigate to ${comp.id} Level 3 Components`}
+                  >
+                    <span>Explore Level 3</span>
+                    <ChevronRight className="h-3 w-3" />
+                  </button>
+                  <button
+                    onClick={() => openC4Inspector(comp)}
+                    className="py-1.5 px-2.5 rounded-lg bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground font-medium transition-colors cursor-pointer"
+                    title="Inspect Details"
+                  >
+                    Details
+                  </button>
+                </div>
+              </Card>
+            );
+          })}
         </div>
       </div>
 
@@ -602,21 +714,114 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
                 </div>
               </div>
 
-              {/* Contracts & Dependencies */}
-              <div className="space-y-2">
+              {/* Inter-Container Dependency Connections */}
+              <div className="space-y-3">
                 <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                   <FileCode className="h-4 w-4 text-indigo-400" />
-                  Boundary Contracts & Dependencies
+                  Inter-Container Dependencies &amp; Contracts
                 </h4>
+                {/* Outgoing Dependencies */}
+                <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-foreground">Upstream Dependencies (Consumes)</p>
+                    <span className="text-[10px] font-mono text-muted-foreground">
+                      {inspectedComponent.dependencies?.internal_containers?.length || 0} internal
+                    </span>
+                  </div>
+                  {inspectedComponent.dependencies?.internal_containers &&
+                  inspectedComponent.dependencies.internal_containers.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {inspectedComponent.dependencies.internal_containers.map((depId) => {
+                        const targetComp = data.components.find((c) => c.id === depId);
+                        return (
+                          <button
+                            key={depId}
+                            onClick={() => {
+                              if (targetComp) openC4Inspector(targetComp);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer"
+                            title={targetComp?.name || depId}
+                          >
+                            <span>{depId}</span>
+                            <ChevronRight className="h-3 w-3" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-[11px] italic">
+                      None (Foundation core container)
+                    </p>
+                  )}
+                </div>
+
+                {/* Incoming Dependents */}
+                <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-foreground">Downstream Dependents</p>
+                    <span className="text-[10px] font-mono text-muted-foreground">
+                      {
+                        data.components.filter((c) =>
+                          c.dependencies?.internal_containers?.includes(inspectedComponent.id)
+                        ).length
+                      }{" "}
+                      consumers
+                    </span>
+                  </div>
+                  {(() => {
+                    const dependents = data.components.filter((c) =>
+                      c.dependencies?.internal_containers?.includes(inspectedComponent.id)
+                    );
+                    return dependents.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {dependents.map((dep) => (
+                          <button
+                            key={dep.id}
+                            onClick={() => openC4Inspector(dep)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] bg-muted hover:bg-muted/80 text-foreground transition-colors cursor-pointer"
+                            title={dep.name}
+                          >
+                            <span>{dep.id}</span>
+                            <ChevronRight className="h-3 w-3" />
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground text-[11px] italic">
+                        No internal containers depend on this unit
+                      </p>
+                    );
+                  })()}
+                </div>
+
+                {/* External Services */}
+                {inspectedComponent.dependencies?.external_services &&
+                  inspectedComponent.dependencies.external_services.length > 0 && (
+                    <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1.5 text-xs">
+                      <p className="font-semibold text-foreground">External Platform Services</p>
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {inspectedComponent.dependencies.external_services.map((ext, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2 py-0.5 rounded-md font-mono text-[10px] bg-muted text-muted-foreground border border-border/40"
+                          >
+                            {ext}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                {/* Boundary Contracts */}
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="p-3 rounded-xl border border-border/60 bg-muted/20">
-                    <p className="font-semibold text-foreground mb-1">Provides</p>
+                    <p className="font-semibold text-foreground mb-1">Provides Contracts</p>
                     <p className="text-muted-foreground font-mono text-[11px]">
                       {inspectedComponent.contracts?.provides?.join(", ") || "None"}
                     </p>
                   </div>
                   <div className="p-3 rounded-xl border border-border/60 bg-muted/20">
-                    <p className="font-semibold text-foreground mb-1">Consumes</p>
+                    <p className="font-semibold text-foreground mb-1">Consumes Contracts</p>
                     <p className="text-muted-foreground font-mono text-[11px]">
                       {inspectedComponent.contracts?.consumes?.join(", ") || "None"}
                     </p>

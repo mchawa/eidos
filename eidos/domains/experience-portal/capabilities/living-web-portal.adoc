@@ -60,6 +60,9 @@ technical:
     - id: INV-PORTAL-READING-ERGONOMICS
       rule: "The portal living specification viewer must enforce a minimum 15px body prose, 72ch optimal reading measure, dynamic in-page Table of Contents (TOC) outlines, and non-blocking metadata headers."
       test_binding: "tests/test_portal.py::test_portal_reading_ergonomics"
+    - id: INV-PORTAL-C4-CONTAINER-HIERARCHY
+      rule: "The portal C4 Level 2 Container Diagram must structure containers into semantic architectural tiers within the system boundary and explicitly render declared inter-container dependency connections and contract bindings."
+      test_binding: "tests/test_portal.py::test_c4_level2_container_hierarchy_and_connections"
 ---
 = Capability: Interactive Living Web Portal & Visual Documentation Engine
 :toc: left

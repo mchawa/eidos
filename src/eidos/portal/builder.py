@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from eidos.portal.assets import PORTAL_HTML_TEMPLATE
+from eidos.portal.assets import PORTAL_FAVICON_SVG, PORTAL_HTML_TEMPLATE
 from eidos.portal.generator import get_portal_data
 
 
@@ -27,5 +27,9 @@ def build_static_portal(eidos_dir: Path, output_dir: Path) -> Path:
 
     index_file = out_path / "index.html"
     index_file.write_text(static_html, encoding="utf-8")
+
+    # 4. Write favicon.svg for offline static site asset resolution
+    favicon_file = out_path / "favicon.svg"
+    favicon_file.write_text(PORTAL_FAVICON_SVG, encoding="utf-8")
 
     return out_path

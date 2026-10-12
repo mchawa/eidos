@@ -8,6 +8,7 @@ runtime: "Python 3.12 / Typer / Rich"
 package_path: "src/eidos/cli"
 
 domain_binding: DOM-SPEC-ENGINE
+tier: presentation
 
 components:
   - id: CMP-CLI-APP

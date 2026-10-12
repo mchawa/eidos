@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from eidos.core.validator import SpecValidator
-from eidos.portal.assets import PORTAL_HTML_TEMPLATE
+from eidos.portal.assets import PORTAL_FAVICON_SVG, PORTAL_HTML_TEMPLATE
 from eidos.portal.generator import get_portal_data
 
 logger = logging.getLogger("eidos.portal")
@@ -27,6 +27,8 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
 
         if path in ("/", "/index.html"):
             self._send_html(PORTAL_HTML_TEMPLATE)
+        elif path in ("/favicon.svg", "/favicon.ico"):
+            self._send_svg(PORTAL_FAVICON_SVG)
         elif path == "/api/data":
             data = get_portal_data(self.eidos_dir)
             self._send_json(data)
@@ -55,6 +57,15 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _send_svg(self, svg_content: str) -> None:
+        payload = svg_content.encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "image/svg+xml")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "public, max-age=86400")
         self.end_headers()
         self.wfile.write(payload)
 

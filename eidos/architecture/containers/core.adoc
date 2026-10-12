@@ -8,6 +8,7 @@ runtime: "Python 3.12 / Hatchling / PyYAML / jsonschema"
 package_path: "src/eidos/core"
 
 domain_binding: DOM-SPEC-ENGINE
+tier: core
 
 components:
   - id: CMP-SPEC-PARSER

@@ -98,6 +98,8 @@ def test_static_portal_builder(tmp_path: Path):
 
     assert index_file.exists()
     assert data_file.exists()
+    assert (out_dir / "favicon.svg").exists()
+    assert "<svg" in (out_dir / "favicon.svg").read_text(encoding="utf-8")
 
     index_html = index_file.read_text(encoding="utf-8")
     assert "<!DOCTYPE html>" in index_html
@@ -169,7 +171,20 @@ def test_portal_http_server():
         h = json.loads(res.read().decode("utf-8"))
         assert h["status"] == "ok"
 
-    # 6. GET /unknown -> 404
+    # 6. GET /favicon.svg
+    with urllib.request.urlopen(f"{base_url}/favicon.svg") as res:
+        assert res.status == 200
+        assert "image/svg+xml" in res.headers.get("Content-Type", "")
+        fav = res.read().decode("utf-8")
+        assert "<svg" in fav
+        assert "eidos-fav-grad" in fav
+
+    # 7. GET /favicon.ico
+    with urllib.request.urlopen(f"{base_url}/favicon.ico") as res:
+        assert res.status == 200
+        assert "image/svg+xml" in res.headers.get("Content-Type", "")
+
+    # 8. GET /unknown -> 404
     try:
         urllib.request.urlopen(f"{base_url}/unknown-endpoint")
         pytest.fail("Expected 404")
@@ -222,4 +237,51 @@ def test_portal_reading_ergonomics():
     assert "prose-reading" in PORTAL_HTML_TEMPLATE
     assert "prose-measure" in PORTAL_HTML_TEMPLATE
     assert "spec-heading" in PORTAL_HTML_TEMPLATE
+
+
+def test_c4_level2_container_hierarchy_and_connections():
+    """Verify C4 Level 2 Container Diagram hierarchy, tiers, and inter-container connections (INV-PORTAL-C4-CONTAINER-HIERARCHY)."""
+    data = get_portal_data(Path("eidos"))
+    c4_containers = data["diagrams"]["c4_containers"]
+
+    # 1. System Boundary and Tiers Hierarchy Verification
+    assert "SYS_BOUNDARY" in c4_containers
+    assert "System Boundary:" in c4_containers
+    assert "SUB_TIER_PRESENTATION" in c4_containers
+    assert "Tier 1: Presentation &amp; Interface Layer" in c4_containers
+    assert "SUB_TIER_EXTENSIBILITY" in c4_containers
+    assert "Tier 2: Extensibility &amp; Agent Integration Layer" in c4_containers
+    assert "SUB_TIER_CORE" in c4_containers
+    assert "Tier 3: Core Domain &amp; Specification Engine" in c4_containers
+    assert "SUB_TIER_PERSISTENCE" in c4_containers
+    assert "Tier 4: Knowledge Graph &amp; Persistence Layer" in c4_containers
+
+    # 2. Component Tier Classifications in Data Model
+    comps_by_id = {c["id"]: c for c in data["components"]}
+    assert comps_by_id["CNT-EIDOS-CLI"]["tier"] == "tier_presentation"
+    assert comps_by_id["CNT-EIDOS-PORTAL"]["tier"] == "tier_presentation"
+    assert comps_by_id["CNT-EIDOS-DOCS"]["tier"] == "tier_presentation"
+    assert comps_by_id["CNT-EIDOS-PLUGIN"]["tier"] == "tier_extensibility"
+    assert comps_by_id["CNT-EIDOS-CORE"]["tier"] == "tier_core"
+    assert comps_by_id["CNT-EIDOS-INDEX"]["tier"] == "tier_persistence"
+
+    # 3. Explicit Inter-Container Connections Verification
+    assert 'CNT_EIDOS_CLI -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
+    assert 'CNT_EIDOS_CLI -->|"Queries &amp; Stores Data"| CNT_EIDOS_INDEX' in c4_containers
+    assert 'CNT_EIDOS_CLI -->|"In-Process Python API"| CNT_EIDOS_PLUGIN' in c4_containers
+    assert 'CNT_EIDOS_CLI -->|"HTTP JSON • [CTR-EIDOS-PORTAL]"| CNT_EIDOS_PORTAL' in c4_containers
+    assert 'CNT_EIDOS_PORTAL -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
+    assert 'CNT_EIDOS_PORTAL -->|"Queries &amp; Stores Data"| CNT_EIDOS_INDEX' in c4_containers
+    assert 'CNT_EIDOS_DOCS -->|"HTTP JSON • Consumes [CTR-EIDOS-PORTAL]"| CNT_EIDOS_PORTAL' in c4_containers
+    assert 'CNT_EIDOS_PLUGIN -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
+    assert 'CNT_EIDOS_INDEX -->|"In-Process Python API"| CNT_EIDOS_CORE' in c4_containers
+
+    # 4. External Actors & Platform Service Boundaries dynamically derived
+    assert 'PER_AUTONOMOUS_AGENT ==>|"Runs CLI Commands"| CNT_EIDOS_CLI' in c4_containers
+    assert 'CNT_EIDOS_CORE -.->|"Tracks &amp; Syncs Files"| EXT_GIT_CLI' in c4_containers
+    assert 'CNT_EIDOS_INDEX -.->|"Persists Relational Data"| EXT_SQLITE3' in c4_containers
+    assert 'CNT_EIDOS_PLUGIN -.->|"Tracks &amp; Syncs Files"| EXT_HOST_IDE_AGENT_CONFIGS' in c4_containers
+    assert 'CNT_EIDOS_DOCS -.->|"Tracks &amp; Syncs Files"| EXT_GITHUB_PAGES' in c4_containers
+    assert 'CNT_EIDOS_PORTAL -.->|"Serves Web Application"| EXT_WEB_BROWSERS' in c4_containers
+
 

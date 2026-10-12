@@ -23,4 +23,5 @@ This contract defines the HTTP endpoints exposed by the Eidos Living Web Portal 
 | `GET` | `/api/overview` | `application/json` | Returns aggregate statistics and document counts.
 | `GET` | `/api/validate` | `application/json` | Executes dynamic specification validation and returns the report.
 | `GET` | `/health` | `application/json` | Health check endpoint returning server availability status.
+| `GET` | `/favicon.svg` | `image/svg+xml` | Serves the official Eidos Form brand mark vector favicon.
 |===

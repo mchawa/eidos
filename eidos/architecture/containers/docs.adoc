@@ -8,6 +8,7 @@ runtime: "Python 3.12 / Zensical / Markdown / GitHub Pages"
 package_path: "docs"
 
 domain_binding: DOM-EXPERIENCE-PORTAL
+tier: presentation
 
 components:
   - id: CMP-DOCS-GETTING-STARTED
