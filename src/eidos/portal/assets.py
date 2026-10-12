@@ -89,8 +89,9 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       top: 0;
       height: 100vh;
       overflow-y: auto;
+      overflow-x: hidden;
       z-index: 40;
-      transition: transform 0.2s ease, width 0.2s ease;
+      transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s ease;
     }
     .sidebar-header {
       padding: 1.25rem 1.25rem 1rem;
@@ -98,11 +99,13 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       display: flex;
       flex-direction: column;
       gap: 0.5rem;
+      transition: padding 0.2s ease;
     }
     .brand-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 0.5rem;
     }
     .brand {
       display: flex;
@@ -112,6 +115,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       font-weight: 800;
       letter-spacing: -0.02em;
       color: var(--text);
+      min-width: 0;
     }
     .brand-icon {
       display: flex;
@@ -123,6 +127,40 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       background: linear-gradient(135deg, var(--primary), var(--accent));
       color: #fff;
       font-size: 0.95rem;
+      flex-shrink: 0;
+    }
+    .brand-title {
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .brand-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-shrink: 0;
+    }
+    .sidebar-collapse-btn {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      width: 26px;
+      height: 26px;
+      border-radius: 0.35rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      padding: 0;
+      flex-shrink: 0;
+    }
+    .sidebar-collapse-btn:hover {
+      color: var(--text);
+      border-color: var(--border-accent);
+      background: var(--bg-card-hover);
+    }
+    .collapse-icon {
+      transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .brand-meta {
       display: flex;
@@ -809,7 +847,64 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
     }
     .modal-close:hover { color: var(--text); border-color: var(--border-accent); }
 
-    /* RESPONSIVE BREAKPOINTS */
+    /* RESPONSIVE BREAKPOINTS & SIDEBAR COLLAPSE */
+    @media (min-width: 901px) {
+      .sidebar.collapsed {
+        width: 68px;
+      }
+      .sidebar.collapsed .sidebar-header {
+        padding: 1rem 0.5rem;
+        align-items: center;
+      }
+      .sidebar.collapsed .brand-row {
+        flex-direction: column;
+        gap: 0.6rem;
+        justify-content: center;
+        align-items: center;
+      }
+      .sidebar.collapsed .brand-title,
+      .sidebar.collapsed .brand-badge,
+      .sidebar.collapsed .brand-meta,
+      .sidebar.collapsed .nav-label,
+      .sidebar.collapsed .nav-counter,
+      .sidebar.collapsed .nav-group-title,
+      .sidebar.collapsed #themeLabel,
+      .sidebar.collapsed .footer-status span:last-child {
+        display: none !important;
+      }
+      .sidebar.collapsed .collapse-icon {
+        transform: rotate(180deg);
+      }
+      .sidebar.collapsed .sidebar-nav {
+        padding: 0.75rem 0.4rem;
+        align-items: center;
+      }
+      .sidebar.collapsed .nav-link {
+        justify-content: center;
+        padding: 0.65rem 0;
+        width: 44px;
+        height: 40px;
+        margin: 0 auto;
+        border-radius: 0.5rem;
+      }
+      .sidebar.collapsed .nav-icon {
+        margin: 0;
+      }
+      .sidebar.collapsed .sidebar-footer {
+        padding: 0.75rem 0.5rem;
+        align-items: center;
+      }
+      .sidebar.collapsed .btn-theme {
+        width: 40px;
+        height: 36px;
+        padding: 0;
+        justify-content: center;
+      }
+      .sidebar.collapsed .footer-status {
+        justify-content: center;
+        padding: 0.25rem 0;
+      }
+    }
     @media (max-width: 900px) {
       .sidebar {
         position: fixed;
@@ -820,6 +915,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       }
       .sidebar.open { transform: translateX(0); box-shadow: 0 0 30px rgba(0,0,0,0.5); }
       .mobile-menu-btn { display: inline-flex; }
+      .sidebar-collapse-btn { display: none; }
       .search-input { width: 160px; }
       .search-input:focus { width: 200px; }
     }
@@ -833,9 +929,16 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
         <div class="brand-row">
           <div class="brand">
             <span class="brand-icon">⚡</span>
-            <span>Eidos</span>
+            <span class="brand-title">Eidos</span>
           </div>
-          <span class="badge badge-success" id="sidebarPassBadge">VALID</span>
+          <div class="brand-actions">
+            <span class="badge badge-success brand-badge" id="sidebarPassBadge">VALID</span>
+            <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" onclick="toggleSidebarCollapse()" title="Collapse sidebar (Ctrl+B)" aria-label="Collapse sidebar">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="collapse-icon">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+          </div>
         </div>
         <div class="brand-meta">
           <span class="badge badge-primary" id="sidebarSystemId">SYS-EIDOS-001</span>
@@ -845,37 +948,42 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
 
       <nav class="sidebar-nav">
         <div class="nav-group-title">Overview</div>
-        <button class="nav-link active" onclick="switchTab('home')">
-          <span class="nav-icon">📊</span>
+        <button class="nav-link active" onclick="switchTab('home')" title="Home (Overview)">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 9.5L12 3l9 6.5V20a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9.5z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+          </span>
           <span class="nav-label">Home</span>
         </button>
 
         <div class="nav-group-title">Information Flow</div>
-        <button class="nav-link" onclick="switchTab('business')">
+        <button class="nav-link" onclick="switchTab('business')" title="1. Business & Governance">
           <span class="nav-icon">💼</span>
           <span class="nav-label">1. Business & Governance</span>
           <span class="nav-counter" id="navCountBusiness">0</span>
         </button>
-        <button class="nav-link" onclick="switchTab('design')">
+        <button class="nav-link" onclick="switchTab('design')" title="2. Design & Experience">
           <span class="nav-icon">🎨</span>
           <span class="nav-label">2. Design & Experience</span>
           <span class="nav-counter" id="navCountDesign">0</span>
         </button>
-        <button class="nav-link" onclick="switchTab('architecture')">
+        <button class="nav-link" onclick="switchTab('architecture')" title="3. Technical Architecture">
           <span class="nav-icon">🏛️</span>
           <span class="nav-label">3. Technical Architecture</span>
           <span class="nav-counter" id="navCountArchitecture">0</span>
         </button>
 
         <div class="nav-group-title">Mutation Lifecycle</div>
-        <button class="nav-link" onclick="switchTab('deltas')">
+        <button class="nav-link" onclick="switchTab('deltas')" title="SpecDeltas (Kanban)">
           <span class="nav-icon">🔄</span>
           <span class="nav-label">SpecDeltas (Kanban)</span>
           <span class="nav-counter" id="navCountDeltas">0</span>
         </button>
 
         <div class="nav-group-title">Repository Registry</div>
-        <button class="nav-link" onclick="switchTab('catalog')">
+        <button class="nav-link" onclick="switchTab('catalog')" title="Living Specs Catalog">
           <span class="nav-icon">📑</span>
           <span class="nav-label">Living Specs Catalog</span>
           <span class="nav-counter" id="navCountCatalog">0</span>
@@ -887,7 +995,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
           <span id="themeLabel">Dark Theme</span>
           <span id="themeIcon">🌙</span>
         </button>
-        <div class="footer-status">
+        <div class="footer-status" title="Git-Native • Zero Drift">
           <span class="status-dot"></span>
           <span>Git-Native • Zero Drift</span>
         </div>
@@ -1418,6 +1526,13 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
     let PORTAL_DATA = window.__EIDOS_DATA__ || null;
     let CURRENT_TAB = 'home';
 
+    // Immediate check to restore sidebar collapsed state before rendering
+    try {
+      if (localStorage.getItem('eidos_sidebar_collapsed') === 'true') {
+        document.getElementById('sidebar')?.classList.add('collapsed');
+      }
+    } catch(e) {}
+
     mermaid.initialize({
       startOnLoad: false,
       theme: document.documentElement.classList.contains('dark') ? 'dark' : 'default',
@@ -1435,6 +1550,7 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
     });
 
     async function initPortal() {
+      initSidebarState();
       if (!PORTAL_DATA) {
         try {
           const res = await fetch('/api/data');
@@ -1950,6 +2066,43 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
       });
     }
 
+    function initSidebarState() {
+      try {
+        const isCollapsed = localStorage.getItem('eidos_sidebar_collapsed') === 'true';
+        const sidebar = document.getElementById('sidebar');
+        const btn = document.getElementById('sidebarCollapseBtn');
+        if (isCollapsed) {
+          sidebar.classList.add('collapsed');
+          if (btn) {
+            btn.setAttribute('title', 'Expand sidebar (Ctrl+B)');
+            btn.setAttribute('aria-label', 'Expand sidebar');
+          }
+        } else {
+          sidebar.classList.remove('collapsed');
+          if (btn) {
+            btn.setAttribute('title', 'Collapse sidebar (Ctrl+B)');
+            btn.setAttribute('aria-label', 'Collapse sidebar');
+          }
+        }
+      } catch (e) {
+        console.warn("localStorage unavailable for sidebar state", e);
+      }
+    }
+
+    function toggleSidebarCollapse() {
+      const sidebar = document.getElementById('sidebar');
+      const btn = document.getElementById('sidebarCollapseBtn');
+      sidebar.classList.toggle('collapsed');
+      const isCollapsed = sidebar.classList.contains('collapsed');
+      try {
+        localStorage.setItem('eidos_sidebar_collapsed', isCollapsed ? 'true' : 'false');
+      } catch (e) {}
+      if (btn) {
+        btn.setAttribute('title', isCollapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)');
+        btn.setAttribute('aria-label', isCollapsed ? 'Expand sidebar' : 'Collapse sidebar');
+      }
+    }
+
     function toggleMobileSidebar() {
       document.getElementById('sidebar').classList.toggle('open');
     }
@@ -1965,6 +2118,11 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
 
     function setupKeyboardShortcuts() {
       window.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+          e.preventDefault();
+          toggleSidebarCollapse();
+          return;
+        }
         if (e.key === '/' && document.activeElement !== document.getElementById('globalSearch')) {
           e.preventDefault();
           document.getElementById('globalSearch').focus();

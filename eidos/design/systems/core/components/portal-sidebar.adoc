@@ -40,5 +40,15 @@ The Portal Navigation Sidebar (`UIC-PORTAL-SIDEBAR`) establishes the primary inf
 6. **Specs Catalog**: Complete searchable, filterable specification repository inventory.
 
 == 2. Visual States & Badges
-Each navigation entry displays an SVG icon, section label, and live document counter badge. The active view is visually highlighted with high-contrast accent styling.
+Each navigation entry displays an SVG icon or glyph, section label, and live document counter badge. The active view is visually highlighted with high-contrast accent styling.
 
+== 3. Desktop Collapsible Behavior & Persistence
+The sidebar supports both full-width (`270px`) and icon-only collapsed (`68px`) modes on desktop displays:
+* **Toggle Trigger**: Interactive collapse button (`#sidebarCollapseBtn`) in the brand row with animated chevron rotation.
+* **Shortcut Binding**: `Ctrl+B` or `Cmd+B` toggles the sidebar state from anywhere within the portal.
+* **Condensed Visual Styling**: In collapsed mode, textual titles, group headers, and counter badges are gracefully hidden. Icons are centered into 44x40px interactive target pills.
+* **Tooltips & Accessibility**: Each condensed navigation button provides native `title` and `aria-label` attributes to maintain full WCAG AA accessibility.
+* **State Persistence**: The user's preference is automatically saved to browser `localStorage.getItem('eidos_sidebar_collapsed')` and restored prior to paint to prevent layout flicker.
+
+== 4. Iconography & Home Glyph Specification
+* The **Home** navigation item features a vector SVG house glyph (`M3 9.5L12 3l9 6.5V20a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9.5z`) ensuring crisp high-DPI rendering and dynamic CSS color inheritance across dark and light themes.

@@ -88,6 +88,10 @@ def test_static_portal_builder(tmp_path: Path):
 
     # Verify Sidebar and IA Views in compiled SPA
     assert 'class="sidebar"' in index_html
+    assert 'id="sidebarCollapseBtn"' in index_html
+    assert "toggleSidebarCollapse" in index_html
+    assert "initSidebarState" in index_html
+    assert "eidos_sidebar_collapsed" in index_html
     assert 'id="tab-home"' in index_html
     assert 'id="tab-business"' in index_html
     assert 'id="tab-design"' in index_html
@@ -95,6 +99,7 @@ def test_static_portal_builder(tmp_path: Path):
     assert 'id="tab-deltas"' in index_html
     assert 'id="tab-catalog"' in index_html
     assert 'id="tokenSwatchesGrid"' in index_html
+    assert "📊" not in index_html  # Replaced with modern SVG home icon
 
     with open(data_file, encoding="utf-8") as f:
         json_data = json.load(f)
