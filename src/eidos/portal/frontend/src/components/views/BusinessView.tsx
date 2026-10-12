@@ -21,6 +21,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
+import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
 import { cn } from "@/lib/utils";
 import type {
   PortalData,
@@ -706,9 +707,7 @@ export function BusinessView({ data }: BusinessViewProps) {
                       <BookOpen className="h-3.5 w-3.5 text-purple-400" />
                       Living Specification Rationale & Body
                     </h4>
-                    <div className="p-4 rounded-xl bg-muted/20 border border-border/80 whitespace-pre-wrap leading-relaxed max-h-72 overflow-y-auto text-xs text-foreground/90 font-mono">
-                      {selectedEntity.item.body}
-                    </div>
+                    <AsciiDocRenderer content={selectedEntity.item.body} />
                   </div>
                 )}
               </div>
@@ -872,9 +871,7 @@ export function BusinessView({ data }: BusinessViewProps) {
                       <BookOpen className="h-3.5 w-3.5 text-purple-400" />
                       Living Specification Body
                     </h4>
-                    <div className="p-4 rounded-xl bg-muted/20 border border-border/80 whitespace-pre-wrap leading-relaxed max-h-72 overflow-y-auto text-xs text-foreground/90 font-mono">
-                      {selectedEntity.item.body}
-                    </div>
+                    <AsciiDocRenderer content={selectedEntity.item.body} />
                   </div>
                 )}
               </div>
@@ -1054,9 +1051,7 @@ export function BusinessView({ data }: BusinessViewProps) {
                       <BookOpen className="h-3.5 w-3.5 text-purple-400" />
                       Living Specification Body
                     </h4>
-                    <div className="p-4 rounded-xl bg-muted/20 border border-border/80 whitespace-pre-wrap leading-relaxed max-h-72 overflow-y-auto text-xs text-foreground/90 font-mono">
-                      {selectedEntity.item.body}
-                    </div>
+                    <AsciiDocRenderer content={selectedEntity.item.body} />
                   </div>
                 )}
               </div>
@@ -1152,9 +1147,7 @@ export function BusinessView({ data }: BusinessViewProps) {
                       <BookOpen className="h-3.5 w-3.5 text-purple-400" />
                       Living Specification Profile
                     </h4>
-                    <div className="p-4 rounded-xl bg-muted/20 border border-border/80 whitespace-pre-wrap leading-relaxed max-h-72 overflow-y-auto text-xs text-foreground/90 font-mono">
-                      {selectedEntity.item.body}
-                    </div>
+                    <AsciiDocRenderer content={selectedEntity.item.body} />
                   </div>
                 )}
               </div>
