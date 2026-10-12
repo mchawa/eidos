@@ -23,7 +23,7 @@ def test_bundled_schemas_loaded(validator):
         "exploration.schema.yaml",
         "delta.schema.yaml",
         "architecture.schema.yaml",
-        "component.schema.yaml",
+        "container.schema.yaml",
         "contract.schema.yaml",
     ]
     for schema_name in expected_schemas:
@@ -43,7 +43,7 @@ def test_validate_eidos_specifications(validator):
         f"Broken references: {report.broken_references}"
     )
     assert len(report.entity_index) == report.total_docs
-    assert "CMP-EIDOS-CLI" in report.entity_index
+    assert "CNT-EIDOS-CLI" in report.entity_index
     assert "DOM-SPEC-ENGINE" in report.entity_index
     assert "DOM-EXPERIENCE-PORTAL" in report.entity_index
     assert "DOM-AGENT-INTELLIGENCE" in report.entity_index

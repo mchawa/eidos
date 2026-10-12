@@ -20,7 +20,7 @@ eidos info
 ---
 
 ### `eidos init`
-Initialize a Git repository with the standard Eidos living specification topology, baseline Arc42/C4 architecture, core policies, and validation rules.
+Initialize a Git repository with an empty Eidos living specification skeleton, tracking empty directories with `.gitkeep` files, self-contained gitignore, and optional agent plugin.
 
 ```bash
 eidos init
@@ -78,11 +78,24 @@ Options:
 
 ---
 
-### `eidos components`
-Inspect and list all C4 containers, internal components, dependencies, and interface contracts.
+### `eidos containers`
+Inspect and list all C4 Level 2 containers (`CNT-*`), their runtimes, package paths, and declared C4 Level 3 components.
 
 ```bash
+eidos containers
+```
+
+---
+
+### `eidos components`
+Inspect and list all C4 Level 3 in-process components (`CMP-*`), responsibilities, and source file paths, optionally filtered by container ID.
+
+```bash
+# List all internal components across all containers
 eidos components
+
+# List internal components belonging to a specific container
+eidos components CNT-EIDOS-CORE
 ```
 
 ---
@@ -318,11 +331,14 @@ eidos plugin uninstall --target all
 
 Eidos provides intuitive root-level shortcuts for common workflows:
 
+* `eidos install [TARGET]`: Direct shortcut to `eidos plugin install` (e.g. `eidos install claude`).
+* `eidos uninstall [TARGET]`: Direct shortcut to `eidos plugin uninstall`.
 * `eidos drift`: Runs spec-to-code drift detection.
 * `eidos reconcile`: Runs the spec reconciliation assistant (`eidos sync`).
 * `eidos create <type> <id> --title <title>`: Direct shortcut to `eidos spec create`.
 * `eidos delete <id_or_path> [--force]`: Direct shortcut to `eidos spec delete`.
 * `eidos list [--type <type>] [--status <status>]`: Direct shortcut to `eidos spec list`.
+
 
 
 

@@ -59,7 +59,7 @@ The tool returns a structured payload:
   "total_specs": 47,
   "remediation_suggestions": [
     "Drift Detected: 1 code file(s) changed in src/ without living specification updates in eidos/.",
-    "• 'src/eidos/cli/main.py' relates to CMP-EIDOS-CLI -> Update 'eidos/architecture/components/cli.adoc'"
+    "• 'src/eidos/cli/main.py' relates to CNT-EIDOS-CLI -> Update 'eidos/architecture/containers/cli.adoc'"
   ],
   "summary_markdown": "..."
 }

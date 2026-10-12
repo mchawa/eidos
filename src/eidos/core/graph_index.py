@@ -67,10 +67,10 @@ class TieredContextSlice(ArchitecturalContextSlice):
             lines.append(" | ".join(query_parts))
             lines.append("")
 
-        # 1. Components
-        lines.append(f"## 🧱 C4 Level 2/3 Components ({len(self.components)})")
+        # 1. Containers & Components
+        lines.append(f"## 🧱 C4 Level 2 Containers & Level 3 Components ({len(self.components)})")
         if not self.components:
-            lines.append("*No components directly matched.*")
+            lines.append("*No components or containers directly matched.*")
         for comp in self.components:
             cid = comp.get("id", "")
             name = comp.get("name", cid)
@@ -84,7 +84,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
 
             if self.tier in ("guardrails", "deep"):
                 deps = (
-                    (comp.get("dependencies") or {}).get("internal_components", [])
+                    (comp.get("dependencies") or {}).get("internal_containers", [])
+                    or (comp.get("dependencies") or {}).get("internal_components", [])
                     if isinstance(comp.get("dependencies"), dict)
                     else []
                 )
@@ -103,11 +104,12 @@ class TieredContextSlice(ArchitecturalContextSlice):
                     lines.append(f"- **Requires Contracts:** {', '.join(f'`{r}`' for r in req)}")
 
             if self.tier == "deep":
-                modules = comp.get("c4_internal_components", [])
+                modules = comp.get("components", []) or comp.get("c4_internal_components", [])
                 if modules:
-                    lines.append("- **Internal Modules:**")
+                    lines.append("- **C4 Level 3 Components:**")
                     for m in modules:
-                        lines.append(f"  - `{m.get('name', '')}`: {m.get('responsibility', '')}")
+                        mid = f"`{m['id']}` " if m.get("id") else ""
+                        lines.append(f"  - {mid}**{m.get('name', '')}**: {m.get('responsibility', '')}")
             lines.append("")
 
         # 2. Bound Contracts
@@ -118,7 +120,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             cid = ctr.get("id", "")
             title = ctr.get("title", cid)
             protocol = ctr.get("protocol", "standard")
-            owner = ctr.get("owning_component", "N/A")
+            owner = ctr.get("owning_container") or ctr.get("owning_component", "N/A")
             lines.append(f"### `{cid}`: {title}")
             lines.append(f"- **Protocol:** `{protocol}` | **Owner:** `{owner}`")
             lines.append("")
@@ -184,7 +186,13 @@ class ArchitecturalIndex:
         repo_root: Path | None = None,
         eidos_dir: Path | None = None,
     ) -> None:
-        self.root = (repo_root or Path.cwd()).resolve()
+        if repo_root is not None:
+            self.root = Path(repo_root).resolve()
+        elif eidos_dir is not None and Path(eidos_dir).name == "eidos":
+            self.root = Path(eidos_dir).resolve().parent
+        else:
+            self.root = Path.cwd().resolve()
+
         self.eidos_dir = (eidos_dir or (self.root / "eidos")).resolve()
 
         if db_path is not None:
@@ -433,7 +441,8 @@ class ArchitecturalIndex:
                 # Dependencies
                 deps = fm.get("dependencies", {})
                 if isinstance(deps, dict):
-                    for dep in deps.get("internal_components", []):
+                    dep_list = deps.get("internal_containers", []) or deps.get("internal_components", [])
+                    for dep in dep_list:
                         conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'depends_on', NULL);", (doc_id, dep))
 
                 # Contracts on components
@@ -446,7 +455,7 @@ class ArchitecturalIndex:
 
                 # Contracts standalone specs
                 if doc_type == "tech/contract":
-                    owning = fm.get("owning_component")
+                    owning = fm.get("owning_container") or fm.get("owning_component")
                     if owning:
                         conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides', NULL);", (owning, doc_id))
                         conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'owned_by', NULL);", (doc_id, owning))
@@ -527,10 +536,11 @@ class ArchitecturalIndex:
                         "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'package_path');", (package_path, doc_id)
                     )
 
-                # Internal C4 modules
-                for module in fm.get("c4_internal_components", []):
+                # Internal C4 modules & components
+                for module in (fm.get("components", []) or fm.get("c4_internal_components", [])):
                     mname = module.get("name")
                     mpath = module.get("source_path")
+                    mid = module.get("id")
                     if mname:
                         conn.execute(
                             "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'module_name');", (mname, doc_id)
@@ -538,6 +548,10 @@ class ArchitecturalIndex:
                     if mpath:
                         conn.execute(
                             "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (mpath, doc_id)
+                        )
+                    if mid:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_id');", (mid, doc_id)
                         )
 
                 # Interface commands
@@ -552,7 +566,7 @@ class ArchitecturalIndex:
                 jtbd_or_rule = biz.get("jtbd", fm.get("rule", ""))
                 body_clean = re.sub(r"[{}\[\]=:#*`]", " ", doc.body or "")
                 keywords = " ".join([doc_id, doc_type, domain, container_type, package_path])
-                symbols = " ".join([m.get("name", "") for m in fm.get("c4_internal_components", [])])
+                symbols = " ".join([m.get("name", "") for m in (fm.get("components", []) or fm.get("c4_internal_components", []))])
 
                 conn.execute(
                     """
@@ -801,14 +815,14 @@ class ArchitecturalIndex:
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        # 1. Resolve by Component parameter
+        # 1. Resolve by Component / Container parameter
         if component:
             c_clean = component.strip().upper()
             cursor.execute(
                 """
                 SELECT id, title, type, domain, data_json
                 FROM entities
-                WHERE type = 'tech/component' AND (id = ? OR id LIKE '%' || ? || '%');
+                WHERE type IN ('tech/container', 'tech/component') AND (id = ? OR id LIKE '%' || ? || '%');
                 """,
                 (c_clean, c_clean),
             )
@@ -852,7 +866,7 @@ class ArchitecturalIndex:
                 data["id"] = eid
                 data["title"] = m["title"]
 
-                if etype == "tech/component":
+                if etype in ("tech/container", "tech/component"):
                     matched_components[eid] = data
                     matched_reasons.setdefault(eid, []).append(f"Source file match on '{fpath}'")
                 elif etype == "invariant":
@@ -873,7 +887,7 @@ class ArchitecturalIndex:
                 data["title"] = m["title"]
 
                 reason = f"FTS lexical match on task (BM25 score: {m['rank']:.2f})"
-                if etype == "tech/component":
+                if etype in ("tech/container", "tech/component"):
                     matched_components[eid] = data
                     matched_reasons.setdefault(eid, []).append(reason)
                 elif etype == "tech/contract":
@@ -891,8 +905,8 @@ class ArchitecturalIndex:
 
         # 4. Fallback if no specific filter matched or empty query
         if not matched_components and not matched_capabilities and not clean_files and not component and not task:
-            # Full catalog overview: select all components
-            cursor.execute("SELECT id, title, type, domain, data_json FROM entities WHERE type = 'tech/component';")
+            # Full catalog overview: select all components/containers
+            cursor.execute("SELECT id, title, type, domain, data_json FROM entities WHERE type IN ('tech/container', 'tech/component');")
             for row in cursor.fetchall():
                 c_data = json.loads(row["data_json"])
                 c_data["id"] = row["id"]
@@ -900,7 +914,7 @@ class ArchitecturalIndex:
                 matched_components[row["id"]] = c_data
         elif not matched_components and not matched_capabilities:
             # Filters provided but nothing matched: fallback baseline anchors
-            for fb in ["CMP-EIDOS-CLI", "CMP-EIDOS-CORE"]:
+            for fb in ["CNT-EIDOS-CLI", "CNT-EIDOS-CORE", "CMP-EIDOS-CLI", "CMP-EIDOS-CORE"]:
                 row = cursor.execute(
                     "SELECT id, title, type, domain, data_json FROM entities WHERE id = ?;", (fb,)
                 ).fetchone()
@@ -912,7 +926,7 @@ class ArchitecturalIndex:
                     matched_reasons.setdefault(row["id"], []).append("Fallback baseline component anchor")
             if not matched_components:
                 for row in cursor.execute(
-                    "SELECT id, title, type, domain, data_json FROM entities WHERE type = 'tech/component' LIMIT 2;"
+                    "SELECT id, title, type, domain, data_json FROM entities WHERE type IN ('tech/container', 'tech/component') LIMIT 2;"
                 ).fetchall():
                     c_data = json.loads(row["data_json"])
                     c_data["id"] = row["id"]
@@ -924,7 +938,8 @@ class ArchitecturalIndex:
         primary_cids = list(matched_components.keys())
         for cid in primary_cids:
             comp_data = matched_components.get(cid, {})
-            deps = (comp_data.get("dependencies") or {}).get("internal_components", [])
+            deps_dict = comp_data.get("dependencies") or {}
+            deps = deps_dict.get("internal_containers", []) or deps_dict.get("internal_components", [])
             for dep_id in deps:
                 if dep_id not in matched_components:
                     row = cursor.execute(
@@ -1065,11 +1080,11 @@ class ArchitecturalIndex:
         return slice_obj
 
     def get_components(self) -> list[dict[str, Any]]:
-        """Retrieve all C4 components from the knowledge graph index."""
+        """Retrieve all C4 containers and components from the knowledge graph index."""
         self._ensure_synced()
         with self._get_connection() as conn:
             rows = conn.execute(
-                "SELECT id, title, file_path, data_json FROM entities WHERE type = 'tech/component' ORDER BY id;"
+                "SELECT id, title, file_path, data_json FROM entities WHERE type IN ('tech/container', 'tech/component') ORDER BY id;"
             ).fetchall()
             components = []
             for r in rows:
@@ -1078,6 +1093,10 @@ class ArchitecturalIndex:
                 data["file_path"] = r["file_path"]
                 components.append(data)
             return components
+
+    def get_containers(self) -> list[dict[str, Any]]:
+        """Retrieve all C4 containers (Level 2) from the knowledge graph index."""
+        return self.get_entities(entity_type="tech/container")
 
     def get_entities(
         self,
@@ -1152,7 +1171,13 @@ def get_architectural_index(
 ) -> ArchitecturalIndex:
     """Get or create singleton ArchitecturalIndex instance."""
     global _INDEX_INSTANCE
-    target_root = (repo_root or Path.cwd()).resolve()
+    if repo_root is not None:
+        target_root = Path(repo_root).resolve()
+    elif eidos_dir is not None and Path(eidos_dir).name == "eidos":
+        target_root = Path(eidos_dir).resolve().parent
+    else:
+        target_root = Path.cwd().resolve()
+
     target_eidos = (eidos_dir or (target_root / "eidos")).resolve()
     if (
         force_new

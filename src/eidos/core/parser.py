@@ -10,6 +10,17 @@ from eidos.core.models import SpecDocument
 def parse_spec_file(path: Path) -> SpecDocument:
     """Parse an .adoc specification file with YAML frontmatter."""
     content = path.read_text(encoding="utf-8")
+    if not content.strip():
+        doc_type = "product/system" if path.name == "system.adoc" else "unknown"
+        return SpecDocument(
+            file_path=path,
+            frontmatter={},
+            body="",
+            doc_type=doc_type,
+            doc_id=path.stem,
+            is_valid=True,
+        )
+
     frontmatter_dict, body, parse_error = extract_frontmatter(content)
 
     doc_type = frontmatter_dict.get("type", "unknown") if frontmatter_dict else "unknown"

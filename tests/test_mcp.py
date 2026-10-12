@@ -69,11 +69,11 @@ def test_mcp_list_components_tool():
     data = json.loads(res[0]["text"])
     assert len(data) >= 4
     comp_ids = {c["id"] for c in data}
-    assert "CMP-EIDOS-CORE" in comp_ids
-    assert "CMP-EIDOS-CLI" in comp_ids
-    assert "CMP-EIDOS-MCP" in comp_ids
-    assert "CMP-EIDOS-PLUGIN" in comp_ids
-    assert "CMP-EIDOS-PORTAL" in comp_ids
+    assert "CNT-EIDOS-CORE" in comp_ids
+    assert "CNT-EIDOS-CLI" in comp_ids
+    assert "CNT-EIDOS-MCP" in comp_ids
+    assert "CNT-EIDOS-PLUGIN" in comp_ids
+    assert "CNT-EIDOS-PORTAL" in comp_ids
 
 
 def test_mcp_read_spec_tool():
@@ -115,15 +115,15 @@ def test_mcp_context_tool():
     # 1. Markdown mode via eidos_get_task_context
     res_md = handle_tool_call("eidos_get_task_context", {"files": ["src/eidos/cli/main.py"]})
     assert len(res_md) == 1
-    assert "CMP-EIDOS-CLI" in res_md[0]["text"]
-    assert "C4 Level 2/3 Components" in res_md[0]["text"]
+    assert "CNT-EIDOS-CLI" in res_md[0]["text"]
+    assert "C4 Level 2 Containers & Level 3 Components" in res_md[0]["text"]
 
     # 2. JSON mode via alias eidos_context
-    res_json = handle_tool_call("eidos_context", {"component": "CMP-EIDOS-CLI", "format": "json"})
+    res_json = handle_tool_call("eidos_context", {"component": "CNT-EIDOS-CLI", "format": "json"})
     assert len(res_json) == 1
     data = json.loads(res_json[0]["text"])
     assert len(data["components"]) >= 1
-    assert any(c["id"] == "CMP-EIDOS-CLI" for c in data["components"])
+    assert any(c["id"] == "CNT-EIDOS-CLI" for c in data["components"])
     assert len(data["contracts"]) >= 1
     assert len(data["capabilities"]) >= 1
     assert len(data["invariants"]) >= 1
@@ -147,11 +147,11 @@ def test_mcp_index_tools():
     assert any("DS-" in item["id"] or "CAP-" in item["id"] or "DLT-" in item["id"] for item in search_data)
 
     # 2. eidos_get_blast_radius
-    res_blast = handle_tool_call("eidos_get_blast_radius", {"entity_id": "CMP-EIDOS-CORE", "depth": 2})
+    res_blast = handle_tool_call("eidos_get_blast_radius", {"entity_id": "CNT-EIDOS-CORE", "depth": 2})
     assert len(res_blast) == 1
     blast_data = json.loads(res_blast[0]["text"])
     assert len(blast_data) >= 2
-    assert any(n["id"] == "CMP-EIDOS-CORE" and n["depth"] == 0 for n in blast_data)
+    assert any(n["id"] == "CNT-EIDOS-CORE" and n["depth"] == 0 for n in blast_data)
 
     # 3. eidos_index_status
     res_status = handle_tool_call("eidos_index_status", {})

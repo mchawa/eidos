@@ -49,7 +49,7 @@ TOOLS = [
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Path to scan for component manifests (defaults to 'eidos/architecture/components').",
+                    "description": "Path to scan for container manifests (defaults to 'eidos/architecture/containers').",
                 }
             },
         },
@@ -169,7 +169,7 @@ TOOLS = [
     },
     {
         "name": "eidos_init_repo",
-        "description": "Initialize a repository with Eidos living specifications, baseline architecture, and governance.",
+        "description": "Initialize a repository with an empty Eidos living specification skeleton and governance.",
         "inputSchema": {
             "type": "object",
             "properties": {

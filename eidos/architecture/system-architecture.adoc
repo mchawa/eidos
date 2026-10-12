@@ -18,37 +18,37 @@ c4_context:
       protocol: "JSON-RPC 2.0 stdio"
 
 c4_containers:
-  - component_ref: "CMP-EIDOS-CORE"
+  - container_ref: "CNT-EIDOS-CORE"
     name: "Eidos Living Specification & Design Core Engine"
     container_type: "library"
     runtime: "Python 3.12 / Hatchling / PyYAML / jsonschema"
     package_path: "src/eidos/core"
-  - component_ref: "CMP-EIDOS-CLI"
+  - container_ref: "CNT-EIDOS-CLI"
     name: "Eidos Command-Line Interface"
     container_type: "cli_app"
     runtime: "Python 3.12 / Typer / Rich"
     package_path: "src/eidos/cli"
-  - component_ref: "CMP-EIDOS-MCP"
+  - container_ref: "CNT-EIDOS-MCP"
     name: "Eidos Model Context Protocol Server"
     container_type: "daemon"
     runtime: "Python 3.12 / JSON-RPC 2.0 stdio"
     package_path: "src/eidos/mcp"
-  - component_ref: "CMP-EIDOS-PLUGIN"
+  - container_ref: "CNT-EIDOS-PLUGIN"
     name: "Eidos Agent Plugin & Extension Manager"
     container_type: "library"
     runtime: "Python 3.12 / agent-plugins.org v1.0.0"
     package_path: "src/eidos/plugin"
-  - component_ref: "CMP-EIDOS-PORTAL"
+  - container_ref: "CNT-EIDOS-PORTAL"
     name: "Eidos Living Web Portal & Static Site Generator"
     container_type: "web_app"
     runtime: "Python 3.12 / HTTP / HTML5 / Mermaid.js"
     package_path: "src/eidos/portal"
-  - component_ref: "CMP-EIDOS-INDEX"
+  - container_ref: "CNT-EIDOS-INDEX"
     name: "Eidos Architectural Knowledge Graph & Retrieval Index"
     container_type: "library"
     runtime: "Python 3.12 / SQLite3 / FTS5 / CTE"
     package_path: "src/eidos/core/graph_index.py"
-  - component_ref: "CMP-EIDOS-DOCS"
+  - container_ref: "CNT-EIDOS-DOCS"
     name: "Eidos User Documentation System"
     container_type: "web_app"
     runtime: "Python 3.12 / Zensical / Markdown / GitHub Pages"
@@ -122,32 +122,50 @@ C4Context
 * **Token-Budgeted Context Slicing**: Slices bounded C4 topologies, active invariants, and governing policies dynamically for AI agent contexts.
 * **Polyglot Invariant Verification**: Continuous drift detection validating automated test bindings across Python, TypeScript, Go, Rust, and Java.
 
-== 5. Building Block View (C4 Level 2: Container Topology)
+== 5. Building Block View (C4 Architecture Hierarchy)
 
-=== 5.1 Monorepo Container Topology
-Eidos is distributed as a monorepo consisting of the following primary containers:
+=== 5.1 C4 Level Mapping Guide
+Eidos enforces a strict, first-principles mapping to the canonical C4 architecture model:
+
+[cols="1,1,2,2", options="header"]
+|===
+| C4 Level | C4 Term | Eidos Specification Entity | Architectural Boundary
+| **Level 1** | **System Context** | Root System Spec (`SYS-*`) & Architecture (`ARCH-*`) | System boundaries, users/personas, and external platforms
+| **Level 2** | **Container** | Container Manifests (`CNT-*`, `type: tech/container`) | **Process / Deployable / Package boundary** (CLI app, library, daemon, SPA, docs)
+| **Level 3** | **Component** | In-Process Modules (`CMP-*`, `components` array in `CNT-*.adoc` or co-located `<source_path>/<comp>.adoc`) | **In-Process / Memory boundary** (internal modules, services, parsers, engines)
+| **Level 4** | **Code** | Source Code & Schemas (`source_path`) | Exact classes, functions, and data structures (`src/eidos/**/*.py`)
+|===
+
+=== 5.2 Monorepo Container Topology (C4 Level 2)
+Eidos is distributed as a monorepo consisting of the following primary Level 2 containers:
 
 [cols="1,2,2,2", options="header"]
 |===
 | Container ID | Name | Type | Source Path
-| `CMP-EIDOS-CORE` | Eidos Living Spec & Design Core Engine | Library | `src/eidos/core`
-| `CMP-EIDOS-CLI` | Eidos Command-Line Interface | CLI Application | `src/eidos/cli`
-| `CMP-EIDOS-MCP` | Eidos Model Context Protocol Server | Daemon / Service | `src/eidos/mcp`
-| `CMP-EIDOS-PLUGIN` | Eidos Agent Plugin & Extension Manager | Library | `src/eidos/plugin`
-| `CMP-EIDOS-PORTAL` | Eidos Living Web Portal & Static Generator | Web Application | `src/eidos/portal`
-| `CMP-EIDOS-INDEX` | Eidos Architectural Knowledge Graph & Retrieval Index | Library | `src/eidos/core/graph_index.py`
-| `CMP-EIDOS-DOCS` | Eidos User Documentation System | Web Application | `docs`
+| `CNT-EIDOS-CORE` | Eidos Living Spec & Design Core Engine | Library | `src/eidos/core`
+| `CNT-EIDOS-CLI` | Eidos Command-Line Interface | CLI Application | `src/eidos/cli`
+| `CNT-EIDOS-MCP` | Eidos Model Context Protocol Server | Daemon / Service | `src/eidos/mcp`
+| `CNT-EIDOS-PLUGIN` | Eidos Agent Plugin & Extension Manager | Library | `src/eidos/plugin`
+| `CNT-EIDOS-PORTAL` | Eidos Living Web Portal & Static Generator | Web Application | `src/eidos/portal`
+| `CNT-EIDOS-INDEX` | Eidos Architectural Knowledge Graph & Retrieval Index | Library | `src/eidos/core/graph_index.py`
+| `CNT-EIDOS-DOCS` | Eidos User Documentation System | Web Application | `docs`
 |===
 
-=== 5.2 Level 3 Component Whitebox View
-Internal component manifests for each container, interactively explorable in the Living Web Portal's Hierarchical C4 Explorer:
-* link:components/core.adoc[`CMP-EIDOS-CORE` Component Specification]
-* link:components/cli.adoc[`CMP-EIDOS-CLI` Component Specification]
-* link:components/mcp.adoc[`CMP-EIDOS-MCP` Component Specification]
-* link:components/plugin.adoc[`CMP-EIDOS-PLUGIN` Component Specification]
-* link:components/portal.adoc[`CMP-EIDOS-PORTAL` Component Specification]
-* link:components/index.adoc[`CMP-EIDOS-INDEX` Component Specification]
-* link:components/docs.adoc[`CMP-EIDOS-DOCS` Component Specification]
+=== 5.3 Level 3 Component Whitebox View & Interface Governance
+Internal component building blocks are declared inline within each container manifest. In Hybrid Mode (see link:../explorations/EXP-2026-004.adoc[EXP-2026-004]), complex promoted components **must be co-located directly with their source code** (e.g. `src/eidos/core/validator.adoc`); centralized component folders are prohibited.
+
+Furthermore, interface ownership strictly distinguishes between deployment boundaries and in-memory linkage:
+* **Containers (`CNT-*`)** define **Boundary Protocol Contracts (`CTR-*`)**: Cross-process, network, or CLI protocols (CLI args, REST OpenAPI, gRPC, MCP).
+* **Components (`CMP-*`)** define **In-Process APIs (`interfaces.provides`)**: In-memory language-level function/class signatures internal to the container.
+
+Container manifests interactively explorable in the Living Web Portal's Hierarchical C4 Explorer:
+* link:containers/core.adoc[`CNT-EIDOS-CORE` Container Specification (CMP-SPEC-PARSER, CMP-SPEC-VALIDATOR, ...)]
+* link:containers/cli.adoc[`CNT-EIDOS-CLI` Container Specification (CMP-CLI-APP, CMP-CLI-SPEC-COMMANDS, ...)]
+* link:containers/mcp.adoc[`CNT-EIDOS-MCP` Container Specification (CMP-MCP-SERVER-LOOP, CMP-MCP-TOOL-CATALOG, ...)]
+* link:containers/plugin.adoc[`CNT-EIDOS-PLUGIN` Container Specification (CMP-PLUGIN-INSTALLER, CMP-PLUGIN-VALIDATOR, ...)]
+* link:containers/portal.adoc[`CNT-EIDOS-PORTAL` Container Specification (CMP-PORTAL-SERVER, CMP-PORTAL-GENERATOR, ...)]
+* link:containers/index.adoc[`CNT-EIDOS-INDEX` Container Specification (CMP-GRAPH-STORAGE, CMP-FTS-QUERY-ENGINE, ...)]
+* link:containers/docs.adoc[`CNT-EIDOS-DOCS` Container Specification (CMP-DOCS-GETTING-STARTED, CMP-DOCS-USER-GUIDES, ...)]
 
 == 6. Runtime View
 Runtime execution choreographies are defined in:

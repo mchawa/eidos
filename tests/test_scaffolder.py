@@ -70,24 +70,24 @@ def test_scaffold_all_spec_types(tmp_path):
         raw_id="CTR-AUTH-REST",
         title="Auth REST API",
         protocol="openapi",
-        owning_component="CMP-AUTH-SERVICE",
+        owning_container="CNT-AUTH-SERVICE",
         specification_file="src/auth.yaml",
     )
     assert ctr_file.exists()
     assert_valid_spec(validator, ctr_file)
 
-    # 5. Component
-    cmp_file = create_spec(
+    # 5. Container
+    cnt_file = create_spec(
         eidos_dir=tmp_path,
-        doc_type_key="component",
-        raw_id="CMP-AUTH-SERVICE",
+        doc_type_key="container",
+        raw_id="CNT-AUTH-SERVICE",
         title="Auth Microservice",
         container_type="service",
         runtime="Rust / Axum",
         package_path="packages/auth",
     )
-    assert cmp_file.exists()
-    assert_valid_spec(validator, cmp_file)
+    assert cnt_file.exists()
+    assert_valid_spec(validator, cnt_file)
 
     # 6. Persona
     per_file = create_spec(
@@ -143,20 +143,20 @@ def test_list_specs_and_filtering(tmp_path):
 
 def test_spec_deletion_safety_with_references(tmp_path):
     """Verify delete_spec blocks deletion if referenced by other documents, unless forced (CTR-EIDOS-CLI, POL-001)."""
-    # Create component and contract that references it
-    create_spec(tmp_path, "component", "CMP-CORE", "Core Component")
-    create_spec(tmp_path, "contract", "CTR-API", "API Contract", owning_component="CMP-CORE")
+    # Create container and contract that references it
+    create_spec(tmp_path, "container", "CNT-CORE", "Core Component")
+    create_spec(tmp_path, "contract", "CTR-API", "API Contract", owning_container="CNT-CORE")
 
-    # Attempt delete CMP-CORE without force
-    success, msg, refs = delete_spec(tmp_path, "CMP-CORE", force=False)
+    # Attempt delete CNT-CORE without force
+    success, msg, refs = delete_spec(tmp_path, "CNT-CORE", force=False)
     assert not success
     assert "referenced by" in msg
     assert len(refs) == 1
 
     # Attempt delete with force
-    success_force, _msg_force, _ = delete_spec(tmp_path, "CMP-CORE", force=True)
+    success_force, _msg_force, _ = delete_spec(tmp_path, "CNT-CORE", force=True)
     assert success_force
-    assert not find_spec_by_id_or_path(tmp_path, "CMP-CORE")
+    assert not find_spec_by_id_or_path(tmp_path, "CNT-CORE")
 
 
 def test_delta_lifecycle_apply(tmp_path):
@@ -396,7 +396,7 @@ def test_self_contained_eidos_gitignore(tmp_path):
 
 
 def test_init_repository_programmatic(tmp_path):
-    """Verify init_repository scaffolds a full, schema-compliant living specification ecosystem (CTR-EIDOS-CLI)."""
+    """Verify init_repository scaffolds an empty living specification skeleton tracked by .gitkeep (CTR-EIDOS-CLI)."""
     from eidos.core.scaffolder import init_repository
     from eidos.core.validator import SpecValidator
 
@@ -407,16 +407,34 @@ def test_init_repository_programmatic(tmp_path):
         with_plugin=True,
     )
     assert success
-    assert len(files) == 5
-
     eidos_dir = tmp_path / "eidos"
     assert (eidos_dir / ".gitignore").exists()
-    assert (eidos_dir / "system.adoc").exists()
-    assert (eidos_dir / "architecture" / "system-architecture.adoc").exists()
-    assert (eidos_dir / "policies" / "POL-001-git-as-single-source-of-truth.adoc").exists()
-    assert (eidos_dir / "policies" / "POL-002-invariant-test-enforcement.adoc").exists()
-    assert (eidos_dir / "personas" / "autonomous-agent.adoc").exists()
     assert (tmp_path / ".agents" / "plugins" / "eidos").exists()
+
+    # Verify system.adoc exists but is empty
+    assert (eidos_dir / "system.adoc").exists()
+    assert (eidos_dir / "system.adoc").read_text(encoding="utf-8") == ""
+
+    # Verify no other example .adoc specifications exist
+    other_adocs = [p for p in eidos_dir.rglob("*.adoc") if p.name != "system.adoc"]
+    assert not other_adocs
+
+    # Verify all empty directories contain .gitkeep files
+    expected_gitkeeps = [
+        eidos_dir / "architecture" / "components" / ".gitkeep",
+        eidos_dir / "architecture" / "contracts" / ".gitkeep",
+        eidos_dir / "domains" / ".gitkeep",
+        eidos_dir / "policies" / ".gitkeep",
+        eidos_dir / "personas" / ".gitkeep",
+        eidos_dir / "deltas" / ".gitkeep",
+        eidos_dir / "explorations" / ".gitkeep",
+        eidos_dir / "design" / "clients" / ".gitkeep",
+        eidos_dir / "design" / "flows" / ".gitkeep",
+        eidos_dir / "design" / "screens" / ".gitkeep",
+        eidos_dir / "design" / "systems" / "core" / "components" / ".gitkeep",
+    ]
+    for gk in expected_gitkeeps:
+        assert gk.exists(), f"Expected .gitkeep at {gk}"
 
     # Re-init without force must fail
     success2, msg2, _ = init_repository(project_dir=tmp_path, force=False)
@@ -427,12 +445,11 @@ def test_init_repository_programmatic(tmp_path):
     success3, _, _ = init_repository(project_dir=tmp_path, force=True)
     assert success3
 
-    # Validate directory
+    # Validate directory (empty skeleton should be clean)
     validator = SpecValidator()
     report = validator.validate_directory(eidos_dir)
     assert report.is_clean
-    assert report.total_docs == 5
-    assert report.valid_docs == 5
+    assert report.total_docs == 0
 
 
 def test_init_repository_cli(tmp_path):
@@ -441,7 +458,12 @@ def test_init_repository_cli(tmp_path):
     result = runner.invoke(app, ["init", str(target), "--name", "my-app", "--title", "My Application", "--no-plugin"])
     assert result.exit_code == 0
     assert "Successfully initialized" in result.stdout
+    assert (target / "eidos" / ".gitignore").exists()
     assert (target / "eidos" / "system.adoc").exists()
+    assert (target / "eidos" / "system.adoc").read_text(encoding="utf-8") == ""
+    assert (target / "eidos" / "policies" / ".gitkeep").exists()
+    assert (target / "eidos" / "architecture" / "components" / ".gitkeep").exists()
+    assert not any(p for p in (target / "eidos").rglob("*.adoc") if p.name != "system.adoc")
 
 
 def test_init_repository_mcp(tmp_path):
@@ -458,8 +480,11 @@ def test_init_repository_mcp(tmp_path):
     )
     data = json.loads(res[0]["text"])
     assert data["success"]
-    assert len(data["created_files"]) == 5
+    assert (target / "eidos" / ".gitignore").exists()
     assert (target / "eidos" / "system.adoc").exists()
+    assert (target / "eidos" / "system.adoc").read_text(encoding="utf-8") == ""
+    assert (target / "eidos" / "architecture" / "components" / ".gitkeep").exists()
+    assert not any(p for p in (target / "eidos").rglob("*.adoc") if p.name != "system.adoc")
 
 
 def test_scaffold_design_system_and_tokens(tmp_path):

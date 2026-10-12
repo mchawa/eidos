@@ -1,0 +1,113 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: ContainerSchema
+description: "Defines an independently deployable or runnable unit of code execution or data storage following Arc42 Building Block View (Section 5.1) and C4 Model Level 2 (Containers). Contains an embedded C4 Level 3 Component Whitebox View via the components array."
+type: object
+required:
+  - type
+  - schema
+  - id
+  - name
+  - container_type
+  - runtime
+  - package_path
+properties:
+  type:
+    type: string
+    const: "tech/container"
+    description: "The fixed document type identifier. Must always be 'tech/container'."
+  schema:
+    type: string
+    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
+  id:
+    type: string
+    pattern: "^CNT-[A-Z0-9_-]+$"
+    description: "Unique C4 Container identifier following CNT-<NAME> (e.g. CNT-EIDOS-CORE, CNT-EIDOS-CLI)."
+  name:
+    type: string
+    description: "Human-readable display name of the container/package."
+  container_type:
+    type: string
+    description: "The C4 Container classification: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon, database, driver, or custom slug."
+  runtime:
+    type: string
+    description: "Execution environment and primary framework (e.g. 'Python 3.12 / Typer / Hatchling', 'TypeScript / React', 'Rust / Tokio')."
+  package_path:
+    type: string
+    description: >
+      Relative path from repository root to the package source code (e.g. 'src/eidos/core' or 'packages/auth').
+      Enables dual-layout support: container documents can live centralized under 'eidos/architecture/containers/'
+      OR co-located inside the package directory (e.g. 'src/eidos/core/container.adoc').
+  domain_binding:
+    type: string
+    description: "The product domain ID (DOM-*) this technical container primarily realizes (optional)."
+  components:
+    type: array
+    description: "Arc42 Section 5.2 / C4 Level 3: Component Whitebox View. The internal modules, services, or building blocks that constitute this container."
+    items:
+      type: object
+      required:
+        - id
+        - name
+        - responsibility
+        - source_path
+      properties:
+        id:
+          type: string
+          pattern: "^CMP-[A-Z0-9_-]+$"
+          description: "Unique C4 Component identifier following CMP-<NAME> (e.g. CMP-SPEC-PARSER, CMP-AUTH-SERVICE)."
+        name:
+          type: string
+          description: "Internal component name (e.g. 'SpecParser', 'SchemaValidator', 'CliEntrypoint')."
+        responsibility:
+          type: string
+          description: "What this internal component does and what domain logic it encapsulates."
+        source_path:
+          type: string
+          description: "Relative file path to the source file implementing this component (e.g. 'src/eidos/core/parser.py')."
+        spec_path:
+          type: string
+          description: "Relative path to an optional dedicated component specification document (for complex components)."
+  dependencies:
+    type: object
+    description: "Explicit container dependencies and external platform services (optional)."
+    properties:
+      internal_containers:
+        type: array
+        description: "List of other container IDs (CNT-*) in this repository that this container directly depends on or imports."
+        items:
+          type: string
+      external_services:
+        type: array
+        description: "External APIs, databases, or brokers consumed (e.g. PostgreSQL, Redis, GitHub API, Git CLI)."
+        items:
+          type: string
+  contracts:
+    type: object
+    description: "Exposed and consumed interface contracts (optional)."
+    properties:
+      provides:
+        type: array
+        description: "Paths or IDs of interface contracts (CTR-*) exposed by this container."
+        items:
+          type: string
+      consumes:
+        type: array
+        description: "Paths or IDs of interface contracts (CTR-*) consumed by this container."
+        items:
+          type: string
+  quality_attributes:
+    type: object
+    description: "Arc42 Section 10: Quality Requirements and Operational Invariants (optional)."
+    properties:
+      stateless:
+        type: boolean
+        description: "Whether container instances are completely stateless."
+      idempotent:
+        type: boolean
+        description: "Whether mutations handled by this container are idempotent."
+      concurrency_model:
+        type: string
+        description: "Concurrency paradigm (e.g. async_event_loop, multi_thread, multi_process, synchronous_library, actor)."
+      max_memory_mb:
+        type: integer
+        description: "Maximum allowable memory allocation limit in MB."

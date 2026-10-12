@@ -8,7 +8,7 @@ platform: "web"
 
 design_system: "DS-CORE"
 
-container: "CMP-EIDOS-PORTAL"
+container: "CNT-EIDOS-PORTAL"
 
 capabilities:
   - "eidos/domains/spec-engine/capabilities/living-spec-engine.adoc"
@@ -32,7 +32,7 @@ flows:
 The Web Living Documentation Portal (`CLT-WEB-PORTAL`) is the primary desktop and mobile web surface for Eidos:
 * **Platform**: Responsive Web Application (SPA / SSR architecture).
 * **Bound Design System**: Styled with `DS-CORE` and standard W3C Design Tokens Studio variables.
-* **Technical Container**: Implemented and served by `CMP-EIDOS-PORTAL` over an embedded Python HTTP/JSON-RPC daemon.
+* **Technical Container**: Implemented and served by `CNT-EIDOS-PORTAL` over an embedded Python HTTP/JSON-RPC daemon.
 
 == 2. Viewport & Shell Layout
 * **Shell Navigation**: Collapsible responsive sidebar (`UIC-PORTAL-SIDEBAR`), top breadcrumbs, and real-time search.

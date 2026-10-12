@@ -1,6 +1,6 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: ContractSchema
-description: "Defines an explicit protocol, API, or interface boundary contract (OpenAPI, gRPC Protobuf, GraphQL, AsyncAPI, or CLI interfaces)."
+description: "Defines an explicit protocol, API, or interface boundary contract (OpenAPI, gRPC Protobuf, GraphQL, AsyncAPI, JSON-RPC, or CLI interfaces)."
 type: object
 required:
   - type
@@ -8,8 +8,10 @@ required:
   - id
   - title
   - protocol
-  - owning_component
   - specification_file
+anyOf:
+  - required: ["owning_container"]
+  - required: ["owning_component"]
 properties:
   type:
     type: string
@@ -27,11 +29,13 @@ properties:
     description: "Human-readable title of this interface contract."
   protocol:
     type: string
-    description: "Protocol format: openapi, protobuf, graphql, asyncapi, json_schema, or cli_args."
+    description: "Protocol format: openapi, protobuf, graphql, asyncapi, json_schema, json_rpc_stdio, or cli_args."
+  owning_container:
+    type: string
+    description: "The container ID (CNT-*) that owns, implements, and provides this contract."
   owning_component:
     type: string
-    description: "The component ID (CMP-*) that owns, implements, and provides this contract."
+    description: "Legacy alias: The container or component ID that owns, implements, and provides this contract."
   specification_file:
     type: string
     description: "Relative path from repository root to the raw interface schema file (e.g. contracts/api.openapi.yaml)."
-

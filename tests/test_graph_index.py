@@ -64,14 +64,14 @@ def test_spike_a_fts5_bm25_lexical_search(temp_index):
 def test_spike_a_recursive_cte_k_hop_traversal(temp_index):
     """Spike A: Verify recursive CTE graph query traverses k-hop blast radius in sub-2ms."""
     t0 = time.perf_counter()
-    neighborhood = temp_index.get_k_hop_neighborhood("CMP-EIDOS-CORE", max_depth=2)
+    neighborhood = temp_index.get_k_hop_neighborhood("CNT-EIDOS-CORE", max_depth=2)
     traversal_latency_ms = (time.perf_counter() - t0) * 1000
 
     assert traversal_latency_ms < 10.0
     assert len(neighborhood) > 0
 
     node_ids = {n["id"] for n in neighborhood}
-    assert "CMP-EIDOS-CORE" in node_ids
+    assert "CNT-EIDOS-CORE" in node_ids
     # Should reach bound domain or contracts within 2 hops
     assert any(n["type"] in ("tech/contract", "product/domain", "product/capability") for n in neighborhood)
 
@@ -159,9 +159,9 @@ package_path: "src/test_mutated"
 
 def test_spike_c_tiered_context_compression(temp_index):
     """Spike C: Verify tiered context slicing token reduction >= 60% compared to raw file loading."""
-    slice_anchor = temp_index.get_tiered_context_slice(component="CMP-EIDOS-CORE", tier="anchor")
-    slice_guardrails = temp_index.get_tiered_context_slice(component="CMP-EIDOS-CORE", tier="guardrails")
-    slice_deep = temp_index.get_tiered_context_slice(component="CMP-EIDOS-CORE", tier="deep")
+    slice_anchor = temp_index.get_tiered_context_slice(component="CNT-EIDOS-CORE", tier="anchor")
+    slice_guardrails = temp_index.get_tiered_context_slice(component="CNT-EIDOS-CORE", tier="guardrails")
+    slice_deep = temp_index.get_tiered_context_slice(component="CNT-EIDOS-CORE", tier="deep")
 
     assert isinstance(slice_anchor, TieredContextSlice)
     assert slice_anchor.tier == "anchor"

@@ -84,10 +84,10 @@ class ArchitecturalContextSlice:
             lines.append(" | ".join(query_parts))
             lines.append("")
 
-        # 1. Components
-        lines.append(f"## 🧱 C4 Level 2/3 Components ({len(self.components)})")
+        # 1. Containers & Components
+        lines.append(f"## 🧱 C4 Level 2 Containers & Level 3 Components ({len(self.components)})")
         if not self.components:
-            lines.append("*No components directly matched.*")
+            lines.append("*No containers or components directly matched.*")
         for comp in self.components:
             cid = comp.get("id", "")
             name = comp.get("name", cid)
@@ -95,10 +95,13 @@ class ArchitecturalContextSlice:
             runtime = comp.get("runtime", "N/A")
             pkg = comp.get("package_path", "")
             lines.append(f"### `{cid}` ({name})")
-            lines.append(f"- **Container:** `{ctype}` | **Runtime:** `{runtime}` | **Package:** `{pkg}`")
+            lines.append(f"- **Container Type:** `{ctype}` | **Runtime:** `{runtime}` | **Package:** `{pkg}`")
             if comp.get("domain_binding"):
                 lines.append(f"- **Domain:** `{comp['domain_binding']}`")
-            deps = (comp.get("dependencies") or {}).get("internal_components", []) if isinstance(comp.get("dependencies"), dict) else []
+            deps = (
+                (comp.get("dependencies") or {}).get("internal_containers", [])
+                or (comp.get("dependencies") or {}).get("internal_components", [])
+            ) if isinstance(comp.get("dependencies"), dict) else []
             if deps:
                 lines.append(f"- **Internal Dependencies:** {', '.join(f'`{d}`' for d in deps)}")
             contracts = comp.get("contracts") or {}
@@ -108,13 +111,14 @@ class ArchitecturalContextSlice:
             req = (contracts.get("requires") or contracts.get("consumes") or []) if isinstance(contracts, dict) else []
             if req:
                 lines.append(f"- **Requires Contracts:** {', '.join(f'`{r}`' for r in req)}")
-            modules = comp.get("c4_internal_components", [])
+            modules = comp.get("components", []) or comp.get("c4_internal_components", [])
             if modules:
-                lines.append("- **Internal Modules:**")
-                for m in modules[:4]:
+                lines.append("- **C4 Level 3 Components:**")
+                for m in modules[:6]:
+                    mid = f"`{m['id']}` " if m.get("id") else ""
                     mname = m.get("name", "")
                     mresp = m.get("responsibility", "")
-                    lines.append(f"  - `{mname}`: {mresp}")
+                    lines.append(f"  - {mid}**{mname}**: {mresp}")
             lines.append("")
 
         # 2. Contracts
@@ -125,7 +129,7 @@ class ArchitecturalContextSlice:
             cid = ctr.get("id", "")
             title = ctr.get("title", cid)
             protocol = ctr.get("protocol", "standard")
-            owner = ctr.get("owning_component", "N/A")
+            owner = ctr.get("owning_container") or ctr.get("owning_component", "N/A")
             path = ctr.get("path", "")
             lines.append(f"### `{cid}`: {title}")
             lines.append(f"- **Protocol:** `{protocol}` | **Owner:** `{owner}` | **Path:** `{path}`")

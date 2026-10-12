@@ -67,20 +67,21 @@ properties:
     items:
       anyOf:
         - type: string
-          description: "Component ID (CMP-*) or relative path to a tech/component document (e.g. CMP-EIDOS-ENGINE or eidos/architecture/components/engine.adoc)."
+          description: "Container ID (CNT-*) or relative path to a tech/container document (e.g. CNT-EIDOS-CORE or eidos/architecture/containers/core.adoc)."
         - type: object
-          required:
-            - component_ref
           properties:
+            container_ref:
+              type: string
+              description: "Container ID (CNT-*) or relative path to container specification."
             component_ref:
               type: string
-              description: "Component ID (CMP-*) or relative path to component specification."
+              description: "Legacy alias: Container ID or relative path."
             name:
               type: string
               description: "Display name of the container/package (optional)."
             container_type:
               type: string
-              description: "Type of container: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon (optional)."
+              description: "Type of container: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon, database (optional)."
             runtime:
               type: string
               description: "Execution runtime and primary framework (optional)."

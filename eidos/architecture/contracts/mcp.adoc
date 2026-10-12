@@ -4,7 +4,7 @@ schema: schemas/v1/tech/contract.schema.yaml
 id: CTR-EIDOS-MCP
 title: "Eidos Model Context Protocol (MCP) Interface Contract"
 protocol: "json_rpc_stdio"
-owning_component: "CMP-EIDOS-MCP"
+owning_container: "CNT-EIDOS-MCP"
 specification_file: "src/eidos/mcp/server.py"
 ---
 = Contract: Eidos MCP stdio Interface

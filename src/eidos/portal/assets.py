@@ -3671,21 +3671,21 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
         });
       }
 
-      // Monorepo Containers & Packages Group
-      const cmpSpecs = specs.filter(s => s.type === "tech/component");
+      // Monorepo Containers & Packages Group (C4 Level 2)
+      const cmpSpecs = specs.filter(s => s.type === "tech/container" || s.type === "tech/component");
       if (cmpSpecs.length > 0) {
         rows.push({
           id: "group_components",
           parentId: "p_tech",
           level: 2,
           docId: "CONTAINERS-GROUP",
-          title: "Monorepo Containers & Modular Packages (CMP-*)",
-          type: "tech/component",
-          icon: "⚙️",
-          countTag: `${cmpSpecs.length} Packages`,
-          invariants: "Isolated Subsystems",
+          title: "Monorepo Containers (CNT-*)",
+          type: "tech/container",
+          icon: "📦",
+          countTag: `${cmpSpecs.length} Containers`,
+          invariants: "C4 Level 2 Topologies",
           status: "VALID",
-          path: "eidos/architecture/components/",
+          path: "eidos/architecture/containers/",
           isParent: true,
           defaultExpanded: true,
           pillar: "tech"
@@ -3697,8 +3697,8 @@ PORTAL_HTML_TEMPLATE = r"""<!DOCTYPE html>
             level: 3,
             docId: cmp.id,
             title: cmp.title,
-            type: "tech/component",
-            icon: "⚙️",
+            type: cmp.type || "tech/container",
+            icon: "📦",
             countTag: "",
             invariants: cmp.frontmatter?.container_type || "library",
             status: "VALID",

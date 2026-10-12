@@ -33,7 +33,7 @@ technical:
       rule: "Switching the agent driver from 'agy' to 'claude' must not alter task inputs, test invariants, or git output contracts."
       test_binding: "tests/agents/test_adapters.py::test_driver_parity"
     - id: INV-AGENT-LINT-HOOK
-      rule: "The AI agent plugin lifecycle hooks must enforce living specification syntax, schema validity, and link integrity on edit and before task completion."
+      rule: "The AI agent plugin lifecycle hooks must enforce living specification syntax, schema validity, link integrity, and spec-to-code synchronization (drift gate) before task completion."
       test_binding: "tests/test_plugin.py::test_doc_lint_hook_stop_event"
     - id: INV-AGENT-CONTEXT-SLICING
       rule: "Context slicing must extract compact, token-efficient architectural subgraphs without phantom dependencies or circular module errors."
@@ -55,7 +55,7 @@ By replacing raw file dumps with token-budgeted, graph-indexed architectural sli
 * **Tiered Architectural Context Slicing**: Dynamically extracting token-compressed architectural subgraphs matching task requirements.
 * **Hybrid Lexical-Relational Retrieval**: Combining FTS5 BM25 search with graph-neighborhood traversals to resolve engineering prompts to architectural entities.
 * **Architectural Blast-Radius Analysis**: Recursive CTE impact mapping allowing agents to assess blast radius before proposing code changes.
-* **Lifecycle Linting & Safety Hooks**: Pre-completion hooks enforcing specification schemas, valid cross-references, and test invariant coverage.
+* **Lifecycle Linting & Safety Hooks**: Pre-completion hooks enforcing specification schemas, valid cross-references, spec-to-code synchronization gates, and test invariant coverage.
 
 == Tiered Context Slicing Architecture
 

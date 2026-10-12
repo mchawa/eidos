@@ -1,6 +1,10 @@
 ---
 name: eidos
-description: Understand, navigate, author, and validate Eidos Git-native living specifications, Arc42/C4 architectures, and dual workflows.
+description: >-
+  Master architecture and engineering orchestrator for repositories managed by Eidos.
+  MUST be consulted before modifying code, proposing architectural changes, adding features,
+  refactoring, or altering living specifications in eidos/. Strictly enforces living specs
+  (NO ADRs), dual workflows (Direct vs. Planned), invariant-test traceability, and zero drift.
 ---
 
 # Eidos Engineering & Architecture Skill
@@ -9,133 +13,117 @@ This skill teaches AI agents how to reason about, navigate, author, and validate
 
 ---
 
-## 1. What is Eidos?
+## 1. Constitutional Guardrails
 
-Eidos replaces fragmented documentation, stale wikis, and historical write-only logs (like ADRs) with **living, schema-validated specifications** stored directly in the Git repository under the `eidos/` directory.
+Whenever operating within a repository containing an `eidos/` directory, adhere strictly to these 5 non-negotiable rules:
 
-### Core Tenets
-1. **Git as Single Source of Truth**: All specifications, code, and tests evolve together in atomic Git commits.
-2. **AsciiDoc + YAML Frontmatter**: Every spec document is an `.adoc` file with structured, schema-validated YAML frontmatter and human/agent-readable AsciiDoc content.
-3. **No ADRs (Architecture Decision Records)**: We do not write ADRs or maintain dead changelogs. Git preserves history. We maintain living component manifests (`tech/component`), system architecture (`tech/architecture`), interface contracts (`tech/contract`), and governance policies (`product/policy`).
-4. **Dual Workflows**:
-   - **Direct Mode (Default):** For fast, routine, or flow-state tasks, co-evolve living specs and code directly. **Git diffs** serve as the change delta.
-   - **Planned Mode (Optional):** For complex or breaking changes, **think deeply** and author an explicit SpecDelta (`DLT-*`), review with human/team, implement against the checklist, and reconcile.
-5. **Invariant-Test Traceability**: Product capabilities (`CAP-*`) and architectural policies (`POL-*`) declare invariants. Automated tests in `tests/` explicitly reference these invariants.
-6. **Automated Drift Governance**: `eidos drift` (or AI tool `eidos_detect_drift`) verifies that code modifications are accompanied by living spec updates before merging.
+1. **Single Source of Truth**: All requirements, topologies, container manifests, and policies are codified inside `eidos/` as living AsciiDoc (`.adoc`) files with YAML frontmatter. Continuously synchronize specs with code.
+2. **Strictly Zero ADRs**: Never create Architecture Decision Records or dead markdown logs (`docs/adr/`, `decisions/`). Git preserves history; record all architectural evolution directly in living specifications.
+3. **Dual Workflows (Direct vs. Planned)**:
+   - **Direct Mode (Default):** Co-evolve code in `src/` and specs in `eidos/` in the same turn/commit. Git diffs serve as the change delta.
+   - **Planned Mode:** For breaking, cross-container, or high-risk changes, scaffold a SpecDelta (`DLT-*`) via `eidos delta create <id>` (or MCP `eidos_create_delta`), implement against the checklist, and reconcile via `eidos delta apply <id>`.
+4. **Invariant-Test Traceability (`POL-002`)**: Every policy (`POL-*`) and capability (`CAP-*`) declares testable invariants (`INV-*`). All automated tests must explicitly reference these IDs.
+5. **Zero-Drift & Graph Integrity**: Never conclude a task with broken references, unvalidated schemas, or unmanaged drift. Always pass `eidos validate eidos && eidos drift --uncommitted`.
 
 ---
 
-## 2. Directory Layout & Schema Taxonomy
+## 2. C4 Taxonomy & Annotated Directory Tree
+
+Eidos models systems using Simon Brown's canonical **C4 Model** (L1 System $\rightarrow$ L2 Containers $\rightarrow$ L3 Components $\rightarrow$ L4 Code). Every document follows strict prefix conventions:
 
 ```text
 eidos/
-├── system.adoc                               # type: product/system (Root system context)
-├── personas/                                 # type: product/persona (Human & AI actor personas)
-│   ├── product-lead.adoc
-│   └── autonomous-agent.adoc
-├── policies/                                 # type: product/policy (Invariants & governance rules)
-│   ├── POL-001-git-as-single-source-of-truth.adoc
-│   ├── POL-002-invariant-test-enforcement.adoc
-│   └── POL-003-continuous-documentation-sync.adoc
-├── domains/                                  # Bounded contexts
-│   └── <domain-name>/                        # type: product/domain
-│       ├── domain.adoc
-│       └── capabilities/
-│           └── <capability-name>.adoc        # type: product/capability
-├── architecture/                             # Technical architecture
-│   ├── system-architecture.adoc              # type: tech/architecture (Arc42 + C4 L1/L2)
-│   ├── components/                           # type: tech/component (C4 L3 manifests)
-│   │   └── <component-name>.adoc
-│   └── contracts/                            # type: tech/contract (Interface definitions)
-│       └── <contract-name>.adoc
-├── design/                                   # Multi-Design Systems, Clients & UI contracts
-│   ├── clients/                              # type: design/client & screens
-│   ├── flows/                                # type: design/flow (User journey state machines)
-│   └── systems/<system-name>/
-│       ├── system.adoc                       # type: design/system
-│       ├── tokens.json                       # W3C DTCG Design Tokens
-│       └── components/<comp>.adoc            # type: design/ui-component
-└── deltas/                                   # Optional Planned Mode mutations
-    └── <delta-id>.adoc                       # type: delta/mutation
+├── system.adoc                               # SYS-*: Root system context, vision & core pillars
+├── personas/<name>.adoc                      # PER-*: Human & AI actor personas
+├── policies/<name>.adoc                      # POL-*: Governance policies & invariants (INV-*)
+├── domains/<name>/                           # DOM-*: Bounded business domains
+│   └── capabilities/<name>.adoc              # CAP-*: Product capabilities defining requirements
+├── architecture/
+│   ├── system-architecture.adoc              # ARCH-*: Arc42 & global C4 container topology
+│   ├── containers/<name>.adoc                # CNT-*: C4 L2 deployables (contains CMP-* components)
+│   └── contracts/<name>.adoc                 # CTR-*: Boundary contracts (CLI, OpenAPI, MCP)
+├── design/
+│   ├── clients/<name>/                       # CLT-*: Client surfaces (screens/ SCR-*)
+│   ├── flows/<name>.adoc                     # FLOW-*: User journey state machines
+│   └── systems/<name>/                       # DS-*: Design systems (tokens.json, components/ UIC-*)
+├── explorations/<name>.adoc                  # EXP-*: Technical spikes & feasibility discovery
+└── deltas/<name>.adoc                        # DLT-*: Planned Mode semantic mutations
 ```
 
 ---
 
-## 3. Agent Operating Workflow
+## 3. Operational Lifecycle & Verification Gate
 
-### Step 1: Slice Context & Discover
-1. **Extract a token-efficient context slice:**
-   - Run `eidos context -f <files> -c <component> -t "<task description>"` or call MCP tool `eidos_get_task_context(files=..., component=..., task=...)`.
-   - Inspect the returned slice: matched C4 Level 2/3 components, bound interface contracts (`CTR-*`), domain capabilities (`CAP-*`), active invariants (`INV-*`), and governing policies (`POL-*`).
-2. **Inspect high-level system context if needed:**
-   - Read `eidos/system.adoc` for goals and core pillars.
-   - Read `eidos/architecture/system-architecture.adoc` for global C4 container topology.
-   - Run `eidos components` or call MCP tool `eidos_list_components` to view monorepo boundaries.
-
-### Step 2: Choose Workflow Mode
-- **Routine task / Localized fix?** -> Use **Direct Mode** (co-evolve code in `src/` and specs in `eidos/` directly in the same turn/commit).
-- **Complex / Breaking / Multi-component change?** -> Use **Planned Mode** (Think deeply, scaffold `DLT-*`, review with user, execute against checklist, apply delta).
-
-### Step 3: Implement Code & Invariant Tests
-1. Implement the requested changes in source code (`src/` or `packages/`).
-2. Implement automated tests explicitly referencing invariant IDs (`INV-*`) using polyglot conventions (comments, docstrings, annotations, or test bindings).
-3. Update the corresponding living specifications in `eidos/` (components, contracts, policies, capabilities).
-
-### Step 4: Verify Zero Drift & Invariant Coverage
-Run the verification gate:
-```bash
-eidos validate eidos
-eidos drift --uncommitted
-```
-Ensure all checks pass with exit code `0`.
+1. **Context Slicing**: Run `eidos context -f <files> -c <container> -t "<task>"` (or MCP `eidos_get_task_context`) to extract only relevant C4 containers, contracts (`CTR-*`), capabilities (`CAP-*`), and invariants (`INV-*`).
+2. **Workflow Selection**:
+   - *Direct Mode (Routine/local)*: Modify code in `src/` and specs in `eidos/` directly in the same turn.
+   - *Planned Mode (Breaking/cross-container)*: Scaffold `DLT-*` via `eidos delta create`, implement against checklist, reconcile via `eidos delta apply`.
+   - *Exploration Spike (Feasibility discovery)*: Scaffold `EXP-*` via `eidos spec create exploration EXP-YYYY-NNN`.
+3. **Implementation & Invariant Testing**: Implement changes in source code. Automated tests in `tests/` must explicitly bind to invariant IDs (`INV-*` or `POL-*`).
+4. **Living Spec Co-Evolution**: Synchronize modified containers (`eidos/architecture/containers/`), contracts (`eidos/architecture/contracts/`), and domain capabilities in the same commit.
+5. **Pre-Completion Gate**: Verify the 5-point self-audit before concluding:
+   - [ ] All code changes reflected in `eidos/` living specifications (containers, contracts, capabilities).
+   - [ ] Zero ADRs or static decision markdown files created.
+   - [ ] Automated tests bound to `INV-*` or `POL-*` IDs.
+   - [ ] `eidos validate eidos` passes with exit code 0.
+   - [ ] `eidos drift --uncommitted` confirms zero unmanaged modifications.
+   ```bash
+   eidos validate eidos && eidos drift --uncommitted
+   ```
 
 ---
 
-## 4. Available MCP Tools & CLI Commands
+## 4. MCP Tools & CLI Command Matrix
 
-### MCP Tools Reference
-When the Eidos MCP server is active, you have access to:
-- `eidos_get_task_context(...)` (alias `eidos_context`): Extract a compact, token-efficient architectural subgraph context slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies).
-- `eidos_detect_drift`: Inspect spec-to-code drift between git branches or uncommitted changes, validate schemas, and verify invariant test bindings.
-- `eidos_reconcile`: Analyze recent code changes against the living spec catalog and return candidate specs to update.
-- `eidos_validate(path="eidos")`: Validate all `.adoc` files in a path against schemas and verify bidirectional cross-references.
-- `eidos_info()`: Return engine version, loaded v1 schemas, and supported platforms.
-- `eidos_list_components(path="eidos/architecture")`: List all C4 containers, internal components, runtime dependencies, and monorepo package paths.
-- `eidos_create_delta(...)`: Scaffold an optional SpecDelta mutation file for Planned Mode.
-- `eidos_apply_delta(target="<delta-id>")`: Reconcile a SpecDelta in-place to `status: applied`.
-- `eidos_create_spec(...)`: Scaffold a new living specification document.
-- `eidos_read_spec(path="...")`: Parse and read an Eidos specification.
-- `eidos_list_specs(...)`: Query living specifications with type and status filters.
-- `eidos_delete_spec(...)`: Safely delete a living specification with reference safety checks.
-- `eidos_init_repo(...)`: Programmatically initialize a repository with living specs and agent plugin.
-
-### Primary CLI Commands
-- `eidos context`: Extract architectural context slices (`-f`, `-c`, `-t`, `--format`).
-- `eidos drift`: Detect spec-to-code drift and verify invariant test coverage (`--uncommitted`, `--base`).
-- `eidos reconcile`: Propose living specification updates for recent code changes.
-- `eidos validate`: Validate all living specification schemas and entity reference graphs.
-- `eidos components`: Scan monorepo packages, runtimes, and dependencies.
-- `eidos delta`: Manage flat SpecDelta change lifecycles (`status`, `create`, `apply`).
-- `eidos spec`: Scaffold or safely delete living specifications (`create`, `delete`, `list`, `show`).
-- `eidos plugin`: Install, validate, update, inspect, and remove portable agent plugins.
-- `eidos serve` & `eidos build-site`: Preview and export the interactive Living Web Portal.
+| MCP Tool | CLI Equivalent | Primary Use Case |
+| :--- | :--- | :--- |
+| `eidos_get_task_context` | `eidos context` | Extract token-efficient architectural context slice for files/tasks |
+| `eidos_detect_drift` | `eidos drift` | Detect code-to-spec drift, validate schemas, and check test bindings |
+| `eidos_reconcile` | `eidos reconcile` | Analyze recent Git diffs and suggest living spec updates |
+| `eidos_validate` | `eidos validate` | Validate all `.adoc` schemas and cross-reference integrity |
+| `eidos_list_components` | `eidos containers`<br>`eidos components` | List C4 Level 2 containers and Level 3 in-process components |
+| `eidos_create_delta` | `eidos delta create` | Scaffold a SpecDelta mutation document (`DLT-*`) for Planned Mode |
+| `eidos_apply_delta` | `eidos delta apply` | Reconcile an applied SpecDelta in-place to `status: applied` |
+| `eidos_create_spec` | `eidos spec create` | Scaffold a living specification (`container`, `contract`, `capability`, etc.) |
+| `eidos_read_spec` | `eidos spec show` | Parse structured frontmatter metadata and AsciiDoc sections |
+| `eidos_list_specs` | `eidos spec list` | Query specs filtered by type (`tech/container`, `product/capability`) or status |
+| `eidos_delete_spec` | `eidos spec delete` | Safely delete a living specification with graph reference checks |
+| `eidos_info` | `eidos info` | Inspect engine version, loaded JSON schemas, and platform status |
+| `eidos_init_repo` | `eidos init` | Initialize a repository with standard living specifications |
 
 ---
 
-## 5. Specialized Eidos Skills Portfolio (14 Skills)
+## 5. Polyglot Invariant Test Tagging (`POL-002`)
 
-Depending on the specific phase of work, consult or invoke the specialized skill:
-- **`eidos`**: Root orchestrator skill for living specification navigation, dual workflows, and agent guidelines.
-- **`eidos-context`**: Extract token-efficient architectural context slices (C4 Level 2/3 topology, contracts, capabilities, invariants, and policies) for targeted tasks.
-- **`eidos-init`**: Bootstrap a repository with Eidos living specifications, C4 topology, and governance policies.
-- **`eidos-extract`**: Reverse-engineer and extract living specifications from brownfield codebases.
-- **`eidos-product`**: Model business domains (`DOM-*`), capabilities (`CAP-*`), and personas (`PER-*`).
-- **`eidos-architecture`**: Maintain Arc42 system context, C4 container topologies, component manifests, and interface contracts (`CTR-*`). Strictly enforces NO ADRs.
-- **`eidos-design`**: Author multi-design systems, clients, user flows, W3C Design Tokens, and UI component state machines.
-- **`eidos-explore`**: Conduct spikes, technical feasibility studies, and hypothesis-driven discovery (`EXP-*`).
-- **`eidos-delta`**: Author, execute, and verify SpecDeltas (`DLT-*`) in Planned Mode.
-- **`eidos-invariants`**: Formulate policy invariants (`POL-*`), capability invariants (`INV-*`), and maintain invariant-test traceability.
-- **`eidos-review`**: Staff Architect architectural review, blast radius auditing, and contract SemVer evaluation.
-- **`eidos-drift`**: Detect spec-to-code drift across branches or uncommitted changes, run the PR gate, and check polyglot test coverage via the `eidos_detect_drift` AI tool.
-- **`eidos-reconcile`**: Reconcile code changes to living specifications in Direct Mode.
-- **`eidos-portal`**: Preview, serve (`eidos serve`), and build static documentation sites (`eidos build-site`) with interactive C4 diagrams and token studios.
+All automated tests verifying capability invariants (`INV-*`) or policies (`POL-*`) must declare explicit bindings:
+
+| Language / Framework | Invariant Test Tagging Convention (`POL-002`) |
+| :--- | :--- |
+| **Python (pytest)** | `@pytest.mark.invariant("INV-ID")` or docstring `"""INV-ID: ..."""` |
+| **TypeScript / JS (Vitest/Jest)** | `test('INV-ID: description', () => ...)` or JSDoc `@invariant INV-ID` |
+| **Go (`testing`)** | `// Invariant: INV-ID` comment directly above test function |
+| **Rust (`#[test]`)** | `/// Invariant: INV-ID` doc comment directly above `#[test]` |
+| **Java / Kotlin (JUnit 5)** | `@Tag("INV-ID")` or `@DisplayName("INV-ID: ...")` |
+
+---
+
+## 6. Specialized Skills Routing Directory (14 Skills)
+
+When deeper guidance is needed for a specific architectural phase, consult the specialized skill:
+
+| Skill | Focus Area & When to Dispatch |
+| :--- | :--- |
+| **`eidos`** | **Master Orchestrator**: High-level workflow, governance principles, and cross-cutting rules. |
+| **`eidos-context`** | **Context Slicing**: Extract targeted C4 Level 2/3 topology, contracts, and active invariants. |
+| **`eidos-architecture`** | **Arc42 & C4 Topology**: Author C4 containers (`CNT-*`), in-process components (`CMP-*`), and interface contracts (`CTR-*`). |
+| **`eidos-invariants`** | **Policy & Invariants**: Formulate policies (`POL-*`), capability invariants (`INV-*`), and maintain test traceability. |
+| **`eidos-drift`** | **Drift Detection**: Inspect spec-to-code drift between branches or uncommitted changes via `eidos_detect_drift`. |
+| **`eidos-reconcile`** | **Direct Mode Reconciliation**: Inspect Git diffs, map code changes to living specifications, and sync specs. |
+| **`eidos-delta`** | **Planned Mode Mutations**: Scaffold, manage, verify, and reconcile SpecDeltas (`DLT-*`). |
+| **`eidos-explore`** | **Spikes & Feasibility**: Scope technical spikes (`EXP-*`), test hypotheses, and graduate proven spikes. |
+| **`eidos-product`** | **Domain & Capability Modeling**: Model bounded contexts (`DOM-*`), capabilities (`CAP-*`), and personas (`PER-*`). |
+| **`eidos-design`** | **Multi-Design Systems**: Author W3C tokens (`tokens.json`), client surfaces (`CLT-*`), screens (`SCR-*`), and flows (`FLOW-*`). |
+| **`eidos-review`** | **Architectural Review**: Perform Staff Architect audits on blast radius, SemVer breaking changes, and invariant test coverage. |
+| **`eidos-extract`** | **Brownfield Reverse-Engineering**: Systematically extract Eidos living specifications from pre-existing codebases. |
+| **`eidos-init`** | **Repository Bootstrapping**: Initialize a clean Git repository with living spec skeletons and agent configuration. |
+| **`eidos-portal`** | **Living Web Portal**: Preview (`eidos serve`), build, and publish interactive documentation sites with C4 visualizers. |

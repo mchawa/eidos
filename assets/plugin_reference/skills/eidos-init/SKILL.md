@@ -1,6 +1,6 @@
 ---
 name: eidos-init
-description: Bootstrap and initialize a Git repository with Eidos living specifications, baseline Arc42/C4 architecture, core policies, personas, and automated validation.
+description: Bootstrap and initialize a Git repository with an empty Eidos living specification skeleton tracked by .gitkeep files.
 ---
 
 # Eidos Repository Initialization (`eidos-init`)
@@ -9,32 +9,32 @@ This skill guides AI agents through initializing a new or existing Git repositor
 
 ## Overview & Objectives
 
-Initializing an Eidos workspace establishes the foundational living specifications, architectural models, and governance guardrails:
+Initializing an Eidos workspace establishes the empty living specification skeleton, tracked in Git via `.gitkeep` files, and governance guardrails:
 
 ```
   New or Existing Repository
   ┌────────────────────────────────────────────────────────┐
   │  eidos init [PATH]                                     │
   └────────────────────────┬───────────────────────────────┘
-                           │ Scaffolds
+                           │ Scaffolds Empty Skeleton
                            ▼
   ┌────────────────────────────────────────────────────────┐
   │ eidos/                                                 │
   │ ├── .gitignore                  <- ignores symlink views│
-  │ ├── system.adoc                 <- product/system       │
+  │ ├── system.adoc                 <- empty root system doc│
   │ ├── architecture/                                      │
-  │ │   ├── system-architecture.adoc<- tech/architecture   │
-  │ │   ├── components/             <- container manifests │
-  │ │   └── contracts/              <- interface contracts │
-  │ ├── domains/                    <- domain caps (CAP-*) │
-  │ ├── policies/                                          │
-  │ │   ├── POL-001-git-as-single-source-of-truth.adoc     │
-  │ │   └── POL-002-invariant-test-enforcement.adoc        │
-  │ ├── personas/                                          │
-  │ │   └── autonomous-agent.adoc   <- product/persona     │
-  │ ├── deltas/                     <- flat SpecDeltas     │
-  │ │   └── by-status/              <- symlink views       │
-  │ └── explorations/               <- research spikes     │
+  │ │   ├── components/             <- tracked by .gitkeep │
+  │ │   └── contracts/              <- tracked by .gitkeep │
+  │ ├── domains/                    <- tracked by .gitkeep │
+  │ ├── policies/                   <- tracked by .gitkeep │
+  │ ├── personas/                   <- tracked by .gitkeep │
+  │ ├── deltas/                     <- tracked by .gitkeep │
+  │ ├── explorations/               <- tracked by .gitkeep │
+  │ └── design/                                            │
+  │     ├── clients/                <- tracked by .gitkeep │
+  │     ├── flows/                  <- tracked by .gitkeep │
+  │     ├── screens/                <- tracked by .gitkeep │
+  │     └── systems/core/components/<- tracked by .gitkeep │
   │                                                        │
   │ .agents/plugins/eidos/          <- AI agent plugin     │
   └────────────────────────────────────────────────────────┘
@@ -91,13 +91,13 @@ Inspect the repository root to determine:
 ### Step 2: Execute Initialization
 
 Invoke `eidos init` via CLI or `eidos_init_repo` via MCP:
-- Scaffolds the complete `eidos/` directory layout.
+- Scaffolds the complete `eidos/` empty directory layout with an empty `system.adoc` (without example specs).
+- Places `.gitkeep` files in empty directories so they are tracked by Git.
 - Creates self-contained `eidos/.gitignore` targeting `deltas/by-status/`.
-- Scaffolds schema-conforming `system.adoc`, baseline policies, `autonomous-agent.adoc` persona, and `system-architecture.adoc`.
 - Installs the Eidos Agent Plugin to `.agents/plugins/eidos`.
 - Runs immediate validation check.
 
-### Step 3: Customize Root System Vision (`eidos/system.adoc`)
+### Step 3: Author Root System Vision (`eidos/system.adoc`)
 
 Update `eidos/system.adoc` with the project's actual domain purpose:
 - **`archetypes`**: List all matching archetypes (e.g. `[api_service, data_pipeline]`).

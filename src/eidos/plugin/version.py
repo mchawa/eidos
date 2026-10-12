@@ -134,7 +134,12 @@ def get_installed_plugin_version(project_dir: Path | None = None, dest_path: Pat
 
     manifest_path = target_dir / "plugin.json"
     if not manifest_path.exists():
-        return None
+        # Fallback to Claude plugin manifest if installed specifically for Claude
+        claude_manifest = root / ".claude" / "skills" / "eidos" / ".claude-plugin" / "plugin.json"
+        if claude_manifest.exists():
+            manifest_path = claude_manifest
+        else:
+            return None
     try:
         with open(manifest_path, encoding="utf-8") as f:
             data = json.load(f)

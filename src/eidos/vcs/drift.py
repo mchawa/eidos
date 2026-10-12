@@ -115,7 +115,7 @@ def get_git_diff_files(
                 files.update(line.strip() for line in staged_res.stdout.splitlines() if line.strip())
 
             status_res = subprocess.run(
-                ["git", "status", "--porcelain"],
+                ["git", "status", "--porcelain", "-uall"],
                 cwd=repo,
                 capture_output=True,
                 text=True,
@@ -123,8 +123,11 @@ def get_git_diff_files(
             )
             if status_res.returncode == 0:
                 for line in status_res.stdout.splitlines():
-                    if line.startswith("?? ") or line.startswith("A ") or line.startswith("M "):
-                        files.add(line[3:].strip())
+                    if len(line) > 3:
+                        raw_path = line[3:].strip()
+                        if " -> " in raw_path:
+                            raw_path = raw_path.split(" -> ")[1].strip()
+                        files.add(raw_path)
         except Exception:
             pass
         return sorted(files)
@@ -372,14 +375,16 @@ def classify_changed_files(files: list[str], repo_root: Path | None = None) -> C
     return classification
 
 
-def map_code_to_components(eidos_dir: Path, code_files: list[str]) -> list[tuple[str, str, str]]:
+def map_code_to_components(
+    eidos_dir: Path, code_files: list[str], repo_root: Path | None = None
+) -> list[tuple[str, str, str]]:
     """Map changed code files to living component specifications (returns list of (code_file, cmp_id, cmp_spec_path))."""
     if not eidos_dir.exists():
         return []
 
     from eidos.core.graph_index import get_architectural_index
 
-    idx = get_architectural_index(eidos_dir=eidos_dir)
+    idx = get_architectural_index(repo_root=repo_root, eidos_dir=eidos_dir)
     components = idx.get_components()
 
     mappings: list[tuple[str, str, str]] = []
@@ -388,7 +393,7 @@ def map_code_to_components(eidos_dir: Path, code_files: list[str]) -> list[tuple
         # 1. AST / symbol reverse mapping
         matches = idx.resolve_symbol_or_path(cf)
         for m in matches:
-            if m.get("type") == "tech/component":
+            if m.get("type") in ("tech/container", "tech/component"):
                 mappings.append((cf, m["entity_id"], m["file_path"]))
                 matched = True
                 break
@@ -527,7 +532,7 @@ def extract_invariants_and_verify(
     return invariants
 
 
-def get_living_specs_catalog(eidos_dir: Path) -> dict[str, list[dict]]:
+def get_living_specs_catalog(eidos_dir: Path, repo_root: Path | None = None) -> dict[str, list[dict]]:
     """Generate a clean, token-efficient catalog of living capabilities, components, and policies for agents."""
     catalog: dict[str, list[dict]] = {
         "capabilities": [],
@@ -541,7 +546,7 @@ def get_living_specs_catalog(eidos_dir: Path) -> dict[str, list[dict]]:
 
     from eidos.core.graph_index import get_architectural_index
 
-    idx = get_architectural_index(eidos_dir=eidos_dir)
+    idx = get_architectural_index(repo_root=repo_root, eidos_dir=eidos_dir)
     entities = idx.get_entities()
 
     for ent in entities:
@@ -563,7 +568,7 @@ def get_living_specs_catalog(eidos_dir: Path) -> dict[str, list[dict]]:
                     "path": spec_path,
                 }
             )
-        elif dtype == "tech/component":
+        elif dtype in ("tech/container", "tech/component"):
             catalog["components"].append(
                 {
                     "id": eid,
@@ -625,7 +630,7 @@ def detect_drift(
     validation_report = validator.validate_directory(target_eidos)
 
     # 3. Component Mapping
-    comp_mappings = map_code_to_components(target_eidos, classification.code_files)
+    comp_mappings = map_code_to_components(target_eidos, classification.code_files, repo_root=root)
     touched_components = sorted({cid for _, cid, _ in comp_mappings})
 
     # 4. Invariant Traceability
@@ -736,8 +741,8 @@ def reconcile_specs(
 
     changed_files = get_git_diff_files(root, base_ref=base_ref, uncommitted=uncommitted)
     classification = classify_changed_files(changed_files, repo_root=root)
-    comp_mappings = map_code_to_components(target_eidos, classification.code_files)
-    catalog = get_living_specs_catalog(target_eidos)
+    comp_mappings = map_code_to_components(target_eidos, classification.code_files, repo_root=root)
+    catalog = get_living_specs_catalog(target_eidos, repo_root=root)
 
     suggestions: list[ReconcileSuggestion] = []
     file_to_comps: dict[str, list[str]] = {}
@@ -746,7 +751,7 @@ def reconcile_specs(
 
     from eidos.core.graph_index import get_architectural_index
 
-    idx = get_architectural_index(eidos_dir=target_eidos) if target_eidos.exists() else None
+    idx = get_architectural_index(repo_root=root, eidos_dir=target_eidos) if target_eidos.exists() else None
 
     for cf in classification.code_files:
         base_candidates = file_to_comps.get(cf, [])

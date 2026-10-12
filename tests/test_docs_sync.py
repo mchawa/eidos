@@ -50,6 +50,7 @@ def test_documentation_and_schemas_in_sync():
         "spec",
         "delta",
         "init",
+        "containers",
         "components",
         "info",
         "mcp",
@@ -59,24 +60,24 @@ def test_documentation_and_schemas_in_sync():
     for cmd in expected_commands:
         assert f"eidos {cmd}" in cli_doc_text, f"Command 'eidos {cmd}' is not documented in {cli_doc_path}"
 
-    # 3. Verify all C4 components are registered in system-architecture.adoc
+    # 3. Verify all C4 containers are registered in system-architecture.adoc
     sys_arch_path = repo_root / "eidos/architecture/system-architecture.adoc"
     assert sys_arch_path.exists(), "system-architecture.adoc is missing"
     sys_arch_text = sys_arch_path.read_text(encoding="utf-8")
 
-    component_files = sorted(glob.glob(str(repo_root / "eidos/architecture/components/*.adoc")))
-    assert len(component_files) >= 6, f"Expected at least 6 components, found {len(component_files)}"
+    container_files = sorted(glob.glob(str(repo_root / "eidos/architecture/containers/*.adoc")))
+    assert len(container_files) >= 6, f"Expected at least 6 containers, found {len(container_files)}"
 
-    for comp_file in component_files:
-        with open(comp_file, encoding="utf-8") as f:
+    for cont_file in container_files:
+        with open(cont_file, encoding="utf-8") as f:
             lines = f.readlines()
-        comp_id = None
+        cont_id = None
         for line in lines:
             if line.startswith("id:"):
-                comp_id = line.split(":", 1)[1].strip()
+                cont_id = line.split(":", 1)[1].strip()
                 break
-        assert comp_id, f"Component file {comp_file} missing id: frontmatter"
-        assert comp_id in sys_arch_text, f"Component '{comp_id}' not registered in {sys_arch_path}"
+        assert cont_id, f"Container file {cont_file} missing id: frontmatter"
+        assert cont_id in sys_arch_text, f"Container '{cont_id}' not registered in {sys_arch_path}"
 
     # 4. Verify all 14 skills are documented in docs/guides/agent-plugin.md
     agent_plugin_doc = repo_root / "docs/guides/agent-plugin.md"

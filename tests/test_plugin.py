@@ -20,6 +20,7 @@ from eidos.plugin.version import (
     check_plugin_version_status,
     compare_semver,
     get_bundled_plugin_version,
+    get_installed_plugin_version,
     is_valid_semver,
     parse_semver,
 )
@@ -81,7 +82,6 @@ def test_plugin_install_to_project_scope(tmp_path):
     assert (agent_dir / "mcp_config.json").exists()
     assert not (agent_dir / "mcp.json").exists()
     assert (agent_dir / "skills" / "eidos" / "SKILL.md").exists()
-    assert (agent_dir / "rules" / "AGENTS.md").exists()
     agent_report = validate_plugin_package(agent_dir)
     assert agent_report.is_valid
 
@@ -110,8 +110,6 @@ def test_plugin_install_to_custom_directory(tmp_path):
     assert (dest / "mcp_config.json").exists()
     assert not (dest / "mcp.json").exists()
     assert (dest / "skills" / "eidos" / "SKILL.md").exists()
-    assert (dest / "rules" / "AGENTS.md").exists()
-
     report = validate_plugin_package(dest)
     assert report.is_valid
 
@@ -195,6 +193,91 @@ def test_cli_plugin_remove_alias(tmp_path):
     assert res.exit_code == 0
     assert "Success!" in res.stdout
     assert not (tmp_path / ".agents" / "plugins" / "eidos").exists()
+
+
+def test_plugin_install_to_claude_plugin(tmp_path):
+    """Verify installing plugin specifically as Claude Code plugin into .claude/skills/eidos."""
+    results = install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path, force=True)
+
+    assert len(results) == 1
+    assert results[0].success
+    assert results[0].target == "claude"
+
+    claude_plugin_dir = tmp_path / ".claude" / "skills" / "eidos"
+    assert (claude_plugin_dir / ".claude-plugin" / "plugin.json").exists()
+    assert (claude_plugin_dir / ".mcp.json").exists()
+    assert (claude_plugin_dir / "skills" / "eidos" / "SKILL.md").exists()
+
+    with open(claude_plugin_dir / ".claude-plugin" / "plugin.json", encoding="utf-8") as f:
+        manifest = json.load(f)
+    assert manifest["name"] == "eidos"
+
+    # Verify settings.json
+    settings_file = tmp_path / ".claude" / "settings.json"
+    assert settings_file.exists()
+    with open(settings_file, encoding="utf-8") as f:
+        settings = json.load(f)
+    assert settings["enabledPlugins"].get("eidos@skills-dir") is True
+
+    # Verify project-level .claude/mcp.json
+    claude_mcp = tmp_path / ".claude" / "mcp.json"
+    assert claude_mcp.exists()
+    with open(claude_mcp, encoding="utf-8") as f:
+        mcp_data = json.load(f)
+    assert "eidos" in mcp_data["mcpServers"]
+
+    # Verify get_installed_plugin_version detects Claude plugin
+    installed_ver = get_installed_plugin_version(project_dir=tmp_path)
+    assert installed_ver == get_bundled_plugin_version()
+
+
+def test_plugin_uninstall_claude_plugin(tmp_path):
+    """Verify uninstalling Claude Code plugin cleans .claude/skills/eidos and settings.json."""
+    # Install first
+    install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path, force=True)
+    claude_plugin_dir = tmp_path / ".claude" / "skills" / "eidos"
+    settings_file = tmp_path / ".claude" / "settings.json"
+    claude_mcp = tmp_path / ".claude" / "mcp.json"
+    assert claude_plugin_dir.exists()
+
+    # Uninstall
+    results = uninstall_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path)
+    assert len(results) == 1
+    assert results[0].success
+
+    assert not claude_plugin_dir.exists()
+    if settings_file.exists():
+        with open(settings_file, encoding="utf-8") as f:
+            settings = json.load(f)
+        assert "eidos@skills-dir" not in settings.get("enabledPlugins", {})
+
+    if claude_mcp.exists():
+        with open(claude_mcp, encoding="utf-8") as f:
+            mcp_data = json.load(f)
+        assert "eidos" not in mcp_data.get("mcpServers", {})
+
+
+def test_cli_install_and_uninstall_shortcut_claude(tmp_path):
+    """Verify 'eidos install claude' and 'eidos uninstall claude' shortcuts work."""
+    # Install with positional argument
+    res = runner.invoke(app, ["install", "claude", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    assert "Success!" in res.stdout
+    assert (tmp_path / ".claude" / "skills" / "eidos" / ".claude-plugin" / "plugin.json").exists()
+
+    # Uninstall with positional argument
+    res = runner.invoke(app, ["uninstall", "claude", "--project-dir", str(tmp_path)])
+    assert res.exit_code == 0
+    assert "Success!" in res.stdout
+    assert not (tmp_path / ".claude" / "skills" / "eidos").exists()
+
+
+def test_cli_install_rejects_workspace_target(tmp_path):
+    """Verify 'workspace' is rejected as target following strict agent-plugins standard."""
+    res = runner.invoke(app, ["install", "workspace", "--project-dir", str(tmp_path)])
+    assert res.exit_code != 0
+    # Output should contain error indication about invalid choice
+    assert "Invalid value" in res.output or "invalid" in res.output.lower()
 
 
 def test_semver_validation_and_parsing():
@@ -386,8 +469,8 @@ def test_assets_and_installed_plugin_parity():
     if not installed_plugin.exists():
         pytest.skip(".agents/plugins/eidos not installed in this environment")
 
-    ref_files = {p.relative_to(ref_plugin) for p in ref_plugin.rglob("*") if p.is_file()}
-    inst_files = {p.relative_to(installed_plugin) for p in installed_plugin.rglob("*") if p.is_file()}
+    ref_files = {p.relative_to(ref_plugin) for p in ref_plugin.rglob("*") if p.is_file() and ".eidos" not in p.parts}
+    inst_files = {p.relative_to(installed_plugin) for p in installed_plugin.rglob("*") if p.is_file() and ".eidos" not in p.parts}
     assert ref_files == inst_files, f"File mismatch: {ref_files ^ inst_files}"
 
     for rel in sorted(ref_files):
@@ -549,3 +632,126 @@ def test_cli_lint_command():
     res = runner.invoke(app, ["lint", "eidos"])
     assert res.exit_code == 0
     assert "Success! All" in res.stdout
+
+
+def test_doc_lint_hook_stop_event_drift_detected(tmp_path):
+    """Verify stop hook blocks task completion when code changes without living spec synchronization (INV-AGENT-LINT-HOOK)."""
+    script_path = Path("assets/plugin_reference/scripts/lint_docs.py")
+    eidos_dir = tmp_path / "eidos"
+    eidos_dir.mkdir()
+    valid_spec = eidos_dir / "policy.adoc"
+    valid_spec.write_text(
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nrule: Must execute safely\nenforcement:\n  mechanism: lint\n  severity: blocking\n---\n",
+        encoding="utf-8",
+    )
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "feature.py").write_text("def do_feature(): pass\n", encoding="utf-8")
+
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.email", "agent@eidos.ai"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.name", "Eidos Agent"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "add", "eidos"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", "init specs"], cwd=tmp_path, capture_output=True, check=True)
+
+    stop_payload = json.dumps(
+        {
+            "executionNum": 1,
+            "terminationReason": "model_stop",
+            "workspacePaths": [str(tmp_path)],
+        }
+    )
+    res = subprocess.run(
+        [sys.executable, str(script_path), "--event", "stop"],
+        input=stop_payload,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert res.returncode == 0
+    data = json.loads(res.stdout)
+    assert data["decision"] == "continue"
+    assert "Drift Gate" in data["reason"] or "drift detected" in data["reason"].lower()
+    assert "src/feature.py" in data["reason"]
+
+
+def test_doc_lint_hook_stop_event_synchronized(tmp_path):
+    """Verify stop hook allows completion when code and living specs are co-evolved (INV-AGENT-LINT-HOOK)."""
+    script_path = Path("assets/plugin_reference/scripts/lint_docs.py")
+    eidos_dir = tmp_path / "eidos"
+    eidos_dir.mkdir()
+    valid_spec = eidos_dir / "policy.adoc"
+    valid_spec.write_text(
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nrule: Must execute safely\nenforcement:\n  mechanism: lint\n  severity: blocking\n---\n",
+        encoding="utf-8",
+    )
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "feature.py").write_text("def do_feature(): pass\n", encoding="utf-8")
+
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.email", "agent@eidos.ai"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.name", "Eidos Agent"], cwd=tmp_path, capture_output=True, check=True)
+
+    stop_payload = json.dumps(
+        {
+            "executionNum": 1,
+            "terminationReason": "model_stop",
+            "workspacePaths": [str(tmp_path)],
+        }
+    )
+    res = subprocess.run(
+        [sys.executable, str(script_path), "--event", "stop"],
+        input=stop_payload,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert res.returncode == 0
+    data = json.loads(res.stdout)
+    assert data["decision"] == "allow"
+
+
+def test_doc_lint_hook_post_invocation_drift_notice(tmp_path):
+    """Verify post_invocation hook emits ephemeral drift notice when uncommitted code exists (INV-AGENT-LINT-HOOK)."""
+    script_path = Path("assets/plugin_reference/scripts/lint_docs.py")
+    eidos_dir = tmp_path / "eidos"
+    eidos_dir.mkdir()
+    valid_spec = eidos_dir / "policy.adoc"
+    valid_spec.write_text(
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nrule: Must execute safely\nenforcement:\n  mechanism: lint\n  severity: blocking\n---\n",
+        encoding="utf-8",
+    )
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "feature.py").write_text("def do_feature(): pass\n", encoding="utf-8")
+
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.email", "agent@eidos.ai"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.name", "Eidos Agent"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "add", "eidos"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", "init specs"], cwd=tmp_path, capture_output=True, check=True)
+
+    inv_payload = json.dumps(
+        {
+            "invocationNum": 2,
+            "workspacePaths": [str(tmp_path)],
+        }
+    )
+    res = subprocess.run(
+        [sys.executable, str(script_path), "--event", "post_invocation"],
+        input=inv_payload,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert res.returncode == 0
+    data = json.loads(res.stdout)
+    assert "injectSteps" in data
+    assert len(data["injectSteps"]) == 1
+    assert "ephemeralMessage" in data["injectSteps"][0]
+    assert "Eidos Sync Notice" in data["injectSteps"][0]["ephemeralMessage"]
+

@@ -19,10 +19,10 @@ def test_context_slice_by_file():
 
     assert isinstance(res, ArchitecturalContextSlice)
     comp_ids = {c["id"] for c in res.components}
-    assert "CMP-EIDOS-CLI" in comp_ids
+    assert "CNT-EIDOS-CLI" in comp_ids
     # 1-hop dependencies included
-    assert "CMP-EIDOS-CORE" in comp_ids
-    assert "CMP-EIDOS-PLUGIN" in comp_ids
+    assert "CNT-EIDOS-CORE" in comp_ids
+    assert "CNT-EIDOS-PLUGIN" in comp_ids
 
     # Bound contract
     contract_ids = {c["id"] for c in res.contracts}
@@ -41,11 +41,11 @@ def test_context_slice_by_file():
 
 def test_context_slice_by_component():
     """Verify slicing by component ID extracts the target component, internal deps, and contracts."""
-    res = get_context_slice(component="CMP-EIDOS-MCP")
+    res = get_context_slice(component="CNT-EIDOS-MCP")
 
     comp_ids = {c["id"] for c in res.components}
-    assert "CMP-EIDOS-MCP" in comp_ids
-    assert "CMP-EIDOS-CORE" in comp_ids
+    assert "CNT-EIDOS-MCP" in comp_ids
+    assert "CNT-EIDOS-CORE" in comp_ids
 
     contract_ids = {c["id"] for c in res.contracts}
     assert "CTR-EIDOS-MCP" in contract_ids
@@ -67,7 +67,7 @@ def test_context_slice_fallback_and_empty():
     # Unmatched query
     res_unmatched = get_context_slice(component="CMP-NONEXISTENT")
     assert len(res_unmatched.components) >= 1
-    assert any(c["id"] in ["CMP-EIDOS-CLI", "CMP-EIDOS-CORE"] for c in res_unmatched.components)
+    assert any(c["id"] in ["CNT-EIDOS-CLI", "CNT-EIDOS-CORE"] for c in res_unmatched.components)
 
     # Empty query (all components overview)
     res_empty = get_context_slice()
@@ -76,13 +76,13 @@ def test_context_slice_fallback_and_empty():
 
 def test_context_slice_markdown_and_json_serialization():
     """Verify markdown and JSON rendering formats."""
-    res = get_context_slice(files=["src/eidos/cli/main.py"], component="CMP-EIDOS-CLI")
+    res = get_context_slice(files=["src/eidos/cli/main.py"], component="CNT-EIDOS-CLI")
 
     # Markdown
     md = res.to_markdown()
     assert "# 🧭 Eidos Architectural Context Slice" in md
-    assert "C4 Level 2/3 Components" in md
-    assert "CMP-EIDOS-CLI" in md
+    assert "C4 Level 2 Containers & Level 3 Components" in md
+    assert "CNT-EIDOS-CLI" in md
     assert "Bound Interface Contracts" in md
     assert "Active Invariants" in md
 
@@ -94,7 +94,7 @@ def test_context_slice_markdown_and_json_serialization():
     assert "capabilities" in data
     assert "invariants" in data
     assert "policies" in data
-    assert data["query"]["component"] == "CMP-EIDOS-CLI"
+    assert data["query"]["component"] == "CNT-EIDOS-CLI"
 
 
 def test_cli_context_command():
@@ -102,14 +102,14 @@ def test_cli_context_command():
     # 1. Markdown output with -f
     res_f = runner.invoke(app, ["context", "-f", "src/eidos/cli/main.py"])
     assert res_f.exit_code == 0
-    assert "CMP-EIDOS-CLI" in res_f.output
-    assert "C4 Level 2/3 Components" in res_f.output
+    assert "CNT-EIDOS-CLI" in res_f.output
+    assert "C4 Level 2 Containers & Level 3 Components" in res_f.output
 
     # 2. JSON output with -c and --format json
-    res_json = runner.invoke(app, ["context", "-c", "CMP-EIDOS-MCP", "--format", "json"])
+    res_json = runner.invoke(app, ["context", "-c", "CNT-EIDOS-MCP", "--format", "json"])
     assert res_json.exit_code == 0
     data = json.loads(res_json.output)
-    assert any(c["id"] == "CMP-EIDOS-MCP" for c in data["components"])
+    assert any(c["id"] == "CNT-EIDOS-MCP" for c in data["components"])
 
     # 3. Task search with -t
     res_task = runner.invoke(app, ["context", "-t", "GitLab bridge synchronization"])
@@ -118,21 +118,21 @@ def test_cli_context_command():
 
 
 def test_context_slice_substring_no_false_positive():
-    """Verify that a file like 'packages/client/index.ts' does not match 'CMP-EIDOS-CLI' via substring 'cli'."""
+    """Verify that a file like 'packages/client/index.ts' does not match 'CNT-EIDOS-CLI' via substring 'cli'."""
     res = get_context_slice(files=["packages/client/index.ts"])
     matched_ids = {c["id"] for c in res.components}
     # CLI should not be matched via "cli" in "client"
-    assert "CMP-EIDOS-CLI" not in matched_ids or "Fallback baseline component anchor" in res.matched_reasons.get("CMP-EIDOS-CLI", [])
-    if "CMP-EIDOS-CLI" in res.matched_reasons:
-        assert not any("matches slug 'cli'" in r for r in res.matched_reasons["CMP-EIDOS-CLI"])
+    assert "CNT-EIDOS-CLI" not in matched_ids or "Fallback baseline component anchor" in res.matched_reasons.get("CNT-EIDOS-CLI", [])
+    if "CNT-EIDOS-CLI" in res.matched_reasons:
+        assert not any("matches slug 'cli'" in r for r in res.matched_reasons["CNT-EIDOS-CLI"])
 
 
 def test_context_slice_string_and_comma_separated_files():
     """Verify get_context_slice supports string inputs and comma-separated file paths."""
     res = get_context_slice(files="src/eidos/cli/main.py, src/eidos/mcp/server.py")
     comp_ids = {c["id"] for c in res.components}
-    assert "CMP-EIDOS-CLI" in comp_ids
-    assert "CMP-EIDOS-MCP" in comp_ids
+    assert "CNT-EIDOS-CLI" in comp_ids
+    assert "CNT-EIDOS-MCP" in comp_ids
 
 
 def test_context_slice_non_eidos_project_fallback(tmp_path):
@@ -186,16 +186,16 @@ def test_context_slice_absolute_path_normalization():
     abs_cli_file = str((Path.cwd() / "src/eidos/cli/main.py").resolve())
     res = get_context_slice(files=[abs_cli_file])
     comp_ids = {c["id"] for c in res.components}
-    assert "CMP-EIDOS-CLI" in comp_ids
-    # Should NOT falsely match CMP-EIDOS-DOCS even if ancestor paths contain words
-    assert "CMP-EIDOS-DOCS" not in comp_ids
+    assert "CNT-EIDOS-CLI" in comp_ids
+    # Should NOT falsely match CNT-EIDOS-DOCS even if ancestor paths contain words
+    assert "CNT-EIDOS-DOCS" not in comp_ids
 
 
 def test_context_slice_relative_path_with_dots():
     """Verify relative paths prefixed with ./ resolve cleanly."""
     res = get_context_slice(files=["./src/eidos/cli/main.py"])
     comp_ids = {c["id"] for c in res.components}
-    assert "CMP-EIDOS-CLI" in comp_ids
+    assert "CNT-EIDOS-CLI" in comp_ids
 
 
 def test_context_slice_invariants_policy_id(tmp_path):
@@ -258,9 +258,9 @@ def test_cli_index_commands():
     assert "Architectural Search Results" in res_search.output
 
     # 4. blast-radius
-    res_blast = runner.invoke(app, ["index", "blast-radius", "CMP-EIDOS-CORE", "--depth", "1"])
+    res_blast = runner.invoke(app, ["index", "blast-radius", "CNT-EIDOS-CORE", "--depth", "1"])
     assert res_blast.exit_code == 0
-    assert "Blast Radius for 'CMP-EIDOS-CORE'" in res_blast.output
+    assert "Blast Radius for 'CNT-EIDOS-CORE'" in res_blast.output
 
 
 

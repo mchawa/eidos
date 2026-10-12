@@ -31,8 +31,11 @@ for root in search_roots:
 
 try:
     from eidos.core.validator import SpecValidator
+    from eidos.vcs.drift import detect_drift, reconcile_specs
 except ImportError:
     SpecValidator = None
+    detect_drift = None
+    reconcile_specs = None
 
 
 def find_workspace_root(payload: dict[str, Any] | None = None) -> Path:
@@ -110,66 +113,109 @@ def handle_pre_tool_use(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def handle_post_invocation(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]:
-    """Inject ephemeral diagnostics into agent context if specs are invalid."""
+    """Inject ephemeral diagnostics into agent context if specs are invalid or drift is detected."""
     eidos_dir = workspace_root / "eidos"
-    if not eidos_dir.exists() or SpecValidator is None:
+    if not eidos_dir.exists():
         return {"injectSteps": []}
 
-    try:
-        validator = SpecValidator()
-        report = validator.validate_directory(eidos_dir)
-        if not report.is_clean:
-            errors: list[str] = []
-            for f, errs in report.schema_errors.items():
-                fname = Path(f).name
-                for e in errs[:2]:
-                    errors.append(f"• {fname}: {e}")
-            for r in report.broken_references[:3]:
-                errors.append(f"• Broken reference: {r}")
+    # 1. Spec Schema & Link Validation
+    if SpecValidator is not None:
+        try:
+            validator = SpecValidator()
+            report = validator.validate_directory(eidos_dir)
+            if not report.is_clean:
+                errors: list[str] = []
+                for f, errs in report.schema_errors.items():
+                    fname = Path(f).name
+                    for e in errs[:2]:
+                        errors.append(f"• {fname}: {e}")
+                for r in report.broken_references[:3]:
+                    errors.append(f"• Broken reference: {r}")
 
-            summary = "\n".join(errors[:6])
-            msg = (
-                f"⚠️ [Eidos Doc Linter] Living specification syntax or schema issues detected in eidos/:\n"
-                f"{summary}\n\n"
-                f"Please correct these errors before proceeding."
-            )
-            return {"injectSteps": [{"ephemeralMessage": msg}]}
-    except (OSError, yaml.YAMLError, ValueError, TypeError):
-        pass
+                summary = "\n".join(errors[:6])
+                msg = (
+                    f"⚠️ [Eidos Doc Linter] Living specification syntax or schema issues detected in eidos/:\n"
+                    f"{summary}\n\n"
+                    f"Please correct these errors before proceeding."
+                )
+                return {"injectSteps": [{"ephemeralMessage": msg}]}
+        except (OSError, yaml.YAMLError, ValueError, TypeError):
+            pass
+
+    # 2. Spec-to-Code Drift Notice (In-Flight)
+    if detect_drift is not None:
+        try:
+            drift_res = detect_drift(repo_root=workspace_root, eidos_dir=eidos_dir, uncommitted=True)
+            if drift_res.drift_detected:
+                code_count = len(drift_res.classification.code_files)
+                top_files = ", ".join(Path(f).name for f in drift_res.classification.code_files[:3])
+                more = f" (+{code_count - 3} more)" if code_count > 3 else ""
+                msg = (
+                    f"ℹ️ [Eidos Sync Notice] Uncommitted code changes detected in {top_files}{more} without living spec updates in 'eidos/'.\n"
+                    f"Remember to synchronize living specifications in 'eidos/' (or run 'eidos reconcile') before concluding."
+                )
+                return {"injectSteps": [{"ephemeralMessage": msg}]}
+        except Exception:
+            pass
 
     return {"injectSteps": []}
 
 
 def handle_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]:
-    """Block agent completion if any living specifications are invalid."""
+    """Block agent completion if any living specifications are invalid or if drift is detected."""
     eidos_dir = workspace_root / "eidos"
-    if not eidos_dir.exists() or SpecValidator is None:
+    if not eidos_dir.exists():
         return {"decision": "allow"}
 
-    try:
-        validator = SpecValidator()
-        report = validator.validate_directory(eidos_dir)
-        if not report.is_clean:
-            errors: list[str] = []
-            for f, errs in report.schema_errors.items():
-                fname = Path(f).name
-                for e in errs[:3]:
-                    errors.append(f"  - {fname}: {e}")
-            for r in report.broken_references[:3]:
-                errors.append(f"  - Broken reference: {r}")
+    # 1. Living specification validity check
+    if SpecValidator is not None:
+        try:
+            validator = SpecValidator()
+            report = validator.validate_directory(eidos_dir)
+            if not report.is_clean:
+                errors: list[str] = []
+                for f, errs in report.schema_errors.items():
+                    fname = Path(f).name
+                    for e in errs[:3]:
+                        errors.append(f"  - {fname}: {e}")
+                for r in report.broken_references[:3]:
+                    errors.append(f"  - Broken reference: {r}")
 
-            err_msg = "\n".join(errors[:10])
-            reason = (
-                f"🛑 [Eidos Doc Linter] Cannot complete task: One or more specifications in 'eidos/' failed validation:\n"
-                f"{err_msg}\n\n"
-                f"According to Eidos Rule #5, all specifications in eidos/ must strictly conform to their schema with zero broken references before concluding your work."
-            )
-            return {"decision": "continue", "reason": reason}
-    except (OSError, yaml.YAMLError, ValueError, TypeError, KeyError) as exc:
-        return {
-            "decision": "continue",
-            "reason": f"🛑 [Eidos Doc Linter] Validator execution error: {exc}",
-        }
+                err_msg = "\n".join(errors[:10])
+                reason = (
+                    f"🛑 [Eidos Doc Linter] Cannot complete task: One or more specifications in 'eidos/' failed validation:\n"
+                    f"{err_msg}\n\n"
+                    f"According to Eidos Rule #5, all specifications in eidos/ must strictly conform to their schema with zero broken references before concluding your work."
+                )
+                return {"decision": "continue", "reason": reason}
+        except (OSError, yaml.YAMLError, ValueError, TypeError, KeyError) as exc:
+            return {
+                "decision": "continue",
+                "reason": f"🛑 [Eidos Doc Linter] Validator execution error: {exc}",
+            }
+
+    # 2. Spec-to-code drift detection gate
+    if detect_drift is not None:
+        try:
+            drift_res = detect_drift(repo_root=workspace_root, eidos_dir=eidos_dir, uncommitted=True)
+            if drift_res.drift_detected:
+                remediation_lines = "\n".join(f"  {rem}" for rem in drift_res.remediation_suggestions)
+                code_files_str = "\n".join(f"  - {cf}" for cf in drift_res.classification.code_files[:8])
+                if len(drift_res.classification.code_files) > 8:
+                    code_files_str += f"\n  ... and {len(drift_res.classification.code_files) - 8} more files"
+
+                reason = (
+                    f"🛑 [Eidos Drift Gate] Cannot complete task: Spec-to-code drift detected!\n"
+                    f"{len(drift_res.classification.code_files)} code file(s) were modified without corresponding living specification updates in 'eidos/':\n"
+                    f"{code_files_str}\n\n"
+                    f"Recommended Actions:\n"
+                    f"{remediation_lines}\n\n"
+                    f"According to Eidos Guidelines (Rule #3 & #5), all code modifications in src/ must co-evolve with living specs in 'eidos/'. "
+                    f"Please update the relevant living specifications (or scaffold a SpecDelta) before concluding your work."
+                )
+                return {"decision": "continue", "reason": reason}
+        except Exception:
+            pass
 
     return {"decision": "allow"}
 

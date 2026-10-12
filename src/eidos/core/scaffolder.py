@@ -18,6 +18,8 @@ VALID_SPEC_TYPES = {
     "domain": "product/domain",
     "policy": "product/policy",
     "contract": "tech/contract",
+    "container": "tech/container",
+    "tech/container": "tech/container",
     "component": "tech/component",
     "persona": "product/persona",
     "exploration": "product/exploration",
@@ -42,7 +44,10 @@ def normalize_id(doc_type_key: str, raw_id: str) -> str:
         "domain": "DOM-",
         "policy": "POL-",
         "contract": "CTR-",
-        "component": "CMP-",
+        "container": "CNT-",
+        "tech/container": "CNT-",
+        "component": "CNT-",
+        "tech/component": "CNT-",
         "persona": "PER-",
         "exploration": "EXP-",
         "design-system": "DS-",
@@ -56,6 +61,10 @@ def normalize_id(doc_type_key: str, raw_id: str) -> str:
     }
     pfx = prefix_map.get(doc_type_key.lower())
     if pfx and not cleaned.startswith(pfx):
+        if doc_type_key in ("container", "component", "tech/container", "tech/component") and (
+            cleaned.startswith("CNT-") or cleaned.startswith("CMP-")
+        ):
+            return cleaned
         cleaned = f"{pfx}{cleaned}"
     return cleaned
 
@@ -71,7 +80,8 @@ def create_spec(
     category: str = "governance",
     rule: str = "Rule statement for this policy.",
     protocol: str = "cli_args",
-    owning_component: str = "CMP-EIDOS-CORE",
+    owning_container: str | None = None,
+    owning_component: str | None = None,
     specification_file: str = "src/eidos/cli/main.py",
     container_type: str = "library",
     runtime: str = "Python 3.12 / Typer / Hatchling",
@@ -99,8 +109,10 @@ def create_spec(
         "product/policy": "policy",
         "contract": "contract",
         "tech/contract": "contract",
-        "component": "component",
-        "tech/component": "component",
+        "container": "container",
+        "tech/container": "container",
+        "component": "container",
+        "tech/component": "container",
         "persona": "persona",
         "product/persona": "persona",
         "exploration": "exploration",
@@ -237,13 +249,14 @@ Explain why this non-negotiable architectural or product guardrail exists.
     elif canonical_key == "contract":
         dest_dir = eidos_dir / "architecture" / "contracts"
         dest_file = dest_dir / f"{slug}.adoc"
+        owner_id = owning_container or owning_component or "CNT-EIDOS-CORE"
         content = f"""---
 type: tech/contract
 schema: schemas/v1/tech/contract.schema.yaml
 id: {doc_id}
 title: "{title}"
 protocol: "{protocol}"
-owning_component: "{owning_component}"
+owning_container: "{owner_id}"
 specification_file: "{specification_file}"
 ---
 = Contract: {title}
@@ -253,23 +266,27 @@ specification_file: "{specification_file}"
 Document the endpoints, command line arguments, payloads, or schemas for this contract.
 """
 
-    elif canonical_key == "component":
-        dest_dir = eidos_dir / "architecture" / "components"
+    elif canonical_key in ("container", "component"):
+        dest_dir = eidos_dir / "architecture" / "containers"
         dest_file = dest_dir / f"{slug}.adoc"
         content = f"""---
-type: tech/component
-schema: schemas/v1/tech/component.schema.yaml
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
 id: {doc_id}
 name: "{title}"
 container_type: "{container_type}"
 runtime: "{runtime}"
 package_path: "{package_path}"
+components: []
 ---
-= Component: {title}
+= Container: {title}
 :toc: left
 
-== Whitebox View & Responsibilities
-Describe the internal modules, responsibility boundaries, and dependencies of this component.
+== Architectural Boundary
+Describe the container boundary, deployment unit, and responsibilities.
+
+== Building Block View (C4 Level 3 Components)
+Internal components and modular building blocks contained within this deployable.
 """
 
     elif canonical_key == "persona":
@@ -820,25 +837,19 @@ def init_repository(
     with_plugin: bool = True,
     force: bool = False,
 ) -> tuple[bool, str, list[Path]]:
-    """Initialize a repository with Eidos living specifications, baseline architecture, and governance."""
+    """Initialize a repository with an empty Eidos living specification skeleton and governance."""
     eidos_dir = project_dir / eidos_dir_name
     created_files: list[Path] = []
 
-    if eidos_dir.exists() and any(eidos_dir.rglob("*.adoc")) and not force:
+    if eidos_dir.exists() and any(eidos_dir.iterdir()) and not force:
         return (
             False,
             f"Eidos specifications already exist at '{eidos_dir}'. Use --force to re-initialize.",
             [],
         )
 
-    # Clean name and title
-    clean_name = (name or project_dir.resolve().name).lower().replace("_", "-").replace(" ", "-")
-    clean_title = title or clean_name.replace("-", " ").title()
-    sys_id = f"SYS-{clean_name.upper().replace('-', '_')}"
-    arch_id = f"ARCH-{clean_name.upper().replace('-', '_')}-001"
-
-    # Directory layout
-    subdirs = [
+    # Standard Eidos living specification directory skeleton
+    skeleton_dirs = [
         eidos_dir / "architecture" / "components",
         eidos_dir / "architecture" / "contracts",
         eidos_dir / "domains",
@@ -846,163 +857,46 @@ def init_repository(
         eidos_dir / "personas",
         eidos_dir / "deltas",
         eidos_dir / "explorations",
-        eidos_dir / "design" / "systems" / "core" / "components",
-        eidos_dir / "design" / "screens",
+        eidos_dir / "design" / "clients",
         eidos_dir / "design" / "flows",
+        eidos_dir / "design" / "screens",
+        eidos_dir / "design" / "systems" / "core" / "components",
     ]
-    for d in subdirs:
+    for d in skeleton_dirs:
         d.mkdir(parents=True, exist_ok=True)
+        gitkeep = d / ".gitkeep"
+        if not gitkeep.exists():
+            gitkeep.touch()
+        if gitkeep not in created_files:
+            created_files.append(gitkeep)
 
-    # 1. system.adoc
-    sys_file = eidos_dir / "system.adoc"
-    sys_content = f"""---
-type: product/system
-schema: schemas/v1/product/system.schema.yaml
-id: {sys_id}
-title: "{clean_title}"
-archetypes:
-  - library
-  - cli_tool
+    # Ensure any additional empty leaf directories under eidos_dir are tracked by .gitkeep
+    for current_dir, dirnames, filenames in os.walk(eidos_dir):
+        p = Path(current_dir)
+        if "by-status" in p.parts:
+            continue
+        if not dirnames and not filenames:
+            gitkeep = p / ".gitkeep"
+            gitkeep.touch()
+            if gitkeep not in created_files:
+                created_files.append(gitkeep)
 
-business_identity:
-  vision: "A synchronized, self-describing software system governed by living specifications."
-  target_users:
-    - "Software Engineers"
-    - "Autonomous AI Coding Agents"
-  value_proposition: "Maintains continuous alignment between technical implementation and architectural requirements."
-
-technical_profile:
-  primary_languages:
-    - "AsciiDoc"
-    - "YAML"
----
-= {clean_title}: System Vision & Strategy
-:toc: left
-
-== Executive Summary
-{clean_title} is governed under Eidos living specifications, maintaining continuous alignment between technical implementation and architectural requirements.
-"""
-    sys_file.write_text(sys_content, encoding="utf-8")
-    created_files.append(sys_file)
-
-    # 2. POL-001
-    pol1_file = eidos_dir / "policies" / "POL-001-git-as-single-source-of-truth.adoc"
-    pol1_content = """---
-type: product/policy
-schema: schemas/v1/product/policy.schema.yaml
-id: POL-001-GIT-SOURCE-OF-TRUTH
-title: "Git Repository as Single Source of Truth"
-category: governance
-rule: "All product specifications, architecture topologies, component manifests, contracts, and code changes must reside strictly in Git."
-enforcement:
-  mechanism: "CI validation checks ensuring all code changes map to living specs and passing tests"
-  severity: blocking
----
-= Policy: Git Repository as Single Source of Truth
-:toc: left
-
-== Intent & Scope
-Guarantees that product requirements, architectural contracts, and invariant policies are version-controlled in the same Git repository as the code.
-"""
-    pol1_file.write_text(pol1_content, encoding="utf-8")
-    created_files.append(pol1_file)
-
-    # 3. POL-002
-    pol2_file = eidos_dir / "policies" / "POL-002-invariant-test-enforcement.adoc"
-    pol2_content = """---
-type: product/policy
-schema: schemas/v1/product/policy.schema.yaml
-id: POL-002-INVARIANT-TEST-ENFORCEMENT
-title: "Bidirectional Invariant-Test Traceability"
-category: testing
-rule: "Every capability and policy invariant must have corresponding automated verification in the test suite."
-enforcement:
-  mechanism: "Automated test suites executing test bindings defined in specifications"
-  severity: blocking
----
-= Policy: Bidirectional Invariant-Test Traceability
-:toc: left
-
-== Intent & Scope
-Enforces bidirectional traceability: specifications reference test locations, and automated test functions reference invariant IDs.
-"""
-    pol2_file.write_text(pol2_content, encoding="utf-8")
-    created_files.append(pol2_file)
-
-    # 4. personas/autonomous-agent.adoc
-    per_file = eidos_dir / "personas" / "autonomous-agent.adoc"
-    per_content = """---
-type: product/persona
-schema: schemas/v1/product/persona.schema.yaml
-id: PER-AUTONOMOUS-AGENT
-name: "Autonomous Coding Agent"
-role_type: autonomous_agent
-goals:
-  - "Implement features while strictly preserving architectural invariants"
-  - "Maintain bidirectional traceability between code and specifications"
-  - "Propose and reconcile SpecDeltas for semantic changes"
-pain_points:
-  - "Out-of-date or contradictory documentation"
-  - "Hidden architectural decisions without test coverage"
-interaction_modes:
-  - "CLI invocation"
-  - "MCP tool execution"
-  - "Direct Git PR creation"
----
-= Persona: Autonomous Coding Agent
-:toc: left
-
-== Profile & Capabilities
-Autonomous AI agents operating in this repository adhere strictly to Eidos living specifications, Zero-ADR policies, and SpecDelta lifecycles.
-"""
-    per_file.write_text(per_content, encoding="utf-8")
-    created_files.append(per_file)
-
-    # 5. architecture/system-architecture.adoc
-    arch_file = eidos_dir / "architecture" / "system-architecture.adoc"
-    arch_content = f"""---
-type: tech/architecture
-schema: schemas/v1/tech/architecture.schema.yaml
-id: {arch_id}
-title: "{clean_title} System Architecture"
-topology_style: "modular_monolith"
-
-c4_context:
-  actors:
-    - "{eidos_dir_name}/personas/autonomous-agent.adoc"
-  external_systems:
-    - name: "Git Remote"
-      role: "Source code repository and CI/CD pipelines"
-
-c4_containers: []
-
-solution_strategy:
-  - "GitOps State Machine: Git repository is the sole source of authoritative truth."
-  - "Specification-as-Code: YAML frontmatter + AsciiDoc technical specifications validated against schemas."
-  - "Bidirectional Invariant-Test Traceability: Every invariant is bound to automated tests."
-
-cross_cutting_concepts:
-  error_handling: "Structured CLI exit codes with rich diagnostic output."
-  telemetry_and_logging: "Local stdout/stderr streaming and automated validation reports."
-
-deployment_view:
-  hosting_model: "Developer Workstation and CI/CD Runners"
-  ci_cd_engine: "GitHub Actions / GitLab CI"
----
-= {clean_title}: System Architecture (Arc42 + C4)
-:toc: left
-
-== System Context & Scope
-This document defines the structural topology and architectural governance for {clean_title}.
-"""
-    arch_file.write_text(arch_content, encoding="utf-8")
-    created_files.append(arch_file)
-
-    # 6. Ensure self-contained eidos/.gitignore and status symlink views
+    # Ensure self-contained eidos/.gitignore and status symlink views
     _ensure_eidos_gitignore(eidos_dir)
+    gitignore_file = eidos_dir / ".gitignore"
+    if gitignore_file.exists() and gitignore_file not in created_files:
+        created_files.append(gitignore_file)
+
+    # Root system.adoc exists but is empty (ready for user authoring)
+    sys_file = eidos_dir / "system.adoc"
+    if not sys_file.exists():
+        sys_file.write_text("", encoding="utf-8")
+    if sys_file not in created_files:
+        created_files.append(sys_file)
+
     sync_delta_views(eidos_dir)
 
-    # 7. Validate all generated specifications immediately
+    # Validate directory immediately
     validator = SpecValidator()
     report = validator.validate_directory(eidos_dir)
     if not report.is_clean:
@@ -1013,7 +907,7 @@ This document defines the structural topology and architectural governance for {
             errs.append(f"Broken ref: {b}")
         return False, f"Scaffolded specifications failed validation: {'; '.join(errs)}", created_files
 
-    # 8. Optional Agent Plugin installation
+    # Optional Agent Plugin installation
     if with_plugin:
         try:
             from eidos.plugin.installer import PluginInstallTarget, install_plugin
@@ -1022,4 +916,4 @@ This document defines the structural topology and architectural governance for {
         except Exception:
             pass
 
-    return True, f"Successfully initialized Eidos living specifications at '{eidos_dir}'.", created_files
+    return True, f"Successfully initialized empty Eidos living specification skeleton at '{eidos_dir}'.", created_files

@@ -94,7 +94,7 @@ eidos/
   * [`POL-002: Invariant Test Enforcement`](eidos/policies/POL-002-invariant-test-enforcement.adoc)
 * **Technical Architecture**:
   * [`Global System Architecture`](eidos/architecture/system-architecture.adoc)
-  * [`Components Directory`](eidos/architecture/components/)
+  * [`Containers Directory`](eidos/architecture/containers/)
   * [`Contracts Directory`](eidos/architecture/contracts/)
 * **SpecDeltas**:
   * [`SpecDeltas Directory`](eidos/deltas/)

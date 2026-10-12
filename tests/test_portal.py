@@ -29,14 +29,14 @@ def test_portal_data_generation():
     assert ov["components_count"] >= 5
     assert ov["deltas_count"] >= 9
 
-    # Components verification
+    # Containers verification
     comp_ids = {c["id"] for c in data["components"]}
-    assert "CMP-EIDOS-CORE" in comp_ids
-    assert "CMP-EIDOS-CLI" in comp_ids
-    assert "CMP-EIDOS-MCP" in comp_ids
-    assert "CMP-EIDOS-PLUGIN" in comp_ids
-    assert "CMP-EIDOS-PORTAL" in comp_ids
-    assert "CMP-EIDOS-DOCS" in comp_ids
+    assert "CNT-EIDOS-CORE" in comp_ids
+    assert "CNT-EIDOS-CLI" in comp_ids
+    assert "CNT-EIDOS-MCP" in comp_ids
+    assert "CNT-EIDOS-PLUGIN" in comp_ids
+    assert "CNT-EIDOS-PORTAL" in comp_ids
+    assert "CNT-EIDOS-DOCS" in comp_ids
 
     # Design systems, UI components, clients, flows, and screens verification
     assert ov["design_systems_count"] >= 1
@@ -69,14 +69,14 @@ def test_portal_data_generation():
     # Mermaid diagrams verification
     assert data["diagrams"]["c4_context"].startswith("graph TD")
     assert data["diagrams"]["c4_containers"].startswith("graph TD")
-    assert "CMP_EIDOS_CORE" in data["diagrams"]["c4_containers"]
-    assert "CMP_EIDOS_PORTAL" in data["diagrams"]["c4_containers"]
+    assert "CNT_EIDOS_CORE" in data["diagrams"]["c4_containers"]
+    assert "CNT_EIDOS_PORTAL" in data["diagrams"]["c4_containers"]
 
     # C4 Level 3 Component Whitebox diagrams verification
     c4_components = data["diagrams"]["c4_components"]
     assert isinstance(c4_components, dict)
     assert len(c4_components) >= 5
-    for cid in ["CMP-EIDOS-CORE", "CMP-EIDOS-CLI", "CMP-EIDOS-PORTAL", "CMP-EIDOS-MCP"]:
+    for cid in ["CNT-EIDOS-CORE", "CNT-EIDOS-CLI", "CNT-EIDOS-PORTAL", "CNT-EIDOS-MCP"]:
         assert cid in c4_components
         assert c4_components[cid].startswith("graph TD")
         assert cid.replace("-", "_") in c4_components[cid]

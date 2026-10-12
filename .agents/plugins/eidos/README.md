@@ -41,9 +41,6 @@ This plugin equips AI agents (Antigravity `agy`, Claude Code, Cursor, GitHub Cop
    - `skills/eidos-reconcile/SKILL.md`: **Direct Mode Spec Reconciliation** mapping code modifications to living specifications and syncing docs.
    - `skills/eidos-portal/SKILL.md`: **Living Web Portal & Documentation** serving (`eidos serve`) and exporting static sites (`eidos build-site`).
 
-3. **Continuous Agent Awareness Rules (`rules/AGENTS.md`)**:
-   - Automatically injected into agents working in an Eidos repository.
-
 ---
 
 ## Installation via CLI (Project Scope)
@@ -52,18 +49,20 @@ You can install this plugin into your local repository/workspace using the `eido
 
 ```bash
 # Install to project scope (installs .agents/plugins/eidos and workspace configurations):
+eidos install
+# or:
 eidos plugin install
 
 # Or target specific project configurations:
-eidos plugin install --target workspace     # .agents/plugins/eidos (agent-plugins.org v1.0.0)
-eidos plugin install --target antigravity   # .agents/plugins/eidos (Antigravity workspace plugin)
-eidos plugin install --target claude        # .claude/mcp.json (Claude Code project MCP)
-eidos plugin install --target cursor        # .cursor/mcp.json (Cursor project MCP)
+eidos install project       # .agents/plugins/eidos (strict agent-plugins.org v1.0.0)
+eidos install antigravity   # .agents/plugins/eidos (Antigravity workspace plugin)
+eidos install claude        # .claude/skills/eidos (Claude Code plugin & MCP)
+eidos install cursor        # .cursor/mcp.json (Cursor project MCP)
 
 # Remove / uninstall from project scope:
-eidos plugin remove
+eidos uninstall
 # Or:
-eidos plugin uninstall --target cursor      # removes only cursor MCP entry
+eidos uninstall cursor      # removes only cursor MCP entry
 ```
 
 ## Versioning and Updates

@@ -45,8 +45,8 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     system_title = (sys_doc["frontmatter"].get("title") if sys_doc else None) or "Eidos Living Architecture"
     system_id = (sys_doc["id"] if sys_doc else None) or "SYS-EIDOS-001"
 
-    # Components & Containers
-    raw_components = specs_by_type.get("tech/component", [])
+    # Components & Containers (C4 Level 2)
+    raw_components = specs_by_type.get("tech/container", []) + specs_by_type.get("tech/component", [])
     components: list[dict[str, Any]] = []
     for c in raw_components:
         fm = c["frontmatter"]
@@ -57,7 +57,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 "container_type": fm.get("container_type", "library"),
                 "runtime": fm.get("runtime", "N/A"),
                 "package_path": fm.get("package_path", "N/A"),
-                "internal_components": fm.get("c4_internal_components", []),
+                "internal_components": fm.get("components", []) or fm.get("c4_internal_components", []),
                 "dependencies": fm.get("dependencies", {}),
                 "contracts": fm.get("contracts", {}),
                 "description": c["body"],
@@ -393,11 +393,13 @@ def _generate_c4_containers_mermaid(components: list[dict[str, Any]]) -> str:
         )
 
     # Standard container interaction relationships
-    if any(c["id"] == "CMP-EIDOS-CORE" for c in components):
+    core_id = next((c["id"] for c in components if c["id"] in ("CNT-EIDOS-CORE", "CMP-EIDOS-CORE")), None)
+    if core_id:
+        core_node = core_id.replace("-", "_")
         for c in components:
-            if c["id"] != "CMP-EIDOS-CORE":
+            if c["id"] != core_id:
                 node_id = c["id"].replace("-", "_")
-                lines.append(f"  {node_id} -->|In-Process Python API| CMP_EIDOS_CORE")
+                lines.append(f"  {node_id} -->|In-Process Python API| {core_node}")
 
     return "\n".join(lines)
 
@@ -417,7 +419,7 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
         "  classDef peer fill:#1e293b,stroke:#475569,color:#94a3b8,stroke-width:1.5px,rx:6px,stroke-dasharray: 4 4;",
         "  classDef contract fill:#064e3b,stroke:#10b981,color:#fff,stroke-width:2px,rx:6px;",
         "",
-        f'  subgraph {box_id} ["📦 {cid}: {clean_name} [{ctype} • {runtime}]"]',
+        f'  subgraph {box_id} ["📦 Level 2 Container: {cid} ({clean_name}) [{ctype} • {runtime}]"]',
     ]
 
     if not internals:
@@ -425,14 +427,16 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
         lines.append(f'    {fallback_id}["<div style=\'padding:10px 14px;\'><b>{clean_name}</b><br/><i>Core Container Logic</i></div>"]:::module')
     else:
         for idx, mod in enumerate(internals):
+            mid = mod.get("id")
             mname = mod.get("name", f"Module {idx+1}").replace('"', "'")
+            title_text = f"<b>{mid}: {mname}</b>" if mid else f"<b>{mname}</b>"
             resp = mod.get("responsibility", "").replace('"', "'")
             short_resp = (resp[:75] + "...") if len(resp) > 75 else resp
             spath = mod.get("source_path", "").replace('"', "'")
             mod_id = f"mod_{cid.replace('-', '_')}_{idx}"
             lines.append(
                 f'    {mod_id}["<div style=\'padding:6px 10px;text-align:left;max-width:260px;\'>'
-                f'<b>{mname}</b><br/><small style=\'color:#93c5fd;font-family:monospace;font-size:10px;\'>{spath}</small><br/>'
+                f'{title_text}<br/><small style=\'color:#93c5fd;font-family:monospace;font-size:10px;\'>{spath}</small><br/>'
                 f'<span style=\'font-size:11px;color:#cbd5e1;\'>{short_resp}</span></div>"]:::module'
             )
 
@@ -446,7 +450,7 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
 
     # Inbound / Outbound peer container dependencies
     deps = component.get("dependencies", {})
-    int_deps = deps.get("internal_components", []) if isinstance(deps, dict) else []
+    int_deps = (deps.get("internal_containers", []) or deps.get("internal_components", [])) if isinstance(deps, dict) else []
     for dep_id in int_deps:
         if dep_id != cid:
             peer_node = f"peer_{dep_id.replace('-', '_')}"
