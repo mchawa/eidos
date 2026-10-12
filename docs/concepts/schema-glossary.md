@@ -260,6 +260,32 @@ dependencies:
 
 ---
 
+### `tech/component`
+* **Schema**: `schemas/v1/tech/component.schema.yaml`
+* **ID Convention**: `CMP-<NAME>` (e.g., `CMP-CORE-VALIDATOR`, `CMP-AUTH-TOKEN-MGR`)
+* **Location**: Co-located in `<package_path>/<component>.adoc` (e.g., `src/eidos/core/validator.adoc`)
+* **Required Properties**: `type`, `schema`, `id`, `name`, `container`, `status`, `responsibility`
+* **Intent**: C4 Level 3 Component specification in the Hybrid Co-Located Architecture. Dedicated manifest for complex, stateful, or team-owned internal subsystems. Declares in-process APIs (`interfaces.provides`), quality attributes, and component invariants (`INV-*`).
+
+```yaml
+---
+type: tech/component
+schema: schemas/v1/tech/component.schema.yaml
+id: CMP-CORE-VALIDATOR
+name: "Specification & Schema Validator"
+container: CNT-EIDOS-CORE
+status: active
+package_path: "src/eidos/core/validator.py"
+responsibility: "Validates specifications against JSON Schemas."
+interfaces:
+  provides:
+    - signature: "validate_document(doc: SpecDocument) -> list[str]"
+      description: "Validates a single parsed spec document."
+---
+```
+
+---
+
 ### `tech/contract`
 * **Schema**: `schemas/v1/tech/contract.schema.yaml`
 * **ID Convention**: `CTR-<NAME>` (e.g., `CTR-EIDOS-CLI`, `CTR-REST-API`)

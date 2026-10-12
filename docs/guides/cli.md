@@ -100,6 +100,23 @@ eidos components CNT-EIDOS-CORE
 
 ---
 
+### `eidos component`
+Manage C4 Level 3 in-process components (`CMP-*`) (promotion and inlining):
+
+```bash
+# Promote an inline component to a dedicated specification
+eidos component promote CMP-CORE-VALIDATOR
+
+# Demote / inline a dedicated component back into its container manifest
+eidos component inline CMP-CORE-VALIDATOR
+
+# List all components
+eidos component list
+```
+
+---
+
+
 ### `eidos context`
 Extract a compact, token-efficient architectural subgraph slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies) given target file paths, a component ID, or a task description. Powered by the embedded SQLite knowledge graph for sub-3ms resolution.
 

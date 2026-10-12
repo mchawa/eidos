@@ -36,6 +36,17 @@ Scans and displays all monorepo containers, C4 components, internal modules, dep
 * **Exit Codes**:
   - `0`: Scan complete.
 
+=== `eidos component`
+Manages C4 Level 3 in-process components: promotion to dedicated specifications, inlining back into container manifests, and component listing.
+* **Sub-commands**:
+  - `promote <component_id> [--path <path>] [--repo-root <path>]`: Promotes an inline component to a dedicated specification (`.adoc`) inside `eidos/architecture/components/` and updates the container manifest with `ref:`.
+  - `inline <component_id> [--path <path>] [--repo-root <path>]`: Demotes a dedicated component back into its parent container manifest as an inline definition and safely unlinks the dedicated specification file.
+  - `list [--path <path>] [--repo-root <path>]`: Lists all C4 Level 3 components across containers, displaying component ID, name, parent container, specification status/path, and responsibility.
+* **Exit Codes**:
+  - `0`: Component operation succeeded.
+  - `1`: Component not found or validation failure.
+
+
 === `eidos context [--file PATH] [--component ID] [--task PROMPT] [--tier TIER] [--format FORMAT] [--path PATH]`
 Extracts a compact, token-efficient architectural subgraph context slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies).
 * **Options**:
