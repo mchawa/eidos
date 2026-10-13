@@ -64,6 +64,9 @@ packages = ["src/eidos"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "invariant: Architectural invariant verification marker",
+]
 
 [tool.ruff]
 line-length = 120

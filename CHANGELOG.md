@@ -10,15 +10,14 @@ Every major feature and architectural mutation is directly backed by an immutabl
 
 ---
 
-## [Unreleased]
+## [0.8.0] - 2026-10-13
 
 ### Added
-- **Automated Living Architecture Changelog Generation Engine** ([DLT-2026-022](eidos/deltas/dlt-2026-022.adoc)): Provide a zero-dependency automated changelog generation engine that parses applied SpecDeltas (DLT-*) and Git release tags into a standard Keep a Changelog compliant CHANGELOG.md and docs/changelog.md, establishing bidirectional traceability between release notes, git tags, and living specifications.
-- Polyglot ast code graph, repo map, and symbol discovery (dlt-2026-021)
-- Scope doc linter to eidos specs and add dedicated drift gate hook
+- **Automated Living Architecture Changelog Generation Engine** ([DLT-2026-022](eidos/deltas/dlt-2026-022.adoc)): Zero-dependency automated changelog generation engine compiling applied SpecDeltas (`DLT-*`) and Git release tags into a standard Keep a Changelog compliant ledger (`CHANGELOG.md` and `docs/changelog.md`), establishing bidirectional traceability between release notes, git tags, and living specifications.
+- **Dedicated Drift Gate Hook and Scoped Spec Doc Linter**: Pre-tool and post-invocation lifecycle hooks for autonomous coding agents ensuring zero documentation drift and YAML frontmatter validation.
 
 ### Changed
-- **Polyglot AST Symbol Indexing, AI Code Graph, and Granular Invariant Traceability via ast-grep** ([DLT-2026-021](eidos/deltas/dlt-2026-021.adoc)): Integrate ast-grep (ast-grep-py) to empower the Eidos Architectural Knowledge Graph indexer with deep polyglot AST symbol mapping (classes, functions, methods, interface signatures), a high-speed structural AI Code Graph / Repo Map engine, and granular test-function invariant traceability ((test_fn) -[asserts]-> (INV-*)).
+- **Polyglot AST Symbol Indexing, AI Code Graph, and Granular Invariant Traceability via ast-grep** ([DLT-2026-021](eidos/deltas/dlt-2026-021.adoc)): Integrate ast-grep (`ast-grep-py`) to empower the Eidos Architectural Knowledge Graph indexer with deep polyglot AST symbol mapping (classes, functions, methods, interface signatures), a high-speed structural AI Code Graph / Repo Map engine, and granular test-function invariant traceability (`(test_fn) -[asserts]-> (INV-*)`).
 
 ## [0.7.0] - 2026-10-13
 
