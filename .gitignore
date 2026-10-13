@@ -59,5 +59,7 @@ opencode.json
 # Dynamic VCS version file
 src/eidos/_version.py
 
-
-
+# Ephemeral changelog ledgers (generated in CI for docs, PyPI, and releases)
+CHANGELOG.md
+docs/changelog.md
+RELEASE_NOTES.md

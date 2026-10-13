@@ -268,12 +268,10 @@ class ChangelogGenerator:
         delta_id = delta["id"]
         title = delta["title"]
         summary = delta["summary"]
-        rel_path = delta["relative_path"]
         kind = str(delta.get("kind", "feature")).lower()
 
-        link = f"[{delta_id}]({rel_path})"
         desc = f": {summary}" if summary and summary.lower() != title.lower() else ""
-        item_text = f"**{title}** ({link}){desc}"
+        item_text = f"**{title}** (`{delta_id}`){desc}"
 
         if kind in ("creation", "feature", "architecture"):
             section.added.append(item_text)

@@ -43,9 +43,10 @@ def test_delta_changelog_generation():
     assert "## [0.1.0]" in md
     assert "### Added" in md or "### Changed" in md
 
-    # Verify DLT-2026-021 and DLT-2026-020 are referenced
-    assert "DLT-2026-020" in md
-    assert "DLT-2026-021" in md
+    # Verify DLT-2026-021 and DLT-2026-020 are referenced as clean code badges without broken .adoc links
+    assert "(`DLT-2026-020`)" in md
+    assert "(`DLT-2026-021`)" in md
+    assert ".adoc" not in md
 
 
 def test_changelog_cli_stdout():

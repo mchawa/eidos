@@ -39,6 +39,10 @@ components:
     name: "ContextSlicer"
     responsibility: "Extracts compact, token-efficient architectural subgraph slices across C4 components, contracts, capabilities, invariants, and policies."
     source_path: "src/eidos/core/context.py"
+  - id: CMP-CHANGELOG-GENERATOR
+    name: "ChangelogGenerator"
+    responsibility: "Compiles applied SpecDeltas and Git release history into a portable Keep a Changelog ledger with inline code badges (INV-DELTA-CHANGELOG-GENERATION)."
+    source_path: "src/eidos/core/changelog.py"
 
 dependencies:
   internal_containers: []
@@ -73,6 +77,7 @@ This container represents the foundational library under `src/eidos/core/`. It o
 | `CMP-REPO-INITIALIZER` | **RepositoryInitializer** | Repository scaffolding with living spec hierarchies and gitignore | `src/eidos/core/scaffolder.py`
 | `CMP-ASSET-LOCATOR` | **AssetLocator** | Resolves bundled schemas and plugin assets across packages and repos | `src/eidos/core/assets.py`
 | `CMP-CONTEXT-SLICER` | **ContextSlicer** | Slices token-budgeted architectural subgraphs for AI coding agents | `src/eidos/core/context.py`
+| `CMP-CHANGELOG-GENERATOR` | **ChangelogGenerator** | Compiles applied SpecDeltas and Git release history into a portable Keep a Changelog ledger | `src/eidos/core/changelog.py`
 |===
 
 == Quality Attributes & Operational Policies
