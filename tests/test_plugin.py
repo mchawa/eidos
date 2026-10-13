@@ -713,6 +713,7 @@ def test_plugin_hooks_conformance():
     report = validate_plugin_package(ref_plugin)
     assert report.is_valid, f"Plugin validation failed: {report.errors}"
     assert "eidos-doc-linter" in report.hooks
+    assert "eidos-drift-gate" in report.hooks
 
 
 def test_doc_lint_hook_pre_tool_use():
@@ -862,9 +863,130 @@ def test_cli_lint_command():
     assert "Success! All" in res.stdout
 
 
-def test_doc_lint_hook_stop_event_drift_detected(tmp_path):
-    """Verify stop hook blocks task completion when code changes without living spec synchronization (INV-AGENT-LINT-HOOK)."""
+def test_doc_lint_hook_stop_event_ignores_code_modifications(tmp_path):
+    """Verify stop hook allows task completion when code changes, as lint_docs solely validates eidos docs (INV-AGENT-LINT-HOOK)."""
     script_path = Path("assets/plugin_reference/scripts/lint_docs.py")
+    eidos_dir = tmp_path / "eidos"
+    eidos_dir.mkdir()
+    valid_spec = eidos_dir / "policy.adoc"
+    valid_spec.write_text(
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nrule: Must execute safely\nenforcement:\n  mechanism: lint\n  severity: blocking\n---\n",
+        encoding="utf-8",
+    )
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "feature.py").write_text("def do_feature(): pass\n", encoding="utf-8")
+
+    stop_payload = json.dumps(
+        {
+            "executionNum": 1,
+            "terminationReason": "model_stop",
+            "workspacePaths": [str(tmp_path)],
+        }
+    )
+    res = subprocess.run(
+        [sys.executable, str(script_path), "--event", "stop"],
+        input=stop_payload,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert res.returncode == 0
+    data = json.loads(res.stdout)
+    assert data["decision"] == "allow"
+
+
+def test_doc_lint_hook_post_invocation_ignores_code_modifications(tmp_path):
+    """Verify post_invocation hook does not emit drift notices for code modifications (INV-AGENT-LINT-HOOK)."""
+    script_path = Path("assets/plugin_reference/scripts/lint_docs.py")
+    eidos_dir = tmp_path / "eidos"
+    eidos_dir.mkdir()
+    valid_spec = eidos_dir / "policy.adoc"
+    valid_spec.write_text(
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nrule: Must execute safely\nenforcement:\n  mechanism: lint\n  severity: blocking\n---\n",
+        encoding="utf-8",
+    )
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "feature.py").write_text("def do_feature(): pass\n", encoding="utf-8")
+
+    inv_payload = json.dumps(
+        {
+            "invocationNum": 2,
+            "workspacePaths": [str(tmp_path)],
+        }
+    )
+    res = subprocess.run(
+        [sys.executable, str(script_path), "--event", "post_invocation"],
+        input=inv_payload,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert res.returncode == 0
+    data = json.loads(res.stdout)
+    assert "injectSteps" in data
+    assert len(data["injectSteps"]) == 0
+
+
+def test_doc_lint_hook_pre_tool_ignores_non_eidos_files(tmp_path):
+    """Verify pre_tool hook ignores documentation or config files outside the eidos/ directory."""
+    script_path = Path("assets/plugin_reference/scripts/lint_docs.py")
+
+    # 1. Non-eidos .adoc file with arbitrary or missing frontmatter
+    non_eidos_payload = json.dumps(
+        {
+            "toolCall": {
+                "name": "write_to_file",
+                "args": {
+                    "TargetFile": str(tmp_path / "docs" / "guide.adoc"),
+                    "CodeContent": "= My General Guide\nSome text without frontmatter.\n",
+                },
+            },
+            "workspacePaths": [str(tmp_path)],
+        }
+    )
+    res = subprocess.run(
+        [sys.executable, str(script_path), "--event", "pre_tool"],
+        input=non_eidos_payload,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert res.returncode == 0
+    data = json.loads(res.stdout)
+    assert data["decision"] == "allow"
+
+    # 2. Non-eidos .json file (e.g. package.json)
+    package_json_payload = json.dumps(
+        {
+            "toolCall": {
+                "name": "write_to_file",
+                "args": {
+                    "TargetFile": str(tmp_path / "package.json"),
+                    "CodeContent": "{\n  \"name\": \"my-app\"\n}\n",
+                },
+            },
+            "workspacePaths": [str(tmp_path)],
+        }
+    )
+    res_pkg = subprocess.run(
+        [sys.executable, str(script_path), "--event", "pre_tool"],
+        input=package_json_payload,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert res_pkg.returncode == 0
+    data_pkg = json.loads(res_pkg.stdout)
+    assert data_pkg["decision"] == "allow"
+
+
+def test_drift_hook_stop_event_drift_detected(tmp_path):
+    """Verify drift hook blocks task completion when code changes without living spec updates (INV-AGENT-DRIFT-HOOK)."""
+    script_path = Path("assets/plugin_reference/scripts/check_drift.py")
     eidos_dir = tmp_path / "eidos"
     eidos_dir.mkdir()
     valid_spec = eidos_dir / "policy.adoc"
@@ -904,9 +1026,9 @@ def test_doc_lint_hook_stop_event_drift_detected(tmp_path):
     assert "src/feature.py" in data["reason"]
 
 
-def test_doc_lint_hook_stop_event_synchronized(tmp_path):
-    """Verify stop hook allows completion when code and living specs are co-evolved (INV-AGENT-LINT-HOOK)."""
-    script_path = Path("assets/plugin_reference/scripts/lint_docs.py")
+def test_drift_hook_stop_event_synchronized(tmp_path):
+    """Verify drift hook allows task completion when code and living specs are co-evolved (INV-AGENT-DRIFT-HOOK)."""
+    script_path = Path("assets/plugin_reference/scripts/check_drift.py")
     eidos_dir = tmp_path / "eidos"
     eidos_dir.mkdir()
     valid_spec = eidos_dir / "policy.adoc"
@@ -942,9 +1064,9 @@ def test_doc_lint_hook_stop_event_synchronized(tmp_path):
     assert data["decision"] == "allow"
 
 
-def test_doc_lint_hook_post_invocation_drift_notice(tmp_path):
-    """Verify post_invocation hook emits ephemeral drift notice when uncommitted code exists (INV-AGENT-LINT-HOOK)."""
-    script_path = Path("assets/plugin_reference/scripts/lint_docs.py")
+def test_drift_hook_post_invocation_drift_notice(tmp_path):
+    """Verify drift hook emits ephemeral notice during in-flight turns when drift is detected (INV-AGENT-DRIFT-HOOK)."""
+    script_path = Path("assets/plugin_reference/scripts/check_drift.py")
     eidos_dir = tmp_path / "eidos"
     eidos_dir.mkdir()
     valid_spec = eidos_dir / "policy.adoc"
@@ -982,4 +1104,31 @@ def test_doc_lint_hook_post_invocation_drift_notice(tmp_path):
     assert len(data["injectSteps"]) == 1
     assert "ephemeralMessage" in data["injectSteps"][0]
     assert "Eidos Sync Notice" in data["injectSteps"][0]["ephemeralMessage"]
+
+
+def test_drift_hook_post_invocation_clean(tmp_path):
+    """Verify drift hook emits no messages when code and specs are clean (INV-AGENT-DRIFT-HOOK)."""
+    script_path = Path("assets/plugin_reference/scripts/check_drift.py")
+    eidos_dir = tmp_path / "eidos"
+    eidos_dir.mkdir()
+
+    inv_payload = json.dumps(
+        {
+            "invocationNum": 2,
+            "workspacePaths": [str(tmp_path)],
+        }
+    )
+    res = subprocess.run(
+        [sys.executable, str(script_path), "--event", "post_invocation"],
+        input=inv_payload,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert res.returncode == 0
+    data = json.loads(res.stdout)
+    assert "injectSteps" in data
+    assert len(data["injectSteps"]) == 0
+
+
 

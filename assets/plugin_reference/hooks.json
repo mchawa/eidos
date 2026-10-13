@@ -26,6 +26,21 @@
         "timeout": 30
       }
     ]
+  },
+  "eidos-drift-gate": {
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "python3 scripts/check_drift.py --event post_invocation",
+        "timeout": 30
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python3 scripts/check_drift.py --event stop",
+        "timeout": 30
+      }
+    ]
   }
 }
-

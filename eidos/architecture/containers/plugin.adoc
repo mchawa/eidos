@@ -21,7 +21,7 @@ components:
     source_path: "src/eidos/plugin/validator.py"
   - id: CMP-HOOK-MANAGER
     name: "HookManager"
-    responsibility: "Validates and orchestrates agent lifecycle hooks (hooks.json) and documentation linters, supporting JSONC configuration files."
+    responsibility: "Validates and orchestrates agent lifecycle hooks (hooks.json), documentation linters, and spec-to-code drift gates, supporting JSONC configuration files."
     source_path: "src/eidos/plugin/validator.py"
 
 dependencies:
@@ -53,5 +53,5 @@ This container represents the plugin distribution and validation system under `s
 | Component ID | Name | Responsibility | Source Path
 | `CMP-PLUGIN-INSTALLER` | **PluginInstaller** | Manages installation and file synchronization into `.agents/plugins/eidos`, `.github/plugin/`, `.github/skills/`, `.claude/plugins/`, `.claude/skills/`, `.cursor/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/skills/`, and `.aider/skills/` | `src/eidos/plugin/installer.py`
 | `CMP-PLUGIN-VALIDATOR` | **PluginValidator** | Enforces JSON Schema conformance and SemVer 2.0.0 rules for plugins | `src/eidos/plugin/validator.py`
-| `CMP-HOOK-MANAGER` | **HookManager** | Validates and coordinates lifecycle hooks (`hooks.json`) and linter runners supporting JSONC configs (`devcontainer.json`, `.vscode/`) | `src/eidos/plugin/validator.py`
+| `CMP-HOOK-MANAGER` | **HookManager** | Validates and coordinates lifecycle hooks (`hooks.json`), linter runners, and drift gates supporting JSONC configs (`devcontainer.json`, `.vscode/`) | `src/eidos/plugin/validator.py`
 |===

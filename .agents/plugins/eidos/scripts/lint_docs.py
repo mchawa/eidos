@@ -2,8 +2,8 @@
 """Eidos Living Documentation Linter & Agent Lifecycle Hook.
 
 Executes within agent environments (Antigravity hooks.json) and standalone CLI
-to ensure AsciiDoc specifications strictly adhere to YAML frontmatter syntax,
-JSON schema validation (Draft 2020-12), and cross-reference integrity.
+to ensure living specifications under eidos/ strictly adhere to YAML frontmatter
+syntax, JSON schema validation (Draft 2020-12), and cross-reference integrity.
 """
 
 import argparse
@@ -31,11 +31,8 @@ for root in search_roots:
 
 try:
     from eidos.core.validator import SpecValidator
-    from eidos.vcs.drift import detect_drift, reconcile_specs
 except ImportError:
     SpecValidator = None
-    detect_drift = None
-    reconcile_specs = None
 
 
 def find_workspace_root(payload: dict[str, Any] | None = None) -> Path:
@@ -55,7 +52,35 @@ def find_workspace_root(payload: dict[str, Any] | None = None) -> Path:
     return cwd
 
 
-def handle_pre_tool_use(payload: dict[str, Any]) -> dict[str, Any]:
+def is_eidos_doc(target_file_str: str, workspace_root: Path | None = None) -> bool:
+    """Check if the given file path refers to an Eidos specification document."""
+    if not target_file_str:
+        return False
+    target_path = Path(target_file_str)
+    if target_path.suffix.lower() not in (".adoc", ".json"):
+        return False
+
+    ws_root = (workspace_root or find_workspace_root()).resolve()
+    try:
+        resolved = target_path.resolve() if target_path.is_absolute() else (ws_root / target_path).resolve()
+        rel = resolved.relative_to(ws_root)
+        # An Eidos specification document must reside within the eidos/ directory of the workspace
+        if rel.parts and rel.parts[0] == "eidos":
+            return True
+    except (ValueError, RuntimeError):
+        pass
+
+    # Fallback for relative paths without matching workspace_root
+    parts = target_path.parts
+    if parts and parts[0] == ".":
+        parts = parts[1:]
+    if parts and parts[0] == "eidos":
+        return True
+
+    return False
+
+
+def handle_pre_tool_use(payload: dict[str, Any], workspace_root: Path | None = None) -> dict[str, Any]:
     """Validate YAML frontmatter syntax before file modification tools execute."""
     tool_call = payload.get("toolCall", {})
     tool_name = tool_call.get("name", "")
@@ -65,9 +90,11 @@ def handle_pre_tool_use(payload: dict[str, Any]) -> dict[str, Any]:
     if not target_file_str:
         return {"decision": "allow"}
 
-    target_path = Path(target_file_str)
-    if target_path.suffix.lower() not in (".adoc", ".json"):
+    # Only lint eidos-related documentation and specification files
+    if not is_eidos_doc(target_file_str, workspace_root):
         return {"decision": "allow"}
+
+    target_path = Path(target_file_str)
 
     content_to_check: str | None = None
     if tool_name == "write_to_file":
@@ -81,12 +108,7 @@ def handle_pre_tool_use(payload: dict[str, Any]) -> dict[str, Any]:
                 content_to_check = curr_text.replace(target_str, replace_str, 1)
 
     if content_to_check is not None:
-        is_jsonc = (
-            target_path.name in ("devcontainer.json", "tsconfig.json")
-            or ".devcontainer" in target_file_str
-            or ".vscode" in target_file_str
-        )
-        if target_path.suffix.lower() == ".json" and not is_jsonc and ("/eidos/" in target_file_str or "tokens.json" in target_file_str):
+        if target_path.suffix.lower() == ".json":
             try:
                 json.loads(content_to_check)
             except json.JSONDecodeError as exc:
@@ -127,12 +149,12 @@ def handle_pre_tool_use(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def handle_post_invocation(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]:
-    """Inject ephemeral diagnostics into agent context if specs are invalid or drift is detected."""
+    """Inject ephemeral diagnostics into agent context if living specifications in eidos/ are invalid."""
     eidos_dir = workspace_root / "eidos"
     if not eidos_dir.exists():
         return {"injectSteps": []}
 
-    # 1. Spec Schema & Link Validation
+    # Spec Schema & Link Validation
     if SpecValidator is not None:
         try:
             validator = SpecValidator()
@@ -156,35 +178,16 @@ def handle_post_invocation(payload: dict[str, Any], workspace_root: Path) -> dic
         except Exception as exc:
             print(f"[Eidos Doc Linter Error] Validator error: {exc}", file=sys.stderr)
 
-    # 2. Spec-to-Code Drift Notice (In-Flight)
-    if detect_drift is not None:
-        try:
-            drift_res = detect_drift(repo_root=workspace_root, eidos_dir=eidos_dir, uncommitted=True)
-            if drift_res.drift_detected:
-                code_count = len(drift_res.classification.code_files)
-                top_files = ", ".join(Path(f).name for f in drift_res.classification.code_files[:3])
-                more = f" (+{code_count - 3} more)" if code_count > 3 else ""
-                remediation_hint = ""
-                if drift_res.remediation_suggestions:
-                    remediation_hint = f"\nAction needed: {drift_res.remediation_suggestions[0]}"
-                msg = (
-                    f"ℹ️ [Eidos Sync Notice] Uncommitted code changes detected in {top_files}{more} without living spec updates in 'eidos/'.{remediation_hint}\n"
-                    f"Remember to synchronize living specifications in 'eidos/' (or run 'eidos reconcile') before concluding."
-                )
-                return {"injectSteps": [{"ephemeralMessage": msg}]}
-        except Exception as exc:
-            print(f"[Eidos Doc Linter Error] Drift detection error: {exc}", file=sys.stderr)
-
     return {"injectSteps": []}
 
 
 def handle_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]:
-    """Block agent completion if any living specifications are invalid or if drift is detected."""
+    """Block agent completion if any living specifications in eidos/ fail validation."""
     eidos_dir = workspace_root / "eidos"
     if not eidos_dir.exists():
         return {"decision": "allow"}
 
-    # 1. Living specification validity check
+    # Living specification validity check
     if SpecValidator is not None:
         try:
             validator = SpecValidator()
@@ -207,29 +210,6 @@ def handle_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]
                 return {"decision": "continue", "reason": reason}
         except Exception as exc:
             print(f"[Eidos Doc Linter Error] Validator execution error: {exc}", file=sys.stderr)
-
-    # 2. Spec-to-code drift detection gate
-    if detect_drift is not None:
-        try:
-            drift_res = detect_drift(repo_root=workspace_root, eidos_dir=eidos_dir, uncommitted=True)
-            if drift_res.drift_detected:
-                remediation_lines = "\n".join(f"  {rem}" for rem in drift_res.remediation_suggestions)
-                code_files_str = "\n".join(f"  - {cf}" for cf in drift_res.classification.code_files[:8])
-                if len(drift_res.classification.code_files) > 8:
-                    code_files_str += f"\n  ... and {len(drift_res.classification.code_files) - 8} more files"
-
-                reason = (
-                    f"🛑 [Eidos Drift Gate] Cannot complete task: Spec-to-code drift detected!\n"
-                    f"{len(drift_res.classification.code_files)} code file(s) were modified without corresponding living specification updates in 'eidos/':\n"
-                    f"{code_files_str}\n\n"
-                    f"Recommended Actions:\n"
-                    f"{remediation_lines}\n\n"
-                    f"According to Eidos Guidelines (Rule #3 & #5), all code modifications in src/ must co-evolve with living specs in 'eidos/'. "
-                    f"Please update the relevant living specifications (or scaffold a SpecDelta) before concluding your work."
-                )
-                return {"decision": "continue", "reason": reason}
-        except Exception as exc:
-            print(f"[Eidos Doc Linter Error] Drift detection error: {exc}", file=sys.stderr)
 
     return {"decision": "allow"}
 
@@ -314,7 +294,7 @@ def main() -> int:
     ws_root = find_workspace_root(payload)
 
     if event == "pre_tool":
-        res = handle_pre_tool_use(payload)
+        res = handle_pre_tool_use(payload, ws_root)
         print(json.dumps(res))
         return 0
 

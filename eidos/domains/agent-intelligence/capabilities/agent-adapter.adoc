@@ -35,8 +35,11 @@ technical:
       rule: "Eidos must never initiate calls to AI/LLM APIs directly, functioning strictly as a deterministic substrate for external coding agents."
       test_binding: "tests/test_policy_zero_ai.py::test_pyproject_contains_zero_ai_dependencies"
     - id: INV-AGENT-LINT-HOOK
-      rule: "The AI agent plugin lifecycle hooks must enforce living specification syntax, schema validity, link integrity, and spec-to-code synchronization (drift gate) before task completion."
+      rule: "The AI agent plugin lifecycle hooks must enforce living specification syntax, schema validity, and link integrity before task completion."
       test_binding: "tests/test_plugin.py::test_doc_lint_hook_stop_event"
+    - id: INV-AGENT-DRIFT-HOOK
+      rule: "The AI agent plugin lifecycle hooks must enforce spec-to-code synchronization (drift gate) before task completion."
+      test_binding: "tests/test_plugin.py::test_drift_hook_stop_event_drift_detected"
     - id: INV-AGENT-CONTEXT-SLICING
       rule: "Context slicing must extract compact, token-efficient architectural subgraphs without phantom dependencies or circular module errors."
       test_binding: "tests/test_context.py::test_context_slice_by_file"
@@ -57,7 +60,7 @@ In strict adherence to *POL-004*, Eidos never initiates AI/LLM calls itself. Ins
 * **Tiered Architectural Context Slicing**: Dynamically extracting token-compressed architectural subgraphs matching task requirements.
 * **Hybrid Lexical-Relational Retrieval**: Combining FTS5 BM25 search with graph-neighborhood traversals to resolve engineering prompts to architectural entities.
 * **Architectural Blast-Radius Analysis**: Recursive CTE impact mapping allowing agents to assess blast radius before proposing code changes.
-* **Lifecycle Linting & Safety Hooks**: Pre-completion hooks enforcing specification schemas, valid cross-references, spec-to-code synchronization gates, and test invariant coverage.
+* **Lifecycle Linting & Safety Hooks**: Pre-completion hooks enforcing specification schemas, valid cross-references, frontmatter syntax integrity, and dedicated spec-to-code synchronization drift gates.
 
 == Tiered Context Slicing Architecture
 
