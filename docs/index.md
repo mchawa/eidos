@@ -54,30 +54,30 @@ Modern software development often suffers from two major problems:
 
 ## Quick Installation
 
-Install Eidos using `pip` or `uv`:
+Install Eidos globally as a standalone CLI tool (so it works across any Python, TypeScript, Go, or Rust repository without polluting project dependencies):
 
-=== "uv"
-
-    ```bash
-    uv add eidos-ai
-    ```
-
-=== "pip"
+=== "uv tool (Recommended)"
 
     ```bash
-    pip install eidos-ai
+    uv tool install eidos-ai
     ```
 
-=== "Standalone (pipx)"
+=== "pipx"
 
     ```bash
     pipx install eidos-ai
     ```
 
+=== "Ephemeral (uvx)"
+
+    ```bash
+    uvx eidos-ai --help
+    ```
+
 Verify the installation:
 
 ```bash
-eidos --help
+eidos doctor
 ```
 
 ---

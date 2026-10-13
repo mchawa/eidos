@@ -1,0 +1,53 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-028
+title: Scoped 1-Hop Graph Neighborhood and AST Structural Drift Detection
+status: applied
+vcs:
+  branch: feat/scoped-structural-drift
+intent:
+  kind: architectural_refactor
+  motivation: Replace coarse boolean repository-wide drift checks ('any code changed
+    and no spec changed') with AST structural change detection and 1-hop knowledge
+    graph neighborhood verification so internal body-only refactors do not cause false-positive
+    spec churn and unrelated spec edits cannot mask component drift.
+mutations:
+- action: modify_component
+  target_component: CNT-EIDOS-CORE
+  details: Add signature extraction ('CodeSymbol.signature') and 'has_structural_changes(old_content,
+    new_content, file_path)' in 'src/eidos/core/ast_indexer.py' to distinguish public
+    API/symbol/signature changes from internal function body edits.
+- action: modify_component
+  target_component: CNT-EIDOS-VCS
+  details: Upgrade 'detect_drift()' in 'src/eidos/vcs/drift.py' to filter modified
+    code files through 'has_structural_changes()' and verify per-component synchronization
+    against the owning spec or its 1-hop knowledge graph neighborhood ('idx.get_k_hop_neighborhood(cid,
+    max_hops=1)').
+- action: extend_capability
+  target_capability: CAP-VCS-001
+  details: Enforce scoped 1-hop structural drift detection under 'INV-DRIFT-DETECTION-ACCURACY'.
+blast_radius:
+  impacted_components:
+  - CNT-EIDOS-CORE
+  - CNT-EIDOS-VCS
+---
+= SpecDelta: Scoped 1-Hop Graph Neighborhood and AST Structural Drift Detection
+:toc: left
+
+== Problem Statement
+
+Previously, `detect_drift()` evaluated `base_direct_drift = code_changed and not specs_changed and not has_deltas`. This had two major flaws:
+1. Editing a single line inside the body of an existing function (a bugfix, typo fix, or internal refactor) triggered drift and forced unnecessary specification edits.
+2. Modifying 10 files in Component A while touching an unrelated spec for Component B silenced drift across the entire repository.
+
+== Architectural & Behavioral Mutations
+
+1. **AST Structural Change Filtering (`has_structural_changes`)**:
+   * Compare AST symbols (`class`, `function`, `method`, `interface`, `struct`, `enum`, `type`) and their header signatures between the Git base blob and current file content.
+   * **Structural changes** (file added/deleted, or public symbol added, removed, renamed, or signature modified) require specification synchronization.
+   * **Body-only changes** (edits strictly inside existing function/method bodies or private `_` helpers) pass cleanly without requiring spec churn.
+2. **Scoped 1-Hop Graph Neighborhood Verification**:
+   * Each file with a structural change is mapped to its owning `CNT-*` / `CMP-*` / `CLT-*` / `DS-*` entities in the SQLite Knowledge Graph.
+   * Drift is satisfied only if the owning specification or a 1-hop linked neighbor (`CAP-*`, `CTR-*`, parent `CNT-*`, `CLT-*`, `DS-*`) is updated in the same diff (or declared in an active SpecDelta).
+

@@ -87,7 +87,7 @@ def repo_env(tmp_path):
         "name: Specification Validator\n"
         "container: CNT-SAMPLE-CORE\n"
         "status: active\n"
-        "package_path: src/sample/core/validator.py\n"
+        "source_path: src/sample/core/validator.py\n"
         "responsibility: Validates living specifications against schemas.\n"
         "interfaces:\n"
         "  provides:\n"
@@ -99,7 +99,7 @@ def repo_env(tmp_path):
         "  stateless: true\n"
         "  reentrant: true\n"
         "invariants:\n"
-        "  - id: INV-VALIDATOR-CONFORMANCE\n"
+        "  - id: INV-VALIDATOR-CONFORMANCE\n"  # eidos:fixture
         "    rule: All documents must conform to Draft 2020-12 schemas.\n"
         "    test_binding: tests/test_core.py::test_parser\n"
         "---\n"
@@ -151,7 +151,7 @@ def test_spike_1_centralization_mandate_enforcement(repo_env):
         "name: Illegal Code Pollution\n"
         "container: CNT-SAMPLE-CORE\n"
         "status: active\n"
-        "package_path: src/sample/core/parser.py\n"
+        "source_path: src/sample/core/parser.py\n"
         "responsibility: Illegally placed in src/ code tree.\n"
         "---\n"
         "= Illegal\n",
@@ -178,7 +178,7 @@ def test_spike_1_container_affinity_enforcement(repo_env):
         "name: Orphan Component\n"
         "container: CNT-NONEXISTENT\n"
         "status: active\n"
-        "package_path: src/sample/core/parser.py\n"
+        "source_path: src/sample/core/parser.py\n"
         "responsibility: References container that does not exist.\n"
         "---\n"
         "= Orphan\n",
@@ -221,7 +221,7 @@ def test_spike_1_interface_boundary_governance_enforcement(repo_env):
 
 
 def test_spike_2_centralized_component_indexing(repo_env):
-    """Spike 2: Verify ArchitecturalIndex discovers and indexes centralized components and edges."""
+    """Spike 2: Verify ArchitecturalIndex discovers and indexes centralized components and edges."""  # eidos:fixture
     repo_root, eidos_dir = repo_env
     db_path = repo_root / "test_index.db"
 
@@ -249,7 +249,7 @@ def test_spike_2_centralized_component_indexing(repo_env):
     assert edge_part_of is not None
 
     # Verify component invariant indexed
-    inv_row = conn.execute("SELECT * FROM entities WHERE id = 'INV-VALIDATOR-CONFORMANCE';").fetchone()
+    inv_row = conn.execute("SELECT * FROM entities WHERE id = 'INV-VALIDATOR-CONFORMANCE';").fetchone()  # eidos:fixture
     assert inv_row is not None
 
     # Verify reverse symbol mapping for source path & interface method

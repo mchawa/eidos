@@ -16,10 +16,8 @@ from typer.testing import CliRunner
 
 from eidos.cli.main import app
 from eidos.core.ast_indexer import (
-    AstGrepIndexer,
     FallbackIndexer,
     get_ast_indexer,
-    is_ast_grep_available,
 )
 from eidos.core.graph_index import get_architectural_index
 

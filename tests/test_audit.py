@@ -91,7 +91,7 @@ mutations:
 
 
 def test_delta_audit_tombstone_exemption(tmp_path):
-    """Verify declared tombstones in SpecDelta frontmatter approve matching references."""
+    """Verify INV-REMOVAL-TOMBSTONE: declared tombstones in SpecDelta frontmatter approve matching references."""
     eidos_dir = tmp_path / "eidos"
     deltas_dir = eidos_dir / "deltas"
     deltas_dir.mkdir(parents=True)

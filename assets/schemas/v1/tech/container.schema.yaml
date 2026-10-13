@@ -32,11 +32,15 @@ properties:
     type: string
     description: "Execution environment and primary framework (e.g. 'Python 3.12 / Typer / Hatchling', 'TypeScript / React', 'Rust / Tokio')."
   package_path:
-    type: string
+    oneOf:
+      - type: string
+      - type: array
+        items:
+          type: string
     description: >
-      Relative path from repository root to the package source code (e.g. 'src/eidos/core' or 'packages/auth').
+      Relative path(s) or glob pattern(s) from repository root to the package source code (e.g. 'src/core' or ['src/plugin', 'assets/plugin_reference']).
       Enables dual-layout support: container documents can live centralized under 'eidos/architecture/containers/'
-      OR co-located inside the package directory (e.g. 'src/eidos/core/container.adoc').
+      OR co-located inside the package directory (e.g. 'src/core/container.adoc').
   domain_binding:
     type: string
     description: "The product domain ID (DOM-*) this technical container primarily realizes (optional)."
@@ -66,8 +70,12 @@ properties:
               type: string
               description: "What this internal component does and what domain logic it encapsulates."
             source_path:
-              type: string
-              description: "Relative file path to the source file implementing this component (e.g. 'src/eidos/core/parser.py')."
+              oneOf:
+                - type: string
+                - type: array
+                  items:
+                    type: string
+              description: "Relative file path(s) or glob(s) to the source file(s) implementing this component (e.g. 'src/core/parser.py')."
             spec_path:
               type: string
               description: "Relative path to an optional dedicated component specification document (for complex components)."

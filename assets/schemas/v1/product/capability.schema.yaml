@@ -106,16 +106,22 @@ properties:
           description: "Relative path to UI component specification or component ID (e.g. UIC-CORE-BUTTON)."
   technical:
     type: object
-    description: "Technical lens: implementing components, interface contracts, and non-negotiable test-bound invariants."
+    description: "Technical lens: implementing C4 containers, optional internal components, interface contracts, and non-negotiable test-bound invariants."
     required:
-      - components
+      - containers
     properties:
-      components:
+      containers:
         type: array
-        description: "Source code modules, packages, or services that implement this capability."
+        description: "Primary C4 Level 2 containers (CNT-* IDs or container spec paths) that implement this capability."
         items:
           type: string
-          description: "Package or module path (e.g. packages/spec-parser)."
+          description: "Container ID (e.g. CNT-API-SERVER) or relative path to container specification."
+      components:
+        type: array
+        description: "Optional C4 Level 3 internal components (CMP-* IDs or component spec paths) that implement this capability."
+        items:
+          type: string
+          description: "Component ID (e.g. CMP-AUTH-ENGINE) or relative path to component specification."
       contracts:
         type: object
         description: "External API endpoints, CLI interfaces, and async event contracts (optional)."

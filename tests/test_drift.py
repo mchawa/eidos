@@ -38,7 +38,7 @@ def test_classify_changed_files():
 
 
 def test_drift_detection_code_without_specs(monkeypatch):
-    """Verify INV-SPEC-CODE-SYNC: drift is detected when code changes without living spec updates."""
+    """Verify INV-DRIFT-DETECTION-ACCURACY: drift is detected when code changes without living spec updates."""
     # Mock get_git_diff_files to simulate un-synchronized code edits
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
@@ -56,7 +56,7 @@ def test_drift_detection_code_without_specs(monkeypatch):
 
 
 def test_pr_check_gate_pass_direct(monkeypatch):
-    """Verify INV-DRIFT-GATE: gate passes when code and living specs co-evolve together directly."""
+    """Verify INV-DRIFT-DETECTION-ACCURACY: gate passes when code and living specs co-evolve together directly."""
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
         lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
@@ -179,7 +179,7 @@ def test_polyglot_test_file_classification():
 
 
 def test_polyglot_invariant_test_scanning(tmp_path):
-    """Verify Initiative D: extract_invariants_and_verify accurately traces invariants across polyglot test suites."""
+    """Verify Initiative D: extract_invariants_and_verify accurately traces invariants across polyglot test suites."""  # eidos:fixture
     from eidos.vcs.drift import extract_invariants_and_verify
 
     eidos_dir = tmp_path / "eidos"
@@ -198,7 +198,7 @@ def test_polyglot_invariant_test_scanning(tmp_path):
         "  personas: []\n"
         "  jtbd: Verify polyglot suites\n"
         "technical:\n"
-        "  components: []\n"
+        "  containers: []\n"
         "  invariants:\n"
         "    - id: INV-TS-UNIT\n"
         "      rule: TS unit tests\n"
@@ -444,5 +444,158 @@ def test_uncovered_delta_drift_detection(monkeypatch):
     assert any("Design System Drift Detected" in r for r in result.remediation_suggestions)
 
 
+def test_strict_static_invariant_binding_and_orphans(tmp_path):
+    """Verify DLT-2026-027: strict file::func existence, exact word-boundary matching, decorator/comment binding, and orphan detection."""  # eidos:fixture
+    from eidos.vcs.drift import detect_orphan_invariants, extract_invariants_and_verify
+
+    eidos_dir = tmp_path / "eidos"
+    cap_dir = eidos_dir / "domains" / "auth"
+    cap_dir.mkdir(parents=True)
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True)
+
+    (cap_dir / "cap-auth.adoc").write_text(
+        """---
+type: product/capability
+id: CAP-AUTH-001
+title: Auth Capability
+domain: DOM-AUTH
+status: active
+business:
+  personas: []
+  jtbd: Authenticate users
+technical:
+  containers: []
+  invariants:
+    - id: INV-AUTH-OK
+      rule: Must verify auth token
+      test_binding: tests/test_auth.py::test_valid_token
+    - id: INV-AUTH-MISSING-FUNC
+      rule: Points to non-existent function
+      test_binding: tests/test_auth.py::test_does_not_exist
+    - id: INV-AUTH-UNTAGGED-FUNC
+      rule: Points to existing function that lacks invariant tag
+      test_binding: tests/test_auth.py::test_untagged_helper
+    - id: INV-AUTH-1
+      rule: Must not false-match INV-AUTH-10
+      test_binding: tests/test_auth.py::test_prefix_collision
+---
+= Auth Capability
+""",
+        encoding="utf-8",
+    )
+
+    (tests_dir / "test_auth.py").write_text(
+        """# Preceding comment binding INV-AUTH-OK
+def test_valid_token():
+    assert True
 
 
+def test_untagged_helper():
+    assert True
+
+
+def test_prefix_collision():
+    # Mentions INV-AUTH-10 and an orphan INV-ORPHAN-999 only
+    assert True
+""",
+        encoding="utf-8",
+    )
+
+    invariants = extract_invariants_and_verify(eidos_dir, tmp_path)
+    inv_map = {inv.invariant_id: inv for inv in invariants}
+
+    # 1. Preceding comment above bound function satisfies file::func binding
+    assert inv_map["INV-AUTH-OK"].has_test_coverage is True
+    assert "tests/test_auth.py::test_valid_token" in inv_map["INV-AUTH-OK"].matching_tests
+
+    # 2. Missing function fails even though tests/test_auth.py exists
+    assert inv_map["INV-AUTH-MISSING-FUNC"].has_test_coverage is False
+
+    # 3. Existing function without INV-* tag fails
+    assert inv_map["INV-AUTH-UNTAGGED-FUNC"].has_test_coverage is False
+
+    # 4. Exact word-boundary regex prevents INV-AUTH-1 from matching INV-AUTH-10
+    assert inv_map["INV-AUTH-1"].has_test_coverage is False
+
+    # 5. Orphan invariant detection catches INV-AUTH-10 and INV-ORPHAN-999
+    orphans = detect_orphan_invariants(tmp_path, set(inv_map.keys()))
+    orphan_ids = {oid for oid, _ in orphans}
+    assert "INV-AUTH-10" in orphan_ids
+    assert "INV-ORPHAN-999" in orphan_ids
+
+
+def test_structural_vs_body_only_drift_detection(monkeypatch):
+    """Verify DLT-2026-028: body-only edits inside existing functions do not trigger drift, while structural API/signature changes do."""
+    old_code = "def calculate_total(items: list[int]) -> int:\n    return sum(items)\n"
+    body_only_new_code = (
+        "def calculate_total(items: list[int]) -> int:\n"
+        "    # Internal optimization without signature or symbol change\n"
+        "    total = 0\n"
+        "    for x in items:\n"
+        "        total += x\n"
+        "    return total\n"
+    )
+    structural_new_code = (
+        "def calculate_total(items: list[int], tax_rate: float = 0.0) -> float:\n"
+        "    return float(sum(items)) * (1.0 + tax_rate)\n"
+    )
+
+    monkeypatch.setattr(
+        "eidos.vcs.drift.get_git_diff_files",
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+            "src/eidos/cli/main.py",
+        ],
+    )
+
+    # 1. Body-only edit -> NO drift!
+    monkeypatch.setattr(
+        "eidos.vcs.drift._get_file_versions",
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (
+            old_code,
+            body_only_new_code,
+        ),
+    )
+    res_body = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert res_body.drift_detected is False
+    assert res_body.is_clean is True
+    assert "src/eidos/cli/main.py" in res_body.body_only_code_files
+
+    # 2. Signature change (structural) without spec update -> DRIFT detected!
+    monkeypatch.setattr(
+        "eidos.vcs.drift._get_file_versions",
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (
+            old_code,
+            structural_new_code,
+        ),
+    )
+    res_struct = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert res_struct.drift_detected is True
+    assert res_struct.is_clean is False
+
+
+def test_scoped_1hop_neighborhood_drift_verification(monkeypatch):
+    """Verify DLT-2026-028: touching an unrelated spec does not silence component drift, while a 1-hop linked spec satisfies it."""
+    # 1. CLI code changed + unrelated Portal container spec changed -> DRIFT detected!
+    monkeypatch.setattr(
+        "eidos.vcs.drift.get_git_diff_files",
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+            "src/eidos/cli/main.py",
+            "eidos/architecture/containers/portal.adoc",
+        ],
+    )
+    res_unrelated = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert res_unrelated.drift_detected is True
+    assert res_unrelated.is_clean is False
+
+    # 2. CLI code changed + 1-hop neighbor contract (eidos/architecture/contracts/cli.adoc) changed -> CLEAN!
+    monkeypatch.setattr(
+        "eidos.vcs.drift.get_git_diff_files",
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+            "src/eidos/cli/main.py",
+            "eidos/architecture/contracts/cli.adoc",
+        ],
+    )
+    res_1hop = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert res_1hop.drift_detected is False
+    assert res_1hop.is_clean is True

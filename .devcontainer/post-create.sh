@@ -11,10 +11,10 @@ export PATH="$HOME/.local/bin:$PATH"
 echo "==> Ensuring Python 3.15 via uv..."
 uv python install --default 3.15
 
-# 2. Set up Python virtual environment and install Eidos in editable mode
-echo "==> Setting up Eidos virtual environment with Python 3.15..."
-uv venv --python 3.15 .venv
-uv pip install -e ".[dev,docs]"
+# 2. Set up Python virtual environment and install Eidos CLI tool
+echo "==> Setting up Eidos environment with Python 3.15..."
+uv sync --all-extras --dev
+uv tool install --force --editable .
 
 # 3. Install Living Portal frontend dependencies
 if [ -d "src/eidos/portal/frontend" ] && command -v pnpm &>/dev/null; then

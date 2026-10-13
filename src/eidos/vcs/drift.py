@@ -2,11 +2,17 @@
 
 import contextlib
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from eidos.core.parser import parse_spec_file
+from eidos.core.project import (
+    extract_entity_paths,
+    is_generated_or_vendored,
+    matches_owned_paths,
+)
 from eidos.core.validator import SpecValidator, ValidationReport
 
 
@@ -57,6 +63,8 @@ class DriftCheckResult:
     validation_report: ValidationReport
     touched_components: list[str] = field(default_factory=list)
     invariants: list[InvariantTrace] = field(default_factory=list)
+    orphan_invariants: list[tuple[str, str]] = field(default_factory=list)
+    body_only_code_files: list[str] = field(default_factory=list)
     remediation_suggestions: list[str] = field(default_factory=list)
     summary_markdown: str = ""
 
@@ -352,6 +360,18 @@ def classify_changed_files(files: list[str], repo_root: Path | None = None) -> C
 
         parts = [p.lower() for p in rel_f.parts]
 
+        # Ignore .gitkeep, eidos/.cache/**, and eidos/deltas/by-status/** symlinks
+        if f.name == ".gitkeep" or (
+            parts
+            and parts[0] == "eidos"
+            and (
+                any(p.startswith(".") for p in parts[1:])
+                or ("deltas" in parts and "by-status" in parts)
+            )
+        ):
+            classification.other_files.append(f_str)
+            continue
+
         # Spec / Delta files (must reside within the project's eidos/ specifications directory)
         if parts and parts[0] == "eidos" and f.suffix in {".adoc", ".json", ".yaml", ".yml"}:
             if "deltas" in parts:
@@ -370,9 +390,14 @@ def classify_changed_files(files: list[str], repo_root: Path | None = None) -> C
             classification.doc_files.append(f_str)
             continue
 
-        # Code files
-        if f.suffix in code_extensions and not any(
-            skip in parts for skip in [".venv", "venv", "node_modules", "dist", "build", "__pycache__"]
+        # Code files (excluding generated or vendored artifacts)
+        if (
+            f.suffix in code_extensions
+            and not any(
+                skip in parts
+                for skip in [".venv", "venv", "node_modules", "dist", "build", "__pycache__"]
+            )
+            and not is_generated_or_vendored(effective_root, str(rel_f))
         ):
             classification.code_files.append(f_str)
             continue
@@ -397,7 +422,7 @@ def map_code_to_components(
     mappings: list[tuple[str, str, str]] = []
     for cf in code_files:
         matched = False
-        # 1. AST / symbol reverse mapping
+        # 1. AST / symbol / graph ownership reverse mapping
         matches = idx.resolve_symbol_or_path(cf)
         for m in matches:
             if m.get("type") in ("tech/container", "tech/component"):
@@ -405,32 +430,24 @@ def map_code_to_components(
                 matched = True
                 break
 
-        # 2. Specific path prefixes
-        if not matched and cf.startswith((".agents/plugins", "assets/plugin_reference")):
-            for c in components:
-                    if c.get("id") == "CNT-EIDOS-PLUGIN":
-                        mappings.append((cf, "CNT-EIDOS-PLUGIN", str(c.get("file_path", "eidos/architecture/containers/plugin.adoc"))))
-                        matched = True
-                        break
-
-        # 3. Package path prefix
+        # 2. Owned paths (package_path / source_path strings or globs)
         if not matched:
             for c in components:
                 cid = c.get("id", "")
-                pkg = c.get("package_path", "")
                 path = c.get("file_path", "")
-                if pkg and (cf.startswith(pkg) or f"/{pkg}/" in cf or cf.endswith(pkg)):
+                owned = extract_entity_paths(c)
+                if owned and matches_owned_paths(cf, owned):
                     mappings.append((cf, cid, str(path)))
                     matched = True
                     break
 
-        # 4. Component name slug fallback (on path segments, not arbitrary substring)
+        # 3. Generic component ID slug fallback on path segments
         if not matched:
             parts = [p.lower() for p in Path(cf).parts]
             for c in components:
                 cid = c.get("id", "")
                 path = c.get("file_path", "")
-                slug = cid.lower().replace("cnt-eidos-", "").replace("cmp-eidos-", "").replace("cnt-", "").replace("cmp-", "")
+                slug = re.sub(r"^(?:cnt|cmp)-(?:[a-z0-9]+-)?", "", cid.lower())
                 if slug and (slug in parts or any(slug == part.split(".")[0] for part in parts)):
                     mappings.append((cf, cid, str(path)))
                     matched = True
@@ -439,14 +456,96 @@ def map_code_to_components(
     return mappings
 
 
+def _verify_single_invariant(
+    iid: str,
+    tb: str | None,
+    repo_root: Path,
+    all_tests_content: dict[str, str],
+    inv_to_test_funcs: dict[str, list[str]],
+    ast_idx,
+) -> list[str]:
+    """Strictly verify static invariant coverage against test_binding (file::func or file) or test suite."""
+    pattern = re.compile(rf"\b{re.escape(iid)}\b")
+    if tb:
+        parts = [p.strip() for p in tb.split("::") if p.strip()]
+        tb_file = parts[0]
+        tb_func = parts[-1] if len(parts) > 1 else None
+        tb_path = repo_root / tb_file
+        if not tb_path.exists():
+            return []
+        if tb_file not in all_tests_content:
+            with contextlib.suppress(Exception):
+                all_tests_content[tb_file] = tb_path.read_text(encoding="utf-8", errors="replace")
+        file_content = all_tests_content.get(tb_file, "")
+        if tb_func:
+            funcs = ast_idx.list_test_functions(tb_file, file_content)
+            if tb_func not in funcs:
+                return []
+            if not pattern.search(funcs[tb_func]):
+                return []
+            return list(dict.fromkeys([f"{tb_file}::{tb_func}", *inv_to_test_funcs.get(iid, [])]))
+        if pattern.search(file_content):
+            return list(dict.fromkeys([tb_file, *inv_to_test_funcs.get(iid, [])]))
+        return []
+
+    matching = list(inv_to_test_funcs.get(iid, []))
+    if not matching:
+        matching = [tpath for tpath, content in all_tests_content.items() if pattern.search(content)]
+    return matching
+
+
+def detect_orphan_invariants(
+    repo_root: Path,
+    known_invariant_ids: set[str],
+    all_tests_content: dict[str, str] | None = None,
+) -> list[tuple[str, str]]:
+    """Find INV-* tokens referenced in tests that do not exist in any living specification."""
+    if all_tests_content is None:
+        all_tests_content = collect_polyglot_test_files(repo_root)
+
+    from eidos.core.ast_indexer import get_ast_indexer
+
+    ast_idx = get_ast_indexer()
+    orphans: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for tpath, tcontent in sorted(all_tests_content.items()):
+        if "# eidos:fixture" in tcontent or "// eidos:fixture" in tcontent:
+            # Check per-function or skip fixture-marked functions
+            funcs = ast_idx.list_test_functions(tpath, tcontent)
+            for fname, fslice in funcs.items():
+                if "eidos:fixture" in fslice:
+                    continue
+                for line in fslice.splitlines():
+                    if "eidos:fixture" in line:
+                        continue
+                    for inv_id in re.findall(r"\b(INV-[A-Z0-9-]+)\b", line):
+                        if inv_id not in known_invariant_ids:
+                            key = (inv_id, f"{tpath}::{fname}")
+                            if key not in seen:
+                                seen.add(key)
+                                orphans.append(key)
+            continue
+
+        for binding in ast_idx.extract_test_bindings(tpath, tcontent):
+            for inv_id in binding.invariants:
+                if inv_id not in known_invariant_ids:
+                    key = (inv_id, binding.identifier)
+                    if key not in seen:
+                        seen.add(key)
+                        orphans.append(key)
+
+    return orphans
+
+
 def extract_invariants_and_verify(
     eidos_dir: Path,
     repo_root: Path,
 ) -> list[InvariantTrace]:
-    """Extract all invariants declared in capabilities and policies, and check test coverage across polyglot test suites."""
+    """Extract all invariants declared in capabilities and policies, and strictly verify static test bindings."""
     invariants: list[InvariantTrace] = []
 
-    # 1. Collect tests content to check mentions across Python, TS/JS, Go, Rust, Java/Kotlin
+    # 1. Collect tests content across Python, TS/JS, Go, Rust, Java/Kotlin
     all_tests_content = collect_polyglot_test_files(repo_root)
 
     # 1.5 Extract granular AST test function bindings
@@ -476,19 +575,9 @@ def extract_invariants_and_verify(
                         rule = inv.get("rule", "")
                         tb = inv.get("test_binding")
                         if iid:
-                            # If test_binding points to a file, ensure it is in all_tests_content
-                            if tb:
-                                tb_file = tb.split("::")[0].strip()
-                                tb_path = repo_root / tb_file
-                                if tb_path.exists() and tb_file not in all_tests_content:
-                                    with contextlib.suppress(Exception):
-                                        all_tests_content[tb_file] = tb_path.read_text(
-                                            encoding="utf-8", errors="replace"
-                                        )
-
-                            matching = inv_to_test_funcs.get(iid) or [tpath for tpath, content in all_tests_content.items() if iid in content]
-                            if not matching and tb and (repo_root / tb.split("::")[0].strip()).exists():
-                                matching = [tb.split("::")[0].strip()]
+                            matching = _verify_single_invariant(
+                                iid, tb, repo_root, all_tests_content, inv_to_test_funcs, ast_idx
+                            )
                             has_cov = bool(matching)
                             invariants.append(
                                 InvariantTrace(
@@ -524,18 +613,9 @@ def extract_invariants_and_verify(
                             rule = inv.get("rule", "")
                             tb = inv.get("test_binding")
                             if iid:
-                                if tb:
-                                    tb_file = tb.split("::")[0].strip()
-                                    tb_path = repo_root / tb_file
-                                    if tb_path.exists() and tb_file not in all_tests_content:
-                                        with contextlib.suppress(Exception):
-                                            all_tests_content[tb_file] = tb_path.read_text(
-                                                encoding="utf-8", errors="replace"
-                                            )
-
-                                matching = inv_to_test_funcs.get(iid) or [tpath for tpath, content in all_tests_content.items() if iid in content]
-                                if not matching and tb and (repo_root / tb.split("::")[0].strip()).exists():
-                                    matching = [tb.split("::")[0].strip()]
+                                matching = _verify_single_invariant(
+                                    iid, tb, repo_root, all_tests_content, inv_to_test_funcs, ast_idx
+                                )
                                 has_cov = bool(matching)
                                 invariants.append(
                                     InvariantTrace(
@@ -628,6 +708,142 @@ def get_living_specs_catalog(eidos_dir: Path, repo_root: Path | None = None) -> 
     return catalog
 
 
+def _get_file_versions(
+    repo_root: Path,
+    rel_path: str,
+    base_ref: str | None = None,
+    head_ref: str = "HEAD",
+    uncommitted: bool = False,
+) -> tuple[str | None, str | None]:
+    """Retrieve (old_content, new_content) for a modified file to evaluate structural AST diffs."""
+    repo = repo_root.resolve()
+    norm_rel = rel_path.replace("\\", "/")
+
+    def _git_show(ref: str, path_str: str) -> str | None:
+        try:
+            res = subprocess.run(
+                ["git", "show", f"{ref}:{path_str}"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res.returncode == 0:
+                return res.stdout
+        except Exception:
+            pass
+        return None
+
+    if uncommitted:
+        old_content = _git_show("HEAD", norm_rel)
+        abs_p = repo / norm_rel
+        new_content = None
+        if abs_p.exists() and abs_p.is_file():
+            with contextlib.suppress(Exception):
+                new_content = abs_p.read_text(encoding="utf-8", errors="replace")
+        return old_content, new_content
+
+    resolved_base = base_ref
+    if not resolved_base:
+        for candidate in ["origin/main", "main", "origin/master", "master", "HEAD~1"]:
+            check = subprocess.run(
+                ["git", "rev-parse", "--verify", candidate],
+                cwd=repo,
+                capture_output=True,
+                check=False,
+            )
+            if check.returncode == 0:
+                resolved_base = candidate
+                break
+
+    if not resolved_base:
+        return None, None
+
+    old_content = _git_show(resolved_base, norm_rel)
+    new_content = _git_show(head_ref, norm_rel)
+    return old_content, new_content
+
+
+def _collect_1hop_spec_targets(
+    idx,
+    cf: str,
+    cid: str,
+    spath: str,
+) -> tuple[set[str], set[str], bool]:
+    """Return (allowed_spec_paths, allowed_entity_ids, is_design_linked) within 1 hop of a code file's owners."""
+    allowed_paths: set[str] = {
+        spath.replace("\\", "/").lower(),
+        "eidos/system.adoc",
+        "eidos/architecture/system-architecture.adoc",
+    }
+    slug = re.sub(r"^(?:cnt|cmp)-(?:[a-z0-9]+-)?", "", cid.lower())
+    allowed_ids: set[str] = {cid.lower()}
+    if slug:
+        allowed_ids.add(slug)
+
+    is_design_linked = cf.endswith(
+        (".css", ".scss", ".sass", ".less", ".tsx", ".jsx", ".vue", ".svelte", ".html")
+    )
+
+    if idx is None:
+        return allowed_paths, allowed_ids, is_design_linked
+
+    seed_ids: set[str] = {cid}
+    for m in idx.resolve_symbol_or_path(cf):
+        eid = m.get("entity_id")
+        fp = m.get("file_path")
+        mtype = m.get("type", "")
+        if eid:
+            seed_ids.add(eid)
+            allowed_ids.add(eid.lower())
+        if fp:
+            allowed_paths.add(str(fp).replace("\\", "/").lower())
+        if mtype in ("design/client", "design/system"):
+            is_design_linked = True
+
+    for sid in seed_ids:
+        for n in idx.get_k_hop_neighborhood(sid, max_hops=1):
+            nid = n.get("id", "")
+            ntype = n.get("type", "")
+            ndata = n.get("data", {}) or {}
+            if ntype in ("tech/container", "tech/component") and nid not in seed_ids:
+                continue
+            if nid:
+                allowed_ids.add(nid.lower())
+            nfp = n.get("file_path")
+            if nfp:
+                allowed_paths.add(str(nfp).replace("\\", "/").lower())
+            for pkey in ("file_path", "path", "tokens_path"):
+                pval = ndata.get(pkey)
+                if pval:
+                    allowed_paths.add(str(pval).replace("\\", "/").lower())
+            if ntype in ("design/client", "design/system"):
+                is_design_linked = True
+
+    return allowed_paths, allowed_ids, is_design_linked
+
+
+def _is_covered_by_changed_specs(
+    changed_specs: list[str],
+    allowed_paths: set[str],
+    allowed_ids: set[str],
+    is_design_linked: bool,
+) -> bool:
+    """Check if any modified spec file satisfies the 1-hop neighborhood of a modified code file."""
+    for s in changed_specs:
+        s_norm = s.replace("\\", "/").lower()
+        if any(ap and (s_norm.endswith(ap) or ap.endswith(s_norm)) for ap in allowed_paths):
+            return True
+        s_stem = Path(s_norm).stem
+        if any(aid and len(aid) >= 3 and aid in s_stem for aid in allowed_ids):
+            return True
+        if is_design_linked and (
+            "eidos/design" in s_norm or "/design/" in s_norm or s_norm.endswith("tokens.json")
+        ):
+            return True
+    return False
+
+
 def detect_drift(
     repo_root: Path,
     base_ref: str | None = None,
@@ -636,6 +852,9 @@ def detect_drift(
     uncommitted: bool = False,
 ) -> DriftCheckResult:
     """Run drift detection: evaluate spec-code synchronization, schema validation, and invariant check."""
+    from eidos.core.ast_indexer import has_structural_changes
+    from eidos.core.graph_index import get_architectural_index
+
     root = repo_root.resolve()
     target_eidos = (eidos_dir or (root / "eidos")).resolve()
 
@@ -643,18 +862,39 @@ def detect_drift(
     classification = classify_changed_files(changed_files, repo_root=root)
 
     # Determine workflow mode: Planned (with SpecDelta) vs Direct (pure co-evolution)
-    # Determine workflow mode: Planned (with SpecDelta) vs Direct (pure co-evolution)
     has_deltas = len(classification.delta_files) > 0
     workflow_mode = "planned" if has_deltas else "direct"
 
-    # 1. Component Mapping
-    comp_mappings = map_code_to_components(target_eidos, classification.code_files, repo_root=root)
+    # 0. Filter code files into structural vs body-only edits (DLT-2026-028)
+    structural_code_files: list[str] = []
+    body_only_code_files: list[str] = []
+    for cf in classification.code_files:
+        old_c, new_c = _get_file_versions(
+            root, cf, base_ref=base_ref, head_ref=head_ref, uncommitted=uncommitted
+        )
+        if old_c is not None and new_c is not None:
+            if old_c == new_c:
+                # Synthetic/mocked diff where git blobs are identical
+                is_structural = True
+            else:
+                is_structural, _ = has_structural_changes(old_c, new_c, cf)
+        else:
+            # Newly added or deleted file
+            is_structural = True
+
+        if is_structural:
+            structural_code_files.append(cf)
+        else:
+            body_only_code_files.append(cf)
+
+    # 1. Component Mapping (for structural code changes)
+    comp_mappings = map_code_to_components(target_eidos, structural_code_files, repo_root=root)
     touched_components = sorted({cid for _, cid, _ in comp_mappings})
+    idx = get_architectural_index(repo_root=root, eidos_dir=target_eidos) if target_eidos.exists() else None
 
     # 2. Extract declared targets from deltas if deltas exist
     declared_delta_targets: set[str] = set()
     if has_deltas:
-        from eidos.core.parser import parse_spec_file
         for df in classification.delta_files:
             try:
                 delta_file = (root / df) if not Path(df).is_absolute() else Path(df)
@@ -678,38 +918,50 @@ def detect_drift(
                                     declared_delta_targets.add(str(val).lower())
                     br = fm.get("blast_radius", {}) or {}
                     if isinstance(br, dict):
-                        for sub in ("components", "domains", "capabilities", "screens", "design_systems", "impacted_components"):
+                        for sub in (
+                            "components",
+                            "domains",
+                            "capabilities",
+                            "screens",
+                            "design_systems",
+                            "impacted_components",
+                        ):
                             for val in br.get(sub, []) or []:
                                 declared_delta_targets.add(str(val).lower())
             except Exception:
                 pass
 
-    # 3. Spec-Code Drift Evaluation
-    code_changed = len(classification.code_files) > 0
+    # 3. Spec-Code Drift Evaluation (Scoped 1-Hop Neighborhood + Structural Changes)
+    code_changed = len(structural_code_files) > 0
     specs_changed = len(classification.spec_files) > 0
 
-    # Uncovered code detection in planned mode
     uncovered_components: list[tuple[str, str, str]] = []
-    if has_deltas and code_changed:
-        for cf, cid, spath in comp_mappings:
-            cid_lower = cid.lower()
-            slug = cid_lower.replace("cnt-eidos-", "").replace("cmp-eidos-", "").replace("cnt-", "").replace("cmp-", "")
-            covered_by_delta = any(
-                target in cid_lower or slug in target or cid_lower in target
-                for target in declared_delta_targets
-            )
-            covered_by_spec = any(cid_lower in s.lower() or slug in s.lower() for s in classification.spec_files)
-            if not covered_by_delta and not covered_by_spec:
-                uncovered_components.append((cf, cid, spath))
+    uncovered_direct_components: list[tuple[str, str, str]] = []
 
-    # Domain-specific drift: Design systems & frontend
+    if code_changed:
+        for cf, cid, spath in comp_mappings:
+            allowed_paths, allowed_ids, is_design_linked = _collect_1hop_spec_targets(
+                idx, cf, cid, spath
+            )
+            covered_by_spec = _is_covered_by_changed_specs(
+                classification.spec_files, allowed_paths, allowed_ids, is_design_linked
+            )
+            if has_deltas:
+                covered_by_delta = any(
+                    any(target in aid or aid in target for aid in allowed_ids if len(aid) >= 3)
+                    for target in declared_delta_targets
+                )
+                if not covered_by_delta and not covered_by_spec:
+                    uncovered_components.append((cf, cid, spath))
+            else:
+                if not covered_by_spec:
+                    uncovered_direct_components.append((cf, cid, spath))
+
+    # Domain-specific drift: Design systems & UI styling files
     design_drift = False
+    styling_ui_exts = (".css", ".scss", ".sass", ".less", ".tsx", ".jsx", ".vue", ".svelte", ".html")
     frontend_code_files = [
-        cf for cf in classification.code_files
-        if "frontend" in cf.lower()
-        or cf.endswith((".css", ".scss", ".sass", ".less"))
-        or cf.endswith((".tsx", ".jsx", ".vue", ".svelte", ".html"))
-        or cf.endswith("assets.py")
+        cf for cf in structural_code_files if cf.endswith(styling_ui_exts)
     ]
     if frontend_code_files:
         has_design_spec_update = any(
@@ -721,7 +973,10 @@ def detect_drift(
         if not has_design_spec_update:
             design_drift = True
 
-    base_direct_drift = code_changed and not specs_changed and not has_deltas
+    base_direct_drift = (
+        (code_changed and not specs_changed and not has_deltas)
+        or (not has_deltas and bool(uncovered_direct_components))
+    )
     uncovered_delta_drift = bool(uncovered_components)
     drift_detected = base_direct_drift or design_drift or uncovered_delta_drift
 
@@ -729,18 +984,23 @@ def detect_drift(
     validator = SpecValidator()
     validation_report = validator.validate_directory(target_eidos)
 
-    # 5. Invariant Traceability
+    # 5. Invariant Traceability & Orphan Invariant Detection (DLT-2026-027)
     invariants = extract_invariants_and_verify(target_eidos, root)
+    uncovered_invariants = [inv for inv in invariants if not inv.has_test_coverage]
+    orphan_invariants = detect_orphan_invariants(
+        root, {inv.invariant_id for inv in invariants}
+    )
 
     # 6. Remediation suggestions
     remediation: list[str] = []
     if base_direct_drift:
+        target_list = uncovered_direct_components or comp_mappings
         remediation.append(
-            f"Drift Detected: {len(classification.code_files)} code file(s) changed in src/ without living specification updates in eidos/."
+            f"Drift Detected: {len(structural_code_files)} structural code file(s) changed without corresponding living specification updates in eidos/ (within 1-hop graph neighborhood)."
         )
-        for cf, cid, spath in comp_mappings[:5]:
-            remediation.append(f"• '{cf}' relates to {cid} -> Update '{spath}'")
-        if not comp_mappings:
+        for cf, cid, spath in target_list[:5]:
+            remediation.append(f"• '{cf}' relates to {cid} -> Update '{spath}' (or a 1-hop linked capability/contract)")
+        if not target_list:
             remediation.append(
                 "• Run 'eidos reconcile' or ask your AI agent to update corresponding living specifications."
             )
@@ -765,10 +1025,31 @@ def detect_drift(
             f"Specification Validation Failed: {len(validation_report.schema_errors)} error(s), {len(validation_report.broken_references)} broken link(s)."
         )
 
-    # Overall clean status
-    is_clean = (not drift_detected) and validation_report.is_clean
+    if uncovered_invariants:
+        remediation.append(
+            f"Uncovered Invariants: {len(uncovered_invariants)} invariant(s) lack verified static test bindings (file::func + # INV-* marker)."
+        )
+        for uinv in uncovered_invariants[:5]:
+            remediation.append(
+                f"• {uinv.invariant_id} ({uinv.spec_path}) -> test_binding='{uinv.test_binding}'"
+            )
 
-    # 6. Generate Markdown Summary for reports and PR comments
+    if orphan_invariants:
+        remediation.append(
+            f"Orphan Invariant References: {len(orphan_invariants)} test reference(s) point to non-existent INV-* IDs."
+        )
+        for oid, loc in orphan_invariants[:5]:
+            remediation.append(f"• {oid} referenced in '{loc}' is not declared in any capability or policy.")
+
+    # Overall clean status
+    is_clean = (
+        (not drift_detected)
+        and validation_report.is_clean
+        and len(uncovered_invariants) == 0
+        and len(orphan_invariants) == 0
+    )
+
+    # 7. Generate Markdown Summary for reports and PR comments
     summary_lines = [
         "## 🧭 Eidos Living Specification Drift Detection Summary",
         "",
@@ -791,11 +1072,12 @@ def detect_drift(
             "",
             "| Metric | Count | Status |",
             "|---|---|---|",
-            f"| Modified Code Files | `{len(classification.code_files)}` | {'⚠️ Needs Spec Update' if drift_detected else '✓'} |",
+            f"| Modified Code Files | `{len(classification.code_files)}` (`{len(structural_code_files)}` structural) | {'⚠️ Needs Spec Update' if drift_detected else '✓'} |",
             f"| Modified Living Specs | `{len(classification.spec_files)}` | {'✓ In Sync' if specs_changed else '—'} |",
             f"| Modified SpecDeltas | `{len(classification.delta_files)}` | {'✓ Planned' if has_deltas else '— (Direct Mode)'} |",
             f"| Modified Test Files | `{len(classification.test_files)}` | {'✓' if classification.test_files else '—'} |",
             f"| Living Specs Validated | `{validation_report.valid_docs}/{validation_report.total_docs}` | {'✓ 100% Green' if validation_report.is_clean else '✗ Errors'} |",
+            f"| Invariants Verified | `{len(invariants) - len(uncovered_invariants)}/{len(invariants)}` | {'✓ 100% Covered' if not uncovered_invariants else f'✗ {len(uncovered_invariants)} Uncovered'} |",
             "",
         ]
     )
@@ -831,6 +1113,8 @@ def detect_drift(
         validation_report=validation_report,
         touched_components=touched_components,
         invariants=invariants,
+        orphan_invariants=orphan_invariants,
+        body_only_code_files=body_only_code_files,
         remediation_suggestions=remediation,
         summary_markdown=summary_markdown,
     )

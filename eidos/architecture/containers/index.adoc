@@ -57,7 +57,7 @@ quality_attributes:
 :toc: left
 
 == Architectural Boundary
-This container represents the embedded relational and lexical indexing engine under `src/eidos/core/graph_index.py`. It persists and manages the local SQLite knowledge graph (`.eidos/cache/index.db`), providing sub-millisecond catalog lookups, incremental zero-drift synchronization, FTS5 BM25 search, recursive CTE blast-radius traversal, and tiered context slicing for AI coding agents and CLI commands.
+This container represents the embedded relational and lexical indexing engine under `src/eidos/core/graph_index.py`. It persists and manages the local SQLite knowledge graph (`eidos/.cache/index.db`), providing sub-millisecond catalog lookups, incremental zero-drift synchronization, FTS5 BM25 search, recursive CTE blast-radius traversal, and tiered context slicing for AI coding agents and CLI commands.
 
 == Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
 

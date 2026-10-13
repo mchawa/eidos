@@ -110,7 +110,7 @@ def test_delta_verify_unfulfilled_mutations(tmp_path):
 
 
 def test_delta_execute_and_verify_lifecycle(tmp_path):
-    """Verify that execute_delta_mutations deterministically scaffolds missing specs and updates components."""
+    """Verify INV-MUTATION-REVERSIBILITY: execute_delta_mutations deterministically scaffolds missing specs and updates components."""
     init_repository(tmp_path, name="test-system", with_plugin=False)
     eidos_dir = tmp_path / "eidos"
 

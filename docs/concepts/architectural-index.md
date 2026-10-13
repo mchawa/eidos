@@ -1,6 +1,6 @@
 # Architectural Knowledge Graph & Index
 
-Eidos features a built-in, zero-dependency **Architectural Knowledge Graph Index** powered by an embedded SQLite database (`.eidos/cache/index.db`) with full-text search (FTS5) and recursive graph traversals (Common Table Expressions).
+Eidos features a built-in, zero-dependency **Architectural Knowledge Graph Index** powered by an embedded SQLite database (`eidos/.cache/index.db`) with full-text search (FTS5) and recursive graph traversals (Common Table Expressions).
 
 The index enables sub-3ms architectural queries, intelligent full-text specification discovery, transitive blast-radius analysis, and token-budgeted 3-tier context slicing for AI coding agents.
 
@@ -11,7 +11,7 @@ The index enables sub-3ms architectural queries, intelligent full-text specifica
                             │  Incremental Dirty Check (SHA-256, ~1.5ms)
                             ▼
 ┌────────────────────────────────────────────────────────┐
-│       Embedded SQLite Knowledge Graph (.eidos/cache)    │
+│       Embedded SQLite Knowledge Graph (eidos/.cache)    │
 │  ├── entities (70+ nodes: CMP, CTR, CAP, DOM, POL, …)  │
 │  ├── edges (depends_on, provides, governs, asserts, …) │
 │  ├── symbol_mappings (360+ AST code-to-spec maps)      │
@@ -34,8 +34,8 @@ The index enables sub-3ms architectural queries, intelligent full-text specifica
 The architectural index requires **zero external dependencies**, zero background daemons, and zero third-party vector databases.
 
 * Built entirely on Python's standard library **`sqlite3`**, which natively bundles SQLite 3.x with FTS5 and recursive CTEs.
-* Stores cache data inside a single, self-contained file: `.eidos/cache/index.db`.
-* The `.eidos/cache/` directory is automatically added to `.gitignore`, keeping Git repositories pristine and lightweight.
+* Stores cache data inside a single, self-contained file: `eidos/.cache/index.db`.
+* The `eidos/.cache/` directory is automatically added to `.gitignore`, keeping Git repositories pristine and lightweight.
 
 ---
 
@@ -45,7 +45,7 @@ You never need to remember to run a build or initialization command.
 
 ### 1. Automatic On-Demand Bootstrapping
 The first time any command requiring architectural context is invoked (`eidos context`, `eidos index`, or agent skills), Eidos automatically:
-1. Creates `.eidos/cache/` if it does not exist.
+1. Creates `eidos/.cache/` if it does not exist.
 2. Initializes the SQLite schema (`entities`, `edges`, `symbol_mappings`, `indexed_files`, `specs_fts`).
 3. Indexes all living specifications and builds initial reverse symbol mappings in ~100ms.
 
@@ -76,7 +76,7 @@ eidos index status --json
 Output:
 ```text
 ╭───────────────── Eidos Architectural Knowledge Graph Index ──────────────────╮
-│        Database Path:  /path/to/project/.eidos/cache/index.db                │
+│        Database Path:  /path/to/project/eidos/.cache/index.db                │
 │       Schema Version:  1.0.0                                                 │
 │           Cache Size:  1008.0 KB                                             │
 │               Status:  SYNCED (Clean) (4.20ms check)                         │

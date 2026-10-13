@@ -5,7 +5,9 @@ id: CNT-EIDOS-PLUGIN
 name: "Eidos Agent Plugin & Extension Manager"
 container_type: "library"
 runtime: "Python 3.12 / agent-plugins.org v1.0.0"
-package_path: "src/eidos/plugin"
+package_path:
+  - "src/eidos/plugin"
+  - "assets/plugin_reference"
 
 domain_binding: DOM-AGENT-INTELLIGENCE
 tier: extensibility
@@ -23,6 +25,10 @@ components:
     name: "HookManager"
     responsibility: "Validates and orchestrates agent lifecycle hooks (hooks.json), documentation linters, and spec-to-code drift gates, supporting JSONC configuration files."
     source_path: "src/eidos/plugin/validator.py"
+  - id: CMP-HOOK-RUNNER
+    name: "HookRunner"
+    responsibility: "Executes CLI-native PreToolUse/PostToolUse lint hooks and PostInvocation/Stop drift gates with Block-Once fingerprint persistence in eidos/.cache/stop-gate.json."
+    source_path: "src/eidos/plugin/hooks.py"
 
 dependencies:
   internal_containers:
@@ -44,7 +50,7 @@ quality_attributes:
 :toc: left
 
 == Architectural Boundary
-This container represents the plugin distribution and validation system under `src/eidos/plugin/`. It packages living specification skills, commands, and validation rules into standard bundles adhering to `agent-plugins.org v1.0.0` as well as Claude Code, OpenAI Codex, OpenCode, Aider, Cline, Cursor, and GitHub Copilot environments.
+This container represents the plugin distribution, hook execution, and validation system under `src/eidos/plugin/` and `assets/plugin_reference/`. It packages living specification skills, commands, and validation rules into standard bundles adhering to `agent-plugins.org v1.0.0` as well as Claude Code, OpenAI Codex, OpenCode, Aider, Cline, Cursor, and GitHub Copilot environments.
 
 == Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
 
@@ -54,4 +60,5 @@ This container represents the plugin distribution and validation system under `s
 | `CMP-PLUGIN-INSTALLER` | **PluginInstaller** | Manages installation and file synchronization into `.agents/plugins/eidos`, `.github/plugin/`, `.github/skills/`, `.claude/plugins/`, `.claude/skills/`, `.cursor/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/skills/`, and `.aider/skills/` | `src/eidos/plugin/installer.py`
 | `CMP-PLUGIN-VALIDATOR` | **PluginValidator** | Enforces JSON Schema conformance and SemVer 2.0.0 rules for plugins | `src/eidos/plugin/validator.py`
 | `CMP-HOOK-MANAGER` | **HookManager** | Validates and coordinates lifecycle hooks (`hooks.json`), linter runners, and drift gates supporting JSONC configs (`devcontainer.json`, `.vscode/`) | `src/eidos/plugin/validator.py`
+| `CMP-HOOK-RUNNER` | **HookRunner** | CLI-native hook execution (`eidos hook lint`, `eidos hook drift`) with Block-Once Stop gate | `src/eidos/plugin/hooks.py`
 |===

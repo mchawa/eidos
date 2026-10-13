@@ -29,9 +29,9 @@ experience:
     - "eidos/design/clients/web-portal/flows/spec-exploration.adoc"
 
 technical:
-  components:
-    - "src/eidos/portal/generator.py"
-    - "src/eidos/core/models.py"
+  containers:
+    - "CNT-EIDOS-PORTAL"
+    - "CNT-EIDOS-CORE"
   contracts:
     interfaces:
       - "eidos spec create design-system <id>"

@@ -1,6 +1,8 @@
 """Main CLI entrypoint for Eidos."""
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Annotated
 
@@ -11,8 +13,10 @@ from rich.table import Table
 
 import eidos
 from eidos.core.audit import AuditEngine
+from eidos.core.changelog import ChangelogGenerator
 from eidos.core.graph_index import get_architectural_index
 from eidos.core.parser import parse_spec_file
+from eidos.core.project import find_repo_root
 from eidos.core.scaffolder import (
     apply_delta,
     create_spec,
@@ -28,7 +32,7 @@ from eidos.core.scaffolder import (
     verify_delta_mutations,
 )
 from eidos.core.validator import SpecValidator
-from eidos.core.changelog import ChangelogGenerator
+from eidos.plugin.hooks import execute_drift_hook, execute_lint_hook
 from eidos.plugin.installer import (
     PluginInstallTarget,
     install_plugin,
@@ -54,6 +58,11 @@ plugin_app = typer.Typer(
     help="Manage, install, and validate Eidos agent plugins (agent-plugins.org v1.0.0).",
     add_completion=False,
 )
+hook_app = typer.Typer(
+    name="hook",
+    help="Execute native Eidos agent plugin lifecycle hooks (lint, drift).",
+    add_completion=False,
+)
 spec_app = typer.Typer(
     name="spec",
     help="Manage living specifications (list, create, delete, show).",
@@ -66,7 +75,7 @@ delta_app = typer.Typer(
 )
 index_app = typer.Typer(
     name="index",
-    help="Manage and query the embedded SQLite architectural knowledge graph (.eidos/cache/index.db).",
+    help="Manage and query the embedded SQLite architectural knowledge graph (eidos/.cache/index.db).",
     add_completion=False,
 )
 component_app = typer.Typer(
@@ -95,6 +104,7 @@ app.add_typer(component_app, name="component", rich_help_panel=PANEL_SPECS)
 app.add_typer(index_app, name="index", rich_help_panel=PANEL_KNOWLEDGE)
 app.add_typer(portal_app, name="portal", rich_help_panel=PANEL_PORTAL)
 app.add_typer(plugin_app, name="plugin", rich_help_panel=PANEL_PLUGINS)
+app.add_typer(hook_app, name="hook", rich_help_panel=PANEL_PLUGINS)
 console = Console()
 
 
@@ -139,11 +149,155 @@ def info():
     grid.add_row("Bundled v1 Schemas:", f"[bold yellow]{len(schemas)} loaded[/bold yellow]")
     for s in schemas:
         grid.add_row("", f"• {s}")
-    grid.add_row("Supported VCS:", "GitHub, GitLab")
+    grid.add_row("Supported VCS:", "Git (local repository)")
     grid.add_row("Supported Agents:", "Antigravity (agy), Claude Code, Cursor, Copilot")
     grid.add_row("Plugin Standard:", "agent-plugins.org v1.0.0 & agentskills.io")
 
     console.print(Panel(grid, title="[bold blue]Eidos AI Ecosystem[/bold blue]", expand=False))
+
+
+@app.command("doctor", rich_help_panel=PANEL_SETUP)
+def doctor_cmd(
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to project or eidos directory (defaults to current directory).",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output machine-readable JSON diagnostics report.",
+    ),
+):
+    """Run health checks on the Eidos CLI installation, Git repository, living specs, index, and agent plugin."""
+    start = (path or Path.cwd()).resolve()
+    repo_root = find_repo_root(start)
+    eidos_dir = repo_root / "eidos"
+
+    eidos_bin = shutil.which("eidos")
+    eidos_ai_bin = shutil.which("eidos-ai")
+    cli_ok = bool(eidos_bin or eidos_ai_bin)
+
+    git_ok = False
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        git_ok = res.returncode == 0
+    except Exception:
+        git_ok = False
+
+    specs_exist = eidos_dir.exists() and (eidos_dir / "system.adoc").exists()
+    specs_valid = False
+    total_specs = 0
+    valid_specs = 0
+    if eidos_dir.exists():
+        val_report = SpecValidator().validate_directory(eidos_dir)
+        specs_valid = val_report.is_clean
+        total_specs = val_report.total_docs
+        valid_specs = val_report.valid_docs
+
+    db_path = eidos_dir / ".cache" / "index.db"
+    index_ok = False
+    index_entities = 0
+    if eidos_dir.exists():
+        try:
+            idx = get_architectural_index(repo_root=repo_root, eidos_dir=eidos_dir)
+            st = idx.get_index_status()
+            index_ok = True
+            index_entities = st.get("total_entities", 0)
+        except Exception:
+            index_ok = False
+
+    plugin_status = check_plugin_version_status(project_dir=repo_root)
+    plugin_installed = plugin_status.get("status") != "not_installed"
+    plugin_up_to_date = plugin_status.get("status") == "up_to_date"
+
+    checks = {
+        "cli_binary": {
+            "ok": cli_ok,
+            "eidos_bin": eidos_bin,
+            "eidos_ai_bin": eidos_ai_bin,
+            "version": eidos.__version__,
+        },
+        "git_repository": {
+            "ok": git_ok,
+            "repo_root": str(repo_root),
+        },
+        "living_specs": {
+            "ok": specs_exist and specs_valid,
+            "exists": specs_exist,
+            "valid": specs_valid,
+            "valid_docs": valid_specs,
+            "total_docs": total_specs,
+            "eidos_dir": str(eidos_dir),
+        },
+        "knowledge_graph_index": {
+            "ok": index_ok,
+            "db_path": str(db_path),
+            "total_entities": index_entities,
+        },
+        "agent_plugin": {
+            "ok": not plugin_installed or plugin_up_to_date,
+            "installed": plugin_installed,
+            "status": plugin_status.get("status"),
+            "installed_version": plugin_status.get("installed_version"),
+            "bundled_version": plugin_status.get("bundled_version"),
+        },
+    }
+    overall_ok = cli_ok and git_ok and (not specs_exist or (specs_valid and index_ok))
+
+    if json_output:
+        typer.echo(json.dumps({"healthy": overall_ok, "checks": checks}, indent=2))
+        if not overall_ok:
+            raise typer.Exit(code=1)
+        return
+
+    table = Table(title="Eidos Environment & Workspace Doctor", show_header=True, header_style="bold cyan")
+    table.add_column("Check", style="bold white")
+    table.add_column("Status", justify="center")
+    table.add_column("Details", style="dim")
+
+    table.add_row(
+        "CLI Binary on PATH",
+        "[bold green]PASS[/bold green]" if cli_ok else "[bold yellow]WARN[/bold yellow]",
+        f"{eidos_bin or eidos_ai_bin or 'Not on PATH (install via: uv tool install eidos-ai)'} (v{eidos.__version__})",
+    )
+    table.add_row(
+        "Git Repository",
+        "[bold green]PASS[/bold green]" if git_ok else "[bold red]FAIL[/bold red]",
+        str(repo_root),
+    )
+    table.add_row(
+        "Living Specifications",
+        "[bold green]PASS[/bold green]"
+        if (specs_exist and specs_valid)
+        else ("[bold yellow]UNINITIALIZED[/bold yellow]" if not specs_exist else "[bold red]FAIL[/bold red]"),
+        f"{valid_specs}/{total_specs} valid specs in {eidos_dir}" if specs_exist else "Run 'eidos init' to initialize",
+    )
+    table.add_row(
+        "SQLite Knowledge Graph",
+        "[bold green]PASS[/bold green]" if index_ok else "[bold yellow]WARN[/bold yellow]",
+        f"{index_entities} entities indexed ({db_path.relative_to(repo_root) if db_path.is_relative_to(repo_root) else db_path})",
+    )
+    table.add_row(
+        "Agent Plugin Status",
+        "[bold green]PASS[/bold green]"
+        if plugin_up_to_date
+        else ("[dim]NOT INSTALLED[/dim]" if not plugin_installed else f"[bold yellow]{plugin_status.get('status', '').upper()}[/bold yellow]"),
+        f"Installed: v{plugin_status.get('installed_version')} / Bundled: v{plugin_status.get('bundled_version')}"
+        if plugin_installed
+        else "Optional: Run 'eidos plugin install' to enable agent skills & hooks",
+    )
+
+    console.print(table)
+    if not overall_ok:
+        raise typer.Exit(code=1)
 
 
 @app.command("init", rich_help_panel=PANEL_SETUP)
@@ -610,7 +764,7 @@ def build_site_cmd(
         help="Target output directory for the static site (defaults to ./site).",
     ),
 ):
-    """Export the Eidos Living Web Portal as a self-contained static site for GitHub/GitLab Pages."""
+    """Export the Eidos Living Web Portal as a self-contained static web site."""
     target = target_path or Path("eidos")
     if not target.exists():
         console.print(f"[bold red]Error:[/bold red] Specifications directory '{target}' not found.")
@@ -676,7 +830,7 @@ def containers(
 def components(
     container_id: str | None = typer.Argument(
         None,
-        help="Optional container ID to filter components (e.g. CNT-EIDOS-CORE).",
+        help="Optional container ID to filter components (e.g. CNT-CORE).",
     ),
     target_path: Path | None = typer.Option(
         None,
@@ -720,7 +874,7 @@ def components(
                 cid,
                 c.get("name", c.get("title", "N/A")),
                 c.get("container", "N/A"),
-                c.get("file_path", c.get("package_path", "N/A")),
+                str(c.get("source_path") or c.get("package_path") or c.get("file_path") or "N/A"),
                 c.get("responsibility", "N/A"),
             )
             continue
@@ -730,7 +884,7 @@ def components(
         internals = c.get("components", []) or c.get("c4_internal_components", [])
         for m in internals:
             count += 1
-            spec_ref = m.get("ref", m.get("spec_path", m.get("source_path", "N/A")))
+            spec_ref = str(m.get("ref", m.get("spec_path", m.get("source_path", "N/A"))))
             table.add_row(
                 m.get("id", "CMP-INTERNAL"),
                 m.get("name", "N/A"),
@@ -807,7 +961,7 @@ def context_cmd(
         None,
         "--component",
         "-c",
-        help="Target component identifier (e.g. 'CMP-EIDOS-CLI').",
+        help="Target component identifier (e.g. 'CMP-CORE').",
     ),
     task: str | None = typer.Option(
         None,
@@ -1034,7 +1188,7 @@ def index_search_cmd(
 def index_blast_radius_cmd(
     entity_id: str = typer.Argument(
         ...,
-        help="Target architectural entity ID (e.g. 'CMP-EIDOS-CORE', 'CAP-PROD-001').",
+        help="Target architectural entity ID (e.g. 'CNT-CORE', 'CAP-PROD-001').",
     ),
     depth: int = typer.Option(
         2,
@@ -1266,7 +1420,7 @@ def spec_create_cmd(
         None,
         "--domain",
         "-d",
-        help="Parent domain ID for capabilities (e.g. DOM-SPEC-ENGINE).",
+        help="Parent domain ID for capabilities (e.g. DOM-CORE).",
     ),
     kind: str = typer.Option(
         "feature_addition",
@@ -1297,10 +1451,10 @@ def spec_create_cmd(
         "--protocol",
         help="Protocol for contracts (cli_args, openapi, protobuf, graphql, json_rpc_stdio).",
     ),
-    owning_component: str = typer.Option(
-        "CMP-EIDOS-CORE",
+    owning_component: str | None = typer.Option(
+        None,
         "--owning-component",
-        help="Owning component ID for contracts.",
+        help="Owning component or container ID for contracts.",
     ),
     client_id: str | None = typer.Option(
         None,
@@ -1982,15 +2136,27 @@ def plugin_install(
         "--force/--no-force",
         help="Overwrite existing files at destination.",
     ),
+    launcher: str = typer.Option(
+        "eidos",
+        "--launcher",
+        help="Hook command launcher: 'eidos' (global CLI on PATH) or 'uvx' (ephemeral uvx runner).",
+    ),
 ):
     """Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos, agent-plugins.org v1.0.0)."""
     resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
+    resolved_launcher = launcher if isinstance(launcher, str) else "eidos"
     console.print(
         f"[bold cyan]Installing Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{resolved_target.value}[/bold green])...\n"
     )
 
     try:
-        results = install_plugin(target=resolved_target, project_dir=project_dir, dest_path=dest, force=force)
+        results = install_plugin(
+            target=resolved_target,
+            project_dir=project_dir,
+            dest_path=dest,
+            force=force,
+            launcher=resolved_launcher,
+        )
         for res in results:
             if res.success:
                 console.print(f"[bold green]✓[/bold green] [bold]{res.target.upper()}:[/bold] {res.message}")
@@ -2034,10 +2200,22 @@ def install_shortcut(
         "--force/--no-force",
         help="Overwrite existing files at destination.",
     ),
+    launcher: str = typer.Option(
+        "eidos",
+        "--launcher",
+        help="Hook command launcher: 'eidos' (global CLI on PATH) or 'uvx' (ephemeral uvx runner).",
+    ),
 ):
     """Shortcut alias for 'eidos plugin install'."""
     resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
-    plugin_install(target=resolved_target, project_dir=project_dir, dest=dest, force=force)
+    resolved_launcher = launcher if isinstance(launcher, str) else "eidos"
+    plugin_install(
+        target=resolved_target,
+        project_dir=project_dir,
+        dest=dest,
+        force=force,
+        launcher=resolved_launcher,
+    )
 
 
 @plugin_app.command("uninstall")
@@ -2227,15 +2405,26 @@ def plugin_update(
         "-d",
         help="Custom destination directory within the project to update.",
     ),
+    launcher: str = typer.Option(
+        "eidos",
+        "--launcher",
+        help="Hook command launcher: 'eidos' (global CLI on PATH) or 'uvx' (ephemeral uvx runner).",
+    ),
 ):
     """Update project-scoped Agent Plugin to the latest bundled version."""
     resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
+    resolved_launcher = launcher if isinstance(launcher, str) else "eidos"
     console.print(
         f"[bold cyan]Updating Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{resolved_target.value}[/bold green])...\n"
     )
 
     try:
-        prev_ver, current_ver, results = update_plugin(target=resolved_target, project_dir=project_dir, dest_path=dest)
+        prev_ver, current_ver, results = update_plugin(
+            target=resolved_target,
+            project_dir=project_dir,
+            dest_path=dest,
+            launcher=resolved_launcher,
+        )
         for res in results:
             if res.success:
                 console.print(f"[bold green]✓[/bold green] [bold]{res.target.upper()}:[/bold] {res.message}")
@@ -2283,10 +2472,16 @@ def plugin_upgrade(
         "-d",
         help="Custom destination directory within the project to update.",
     ),
+    launcher: str = typer.Option(
+        "eidos",
+        "--launcher",
+        help="Hook command launcher: 'eidos' (global CLI on PATH) or 'uvx' (ephemeral uvx runner).",
+    ),
 ):
     """Alias for 'eidos plugin update'."""
     resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
-    plugin_update(target=resolved_target, project_dir=project_dir, dest=dest)
+    resolved_launcher = launcher if isinstance(launcher, str) else "eidos"
+    plugin_update(target=resolved_target, project_dir=project_dir, dest=dest, launcher=resolved_launcher)
 
 
 @plugin_app.command("validate")
@@ -2375,6 +2570,53 @@ def plugin_info(
     grid.add_row("Extensions:", ", ".join(report.extensions) or "None")
 
     console.print(Panel(grid, title="[bold blue]Eidos Agent Plugin Manifest[/bold blue]", expand=False))
+
+
+# -------------------------------------------------------------------------
+# Native Agent Plugin Lifecycle Hooks
+# -------------------------------------------------------------------------
+
+
+@hook_app.command("lint")
+def hook_lint_cmd(
+    event: str = typer.Option(
+        "Stop",
+        "--event",
+        "-e",
+        help="Hook lifecycle event (PreToolUse, PostInvocation, Stop).",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Repository root or eidos directory path.",
+    ),
+):
+    """Execute native Eidos specification lint & ADR guard lifecycle hook."""
+    code = execute_lint_hook(event=event, repo_root=path)
+    if code != 0:
+        raise typer.Exit(code=code)
+
+
+@hook_app.command("drift")
+def hook_drift_cmd(
+    event: str = typer.Option(
+        "Stop",
+        "--event",
+        "-e",
+        help="Hook lifecycle event (PostInvocation, Stop).",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Repository root or eidos directory path.",
+    ),
+):
+    """Execute native Eidos spec-to-code drift lifecycle hook with Block-Once Stop gate."""
+    code = execute_drift_hook(event=event, repo_root=path)
+    if code != 0:
+        raise typer.Exit(code=code)
 
 
 if __name__ == "__main__":

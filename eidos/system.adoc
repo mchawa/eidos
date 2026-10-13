@@ -25,10 +25,9 @@ technical_profile:
     - "Node.js / Python 3.12+"
   deployment_targets:
     - "Local Workstation (Developer CLI)"
-    - "Cloud CI/CD Runners (GitHub Actions / GitLab CI)"
+    - "CI/CD Pipeline Runners"
   vcs_platforms:
-    - "GitHub"
-    - "GitLab"
+    - "Git (Local & Remote Repositories)"
   agent_support:
     - "Antigravity (agy)"
     - "Claude Code"
@@ -51,7 +50,7 @@ Eidos is an open, Git-native development AI ecosystem and orchestration framewor
 3. **Product Deltas (SpecDelta)**: Declarative, machine-verifiable diffs for features, bugs, modifications, and deprecations.
 4. **Architectural Guardrails**: Test-bound system invariants and contract-first API definitions.
 5. **Agent Governance Substrate**: Deterministic CLI context slicing and progressive Agent Skills that ground external coding agents (Google Antigravity `agy`, Claude Code, Cursor, Copilot) without Eidos ever calling AI itself.
-6. **Native VCS Integration**: Full bidirectional synchronization with GitHub Issues / PRs and GitLab Epics / MRs.
+6. **Git-Native Drift Governance**: Continuous structural spec-to-code drift detection, static invariant test verification, and spec reconciliation directly in Git.
 
 == Architectural Philosophy
 

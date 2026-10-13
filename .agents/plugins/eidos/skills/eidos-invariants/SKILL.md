@@ -5,12 +5,12 @@ description: Define system policies (POL-*), capability invariants (INV-*), and 
 
 # Eidos Invariant Governance & Test Traceability (`eidos-invariants`)
 
-This skill equips AI agents to define non-negotiable policies, author capability invariants, and enforce bidirectional traceability between living specifications and automated tests (`POL-002`).
+This skill equips AI agents to define non-negotiable policies, author capability invariants, and enforce bidirectional traceability between living specifications and automated tests (`POL-*`, `INV-*`).
 
 ## The Invariant-Test Golden Rule
 
 > [!IMPORTANT]
-> **POL-002 Invariant-Test Enforcement**: Every policy (`POL-*`) and capability (`CAP-*`) has defined invariants. Modifying code or specs without corresponding invariant test coverage violates the repository's governance.
+> **Invariant-Test Enforcement**: Every policy (`POL-*`) and capability (`CAP-*`) has defined invariants (`INV-*`). Modifying code or specs without corresponding invariant test bindings violates the repository's governance.
 
 ---
 
@@ -20,7 +20,7 @@ Use the Eidos CLI to scaffold policies and capabilities:
 
 ```bash
 # 1. Scaffold a new system policy:
-eidos spec create policy POL-003-ZERO-ORPHAN-SPECS \
+eidos spec create policy POL-ZERO-ORPHAN-SPECS \
   --title "Zero Orphan Specifications Policy" \
   --category governance \
   --rule "All capability documents must link to an active owning domain."
@@ -44,20 +44,20 @@ Policies live in `eidos/policies/POL-*.adoc`:
 ---
 type: product/policy
 schema: schemas/v1/product/policy.schema.yaml
-id: POL-002-INVARIANT-TEST-ENFORCEMENT
+id: POL-INVARIANT-TRACEABILITY
 title: "Invariant-Test Traceability Policy"
 category: governance  # governance | architectural | security | compliance | testing
 rule: "Every product capability must declare atomic invariants with traceable test bindings."
 
 enforcement:
-  mechanism: "Pytest invariant bindings & CI quality gates"
+  mechanism: "Static invariant test bindings & CI quality gates"
   severity: critical
 ---
 = Policy: Invariant-Test Traceability Policy
 :toc: left
 
 == Rule Statement
-All code mutations must maintain verified invariant test coverage.
+All code mutations must maintain verified invariant test bindings.
 ```
 
 ---
@@ -82,8 +82,10 @@ business:
   jtbd: "When signing in, I want secure authentication, so that my account is protected."
 
 technical:
+  containers:
+    - "CNT-AUTH-SERVICE"
   components:
-    - "CMP-AUTH-SERVICE"
+    - "CMP-AUTH-HASHER"
   contracts:
     interfaces:
       - "CTR-AUTH-API"
@@ -101,13 +103,13 @@ technical:
 
 ## 4. Polyglot Test Binding Conventions
 
-To satisfy invariant traceability (`POL-002`), every invariant (`INV-*`) must be traceable to automated tests. The Eidos drift engine scans across polyglot test suites. Place invariant markers using the native conventions of your language and framework:
+To satisfy invariant traceability, every invariant (`INV-*`) must be traceable to automated tests. The Eidos drift engine statically verifies test bindings across polyglot test suites. Place invariant markers using the native conventions of your language and framework:
 
 ### A. Python (`pytest`, `unittest`)
 1. **In the test docstring (Recommended):**
    ```python
    def test_login_brute_force_lockout():
-       """Verify account lock after 5 failed attempts (INV-AUTH-RATE-LIMIT, POL-002)."""
+       """Verify account lock after 5 failed attempts (INV-AUTH-RATE-LIMIT)."""
        ...
    ```
 2. **Via Pytest custom markers:**

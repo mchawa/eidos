@@ -23,7 +23,7 @@ FORBIDDEN_AI_PACKAGES = {
 
 
 def test_pyproject_contains_zero_ai_dependencies():
-    """Verify POL-004: pyproject.toml does not require any AI/LLM SDK dependencies."""
+    """Verify POL-004 and INV-AGENT-ZERO-AI-DEPENDENCY: pyproject.toml does not require any AI/LLM SDK dependencies."""
     repo_root = Path(__file__).parent.parent
     pyproject_path = repo_root / "pyproject.toml"
     assert pyproject_path.exists(), "pyproject.toml not found"

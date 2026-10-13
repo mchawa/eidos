@@ -1,7 +1,7 @@
 """Embedded SQLite Architectural Knowledge Graph & Hybrid Context Retrieval Index.
 
 Implements EXP-2026-002:
-- Standard library `sqlite3` backed graph store (.eidos/cache/index.db).
+- Standard library `sqlite3` backed graph store (eidos/.cache/index.db).
 - FTS5 virtual table with BM25 ranking for fuzzy and lexical matching.
 - Recursive CTE queries for sub-millisecond k-hop blast radius and dependency traversal.
 - SHA-256 and mtime dirty-checking for incremental <5ms zero-drift refreshes.
@@ -23,6 +23,7 @@ from typing import Any
 from eidos.core.ast_indexer import get_ast_indexer
 from eidos.core.context import ArchitecturalContextSlice
 from eidos.core.parser import parse_spec_file
+from eidos.core.project import extract_entity_paths, find_repo_root, match_path_pattern
 
 
 @dataclass
@@ -141,7 +142,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
                         for m in modules:
                             mid = f"`{m['id']}` " if m.get("id") else ""
                             if m.get("ref"):
-                                lines.append(f"  - {mid}**{m.get('name', m.get('id', ''))}** (co-located): `ref: {m['ref']}`")
+                                lines.append(
+                                    f"  - {mid}**{m.get('name', m.get('id', ''))}** (co-located): `ref: {m['ref']}`"
+                                )
                             else:
                                 lines.append(f"  - {mid}**{m.get('name', '')}**: {m.get('responsibility', '')}")
             lines.append("")
@@ -209,17 +212,6 @@ class TieredContextSlice(ArchitecturalContextSlice):
         return "\n".join(lines)
 
 
-def find_repo_root(start_dir: Path | None = None) -> Path:
-    """Find the repository or workspace root containing .git or eidos/ living specifications."""
-    cwd = (start_dir or Path.cwd()).resolve()
-    for parent in [cwd, *cwd.parents]:
-        if (parent / ".git").exists():
-            return parent
-        if (parent / "eidos" / "system.adoc").exists() or (parent / "eidos" / "architecture").is_dir():
-            return parent
-    return cwd
-
-
 class ArchitecturalIndex:
     """Embedded SQLite Architectural Knowledge Graph & Hybrid Retrieval Index."""
 
@@ -247,7 +239,7 @@ class ArchitecturalIndex:
         if db_path is not None:
             self.db_path = Path(db_path).resolve()
         else:
-            cache_dir = self.root / ".eidos" / "cache"
+            cache_dir = self.eidos_dir / ".cache"
             cache_dir.mkdir(parents=True, exist_ok=True)
             self.db_path = cache_dir / "index.db"
 
@@ -404,11 +396,11 @@ class ArchitecturalIndex:
                     disk_files.add(rel_code)
                     stat = p_abs.stat()
                     cached = db_files.get(rel_code)
-                    if not cached:
+                    if not cached or (
+                        abs(stat.st_mtime - cached[0]) > 0.001
+                        and hashlib.sha256(p_abs.read_bytes()).hexdigest() != cached[1]
+                    ):
                         to_update.append(p_abs)
-                    elif abs(stat.st_mtime - cached[0]) > 0.001:
-                        if hashlib.sha256(p_abs.read_bytes()).hexdigest() != cached[1]:
-                            to_update.append(p_abs)
 
         for std_dir in ("src", "tests", "test"):
             cand = (self.root / std_dir).resolve()
@@ -421,13 +413,26 @@ class ArchitecturalIndex:
                 if abs_tracked.is_file():
                     disk_files.add(rel_tracked)
                     stat = abs_tracked.stat()
-                    if abs(stat.st_mtime - mtime_cached) > 0.001:
-                        if hashlib.sha256(abs_tracked.read_bytes()).hexdigest() != sha_cached:
-                            to_update.append(abs_tracked)
+                    if (
+                        abs(stat.st_mtime - mtime_cached) > 0.001
+                        and hashlib.sha256(abs_tracked.read_bytes()).hexdigest() != sha_cached
+                    ):
+                        to_update.append(abs_tracked)
 
         excluded_dirs = {
-            ".git", ".venv", "venv", "__pycache__", "node_modules", "dist", "build",
-            ".pytest_cache", ".ruff_cache", ".mypy_cache", ".eidos", "htmlcov", "site"
+            ".git",
+            ".venv",
+            "venv",
+            "__pycache__",
+            "node_modules",
+            "dist",
+            "build",
+            ".pytest_cache",
+            ".ruff_cache",
+            ".mypy_cache",
+            ".eidos",
+            "htmlcov",
+            "site",
         }
         for code_dir in tracked_code_dirs:
             if not code_dir.exists():
@@ -448,11 +453,11 @@ class ArchitecturalIndex:
 
                     stat = p_file.stat()
                     cached = db_files.get(rel_code)
-                    if not cached:
+                    if not cached or (
+                        abs(stat.st_mtime - cached[0]) > 0.001
+                        and hashlib.sha256(p_file.read_bytes()).hexdigest() != cached[1]
+                    ):
                         to_update.append(p_file)
-                    elif abs(stat.st_mtime - cached[0]) > 0.001:
-                        if hashlib.sha256(p_file.read_bytes()).hexdigest() != cached[1]:
-                            to_update.append(p_file)
 
         deleted = [Path(rel) for rel in db_files.keys() - disk_files]
         is_dirty = len(to_update) > 0 or len(deleted) > 0
@@ -551,7 +556,13 @@ class ArchitecturalIndex:
                 title = doc.title or fm.get("title", doc_id)
                 status = fm.get("status", "active")
                 domain = fm.get("domain", fm.get("domain_binding", ""))
-                package_path = fm.get("package_path", "")
+                raw_pkg = fm.get("package_path", fm.get("source_path", ""))
+                pkg_list = (
+                    [str(x).strip() for x in raw_pkg if str(x).strip()]
+                    if isinstance(raw_pkg, list)
+                    else ([str(raw_pkg).strip()] if str(raw_pkg).strip() else [])
+                )
+                package_path = pkg_list[0] if pkg_list else ""
                 runtime = fm.get("runtime", "")
                 container_type = fm.get("container_type", "")
 
@@ -612,6 +623,57 @@ class ArchitecturalIndex:
                         "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'contract_path');", (rel_p, doc_id)
                     )
 
+                # Design client bindings (CLT-* -> CNT-* and CLT-* -> DS-*)
+                if doc_type == "design/client":
+                    cnt_ref = fm.get("container")
+                    ds_ref = fm.get("design_system")
+                    if cnt_ref and isinstance(cnt_ref, str):
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implemented_by', NULL);",
+                            (doc_id, cnt_ref.strip()),
+                        )
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements_client', NULL);",
+                            (cnt_ref.strip(), doc_id),
+                        )
+                    if ds_ref and isinstance(ds_ref, str):
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);", (doc_id, ds_ref.strip())
+                        )
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_client', NULL);",
+                            (ds_ref.strip(), doc_id),
+                        )
+                    if cnt_ref and isinstance(cnt_ref, str) and ds_ref and isinstance(ds_ref, str):
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);",
+                            (cnt_ref.strip(), ds_ref.strip()),
+                        )
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_container', NULL);",
+                            (ds_ref.strip(), cnt_ref.strip()),
+                        )
+
+                # Design system inheritance and client bindings
+                if doc_type == "design/system":
+                    for clt_ref in fm.get("clients", []) or []:
+                        if isinstance(clt_ref, str) and clt_ref.strip():
+                            conn.execute(
+                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);",
+                                (clt_ref.strip(), doc_id),
+                            )
+                            conn.execute(
+                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_client', NULL);",
+                                (doc_id, clt_ref.strip()),
+                            )
+                    inh = fm.get("inheritance")
+                    if isinstance(inh, dict) and inh.get("extends"):
+                        parent_ds = str(inh["extends"]).strip()
+                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'extends', NULL);", (doc_id, parent_ds))
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'extended_by', NULL);", (parent_ds, doc_id)
+                        )
+
                 # Capability bindings
                 biz = fm.get("business", {})
                 if isinstance(biz, dict):
@@ -625,7 +687,8 @@ class ArchitecturalIndex:
                 tech = fm.get("technical", {})
                 invariants = []
                 if isinstance(tech, dict):
-                    for comp_ref in tech.get("components", []):
+                    tech_targets = list(tech.get("containers", []) or []) + list(tech.get("components", []) or [])
+                    for comp_ref in tech_targets:
                         conn.execute(
                             "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements', NULL);", (doc_id, comp_ref)
                         )
@@ -642,7 +705,9 @@ class ArchitecturalIndex:
                 if doc_type == "tech/component":
                     cnt_id = fm.get("container")
                     if cnt_id:
-                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);", (cnt_id, doc_id))
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);", (cnt_id, doc_id)
+                        )
                         conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (doc_id, cnt_id))
 
                     # In-process interfaces
@@ -652,11 +717,20 @@ class ArchitecturalIndex:
                             if isinstance(prov, dict) and prov.get("signature"):
                                 sig = prov["signature"]
                                 meth = sig.split("(")[0].strip()
-                                conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_method');", (meth, doc_id))
-                                conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_signature');", (sig, doc_id))
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_method');",
+                                    (meth, doc_id),
+                                )
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_signature');",
+                                    (sig, doc_id),
+                                )
                         for consumed in ifaces.get("consumes", []):
                             if isinstance(consumed, str):
-                                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api', NULL);", (doc_id, consumed.strip()))
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api', NULL);",
+                                    (doc_id, consumed.strip()),
+                                )
 
                     # Component invariants
                     invariants = fm.get("invariants", []) or []
@@ -668,9 +742,17 @@ class ArchitecturalIndex:
                             ref_path = comp_entry["ref"]
                             cid = comp_entry.get("id")
                             if cid:
-                                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);", (doc_id, cid))
-                                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (cid, doc_id))
-                                conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_ref');", (ref_path, cid))
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);",
+                                    (doc_id, cid),
+                                )
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (cid, doc_id)
+                                )
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_ref');",
+                                    (ref_path, cid),
+                                )
 
                 # Insert invariants as child entities & edges
                 for inv in invariants:
@@ -718,13 +800,23 @@ class ArchitecturalIndex:
                                     INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
                                     VALUES (?, ?, ?, ?, 'code/test', ?);
                                     """,
-                                    (rel_tf, abs_test.stat().st_mtime, hashlib.sha256(abs_test.read_bytes()).hexdigest(), iid, time.time()),
+                                    (
+                                        rel_tf,
+                                        abs_test.stat().st_mtime,
+                                        hashlib.sha256(abs_test.read_bytes()).hexdigest(),
+                                        iid,
+                                        time.time(),
+                                    ),
                                 )
 
                 # 3. Symbol mappings
-                if package_path:
+                for pkg_entry in pkg_list:
                     conn.execute(
-                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'package_path');", (package_path, doc_id)
+                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'package_path');", (pkg_entry, doc_id)
+                    )
+                for owned_pat in extract_entity_paths(fm):
+                    conn.execute(
+                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'owned_path');", (owned_pat, doc_id)
                     )
 
                 # Internal C4 modules & components
@@ -732,13 +824,18 @@ class ArchitecturalIndex:
                 all_modules = list(fm.get("components", []) or fm.get("c4_internal_components", []))
                 for module in all_modules:
                     mname = module.get("name")
-                    mpath = module.get("source_path")
+                    raw_mpath = module.get("source_path")
+                    mpath_list = (
+                        [str(x).strip() for x in raw_mpath if str(x).strip()]
+                        if isinstance(raw_mpath, list)
+                        else ([str(raw_mpath).strip()] if raw_mpath and str(raw_mpath).strip() else [])
+                    )
                     mid = module.get("id")
                     if mname:
                         conn.execute(
                             "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'module_name');", (mname, doc_id)
                         )
-                    if mpath:
+                    for mpath in mpath_list:
                         conn.execute(
                             "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (mpath, doc_id)
                         )
@@ -753,22 +850,38 @@ class ArchitecturalIndex:
                                 INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
                                 VALUES (?, ?, ?, ?, 'code/source', ?);
                                 """,
-                                (rel_m, abs_mpath.stat().st_mtime, hashlib.sha256(abs_mpath.read_bytes()).hexdigest(), doc_id, time.time()),
+                                (
+                                    rel_m,
+                                    abs_mpath.stat().st_mtime,
+                                    hashlib.sha256(abs_mpath.read_bytes()).hexdigest(),
+                                    doc_id,
+                                    time.time(),
+                                ),
                             )
                             for sym in ast_idx.extract_symbols(abs_mpath):
-                                conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, ?);", (sym.name, doc_id, sym.kind))
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, ?);",
+                                    (sym.name, doc_id, sym.kind),
+                                )
                                 if sym.parent_symbol:
-                                    conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'method');", (f"{sym.parent_symbol}.{sym.name}", doc_id))
+                                    conn.execute(
+                                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'method');",
+                                        (f"{sym.parent_symbol}.{sym.name}", doc_id),
+                                    )
                     if mid:
                         conn.execute(
                             "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_id');", (mid, doc_id)
                         )
 
                 # Extract AST symbols if package_path points to source file or package directory
-                if package_path:
-                    abs_pkg = (self.root / package_path).resolve()
+                for pkg_item in pkg_list:
+                    if any(ch in pkg_item for ch in "*?["):
+                        continue
+                    abs_pkg = (self.root / pkg_item).resolve()
                     if abs_pkg.is_file():
-                        conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (package_path, doc_id))
+                        conn.execute(
+                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (pkg_item, doc_id)
+                        )
                         try:
                             rel_pkg = str(abs_pkg.relative_to(self.root)).replace("\\", "/")
                         except ValueError:
@@ -778,12 +891,23 @@ class ArchitecturalIndex:
                             INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
                             VALUES (?, ?, ?, ?, 'code/source', ?);
                             """,
-                            (rel_pkg, abs_pkg.stat().st_mtime, hashlib.sha256(abs_pkg.read_bytes()).hexdigest(), doc_id, time.time()),
+                            (
+                                rel_pkg,
+                                abs_pkg.stat().st_mtime,
+                                hashlib.sha256(abs_pkg.read_bytes()).hexdigest(),
+                                doc_id,
+                                time.time(),
+                            ),
                         )
                         for sym in ast_idx.extract_symbols(abs_pkg):
-                            conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, ?);", (sym.name, doc_id, sym.kind))
+                            conn.execute(
+                                "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, ?);", (sym.name, doc_id, sym.kind)
+                            )
                             if sym.parent_symbol:
-                                conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'method');", (f"{sym.parent_symbol}.{sym.name}", doc_id))
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'method');",
+                                    (f"{sym.parent_symbol}.{sym.name}", doc_id),
+                                )
                     elif abs_pkg.is_dir() and not all_modules:
                         for ext in ("*.py", "*.ts", "*.tsx", "*.go", "*.rs"):
                             for code_file in abs_pkg.glob(ext):
@@ -792,18 +916,33 @@ class ArchitecturalIndex:
                                         rel_code = str(code_file.relative_to(self.root)).replace("\\", "/")
                                     except ValueError:
                                         rel_code = str(code_file)
-                                    conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (rel_code, doc_id))
+                                    conn.execute(
+                                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');",
+                                        (rel_code, doc_id),
+                                    )
                                     conn.execute(
                                         """
                                         INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
                                         VALUES (?, ?, ?, ?, 'code/source', ?);
                                         """,
-                                        (rel_code, code_file.stat().st_mtime, hashlib.sha256(code_file.read_bytes()).hexdigest(), doc_id, time.time()),
+                                        (
+                                            rel_code,
+                                            code_file.stat().st_mtime,
+                                            hashlib.sha256(code_file.read_bytes()).hexdigest(),
+                                            doc_id,
+                                            time.time(),
+                                        ),
                                     )
                                     for sym in ast_idx.extract_symbols(code_file):
-                                        conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, ?);", (sym.name, doc_id, sym.kind))
+                                        conn.execute(
+                                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, ?);",
+                                            (sym.name, doc_id, sym.kind),
+                                        )
                                         if sym.parent_symbol:
-                                            conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'method');", (f"{sym.parent_symbol}.{sym.name}", doc_id))
+                                            conn.execute(
+                                                "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'method');",
+                                                (f"{sym.parent_symbol}.{sym.name}", doc_id),
+                                            )
 
                 # Interface commands
                 if isinstance(fm.get("contracts"), dict):
@@ -817,7 +956,9 @@ class ArchitecturalIndex:
                 jtbd_or_rule = biz.get("jtbd", fm.get("rule", ""))
                 body_clean = re.sub(r"[{}\[\]=:#*`]", " ", doc.body or "")
                 keywords = " ".join([doc_id, doc_type, domain, container_type, package_path])
-                symbols = " ".join([m.get("name", "") for m in (fm.get("components", []) or fm.get("c4_internal_components", []))])
+                symbols = " ".join(
+                    [m.get("name", "") for m in (fm.get("components", []) or fm.get("c4_internal_components", []))]
+                )
 
                 conn.execute(
                     """
@@ -836,8 +977,62 @@ class ArchitecturalIndex:
                     (rel_p, mtime, sha, doc_id, doc_type, time.time()),
                 )
 
+            if spec_updates:
+                conn.execute("DELETE FROM symbol_mappings WHERE kind = 'inferred_path';")
+                # Propagate container owned_path/source_path to bound design/client (CLT-*) and design/system (DS-*)
+                client_cnt_rows = conn.execute(
+                    "SELECT source_id, target_id FROM edges WHERE rel_type = 'implemented_by' AND source_id LIKE 'CLT-%';"
+                ).fetchall()
+                for clt_id, cnt_id in client_cnt_rows:
+                    cnt_paths = [
+                        r[0]
+                        for r in conn.execute(
+                            """
+                            SELECT DISTINCT symbol FROM symbol_mappings
+                            WHERE kind IN ('owned_path', 'package_path', 'source_path')
+                              AND (entity_id = ? OR entity_id IN (
+                                  SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'contains_component'
+                              ));
+                            """,
+                            (cnt_id, cnt_id),
+                        ).fetchall()
+                    ]
+                    if not cnt_paths:
+                        continue
+                    for pat in cnt_paths:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'inferred_path');",
+                            (pat, clt_id),
+                        )
+                    # Propagate to any DS-* styling this client (and parent/child DS-* via extends)
+                    ds_rows = conn.execute(
+                        """
+                        WITH RECURSIVE ds_tree(ds_id) AS (
+                            SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'styled_by'
+                            UNION
+                            SELECT e.target_id FROM edges e JOIN ds_tree d ON e.source_id = d.ds_id
+                            WHERE e.rel_type IN ('extends', 'extended_by')
+                        )
+                        SELECT DISTINCT ds_id FROM ds_tree;
+                        """,
+                        (clt_id,),
+                    ).fetchall()
+                    for (ds_id,) in ds_rows:
+                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);", (cnt_id, ds_id))
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_container', NULL);", (ds_id, cnt_id)
+                        )
+                        for pat in cnt_paths:
+                            conn.execute(
+                                "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'inferred_path');",
+                                (pat, ds_id),
+                            )
+
             # Handle code and test file updates
             ast_idx = get_ast_indexer()
+            owned_rows = conn.execute(
+                "SELECT symbol, entity_id FROM symbol_mappings WHERE kind = 'owned_path';"
+            ).fetchall()
             for p in code_updates:
                 if not p.is_file():
                     continue
@@ -877,9 +1072,7 @@ class ArchitecturalIndex:
                                 "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
                                 (rel_p, inv_id),
                             )
-                            inv_row = conn.execute(
-                                "SELECT data_json FROM entities WHERE id = ?", (inv_id,)
-                            ).fetchone()
+                            inv_row = conn.execute("SELECT data_json FROM entities WHERE id = ?", (inv_id,)).fetchone()
                             if inv_row:
                                 idata = json.loads(inv_row["data_json"])
                                 idata["has_test_coverage"] = True
@@ -903,22 +1096,35 @@ class ArchitecturalIndex:
                     ).fetchone()
                     entity_id = row["entity_id"] if row else None
                     if not entity_id:
+                        best_score = 0
+                        for orow in owned_rows:
+                            score = match_path_pattern(rel_p, orow["symbol"])
+                            if score > best_score:
+                                best_score = score
+                                entity_id = orow["entity_id"]
+                    if not entity_id:
                         row = conn.execute(
-                            "SELECT id FROM entities WHERE package_path != '' AND ? LIKE package_path || '%' LIMIT 1;",
+                            "SELECT id FROM entities WHERE package_path != '' AND ? LIKE package_path || '%' ORDER BY LENGTH(package_path) DESC LIMIT 1;",
                             (rel_p,),
                         ).fetchone()
                         if row:
                             entity_id = row["id"]
-                        elif rel_p.startswith("src/eidos"):
-                            entity_id = "CNT-EIDOS-CORE"
 
                     if entity_id:
-                        conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (rel_p, entity_id))
+                        conn.execute(
+                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (rel_p, entity_id)
+                        )
                         syms = ast_idx.extract_symbols(p)
                         for sym in syms:
-                            conn.execute("INSERT OR REPLACE INTO symbol_mappings VALUES (?, ?, ?);", (sym.name, entity_id, sym.kind))
+                            conn.execute(
+                                "INSERT OR REPLACE INTO symbol_mappings VALUES (?, ?, ?);",
+                                (sym.name, entity_id, sym.kind),
+                            )
                             if sym.parent_symbol:
-                                conn.execute("INSERT OR REPLACE INTO symbol_mappings VALUES (?, ?, 'method');", (f"{sym.parent_symbol}.{sym.name}", entity_id))
+                                conn.execute(
+                                    "INSERT OR REPLACE INTO symbol_mappings VALUES (?, ?, 'method');",
+                                    (f"{sym.parent_symbol}.{sym.name}", entity_id),
+                                )
 
                     conn.execute(
                         """
@@ -1070,7 +1276,9 @@ class ArchitecturalIndex:
         except sqlite3.OperationalError:
             return []
 
-    def get_k_hop_neighborhood(self, entity_id: str, max_depth: int = 2, max_hops: int | None = None) -> list[dict[str, Any]]:
+    def get_k_hop_neighborhood(
+        self, entity_id: str, max_depth: int = 2, max_hops: int | None = None
+    ) -> list[dict[str, Any]]:
         """Traverse graph up to k hops in both directions using recursive CTE."""
         if max_hops is not None:
             max_depth = max_hops
@@ -1092,7 +1300,7 @@ class ArchitecturalIndex:
                 WHERE gw.depth < ?
                   AND gw.path NOT LIKE '%' || CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END || '%'
             )
-            SELECT DISTINCT gw.node_id, gw.depth, ent.type, ent.title, ent.domain, ent.data_json
+            SELECT DISTINCT gw.node_id, gw.depth, ent.type, ent.title, ent.domain, ent.file_path, ent.data_json
             FROM graph_walk gw
             JOIN entities ent ON ent.id = gw.node_id
             ORDER BY gw.depth ASC;
@@ -1109,6 +1317,7 @@ class ArchitecturalIndex:
                     "type": row["type"],
                     "title": row["title"],
                     "domain": row["domain"],
+                    "file_path": row["file_path"],
                     "data": json.loads(row["data_json"]),
                 }
             )
@@ -1130,16 +1339,18 @@ class ArchitecturalIndex:
             FROM symbol_mappings s
             JOIN entities e ON e.id = s.entity_id
             WHERE s.symbol = ?
-               OR (? LIKE s.symbol || '/%' AND s.kind = 'package_path')
-               OR (? LIKE '%' || s.symbol AND s.kind IN ('source_path', 'specification_file', 'component_ref', 'interface_method', 'class', 'function', 'method', 'interface'))
+               OR (? LIKE s.symbol || '/%' AND s.kind IN ('package_path', 'inferred_path'))
+               OR (? LIKE '%' || s.symbol AND s.kind IN ('source_path', 'inferred_path', 'specification_file', 'component_ref', 'interface_method', 'class', 'function', 'method', 'interface'))
                OR (? LIKE s.symbol || '%' AND s.kind = 'test_binding')
-            LIMIT 10;
+            LIMIT 25;
             """,
             (clean, clean, clean, clean),
         )
 
         results = []
+        seen_entities: set[str] = set()
         for row in cursor.fetchall():
+            seen_entities.add(row["entity_id"])
             results.append(
                 {
                     "symbol": row["symbol"],
@@ -1151,6 +1362,43 @@ class ArchitecturalIndex:
                     "data": json.loads(row["data_json"]),
                 }
             )
+
+        # Also check owned_path and inferred_path glob patterns if query looks like a file path
+        if "/" in clean or "." in clean:
+            cursor.execute(
+                """
+                SELECT s.symbol, s.entity_id, s.kind, e.type, e.title, e.file_path, e.data_json
+                FROM symbol_mappings s
+                JOIN entities e ON e.id = s.entity_id
+                WHERE s.kind IN ('owned_path', 'inferred_path');
+                """
+            )
+            scored_matches: list[tuple[int, dict[str, Any]]] = []
+            for row in cursor.fetchall():
+                if row["entity_id"] in seen_entities:
+                    continue
+                score = match_path_pattern(clean, row["symbol"])
+                if score > 0:
+                    scored_matches.append(
+                        (
+                            score,
+                            {
+                                "symbol": row["symbol"],
+                                "entity_id": row["entity_id"],
+                                "kind": row["kind"],
+                                "type": row["type"],
+                                "title": row["title"],
+                                "file_path": row["file_path"],
+                                "data": json.loads(row["data_json"]),
+                            },
+                        )
+                    )
+            scored_matches.sort(key=lambda item: (-item[0], item[1]["entity_id"]))
+            for _, item in scored_matches:
+                if item["entity_id"] not in seen_entities:
+                    seen_entities.add(item["entity_id"])
+                    results.append(item)
+
         return results
 
     def find_symbol(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -1242,9 +1490,9 @@ class ArchitecturalIndex:
         for row in cursor.execute("SELECT kind, COUNT(*) FROM symbol_mappings GROUP BY kind;").fetchall():
             symbol_counts[row[0]] = row[1]
 
-        test_invariant_assertions = cursor.execute(
-            "SELECT COUNT(*) FROM edges WHERE rel_type = 'asserts';"
-        ).fetchone()[0]
+        test_invariant_assertions = cursor.execute("SELECT COUNT(*) FROM edges WHERE rel_type = 'asserts';").fetchone()[
+            0
+        ]
         tested_invariants = cursor.execute(
             "SELECT COUNT(DISTINCT target_id) FROM edges WHERE rel_type = 'asserts';"
         ).fetchone()[0]
@@ -1398,33 +1646,24 @@ class ArchitecturalIndex:
         # 4. Fallback if no specific filter matched or empty query
         if not matched_components and not matched_capabilities and not clean_files and not component and not task:
             # Full catalog overview: select all components/containers
-            cursor.execute("SELECT id, title, type, domain, data_json FROM entities WHERE type IN ('tech/container', 'tech/component');")
+            cursor.execute(
+                "SELECT id, title, type, domain, data_json FROM entities WHERE type IN ('tech/container', 'tech/component');"
+            )
             for row in cursor.fetchall():
                 c_data = json.loads(row["data_json"])
                 c_data["id"] = row["id"]
                 c_data["title"] = row["title"]
                 matched_components[row["id"]] = c_data
         elif not matched_components and not matched_capabilities:
-            # Filters provided but nothing matched: fallback baseline anchors
-            for fb in ["CNT-EIDOS-CLI", "CNT-EIDOS-CORE", "CMP-EIDOS-CLI", "CMP-EIDOS-CORE"]:
-                row = cursor.execute(
-                    "SELECT id, title, type, domain, data_json FROM entities WHERE id = ?;", (fb,)
-                ).fetchone()
-                if row:
-                    c_data = json.loads(row["data_json"])
-                    c_data["id"] = row["id"]
-                    c_data["title"] = row["title"]
-                    matched_components[row["id"]] = c_data
-                    matched_reasons.setdefault(row["id"], []).append("Fallback baseline component anchor")
-            if not matched_components:
-                for row in cursor.execute(
-                    "SELECT id, title, type, domain, data_json FROM entities WHERE type IN ('tech/container', 'tech/component') LIMIT 2;"
-                ).fetchall():
-                    c_data = json.loads(row["data_json"])
-                    c_data["id"] = row["id"]
-                    c_data["title"] = row["title"]
-                    matched_components[row["id"]] = c_data
-                    matched_reasons.setdefault(row["id"], []).append("Fallback baseline component anchor")
+            # Filters provided but nothing matched: fallback baseline anchors (generic)
+            for row in cursor.execute(
+                "SELECT id, title, type, domain, data_json FROM entities WHERE type IN ('tech/container', 'tech/component') ORDER BY id LIMIT 2;"
+            ).fetchall():
+                c_data = json.loads(row["data_json"])
+                c_data["id"] = row["id"]
+                c_data["title"] = row["title"]
+                matched_components[row["id"]] = c_data
+                matched_reasons.setdefault(row["id"], []).append("Fallback baseline component anchor")
 
         # 5. Forward dependency expansion for primary matched components
         primary_cids = list(matched_components.keys())
@@ -1469,7 +1708,9 @@ class ArchitecturalIndex:
                 matched_contracts.setdefault(row["id"], ctr_data)
 
         # 7. Include domain capabilities for primary components' domains
-        domains = {c.get("domain_binding") or c.get("domain") for c in [matched_components[cid] for cid in primary_cids]}
+        domains = {
+            c.get("domain_binding") or c.get("domain") for c in [matched_components[cid] for cid in primary_cids]
+        }
         domains.discard("")
         if domains:
             ph = ",".join("?" for _ in domains)
@@ -1520,23 +1761,13 @@ class ArchitecturalIndex:
 
         # 9. Fallback governing policies if none matched
         if not matched_policies:
-            for pid in ["POL-001-GIT-SOURCE-OF-TRUTH", "POL-002-INVARIANT-TEST-ENFORCEMENT"]:
-                row = cursor.execute(
-                    "SELECT id, title, type, domain, data_json FROM entities WHERE id = ?;", (pid,)
-                ).fetchone()
-                if row:
-                    p_data = json.loads(row["data_json"])
-                    p_data["id"] = row["id"]
-                    p_data["title"] = row["title"]
-                    matched_policies[row["id"]] = p_data
-            if not matched_policies:
-                for row in cursor.execute(
-                    "SELECT id, title, type, domain, data_json FROM entities WHERE type = 'product/policy' LIMIT 2;"
-                ).fetchall():
-                    p_data = json.loads(row["data_json"])
-                    p_data["id"] = row["id"]
-                    p_data["title"] = row["title"]
-                    matched_policies[row["id"]] = p_data
+            for row in cursor.execute(
+                "SELECT id, title, type, domain, data_json FROM entities WHERE type = 'product/policy' ORDER BY id LIMIT 2;"
+            ).fetchall():
+                p_data = json.loads(row["data_json"])
+                p_data["id"] = row["id"]
+                p_data["title"] = row["title"]
+                matched_policies[row["id"]] = p_data
 
         # 10. Invariants from governing policies
         for pid in list(matched_policies.keys()):

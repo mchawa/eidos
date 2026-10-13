@@ -37,28 +37,28 @@ Agents extract architectural context slices directly using the `eidos context` a
 
 ```bash
 # Slice context with default guardrails tier (~260-890 tokens)
-eidos context -f src/eidos/cli/main.py
+eidos context -f src/auth/service.py
 
 # Slice minimal anchor tier (~140 tokens)
-eidos context -f src/eidos/cli/main.py --tier anchor
+eidos context -f src/auth/service.py --tier anchor
 
 # Slice deep comprehensive tier with C4 internal modules (~1,500 tokens)
-eidos context -f src/eidos/cli/main.py --tier deep
+eidos context -f src/auth/service.py --tier deep
 
 # Machine-readable JSON output for agent automation
-eidos context -f src/eidos/cli/main.py --format json
+eidos context -f src/auth/service.py --format json
 
 # Generate token-budgeted structural repo map outline (~98% compression)
 eidos repo-map --max-tokens 1500
 
 # Locate symbol matches across code AST and link to living specs
-eidos find-symbol "AstGrepIndexer"
+eidos find-symbol "TokenValidator"
 
 # Search architecture via FTS5 BM25 ranked search
 eidos index search "token design system"
 
 # Calculate recursive CTE blast radius up to 2 hops
-eidos index blast-radius CMP-EIDOS-CORE --depth 2
+eidos index blast-radius CNT-AUTH-SERVICE --depth 2
 
 # Check knowledge graph index status and cache size
 eidos index status
@@ -71,7 +71,7 @@ eidos index sync --force
 | Flag | Short | Description |
 | :--- | :--- | :--- |
 | `--file` | `-f` | Target source code file path(s) (can be passed multiple times) |
-| `--component` | `-c` | Target component identifier (e.g. `CMP-EIDOS-CLI`) |
+| `--component` | `-c` | Target container or component identifier (e.g. `CNT-AUTH-SERVICE`, `CMP-AUTH-VALIDATOR`) |
 | `--task` | `-t` | Free-text task prompt or issue description |
 | `--tier` | `-T` | Context tier: `anchor`, `guardrails` (default), or `deep` |
 | `--format` | | Output format: `markdown` (default) or `json` |
@@ -81,10 +81,10 @@ eidos index sync --force
 
 ## 4. Automatic Zero-Drift Freshness
 
-The context engine is backed by an embedded SQLite knowledge graph (`.eidos/cache/index.db`) using Python's standard library `sqlite3`:
+The context engine is backed by an embedded SQLite knowledge graph (`eidos/.cache/index.db`) using Python's standard library `sqlite3`:
 1. **Sub-3ms Dirty Checking**: Before executing any query or CLI command, `is_dirty()` compares disk modification timestamps (`mtime`) and SHA-256 hashes against the cached manifest across living specs, tracked source code, and automated test files.
 2. **Instant Sync**: Only modified or new `.adoc` specs, source code files, or tests are re-parsed into SQLite (<5ms). Clean repositories execute dirty checks in ~1.5ms.
-3. **Transparent Rebuild**: If `.eidos/cache/index.db` is missing or corrupted, it is automatically rebuilt from the living specifications with zero manual developer intervention.
+3. **Transparent Rebuild**: If `eidos/.cache/index.db` is missing or corrupted, it is automatically rebuilt from the living specifications with zero manual developer intervention.
 
 ---
 
@@ -117,13 +117,13 @@ The returned markdown context slice contains 5 structured sections:
 ### 4. Active Invariants & Test Coverage (`INV-*`)
 - **Rule Statement:** The non-negotiable architectural or business rule that must hold true.
 - **Coverage Status:**
-  - `[✓ Covered]`: Bound test file/function exists and passes in the test suite.
-  - `[⚠️ Uncovered]`: Invariant lacks automated test coverage.
-- **Test Binding:** Explicit path to the test file or test item (e.g. `tests/test_drift.py::test_reconcile_specs`).
-- **Golden Rule:** Code changes must never cause a covered invariant to become uncovered or fail. New capabilities must declare invariants and provide test coverage.
+  - `[✓ Covered]`: Bound test file/function exists and references the invariant ID.
+  - `[⚠️ Uncovered]`: Invariant lacks verified automated test binding.
+- **Test Binding:** Explicit path to the test file or test item (e.g. `tests/test_auth.py::test_token_expiry`).
+- **Golden Rule:** Code changes must never cause a covered invariant to become uncovered. New capabilities must declare invariants and provide test bindings.
 
 ### 5. Governing Policies (`POL-*`)
-- Non-negotiable repository policies governing the repository (e.g., `POL-001` Git Source of Truth, `POL-002` Invariant Test Enforcement, `POL-003` Continuous Documentation Sync).
+- Non-negotiable repository policies governing the repository (`POL-*`).
 
 ---
 

@@ -22,7 +22,7 @@ Initializing an Eidos workspace establishes the empty living specification skele
    - `eidos/deltas/` — active and historical SpecDeltas (`DLT-*`).
    - `eidos/explorations/` — spike discoveries and hypothesis documents (`EXP-*`).
    - `eidos/design/` — client applications, screens, flows, and design systems.
-3. **Architectural Index Synchronization**: Update and populate the embedded SQLite architectural knowledge graph index (`.eidos/cache/index.db`) via `eidos index sync`.
+3. **Architectural Index Synchronization**: Update and populate the embedded SQLite architectural knowledge graph index (`eidos/.cache/index.db`) via `eidos index sync`.
 
 ---
 
@@ -57,7 +57,7 @@ Inspect the repository root to determine:
 Invoke `eidos init` via CLI:
 - Scaffolds the complete `eidos/` empty directory layout with an empty `system.adoc` (without example specs).
 - Places `.gitkeep` files in empty directories so they are tracked by Git.
-- Creates self-contained `eidos/.gitignore` targeting `deltas/by-status/`.
+- Creates self-contained `eidos/.gitignore` targeting `deltas/by-status/` and `.cache/`.
 - Runs immediate validation check.
 - Note: `eidos init` initializes Eidos specifications and does not install plugins (plugins can be installed separately via `eidos plugin install`).
 
@@ -82,13 +82,9 @@ Review and flesh out the C4 Level 1-2 architecture:
 - Define `c4_context.external_systems`: Third-party APIs, authentication providers, remote databases.
 - Declare `c4_containers`: If containers/services exist, scaffold container manifests via `eidos spec create container CNT-*`.
 
-### Step 5: Review & Enforce Baseline Policies
+### Step 5: Review & Author Repository Policies (`eidos/policies/`)
 
-Eidos initializes two non-negotiable policies:
-1. `POL-001-GIT-SOURCE-OF-TRUTH`: Ensures all specifications and architectures are versioned in Git.
-2. `POL-002-INVARIANT-TEST-ENFORCEMENT`: Mandates that all capability invariants have automated test bindings.
-
-If the project requires domain-specific guardrails (e.g. compliance, security, zero-ADR), add them via `eidos spec create policy`.
+If the project requires domain-specific or repository-wide guardrails (e.g. compliance, security, invariant test enforcement, zero-ADR), scaffold them via `eidos spec create policy POL-*`.
 
 ### Step 6: Validate Specification Integrity
 
@@ -114,7 +110,7 @@ eidos index sync --force
 eidos index status
 ```
 
-Updating the index builds `.eidos/cache/index.db` and ensures `eidos context`, `eidos index search`, and dependency blast-radius queries have up-to-date graph metadata immediately available.
+Updating the index builds `eidos/.cache/index.db` and ensures `eidos context`, `eidos index search`, and dependency blast-radius queries have up-to-date graph metadata immediately available.
 
 ---
 

@@ -2,10 +2,10 @@
 type: product/capability
 schema: schemas/v1/product/capability.schema.yaml
 id: CAP-VCS-001
-title: "Git-Native Drift Detection & GitHub/GitLab Bridge"
+title: "Git-Native Spec-to-Code Drift Detection"
 domain: DOM-VCS-LIFECYCLE
 status: active
-version: "1.1.0"
+version: "1.2.0"
 
 business:
   personas:
@@ -13,33 +13,32 @@ business:
     - eidos/personas/software-engineer.adoc
     - eidos/personas/product-lead.adoc
     - eidos/personas/autonomous-agent.adoc
-  jtbd: "Detect and reconcile code-to-spec drift continuously across local working trees, and synchronize GitLab and GitHub bridge pull requests without manual documentation maintenance."
+  jtbd: "Detect and reconcile structural code-to-spec drift continuously across local working trees and Git commit ranges without manual documentation maintenance."
   policies:
     - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
 
 technical:
+  containers:
+    - "CNT-EIDOS-VCS"
+    - "CNT-EIDOS-INDEX"
   components:
-    - "src/eidos/vcs/drift.py"
-    - "src/eidos/core/graph_index.py"
+    - "CMP-DRIFT-DETECTOR"
   contracts:
     interfaces:
-      - "eidos drift [--strict]"
+      - "eidos drift [--uncommitted]"
       - "eidos reconcile"
   invariants:
     - id: INV-DRIFT-DETECTION-ACCURACY
-      rule: "The drift detection engine must accurately identify all uncommitted or branched code modifications and classify spec synchronization status."
-      test_binding: "tests/test_drift.py::test_drift_detector_clean_repo"
-    - id: INV-VCS-PARITY
-      rule: "All capabilities, status labels, and comment triggers supported on GitHub must have direct feature parity on GitLab."
-      test_binding: "tests/test_drift.py::test_drift_status_reporting"
+      rule: "The drift detection engine must accurately identify structural code modifications and verify synchronization with owning or 1-hop linked living specifications."
+      test_binding: "tests/test_drift.py::test_drift_detection_code_without_specs"
 ---
-= Capability: Git-Native Drift Detection & Reconciliation Gate
+= Capability: Git-Native Spec-to-Code Drift Detection
 :toc: left
 
 == Intent
-Ensures that source code and living specifications never diverge. Through local Git diff analysis, embedded knowledge graph lookups, and automated CI/CD gating, Eidos continuously verifies that code modifications are paired with living specification updates, preserving system documentation integrity with zero manual overhead.
+Ensures that source code and living specifications never diverge. Through local Git diff analysis, AST structural symbol comparison, embedded knowledge graph lookups, and automated CI/CD gating, Eidos continuously verifies that structural code modifications are paired with living specification updates, preserving system documentation integrity with zero manual overhead.
 
-By leveraging the SQLite Knowledge Graph (`.eidos/cache/index.db`), drift detection and reconciliation map code diffs directly to architectural components and traverse relational neighborhoods to recommend exact specification targets.
+By leveraging the SQLite Knowledge Graph (`eidos/.cache/index.db`), drift detection and reconciliation map code diffs directly to architectural components and traverse 1-hop relational neighborhoods to recommend exact specification targets.
 
 == Key Responsibilities
 * **Git Diff Inspection**: Inspecting working trees, staged changes, and branch heads for unmapped architectural modifications.

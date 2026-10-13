@@ -11,39 +11,29 @@ Eidos is packaged as `eidos-ai` on PyPI and supports Python 3.11, 3.12, 3.13, 3.
 
 ---
 
-## Installing via uv (Recommended)
+## Installing via uv tool (Recommended)
 
-[uv](https://github.com/astral-sh/uv) is the recommended package manager for Eidos.
+Eidos is a language-agnostic CLI tool that should be installed in an isolated tool environment rather than added to your application's runtime dependencies.
 
-To add Eidos to your project environment:
+[uv](https://github.com/astral-sh/uv) is the recommended tool installer for Eidos:
 
 ```bash
-uv add eidos-ai
+uv tool install eidos-ai
 ```
 
-To run Eidos directly without installing it into a project:
+To run Eidos ephemerally without installing it permanently:
 
 ```bash
 uvx eidos-ai --help
-```
-
----
-
-## Installing via pip
-
-You can install Eidos directly into any virtual environment:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install eidos-ai
+# Or run specific subcommands via uvx:
+uvx --from eidos-ai eidos doctor
 ```
 
 ---
 
 ## Installing via pipx
 
-If you want the `eidos` CLI tool globally available across your system:
+You can also install the `eidos` CLI globally in an isolated environment using [pipx](https://pipx.pypa.io/):
 
 ```bash
 pipx install eidos-ai
@@ -53,29 +43,23 @@ pipx install eidos-ai
 
 ## Optional Extras
 
-Eidos provides optional feature sets that can be installed on demand:
+Eidos provides optional feature sets that can be included when installing the CLI tool:
 
 | Extra | Description | Installation |
 | :--- | :--- | :--- |
-| `ast` | Polyglot AST code indexing via `ast-grep` (Python, TS/JS, Go, Rust) | `pip install "eidos-ai[ast]"` |
-| `docs` | Documentation building with Zensical | `pip install "eidos-ai[docs]"` |
-| `dev` | Test suite (`pytest`, `pytest-cov`, `ruff`) | `pip install "eidos-ai[dev]"` |
-
-Using `uv`:
-
-```bash
-uv sync --all-extras --dev
-```
+| `ast` | Polyglot AST code indexing via `ast-grep` (Python, TS/JS, Go, Rust) | `uv tool install "eidos-ai[ast]"` or `pipx install "eidos-ai[ast]"` |
+| `docs` | Documentation site building with Zensical | `uv tool install "eidos-ai[docs]"` |
+| `dev` | Contributor test suite (`pytest`, `pytest-cov`, `ruff`) | `uv sync --all-extras --dev` |
 
 ---
 
 ## Verifying Installation
 
-Verify that the CLI command is registered and accessible:
+Verify that the CLI binary is registered on your `PATH` and inspect workspace health:
 
 ```bash
 eidos --version
-eidos --help
+eidos doctor
 ```
 
 You are now ready to run the **[Quickstart Guide](quickstart.md)**!

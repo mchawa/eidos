@@ -41,11 +41,9 @@ experience:
     - "eidos/design/systems/core/components/portal-reader.adoc"
 
 technical:
-  components:
-    - "src/eidos/portal/server.py"
-    - "src/eidos/portal/generator.py"
-    - "src/eidos/portal/assets.py"
-    - "src/eidos/portal/builder.py"
+  containers:
+    - "CNT-EIDOS-PORTAL"
+    - "CNT-EIDOS-CLI"
   contracts:
     interfaces:
       - "eidos portal serve [--port <port>] (shortcut: eidos serve)"

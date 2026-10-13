@@ -16,11 +16,14 @@ This repository dogfoods the **Eidos Specification Standard** to define Eidos it
 ## Quickstart
 
 ```bash
-# Install with uv (recommended)
-uv add --dev eidos-ai
+# Install globally as a standalone CLI tool with uv (recommended)
+uv tool install eidos-ai
 
-# Or with pip
-pip install eidos-ai
+# Or install with pipx
+pipx install eidos-ai
+
+# Or run ephemerally without installing
+uvx eidos-ai --help
 
 # Initialize Eidos in your repository
 eidos init
@@ -80,7 +83,7 @@ eidos/
 | **Specifications** | Ephemeral Jira tickets, stale Confluence/Notion pages | Versioned YAML frontmatter + AsciiDoc living in Git |
 | **Change Management** | Narrative RFC essays that rot in archive folders | Declarative `SpecDelta` mutations applied automatically upon merge |
 | **Agent Support** | Vendor-locked to a single proprietary LLM | Agent-agnostic via agent-plugins.org v1.0.0 & CLI-first Agent Skills |
-| **VCS Support** | GitHub-only or closed web UI | Native bidirectional support for both GitHub and GitLab |
+| **VCS Support** | Tied to a single SaaS platform or closed web UI | 100% Git-native local repository engine |
 
 ---
 

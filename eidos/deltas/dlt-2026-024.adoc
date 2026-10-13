@@ -1,0 +1,63 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-024
+title: Tool-Only Installation, CLI-Native Agent Hooks, and Block-Once Stop Gate
+status: applied
+vcs:
+  branch: feat/tool-only-install-and-hooks
+intent:
+  kind: architectural_refactor
+  motivation: Eliminate virtual-environment coupled hook scripts and project dependency
+    pollution by standardizing Eidos as a standalone developer tool ('uv tool install
+    eidos-ai', 'pipx install eidos-ai', 'uvx eidos-ai'), migrating agent lifecycle
+    hooks into native CLI subcommands ('eidos hook lint', 'eidos hook drift'), and
+    enforcing a stateful Block-Once Stop gate.
+mutations:
+- action: modify_component
+  target_component: CNT-EIDOS-PLUGIN
+  details: Add 'src/eidos/plugin/hooks.py' implementing CLI-native agent lifecycle
+    hook execution ('run_lint_hook' and 'run_drift_hook') and a stateful Block-Once
+    Stop gate that persists a SHA-256 failure fingerprint in 'eidos/.cache/stop-gate.json'
+    to block the first turn completion on drift or validation errors while allowing
+    a subsequent Stop with the same fingerprint.
+- action: modify_component
+  target_component: CNT-EIDOS-CLI
+  details: Expose 'eidos hook lint', 'eidos hook drift', and 'eidos doctor' commands
+    in 'src/eidos/cli/main.py', and register both 'eidos' and 'eidos-ai' console script
+    entry points in 'pyproject.toml'.
+- action: modify_contract
+  target_contract: CTR-EIDOS-CLI
+  details: Document 'eidos hook lint', 'eidos hook drift', and 'eidos doctor' in 'eidos/architecture/contracts/cli.adoc'
+    and update installation guidance across documentation and skills to exclusively
+    use 'uv tool install eidos-ai', 'pipx install eidos-ai', and 'uvx eidos-ai'.
+- action: extend_capability
+  target_capability: CAP-AGENT-001
+  details: Upgrade agent lifecycle hooks to execute through the globally installed
+    'eidos' CLI binary (with 'uvx eidos-ai' fallback) and enforce the Block-Once Stop
+    gate.
+blast_radius:
+  impacted_components:
+  - CNT-EIDOS-PLUGIN
+  - CNT-EIDOS-CLI
+---
+= SpecDelta: Tool-Only Installation, CLI-Native Agent Hooks, and Block-Once Stop Gate
+:toc: left
+
+== Problem Statement
+
+Previously, Eidos documentation mixed `uv add eidos-ai` with `uv tool install`, and the bundled plugin hooks (`hooks.json`) invoked copied Python scripts (`python3 .agents/plugins/eidos/scripts/lint_docs.py` and `check_drift.py`) that failed with `ModuleNotFoundError: No module named 'eidos'` in non-Python repositories or isolated virtual environments. Furthermore, the `Stop` hook only emitted a passive `systemMessage` without blocking an agent from finishing a turn with drifted specifications.
+
+== Architectural & Behavioral Mutations
+
+1. **Tool-Only Installation**:
+   * Standardize installation exclusively around `uv tool install eidos-ai`, `pipx install eidos-ai`, and ephemeral `uvx eidos-ai`.
+   * Expose both `eidos` and `eidos-ai` script entry points in `pyproject.toml`.
+2. **CLI-Native Hooks (`eidos hook lint`, `eidos hook drift`) & `eidos doctor`**:
+   * Implement `src/eidos/plugin/hooks.py` and wire `eidos hook lint` and `eidos hook drift` in `src/eidos/cli/main.py`.
+   * Keep lightweight forwarding shims in `scripts/lint_docs.py` and `scripts/check_drift.py` that delegate to `eidos hook` (falling back to `uvx --from eidos-ai eidos hook`).
+3. **Block-Once Stop Gate**:
+   * On `Stop`, if specification validation or drift fails, compute a SHA-256 fingerprint of the failure state and store it in `eidos/.cache/stop-gate.json`.
+   * First `Stop` with a new fingerprint returns `{"decision": "continue", "reason": ...}` to block turn completion and instruct the agent to reconcile specs.
+   * If the agent attempts to stop a second time with the identical failure fingerprint, clear `eidos/.cache/stop-gate.json` and return `{"decision": "allow", "systemMessage": ...}` to prevent infinite loops.
+

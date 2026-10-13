@@ -20,7 +20,7 @@ runner = CliRunner()
 
 
 def test_portal_data_generation():
-    """Verify portal data model synthesis across living specifications (INV-LIVING-PORTAL-VISUALIZATION)."""
+    """Verify portal data model synthesis across living specifications (INV-LIVING-PORTAL-VISUALIZATION, INV-PORTAL-ZERO-NODE-DEP, INV-W3C-DTCG-COMPLIANCE)."""
     data = get_portal_data(Path("eidos"))
 
     ov = data["overview"]
@@ -88,7 +88,7 @@ def test_portal_data_generation():
 
 
 def test_static_portal_builder(tmp_path: Path):
-    """Verify compiling the standalone static portal folder for GitHub/GitLab Pages."""
+    """Verify compiling the standalone static portal folder for GitHub/GitLab Pages (INV-PORTAL-INTERACTIVE-C4)."""
     out_dir = tmp_path / "docs_site"
     res_dir = build_static_portal(Path("eidos"), out_dir)
 

@@ -1,0 +1,49 @@
+---
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
+id: CNT-EIDOS-VCS
+name: "Eidos Git Drift & Lifecycle Engine"
+container_type: "library"
+runtime: "Python 3.12 / Git CLI / AST"
+package_path: "src/eidos/vcs"
+
+domain_binding: DOM-VCS-LIFECYCLE
+tier: core
+
+components:
+  - id: CMP-DRIFT-DETECTOR
+    name: "DriftDetector"
+    responsibility: "Analyzes Git diffs and working-tree changes, evaluates structural AST symbol modifications, verifies static invariant test bindings, and detects spec-to-code drift across 1-hop knowledge graph neighborhoods."
+    source_path: "src/eidos/vcs/drift.py"
+
+dependencies:
+  internal_containers:
+    - "CNT-EIDOS-CORE"
+    - "CNT-EIDOS-INDEX"
+  external_services:
+    - "Git CLI (local)"
+
+contracts:
+  provides: []
+  consumes: []
+
+quality_attributes:
+  stateless: true
+  idempotent: true
+  concurrency_model: "synchronous_library"
+  max_memory_mb: 128
+---
+= Container: Eidos Git Drift & Lifecycle Engine (C4 Level 2 Container & Level 3 Components)
+:toc: left
+
+== Architectural Boundary
+This container represents the Git-native drift detection and specification reconciliation engine under `src/eidos/vcs/`. It inspects Git commit ranges and uncommitted working-tree diffs, performs structural AST symbol comparison, verifies static invariant test bindings (`file::func`), and evaluates 1-hop knowledge graph neighborhoods to detect specification-to-code drift.
+
+== Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
+
+[cols="1,1,2,2", options="header"]
+|===
+| Component ID | Name | Responsibility | Source Path
+| `CMP-DRIFT-DETECTOR` | **DriftDetector** | Structural Git diff inspection, static invariant test verification, and 1-hop graph drift analysis | `src/eidos/vcs/drift.py`
+|===
+

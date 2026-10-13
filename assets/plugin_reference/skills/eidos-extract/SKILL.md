@@ -17,7 +17,7 @@ Transform an unannotated codebase into a synchronized, self-describing Eidos wor
 4. **Capabilities** (`eidos/domains/<name>/capabilities/*.adoc`) &larr; Harvested from business workflows, domain logic, and user journeys.
 5. **Invariants** (`INV-*` test bindings) &larr; Harvested from assertions, validation logic, and the `tests/` directory.
 6. **Policies** (`eidos/policies/POL-*.adoc`) &larr; Harvested from linter configurations, CI checks, and architectural guardrails.
-7. **Architectural Index** (`.eidos/cache/index.db`) &larr; Populated and synchronized at the end via `eidos index sync` to power AI context slicing and graph queries.
+7. **Architectural Index** (`eidos/.cache/index.db`) &larr; Populated and synchronized at the end via `eidos index sync` to power AI context slicing and graph queries.
 
 ---
 
@@ -105,7 +105,7 @@ Group code by business responsibility using Domain-Driven Design (DDD) taxonomy.
      - `core`: Unique differentiator (e.g. trading algorithm, recommendation engine).
      - `supporting`: Custom internal helpers (e.g. report generator).
      - `generic`: Common commodity (e.g. auth, notifications).
-     - `platform`: Infrastructure, telemetry, VCS bridge.
+     - `platform`: Infrastructure, telemetry, developer platform.
 
 2. **Scaffold Domains**:
    ```bash
@@ -142,8 +142,10 @@ Extract concrete user capabilities from controllers, services, and domain logic.
    Add them under `technical.invariants` in `eidos/domains/<domain>/capabilities/*.adoc`:
    ```yaml
    technical:
+     containers:
+       - "CNT-BILLING-SERVICE"
      components:
-       - "CMP-BILLING-SERVICE"
+       - "CMP-BILLING-INVOICE"
      contracts:
        interfaces:
          - "CTR-BILLING-API"
@@ -158,7 +160,7 @@ Extract concrete user capabilities from controllers, services, and domain logic.
 
 ---
 
-### Phase 5: Invariant-Test Traceability (`POL-002`)
+### Phase 5: Invariant-Test Traceability (`INV-*` / `POL-*`)
 
 Bind existing automated tests directly to harvested invariants.
 
@@ -170,7 +172,7 @@ Bind existing automated tests directly to harvested invariants.
    - Annotate the test in code with docstring or comment referencing `INV-*`:
      ```python
      def test_charge_positive():
-         """Verify invoice amount positivity (INV-BILL-NON-NEGATIVE-AMOUNT, POL-002)."""
+         """Verify invoice amount positivity (INV-BILL-NON-NEGATIVE-AMOUNT)."""
          ...
      ```
 
@@ -186,11 +188,11 @@ Extract universal architectural guardrails and engineering ground truth.
 1. **Locate Guardrails**:
    - Monorepo boundary rules (`nx.json`, `lerna.json`, ESLint boundary rules).
    - Data security & privacy rules (encryption at rest, PII retention).
-   - Core invariants (e.g. `POL-001-GIT-SOURCE-OF-TRUTH`, `POL-002-INVARIANT-TEST-ENFORCEMENT`).
+   - Core governance policies (`POL-*`).
 
 2. **Scaffold Policies**:
    ```bash
-   eidos spec create policy POL-003-DATABASE-ISOLATION \
+   eidos spec create policy POL-DATABASE-ISOLATION \
      --title "Multi-Tenant Data Isolation" \
      --category security \
      --rule "Every database query must filter by tenant_id partition key."
@@ -242,7 +244,7 @@ Assemble the top-level System Context, validate the extracted specifications, an
    # Verify index status, cache health, and registered entities
    eidos index status
    ```
-   This populates `.eidos/cache/index.db` and ensures `eidos context`, `eidos index search`, and dependency blast-radius queries have up-to-date graph metadata immediately available.
+   This populates `eidos/.cache/index.db` and ensures `eidos context`, `eidos index search`, and dependency blast-radius queries have up-to-date graph metadata immediately available.
 
 4. **Commit the Extraction**:
    Commit the complete `eidos/` specification baseline to git.

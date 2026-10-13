@@ -22,7 +22,7 @@ Whenever operating within a repository containing an `eidos/` directory, adhere 
 3. **Dual Workflows (Direct vs. Planned)**:
    - **Direct Mode (Default):** Co-evolve code in `src/` and specs in `eidos/` in the same turn/commit. Git diffs serve as the change delta.
    - **Planned Mode:** For breaking, cross-container, or high-risk changes, scaffold a SpecDelta (`DLT-*`) via `eidos delta create <id>`, implement against the checklist, and reconcile via `eidos delta apply <id>`.
-4. **Invariant-Test Traceability (`POL-002`)**: Every policy (`POL-*`) and capability (`CAP-*`) declares testable invariants (`INV-*`). All automated tests must explicitly reference these IDs.
+4. **Invariant-Test Traceability (`INV-*` / `POL-*`)**: Every policy (`POL-*`) and capability (`CAP-*`) declares testable invariants (`INV-*`). All automated tests must explicitly reference these IDs.
 5. **Zero-Drift & Graph Integrity**: Never conclude a task with broken references, unvalidated schemas, or unmanaged drift. Always pass `eidos validate eidos && eidos drift --uncommitted`.
 
 ---
@@ -106,11 +106,11 @@ All inspection and mutation commands provide deterministic `--json` outputs for 
 
 ---
 
-## 5. Polyglot Invariant Test Tagging (`POL-002`)
+## 5. Polyglot Invariant Test Tagging (`INV-*` / `POL-*`)
 
 All automated tests verifying capability invariants (`INV-*`) or policies (`POL-*`) must declare explicit bindings:
 
-| Language / Framework | Invariant Test Tagging Convention (`POL-002`) |
+| Language / Framework | Invariant Test Tagging Convention |
 | :--- | :--- |
 | **Python (pytest)** | `@pytest.mark.invariant("INV-ID")` or docstring `"""INV-ID: ..."""` |
 | **TypeScript / JS (Vitest/Jest)** | `test('INV-ID: description', () => ...)` or JSDoc `@invariant INV-ID` |

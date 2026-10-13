@@ -127,10 +127,10 @@ def create_spec(
     protocol: str = "cli_args",
     owning_container: str | None = None,
     owning_component: str | None = None,
-    specification_file: str = "src/eidos/cli/main.py",
-    container_type: str = "library",
-    runtime: str = "Python 3.12 / Typer / Hatchling",
-    package_path: str = "src/eidos",
+    specification_file: str = "src/main.py",
+    container_type: str = "service",
+    runtime: str = "Application Runtime",
+    package_path: str = "src",
     role_type: str = "human_engineer",
     jtbd: str = "When executing lifecycle commands, I want automated scaffolding so that specs are valid.",
     client_id: str | None = None,
@@ -207,7 +207,30 @@ Describe the exact behavioral diffs, mutations, and invariant updates here.
 """
 
     elif canonical_key == "capability":
-        parent_domain = domain or "DOM-SPEC-ENGINE"
+        specs_by_id, _, _ = _build_spec_catalog(eidos_dir)
+        if domain:
+            parent_domain = domain
+        else:
+            existing_domains = sorted(did for did, (_, dt, _) in specs_by_id.items() if dt == "product/domain")
+            parent_domain = existing_domains[0] if existing_domains else "DOM-CORE"
+
+        cnt_ref = owning_container
+        if not cnt_ref:
+            if owning_component and owning_component.startswith("CNT-"):
+                cnt_ref = owning_component
+            else:
+                existing_cnts = sorted(
+                    cid for cid, (_, dt, _) in specs_by_id.items() if dt == "tech/container"
+                )
+                cnt_ref = existing_cnts[0] if existing_cnts else "CNT-CORE"
+
+        comp_block = ""
+        if owning_component and owning_component != cnt_ref:
+            comp_block = f"  components:\n    - \"{owning_component}\"\n"
+
+        existing_personas = sorted((eidos_dir / "personas").glob("*.adoc")) if (eidos_dir / "personas").exists() else []
+        persona_ref = f"eidos/personas/{existing_personas[0].name}" if existing_personas else "PER-USER"
+
         domain_slug = parent_domain.lower().replace("dom-", "")
         # Find if domains/<domain_slug> exists
         domain_dirs = list(eidos_dir.glob(f"domains/*{domain_slug}*"))
@@ -227,13 +250,13 @@ version: "1.0.0"
 
 business:
   personas:
-    - eidos/personas/product-lead.adoc
+    - {persona_ref}
   jtbd: "{jtbd}"
 
 technical:
-  components:
-    - "{owning_component}"
-  contracts:
+  containers:
+    - "{cnt_ref}"
+{comp_block}  contracts:
     interfaces: []
   invariants: []
 ---
@@ -294,7 +317,13 @@ Explain why this non-negotiable architectural or product guardrail exists.
     elif canonical_key == "contract":
         dest_dir = eidos_dir / "architecture" / "contracts"
         dest_file = dest_dir / f"{slug}.adoc"
-        owner_id = owning_container or owning_component or "CNT-EIDOS-CORE"
+        owner_id = owning_container or owning_component
+        if not owner_id:
+            specs_by_id, _, _ = _build_spec_catalog(eidos_dir)
+            existing_comps = sorted(
+                cid for cid, (_, dt, _) in specs_by_id.items() if dt in ("tech/container", "tech/component")
+            )
+            owner_id = existing_comps[0] if existing_comps else "CNT-CORE"
         content = f"""---
 type: tech/contract
 schema: schemas/v1/tech/contract.schema.yaml
@@ -678,21 +707,28 @@ def list_specs(
 
 
 def _ensure_eidos_gitignore(eidos_dir: Path) -> None:
-    """Ensure eidos/.gitignore is present and ignores generated symlink views so host projects remain unpolluted."""
+    """Ensure eidos/.gitignore is present and ignores generated symlink views and cache so host projects remain unpolluted."""
     gitignore_path = eidos_dir / ".gitignore"
-    rule = "deltas/by-status/"
+    default_content = (
+        "# Eidos living specification lifecycle views (generated symlinks) and local index cache\n"
+        "deltas/by-status/\n"
+        ".cache/\n"
+    )
     if not gitignore_path.exists():
         with contextlib.suppress(Exception):
-            gitignore_path.write_text(
-                f"# Eidos living specification lifecycle views (generated symlinks)\n{rule}\n",
-                encoding="utf-8",
-            )
+            gitignore_path.write_text(default_content, encoding="utf-8")
     else:
         with contextlib.suppress(Exception):
             content = gitignore_path.read_text(encoding="utf-8")
+            missing: list[str] = []
             if "deltas/by-status" not in content and "by-status" not in content:
+                missing.append("deltas/by-status/")
+            if ".cache" not in content:
+                missing.append(".cache/")
+            if missing:
+                extra = "\n".join(missing)
                 gitignore_path.write_text(
-                    f"{content.rstrip()}\n\n# Eidos living specification lifecycle views (generated symlinks)\n{rule}\n",
+                    f"{content.rstrip()}\n\n# Eidos generated views and cache\n{extra}\n",
                     encoding="utf-8",
                 )
 
@@ -1072,7 +1108,7 @@ def execute_delta_mutations(
                 domain = m.get("target_domain")
                 if not domain:
                     domains = [did for did, (_, dt, _) in specs_by_id.items() if dt == "product/domain"]
-                    domain = domains[0] if domains else "DOM-SPEC-ENGINE"
+                    domain = domains[0] if domains else "DOM-CORE"
                 title = m.get("title") or target_id.replace("CAP-", "").replace("-", " ").title()
                 created = create_spec(
                     eidos_dir=eidos_dir,
@@ -1348,7 +1384,7 @@ def init_repository(
     # Ensure any additional empty leaf directories under eidos_dir are tracked by .gitkeep
     for current_dir, dirnames, filenames in os.walk(eidos_dir):
         p = Path(current_dir)
-        if "by-status" in p.parts:
+        if "by-status" in p.parts or ".cache" in p.parts:
             continue
         if not dirnames and not filenames:
             gitkeep = p / ".gitkeep"
@@ -1450,7 +1486,7 @@ id: {norm_id}
 name: "{comp_name}"
 container: {container_id}
 status: active
-package_path: "{source_path_str}"
+source_path: "{source_path_str}"
 responsibility: >
   {responsibility}
 
@@ -1547,7 +1583,7 @@ def inline_component(
     comp_fm = comp_doc.frontmatter or {}
     name = comp_fm.get("name", norm_id)
     responsibility = comp_fm.get("responsibility", "In-process module logic.")
-    source_path = comp_fm.get("package_path", comp_fm.get("source_path", ""))
+    source_path = comp_fm.get("source_path", comp_fm.get("package_path", ""))
 
     # Update container frontmatter
     raw_text = target_container_path.read_text(encoding="utf-8")

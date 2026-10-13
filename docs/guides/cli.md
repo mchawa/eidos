@@ -331,7 +331,7 @@ eidos components CNT-EIDOS-CORE
 ## 5. Knowledge Graph & AI Context
 
 ### `eidos index`
-Manage and query the embedded SQLite architectural knowledge graph and FTS5 hybrid search index (`.eidos/cache/index.db`).
+Manage and query the embedded SQLite architectural knowledge graph and FTS5 hybrid search index (`eidos/.cache/index.db`).
 
 The index initializes automatically on first use and lazily resynchronizes before every query with sub-2ms dirty checking, guaranteeing zero drift.
 
@@ -444,7 +444,7 @@ eidos context -c CMP-EIDOS-CORE --tier anchor
 eidos context -c CMP-EIDOS-CORE --tier deep
 
 # Slice context from a free-text task description
-eidos context -t "Implement Git and GitLab synchronization bridge"
+eidos context -t "Implement Git-native drift detection"
 
 # Output in JSON format
 eidos context -c CMP-EIDOS-CORE --format json
@@ -508,6 +508,29 @@ Sub-commands:
 
 ---
 
+### `eidos hook`
+CLI-native lifecycle hook handlers invoked by AI coding agent harnesses (`PreToolUse`, `PostInvocation`, and Block-Once `Stop` gate):
+
+```bash
+eidos hook lint --event pre_tool
+eidos hook lint --event post_invocation
+eidos hook lint --event stop
+eidos hook drift --event post_invocation
+eidos hook drift --event stop
+```
+
+---
+
+### `eidos doctor`
+Verify Eidos tool installation, AST engine status, specification directory health, and installed agent plugin hooks:
+
+```bash
+eidos doctor
+eidos doctor --json
+```
+
+---
+
 ### `eidos install`
 Convenience shortcut for `eidos plugin install`. Installs the Eidos Agent Plugin or client integrations into project scope.
 
@@ -532,6 +555,7 @@ Eidos provides intuitive root-level shortcuts for common workflows:
 
 * `eidos install [TARGET]`: Direct shortcut to `eidos plugin install` (e.g. `eidos install claude`).
 * `eidos uninstall [TARGET]`: Direct shortcut to `eidos plugin uninstall`.
+* `eidos doctor [--json]`: Inspect Eidos CLI, AST engine, and plugin hook health.
 * `eidos serve`: Direct shortcut to `eidos portal serve`.
 * `eidos build-site`: Direct shortcut to `eidos portal build`.
 * `eidos drift`: Runs spec-to-code drift detection.

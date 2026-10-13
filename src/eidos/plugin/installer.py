@@ -76,15 +76,22 @@ def locate_plugin_bundle() -> Path:
     raise FileNotFoundError("Could not locate Eidos plugin reference in assets or repository.")
 
 
-def _copy_plugin_tree(source_dir: Path, target_dir: Path, force: bool = False) -> list[Path]:
+def _copy_plugin_tree(
+    source_dir: Path, target_dir: Path, force: bool = False, launcher: str = "eidos"
+) -> list[Path]:
     """Copy all plugin files to target destination within the project."""
     target_dir.mkdir(parents=True, exist_ok=True)
+    # Remove legacy scripts directory if no longer present in source bundle
+    legacy_scripts = target_dir / "scripts"
+    if legacy_scripts.exists() and not (source_dir / "scripts").exists():
+        with contextlib.suppress(OSError):
+            shutil.rmtree(legacy_scripts)
     created = []
     for item in source_dir.rglob("*"):
         if item.is_file():
             rel = item.relative_to(source_dir)
             # Never copy internal cache or assistant-specific directories into plugins
-            if any(part in (".claude-plugin", ".eidos", ".git") for part in rel.parts):
+            if any(part in (".claude-plugin", ".eidos", ".cache", ".git") for part in rel.parts):
                 continue
             # Never copy legacy MCP configuration files into target plugins
             if rel.name in (".mcp.json", "mcp.json", "mcp_config.json"):
@@ -105,6 +112,16 @@ def _copy_plugin_tree(source_dir: Path, target_dir: Path, force: bool = False) -
                 data["version"] = bundled_ver
                 with open(target_manifest, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2)
+        except Exception:
+            pass
+
+    # Rewrite hook commands if launcher == "uvx"
+    target_hooks = target_dir / "hooks.json"
+    if target_hooks.exists() and launcher == "uvx":
+        try:
+            hooks_text = target_hooks.read_text(encoding="utf-8")
+            hooks_text = hooks_text.replace('"command": "eidos hook ', '"command": "uvx --from eidos-ai eidos hook ')
+            target_hooks.write_text(hooks_text, encoding="utf-8")
         except Exception:
             pass
 
@@ -261,11 +278,12 @@ def _ensure_claude_plugin_manifest(target_dir: Path) -> list[Path]:
     return created
 
 
-def _write_claude_commands(target_dir: Path) -> list[Path]:
+def _write_claude_commands(target_dir: Path, launcher: str = "eidos") -> list[Path]:
     """Write Claude Code slash commands to target_dir/commands/ (Layer 2: Commands)."""
     commands_dir = target_dir / "commands"
     commands_dir.mkdir(parents=True, exist_ok=True)
     created = []
+    cmd_prefix = "uvx --from eidos-ai eidos" if launcher == "uvx" else "eidos"
 
     commands = {
         "validate.md": (
@@ -274,7 +292,7 @@ def _write_claude_commands(target_dir: Path) -> list[Path]:
             "---\n\n"
             "Run specification validation:\n"
             "```bash\n"
-            "uv run eidos validate eidos\n"
+            f"{cmd_prefix} validate eidos\n"
             "```\n"
         ),
         "drift.md": (
@@ -283,7 +301,7 @@ def _write_claude_commands(target_dir: Path) -> list[Path]:
             "---\n\n"
             "Run drift detection:\n"
             "```bash\n"
-            "uv run eidos drift --uncommitted\n"
+            f"{cmd_prefix} drift --uncommitted\n"
             "```\n"
         ),
         "reconcile.md": (
@@ -292,7 +310,7 @@ def _write_claude_commands(target_dir: Path) -> list[Path]:
             "---\n\n"
             "Run spec reconciliation:\n"
             "```bash\n"
-            "uv run eidos reconcile --uncommitted --prompt\n"
+            f"{cmd_prefix} reconcile --uncommitted --prompt\n"
             "```\n"
         ),
         "context.md": (
@@ -301,7 +319,7 @@ def _write_claude_commands(target_dir: Path) -> list[Path]:
             "---\n\n"
             "Extract architectural context:\n"
             "```bash\n"
-            "uv run eidos context\n"
+            f"{cmd_prefix} context\n"
             "```\n"
         ),
     }
@@ -413,7 +431,7 @@ def _write_cursor_rules(file_path: Path) -> Path:
         "## Core Principles\n"
         "- Consult living specifications before modifying code or proposing architectural changes.\n"
         "- Strictly enforce living specifications (NO ADRs). All architectural mutations follow the SpecDelta lifecycle (`eidos/deltas/`).\n"
-        "- Preserve bidirectional invariant-test traceability (`POL-002`).\n"
+        "- Preserve bidirectional invariant-test traceability (`POL-*` and `INV-*`).\n"
         "- Verify specification schemas with `eidos validate eidos` (or `eidos validate --json`).\n"
         "- Verify synchronization with `eidos drift --uncommitted` (or `eidos drift --uncommitted --json`) before finalizing tasks.\n"
         "- Use Eidos CLI commands (`eidos context`, `eidos index search`, `eidos drift`) for real-time inspection.\n"
@@ -795,6 +813,7 @@ def install_plugin(
     project_dir: Path | None = None,
     dest_path: Path | None = None,
     force: bool = True,
+    launcher: str = "eidos",
 ) -> list[InstallResult]:
     """Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos)."""
     source_dir = locate_plugin_bundle()
@@ -804,7 +823,7 @@ def install_plugin(
     # If explicit destination provided, install there directly
     if dest_path is not None:
         target_path = dest_path if dest_path.is_absolute() else (root / dest_path)
-        created = _copy_plugin_tree(source_dir, target_path, force=force)
+        created = _copy_plugin_tree(source_dir, target_path, force=force, launcher=launcher)
         results.append(
             InstallResult(
                 target="custom",
@@ -841,7 +860,7 @@ def install_plugin(
     for t in targets_to_run:
         if t in (PluginInstallTarget.PROJECT, PluginInstallTarget.ANTIGRAVITY):
             plugin_dir = root / ".agents" / "plugins" / "eidos"
-            created = _copy_plugin_tree(source_dir, plugin_dir, force=force)
+            created = _copy_plugin_tree(source_dir, plugin_dir, force=force, launcher=launcher)
             results.append(
                 InstallResult(
                     target=t.value,
@@ -871,12 +890,12 @@ def install_plugin(
 
         elif t == PluginInstallTarget.CLAUDE:
             claude_plugin_dir = root / ".claude" / "plugins" / "eidos"
-            created = _copy_plugin_tree(source_dir, claude_plugin_dir, force=force)
+            created = _copy_plugin_tree(source_dir, claude_plugin_dir, force=force, launcher=launcher)
 
             manifests = _ensure_claude_plugin_manifest(claude_plugin_dir)
             created.extend(manifests)
 
-            commands = _write_claude_commands(claude_plugin_dir)
+            commands = _write_claude_commands(claude_plugin_dir, launcher=launcher)
             created.extend(commands)
 
             claude_skills = root / ".claude" / "skills"
@@ -915,7 +934,7 @@ def install_plugin(
 
         elif t == PluginInstallTarget.CLINE:
             cline_plugin = root / ".cline" / "plugins" / "eidos"
-            created_plugin = _copy_plugin_tree(source_dir, cline_plugin, force=force)
+            created_plugin = _copy_plugin_tree(source_dir, cline_plugin, force=force, launcher=launcher)
 
             cline_skills = root / ".cline" / "skills"
             created_skills = _copy_skills_flat(source_dir, cline_skills, force=force)
@@ -932,7 +951,7 @@ def install_plugin(
 
         elif t in (PluginInstallTarget.OPEN_CODE, PluginInstallTarget.OPENCODE):
             opencode_plugin_dir = root / ".opencode" / "plugins" / "eidos"
-            created_plugin = _copy_plugin_tree(source_dir, opencode_plugin_dir, force=force)
+            created_plugin = _copy_plugin_tree(source_dir, opencode_plugin_dir, force=force, launcher=launcher)
 
             opencode_skills = root / ".opencode" / "skills"
             created_skills = _copy_skills_flat(source_dir, opencode_skills, force=force)
@@ -949,7 +968,7 @@ def install_plugin(
 
         elif t == PluginInstallTarget.CODEX:
             codex_dir = root / ".codex"
-            created_codex = _copy_plugin_tree(source_dir, codex_dir, force=force)
+            created_codex = _copy_plugin_tree(source_dir, codex_dir, force=force, launcher=launcher)
 
             codex_manifest = _ensure_codex_plugin_manifest(codex_dir)
             created_codex.append(codex_manifest)
@@ -974,7 +993,7 @@ def install_plugin(
 
         elif t == PluginInstallTarget.COPILOT:
             copilot_plugin_dir = root / ".github" / "plugin"
-            created_plugin = _copy_plugin_tree(source_dir, copilot_plugin_dir, force=force)
+            created_plugin = _copy_plugin_tree(source_dir, copilot_plugin_dir, force=force, launcher=launcher)
 
             copilot_manifest = _ensure_copilot_plugin_manifest(copilot_plugin_dir)
             created_plugin.append(copilot_manifest)
@@ -1360,6 +1379,7 @@ def update_plugin(
     target: PluginInstallTarget = PluginInstallTarget.PROJECT,
     project_dir: Path | None = None,
     dest_path: Path | None = None,
+    launcher: str = "eidos",
 ) -> tuple[str | None, str, list[InstallResult]]:
     """Update the installed Eidos agent plugin to the latest bundled version.
 
@@ -1368,5 +1388,5 @@ def update_plugin(
     """
     prev_version = get_installed_plugin_version(project_dir=project_dir, dest_path=dest_path)
     bundled_version = get_bundled_plugin_version()
-    results = install_plugin(target=target, project_dir=project_dir, dest_path=dest_path, force=True)
+    results = install_plugin(target=target, project_dir=project_dir, dest_path=dest_path, force=True, launcher=launcher)
     return prev_version, bundled_version, results

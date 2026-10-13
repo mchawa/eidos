@@ -6,10 +6,9 @@ name: "Git-Native Lifecycle & Drift Governance"
 classification: core
 boundaries:
   responsibilities:
-    - "Inspect Git diffs and detect spec-to-code drift across working tree, branches, and commits (eidos drift)."
+    - "Inspect Git diffs and detect structural spec-to-code drift across working tree, branches, and commits (eidos drift)."
     - "Enable frictionless Direct Mode co-evolution and bidirectional specification reconciliation (eidos reconcile)."
     - "Enforce Git as the Single Source of Truth policy (POL-001) in CI/CD pipeline verification gates."
-    - "Provide integration hooks and status checks for GitHub Pull Requests and GitLab Merge Requests."
   out_of_scope:
     - "Parsing and validating specification AST schemas (delegated to DOM-SPEC-ENGINE)."
     - "Agent plugin packaging and skills maintenance (delegated to DOM-AGENT-INTELLIGENCE)."
@@ -17,7 +16,6 @@ boundaries:
 technical_mapping:
   components:
     - "src/eidos/vcs/drift.py"
-    - "src/eidos/vcs/bridge.py"
   dependencies:
     - "DOM-SPEC-ENGINE"
 ---

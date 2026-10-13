@@ -276,6 +276,20 @@ class SpecValidator:
 
             tech = fm.get("technical")
             if isinstance(tech, dict):
+                containers = tech.get("containers", []) or []
+                cnt_list = [containers] if isinstance(containers, str) else containers
+                if isinstance(cnt_list, list):
+                    for cnt in cnt_list:
+                        if (
+                            isinstance(cnt, str)
+                            and (is_entity_id(cnt) or cnt.startswith("CNT-"))
+                            and cnt.strip() not in catalog_ids
+                        ):
+                            report.broken_references.append(
+                                f"Broken entity reference in {doc.file_path.name}: "
+                                f"container '{cnt.strip()}' in technical.containers does not exist in catalog"
+                            )
+
                 components = tech.get("components", []) or []
                 comp_list = [components] if isinstance(components, str) else components
                 if isinstance(comp_list, list):

@@ -10,9 +10,9 @@ c4_context:
     - "eidos/personas/product-lead.adoc"
     - "eidos/personas/autonomous-agent.adoc"
   external_systems:
-    - name: "GitHub / GitLab"
-      role: "Git hosting, Issue/PR webhook synchronization, and CI/CD execution"
-      protocol: "REST / GraphQL Webhooks"
+    - name: "Git Repository & CI/CD Pipeline"
+      role: "Local and remote Git version control, branch diffs, and CI/CD verification gates"
+      protocol: "Git CLI / Subprocess"
     - name: "AI Coding Environments"
       role: "Agent pair programming environments (Antigravity, Cursor, Claude Code) executing Eidos CLI tools"
       protocol: "CLI Subshell / JSON"
@@ -22,7 +22,14 @@ c4_containers:
     name: "Eidos Living Specification & Design Core Engine"
     container_type: "library"
     runtime: "Python 3.12 / Hatchling / PyYAML / jsonschema"
-    package_path: "src/eidos/core"
+    package_path:
+      - "src/eidos/core"
+      - "assets/schemas"
+  - container_ref: "CNT-EIDOS-VCS"
+    name: "Eidos Git Drift & Lifecycle Engine"
+    container_type: "library"
+    runtime: "Python 3.12 / Git CLI / AST"
+    package_path: "src/eidos/vcs"
   - container_ref: "CNT-EIDOS-CLI"
     name: "Eidos Command-Line Interface"
     container_type: "cli_app"
@@ -32,7 +39,9 @@ c4_containers:
     name: "Eidos Agent Plugin & Extension Manager"
     container_type: "library"
     runtime: "Python 3.12 / agent-plugins.org v1.0.0"
-    package_path: "src/eidos/plugin"
+    package_path:
+      - "src/eidos/plugin"
+      - "assets/plugin_reference"
   - container_ref: "CNT-EIDOS-PORTAL"
     name: "Eidos Living Web Portal & Static Site Generator"
     container_type: "web_app"
@@ -59,19 +68,19 @@ solution_strategy:
   - "Portable Agent Plugins: Strict conformance to agent-plugins.org v1.0.0 packaging specialized skills."
   - "Token-Budgeted Context Slicing: Extracts compact, token-efficient architectural subgraphs (C4 Level 2/3 topology, contracts, capabilities, and invariants) for agent context windows."
   - "Polyglot Invariant Verification: Drift engine scans tests across Python, TypeScript, Go, Rust, and Java to guarantee mandatory invariant test bindings."
-  - "Embedded SQLite Knowledge Graph: Auto-synchronizing SQLite index (.eidos/cache/index.db) providing sub-millisecond AST and edge catalog lookups, FTS5 BM25 lexical retrieval, and recursive CTE blast-radius traversal with zero external runtime dependencies."
+  - "Embedded SQLite Knowledge Graph: Auto-synchronizing SQLite index (eidos/.cache/index.db) providing sub-millisecond AST and edge catalog lookups, FTS5 BM25 lexical retrieval, and recursive CTE blast-radius traversal with zero external runtime dependencies."
 
 cross_cutting_concepts:
-  authentication_and_authz: "Git token credentials (GITHUB_TOKEN / GITLAB_TOKEN) scoped via environment or local Git credentials."
+  authentication_and_authz: "Local Git credentials and environment variables."
   error_handling: "Structured CLI exit codes (0 = Success, 1 = Validation failure, 2 = Execution error) with Rich diagnostic output."
   telemetry_and_logging: "Local stdout/stderr streaming with optional structured JSON log output for CI pipelines."
   design_tokens: "W3C Design Tokens Community Group (DTCG) tokens.json standard compiling across web and native targets."
-  lifecycle_isolation: "Self-contained eidos/.gitignore isolating generated status symlink views from host project."
-  data_storage: "Entirely Git filesystem backed with YAML frontmatter + AsciiDoc, accelerated by an ephemeral, zero-dependency SQLite knowledge graph cache (.eidos/cache/index.db) for sub-millisecond retrieval."
+  lifecycle_isolation: "Self-contained eidos/.gitignore isolating generated status symlink views and local cache from host project."
+  data_storage: "Entirely Git filesystem backed with YAML frontmatter + AsciiDoc, accelerated by an ephemeral, zero-dependency SQLite knowledge graph cache (eidos/.cache/index.db) for sub-millisecond retrieval."
 
 deployment_view:
-  hosting_model: "Distributed: Local developer workstation (CLI) and CI/CD Runner environments (GitHub Actions / GitLab CI)."
-  ci_cd_engine: "GitHub Actions workflows and GitLab CI pipelines executing eidos validate and test runners."
+  hosting_model: "Distributed: Local developer workstation (CLI tool) and CI/CD Runner environments."
+  ci_cd_engine: "CI/CD pipelines executing eidos validate, eidos drift, and test runners."
 ---
 = Eidos Global System Architecture (Arc42 & C4 Blueprint)
 :doctype: book
@@ -99,11 +108,11 @@ C4Context
   Person(user, "Product Lead / Engineer", "Authors specifications, reviews PRs, triggers agent tasks")
   Person_Ext(agent, "AI Coding Agent", "Autonomous worker (agy, claude, codex) executing tasks via CLI")
   System(eidos, "Eidos Ecosystem", "Git-native SDLC orchestration and specification engine")
-  System_Ext(vcs, "GitHub / GitLab", "VCS repository, PR/MR discussions, and CI/CD pipelines")
+  System_Ext(vcs, "Git Repository & CI/CD", "Local/remote Git repository and CI verification pipelines")
 
   Rel(user, eidos, "Runs CLI commands, writes living specs")
   Rel(agent, eidos, "Invokes CLI commands, inspects task context, returns code diffs")
-  Rel(eidos, vcs, "Bidirectional sync of issues, PRs, and status checks")
+  Rel(eidos, vcs, "Inspects Git diffs, tracks living specs, enforces CI gates")
 ----
 
 == 4. Solution Strategy
@@ -111,7 +120,7 @@ C4Context
 * **SpecDelta Diff Engine**: Evolutionary changes are semantic mutations (`add`, `modify`, `remove`, `patch`) stored flat with gitignored symlink status views.
 * **Multi-Design Systems & W3C Tokens**: Product capabilities bridge business JTBD with technical code packages and W3C tokenized multi-brand design systems.
 * **Interactive Hierarchical C4 Explorer**: Living Web Portal provides dynamic, clickable drill-down from C4 Level 1 System Context to Level 2 Container Topologies and Level 3 Component Whiteboxes with breadcrumbs and slide-over component inspection.
-* **Embedded SQLite Knowledge Graph & FTS5 Retrieval**: High-speed, zero-dependency caching layer (`.eidos/cache/index.db`) indexing all entities, directed dependency edges, and lexical full-text with sub-2ms dirty checking.
+* **Embedded SQLite Knowledge Graph & FTS5 Retrieval**: High-speed, zero-dependency caching layer (`eidos/.cache/index.db`) indexing all entities, directed dependency edges, and lexical full-text with sub-2ms dirty checking.
 * **Recursive CTE Blast-Radius & Impact Analysis**: Architectural blast radius and k-hop neighborhood traversal executed natively in SQLite via Common Table Expressions (CTEs).
 * **Tiered Context Compression Model**: Three-tier context extraction (`anchor`, `guardrails`, `deep`) reducing prompt token payloads by 60-80% for AI coding agents.
 * **Token-Budgeted Context Slicing**: Slices bounded C4 topologies, active invariants, and governing policies dynamically for AI agent contexts.
@@ -127,7 +136,7 @@ Eidos enforces a strict, first-principles mapping to the canonical C4 architectu
 | C4 Level | C4 Term | Eidos Specification Entity | Architectural Boundary
 | **Level 1** | **System Context** | Root System Spec (`SYS-*`) & Architecture (`ARCH-*`) | System boundaries, users/personas, and external platforms
 | **Level 2** | **Container** | Container Manifests (`CNT-*`, `type: tech/container`) | **Process / Deployable / Package boundary** (CLI app, library, daemon, SPA, docs)
-| **Level 3** | **Component** | In-Process Modules (`CMP-*`, `components` array in `CNT-*.adoc` or co-located `<source_path>/<comp>.adoc`) | **In-Process / Memory boundary** (internal modules, services, parsers, engines)
+| **Level 3** | **Component** | In-Process Modules (`CMP-*`, `components` array in `CNT-*.adoc` or centralized `eidos/architecture/components/<comp>.adoc`) | **In-Process / Memory boundary** (internal modules, services, parsers, engines)
 | **Level 4** | **Code** | Source Code & Schemas (`source_path`) | Exact classes, functions, and data structures (`src/eidos/**/*.py`)
 |===
 
@@ -140,20 +149,22 @@ Eidos is distributed as a monorepo consisting of the following primary Level 2 c
 | `CNT-EIDOS-CLI` | Eidos Command-Line Interface | Tier 1: Presentation & Interface | CLI Application | `src/eidos/cli`
 | `CNT-EIDOS-PORTAL` | Eidos Living Web Portal & Static Generator | Tier 1: Presentation & Interface | Web Application | `src/eidos/portal`
 | `CNT-EIDOS-DOCS` | Eidos User Documentation System | Tier 1: Presentation & Interface | Web Application | `docs`
-| `CNT-EIDOS-PLUGIN` | Eidos Agent Plugin & Extension Manager | Tier 2: Extensibility & Agent Integration | Library | `src/eidos/plugin`
-| `CNT-EIDOS-CORE` | Eidos Living Spec & Design Core Engine | Tier 3: Core Domain & Spec Engine | Library | `src/eidos/core`
+| `CNT-EIDOS-PLUGIN` | Eidos Agent Plugin & Extension Manager | Tier 2: Extensibility & Agent Integration | Library | `src/eidos/plugin`, `assets/plugin_reference`
+| `CNT-EIDOS-CORE` | Eidos Living Spec & Design Core Engine | Tier 3: Core Domain & Spec Engine | Library | `src/eidos/core`, `assets/schemas`
+| `CNT-EIDOS-VCS` | Eidos Git Drift & Lifecycle Engine | Tier 3: Core Domain & Spec Engine | Library | `src/eidos/vcs`
 | `CNT-EIDOS-INDEX` | Eidos Architectural Knowledge Graph & Retrieval Index | Tier 4: Knowledge Graph & Persistence | Library | `src/eidos/core/graph_index.py`
 |===
 
 The C4 Level 2 Container Diagram explicitly renders the inter-container dependency connections:
-* `CNT-EIDOS-CLI` invokes Core Engine commands (`CNT-EIDOS-CORE`), queries the knowledge index (`CNT-EIDOS-INDEX`), validates plugins (`CNT-EIDOS-PLUGIN`), and hosts/builds the Living Portal (`CNT-EIDOS-PORTAL`).
+* `CNT-EIDOS-CLI` invokes Core Engine commands (`CNT-EIDOS-CORE`), runs drift detection (`CNT-EIDOS-VCS`), queries the knowledge index (`CNT-EIDOS-INDEX`), validates plugins (`CNT-EIDOS-PLUGIN`), and hosts/builds the Living Portal (`CNT-EIDOS-PORTAL`).
+* `CNT-EIDOS-VCS` inspects Git diffs, AST symbols, and 1-hop graph neighborhoods via `CNT-EIDOS-CORE` and `CNT-EIDOS-INDEX`.
 * `CNT-EIDOS-PORTAL` validates and synthesizes living specifications (`CNT-EIDOS-CORE`) and retrieves graph metrics (`CNT-EIDOS-INDEX`).
 * `CNT-EIDOS-DOCS` embeds and links the Living Portal (`CTR-EIDOS-PORTAL`).
 * `CNT-EIDOS-PLUGIN` resolves schemas and plugin reference assets (`CNT-EIDOS-CORE`).
 * `CNT-EIDOS-INDEX` consumes AST models and frontmatter definitions (`CNT-EIDOS-CORE`).
 
 === 5.3 Level 3 Component Whitebox View & Interface Governance
-Internal component building blocks are declared inline within each container manifest. In Centralized Hybrid Mode (see link:../explorations/EXP-2026-004.adoc[EXP-2026-004]), complex promoted components **reside centrally in `eidos/architecture/components/<component>.adoc`** (linked via `ref:` in the parent container manifest) and point to code via `package_path`. Eidos specifications **never touch or reside within source code directories** (`src/`, `packages/`).
+Internal component building blocks are declared inline within each container manifest. In Centralized Hybrid Mode (see link:../explorations/EXP-2026-004.adoc[EXP-2026-004]), complex promoted components **reside centrally in `eidos/architecture/components/<component>.adoc`** (linked via `ref:` in the parent container manifest) and point to code via `source_path`. Eidos specifications **never touch or reside within source code directories** (`src/`, `packages/`).
 
 Furthermore, interface ownership strictly distinguishes between deployment boundaries and in-memory linkage:
 * **Containers (`CNT-*`)** define **Boundary Protocol Contracts (`CTR-*`)**: Cross-process, network, or CLI protocols (CLI args, REST OpenAPI, gRPC).
@@ -161,6 +172,7 @@ Furthermore, interface ownership strictly distinguishes between deployment bound
 
 Container manifests interactively explorable in the Living Web Portal's Hierarchical C4 Explorer:
 * link:containers/core.adoc[`CNT-EIDOS-CORE` Container Specification (CMP-SPEC-PARSER, CMP-SPEC-VALIDATOR, ...)]
+* link:containers/vcs.adoc[`CNT-EIDOS-VCS` Container Specification (CMP-DRIFT-DETECTOR)]
 * link:containers/cli.adoc[`CNT-EIDOS-CLI` Container Specification (CMP-CLI-APP, CMP-CLI-SPEC-COMMANDS, ...)]
 * link:containers/plugin.adoc[`CNT-EIDOS-PLUGIN` Container Specification (CMP-PLUGIN-INSTALLER, CMP-PLUGIN-VALIDATOR, ...)]
 * link:containers/portal.adoc[`CNT-EIDOS-PORTAL` Container Specification (CMP-PORTAL-SERVER, CMP-PORTAL-GENERATOR, ...)]
@@ -173,13 +185,13 @@ Runtime execution choreographies are defined in:
 * link:../domains/product-core/capabilities/exploration-discovery.adoc[Exploration & Spike Flow]
 
 == 7. Deployment View (Infrastructure & Delivery)
-* **Local Workstation**: Developers and AI agents run the CLI directly (`uv run eidos`).
-* **CI/CD Automation**: GitHub Actions or GitLab CI runners execute validation gates on every PR.
+* **Local Workstation**: Developers and AI agents install the standalone CLI tool (`uv tool install eidos-ai` / `pipx install eidos-ai` / `uvx eidos-ai`).
+* **CI/CD Automation**: CI runners execute `eidos validate` and `eidos drift` gates on every PR.
 
 == 8. Cross-Cutting Concepts
 * **Interface Contracts**:
   - link:contracts/cli.adoc[`CTR-EIDOS-CLI` (Command-Line Interface Contract)]
 * **Design System Standard**: W3C Design Tokens Community Group (`tokens.json`) with multi-brand inheritance.
-* **Lifecycle Isolation**: Self-contained `eidos/.gitignore` isolating generated status symlink views (`deltas/by-status/`).
+* **Lifecycle Isolation**: Self-contained `eidos/.gitignore` isolating generated status symlink views (`deltas/by-status/`) and local cache (`eidos/.cache/`).
 * **Error Diagnostics**: Standardized exit codes and formatted terminal tables using Rich.
-* **Data Storage**: Entirely Git filesystem backed with YAML frontmatter + AsciiDoc living specifications, accelerated by an ephemeral, zero-dependency SQLite knowledge graph cache (`.eidos/cache/index.db`).
+* **Data Storage**: Entirely Git filesystem backed with YAML frontmatter + AsciiDoc living specifications, accelerated by an ephemeral, zero-dependency SQLite knowledge graph cache (`eidos/.cache/index.db`).

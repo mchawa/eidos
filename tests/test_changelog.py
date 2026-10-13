@@ -1,9 +1,9 @@
 """Tests verifying automated SpecDelta-backed changelog generation (INV-DELTA-CHANGELOG-GENERATION, POL-004)."""
 
-import json
 from pathlib import Path
-from typer.testing import CliRunner
+
 import pytest
+from typer.testing import CliRunner
 
 from eidos.cli.main import app
 from eidos.core.changelog import ChangelogGenerator

@@ -34,7 +34,7 @@ def temp_index(tmp_path):
 
 
 def test_spike_a_schema_initialization_and_sync(temp_index):
-    """Spike A: Verify SQLite schema initialization, table structures, and complete sync."""
+    """Spike A: Verify SQLite schema initialization, table structures, and complete sync (INV-KNOWLEDGE-GRAPH-CATALOG)."""
     stats = temp_index.sync(force=True)
     assert stats.total_specs_scanned >= 50
     assert stats.indexed_new >= 50
@@ -107,7 +107,7 @@ def test_spike_b_incremental_dirty_checking_latency(temp_index):
 
 
 def test_spike_b_zero_drift_on_mutation(tmp_path):
-    """Spike B: Verify zero drift by modifying a spec file and asserting immediate index update."""
+    """Spike B: Verify zero drift by modifying a spec file and asserting immediate index update (INV-AGENT-GRAPH-INDEX-FRESHNESS)."""
     eidos_copy = tmp_path / "eidos"
     comps_dir = eidos_copy / "architecture" / "components"
     comps_dir.mkdir(parents=True)
@@ -119,9 +119,10 @@ type: tech/component
 schema: schemas/v1/tech/component.schema.yaml
 id: CMP-TEST-SPIKE
 name: "Test Spike Service"
-container_type: "service"
-runtime: "Python 3.12"
-package_path: "src/test"
+container: "CNT-TEST-SPIKE"
+status: "active"
+source_path: "src/test"
+responsibility: "Test service"
 ---
 = Test Spike Service
 """
@@ -143,9 +144,10 @@ type: tech/component
 schema: schemas/v1/tech/component.schema.yaml
 id: CMP-TEST-SPIKE
 name: "Mutated Spike Service"
-container_type: "service"
-runtime: "Python 3.12"
-package_path: "src/test_mutated"
+container: "CNT-TEST-SPIKE"
+status: "active"
+source_path: "src/test_mutated"
+responsibility: "Test service"
 ---
 = Mutated Spike Service
 """
@@ -208,12 +210,14 @@ def test_exit_criteria_resolution_latency(temp_index):
     avg_latency = sum(latencies) / len(latencies)
     is_instrumented = "coverage" in sys.modules or sys.gettrace() is not None
     max_latency_ms = 40.0 if is_instrumented else 15.0
-    assert avg_latency < max_latency_ms, f"Average context slice latency {avg_latency:.2f}ms exceeded {max_latency_ms}ms"
+    assert avg_latency < max_latency_ms, (
+        f"Average context slice latency {avg_latency:.2f}ms exceeded {max_latency_ms}ms"
+    )
     assert s.query_latency_ms < max_latency_ms
 
 
 def test_repo_root_discovery_and_no_nested_eidos(tmp_path, monkeypatch):
-    """Verify repo root discovery prevents spurious nested .eidos directories (INV-STORAGE-ROOT)."""
+    """Verify repo root discovery prevents spurious nested cache directories."""  # eidos:fixture
     repo = tmp_path / "mock_repo"
     repo.mkdir()
     (repo / ".git").mkdir()
@@ -235,7 +239,7 @@ def test_repo_root_discovery_and_no_nested_eidos(tmp_path, monkeypatch):
     try:
         assert idx.root == repo.resolve()
         assert idx.eidos_dir == specs_dir.resolve()
-        assert idx.db_path == repo.resolve() / ".eidos" / "cache" / "index.db"
+        assert idx.db_path == repo.resolve() / "eidos" / ".cache" / "index.db"
         assert not (subfolder / ".eidos").exists()
         assert not (subfolder.parent / ".eidos").exists()
         assert not (repo / ".agents" / "plugins" / "eidos" / ".eidos").exists()
@@ -286,7 +290,7 @@ def test_code_aware_dirty_checking_and_sync(tmp_path):
 
     test_file = tests_dir / "test_service.py"
     test_file.write_text(
-        """# Tests INV-SAMPLE-RULE\ndef test_service():\n    assert True\n""",
+        """# Tests INV-SAMPLE-RULE\ndef test_service():\n    assert True\n""",  # eidos:fixture
         encoding="utf-8",
     )
 
@@ -297,11 +301,12 @@ type: tech/component
 schema: schemas/v1/tech/component.schema.yaml
 id: CMP-SAMPLE-SERVICE
 name: Sample Service
-container_type: service
-runtime: Python 3.12
-package_path: src/pkg
+container: CNT-SAMPLE
+status: active
+source_path: src/pkg
+responsibility: Sample service
 invariants:
-  - id: INV-SAMPLE-RULE
+  - id: INV-SAMPLE-RULE  # eidos:fixture
     rule: Sample rule must hold.
     test_binding: tests/test_service.py::test_service
 ---
@@ -310,13 +315,13 @@ invariants:
         encoding="utf-8",
     )
 
-    db_path = repo / ".eidos" / "cache" / "index.db"
+    db_path = repo / "eidos" / ".cache" / "index.db"
     idx = ArchitecturalIndex(db_path=db_path, repo_root=repo, eidos_dir=eidos_dir)
     idx.sync(force=True)
 
     try:
         # 1. Initially clean
-        dirty, modified, deleted = idx.is_dirty()
+        dirty, modified, _deleted = idx.is_dirty()
         assert not dirty
         assert len(modified) == 0
 
@@ -350,3 +355,115 @@ invariants:
     finally:
         idx.close()
 
+
+def test_design_client_and_system_path_inference(tmp_path):
+    """Verify DLT-2026-026: CLT-* and DS-* infer owned code paths automatically from bound CNT-* and CMP-* without declaring path properties."""
+    repo = tmp_path / "design_inference_repo"
+    repo.mkdir()
+    eidos_dir = repo / "eidos"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    clt_dir = eidos_dir / "design" / "clients"
+    ds_dir = eidos_dir / "design" / "systems" / "brand"
+    cnt_dir.mkdir(parents=True)
+    clt_dir.mkdir(parents=True)
+    ds_dir.mkdir(parents=True)
+
+    # Create source files across multiple container package_paths
+    web_src = repo / "apps" / "web" / "src"
+    ui_pkg = repo / "packages" / "ui-kit" / "src"
+    web_src.mkdir(parents=True)
+    ui_pkg.mkdir(parents=True)
+    (web_src / "App.tsx").write_text("export function App() { return null; }\n", encoding="utf-8")
+    (ui_pkg / "Button.tsx").write_text("export function Button() { return null; }\n", encoding="utf-8")
+
+    # Container with array package_path and inline component with source_path
+    (cnt_dir / "web.adoc").write_text(
+        """---
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
+id: CNT-WEB-APP
+name: "Web Application"
+container_type: web_app
+runtime: "TypeScript / React"
+package_path:
+  - "apps/web/src"
+  - "packages/ui-kit/**"
+components:
+  - id: CMP-WEB-BUTTON
+    name: "Button Component"
+    responsibility: "Renders interactive button"
+    source_path: "packages/ui-kit/src/Button.tsx"
+---
+= Web Application
+""",
+        encoding="utf-8",
+    )
+
+    # Standalone component bound to CNT-WEB-APP with source_path
+    (cnt_dir / "button-cmp.adoc").write_text(
+        """---
+type: tech/component
+schema: schemas/v1/tech/component.schema.yaml
+id: CMP-WEB-BUTTON
+name: "Button Component"
+container: CNT-WEB-APP
+responsibility: "Renders interactive button"
+source_path: "packages/ui-kit/src/Button.tsx"
+---
+= Button Component
+""",
+        encoding="utf-8",
+    )
+
+    # Client bound to CNT-WEB-APP and DS-BRAND (notice NO path properties on client!)
+    (clt_dir / "web-client.adoc").write_text(
+        """---
+type: design/client
+schema: schemas/v1/design/client.schema.yaml
+id: CLT-WEB-CLIENT
+title: "Customer Web Client"
+platform: web
+status: active
+container: CNT-WEB-APP
+design_system: DS-BRAND
+---
+= Customer Web Client
+""",
+        encoding="utf-8",
+    )
+
+    # Design system bound to CLT-WEB-CLIENT (notice NO code path properties on system!)
+    (ds_dir / "system.adoc").write_text(
+        """---
+type: design/system
+schema: schemas/v1/design/system.schema.yaml
+id: DS-BRAND
+title: "Brand Design System"
+status: active
+version: "1.0.0"
+tokens_path: "eidos/design/systems/brand/tokens.json"
+clients:
+  - CLT-WEB-CLIENT
+---
+= Brand Design System
+""",
+        encoding="utf-8",
+    )
+
+    idx = ArchitecturalIndex(repo_root=repo, eidos_dir=eidos_dir)
+    idx.sync(force=True)
+    try:
+        matches_app = idx.resolve_symbol_or_path("apps/web/src/App.tsx")
+        matched_ids_app = {m["entity_id"] for m in matches_app}
+        assert "CNT-WEB-APP" in matched_ids_app
+        assert "CLT-WEB-CLIENT" in matched_ids_app
+        assert "DS-BRAND" in matched_ids_app
+
+        matches_btn = idx.resolve_symbol_or_path("packages/ui-kit/src/Button.tsx")
+        matched_ids_btn = {m["entity_id"] for m in matches_btn}
+        assert "CMP-WEB-BUTTON" in matched_ids_btn
+        assert "CNT-WEB-APP" in matched_ids_btn
+        assert "CLT-WEB-CLIENT" in matched_ids_btn
+        assert "DS-BRAND" in matched_ids_btn
+    finally:
+        idx.close()

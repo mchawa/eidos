@@ -54,13 +54,13 @@ properties:
           properties:
             name:
               type: string
-              description: "Name of the external system (e.g. 'GitHub / GitLab', 'Stripe Gateway')."
+              description: "Name of the external system (e.g. 'Git Repository / CI Pipeline', 'Stripe Gateway')."
             role:
               type: string
               description: "How the system interacts with this external entity."
             protocol:
               type: string
-              description: "Communication protocol (e.g. 'REST Webhooks', 'OAuth2', 'Kafka Topic')."
+              description: "Communication protocol (e.g. 'Git CLI', 'OAuth2', 'Kafka Topic')."
   c4_containers:
     type: array
     description: "Arc42 Section 5.1 / C4 Level 2: Container Topology. The high-level deployable units, services, monorepo packages, or applications comprising the system."
@@ -86,8 +86,12 @@ properties:
               type: string
               description: "Execution runtime and primary framework (optional)."
             package_path:
-              type: string
-              description: "Relative source code directory in the repository (optional)."
+              oneOf:
+                - type: string
+                - type: array
+                  items:
+                    type: string
+              description: "Relative source code directory, file path, or glob pattern(s) in the repository (optional)."
   solution_strategy:
     type: array
     description: "Arc42 Section 4: Solution Strategy. Fundamental architectural decisions and paradigms shaping the system."

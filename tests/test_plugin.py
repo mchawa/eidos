@@ -1131,4 +1131,57 @@ def test_drift_hook_post_invocation_clean(tmp_path):
     assert len(data["injectSteps"]) == 0
 
 
+def test_stop_gate_block_once_and_allow_second_attempt(tmp_path):
+    """Verify Block-Once Stop Gate (DLT-2026-024): blocks first Stop on drift, allows second Stop with identical fingerprint, and blocks again on new drift."""
+    from eidos.plugin.hooks import handle_drift_stop
 
+    eidos_dir = tmp_path / "eidos"
+    eidos_dir.mkdir()
+    valid_spec = eidos_dir / "policy.adoc"
+    valid_spec.write_text(
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nrule: Must execute safely\nenforcement:\n  mechanism: lint\n  severity: blocking\n---\n",
+        encoding="utf-8",
+    )
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "feature.py").write_text("def do_feature():\n    return 1\n", encoding="utf-8")
+
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.email", "agent@eidos.ai"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.name", "Eidos Agent"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "add", "eidos"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", "init specs"], cwd=tmp_path, capture_output=True, check=True)
+
+    payload = {"executionNum": 1, "terminationReason": "model_stop", "workspacePaths": [str(tmp_path)]}
+
+    # 1. First Stop attempt: blocked with decision="continue" and state persisted in eidos/.cache/stop-gate.json
+    res1 = handle_drift_stop(payload, tmp_path)
+    assert res1["decision"] == "continue"
+    assert (eidos_dir / ".cache" / "stop-gate.json").exists()
+
+    # 2. Second Stop attempt with identical failure fingerprint: allowed with decision="allow"
+    res2 = handle_drift_stop(payload, tmp_path)
+    assert res2["decision"] == "allow"
+    assert not (eidos_dir / ".cache" / "stop-gate.json").exists()
+
+    # 3. New structural code file added -> fingerprint changes -> blocked once again
+    (src_dir / "second_feature.py").write_text("def second_feature():\n    return 2\n", encoding="utf-8")
+    res3 = handle_drift_stop(payload, tmp_path)
+    assert res3["decision"] == "continue"
+
+
+def test_cli_doctor_command():
+    """Verify 'eidos doctor' and 'eidos doctor --json' CLI health check (DLT-2026-024)."""
+    res = runner.invoke(app, ["doctor"])
+    assert res.exit_code == 0
+    assert "Eidos Environment & Workspace Doctor" in res.stdout
+
+    res_json = runner.invoke(app, ["doctor", "--json"])
+    assert res_json.exit_code == 0
+    data = json.loads(res_json.stdout)
+    assert "healthy" in data
+    assert "checks" in data
+    assert "cli_binary" in data["checks"]
+    assert "knowledge_graph_index" in data["checks"]
+    assert data["checks"]["living_specs"]["exists"] is True

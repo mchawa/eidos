@@ -193,7 +193,7 @@ Detailed component behavior and rendering rules.
 Client manifests live in `eidos/design/clients/<client-name>/client.adoc`.
 
 * **`design_system`**: The primary component library (`UIC-*`) and token foundation the client imports and compiles against (e.g. `DS-CORE`).
-* **`container`**: The C4 Level 2 Container manifest implementing this client surface (e.g. `CMP-EIDOS-PORTAL`).
+* **`container`**: The C4 Level 2 Container manifest implementing this client surface (e.g. `CNT-WEB-APP` or `eidos/architecture/containers/web-app.adoc`). Code paths for the client and its bound design system are automatically inferred from this container's `package_path` and components' `source_path`.
 
 ```yaml
 ---

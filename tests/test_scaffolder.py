@@ -26,7 +26,7 @@ def assert_valid_spec(validator: SpecValidator, path: Path):
 
 
 def test_scaffold_all_spec_types(tmp_path):
-    """Verify that create_spec scaffolds syntactically valid documents for every schema type (CTR-EIDOS-CLI, POL-002)."""
+    """Verify that create_spec scaffolds syntactically valid documents for every schema type (CTR-EIDOS-CLI, POL-002, INV-SPIKE-ISOLATION)."""
     validator = SpecValidator()
 
     # 1. Domain

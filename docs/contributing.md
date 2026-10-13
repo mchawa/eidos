@@ -13,20 +13,13 @@ git clone https://github.com/mchawa/eidos.git
 cd eidos
 ```
 
-### 2. Install Dependencies
+### 2. Install Dependencies & Editable CLI Tool
 
-Using `uv` (recommended):
+Using `uv`:
 
 ```bash
 uv sync --all-extras --dev
-```
-
-Or using standard `pip`:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev,docs]"
+uv tool install --force --editable .
 ```
 
 ---

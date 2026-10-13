@@ -1,0 +1,42 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-025
+title: Decommission Unimplemented GitHub and GitLab VCS Bridge
+status: applied
+vcs:
+  branch: feat/remove-vcs-bridge
+intent:
+  kind: feature_removal
+  motivation: Remove the unimplemented GitHub/GitLab API bridge ('src/eidos/vcs/bridge.py')
+    and update VCS lifecycle specifications so Eidos focuses strictly on local Git-native
+    drift detection and living specification reconciliation.
+mutations:
+- action: modify_component
+  target_component: CNT-EIDOS-VCS
+  details: Delete 'src/eidos/vcs/bridge.py' and remove 'VCSBridge', 'VCSIssue', and
+    'VCSPullRequest' exports from 'src/eidos/vcs/__init__.py'.
+- action: extend_capability
+  target_capability: CAP-VCS-001
+  details: Rename 'eidos/domains/vcs-lifecycle/capabilities/github-gitlab-bridge.adoc'
+    to 'eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc', remove phantom
+    invariant 'INV-VCS-PARITY', and align 'DOM-VCS-LIFECYCLE' and 'SYS-EIDOS-001'
+    external context with local Git-native drift detection.
+blast_radius:
+  impacted_components:
+  - CNT-EIDOS-VCS
+  - CNT-EIDOS-PORTAL
+---
+= SpecDelta: Decommission Unimplemented GitHub and GitLab VCS Bridge
+:toc: left
+
+== Problem Statement
+
+`src/eidos/vcs/bridge.py` contained stubbed `VCSBridge`, `VCSIssue`, and `VCSPullRequest` classes that returned placeholder URLs (`https://github.com/org/repo/issues/1`) without making real API calls, while living specifications claimed bidirectional GitHub/GitLab issue and PR comment synchronization.
+
+== Architectural & Behavioral Mutations
+
+1. Delete `src/eidos/vcs/bridge.py` and clean up `src/eidos/vcs/__init__.py`.
+2. Rename `eidos/domains/vcs-lifecycle/capabilities/github-gitlab-bridge.adoc` to `eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc` (`CAP-VCS-001`).
+3. Remove `INV-VCS-PARITY` and update `eidos/system.adoc`, `eidos/domains/vcs-lifecycle/domain.adoc`, and `eidos/personas/product-lead.adoc` to reflect local Git-native verification and CI/CD gating.
+

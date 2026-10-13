@@ -39,10 +39,12 @@ experience:
     - "eidos/design/systems/core/components/portal-metric-card.adoc"
 
 technical:
+  containers:
+    - "CNT-EIDOS-CORE"
+    - "CNT-EIDOS-INDEX"
   components:
-    - "packages/spec-parser"
-    - "packages/spec-validator"
-    - "packages/architectural-index"
+    - "CMP-SPEC-PARSER"
+    - "CMP-SPEC-VALIDATOR"
   contracts:
     interfaces:
       - "eidos spec validate"
@@ -80,12 +82,12 @@ technical:
 == Intent
 Traditional product requirements documents (PRDs) quickly become obsolete. This capability ensures that the `eidos/` directory is treated as living code: every document has an explicit type and JSON/YAML schema, is validated continuously, and forms an in-memory knowledge graph that AI agents and developer tools can query to understand the system state.
 
-Through an embedded SQLite Knowledge Graph (`.eidos/cache/index.db`), Eidos bridges human-readable AsciiDoc specifications with sub-millisecond relational queries, full-text lexical search (FTS5 BM25), and zero-drift incremental indexing.
+Through an embedded SQLite Knowledge Graph (`eidos/.cache/index.db`), Eidos bridges human-readable AsciiDoc specifications with sub-millisecond relational queries, full-text lexical search (FTS5 BM25), and zero-drift incremental indexing.
 
 == Key Responsibilities
 * **Living Specification Parsing**: Robust extraction of YAML frontmatter combined with AsciiDoc technical specifications.
 * **Schema Validation & Integrity**: Schema resolution and Draft 2020-12 validation ensuring strict typing across all 16 specification schemas.
-* **Embedded Knowledge Graph**: Relational indexing linking Personas, Domains, Capabilities, Invariants, Components, Contracts, and SpecDeltas into `.eidos/cache/index.db`.
+* **Embedded Knowledge Graph**: Relational indexing linking Personas, Domains, Capabilities, Invariants, Components, Contracts, and SpecDeltas into `eidos/.cache/index.db`.
 * **Zero-Drift Incremental Sync**: Mtime and SHA-256 dirty checking that keeps the SQLite graph continuously synchronized with the working tree in under 2ms.
 * **Sub-Millisecond Catalog Resolution**: Powering `eidos components`, `eidos spec list`, and CLI inspection commands with instant relational queries rather than linear disk scans.
 * **Recursive Blast-Radius & Search**: SQLite recursive Common Table Expressions (CTEs) traversing k-hop impact boundaries and FTS5 full-text search over titles, descriptions, and keywords.

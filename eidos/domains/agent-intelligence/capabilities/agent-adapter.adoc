@@ -19,7 +19,7 @@ business:
     - eidos/policies/POL-004-zero-ai-call-dependency.adoc
 
 technical:
-  components:
+  containers:
     - "CNT-EIDOS-CLI"
     - "CNT-EIDOS-INDEX"
     - "CNT-EIDOS-PLUGIN"

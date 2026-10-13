@@ -31,7 +31,7 @@ def test_bundled_schemas_loaded(validator):
 
 
 def test_validate_eidos_specifications(validator):
-    """Verify INV-SPEC-VALIDATION and INV-SPEC-GRAPH-INTEGRITY: all living specifications pass schema validation and entity ID graph integrity."""
+    """Verify INV-SPEC-VALIDATION, INV-SPEC-GRAPH-INTEGRITY, and INV-CLIENT-DESIGN-BINDING: all living specifications pass schema validation and entity ID graph integrity."""
     eidos_dir = Path("eidos")
     assert eidos_dir.exists(), "eidos/ specification directory does not exist"
 
@@ -140,6 +140,8 @@ def test_capability_semantic_references_broken(tmp_path, validator):
         "  personas: []\n"
         "  jtbd: Test\n"
         "technical:\n"
+        "  containers:\n"
+        "    - CNT-GHOST\n"
         "  components:\n"
         "    - CMP-TEST-CORE\n"
         "    - CMP-GHOST\n"
@@ -159,6 +161,7 @@ def test_capability_semantic_references_broken(tmp_path, validator):
     assert not report.is_clean
     broken_str = "\n".join(report.broken_references)
     assert "DOM-NONEXISTENT" in broken_str
+    assert "CNT-GHOST" in broken_str
     assert "CMP-GHOST" in broken_str
     assert "CTR-GHOST-IFACE" in broken_str
     assert "CTR-GHOST-PROV" in broken_str

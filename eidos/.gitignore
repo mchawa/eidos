@@ -1,3 +1,3 @@
-# Eidos living specification lifecycle views (generated symlinks)
+# Eidos living specification lifecycle views (generated symlinks) and local index cache
 deltas/by-status/
-
+.cache/

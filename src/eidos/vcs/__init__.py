@@ -1,6 +1,5 @@
-"""VCS integration bridge and drift governance package."""
+"""Git-native drift detection and spec reconciliation package."""
 
-from eidos.vcs.bridge import VCSBridge, VCSIssue, VCSPullRequest
 from eidos.vcs.drift import (
     ChangedFilesClassification,
     DriftCheckResult,
@@ -21,9 +20,6 @@ __all__ = [
     "InvariantTrace",
     "ReconcileResult",
     "ReconcileSuggestion",
-    "VCSBridge",
-    "VCSIssue",
-    "VCSPullRequest",
     "check_pr_drift",
     "classify_changed_files",
     "detect_drift",

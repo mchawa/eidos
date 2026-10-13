@@ -19,7 +19,7 @@ This skill equips AI agents to conduct **hypothesis-driven research, feasibility
 
 1. **Prevent Premature Architecture:** Do not commit to unverified database engines, protocols, or frameworks in living specifications without empirical proof.
 2. **Auditable Spikes:** Prototype in disposable branches, but record the hypothesis, questions, and exit criteria in a validated specification (`eidos/explorations/exp-<year>-<num>.adoc`).
-3. **No ADR Graveyards:** Explorations that succeed graduate into [`SpecDeltas`](file:///home/MTS/marwan.chawa/WS/eidos/.agents/plugins/eidos/skills/eidos-delta/SKILL.md) (`DLT-*`); explorations that fail are marked `discarded` with post-mortem learnings so mistakes are never repeated.
+3. **No ADR Graveyards:** Explorations that succeed graduate into **SpecDeltas** (`DLT-*`, see `eidos-delta` skill); explorations that fail are marked `discarded` with post-mortem learnings so mistakes are never repeated.
 
 ---
 

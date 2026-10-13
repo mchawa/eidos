@@ -49,7 +49,7 @@ properties:
     description: "ID or relative path to the primary design system styling this client (e.g. 'DS-CORE' or 'eidos/design/systems/core/system.adoc')."
   container:
     type: string
-    description: "ID or relative path to the C4 Level 2 Container manifest implementing this client (e.g. 'CMP-EIDOS-PORTAL')."
+    description: "ID or relative path to the C4 Level 2 Container manifest implementing this client (e.g. 'CNT-WEB-PORTAL')."
   capabilities:
     type: array
     description: "List of product capabilities delivered on this client surface."

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 scripts/lint_docs.py --event pre_tool",
+            "command": "eidos hook lint --event PreToolUse",
             "timeout": 15
           }
         ]
@@ -15,14 +15,14 @@
     "PostInvocation": [
       {
         "type": "command",
-        "command": "python3 scripts/lint_docs.py --event post_invocation",
+        "command": "eidos hook lint --event PostInvocation",
         "timeout": 30
       }
     ],
     "Stop": [
       {
         "type": "command",
-        "command": "python3 scripts/lint_docs.py --event stop",
+        "command": "eidos hook lint --event Stop",
         "timeout": 30
       }
     ]
@@ -31,14 +31,14 @@
     "PostInvocation": [
       {
         "type": "command",
-        "command": "python3 scripts/check_drift.py --event post_invocation",
+        "command": "eidos hook drift --event PostInvocation",
         "timeout": 30
       }
     ],
     "Stop": [
       {
         "type": "command",
-        "command": "python3 scripts/check_drift.py --event stop",
+        "command": "eidos hook drift --event Stop",
         "timeout": 30
       }
     ]

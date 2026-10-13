@@ -53,13 +53,13 @@ def test_context_slice_by_component():
 
 def test_context_slice_by_task():
     """Verify slicing by task description matches relevant capabilities and invariants."""
-    res = get_context_slice(task="Implement GitLab and GitHub synchronization bridge")
+    res = get_context_slice(task="Detect and reconcile structural spec-to-code drift across Git diffs")
 
     cap_ids = {c["id"] for c in res.capabilities}
     assert "CAP-VCS-001" in cap_ids
 
     inv_ids = {i["id"] for i in res.invariants}
-    assert "INV-VCS-PARITY" in inv_ids
+    assert "INV-DRIFT-DETECTION-ACCURACY" in inv_ids
 
 
 def test_context_slice_fallback_and_empty():
@@ -112,7 +112,7 @@ def test_cli_context_command():
     assert any(c["id"] == "CNT-EIDOS-CLI" for c in data["components"])
 
     # 3. Task search with -t
-    res_task = runner.invoke(app, ["context", "-t", "GitLab bridge synchronization"])
+    res_task = runner.invoke(app, ["context", "-t", "spec-to-code drift detection"])
     assert res_task.exit_code == 0
     assert "CAP-VCS-001" in res_task.output
 
@@ -136,7 +136,7 @@ def test_context_slice_string_and_comma_separated_files():
 
 
 def test_context_slice_non_eidos_project_fallback(tmp_path):
-    """Verify get_context_slice functions and provides baseline anchors in a generic non-Eidos repository."""
+    """Verify get_context_slice functions and provides baseline anchors in a generic non-Eidos repository."""  # eidos:fixture
     eidos_dir = tmp_path / "eidos"
     comps_dir = eidos_dir / "architecture" / "components"
     pols_dir = eidos_dir / "policies"
@@ -148,11 +148,10 @@ def test_context_slice_non_eidos_project_fallback(tmp_path):
         "type: tech/component\n"
         "id: CMP-AUTH-SVC\n"
         "name: AuthService\n"
-        "container_type: service\n"
-        "runtime: python\n"
-        "package_path: src/auth\n"
-        "dependencies:\n"
-        "contracts:\n"
+        "container: CNT-AUTH\n"
+        "status: active\n"
+        "source_path: src/auth\n"
+        "responsibility: Auth service\n"
         "---\n"
         "= Auth\n"
     )
@@ -199,7 +198,7 @@ def test_context_slice_relative_path_with_dots():
 
 
 def test_context_slice_invariants_policy_id(tmp_path):
-    """Verify policy invariants in slice have policy_id assigned when defined on policies."""
+    """Verify policy invariants in slice have policy_id assigned when defined on policies."""  # eidos:fixture
     eidos_dir = tmp_path / "eidos"
     pols_dir = eidos_dir / "policies"
     pols_dir.mkdir(parents=True)

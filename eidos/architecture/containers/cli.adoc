@@ -51,10 +51,15 @@ components:
     name: "PortalCommands"
     responsibility: "Living Web Portal commands: interactive preview server (`eidos portal serve` / `serve`) and static site compilation (`eidos portal build` / `build-site`)."
     source_path: "src/eidos/cli/main.py"
+  - id: CMP-CLI-DOCTOR-HOOKS
+    name: "DoctorAndHookCommands"
+    responsibility: "Installation health diagnostics (`eidos doctor`) and CLI-native agent lifecycle hook dispatchers (`eidos hook lint`, `eidos hook drift`)."
+    source_path: "src/eidos/cli/main.py"
 
 dependencies:
   internal_containers:
     - "CNT-EIDOS-CORE"
+    - "CNT-EIDOS-VCS"
     - "CNT-EIDOS-INDEX"
     - "CNT-EIDOS-PLUGIN"
     - "CNT-EIDOS-PORTAL"

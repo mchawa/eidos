@@ -1,10 +1,13 @@
 """Parser for AsciiDoc files containing YAML frontmatter."""
 
+import re
 from pathlib import Path
 
 import yaml
 
 from eidos.core.models import SpecDocument
+
+_FRONTMATTER_DELIMITER_RE = re.compile(r"^---\s*$", re.MULTILINE)
 
 
 def parse_spec_file(path: Path) -> SpecDocument:
@@ -18,7 +21,6 @@ def parse_spec_file(path: Path) -> SpecDocument:
             body="",
             doc_type=doc_type,
             doc_id=path.stem,
-            is_valid=True,
         )
 
     frontmatter_dict, body, parse_error = extract_frontmatter(content)
@@ -47,18 +49,24 @@ def parse_spec_file(path: Path) -> SpecDocument:
 
 
 def extract_frontmatter(content: str) -> tuple[dict | None, str, str | None]:
-    """Extract YAML frontmatter between leading '---' markers."""
-    stripped = content.lstrip()
+    """Extract YAML frontmatter between line-anchored '---' markers."""
+    cleaned = content.lstrip("\ufeff")
+    stripped = cleaned.lstrip()
     if not stripped.startswith("---"):
         return None, content, "No opening frontmatter delimiter ('---')"
 
-    # Find the closing '---'
-    parts = stripped.split("---", 2)
-    if len(parts) < 3:
+    matches = list(_FRONTMATTER_DELIMITER_RE.finditer(stripped))
+    if not matches or matches[0].start() != 0:
+        return None, content, "No opening frontmatter delimiter ('---')"
+    if len(matches) < 2:
         return None, content, "No closing frontmatter delimiter ('---')"
 
-    yaml_text = parts[1]
-    body = parts[2]
+    yaml_text = stripped[matches[0].end() : matches[1].start()]
+    body = stripped[matches[1].end() :]
+    if body.startswith("\r\n"):
+        body = body[2:]
+    elif body.startswith("\n"):
+        body = body[1:]
 
     try:
         data = yaml.safe_load(yaml_text)

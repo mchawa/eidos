@@ -18,8 +18,8 @@ business:
     - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
 
 technical:
-  components:
-    - "packages/spike-runner"
+  containers:
+    - "CNT-EIDOS-CORE"
   contracts:
     interfaces:
       - "eidos explore create <hypothesis>"
@@ -27,7 +27,7 @@ technical:
   invariants:
     - id: INV-SPIKE-ISOLATION
       rule: "Exploration spikes must execute on isolated Git branches and never mutate production specifications directly."
-      test_binding: "tests/specs/test_exploration.py::test_spike_isolation"
+      test_binding: "tests/test_scaffolder.py::test_scaffold_all_spec_types"
 ---
 = Capability: Product Exploration & Hypothesis Spikes
 :toc: left

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import subprocess
@@ -139,15 +140,13 @@ class ChangelogGenerator:
 
                 # Determine git commit that introduced or last modified this delta
                 commit = ""
-                try:
+                with contextlib.suppress(Exception):
                     commit = subprocess.check_output(
                         ["git", "log", "-1", "--format=%H", "--", str(df)],
                         cwd=self.root,
                         text=True,
                         stderr=subprocess.DEVNULL,
                     ).strip()
-                except Exception:
-                    pass
 
                 results.append(
                     {
@@ -338,10 +337,8 @@ class ChangelogGenerator:
             docs_changelog.parent.mkdir(parents=True, exist_ok=True)
             # Create relative symlink if supported
             if docs_changelog.is_symlink() or docs_changelog.exists():
-                try:
+                with contextlib.suppress(Exception):
                     docs_changelog.unlink()
-                except Exception:
-                    pass
             try:
                 os.symlink("../CHANGELOG.md", docs_changelog)
                 symlink_created = True

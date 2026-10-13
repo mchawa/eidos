@@ -1,6 +1,6 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: ComponentSchema
-description: "Defines a dedicated in-process C4 Level 3 Component (CMP-*). Stored centrally in 'eidos/architecture/components/<component>.adoc' with package_path/source_path linking to implementation code."
+description: "Defines a dedicated in-process C4 Level 3 Component (CMP-*). Stored centrally in 'eidos/architecture/components/<component>.adoc' with source_path linking to implementation code."
 type: object
 required:
   - type
@@ -37,12 +37,13 @@ properties:
       - deprecated
       - retired
     description: "Lifecycle status of the component."
-  package_path:
-    type: string
-    description: "Relative file or package path to the source code implementing this component."
   source_path:
-    type: string
-    description: "Alias for package_path: relative path to the primary implementation source file."
+    oneOf:
+      - type: string
+      - type: array
+        items:
+          type: string
+    description: "Relative file path(s) or glob pattern(s) to the source code implementing this component."
   domain_binding:
     type: string
     description: "Optional product domain identifier (DOM-*) this component helps realize."

@@ -31,22 +31,22 @@ When reviewing a branch, PR, or working tree, audit across these 5 dimensions:
 ### Dimension 1: Blast Radius & Boundary Integrity
 * **Recommended Step 1:** Run `eidos context -f <file> --format json` on the changed files. This immediately extracts the exact C4 Level 2/3 component slice, bound interface contracts (`CTR-*`), domain capabilities (`CAP-*`), and technical invariants (`INV-*`).
 * **Blast-Radius Graph Traversal:** Run `eidos index blast-radius <comp_id>` to compute recursive transitive dependencies across containers, interface contracts, and domain capabilities. Verify all impacted downstream entities are accounted for in the change plan.
-* Inspect touched code files and verify they belong strictly to declared container packages ([`CNT-*`](file:///home/MTS/marwan.chawa/WS/eidos/eidos/architecture/containers)).
+* Inspect touched code files and verify they belong strictly to declared container packages (`CNT-*` in `eidos/architecture/containers/`).
 * **Red Flag:** A pull request touches files across 4 different components when the SpecDelta only declared mutations for 1 component.
 * **Red Flag:** Introduction of circular module dependencies or unauthorized cross-package imports violating architectural boundaries.
 
 ### Dimension 2: Interface Contract & Protocol Compatibility (SemVer)
-* Inspect interface contract modifications ([`CTR-*`](file:///home/MTS/marwan.chawa/WS/eidos/eidos/architecture/contracts)):
+* Inspect interface contract modifications (`CTR-*` in `eidos/architecture/contracts/`):
   - CLI commands (`cli_args`): Were required flags added? Were existing arguments renamed or removed?
   - REST APIs (`openapi`): Were required request body fields added? Were response status codes changed?
   - gRPC / Protobuf (`protobuf`): Were field tag numbers altered or types changed?
 * **Verdict:** Flag any breaking interface change that lacks a corresponding major version bump or backward-compatibility deprecation plan.
 
 ### Dimension 3: Policy & Invariant Guardrails
-* Verify compliance against repository policies ([`POL-*`](file:///home/MTS/marwan.chawa/WS/eidos/eidos/policies)):
-  - Does the PR violate [`POL-001`](file:///home/MTS/marwan.chawa/WS/eidos/eidos/policies/POL-001-git-as-single-source-of-truth.adoc) (Git as single source of truth)?
-  - Does the PR violate [`POL-002`](file:///home/MTS/marwan.chawa/WS/eidos/eidos/policies/POL-002-invariant-test-enforcement.adoc) (All invariants must have test bindings)?
-* **Red Flag:** New business validation rules added in code without an explicit `INV-*` ID in the capability and without a passing automated test in `tests/`.
+* Verify compliance against repository policies (`POL-*` in `eidos/policies/`):
+  - Does the PR violate any declared repository policy (`POL-*`)?
+  - Do all capability invariants (`INV-*`) have verified static test bindings (`file::func`)?
+* **Red Flag:** New business validation rules added in code without an explicit `INV-*` ID in the capability and without an automated test binding in `tests/`.
 
 ### Dimension 4: Workflow Mode Compliance
 * **Planned Mode:** If a SpecDelta is present (`eidos/deltas/dlt-*.adoc`), does the code implementation fulfill the declared mutations and checklist items?
@@ -72,24 +72,24 @@ Deliver structured, actionable review feedback formatted like a Senior/Staff Arc
 ### 🎯 Summary Decision: [APPROVE | REQUEST_CHANGES | COMMENT]
 - **Workflow Mode:** Planned Mode (`DLT-2026-012`) / Direct Mode
 - **Drift Status:** Synced (Zero Drift) / Drift Detected
-- **Invariant Test Coverage:** 100% Green / ⚠️ Missing Bindings
+- **Invariant Test Coverage:** 100% Verified / ⚠️ Missing Bindings
 
 ---
 
 ### 🔍 Architectural Findings
 
 #### 1. Blast Radius & Components [PASS / WARN / BLOCK]
-- **Touched Components:** `CMP-EIDOS-CLI`, `CMP-EIDOS-CORE`
+- **Touched Components:** `CNT-AUTH-SERVICE`, `CMP-AUTH-VALIDATOR`
 - **Assessment:** Clean separation. All touched files belong strictly to declared components.
 
 #### 2. Contract & SemVer Impact [PASS / WARN / BLOCK]
-- **Touched Contracts:** `CTR-EIDOS-CLI`
-- **Assessment:** Added optional flag `--prompt`. Fully backward-compatible (Minor evolution).
+- **Touched Contracts:** `CTR-AUTH-API`
+- **Assessment:** Added optional parameter `scope`. Fully backward-compatible (Minor evolution).
 
 #### 3. Invariants & Policy Compliance [PASS / WARN / BLOCK]
-- **Policies Checked:** `POL-001`, `POL-002`
-- **New Invariants:** `INV-RECONCILE-PROMPT`
-- **Test Binding:** `tests/test_drift.py::test_reconcile_specs_catalog_and_prompt` (Verified passing).
+- **Policies Checked:** `POL-INVARIANT-TRACEABILITY`
+- **New Invariants:** `INV-AUTH-TOKEN-EXPIRY`
+- **Test Binding:** `tests/test_auth.py::test_expired_token_rejected` (Verified).
 
 ---
 
@@ -97,7 +97,7 @@ Deliver structured, actionable review feedback formatted like a Senior/Staff Arc
 1. None. Ready to merge.
 
 ### 📝 Suggestions (Non-blocking)
-- Consider adding a short usage example to `eidos/architecture/contracts/cli.adoc`.
+- Consider adding a short usage example to `eidos/architecture/contracts/auth-api.adoc`.
 ```
 
 ---

@@ -17,7 +17,7 @@ interaction_modes:
   - "Authoring capabilities (CAP-*) and hypothesis explorations (EXP-*)"
   - "Scaffolding and reviewing Planned Mode SpecDeltas (DLT-*)"
   - "Tracking feature lifecycle and Kanban boards on the Living Web Portal"
-  - "Reviewing specification diffs on GitHub PRs and GitLab MRs"
+  - "Reviewing specification diffs and SpecDelta mutations in Git pull requests"
 ---
 = Persona: Product Lead
 :toc: left

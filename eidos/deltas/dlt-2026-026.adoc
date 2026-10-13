@@ -1,0 +1,54 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-026
+title: "100% Generic Engine, Zero-Config Path Standardization, and Graph-Inferred Design Paths"
+status: applied
+vcs:
+  branch: feat/generic-engine-zero-config
+intent:
+  kind: architectural_refactor
+  motivation: "Make the Eidos runtime engine and bundled agent skills 100% repository-agnostic with zero configuration files by standardizing 'package_path' on containers, 'source_path' on components, inferring design client/system paths via the knowledge graph, and relocating the index cache to 'eidos/.cache/'."
+mutations:
+- action: modify_component
+  target_component: CNT-EIDOS-CORE
+  details: "Add 'src/eidos/core/project.py' for glob-aware path ownership matching and generated/vendored file filtering; update 'container.schema.yaml' ('package_path' as string or array of strings/globs), 'component.schema.yaml' (strictly 'source_path' as string or array of strings/globs, removing duplicate 'package_path'), and 'capability.schema.yaml' ('technical.containers' as primary required list and 'technical.components' as optional sub-list); fix YAML frontmatter splitting in 'src/eidos/core/parser.py'."
+- action: modify_component
+  target_component: CNT-EIDOS-INDEX
+  details: "Relocate the SQLite knowledge graph and stop-gate cache from '.eidos/cache/' to 'eidos/.cache/' (gitignored via 'eidos/.gitignore'), remove hardcoded Eidos path prefixes from 'src/eidos/core/graph_index.py', and automatically infer code paths for 'design/client' ('CLT-*') and 'design/system' ('DS-*') by traversing graph edges to bound 'CNT-*' containers and 'CMP-*' components."
+- action: modify_component
+  target_component: CNT-EIDOS-PORTAL
+  details: "Remove hardcoded 'SYS-EIDOS-001', 'POL-001/002/003', and 'CMP-EIDOS-PORTAL' references from 'src/eidos/portal/generator.py', deriving C4 diagrams and policy badges dynamically from the repository's parsed living specifications."
+- action: modify_component
+  target_component: CNT-EIDOS-PLUGIN
+  details: "Remove all author-specific filesystem paths ('file:///home/MTS/marwan.chawa/...') and Eidos-self examples from all 14 skills in 'assets/plugin_reference/skills/*/SKILL.md'."
+- action: add_component
+  target_component: CNT-EIDOS-VCS
+  details: "Create 'eidos/architecture/containers/vcs.adoc' ('CNT-EIDOS-VCS' owning 'src/eidos/vcs') and register 'src/eidos/plugin' + 'assets/plugin_reference' in 'CNT-EIDOS-PLUGIN' so Eidos dogfoods its own generic path ownership rules."
+blast_radius:
+  impacted_components:
+  - CNT-EIDOS-CORE
+  - CNT-EIDOS-INDEX
+  - CNT-EIDOS-PORTAL
+  - CNT-EIDOS-PLUGIN
+  - CNT-EIDOS-VCS
+---
+= SpecDelta: 100% Generic Engine, Zero-Config Path Standardization, and Graph-Inferred Design Paths
+:toc: left
+
+== Problem Statement
+
+The Eidos engine (`graph_index.py`, `drift.py`, `portal/generator.py`) and bundled plugin skills contained hardcoded Eidos-self assumptions (`CNT-EIDOS-PLUGIN`, `SYS-EIDOS-001`, `cnt-eidos-`, and author-specific `file:///home/MTS/marwan.chawa/...` links). In addition, `component.schema.yaml` defined both `package_path` and `source_path` for the same purpose, `capability.schema.yaml` conflated C4 containers and components under `technical.components`, and runtime caches created a second top-level `.eidos/` directory alongside `eidos/`.
+
+== Architectural & Behavioral Mutations
+
+1. **Zero Settings File & Consolidated `eidos/.cache/`**:
+   * Living specifications reside in `eidos/`, and ephemeral runtime caches (`index.db` and `stop-gate.json`) reside in `eidos/.cache/` (gitignored via `eidos/.gitignore`).
+2. **Standardized Path & C4 Hierarchy Properties**:
+   * **Container (`tech/container`)**: Strictly uses `package_path` (`string` or `array of strings/globs`).
+   * **Component (`tech/component`, standalone & inline)**: Strictly uses `source_path` (`string` or `array of strings/globs`). `package_path` is removed from `component.schema.yaml`.
+   * **Capability (`product/capability`)**: Under `technical`, `containers` (`CNT-*`) is the primary required list, and `components` (`CMP-*`) is an optional sub-list.
+   * **Design Client (`CLT-*`) & Design System (`DS-*`)**: Do not declare path properties; their code paths are inferred automatically via the knowledge graph (`DS-* <-> CLT-* -> CNT-*`).
+3. **100% Generic Engine & Skills**:
+   * All Eidos-specific hardcodings are removed from `src/eidos/` and `assets/plugin_reference/skills/*/SKILL.md`.
+

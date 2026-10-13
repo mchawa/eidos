@@ -35,7 +35,7 @@ eidos containers
 eidos spec components
 # Or using shortcut:
 eidos components
-eidos components CNT-EIDOS-CORE
+eidos components CNT-AUTH-SERVICE
 
 # 3. Search architectural topology and compute dependency blast radius:
 eidos index search "authentication"
@@ -49,13 +49,13 @@ eidos spec create container CNT-AUTH-SERVICE --title "Authentication & Token Ser
 eidos spec create contract CTR-AUTH-API --title "Auth REST API" \
   --protocol openapi --owning-container CNT-AUTH-SERVICE --specification-file "packages/auth/openapi.yaml"
 
-# 6. Promote an inline C4 Level 3 component to a co-located specification:
-eidos component promote CMP-CORE-VALIDATOR
+# 6. Promote an inline C4 Level 3 component to a dedicated specification:
+eidos component promote CMP-AUTH-VALIDATOR
 
-# 7. Demote / inline a co-located component back into its container:
-eidos component inline CMP-CORE-VALIDATOR
+# 7. Demote / inline a dedicated component back into its container:
+eidos component inline CMP-AUTH-VALIDATOR
 
-# 8. List all C4 Level 3 components and their co-location status:
+# 8. List all C4 Level 3 components and their specification status:
 eidos component list
 ```
 
@@ -69,42 +69,42 @@ Container manifests live in `eidos/architecture/containers/<container-name>.adoc
 ---
 type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
-id: CNT-EIDOS-CORE
-name: "Eidos Core Engine"
-container_type: library  # service | library | cli_app | frontend_spa | background_worker | daemon
-runtime: "Python 3.12 / Typer / Hatchling"
-package_path: "src/eidos"
-domain_binding: DOM-SPEC-ENGINE
+id: CNT-AUTH-SERVICE
+name: "Authentication & Token Service"
+container_type: service  # service | library | cli_app | frontend_spa | background_worker | daemon
+runtime: "Python 3.12 / FastAPI"
+package_path: "src/auth"
+domain_binding: DOM-IDENTITY
 
 components:
-  - id: CMP-CORE-PARSER
-    name: "SpecParser"
-    responsibility: "Parses AsciiDoc frontmatter and structured sections."
-    source_path: "src/eidos/core/parser.py"
-  - id: CMP-CORE-VALIDATOR
-    name: "SpecValidator"
-    responsibility: "Validates living specs against Draft 2020-12 schemas and checks cross-references."
-    source_path: "src/eidos/core/validator.py"
-  - id: CMP-CORE-SCAFFOLDER
-    name: "LifecycleScaffolder"
-    responsibility: "Manages document lifecycle, template generation, and safety checks."
-    source_path: "src/eidos/core/scaffolder.py"
+  - id: CMP-AUTH-PARSER
+    name: "TokenParser"
+    responsibility: "Parses and decodes incoming bearer tokens and claims."
+    source_path: "src/auth/parser.py"
+  - id: CMP-AUTH-VALIDATOR
+    name: "TokenValidator"
+    responsibility: "Validates token signatures, expiration windows, and audience claims."
+    source_path: "src/auth/validator.py"
+  - id: CMP-AUTH-ISSUER
+    name: "SessionIssuer"
+    responsibility: "Mints short-lived access tokens and rotates refresh tokens."
+    source_path: "src/auth/issuer.py"
 
 dependencies:
   internal_containers: []
   external_services:
-    - "pyyaml"
-    - "jsonschema"
+    - "PostgreSQL"
+    - "Redis"
 
 contracts:
   provides:
-    - "CTR-EIDOS-VALIDATOR"
+    - "CTR-AUTH-API"
 ---
-= Container: Eidos Core Engine
+= Container: Authentication & Token Service
 :toc: left
 
 == Architectural Role
-Core engine providing parsing, validation, and lifecycle orchestration.
+Service providing token issuance, verification, and session lifecycle management.
 
 == Building Block View (C4 Level 3 Components)
 Internal modules and modular components contained within this deployable.
@@ -116,7 +116,7 @@ Internal modules and modular components contained within this deployable.
 
 C4 Level 3 components (`CMP-*`) follow a centralized hybrid model:
 1. **Inline by Default (80%)**: Simple internal modules remain inline within `CNT-*.adoc` under `components:` (`id`, `name`, `responsibility`, `source_path`).
-2. **Promoted Dedicated Specs (20%)**: Architecturally complex modules receive dedicated `type: tech/component` specifications residing centrally in `eidos/architecture/components/<component>.adoc` (linking to implementation code via `package_path`) and referenced in the container manifest via `ref: architecture/components/<component>.adoc`.
+2. **Promoted Dedicated Specs (20%)**: Architecturally complex modules receive dedicated `type: tech/component` specifications residing centrally in `eidos/architecture/components/<component>.adoc` (linking to implementation code via `source_path`) and referenced in the container manifest via `ref: architecture/components/<component>.adoc`.
 3. **Mandatory Invariants**:
    - `INV-COMPONENT-CENTRALIZATION-MANDATE`: Component specifications **MUST** reside centrally within `eidos/architecture/components/`. Specifications must never touch or reside within source code directories (`src/`, `packages/`).
    - `INV-COMPONENT-CONTAINER-AFFINITY`: Every dedicated `CMP-*` manifest must declare `container: CNT-*` pointing to an existing container.
@@ -126,27 +126,27 @@ C4 Level 3 components (`CMP-*`) follow a centralized hybrid model:
 ---
 type: tech/component
 schema: schemas/v1/tech/component.schema.yaml
-id: CMP-CORE-VALIDATOR
-name: "Specification Validator"
-container: CNT-EIDOS-CORE
+id: CMP-AUTH-VALIDATOR
+name: "Token Validator"
+container: CNT-AUTH-SERVICE
 status: active
-package_path: "src/eidos/core/validator.py"
-responsibility: "Validates specifications against canonical Draft 2020-12 schemas."
+source_path: "src/auth/validator.py"
+responsibility: "Validates JWT signatures and claim invariants."
 interfaces:
   provides:
-    - signature: "validate_document(doc: SpecDocument) -> list[str]"
-      description: "Validates a single parsed document."
+    - signature: "validate_token(token: str) -> Claims"
+      description: "Validates a signed bearer token."
   consumes:
-    - "CMP-CORE-PARSER"
+    - "CMP-AUTH-PARSER"
 quality_attributes:
   stateless: true
   reentrant: true
 invariants:
-  - id: INV-SPEC-VALIDATION
-    rule: "All specifications must validate against schema."
-    test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+  - id: INV-AUTH-TOKEN-EXPIRY
+    rule: "Expired tokens must always be rejected prior to claim evaluation."
+    test_binding: "tests/test_auth.py::test_expired_token_rejected"
 ---
-= Component: Specification Validator
+= Component: Token Validator
 ```
 
 ---
@@ -159,17 +159,17 @@ Interface contracts live in `eidos/architecture/contracts/<contract-name>.adoc`:
 ---
 type: tech/contract
 schema: schemas/v1/tech/contract.schema.yaml
-id: CTR-EIDOS-CLI
-title: "Eidos Command-Line Interface Contract"
-protocol: "cli_args"  # cli_args | openapi | protobuf | graphql | asyncapi | json_rpc_stdio
-owning_container: "CNT-EIDOS-CLI"
-specification_file: "src/eidos/cli/main.py"
+id: CTR-AUTH-API
+title: "Authentication Service Interface Contract"
+protocol: "openapi"  # cli_args | openapi | protobuf | graphql | asyncapi | json_rpc_stdio
+owning_container: "CNT-AUTH-SERVICE"
+specification_file: "src/auth/openapi.yaml"
 ---
-= Contract: Eidos CLI Interface
+= Contract: Authentication Service Interface
 :toc: left
 
-== Command Specifications
-Document CLI flags, arguments, exit codes, and JSON-RPC messages here.
+== Endpoint Specifications
+Document API endpoints, CLI flags, arguments, exit codes, and payload schemas here.
 ```
 
 ---

@@ -18,9 +18,9 @@ business:
     - eidos/policies/POL-002-invariant-test-enforcement.adoc
 
 technical:
-  components:
-    - "packages/spec-mutator"
-    - "packages/impact-analyzer"
+  containers:
+    - "CNT-EIDOS-CORE"
+    - "CNT-EIDOS-CLI"
   contracts:
     interfaces:
       - "eidos delta create --kind [feature|bugfix|removal]"
@@ -31,10 +31,10 @@ technical:
   invariants:
     - id: INV-MUTATION-REVERSIBILITY
       rule: "Applying a SpecDelta must either cleanly mutate the baseline .adoc files or abort without leaving partial state."
-      test_binding: "tests/specs/test_delta_engine.py::test_atomic_spec_mutation"
+      test_binding: "tests/test_delta_engine.py::test_delta_execute_and_verify_lifecycle"
     - id: INV-REMOVAL-TOMBSTONE
       rule: "Removing a capability via SpecDelta must archive the spec with a tombstone entry rather than silently deleting history."
-      test_binding: "tests/specs/test_delta_engine.py::test_capability_removal_tombstone"
+      test_binding: "tests/test_audit.py::test_delta_audit_tombstone_exemption"
     - id: INV-DELTA-DELETION-AUDIT
       rule: "SpecDeltas with deletion or deprecation mutations must pass context-aware blast-radius auditing with zero unacknowledged active leaks."
       test_binding: "tests/test_audit.py::test_delta_deletion_audit_clean"

@@ -1,0 +1,47 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-027
+title: "Strict Static-Only Invariant-to-Test Function Verification"
+status: applied
+vcs:
+  branch: feat/strict-static-invariant-verification
+intent:
+  kind: architectural_refactor
+  motivation: "Enforce strict static-only verification of invariant 'test_binding' declarations ('file::func' existence and exact word-boundary '# INV-*' reference within the bound test function) without executing tests or reading test runner artifacts."
+mutations:
+- action: modify_component
+  target_component: CNT-EIDOS-CORE
+  details: "Upgrade 'src/eidos/core/ast_indexer.py' with 'list_test_functions()' and decorator/preceding-comment aware 'extract_test_bindings()' across both 'AstGrepIndexer' and 'FallbackIndexer'."
+- action: modify_component
+  target_component: CNT-EIDOS-VCS
+  details: "Upgrade 'extract_invariants_and_verify()' and add 'detect_orphan_invariants()' in 'src/eidos/vcs/drift.py' to strictly require that 'test_binding' ('file::func') resolves to an existing file and AST test function containing the exact word-boundary 'INV-...' token, removing the permissive 'file exists -> covered' fallback and gating 'is_clean' on 100% invariant coverage."
+- action: modify_component
+  target_component: CNT-EIDOS-CLI
+  details: "Add '--warn-only' option to 'eidos drift' in 'src/eidos/cli/main.py' so strict static invariant verification is enforced by default while allowing advisory inspection when requested."
+- action: extend_capability
+  target_capability: CAP-VCS-001
+  details: "Repair stale 'test_binding' paths across 'eidos/domains/' and tag bound test functions in 'tests/' so all 30 repository invariants pass strict static 'file::func' verification with zero orphans."
+blast_radius:
+  impacted_components:
+  - CNT-EIDOS-CORE
+  - CNT-EIDOS-VCS
+  - CNT-EIDOS-CLI
+---
+= SpecDelta: Strict Static-Only Invariant-to-Test Function Verification
+:toc: left
+
+== Problem Statement
+
+Previously, `extract_invariants_and_verify()` in `src/eidos/vcs/drift.py` contained a fallback (`if not matching and tb and (repo_root / tb.split("::")[0]).exists(): matching = [tb_file]`) that marked any invariant as covered if its test file merely existed on disk—even when the `::test_func` did not exist or never mentioned the invariant ID. It also used substring matching (`iid in content`) and did not gate `DriftCheckResult.is_clean` on uncovered invariants.
+
+== Architectural & Behavioral Mutations
+
+1. **Strict Static-Only Verification (No Test Execution)**:
+   * Eidos never runs test suites or parses JUnit XML; verification is 100% static and instantaneous.
+   * When `test_binding: path/to/test_file.py::test_func` is declared, both the file AND `test_func` must exist in the AST (`list_test_functions`), and `test_func` (including its preceding comments and decorators) must contain the exact word-boundary token `\bINV-...\b`.
+2. **Orphan Invariant Detection**:
+   * `detect_orphan_invariants()` reports `INV-*` tokens referenced in test functions that do not exist in any capability or policy specification (supporting `# eidos:fixture` opt-out for synthetic test fixtures).
+3. **Default Gate Enforcement**:
+   * `DriftCheckResult.is_clean` requires zero uncovered invariants and zero orphan invariant references (`eidos drift --warn-only` downgrades to advisory mode).
+

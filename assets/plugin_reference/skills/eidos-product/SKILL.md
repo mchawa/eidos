@@ -41,7 +41,7 @@ When defining a domain, classify its architectural role:
 * **`core`**: Primary competitive differentiator and business value driver (e.g., trading algorithm, recommendation engine, document validator).
 * **`supporting`**: Custom business capability tailored to the organization (e.g., invoice generator, custom report builder).
 * **`generic`**: Standard commodity capability (e.g., authentication, notifications, billing gateway).
-* **`platform`**: Foundational developer infrastructure, telemetry, and VCS bridge.
+* **`platform`**: Foundational developer infrastructure, telemetry, and CI/CD tooling.
 
 ### Authoring Domains
 Use the Eidos CLI:
@@ -105,11 +105,13 @@ business:
     - eidos/personas/workspace-admin.adoc
   jtbd: "When my team needs higher quota limits, I want to upgrade our plan self-service, so that our workflows are never blocked."
   policies:
-    - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
+    - eidos/policies/POL-BILLING-ACCURACY.adoc
 
 technical:
+  containers:
+    - "CNT-BILLING-SERVICE"
   components:
-    - "CMP-BILLING-SERVICE"
+    - "CMP-PRORATION-ENGINE"
   contracts:
     interfaces:
       - "CTR-BILLING-API"
@@ -185,7 +187,7 @@ After adding or modifying domains, capabilities, or personas:
    Ensure:
    - All `business.personas` paths exist.
    - All `business.policies` paths exist.
-   - All referenced `technical.components` and `contracts` exist in `eidos/architecture/`.
+   - All referenced `technical.containers`, optional `technical.components`, and `contracts` exist in `eidos/architecture/`.
 
 2. **Verify Invariant Coverage:**
    ```bash

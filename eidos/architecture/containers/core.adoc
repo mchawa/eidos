@@ -5,7 +5,9 @@ id: CNT-EIDOS-CORE
 name: "Eidos Living Specification & Design Core Engine"
 container_type: "library"
 runtime: "Python 3.12 / Hatchling / PyYAML / jsonschema"
-package_path: "src/eidos/core"
+package_path:
+  - "src/eidos/core"
+  - "assets/schemas"
 
 domain_binding: DOM-SPEC-ENGINE
 tier: core
@@ -35,6 +37,18 @@ components:
     name: "AssetLocator"
     responsibility: "Locates externalized specification schemas and canonical plugin reference assets across local checkouts and wheels."
     source_path: "src/eidos/core/assets.py"
+  - id: CMP-PROJECT-RESOLVER
+    name: "ProjectResolver"
+    responsibility: "Zero-config repository root discovery, path ownership glob matching, and gitattributes generated/vendored file filtering."
+    source_path: "src/eidos/core/project.py"
+  - id: CMP-DOMAIN-MODELS
+    name: "DomainModels"
+    responsibility: "Typed Pydantic and dataclass domain models representing living specification documents and validation reports."
+    source_path: "src/eidos/core/models.py"
+  - id: CMP-DELTA-AUDITOR
+    name: "DeltaAuditor"
+    responsibility: "Audits reverse-dependency blast radius for entities deprecated or removed by SpecDeltas."
+    source_path: "src/eidos/core/audit.py"
   - id: CMP-CONTEXT-SLICER
     name: "ContextSlicer"
     responsibility: "Extracts compact, token-efficient architectural subgraph slices across C4 components, contracts, capabilities, invariants, and policies."
@@ -63,7 +77,7 @@ quality_attributes:
 :toc: left
 
 == Architectural Boundary
-This container represents the foundational library under `src/eidos/core/`. It owns all specification parsing, JSON Schema validation, multi-design system scaffolding, W3C token management, SpecDelta lifecycle state machines, reference checking, and embedded architectural graph indexing.
+This container represents the foundational library under `src/eidos/core/` and bundled schemas under `assets/schemas/`. It owns all specification parsing, JSON Schema validation, zero-config project path resolution, multi-design system scaffolding, W3C token management, SpecDelta lifecycle state machines, reference checking, and embedded architectural graph indexing.
 
 == Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
 
@@ -76,10 +90,13 @@ This container represents the foundational library under `src/eidos/core/`. It o
 | `CMP-DESIGN-ENGINE` | **DesignEngine** | Multi-design system management, token compilation, and UI state machines | `src/eidos/core/scaffolder.py`
 | `CMP-REPO-INITIALIZER` | **RepositoryInitializer** | Repository scaffolding with living spec hierarchies and gitignore | `src/eidos/core/scaffolder.py`
 | `CMP-ASSET-LOCATOR` | **AssetLocator** | Resolves bundled schemas and plugin assets across packages and repos | `src/eidos/core/assets.py`
+| `CMP-PROJECT-RESOLVER` | **ProjectResolver** | Zero-config repository root discovery and path ownership matching | `src/eidos/core/project.py`
+| `CMP-DOMAIN-MODELS` | **DomainModels** | Typed domain models for living specification entities and validation reports | `src/eidos/core/models.py`
+| `CMP-DELTA-AUDITOR` | **DeltaAuditor** | Reverse-dependency blast-radius auditor for SpecDelta removals | `src/eidos/core/audit.py`
 | `CMP-CONTEXT-SLICER` | **ContextSlicer** | Slices token-budgeted architectural subgraphs for AI coding agents | `src/eidos/core/context.py`
 | `CMP-CHANGELOG-GENERATOR` | **ChangelogGenerator** | Compiles applied SpecDeltas and Git release history into a portable Keep a Changelog ledger | `src/eidos/core/changelog.py`
 |===
 
 == Quality Attributes & Operational Policies
-* **Statelessness**: The core engine operates statelessly. All state is maintained within the Git repository and accelerated by an ephemeral cache (`.eidos/cache/index.db`).
+* **Statelessness**: The core engine operates statelessly. All state is maintained within the Git repository and accelerated by an ephemeral cache (`eidos/.cache/index.db`).
 * **Validation Determinism**: Schema validation produces deterministic exit codes and structured reports.

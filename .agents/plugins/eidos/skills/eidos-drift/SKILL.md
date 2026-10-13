@@ -42,16 +42,16 @@ The command returns a structured JSON payload:
   "is_clean": false,
   "drift_detected": true,
   "workflow_mode": "direct",
-  "code_files": ["src/eidos/cli/main.py"],
+  "code_files": ["src/auth/service.py"],
   "spec_files": [],
   "delta_files": [],
-  "test_files": ["tests/test_drift.py"],
-  "touched_components": ["CMP-EIDOS-CLI"],
+  "test_files": ["tests/test_auth.py"],
+  "touched_components": ["CNT-AUTH-SERVICE"],
   "valid_specs": 47,
   "total_specs": 47,
   "remediation_suggestions": [
-    "Drift Detected: 1 code file(s) changed in src/ without living specification updates in eidos/.",
-    "• 'src/eidos/cli/main.py' relates to CNT-EIDOS-CLI -> Update 'eidos/architecture/containers/cli.adoc'"
+    "Drift Detected: 1 code file(s) had structural changes without living specification updates in eidos/.",
+    "• 'src/auth/service.py' relates to CNT-AUTH-SERVICE -> Update 'eidos/architecture/containers/auth.adoc'"
   ],
   "summary_markdown": "..."
 }
@@ -63,12 +63,12 @@ The command returns a structured JSON payload:
 
 ### Direct Mode (Default)
 When no `SpecDelta` (`DLT-*`) files are present:
-1. `classification.code_files` must have corresponding updates in `classification.spec_files`.
-2. If code was modified but no living specifications were touched -> **Drift Detected!**
+1. Code files with **structural changes** (added/deleted files, or added/removed/renamed/signature-changed public classes, functions, or methods) must have corresponding updates in their owning spec or a 1-hop linked spec in `eidos/`. Body-only edits inside existing functions do not trigger drift.
+2. If structural code changes occur without any owning or 1-hop linked specification update -> **Drift Detected!**
 3. If drift is detected, proceed to **Remediation**:
    - Identify owning components in `touched_components`.
    - Activate `eidos-reconcile` skill or run `eidos index search` to locate candidate living specifications.
-   - Update the relevant living specifications (`CMP-*`, `CTR-*`, `POL-*`, `CAP-*`) in `eidos/`.
+   - Update the relevant living specifications (`CNT-*`, `CMP-*`, `CTR-*`, `POL-*`, `CAP-*`) in `eidos/`.
 
 ### Planned Mode (SpecDelta Present)
 When `delta_files` are present (e.g., `eidos/deltas/dlt-*.adoc`):
@@ -80,7 +80,7 @@ When `delta_files` are present (e.g., `eidos/deltas/dlt-*.adoc`):
 
 ## 4. Invariant Test Coverage & Polyglot Scanning
 
-Every capability invariant (`INV-*`) and policy (`POL-*`) must be bound to automated test coverage in the repository test suite (`POL-002`).
+Every capability invariant (`INV-*`) and policy (`POL-*`) must be bound to automated test coverage in the repository test suite.
 
 ### Polyglot Test File Discovery
 `eidos drift` features an integrated **Polyglot Invariant Test Scanner** that automatically discovers and inspects test files across multiple programming languages and ecosystems:

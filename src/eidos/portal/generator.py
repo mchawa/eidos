@@ -6,12 +6,14 @@ import re
 from pathlib import Path
 from typing import Any
 
+from eidos.core.project import load_project
 from eidos.core.validator import SpecValidator
 
 
 def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     """Inspect and extract all living specifications into a structured portal payload."""
     eidos_path = eidos_dir.resolve()
+    project = load_project(eidos_path.parent)
     validator = SpecValidator()
     report = validator.validate_directory(eidos_path)
 
@@ -43,20 +45,26 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     arch_doc = next((s for s in specs if s["type"] == "tech/architecture"), None)
     sys_doc = next((s for s in specs if s["type"] == "product/system"), None)
 
-    system_title = (sys_doc["frontmatter"].get("title") if sys_doc else None) or "Eidos Living Architecture"
-    system_id = (sys_doc["id"] if sys_doc else None) or "SYS-EIDOS-001"
+    system_title = (
+        (sys_doc["frontmatter"].get("title") or sys_doc["frontmatter"].get("name") if sys_doc else None)
+        or (arch_doc["frontmatter"].get("title") if arch_doc else None)
+        or project.system_name
+    )
+    system_id = (sys_doc["id"] if sys_doc else None) or project.system_id
 
     # Components & Containers (C4 Level 2)
     raw_components = specs_by_type.get("tech/container", []) + specs_by_type.get("tech/component", [])
     components: list[dict[str, Any]] = []
     for c in raw_components:
         fm = c["frontmatter"]
+        raw_pkg = fm.get("package_path", "N/A")
+        pkg_path_str = ", ".join(str(p) for p in raw_pkg) if isinstance(raw_pkg, list) else str(raw_pkg)
         comp_dict = {
             "id": c["id"],
             "name": fm.get("name", c["id"]),
             "container_type": fm.get("container_type", "library"),
             "runtime": fm.get("runtime", "N/A"),
-            "package_path": fm.get("package_path", "N/A"),
+            "package_path": pkg_path_str,
             "domain_binding": fm.get("domain_binding", "N/A"),
             "internal_components": fm.get("components", []) or fm.get("c4_internal_components", []),
             "dependencies": fm.get("dependencies", {}),
@@ -141,13 +149,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     invariants: list[dict[str, Any]] = []
     for pol in policies:
         pid = pol.get("id", "")
-        tb = "tests/test_validator.py"
-        if "POL-003" in pid:
-            tb = "tests/test_docs_sync.py::test_documentation_and_schemas_in_sync"
-        elif "POL-002" in pid:
-            tb = "tests/test_drift.py::test_drift_detection"
-        elif "POL-001" in pid:
-            tb = "tests/test_drift.py::test_clean_repo"
+        tb = pol.get("test_binding") or pol.get("enforcement_command") or "N/A"
         invariants.append(
             {
                 "id": pid,
@@ -330,7 +332,7 @@ def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict
                 "title": clt["title"],
                 "platform": fm.get("platform", "web"),
                 "design_system": fm.get("design_system", "DS-CORE"),
-                "container": fm.get("container", "CMP-EIDOS-PORTAL"),
+                "container": fm.get("container", "N/A"),
                 "capabilities": fm.get("capabilities", []),
                 "screens": fm.get("screens", []),
                 "flows": fm.get("flows", []),
@@ -392,7 +394,7 @@ def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict
                 "id": scr["id"],
                 "title": scr["title"],
                 "route": fm.get("route", "/"),
-                "client": fm.get("client", "CLT-WEB-PORTAL"),
+                "client": fm.get("client", "N/A"),
                 "system_ref": fm.get("supported_design_systems", ["DS-CORE"])[0] if fm.get("supported_design_systems") else "DS-CORE",
                 "states": states,
                 "slots": fm.get("slots", {}),
@@ -419,8 +421,8 @@ def _generate_c4_context_mermaid(personas: list[dict[str, Any]], system_id: str,
         "  classDef system fill:#059669,stroke:#047857,color:#fff,stroke-width:3px,rx:8px;",
         "  classDef external fill:#334155,stroke:#475569,color:#fff,stroke-width:2px,rx:6px;",
         "",
-        f'  SYS["<div style=\'padding:10px 14px;font-size:15px;\'><b>{system_id}</b><br/>{clean_title}<br/><i>[Living Specification &amp; Governance Ecosystem]</i></div>"]:::system',
-        '  EXT_GIT["<div style=\'padding:8px 12px;\'><b>GitHub / GitLab</b><br/>VCS Platform &amp; CI/CD Pipeline<br/><i>[External Platform]</i></div>"]:::external',
+        f'  SYS["<div style=\'padding:10px 14px;font-size:15px;\'><b>{system_id}</b><br/>{clean_title}<br/><i>[Software System]</i></div>"]:::system',
+        '  EXT_GIT["<div style=\'padding:8px 12px;\'><b>Git Repository &amp; CI/CD</b><br/>Version Control &amp; Verification Pipeline<br/><i>[External Platform]</i></div>"]:::external',
         '  EXT_IDE["<div style=\'padding:8px 12px;\'><b>AI IDEs &amp; Coding Agents</b><br/>Antigravity, Cursor, Claude Code<br/><i>[Development Environments]</i></div>"]:::external',
     ]
 
@@ -436,7 +438,7 @@ def _generate_c4_context_mermaid(personas: list[dict[str, Any]], system_id: str,
         node_id = pid.replace("-", "_")
         lines.append(f'  {node_id} ==>|Interacts & Collaborates| SYS')
 
-    lines.append('  SYS ==>|Syncs Specs, Issues, PRs| EXT_GIT')
+    lines.append('  SYS ==>|Tracks Specs, Commits &amp; Drift| EXT_GIT')
     lines.append('  SYS ==>|CLI Commands &amp; Agent Skills| EXT_IDE')
 
     return "\n".join(lines)
@@ -491,10 +493,7 @@ def _classify_container_tier(comp: dict[str, Any]) -> tuple[str, str]:
     raw_tier = comp.get("tier")
     if raw_tier:
         raw_slug = str(raw_tier).strip().lower()
-        if not raw_slug.startswith("tier_"):
-            tier_key = f"tier_{raw_slug}"
-        else:
-            tier_key = raw_slug
+        tier_key = f"tier_{raw_slug}" if not raw_slug.startswith("tier_") else raw_slug
         if tier_key in GENERIC_TIERS:
             return (tier_key, GENERIC_TIERS[tier_key]["name"])
         clean_slug = tier_key.replace("tier_", "")
@@ -869,8 +868,8 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
     """Generate Mermaid syntax for C4 Level 3 Component Whitebox View of a single container."""
     cid = component["id"]
     clean_name = component.get("name", cid).replace('"', "'")
-    ctype = component.get("container_type", "library")
-    runtime = component.get("runtime", "N/A").replace('"', "'")
+    component.get("container_type", "library")
+    component.get("runtime", "N/A").replace('"', "'")
     internals = component.get("internal_components", [])
     box_id = f"subgraph_{cid.replace('-', '_')}"
 
@@ -892,7 +891,12 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
             mname = mod.get("name", f"Module {idx+1}").replace('"', "'")
             title_text = f"<b>{html.escape(mid)}: {html.escape(mname)}</b>" if mid else f"<b>{html.escape(mname)}</b>"
             resp = mod.get("responsibility", "").replace('"', "'")
-            spath = mod.get("source_path", "").replace('"', "'")
+            raw_spath = mod.get("source_path", "")
+            spath = (
+                ", ".join(str(p) for p in raw_spath)
+                if isinstance(raw_spath, list)
+                else str(raw_spath)
+            ).replace('"', "'")
             mod_id = f"mod_{cid.replace('-', '_')}_{idx}"
             lines.append(
                 f'    {mod_id}["<div style=\'padding:10px 14px;text-align:left;min-width:300px;max-width:420px;white-space:normal;word-break:break-word;line-height:1.45;\'>'
