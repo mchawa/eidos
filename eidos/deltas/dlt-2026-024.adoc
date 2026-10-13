@@ -55,7 +55,7 @@ Previously, Eidos documentation mixed `uv add eidos-ai` with `uv tool install`, 
    * Expose `eidos` as the sole CLI script entry point in `pyproject.toml`.
 2. **CLI-Native Hooks (`eidos hook lint`, `eidos hook drift`) & `eidos doctor`**:
    * Implement `src/eidos/plugin/hooks.py` and wire `eidos hook lint` and `eidos hook drift` in `src/eidos/cli/main.py`.
-   * Keep lightweight forwarding shims in `scripts/lint_docs.py` and `scripts/check_drift.py` that delegate to `eidos hook` (falling back to `uvx --from eidos-ai eidos hook`).
+   * Remove legacy `scripts/lint_docs.py` and `scripts/check_drift.py` wrappers so `hooks.json` invokes `eidos hook lint` and `eidos hook drift` directly.
 3. **Block-Once Stop Gate**:
    * On `Stop`, if specification validation or drift fails, compute a SHA-256 fingerprint of the failure state and store it in `eidos/.cache/stop-gate.json`.
    * First `Stop` with a new fingerprint returns `{"decision": "continue", "reason": ...}` to block turn completion and instruct the agent to reconcile specs.
