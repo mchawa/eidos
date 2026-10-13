@@ -276,6 +276,16 @@ eidos delta delete dlt-2026-005
 
 # Rebuild symlink views partitioned by lifecycle state
 eidos delta sync-views
+
+# Compile an auditable, SpecDelta-backed changelog from Git release tags
+eidos delta changelog
+
+# Direct shortcut form
+eidos changelog
+
+# Output directly to stdout or export to custom file
+eidos changelog --stdout
+eidos changelog --output RELEASE_NOTES.md --no-unreleased
 ```
 
 ---
@@ -525,4 +535,6 @@ Eidos provides intuitive root-level shortcuts for common workflows:
 * `eidos components`: Direct shortcut to `eidos spec components`.
 * `eidos repo-map`: Direct shortcut to `eidos index repo-map`.
 * `eidos find-symbol <query>`: Direct shortcut to `eidos index find-symbol`.
+* `eidos changelog`: Direct shortcut to `eidos delta changelog`.
+
 

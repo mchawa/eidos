@@ -352,18 +352,24 @@ class AuditEngine:
                 risk_level="low",
             )
 
-        # 2. Historical Applied Deltas
-        if rel_str.startswith("eidos/deltas/") and ("by-status/applied/" in rel_str or self._is_delta_applied(rel_path)):
+        # 2. Historical Applied Deltas & Release Changelogs
+        if (
+            (rel_str.startswith("eidos/deltas/") and ("by-status/applied/" in rel_str or self._is_delta_applied(rel_path)))
+            or rel_str in ("CHANGELOG.md", "docs/changelog.md")
+            or rel_str.endswith("CHANGELOG.md")
+            or rel_str.endswith("changelog.md")
+        ):
             return AuditFinding(
-                    file_path=rel_str,
-                    line_number=line_number,
-                    matched_term=matched_term,
-                    line_snippet=line_text[:80],
-                    classification="historical_ledger",
-                    is_approved=True,
-                    reason="Historical applied SpecDelta ledger (immutable record)",
-                    risk_level="low",
-                )
+                file_path=rel_str,
+                line_number=line_number,
+                matched_term=matched_term,
+                line_snippet=line_text[:80],
+                classification="historical_ledger",
+                is_approved=True,
+                reason="Historical applied SpecDelta or changelog release ledger (immutable record)",
+                risk_level="low",
+            )
+
 
         # 3. Explicit Tombstone declarations in SpecDelta
         for entry in allowed_reasons:

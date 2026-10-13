@@ -27,6 +27,7 @@ nav = [
     { "Eidos Portal" = "guides/living-portal.md" },
   ]},
   { "Contributing" = "contributing.md" },
+  { "Changelog" = "changelog.md" },
   { "Eidos Portal ↗" = "https://mchawa.github.io/eidos/portal/" },
 ]
 

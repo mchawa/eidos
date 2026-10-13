@@ -94,6 +94,7 @@ All inspection and mutation commands provide deterministic `--json` outputs for 
 | `eidos spec containers`<br>`eidos spec components` | `[container_id]` | List C4 Level 2 containers and Level 3 in-process components |
 | `eidos delta create` | `<id> -t <title> -k <kind> -m <motivation>` | Scaffold a SpecDelta mutation document (`DLT-*`) for Planned Mode |
 | `eidos delta apply` | `<id>` | Reconcile an applied SpecDelta in-place to `status: applied` |
+| `eidos changelog`<br>`eidos delta changelog` | `[--output <file>] [--unreleased]` | Generate auditable SpecDelta-backed release changelog |
 | `eidos spec create` | `<type> <id> -t <title> ...` | Scaffold a living specification (`container`, `contract`, `capability`, etc.) |
 | `eidos spec show` | `<id_or_path>` | Parse structured frontmatter metadata and AsciiDoc sections |
 | `eidos spec list` | `[--type <type>] [--status <status>]` | Query specs filtered by type (`tech/container`, `product/capability`) or status |

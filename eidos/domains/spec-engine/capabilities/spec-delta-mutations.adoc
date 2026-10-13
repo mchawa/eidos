@@ -27,6 +27,7 @@ technical:
       - "eidos delta apply <delta-id>"
       - "eidos delta impact <delta-id>"
       - "eidos delta audit <delta-id> [--strict] [--json]"
+      - "eidos delta changelog [--output <file>] [--unreleased]"
   invariants:
     - id: INV-MUTATION-REVERSIBILITY
       rule: "Applying a SpecDelta must either cleanly mutate the baseline .adoc files or abort without leaving partial state."
@@ -37,6 +38,10 @@ technical:
     - id: INV-DELTA-DELETION-AUDIT
       rule: "SpecDeltas with deletion or deprecation mutations must pass context-aware blast-radius auditing with zero unacknowledged active leaks."
       test_binding: "tests/test_audit.py::test_delta_deletion_audit_clean"
+    - id: INV-DELTA-CHANGELOG-GENERATION
+      rule: "eidos delta changelog must compile an auditable, SpecDelta-backed changelog partitioned by git release tags with zero hallucinated mutations."
+      test_binding: "tests/test_changelog.py::test_delta_changelog_generation"
+
 ---
 = Capability: SpecDelta Semantic Mutation Engine
 :toc: left

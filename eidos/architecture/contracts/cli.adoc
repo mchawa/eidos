@@ -158,6 +158,8 @@ Orchestrates SpecDeltas throughout their semantic mutation lifecycle using flat 
   - `audit <id_or_path> [--path <path>] [--strict] [--json]`: Performs reverse-dependency blast-radius audit on entities removed or deprecated by the SpecDelta, classifying references into approved (historical, negative tests, cleanup routines, tombstones) vs. unacknowledged active leaks.
   - `apply <id_or_path> [--execute] [--verify] [--json]`: Reconciles a delta in-place, updates frontmatter status to `applied`, and updates symlink views. If `--execute` is supplied, deterministically scaffolds missing specs and applies structural mutations without LLMs.
   - `delete <id_or_path> [--force]`: Deletes a SpecDelta file and cleans up symlink views.
+  - `changelog [--output <path>] [--unreleased/--no-unreleased] [--docs/--no-docs] [--path <path>]`: Compiles an auditable, Keep a Changelog compliant release history partitioned by Git release tags and applied SpecDeltas (`DLT-*`).
+
 
 === `eidos drift [--base REF] [--head REF] [--uncommitted] [--markdown FILE] [--json]`
 Detects spec-to-code drift, schema validity, and invariant test coverage across both Planned Mode and Direct Mode.
@@ -206,6 +208,7 @@ Bootstraps a repository with an empty Eidos living specification skeleton, an em
 * `eidos uninstall`: Direct shortcut to `eidos plugin uninstall`.
 * `eidos repo-map`: Direct shortcut to `eidos index repo-map`.
 * `eidos find-symbol <query>`: Direct shortcut to `eidos index find-symbol`.
+* `eidos changelog`: Direct shortcut to `eidos delta changelog`.
 
 == Command Groups (Rich Help Panels)
 
@@ -213,7 +216,7 @@ Commands are semantically organized into six functional panels in CLI help outpu
 1. **Setup & Workspace**: `version`, `info`, `init`
 2. **Governance & Verification**: `validate`, `lint`, `drift`, `reconcile`, `sync`
 3. **Living Web Portal**: `portal`, `serve`, `build-site`
-4. **Living Catalog & Mutations**: `spec`, `delta`, `component`, `create`, `delete`, `list`, `containers`, `components`
+4. **Living Catalog & Mutations**: `spec`, `delta`, `component`, `create`, `delete`, `list`, `containers`, `components`, `changelog`
 5. **Knowledge Graph & AI Context**: `index`, `context`, `repo-map`, `find-symbol`
 6. **Agent Ecosystem & Plugins**: `plugin`, `install`, `uninstall`
 

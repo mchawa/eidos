@@ -28,6 +28,7 @@ from eidos.core.scaffolder import (
     verify_delta_mutations,
 )
 from eidos.core.validator import SpecValidator
+from eidos.core.changelog import ChangelogGenerator
 from eidos.plugin.installer import (
     PluginInstallTarget,
     install_plugin,
@@ -1808,9 +1809,62 @@ def delta_delete_cmd(
     console.print(f"[bold green]✓[/bold green] {msg}")
 
 
+@delta_app.command("changelog")
+@app.command("changelog", rich_help_panel=PANEL_SPECS)
+def delta_changelog_cmd(
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Target changelog file path (defaults to ./CHANGELOG.md).",
+    ),
+    unreleased: bool = typer.Option(
+        True,
+        "--unreleased/--no-unreleased",
+        help="Include unreleased changes section.",
+    ),
+    docs: bool = typer.Option(
+        True,
+        "--docs/--no-docs",
+        help="Automatically synchronize docs/changelog.md and register in zensical.toml.",
+    ),
+    stdout: bool = typer.Option(
+        False,
+        "--stdout",
+        help="Print changelog directly to stdout instead of writing to disk.",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to eidos directory (defaults to ./eidos).",
+    ),
+):
+    """Generate an auditable, SpecDelta-backed changelog partitioned by Git release tags."""
+    eidos_dir = path or Path("eidos")
+    repo_root = eidos_dir.resolve().parent if eidos_dir.name == "eidos" else Path.cwd()
+    gen = ChangelogGenerator(repo_root=repo_root, eidos_dir=eidos_dir)
+
+    if stdout:
+        typer.echo(gen.generate_changelog(include_unreleased=unreleased))
+        return
+
+    res = gen.update_changelog_files(
+        output_file=output,
+        update_docs=docs,
+        include_unreleased=unreleased,
+    )
+
+    console.print(f"[bold green]✓ Changelog generated:[/bold green] {res['output_file']} ({res['bytes_written']} bytes)")
+    if res.get("docs_file"):
+        link_mode = "symlinked" if res.get("symlink_created") else "mirrored"
+        console.print(f"  [dim]Documentation {link_mode}: {res['docs_file']}[/dim]")
+
+
 # -------------------------------------------------------------------------
 # Top-Level Convenience Shortcuts
 # -------------------------------------------------------------------------
+
 
 
 @app.command("create", rich_help_panel=PANEL_SPECS)
