@@ -11,6 +11,7 @@ Verifies:
 
 import gzip
 import json
+import sys
 import threading
 import time
 import urllib.request
@@ -155,6 +156,8 @@ def test_spike_d_runtime_zero_node_invariant(repo_root):
         html = res.read()
     delivery_latency_ms = (time.perf_counter() - t0) * 1000
 
-    # Exit Criteria: Cold boot live preview response < 50ms
-    assert delivery_latency_ms < 50.0, f"Delivery latency {delivery_latency_ms:.2f}ms exceeds 50ms"
+    # Exit Criteria: Cold boot live preview response < 50ms (headroom when instrumented with coverage)
+    is_instrumented = "coverage" in sys.modules or sys.gettrace() is not None
+    max_delivery_ms = 150.0 if is_instrumented else 50.0
+    assert delivery_latency_ms < max_delivery_ms, f"Delivery latency {delivery_latency_ms:.2f}ms exceeds {max_delivery_ms}ms"
     assert len(html) > 1000
