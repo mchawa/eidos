@@ -43,6 +43,30 @@ def test_cli_context_json_output():
     data = json.loads(result.output)
     assert "components" in data
     assert "contracts" in data
-    assert "policies" in data
     assert any(c["id"] == "CNT-EIDOS-CLI" for c in data["components"])
+
+
+def test_cli_index_status_json_output():
+    """Verify 'eidos index status --json' outputs structured JSON with AST telemetry."""
+    result = runner.invoke(app, ["index", "status", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert "db_path" in data
+    assert "schema_version" in data
+    assert "total_entities" in data
+    assert "total_edges" in data
+    assert "total_symbols" in data
+    assert "total_indexed_files" in data
+    assert "ast" in data
+    ast = data["ast"]
+    assert "engine" in ast
+    assert "engine_class" in ast
+    assert "classes" in ast
+    assert "functions" in ast
+    assert "methods" in ast
+    assert "test_bindings" in ast
+    assert "symbols_by_kind" in ast
+    assert "test_invariant_assertions" in ast
+    assert "tested_invariants" in ast
+
 

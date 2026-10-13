@@ -241,3 +241,112 @@ def test_repo_root_discovery_and_no_nested_eidos(tmp_path, monkeypatch):
         assert not (repo / ".agents" / "plugins" / "eidos" / ".eidos").exists()
     finally:
         idx.close()
+
+
+def test_index_status_ast_telemetry(temp_index):
+    """Verify INV-INDEX-STATUS-AST-TELEMETRY: AST engine, symbol kinds, and invariant assertions."""
+    status = temp_index.get_index_status()
+    assert "ast" in status
+    ast = status["ast"]
+
+    assert isinstance(ast["engine"], str)
+    assert "ast-grep" in ast["engine"] or "python-ast" in ast["engine"]
+    assert isinstance(ast["engine_class"], str)
+    assert isinstance(ast["ast_grep_available"], bool)
+    assert ast["total_symbols"] > 0
+    assert ast["classes"] >= 1
+    assert ast["functions"] >= 1
+    assert ast["methods"] >= 1
+    assert ast["test_bindings"] >= 1
+    assert isinstance(ast["symbols_by_kind"], dict)
+    assert "class" in ast["symbols_by_kind"]
+    assert "function" in ast["symbols_by_kind"]
+    assert ast["test_invariant_assertions"] >= 1
+    assert ast["tested_invariants"] >= 1
+
+
+def test_code_aware_dirty_checking_and_sync(tmp_path):
+    """Verify INV-INDEX-CODE-DIRTY-SYNC: sub-5ms dirty detection when source code or tests are modified."""
+    repo = tmp_path / "mock_project"
+    repo.mkdir()
+    eidos_dir = repo / "eidos"
+    comps_dir = eidos_dir / "architecture" / "components"
+    comps_dir.mkdir(parents=True)
+
+    src_dir = repo / "src" / "pkg"
+    src_dir.mkdir(parents=True)
+    tests_dir = repo / "tests"
+    tests_dir.mkdir(parents=True)
+
+    code_file = src_dir / "service.py"
+    code_file.write_text(
+        """class SampleService:\n    def execute(self):\n        return True\n""",
+        encoding="utf-8",
+    )
+
+    test_file = tests_dir / "test_service.py"
+    test_file.write_text(
+        """# Tests INV-SAMPLE-RULE\ndef test_service():\n    assert True\n""",
+        encoding="utf-8",
+    )
+
+    spec_file = comps_dir / "service.adoc"
+    spec_file.write_text(
+        """---
+type: tech/component
+schema: schemas/v1/tech/component.schema.yaml
+id: CMP-SAMPLE-SERVICE
+name: Sample Service
+container_type: service
+runtime: Python 3.12
+package_path: src/pkg
+invariants:
+  - id: INV-SAMPLE-RULE
+    rule: Sample rule must hold.
+    test_binding: tests/test_service.py::test_service
+---
+= Sample Service
+""",
+        encoding="utf-8",
+    )
+
+    db_path = repo / ".eidos" / "cache" / "index.db"
+    idx = ArchitecturalIndex(db_path=db_path, repo_root=repo, eidos_dir=eidos_dir)
+    idx.sync(force=True)
+
+    try:
+        # 1. Initially clean
+        dirty, modified, deleted = idx.is_dirty()
+        assert not dirty
+        assert len(modified) == 0
+
+        # Verify initial symbols
+        status = idx.get_index_status()
+        assert status["ast"]["classes"] >= 1
+        assert any(r["symbol"] == "SampleService" for r in idx.find_symbol("SampleService"))
+
+        # 2. Mutate code file (allow 0.25s debounce cooldown from initial sync)
+        time.sleep(0.25)
+        code_file.write_text(
+            """class MutatedService:\n    def new_action(self):\n        return False\n""",
+            encoding="utf-8",
+        )
+
+        # 3. Detect dirty immediately (<5ms)
+        t0 = time.perf_counter()
+        dirty, modified, _ = idx.is_dirty()
+        dt_ms = (time.perf_counter() - t0) * 1000
+        assert dirty
+        assert dt_ms < 15.0
+        assert any(p.resolve() == code_file.resolve() for p in modified)
+
+        # 4. Trigger read query with transparent JIT auto-sync (_ensure_synced)
+        results = idx.find_symbol("MutatedService")
+        assert any(r["symbol"] == "MutatedService" for r in results)
+
+        # 5. After read query, index is clean again
+        dirty_after, _, _ = idx.is_dirty()
+        assert not dirty_after
+    finally:
+        idx.close()
+

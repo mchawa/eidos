@@ -52,9 +52,9 @@ The first time any command requiring architectural context is invoked (`eidos co
 ### 2. Zero-Drift Freshness (`_ensure_synced`)
 Before answering any query, search, or context extraction request, the index runs a lazy freshness check (`is_dirty()`):
 * Compares file modification timestamps (`mtime`) and SHA-256 hashes against `indexed_files`.
-* Executes in **~1.5ms** on clean working trees across 50+ living specs.
-* If any `.adoc` file has been edited, added, or deleted, only the modified specifications are incrementally re-indexed.
-* This guarantees that AI agents and CLI users always operate against real-time specifications with **zero drift**.
+* Executes in **<5ms** on clean working trees across living specifications, polyglot source code files, and automated test suites.
+* If any `.adoc` spec, source file, or test file has been edited, added, or deleted, only the modified files are incrementally re-indexed.
+* This guarantees that AI agents and CLI users always operate against real-time specifications and code with **zero drift**.
 
 ---
 
@@ -62,25 +62,53 @@ Before answering any query, search, or context extraction request, the index run
 
 While synchronization is completely automatic, developers and CI/CD pipelines can inspect or manage the index directly via the CLI:
 
-### Inspect Index Status
-View database size, health, total entities, edges, indexed files, and check latency:
+### Inspect Index Status & AST Telemetry
+View database size, health, total entities, edges, indexed files, AST parser engine telemetry, symbol breakdown by syntax kind, and test invariant assertions:
 
 ```bash
+# Rich visual panel and tables:
 eidos index status
+
+# Machine-readable JSON output for AI agent tool calling:
+eidos index status --json
 ```
 
 Output:
 ```text
-╭───────────────── Eidos Architectural Knowledge Graph Index ─────────────────╮
-│       Database Path:  /path/to/project/.eidos/cache/index.db                │
-│      Schema Version:  1.0.0                                                 │
-│          Cache Size:  504.0 KB                                              │
-│              Status:  SYNCED (Clean) (1.52ms check)                         │
-│      Total Entities:  73                                                    │
-│         Total Edges:  69                                                    │
-│       Indexed Files:  56                                                    │
-│ AST Symbol Mappings:  75                                                    │
-╰─────────────────────────────────────────────────────────────────────────────╯
+╭───────────────── Eidos Architectural Knowledge Graph Index ──────────────────╮
+│        Database Path:  /path/to/project/.eidos/cache/index.db                │
+│       Schema Version:  1.0.0                                                 │
+│           Cache Size:  1008.0 KB                                             │
+│               Status:  SYNCED (Clean) (4.20ms check)                         │
+│       Total Entities:  105                                                   │
+│          Total Edges:  140                                                   │
+│        Indexed Files:  141                                                   │
+│           AST Engine:  ast-grep (Native AST)                                 │
+│          AST Symbols:  581 (86 classes, 157 funcs, 155 methods, 49 test      │
+│                        bindings)                                             │
+│ Invariant Assertions:  31 assertions across 31 invariants                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+       Entities by Type        
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Type                ┃ Count ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ delta/mutation      │    23 │
+│ invariant           │    31 │
+│ product/capability  │     8 │
+│ tech/container      │     6 │
+│ ...                 │   ... │
+└─────────────────────┴───────┘
+      AST Code Symbols &      
+         Traceability         
+┏━━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Syntax Kind        ┃ Count ┃
+┡━━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ class              │    86 │
+│ function           │   157 │
+│ method             │   155 │
+│ test_binding       │    49 │
+│ ...                 │   ... │
+└────────────────────┴───────┘
 ```
 
 ### Force Index Rebuild

@@ -342,6 +342,8 @@ class ArchitecturalIndex:
     def is_dirty(self) -> tuple[bool, list[Path], list[Path]]:
         """Perform sub-5ms dirty checking comparing filesystem mtime with indexed state.
 
+        Checks both living specifications in eidos/ and tracked source code and test files.
+
         Returns:
             (is_dirty, modified_or_new_files, deleted_rel_paths)
         """
@@ -358,6 +360,8 @@ class ArchitecturalIndex:
             return len(deleted) > 0, [], deleted
 
         root_str = str(self.root)
+
+        # 1. Living specifications in eidos/ (.adoc)
         for dirpath, dirnames, filenames in os.walk(str(self.eidos_dir)):
             dirnames[:] = [d for d in dirnames if not d.startswith(".") and d != "by-status"]
             for fn in filenames:
@@ -381,6 +385,75 @@ class ArchitecturalIndex:
                     if h != cached[1]:
                         to_update.append(Path(full_path))
 
+        # 2. Tracked code and test files
+        code_exts = {".py", ".ts", ".tsx", ".go", ".rs", ".js", ".jsx", ".java", ".kt"}
+        tracked_code_dirs: set[Path] = set()
+
+        cursor.execute("SELECT DISTINCT package_path FROM entities WHERE package_path != '';")
+        for row in cursor.fetchall():
+            pp = row[0].strip()
+            if pp:
+                p_abs = (self.root / pp).resolve()
+                if p_abs.is_dir():
+                    tracked_code_dirs.add(p_abs)
+                elif p_abs.is_file() and p_abs.suffix in code_exts:
+                    try:
+                        rel_code = str(p_abs.relative_to(self.root)).replace("\\", "/")
+                    except ValueError:
+                        rel_code = str(p_abs).replace("\\", "/")
+                    disk_files.add(rel_code)
+                    stat = p_abs.stat()
+                    cached = db_files.get(rel_code)
+                    if not cached:
+                        to_update.append(p_abs)
+                    elif abs(stat.st_mtime - cached[0]) > 0.001:
+                        if hashlib.sha256(p_abs.read_bytes()).hexdigest() != cached[1]:
+                            to_update.append(p_abs)
+
+        for std_dir in ("src", "tests", "test"):
+            cand = (self.root / std_dir).resolve()
+            if cand.is_dir():
+                tracked_code_dirs.add(cand)
+
+        for rel_tracked, (mtime_cached, sha_cached) in db_files.items():
+            if not rel_tracked.endswith(".adoc"):
+                abs_tracked = (self.root / rel_tracked).resolve()
+                if abs_tracked.is_file():
+                    disk_files.add(rel_tracked)
+                    stat = abs_tracked.stat()
+                    if abs(stat.st_mtime - mtime_cached) > 0.001:
+                        if hashlib.sha256(abs_tracked.read_bytes()).hexdigest() != sha_cached:
+                            to_update.append(abs_tracked)
+
+        excluded_dirs = {
+            ".git", ".venv", "venv", "__pycache__", "node_modules", "dist", "build",
+            ".pytest_cache", ".ruff_cache", ".mypy_cache", ".eidos", "htmlcov", "site"
+        }
+        for code_dir in tracked_code_dirs:
+            if not code_dir.exists():
+                continue
+            for dirpath, dirnames, filenames in os.walk(str(code_dir)):
+                dirnames[:] = [d for d in dirnames if d not in excluded_dirs and not d.startswith(".")]
+                for fn in filenames:
+                    p_file = Path(dirpath) / fn
+                    if p_file.suffix not in code_exts:
+                        continue
+                    try:
+                        rel_code = str(p_file.relative_to(self.root)).replace("\\", "/")
+                    except ValueError:
+                        rel_code = str(p_file).replace("\\", "/")
+                    if rel_code in disk_files:
+                        continue
+                    disk_files.add(rel_code)
+
+                    stat = p_file.stat()
+                    cached = db_files.get(rel_code)
+                    if not cached:
+                        to_update.append(p_file)
+                    elif abs(stat.st_mtime - cached[0]) > 0.001:
+                        if hashlib.sha256(p_file.read_bytes()).hexdigest() != cached[1]:
+                            to_update.append(p_file)
+
         deleted = [Path(rel) for rel in db_files.keys() - disk_files]
         is_dirty = len(to_update) > 0 or len(deleted) > 0
         return is_dirty, to_update, deleted
@@ -397,7 +470,7 @@ class ArchitecturalIndex:
         self._last_synced_check = time.monotonic()
 
     def sync(self, force: bool = False) -> IndexSyncStats:
-        """Incrementally synchronize the index with specifications on disk."""
+        """Incrementally synchronize the index with specifications and code on disk."""
         t0 = time.perf_counter()
         stats = IndexSyncStats()
 
@@ -424,19 +497,27 @@ class ArchitecturalIndex:
             # Handle deletions
             for d in deleted:
                 d_rel = str(d).replace("\\", "/")
-                row = conn.execute("SELECT doc_id FROM indexed_files WHERE rel_path = ?", (d_rel,)).fetchone()
-                if row and row["doc_id"]:
+                row = conn.execute("SELECT doc_id, doc_type FROM indexed_files WHERE rel_path = ?", (d_rel,)).fetchone()
+                if row and row["doc_type"] in ("code/source", "code/test"):
+                    conn.execute("DELETE FROM symbol_mappings WHERE symbol = ?;", (d_rel,))
+                    conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
+                elif row and row["doc_id"]:
                     doc_id = row["doc_id"]
                     conn.execute("DELETE FROM entities WHERE id = ?", (doc_id,))
                     conn.execute("DELETE FROM edges WHERE source_id = ? OR target_id = ?", (doc_id, doc_id))
                     conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?", (doc_id,))
                     conn.execute("DELETE FROM specs_fts WHERE entity_id = ?", (doc_id,))
-                conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
+                    conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
+                else:
+                    conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
                 stats.pruned_deleted += 1
 
-            # Handle updates & new additions
-            stats.total_specs_scanned = len(to_update)
-            for p in to_update:
+            # Partition updates into specifications (.adoc) and code/test files
+            spec_updates = [p for p in to_update if p.suffix == ".adoc"]
+            code_updates = [p for p in to_update if p.suffix != ".adoc"]
+
+            stats.total_specs_scanned = len(spec_updates)
+            for p in spec_updates:
                 try:
                     rel_p = str(p.relative_to(self.root)).replace("\\", "/")
                 except ValueError:
@@ -626,6 +707,19 @@ class ArchitecturalIndex:
                                 "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
                                 (test_file, iid),
                             )
+                            abs_test = (self.root / test_file).resolve()
+                            if abs_test.is_file():
+                                try:
+                                    rel_tf = str(abs_test.relative_to(self.root)).replace("\\", "/")
+                                except ValueError:
+                                    rel_tf = str(abs_test).replace("\\", "/")
+                                conn.execute(
+                                    """
+                                    INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
+                                    VALUES (?, ?, ?, ?, 'code/test', ?);
+                                    """,
+                                    (rel_tf, abs_test.stat().st_mtime, hashlib.sha256(abs_test.read_bytes()).hexdigest(), iid, time.time()),
+                                )
 
                 # 3. Symbol mappings
                 if package_path:
@@ -650,6 +744,17 @@ class ArchitecturalIndex:
                         )
                         abs_mpath = (self.root / mpath).resolve()
                         if abs_mpath.is_file():
+                            try:
+                                rel_m = str(abs_mpath.relative_to(self.root)).replace("\\", "/")
+                            except ValueError:
+                                rel_m = str(abs_mpath).replace("\\", "/")
+                            conn.execute(
+                                """
+                                INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
+                                VALUES (?, ?, ?, ?, 'code/source', ?);
+                                """,
+                                (rel_m, abs_mpath.stat().st_mtime, hashlib.sha256(abs_mpath.read_bytes()).hexdigest(), doc_id, time.time()),
+                            )
                             for sym in ast_idx.extract_symbols(abs_mpath):
                                 conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, ?);", (sym.name, doc_id, sym.kind))
                                 if sym.parent_symbol:
@@ -664,6 +769,17 @@ class ArchitecturalIndex:
                     abs_pkg = (self.root / package_path).resolve()
                     if abs_pkg.is_file():
                         conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (package_path, doc_id))
+                        try:
+                            rel_pkg = str(abs_pkg.relative_to(self.root)).replace("\\", "/")
+                        except ValueError:
+                            rel_pkg = str(abs_pkg).replace("\\", "/")
+                        conn.execute(
+                            """
+                            INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
+                            VALUES (?, ?, ?, ?, 'code/source', ?);
+                            """,
+                            (rel_pkg, abs_pkg.stat().st_mtime, hashlib.sha256(abs_pkg.read_bytes()).hexdigest(), doc_id, time.time()),
+                        )
                         for sym in ast_idx.extract_symbols(abs_pkg):
                             conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, ?);", (sym.name, doc_id, sym.kind))
                             if sym.parent_symbol:
@@ -677,6 +793,13 @@ class ArchitecturalIndex:
                                     except ValueError:
                                         rel_code = str(code_file)
                                     conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (rel_code, doc_id))
+                                    conn.execute(
+                                        """
+                                        INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
+                                        VALUES (?, ?, ?, ?, 'code/source', ?);
+                                        """,
+                                        (rel_code, code_file.stat().st_mtime, hashlib.sha256(code_file.read_bytes()).hexdigest(), doc_id, time.time()),
+                                    )
                                     for sym in ast_idx.extract_symbols(code_file):
                                         conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, ?);", (sym.name, doc_id, sym.kind))
                                         if sym.parent_symbol:
@@ -712,6 +835,148 @@ class ArchitecturalIndex:
                     """,
                     (rel_p, mtime, sha, doc_id, doc_type, time.time()),
                 )
+
+            # Handle code and test file updates
+            ast_idx = get_ast_indexer()
+            for p in code_updates:
+                if not p.is_file():
+                    continue
+                try:
+                    rel_p = str(p.relative_to(self.root)).replace("\\", "/")
+                except ValueError:
+                    rel_p = str(p).replace("\\", "/")
+
+                mtime = p.stat().st_mtime
+                sha = hashlib.sha256(p.read_bytes()).hexdigest()
+
+                is_test = (
+                    p.name.startswith("test_")
+                    or p.name.endswith("_test.py")
+                    or any(part in ("tests", "test", "__tests__") for part in p.parts)
+                )
+
+                existing = conn.execute("SELECT 1 FROM indexed_files WHERE rel_path = ?", (rel_p,)).fetchone()
+                if existing:
+                    stats.updated_modified += 1
+                else:
+                    stats.indexed_new += 1
+
+                if is_test:
+                    test_bindings = ast_idx.extract_test_bindings(p)
+                    for binding in test_bindings:
+                        for inv_id in binding.invariants:
+                            conn.execute(
+                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);",
+                                (binding.identifier, inv_id),
+                            )
+                            conn.execute(
+                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);",
+                                (inv_id, binding.identifier),
+                            )
+                            conn.execute(
+                                "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
+                                (rel_p, inv_id),
+                            )
+                            inv_row = conn.execute(
+                                "SELECT data_json FROM entities WHERE id = ?", (inv_id,)
+                            ).fetchone()
+                            if inv_row:
+                                idata = json.loads(inv_row["data_json"])
+                                idata["has_test_coverage"] = True
+                                if binding.identifier not in idata.get("matching_tests", []):
+                                    idata.setdefault("matching_tests", []).append(binding.identifier)
+                                conn.execute(
+                                    "UPDATE entities SET data_json = ? WHERE id = ?",
+                                    (json.dumps(idata), inv_id),
+                                )
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
+                        VALUES (?, ?, ?, 'tests', 'code/test', ?);
+                        """,
+                        (rel_p, mtime, sha, time.time()),
+                    )
+                else:
+                    row = conn.execute(
+                        "SELECT entity_id FROM symbol_mappings WHERE symbol = ? AND kind = 'source_path' LIMIT 1;",
+                        (rel_p,),
+                    ).fetchone()
+                    entity_id = row["entity_id"] if row else None
+                    if not entity_id:
+                        row = conn.execute(
+                            "SELECT id FROM entities WHERE package_path != '' AND ? LIKE package_path || '%' LIMIT 1;",
+                            (rel_p,),
+                        ).fetchone()
+                        if row:
+                            entity_id = row["id"]
+                        elif rel_p.startswith("src/eidos"):
+                            entity_id = "CNT-EIDOS-CORE"
+
+                    if entity_id:
+                        conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (rel_p, entity_id))
+                        syms = ast_idx.extract_symbols(p)
+                        for sym in syms:
+                            conn.execute("INSERT OR REPLACE INTO symbol_mappings VALUES (?, ?, ?);", (sym.name, entity_id, sym.kind))
+                            if sym.parent_symbol:
+                                conn.execute("INSERT OR REPLACE INTO symbol_mappings VALUES (?, ?, 'method');", (f"{sym.parent_symbol}.{sym.name}", entity_id))
+
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
+                        VALUES (?, ?, ?, ?, 'code/source', ?);
+                        """,
+                        (rel_p, mtime, sha, entity_id or "source", time.time()),
+                    )
+
+            # Ensure test bindings across tests/ are indexed
+            tests_dir = self.root / "tests"
+            if tests_dir.is_dir():
+                for tp in tests_dir.rglob("*.py"):
+                    if tp.is_file() and (tp.name.startswith("test_") or tp.name.endswith("_test.py")):
+                        try:
+                            rel_t = str(tp.relative_to(self.root)).replace("\\", "/")
+                        except ValueError:
+                            rel_t = str(tp).replace("\\", "/")
+                        cached_entry = conn.execute(
+                            "SELECT mtime, sha256 FROM indexed_files WHERE rel_path = ? AND doc_type = 'code/test';",
+                            (rel_t,),
+                        ).fetchone()
+                        stat = tp.stat()
+                        if not cached_entry or abs(stat.st_mtime - cached_entry["mtime"]) > 0.001 or force:
+                            t_sha = hashlib.sha256(tp.read_bytes()).hexdigest()
+                            conn.execute(
+                                """
+                                INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
+                                VALUES (?, ?, ?, 'tests', 'code/test', ?);
+                                """,
+                                (rel_t, stat.st_mtime, t_sha, time.time()),
+                            )
+                            for binding in ast_idx.extract_test_bindings(tp):
+                                for inv_id in binding.invariants:
+                                    conn.execute(
+                                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);",
+                                        (binding.identifier, inv_id),
+                                    )
+                                    conn.execute(
+                                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);",
+                                        (inv_id, binding.identifier),
+                                    )
+                                    conn.execute(
+                                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
+                                        (rel_t, inv_id),
+                                    )
+                                    inv_row = conn.execute(
+                                        "SELECT data_json FROM entities WHERE id = ?", (inv_id,)
+                                    ).fetchone()
+                                    if inv_row:
+                                        idata = json.loads(inv_row["data_json"])
+                                        idata["has_test_coverage"] = True
+                                        if binding.identifier not in idata.get("matching_tests", []):
+                                            idata.setdefault("matching_tests", []).append(binding.identifier)
+                                        conn.execute(
+                                            "UPDATE entities SET data_json = ? WHERE id = ?",
+                                            (json.dumps(idata), inv_id),
+                                        )
 
             # Resolve any cross-reference edges where target_id or source_id is a file path
             conn.execute(
@@ -973,6 +1238,36 @@ class ArchitecturalIndex:
         for row in cursor.execute("SELECT type, COUNT(*) FROM entities GROUP BY type;").fetchall():
             type_counts[row[0]] = row[1]
 
+        symbol_counts = {}
+        for row in cursor.execute("SELECT kind, COUNT(*) FROM symbol_mappings GROUP BY kind;").fetchall():
+            symbol_counts[row[0]] = row[1]
+
+        test_invariant_assertions = cursor.execute(
+            "SELECT COUNT(*) FROM edges WHERE rel_type = 'asserts';"
+        ).fetchone()[0]
+        tested_invariants = cursor.execute(
+            "SELECT COUNT(DISTINCT target_id) FROM edges WHERE rel_type = 'asserts';"
+        ).fetchone()[0]
+
+        from eidos.core.ast_indexer import get_ast_indexer, is_ast_grep_available
+
+        ast_avail = is_ast_grep_available()
+        ast_idx = get_ast_indexer()
+
+        ast_telemetry = {
+            "engine": "ast-grep (Native AST)" if ast_avail else "python-ast (Standard Library Fallback)",
+            "engine_class": ast_idx.__class__.__name__,
+            "ast_grep_available": ast_avail,
+            "total_symbols": total_symbols,
+            "classes": symbol_counts.get("class", 0),
+            "functions": symbol_counts.get("function", 0),
+            "methods": symbol_counts.get("method", 0),
+            "test_bindings": symbol_counts.get("test_binding", 0),
+            "symbols_by_kind": symbol_counts,
+            "test_invariant_assertions": test_invariant_assertions,
+            "tested_invariants": tested_invariants,
+        }
+
         db_size_bytes = self.db_path.stat().st_size if self.db_path.exists() else 0
 
         return {
@@ -988,6 +1283,7 @@ class ArchitecturalIndex:
             "pending_deletions": len(to_delete),
             "dirty_check_latency_ms": round(dirty_ms, 2),
             "entity_counts_by_type": type_counts,
+            "ast": ast_telemetry,
         }
 
     def get_tiered_context_slice(

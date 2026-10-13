@@ -336,11 +336,19 @@ Manage and query the embedded SQLite architectural knowledge graph and FTS5 hybr
 The index initializes automatically on first use and lazily resynchronizes before every query with sub-2ms dirty checking, guaranteeing zero drift.
 
 #### `eidos index status`
-Display database cache size, clean/drift synchronization state, check latency, and entity/edge counts.
+Display database cache size, clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
 
 ```bash
+# Display rich visual status and AST telemetry:
 eidos index status
+
+# Output raw telemetry as machine-readable JSON:
+eidos index status --json
 ```
+
+Options:
+* `--json`: Output raw index telemetry as formatted JSON.
+* `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
 #### `eidos index sync`
 Manually synchronize or force a full clean rebuild of the SQLite database and FTS5 index.

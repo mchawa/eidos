@@ -82,8 +82,8 @@ eidos index sync --force
 ## 4. Automatic Zero-Drift Freshness
 
 The context engine is backed by an embedded SQLite knowledge graph (`.eidos/cache/index.db`) using Python's standard library `sqlite3`:
-1. **Sub-3ms Dirty Checking**: Before executing any query or CLI command, `is_dirty()` compares disk modification timestamps (`mtime`) and SHA-256 hashes against the cached manifest.
-2. **Instant Sync**: Only modified or new `.adoc` files are re-parsed into SQLite (<5ms). Clean repositories execute dirty checks in ~1.5ms.
+1. **Sub-3ms Dirty Checking**: Before executing any query or CLI command, `is_dirty()` compares disk modification timestamps (`mtime`) and SHA-256 hashes against the cached manifest across living specs, tracked source code, and automated test files.
+2. **Instant Sync**: Only modified or new `.adoc` specs, source code files, or tests are re-parsed into SQLite (<5ms). Clean repositories execute dirty checks in ~1.5ms.
 3. **Transparent Rebuild**: If `.eidos/cache/index.db` is missing or corrupted, it is automatically rebuilt from the living specifications with zero manual developer intervention.
 
 ---

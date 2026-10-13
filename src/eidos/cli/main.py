@@ -865,11 +865,20 @@ def index_status_cmd(
         "-p",
         help="Path to eidos directory (defaults to ./eidos).",
     ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output raw index telemetry as JSON for programmatic inspection.",
+    ),
 ):
-    """Display health, schema version, cache size, and statistics of the architectural index."""
+    """Display health, schema version, cache size, AST telemetry, and statistics of the architectural index."""
     eidos_dir = path or Path("eidos")
     idx = get_architectural_index(eidos_dir=eidos_dir)
     status = idx.get_index_status()
+
+    if json_output:
+        console.print_json(data=status)
+        return
 
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style="bold cyan", justify="right")
@@ -887,7 +896,28 @@ def index_status_cmd(
     grid.add_row("Total Entities:", f"[bold white]{status['total_entities']}[/bold white]")
     grid.add_row("Total Edges:", f"[bold white]{status['total_edges']}[/bold white]")
     grid.add_row("Indexed Files:", f"[bold white]{status['total_indexed_files']}[/bold white]")
-    grid.add_row("AST Symbol Mappings:", f"[bold white]{status['total_symbols']}[/bold white]")
+
+    ast_info = status.get("ast", {})
+    grid.add_row("AST Engine:", f"[magenta]{ast_info.get('engine', 'N/A')}[/magenta]")
+    if "classes" in ast_info:
+        cls_count = ast_info.get("classes", 0)
+        fn_count = ast_info.get("functions", 0)
+        meth_count = ast_info.get("methods", 0)
+        tb_count = ast_info.get("test_bindings", 0)
+        grid.add_row(
+            "AST Symbols:",
+            f"[bold white]{status['total_symbols']}[/bold white] "
+            f"[dim]({cls_count} classes, {fn_count} funcs, {meth_count} methods, {tb_count} test bindings)[/dim]",
+        )
+    else:
+        grid.add_row("AST Symbol Mappings:", f"[bold white]{status['total_symbols']}[/bold white]")
+
+    if "test_invariant_assertions" in ast_info:
+        grid.add_row(
+            "Invariant Assertions:",
+            f"[green]{ast_info['test_invariant_assertions']}[/green] assertions "
+            f"across [bold green]{ast_info.get('tested_invariants', 0)}[/bold green] invariants",
+        )
 
     console.print(Panel(grid, title="[bold blue]Eidos Architectural Knowledge Graph Index[/bold blue]", expand=False))
 
@@ -898,6 +928,14 @@ def index_status_cmd(
         for etype, count in sorted(status["entity_counts_by_type"].items()):
             table.add_row(etype, str(count))
         console.print(table)
+
+    if ast_info.get("symbols_by_kind"):
+        ast_table = Table(title="AST Code Symbols & Traceability", show_header=True)
+        ast_table.add_column("Syntax Kind", style="bold magenta")
+        ast_table.add_column("Count", justify="right", style="green")
+        for kind, count in sorted(ast_info["symbols_by_kind"].items()):
+            ast_table.add_row(kind, str(count))
+        console.print(ast_table)
 
 
 @index_app.command("sync")

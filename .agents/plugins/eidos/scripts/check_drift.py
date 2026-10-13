@@ -73,6 +73,18 @@ def handle_post_invocation(payload: dict[str, Any], workspace_root: Path) -> dic
     except Exception as exc:
         print(f"[Eidos Drift Gate Error] Drift detection error: {exc}", file=sys.stderr)
 
+    # Lazily ensure knowledge graph index is synchronized
+    with contextlib.suppress(Exception):
+        from eidos.core.graph_index import ArchitecturalIndex
+
+        cache_db = workspace_root / ".eidos" / "cache" / "index.db"
+        if cache_db.exists():
+            idx = ArchitecturalIndex(db_path=cache_db, repo_root=workspace_root, eidos_dir=eidos_dir)
+            dirty, _, _ = idx.is_dirty()
+            if dirty:
+                idx.sync()
+            idx.close()
+
     return {"injectSteps": []}
 
 

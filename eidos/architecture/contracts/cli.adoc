@@ -67,7 +67,7 @@ Extracts a compact, token-efficient architectural subgraph context slice (C4 com
 === `eidos index`
 Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search index (`.eidos/cache/index.db`).
 * **Sub-commands**:
-  - `status [--path <path>]`: Displays index health, entity/edge counts, file hashes, cache file size, and drift status.
+  - `status [--path <path>] [--json]`: Displays index health, AST parser engine telemetry (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, test invariant assertion metrics, cache file size, and continuous code-aware dirty status. Supports `--json` for programmatic agent consumption.
   - `sync [--path <path>] [--force]`: Synchronizes or rebuilds the knowledge graph index.
   - `search <query> [--limit <n>] [--path <path>]`: Performs BM25 full-text search across titles, requirements, and invariants.
   - `blast-radius <symbol_or_path> [--depth <n>] [--path <path>]`: Computes the transitive dependency and governance blast radius for a symbol or spec path.
