@@ -89,6 +89,8 @@ All inspection and mutation commands provide deterministic `--json` outputs for 
 | `eidos index sync` | `[--force] [--path <path>]` | Synchronize SQLite architectural knowledge graph & FTS5 search |
 | `eidos index status` | `[--path <path>]` | Inspect knowledge graph sync state, entity/edge count, and cache size |
 | `eidos index blast-radius` | `<id> [--depth <n>]` | Compute dependency blast radius using recursive graph queries |
+| `eidos repo-map`<br>`eidos index repo-map` | `[--max-tokens <n>] [--format <fmt>]` | Generate token-budgeted structural repo map outline for AI agents |
+| `eidos find-symbol`<br>`eidos index find-symbol` | `<query> [--limit <n>] [--json]` | Locate symbol matches across code AST and link to living specs |
 | `eidos spec containers`<br>`eidos spec components` | `[container_id]` | List C4 Level 2 containers and Level 3 in-process components |
 | `eidos delta create` | `<id> -t <title> -k <kind> -m <motivation>` | Scaffold a SpecDelta mutation document (`DLT-*`) for Planned Mode |
 | `eidos delta apply` | `<id>` | Reconcile an applied SpecDelta in-place to `status: applied` |

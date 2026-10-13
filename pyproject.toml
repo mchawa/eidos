@@ -39,6 +39,9 @@ dev = [
 docs = [
     "zensical>=0.0.69",
 ]
+ast = [
+    "ast-grep-py>=0.50.0",
+]
 
 [project.scripts]
 eidos = "eidos.cli.main:app"

@@ -20,6 +20,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from eidos.core.ast_indexer import get_ast_indexer
 from eidos.core.context import ArchitecturalContextSlice
 from eidos.core.parser import parse_spec_file
 
@@ -633,7 +634,9 @@ class ArchitecturalIndex:
                     )
 
                 # Internal C4 modules & components
-                for module in (fm.get("components", []) or fm.get("c4_internal_components", [])):
+                ast_idx = get_ast_indexer()
+                all_modules = list(fm.get("components", []) or fm.get("c4_internal_components", []))
+                for module in all_modules:
                     mname = module.get("name")
                     mpath = module.get("source_path")
                     mid = module.get("id")
@@ -645,10 +648,39 @@ class ArchitecturalIndex:
                         conn.execute(
                             "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (mpath, doc_id)
                         )
+                        abs_mpath = (self.root / mpath).resolve()
+                        if abs_mpath.is_file():
+                            for sym in ast_idx.extract_symbols(abs_mpath):
+                                conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, ?);", (sym.name, doc_id, sym.kind))
+                                if sym.parent_symbol:
+                                    conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'method');", (f"{sym.parent_symbol}.{sym.name}", doc_id))
                     if mid:
                         conn.execute(
                             "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_id');", (mid, doc_id)
                         )
+
+                # Extract AST symbols if package_path points to source file or package directory
+                if package_path:
+                    abs_pkg = (self.root / package_path).resolve()
+                    if abs_pkg.is_file():
+                        conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (package_path, doc_id))
+                        for sym in ast_idx.extract_symbols(abs_pkg):
+                            conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, ?);", (sym.name, doc_id, sym.kind))
+                            if sym.parent_symbol:
+                                conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'method');", (f"{sym.parent_symbol}.{sym.name}", doc_id))
+                    elif abs_pkg.is_dir() and not all_modules:
+                        for ext in ("*.py", "*.ts", "*.tsx", "*.go", "*.rs"):
+                            for code_file in abs_pkg.glob(ext):
+                                if code_file.is_file() and not code_file.name.startswith("test_"):
+                                    try:
+                                        rel_code = str(code_file.relative_to(self.root)).replace("\\", "/")
+                                    except ValueError:
+                                        rel_code = str(code_file)
+                                    conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (rel_code, doc_id))
+                                    for sym in ast_idx.extract_symbols(code_file):
+                                        conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, ?);", (sym.name, doc_id, sym.kind))
+                                        if sym.parent_symbol:
+                                            conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'method');", (f"{sym.parent_symbol}.{sym.name}", doc_id))
 
                 # Interface commands
                 if isinstance(fm.get("contracts"), dict):
@@ -834,7 +866,7 @@ class ArchitecturalIndex:
             JOIN entities e ON e.id = s.entity_id
             WHERE s.symbol = ?
                OR (? LIKE s.symbol || '/%' AND s.kind = 'package_path')
-               OR (? LIKE '%' || s.symbol AND s.kind IN ('source_path', 'specification_file', 'component_ref', 'interface_method'))
+               OR (? LIKE '%' || s.symbol AND s.kind IN ('source_path', 'specification_file', 'component_ref', 'interface_method', 'class', 'function', 'method', 'interface'))
                OR (? LIKE s.symbol || '%' AND s.kind = 'test_binding')
             LIMIT 10;
             """,
@@ -855,6 +887,73 @@ class ArchitecturalIndex:
                 }
             )
         return results
+
+    def find_symbol(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
+        """Locate symbol matches and their associated living component specs across the Code Graph."""
+        self._ensure_synced()
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        q_norm = query.strip()
+        q_alt = q_norm.replace("-", "_") if "-" in q_norm else q_norm.replace("_", "-")
+        cursor.execute(
+            """
+            SELECT s.symbol, s.entity_id, s.kind, e.title, e.type, e.file_path
+            FROM symbol_mappings s
+            JOIN entities e ON e.id = s.entity_id
+            WHERE s.symbol = ?
+               OR s.symbol = ?
+               OR s.symbol LIKE ?
+               OR s.symbol LIKE ?
+            ORDER BY CASE WHEN s.symbol IN (?, ?) THEN 0 ELSE 1 END, s.symbol ASC
+            LIMIT ?;
+            """,
+            (q_norm, q_alt, f"%{q_norm}%", f"%{q_alt}%", q_norm, q_alt, limit),
+        )
+        results = []
+        for r in cursor.fetchall():
+            results.append(
+                {
+                    "symbol": r["symbol"],
+                    "entity_id": r["entity_id"],
+                    "kind": r["kind"],
+                    "title": r["title"],
+                    "type": r["type"],
+                    "file_path": r["file_path"],
+                }
+            )
+        return results
+
+    def get_repo_map(self, max_tokens: int = 1500) -> str:
+        """Generate a token-budgeted structural repo map outline across all indexed components for AI coding agents."""
+        self._ensure_synced()
+        from eidos.core.ast_indexer import get_ast_indexer
+
+        indexer = get_ast_indexer()
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        rows = cursor.execute(
+            """
+            SELECT DISTINCT symbol AS file_path
+            FROM symbol_mappings
+            WHERE kind = 'source_path';
+            """
+        ).fetchall()
+
+        symbols_by_file: dict[str, list[Any]] = {}
+        for r in rows:
+            fpath = r["file_path"]
+            abs_p = (self.root / fpath).resolve()
+            if abs_p.is_file():
+                syms = indexer.extract_symbols(abs_p)
+                if syms:
+                    try:
+                        rel = str(abs_p.relative_to(self.root)).replace("\\", "/")
+                    except ValueError:
+                        rel = fpath
+                    symbols_by_file[rel] = syms
+
+        return indexer.generate_repo_map(symbols_by_file, max_tokens=max_tokens)
 
     def get_index_status(self) -> dict[str, Any]:
         """Return comprehensive health and statistics of the architectural index."""

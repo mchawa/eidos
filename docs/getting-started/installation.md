@@ -57,6 +57,7 @@ Eidos provides optional feature sets that can be installed on demand:
 
 | Extra | Description | Installation |
 | :--- | :--- | :--- |
+| `ast` | Polyglot AST code indexing via `ast-grep` (Python, TS/JS, Go, Rust) | `pip install "eidos-ai[ast]"` |
 | `docs` | Documentation building with Zensical | `pip install "eidos-ai[docs]"` |
 | `dev` | Test suite (`pytest`, `pytest-cov`, `ruff`) | `pip install "eidos-ai[dev]"` |
 

@@ -71,6 +71,9 @@ Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search
   - `sync [--path <path>] [--force]`: Synchronizes or rebuilds the knowledge graph index.
   - `search <query> [--limit <n>] [--path <path>]`: Performs BM25 full-text search across titles, requirements, and invariants.
   - `blast-radius <symbol_or_path> [--depth <n>] [--path <path>]`: Computes the transitive dependency and governance blast radius for a symbol or spec path.
+  - `repo-map [--max-tokens <tokens>] [--format <format>] [--path <path>]`: Generates a token-budgeted structural repo map outline (classes, functions, methods, routes) for AI coding agents.
+  - `find-symbol <query> [--limit <n>] [--json] [--path <path>]`: Locates code symbols across polyglot AST source files and links them to associated living component specifications.
+
 
 === `eidos portal`
 Manages the interactive Living Web Portal and documentation site export.
@@ -201,6 +204,8 @@ Bootstraps a repository with an empty Eidos living specification skeleton, an em
 * `eidos build-site`: Direct shortcut to `eidos portal build`.
 * `eidos install`: Direct shortcut to `eidos plugin install`.
 * `eidos uninstall`: Direct shortcut to `eidos plugin uninstall`.
+* `eidos repo-map`: Direct shortcut to `eidos index repo-map`.
+* `eidos find-symbol <query>`: Direct shortcut to `eidos index find-symbol`.
 
 == Command Groups (Rich Help Panels)
 
@@ -209,8 +214,9 @@ Commands are semantically organized into six functional panels in CLI help outpu
 2. **Governance & Verification**: `validate`, `lint`, `drift`, `reconcile`, `sync`
 3. **Living Web Portal**: `portal`, `serve`, `build-site`
 4. **Living Catalog & Mutations**: `spec`, `delta`, `component`, `create`, `delete`, `list`, `containers`, `components`
-5. **Knowledge Graph & AI Context**: `index`, `context`
+5. **Knowledge Graph & AI Context**: `index`, `context`, `repo-map`, `find-symbol`
 6. **Agent Ecosystem & Plugins**: `plugin`, `install`, `uninstall`
+
 
 
 

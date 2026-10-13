@@ -1032,6 +1032,90 @@ def index_blast_radius_cmd(
     console.print(table)
 
 
+@index_app.command("repo-map")
+@app.command("repo-map", rich_help_panel=PANEL_KNOWLEDGE)
+def index_repo_map_cmd(
+    max_tokens: int = typer.Option(
+        1500,
+        "--max-tokens",
+        "-t",
+        help="Maximum context tokens allocated for structural repo map outline.",
+    ),
+    format_type: str = typer.Option(
+        "markdown",
+        "--format",
+        "-f",
+        help="Output format: markdown (default) or json.",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to eidos directory (defaults to ./eidos).",
+    ),
+):
+    """Generate a token-budgeted structural repo map outline for AI coding agents."""
+    eidos_dir = path or Path("eidos")
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    repo_map = idx.get_repo_map(max_tokens=max_tokens)
+
+    if format_type.lower() == "json":
+        console.print_json(data={"repo_map": repo_map, "max_tokens": max_tokens, "estimated_tokens": len(repo_map) // 4})
+    else:
+        console.print(repo_map)
+
+
+@index_app.command("find-symbol")
+@app.command("find-symbol", rich_help_panel=PANEL_KNOWLEDGE)
+def index_find_symbol_cmd(
+    query: str = typer.Argument(
+        ...,
+        help="Exact or partial symbol name (class, method, function, or route).",
+    ),
+    limit: int = typer.Option(
+        20,
+        "--limit",
+        "-l",
+        help="Maximum number of symbol results to return.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output results as machine-readable JSON.",
+    ),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Path to eidos directory (defaults to ./eidos).",
+    ),
+):
+    """Locate symbol matches and their associated living component specifications."""
+    eidos_dir = path or Path("eidos")
+    idx = get_architectural_index(eidos_dir=eidos_dir)
+    matches = idx.find_symbol(query=query, limit=limit)
+
+    if json_output:
+        console.print_json(data={"query": query, "count": len(matches), "matches": matches})
+        return
+
+    if not matches:
+        console.print(f"[yellow]No symbols found matching '{query}'.[/yellow]")
+        return
+
+    table = Table(title=f"Code Symbols matching '{query}' ({len(matches)} matches)", show_header=True)
+    table.add_column("Symbol", style="bold cyan")
+    table.add_column("Kind", style="yellow")
+    table.add_column("Owning Entity", style="bold white")
+    table.add_column("Title", style="dim")
+    table.add_column("Spec Path", style="dim")
+
+    for m in matches:
+        table.add_row(m["symbol"], m["kind"], m["entity_id"], m["title"], m.get("file_path", "") or "—")
+
+    console.print(table)
+
+
 
 
 # -------------------------------------------------------------------------

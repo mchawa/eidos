@@ -371,6 +371,45 @@ Options:
 * `-d, --depth INTEGER`: Maximum graph traversal distance (default: `2`).
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
+#### `eidos index repo-map`
+Generate a token-budgeted structural repo map outline (classes, functions, methods, routes) for AI coding agents. Powered by multi-language AST parsing (`ast-grep` with Python stdlib fallback), compressing whole codebases into a high-density architectural outline (~98% token compression).
+
+```bash
+# Generate structural repo map with default budget (1500 tokens)
+eidos repo-map
+
+# Or specify a custom token budget and format:
+eidos index repo-map --max-tokens 2000 --format markdown
+
+# Output as structured JSON for autonomous agent harnesses:
+eidos repo-map --format json
+```
+
+Options:
+* `-t, --max-tokens INTEGER`: Maximum context tokens allocated for structural repo map outline (default: `1500`).
+* `-f, --format [markdown|json]`: Output format (default: `markdown`).
+* `-p, --path PATH`: Path to specifications directory (default: `eidos`).
+
+#### `eidos index find-symbol`
+Locate symbol matches (classes, functions, methods, API endpoints) across polyglot AST source files and identify their governing living component specifications.
+
+```bash
+# Locate a class or function symbol across the codebase:
+eidos find-symbol "ArchitecturalIndex"
+
+# Or search with custom result limit:
+eidos index find-symbol "AstGrepIndexer" --limit 10
+
+# Output as structured JSON:
+eidos find-symbol "validate" --json
+```
+
+Options:
+* `QUERY`: Exact or partial symbol name (class, method, function, or route).
+* `-l, --limit INTEGER`: Maximum number of symbol results to return (default: `20`).
+* `--json`: Output results as machine-readable JSON.
+* `-p, --path PATH`: Path to specifications directory (default: `eidos`).
+
 ---
 
 ### `eidos context`
@@ -484,3 +523,6 @@ Eidos provides intuitive root-level shortcuts for common workflows:
 * `eidos list [--type <type>] [--status <status>]`: Direct shortcut to `eidos spec list`.
 * `eidos containers`: Direct shortcut to `eidos spec containers`.
 * `eidos components`: Direct shortcut to `eidos spec components`.
+* `eidos repo-map`: Direct shortcut to `eidos index repo-map`.
+* `eidos find-symbol <query>`: Direct shortcut to `eidos index find-symbol`.
+

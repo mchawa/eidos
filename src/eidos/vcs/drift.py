@@ -449,6 +449,16 @@ def extract_invariants_and_verify(
     # 1. Collect tests content to check mentions across Python, TS/JS, Go, Rust, Java/Kotlin
     all_tests_content = collect_polyglot_test_files(repo_root)
 
+    # 1.5 Extract granular AST test function bindings
+    from eidos.core.ast_indexer import get_ast_indexer
+
+    ast_idx = get_ast_indexer()
+    inv_to_test_funcs: dict[str, list[str]] = {}
+    for tpath, tcontent in all_tests_content.items():
+        for binding in ast_idx.extract_test_bindings(tpath, tcontent):
+            for ref in binding.invariants + binding.policies:
+                inv_to_test_funcs.setdefault(ref, []).append(binding.identifier)
+
     # 2. Extract invariants from capabilities
     domains_dir = eidos_dir / "domains"
     if domains_dir.exists():
@@ -476,7 +486,7 @@ def extract_invariants_and_verify(
                                             encoding="utf-8", errors="replace"
                                         )
 
-                            matching = [tpath for tpath, content in all_tests_content.items() if iid in content]
+                            matching = inv_to_test_funcs.get(iid) or [tpath for tpath, content in all_tests_content.items() if iid in content]
                             if not matching and tb and (repo_root / tb.split("::")[0].strip()).exists():
                                 matching = [tb.split("::")[0].strip()]
                             has_cov = bool(matching)
@@ -523,7 +533,7 @@ def extract_invariants_and_verify(
                                                 encoding="utf-8", errors="replace"
                                             )
 
-                                matching = [tpath for tpath, content in all_tests_content.items() if iid in content]
+                                matching = inv_to_test_funcs.get(iid) or [tpath for tpath, content in all_tests_content.items() if iid in content]
                                 if not matching and tb and (repo_root / tb.split("::")[0].strip()).exists():
                                     matching = [tb.split("::")[0].strip()]
                                 has_cov = bool(matching)

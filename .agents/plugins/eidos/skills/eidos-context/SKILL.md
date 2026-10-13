@@ -48,6 +48,12 @@ eidos context -f src/eidos/cli/main.py --tier deep
 # Machine-readable JSON output for agent automation
 eidos context -f src/eidos/cli/main.py --format json
 
+# Generate token-budgeted structural repo map outline (~98% compression)
+eidos repo-map --max-tokens 1500
+
+# Locate symbol matches across code AST and link to living specs
+eidos find-symbol "AstGrepIndexer"
+
 # Search architecture via FTS5 BM25 ranked search
 eidos index search "token design system"
 

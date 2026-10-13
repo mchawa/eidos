@@ -31,12 +31,17 @@ components:
     name: "TieredContextCompressor"
     responsibility: "Extracts token-compressed architectural slices across anchor, guardrails, and deep tiers for AI coding agents, formatting co-located components with in-process APIs and invariants."
     source_path: "src/eidos/core/graph_index.py"
+  - id: CMP-AST-SYMBOL-INDEXER
+    name: "AstSymbolIndexer"
+    responsibility: "Extracts polyglot AST symbols (classes, functions, interface signatures), generates structural AI repo maps, and binds test functions to capability invariants via ast-grep with stdlib ast fallback."
+    source_path: "src/eidos/core/ast_indexer.py"
 
 dependencies:
   internal_containers:
     - "CNT-EIDOS-CORE"
   external_services:
     - "SQLite3 (Python Standard Library)"
+    - "ast-grep-py (Optional)"
 
 contracts:
   provides: []
