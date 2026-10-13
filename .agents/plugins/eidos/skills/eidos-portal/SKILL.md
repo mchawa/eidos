@@ -110,7 +110,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v5
-      - run: uvx eidos-ai build-site --out site
+      - run: uvx --from eidos-ai eidos build-site --out site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

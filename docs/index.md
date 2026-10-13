@@ -71,7 +71,7 @@ Install Eidos globally as a standalone CLI tool (so it works across any Python, 
 === "Ephemeral (uvx)"
 
     ```bash
-    uvx eidos-ai --help
+    uvx --from eidos-ai eidos --help
     ```
 
 Verify the installation:

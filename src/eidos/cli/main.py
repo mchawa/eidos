@@ -176,8 +176,7 @@ def doctor_cmd(
     eidos_dir = repo_root / "eidos"
 
     eidos_bin = shutil.which("eidos")
-    eidos_ai_bin = shutil.which("eidos-ai")
-    cli_ok = bool(eidos_bin or eidos_ai_bin)
+    cli_ok = bool(eidos_bin)
 
     git_ok = False
     try:
@@ -222,7 +221,6 @@ def doctor_cmd(
         "cli_binary": {
             "ok": cli_ok,
             "eidos_bin": eidos_bin,
-            "eidos_ai_bin": eidos_ai_bin,
             "version": eidos.__version__,
         },
         "git_repository": {
@@ -266,7 +264,7 @@ def doctor_cmd(
     table.add_row(
         "CLI Binary on PATH",
         "[bold green]PASS[/bold green]" if cli_ok else "[bold yellow]WARN[/bold yellow]",
-        f"{eidos_bin or eidos_ai_bin or 'Not on PATH (install via: uv tool install eidos-ai)'} (v{eidos.__version__})",
+        f"{eidos_bin or 'Not on PATH (install via: uv tool install eidos-ai)'} (v{eidos.__version__})",
     )
     table.add_row(
         "Git Repository",

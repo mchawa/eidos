@@ -24,8 +24,7 @@ uv tool install eidos-ai
 To run Eidos ephemerally without installing it permanently:
 
 ```bash
-uvx eidos-ai --help
-# Or run specific subcommands via uvx:
+uvx --from eidos-ai eidos --help
 uvx --from eidos-ai eidos doctor
 ```
 

@@ -10,7 +10,7 @@ intent:
   kind: architectural_refactor
   motivation: Eliminate virtual-environment coupled hook scripts and project dependency
     pollution by standardizing Eidos as a standalone developer tool ('uv tool install
-    eidos-ai', 'pipx install eidos-ai', 'uvx eidos-ai'), migrating agent lifecycle
+    eidos-ai', 'pipx install eidos-ai', 'uvx --from eidos-ai eidos'), migrating agent lifecycle
     hooks into native CLI subcommands ('eidos hook lint', 'eidos hook drift'), and
     enforcing a stateful Block-Once Stop gate.
 mutations:
@@ -24,17 +24,17 @@ mutations:
 - action: modify_component
   target_component: CNT-EIDOS-CLI
   details: Expose 'eidos hook lint', 'eidos hook drift', and 'eidos doctor' commands
-    in 'src/eidos/cli/main.py', and register both 'eidos' and 'eidos-ai' console script
-    entry points in 'pyproject.toml'.
+    in 'src/eidos/cli/main.py', keeping 'eidos' as the sole console script
+    entry point in 'pyproject.toml'.
 - action: modify_contract
   target_contract: CTR-EIDOS-CLI
   details: Document 'eidos hook lint', 'eidos hook drift', and 'eidos doctor' in 'eidos/architecture/contracts/cli.adoc'
     and update installation guidance across documentation and skills to exclusively
-    use 'uv tool install eidos-ai', 'pipx install eidos-ai', and 'uvx eidos-ai'.
+    use 'uv tool install eidos-ai', 'pipx install eidos-ai', and 'uvx --from eidos-ai eidos'.
 - action: extend_capability
   target_capability: CAP-AGENT-001
   details: Upgrade agent lifecycle hooks to execute through the globally installed
-    'eidos' CLI binary (with 'uvx eidos-ai' fallback) and enforce the Block-Once Stop
+    'eidos' CLI binary (with 'uvx --from eidos-ai eidos' fallback) and enforce the Block-Once Stop
     gate.
 blast_radius:
   impacted_components:
@@ -51,8 +51,8 @@ Previously, Eidos documentation mixed `uv add eidos-ai` with `uv tool install`, 
 == Architectural & Behavioral Mutations
 
 1. **Tool-Only Installation**:
-   * Standardize installation exclusively around `uv tool install eidos-ai`, `pipx install eidos-ai`, and ephemeral `uvx eidos-ai`.
-   * Expose both `eidos` and `eidos-ai` script entry points in `pyproject.toml`.
+   * Standardize installation exclusively around `uv tool install eidos-ai`, `pipx install eidos-ai`, and ephemeral `uvx --from eidos-ai eidos`.
+   * Expose `eidos` as the sole CLI script entry point in `pyproject.toml`.
 2. **CLI-Native Hooks (`eidos hook lint`, `eidos hook drift`) & `eidos doctor`**:
    * Implement `src/eidos/plugin/hooks.py` and wire `eidos hook lint` and `eidos hook drift` in `src/eidos/cli/main.py`.
    * Keep lightweight forwarding shims in `scripts/lint_docs.py` and `scripts/check_drift.py` that delegate to `eidos hook` (falling back to `uvx --from eidos-ai eidos hook`).

@@ -45,7 +45,6 @@ ast = [
 
 [project.scripts]
 eidos = "eidos.cli.main:app"
-eidos-ai = "eidos.cli.main:app"
 
 [tool.hatch.version]
 source = "vcs"

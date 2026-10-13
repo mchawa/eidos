@@ -185,7 +185,7 @@ Runtime execution choreographies are defined in:
 * link:../domains/product-core/capabilities/exploration-discovery.adoc[Exploration & Spike Flow]
 
 == 7. Deployment View (Infrastructure & Delivery)
-* **Local Workstation**: Developers and AI agents install the standalone CLI tool (`uv tool install eidos-ai` / `pipx install eidos-ai` / `uvx eidos-ai`).
+* **Local Workstation**: Developers and AI agents install the standalone CLI tool (`uv tool install eidos-ai` / `pipx install eidos-ai` / `uvx --from eidos-ai eidos`).
 * **CI/CD Automation**: CI runners execute `eidos validate` and `eidos drift` gates on every PR.
 
 == 8. Cross-Cutting Concepts

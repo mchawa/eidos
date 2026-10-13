@@ -23,7 +23,7 @@ uv tool install eidos-ai
 pipx install eidos-ai
 
 # Or run ephemerally without installing
-uvx eidos-ai --help
+uvx --from eidos-ai eidos --help
 
 # Initialize Eidos in your repository
 eidos init
