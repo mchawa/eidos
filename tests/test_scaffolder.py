@@ -5,8 +5,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
-from eidos.core.parser import parse_spec_file
-from eidos.core.scaffolder import (
+from eidos.core.lifecycle.scaffolder import (
     apply_delta,
     create_spec,
     delete_spec,
@@ -14,7 +13,8 @@ from eidos.core.scaffolder import (
     init_repository,
     list_specs,
 )
-from eidos.core.validator import SpecValidator
+from eidos.core.spec.parser import parse_spec_file
+from eidos.core.spec.validator import SpecValidator
 
 runner = CliRunner()
 
@@ -405,8 +405,8 @@ def test_self_contained_eidos_gitignore(tmp_path):
 
 def test_init_repository_programmatic(tmp_path):
     """Verify init_repository scaffolds an empty living specification skeleton tracked by .gitkeep without installing plugins (CTR-EIDOS-CLI)."""
-    from eidos.core.scaffolder import init_repository
-    from eidos.core.validator import SpecValidator
+    from eidos.core.lifecycle.scaffolder import init_repository
+    from eidos.core.spec.validator import SpecValidator
 
     success, _msg, _files = init_repository(
         project_dir=tmp_path,
@@ -516,7 +516,7 @@ def test_cli_version_command_and_options():
 
 def test_cli_index_update_alias(tmp_path):
     """Verify 'eidos index update' acts as an alias to sync (CTR-EIDOS-CLI)."""
-    from eidos.core.scaffolder import init_repository
+    from eidos.core.lifecycle.scaffolder import init_repository
 
     init_repository(project_dir=tmp_path)
     res = runner.invoke(app, ["index", "update", "--path", str(tmp_path / "eidos")])
@@ -868,7 +868,7 @@ technical_profile:
 
 def test_frontmatter_mutations_preserve_yaml_comments_and_formatting(tmp_path):
     """Verify apply_delta, promote_component, inline_component, and execute_delta_mutations preserve YAML comments."""
-    from eidos.core.scaffolder import execute_delta_mutations, inline_component, promote_component
+    from eidos.core.lifecycle.scaffolder import execute_delta_mutations, inline_component, promote_component
 
     eidos_dir = tmp_path / "eidos"
     cnts_dir = eidos_dir / "architecture" / "containers"
@@ -955,3 +955,112 @@ mutations:
     assert "status: applied # status inline comment" in dlt_after_apply
 
 
+
+
+def test_scaffolder_backward_compatible_reexports():
+    """DLT-2026-038: every previously public name in eidos.core.lifecycle.scaffolder / eidos.cli.main resolves to its new home."""
+    import importlib
+    import json
+
+    snapshot = json.loads((Path(__file__).parent / "fixtures" / "public_api_names.json").read_text(encoding="utf-8"))
+    assert set(snapshot) == {"eidos.core.lifecycle.scaffolder", "eidos.cli.main"}
+
+    for module_name, names in snapshot.items():
+        legacy = importlib.import_module(module_name)
+        package_prefix = module_name.rsplit(".", 1)[0] + "."
+        missing = [n for n in names if not hasattr(legacy, n)]
+        assert not missing, f"{module_name} lost public names: {missing}"
+        for name in names:
+            obj = getattr(legacy, name)
+            owner = getattr(obj, "__module__", None)
+            if isinstance(owner, str) and owner.startswith(package_prefix):
+                home = importlib.import_module(owner)
+                assert getattr(home, name) is obj, f"{module_name}.{name} is not the object defined in {owner}"
+
+    from eidos.core.lifecycle import catalog, delta_engine, initializer, scaffolder
+
+    assert scaffolder.find_spec_by_id_or_path is catalog.find_spec_by_id_or_path
+    assert scaffolder.VALID_SPEC_TYPES is catalog.VALID_SPEC_TYPES
+    assert scaffolder.verify_delta_mutations is delta_engine.verify_delta_mutations
+    assert scaffolder.init_repository is initializer.init_repository
+
+
+def test_core_and_cli_modules_import_without_cycles():
+    """DLT-2026-038: modules import cleanly in a fresh interpreter, in any order, with an acyclic module-level graph."""
+    import ast
+    import subprocess
+    import sys
+
+    src_root = Path(__file__).resolve().parent.parent / "src"
+    modules: dict[str, Path] = {}
+    for pkg in ("core", "cli"):
+        for path in sorted((src_root / "eidos" / pkg).rglob("*.py")):
+            if path.name != "__init__.py":
+                rel = path.relative_to(src_root).with_suffix("")
+                modules[".".join(rel.parts)] = path
+
+    # Dedicated module exists for every C4 component split by DLT-2026-038.
+    for expected in (
+        "eidos.core.lifecycle.catalog",
+        "eidos.core.lifecycle.delta_engine",
+        "eidos.core.lifecycle.design_engine",
+        "eidos.core.lifecycle.initializer",
+        "eidos.cli._shared",
+        "eidos.cli.spec_commands",
+        "eidos.cli.delta_commands",
+        "eidos.cli.plugin_commands",
+        "eidos.cli.drift_commands",
+        "eidos.cli.init_command",
+        "eidos.cli.context_command",
+        "eidos.cli.index_commands",
+        "eidos.cli.component_commands",
+        "eidos.cli.portal_commands",
+        "eidos.cli.doctor_hook_commands",
+    ):
+        assert expected in modules, f"missing module {expected}"
+
+    # 1. Fresh-interpreter import of every module on its own, and all modules in reverse order.
+    env_code = "import importlib, sys\nfor n in sys.argv[1:]:\n    importlib.import_module(n)\n"
+    pythonpath = str(src_root)
+    names = sorted(modules)
+    for order in ([[n] for n in names] + [list(reversed(names))]):
+        proc = subprocess.run(
+            [sys.executable, "-c", env_code, *order],
+            capture_output=True,
+            text=True,
+            env={**__import__("os").environ, "PYTHONPATH": pythonpath},
+        )
+        assert proc.returncode == 0, f"import of {order[:2]}... failed:\n{proc.stderr}"
+
+    # 2. Module-level (not function-local) imports among these modules form a DAG.
+    graph: dict[str, set[str]] = {}
+    for name, path in modules.items():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        deps: set[str] = set()
+        for node in tree.body:  # top-level statements only
+            if isinstance(node, ast.ImportFrom) and node.module:
+                if node.module in modules:
+                    deps.add(node.module)
+                deps.update(f"{node.module}.{a.name}" for a in node.names if f"{node.module}.{a.name}" in modules)
+            elif isinstance(node, ast.Import):
+                deps.update(a.name for a in node.names if a.name in modules)
+        graph[name] = deps - {name}
+
+    state: dict[str, int] = {}
+
+    def visit(node: str, stack: list[str]) -> None:
+        if state.get(node) == 2:
+            return
+        assert state.get(node) != 1, f"import cycle: {' -> '.join([*stack, node])}"
+        state[node] = 1
+        for dep in sorted(graph[node]):
+            visit(dep, [*stack, node])
+        state[node] = 2
+
+    for n in graph:
+        visit(n, [])
+
+    # 3. Command modules never import the root dispatcher.
+    for name, deps in graph.items():
+        if name.startswith("eidos.cli.") and name != "eidos.cli.main":
+            assert "eidos.cli.main" not in deps, f"{name} must not import eidos.cli.main"

@@ -20,10 +20,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from eidos.core.ast_indexer import get_ast_indexer
-from eidos.core.context import ArchitecturalContextSlice
-from eidos.core.parser import parse_spec_file
-from eidos.core.project import extract_entity_paths, find_repo_root, match_path_pattern
+from eidos.core.index.ast_indexer import get_ast_indexer
+from eidos.core.spec.parser import parse_spec_file
+from eidos.core.workspace.context import ArchitecturalContextSlice
+from eidos.core.workspace.project import extract_entity_paths, find_repo_root, match_path_pattern
 
 
 @dataclass
@@ -212,10 +212,166 @@ class TieredContextSlice(ArchitecturalContextSlice):
         return "\n".join(lines)
 
 
+_CODE_EXTS = frozenset({".py", ".ts", ".tsx", ".go", ".rs", ".js", ".jsx", ".java", ".kt"})
+
+_EXCLUDED_CODE_DIRS = frozenset(
+    {
+        ".git",
+        ".venv",
+        "venv",
+        "__pycache__",
+        "node_modules",
+        "dist",
+        "build",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".mypy_cache",
+        ".eidos",
+        "htmlcov",
+        "site",
+    }
+)
+
+# Every table owned by the derived index cache (dropped and rebuilt on schema version mismatch).
+_MANAGED_TABLES = (
+    "code_symbols",
+    "symbol_mappings",
+    "edges",
+    "entities",
+    "indexed_files",
+    "specs_fts",
+    "metadata",
+)
+
+# symbol_mappings kinds that are *not* AST symbols (everything else resolves to code_symbols coordinates).
+_NON_AST_SYMBOL_KINDS = frozenset(
+    {
+        "specification_file",
+        "contract_path",
+        "interface_method",
+        "interface_signature",
+        "component_ref",
+        "test_binding",
+        "package_path",
+        "owned_path",
+        "module_name",
+        "source_path",
+        "component_id",
+        "interface_command",
+        "inferred_path",
+    }
+)
+
+
+def _normalize_rel_path(path: str) -> str:
+    norm = path.strip().replace("\\", "/")
+    while norm.startswith("./"):
+        norm = norm[2:]
+    return norm.rstrip("/")
+
+
+class _CodeOwnershipResolver:
+    """Deterministic, spec-order-independent attribution of source files to owning containers/components.
+
+    Built once per sync from the persisted specification state, so every file resolves identically no matter
+    which spec was processed first. Precedence (DLT-2026-034):
+
+    1. exact component ``source_path`` declared by any container (lowest container id wins; every other declaring
+       entity is kept as a secondary owner, see ``owners()``);
+    2. highest-scoring ``owned_path`` pattern (``match_path_pattern``);
+    3. longest ``package_path`` prefix (path-boundary aware) across all entries of all containers.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._component_sources: dict[str, tuple[str, str]] = {}
+        self._declared_by: dict[str, set[str]] = {}
+        self._declared_components: dict[tuple[str, str], str] = {}
+        for row in conn.execute("SELECT id, data_json FROM entities WHERE type = 'tech/container' ORDER BY id;"):
+            try:
+                fm = json.loads(row["data_json"])
+            except (TypeError, ValueError):
+                continue
+            for comp in fm.get("components", []) or fm.get("c4_internal_components", []) or []:
+                if not isinstance(comp, dict):
+                    continue
+                raw = comp.get("source_path")
+                paths = raw if isinstance(raw, list) else ([raw] if raw else [])
+                for sp in paths:
+                    norm = _normalize_rel_path(str(sp))
+                    if not norm or any(ch in norm for ch in "*?["):
+                        continue
+                    self._component_sources.setdefault(norm, (row["id"], str(comp.get("id") or "")))
+                    self._declared_by.setdefault(norm, set()).add(row["id"])
+                    self._declared_components.setdefault((norm, row["id"]), str(comp.get("id") or ""))
+
+        self._owned: list[tuple[str, str]] = [
+            (r["symbol"], r["entity_id"])
+            for r in conn.execute(
+                "SELECT symbol, entity_id FROM symbol_mappings WHERE kind = 'owned_path' ORDER BY entity_id, symbol;"
+            )
+        ]
+        self._packages: list[tuple[str, str]] = []
+        for r in conn.execute(
+            "SELECT symbol, entity_id FROM symbol_mappings WHERE kind = 'package_path' ORDER BY entity_id, symbol;"
+        ):
+            norm = _normalize_rel_path(r["symbol"])
+            if not norm or any(ch in norm for ch in "*?["):
+                continue
+            self._packages.append((norm, r["entity_id"]))
+            if "." in norm.rsplit("/", 1)[-1]:  # literal file declared as package_path
+                self._declared_by.setdefault(norm, set()).add(r["entity_id"])
+
+    def package_dirs(self) -> set[str]:
+        """All literal ``package_path`` entries (callers filter for existing directories)."""
+        return {pp for pp, _ in self._packages}
+
+    def declared_owners(self, rel_path: str) -> set[str]:
+        """Entities that explicitly declare ``rel_path`` as a source/package file."""
+        return self._declared_by.get(_normalize_rel_path(rel_path), set())
+
+    def declared_files(self) -> set[str]:
+        """Every literal source file explicitly declared by any entity."""
+        return set(self._declared_by)
+
+    def owners(self, rel_path: str) -> list[tuple[str, str]]:
+        """``(entity_id, component_id)`` owners of a file: the resolved primary owner first, then every other entity
+        that explicitly declares the file (sorted by id). Empty when the file is unowned."""
+        primary, component_id = self.resolve(rel_path)
+        if not primary:
+            return []
+        rel = _normalize_rel_path(rel_path)
+        result = [(primary, component_id)]
+        for entity_id in sorted(self._declared_by.get(rel, set()) - {primary}):
+            result.append((entity_id, self._declared_components.get((rel, entity_id), "")))
+        return result
+
+    def resolve(self, rel_path: str) -> tuple[str | None, str]:
+        """Return ``(owning entity id or None, component id or '')`` for a repo-relative source path."""
+        rel = _normalize_rel_path(rel_path)
+        hit = self._component_sources.get(rel)
+        if hit:
+            return hit
+
+        best_score = 0
+        owner: str | None = None
+        for pattern, entity_id in self._owned:
+            score = match_path_pattern(rel, pattern)
+            if score > best_score:
+                best_score, owner = score, entity_id
+        if owner:
+            return owner, ""
+
+        best_len = -1
+        for pkg, entity_id in self._packages:
+            if (rel == pkg or rel.startswith(pkg + "/")) and len(pkg) > best_len:
+                best_len, owner = len(pkg), entity_id
+        return owner, ""
+
+
 class ArchitecturalIndex:
     """Embedded SQLite Architectural Knowledge Graph & Hybrid Retrieval Index."""
 
-    SCHEMA_VERSION = "1.0.0"
+    SCHEMA_VERSION = "2.1.0"
 
     def __init__(
         self,
@@ -259,8 +415,22 @@ class ArchitecturalIndex:
         return self._conn
 
     def _init_db(self) -> None:
-        """Create tables, indexes, and FTS5 virtual tables."""
+        """Create tables, indexes, and FTS5 virtual tables.
+
+        The database is a derived cache: when the persisted ``schema_version`` is missing or differs from
+        ``SCHEMA_VERSION``, every managed table is dropped and rebuilt on the next sync (DLT-2026-034).
+        """
         conn = self._get_connection()
+        existing_tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")}
+        if existing_tables & set(_MANAGED_TABLES):
+            stored_version = None
+            if "metadata" in existing_tables:
+                row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()
+                stored_version = row[0] if row else None
+            if stored_version != self.SCHEMA_VERSION:
+                with conn:
+                    for table in _MANAGED_TABLES:
+                        conn.execute(f"DROP TABLE IF EXISTS {table};")
         with conn:
             conn.executescript(
                 """
@@ -313,6 +483,26 @@ class ArchitecturalIndex:
                 CREATE INDEX IF NOT EXISTS idx_symbols_symbol ON symbol_mappings(symbol);
                 CREATE INDEX IF NOT EXISTS idx_symbols_entity ON symbol_mappings(entity_id);
 
+                -- AST symbol coordinates (DLT-2026-034), one row set per owning entity of the file ('is_primary' marks the
+                -- resolved primary owner; files declared by several entities keep rows for each). 'id' preserves AST order.
+                CREATE TABLE IF NOT EXISTS code_symbols (
+                    id INTEGER PRIMARY KEY,
+                    file_path TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    parent_symbol TEXT NOT NULL DEFAULT '',
+                    line_start INTEGER NOT NULL,
+                    line_end INTEGER NOT NULL,
+                    signature TEXT NOT NULL DEFAULT '',
+                    entity_id TEXT NOT NULL,
+                    component_id TEXT NOT NULL DEFAULT '',
+                    is_primary INTEGER NOT NULL DEFAULT 1,
+                    UNIQUE (file_path, entity_id, kind, parent_symbol, symbol, line_start)
+                );
+                CREATE INDEX IF NOT EXISTS idx_code_symbols_symbol ON code_symbols(symbol);
+                CREATE INDEX IF NOT EXISTS idx_code_symbols_file ON code_symbols(file_path);
+                CREATE INDEX IF NOT EXISTS idx_code_symbols_entity ON code_symbols(entity_id, kind, symbol);
+
                 -- FTS5 full-text search table for BM25 ranking
                 CREATE VIRTUAL TABLE IF NOT EXISTS specs_fts USING fts5(
                     entity_id UNINDEXED,
@@ -324,6 +514,236 @@ class ArchitecturalIndex:
                     tokenize='porter unicode61'
                 );
                 """
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?);",
+                (self.SCHEMA_VERSION,),
+            )
+
+    # ------------------------------------------------------------------
+    # Code symbol persistence helpers (DLT-2026-034)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_test_code_path(rel_path: str) -> bool:
+        """Return True for test files (by name or by a tests/test/__tests__ directory segment)."""
+        parts = rel_path.replace("\\", "/").split("/")
+        name = parts[-1]
+        return (
+            name.startswith("test_")
+            or name.endswith("_test.py")
+            or any(part in ("tests", "test", "__tests__") for part in parts[:-1])
+        )
+
+    def _store_code_symbols(
+        self,
+        conn: sqlite3.Connection,
+        rel_path: str,
+        owners: list[tuple[str, str]],
+        symbols: list[Any],
+    ) -> None:
+        """Replace all persisted symbols of one source file (delete-then-insert) and keep lookups consistent.
+
+        ``owners`` lists ``(entity_id, component_id)`` pairs, primary owner first; every owner gets the file's AST
+        coordinates in ``code_symbols`` and its lookup rows in ``symbol_mappings``. Mapping rows that were only
+        provided by the file's previous symbols/owners are pruned, so edits, deletions and ownership changes leave
+        nothing stale behind.
+        """
+        previous = conn.execute(
+            "SELECT DISTINCT entity_id, kind, symbol, parent_symbol FROM code_symbols WHERE file_path = ?;",
+            (rel_path,),
+        ).fetchall()
+        conn.execute("DELETE FROM code_symbols WHERE file_path = ?;", (rel_path,))
+
+        for position, (entity_id, component_id) in enumerate(owners):
+            for sym in symbols:
+                parent = sym.parent_symbol or ""
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO code_symbols
+                    (file_path, symbol, kind, parent_symbol, line_start, line_end, signature, entity_id,
+                     component_id, is_primary)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    (
+                        rel_path,
+                        sym.name,
+                        sym.kind,
+                        parent,
+                        sym.line_start,
+                        sym.line_end,
+                        sym.signature or "",
+                        entity_id,
+                        component_id,
+                        1 if position == 0 else 0,
+                    ),
+                )
+                conn.execute(
+                    "INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind) VALUES (?, ?, ?);",
+                    (sym.name, entity_id, sym.kind),
+                )
+                if parent:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind) VALUES (?, ?, 'method');",
+                        (f"{parent}.{sym.name}", entity_id),
+                    )
+
+        for old in previous:
+            old_entity, old_kind, old_symbol, old_parent = (
+                old["entity_id"],
+                old["kind"],
+                old["symbol"],
+                old["parent_symbol"],
+            )
+            if not conn.execute(
+                "SELECT 1 FROM code_symbols WHERE entity_id = ? AND kind = ? AND symbol = ? LIMIT 1;",
+                (old_entity, old_kind, old_symbol),
+            ).fetchone():
+                conn.execute(
+                    "DELETE FROM symbol_mappings WHERE symbol = ? AND entity_id = ? AND kind = ?;",
+                    (old_symbol, old_entity, old_kind),
+                )
+            if (
+                old_parent
+                and not conn.execute(
+                    "SELECT 1 FROM code_symbols WHERE entity_id = ? AND parent_symbol = ? AND symbol = ? LIMIT 1;",
+                    (old_entity, old_parent, old_symbol),
+                ).fetchone()
+            ):
+                conn.execute(
+                    "DELETE FROM symbol_mappings WHERE symbol = ? AND entity_id = ? AND kind = 'method';",
+                    (f"{old_parent}.{old_symbol}", old_entity),
+                )
+
+    def _restore_code_mappings(self, conn: sqlite3.Connection, entity_id: str) -> None:
+        """Re-create ``symbol_mappings`` rows for an entity from persisted code state (no source re-parsing)."""
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind)
+            SELECT DISTINCT file_path, entity_id, 'source_path' FROM code_symbols WHERE entity_id = ?
+            UNION
+            SELECT rel_path, doc_id, 'source_path' FROM indexed_files
+            WHERE doc_type = 'code/source' AND doc_id = ?;
+            """,
+            (entity_id, entity_id),
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind)
+            SELECT symbol, entity_id, kind FROM code_symbols WHERE entity_id = ?;
+            """,
+            (entity_id,),
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind)
+            SELECT parent_symbol || '.' || symbol, entity_id, 'method' FROM code_symbols
+            WHERE entity_id = ? AND parent_symbol != '';
+            """,
+            (entity_id,),
+        )
+
+    def _index_source_file(
+        self,
+        conn: sqlite3.Connection,
+        ast_idx: Any,
+        path: Path,
+        rel_path: str,
+        mtime: float,
+        sha: str,
+        resolver: _CodeOwnershipResolver,
+    ) -> None:
+        """Index one non-test source file for all its resolved owners (one AST parse)."""
+        owners = resolver.owners(rel_path)
+        owner_ids = {entity_id for entity_id, _ in owners}
+        # Drop source_path rows of entities that no longer own or declare the file.
+        keep = resolver.declared_owners(rel_path) | owner_ids
+        for stale in conn.execute(
+            "SELECT entity_id FROM symbol_mappings WHERE symbol = ? AND kind = 'source_path';", (rel_path,)
+        ).fetchall():
+            if stale["entity_id"] not in keep:
+                conn.execute(
+                    "DELETE FROM symbol_mappings WHERE symbol = ? AND entity_id = ? AND kind = 'source_path';",
+                    (rel_path, stale["entity_id"]),
+                )
+        for entity_id in sorted(owner_ids):
+            conn.execute(
+                "INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind) VALUES (?, ?, 'source_path');",
+                (rel_path, entity_id),
+            )
+        self._store_code_symbols(conn, rel_path, owners, ast_idx.extract_symbols(path) if owners else [])
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
+            VALUES (?, ?, ?, ?, 'code/source', ?);
+            """,
+            (rel_path, mtime, sha, owners[0][0] if owners else "source", time.time()),
+        )
+
+    def _reconcile_code_ownership(
+        self,
+        conn: sqlite3.Connection,
+        ast_idx: Any,
+        resolver: _CodeOwnershipResolver,
+        processed: set[str],
+    ) -> None:
+        """Recursively index every container package directory and re-attribute files whose owners changed.
+
+        Runs after all specifications are loaded, so ownership is independent of spec processing order.
+        Candidates are all non-test code files under any declared ``package_path`` (excluded directories pruned),
+        every explicitly declared source file, and every already-indexed source file. A file is (re)indexed when it
+        is unknown, its primary owner differs from the manifest, or its persisted owner set differs from the
+        resolved one.
+        """
+        candidates: dict[str, Path] = {}
+        for pkg in sorted(resolver.package_dirs()):
+            abs_pkg = (self.root / pkg).resolve()
+            if not abs_pkg.is_dir():
+                continue
+            for dirpath, dirnames, filenames in os.walk(str(abs_pkg)):
+                dirnames[:] = sorted(d for d in dirnames if d not in _EXCLUDED_CODE_DIRS and not d.startswith("."))
+                for fn in sorted(filenames):
+                    p_file = Path(dirpath) / fn
+                    if p_file.suffix not in _CODE_EXTS:
+                        continue
+                    try:
+                        rel_code = str(p_file.relative_to(self.root)).replace("\\", "/")
+                    except ValueError:
+                        continue
+                    candidates.setdefault(rel_code, p_file)
+
+        manifest = {
+            r["rel_path"]: r["doc_id"]
+            for r in conn.execute("SELECT rel_path, doc_id FROM indexed_files WHERE doc_type = 'code/source';")
+        }
+        for rel_code in sorted(set(manifest) | resolver.declared_files()):
+            if rel_code not in candidates:
+                abs_known = (self.root / rel_code).resolve()
+                if abs_known.is_file() and abs_known.suffix in _CODE_EXTS:
+                    candidates[rel_code] = abs_known
+
+        for rel_code, p_file in sorted(candidates.items()):
+            if rel_code in processed or self._is_test_code_path(rel_code):
+                continue
+            owners = resolver.owners(rel_code)
+            if rel_code in manifest and manifest[rel_code] == (owners[0][0] if owners else "source"):
+                stored = {
+                    r[0]
+                    for r in conn.execute(
+                        "SELECT DISTINCT entity_id FROM code_symbols WHERE file_path = ?;", (rel_code,)
+                    )
+                }
+                if not stored or stored == {entity_id for entity_id, _ in owners}:
+                    continue
+            stat = p_file.stat()
+            self._index_source_file(
+                conn,
+                ast_idx,
+                p_file,
+                rel_code,
+                stat.st_mtime,
+                hashlib.sha256(p_file.read_bytes()).hexdigest(),
+                resolver,
             )
 
     def close(self) -> None:
@@ -378,12 +798,17 @@ class ArchitecturalIndex:
                         to_update.append(Path(full_path))
 
         # 2. Tracked code and test files
-        code_exts = {".py", ".ts", ".tsx", ".go", ".rs", ".js", ".jsx", ".java", ".kt"}
+        code_exts = _CODE_EXTS
         tracked_code_dirs: set[Path] = set()
 
+        # entities.package_path only holds the first entry of a multi-path container; every declared entry is also
+        # persisted as a kind='package_path' mapping (DLT-2026-034).
+        package_paths: set[str] = set()
         cursor.execute("SELECT DISTINCT package_path FROM entities WHERE package_path != '';")
-        for row in cursor.fetchall():
-            pp = row[0].strip()
+        package_paths.update(row[0].strip() for row in cursor.fetchall())
+        cursor.execute("SELECT DISTINCT symbol FROM symbol_mappings WHERE kind = 'package_path';")
+        package_paths.update(row[0].strip() for row in cursor.fetchall())
+        for pp in sorted(package_paths):
             if pp:
                 p_abs = (self.root / pp).resolve()
                 if p_abs.is_dir():
@@ -419,21 +844,7 @@ class ArchitecturalIndex:
                     ):
                         to_update.append(abs_tracked)
 
-        excluded_dirs = {
-            ".git",
-            ".venv",
-            "venv",
-            "__pycache__",
-            "node_modules",
-            "dist",
-            "build",
-            ".pytest_cache",
-            ".ruff_cache",
-            ".mypy_cache",
-            ".eidos",
-            "htmlcov",
-            "site",
-        }
+        excluded_dirs = _EXCLUDED_CODE_DIRS
         for code_dir in tracked_code_dirs:
             if not code_dir.exists():
                 continue
@@ -486,6 +897,7 @@ class ArchitecturalIndex:
                 conn.execute("DELETE FROM entities;")
                 conn.execute("DELETE FROM edges;")
                 conn.execute("DELETE FROM symbol_mappings;")
+                conn.execute("DELETE FROM code_symbols;")
                 conn.execute("DELETE FROM specs_fts;")
 
         dirty, to_update, deleted = self.is_dirty()
@@ -500,17 +912,23 @@ class ArchitecturalIndex:
 
         with conn:
             # Handle deletions
+            specs_deleted = False
             for d in deleted:
                 d_rel = str(d).replace("\\", "/")
                 row = conn.execute("SELECT doc_id, doc_type FROM indexed_files WHERE rel_path = ?", (d_rel,)).fetchone()
                 if row and row["doc_type"] in ("code/source", "code/test"):
+                    self._store_code_symbols(conn, d_rel, [], [])  # prune coordinates + orphaned AST mappings
                     conn.execute("DELETE FROM symbol_mappings WHERE symbol = ?;", (d_rel,))
                     conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
                 elif row and row["doc_id"]:
                     doc_id = row["doc_id"]
-                    conn.execute("DELETE FROM entities WHERE id = ?", (doc_id,))
-                    conn.execute("DELETE FROM edges WHERE source_id = ? OR target_id = ?", (doc_id, doc_id))
+                    specs_deleted = True
+                    conn.execute(
+                        "DELETE FROM entities WHERE id = ? OR (file_path = ? AND type = 'invariant')",
+                        (doc_id, d_rel),
+                    )
                     conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?", (doc_id,))
+                    conn.execute("DELETE FROM code_symbols WHERE entity_id = ?", (doc_id,))
                     conn.execute("DELETE FROM specs_fts WHERE entity_id = ?", (doc_id,))
                     conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
                 else:
@@ -545,8 +963,10 @@ class ArchitecturalIndex:
                 existing = conn.execute("SELECT 1 FROM indexed_files WHERE rel_path = ?", (rel_p,)).fetchone()
                 if existing:
                     stats.updated_modified += 1
-                    conn.execute("DELETE FROM entities WHERE id = ?", (doc_id,))
-                    conn.execute("DELETE FROM edges WHERE source_id = ? OR target_id = ?", (doc_id, doc_id))
+                    conn.execute(
+                        "DELETE FROM entities WHERE id = ? OR (file_path = ? AND type = 'invariant')",
+                        (doc_id, rel_p),
+                    )
                     conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?", (doc_id,))
                     conn.execute("DELETE FROM specs_fts WHERE entity_id = ?", (doc_id,))
                 else:
@@ -586,33 +1006,8 @@ class ArchitecturalIndex:
                     ),
                 )
 
-                # 2. Extract and insert edges
-                # Component domain binding
-                if domain:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'realizes', NULL);", (doc_id, domain))
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'domain_member', NULL);", (domain, doc_id))
-
-                # Dependencies
-                deps = fm.get("dependencies", {})
-                if isinstance(deps, dict):
-                    dep_list = deps.get("internal_containers", []) or deps.get("internal_components", [])
-                    for dep in dep_list:
-                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'depends_on', NULL);", (doc_id, dep))
-
-                # Contracts on components
-                contracts = fm.get("contracts", {})
-                if isinstance(contracts, dict):
-                    for prov in contracts.get("provides", []):
-                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides', NULL);", (doc_id, prov))
-                    for req in contracts.get("requires") or contracts.get("consumes") or []:
-                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes', NULL);", (doc_id, req))
-
-                # Contracts standalone specs
+                # 2. Extract spec symbol mappings & child invariants (spec edges are rebuilt across all entities below)
                 if doc_type == "tech/contract":
-                    owning = fm.get("owning_container") or fm.get("owning_component")
-                    if owning:
-                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides', NULL);", (owning, doc_id))
-                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'owned_by', NULL);", (doc_id, owning))
                     spec_file = fm.get("specification_file")
                     if spec_file:
                         conn.execute(
@@ -623,78 +1018,10 @@ class ArchitecturalIndex:
                         "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'contract_path');", (rel_p, doc_id)
                     )
 
-                # Design client bindings (CLT-* -> CNT-* and CLT-* -> DS-*)
-                if doc_type == "design/client":
-                    cnt_ref = fm.get("container")
-                    ds_ref = fm.get("design_system")
-                    if cnt_ref and isinstance(cnt_ref, str):
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implemented_by', NULL);",
-                            (doc_id, cnt_ref.strip()),
-                        )
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements_client', NULL);",
-                            (cnt_ref.strip(), doc_id),
-                        )
-                    if ds_ref and isinstance(ds_ref, str):
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);", (doc_id, ds_ref.strip())
-                        )
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_client', NULL);",
-                            (ds_ref.strip(), doc_id),
-                        )
-                    if cnt_ref and isinstance(cnt_ref, str) and ds_ref and isinstance(ds_ref, str):
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);",
-                            (cnt_ref.strip(), ds_ref.strip()),
-                        )
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_container', NULL);",
-                            (ds_ref.strip(), cnt_ref.strip()),
-                        )
-
-                # Design system inheritance and client bindings
-                if doc_type == "design/system":
-                    for clt_ref in fm.get("clients", []) or []:
-                        if isinstance(clt_ref, str) and clt_ref.strip():
-                            conn.execute(
-                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);",
-                                (clt_ref.strip(), doc_id),
-                            )
-                            conn.execute(
-                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_client', NULL);",
-                                (doc_id, clt_ref.strip()),
-                            )
-                    inh = fm.get("inheritance")
-                    if isinstance(inh, dict) and inh.get("extends"):
-                        parent_ds = str(inh["extends"]).strip()
-                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'extends', NULL);", (doc_id, parent_ds))
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'extended_by', NULL);", (parent_ds, doc_id)
-                        )
-
-                # Capability bindings
                 biz = fm.get("business", {})
-                if isinstance(biz, dict):
-                    for pol in biz.get("policies", []):
-                        pol_ref = str(pol).strip()
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'governed_by', NULL);", (doc_id, pol_ref)
-                        )
-                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'governs', NULL);", (pol_ref, doc_id))
-
                 tech = fm.get("technical", {})
                 invariants = []
                 if isinstance(tech, dict):
-                    tech_targets = list(tech.get("containers", []) or []) + list(tech.get("components", []) or [])
-                    for comp_ref in tech_targets:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements', NULL);", (doc_id, comp_ref)
-                        )
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implemented_by', NULL);", (comp_ref, doc_id)
-                        )
                     invariants = tech.get("invariants", []) or []
 
                 # Policy invariants
@@ -703,14 +1030,6 @@ class ArchitecturalIndex:
 
                 # Dedicated Component bindings
                 if doc_type == "tech/component":
-                    cnt_id = fm.get("container")
-                    if cnt_id:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);", (cnt_id, doc_id)
-                        )
-                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (doc_id, cnt_id))
-
-                    # In-process interfaces
                     ifaces = fm.get("interfaces", {})
                     if isinstance(ifaces, dict):
                         for prov in ifaces.get("provides", []):
@@ -725,12 +1044,6 @@ class ArchitecturalIndex:
                                     "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_signature');",
                                     (sig, doc_id),
                                 )
-                        for consumed in ifaces.get("consumes", []):
-                            if isinstance(consumed, str):
-                                conn.execute(
-                                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api', NULL);",
-                                    (doc_id, consumed.strip()),
-                                )
 
                     # Component invariants
                     invariants = fm.get("invariants", []) or []
@@ -743,18 +1056,11 @@ class ArchitecturalIndex:
                             cid = comp_entry.get("id")
                             if cid:
                                 conn.execute(
-                                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);",
-                                    (doc_id, cid),
-                                )
-                                conn.execute(
-                                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (cid, doc_id)
-                                )
-                                conn.execute(
                                     "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_ref');",
                                     (ref_path, cid),
                                 )
 
-                # Insert invariants as child entities & edges
+                # Insert invariants as child entities
                 for inv in invariants:
                     iid = inv.get("id")
                     if iid:
@@ -762,6 +1068,13 @@ class ArchitecturalIndex:
                         test = inv.get("test_binding", "")
                         test_file = test.split("::")[0] if test else ""
                         test_exists = bool(test_file and (self.root / test_file).exists())
+                        matching = [test] if test else []
+                        for (ast_match,) in conn.execute(
+                            "SELECT source_id FROM edges WHERE rel_type = 'asserts' AND target_id = ? AND instr(source_id, '::') > 0;",
+                            (iid,),
+                        ):
+                            if ast_match not in matching:
+                                matching.append(ast_match)
                         inv_data = {
                             "id": iid,
                             "rule": rule,
@@ -770,8 +1083,8 @@ class ArchitecturalIndex:
                             "capability_id": doc_id if doc_type == "product/capability" else None,
                             "policy_id": doc_id if doc_type == "product/policy" else None,
                             "component_id": doc_id if doc_type == "tech/component" else None,
-                            "has_test_coverage": test_exists,
-                            "matching_tests": [test] if test else [],
+                            "has_test_coverage": test_exists or bool(matching and not test),
+                            "matching_tests": matching,
                         }
                         conn.execute(
                             """
@@ -781,8 +1094,6 @@ class ArchitecturalIndex:
                             """,
                             (iid, rule, domain, rel_p, json.dumps(inv_data)),
                         )
-                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);", (doc_id, iid))
-                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);", (iid, doc_id))
 
                         if test:
                             conn.execute(
@@ -819,8 +1130,9 @@ class ArchitecturalIndex:
                         "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'owned_path');", (owned_pat, doc_id)
                     )
 
-                # Internal C4 modules & components
-                ast_idx = get_ast_indexer()
+                # Internal C4 modules & components: record declarations only. Source files are indexed exactly
+                # once per sync by _reconcile_code_ownership() after every spec is loaded, so ownership (including
+                # files declared by several entities) never depends on spec processing order (DLT-2026-034).
                 all_modules = list(fm.get("components", []) or fm.get("c4_internal_components", []))
                 for module in all_modules:
                     mname = module.get("name")
@@ -839,110 +1151,20 @@ class ArchitecturalIndex:
                         conn.execute(
                             "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (mpath, doc_id)
                         )
-                        abs_mpath = (self.root / mpath).resolve()
-                        if abs_mpath.is_file():
-                            try:
-                                rel_m = str(abs_mpath.relative_to(self.root)).replace("\\", "/")
-                            except ValueError:
-                                rel_m = str(abs_mpath).replace("\\", "/")
-                            conn.execute(
-                                """
-                                INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-                                VALUES (?, ?, ?, ?, 'code/source', ?);
-                                """,
-                                (
-                                    rel_m,
-                                    abs_mpath.stat().st_mtime,
-                                    hashlib.sha256(abs_mpath.read_bytes()).hexdigest(),
-                                    doc_id,
-                                    time.time(),
-                                ),
-                            )
-                            for sym in ast_idx.extract_symbols(abs_mpath):
-                                conn.execute(
-                                    "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, ?);",
-                                    (sym.name, doc_id, sym.kind),
-                                )
-                                if sym.parent_symbol:
-                                    conn.execute(
-                                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'method');",
-                                        (f"{sym.parent_symbol}.{sym.name}", doc_id),
-                                    )
                     if mid:
                         conn.execute(
                             "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_id');", (mid, doc_id)
                         )
 
-                # Extract AST symbols if package_path points to source file or package directory
                 for pkg_item in pkg_list:
-                    if any(ch in pkg_item for ch in "*?["):
+                    if any(ch in pkg_item for ch in "*?[") or not (self.root / pkg_item).is_file():
                         continue
-                    abs_pkg = (self.root / pkg_item).resolve()
-                    if abs_pkg.is_file():
-                        conn.execute(
-                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (pkg_item, doc_id)
-                        )
-                        try:
-                            rel_pkg = str(abs_pkg.relative_to(self.root)).replace("\\", "/")
-                        except ValueError:
-                            rel_pkg = str(abs_pkg).replace("\\", "/")
-                        conn.execute(
-                            """
-                            INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-                            VALUES (?, ?, ?, ?, 'code/source', ?);
-                            """,
-                            (
-                                rel_pkg,
-                                abs_pkg.stat().st_mtime,
-                                hashlib.sha256(abs_pkg.read_bytes()).hexdigest(),
-                                doc_id,
-                                time.time(),
-                            ),
-                        )
-                        for sym in ast_idx.extract_symbols(abs_pkg):
-                            conn.execute(
-                                "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, ?);", (sym.name, doc_id, sym.kind)
-                            )
-                            if sym.parent_symbol:
-                                conn.execute(
-                                    "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'method');",
-                                    (f"{sym.parent_symbol}.{sym.name}", doc_id),
-                                )
-                    elif abs_pkg.is_dir() and not all_modules:
-                        for ext in ("*.py", "*.ts", "*.tsx", "*.go", "*.rs"):
-                            for code_file in abs_pkg.glob(ext):
-                                if code_file.is_file() and not code_file.name.startswith("test_"):
-                                    try:
-                                        rel_code = str(code_file.relative_to(self.root)).replace("\\", "/")
-                                    except ValueError:
-                                        rel_code = str(code_file)
-                                    conn.execute(
-                                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');",
-                                        (rel_code, doc_id),
-                                    )
-                                    conn.execute(
-                                        """
-                                        INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-                                        VALUES (?, ?, ?, ?, 'code/source', ?);
-                                        """,
-                                        (
-                                            rel_code,
-                                            code_file.stat().st_mtime,
-                                            hashlib.sha256(code_file.read_bytes()).hexdigest(),
-                                            doc_id,
-                                            time.time(),
-                                        ),
-                                    )
-                                    for sym in ast_idx.extract_symbols(code_file):
-                                        conn.execute(
-                                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, ?);",
-                                            (sym.name, doc_id, sym.kind),
-                                        )
-                                        if sym.parent_symbol:
-                                            conn.execute(
-                                                "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'method');",
-                                                (f"{sym.parent_symbol}.{sym.name}", doc_id),
-                                            )
+                    conn.execute(
+                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (pkg_item, doc_id)
+                    )
+
+                # Re-attach previously indexed source files and AST symbols that the per-entity DELETE above removed.
+                self._restore_code_mappings(conn, doc_id)
 
                 # Interface commands
                 if isinstance(fm.get("contracts"), dict):
@@ -953,7 +1175,7 @@ class ArchitecturalIndex:
                         )
 
                 # 4. Insert into FTS5
-                jtbd_or_rule = biz.get("jtbd", fm.get("rule", ""))
+                jtbd_or_rule = biz.get("jtbd", fm.get("rule", "")) if isinstance(biz, dict) else fm.get("rule", "")
                 body_clean = re.sub(r"[{}\[\]=:#*`]", " ", doc.body or "")
                 keywords = " ".join([doc_id, doc_type, domain, container_type, package_path])
                 symbols = " ".join(
@@ -977,7 +1199,8 @@ class ArchitecturalIndex:
                     (rel_p, mtime, sha, doc_id, doc_type, time.time()),
                 )
 
-            if spec_updates:
+            if spec_updates or specs_deleted:
+                self._rebuild_spec_edges(conn)
                 conn.execute("DELETE FROM symbol_mappings WHERE kind = 'inferred_path';")
                 # Propagate container owned_path/source_path to bound design/client (CLT-*) and design/system (DS-*)
                 client_cnt_rows = conn.execute(
@@ -1030,9 +1253,8 @@ class ArchitecturalIndex:
 
             # Handle code and test file updates
             ast_idx = get_ast_indexer()
-            owned_rows = conn.execute(
-                "SELECT symbol, entity_id FROM symbol_mappings WHERE kind = 'owned_path';"
-            ).fetchall()
+            resolver = _CodeOwnershipResolver(conn)
+            processed_code: set[str] = set()
             for p in code_updates:
                 if not p.is_file():
                     continue
@@ -1044,11 +1266,7 @@ class ArchitecturalIndex:
                 mtime = p.stat().st_mtime
                 sha = hashlib.sha256(p.read_bytes()).hexdigest()
 
-                is_test = (
-                    p.name.startswith("test_")
-                    or p.name.endswith("_test.py")
-                    or any(part in ("tests", "test", "__tests__") for part in p.parts)
-                )
+                is_test = self._is_test_code_path(rel_p)
 
                 existing = conn.execute("SELECT 1 FROM indexed_files WHERE rel_path = ?", (rel_p,)).fetchone()
                 if existing:
@@ -1066,49 +1284,13 @@ class ArchitecturalIndex:
                         (rel_p, mtime, sha, time.time()),
                     )
                 else:
-                    row = conn.execute(
-                        "SELECT entity_id FROM symbol_mappings WHERE symbol = ? AND kind = 'source_path' LIMIT 1;",
-                        (rel_p,),
-                    ).fetchone()
-                    entity_id = row["entity_id"] if row else None
-                    if not entity_id:
-                        best_score = 0
-                        for orow in owned_rows:
-                            score = match_path_pattern(rel_p, orow["symbol"])
-                            if score > best_score:
-                                best_score = score
-                                entity_id = orow["entity_id"]
-                    if not entity_id:
-                        row = conn.execute(
-                            "SELECT id FROM entities WHERE package_path != '' AND ? LIKE package_path || '%' ORDER BY LENGTH(package_path) DESC LIMIT 1;",
-                            (rel_p,),
-                        ).fetchone()
-                        if row:
-                            entity_id = row["id"]
+                    self._index_source_file(conn, ast_idx, p, rel_p, mtime, sha, resolver)
+                    processed_code.add(rel_p)
 
-                    if entity_id:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (rel_p, entity_id)
-                        )
-                        syms = ast_idx.extract_symbols(p)
-                        for sym in syms:
-                            conn.execute(
-                                "INSERT OR REPLACE INTO symbol_mappings VALUES (?, ?, ?);",
-                                (sym.name, entity_id, sym.kind),
-                            )
-                            if sym.parent_symbol:
-                                conn.execute(
-                                    "INSERT OR REPLACE INTO symbol_mappings VALUES (?, ?, 'method');",
-                                    (f"{sym.parent_symbol}.{sym.name}", entity_id),
-                                )
-
-                    conn.execute(
-                        """
-                        INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-                        VALUES (?, ?, ?, ?, 'code/source', ?);
-                        """,
-                        (rel_p, mtime, sha, entity_id or "source", time.time()),
-                    )
+            # Ownership can only change when specifications change: only then walk every package directory and
+            # re-attribute files (code-only syncs index just the dirty files above) (DLT-2026-034).
+            if force or spec_updates or specs_deleted:
+                self._reconcile_code_ownership(conn, ast_idx, resolver, processed_code)
 
             # Ensure test bindings across tests/ are indexed
             tests_dir = self.root / "tests"
@@ -1187,6 +1369,161 @@ class ArchitecturalIndex:
         stats.duration_ms = (time.perf_counter() - t0) * 1000
         self._last_synced_check = time.monotonic()
         return stats
+
+    @staticmethod
+    def _rebuild_spec_edges(conn: sqlite3.Connection) -> None:
+        """Rebuild all specification-declared relational edges from persisted entity frontmatter.
+
+        Preserves 'file::func' AST test-binding edges while guaranteeing that incremental updates or deletions of a
+        subset of specs never drop incoming/bidirectional edges declared by unchanged specs.
+        """
+        conn.execute(
+            """
+            DELETE FROM edges
+            WHERE NOT (
+                (rel_type = 'asserts' AND instr(source_id, '::') > 0)
+                OR (rel_type = 'bound_to' AND instr(target_id, '::') > 0)
+            );
+            """
+        )
+        rows = conn.execute(
+            "SELECT id, type, data_json FROM entities WHERE type != 'invariant' ORDER BY id;"
+        ).fetchall()
+        for row in rows:
+            doc_id = row["id"]
+            doc_type = row["type"]
+            try:
+                fm = json.loads(row["data_json"])
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(fm, dict):
+                continue
+
+            domain = fm.get("domain", fm.get("domain_binding", ""))
+            if domain:
+                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'realizes', NULL);", (doc_id, domain))
+                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'domain_member', NULL);", (domain, doc_id))
+
+            deps = fm.get("dependencies", {})
+            if isinstance(deps, dict):
+                dep_list = deps.get("internal_containers", []) or deps.get("internal_components", [])
+                for dep in dep_list:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'depends_on', NULL);", (doc_id, dep))
+
+            contracts = fm.get("contracts", {})
+            if isinstance(contracts, dict):
+                for prov in contracts.get("provides", []):
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides', NULL);", (doc_id, prov))
+                for req in contracts.get("requires") or contracts.get("consumes") or []:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes', NULL);", (doc_id, req))
+
+            if doc_type == "tech/contract":
+                owning = fm.get("owning_container") or fm.get("owning_component")
+                if owning:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides', NULL);", (owning, doc_id))
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'owned_by', NULL);", (doc_id, owning))
+
+            if doc_type == "design/client":
+                cnt_ref = fm.get("container")
+                ds_ref = fm.get("design_system")
+                if cnt_ref and isinstance(cnt_ref, str):
+                    conn.execute(
+                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implemented_by', NULL);",
+                        (doc_id, cnt_ref.strip()),
+                    )
+                    conn.execute(
+                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements_client', NULL);",
+                        (cnt_ref.strip(), doc_id),
+                    )
+                if ds_ref and isinstance(ds_ref, str):
+                    conn.execute(
+                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);", (doc_id, ds_ref.strip())
+                    )
+                    conn.execute(
+                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_client', NULL);",
+                        (ds_ref.strip(), doc_id),
+                    )
+                if cnt_ref and isinstance(cnt_ref, str) and ds_ref and isinstance(ds_ref, str):
+                    conn.execute(
+                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);",
+                        (cnt_ref.strip(), ds_ref.strip()),
+                    )
+                    conn.execute(
+                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_container', NULL);",
+                        (ds_ref.strip(), cnt_ref.strip()),
+                    )
+
+            if doc_type == "design/system":
+                for clt_ref in fm.get("clients", []) or []:
+                    if isinstance(clt_ref, str) and clt_ref.strip():
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);",
+                            (clt_ref.strip(), doc_id),
+                        )
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_client', NULL);",
+                            (doc_id, clt_ref.strip()),
+                        )
+                inh = fm.get("inheritance")
+                if isinstance(inh, dict) and inh.get("extends"):
+                    parent_ds = str(inh["extends"]).strip()
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'extends', NULL);", (doc_id, parent_ds))
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'extended_by', NULL);", (parent_ds, doc_id))
+
+            biz = fm.get("business", {})
+            if isinstance(biz, dict):
+                for pol in biz.get("policies", []):
+                    pol_ref = str(pol).strip()
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'governed_by', NULL);", (doc_id, pol_ref))
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'governs', NULL);", (pol_ref, doc_id))
+
+            tech = fm.get("technical", {})
+            invariants = []
+            if isinstance(tech, dict):
+                tech_targets = list(tech.get("containers", []) or []) + list(tech.get("components", []) or [])
+                for comp_ref in tech_targets:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements', NULL);", (doc_id, comp_ref))
+                    conn.execute(
+                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implemented_by', NULL);", (comp_ref, doc_id)
+                    )
+                invariants = tech.get("invariants", []) or []
+
+            if doc_type == "product/policy":
+                invariants = fm.get("invariants", []) or []
+
+            if doc_type == "tech/component":
+                cnt_id = fm.get("container")
+                if cnt_id:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);", (cnt_id, doc_id)
+                    )
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (doc_id, cnt_id))
+                ifaces = fm.get("interfaces", {})
+                if isinstance(ifaces, dict):
+                    for consumed in ifaces.get("consumes", []):
+                        if isinstance(consumed, str):
+                            conn.execute(
+                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api', NULL);",
+                                (doc_id, consumed.strip()),
+                            )
+                invariants = fm.get("invariants", []) or []
+
+            if doc_type == "tech/container":
+                for comp_entry in fm.get("components", []):
+                    if isinstance(comp_entry, dict) and comp_entry.get("ref"):
+                        cid = comp_entry.get("id")
+                        if cid:
+                            conn.execute(
+                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);",
+                                (doc_id, cid),
+                            )
+                            conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (cid, doc_id))
+
+            for inv in invariants:
+                iid = inv.get("id") if isinstance(inv, dict) else None
+                if iid:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);", (doc_id, iid))
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);", (iid, doc_id))
 
     @staticmethod
     def _index_test_bindings(conn: sqlite3.Connection, ast_idx: Any, test_path: Path, rel_test: str) -> None:
@@ -1462,49 +1799,93 @@ class ArchitecturalIndex:
             """,
             (q_norm, q_alt, f"%{q_norm}%", f"%{q_alt}%", q_norm, q_alt, limit),
         )
-        results = []
+        results: list[dict[str, Any]] = []
         for r in cursor.fetchall():
-            results.append(
-                {
-                    "symbol": r["symbol"],
-                    "entity_id": r["entity_id"],
-                    "kind": r["kind"],
-                    "title": r["title"],
-                    "type": r["type"],
-                    "file_path": r["file_path"],
-                }
+            base = {
+                "symbol": r["symbol"],
+                "entity_id": r["entity_id"],
+                "kind": r["kind"],
+                "title": r["title"],
+                "type": r["type"],
+                # Spec path of the owning entity (unchanged meaning); source coordinates live in 'location'.
+                "file_path": r["file_path"],
+            }
+            locations = (
+                []
+                if r["kind"] in _NON_AST_SYMBOL_KINDS
+                else self._symbol_locations(r["entity_id"], r["kind"], r["symbol"])
             )
-        return results
+            if locations:
+                results.extend({**base, "location": loc} for loc in locations)
+            else:
+                results.append({**base, "location": None})
+        return results[:limit]
+
+    def _symbol_locations(self, entity_id: str, kind: str, symbol: str) -> list[dict[str, Any]]:
+        """Resolve persisted source coordinates (one entry per definition) for an AST symbol mapping."""
+        cursor = self._get_connection().cursor()
+        if kind == "method" and "." in symbol:
+            parent, name = symbol.rsplit(".", 1)
+            cursor.execute(
+                """
+                SELECT file_path, line_start, line_end, signature, parent_symbol FROM code_symbols
+                WHERE entity_id = ? AND kind = 'method' AND parent_symbol = ? AND symbol = ?
+                ORDER BY file_path, line_start;
+                """,
+                (entity_id, parent, name),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT file_path, line_start, line_end, signature, parent_symbol FROM code_symbols
+                WHERE entity_id = ? AND kind = ? AND symbol = ?
+                ORDER BY file_path, line_start;
+                """,
+                (entity_id, kind, symbol),
+            )
+        return [
+            {
+                "file": row["file_path"],
+                "line_start": row["line_start"],
+                "line_end": row["line_end"],
+                "signature": row["signature"],
+                "parent_symbol": row["parent_symbol"] or None,
+            }
+            for row in cursor.fetchall()
+        ]
 
     def get_repo_map(self, max_tokens: int = 1500) -> str:
-        """Generate a token-budgeted structural repo map outline across all indexed components for AI coding agents."""
+        """Generate a token-budgeted structural repo map outline across all indexed components for AI coding agents.
+
+        Reconstructed entirely from the persisted ``code_symbols`` table; source files are never re-parsed.
+        """
         self._ensure_synced()
-        from eidos.core.ast_indexer import get_ast_indexer
+        from eidos.core.index.ast_indexer import CodeSymbol
 
         indexer = get_ast_indexer()
         conn = self._get_connection()
-        cursor = conn.cursor()
-
-        rows = cursor.execute(
+        rows = conn.execute(
             """
-            SELECT DISTINCT symbol AS file_path
-            FROM symbol_mappings
-            WHERE kind = 'source_path';
+            SELECT file_path, symbol, kind, parent_symbol, line_start, line_end, signature
+            FROM code_symbols
+            WHERE is_primary = 1
+            ORDER BY file_path, id;
             """
         ).fetchall()
 
         symbols_by_file: dict[str, list[Any]] = {}
         for r in rows:
-            fpath = r["file_path"]
-            abs_p = (self.root / fpath).resolve()
-            if abs_p.is_file():
-                syms = indexer.extract_symbols(abs_p)
-                if syms:
-                    try:
-                        rel = str(abs_p.relative_to(self.root)).replace("\\", "/")
-                    except ValueError:
-                        rel = fpath
-                    symbols_by_file[rel] = syms
+            symbols_by_file.setdefault(r["file_path"], []).append(
+                CodeSymbol(
+                    name=r["symbol"],
+                    kind=r["kind"],
+                    file_path=r["file_path"],
+                    line_start=r["line_start"],
+                    line_end=r["line_end"],
+                    parent_symbol=r["parent_symbol"] or None,
+                    signature=r["signature"] or None,
+                )
+            )
 
         return indexer.generate_repo_map(symbols_by_file, max_tokens=max_tokens)
 
@@ -1543,7 +1924,7 @@ class ArchitecturalIndex:
             f"SELECT COUNT(DISTINCT target_id) FROM edges WHERE {test_assert_filter};"
         ).fetchone()[0]
 
-        from eidos.core.ast_indexer import get_ast_indexer, is_ast_grep_available
+        from eidos.core.index.ast_indexer import get_ast_indexer, is_ast_grep_available
 
         ast_avail = is_ast_grep_available()
         ast_idx = get_ast_indexer()

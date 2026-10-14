@@ -1,7 +1,9 @@
 """Tests for Eidos PR verification gate, drift detection, and spec reconciliation."""
 
+import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
@@ -77,7 +79,7 @@ def test_pr_check_gate_pass_planned(monkeypatch):
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
         lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
-            "src/eidos/core/parser.py",
+            "src/eidos/core/spec/parser.py",
             "eidos/deltas/dlt-2026-010.adoc",
         ],
     )
@@ -935,3 +937,359 @@ components: []
     assert mappings == []
 
 
+
+
+# ---------------------------------------------------------------------------
+# DLT-2026-039: diff-aware specification coverage for structural additions
+# ---------------------------------------------------------------------------
+
+_SPEC_REL = "eidos/architecture/containers/x.adoc"
+_SPEC_BASE = """---
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
+id: CNT-X
+name: X
+package_path: src/pkg
+---
+= X
+
+Original prose.
+"""
+_CODE_OLD = "def existing():\n    return 1\n"
+_CODE_WITH_CLASS = _CODE_OLD + "\n\nclass Foo:\n    def run(self):\n        return 1\n"
+
+
+def _diff_aware_env(tmp_path, monkeypatch, changed, versions, spec_text=_SPEC_BASE, extra_files=None):
+    """Tmp repo with one container (CNT-X owning src/pkg) and mocked git diff / file versions."""
+    eidos_dir = tmp_path / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (tmp_path / "src" / "pkg").mkdir(parents=True)
+    (tmp_path / _SPEC_REL).write_text(spec_text, encoding="utf-8")
+    (tmp_path / "src" / "pkg" / "svc.py").write_text(_CODE_WITH_CLASS, encoding="utf-8")
+    for rel, content in (extra_files or {}).items():
+        target = tmp_path / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+
+    monkeypatch.setattr(
+        "eidos.vcs.drift.get_git_diff_files",
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: list(changed),
+    )
+    monkeypatch.setattr(
+        "eidos.vcs.drift._get_file_versions",
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: versions.get(
+            rel_path, (None, None)
+        ),
+    )
+    return eidos_dir
+
+
+_TRIVIAL_EDITS = {
+    "blank_lines": _SPEC_BASE + "\n\n   \n",
+    "line_comment": _SPEC_BASE + "\n// touched to appease drift\n",
+    "block_comment": _SPEC_BASE + "\n////\nnote about Foo\n////\n",
+    "yaml_comment": _SPEC_BASE.replace("name: X\n", "name: X\n# touched\n"),
+    "rewrap": _SPEC_BASE.replace("Original prose.", "Original\nprose."),
+}
+
+
+@pytest.mark.parametrize("edit", sorted(_TRIVIAL_EDITS))
+def test_trivial_spec_edit_does_not_cover_structural_addition(tmp_path, monkeypatch, edit):
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: whitespace/comment/re-wrap-only spec edits do not cover a new public symbol."""
+    eidos_dir = _diff_aware_env(
+        tmp_path,
+        monkeypatch,
+        changed=["src/pkg/svc.py", _SPEC_REL],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, _CODE_WITH_CLASS),
+            _SPEC_REL: (_SPEC_BASE, _TRIVIAL_EDITS[edit]),
+        },
+    )
+    result = detect_drift(repo_root=tmp_path, eidos_dir=eidos_dir)
+    assert result.drift_detected is True
+    assert len(result.trivially_covered_files) == 1
+    rec = result.trivially_covered_files[0]
+    assert rec["file"] == "src/pkg/svc.py"
+    assert rec["rule"] == "trivial_spec_diff"
+    assert rec["additions"] == ["added class 'Foo'", "added method 'Foo.run'"]
+    assert rec["spec_files"] == [_SPEC_REL]
+    assert any("Trivial Spec Edit" in r for r in result.remediation_suggestions)
+
+
+def test_substantive_spec_edit_covers_structural_addition(tmp_path, monkeypatch):
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: a real prose/frontmatter change covers a new public symbol in an existing file."""
+    eidos_dir = _diff_aware_env(
+        tmp_path,
+        monkeypatch,
+        changed=["src/pkg/svc.py", _SPEC_REL],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, _CODE_WITH_CLASS),
+            _SPEC_REL: (_SPEC_BASE, _SPEC_BASE + "\nThe service now also exposes a runner.\n"),
+        },
+    )
+    result = detect_drift(repo_root=tmp_path, eidos_dir=eidos_dir)
+    assert result.drift_detected is False
+    assert result.trivially_covered_files == []
+
+
+def test_new_spec_file_counts_as_substantive(tmp_path, monkeypatch):
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: a newly created 1-hop spec always covers the addition."""
+    eidos_dir = _diff_aware_env(
+        tmp_path,
+        monkeypatch,
+        changed=["src/pkg/svc.py", _SPEC_REL],
+        versions={"src/pkg/svc.py": (_CODE_OLD, _CODE_WITH_CLASS), _SPEC_REL: (None, _SPEC_BASE)},
+    )
+    result = detect_drift(repo_root=tmp_path, eidos_dir=eidos_dir)
+    assert result.drift_detected is False
+    assert result.trivially_covered_files == []
+
+
+_NEW_MODULE = "def new_fn():\n    return 1\n"
+
+
+def test_new_unclaimed_file_requires_anchor(tmp_path, monkeypatch):
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: a new file only owned via package_path needs an anchored owner-spec edit."""
+    new_rel = "src/pkg/new_mod.py"
+    unrelated = _SPEC_BASE + "\nSome unrelated documentation sentence.\n"
+    stem_only = _SPEC_BASE + "\nIntroduces the new_mod helpers.\n"  # bare stem: generic word, not an anchor
+    mentions = _SPEC_BASE + "\nIntroduces `new_mod.py`.\n"
+    names_symbol = _SPEC_BASE + "\nAdds `new_fn()` for callers.\n"
+    declares = _SPEC_BASE.replace("package_path: src/pkg\n", "package_path: src/pkg\nsource_path: src/pkg/new_mod.py\n")
+
+    def run(sub, new_spec):
+        root = tmp_path / sub
+        root.mkdir()
+        env = _diff_aware_env(
+            root,
+            monkeypatch,
+            changed=[new_rel, _SPEC_REL],
+            versions={new_rel: (None, _NEW_MODULE), _SPEC_REL: (_SPEC_BASE, new_spec)},
+            extra_files={new_rel: _NEW_MODULE},
+        )
+        return detect_drift(repo_root=root, eidos_dir=env)
+
+    rejected = run("unrelated", unrelated)
+    assert rejected.drift_detected is True
+    assert [r["rule"] for r in rejected.trivially_covered_files] == ["missing_anchor"]
+    assert rejected.trivially_covered_files[0]["additions"] == [f"added file '{new_rel}'"]
+    assert any("Missing Spec Anchor" in r for r in rejected.remediation_suggestions)
+
+    stem = run("stem_only", stem_only)
+    assert [r["rule"] for r in stem.trivially_covered_files] == ["missing_anchor"]
+    assert run("mentions", mentions).drift_detected is False  # file name with extension in added prose
+    assert run("names_symbol", names_symbol).drift_detected is False  # new public symbol named
+    assert run("declares", declares).drift_detected is False  # ownership keys changed
+
+
+def test_new_file_already_claimed_by_source_path_only_needs_substantive_edit(tmp_path, monkeypatch):
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: files matched by the owner's source_path at the base revision need no anchor."""
+    new_rel = "src/pkg/new_mod.py"
+    claimed_base = _SPEC_BASE.replace("package_path: src/pkg\n", "package_path: src/pkg\nsource_path: src/pkg/*.py\n")
+    eidos_dir = _diff_aware_env(
+        tmp_path,
+        monkeypatch,
+        changed=[new_rel, _SPEC_REL],
+        versions={
+            new_rel: (None, _NEW_MODULE),
+            _SPEC_REL: (claimed_base, claimed_base + "\nUnrelated documentation sentence.\n"),
+        },
+        spec_text=claimed_base,
+        extra_files={new_rel: _NEW_MODULE},
+    )
+    result = detect_drift(repo_root=tmp_path, eidos_dir=eidos_dir)
+    assert result.drift_detected is False
+
+
+def test_non_additive_structural_changes_keep_existing_rule(tmp_path, monkeypatch):
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: signature changes are still covered by any 1-hop spec change (no regression)."""
+    changed_sig = "def existing(x):\n    return x\n"
+    eidos_dir = _diff_aware_env(
+        tmp_path,
+        monkeypatch,
+        changed=["src/pkg/svc.py", _SPEC_REL],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, changed_sig),
+            _SPEC_REL: (_SPEC_BASE, _SPEC_BASE + "\n\n"),
+        },
+    )
+    result = detect_drift(repo_root=tmp_path, eidos_dir=eidos_dir)
+    assert result.drift_detected is False
+    assert result.trivially_covered_files == []
+
+
+def test_delta_declared_target_bypasses_diff_check(tmp_path, monkeypatch):
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: in Planned Mode a delta declaring the owner covers additions regardless of spec diffs."""
+    delta_rel = "eidos/deltas/dlt-2026-900.adoc"
+    delta = """---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-900
+title: Declares CNT-X
+status: proposed
+intent:
+  kind: feature_addition
+  motivation: Add Foo
+mutations:
+  - action: modify_component
+    target_component: CNT-X
+    details: Add Foo
+---
+= Delta
+"""
+    eidos_dir = _diff_aware_env(
+        tmp_path,
+        monkeypatch,
+        changed=["src/pkg/svc.py", delta_rel, _SPEC_REL],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, _CODE_WITH_CLASS),
+            _SPEC_REL: (_SPEC_BASE, _SPEC_BASE + "\n// only a comment\n"),
+        },
+        extra_files={delta_rel: delta},
+    )
+    result = detect_drift(repo_root=tmp_path, eidos_dir=eidos_dir)
+    assert result.workflow_mode == "planned"
+    assert result.drift_detected is False
+    assert result.trivially_covered_files == []
+
+
+def test_cli_drift_json_reports_trivially_covered_files(tmp_path, monkeypatch):
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: 'eidos drift --json' exposes trivially_covered_files additively."""
+    _diff_aware_env(
+        tmp_path,
+        monkeypatch,
+        changed=["src/pkg/svc.py", _SPEC_REL],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, _CODE_WITH_CLASS),
+            _SPEC_REL: (_SPEC_BASE, _SPEC_BASE + "\n// touched\n"),
+        },
+    )
+    monkeypatch.chdir(tmp_path)
+    res = runner.invoke(app, ["drift", "--json"])
+    data = json.loads(res.output)
+    assert data["drift_detected"] is True
+    assert data["trivially_covered_files"][0]["file"] == "src/pkg/svc.py"
+    assert data["trivially_covered_files"][0]["rule"] == "trivial_spec_diff"
+    assert res.exit_code == 1
+
+
+_SPEC_WITH_LISTING = (
+    _SPEC_BASE
+    + """
+[source,js]
+----
+// configure the client
+client.init();
+----
+"""
+)
+
+
+def test_code_sample_edit_inside_listing_block_is_substantive(tmp_path, monkeypatch):
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: '//' lines inside verbatim blocks (code samples) are content, not comments."""
+    eidos_dir = _diff_aware_env(
+        tmp_path,
+        monkeypatch,
+        changed=["src/pkg/svc.py", _SPEC_REL],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, _CODE_WITH_CLASS),
+            _SPEC_REL: (_SPEC_WITH_LISTING, _SPEC_WITH_LISTING.replace("// configure the client", "// use Foo")),
+        },
+        spec_text=_SPEC_WITH_LISTING,
+    )
+    result = detect_drift(repo_root=tmp_path, eidos_dir=eidos_dir)
+    assert result.drift_detected is False
+    assert result.trivially_covered_files == []
+
+
+def test_comment_after_listing_block_is_still_trivial(tmp_path, monkeypatch):
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: comment stripping resumes after a verbatim block closes."""
+    eidos_dir = _diff_aware_env(
+        tmp_path,
+        monkeypatch,
+        changed=["src/pkg/svc.py", _SPEC_REL],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, _CODE_WITH_CLASS),
+            _SPEC_REL: (_SPEC_WITH_LISTING, _SPEC_WITH_LISTING + "\n// touched\n"),
+        },
+        spec_text=_SPEC_WITH_LISTING,
+    )
+    result = detect_drift(repo_root=tmp_path, eidos_dir=eidos_dir)
+    assert [r["rule"] for r in result.trivially_covered_files] == ["trivial_spec_diff"]
+
+
+def test_frontmatter_block_scalar_hash_lines_are_content(tmp_path, monkeypatch):
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: frontmatter is compared as YAML data, so '#' inside block strings is content."""
+    base = _SPEC_BASE.replace("name: X\n", "name: X\nnotes: |\n  # Overview\n  text\n")
+    edited = base.replace("  # Overview\n", "  # Overview of Foo\n")
+    eidos_dir = _diff_aware_env(
+        tmp_path,
+        monkeypatch,
+        changed=["src/pkg/svc.py", _SPEC_REL],
+        versions={"src/pkg/svc.py": (_CODE_OLD, _CODE_WITH_CLASS), _SPEC_REL: (base, edited)},
+        spec_text=base,
+    )
+    result = detect_drift(repo_root=tmp_path, eidos_dir=eidos_dir)
+    assert result.drift_detected is False
+
+
+def test_moved_file_is_not_a_structural_addition(tmp_path, monkeypatch):
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: a pure move/rename (paired by content, not VCS rename detection) keeps the
+    classic coverage rule; symbols added during the move are still additions."""
+    old_rel, new_rel = "src/pkg/svc.py", "src/pkg/service.py"
+    trivial_spec = _SPEC_BASE + "\n// moved\n"
+
+    def run(sub, moved_content):
+        root = tmp_path / sub
+        root.mkdir()
+        env = _diff_aware_env(
+            root,
+            monkeypatch,
+            changed=[old_rel, new_rel, _SPEC_REL],
+            versions={
+                old_rel: (_CODE_WITH_CLASS, None),
+                new_rel: (None, moved_content),
+                _SPEC_REL: (_SPEC_BASE, trivial_spec),
+            },
+            extra_files={new_rel: moved_content},
+        )
+        return detect_drift(repo_root=root, eidos_dir=env)
+
+    # Identical content, and reformatted content with the same public surface: both pure moves
+    assert run("identical", _CODE_WITH_CLASS).trivially_covered_files == []
+    reformatted = _CODE_WITH_CLASS.replace("return 1", "return  1  # same") + "\n\ndef _private():\n    return 0\n"
+    pure = run("reformatted", reformatted)
+    assert pure.trivially_covered_files == []
+    assert pure.drift_detected is False
+
+    # A move that also adds a public symbol: the addition (not the move) needs substantive coverage
+    grown = run("grown", _CODE_WITH_CLASS + "\n\ndef extra():\n    return 2\n")
+    assert [(r["file"], r["rule"], r["additions"]) for r in grown.trivially_covered_files] == [
+        (new_rel, "trivial_spec_diff", ["added function 'extra'"])
+    ]
+
+    # Losing public symbols is not a move: the new path is a genuinely new file
+    shrunk = run("shrunk", "def unrelated():\n    return 3\n")
+    assert [(r["file"], r["rule"]) for r in shrunk.trivially_covered_files] == [(new_rel, "trivial_spec_diff")]
+
+
+def test_git_diff_lists_both_sides_of_renames(tmp_path):
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: the changed-file list keeps the deleted source of a rename so eidos can pair
+    moves by content itself."""
+    import subprocess
+
+    from eidos.vcs.drift import get_git_diff_files
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+    (tmp_path / "a.py").write_text(_CODE_WITH_CLASS, encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    git("mv", "a.py", "b.py")
+    assert {"a.py", "b.py"} <= set(get_git_diff_files(tmp_path, uncommitted=True))
+    git("commit", "-qm", "rename")
+    assert {"a.py", "b.py"} <= set(get_git_diff_files(tmp_path, base_ref="HEAD~1"))

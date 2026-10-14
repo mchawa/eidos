@@ -8,13 +8,15 @@ Verifies:
 4. Exit Criteria: Latency < 10ms across living specs, zero external dependencies.
 """
 
+import os
+import sqlite3
 import sys
 import time
 from pathlib import Path
 
 import pytest
 
-from eidos.core.graph_index import (
+from eidos.core.index.graph_index import (
     ArchitecturalIndex,
     TieredContextSlice,
     find_repo_root,
@@ -536,3 +538,528 @@ invariants:
         assert test_sources == {"tests/test_service.py::test_renamed_rule"}
     finally:
         idx.close()
+
+
+# ---------------------------------------------------------------------------
+# DLT-2026-034: persistent AST symbol locations & recursive multi-package indexing
+# ---------------------------------------------------------------------------
+
+
+def _write_container(
+    repo: Path,
+    filename: str,
+    cnt_id: str,
+    package_path: str | list[str],
+    components: list[tuple[str, str]] | None = None,
+) -> Path:
+    """Write a minimal CNT-* spec; ``components`` is a list of (CMP id, source_path)."""
+    containers = repo / "eidos" / "architecture" / "containers"
+    containers.mkdir(parents=True, exist_ok=True)
+    if isinstance(package_path, list):
+        pkg_yaml = "package_path:\n" + "".join(f'  - "{p}"\n' for p in package_path)
+    else:
+        pkg_yaml = f'package_path: "{package_path}"\n'
+    comp_yaml = ""
+    if components:
+        comp_yaml = "components:\n" + "".join(
+            f'  - id: {cid}\n    name: "{cid.title()}"\n    responsibility: "r"\n    source_path: "{sp}"\n'
+            for cid, sp in components
+        )
+    path = containers / filename
+    path.write_text(
+        f"""---
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
+id: {cnt_id}
+name: "{cnt_id}"
+container_type: "library"
+runtime: "Python"
+{pkg_yaml}domain_binding: DOM-X
+tier: core
+{comp_yaml}---
+= {cnt_id}
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _touch_later(path: Path, offset: float = 5.0) -> None:
+    """Force an mtime change that the incremental dirty checker is guaranteed to notice."""
+    t = time.time() + offset
+    os.utime(path, (t, t))
+
+
+def _make_symbol_repo(tmp_path: Path, name: str = "symrepo") -> tuple[Path, Path, Path]:
+    repo = tmp_path / name
+    (repo / "src" / "pkg").mkdir(parents=True)
+    src = repo / "src" / "pkg" / "service.py"
+    src.write_text(
+        "class SampleService:\n    def execute(self):\n        return True\n\n\ndef helper():\n    return 1\n",
+        encoding="utf-8",
+    )
+    spec = _write_container(repo, "sample.adoc", "CNT-SAMPLE", "src/pkg")
+    return repo, src, spec
+
+
+def test_find_symbol_returns_source_location(tmp_path, temp_index):
+    """INV-SYMBOL-LOCATION-FIDELITY: find_symbol reports the defining file/lines; 'file_path' stays the spec path."""
+    repo, _src, _spec = _make_symbol_repo(tmp_path)
+    idx = ArchitecturalIndex(db_path=repo / "eidos" / ".cache" / "index.db", repo_root=repo, eidos_dir=repo / "eidos")
+    try:
+        idx.sync(force=True)
+        matches = [m for m in idx.find_symbol("SampleService") if m["symbol"] == "SampleService"]
+        assert len(matches) == 1
+        assert matches[0]["kind"] == "class"
+        assert matches[0]["file_path"] == "eidos/architecture/containers/sample.adoc"  # unchanged meaning
+        loc = matches[0]["location"]
+        assert loc["file"] == "src/pkg/service.py"
+        assert loc["line_start"] == 1 and loc["line_end"] >= loc["line_start"]
+        assert loc["signature"].startswith("class SampleService")
+        assert loc["parent_symbol"] is None
+
+        method = next(m for m in idx.find_symbol("SampleService.execute") if m["symbol"] == "SampleService.execute")
+        assert method["location"]["line_start"] == 2
+        assert method["location"]["parent_symbol"] == "SampleService"
+
+        # Non-AST matches (spec paths, components) carry no location
+        spec_hits = [m for m in idx.find_symbol("src/pkg") if m["kind"] == "package_path"]
+        assert spec_hits and all(m["location"] is None for m in spec_hits)
+    finally:
+        idx.close()
+
+    real = [m for m in temp_index.find_symbol("ArchitecturalIndex") if m["symbol"] == "ArchitecturalIndex"]
+    assert real and real[0]["location"]["file"] == "src/eidos/core/index/graph_index.py"
+    assert real[0]["location"]["line_start"] <= real[0]["location"]["line_end"]
+
+
+def test_repo_map_warm_index_does_not_parse_sources(tmp_path, monkeypatch):
+    """INV-SYMBOL-LOCATION-FIDELITY: a warm repo map is built from SQLite with zero AST extraction calls."""
+    from eidos.core.index import ast_indexer
+    from eidos.core.index.ast_indexer import get_ast_indexer
+
+    repo, _src, _spec = _make_symbol_repo(tmp_path, "mapnrepo")
+    (repo / "src" / "pkg" / "second.py").write_text("def other():\n    return 2\n", encoding="utf-8")
+    idx = ArchitecturalIndex(db_path=repo / "eidos" / ".cache" / "index.db", repo_root=repo, eidos_dir=repo / "eidos")
+    try:
+        idx.sync(force=True)
+
+        # Reference: the pre-change algorithm (parse every indexed source file from disk)
+        indexer = get_ast_indexer()
+        reference_files = {
+            r["symbol"]
+            for r in idx._get_connection().execute("SELECT symbol FROM symbol_mappings WHERE kind = 'source_path';")
+        }
+        reference = indexer.generate_repo_map(
+            {f: indexer.extract_symbols(repo / f) for f in sorted(reference_files)}, max_tokens=1500
+        )
+
+        def _boom(self, *args, **kwargs):
+            raise AssertionError("extract_symbols must not be called for a warm repo map")
+
+        for cls in (ast_indexer.AstGrepIndexer, ast_indexer.FallbackIndexer):
+            monkeypatch.setattr(cls, "extract_symbols", _boom)
+
+        repo_map = idx.get_repo_map()
+        assert repo_map == reference
+        assert "SampleService" in repo_map and "other" in repo_map
+    finally:
+        idx.close()
+
+
+def test_code_symbols_invalidated_on_edit_and_delete(tmp_path):
+    """INV-SYMBOL-LOCATION-FIDELITY: coordinates follow source edits and disappear with deleted files."""
+    repo, src, _spec = _make_symbol_repo(tmp_path, "invalrepo")
+    idx = ArchitecturalIndex(db_path=repo / "eidos" / ".cache" / "index.db", repo_root=repo, eidos_dir=repo / "eidos")
+    conn = idx._get_connection()
+
+    def rows(symbol: str) -> list[tuple[int, str]]:
+        return [
+            (r["line_start"], r["file_path"])
+            for r in conn.execute("SELECT line_start, file_path FROM code_symbols WHERE symbol = ?;", (symbol,))
+        ]
+
+    try:
+        idx.sync(force=True)
+        assert rows("helper") == [(6, "src/pkg/service.py")]
+
+        # Shift 'helper' down 10 lines and rename the class: exactly one fresh row, no stale ones
+        src.write_text(
+            "# pad\n" * 10 + "class RenamedService:\n    def execute(self):\n        return True\n\n\n"
+            "def helper():\n    return 1\n",
+            encoding="utf-8",
+        )
+        _touch_later(src)
+        idx.sync()
+        assert rows("helper") == [(16, "src/pkg/service.py")]
+        assert rows("SampleService") == []
+        assert idx.find_symbol("SampleService.execute") == [] or all(
+            m["symbol"] != "SampleService.execute" for m in idx.find_symbol("SampleService.execute")
+        )
+        assert not conn.execute("SELECT 1 FROM symbol_mappings WHERE symbol = 'SampleService';").fetchone()
+        assert not conn.execute("SELECT 1 FROM symbol_mappings WHERE symbol = 'SampleService.execute';").fetchone()
+        assert rows("RenamedService") == [(11, "src/pkg/service.py")]
+        helper = next(m for m in idx.find_symbol("helper") if m["symbol"] == "helper")
+        assert helper["location"]["line_start"] == 16
+
+        # Deleting the file removes every coordinate and mapping
+        src.unlink()
+        idx.sync()
+        assert (
+            conn.execute("SELECT COUNT(*) FROM code_symbols WHERE file_path = 'src/pkg/service.py';").fetchone()[0] == 0
+        )
+        assert not conn.execute(
+            "SELECT 1 FROM symbol_mappings WHERE symbol IN ('helper', 'RenamedService');"
+        ).fetchone()
+        assert not any(m["symbol"] == "helper" for m in idx.find_symbol("helper"))
+    finally:
+        idx.close()
+
+
+def test_spec_edit_keeps_package_code_symbols(tmp_path):
+    """INV-SYMBOL-LOCATION-FIDELITY: editing the owning spec must not lose package files' coordinates or mappings."""
+    repo, _src, spec = _make_symbol_repo(tmp_path, "specedit")
+    idx = ArchitecturalIndex(db_path=repo / "eidos" / ".cache" / "index.db", repo_root=repo, eidos_dir=repo / "eidos")
+    try:
+        idx.sync(force=True)
+        spec.write_text(spec.read_text(encoding="utf-8") + "\nExtra prose.\n", encoding="utf-8")
+        _touch_later(spec)
+        idx.sync()
+        hit = next(m for m in idx.find_symbol("SampleService") if m["symbol"] == "SampleService")
+        assert hit["location"]["file"] == "src/pkg/service.py"
+        conn = idx._get_connection()
+        assert conn.execute(
+            "SELECT 1 FROM symbol_mappings WHERE symbol = 'src/pkg/service.py' AND kind = 'source_path';"
+        ).fetchone()
+        assert not idx.is_dirty()[0]
+    finally:
+        idx.close()
+
+
+def test_schema_version_mismatch_rebuilds_cache(tmp_path):
+    """INV-KNOWLEDGE-GRAPH-CATALOG: a legacy (unversioned) index.db is dropped and rebuilt with the 2.0.0 schema."""
+    repo, _src, _spec = _make_symbol_repo(tmp_path, "migrepo")
+    db_path = repo / "eidos" / ".cache" / "index.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy = sqlite3.connect(str(db_path))
+    legacy.executescript(
+        """
+        CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE indexed_files (rel_path TEXT PRIMARY KEY, mtime REAL NOT NULL, sha256 TEXT NOT NULL,
+            doc_id TEXT, doc_type TEXT, last_indexed REAL NOT NULL);
+        CREATE TABLE entities (id TEXT PRIMARY KEY, type TEXT NOT NULL, title TEXT NOT NULL, status TEXT,
+            domain TEXT, package_path TEXT, runtime TEXT, container_type TEXT, file_path TEXT NOT NULL,
+            data_json TEXT NOT NULL);
+        CREATE TABLE edges (source_id TEXT NOT NULL, target_id TEXT NOT NULL, rel_type TEXT NOT NULL,
+            metadata_json TEXT, PRIMARY KEY (source_id, target_id, rel_type));
+        CREATE TABLE symbol_mappings (symbol TEXT NOT NULL, entity_id TEXT NOT NULL, kind TEXT NOT NULL,
+            PRIMARY KEY (symbol, entity_id, kind));
+        INSERT INTO entities VALUES ('CNT-LEGACY', 'tech/container', 'legacy', 'active', '', '', '', '', 'x.adoc', '{}');
+        INSERT INTO symbol_mappings VALUES ('legacy_sym', 'CNT-LEGACY', 'class');
+        """
+    )
+    legacy.commit()
+    legacy.close()
+
+    idx = ArchitecturalIndex(db_path=db_path, repo_root=repo, eidos_dir=repo / "eidos")
+    try:
+        conn = idx._get_connection()
+        version = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
+        assert version == ArchitecturalIndex.SCHEMA_VERSION
+        assert conn.execute("SELECT COUNT(*) FROM entities;").fetchone()[0] == 0  # legacy rows dropped
+        assert conn.execute("SELECT COUNT(*) FROM code_symbols;").fetchone()[0] == 0
+
+        hit = next(m for m in idx.find_symbol("SampleService") if m["symbol"] == "SampleService")
+        assert hit["location"]["line_start"] == 1
+        assert not any(m["symbol"] == "legacy_sym" for m in idx.find_symbol("legacy_sym"))
+
+        conn.execute("INSERT INTO metadata (key, value) VALUES ('marker', '1');")
+        conn.commit()
+    finally:
+        idx.close()
+
+    # A current-version database is reused, never rebuilt
+    reopened = ArchitecturalIndex(db_path=db_path, repo_root=repo, eidos_dir=repo / "eidos")
+    try:
+        assert reopened._get_connection().execute("SELECT value FROM metadata WHERE key = 'marker';").fetchone()
+    finally:
+        reopened.close()
+
+
+def test_is_dirty_tracks_secondary_package_paths(tmp_path):
+    """INV-KNOWLEDGE-GRAPH-CATALOG: every declared package_path (not only the first) is dirty-tracked."""
+    repo = tmp_path / "multipkg"
+    (repo / "src" / "pkg").mkdir(parents=True)
+    (repo / "extras").mkdir()
+    (repo / "src" / "pkg" / "a.py").write_text("def a():\n    return 1\n", encoding="utf-8")
+    helper = repo / "extras" / "helper.py"
+    helper.write_text("def helper_fn():\n    return 1\n", encoding="utf-8")
+    _write_container(repo, "multi.adoc", "CNT-MULTI", ["src/pkg", "extras"])
+
+    idx = ArchitecturalIndex(db_path=repo / "eidos" / ".cache" / "index.db", repo_root=repo, eidos_dir=repo / "eidos")
+    try:
+        idx.sync(force=True)
+        assert not idx.is_dirty()[0]
+        assert any(m["symbol"] == "helper_fn" for m in idx.find_symbol("helper_fn"))
+
+        helper.write_text("def helper_fn():\n    return 2\n\n\ndef added_fn():\n    return 3\n", encoding="utf-8")
+        _touch_later(helper)
+        dirty, modified, _ = idx.is_dirty()
+        assert dirty
+        assert any(p.resolve() == helper.resolve() for p in modified)
+        idx.sync()
+        assert any(m["symbol"] == "added_fn" for m in idx.find_symbol("added_fn"))
+    finally:
+        idx.close()
+
+
+def _ownership_repo(tmp_path: Path, name: str) -> Path:
+    repo = tmp_path / name
+    for d in ("src/pkg/sub/deeper", "lib/inner", "src/pkg/__pycache__"):
+        (repo / d).mkdir(parents=True)
+    files = {
+        "src/pkg/base.py": "def base_fn():\n    return 1\n",
+        "src/pkg/sub/deep.py": "def deep_fn():\n    return 1\n",
+        "src/pkg/sub/deeper/deepest.py": "def deepest_fn():\n    return 1\n",
+        "src/pkg/special.py": "def special_fn():\n    return 1\n",
+        "src/pkg/__pycache__/junk.py": "def junk_fn():\n    return 1\n",
+        "lib/core.py": "def core_fn():\n    return 1\n",
+        "lib/inner/extra.py": "def extra_fn():\n    return 1\n",
+        "shared/common.py": "class Shared:\n    def run(self):\n        return 1\n",
+    }
+    for rel, content in files.items():
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_text(content, encoding="utf-8")
+    # CNT-BROAD owns the whole package dir; CNT-CLAIMER's component explicitly claims one file inside it.
+    _write_container(repo, "broad.adoc", "CNT-BROAD", "src/pkg", components=[("CMP-COMMON-B", "shared/common.py")])
+    _write_container(
+        repo,
+        "claimer.adoc",
+        "CNT-CLAIMER",
+        "lib",
+        components=[("CMP-SPECIAL", "src/pkg/special.py"), ("CMP-COMMON-C", "shared/common.py")],
+    )
+    # A container with inline components must still index its unclaimed nested files recursively
+    _write_container(repo, "inline.adoc", "CNT-INLINE", "lib", components=[("CMP-CORE", "lib/core.py")])
+    return repo
+
+
+def _ownership_snapshot(idx: ArchitecturalIndex) -> dict[str, list]:
+    conn = idx._get_connection()
+    return {
+        "code_symbols": [
+            tuple(r)
+            for r in conn.execute(
+                "SELECT file_path, symbol, kind, parent_symbol, line_start, entity_id, component_id, is_primary "
+                "FROM code_symbols ORDER BY file_path, entity_id, kind, parent_symbol, symbol, line_start;"
+            )
+        ],
+        "mappings": [
+            tuple(r)
+            for r in conn.execute(
+                "SELECT symbol, entity_id, kind FROM symbol_mappings "
+                "WHERE kind IN ('source_path', 'class', 'function', 'method') ORDER BY symbol, entity_id, kind;"
+            )
+        ],
+        "manifest": [
+            tuple(r)
+            for r in conn.execute(
+                "SELECT rel_path, doc_id FROM indexed_files WHERE doc_type = 'code/source' ORDER BY rel_path;"
+            )
+        ],
+    }
+
+
+_ORDERINGS = {
+    "as_discovered": lambda paths: list(paths),
+    "reversed": lambda paths: list(reversed(paths)),
+    "specs_reversed_code_first": lambda paths: (
+        [p for p in paths if p.suffix != ".adoc"] + list(reversed([p for p in paths if p.suffix == ".adoc"]))
+    ),
+    "sorted_by_name_desc": lambda paths: sorted(paths, key=lambda p: p.name, reverse=True),
+}
+
+
+def test_recursive_package_indexing_respects_global_ownership(tmp_path, monkeypatch):
+    """INV-KNOWLEDGE-GRAPH-CATALOG: nested files are indexed even when a container declares inline components, and
+    the complete ownership state is identical under every spec/code processing order (forced via is_dirty)."""
+    original_is_dirty = ArchitecturalIndex.is_dirty
+    snapshots: dict[str, dict[str, list]] = {}
+    for name, order in _ORDERINGS.items():
+        repo = _ownership_repo(tmp_path, f"own_{name}")
+
+        def ordered_is_dirty(self, _order=order):
+            dirty, to_update, deleted = original_is_dirty(self)
+            return dirty, _order(to_update), deleted
+
+        monkeypatch.setattr(ArchitecturalIndex, "is_dirty", ordered_is_dirty)
+        idx = ArchitecturalIndex(
+            db_path=repo / "eidos" / ".cache" / "index.db", repo_root=repo, eidos_dir=repo / "eidos"
+        )
+        try:
+            idx.sync(force=True)
+            snapshots[name] = _ownership_snapshot(idx)
+            monkeypatch.setattr(ArchitecturalIndex, "is_dirty", original_is_dirty)
+            assert not idx.is_dirty()[0]
+        finally:
+            idx.close()
+
+    reference = snapshots["as_discovered"]
+    for name, snap in snapshots.items():
+        assert snap == reference, f"ownership differs for processing order '{name}'"
+
+    primary = {(f, e) for f, _, _, _, _, e, _, is_primary in reference["code_symbols"] if is_primary}
+    assert ("src/pkg/special.py", "CNT-CLAIMER") in primary  # explicit component claim beats package prefix
+    assert {("src/pkg/base.py", "CNT-BROAD"), ("src/pkg/sub/deep.py", "CNT-BROAD")} <= primary
+    assert ("src/pkg/sub/deeper/deepest.py", "CNT-BROAD") in primary
+    assert not any(f.startswith("src/pkg/__pycache__") for f, _ in primary)  # excluded directories are pruned
+    # 'lib' is declared by two containers: the deterministic (sorted by id) tie-break picks CNT-CLAIMER
+    assert ("lib/inner/extra.py", "CNT-CLAIMER") in primary
+    assert ("lib/core.py", "CNT-INLINE") in primary
+    special = [r for r in reference["code_symbols"] if r[0] == "src/pkg/special.py"]
+    assert {r[6] for r in special} == {"CMP-SPECIAL"}
+
+
+def test_shared_source_file_keeps_every_declaring_owner(tmp_path):
+    """INV-SYMBOL-LOCATION-FIDELITY: a file declared by several containers is indexed once (one primary row set for
+    repo maps) yet every declaring container keeps its symbol mappings and locations; dropping a declaration
+    prunes only that container's rows."""
+    repo = _ownership_repo(tmp_path, "shared")
+    idx = ArchitecturalIndex(db_path=repo / "eidos" / ".cache" / "index.db", repo_root=repo, eidos_dir=repo / "eidos")
+    conn = idx._get_connection()
+    try:
+        idx.sync(force=True)
+        rows = conn.execute(
+            "SELECT entity_id, component_id, is_primary FROM code_symbols "
+            "WHERE file_path = 'shared/common.py' AND symbol = 'Shared';"
+        ).fetchall()
+        assert sorted(tuple(r) for r in rows) == [("CNT-BROAD", "CMP-COMMON-B", 1), ("CNT-CLAIMER", "CMP-COMMON-C", 0)]
+
+        hits = [m for m in idx.find_symbol("Shared") if m["symbol"] == "Shared"]
+        assert sorted(m["entity_id"] for m in hits) == ["CNT-BROAD", "CNT-CLAIMER"]
+        assert all(m["location"]["file"] == "shared/common.py" for m in hits)
+        assert idx.get_repo_map().count("class Shared") == 1  # rendered once despite two owners
+
+        # CNT-CLAIMER drops its declaration: only its rows and mappings disappear
+        spec = _write_container(
+            repo, "claimer.adoc", "CNT-CLAIMER", "lib", components=[("CMP-SPECIAL", "src/pkg/special.py")]
+        )
+        _touch_later(spec)
+        idx.sync()
+        assert {
+            r[0]
+            for r in conn.execute("SELECT DISTINCT entity_id FROM code_symbols WHERE file_path = 'shared/common.py';")
+        } == {"CNT-BROAD"}
+        assert not conn.execute(
+            "SELECT 1 FROM symbol_mappings WHERE entity_id = 'CNT-CLAIMER' AND symbol IN ('Shared', 'Shared.run');"
+        ).fetchone()
+        assert not conn.execute(
+            "SELECT 1 FROM symbol_mappings WHERE symbol = 'shared/common.py' AND entity_id = 'CNT-CLAIMER';"
+        ).fetchone()
+        assert conn.execute(
+            "SELECT 1 FROM symbol_mappings WHERE entity_id = 'CNT-BROAD' AND symbol = 'Shared';"
+        ).fetchone()
+    finally:
+        idx.close()
+
+
+def test_code_only_sync_skips_ownership_pass(tmp_path, monkeypatch):
+    """INV-AGENT-GRAPH-INDEX-FRESHNESS: the package walk / ownership pass only runs when specifications change."""
+    repo, src, spec = _make_symbol_repo(tmp_path, "gate")
+    idx = ArchitecturalIndex(db_path=repo / "eidos" / ".cache" / "index.db", repo_root=repo, eidos_dir=repo / "eidos")
+    calls: list[int] = []
+    original = ArchitecturalIndex._reconcile_code_ownership
+
+    def spy(self, *args, **kwargs):
+        calls.append(1)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(ArchitecturalIndex, "_reconcile_code_ownership", spy)
+    try:
+        idx.sync(force=True)
+        assert calls == [1]
+
+        # Code-only change (edit + brand-new file in a package dir): indexed directly, no ownership pass
+        src.write_text(src.read_text(encoding="utf-8") + "\n\ndef added_fn():\n    return 2\n", encoding="utf-8")
+        _touch_later(src)
+        (repo / "src" / "pkg" / "fresh.py").write_text("def fresh_fn():\n    return 3\n", encoding="utf-8")
+        idx.sync()
+        assert calls == [1]
+        assert any(m["symbol"] == "added_fn" for m in idx.find_symbol("added_fn"))
+        fresh = next(m for m in idx.find_symbol("fresh_fn") if m["symbol"] == "fresh_fn")
+        assert fresh["entity_id"] == "CNT-SAMPLE"
+
+        # Spec change: ownership pass runs
+        spec.write_text(spec.read_text(encoding="utf-8") + "\nMore prose.\n", encoding="utf-8")
+        _touch_later(spec, offset=10)
+        idx.sync()
+        assert calls == [1, 1]
+    finally:
+        idx.close()
+
+
+def test_ownership_reattributed_when_spec_changes(tmp_path):
+    """INV-SYMBOL-LOCATION-FIDELITY: moving a package to another container re-attributes its symbols."""
+    repo, _src, spec = _make_symbol_repo(tmp_path, "reown")
+    idx = ArchitecturalIndex(db_path=repo / "eidos" / ".cache" / "index.db", repo_root=repo, eidos_dir=repo / "eidos")
+    conn = idx._get_connection()
+    try:
+        idx.sync(force=True)
+        assert conn.execute("SELECT DISTINCT entity_id FROM code_symbols;").fetchall()[0][0] == "CNT-SAMPLE"
+
+        _write_container(repo, "sample.adoc", "CNT-SAMPLE", "src/elsewhere")
+        _touch_later(spec)
+        new_spec = _write_container(repo, "newowner.adoc", "CNT-NEWOWNER", "src/pkg")
+        _touch_later(new_spec)
+        idx.sync()
+
+        assert {r[0] for r in conn.execute("SELECT DISTINCT entity_id FROM code_symbols;")} == {"CNT-NEWOWNER"}
+        hit = next(m for m in idx.find_symbol("helper") if m["symbol"] == "helper")
+        assert hit["entity_id"] == "CNT-NEWOWNER"
+        assert not conn.execute(
+            "SELECT 1 FROM symbol_mappings WHERE entity_id = 'CNT-SAMPLE' AND kind = 'function';"
+        ).fetchone()
+        assert not conn.execute(
+            "SELECT 1 FROM symbol_mappings WHERE symbol = 'src/pkg/service.py' AND entity_id = 'CNT-SAMPLE';"
+        ).fetchone()
+    finally:
+        idx.close()
+
+
+def test_incremental_spec_sync_preserves_incoming_edges(tmp_path):
+    """Incremental sync of a single container spec must not drop incoming edges declared by unchanged capabilities."""
+    repo, _src, spec = _make_symbol_repo(tmp_path, "edgesync")
+    cap_dir = repo / "eidos" / "domains" / "core" / "capabilities"
+    cap_dir.mkdir(parents=True, exist_ok=True)
+    cap_spec = cap_dir / "cap.adoc"
+    cap_spec.write_text(
+        "---\n"
+        "type: product/capability\n"
+        "id: CAP-SAMPLE-001\n"
+        "title: Sample Capability\n"
+        "domain: DOM-CORE\n"
+        "technical:\n"
+        "  containers:\n"
+        "    - CNT-SAMPLE\n"
+        "---\n"
+        "= Sample Capability\n",
+        encoding="utf-8",
+    )
+
+    idx = ArchitecturalIndex(db_path=repo / "eidos" / ".cache" / "index.db", repo_root=repo, eidos_dir=repo / "eidos")
+    try:
+        idx.sync(force=True)
+        before_neighbors = {n["id"] for n in idx.get_k_hop_neighborhood("CNT-SAMPLE", max_hops=1)}
+        assert "CAP-SAMPLE-001" in before_neighbors
+
+        # Modify only the container spec and run incremental sync(force=False)
+        spec.write_text(spec.read_text(encoding="utf-8") + "\nUpdated container prose.\n", encoding="utf-8")
+        _touch_later(spec, offset=10)
+        stats = idx.sync(force=False)
+        assert stats.updated_modified == 1
+
+        after_neighbors = {n["id"] for n in idx.get_k_hop_neighborhood("CNT-SAMPLE", max_hops=1)}
+        assert "CAP-SAMPLE-001" in after_neighbors
+    finally:
+        idx.close()
+

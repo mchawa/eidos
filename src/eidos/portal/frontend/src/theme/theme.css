@@ -334,3 +334,418 @@ html, body {
   opacity: 1;
 }
 
+/* ------------------------------------------------------------------ */
+/* AsciiDoc reader (Asciidoctor.js HTML5 output) — UIC-PORTAL-READER   */
+/* Styles the stock Asciidoctor class names; no remote assets.         */
+/* ------------------------------------------------------------------ */
+.adoc-body {
+  color: color-mix(in srgb, var(--foreground) 90%, transparent);
+  overflow-wrap: anywhere;
+}
+.adoc-body > * + *,
+.adoc-body .sectionbody > * + *,
+.adoc-body .sect2 > * + *,
+.adoc-body .sect3 > * + * {
+  margin-top: 0.875rem;
+}
+
+/* Headings: document title (h1), sections (h2/h3/h4) */
+.adoc-body h1,
+.adoc-body h2,
+.adoc-body h3,
+.adoc-body h4,
+.adoc-body h5 {
+  color: var(--foreground);
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+.adoc-body h1 {
+  font-size: var(--text-prose-h1);
+  font-weight: 800;
+  padding-bottom: 0.75rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+.adoc-body h2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-prose-h2);
+  font-weight: 700;
+  padding-top: 1.25rem;
+  padding-bottom: 0.375rem;
+  margin-top: 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.adoc-body h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-prose-h3);
+  font-weight: 700;
+  padding-top: 0.875rem;
+  padding-bottom: 0.25rem;
+  margin-top: 0.5rem;
+}
+.adoc-body h4,
+.adoc-body h5 {
+  font-size: var(--text-prose-h4);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+  padding-top: 0.5rem;
+}
+.adoc-body .heading-anchor-link {
+  color: color-mix(in srgb, var(--muted-foreground) 60%, transparent);
+  padding: 0 0.25rem;
+  border-radius: 0.25rem;
+  text-decoration: none;
+  font-weight: 600;
+}
+.adoc-body .heading-anchor-link:hover {
+  color: var(--primary);
+}
+
+/* Inline text */
+.adoc-body a {
+  color: var(--primary);
+  font-weight: 500;
+  text-decoration: none;
+}
+.adoc-body a:hover {
+  text-decoration: underline;
+}
+.adoc-body a.adoc-external-link::after {
+  content: "\2197";
+  font-size: 0.75em;
+  margin-left: 0.2em;
+  opacity: 0.7;
+}
+.adoc-body a.adoc-spec-link {
+  border-bottom: 1px dashed color-mix(in srgb, var(--primary) 55%, transparent);
+}
+.adoc-body strong {
+  font-weight: 700;
+  color: var(--foreground);
+}
+.adoc-body em {
+  font-style: italic;
+}
+.adoc-body :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: var(--text-prose-code);
+  font-weight: 500;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  background: color-mix(in srgb, var(--muted) 80%, transparent);
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.adoc-body kbd {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--border);
+  background: var(--muted);
+}
+.adoc-body hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.5rem 0;
+}
+.adoc-body .title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+  margin-bottom: 0.375rem;
+}
+
+/* Lists */
+.adoc-body ul,
+.adoc-body ol {
+  padding-left: 1.5rem;
+}
+.adoc-body ul {
+  list-style: disc;
+}
+.adoc-body ol {
+  list-style: decimal;
+}
+.adoc-body ul ul {
+  list-style: circle;
+}
+.adoc-body li + li {
+  margin-top: 0.375rem;
+}
+.adoc-body li > p {
+  margin: 0;
+}
+.adoc-body li > ul,
+.adoc-body li > ol,
+.adoc-body li > .ulist,
+.adoc-body li > .olist {
+  margin-top: 0.375rem;
+}
+.adoc-body ul li::marker,
+.adoc-body ol li::marker {
+  color: var(--primary);
+}
+.adoc-body ol.loweralpha { list-style: lower-alpha; }
+.adoc-body ol.upperalpha { list-style: upper-alpha; }
+.adoc-body ol.lowerroman { list-style: lower-roman; }
+.adoc-body ol.upperroman { list-style: upper-roman; }
+
+/* Definition lists */
+.adoc-body .dlist dt {
+  font-weight: 700;
+  color: var(--foreground);
+  margin-top: 0.75rem;
+}
+.adoc-body .dlist dt:first-child {
+  margin-top: 0;
+}
+.adoc-body .dlist dd {
+  margin: 0.25rem 0 0 0;
+  padding-left: 1rem;
+  border-left: 2px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+.adoc-body .dlist dd > p {
+  margin: 0;
+}
+.adoc-body .dlist.horizontal td,
+.adoc-body .hdlist td {
+  padding: 0.25rem 0.75rem 0.25rem 0;
+  vertical-align: top;
+}
+
+/* Quote / verse blocks */
+.adoc-body .quoteblock,
+.adoc-body .verseblock {
+  margin: 1.25rem 0;
+  padding: 0.875rem 1.25rem;
+  border-left: 4px solid var(--primary);
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+.adoc-body .quoteblock blockquote,
+.adoc-body .verseblock pre {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-style: italic;
+  font-family: inherit;
+  white-space: normal;
+  background: transparent;
+  color: var(--foreground);
+}
+.adoc-body .verseblock pre {
+  white-space: pre-wrap;
+}
+.adoc-body .quoteblock blockquote > .paragraph + .paragraph {
+  margin-top: 0.5rem;
+}
+.adoc-body .quoteblock .attribution,
+.adoc-body .verseblock .attribution {
+  margin-top: 0.5rem;
+  text-align: right;
+  font-size: 0.875rem;
+  font-style: normal;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+.adoc-body .quoteblock .attribution cite {
+  font-style: normal;
+  display: block;
+  font-weight: 500;
+}
+
+/* Admonitions: NOTE / TIP / IMPORTANT / WARNING / CAUTION */
+.adoc-body .admonitionblock {
+  --adm: 37, 99, 235;
+  margin: 0.875rem 0;
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-left: 4px solid rgb(var(--adm));
+  border-radius: 0 var(--radius-xl) var(--radius-xl) 0;
+  background: rgba(var(--adm), 0.1);
+  padding: 0.875rem 1rem;
+}
+.adoc-body .admonitionblock.tip { --adm: 16, 185, 129; }
+.adoc-body .admonitionblock.important { --adm: 168, 85, 247; }
+.adoc-body .admonitionblock.warning { --adm: 245, 158, 11; }
+.adoc-body .admonitionblock.caution { --adm: 244, 63, 94; }
+.adoc-body .admonitionblock table,
+.adoc-body .admonitionblock tbody,
+.adoc-body .admonitionblock tr,
+.adoc-body .admonitionblock td {
+  display: block;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+.adoc-body .admonitionblock td.icon .title {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgb(var(--adm));
+  margin-bottom: 0.25rem;
+}
+.adoc-body .admonitionblock td.content {
+  font-weight: 500;
+  color: var(--foreground);
+}
+.adoc-body .admonitionblock td.content > * + * {
+  margin-top: 0.5rem;
+}
+
+/* Source / literal blocks with copy bar */
+.adoc-body .listingblock,
+.adoc-body .literalblock {
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: #09090b;
+  color: #f4f4f5;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.adoc-body .listingblock > .title,
+.adoc-body .literalblock > .title {
+  padding: 0.375rem 1rem 0;
+  margin: 0;
+  color: #a1a1aa;
+}
+.adoc-body .adoc-code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  background: #18181b;
+  border-bottom: 1px solid rgba(63, 63, 70, 0.6);
+  font-family: var(--font-mono);
+}
+.adoc-body .adoc-code-lang {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #d4d4d8;
+}
+.adoc-body .adoc-copy-btn {
+  font-size: 0.6875rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  color: #d4d4d8;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.adoc-body .adoc-copy-btn:hover {
+  background: rgba(63, 63, 70, 0.6);
+  color: #fff;
+}
+.adoc-body .adoc-copy-btn.is-copied {
+  color: #34d399;
+  font-weight: 600;
+}
+.adoc-body .listingblock pre,
+.adoc-body .literalblock pre {
+  margin: 0;
+  padding: 1rem;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  background: transparent;
+  color: #f4f4f5;
+}
+.adoc-body .listingblock pre code,
+.adoc-body .literalblock pre code {
+  font-family: inherit;
+  font-size: inherit;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+/* Callouts */
+.adoc-body b.conum {
+  display: inline-block;
+  font-style: normal;
+  font-weight: 700;
+  color: #38bdf8;
+  user-select: none;
+}
+.adoc-body .colist ol {
+  list-style: none;
+  counter-reset: adoc-callout;
+  padding-left: 0;
+}
+.adoc-body .colist ol > li {
+  counter-increment: adoc-callout;
+  display: flex;
+  gap: 0.625rem;
+}
+.adoc-body .colist ol > li::before {
+  content: "(" counter(adoc-callout) ")";
+  flex: none;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+/* Tables */
+.adoc-body .adoc-table-scroll {
+  overflow-x: auto;
+  border-radius: var(--radius-xl);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  margin: 0.875rem 0;
+}
+.adoc-body table.tableblock {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: var(--text-sm);
+}
+.adoc-body table.tableblock th,
+.adoc-body table.tableblock td {
+  padding: 0.75rem 1rem;
+  vertical-align: top;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.adoc-body table.tableblock thead th {
+  background: color-mix(in srgb, var(--muted) 70%, transparent);
+  font-weight: 600;
+  color: var(--foreground);
+}
+.adoc-body table.tableblock tbody tr:hover {
+  background: color-mix(in srgb, var(--muted) 30%, transparent);
+}
+.adoc-body table.tableblock tr:last-child td {
+  border-bottom: 0;
+}
+.adoc-body table.tableblock p.tableblock {
+  margin: 0;
+}
+.adoc-body table.tableblock p.tableblock + p.tableblock {
+  margin-top: 0.5rem;
+}
+.adoc-body table.tableblock .halign-center { text-align: center; }
+.adoc-body table.tableblock .halign-right { text-align: right; }
+
+/* Example / sidebar / image blocks */
+.adoc-body .exampleblock > .content,
+.adoc-body .sidebarblock > .content {
+  padding: 1rem 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+}
+.adoc-body .imageblock img {
+  max-width: 100%;
+  height: auto;
+}

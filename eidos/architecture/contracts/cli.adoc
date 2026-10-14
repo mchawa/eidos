@@ -72,7 +72,7 @@ Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search
   - `search <query> [--limit <n>] [--path <path>]`: Performs BM25 full-text search across titles, requirements, and invariants.
   - `blast-radius <symbol_or_path> [--depth <n>] [--path <path>]`: Computes the transitive dependency and governance blast radius for a symbol or spec path.
   - `repo-map [--max-tokens <tokens>] [--format <format>] [--path <path>]`: Generates a token-budgeted structural repo map outline (classes, functions, methods, routes) for AI coding agents.
-  - `find-symbol <query> [--limit <n>] [--json] [--path <path>]`: Locates code symbols across polyglot AST source files and links them to associated living component specifications.
+  - `find-symbol <query> [--limit <n>] [--json] [--path <path>]`: Locates code symbols across polyglot AST source files and links them to associated living component specifications. Each `--json` match carries `file_path` (the owning *specification* path) and a `location` object (`file`, `line_start`, `line_end`, `signature`, `parent_symbol`) pointing at the source definition, or `null` for non-AST matches such as paths and component references. The text table shows a `Location` (`file:line`) column.
 
 
 === `eidos portal`
@@ -168,7 +168,7 @@ Detects spec-to-code drift, schema validity, and invariant test coverage across 
   - `--head`: Head git reference (defaults to `HEAD`).
   - `--uncommitted, -u`: Analyze uncommitted working tree and staged changes instead of branch diff.
   - `--markdown, -m`: Path to write the markdown summary comment (e.g. for CI/CD reports).
-  - `--json`: Output raw JSON verification result.
+  - `--json`: Output raw JSON verification result, including `trivially_covered_files` (a list of `{file, owner, additions, spec_files, rule}` where `rule` is `trivial_spec_diff` or `missing_anchor`): structural additions whose only spec coverage was a whitespace/comment-only or unanchored edit; these files count as drift.
   - `--warn-only`: Do not exit with code 1 on drift.
 * **Exit Codes**:
   - `0`: Specifications and code are synchronized, all schemas valid, invariant tests green.

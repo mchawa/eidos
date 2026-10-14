@@ -13,7 +13,7 @@ tier: core
 components:
   - id: CMP-DRIFT-DETECTOR
     name: "DriftDetector"
-    responsibility: "Analyzes Git diffs and working-tree changes, filters SpecDeltas by active lifecycle status, evaluates structural AST symbol and design token/props modifications, verifies static invariant test bindings across domains, policies, and architecture components, and detects spec-to-code and design drift across component-scoped 1-hop knowledge graph neighborhoods with strict path-boundary matching."
+    responsibility: "Analyzes Git diffs and working-tree changes, filters SpecDeltas by active lifecycle status, pairs moved/renamed files by content and public symbols without VCS rename heuristics, evaluates structural AST symbol and design token/props modifications, verifies static invariant test bindings across domains, policies, and architecture components, and detects spec-to-code and design drift across component-scoped 1-hop knowledge graph neighborhoods with strict path-boundary matching; structural additions (new files or public symbols) are covered only by substantive, comment- and whitespace-normalized spec diffs (new unclaimed files also need an anchored owner-spec edit)."
     source_path: "src/eidos/vcs/drift.py"
 
 dependencies:
@@ -44,6 +44,6 @@ This container represents the Git-native drift detection and specification recon
 [cols="1,1,2,2", options="header"]
 |===
 | Component ID | Name | Responsibility | Source Path
-| `CMP-DRIFT-DETECTOR` | **DriftDetector** | Structural Git diff inspection, static invariant test verification, and 1-hop graph drift analysis | `src/eidos/vcs/drift.py`
+| `CMP-DRIFT-DETECTOR` | **DriftDetector** | Structural Git diff inspection, diff-aware 1-hop spec coverage of structural additions, static invariant test verification, and 1-hop graph drift analysis | `src/eidos/vcs/drift.py`
 |===
 

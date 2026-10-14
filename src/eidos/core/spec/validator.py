@@ -8,9 +8,9 @@ from typing import Any
 import jsonschema
 import yaml
 
-from eidos.core.assets import get_v1_schemas_dir
-from eidos.core.models import SpecDocument, ValidationReport
-from eidos.core.parser import parse_spec_file
+from eidos.core.spec.models import SpecDocument, ValidationReport
+from eidos.core.spec.parser import parse_spec_file
+from eidos.core.workspace.assets import get_v1_schemas_dir
 
 ENTITY_ID_PREFIXES = (
     "CNT-",

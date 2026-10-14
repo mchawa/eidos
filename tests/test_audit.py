@@ -5,7 +5,7 @@ import json
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
-from eidos.core.audit import AuditEngine, DeltaAuditResult
+from eidos.core.lifecycle.audit import AuditEngine, DeltaAuditResult
 
 runner = CliRunner()
 

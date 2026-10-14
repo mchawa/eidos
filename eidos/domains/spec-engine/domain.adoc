@@ -17,10 +17,10 @@ boundaries:
     - "Git diff analysis, drift detection, and PR merge gating (delegated to DOM-VCS-LIFECYCLE)."
 technical_mapping:
   components:
-    - "src/eidos/core/models.py"
-    - "src/eidos/core/validator.py"
-    - "src/eidos/core/scaffolder.py"
-    - "src/eidos/core/graph_index.py"
+    - "src/eidos/core/spec/models.py"
+    - "src/eidos/core/spec/validator.py"
+    - "src/eidos/core/lifecycle/scaffolder.py"
+    - "src/eidos/core/index/graph_index.py"
     - "src/eidos/cli/main.py"
   dependencies:
     - "DOM-VCS-LIFECYCLE"

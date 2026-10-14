@@ -12,7 +12,7 @@ import {
   List,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { AsciiDocRenderer, extractAsciiDocOutline } from "@/components/ui/AsciiDocRenderer";
+import { AsciiDocRenderer, useAsciiDocOutline } from "@/components/ui/AsciiDocRenderer";
 import { cn } from "@/lib/utils";
 
 export interface SpecReaderItem {
@@ -43,9 +43,7 @@ export function SpecReader({
   const [copiedId, setCopiedId] = React.useState(false);
   const [activeHeadingId, setActiveHeadingId] = React.useState<string>("");
 
-  const outline = React.useMemo(() => {
-    return spec.body ? extractAsciiDocOutline(spec.body) : [];
-  }, [spec.body]);
+  const outline = useAsciiDocOutline(spec.body);
 
   // Track active heading on scroll
   React.useEffect(() => {

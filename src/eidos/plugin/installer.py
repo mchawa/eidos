@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from eidos.core.assets import get_plugin_reference_dir
+from eidos.core.workspace.assets import get_plugin_reference_dir
 from eidos.plugin.version import (
     get_bundled_plugin_version,
     get_installed_plugin_version,

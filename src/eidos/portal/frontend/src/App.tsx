@@ -9,6 +9,7 @@ import { DesignView } from "@/components/views/DesignView";
 import { ExplorationsView } from "@/components/views/ExplorationsView";
 import { CommandDialog, type CommandItem } from "@/components/ui/command";
 import type { PortalData } from "@/types";
+import { SPEC_NAV_EVENT, resolveSpecTarget, type SpecNavDetail } from "@/lib/specNav";
 
 export function App() {
   const [data, setData] = React.useState<PortalData | null>(() => {
@@ -16,6 +17,8 @@ export function App() {
   });
 
   const [activeTab, setActiveTab] = React.useState<TabKey>("home");
+  // In-portal xref navigation: the reader publishes raw targets, the shell resolves them to a catalog spec.
+  const [focusSpec, setFocusSpec] = React.useState<{ id: string; nonce: number } | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState<boolean>(() => {
     return localStorage.getItem("eidos_sidebar_collapsed") === "true";
   });
@@ -46,6 +49,23 @@ export function App() {
         .then((payload: PortalData) => setData(payload))
         .catch((err) => console.warn("Could not load /api/data:", err));
     }
+  }, [data]);
+
+  // Resolve xref:/<<ID>>/link:*.adoc[] clicks from the AsciiDoc reader to the spec catalog inspector.
+  React.useEffect(() => {
+    if (!data) return;
+    const onNavigate = (event: Event) => {
+      const { target } = (event as CustomEvent<SpecNavDetail>).detail;
+      const spec = resolveSpecTarget(data.specs, target);
+      if (!spec) {
+        console.warn(`Eidos portal: cross-reference '${target}' does not match any loaded specification.`);
+        return;
+      }
+      setFocusSpec({ id: spec.id, nonce: Date.now() });
+      setActiveTab("catalog");
+    };
+    window.addEventListener(SPEC_NAV_EVENT, onNavigate);
+    return () => window.removeEventListener(SPEC_NAV_EVENT, onNavigate);
   }, [data]);
 
   const toggleSidebar = () => {
@@ -254,7 +274,14 @@ export function App() {
               }}
             />
           )}
-          {activeTab === "catalog" && <CatalogView data={data} />}
+          {activeTab === "catalog" && (
+            <CatalogView
+              data={data}
+              focusSpecId={focusSpec?.id}
+              focusNonce={focusSpec?.nonce}
+              onFocusHandled={() => setFocusSpec(null)}
+            />
+          )}
           {activeTab === "business" && <BusinessView data={data} />}
           {activeTab === "design" && <DesignView data={data} darkMode={darkMode} />}
         </div>

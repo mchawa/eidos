@@ -92,7 +92,7 @@ def get_bundled_plugin_version() -> str:
     """Return the bundled plugin version (synchronized with eidos engine package version)."""
     # 1. Check canonical plugin bundle (via locate_plugin_bundle)
     try:
-        from eidos.core.assets import get_plugin_reference_dir
+        from eidos.core.workspace.assets import get_plugin_reference_dir
 
         ref_dir = get_plugin_reference_dir()
         manifest = ref_dir / "plugin.json"

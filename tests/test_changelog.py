@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
-from eidos.core.changelog import ChangelogGenerator
+from eidos.core.lifecycle.changelog import ChangelogGenerator
 
 runner = CliRunner()
 

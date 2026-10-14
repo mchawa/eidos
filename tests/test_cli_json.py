@@ -70,3 +70,64 @@ def test_cli_index_status_json_output():
     assert "tested_invariants" in ast
 
 
+
+
+def _walk_command_tree(cmd, path: list[str]) -> list[dict]:
+    """Flatten a click/Typer command tree into JSON-friendly rows, preserving command registration order."""
+    import re
+
+    def norm(value):
+        if isinstance(value, str):
+            return re.sub(r" at 0x[0-9a-f]+", "", value)
+        if value is None or isinstance(value, bool | int | float):
+            return value
+        if isinstance(value, list | tuple):
+            return [norm(v) for v in value]
+        if type(value).__name__ == "DefaultPlaceholder":
+            return norm(value.value)
+        return re.sub(r" at 0x[0-9a-f]+", "", str(value))
+
+    params = [
+        {
+            "name": p.name,
+            "opts": list(p.opts),
+            "secondary": list(p.secondary_opts),
+            "kind": type(p).__name__,
+            "required": p.required,
+            "default": str(p.default),
+            "help": getattr(p, "help", None),
+            "panel": getattr(p, "rich_help_panel", None),
+            "envvar": str(getattr(p, "envvar", None)),
+            "type": str(p.type),
+        }
+        for p in cmd.params
+    ]
+    subs = getattr(cmd, "commands", None) or {}
+    rows = [
+        {
+            "order": list(subs),
+            "path": path,
+            "help": cmd.help,
+            "hidden": cmd.hidden,
+            "panel": getattr(cmd, "rich_help_panel", None),
+            "params": params,
+        }
+    ]
+    for name, sub in subs.items():
+        rows += _walk_command_tree(sub, [*path, name])
+    return json.loads(json.dumps(rows, default=norm))
+
+
+def test_cli_command_tree_unchanged():
+    """DLT-2026-038: the recursive Typer command tree (names, order, options, help panels) matches the pre-split snapshot."""
+    import re
+    from pathlib import Path
+
+    import typer
+
+    snapshot = json.loads(
+        (Path(__file__).parent / "fixtures" / "cli_command_tree.json").read_text(encoding="utf-8")
+    )
+    current = _walk_command_tree(typer.main.get_command(app), [])
+    normalized = json.loads(re.sub(r" at 0x[0-9a-f]+", "", json.dumps(current)))
+    assert normalized == snapshot

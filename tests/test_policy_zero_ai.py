@@ -3,8 +3,8 @@
 import tomllib
 from pathlib import Path
 
-from eidos.core.parser import parse_spec_file
-from eidos.core.validator import SpecValidator
+from eidos.core.spec.parser import parse_spec_file
+from eidos.core.spec.validator import SpecValidator
 
 FORBIDDEN_AI_PACKAGES = {
     "openai",

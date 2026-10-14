@@ -9,7 +9,7 @@ from typing import Any
 import jsonschema
 import yaml
 
-from eidos.core.assets import get_agent_plugins_schemas_dir
+from eidos.core.workspace.assets import get_agent_plugins_schemas_dir
 from eidos.plugin.version import is_valid_semver
 
 PLUGIN_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"

@@ -5,7 +5,7 @@ id: CNT-EIDOS-INDEX
 name: "Eidos Architectural Knowledge Graph & Retrieval Index"
 container_type: "library"
 runtime: "Python 3.12 / SQLite3 / FTS5 / CTE"
-package_path: "src/eidos/core/graph_index.py"
+package_path: "src/eidos/core/index"
 
 domain_binding: DOM-SPEC-ENGINE
 tier: persistence
@@ -13,28 +13,28 @@ tier: persistence
 components:
   - id: CMP-GRAPH-STORAGE
     name: "GraphStorage"
-    responsibility: "Manages embedded SQLite schema initialization, connection lifecycle, WAL mode, transaction isolation, repository root discovery, and indexed files tracking."
-    source_path: "src/eidos/core/graph_index.py"
+    responsibility: "Manages embedded SQLite schema initialization (including the versioned, drop-and-rebuild 'metadata.schema_version' cache and the 'symbol_mappings' lookup and 'code_symbols' AST coordinate tables), connection lifecycle, WAL mode, transaction isolation, repository root discovery, and indexed files tracking."
+    source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-INCREMENTAL-SYNC-ENGINE
     name: "IncrementalSyncEngine"
-    responsibility: "Detects specification and test-binding mutations via SHA-256 and mtime hashing across centralized specs (eidos/) and test suites (tests/), lazily updating entities, dependency edges, and invariant assertion edges in sub-5ms."
-    source_path: "src/eidos/core/graph_index.py"
+    responsibility: "Detects specification and test-binding mutations via SHA-256 and mtime hashing across centralized specs (eidos/) and test suites (tests/), lazily updating entities, rebuilding specification-declared dependency edges across persisted entities (preserving incoming edges from unchanged specs), updating invariant assertion edges and per-file AST symbol coordinates in sub-5ms; dirty-tracks every declared container package_path and, when specifications change, reconciles ownership and recursively attributes unclaimed source files via a spec-order-independent precedence (component source_path, owned_path, longest package_path) while sharing single-parse symbols across co-owners."
+    source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-FTS-QUERY-ENGINE
     name: "FTSQueryEngine"
     responsibility: "Full-text lexical search and BM25 ranking across titles, descriptions, and keywords using SQLite FTS5."
-    source_path: "src/eidos/core/graph_index.py"
+    source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-GRAPH-TRAVERSAL-ENGINE
     name: "GraphTraversalEngine"
     responsibility: "Recursive Common Table Expression (CTE) traversal evaluating k-hop blast radius, incoming dependencies, and impact subgraphs in sub-2ms."
-    source_path: "src/eidos/core/graph_index.py"
+    source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-TIERED-CONTEXT-COMPRESSOR
     name: "TieredContextCompressor"
     responsibility: "Extracts token-compressed architectural slices across anchor, guardrails, and deep tiers for AI coding agents, formatting centralized C4 components with in-process APIs and invariants."
-    source_path: "src/eidos/core/graph_index.py"
+    source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-AST-SYMBOL-INDEXER
     name: "AstSymbolIndexer"
-    responsibility: "Extracts polyglot AST symbols (classes, functions, interface signatures), classifies frontend/styling diffs into token or UI contract changes, generates structural AI repo maps, and binds test functions to capability and component invariants via ast-grep with stdlib ast fallback."
-    source_path: "src/eidos/core/ast_indexer.py"
+    responsibility: "Extracts polyglot AST symbols (classes, functions, interface signatures), diffs public symbols between file versions (public_symbol_map, diff_symbol_maps, diff_public_symbols), classifies frontend/styling diffs into token or UI contract changes, generates structural AI repo maps (served from persisted primary 'code_symbols' rows without re-parsing), and binds test functions to capability and component invariants via ast-grep with stdlib ast fallback."
+    source_path: "src/eidos/core/index/ast_indexer.py"
 
 dependencies:
   internal_containers:
@@ -57,16 +57,17 @@ quality_attributes:
 :toc: left
 
 == Architectural Boundary
-This container represents the embedded relational and lexical indexing engine under `src/eidos/core/graph_index.py`. It persists and manages the local SQLite knowledge graph (`eidos/.cache/index.db`), providing sub-millisecond catalog lookups, incremental zero-drift synchronization, FTS5 BM25 search, recursive CTE blast-radius traversal, and tiered context slicing for AI coding agents and CLI commands.
+This container represents the embedded relational and lexical indexing engine under `src/eidos/core/index/`. It persists and manages the local SQLite knowledge graph (`eidos/.cache/index.db`), providing sub-millisecond catalog lookups, incremental zero-drift synchronization, FTS5 BM25 search, recursive CTE blast-radius traversal, and tiered context slicing for AI coding agents and CLI commands.
 
 == Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
 
 [cols="1,1,2,2", options="header"]
 |===
 | Component ID | Name | Responsibility | Source Path
-| `CMP-GRAPH-STORAGE` | **GraphStorage** | SQLite schema (`entities`, `edges`, `indexed_files`, `specs_fts`), WAL mode, repo root discovery, and connection pool | `src/eidos/core/graph_index.py`
-| `CMP-INCREMENTAL-SYNC-ENGINE` | **IncrementalSyncEngine** | SHA-256 content and mtime dirty checking with lazy incremental sync (<5ms) | `src/eidos/core/graph_index.py`
-| `CMP-FTS-QUERY-ENGINE` | **FTSQueryEngine** | SQLite FTS5 BM25 lexical search mapping natural language tasks to architecture IDs | `src/eidos/core/graph_index.py`
-| `CMP-GRAPH-TRAVERSAL-ENGINE` | **GraphTraversalEngine** | Recursive CTE graph queries evaluating k-hop blast radius and incoming references (<2ms) | `src/eidos/core/graph_index.py`
-| `CMP-TIERED-CONTEXT-COMPRESSOR` | **TieredContextCompressor** | 3-tier token-budgeted context extraction (`anchor`, `guardrails`, `deep`) with >=60% reduction | `src/eidos/core/graph_index.py`
+| `CMP-GRAPH-STORAGE` | **GraphStorage** | SQLite schema (`entities`, `edges`, `indexed_files`, `symbol_mappings`, `code_symbols`, `specs_fts`) with versioned drop-and-rebuild migration, WAL mode, repo root discovery, and connection pool | `src/eidos/core/index/graph_index.py`
+| `CMP-INCREMENTAL-SYNC-ENGINE` | **IncrementalSyncEngine** | SHA-256 content and mtime dirty checking across all declared package paths with lazy incremental sync (<5ms), recursive package indexing, and order-independent source ownership resolution | `src/eidos/core/index/graph_index.py`
+| `CMP-FTS-QUERY-ENGINE` | **FTSQueryEngine** | SQLite FTS5 BM25 lexical search mapping natural language tasks to architecture IDs | `src/eidos/core/index/graph_index.py`
+| `CMP-GRAPH-TRAVERSAL-ENGINE` | **GraphTraversalEngine** | Recursive CTE graph queries evaluating k-hop blast radius and incoming references (<2ms) | `src/eidos/core/index/graph_index.py`
+| `CMP-TIERED-CONTEXT-COMPRESSOR` | **TieredContextCompressor** | 3-tier token-budgeted context extraction (`anchor`, `guardrails`, `deep`) with >=60% reduction | `src/eidos/core/index/graph_index.py`
+| `CMP-AST-SYMBOL-INDEXER` | **AstSymbolIndexer** | Polyglot AST symbol extraction (`ast-grep` with stdlib `ast` fallback) feeding persisted symbol coordinates, structural repo maps, and test-to-invariant bindings | `src/eidos/core/index/ast_indexer.py`
 |===

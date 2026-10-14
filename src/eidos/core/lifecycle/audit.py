@@ -17,9 +17,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 
-from eidos.core.graph_index import get_architectural_index
-from eidos.core.parser import parse_spec_file
-from eidos.core.scaffolder import find_spec_by_id_or_path
+from eidos.core.index.graph_index import get_architectural_index
+from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
+from eidos.core.spec.parser import parse_spec_file
 
 
 @dataclass

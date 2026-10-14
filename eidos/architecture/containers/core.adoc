@@ -16,47 +16,53 @@ components:
   - id: CMP-SPEC-PARSER
     name: "SpecParser"
     responsibility: "Extracts YAML frontmatter metadata and body text from AsciiDoc documents."
-    source_path: "src/eidos/core/parser.py"
+    source_path: "src/eidos/core/spec/parser.py"
   - id: CMP-SPEC-VALIDATOR
     name: "SpecValidator"
     responsibility: "Resolves bundled JSON/YAML schemas, validates document frontmatters, verifies cross-references, and enforces centralized component invariants (INV-COMPONENT-CENTRALIZATION-MANDATE, INV-COMPONENT-CONTAINER-AFFINITY, INV-INTERFACE-BOUNDARY-GOVERNANCE)."
-    source_path: "src/eidos/core/validator.py"
+    source_path: "src/eidos/core/spec/validator.py"
   - id: CMP-LIFECYCLE-SCAFFOLDER
     name: "LifecycleScaffolder"
-    responsibility: "Scaffolds all 16 living specification types using safe YAML serialization (yaml.safe_dump), conducts reference safety checks, manages flat SpecDelta lifecycles, and orchestrates centralized C4 component promotion (promote_component) and inlining (inline_component)."
-    source_path: "src/eidos/core/scaffolder.py"
+    responsibility: "Scaffolds all 16 living specification types using safe YAML serialization (yaml.safe_dump), conducts reference safety checks, and orchestrates centralized C4 component promotion (promote_component) and inlining (inline_component). Shared low-level helpers (spec lookup, ID normalization, YAML frontmatter surgery, catalog indexes) live in catalog.py; scaffolder.py keeps permanent backwards-compatible re-exports of every previously public name."
+    source_path:
+      - "src/eidos/core/lifecycle/scaffolder.py"
+      - "src/eidos/core/lifecycle/catalog.py"
   - id: CMP-DESIGN-ENGINE
     name: "DesignEngine"
     responsibility: "Manages Multi-Design Systems, W3C DTCG tokens, UI component contracts, and screen layout/state machines."
-    source_path: "src/eidos/core/scaffolder.py"
+    source_path: "src/eidos/core/lifecycle/design_engine.py"
   - id: CMP-REPO-INITIALIZER
     name: "RepositoryInitializer"
     responsibility: "Bootstraps repositories with living specification skeletons, baseline policies, architecture, immediate validation, and self-contained gitignore (plugins managed via eidos plugin)."
-    source_path: "src/eidos/core/scaffolder.py"
+    source_path: "src/eidos/core/lifecycle/initializer.py"
+  - id: CMP-DELTA-ENGINE
+    name: "DeltaEngine"
+    responsibility: "Owns the SpecDelta lifecycle: listing, status summaries, gitignored by-status view sync, baseline snapshots, verification of declared mutations against living specifications (verify_delta_mutations), deterministic execution (execute_delta_mutations), and in-place application (apply_delta)."
+    source_path: "src/eidos/core/lifecycle/delta_engine.py"
   - id: CMP-ASSET-LOCATOR
     name: "AssetLocator"
     responsibility: "Locates externalized specification schemas and canonical plugin reference assets across local checkouts and wheels."
-    source_path: "src/eidos/core/assets.py"
+    source_path: "src/eidos/core/workspace/assets.py"
   - id: CMP-PROJECT-RESOLVER
     name: "ProjectResolver"
     responsibility: "Zero-config repository root discovery, path ownership glob matching, and gitattributes generated/vendored file filtering."
-    source_path: "src/eidos/core/project.py"
+    source_path: "src/eidos/core/workspace/project.py"
   - id: CMP-DOMAIN-MODELS
     name: "DomainModels"
     responsibility: "Typed Pydantic and dataclass domain models representing living specification documents and validation reports."
-    source_path: "src/eidos/core/models.py"
+    source_path: "src/eidos/core/spec/models.py"
   - id: CMP-DELTA-AUDITOR
     name: "DeltaAuditor"
     responsibility: "Audits reverse-dependency blast radius for entities deprecated or removed by SpecDeltas."
-    source_path: "src/eidos/core/audit.py"
+    source_path: "src/eidos/core/lifecycle/audit.py"
   - id: CMP-CONTEXT-SLICER
     name: "ContextSlicer"
     responsibility: "Extracts compact, token-efficient architectural subgraph slices across C4 components, contracts, capabilities, invariants, and policies."
-    source_path: "src/eidos/core/context.py"
+    source_path: "src/eidos/core/workspace/context.py"
   - id: CMP-CHANGELOG-GENERATOR
     name: "ChangelogGenerator"
     responsibility: "Compiles applied SpecDeltas and Git release history into a portable Keep a Changelog ledger with inline code badges (INV-DELTA-CHANGELOG-GENERATION)."
-    source_path: "src/eidos/core/changelog.py"
+    source_path: "src/eidos/core/lifecycle/changelog.py"
 
 dependencies:
   internal_containers: []
@@ -77,24 +83,25 @@ quality_attributes:
 :toc: left
 
 == Architectural Boundary
-This container represents the foundational library under `src/eidos/core/` and bundled schemas under `assets/schemas/`. It owns all specification parsing, JSON Schema validation, zero-config project path resolution, multi-design system scaffolding, W3C token management, SpecDelta lifecycle state machines, reference checking, and embedded architectural graph indexing.
+This container represents the foundational library under `src/eidos/core/` (`spec/`, `lifecycle/`, and `workspace/` subpackages) and bundled schemas under `assets/schemas/`. It owns all specification parsing, JSON Schema validation, zero-config project path resolution, multi-design system scaffolding, W3C token management, SpecDelta lifecycle state machines, and reference checking.
 
 == Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
 
 [cols="1,1,2,2", options="header"]
 |===
 | Component ID | Name | Responsibility | Source Path
-| `CMP-SPEC-PARSER` | **SpecParser** | Extracts YAML frontmatter metadata and body text from AsciiDoc documents | `src/eidos/core/parser.py`
-| `CMP-SPEC-VALIDATOR` | **SpecValidator** | Resolves bundled JSON/YAML schemas, validates frontmatters, and checks references | `src/eidos/core/validator.py`
-| `CMP-LIFECYCLE-SCAFFOLDER` | **LifecycleScaffolder** | Manages document lifecycle, template generation, and reference safety checks | `src/eidos/core/scaffolder.py`
-| `CMP-DESIGN-ENGINE` | **DesignEngine** | Multi-design system management, token compilation, and UI state machines | `src/eidos/core/scaffolder.py`
-| `CMP-REPO-INITIALIZER` | **RepositoryInitializer** | Repository scaffolding with living spec hierarchies and gitignore | `src/eidos/core/scaffolder.py`
-| `CMP-ASSET-LOCATOR` | **AssetLocator** | Resolves bundled schemas and plugin assets across packages and repos | `src/eidos/core/assets.py`
-| `CMP-PROJECT-RESOLVER` | **ProjectResolver** | Zero-config repository root discovery and path ownership matching | `src/eidos/core/project.py`
-| `CMP-DOMAIN-MODELS` | **DomainModels** | Typed domain models for living specification entities and validation reports | `src/eidos/core/models.py`
-| `CMP-DELTA-AUDITOR` | **DeltaAuditor** | Reverse-dependency blast-radius auditor for SpecDelta removals | `src/eidos/core/audit.py`
-| `CMP-CONTEXT-SLICER` | **ContextSlicer** | Slices token-budgeted architectural subgraphs for AI coding agents | `src/eidos/core/context.py`
-| `CMP-CHANGELOG-GENERATOR` | **ChangelogGenerator** | Compiles applied SpecDeltas and Git release history into a portable Keep a Changelog ledger | `src/eidos/core/changelog.py`
+| `CMP-SPEC-PARSER` | **SpecParser** | Extracts YAML frontmatter metadata and body text from AsciiDoc documents | `src/eidos/core/spec/parser.py`
+| `CMP-SPEC-VALIDATOR` | **SpecValidator** | Resolves bundled JSON/YAML schemas, validates frontmatters, and checks references | `src/eidos/core/spec/validator.py`
+| `CMP-LIFECYCLE-SCAFFOLDER` | **LifecycleScaffolder** | Spec template generation, reference safety checks, and component promote/inline (shared helpers in `catalog.py`) | `src/eidos/core/lifecycle/scaffolder.py`, `src/eidos/core/lifecycle/catalog.py`
+| `CMP-DESIGN-ENGINE` | **DesignEngine** | Multi-design system management, token compilation, and UI state machines | `src/eidos/core/lifecycle/design_engine.py`
+| `CMP-REPO-INITIALIZER` | **RepositoryInitializer** | Repository scaffolding with living spec hierarchies and gitignore | `src/eidos/core/lifecycle/initializer.py`
+| `CMP-DELTA-ENGINE` | **DeltaEngine** | SpecDelta lifecycle: listing, status views, baselines, verification, execution, and apply | `src/eidos/core/lifecycle/delta_engine.py`
+| `CMP-ASSET-LOCATOR` | **AssetLocator** | Resolves bundled schemas and plugin assets across packages and repos | `src/eidos/core/workspace/assets.py`
+| `CMP-PROJECT-RESOLVER` | **ProjectResolver** | Zero-config repository root discovery and path ownership matching | `src/eidos/core/workspace/project.py`
+| `CMP-DOMAIN-MODELS` | **DomainModels** | Typed domain models for living specification entities and validation reports | `src/eidos/core/spec/models.py`
+| `CMP-DELTA-AUDITOR` | **DeltaAuditor** | Reverse-dependency blast-radius auditor for SpecDelta removals | `src/eidos/core/lifecycle/audit.py`
+| `CMP-CONTEXT-SLICER` | **ContextSlicer** | Slices token-budgeted architectural subgraphs for AI coding agents | `src/eidos/core/workspace/context.py`
+| `CMP-CHANGELOG-GENERATOR` | **ChangelogGenerator** | Compiles applied SpecDeltas and Git release history into a portable Keep a Changelog ledger | `src/eidos/core/lifecycle/changelog.py`
 |===
 
 == Quality Attributes & Operational Policies

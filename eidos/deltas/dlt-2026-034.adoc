@@ -2,63 +2,140 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-034
-title: "Rich SQLite AST Symbol Metadata, Recursive Multi-Package Indexing, and Diff-Aware Spec Coverage"
-status: proposed
+title: "Persistent AST Symbol Locations and Recursive Multi-Package Code Indexing"
+status: applied
 vcs:
-  branch: feat/rich-symbol-index-and-diff-aware-drift
+  branch: feat/rich-symbol-index
 intent:
   kind: feature_addition
-  motivation: "Persist full AST symbol coordinates and signatures in SQLite so 'find-symbol' and 'get_repo_map()' operate in O(1) without re-parsing source files from disk, index all container 'package_path' entries recursively, and enforce diff-aware spec coverage so trivial whitespace edits cannot silence structural code drift."
+  motivation: "Persist AST symbol coordinates (file, lines, signature, parent) in the SQLite knowledge graph so 'find-symbol' can report where a symbol is defined and 'repo-map' no longer re-parses every source file, and index every declared container 'package_path' recursively with a deterministic, order-independent ownership precedence."
 mutations:
   - action: modify_component
-    target_component: CNT-EIDOS-INDEX
-    details: "Upgrade 'symbol_mappings' in 'src/eidos/core/graph_index.py' to store '(symbol, entity_id, kind, file_path, line_start, line_end, signature, parent_symbol)'; refactor 'find_symbol()' and 'get_repo_map()' to query SQLite directly without disk AST re-parsing; store all container 'package_path' entries for complete 'is_dirty()' mtime tracking; and use recursive 'rglob()' across all container package directories regardless of whether inline components are present."
+    target_component: CMP-GRAPH-STORAGE
+    details: "Add an additive 'code_symbols' table (explicit column list, NOT NULL defaults, UNIQUE(file_path, entity_id, kind, parent_symbol, symbol, line_start), one row set per owning entity with an 'is_primary' flag) alongside the unchanged 'symbol_mappings' lookup table. Persist 'schema_version' in the 'metadata' table, bump 'ArchitecturalIndex.SCHEMA_VERSION' to 2.1.0, and drop-and-rebuild the derived 'eidos/.cache/index.db' when the stored version is missing or differs."
   - action: modify_component
-    target_component: CNT-EIDOS-VCS
-    details: "Upgrade '_is_covered_by_changed_specs()' in 'src/eidos/vcs/drift.py' with diff-aware semantic verification that rejects whitespace-only or comment-only 'touch-to-appease' spec edits when new source files or public structural symbols are introduced."
-  - action: extend_capability
-    target_capability: CAP-VCS-001
-    details: "Enforce diff-aware specification coverage and full SQLite AST symbol coordinate resolution across all container package paths."
-blast_radius:
-  impacted_components:
+    target_component: CMP-INCREMENTAL-SYNC-ENGINE
+    details: "Delete-then-insert 'code_symbols' rows per file on every (re)index; prune rows (and orphaned AST rows in 'symbol_mappings') on file deletion. Track all container package paths in 'is_dirty()' via existing kind='package_path' rows. Replace the non-recursive, 'not all_modules'-gated package glob with a global post-pass ownership resolution over all package directories."
+  - action: modify_component
+    target_component: CMP-AST-SYMBOL-INDEXER
+    details: "Rebuild 'get_repo_map()' input ('symbols_by_file') from 'code_symbols' rows instead of calling 'extract_symbols()' on disk; 'generate_repo_map()' output is unchanged for the same index state."
+  - action: modify_contract
+    target_contract: CTR-EIDOS-CLI
+    details: "Additive, backward-compatible change to 'eidos index find-symbol --json': each match gains a 'location' object ('file', 'line_start', 'line_end', 'signature', 'parent_symbol') or null for non-AST matches. The existing 'file_path' key keeps its current meaning (owning spec path)."
+  - action: modify_component
+    target_component: CMP-CLI-INDEX-COMMANDS
+    details: "Render a 'Location' ('file:line') column in the 'find-symbol' table output."
+  - action: patch_invariant
+    target_invariant_id: INV-KNOWLEDGE-GRAPH-CATALOG
+    details: "[CAP-PROD-001] Extend the rule to cover AST code symbols indexed recursively across all declared container package paths."
+  - action: add_invariant
+    target_invariant_id: INV-SYMBOL-LOCATION-FIDELITY
+    details: "[CAP-AGENT-001] Rule: 'The knowledge graph must persist source file and line coordinates for every indexed AST symbol, invalidate them on source edit or deletion, and serve find-symbol and repo-map queries without re-parsing source files when the index is warm.' test_binding: 'tests/test_graph_index.py::test_code_symbols_invalidated_on_edit_and_delete'."
+affects:
+  containers:
     - CNT-EIDOS-INDEX
-    - CNT-EIDOS-VCS
+    - CNT-EIDOS-CLI
+  contracts:
+    - CTR-EIDOS-CLI
+  capabilities:
+    - CAP-PROD-001
+    - CAP-AGENT-001
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-INDEX
+    - CNT-EIDOS-CLI
+  impacted_components:
     - CMP-GRAPH-STORAGE
     - CMP-INCREMENTAL-SYNC-ENGINE
     - CMP-AST-SYMBOL-INDEXER
-    - CMP-DRIFT-DETECTOR
+    - CMP-CLI-INDEX-COMMANDS
+    - CTR-EIDOS-CLI
   invariants_to_enforce:
     - INV-KNOWLEDGE-GRAPH-CATALOG
-    - INV-DRIFT-DETECTION-ACCURACY
+    - INV-SYMBOL-LOCATION-FIDELITY
 ---
-= SpecDelta: Rich SQLite AST Symbol Metadata, Recursive Multi-Package Indexing, and Diff-Aware Spec Coverage
+= SpecDelta: Persistent AST Symbol Locations and Recursive Multi-Package Code Indexing
 :toc: left
+
+NOTE: Split from the original DLT-2026-034. The diff-aware specification coverage gate now lives in DLT-2026-039.
 
 == Problem Statement
 
-1. **Discarded AST Symbol Metadata & Disk Re-Parsing**: `ASTIndexer.extract_symbols()` extracts `file_path`, `line_start`, `line_end`, `signature`, and `parent_symbol` for every class, function, and interface. However, `GraphIndex.sync()` (`src/eidos/core/graph_index.py`, lines 307–312 and 1120) only stores `(symbol, entity_id, kind)` in `symbol_mappings`. Consequently, `eidos index find-symbol` cannot report which file or line defines a symbol, and `get_repo_map()` (lines 1448–1469) must re-read and AST-parse every source file from disk on every invocation.
-2. **Multi-`package_path` Truncation & Non-Recursive Globs**:
-   * When a container defines multiple `package_path` directories (e.g., `["src/eidos/core", "assets/schemas"]`), `entities.package_path` stores only `pkg_list[0]` (line 565), causing `is_dirty()` to miss modifications in secondary directories.
-   * Package directory AST indexing (lines 911–915) only runs `if not all_modules:` and uses non-recursive `abs_pkg.glob(ext)` instead of `rglob(ext)`, skipping unmapped files and subdirectories whenever a container declares even one inline component.
-3. **"Touch-to-Appease" Spec Gaming**: `_is_covered_by_changed_specs()` (`src/eidos/vcs/drift.py`, lines 826–845) only checks whether a 1-hop spec file appears in `git diff`. Adding a blank line or trivial comment to `container.adoc` silences drift for newly added classes, modules, or public endpoints without documenting them.
+1. **Discarded symbol coordinates.** `ASTIndexer.extract_symbols()` yields `CodeSymbol(file_path, line_start, line_end, signature, parent_symbol)`, but every sync path in [`ArchitecturalIndex`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/core/graph_index.py) only writes `(symbol, entity_id, kind)` into `symbol_mappings`. As a result:
+   * [`find_symbol()`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/core/graph_index.py#L1444) can only report the owning *spec* (`file_path` = spec path), never the defining source file/line.
+   * [`get_repo_map()`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/core/graph_index.py#L1479) re-reads and re-parses every `source_path` file on every call.
+   * Deleted or edited source files leave stale AST rows behind (deletion only removes the `source_path` row).
+2. **Secondary package paths not dirty-tracked.** `entities.package_path` stores only `pkg_list[0]`, and `is_dirty()` reads that column. `is_dirty()` always walks `src/`, `tests/`, `test/`, so the gap is limited to secondary package directories *outside* those roots (e.g. `frontend/`, `packages/*`).
+3. **Non-recursive, gated package indexing.** Package directories are indexed only `if not all_modules` and with non-recursive `glob()`. Any container declaring a single inline component never indexes its unclaimed files or subdirectories.
 
 == Architectural & Behavioral Mutations
 
-1. **Rich `symbol_mappings` Schema & $O(1)$ Repo Map**:
-   * Expand `symbol_mappings` to `(symbol TEXT, entity_id TEXT, kind TEXT, file_path TEXT, line_start INTEGER, line_end INTEGER, signature TEXT, parent_symbol TEXT, PRIMARY KEY (symbol, entity_id, kind, file_path, line_start))`.
-   * Update `find_symbol()` to return `file_path`, `line_start`, `line_end`, and `signature`.
-   * Refactor `get_repo_map()` to reconstruct the structural repository map directly from `file_mappings` and `symbol_mappings` in SQLite in sub-5ms.
-2. **Complete Multi-Package & Recursive `rglob` Indexing**:
-   * Store all container `package_path` entries (JSON-serialized list in `entities.package_path` or dedicated mapping rows) and check all of them in `is_dirty()`.
-   * Recursively index all source files under each `package_path` via `rglob()`, attributing files not claimed by a specific `CMP-*` `source_path` to their parent `CNT-*` container.
-3. **Diff-Aware Specification Coverage**:
-   * When a new source module is added or a new public class/function/component is introduced, `_is_covered_by_changed_specs()` inspects the unified diff of the modified 1-hop specification(s):
-     - Rejects diffs that contain only whitespace, blank lines, or AsciiDoc comment lines (`//`).
-     - When a new source file is added outside an existing glob `source_path`, requires the owning container/component spec diff to either update `source_path` / `components` or add non-trivial substantive prose/frontmatter lines.
+=== 1. `code_symbols` table (CMP-GRAPH-STORAGE)
+[source,sql]
+----
+CREATE TABLE IF NOT EXISTS code_symbols (
+    id            INTEGER PRIMARY KEY,
+    file_path     TEXT    NOT NULL,             -- repo-relative source path
+    symbol        TEXT    NOT NULL,
+    kind          TEXT    NOT NULL,             -- class | function | method | interface | ...
+    parent_symbol TEXT    NOT NULL DEFAULT '',
+    line_start    INTEGER NOT NULL,
+    line_end      INTEGER NOT NULL,
+    signature     TEXT    NOT NULL DEFAULT '',
+    entity_id     TEXT    NOT NULL,             -- owning CNT-* (same attribution as symbol_mappings today)
+    component_id  TEXT    NOT NULL DEFAULT '',  -- CMP-* when claimed by an explicit component source_path
+    UNIQUE (file_path, kind, parent_symbol, symbol, line_start)
+);
+CREATE INDEX IF NOT EXISTS idx_code_symbols_symbol ON code_symbols(symbol);
+CREATE INDEX IF NOT EXISTS idx_code_symbols_file   ON code_symbols(file_path);
+----
+* Files declared by several entities (e.g. two containers' components pointing at one module) keep a row set per declaring entity, so every declarer keeps its symbol mappings and `find-symbol` locations; `is_primary = 1` marks the resolved primary owner and is the only row set rendered by `repo-map`. Dropping a declaration prunes only that entity's rows.
+* `symbol_mappings` schema and its ~35 positional inserts are **unchanged**. `resolve_symbol_or_path()`, drift mapping and the `inferred_path` post-pass keep working without modification.
+* `code_symbols` is written with explicit column lists only.
+
+=== 2. Cache schema versioning (CMP-GRAPH-STORAGE)
+* Persist `metadata.schema_version`. On connect, if it is missing or differs from `ArchitecturalIndex.SCHEMA_VERSION` (bumped `1.0.0` → `2.1.0`), drop all tables and rebuild. This is safe because `index.db` is a derived cache.
+* Coordination: DLT-2026-035 also adds tables to `index.db`. Whichever delta lands second bumps `SCHEMA_VERSION` again and reuses this mechanism.
+
+=== 3. Invalidation (CMP-INCREMENTAL-SYNC-ENGINE)
+* Whenever a code file is (re)indexed: `DELETE FROM code_symbols WHERE file_path = ?`, then insert fresh rows.
+* When a code file is deleted: delete its `code_symbols` rows, and remove the matching AST rows (`class`/`function`/`method`/`interface`) from `symbol_mappings` only when no remaining `code_symbols` row for the same `(symbol, entity_id, kind)` exists.
+
+=== 4. Queries
+* **`find_symbol()`:** each match gains `location: {file, line_start, line_end, signature, parent_symbol}` (one match per definition), or `location: null` for non-AST matches (paths, test bindings, component refs). The existing keys, including `file_path` (spec path), are unchanged.
+* **`get_repo_map()`:** builds `symbols_by_file` from `code_symbols` (`ORDER BY file_path, line_start`) as `CodeSymbol` instances and calls `generate_repo_map()` unchanged. It makes zero `extract_symbols()` calls and zero source reads when the index is warm.
+
+=== 5. Multi-package tracking and recursive ownership (CMP-INCREMENTAL-SYNC-ENGINE)
+* `is_dirty()` and the incremental owner fallback (currently `? LIKE entities.package_path || '%'`) read **all** entries from `symbol_mappings WHERE kind = 'package_path'`. `entities.package_path` keeps the first entry for display and FTS only.
+* Per-spec sync only records `package_path` / `source_path` / `owned_path` declarations; it never indexes source files itself. A **global ownership post-pass** indexes every candidate file exactly once per sync (it runs only on forced syncs or when specifications were added, modified or deleted: code-only syncs index just the dirty files, so ownership cannot change without a spec change) then walks every package directory recursively. The walk uses `os.walk` with the same `excluded_dirs` pruning and test-file exclusion as `is_dirty()`, and assigns each unindexed code file an owner using this precedence:
+  . exact component `source_path` match in **any** container (sets `component_id`);
+  . highest `match_path_pattern()` score over `owned_path` globs;
+  . longest `package_path` prefix across all entries of all containers.
+* The result does not depend on the order specs are processed. Example: `src/eidos/core/graph_index.py` stays with `CNT-EIDOS-INDEX` (rule 1) even though it lies under `CNT-EIDOS-CORE`'s `src/eidos/core`.
+
+=== 6. Living specification updates
+* [index.adoc](file:///home/MTS/marwan.chawa/WS/eidos/eidos/architecture/containers/index.adoc): add `symbol_mappings` and `code_symbols` to the `CMP-GRAPH-STORAGE` row and add the missing `CMP-AST-SYMBOL-INDEXER` row to the prose table.
+* [cli.adoc contract](file:///home/MTS/marwan.chawa/WS/eidos/eidos/architecture/contracts/cli.adoc): document the `location` object in `find-symbol --json`.
+* [living-spec-engine.adoc](file:///home/MTS/marwan.chawa/WS/eidos/eidos/domains/spec-engine/capabilities/living-spec-engine.adoc): patch `INV-KNOWLEDGE-GRAPH-CATALOG`.
+* [agent-adapter.adoc](file:///home/MTS/marwan.chawa/WS/eidos/eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc): add `INV-SYMBOL-LOCATION-FIDELITY` (agent-facing `find-symbol` / `repo-map` fidelity belongs to `CAP-AGENT-001`; this also keeps the `CNT-EIDOS-CORE` guardrails context slice within its token budget).
+
+== Out of Scope
+* Dirty-tracking non-code assets (e.g. `assets/schemas/*.yaml`). The schema digest is handled by DLT-2026-035.
+* Removing duplicated AST rows from `symbol_mappings` (deferred until all consumers read `code_symbols`).
+* Diff-aware spec coverage in `eidos drift` (DLT-2026-039).
+
+== Coordination
+* **DLT-2026-035:** shared `index.db` schema version (see §2).
+* **DLT-2026-036:** touches `graph_index.py` FTS indexing; no table overlap.
+* **DLT-2026-038:** moves `find-symbol` rendering into `src/eidos/cli/index_commands.py`; apply the `CMP-CLI-INDEX-COMMANDS` change wherever it lives at merge time.
 
 == Verification Criteria
+All bound in `tests/test_graph_index.py`:
 
-* `eidos index find-symbol GraphIndex --json` returns `file_path: "src/eidos/core/graph_index.py"`, `line_start`, `line_end`, and `signature`.
-* `GraphIndex.get_repo_map()` executes with zero `ASTIndexer.extract_symbols()` calls when the index is warm.
-* Appending only whitespace or `// comment` to `eidos/architecture/containers/core.adoc` after adding a new public class in `src/eidos/core/` fails `eidos drift` with an explicit diff-coverage diagnostic.
-
+* `test_find_symbol_returns_source_location`: `eidos index find-symbol ArchitecturalIndex --json` returns a match with `location.file == "src/eidos/core/graph_index.py"`, `location.line_start <= location.line_end`, and a non-empty `signature`. The match's `file_path` still equals `eidos/architecture/containers/index.adoc`.
+* `test_repo_map_warm_index_does_not_parse_sources`: with `extract_symbols` patched to raise, `get_repo_map()` on a warm index succeeds and equals the output of the pre-change implementation for the same fixture.
+* `test_code_symbols_invalidated_on_edit_and_delete` (binds `INV-SYMBOL-LOCATION-FIDELITY`): shifting a function down 10 lines leaves exactly one row with the new `line_start`. Deleting the file leaves zero `code_symbols` rows, and `find-symbol` no longer returns the symbol.
+* `test_schema_version_mismatch_rebuilds_cache`: opening a `1.0.0` `index.db` rebuilds it and stores the current `schema_version`.
+* `test_is_dirty_tracks_secondary_package_paths`: for a container with `package_path: [src/pkg, frontend]`, touching `frontend/app.ts` makes `is_dirty()` true.
+* `test_recursive_package_indexing_respects_global_ownership`: nested-subdirectory files are indexed for a container that declares inline components, and a file claimed by another container's component `source_path` keeps that owner under every spec processing order.
+* Existing `tests/test_graph_index.py::test_spike_a_schema_initialization_and_sync` (binds `INV-KNOWLEDGE-GRAPH-CATALOG`) stays green. `eidos validate eidos` and `eidos drift` are clean.

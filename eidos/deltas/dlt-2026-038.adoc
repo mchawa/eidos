@@ -2,75 +2,174 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-038
-title: "Modularize Core and CLI God Modules and Bundle Air-Gapped AsciiDoc/Mermaid in Portal"
-status: proposed
+title: "Modularize Core and CLI God Modules into 1-to-1 C4 Component Modules"
+status: applied
 vcs:
-  branch: refactor/modularize-engine-cli-and-airgap-portal
+  branch: refactor/modularize-core-and-cli
 intent:
   kind: refactor
-  motivation: "Decompose monolithic 'src/eidos/core/scaffolder.py' (1,611 lines) and 'src/eidos/cli/main.py' (2,622 lines) so each C4 Level 3 component maps 1-to-1 to a focused Python module, and upgrade the Living Web Portal with a standards-compliant AsciiDoc processor and locally bundled Mermaid.js for true 100% air-gapped operation."
+  motivation: "Decompose monolithic 'src/eidos/core/scaffolder.py' (2,039 lines) and 'src/eidos/cli/main.py' (2,636 lines) so each declared C4 Level 3 component maps 1-to-1 to a focused Python module, and declare the SpecDelta engine that currently hides inside 'scaffolder.py' as its own component. Pure code motion: no behavior, CLI surface, or JSON output changes."
 mutations:
+  # --- Core container ---
+  - action: add_component
+    target_container: CNT-EIDOS-CORE
+    target_component: CMP-DELTA-ENGINE
+    details: "Declare 'CMP-DELTA-ENGINE' (DeltaEngine) in 'eidos/architecture/containers/core.adoc' with source_path 'src/eidos/core/lifecycle/delta_engine.py', owning SpecDelta listing, status summaries, by-status view sync, baseline snapshots, 'verify_delta_mutations', 'execute_delta_mutations', and 'apply_delta'. Update both the frontmatter and the AsciiDoc component table."
   - action: modify_component
-    target_component: CNT-EIDOS-CORE
-    details: "Split 'src/eidos/core/scaffolder.py' into focused C4 Level 3 component modules matching 'eidos/architecture/containers/core.adoc': 'src/eidos/core/scaffolder.py' ('CMP-LIFECYCLE-SCAFFOLDER'), 'src/eidos/core/design_engine.py' ('CMP-DESIGN-ENGINE'), 'src/eidos/core/initializer.py' ('CMP-REPO-INITIALIZER'), and 'src/eidos/core/delta_engine.py' ('CMP-DELTA-ENGINE' with git-diff/mtime-aware 'verify_delta_mutations'), preserving re-exports in 'scaffolder.py' for backwards compatibility."
+    target_component: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Narrow responsibility to spec scaffolding, reference-safety checks, and component promote/inline (drop 'manages flat SpecDelta lifecycles'). source_path becomes ['src/eidos/core/lifecycle/scaffolder.py', 'src/eidos/core/lifecycle/catalog.py']; 'catalog.py' hosts the shared low-level helpers ('find_spec_by_id_or_path', '_build_spec_catalog*', frontmatter render/split helpers, 'normalize_id') so 'delta_engine.py', 'design_engine.py', 'initializer.py', and 'audit.py' import from 'catalog.py' rather than 'scaffolder.py' (no import cycles). 'scaffolder.py' keeps permanent backwards-compatible re-exports of every previously public name."
+    expect:
+      source_path: "src/eidos/core/lifecycle/catalog.py"
   - action: modify_component
-    target_component: CNT-EIDOS-CLI
-    details: "Decompose 'src/eidos/cli/main.py' into modular command submodules under 'src/eidos/cli/' matching the C4 Level 3 components in 'eidos/architecture/containers/cli.adoc' ('spec_commands.py', 'delta_commands.py', 'plugin_commands.py', 'drift_commands.py', 'index_commands.py', 'component_commands.py', 'portal_commands.py', 'hook_commands.py'), with 'main.py' serving as the root Typer dispatcher."
+    target_component: CMP-DESIGN-ENGINE
+    details: "Move design system, W3C DTCG token, UI component, and screen scaffolding out of 'scaffolder.py' into 'src/eidos/core/lifecycle/design_engine.py'."
+    expect:
+      source_path: "src/eidos/core/lifecycle/design_engine.py"
   - action: modify_component
-    target_component: CNT-EIDOS-PORTAL
-    details: "Replace the regex-based 'AsciiDocRenderer.tsx' in 'src/eidos/portal/frontend/' with a comprehensive AsciiDoc AST renderer supporting '[quote]' blocks, callouts, multi-line tables, and 'xref:' links; bundle Mermaid.js and fonts directly into the single-file Vite build ('src/eidos/portal/assets.py') so 'eidos serve' and 'eidos build-site' make zero external CDN requests ('cdn.jsdelivr.net', 'fonts.googleapis.com')."
-  - action: patch_invariant
-    target_invariant_id: INV-PORTAL-ZERO-NODE-DEP
-    target_capability: CAP-EXP-001
-    details: "Verify that the compiled portal HTML bundle ('PORTAL_HTML_TEMPLATE') contains zero external HTTP/HTTPS script or stylesheet CDN dependencies and renders offline in air-gapped environments."
-blast_radius:
-  impacted_components:
+    target_component: CMP-REPO-INITIALIZER
+    details: "Move 'init_repository', baseline templates, and '.gitkeep'/'.gitignore' bootstrapping into 'src/eidos/core/lifecycle/initializer.py'."
+    expect:
+      source_path: "src/eidos/core/lifecycle/initializer.py"
+  # --- CLI container ---
+  - action: modify_component
+    target_component: CMP-CLI-APP
+    details: "'main.py' remains the root Typer dispatcher and the 'eidos = eidos.cli.main:app' entry point; it imports each command module and calls its 'register(app)' hook, then pins the root help order with an explicit 'ROOT_COMMAND_ORDER' so registration order across modules cannot change the help layout. Shared console, error-code translation, and help-panel constants move to 'src/eidos/cli/_shared.py' so command modules never import 'main.py'."
+    expect:
+      source_path: "src/eidos/cli/_shared.py"
+  - action: modify_component
+    target_component: CMP-CLI-SPEC-COMMANDS
+    details: "Extract the 'spec' sub-app and the spec-oriented root commands ('validate', 'lint', 'containers', 'components', and the 'create' / 'delete' / 'list' shortcuts) to 'src/eidos/cli/spec_commands.py'. 'version' and 'info' stay in 'main.py'."
+    expect:
+      source_path: "src/eidos/cli/spec_commands.py"
+  - action: modify_component
+    target_component: CMP-CLI-DELTA-COMMANDS
+    details: "Extract 'delta' sub-app and the 'changelog' shortcut to 'src/eidos/cli/delta_commands.py'."
+    expect:
+      source_path: "src/eidos/cli/delta_commands.py"
+  - action: modify_component
+    target_component: CMP-CLI-PLUGIN-COMMANDS
+    details: "Extract 'plugin' sub-app and the 'install' shortcut to 'src/eidos/cli/plugin_commands.py'."
+    expect:
+      source_path: "src/eidos/cli/plugin_commands.py"
+  - action: modify_component
+    target_component: CMP-CLI-DRIFT-COMMANDS
+    details: "Extract 'drift', 'reconcile', and 'sync' to 'src/eidos/cli/drift_commands.py'."
+    expect:
+      source_path: "src/eidos/cli/drift_commands.py"
+  - action: modify_component
+    target_component: CMP-CLI-INIT-COMMAND
+    details: "Extract 'init' to 'src/eidos/cli/init_command.py'."
+    expect:
+      source_path: "src/eidos/cli/init_command.py"
+  - action: modify_component
+    target_component: CMP-CLI-CONTEXT-COMMAND
+    details: "Extract 'context' to 'src/eidos/cli/context_command.py'."
+    expect:
+      source_path: "src/eidos/cli/context_command.py"
+  - action: modify_component
+    target_component: CMP-CLI-INDEX-COMMANDS
+    details: "Extract 'index' sub-app and the 'repo-map' / 'find-symbol' shortcuts to 'src/eidos/cli/index_commands.py'."
+    expect:
+      source_path: "src/eidos/cli/index_commands.py"
+  - action: modify_component
+    target_component: CMP-CLI-COMPONENT-COMMANDS
+    details: "Extract 'component' sub-app to 'src/eidos/cli/component_commands.py'."
+    expect:
+      source_path: "src/eidos/cli/component_commands.py"
+  - action: modify_component
+    target_component: CMP-CLI-PORTAL-COMMANDS
+    details: "Extract 'portal' sub-app and the 'serve' / 'build-site' shortcuts to 'src/eidos/cli/portal_commands.py'."
+    expect:
+      source_path: "src/eidos/cli/portal_commands.py"
+  - action: modify_component
+    target_component: CMP-CLI-DOCTOR-HOOKS
+    details: "Extract 'doctor' and the 'hook' sub-app to 'src/eidos/cli/doctor_hook_commands.py'."
+    expect:
+      source_path: "src/eidos/cli/doctor_hook_commands.py"
+affects:
+  containers:
     - CNT-EIDOS-CORE
     - CNT-EIDOS-CLI
-    - CNT-EIDOS-PORTAL
+  contracts:
+    - CTR-EIDOS-CLI
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-CORE
+    - CNT-EIDOS-CLI
+  impacted_components:
     - CMP-LIFECYCLE-SCAFFOLDER
     - CMP-DESIGN-ENGINE
     - CMP-REPO-INITIALIZER
+    - CMP-DELTA-ENGINE
+    - CMP-DELTA-AUDITOR
     - CMP-CLI-APP
-    - CMP-PORTAL-ASSETS
-    - CMP-PORTAL-BUILDER
+    - CMP-CLI-SPEC-COMMANDS
+    - CMP-CLI-DELTA-COMMANDS
+    - CMP-CLI-PLUGIN-COMMANDS
+    - CMP-CLI-DRIFT-COMMANDS
+    - CMP-CLI-INIT-COMMAND
+    - CMP-CLI-CONTEXT-COMMAND
+    - CMP-CLI-INDEX-COMMANDS
+    - CMP-CLI-COMPONENT-COMMANDS
+    - CMP-CLI-PORTAL-COMMANDS
+    - CMP-CLI-DOCTOR-HOOKS
   invariants_to_enforce:
-    - INV-PORTAL-ZERO-NODE-DEP
-    - INV-PORTAL-INTERACTIVE-C4
-    - INV-PORTAL-READING-ERGONOMICS
     - INV-MUTATION-REVERSIBILITY
+    - INV-COMPONENT-CENTRALIZATION-MANDATE
+    - INV-COMPONENT-CONTAINER-AFFINITY
+    - INV-INTERFACE-BOUNDARY-GOVERNANCE
+    - INV-ENGINE-GENERICITY
+    - INV-HOOK-CLI-NATIVE
+    - INV-HOOK-FAIL-LOUD
 ---
-= SpecDelta: Modularize Core and CLI God Modules and Bundle Air-Gapped AsciiDoc/Mermaid in Portal
+= SpecDelta: Modularize Core and CLI God Modules into 1-to-1 C4 Component Modules
 :toc: left
 
 == Problem Statement
 
-1. **C4 Level 3 "God Module" Drift in `CNT-EIDOS-CORE` and `CNT-EIDOS-CLI`**:
-   * `eidos/architecture/containers/core.adoc` declares `CMP-LIFECYCLE-SCAFFOLDER`, `CMP-DESIGN-ENGINE`, and `CMP-REPO-INITIALIZER` as distinct C4 Level 3 components, yet all three point to the same 1,611-line file (`src/eidos/core/scaffolder.py`), which also houses the SpecDelta state machine (`verify_delta_mutations`, `execute_delta_mutations`).
-   * `eidos/architecture/containers/cli.adoc` declares 11 distinct C4 Level 3 components (`CMP-CLI-APP` through `CMP-CLI-DOCTOR-HOOKS`), yet all 11 point to the same 2,622-line `src/eidos/cli/main.py`.
-2. **Shallow `verify_delta_mutations` Check**:
-   * In `scaffolder.py` (lines 942–1074), `verify_delta_mutations()` marks `modify_component`, `extend_capability`, `modify_contract`, and `patch_invariant` as `verified = True` merely if the target entity ID exists in the catalog—even if the specification file was never edited.
-3. **Portal Regex AsciiDoc Parser & External CDN Leakage**:
-   * `AsciiDocRenderer.tsx` is a custom ~400-line line-by-line regex parser that fails on standard AsciiDoc blocks such as `[quote]` (used in `eidos/system.adoc`), `include::`, definition lists, and complex tables.
-   * `src/eidos/portal/assets.py` loads Mermaid v10 (`https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js`) and Google Fonts from external CDNs, breaking C4 diagrams in air-gapped environments despite `builder.py` and `POL-004` promising zero-fetch offline execution.
+* `eidos/architecture/containers/core.adoc` declares `CMP-LIFECYCLE-SCAFFOLDER`, `CMP-DESIGN-ENGINE`, and `CMP-REPO-INITIALIZER` as distinct components, yet all three point to the same 2,039-line `src/eidos/core/scaffolder.py`. That file also houses an undeclared SpecDelta engine (`verify_delta_mutations`, `execute_delta_mutations`, `apply_delta`, baseline snapshots).
+* `eidos/architecture/containers/cli.adoc` declares 11 components (`CMP-CLI-APP` through `CMP-CLI-DOCTOR-HOOKS`), yet all 11 point to the same 2,636-line `src/eidos/cli/main.py`.
+* Because of this, `eidos context`, `eidos drift`, and blast-radius queries cannot tell these components apart: every change looks like a change to all of them.
 
-== Architectural & Behavioral Mutations
+== Architectural Mutations
 
-1. **1-to-1 C4 Component Modularization in `src/eidos/core/`**:
-   * Extract `src/eidos/core/design_engine.py` (`CMP-DESIGN-ENGINE`: W3C DTCG tokens, design systems, UI components, screens).
-   * Extract `src/eidos/core/initializer.py` (`CMP-REPO-INITIALIZER`: `init_repository` and baseline templates).
-   * Extract `src/eidos/core/delta_engine.py` (`CMP-DELTA-ENGINE`: SpecDelta listing, status, `execute_delta_mutations`, and diff/mtime-aware `verify_delta_mutations` that checks whether `modify_*` / `extend_*` / `patch_*` targets were actually modified relative to the delta creation time or Git base).
-   * Keep `src/eidos/core/scaffolder.py` focused on `CMP-LIFECYCLE-SCAFFOLDER` (`create_spec`, `delete_spec`, `promote_component`, `inline_component`, and backwards-compatible re-exports).
-   * Update `eidos/architecture/containers/core.adoc` `source_path` mappings to reflect the dedicated files.
-2. **1-to-1 C4 Component Modularization in `src/eidos/cli/`**:
-   * Split `src/eidos/cli/main.py` into domain-aligned command modules (`spec_commands.py`, `delta_commands.py`, `plugin_commands.py`, `drift_commands.py`, `index_commands.py`, `component_commands.py`, `portal_commands.py`, `hook_commands.py`) registered on the root `app` in `main.py`, and update `eidos/architecture/containers/cli.adoc` `source_path` entries.
-3. **Air-Gapped Portal Bundle & Full AsciiDoc Rendering (`src/eidos/portal/`)**:
-   * Upgrade `AsciiDocRenderer.tsx` to support `[quote]` blocks, callouts, definition lists, multi-line tables, and cross-spec `xref:` navigation.
-   * Bundle Mermaid and required font metrics locally inside the frontend build and recompile `src/eidos/portal/assets.py` so zero external `https://cdn.jsdelivr.net` or `https://fonts.googleapis.com` URLs appear in `PORTAL_HTML_TEMPLATE`.
+Pure code motion: no behavior changes, CLI command tree unchanged, `CTR-EIDOS-CLI` unchanged.
+
+[cols="2,3", options="header"]
+|===
+| Component | Module(s)
+| `CMP-LIFECYCLE-SCAFFOLDER` | `src/eidos/core/lifecycle/scaffolder.py` (+ compat re-exports), `src/eidos/core/lifecycle/catalog.py`
+| `CMP-DESIGN-ENGINE` | `src/eidos/core/lifecycle/design_engine.py`
+| `CMP-REPO-INITIALIZER` | `src/eidos/core/lifecycle/initializer.py`
+| `CMP-DELTA-ENGINE` _(new)_ | `src/eidos/core/lifecycle/delta_engine.py`
+| `CMP-CLI-APP` | `src/eidos/cli/main.py`, `src/eidos/cli/_shared.py`
+| `CMP-CLI-SPEC-COMMANDS` | `src/eidos/cli/spec_commands.py`
+| `CMP-CLI-DELTA-COMMANDS` | `src/eidos/cli/delta_commands.py`
+| `CMP-CLI-PLUGIN-COMMANDS` | `src/eidos/cli/plugin_commands.py`
+| `CMP-CLI-DRIFT-COMMANDS` | `src/eidos/cli/drift_commands.py`
+| `CMP-CLI-INIT-COMMAND` | `src/eidos/cli/init_command.py`
+| `CMP-CLI-CONTEXT-COMMAND` | `src/eidos/cli/context_command.py`
+| `CMP-CLI-INDEX-COMMANDS` | `src/eidos/cli/index_commands.py`
+| `CMP-CLI-COMPONENT-COMMANDS` | `src/eidos/cli/component_commands.py`
+| `CMP-CLI-PORTAL-COMMANDS` | `src/eidos/cli/portal_commands.py`
+| `CMP-CLI-DOCTOR-HOOKS` | `src/eidos/cli/doctor_hook_commands.py`
+|===
+
+* **Dependency direction (module-level graph is acyclic):** `catalog.py` ← `delta_engine.py` ← {`initializer.py`, `scaffolder.py`}, `design_engine.py` ← `scaffolder.py`, and `catalog.py` ← `audit.py`. `scaffolder.py` re-exports from the others, and none of them imports `scaffolder.py` at module level. The single exception is a function-local `from eidos.core.lifecycle.scaffolder import create_spec` inside `execute_delta_mutations`: `create_spec` itself needs the view-sync and baseline helpers in `delta_engine.py`, so the call-time import is what keeps the module graph a DAG. `create_spec` delegates the design-layer branches to `design_engine.build_design_spec`. In the CLI, `_shared.py` ← every command module ← `main.py`; command modules expose `register(app: typer.Typer) -> None` and never import `main.py`. The only sibling import is `component_commands.py` → `spec_commands.components` (the `component list` command reuses it).
+* **Compatibility:** `eidos = "eidos.cli.main:app"` and every name importable today from `eidos.core.lifecycle.scaffolder` and `eidos.cli.main` stay importable as the same objects. The re-exports are permanent (no deprecation planned).
+* Update the `components` frontmatter and the AsciiDoc component tables in both `core.adoc` and `cli.adoc`.
 
 == Verification Criteria
 
-* Every C4 Level 3 component in `core.adoc` and `cli.adoc` maps to its own dedicated Python module path, and all existing imports from `eidos.core.scaffolder` and `eidos.cli.main` remain backwards-compatible.
-* `verify_delta_mutations()` reports `modify_component` / `extend_capability` mutations as `PENDING` until the target specification file is modified or contains the expected mutation details.
-* `PORTAL_HTML_TEMPLATE` in `src/eidos/portal/assets.py` contains zero `cdn.jsdelivr.net` or `fonts.googleapis.com` references and renders `[quote]` blocks and C4 Mermaid diagrams 100% offline.
+* `eidos delta verify DLT-2026-038` reports every mutation as verified through its `expect.source_path` post-condition (and `CMP-DELTA-ENGINE` as `FOUND`).
+* `tests/test_cli_json.py::test_cli_command_tree_unchanged`: the recursive Typer command tree (commands, options, help panels) matches a snapshot taken before the split.
+* `tests/test_scaffolder.py::test_scaffolder_backward_compatible_reexports`: every previously public name in `eidos.core.lifecycle.scaffolder` resolves to the same object as its new home module.
+* `tests/test_scaffolder.py::test_core_and_cli_modules_import_without_cycles`: each new module imports cleanly in a fresh interpreter, in any order.
+* Existing suites (`test_scaffolder.py`, `test_delta_engine.py`, `test_cli_json.py`, `test_plugin.py`, `test_colocated_components.py`, `test_audit.py`) pass unmodified apart from import paths.
+* `eidos validate eidos && eidos drift --uncommitted` exits 0.
 
+== Related Deltas & Sequencing
+
+* **DLT-2026-040** (delta verification evidence) is implemented in `delta_engine.py` and depends on this delta landing first.
+* **DLT-2026-041** (air-gapped portal) is independent and can land in parallel.
+* Land this delta before DLT-2026-035 / DLT-2026-036 touch `CNT-EIDOS-CORE`, so they don't have to rebase across the `scaffolder.py` split.

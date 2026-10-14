@@ -1,8 +1,7 @@
 import * as React from "react";
 import { ZoomIn, ZoomOut, RotateCcw, Maximize2, Move, Expand, Shrink } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-declare const mermaid: any;
+import { getConfiguredMermaid } from "@/lib/mermaid";
 
 export interface MermaidDiagramProps {
   code: string;
@@ -141,37 +140,14 @@ export function MermaidDiagram({
   // Render diagram ONLY when code, dark mode, or id changes
   React.useEffect(() => {
     let isCancelled = false;
-    if (typeof mermaid === "undefined" || !code || !code.trim()) {
+    if (!code || !code.trim()) {
       return;
     }
-
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: isDark ? "dark" : "default",
-      securityLevel: "loose",
-      fontFamily: "Inter, system-ui, sans-serif",
-      themeVariables: isDark
-        ? {
-            darkMode: true,
-            background: "transparent",
-            mainBkg: "#111827",
-            nodeBorder: "#3b82f6",
-            lineColor: "#60a5fa",
-            textColor: "#f8fafc",
-          }
-        : {
-            darkMode: false,
-            background: "transparent",
-            mainBkg: "#ffffff",
-            nodeBorder: "#2563eb",
-            lineColor: "#2563eb",
-            textColor: "#0f172a",
-          },
-    });
 
     const renderCode = async () => {
       try {
         setError(null);
+        const mermaid = await getConfiguredMermaid(isDark);
         const uniqueId = `mermaid-${id || "dia"}-${Math.random().toString(36).substring(2, 9)}`;
         const { svg } = await mermaid.render(uniqueId, code.trim());
         if (!isCancelled && diagramRef.current) {

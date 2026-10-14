@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from eidos.core.validator import SpecValidator
+from eidos.core.spec.validator import SpecValidator
 from eidos.portal.assets import PORTAL_FAVICON_SVG, PORTAL_HTML_TEMPLATE
 from eidos.portal.generator import get_portal_data
 

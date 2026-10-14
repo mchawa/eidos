@@ -62,7 +62,7 @@ Previously, broken cross-references between component contracts and provider IDs
 could go undetected until runtime portal rendering.
 
 == Applied Changes
-* Updated `eidos.core.validator.SpecValidator` to enforce bidirectional link checks.
+* Updated `eidos.core.spec.validator.SpecValidator` to enforce bidirectional link checks.
 * Updated `CTR-EIDOS-CLI` contract specification.
 * Added invariant test `tests/test_validator.py::test_cross_reference_integrity`.
 ```

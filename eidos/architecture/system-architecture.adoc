@@ -51,7 +51,7 @@ c4_containers:
     name: "Eidos Architectural Knowledge Graph & Retrieval Index"
     container_type: "library"
     runtime: "Python 3.12 / SQLite3 / FTS5 / CTE"
-    package_path: "src/eidos/core/graph_index.py"
+    package_path: "src/eidos/core/index"
   - container_ref: "CNT-EIDOS-DOCS"
     name: "Eidos User Documentation System"
     container_type: "web_app"
@@ -152,7 +152,7 @@ Eidos is distributed as a monorepo consisting of the following primary Level 2 c
 | `CNT-EIDOS-PLUGIN` | Eidos Agent Plugin & Extension Manager | Tier 2: Extensibility & Agent Integration | Library | `src/eidos/plugin`, `assets/plugin_reference`
 | `CNT-EIDOS-CORE` | Eidos Living Spec & Design Core Engine | Tier 3: Core Domain & Spec Engine | Library | `src/eidos/core`, `assets/schemas`
 | `CNT-EIDOS-VCS` | Eidos Git Drift & Lifecycle Engine | Tier 3: Core Domain & Spec Engine | Library | `src/eidos/vcs`
-| `CNT-EIDOS-INDEX` | Eidos Architectural Knowledge Graph & Retrieval Index | Tier 4: Knowledge Graph & Persistence | Library | `src/eidos/core/graph_index.py`
+| `CNT-EIDOS-INDEX` | Eidos Architectural Knowledge Graph & Retrieval Index | Tier 4: Knowledge Graph & Persistence | Library | `src/eidos/core/index`
 |===
 
 The C4 Level 2 Container Diagram explicitly renders the inter-container dependency connections:

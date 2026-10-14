@@ -246,7 +246,7 @@ components:
   - id: CMP-CORE-PARSER
     name: "SpecParser"
     responsibility: "Parses AsciiDoc files with YAML frontmatter."
-    source_path: "src/eidos/core/parser.py"
+    source_path: "src/eidos/core/spec/parser.py"
 contracts:
   provides:
     - "eidos/architecture/contracts/validator.adoc"
@@ -275,7 +275,7 @@ id: CMP-CORE-VALIDATOR
 name: "Specification & Schema Validator"
 container: CNT-EIDOS-CORE
 status: active
-package_path: "src/eidos/core/validator.py"
+package_path: "src/eidos/core/spec/validator.py"
 responsibility: "Validates specifications against JSON Schemas."
 interfaces:
   provides:

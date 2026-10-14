@@ -52,6 +52,9 @@ technical:
     - id: INV-PORTAL-ZERO-NODE-DEP
       rule: "The web portal daemon and static site builder must operate using Python standard library without external Node.js/npm dependencies."
       test_binding: "tests/test_portal.py::test_portal_data_generation"
+    - id: INV-PORTAL-AIR-GAPPED-BUNDLE
+      rule: "The portal bundle served by 'eidos serve' and emitted by 'eidos build-site' must load zero scripts, stylesheets, fonts, or other subresources from remote origins; Mermaid.js, Asciidoctor.js, and web fonts are embedded."
+      test_binding: "tests/test_portal.py::test_portal_bundle_has_no_remote_subresources"
     - id: INV-PORTAL-INTERACTIVE-C4
       rule: "The portal must render a dynamic hierarchical C4 architecture explorer enabling clickable drill-down from L1 System Context to L2 Containers and L3 Component Whiteboxes with breadcrumbs and component inspection."
       test_binding: "tests/test_portal.py::test_static_portal_builder"

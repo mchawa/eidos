@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from eidos.core.parser import parse_spec_file
+from eidos.core.spec.parser import parse_spec_file
 
 STANDARD_EXCLUDED_DIRS = {
     ".git",

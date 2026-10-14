@@ -5,7 +5,7 @@ id: CAP-VCS-001
 title: "Git-Native Spec-to-Code Drift Detection"
 domain: DOM-VCS-LIFECYCLE
 status: active
-version: "1.2.0"
+version: "1.3.0"
 
 business:
   personas:
@@ -31,6 +31,9 @@ technical:
     - id: INV-DRIFT-DETECTION-ACCURACY
       rule: "The drift detection engine must accurately identify structural code and design token/props modifications, verify static test bindings across domain, policy, and architecture component invariants, and enforce component-scoped 1-hop living specification synchronization without global system.adoc bypasses."
       test_binding: "tests/test_drift.py::test_drift_detection_code_without_specs"
+    - id: INV-DRIFT-DIFF-AWARE-COVERAGE
+      rule: "Structural code additions (new source files not paired as a move by content/symbols, or new public symbols) are only covered by 1-hop specification edits that change parsed YAML frontmatter or comment- and whitespace-normalized body content (preserving verbatim blocks); new files outside the owner's declared source_path/owned_path additionally require an owner-spec edit that changes ownership keys or mentions the file path, file name with extension, or a new symbol."
+      test_binding: "tests/test_drift.py::test_trivial_spec_edit_does_not_cover_structural_addition"
 ---
 = Capability: Git-Native Spec-to-Code Drift Detection
 :toc: left
@@ -45,4 +48,5 @@ By leveraging the SQLite Knowledge Graph (`eidos/.cache/index.db`), drift detect
 * **Graph-Powered Reverse Symbol Resolution**: Resolving modified source code file paths to internal C4 modules and owning container IDs (`CMP-*`) in sub-millisecond SQLite queries rather than linear disk crawls.
 * **1-Hop Neighborhood Reconciliation**: Querying the knowledge graph during `eidos reconcile` to discover bound interface contracts (`CTR-*`), domain capabilities (`CAP-*`), and parent containers affected by code changes.
 * **Single Source of Truth Enforcement**: Gating CI/CD pipelines via `eidos drift --strict` to guarantee that no pull request merges with un-synchronized specifications (`POL-001`).
+* **Diff-Aware Spec Coverage**: Rejecting "touch-to-appease" spec edits (blank lines, `//` comments, re-wrapping) as coverage for new source files and new public symbols, and reporting them in `trivially_covered_files`.
 * **Direct Mode Frictionless Co-evolution**: Enabling developers and autonomous agents to write code first and instantly reconcile specifications in the same commit.

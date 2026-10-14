@@ -209,7 +209,7 @@ def get_context_slice(
         ArchitecturalContextSlice with matched components, contracts,
         capabilities, invariants, and policies.
     """
-    from eidos.core.graph_index import get_architectural_index
+    from eidos.core.index.graph_index import get_architectural_index
 
     root = (repo_root or Path.cwd()).resolve()
     target_eidos = (eidos_dir or (root / "eidos")).resolve()

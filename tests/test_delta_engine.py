@@ -5,13 +5,13 @@ import json
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
-from eidos.core.parser import parse_spec_file
-from eidos.core.scaffolder import (
+from eidos.core.lifecycle.scaffolder import (
     create_spec,
     execute_delta_mutations,
     init_repository,
     verify_delta_mutations,
 )
+from eidos.core.spec.parser import parse_spec_file
 
 runner = CliRunner()
 

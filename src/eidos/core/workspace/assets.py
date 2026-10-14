@@ -6,13 +6,13 @@ from pathlib import Path
 def get_assets_root() -> Path:
     """Locate the root assets directory across local repo checkouts and installed wheels."""
     # 1. Check embedded in package directory (e.g. site-packages/eidos/assets or local editable)
-    pkg_assets = Path(__file__).resolve().parent.parent / "assets"
+    pkg_assets = Path(__file__).resolve().parents[2] / "assets"
     if pkg_assets.is_dir():
         return pkg_assets
 
     # 2. Check repository root by ascending from this source file
     cur = Path(__file__).resolve().parent
-    for _ in range(5):
+    for _ in range(6):
         candidate = cur / "assets"
         if candidate.is_dir():
             return candidate

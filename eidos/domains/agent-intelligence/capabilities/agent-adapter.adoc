@@ -55,6 +55,9 @@ technical:
     - id: INV-AGENT-GRAPH-INDEX-FRESHNESS
       rule: "The embedded architectural knowledge graph must automatically detect drift and lazily synchronize before query execution, maintaining sub-10ms response times with zero external runtime dependencies."
       test_binding: "tests/test_graph_index.py::test_spike_b_zero_drift_on_mutation"
+    - id: INV-SYMBOL-LOCATION-FIDELITY
+      rule: "Indexed AST symbols must keep accurate source file and line coordinates, invalidated on edit, deletion, or ownership change, and served to find-symbol and repo-map without re-parsing source."
+      test_binding: "tests/test_graph_index.py::test_code_symbols_invalidated_on_edit_and_delete"
 ---
 = Capability: Universal Agent Adapter & Context Slicing Layer
 :toc: left

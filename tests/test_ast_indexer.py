@@ -15,11 +15,11 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
-from eidos.core.ast_indexer import (
+from eidos.core.index.ast_indexer import (
     FallbackIndexer,
     get_ast_indexer,
 )
-from eidos.core.graph_index import get_architectural_index
+from eidos.core.index.graph_index import get_architectural_index
 
 runner = CliRunner()
 
@@ -30,7 +30,7 @@ def test_inv_index_optional_ast_fallback():
     assert isinstance(fallback_idx, FallbackIndexer)
 
     # 1. Test Python symbol extraction on ast_indexer.py
-    py_path = Path("src/eidos/core/ast_indexer.py")
+    py_path = Path("src/eidos/core/index/ast_indexer.py")
     symbols = fallback_idx.extract_symbols(py_path)
     assert len(symbols) >= 10
     names = {s.name for s in symbols}
@@ -57,11 +57,11 @@ def test_inv_index_polyglot_symbol_precision():
     is_instrumented = "coverage" in sys.modules or sys.gettrace() is not None
 
     # Warm up symbol extractor to avoid one-off dynamic import overhead skewing latency
-    idx.extract_symbols(Path("src/eidos/core/ast_indexer.py"))
+    idx.extract_symbols(Path("src/eidos/core/index/ast_indexer.py"))
 
     # 1. Python file symbol precision
     t0 = time.perf_counter()
-    py_symbols = idx.extract_symbols(Path("src/eidos/core/ast_indexer.py"))
+    py_symbols = idx.extract_symbols(Path("src/eidos/core/index/ast_indexer.py"))
     py_ms = (time.perf_counter() - t0) * 1000
     max_py_ms = 60.0 if is_instrumented else 25.0
     assert py_ms < max_py_ms  # Well within latency limits
@@ -92,7 +92,7 @@ def test_inv_index_polyglot_symbol_precision():
 def test_inv_index_ai_repo_map_budget():
     """Verify INV-INDEX-AI-REPO-MAP-BUDGET: Repo map achieves >= 85% token compression in sub-15ms."""
     repo_root = Path(__file__).parent.parent
-    core_files = list((repo_root / "src" / "eidos" / "core").glob("*.py"))
+    core_files = list((repo_root / "src" / "eidos" / "core").rglob("*.py"))
     assert len(core_files) >= 5
 
     idx = get_ast_indexer()
@@ -137,7 +137,7 @@ def test_architectural_index_find_symbol_and_repo_map():
     # 2. get_repo_map
     repo_map = arch_idx.get_repo_map(max_tokens=1000)
     assert "# 🗺️ Structural Code Graph (Repo Map)" in repo_map
-    assert "src/eidos/core/ast_indexer.py" in repo_map or "src/eidos/core/graph_index.py" in repo_map
+    assert "src/eidos/core/index/ast_indexer.py" in repo_map or "src/eidos/core/index/graph_index.py" in repo_map
 
 
 def test_cli_repo_map_and_find_symbol():
@@ -178,7 +178,7 @@ def test_cli_repo_map_and_find_symbol():
 
 def test_classify_design_changes_categories():
     """Verify DLT-2026-030: frontend diffs are classified into token / ui_contract / body_only."""
-    from eidos.core.ast_indexer import classify_design_changes
+    from eidos.core.index.ast_indexer import classify_design_changes
 
     # Non-design file
     assert classify_design_changes("a", "b", "src/app.py")[0] == "none"
@@ -204,10 +204,44 @@ def test_classify_design_changes_categories():
 
     # Routes and exports
     routes_old = "const routes = [{ path: '/home' }];\n"
-    assert classify_design_changes(routes_old, routes_old + "routes.push({ path: '/admin' });\n", "routes.tsx")[0] == "ui_contract"
-    assert classify_design_changes("export const A = 1;", "export const A = 1;\nexport const B = 2;", "ui.jsx")[0] == "ui_contract"
+    assert (
+        classify_design_changes(routes_old, routes_old + "routes.push({ path: '/admin' });\n", "routes.tsx")[0]
+        == "ui_contract"
+    )
+    assert (
+        classify_design_changes("export const A = 1;", "export const A = 1;\nexport const B = 2;", "ui.jsx")[0]
+        == "ui_contract"
+    )
 
     # Token modules and added/deleted files
-    assert classify_design_changes("export const c = '#111';", "export const c = '#222';", "md3-tokens.ts")[0] == "token"
+    assert (
+        classify_design_changes("export const c = '#111';", "export const c = '#222';", "md3-tokens.ts")[0] == "token"
+    )
     assert classify_design_changes(None, ".a{}", "new.css")[0] == "token"
     assert classify_design_changes("x", None, "Old.tsx")[0] == "ui_contract"
+
+
+def test_has_structural_changes_unchanged_after_refactor():
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: has_structural_changes keeps its contract after delegating to diff_public_symbols."""
+    from eidos.core.index.ast_indexer import diff_public_symbols, has_structural_changes
+
+    old = "def keep(a):\n    return a\n\n\ndef gone():\n    return 1\n\n\ndef _private():\n    return 0\n"
+    new = "def keep(a, b):\n    return a\n\n\ndef added():\n    return 1\n\n\nclass Fresh:\n    def go(self):\n        return 1\n"
+    diff = diff_public_symbols(old, new, "mod.py")
+    assert diff.added == [("class", "", "Fresh"), ("function", "", "added"), ("method", "Fresh", "go")]
+    assert diff.removed == [("function", "", "gone")]
+    assert diff.changed == [("function", "", "keep")]
+    assert has_structural_changes(old, new, "mod.py") == (True, diff.reasons())
+    assert diff.reasons() == [
+        "added class 'Fresh'",
+        "added function 'added'",
+        "added method 'Fresh.go'",
+        "removed function 'gone'",
+        "changed signature of function 'keep'",
+    ]
+    # Body-only and private edits stay non-structural; added/deleted files stay structural
+    assert has_structural_changes(old, old.replace("return 0", "return 5"), "mod.py") == (False, [])
+    assert has_structural_changes(None, new, "mod.py") == (True, ["added file 'mod.py'"])
+    assert has_structural_changes(old, None, "mod.py") == (True, ["deleted file 'mod.py'"])
+    assert has_structural_changes("a: 1\n", "a: 2\n", "cfg.yaml") == (True, ["modified 'cfg.yaml'"])
+    assert not diff_public_symbols("a: 1\n", "a: 2\n", "cfg.yaml")

@@ -1,0 +1,82 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-040
+title: "Require Modification Evidence in SpecDelta Verification"
+status: proposed
+vcs:
+  branch: fix/delta-verify-modification-evidence
+intent:
+  kind: bugfix
+  bug_classification: spec_gap
+  severity: medium
+  motivation: "'eidos delta verify' still reports modify_*/extend_*/patch_* mutations as fulfilled without evidence of change: it falls back to filesystem mtimes when no local baseline exists, hashes component targets at container-file granularity, accepts invariant existence as proof for patch_invariant, and resolves patch_invariant targets to the capability instead of the invariant. CAP-PROD-002 has no invariant requiring modification evidence."
+mutations:
+  - action: modify_component
+    target_component: CMP-DELTA-ENGINE
+    details: "In 'src/eidos/core/lifecycle/delta_engine.py': (1) '_extract_mutation_target' prefers 'target_invariant_id' for '*_invariant' actions; (2) replace the mtime fallback with a Git baseline (content at the commit that first added the delta file, or HEAD if the delta is uncommitted); with neither a local nor a Git baseline, record a baseline and report UNMODIFIED; (3) hash 'CMP-*' targets by their own component entry, not the whole container file; (4) the capability/invariant structural sub-target check becomes a precondition only and no longer verifies 'patch_invariant' by itself. Append 'verification requires modification evidence' to the component responsibility. The status vocabulary (MODIFIED / UNMODIFIED / MISSING / FOUND) and '--json' shape stay unchanged."
+    expect:
+      responsibility: "modification evidence"
+  - action: extend_capability
+    target_capability: CAP-PROD-002
+    details: "Add a 'Modification-Evidence Verification' key responsibility to 'eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc' and bump the capability version 1.2.0 -> 1.3.0."
+    expect:
+      version: "1.3.0"
+  - action: add_invariant
+    target_invariant_id: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+    details: "Add to CAP-PROD-002. Rule: 'eidos delta verify' must report modify_*/extend_*/patch_* mutations as verified only on positive evidence of change to the targeted entity (a satisfied expect post-condition, or a content digest differing from the delta baseline taken from the local snapshot or the Git commit that introduced the delta), never on entity existence or filesystem modification time alone. test_binding: 'tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence'."
+affects:
+  containers:
+    - CNT-EIDOS-CORE
+  contracts:
+    - CTR-EIDOS-CLI
+  capabilities:
+    - CAP-PROD-002
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-CORE
+  impacted_components:
+    - CMP-DELTA-ENGINE
+    - CMP-CLI-DELTA-COMMANDS
+  invariants_to_enforce:
+    - INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+    - INV-MUTATION-REVERSIBILITY
+---
+= SpecDelta: Require Modification Evidence in SpecDelta Verification
+:toc: left
+
+== Problem Statement
+
+SHA-256 baselines and `expect:` post-conditions already exist in `verify_delta_mutations`, but four paths still report fulfilment without evidence:
+
+. **mtime fallback**: baselines live in the gitignored `eidos/.cache/index.db` and are only recorded by `eidos delta create`. On a fresh clone, or for a hand-authored delta, verification falls back to `target.mtime > delta.mtime`. Observed: the original draft of DLT-2026-038 reported `CNT-EIDOS-CORE` and `CNT-EIDOS-CLI` as `MODIFIED` before any implementation work, because `core.adoc` / `cli.adoc` had been saved after the delta file.
+. **Container-granular hashing**: `CMP-*` targets are hashed by their whole container file, so any edit to `core.adoc` (e.g. by DLT-2026-035 or DLT-2026-036) satisfies every component mutation in it.
+. **Existence-only `patch_invariant`**: when `target_capability` and `target_invariant_id` are both set, the structural sub-target check returns `True` as soon as the invariant is listed in the capability.
+. **Target precedence**: `_extract_mutation_target` reads `target_capability` before `target_invariant_id`, so `patch_invariant` mutations that set both resolve to the capability ID and report `MISSING` forever. DLT-2026-035 is affected today.
+
+== Behavioral Mutations
+
+Implemented in `src/eidos/core/lifecycle/delta_engine.py` (extracted by DLT-2026-038):
+
+. `_extract_mutation_target` prefers `target_invariant_id` for `add_invariant` / `patch_invariant` / `remove_invariant`.
+. The baseline order becomes: local SQLite snapshot → Git (target content at the commit that first added the delta file, via `git log --diff-filter=A --format=%H -1 -- <delta>`, or `HEAD` if the delta is uncommitted) → record a fresh baseline and report `UNMODIFIED`. The `st_mtime_ns` comparison is removed.
+. `CMP-*` targets are digested from their own component entry (as invariants already are), not from the whole container file.
+. The capability/invariant structural sub-target check becomes a precondition (`MISSING` if absent). It no longer counts as evidence of modification.
+. No new status values. `eidos delta verify --json` keeps its output shape, so `CTR-EIDOS-CLI` is unchanged.
+
+== Verification Criteria
+
+* `tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence` (INV-DELTA-VERIFY-MODIFICATION-EVIDENCE) covers:
+** No local baseline, target container touched (newer mtime) but byte-identical to the Git baseline → `UNMODIFIED`.
+** Editing a sibling component in the same container leaves the targeted `CMP-*` → `UNMODIFIED`.
+** `patch_invariant` with `target_capability` + `target_invariant_id` resolves to the invariant, and stays `UNMODIFIED` until its rule or test binding changes.
+** No Git repository and no local baseline → baseline recorded, `UNMODIFIED` (never mtime-based).
+* `tests/test_delta_engine.py::test_delta_verify_declarative_expect_and_patch_invariant` and the rest of `tests/test_delta_engine.py` still pass.
+* Re-running `eidos delta verify` on the open deltas (DLT-2026-034 … DLT-2026-041) after a fresh clone reports no `MODIFIED` status without a matching spec change.
+* `eidos validate eidos && eidos drift --uncommitted` exits 0.
+
+== Related Deltas & Sequencing
+
+* **Depends on DLT-2026-038**, which creates `CMP-DELTA-ENGINE` / `delta_engine.py`. Until it is applied, this delta's first mutation reports `MISSING`.
+* Independent of DLT-2026-041.
+* Unrelated pre-existing drift (not addressed here): CAP-PROD-002 lists an `eidos delta impact` interface that the CLI does not implement.

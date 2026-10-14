@@ -23,10 +23,10 @@ Verifies:
 
 import pytest
 
-from eidos.core.graph_index import ArchitecturalIndex
-from eidos.core.parser import parse_spec_file
-from eidos.core.scaffolder import inline_component, promote_component
-from eidos.core.validator import SpecValidator
+from eidos.core.index.graph_index import ArchitecturalIndex
+from eidos.core.lifecycle.scaffolder import inline_component, promote_component
+from eidos.core.spec.parser import parse_spec_file
+from eidos.core.spec.validator import SpecValidator
 
 
 @pytest.fixture

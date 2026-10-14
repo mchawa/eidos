@@ -14,47 +14,49 @@ components:
   - id: CMP-CLI-APP
     name: "CliApp"
     responsibility: "Root command dispatcher, error code translation, and formatted diagnostic table rendering."
-    source_path: "src/eidos/cli/main.py"
+    source_path:
+      - "src/eidos/cli/main.py"
+      - "src/eidos/cli/_shared.py"
   - id: CMP-CLI-SPEC-COMMANDS
     name: "SpecCommands"
     responsibility: "Commands for catalog listing, showing, creating (across all 16 schemas including component, client, and flow), and safely deleting living specifications."
-    source_path: "src/eidos/cli/main.py"
+    source_path: "src/eidos/cli/spec_commands.py"
   - id: CMP-CLI-DELTA-COMMANDS
     name: "DeltaCommands"
     responsibility: "SpecDelta lifecycle commands: status dashboard, authoring, in-place application, and view synchronization."
-    source_path: "src/eidos/cli/main.py"
+    source_path: "src/eidos/cli/delta_commands.py"
   - id: CMP-CLI-PLUGIN-COMMANDS
     name: "PluginCommands"
     responsibility: "Agent plugin lifecycle commands: install, update, validate, inspect, and remove."
-    source_path: "src/eidos/cli/main.py"
+    source_path: "src/eidos/cli/plugin_commands.py"
   - id: CMP-CLI-DRIFT-COMMANDS
     name: "DriftCommands"
     responsibility: "Spec-to-code drift detection (drift) and living spec reconciliation assistant (reconcile / sync)."
-    source_path: "src/eidos/cli/main.py"
+    source_path: "src/eidos/cli/drift_commands.py"
   - id: CMP-CLI-INIT-COMMAND
     name: "InitCommand"
     responsibility: "CLI entrypoint for repository bootstrapping, living spec skeleton generation, and baseline validation."
-    source_path: "src/eidos/cli/main.py"
+    source_path: "src/eidos/cli/init_command.py"
   - id: CMP-CLI-CONTEXT-COMMAND
     name: "ContextCommand"
     responsibility: "Extracts compact, token-efficient architectural subgraph slices for AI agents."
-    source_path: "src/eidos/cli/main.py"
+    source_path: "src/eidos/cli/context_command.py"
   - id: CMP-CLI-INDEX-COMMANDS
     name: "IndexCommands"
-    responsibility: "Knowledge graph operations: sync, status inspection, lexical search, and blast-radius impact analysis."
-    source_path: "src/eidos/cli/main.py"
+    responsibility: "Knowledge graph operations: sync, status inspection, lexical search, blast-radius impact analysis, and repo-map / find-symbol output including source Location (file:line) for AST symbols."
+    source_path: "src/eidos/cli/index_commands.py"
   - id: CMP-CLI-COMPONENT-COMMANDS
     name: "ComponentCommands"
     responsibility: "C4 Level 3 component promotion to centralized specs in eidos/architecture/components/, inlining back to container, and listing."
-    source_path: "src/eidos/cli/main.py"
+    source_path: "src/eidos/cli/component_commands.py"
   - id: CMP-CLI-PORTAL-COMMANDS
     name: "PortalCommands"
     responsibility: "Living Web Portal commands: interactive preview server (`eidos portal serve` / `serve`) and static site compilation (`eidos portal build` / `build-site`)."
-    source_path: "src/eidos/cli/main.py"
+    source_path: "src/eidos/cli/portal_commands.py"
   - id: CMP-CLI-DOCTOR-HOOKS
     name: "DoctorAndHookCommands"
     responsibility: "Installation health diagnostics (`eidos doctor`) and CLI-native agent lifecycle hook dispatchers (`eidos hook lint`, `eidos hook drift`)."
-    source_path: "src/eidos/cli/main.py"
+    source_path: "src/eidos/cli/doctor_hook_commands.py"
 
 dependencies:
   internal_containers:
@@ -88,16 +90,17 @@ This container represents the developer entrypoint under `src/eidos/cli/`. It pr
 [cols="1,1,2,2", options="header"]
 |===
 | Component ID | Name | Responsibility | Source Path
-| `CMP-CLI-APP` | **CliApp** | Command dispatcher, error codes, and Rich terminal output | `src/eidos/cli/main.py`
-| `CMP-CLI-SPEC-COMMANDS` | **SpecCommands** | CRUD commands for living specifications | `src/eidos/cli/main.py`
-| `CMP-CLI-DELTA-COMMANDS` | **DeltaCommands** | SpecDelta lifecycle operations and status views | `src/eidos/cli/main.py`
-| `CMP-CLI-PLUGIN-COMMANDS` | **PluginCommands** | Agent plugin management conforming to agent-plugins.org | `src/eidos/cli/main.py`
-| `CMP-CLI-DRIFT-COMMANDS` | **DriftCommands** | Spec-to-code drift checking and automated reconciliation | `src/eidos/cli/main.py`
-| `CMP-CLI-INIT-COMMAND` | **InitCommand** | Repository bootstrapping and skeleton generation | `src/eidos/cli/main.py`
-| `CMP-CLI-CONTEXT-COMMAND` | **ContextCommand** | Token-budgeted architectural context slicing | `src/eidos/cli/main.py`
-| `CMP-CLI-INDEX-COMMANDS` | **IndexCommands** | Knowledge graph maintenance and blast radius queries | `src/eidos/cli/main.py`
-| `CMP-CLI-COMPONENT-COMMANDS` | **ComponentCommands** | C4 Level 3 component promotion, inlining, and listing | `src/eidos/cli/main.py`
-| `CMP-CLI-PORTAL-COMMANDS` | **PortalCommands** | Living Web Portal interactive preview and static compilation | `src/eidos/cli/main.py`
+| `CMP-CLI-APP` | **CliApp** | Command dispatcher, error codes, and Rich terminal output | `src/eidos/cli/main.py`, `src/eidos/cli/_shared.py`
+| `CMP-CLI-SPEC-COMMANDS` | **SpecCommands** | Validation, linting, C4 listing, and CRUD commands for living specifications | `src/eidos/cli/spec_commands.py`
+| `CMP-CLI-DELTA-COMMANDS` | **DeltaCommands** | SpecDelta lifecycle operations and status views | `src/eidos/cli/delta_commands.py`
+| `CMP-CLI-PLUGIN-COMMANDS` | **PluginCommands** | Agent plugin management conforming to agent-plugins.org | `src/eidos/cli/plugin_commands.py`
+| `CMP-CLI-DRIFT-COMMANDS` | **DriftCommands** | Spec-to-code drift checking and automated reconciliation | `src/eidos/cli/drift_commands.py`
+| `CMP-CLI-INIT-COMMAND` | **InitCommand** | Repository bootstrapping and skeleton generation | `src/eidos/cli/init_command.py`
+| `CMP-CLI-CONTEXT-COMMAND` | **ContextCommand** | Token-budgeted architectural context slicing | `src/eidos/cli/context_command.py`
+| `CMP-CLI-INDEX-COMMANDS` | **IndexCommands** | Knowledge graph maintenance and blast radius queries | `src/eidos/cli/index_commands.py`
+| `CMP-CLI-COMPONENT-COMMANDS` | **ComponentCommands** | C4 Level 3 component promotion, inlining, and listing | `src/eidos/cli/component_commands.py`
+| `CMP-CLI-PORTAL-COMMANDS` | **PortalCommands** | Living Web Portal interactive preview and static compilation | `src/eidos/cli/portal_commands.py`
+| `CMP-CLI-DOCTOR-HOOKS` | **DoctorAndHookCommands** | Installation diagnostics and CLI-native agent lifecycle hook dispatchers | `src/eidos/cli/doctor_hook_commands.py`
 |===
 
 == Quality Attributes & Operational Policies

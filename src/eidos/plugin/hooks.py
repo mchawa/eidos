@@ -9,9 +9,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from eidos.core.parser import extract_frontmatter
-from eidos.core.project import find_repo_root
-from eidos.core.validator import SpecValidator
+from eidos.core.spec.parser import extract_frontmatter
+from eidos.core.spec.validator import SpecValidator
+from eidos.core.workspace.project import find_repo_root
 from eidos.vcs.drift import detect_drift
 
 
@@ -189,7 +189,7 @@ def _validate_doc_content(target_path: Path, content_to_check: str) -> dict[str,
             }
         schema_rel = data.get("schema")
         if isinstance(schema_rel, str) and schema_rel.strip():
-            from eidos.core.assets import get_v1_schemas_dir
+            from eidos.core.workspace.assets import get_v1_schemas_dir
 
             rel_clean = schema_rel.strip().removeprefix("schemas/v1/").removeprefix("schemas/").lstrip("/")
             schema_file = get_v1_schemas_dir() / rel_clean
@@ -396,7 +396,7 @@ def handle_drift_post_invocation(payload: dict[str, Any], workspace_root: Path) 
 
     # Lazily ensure knowledge graph index is synchronized
     try:
-        from eidos.core.graph_index import ArchitecturalIndex
+        from eidos.core.index.graph_index import ArchitecturalIndex
 
         cache_db = eidos_dir / ".cache" / "index.db"
         if cache_db.exists():

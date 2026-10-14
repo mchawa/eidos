@@ -8,13 +8,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from eidos.core.parser import extract_frontmatter, parse_spec_file
-from eidos.core.project import (
+from eidos.core.spec.parser import extract_frontmatter, parse_spec_file
+from eidos.core.spec.validator import SpecValidator, ValidationReport
+from eidos.core.workspace.project import (
     extract_entity_paths,
     is_generated_or_vendored,
     matches_owned_paths,
 )
-from eidos.core.validator import SpecValidator, ValidationReport
 
 
 @dataclass
@@ -68,6 +68,7 @@ class DriftCheckResult:
     body_only_code_files: list[str] = field(default_factory=list)
     uncovered_design_files: list[str] = field(default_factory=list)
     unmapped_code_files: list[str] = field(default_factory=list)
+    trivially_covered_files: list[dict[str, Any]] = field(default_factory=list)
     remediation_suggestions: list[str] = field(default_factory=list)
     summary_markdown: str = ""
 
@@ -105,7 +106,7 @@ def get_git_diff_files(
         files: set[str] = set()
         try:
             diff_res = subprocess.run(
-                ["git", "diff", "--name-only"],
+                ["git", "diff", "--name-only", "--no-renames"],
                 cwd=repo,
                 capture_output=True,
                 text=True,
@@ -115,7 +116,7 @@ def get_git_diff_files(
                 files.update(line.strip() for line in diff_res.stdout.splitlines() if line.strip())
 
             staged_res = subprocess.run(
-                ["git", "diff", "--cached", "--name-only"],
+                ["git", "diff", "--cached", "--name-only", "--no-renames"],
                 cwd=repo,
                 capture_output=True,
                 text=True,
@@ -125,7 +126,7 @@ def get_git_diff_files(
                 files.update(line.strip() for line in staged_res.stdout.splitlines() if line.strip())
 
             status_res = subprocess.run(
-                ["git", "status", "--porcelain", "-uall"],
+                ["git", "status", "--porcelain", "--no-renames", "-uall"],
                 cwd=repo,
                 capture_output=True,
                 text=True,
@@ -136,7 +137,9 @@ def get_git_diff_files(
                     if len(line) > 3:
                         raw_path = line[3:].strip()
                         if " -> " in raw_path:
-                            raw_path = raw_path.split(" -> ")[1].strip()
+                            # Both sides: eidos pairs moves by content itself (DLT-2026-039)
+                            src_path, raw_path = (part.strip() for part in raw_path.split(" -> ", 1))
+                            files.add(src_path)
                         files.add(raw_path)
         except OSError:
             pass
@@ -162,7 +165,7 @@ def get_git_diff_files(
         return get_git_diff_files(repo_root, uncommitted=True)
 
     try:
-        cmd = ["git", "diff", "--name-only", f"{resolved_base}...{head_ref}"]
+        cmd = ["git", "diff", "--name-only", "--no-renames", f"{resolved_base}...{head_ref}"]
         res = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
         if res.returncode == 0:
             lines = [line.strip() for line in res.stdout.splitlines() if line.strip()]
@@ -170,7 +173,7 @@ def get_git_diff_files(
                 return sorted(lines)
 
         # Fallback to direct range
-        cmd_direct = ["git", "diff", "--name-only", resolved_base, head_ref]
+        cmd_direct = ["git", "diff", "--name-only", "--no-renames", resolved_base, head_ref]
         res_direct = subprocess.run(cmd_direct, cwd=repo, capture_output=True, text=True, check=False)
         if res_direct.returncode == 0:
             return sorted(line.strip() for line in res_direct.stdout.splitlines() if line.strip())
@@ -409,7 +412,7 @@ def map_code_to_components(
     if not eidos_dir.exists():
         return []
 
-    from eidos.core.graph_index import get_architectural_index
+    from eidos.core.index.graph_index import get_architectural_index
 
     idx = get_architectural_index(repo_root=repo_root, eidos_dir=eidos_dir)
     components = idx.get_components()
@@ -492,7 +495,7 @@ def detect_orphan_invariants(
     if all_tests_content is None:
         all_tests_content = collect_polyglot_test_files(repo_root)
 
-    from eidos.core.ast_indexer import get_ast_indexer
+    from eidos.core.index.ast_indexer import get_ast_indexer
 
     ast_idx = get_ast_indexer()
     orphans: list[tuple[str, str]] = []
@@ -538,7 +541,7 @@ def extract_invariants_and_verify(
     all_tests_content = collect_polyglot_test_files(repo_root)
 
     # 1.5 Extract granular AST test function bindings
-    from eidos.core.ast_indexer import get_ast_indexer
+    from eidos.core.index.ast_indexer import get_ast_indexer
 
     ast_idx = get_ast_indexer()
     inv_to_test_funcs: dict[str, list[str]] = {}
@@ -618,7 +621,7 @@ def get_living_specs_catalog(eidos_dir: Path, repo_root: Path | None = None) -> 
     if not eidos_dir.exists():
         return catalog
 
-    from eidos.core.graph_index import get_architectural_index
+    from eidos.core.index.graph_index import get_architectural_index
 
     idx = get_architectural_index(repo_root=repo_root, eidos_dir=eidos_dir)
     entities = idx.get_entities()
@@ -797,22 +800,362 @@ def _path_in(changed_spec: str, allowed_paths: set[str]) -> bool:
     return False
 
 
-def _is_covered_by_changed_specs(
+def _relevant_changed_specs(
     changed_specs: list[str],
     allowed_paths: set[str],
     allowed_ids: set[str],
-) -> bool:
-    """Check if any modified spec file satisfies the 1-hop neighborhood of a modified code file."""
+) -> list[str]:
+    """Modified spec files inside the 1-hop neighborhood of a modified code file (system-level specs excluded)."""
+    relevant: list[str] = []
     for s in changed_specs:
         s_norm = s.replace("\\", "/").lower()
         if s_norm in SYSTEM_LEVEL_SPEC_PATHS:
             continue
-        if _path_in(s_norm, allowed_paths):
+        if _path_in(s_norm, allowed_paths) or Path(s_norm).stem in allowed_ids:
+            relevant.append(s)
+    return relevant
+
+
+# ---------------------------------------------------------------------------
+# Diff-aware specification coverage (DLT-2026-039)
+# ---------------------------------------------------------------------------
+
+_ADOC_LINE_COMMENT_RE = re.compile(r"^\s*//(?!/)")
+_ADOC_COMMENT_DELIM_RE = re.compile(r"^/{4,}$")
+# Verbatim blocks (listing, literal, passthrough): their content is never an AsciiDoc comment.
+_ADOC_VERBATIM_DELIM_RE = re.compile(r"^(-{4,}|\.{4,}|\+{4,})$")
+_FRONTMATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", re.DOTALL)
+_OWNERSHIP_KEYS = ("components", "source_path", "owned_path", "package_path")
+_MIN_ANCHOR_LEN = 3
+
+
+@dataclass
+class _StructuralAddition:
+    """Structural additions of one code file: a new file and/or new public symbols."""
+
+    file: str
+    reasons: list[str]
+    symbol_names: list[str]
+    is_new_file: bool
+
+
+class _SymbolMapCache:
+    """Parses each (file, side) version at most once per drift run."""
+
+    def __init__(self, versions: dict[str, tuple[str | None, str | None]]) -> None:
+        self._versions = versions
+        self._maps: dict[tuple[str, int], dict[tuple[str, str, str], str]] = {}
+
+    @staticmethod
+    def supports(cf: str) -> bool:
+        from eidos.core.index.ast_indexer import AST_DIFF_EXTS
+
+        return Path(cf).suffix.lower() in AST_DIFF_EXTS
+
+    def versions_of(self, cf: str) -> tuple[str | None, str | None]:
+        return self._versions.get(cf, (None, None))
+
+    def get(self, cf: str, side: int) -> dict[tuple[str, str, str], str]:
+        """Public symbol map of ``cf`` at ``side`` (0 = old, 1 = new)."""
+        from eidos.core.index.ast_indexer import public_symbol_map
+
+        key = (cf, side)
+        if key not in self._maps:
+            self._maps[key] = public_symbol_map(self.versions_of(cf)[side], cf)
+        return self._maps[key]
+
+    def diff(self, cf: str, old_from: str | None = None) -> Any:
+        """Public symbol diff of ``cf`` (old side taken from ``old_from`` for moved files)."""
+        from eidos.core.index.ast_indexer import diff_symbol_maps
+
+        return diff_symbol_maps(self.get(old_from or cf, 0), self.get(cf, 1))
+
+
+def _normalize_ws(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _pair_moved_files(
+    versions: dict[str, tuple[str | None, str | None]],
+    smap: _SymbolMapCache,
+) -> dict[str, str]:
+    """Pair added files with deleted files of the same change set that they were moved/renamed from.
+
+    Purely content-based (no VCS rename detection): an added file ``A`` is a move of a deleted file ``D`` with the
+    same extension when their whitespace-normalized contents are identical, or when ``D`` had public symbols and
+    every one of them still exists in ``A``. Each deleted file pairs with at most one added file; identical
+    content wins, then the largest preserved public surface, then path order.
+    """
+    added = sorted(cf for cf, (old, new) in versions.items() if old is None and new is not None)
+    deleted = sorted(cf for cf, (old, new) in versions.items() if old is not None and new is None)
+    if not added or not deleted:
+        return {}
+
+    candidates: list[tuple[int, int, str, str]] = []
+    for a in added:
+        a_text = _normalize_ws(versions[a][1] or "")
+        for d in deleted:
+            if Path(a).suffix.lower() != Path(d).suffix.lower():
+                continue
+            if a_text == _normalize_ws(versions[d][0] or ""):
+                candidates.append((0, 0, a, d))
+                continue
+            if not smap.supports(a):
+                continue
+            d_keys = set(smap.get(d, 0))
+            if d_keys and d_keys <= set(smap.get(a, 1)):
+                candidates.append((1, -len(d_keys), a, d))
+
+    pairs: dict[str, str] = {}
+    used: set[str] = set()
+    for _, _, a, d in sorted(candidates):
+        if a not in pairs and d not in used:
+            pairs[a] = d
+            used.add(d)
+    return pairs
+
+
+def _structural_addition_for(
+    cf: str,
+    synthetic: bool,
+    smap: _SymbolMapCache,
+    *,
+    symbol_diff: Any = None,
+    moved_from: str | None = None,
+) -> _StructuralAddition | None:
+    """Return the structural additions of a structurally changed file, or None when it adds nothing.
+
+    Signature changes, removals and deletions are not additions. A moved/renamed file only adds the public symbols
+    absent from its source. Synthetic diffs (identical git blobs) never count as additions so existing mocked-diff
+    behavior is preserved. ``symbol_diff`` reuses an already computed diff (one AST parse per file version).
+    """
+    old_content, new_content = smap.versions_of(cf)
+    if synthetic or new_content is None:
+        return None
+    if moved_from is None and old_content is None:
+        diff = smap.diff(cf)
+        return _StructuralAddition(
+            file=cf,
+            reasons=[f"added file '{cf}'"],
+            symbol_names=[diff.qualified_name(k) for k in diff.added],
+            is_new_file=True,
+        )
+    diff = smap.diff(cf, old_from=moved_from) if moved_from else (symbol_diff or smap.diff(cf))
+    if not diff.added:
+        return None
+    return _StructuralAddition(
+        file=cf,
+        reasons=[f"added {k[0]} '{diff.qualified_name(k)}'" for k in diff.added],
+        symbol_names=[diff.qualified_name(k) for k in diff.added],
+        is_new_file=False,
+    )
+
+
+def _split_spec(content: str | None) -> tuple[str | None, str]:
+    """Split a spec into (raw frontmatter text or None, AsciiDoc body)."""
+    text = content or ""
+    m = _FRONTMATTER_RE.match(text)
+    if not m:
+        return None, text
+    return m.group(1), text[m.end() :]
+
+
+def _normalized_body_lines(body: str) -> list[str]:
+    """AsciiDoc body lines without comments or blank lines, inner whitespace collapsed.
+
+    ``//`` line comments and ``////`` comment blocks are dropped, except inside verbatim blocks (``----`` listing,
+    ``....`` literal, ``++++`` passthrough) whose content - e.g. ``// ...`` lines of code samples - is kept.
+    """
+    out: list[str] = []
+    open_delim: str | None = None
+    for raw in body.splitlines():
+        line = raw.strip()
+        if open_delim is not None:
+            if line == open_delim:
+                if not _ADOC_COMMENT_DELIM_RE.match(open_delim):
+                    out.append(line)
+                open_delim = None
+            elif line and not _ADOC_COMMENT_DELIM_RE.match(open_delim):
+                out.append(_normalize_ws(line))
+            continue
+        if _ADOC_COMMENT_DELIM_RE.match(line) or _ADOC_VERBATIM_DELIM_RE.match(line):
+            open_delim = line
+            if not _ADOC_COMMENT_DELIM_RE.match(line):
+                out.append(line)
+            continue
+        if not line or _ADOC_LINE_COMMENT_RE.match(raw):
+            continue
+        out.append(_normalize_ws(line))
+    return out
+
+
+def _parse_frontmatter(raw: str | None) -> dict[str, Any] | None:
+    """Parsed frontmatter mapping, ``{}`` when absent, ``None`` when it is not valid YAML."""
+    if raw is None:
+        return {}
+    try:
+        import yaml
+
+        data = yaml.safe_load(raw)
+    except Exception:
+        return None
+    if data is None:
+        return {}
+    return data if isinstance(data, dict) else None
+
+
+def _spec_frontmatter(content: str | None) -> dict[str, Any]:
+    return _parse_frontmatter(_split_spec(content)[0]) or {}
+
+
+def _canonical(value: Any) -> str:
+    import json
+
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+def _declared_source_patterns(frontmatter: dict[str, Any]) -> list[str]:
+    """Explicit file/glob ownership declared by a spec (top-level and component ``source_path``/``owned_path``)."""
+    patterns: list[str] = []
+
+    def _add(value: Any) -> None:
+        if isinstance(value, str) and value.strip():
+            patterns.append(value.strip())
+        elif isinstance(value, list):
+            for item in value:
+                _add(item)
+
+    for key in ("source_path", "owned_path"):
+        _add(frontmatter.get(key))
+    for comp in frontmatter.get("components", []) or frontmatter.get("c4_internal_components", []) or []:
+        if isinstance(comp, dict):
+            _add(comp.get("source_path"))
+            _add(comp.get("owned_path"))
+    return patterns
+
+
+class _SpecDiffInspector:
+    """Per-run, cached inspection of how a modified specification changed (DLT-2026-039)."""
+
+    def __init__(self, root: Path, base_ref: str | None, head_ref: str, uncommitted: bool) -> None:
+        self._root = root
+        self._base_ref = base_ref
+        self._head_ref = head_ref
+        self._uncommitted = uncommitted
+        self._versions: dict[str, tuple[str | None, str | None]] = {}
+
+    def versions(self, spec: str) -> tuple[str | None, str | None]:
+        if spec not in self._versions:
+            self._versions[spec] = _get_file_versions(
+                self._root,
+                spec,
+                base_ref=self._base_ref,
+                head_ref=self._head_ref,
+                uncommitted=self._uncommitted,
+            )
+        return self._versions[spec]
+
+    def is_new_spec(self, spec: str) -> bool:
+        old, new = self.versions(spec)
+        return old is None and new is not None
+
+    def is_substantive(self, spec: str) -> bool:
+        """True when the frontmatter data or the comment/whitespace-normalized body differs.
+
+        Frontmatter is compared as parsed YAML (so YAML comments and formatting are ignored, while ``#`` inside
+        block strings is content); invalid YAML falls back to whitespace-normalized text. New, deleted and
+        synthetic (identical) versions count as substantive.
+        """
+        old, new = self.versions(spec)
+        if old is None or new is None or old == new:
             return True
-        s_stem = Path(s_norm).stem
-        if s_stem in allowed_ids:
+        old_raw, old_body = _split_spec(old)
+        new_raw, new_body = _split_spec(new)
+        old_fm, new_fm = _parse_frontmatter(old_raw), _parse_frontmatter(new_raw)
+        if old_fm is None or new_fm is None:
+            fm_changed = _normalize_ws(old_raw or "") != _normalize_ws(new_raw or "")
+        else:
+            fm_changed = _canonical(old_fm) != _canonical(new_fm)
+        if fm_changed:
             return True
-    return False
+        return _normalize_ws(" ".join(_normalized_body_lines(old_body))) != _normalize_ws(
+            " ".join(_normalized_body_lines(new_body))
+        )
+
+    def declares_at_base(self, spec: str, cf: str) -> bool:
+        """True when the spec, at the base revision, already declared ``cf`` via source_path/owned_path."""
+        from eidos.core.workspace.project import match_path_pattern
+
+        old, _ = self.versions(spec)
+        return any(match_path_pattern(cf, p) > 0 for p in _declared_source_patterns(_spec_frontmatter(old)))
+
+    def is_anchored(self, spec: str, cf: str, symbol_names: list[str]) -> bool:
+        """True when the spec edit changes ownership keys or its added content names the file or a new symbol.
+
+        Accepted names: the repo-relative path, the file name *with* extension, and the qualified names of the new
+        public symbols (``Class.method`` for methods). A bare file stem is not enough, so generic words such as
+        "utils" do not anchor ``utils.py``.
+        """
+        from collections import Counter
+
+        old, new = self.versions(spec)
+        if old is None:
+            return True
+        if new is None:
+            return False
+        old_raw, old_body = _split_spec(old)
+        new_raw, new_body = _split_spec(new)
+        old_fm, new_fm = _parse_frontmatter(old_raw) or {}, _parse_frontmatter(new_raw) or {}
+        if any(_canonical(old_fm.get(k)) != _canonical(new_fm.get(k)) for k in _OWNERSHIP_KEYS):
+            return True
+
+        added = list((Counter(_normalized_body_lines(new_body)) - Counter(_normalized_body_lines(old_body))).elements())
+        added += [_canonical(v) for k, v in new_fm.items() if _canonical(v) != _canonical(old_fm.get(k))]
+        needles = {cf, Path(cf).name, *symbol_names}
+        patterns = [
+            re.compile(rf"(?<![A-Za-z0-9_]){re.escape(n)}(?![A-Za-z0-9_])")
+            for n in sorted(needles)
+            if n and len(n) >= _MIN_ANCHOR_LEN
+        ]
+        return any(p.search(line) for line in added for p in patterns)
+
+
+def _spec_coverage_verdict(
+    changed_specs: list[str],
+    allowed_paths: set[str],
+    allowed_ids: set[str],
+    *,
+    addition: _StructuralAddition | None = None,
+    owner_spec: str = "",
+    inspector: _SpecDiffInspector | None = None,
+) -> tuple[bool, str | None, list[str]]:
+    """Decide whether modified specs cover a code file; returns ``(covered, rejection_rule, rejected_specs)``.
+
+    Without structural additions the rule is the classic 1-hop path check. For structural additions only
+    *substantive* spec diffs count, and new files outside the owner's declared ``source_path``/``owned_path``
+    additionally need an *anchored* owner-spec diff. ``rejection_rule`` is ``"trivial_spec_diff"`` or
+    ``"missing_anchor"`` when 1-hop specs were touched but rejected, otherwise ``None``.
+    """
+    relevant = _relevant_changed_specs(changed_specs, allowed_paths, allowed_ids)
+    if not relevant:
+        return False, None, []
+    if addition is None or inspector is None:
+        return True, None, []
+
+    substantive = [s for s in relevant if inspector.is_substantive(s)]
+    if not substantive:
+        return False, "trivial_spec_diff", relevant
+
+    if addition.is_new_file and owner_spec:
+        owner_norm = owner_spec.replace("\\", "/").lower()
+        owner_changed = [s for s in substantive if s.replace("\\", "/").lower() == owner_norm]
+        owner_is_new = any(inspector.is_new_spec(s) for s in owner_changed)
+        needs_anchor = not owner_is_new and not inspector.declares_at_base(owner_spec, addition.file)
+        if needs_anchor and not any(
+            inspector.is_anchored(s, addition.file, addition.symbol_names) for s in owner_changed
+        ):
+            return False, "missing_anchor", relevant
+    return True, None, []
 
 
 def _resolve_bound_design_ids(idx, cf: str, owner_ids: set[str]) -> set[str]:
@@ -900,8 +1243,8 @@ def detect_drift(
     uncommitted: bool = False,
 ) -> DriftCheckResult:
     """Run drift detection: evaluate spec-code synchronization, schema validation, and invariant check."""
-    from eidos.core.ast_indexer import STYLE_EXTS, classify_design_changes, has_structural_changes
-    from eidos.core.graph_index import get_architectural_index
+    from eidos.core.index.ast_indexer import STYLE_EXTS, classify_design_changes, has_structural_changes
+    from eidos.core.index.graph_index import get_architectural_index
 
     root = repo_root.resolve()
     target_eidos = (eidos_dir or (root / "eidos")).resolve()
@@ -913,14 +1256,26 @@ def detect_drift(
     #    and classify frontend/styling diffs into design categories (DLT-2026-030)
     structural_code_files: list[str] = []
     body_only_code_files: list[str] = []
+    structural_additions: dict[str, _StructuralAddition] = {}
     design_changes: dict[str, tuple[str, list[str]]] = {}
+    versions = {
+        cf: _get_file_versions(root, cf, base_ref=base_ref, head_ref=head_ref, uncommitted=uncommitted)
+        for cf in classification.code_files
+    }
+    smap = _SymbolMapCache(versions)
+    # Content-based move detection (DLT-2026-039): an added file paired with a deleted file of the same change set
+    moved_from = _pair_moved_files(versions, smap)
     for cf in classification.code_files:
-        old_c, new_c = _get_file_versions(root, cf, base_ref=base_ref, head_ref=head_ref, uncommitted=uncommitted)
+        old_c, new_c = versions[cf]
         synthetic = old_c is not None and new_c is not None and old_c == new_c
+        symbol_diff = None
         if old_c is not None and new_c is not None:
             if synthetic:
                 # Synthetic/mocked diff where git blobs are identical
                 is_structural = True
+            elif smap.supports(cf):
+                symbol_diff = smap.diff(cf)
+                is_structural = bool(symbol_diff)
             else:
                 is_structural, _ = has_structural_changes(old_c, new_c, cf)
         else:
@@ -941,6 +1296,11 @@ def detect_drift(
 
         if is_structural:
             structural_code_files.append(cf)
+            addition = _structural_addition_for(
+                cf, synthetic, smap, symbol_diff=symbol_diff, moved_from=moved_from.get(cf)
+            )
+            if addition is not None:
+                structural_additions[cf] = addition
         else:
             body_only_code_files.append(cf)
 
@@ -1039,6 +1399,8 @@ def detect_drift(
             design_subgraph_cache[cf] = (bound, d_paths, d_ids)
         return design_subgraph_cache[cf]
 
+    trivial_records: list[dict[str, Any]] = []
+    spec_inspector = _SpecDiffInspector(root, base_ref, head_ref, uncommitted)
     if code_changed:
         for cf, cid, spath in comp_mappings:
             allowed_paths, allowed_ids = _collect_1hop_spec_targets(idx, cf, cid, spath)
@@ -1046,14 +1408,29 @@ def detect_drift(
                 _, d_paths, d_ids = _design_subgraph_for(cf)
                 allowed_paths |= d_paths
                 allowed_ids |= {i.lower() for i in d_ids}
-            covered_by_spec = _is_covered_by_changed_specs(classification.spec_files, allowed_paths, allowed_ids)
-            if has_deltas:
-                covered_by_delta = bool(declared_delta_targets & allowed_ids)
-                if not covered_by_delta and not covered_by_spec:
-                    uncovered_components.append((cf, cid, spath))
-            else:
-                if not covered_by_spec:
-                    uncovered_direct_components.append((cf, cid, spath))
+            if has_deltas and (declared_delta_targets & allowed_ids):
+                continue  # Planned Mode: an active SpecDelta declares the owner (DLT-2026-039: unchanged)
+            covered_by_spec, rejected_rule, rejected_specs = _spec_coverage_verdict(
+                classification.spec_files,
+                allowed_paths,
+                allowed_ids,
+                addition=structural_additions.get(cf),
+                owner_spec=str(spath),
+                inspector=spec_inspector,
+            )
+            if rejected_rule and not any(r["file"] == cf for r in trivial_records):
+                addition = structural_additions[cf]
+                trivial_records.append(
+                    {
+                        "file": cf,
+                        "owner": str(spath),
+                        "additions": list(addition.reasons),
+                        "spec_files": sorted(rejected_specs),
+                        "rule": rejected_rule,
+                    }
+                )
+            if not covered_by_spec:
+                (uncovered_components if has_deltas else uncovered_direct_components).append((cf, cid, spath))
 
     # Unmapped structural code (no CNT-*/CMP-* owner): reported for remediation. System-level specs
     # remain valid synchronization targets for these files only (DLT-2026-030).
@@ -1133,6 +1510,25 @@ def detect_drift(
         for cf, cid, spath in uncovered_components[:5]:
             remediation.append(
                 f"Uncovered Delta Drift: '{cf}' relates to {cid}, which is NOT declared in active SpecDelta mutations. Declare it in the SpecDelta or update '{spath}'."
+            )
+
+    trivial_edit_records = [r for r in trivial_records if r["rule"] == "trivial_spec_diff"]
+    if trivial_edit_records:
+        remediation.append(
+            f"Trivial Spec Edit: {len(trivial_edit_records)} structural addition(s) are only covered by whitespace/comment-only spec edits — document the additions in the owning specification."
+        )
+        for rec in trivial_edit_records[:5]:
+            remediation.append(
+                f"• '{rec['file']}' ({'; '.join(rec['additions'][:3])}) -> document it in {rec['owner']} (spec edits seen: {', '.join(rec['spec_files'])})"
+            )
+    unanchored_records = [r for r in trivial_records if r["rule"] == "missing_anchor"]
+    if unanchored_records:
+        remediation.append(
+            f"Missing Spec Anchor: {len(unanchored_records)} new source file(s) lie outside any declared source_path/owned_path and are not referenced by the owning spec edit."
+        )
+        for rec in unanchored_records[:5]:
+            remediation.append(
+                f"• '{rec['file']}' -> mention it (path, name, or a new public symbol) in {rec['owner']} or declare it under 'components'/'source_path'."
             )
 
     if not validation_report.is_clean:
@@ -1232,6 +1628,7 @@ def detect_drift(
         body_only_code_files=body_only_code_files,
         uncovered_design_files=frontend_code_files,
         unmapped_code_files=unmapped_code_files,
+        trivially_covered_files=trivial_records,
         remediation_suggestions=remediation,
         summary_markdown=summary_markdown,
     )
@@ -1261,7 +1658,7 @@ def reconcile_specs(
     for cf, cid, spath in comp_mappings:
         file_to_comps.setdefault(cf, []).append(f"{cid} ({spath})")
 
-    from eidos.core.graph_index import get_architectural_index
+    from eidos.core.index.graph_index import get_architectural_index
 
     idx = get_architectural_index(repo_root=root, eidos_dir=target_eidos) if target_eidos.exists() else None
 

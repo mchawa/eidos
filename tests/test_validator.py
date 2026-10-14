@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from eidos.core.validator import SpecValidator
+from eidos.core.spec.validator import SpecValidator
 
 
 @pytest.fixture
@@ -416,7 +416,7 @@ def test_strict_schemas_reject_unknown_fields_and_enforce_enums_and_patterns(tmp
         "= Planned Capability\n",
         encoding="utf-8",
     )
-    from eidos.core.parser import parse_spec_file
+    from eidos.core.spec.parser import parse_spec_file
 
     doc_valid = parse_spec_file(cap_file)
     assert validator.validate_document(doc_valid) == []

@@ -2,11 +2,11 @@
 Web Living Portal Modernization: shadcn/ui, Tailwind CSS & Material Design 3 (MD3) Integration.
 
 Verifies:
-1. Spike A: Vite + React + Tailwind CSS v4 + vite-plugin-singlefile bundle generation (<1.2MB compressed).
+1. Spike A: Vite + React + Tailwind CSS v4 + vite-plugin-singlefile bundle generation (<=2 MiB compressed after DLT-2026-041).
 2. Spike B: W3C DTCG tokens to MD3 tonal surfaces & color roles bridge.
 3. Spike C: React C4 Mermaid architecture viewer & SpecDelta Kanban board viewports.
 4. Spike D: Zero Node.js runtime invariant (INV-PORTAL-ZERO-NODE-DEP) for eidos serve & build-site.
-5. Exit Criteria: Cold-boot delivery < 50ms, single-file bundle <= 1.2MB, zero runtime node dependency.
+5. Exit Criteria: Cold-boot delivery < 50ms, single-file bundle <= 5 MiB (revised by DLT-2026-041), zero runtime node dependency.
 """
 
 import gzip
@@ -39,18 +39,36 @@ def test_spike_a_vite_singlefile_bundler(repo_root):
     raw_size_kb = len(raw_content) / 1024
     gzip_size_kb = len(gzip.compress(raw_content)) / 1024
 
-    # Exit Criteria: Uncompressed <= 1.5MB (1500KB), Compressed <= 1.2MB (1200KB)
-    assert raw_size_kb < 1500.0, f"Raw bundle size {raw_size_kb:.2f}KB exceeds 1500KB limit"
-    assert gzip_size_kb < 1200.0, f"Compressed bundle size {gzip_size_kb:.2f}KB exceeds 1200KB limit"
+    # Exit Criteria (revised by DLT-2026-041, which embeds Mermaid.js, Asciidoctor.js and Geist fonts so the portal
+    # is air-gapped): uncompressed <= 5 MiB (5120KB, see test_portal.py::test_portal_bundle_size_budget),
+    # compressed <= 2 MiB (2048KB). The original EXP-2026-003 limits were 1500KB / 1200KB.
+    assert raw_size_kb <= 5120.0, f"Raw bundle size {raw_size_kb:.2f}KB exceeds 5120KB limit"
+    assert gzip_size_kb <= 2048.0, f"Compressed bundle size {gzip_size_kb:.2f}KB exceeds 2048KB limit"
 
     # Verify self-contained single-file properties
     html_text = raw_content.decode("utf-8")
     assert "<!DOCTYPE html>" in html_text
     assert "<script" in html_text
     assert "<style" in html_text
-    # No relative external CSS or JS links
-    assert '<link rel="stylesheet"' not in html_text
-    assert '<script src="./' not in html_text
+    # No external CSS or JS links: structural check over real elements (inline JS string literals, e.g. Asciidoctor's
+    # standalone-page templates, are script data and never become elements).
+    from html.parser import HTMLParser
+
+    class _AssetLinks(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__()
+            self.found: list[str] = []
+
+        def handle_starttag(self, tag, attrs):
+            attr_map = dict(attrs)
+            if tag == "script" and attr_map.get("src"):
+                self.found.append(f"<script src={attr_map['src']}>")
+            if tag == "link" and "stylesheet" in (attr_map.get("rel") or "").lower():
+                self.found.append(f"<link rel=stylesheet href={attr_map.get('href')}>")
+
+    links = _AssetLinks()
+    links.feed(html_text)
+    assert links.found == []
 
 
 def test_spike_b_md3_tokens_and_shadcn_bridge(repo_root):

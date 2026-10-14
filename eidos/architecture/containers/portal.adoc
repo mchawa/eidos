@@ -4,7 +4,7 @@ schema: schemas/v1/tech/container.schema.yaml
 id: CNT-EIDOS-PORTAL
 name: "Eidos Living Web Portal & Static Site Generator"
 container_type: "web_app"
-runtime: "Python 3.12 / HTTP / React 19 / Tailwind v4 / MD3 / Mermaid.js"
+runtime: "Python 3.12 / HTTP / React 19 / Tailwind v4 / MD3 / Mermaid.js (bundled) / Asciidoctor.js (bundled)"
 package_path: "src/eidos/portal"
 
 domain_binding: DOM-EXPERIENCE-PORTAL
@@ -25,7 +25,7 @@ components:
     source_path: "src/eidos/portal/builder.py"
   - id: CMP-PORTAL-ASSETS
     name: "PortalAssets"
-    responsibility: "Delivers pre-compiled single-file React 19 / Tailwind CSS v4 / Material Design 3 (MD3) SPA with high-contrast dark theme, reading-friendly specification reader stage (UIC-PORTAL-READER), dynamic Table of Contents (TOC) outlines, collapsible Navigation Rail, C4 pan/zoom viewer, SpecDelta Kanban board, and CMD+K spotlight search."
+    responsibility: "Delivers pre-compiled single-file React 19 / Tailwind CSS v4 / Material Design 3 (MD3) SPA with zero remote subresources (Mermaid.js, Asciidoctor.js, and Geist / Geist Mono fonts are embedded; no CDN scripts, stylesheets, or fonts), high-contrast dark theme, reading-friendly specification reader stage (UIC-PORTAL-READER) rendering AsciiDoc bodies through Asciidoctor.js in secure safe mode, dynamic Table of Contents (TOC) outlines, collapsible Navigation Rail, C4 pan/zoom viewer, SpecDelta Kanban board, and CMD+K spotlight search; bundle capped at 5 MiB and regenerated via src/eidos/portal/frontend/scripts/build_assets.py."
     source_path: "src/eidos/portal/assets.py"
 
 dependencies:
@@ -60,5 +60,14 @@ This container represents the graphical web interface under `src/eidos/portal/`.
 | `CMP-PORTAL-SERVER` | **PortalServer** | Multi-threaded HTTP daemon hosting the portal UI and REST endpoints | `src/eidos/portal/server.py`
 | `CMP-PORTAL-GENERATOR` | **PortalGenerator** | Synthesizes specs, C4 Mermaid graphs, and SpecDelta Kanban state | `src/eidos/portal/generator.py`
 | `CMP-PORTAL-BUILDER` | **StaticSiteBuilder** | Exports zero-dependency static documentation sites for GitHub/GitLab Pages | `src/eidos/portal/builder.py`
-| `CMP-PORTAL-ASSETS` | **PortalAssets** | Pre-compiled single-file React 19 / Tailwind CSS v4 / Material Design 3 (MD3) SPA with Mermaid.js | `src/eidos/portal/assets.py`
+| `CMP-PORTAL-ASSETS` | **PortalAssets** | Pre-compiled single-file React 19 / Tailwind CSS v4 / Material Design 3 (MD3) SPA with zero remote subresources: Mermaid.js, Asciidoctor.js (secure mode), and Geist / Geist Mono fonts are embedded (5 MiB budget) | `src/eidos/portal/assets.py`
 |===
+
+== Air-Gapped Bundle (INV-PORTAL-AIR-GAPPED-BUNDLE)
+The single-file bundle served by `eidos serve` and emitted by `eidos build-site` loads zero scripts, stylesheets, fonts, or other subresources from remote origins, so C4 diagrams and the specification reader work in air-gapped environments and from `file://` static sites:
+
+* **Mermaid.js** is imported from npm at the version pinned in `package.json` / `pnpm-lock.yaml` (lazy `import()` folded inline by the single-file build; the ELK layout engine is not shipped, `dagre` is the portal layout).
+* **Asciidoctor.js** (`@asciidoctor/core`, `safe: 'secure'`) replaces the former regex AsciiDoc renderer; `include::` is unsupported in the browser.
+* **Fonts**: Geist and Geist Mono latin `woff2` subsets from `@fontsource`; the `Inter` / `JetBrains Mono` stacks in `tokens.json` fall through to system fonts.
+* **Build**: `cd src/eidos/portal/frontend && pnpm build:assets` runs the Vite build and `scripts/build_assets.py`, which regenerates `assets.py` and refuses bundles with remote references, more than one `</head>`, or more than 5 MiB. Node.js is a build-time dependency only (INV-PORTAL-ZERO-NODE-DEP).
+

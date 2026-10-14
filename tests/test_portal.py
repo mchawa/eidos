@@ -1,22 +1,84 @@
 """Tests for the Eidos Living Web Portal, generator, HTTP server, and static site builder."""
 
 import json
+import re
 import threading
 import time
 import urllib.error
 import urllib.request
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
-from eidos.portal.assets import PORTAL_HTML_TEMPLATE
+from eidos.portal.assets import PORTAL_FAVICON_SVG, PORTAL_HTML_TEMPLATE
 from eidos.portal.builder import build_static_portal
 from eidos.portal.generator import get_portal_data
 from eidos.portal.server import run_portal_server
 
 runner = CliRunner()
+
+# Single-file portal bundle budget: 5 MiB uncompressed (DLT-2026-041, INV-PORTAL-AIR-GAPPED-BUNDLE).
+PORTAL_BUNDLE_BUDGET_BYTES = 5 * 1024 * 1024
+
+# A remote (http://, https:// or protocol-relative) URL used as a src=/href= attribute, an @import rule, or a CSS
+# url(...) reference. Deliberately not a blanket substring check: inert string literals inside the minified JS
+# (e.g. https://react.dev/errors/... links) and XML namespace URIs (xmlns="http://www.w3.org/...") must not match.
+REMOTE_SUBRESOURCE_RE = re.compile(
+    r"""(?:\b(?:src|href)\s*=\s*["']?\s*(?P<attr>(?:https?:)?//[^\s"'>]+))"""
+    r"""|(?:@import\s+(?:url\(\s*)?["']?\s*(?P<imp>(?:https?:)?//[^\s"')]+))"""
+    r"""|(?:\burl\(\s*["']?\s*(?P<css>(?:https?:)?//[^\s"')]+))""",
+    re.IGNORECASE,
+)
+XML_NAMESPACE_HOSTS = {"www.w3.org"}
+
+
+def _document_elements(markup: str) -> "_ElementRefCollector":
+    collector = _ElementRefCollector()
+    collector.feed(markup)
+    collector.close()
+    return collector
+
+
+def _external_asset_elements(markup: str) -> list[str]:
+    """Real <link rel=stylesheet> / <script src> elements (JS string literals are not elements)."""
+    collector = _document_elements(markup)
+    found = []
+    for tag, attrs in collector.tags:
+        if tag == "script" and attrs.get("src"):
+            found.append(f"<script src={attrs['src']!r}>")
+        if tag == "link" and "stylesheet" in (attrs.get("rel") or "").lower():
+            found.append(f"<link rel=stylesheet href={attrs.get('href')!r}>")
+    return found
+
+
+def _remote_subresources(markup: str) -> list[str]:
+    found = []
+    for match in REMOTE_SUBRESOURCE_RE.finditer(markup):
+        url = match.group("attr") or match.group("imp") or match.group("css")
+        host = urlparse(url if "//" in url and not url.startswith("//") else f"https:{url}").hostname
+        if host in XML_NAMESPACE_HOSTS:
+            continue
+        found.append(url)
+    return found
+
+
+class _ElementRefCollector(HTMLParser):
+    """Collect real <script>/<link>/<img>/... references; JS string literals are CDATA and thus never parsed as tags."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.refs: list[tuple[str, str, str]] = []
+        self.tags: list[tuple[str, dict[str, str | None]]] = []
+
+    def handle_starttag(self, tag, attrs):
+        self.tags.append((tag, dict(attrs)))
+        for name, value in attrs:
+            if name in {"src", "href", "poster", "data", "action", "srcset"} and value:
+                self.refs.append((tag, name, value))
 
 
 def test_portal_data_generation():
@@ -112,10 +174,14 @@ def test_static_portal_builder(tmp_path: Path):
     assert "<style" in index_html
     assert "mermaid" in index_html
     # Self-contained zero-external asset invariants
-    assert '<link rel="stylesheet"' not in index_html
-    assert '<script src="./' not in index_html
-    # Bundle size under 1.5MB uncompressed
-    assert len(index_html) < 1_500_000
+    assert _external_asset_elements(index_html) == []
+    # The embedded bundle (excluding the per-repository data payload injected below) stays inside the single-file
+    # size budget. The former 1.5 MB cap predates the embedded Mermaid / Asciidoctor.js / Geist fonts (DLT-2026-041).
+    assert len(PORTAL_HTML_TEMPLATE.encode("utf-8")) <= PORTAL_BUNDLE_BUDGET_BYTES
+    assert len(index_html) > len(PORTAL_HTML_TEMPLATE)
+    # build-site must inject the data payload as its own <script>, not into an inline JS string literal.
+    assert index_html.count("window.__EIDOS_DATA__ =") == 1
+    assert "</script>\n</head>" in index_html
 
     with open(data_file, encoding="utf-8") as f:
         json_data = json.load(f)
@@ -285,3 +351,65 @@ def test_c4_level2_container_hierarchy_and_connections():
     assert 'CNT_EIDOS_PORTAL -.->|"Serves Web Application"| EXT_WEB_BROWSERS' in c4_containers
 
 
+
+
+def test_portal_bundle_has_no_remote_subresources():
+    """INV-PORTAL-AIR-GAPPED-BUNDLE: the served/built portal loads no scripts, stylesheets, fonts or other remote subresources."""
+    # 1. Structural check: no real element of the document points at a remote origin.
+    collector = _document_elements(PORTAL_HTML_TEMPLATE)
+    remote_elements = [
+        (tag, name, value[:80])
+        for tag, name, value in collector.refs
+        if re.match(r"(?:https?:)?//", value.strip(), re.IGNORECASE)
+    ]
+    assert remote_elements == []
+
+    # 2. Attribute / @import / url(...) scan over the whole template, including inline CSS and JS.
+    assert _remote_subresources(PORTAL_HTML_TEMPLATE) == []
+
+    # 3. Mermaid, Asciidoctor.js and the Geist fonts are embedded, not linked.
+    assert _external_asset_elements(PORTAL_HTML_TEMPLATE) == []
+    assert "font/woff2" in PORTAL_HTML_TEMPLATE or "data:font" in PORTAL_HTML_TEMPLATE or "base64" in PORTAL_HTML_TEMPLATE
+    assert "@font-face" in PORTAL_HTML_TEMPLATE
+    assert "Geist Mono" in PORTAL_HTML_TEMPLATE
+    assert "asciidoctor" in PORTAL_HTML_TEMPLATE.lower()
+    assert "mermaid" in PORTAL_HTML_TEMPLATE
+
+    # 4. The favicon asset is self-contained too.
+    assert _remote_subresources(PORTAL_FAVICON_SVG) == []
+
+
+def test_remote_subresource_detector_flags_cdn_references():
+    """INV-PORTAL-AIR-GAPPED-BUNDLE: the detector catches the original CDN regressions and ignores inert literals."""
+    regressions = [
+        '<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>',
+        '<link href="https://fonts.googleapis.com/css2?family=Geist" rel="stylesheet">',
+        '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>',
+        "<style>@import url('https://fonts.googleapis.com/css2?family=Inter');</style>",
+        '<style>@import "//fonts.example.com/x.css";</style>',
+        "<style>@font-face{src:url(https://cdn.example.com/geist.woff2)}</style>",
+    ]
+    for snippet in regressions:
+        assert _remote_subresources(snippet), snippet
+
+    inert = [
+        '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+        '<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\'%3E">',
+        "<script>throw Error('see https://react.dev/errors/418 for details')</script>",
+        '<link rel="alternate icon" href="/favicon.ico">',
+    ]
+    for snippet in inert:
+        assert _remote_subresources(snippet) == [], snippet
+
+
+def test_portal_bundle_size_budget():
+    """INV-PORTAL-AIR-GAPPED-BUNDLE: the embedded single-file bundle stays within the 5 MiB uncompressed budget."""
+    size = len(PORTAL_HTML_TEMPLATE.encode("utf-8"))
+    assert size <= PORTAL_BUNDLE_BUDGET_BYTES, f"portal bundle is {size} bytes (budget {PORTAL_BUNDLE_BUDGET_BYTES})"
+
+
+def test_portal_bundle_head_close_is_unique():
+    """CTR-EIDOS-PORTAL: build-site injects data before the first '</head>', so inline JS must never contain one."""
+    assert PORTAL_HTML_TEMPLATE.count("</head>") == 1
+    assert PORTAL_HTML_TEMPLATE.index("</head>") > PORTAL_HTML_TEMPLATE.index('<script type="module"')
+    assert "</head>\n<body" in PORTAL_HTML_TEMPLATE

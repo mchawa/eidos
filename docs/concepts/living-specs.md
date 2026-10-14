@@ -90,7 +90,7 @@ components:
   - id: CMP-CORE-PARSER
     name: SpecParser
     responsibility: "Parses AsciiDoc files with YAML frontmatter into structured AST models."
-    source_path: "src/eidos/core/parser.py"
+    source_path: "src/eidos/core/spec/parser.py"
 contracts:
   provides:
     - "CTR-EIDOS-VALIDATOR"

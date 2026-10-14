@@ -6,8 +6,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from eidos.core.project import load_project
-from eidos.core.validator import SpecValidator
+from eidos.core.spec.validator import SpecValidator
+from eidos.core.workspace.project import load_project
 
 
 def get_portal_data(eidos_dir: Path) -> dict[str, Any]:

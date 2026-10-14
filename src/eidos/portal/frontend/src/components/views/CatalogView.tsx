@@ -34,6 +34,10 @@ import type { PortalData, SpecItem } from "@/types";
 
 export interface CatalogViewProps {
   data: PortalData;
+  /** Spec ID to open in the inspector (set by in-portal xref navigation). */
+  focusSpecId?: string;
+  focusNonce?: number;
+  onFocusHandled?: () => void;
 }
 
 export interface SpecCategoryDefinition {
@@ -131,11 +135,20 @@ const SPEC_CATEGORIES: SpecCategoryDefinition[] = [
   },
 ];
 
-export function CatalogView({ data }: CatalogViewProps) {
+export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: CatalogViewProps) {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [selectedType, setSelectedType] = React.useState("all");
   const [viewMode, setViewMode] = React.useState<"hierarchy" | "flat">("hierarchy");
   const [inspectedSpec, setInspectedSpec] = React.useState<SpecItem | null>(null);
+
+  // Open the spec targeted by an xref:/<<ID>>/link:*.adoc[] click from the AsciiDoc reader.
+  React.useEffect(() => {
+    if (!focusSpecId) return;
+    const target = data.specs.find((s) => s.id === focusSpecId);
+    if (target) setInspectedSpec(target);
+    onFocusHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSpecId, focusNonce]);
 
   // Group specs by type
   const specTypes = React.useMemo(() => {

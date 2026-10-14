@@ -1,6 +1,5 @@
 import * as React from "react";
-// Use global window.mermaid (either bundled or loaded via standalone script)
-declare const mermaid: any;
+import { getConfiguredMermaid } from "@/lib/mermaid";
 import {
   ZoomIn,
   ZoomOut,
@@ -163,33 +162,6 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
     setZoom((prev) => Math.min(3.0, Math.max(0.35, Number((prev + delta).toFixed(2)))));
   };
 
-  // Initialize mermaid and reconfigure when darkMode changes
-  React.useEffect(() => {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: darkMode ? "dark" : "default",
-      securityLevel: "loose",
-      fontFamily: "Inter, system-ui, sans-serif",
-      themeVariables: darkMode
-        ? {
-            darkMode: true,
-            background: "transparent",
-            mainBkg: "#111827",
-            nodeBorder: "#3b82f6",
-            lineColor: "#60a5fa",
-            textColor: "#f8fafc",
-          }
-        : {
-            darkMode: false,
-            background: "transparent",
-            mainBkg: "#ffffff",
-            nodeBorder: "#2563eb",
-            lineColor: "#2563eb",
-            textColor: "#0f172a",
-          },
-    });
-  }, [darkMode]);
-
   // Compute active diagram definition
   const currentDiagramSource = React.useMemo(() => {
     if (level === 1) {
@@ -321,6 +293,7 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
     const renderDiagram = async () => {
       if (!diagramRef.current) return;
       try {
+        const mermaid = await getConfiguredMermaid(darkMode);
         const uniqueId = `mermaid-${Date.now()}`;
         const { svg } = await mermaid.render(uniqueId, currentDiagramSource);
         if (!isCancelled && diagramRef.current) {

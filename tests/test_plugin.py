@@ -1287,7 +1287,7 @@ def test_hooks_fail_loud_on_internal_error(tmp_path, monkeypatch):
 
 def test_stop_hook_fingerprint_retriggers_when_drifted_file_content_changes(tmp_path, monkeypatch):
     """Verify Stop gate fingerprint includes file content hashes so new edits to a drifted file block again."""
-    from eidos.core.models import ValidationReport
+    from eidos.core.spec.models import ValidationReport
     from eidos.plugin.hooks import handle_drift_stop
     from eidos.vcs.drift import ChangedFilesClassification, DriftCheckResult
 

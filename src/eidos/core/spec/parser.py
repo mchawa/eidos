@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from eidos.core.models import SpecDocument
+from eidos.core.spec.models import SpecDocument
 
 _FRONTMATTER_DELIMITER_RE = re.compile(r"^---\s*$", re.MULTILINE)
 

@@ -51,3 +51,17 @@ To maximize cognitive focus and remove interface clutter, the reader eliminates 
 * **Always-Rendered Clean Prose**: Always presents the rendered specification document directly.
 * **Locked Optimal Typography**: Standardizes on the ideal reading line-height and font size.
 * **Section Permalinks**: Hovering over any section heading reveals an anchor link button for instant permalink copying.
+
+== 4. AsciiDoc Rendering (Asciidoctor.js)
+Specification bodies are rendered through Asciidoctor.js (`@asciidoctor/core`, `safe: 'secure'`) instead of a hand-written parser, so the reader supports standard AsciiDoc blocks used by living specs:
+
+* **Quote blocks** (`[quote, Attribution]`, as in `eidos/system.adoc`) with attribution lines.
+* **Admonitions** (`NOTE:`, `[WARNING]` delimited blocks, ...) rendered as colored callout cards.
+* **Callouts** (`<1>` markers in source blocks plus the matching callout list).
+* **Definition lists** (`term:: definition`) and nested/ordered lists.
+* **Multi-line tables** (`[cols=...]`, header rows, multi-paragraph cells) inside a horizontally scrollable wrapper.
+* **Cross references**: `xref:SPEC-ID[]`, `<<SPEC-ID>>`, and relative `link:path/spec.adoc[]` / `xref:path/spec.adoc[]` targets are resolved to in-portal spec navigation (the Catalog spec inspector) and never leave the single-page app; in-page `#anchor` links scroll smoothly.
+* `include::` is explicitly unsupported in the browser (no filesystem) and is left as inert text in secure mode; no living spec currently uses it.
+
+Passthrough HTML emitted by Asciidoctor is sanitized (no scripts, iframes, styles, or event handlers), and heading ids and the sticky outline come from the same Asciidoctor parse, so `Table of Contents` anchors always match rendered headings. Mermaid, Asciidoctor.js, and the Geist fonts are embedded in the portal bundle (INV-PORTAL-AIR-GAPPED-BUNDLE).
+

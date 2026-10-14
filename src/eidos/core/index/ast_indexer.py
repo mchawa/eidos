@@ -798,6 +798,82 @@ def _is_public_symbol(sym: CodeSymbol) -> bool:
     return not sym.name.startswith("_")
 
 
+#: Source extensions whose public symbols are compared structurally.
+AST_DIFF_EXTS = frozenset({".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java"})
+_AST_DIFF_EXTS = AST_DIFF_EXTS
+
+
+@dataclass
+class PublicSymbolDiff:
+    """Structured diff of public symbols between two versions of a source file (DLT-2026-039).
+
+    Each entry is a ``(kind, parent_symbol, name)`` key with ``parent_symbol == ""`` for top-level symbols.
+    """
+
+    added: list[tuple[str, str, str]] = field(default_factory=list)
+    removed: list[tuple[str, str, str]] = field(default_factory=list)
+    changed: list[tuple[str, str, str]] = field(default_factory=list)
+
+    @staticmethod
+    def qualified_name(key: tuple[str, str, str]) -> str:
+        _, parent, name = key
+        return f"{parent}.{name}" if parent else name
+
+    def reasons(self) -> list[str]:
+        """Human-readable reasons in the stable order: added, removed, changed signature."""
+        out = [f"added {k[0]} '{self.qualified_name(k)}'" for k in self.added]
+        out += [f"removed {k[0]} '{self.qualified_name(k)}'" for k in self.removed]
+        out += [f"changed signature of {k[0]} '{self.qualified_name(k)}'" for k in self.changed]
+        return out
+
+    def __bool__(self) -> bool:
+        return bool(self.added or self.removed or self.changed)
+
+
+def public_symbol_map(content: str | None, file_path: Path | str) -> dict[tuple[str, str, str], str]:
+    """Map ``(kind, parent_symbol, name) -> signature`` of the public symbols in one file version.
+
+    ``None`` content (absent file) and files without AST support yield an empty map.
+    """
+    p = Path(file_path)
+    suffix = p.suffix.lower()
+    if content is None or suffix not in _AST_DIFF_EXTS:
+        return {}
+    # For Python, use FallbackIndexer (stdlib ast) for canonical ast.unparse signatures;
+    # for other languages, use get_ast_indexer().
+    indexer: BaseAstIndexer = FallbackIndexer() if suffix == ".py" else get_ast_indexer()
+    return {
+        (s.kind, s.parent_symbol or "", s.name): (s.signature or "")
+        for s in indexer.extract_symbols(p, content)
+        if _is_public_symbol(s)
+    }
+
+
+def diff_symbol_maps(
+    old_map: dict[tuple[str, str, str], str],
+    new_map: dict[tuple[str, str, str], str],
+) -> PublicSymbolDiff:
+    """Diff two ``public_symbol_map()`` results."""
+    return PublicSymbolDiff(
+        added=sorted(set(new_map) - set(old_map)),
+        removed=sorted(set(old_map) - set(new_map)),
+        changed=sorted(k for k in set(old_map) & set(new_map) if old_map[k] != new_map[k]),
+    )
+
+
+def diff_public_symbols(
+    old_content: str | None,
+    new_content: str | None,
+    file_path: Path | str,
+) -> PublicSymbolDiff:
+    """Compute added / removed / signature-changed public symbols between two file versions.
+
+    ``None`` content is treated as an empty file (so every public symbol of an added file is ``added``).
+    Files without AST support (non-code extensions) yield an empty diff.
+    """
+    return diff_symbol_maps(public_symbol_map(old_content, file_path), public_symbol_map(new_content, file_path))
+
+
 def has_structural_changes(
     old_content: str | None,
     new_content: str | None,
@@ -820,37 +896,10 @@ def has_structural_changes(
     if old_content == new_content:
         return False, []
 
-    code_exts = {".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java"}
-    suffix = p.suffix.lower()
-    if suffix not in code_exts:
+    if p.suffix.lower() not in _AST_DIFF_EXTS:
         return True, [f"modified '{p.name}'"]
 
-    # For Python, use FallbackIndexer (stdlib ast) for canonical ast.unparse signatures;
-    # for other languages, use get_ast_indexer().
-    indexer: BaseAstIndexer = FallbackIndexer() if suffix == ".py" else get_ast_indexer()
-    old_symbols = [s for s in indexer.extract_symbols(p, old_content) if _is_public_symbol(s)]
-    new_symbols = [s for s in indexer.extract_symbols(p, new_content) if _is_public_symbol(s)]
-
-    old_map = {(s.kind, s.parent_symbol or "", s.name): (s.signature or "") for s in old_symbols}
-    new_map = {(s.kind, s.parent_symbol or "", s.name): (s.signature or "") for s in new_symbols}
-
-    reasons: list[str] = []
-    for key in sorted(set(new_map) - set(old_map)):
-        kind, parent, name = key
-        qual = f"{parent}.{name}" if parent else name
-        reasons.append(f"added {kind} '{qual}'")
-
-    for key in sorted(set(old_map) - set(new_map)):
-        kind, parent, name = key
-        qual = f"{parent}.{name}" if parent else name
-        reasons.append(f"removed {kind} '{qual}'")
-
-    for key in sorted(set(old_map) & set(new_map)):
-        if old_map[key] != new_map[key]:
-            kind, parent, name = key
-            qual = f"{parent}.{name}" if parent else name
-            reasons.append(f"changed signature of {kind} '{qual}'")
-
+    reasons = diff_public_symbols(old_content, new_content, p).reasons()
     return bool(reasons), reasons
 
 
