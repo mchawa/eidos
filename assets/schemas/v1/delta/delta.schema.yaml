@@ -66,13 +66,18 @@ properties:
             - refactor (Internal code or spec cleanup without behavioral change)
             - security_patch (Addressing a vulnerability)
             - performance_optimization (Speed, throughput, or memory improvement)
-            - chore / documentation (Tooling or doc adjustments)
+            - chore (Tooling, build, or maintenance adjustments)
+            - documentation (Living specification or guide adjustments)
         examples:
           - "feature_addition"
           - "feature_removal"
           - "modification"
           - "bugfix"
           - "refactor"
+          - "security_patch"
+          - "performance_optimization"
+          - "chore"
+          - "documentation"
       motivation:
         type: string
         description: "Why this change is needed and the problem it resolves."
@@ -100,22 +105,31 @@ properties:
             Semantic operation type indicating the exact mutation being executed against the baseline.
             
             Common conventions include:
+              - Domains: add_domain, modify_domain, remove_domain
               - Capabilities: add_capability, extend_capability, deprecate_capability, remove_capability
               - Invariants: add_invariant, patch_invariant, remove_invariant
+              - Containers: add_container, modify_container, remove_container
               - Components: add_component, modify_component, remove_component
-              - Policies: add_policy, patch_policy, deprecate_policy
+              - Architecture: modify_architecture
+              - Policies: add_policy, modify_policy, patch_policy, deprecate_policy, remove_policy
               - Contracts: add_contract, modify_contract, remove_contract
-              - Entities: add_entity, add_entity_field, remove_entity_field
-              - Design: add_design_system, modify_design_system, add_ui_component, modify_ui_component, add_screen, modify_screen, remove_screen
+              - Personas: add_persona, modify_persona, remove_persona
+              - Design: add_design_system, modify_design_system, add_ui_component, modify_ui_component, remove_ui_component, add_screen, modify_screen, remove_screen, add_client, modify_client, add_flow, modify_flow
           examples:
             - "add_capability"
             - "extend_capability"
             - "patch_invariant"
+            - "add_container"
+            - "modify_container"
             - "add_component"
             - "modify_component"
+            - "modify_architecture"
             - "modify_screen"
             - "add_ui_component"
             - "modify_design_system"
+        title:
+          type: string
+          description: "Optional human-readable title when scaffolding a new specification via add_* mutations."
         target_domain:
           type: string
           pattern: "^(DOM-[A-Z0-9_-]+|.*\\.adoc)$"
@@ -127,11 +141,15 @@ properties:
         target_container:
           type: string
           pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
-          description: "Target container ID or relative path (e.g. CNT-CORE)."
+          description: "Target C4 Level 2 container ID or relative path (e.g. CNT-CORE)."
         target_component:
           type: string
-          pattern: "^((CMP|CNT|ARCH|CTR|SYS)-[A-Z0-9_-]+|.*\\.adoc)$"
-          description: "Target component or container ID or relative path (e.g. CMP-CORE-VALIDATOR)."
+          pattern: "^(CMP-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Target C4 Level 3 component ID or relative path (e.g. CMP-CORE-VALIDATOR)."
+        target_architecture:
+          type: string
+          pattern: "^(ARCH-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Target architecture ID or relative path (e.g. ARCH-EIDOS-001 or eidos/architecture/system-architecture.adoc)."
         target_contract:
           type: string
           pattern: "^(CTR-[A-Z0-9_-]+|.*\\.adoc)$"
@@ -178,7 +196,7 @@ properties:
         expect:
           type: object
           additionalProperties: true
-          description: "Optional declarative post-condition assertions (frontmatter key-value pairs or substrings) expected on the target specification after applying a modify_*/extend_*/patch_* mutation."
+          description: "Optional declarative post-condition assertions (frontmatter key-value pairs or substrings) expected on the target specification after applying an add_*, modify_*, extend_*, or patch_* mutation."
   affects:
     type: object
     description: "Explicit entity references affected by this SpecDelta (optional)."
@@ -188,22 +206,24 @@ properties:
         type: array
         items:
           type: string
+          pattern: "^(CMP-[A-Z0-9_-]+|.*\\.adoc)$"
           x-eidos-ref:
             target_types:
               - tech/component
-              - tech/container
             prefixes:
               - CMP-
-              - CNT-
+            entity_label: component
       containers:
         type: array
         items:
           type: string
+          pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
           x-eidos-ref:
             target_types:
               - tech/container
             prefixes:
               - CNT-
+            entity_label: container
       contracts:
         type: array
         items:
@@ -258,14 +278,16 @@ properties:
             entity_label: persona
       impacted_components:
         type: array
-        description: "List of code packages, modules, containers, or components that must be modified."
+        description: "List of C4 Level 3 components (CMP-*) or spec paths that must be modified."
         items:
           type: string
+          pattern: "^(CMP-[A-Z0-9_-]+|.*\\.adoc)$"
       impacted_containers:
         type: array
-        description: "List of C4 Level 2 containers impacted by this change."
+        description: "List of C4 Level 2 containers (CNT-*) impacted by this change."
         items:
           type: string
+          pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
       impacted_design_systems:
         type: array
         description: "List of design systems impacted by this change (e.g. DS-CORE, DS-ACME)."
@@ -276,7 +298,7 @@ properties:
               - design/system
             prefixes:
               - DS-
-            entity_label: entity
+            entity_label: design_system
       impacted_screens:
         type: array
         description: "List of screen specifications modified or affected."
@@ -287,13 +309,41 @@ properties:
               - design/screen
             prefixes:
               - SCR-
-            entity_label: entity
+            entity_label: screen
       invariants_to_enforce:
         type: array
         description: "List of invariant or policy IDs that must have green passing tests before this delta can merge."
         items:
           type: string
           pattern: "^(INV|POL)-[A-Z0-9_-]+$"
+  tombstone:
+    type: object
+    description: "Optional tombstone policy and search-token exemptions for deletion/deprecation audits (eidos delta audit)."
+    additionalProperties: false
+    properties:
+      search_tokens:
+        type: array
+        description: "Additional code symbols, module names, or string tokens to scan for dangling references."
+        items:
+          type: string
+      allowed_reasons:
+        type: array
+        description: "Explicit path/pattern exemptions for legitimate historical or compatibility references."
+        items:
+          type: object
+          additionalProperties: false
+          required:
+            - path
+          properties:
+            path:
+              type: string
+              description: "Relative path or substring matching exempt files."
+            pattern:
+              type: string
+              description: "Optional regex pattern matching exempt lines within the file."
+            reason:
+              type: string
+              description: "Justification for why this reference is exempt from deletion audit failures."
   vcs:
     type: object
     description: "Traceability link to human issue tracker and pull request."

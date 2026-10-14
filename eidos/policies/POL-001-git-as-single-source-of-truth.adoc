@@ -4,7 +4,7 @@ schema: schemas/v1/product/policy.schema.yaml
 id: POL-001-GIT-SOURCE-OF-TRUTH
 title: "Git Repository as the Single Source of Truth"
 category: governance
-rule: "All product requirements, architectural contracts, invariants, and execution logs must reside inside the version-controlled Git repository. No external platform (Notion, Jira, Google Docs) holds authoritative state."
+rule: "All product requirements, architectural contracts, invariants, and execution logs must reside inside the version-controlled Git repository. No external platform (Notion, Jira, Google Docs) holds authoritative state. While standalone chronological ADR files remain prohibited, enduring architectural trade-offs and rejected alternatives are recorded in-place within the 'decisions' frontmatter block of the owning system, architecture, container, or component living specification."
 enforcement:
   mechanism: "CI linting checks that validate all proposed code changes map to an active SpecDelta or existing Capability in eidos/"
   severity: blocking
@@ -13,5 +13,6 @@ enforcement:
 :toc: left
 
 == Rationale
-External systems create split-brain development: engineers work from Jira tickets, designers from Figma, product managers from Notion, while the actual code lives in Git. Eidos mandates that product definitions and technical architectures are code assets versioned, diffed, and reviewed within Git.
+External systems create split-brain development: engineers work from Jira tickets, designers from Figma, product managers from Notion, while the actual code lives in Git. Eidos mandates that product definitions and technical architectures are code assets versioned, diffed, and reviewed within Git. Similarly, rather than scattering historical decisions across detached chronological ADR graveyards (`docs/adr/`), enduring architectural trade-offs (`DEC-*`) and rejected alternatives are embedded directly in the `decisions` block of the living specification (`product/system`, `tech/architecture`, `tech/container`, or `tech/component`) they govern.
+
 

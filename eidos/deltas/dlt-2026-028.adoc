@@ -13,13 +13,13 @@ intent:
     graph neighborhood verification so internal body-only refactors do not cause false-positive
     spec churn and unrelated spec edits cannot mask component drift.
 mutations:
-- action: modify_component
-  target_component: CNT-EIDOS-CORE
+- action: modify_container
+  target_container: CNT-EIDOS-CORE
   details: Add signature extraction ('CodeSymbol.signature') and 'has_structural_changes(old_content,
     new_content, file_path)' in 'src/eidos/core/ast_indexer.py' to distinguish public
     API/symbol/signature changes from internal function body edits.
-- action: modify_component
-  target_component: CNT-EIDOS-VCS
+- action: modify_container
+  target_container: CNT-EIDOS-VCS
   details: Upgrade 'detect_drift()' in 'src/eidos/vcs/drift.py' to filter modified
     code files through 'has_structural_changes()' and verify per-component synchronization
     against the owning spec or its 1-hop knowledge graph neighborhood ('idx.get_k_hop_neighborhood(cid,
@@ -28,7 +28,7 @@ mutations:
   target_capability: CAP-VCS-001
   details: Enforce scoped 1-hop structural drift detection under 'INV-DRIFT-DETECTION-ACCURACY'.
 blast_radius:
-  impacted_components:
+  impacted_containers:
   - CNT-EIDOS-CORE
   - CNT-EIDOS-VCS
 ---

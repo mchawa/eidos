@@ -21,7 +21,7 @@ components:
     source_path: "docs/concepts/living-specs.md"
   - id: CMP-DOCS-USER-GUIDES
     name: "UserGuides"
-    responsibility: "Operational reference manuals: CLI command reference, Agent Plugin integration, and Living Portal deployment."
+    responsibility: "Operational reference manuals: CLI command reference, Agent Plugin integration with 4 workflow skills, and Living Portal deployment."
     source_path: "docs/guides/cli.md"
   - id: CMP-DOCS-CONFIG
     name: "SiteConfiguration"
@@ -59,6 +59,6 @@ This container represents the public documentation site under `docs/` and its bu
 | Component ID | Name | Responsibility | Source Path
 | `CMP-DOCS-GETTING-STARTED` | **GettingStartedGuides** | Installation, environment setup, and 5-minute quickstart onboarding | `docs/getting-started/`
 | `CMP-DOCS-CORE-CONCEPTS` | **CoreConceptsGuides** | Explanations of Living Specs, SpecDeltas, Invariants, Explorations, Design Systems, and Schemas | `docs/concepts/`
-| `CMP-DOCS-USER-GUIDES` | **UserGuides** | CLI reference, AI Agent Plugin guides (Antigravity, Claude, Cursor), and Portal operations | `docs/guides/`
+| `CMP-DOCS-USER-GUIDES` | **UserGuides** | CLI reference, AI Agent Plugin guides (4 workflow skills across Antigravity, Claude, Cursor, Copilot), and Portal operations | `docs/guides/`
 | `CMP-DOCS-CONFIG` | **SiteConfiguration** | Zensical theme styling, search indexing, and navigation topology | `zensical.toml`
 |===

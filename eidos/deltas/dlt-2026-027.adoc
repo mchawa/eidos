@@ -10,20 +10,20 @@ intent:
   kind: architectural_refactor
   motivation: "Enforce strict static-only verification of invariant 'test_binding' declarations ('file::func' existence and exact word-boundary '# INV-*' reference within the bound test function) without executing tests or reading test runner artifacts."
 mutations:
-- action: modify_component
-  target_component: CNT-EIDOS-CORE
+- action: modify_container
+  target_container: CNT-EIDOS-CORE
   details: "Upgrade 'src/eidos/core/ast_indexer.py' with 'list_test_functions()' and decorator/preceding-comment aware 'extract_test_bindings()' across both 'AstGrepIndexer' and 'FallbackIndexer'."
-- action: modify_component
-  target_component: CNT-EIDOS-VCS
+- action: modify_container
+  target_container: CNT-EIDOS-VCS
   details: "Upgrade 'extract_invariants_and_verify()' and add 'detect_orphan_invariants()' in 'src/eidos/vcs/drift.py' to strictly require that 'test_binding' ('file::func') resolves to an existing file and AST test function containing the exact word-boundary 'INV-...' token, removing the permissive 'file exists -> covered' fallback and gating 'is_clean' on 100% invariant coverage."
-- action: modify_component
-  target_component: CNT-EIDOS-CLI
+- action: modify_container
+  target_container: CNT-EIDOS-CLI
   details: "Add '--warn-only' option to 'eidos drift' in 'src/eidos/cli/main.py' so strict static invariant verification is enforced by default while allowing advisory inspection when requested."
 - action: extend_capability
   target_capability: CAP-VCS-001
   details: "Repair stale 'test_binding' paths across 'eidos/domains/' and tag bound test functions in 'tests/' so all 30 repository invariants pass strict static 'file::func' verification with zero orphans."
 blast_radius:
-  impacted_components:
+  impacted_containers:
   - CNT-EIDOS-CORE
   - CNT-EIDOS-VCS
   - CNT-EIDOS-CLI

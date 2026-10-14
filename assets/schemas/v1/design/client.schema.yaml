@@ -64,16 +64,14 @@ properties:
       entity_label: entity
   container:
     type: string
-    pattern: "^((CNT|CMP)-[A-Z0-9_-]+|.*\\.adoc)$"
+    pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
     description: "ID or relative path to the C4 Level 2 Container manifest implementing this client (e.g. 'CNT-WEB-PORTAL')."
     x-eidos-ref:
       target_types:
         - tech/container
-        - tech/component
       prefixes:
         - CNT-
-        - CMP-
-      entity_label: entity
+      entity_label: container
   capabilities:
     type: array
     description: "List of product capabilities delivered on this client surface."

@@ -47,9 +47,8 @@ def test_bundled_plugin_conformance():
     assert report.is_valid, f"Plugin validation failed: {report.errors}"
     assert report.plugin_name == "eidos"
     assert report.plugin_version == get_bundled_plugin_version()
-    assert "eidos" in report.skills
-    assert "eidos-context" in report.skills
-    assert len(report.skills) == 14
+    assert set(report.skills) == {"eidos", "eidos-spec", "eidos-plan", "eidos-ops"}
+    assert len(report.skills) == 4
     assert len(report.mcp_servers) == 0
     assert "com.google.antigravity" in report.extensions
 
@@ -62,7 +61,7 @@ def test_repo_plugin_conformance():
     report = validate_plugin_package(plugin_dir)
     assert report.is_valid, f"Repo plugin validation failed: {report.errors}"
     assert len(report.errors) == 0
-    assert len(report.skills) == 14
+    assert len(report.skills) == 4
 
 
 def test_plugin_install_to_project_scope(tmp_path):
@@ -200,8 +199,8 @@ def test_plugin_install_to_claude_plugin(tmp_path):
     assert (claude_plugin_dir / "skills" / "eidos" / "SKILL.md").exists()
     # Direct flat skills in .claude/skills/
     assert (tmp_path / ".claude" / "skills" / "eidos" / "SKILL.md").exists()
-    assert (tmp_path / ".claude" / "skills" / "eidos-architecture" / "SKILL.md").exists()
-    assert len([d for d in (tmp_path / ".claude" / "skills").iterdir() if d.is_dir()]) == 14
+    assert (tmp_path / ".claude" / "skills" / "eidos-spec" / "SKILL.md").exists()
+    assert len([d for d in (tmp_path / ".claude" / "skills").iterdir() if d.is_dir()]) == 4
 
     with open(claude_plugin_dir / "plugin.json", encoding="utf-8") as f:
         manifest = json.load(f)
@@ -238,7 +237,7 @@ def test_plugin_uninstall_claude_plugin(tmp_path):
     assert results[0].success
 
     assert not claude_plugin_dir.exists()
-    assert not (tmp_path / ".claude" / "skills" / "eidos-architecture").exists()
+    assert not (tmp_path / ".claude" / "skills" / "eidos-spec").exists()
     if settings_file.exists():
         with open(settings_file, encoding="utf-8") as f:
             settings = json.load(f)
@@ -281,7 +280,7 @@ def test_plugin_install_and_uninstall_aider(tmp_path):
     assert conventions.exists()
     assert aider_conf.exists()
     assert (aider_skills / "eidos" / "SKILL.md").exists()
-    assert len([d for d in aider_skills.iterdir() if d.is_dir()]) == 14
+    assert len([d for d in aider_skills.iterdir() if d.is_dir()]) == 4
     assert "Single Source of Truth" in conventions.read_text(encoding="utf-8")
 
     # Uninstall
@@ -310,9 +309,9 @@ def test_plugin_install_and_uninstall_cline(tmp_path):
     assert not settings_file.exists()
     assert plugin_dir.exists()
     assert (skills_dir / "eidos" / "SKILL.md").exists()
-    assert (skills_dir / "eidos-architecture" / "SKILL.md").exists()
-    assert (skills_dir / "eidos-drift" / "SKILL.md").exists()
-    assert len([d for d in skills_dir.iterdir() if d.is_dir()]) == 14
+    assert (skills_dir / "eidos-spec" / "SKILL.md").exists()
+    assert (skills_dir / "eidos-plan" / "SKILL.md").exists()
+    assert len([d for d in skills_dir.iterdir() if d.is_dir()]) == 4
 
     # Uninstall
     uninst = uninstall_plugin(target=PluginInstallTarget.CLINE, project_dir=tmp_path)
@@ -337,7 +336,7 @@ def test_plugin_install_and_uninstall_opencode(tmp_path):
     assert not rules.exists()
     assert plugin_dir.exists()
     assert (skills_dir / "eidos" / "SKILL.md").exists()
-    assert len([d for d in skills_dir.iterdir() if d.is_dir()]) == 14
+    assert len([d for d in skills_dir.iterdir() if d.is_dir()]) == 4
 
     # Uninstall
     uninst = uninstall_plugin(target=PluginInstallTarget.OPEN_CODE, project_dir=tmp_path)
@@ -359,7 +358,7 @@ def test_plugin_install_and_uninstall_codex(tmp_path):
     assert not (codex_dir / "mcp.json").exists()
     assert (codex_dir / "rules.md").exists()
     assert (codex_dir / "skills" / "eidos" / "SKILL.md").exists()
-    assert len([d for d in (codex_dir / "skills").iterdir() if d.is_dir()]) == 14
+    assert len([d for d in (codex_dir / "skills").iterdir() if d.is_dir()]) == 4
 
     with open(codex_dir / "plugin.json", encoding="utf-8") as f:
         manifest = json.load(f)
@@ -396,9 +395,9 @@ def test_plugin_install_and_uninstall_copilot(tmp_path):
     # 2. Native Copilot Agent Skills
     copilot_skills = tmp_path / ".github" / "skills"
     assert (copilot_skills / "eidos" / "SKILL.md").exists()
-    assert (copilot_skills / "eidos-architecture" / "SKILL.md").exists()
-    assert (copilot_skills / "eidos-delta" / "SKILL.md").exists()
-    assert len([d for d in copilot_skills.iterdir() if d.is_dir()]) == 14
+    assert (copilot_skills / "eidos-spec" / "SKILL.md").exists()
+    assert (copilot_skills / "eidos-plan" / "SKILL.md").exists()
+    assert len([d for d in copilot_skills.iterdir() if d.is_dir()]) == 4
 
     # 3. Copilot settings
     copilot_settings = tmp_path / ".github" / "copilot" / "settings.json"
@@ -1323,6 +1322,47 @@ def test_stop_hook_fingerprint_retriggers_when_drifted_file_content_changes(tmp_
     src_file.write_text("def v2():\n    return 2\n", encoding="utf-8")
     res3 = handle_drift_stop({}, tmp_path)
     assert res3["decision"] == "continue"
+
+
+def test_plugin_install_and_update_prunes_retired_legacy_skills(tmp_path):
+    """Verify install_plugin and uninstall_plugin prune the 13 retired legacy skills while preserving unrelated user skills (DLT-2026-037)."""
+    from eidos.plugin.installer import ACTIVE_EIDOS_SKILLS, RETIRED_EIDOS_SKILLS
+
+    # Seed legacy retired skill directories in both plugin-tree and flat skill targets, plus a custom user skill
+    tree_skills = tmp_path / ".agents" / "plugins" / "eidos" / "skills"
+    flat_skills = tmp_path / ".cursor" / "skills"
+    for retired in ("eidos-architecture", "eidos-context", "eidos-delta", "eidos-drift", "eidos-review"):
+        (tree_skills / retired).mkdir(parents=True, exist_ok=True)
+        (tree_skills / retired / "SKILL.md").write_text("# Legacy\n", encoding="utf-8")
+        (flat_skills / retired).mkdir(parents=True, exist_ok=True)
+        (flat_skills / retired / "SKILL.md").write_text("# Legacy\n", encoding="utf-8")
+
+    custom_user_skill = flat_skills / "custom-team-skill"
+    custom_user_skill.mkdir(parents=True, exist_ok=True)
+    (custom_user_skill / "SKILL.md").write_text("# Custom Team Skill\n", encoding="utf-8")
+
+    # Run install_plugin (which powers both install and update)
+    install_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path, force=True)
+
+    # All retired skills must be removed from both plugin tree and flat skills
+    for retired in RETIRED_EIDOS_SKILLS:
+        assert not (tree_skills / retired).exists(), f"Retired skill {retired} not pruned from plugin tree"
+        assert not (flat_skills / retired).exists(), f"Retired skill {retired} not pruned from flat skills"
+
+    # Active 4 skills must exist, and custom user skill must be preserved
+    for active in ACTIVE_EIDOS_SKILLS:
+        assert (tree_skills / active / "SKILL.md").exists()
+        assert (flat_skills / active / "SKILL.md").exists()
+    assert (custom_user_skill / "SKILL.md").exists()
+
+    # Re-seed a retired skill and verify uninstall_plugin removes both active and retired Eidos skills while keeping custom skill
+    (flat_skills / "eidos-portal").mkdir(parents=True, exist_ok=True)
+    (flat_skills / "eidos-portal" / "SKILL.md").write_text("# Legacy Portal\n", encoding="utf-8")
+    uninstall_plugin(target=PluginInstallTarget.CURSOR, project_dir=tmp_path)
+    assert not (flat_skills / "eidos-portal").exists()
+    for active in ACTIVE_EIDOS_SKILLS:
+        assert not (flat_skills / active).exists()
+    assert (custom_user_skill / "SKILL.md").exists()
 
 
 

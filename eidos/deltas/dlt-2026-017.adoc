@@ -23,16 +23,16 @@ mutations:
     delta audit'' interface.
 
     '
-- action: modify_component
-  target_component: CNT-EIDOS-CORE
+- action: modify_container
+  target_container: CNT-EIDOS-CORE
   details: 'Implement AuditEngine in ''src/eidos/core/audit.py'' supporting graph-level
     foreign key checks via ArchitecturalIndex, semantic reference discovery across
     the repository, automatic classification of historical ledgers, negative test
     assertions, and cleanup routines, and tombstone policy matching.
 
     '
-- action: modify_component
-  target_component: CNT-EIDOS-CLI
+- action: modify_container
+  target_container: CNT-EIDOS-CLI
   details: 'Expose the ''eidos delta audit <id_or_path> [--path <path>] [--strict]
     [--json]'' CLI command with formatted Rich diagnostic dashboards and machine-readable
     JSON schemas.
@@ -43,15 +43,15 @@ mutations:
     the ''eidos delta audit'' command, its options, and exit codes.
 
     '
-- action: modify_component
-  target_component: CNT-EIDOS-PLUGIN
+- action: modify_container
+  target_container: CNT-EIDOS-PLUGIN
   details: 'Update the eidos-delta agent skill to incorporate ''eidos delta audit
     <DLT-ID> --strict'' as a mandatory completion gate for deletion or refactoring
     tasks.
 
     '
 blast_radius:
-  impacted_components:
+  impacted_containers:
   - CNT-EIDOS-CORE
   - CNT-EIDOS-CLI
   - CNT-EIDOS-PLUGIN

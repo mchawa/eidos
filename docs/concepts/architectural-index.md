@@ -19,10 +19,10 @@ The index enables sub-3ms architectural queries, intelligent full-text specifica
 └───────────────┬────────────────────────┬───────────────┘
                 │                        │
        CLI Commands               Agent Skills
-  eidos repo-map                   eidos-context
-  eidos find-symbol                eidos-delta
-  eidos context --tier anchor      eidos-review
-  eidos index status               eidos-drift
+  eidos repo-map                   eidos
+  eidos find-symbol                eidos-spec
+  eidos context --tier anchor      eidos-plan
+  eidos index status               eidos-ops
   eidos index search
   eidos index blast-radius
 ```

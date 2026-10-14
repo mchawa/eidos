@@ -40,7 +40,7 @@ mutations:
     with breadcrumbs and component inspector modal/drawer without external Node.js
     dependencies.
 - action: modify_architecture
-  target_component: ARCH-EIDOS-001
+  target_architecture: ARCH-EIDOS-001
   details: Update Section 4 (Solution Strategy) and Section 5 (Building Block View)
     of ARCH-EIDOS-001 to document the dynamic clickable C4 hierarchical zoom and Level
     3 whitebox views.

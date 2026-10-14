@@ -13,13 +13,13 @@ intent:
     Changelog compliant CHANGELOG.md and docs/changelog.md, establishing bidirectional
     traceability between release notes, git tags, and living specifications.
 mutations:
-- action: modify_component
-  target_component: CNT-EIDOS-CORE
+- action: modify_container
+  target_container: CNT-EIDOS-CORE
   details: Implement 'src/eidos/core/changelog.py' with ChangelogGenerator to discover
     git release tags, query applied SpecDeltas, partition changes by release version,
     and format standard Keep a Changelog markdown with SpecDelta cross-references.
-- action: modify_component
-  target_component: CNT-EIDOS-CLI
+- action: modify_container
+  target_container: CNT-EIDOS-CLI
   details: Expose CLI command 'eidos delta changelog' and root-level shortcut 'eidos
     changelog' supporting custom output paths, unreleased inclusion, and automatic
     doc sync.
@@ -32,7 +32,7 @@ mutations:
   details: Document 'eidos delta changelog' and 'eidos changelog' options, arguments,
     and exit codes.
 blast_radius:
-  impacted_components:
+  impacted_containers:
   - CNT-EIDOS-CORE
   - CNT-EIDOS-CLI
 ---

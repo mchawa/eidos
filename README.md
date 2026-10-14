@@ -40,7 +40,7 @@ eidos drift
 # Launch interactive C4 architecture portal
 eidos portal serve --path eidos --port 8080
 
-# Install AI agent plugin (14 skills for Antigravity, Claude, Cursor, Copilot)
+# Install AI agent plugin (4 skills for Antigravity, Claude, Cursor, Copilot)
 eidos plugin install --target all
 ```
 
@@ -56,7 +56,7 @@ eidos/
 ├── src/eidos/                     # [THE ENGINE / SOLUTION]
 │   ├── cli/                       # CLI commands (`eidos validate`, `eidos drift`, `eidos delta`, etc.)
 │   ├── core/                      # AsciiDoc + YAML frontmatter parser & schema validator
-│   ├── plugin/                    # Agent plugin packager, validator, and installer (14 skills)
+│   ├── plugin/                    # Agent plugin packager, validator, and installer (4 skills)
 │   ├── portal/                    # Interactive Living Architecture static portal generator
 │   ├── vcs/                       # Git spec-to-code drift detection & reconciliation engine
 │   └── schemas/v1/                # Portable JSON/YAML Schemas bundled as package data

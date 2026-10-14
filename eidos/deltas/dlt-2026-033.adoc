@@ -13,8 +13,8 @@ intent:
     Code, Cursor, Cline, OpenCode, and OpenAI Codex instead of only matching Antigravity
     tool payload keys.
 mutations:
-- action: modify_component
-  target_component: CNT-EIDOS-PLUGIN
+- action: modify_container
+  target_container: CNT-EIDOS-PLUGIN
   details: Update 'handle_lint_pre_tool_use()' and 'run_lint_hook()' in 'src/eidos/plugin/hooks.py'
     with a harness-agnostic payload normalizer supporting Antigravity ('write_to_file',
     'replace_file_content', 'multi_replace_file_content' -> 'TargetFile', 'CodeContent',
@@ -28,8 +28,9 @@ mutations:
     YAML frontmatter and broken schema references across Antigravity, Claude Code,
     and Cursor JSON stdin payloads.
 blast_radius:
-  impacted_components:
+  impacted_containers:
   - CNT-EIDOS-PLUGIN
+  impacted_components:
   - CMP-HOOK-RUNNER
   invariants_to_enforce:
   - INV-AGENT-LINT-HOOK

@@ -1,6 +1,6 @@
 # AI Agent Integration
 
-Eidos is **agent-agnostic** and **model-agnostic**. It provides a standardized plugin bundle conforming to **[agent-plugins.org v1.0.0](https://agent-plugins.org)** and 14 specialized **Agent Skills** conforming to **[agentskills.io](https://agentskills.io)** so any AI coding assistant—such as **Google Antigravity**, **Claude Code**, **Cursor**, **GitHub Copilot**, **Aider**, **Cline**, **OpenCode**, or **OpenAI Codex**—can understand, query, and mutate your living specifications safely through direct CLI execution.
+Eidos is **agent-agnostic** and **model-agnostic**. It provides a standardized plugin bundle conforming to **[agent-plugins.org v1.0.0](https://agent-plugins.org)** and 4 cohesive **Agent Skills** conforming to **[agentskills.io](https://agentskills.io)** so any AI coding assistant—such as **Google Antigravity**, **Claude Code**, **Cursor**, **GitHub Copilot**, **Aider**, **Cline**, **OpenCode**, or **OpenAI Codex**—can understand, query, and mutate your living specifications safely through direct CLI execution.
 
 ```
                     ┌─────────────────────────────────────────┐
@@ -66,14 +66,14 @@ eidos install copilot
 | :--- | :--- | :--- |
 | `--target all` | All environments below | Installs plugins and configs for Antigravity, Claude, Cursor, Aider, Cline, OpenCode, Codex, and GitHub Copilot |
 | `--target project` | `.agents/plugins/eidos/` | Standard project-scope installation conforming strictly to `agent-plugins.org v1.0.0` (also configures Cursor and Claude) |
-| `--target antigravity` | `.agents/plugins/eidos/` | Installs plugin bundle with rules, 14 skills, hooks, and extensions (agent-plugins.org v1.0.0) |
-| `--target claude` | `.claude/plugins/eidos/`, `.claude/skills/` | Installs Claude Code plugin, 14 flat skills, slash commands (`/validate`, `/drift`), and configures `.claude/settings.json` |
-| `--target cursor` | `.cursor/skills/`, `.cursor/rules/eidos.mdc` | Installs 14 flat skills and Cursor rules (`.mdc`) for CLI execution |
-| `--target copilot` | `.github/plugin/`, `.github/skills/`, `.github/copilot/` | Installs GitHub Copilot plugin (Agent Plugins 1.0), 14 skills, settings, and instructions |
-| `--target aider` | `.aider/skills/`, `.aider.conventions.md`, `.aider.conf.yml` | Installs 14 skills, conventions index, and auto-read configuration |
-| `--target cline` | `.cline/plugins/`, `.cline/skills/` | Installs plugin bundle, 14 flat skills, and AGENTS.md conventions |
-| `--target open-code` | `.opencode/plugins/`, `.opencode/skills/` | Installs plugin bundle, 14 flat skills, and AGENTS.md instructions |
-| `--target codex` | `.codex/plugin.json`, `.codex/skills/`, `.codex/rules.md` | Installs OpenAI Codex plugin bundle with 14 skills and rules |
+| `--target antigravity` | `.agents/plugins/eidos/` | Installs plugin bundle with rules, 4 skills, hooks, and extensions (agent-plugins.org v1.0.0) |
+| `--target claude` | `.claude/plugins/eidos/`, `.claude/skills/` | Installs Claude Code plugin, 4 flat skills, slash commands (`/validate`, `/drift`), and configures `.claude/settings.json` |
+| `--target cursor` | `.cursor/skills/`, `.cursor/rules/eidos.mdc` | Installs 4 flat skills and Cursor rules (`.mdc`) for CLI execution |
+| `--target copilot` | `.github/plugin/`, `.github/skills/`, `.github/copilot/` | Installs GitHub Copilot plugin (Agent Plugins 1.0), 4 skills, settings, and instructions |
+| `--target aider` | `.aider/skills/`, `.aider.conventions.md`, `.aider.conf.yml` | Installs 4 skills, conventions index, and auto-read configuration |
+| `--target cline` | `.cline/plugins/`, `.cline/skills/` | Installs plugin bundle, 4 flat skills, and AGENTS.md conventions |
+| `--target open-code` | `.opencode/plugins/`, `.opencode/skills/` | Installs plugin bundle, 4 flat skills, and AGENTS.md instructions |
+| `--target codex` | `.codex/plugin.json`, `.codex/skills/`, `.codex/rules.md` | Installs OpenAI Codex plugin bundle with 4 skills and rules |
 
 ---
 
@@ -98,31 +98,18 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ```text
     .agents/plugins/eidos/
     ├── plugin.json               # agent-plugins.org v1.0.0 manifest
-    ├── rules/
-    │   └── AGENTS.md             # System prompt architectural guidelines
-    ├── skills/
-    │   ├── eidos/                # Living spec navigation & dual workflows
-    │   ├── eidos-architecture/   # Arc42 & C4 Level 1-3 topology (NO ADRs)
-    │   ├── eidos-context/        # Token-efficient architectural context slicing
-    │   ├── eidos-delta/          # SpecDelta mutation lifecycle (DLT-*)
-    │   ├── eidos-design/         # Multi-Design Systems & W3C Tokens
-    │   ├── eidos-drift/          # Spec-to-code drift detection & PR gate
-    │   ├── eidos-explore/        # Spikes, feasibility & technical discovery (EXP-*)
-    │   ├── eidos-extract/        # Brownfield living spec reverse-engineering
-    │   ├── eidos-init/           # Greenfield repository bootstrapping
-    │   ├── eidos-invariants/     # Policy invariants (POL-*) & test traceability
-    │   ├── eidos-portal/         # Living Web Portal & static documentation
-    │   ├── eidos-product/        # Domains (DOM-*), capabilities (CAP-*), personas
-    │   ├── eidos-reconcile/      # Direct Mode spec reconciliation
-    │   └── eidos-review/         # Staff Architect review & blast radius audit
-    └── hooks/
-        └── eidos-doc-linter/     # Document linting & quality checks
+    ├── hooks.json                # Document linting & drift gate hooks
+    └── skills/
+        ├── eidos/                # Master orchestrator, context slicing, drift & Direct Mode reconcile
+        ├── eidos-spec/           # Product, Arc42/C4 architecture, design systems & invariants (NO ADRs)
+        ├── eidos-plan/           # Technical spikes (EXP-*), SpecDeltas (DLT-*) & Staff Architect review
+        └── eidos-ops/            # Greenfield init, brownfield extraction & Living Web Portal
     ```
 
     ### 2. How Antigravity Uses Eidos
 
-    * **Master Engineering Skill**: Antigravity indexes `skills/eidos/SKILL.md` to guide agent decision-making, strictly enforcing the 5 Eidos architectural invariants (Single Source of Truth, No ADRs, SpecDelta lifecycle, Invariant-Test traceability, and Spec validation).
-    * **Specialized Agent Skills**: Antigravity agents invoke skills like `/eidos-delta` to scaffold mutations, `/eidos-context` to slice architecture, or `/eidos-architecture` to inspect C4 containers.
+    * **Master Engineering Skill**: Antigravity indexes `skills/eidos/SKILL.md` to guide agent decision-making, strictly enforcing the 5 Eidos architectural invariants (Single Source of Truth, No ADRs, SpecDelta lifecycle, Invariant-Test traceability, and Spec validation) alongside `eidos context`, `eidos drift`, and `eidos reconcile`.
+    * **Workflow-Aligned Agent Skills**: Antigravity agents invoke `/eidos-spec` to author or inspect living specs and invariants, `/eidos-plan` for explorations, SpecDeltas, and Staff reviews, and `/eidos-ops` for repository initialization, brownfield extraction, and Web Portal operations.
     * **Quality Hooks**: Quality gates intercept document edits to verify AsciiDoc schemas before changes are finalized.
 
 === "Claude Code"
@@ -150,7 +137,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     This automatically:
     - Installs the full plugin bundle into `.claude/plugins/eidos/` (following Claude Code's Method 2: Project Root Injection) with `plugin.json`, `.claude-plugin/plugin.json`, and `hooks.json`.
     - Generates Claude Code interactive slash commands in `.claude/plugins/eidos/commands/` (`/validate`, `/drift`, `/reconcile`, `/context`).
-    - Installs all 14 individual Eidos skills into `.claude/skills/<skill-name>/` so they are immediately discoverable by Claude Code's native `/skills` registry and direct command invocations (`/eidos`, `/eidos-architecture`, etc.).
+    - Installs all 4 cohesive Eidos skills into `.claude/skills/<skill-name>/` so they are immediately discoverable by Claude Code's native `/skills` registry and direct command invocations (`/eidos`, `/eidos-spec`, `/eidos-plan`, `/eidos-ops`).
     - Registers and enables the plugin in `.claude/settings.json` (`plugins: [{"path": ".claude/plugins/eidos"}]`, `enabledPlugins: {"eidos": true, "eidos@plugins-dir": true}`).
 
     #### 2. Enforcing Rules in `CLAUDE.md`
@@ -172,7 +159,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ### 1. Automatic Configuration
 
-    Generate Cursor rules and 14 native Agent Skills:
+    Generate Cursor rules and 4 native Agent Skills:
 
     ```bash
     eidos install cursor
@@ -182,7 +169,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     This automatically:
     - Generates `.cursor/rules/eidos.mdc` with `alwaysApply: true`.
-    - Installs all 14 skills into `.cursor/skills/<skill-name>/` enabling Cursor's native Agent Skills progressive disclosure engine.
+    - Installs all 4 skills into `.cursor/skills/<skill-name>/` enabling Cursor's native Agent Skills progressive disclosure engine.
 
     ### 2. Cursor Rules (`.cursor/rules/eidos.mdc`)
 
@@ -221,7 +208,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     This automatically:
     - Installs the native Copilot plugin bundle into `.github/plugin/` with `plugin.json` (declaring `com.github.copilot` extension).
-    - Installs all 14 Eidos skills flat into `.github/skills/<skill-name>/SKILL.md` where GitHub Copilot's Agent Skills engine natively scans and indexes them.
+    - Installs all 4 Eidos skills flat into `.github/skills/<skill-name>/SKILL.md` where GitHub Copilot's Agent Skills engine natively scans and indexes them.
     - Configures `.github/copilot/settings.json` enabling the `eidos` plugin (`enabledPlugins: {"eidos": true}`).
     - Configures `.github/copilot-instructions.md` with Eidos living specification rules, safely demarcated with comment markers (`<!-- EIDOS_COPILOT_START -->` ... `<!-- EIDOS_COPILOT_END -->`) to preserve any custom user instructions.
 
@@ -238,7 +225,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ```
 
     This automatically:
-    - Installs all 14 individual Eidos skills into `.aider/skills/<skill-name>/SKILL.md`.
+    - Installs all 4 individual Eidos skills into `.aider/skills/<skill-name>/SKILL.md`.
     - Generates `.aider.conventions.md` in the project root containing core Eidos guidelines (Single Source of Truth, No ADRs, Invariant traceability, spec validation, and drift gate) alongside an interactive index mapping tasks to `/read .aider/skills/<skill>/SKILL.md`.
     - Configures `.aider.conf.yml` to automatically include `.aider.conventions.md` under `read:`.
 
@@ -260,7 +247,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     This automatically:
     - Installs the complete plugin bundle into `.cline/plugins/eidos/`.
-    - Installs all 14 individual skills flat into `.cline/skills/<skill-name>/SKILL.md` where Cline's skill discovery engine indexes them for progressive disclosure.
+    - Installs all 4 individual skills flat into `.cline/skills/<skill-name>/SKILL.md` where Cline's skill discovery engine indexes them for progressive disclosure.
     - Leverages the root `AGENTS.md` open standard without requiring redundant rule files.
 
 === "OpenCode"
@@ -276,7 +263,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     This automatically:
     - Installs the Eidos plugin bundle into `.opencode/plugins/eidos`.
-    - Installs all 14 individual skills flat into `.opencode/skills/<skill-name>/SKILL.md`.
+    - Installs all 4 individual skills flat into `.opencode/skills/<skill-name>/SKILL.md`.
     - Leverages the root `AGENTS.md` open standard without requiring redundant rule files.
 
 === "OpenAI Codex"
@@ -290,7 +277,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     This automatically:
     - Scaffolds `.codex/plugin.json` declaring `com.openai` agent plugin extension and metadata.
-    - Installs all 14 individual skills flat into `.codex/skills/<skill-name>/SKILL.md`.
+    - Installs all 4 individual skills flat into `.codex/skills/<skill-name>/SKILL.md`.
     - Generates `.codex/rules.md` governing living spec workflows.
 
 === "Generic AI Agents (Windsurf, Roo Code, etc.)"
@@ -449,22 +436,12 @@ Before concluding any task, the agent must validate all specifications using `ei
 
 ## Bundled Skills for AI Agents
 
-When using an agent client that supports skill bundles (such as Google Antigravity), 14 specialized skills are available:
+When using an agent client that supports skill bundles (such as Google Antigravity, Claude Code, Cursor, Cline, OpenCode, Codex, Aider, or GitHub Copilot), 4 cohesive workflow skills are available:
 
-* **`eidos`**: High-level navigation and orchestration of living specifications and platform workflows.
-* **`eidos-context`**: Extracting token-efficient architectural context slices (C4 Level 2/3 topology, contracts, capabilities, invariants, and policies) for targeted tasks.
-* **`eidos-architecture`**: Authoring, inspecting, and maintaining Arc42 documentation, C4 Level 1–3 topology, container manifests, and interface contracts.
-* **`eidos-delta`**: Managing the SpecDelta mutation lifecycle (`DLT-*`), including proposing mutations, authoring diffs, and reconciling applied deltas.
-* **`eidos-design`**: Authoring and maintaining Multi-Design Systems, W3C Design Tokens, UI component contracts, and screen state machines.
-* **`eidos-drift`**: Detecting spec-to-code drift across branches or uncommitted changes, running the PR gate, and checking polyglot test coverage.
-* **`eidos-explore`**: Conducting spikes, technical feasibility studies, and hypothesis-driven discovery (`EXP-*`).
-* **`eidos-extract`**: Reverse-engineering and extracting living specifications from existing legacy codebases.
-* **`eidos-init`**: Bootstrapping new Git repositories with baseline Arc42/C4 architecture, core policies, personas, and automated validation.
-* **`eidos-invariants`**: Defining system policies (`POL-*`), capability invariants (`INV-*`), and enforcing bidirectional invariant-test traceability.
-* **`eidos-portal`**: Serving interactive Web Portals (`eidos portal serve` / `eidos serve`) and exporting static documentation sites (`eidos portal build` / `eidos build-site`).
-* **`eidos-product`**: Authoring, inspecting, and maintaining product domains (`DOM-*`), capabilities (`CAP-*`), actor personas, and Jobs-to-be-Done (JTBD).
-* **`eidos-reconcile`**: Reconciling code modifications to living specifications in Direct Mode.
-* **`eidos-review`**: Performing rigorous architectural reviews of SpecDeltas, PR diffs, contract changes, and invariant test coverage.
+* **`eidos`**: Master workflow orchestrator (Direct vs. Planned Mode), token-efficient architectural context slicing (`eidos context`), continuous spec-to-code drift detection (`eidos drift`), and Direct Mode git-diff reconciliation (`eidos reconcile`).
+* **`eidos-spec`**: Unified authoring reference for Product domains (`DOM-*`), capabilities (`CAP-*`), personas (`PER-*`), Arc42/C4 architecture (`CNT-*`, inline and promoted `CMP-*`, `CTR-*`, embedded `decisions:`), Multi-Design Systems (`DS-*`, W3C Design Tokens, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`), and system policies/invariants (`POL-*`, `INV-*` with polyglot `file::func` test bindings).
+* **`eidos-plan`**: Technical feasibility spikes (`EXP-*`), the SpecDelta mutation lifecycle (`DLT-*`, `create`, `verify`, `audit`, `apply`, `changelog`), and 5-dimension Staff Systems Architect reviews.
+* **`eidos-ops`**: Greenfield repository initialization (`eidos init`), systematic reverse-engineering of brownfield codebases into living specifications, and Living Web Portal operations (`eidos serve`, `eidos build-site`).
 
 ---
 
@@ -485,17 +462,14 @@ Output:
 ```text
 ╭──────────────────────── Eidos Agent Plugin Manifest ─────────────────────────╮
 │ Plugin Identifier:  eidos                                                    │
-│           Version:  0.4.0                                                    │
+│           Version:  0.8.0                                                    │
 │       Description:  Git-native, agent-agnostic development AI ecosystem and  │
 │                     lifecycle orchestration framework.                       │
 │           License:  MIT                                                      │
 │     Specification:  agent-plugins.org v1.0.0                                 │
-│            Skills:  eidos, eidos-architecture, eidos-context, eidos-delta,   │
-│                     eidos-design, eidos-drift, eidos-explore, eidos-extract, │
-│                     eidos-init, eidos-invariants, eidos-portal,              │
-│                     eidos-product, eidos-reconcile, eidos-review             │
+│            Skills:  eidos, eidos-ops, eidos-plan, eidos-spec                 │
 │       MCP Servers:  None                                                     │
-│   Lifecycle Hooks:  eidos-doc-linter                                         │
+│   Lifecycle Hooks:  eidos-doc-linter, eidos-drift-gate                       │
 │        Extensions:  com.google.antigravity                                   │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
@@ -532,15 +506,11 @@ Output:
 ┃ Property               ┃ Value                                               ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
 │ Plugin Name            │ eidos                                               │
-│ Plugin Version         │ 0.4.0                                               │
+│ Plugin Version         │ 0.8.0                                               │
 │ Overall Status         │ CONFORMANT                                          │
-│ Discovered Skills      │ eidos, eidos-architecture, eidos-context,           │
-│                        │ eidos-delta, eidos-design, eidos-drift,             │
-│                        │ eidos-explore, eidos-extract, eidos-init,           │
-│                        │ eidos-invariants, eidos-portal, eidos-product,      │
-│                        │ eidos-reconcile, eidos-review                       │
+│ Discovered Skills      │ eidos, eidos-ops, eidos-plan, eidos-spec            │
 │ Configured MCP Servers │ None                                                │
-│ Lifecycle Hooks        │ eidos-doc-linter                                    │
+│ Lifecycle Hooks        │ eidos-doc-linter, eidos-drift-gate                  │
 │ Client Extensions      │ com.google.antigravity                              │
 └────────────────────────┴─────────────────────────────────────────────────────┘
 ```

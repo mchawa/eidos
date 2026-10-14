@@ -40,7 +40,6 @@ blast_radius:
   impacted_components:
     - CMP-DRIFT-DETECTOR
     - CMP-AST-SYMBOL-INDEXER
-    - CTR-EIDOS-CLI
   invariants_to_enforce:
     - INV-DRIFT-DETECTION-ACCURACY
     - INV-DRIFT-DIFF-AWARE-COVERAGE

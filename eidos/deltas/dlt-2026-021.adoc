@@ -29,8 +29,8 @@ mutations:
     and syntax-aware invariant test traceability for autonomous AI coding agents.
 
     '
-- action: modify_component
-  target_component: CNT-EIDOS-INDEX
+- action: modify_container
+  target_container: CNT-EIDOS-INDEX
   details: 'Introduce CMP-AST-SYMBOL-INDEXER (src/eidos/core/ast_indexer.py) to extract
     classes, functions, and public methods into SQLite symbol_mappings across Python,
     TypeScript, Go, Rust, and Java. Add get_repo_map() and find_symbol() APIs to ArchitecturalIndex
@@ -38,15 +38,15 @@ mutations:
     and instant symbol lookups for AI coding agents.
 
     '
-- action: modify_component
-  target_component: CNT-EIDOS-CLI
+- action: modify_container
+  target_container: CNT-EIDOS-CLI
   details: 'Expose ''eidos index repo-map'' and ''eidos index find-symbol <query>''
     CLI commands with deterministic --json outputs for external AI coding agents,
     providing structured code maps and symbol lookups.
 
     '
-- action: modify_component
-  target_component: CNT-EIDOS-CORE
+- action: modify_container
+  target_container: CNT-EIDOS-CORE
   details: 'Upgrade invariant test coverage verification in src/eidos/vcs/drift.py
     to utilize AST test function extraction, linking individual test functions to
     capability invariants (INV-*) and policies (POL-*) instead of naive whole-file
@@ -76,7 +76,7 @@ mutations:
 
     '
 blast_radius:
-  impacted_components:
+  impacted_containers:
   - CNT-EIDOS-INDEX
   - CNT-EIDOS-CORE
   - CNT-EIDOS-CLI

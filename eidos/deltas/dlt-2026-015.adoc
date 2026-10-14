@@ -17,40 +17,40 @@ intent:
     referenced in container manifests via 'ref:'). Eidos specifications must NEVER touch or reside
     within source code directories ('src/', 'packages/'), preserving 100% cleanliness of implementation code.
 mutations:
-  - action: add_component
-    target_component: CNT-EIDOS-CORE
+  - action: add_container
+    target_container: CNT-EIDOS-CORE
     details: >
       Introduce 'assets/schemas/v1/tech/component.schema.yaml' (type: tech/component, CMP-*)
       governing centralized component specifications with container affinity, in-process API
       signatures (interfaces.provides), quality attributes, local invariants, and package_path.
-  - action: modify_component
-    target_component: CNT-EIDOS-CORE
+  - action: modify_container
+    target_container: CNT-EIDOS-CORE
     details: >
       Update 'assets/schemas/v1/tech/container.schema.yaml' to support polymorphic component
       definitions (oneOf: inline component dictionary or centralized reference with 'ref').
   - action: modify_contract
-    target_component: CTR-EIDOS-CLI
+    target_contract: CTR-EIDOS-CLI
     details: >
       Update 'assets/schemas/v1/tech/contract.schema.yaml' to enforce owning_container matching
       '^CNT-[A-Z0-9_-]+$', ensuring boundary protocol contracts are owned exclusively by containers.
-  - action: modify_component
-    target_component: CNT-EIDOS-CORE
+  - action: modify_container
+    target_container: CNT-EIDOS-CORE
     details: >
       Enhance SpecValidator to discover centralized component manifests in 'eidos/architecture/components/'
       and enforce INV-COMPONENT-CENTRALIZATION-MANDATE, INV-COMPONENT-CONTAINER-AFFINITY, and
       INV-INTERFACE-BOUNDARY-GOVERNANCE.
-  - action: modify_component
-    target_component: CNT-EIDOS-CORE
+  - action: modify_container
+    target_container: CNT-EIDOS-CORE
     details: >
       Update repository initialization and scaffolder to provision 'eidos/architecture/components/.gitkeep'
       and support 'promote_component' / 'inline_component' lifecycles in 'eidos/architecture/components/'.
-  - action: modify_component
-    target_component: CNT-EIDOS-INDEX
+  - action: modify_container
+    target_container: CNT-EIDOS-INDEX
     details: >
       Extend ArchitecturalIndex SQLite knowledge graph to index centralized component manifests
       from 'eidos/architecture/components/', linking them to parent containers and indexing in-process APIs.
-  - action: modify_component
-    target_component: CNT-EIDOS-CLI
+  - action: modify_container
+    target_container: CNT-EIDOS-CLI
     details: >
       Implement 'eidos component' CLI sub-app with 'promote', 'inline', and 'list' commands
       operating on 'eidos/architecture/components/'.
@@ -59,7 +59,7 @@ blast_radius:
     - eidos/personas/software-architect.adoc
     - eidos/personas/software-engineer.adoc
     - eidos/personas/autonomous-agent.adoc
-  impacted_components:
+  impacted_containers:
     - CNT-EIDOS-CORE
     - CNT-EIDOS-CLI
     - CNT-EIDOS-INDEX

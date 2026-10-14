@@ -47,7 +47,7 @@ Modern software development often suffers from two major problems:
 * **Strictly No ADRs**: Decisions mutate the living architecture directly through auditable **SpecDeltas** (`DLT-*`).
 * **Bidirectional Invariant-Test Traceability**: Every capability and policy enforces invariants (`INV-*`, `POL-*`) that map directly to automated tests in `tests/`.
 * **Multi-Design Systems & W3C Tokens**: White-label and multi-brand design systems, official W3C DTCG tokens, UI component contracts, and screen state machines.
-* **Agent-Agnostic Plugin & Skills**: Equips AI agents (Google Antigravity, Claude Code, Cursor, Codex) with 14 specialized skills and direct CLI automation to query, mutate, and validate architecture before editing code.
+* **Agent-Agnostic Plugin & Skills**: Equips AI agents (Google Antigravity, Claude Code, Cursor, Codex) with 4 cohesive workflow skills and direct CLI automation to query, mutate, and validate architecture before editing code.
 * **Interactive Living Portal**: Generates a self-contained static visual architecture explorer and graph directly from your specs.
 
 ---

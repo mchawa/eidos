@@ -860,8 +860,8 @@ intent:
   kind: refactor
   motivation: Rejected change.
 mutations:
-  - action: modify_component
-    target_component: CNT-EIDOS-CORE
+  - action: modify_container
+    target_container: CNT-EIDOS-CORE
     details: Touch core
 ---
 = Rejected Delta
@@ -878,8 +878,8 @@ intent:
   kind: refactor
   motivation: Previously applied.
 mutations:
-  - action: modify_component
-    target_component: CNT-EIDOS-CORE
+  - action: modify_container
+    target_container: CNT-EIDOS-CORE
     details: Touch core
 ---
 = Old Applied
@@ -1131,8 +1131,8 @@ intent:
   kind: feature_addition
   motivation: Add Foo
 mutations:
-  - action: modify_component
-    target_component: CNT-X
+  - action: modify_container
+    target_container: CNT-X
     details: Add Foo
 ---
 = Delta
@@ -1293,3 +1293,130 @@ def test_git_diff_lists_both_sides_of_renames(tmp_path):
     assert {"a.py", "b.py"} <= set(get_git_diff_files(tmp_path, uncommitted=True))
     git("commit", "-qm", "rename")
     assert {"a.py", "b.py"} <= set(get_git_diff_files(tmp_path, base_ref="HEAD~1"))
+
+
+def test_test_binding_cache_warm_drift_and_invalidation(tmp_path, monkeypatch):
+    """INV-AGENT-GRAPH-INDEX-FRESHNESS & INV-DRIFT-DETECTION-ACCURACY: extract_invariants_and_verify and
+    detect_orphan_invariants reuse test_binding_cache with zero ASTIndexer calls on warm runs, and invalidate
+    on test file modification (including # eidos:fixture files) or deletion."""  # eidos:fixture
+    import os
+    import sqlite3
+
+    from eidos.core.index.ast_indexer import get_ast_indexer
+    from eidos.vcs.drift import detect_orphan_invariants, extract_invariants_and_verify
+
+    ast_indexer_cls = type(get_ast_indexer())
+    eidos_dir = tmp_path / "eidos"
+    cap_dir = eidos_dir / "domains" / "core" / "capabilities"
+    cap_dir.mkdir(parents=True)
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True)
+
+    cap_file = cap_dir / "cap.adoc"
+    cap_file.write_text(
+        "---\n"
+        "type: product/capability\n"
+        "schema: schemas/v1/product/capability.schema.yaml\n"
+        "id: CAP-CACHE-001\n"
+        "title: Cache Capability\n"
+        "domain: DOM-CORE\n"
+        "status: active\n"
+        "version: 1.0.0\n"
+        "business:\n"
+        "  jtbd: Verify cached invariant bindings.\n"
+        "technical:\n"
+        "  invariants:\n"
+        "    - id: INV-CACHE-BOUND\n"
+        "      rule: Must be bound to a specific function.\n"
+        "      test_binding: tests/test_alpha.py::test_bound_fn\n"
+        "    - id: INV-CACHE-FILE\n"
+        "      rule: Must be bound at file level.\n"
+        "      test_binding: tests/test_beta.py\n"
+        "---\n"
+        "= Capability\n",
+        encoding="utf-8",
+    )
+
+    test_alpha = tests_dir / "test_alpha.py"
+    test_alpha.write_text(
+        "def test_bound_fn():\n"
+        "    # INV-CACHE-BOUND\n"
+        "    assert True\n",
+        encoding="utf-8",
+    )
+
+    test_beta = tests_dir / "test_beta.py"
+    test_beta.write_text(
+        "# Module-level reference to INV-CACHE-FILE\n"
+        "def test_fixture_opt_out():\n"
+        "    # eidos:fixture\n"
+        "    fake = 'INV-SYNTHETIC-IGNORED'\n"
+        "    assert fake\n\n"
+        "def test_real_orphan():\n"
+        "    # INV-ORPHAN-ONE\n"
+        "    assert True\n",
+        encoding="utf-8",
+    )
+
+    # Cold run populates test_binding_cache
+    cold_invs = extract_invariants_and_verify(eidos_dir, tmp_path)
+    cold_map = {i.invariant_id: i.has_test_coverage for i in cold_invs}
+    assert cold_map == {"INV-CACHE-BOUND": True, "INV-CACHE-FILE": True}
+    cold_orphans = detect_orphan_invariants(tmp_path, set(cold_map.keys()), eidos_dir=eidos_dir)
+    assert cold_orphans == [("INV-ORPHAN-ONE", "tests/test_beta.py::test_real_orphan")]
+
+    # 1. Warm run executes zero ASTIndexer.list_test_functions / extract_test_bindings calls
+    ast_calls: list[str] = []
+    orig_list_funcs = ast_indexer_cls.list_test_functions
+    orig_extract_bindings = ast_indexer_cls.extract_test_bindings
+
+    def _spy_list_funcs(self, file_path, content):
+        ast_calls.append(f"list:{file_path}")
+        return orig_list_funcs(self, file_path, content)
+
+    def _spy_extract_bindings(self, file_path, content):
+        ast_calls.append(f"bind:{file_path}")
+        return orig_extract_bindings(self, file_path, content)
+
+    monkeypatch.setattr(ast_indexer_cls, "list_test_functions", _spy_list_funcs)
+    monkeypatch.setattr(ast_indexer_cls, "extract_test_bindings", _spy_extract_bindings)
+
+    warm_invs = extract_invariants_and_verify(eidos_dir, tmp_path)
+    warm_orphans = detect_orphan_invariants(tmp_path, {i.invariant_id for i in warm_invs}, eidos_dir=eidos_dir)
+    assert ast_calls == []
+    assert [(i.invariant_id, i.has_test_coverage, i.matching_tests) for i in warm_invs] == [
+        (i.invariant_id, i.has_test_coverage, i.matching_tests) for i in cold_invs
+    ]
+    assert warm_orphans == cold_orphans
+
+    # 2. Modify fixture-bearing test_beta.py: only test_beta.py is re-parsed and results match cold run
+    test_beta.write_text(
+        "# Module-level reference to INV-CACHE-FILE\n"
+        "def test_fixture_opt_out():\n"
+        "    # eidos:fixture\n"
+        "    fake = 'INV-SYNTHETIC-IGNORED'\n"
+        "    assert fake\n\n"
+        "def test_real_orphan():\n"
+        "    # INV-ORPHAN-TWO\n"
+        "    assert True\n",
+        encoding="utf-8",
+    )
+    st = test_beta.stat()
+    os.utime(test_beta, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
+
+    updated_orphans = detect_orphan_invariants(tmp_path, set(cold_map.keys()), eidos_dir=eidos_dir)
+    assert ast_calls == ["list:tests/test_beta.py", "bind:tests/test_beta.py"]
+    assert updated_orphans == [("INV-ORPHAN-TWO", "tests/test_beta.py::test_real_orphan")]
+
+    # 3. Delete test_alpha.py: row is pruned from test_binding_cache and INV-CACHE-BOUND becomes uncovered
+    ast_calls.clear()
+    test_alpha.unlink()
+    after_del_invs = extract_invariants_and_verify(eidos_dir, tmp_path)
+    assert ast_calls == []
+    after_del_map = {i.invariant_id: i.has_test_coverage for i in after_del_invs}
+    assert after_del_map == {"INV-CACHE-BOUND": False, "INV-CACHE-FILE": True}
+
+    db_path = eidos_dir / ".cache" / "index.db"
+    with sqlite3.connect(str(db_path)) as conn:
+        cached_test_files = {r[0] for r in conn.execute("SELECT file_path FROM test_binding_cache;")}
+    assert cached_test_files == {"tests/test_beta.py"}

@@ -20,8 +20,8 @@ intent:
     labels, exposes external actor and storage touchpoints, and enhances the portal
     UI with tier badges and dependency matrices.
 mutations:
-- action: modify_component
-  target_component: CNT-EIDOS-PORTAL
+- action: modify_container
+  target_container: CNT-EIDOS-PORTAL
   details: Upgrade 'src/eidos/portal/generator.py' to classify containers into semantic
     architectural tiers (presentation, extensibility, core engine, persistence), render
     nested subgraphs within the system boundary, generate explicit inter-container
@@ -38,7 +38,7 @@ mutations:
     partitions containers into architectural tiers within the system boundary and
     explicitly renders declared internal container dependencies and contract bindings.
 blast_radius:
-  impacted_components:
+  impacted_containers:
   - CNT-EIDOS-PORTAL
   - CNT-EIDOS-CLI
   - CNT-EIDOS-CORE

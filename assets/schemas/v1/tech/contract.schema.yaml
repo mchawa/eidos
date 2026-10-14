@@ -50,7 +50,7 @@ properties:
         - tech/container
       prefixes:
         - CNT-
-      entity_label: container/component
+      entity_label: container
   owning_component:
     type: string
     pattern: "^((CNT|CMP)-[A-Z0-9_-]+|.*\\.adoc)$"

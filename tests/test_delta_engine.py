@@ -38,8 +38,8 @@ def test_delta_verify_all_satisfied(tmp_path):
     # Inject mutations into frontmatter
     content = dlt_path.read_text(encoding="utf-8")
     mutations_yaml = """mutations:
-  - action: modify_component
-    target_component: CNT-AUTH-SVC
+  - action: modify_container
+    target_container: CNT-AUTH-SVC
     details: "Harden auth service."
   - action: extend_capability
     target_capability: CAP-AUTH-LOGIN
@@ -47,14 +47,14 @@ def test_delta_verify_all_satisfied(tmp_path):
   - action: modify_policy
     target_policy: POL-AUTH-PASS
     details: "Increase complexity."
-  - action: remove_component
-    target_component: CNT-OLD-DEPRECATED
-    details: "Verify old component is absent."
+  - action: remove_container
+    target_container: CNT-OLD-DEPRECATED
+    details: "Verify old container is absent."
 """
     new_content = content.replace("mutations: []", mutations_yaml)
     dlt_path.write_text(new_content, encoding="utf-8")
 
-    # 3. Before touching the target specs, modify_*/extend_* must report UNMODIFIED (only remove_component is satisfied)
+    # 3. Before touching the target specs, modify_*/extend_* must report UNMODIFIED (only remove_container is satisfied)
     pre_verified, _pre_msg, pre_report = verify_delta_mutations(eidos_dir, "DLT-2026-050")
     assert pre_verified is False
     assert pre_report is not None
@@ -150,9 +150,9 @@ def test_delta_verify_unfulfilled_mutations(tmp_path):
   - action: add_capability
     new_capability_id: CAP-UNIMPLEMENTED-001
     details: "New capability not yet scaffolded."
-  - action: remove_component
-    target_component: CNT-STILL-EXISTS
-    details: "Component was not yet deleted."
+  - action: remove_container
+    target_container: CNT-STILL-EXISTS
+    details: "Container was not yet deleted."
 """
     new_content = content.replace("mutations: []", mutations_yaml)
     dlt_path.write_text(new_content, encoding="utf-8")
@@ -264,3 +264,173 @@ def test_delta_apply_cli_with_execute_and_verify(tmp_path):
     # Verify delta is now applied
     dlt_doc = parse_spec_file(dlt_path)
     assert dlt_doc.frontmatter.get("status") == "applied"
+
+
+def test_delta_verify_requires_modification_evidence(tmp_path):
+    """INV-DELTA-VERIFY-MODIFICATION-EVIDENCE: verify modify_*/extend_*/patch_* require positive evidence of change."""
+    import os
+    import shutil
+
+    init_repository(tmp_path, name="test-system", with_plugin=False)
+    eidos_dir = tmp_path / "eidos"
+
+    create_spec(eidos_dir, "domain", "DOM-CORE", title="Core Domain")
+    cap_path = create_spec(eidos_dir, "capability", "CAP-CORE-001", title="Core Cap", domain="DOM-CORE")
+    other_cap_path = create_spec(eidos_dir, "capability", "CAP-OTHER-001", title="Other Cap", domain="DOM-CORE")
+    cnt_path = create_spec(eidos_dir, "container", "CNT-CORE-SVC", title="Core Service")
+    ctr_path = create_spec(eidos_dir, "contract", "CTR-CORE-API", title="Core API")
+    pol_path = create_spec(eidos_dir, "policy", "POL-CORE-001", title="Core Policy", rule="Initial policy rule.")
+
+    # Populate container with two inline components and a contract binding
+    cnt_text = cnt_path.read_text(encoding="utf-8").replace(
+        "components: []",
+        (
+            "components:\n"
+            "  - id: CMP-TARGET\n"
+            '    name: "TargetComponent"\n'
+            '    responsibility: "Initial target responsibility."\n'
+            "  - id: CMP-SIBLING\n"
+            '    name: "SiblingComponent"\n'
+            '    responsibility: "Initial sibling responsibility."'
+        ),
+    ).replace(
+        "provides: []",
+        "provides:\n    - CTR-CORE-API",
+    )
+    cnt_path.write_text(cnt_text, encoding="utf-8")
+
+    # Populate capability with an invariant
+    cap_text = cap_path.read_text(encoding="utf-8").replace(
+        "invariants: []",
+        (
+            "invariants:\n"
+            "    - id: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE\n"
+            '      rule: "Initial invariant rule."\n'
+            '      test_binding: "tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence"'
+        ),
+    )
+    cap_path.write_text(cap_text, encoding="utf-8")
+    _ = other_cap_path
+
+    # Create delta (records initial SQLite baselines)
+    dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-060", title="Evidence Verification")
+    mutations_yaml = """mutations:
+  - action: modify_policy
+    target_policy: POL-CORE-001
+  - action: modify_component
+    target_container: CNT-CORE-SVC
+    target_component: CMP-TARGET
+  - action: modify_contract
+    target_container: CNT-CORE-SVC
+    target_contract: CTR-CORE-API
+  - action: patch_invariant
+    target_capability: CAP-CORE-001
+    target_invariant_id: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+"""
+    dlt_path.write_text(dlt_path.read_text(encoding="utf-8").replace("mutations: []", mutations_yaml), encoding="utf-8")
+
+    # 1. Remove local SQLite cache and bump mtimes on all target files so target.mtime > delta.mtime
+    shutil.rmtree(eidos_dir / ".cache", ignore_errors=True)
+    future_ns = dlt_path.stat().st_mtime_ns + 10_000_000_000
+    for p in (pol_path, cnt_path, ctr_path, cap_path):
+        os.utime(p, ns=(future_ns, future_ns))
+
+    ok1, _, rep1 = verify_delta_mutations(eidos_dir, "DLT-2026-060")
+    assert ok1 is False
+    assert [m.target for m in rep1.mutations] == [
+        "POL-CORE-001",
+        "CMP-TARGET",
+        "CTR-CORE-API",
+        "INV-DELTA-VERIFY-MODIFICATION-EVIDENCE",
+    ]
+    assert [m.status for m in rep1.mutations] == [
+        "UNMODIFIED",
+        "UNMODIFIED",
+        "UNMODIFIED",
+        "UNMODIFIED",
+    ]
+
+    # 2. Editing a sibling component in the same container must leave CMP-TARGET as UNMODIFIED
+    cnt_path.write_text(
+        cnt_path.read_text(encoding="utf-8").replace(
+            "Initial sibling responsibility.", "Updated sibling responsibility."
+        ),
+        encoding="utf-8",
+    )
+    ok2, _, rep2 = verify_delta_mutations(eidos_dir, "DLT-2026-060")
+    assert ok2 is False
+    assert rep2.mutations[1].target == "CMP-TARGET"
+    assert rep2.mutations[1].status == "UNMODIFIED"
+
+    # 3. Structural sub-target mismatch reports MISSING even when target entity exists elsewhere
+    dlt_mismatch = create_spec(eidos_dir, "delta", "DLT-2026-061", title="Subtarget Preconditions")
+    mismatch_yaml = """mutations:
+  - action: patch_invariant
+    target_capability: CAP-OTHER-001
+    target_invariant_id: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+  - action: modify_component
+    target_container: CNT-NONEXISTENT
+    target_component: CMP-TARGET
+  - action: modify_contract
+    target_container: CNT-NONEXISTENT
+    target_contract: CTR-CORE-API
+"""
+    dlt_mismatch.write_text(
+        dlt_mismatch.read_text(encoding="utf-8").replace("mutations: []", mismatch_yaml),
+        encoding="utf-8",
+    )
+    ok_mis, _, rep_mis = verify_delta_mutations(eidos_dir, "DLT-2026-061")
+    assert ok_mis is False
+    assert [m.status for m in rep_mis.mutations] == ["MISSING", "MISSING", "MISSING"]
+
+    # 4. Now modify each targeted entity in DLT-2026-060 -> all four report MODIFIED
+    pol_path.write_text(
+        pol_path.read_text(encoding="utf-8").replace("Initial policy rule.", "Updated policy rule."),
+        encoding="utf-8",
+    )
+    cnt_path.write_text(
+        cnt_path.read_text(encoding="utf-8").replace(
+            "Initial target responsibility.", "Updated target responsibility."
+        ),
+        encoding="utf-8",
+    )
+    ctr_path.write_text(
+        ctr_path.read_text(encoding="utf-8") + "\n// Added endpoint details\n",
+        encoding="utf-8",
+    )
+    cap_path.write_text(
+        cap_path.read_text(encoding="utf-8").replace("Initial invariant rule.", "Updated invariant rule."),
+        encoding="utf-8",
+    )
+
+    ok3, _, rep3 = verify_delta_mutations(eidos_dir, "DLT-2026-060")
+    assert ok3 is True
+    assert [m.status for m in rep3.mutations] == [
+        "MODIFIED",
+        "MODIFIED",
+        "MODIFIED",
+        "MODIFIED",
+    ]
+
+    # 5. Applied delta with an expect: post-condition still evaluates expect: and catches regressions
+    dlt_applied = create_spec(eidos_dir, "delta", "DLT-2026-062", title="Applied Expect Regression")
+    applied_yaml = """mutations:
+  - action: modify_policy
+    target_policy: POL-CORE-001
+    expect:
+      rule: "Expected post-apply rule."
+  - action: modify_architecture
+    target_architecture: ARCH-TEST-001
+"""
+    dlt_applied.write_text(
+        dlt_applied.read_text(encoding="utf-8")
+        .replace("status: proposed", "status: applied")
+        .replace("mutations: []", applied_yaml),
+        encoding="utf-8",
+    )
+    ok_reg, _, rep_reg = verify_delta_mutations(eidos_dir, "DLT-2026-062")
+    assert ok_reg is False
+    assert rep_reg.mutations[0].status == "UNMODIFIED"
+    assert rep_reg.mutations[1].target == "ARCH-TEST-001"
+
+

@@ -546,6 +546,383 @@ def test_validator_checks_package_path_specification_file_and_cli_contract_parit
     assert "documented-cmd" not in broken_text
 
 
+def test_decisions_schema_and_cross_reference_validation(tmp_path, validator):
+    """Verify INV-SPEC-VALIDATION and INV-SPEC-GRAPH-INTEGRITY: embedded decisions validate against schemas, enforce DEC-* uniqueness, and check graduated_from references."""
+    eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    comps_dir = eidos_dir / "architecture" / "components"
+    exps_dir = eidos_dir / "explorations"
+    cnts_dir.mkdir(parents=True)
+    comps_dir.mkdir(parents=True)
+    exps_dir.mkdir(parents=True)
+
+    (exps_dir / "exp.adoc").write_text(
+        "---\n"
+        "type: product/exploration\n"
+        "schema: schemas/v1/product/exploration.schema.yaml\n"
+        "id: EXP-2026-001\n"
+        "title: Valid Spike\n"
+        "status: adopted\n"
+        "hypothesis: Test\n"
+        "exit_criteria:\n"
+        "  max_duration: 1_day\n"
+        "---\n"
+        "= Spike\n",
+        encoding="utf-8",
+    )
+
+    (eidos_dir / "system.adoc").write_text(
+        "---\n"
+        "type: product/system\n"
+        "schema: schemas/v1/product/system.schema.yaml\n"
+        "id: SYS-TEST-001\n"
+        "title: Test System\n"
+        "archetypes:\n"
+        "  - cli_tool\n"
+        "business_identity:\n"
+        "  vision: Vision\n"
+        "  target_users:\n"
+        "    - Devs\n"
+        "  value_proposition: Value\n"
+        "technical_profile:\n"
+        "  primary_languages:\n"
+        "    - Python\n"
+        "decisions:\n"
+        "  - id: DEC-SHARED-ID\n"
+        "    title: System Decision\n"
+        "    decision: Use Python\n"
+        "    rationale: Standard runtime\n"
+        "    rejected_alternatives:\n"
+        "      - option: Perl\n"
+        "        reason_rejected: Legacy\n"
+        "    graduated_from: EXP-2026-001\n"
+        "---\n"
+        "= System\n",
+        encoding="utf-8",
+    )
+
+    (cnts_dir / "core.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-TEST-CORE\n"
+        "name: Core\n"
+        "container_type: library\n"
+        "runtime: Python\n"
+        "package_path: src/core\n"
+        "components:\n"
+        "  - id: CMP-INLINE-ONE\n"
+        "    name: InlineOne\n"
+        "    responsibility: Does inline work\n"
+        "    source_path: src/core/one.py\n"
+        "    decisions:\n"
+        "      - id: DEC-SHARED-ID\n"
+        "        title: Duplicate Decision\n"
+        "        decision: Collides with system.adoc\n"
+        "        rationale: Testing duplicate detection\n"
+        "decisions:\n"
+        "  - id: DEC-BROKEN-GRAD\n"
+        "    title: Broken Graduated Ref\n"
+        "    decision: Test broken ref\n"
+        "    rationale: Testing x-eidos-ref\n"
+        "    graduated_from: EXP-9999-999\n"
+        "---\n"
+        "= Core\n",
+        encoding="utf-8",
+    )
+
+    (comps_dir / "dedicated.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "schema: schemas/v1/tech/component.schema.yaml\n"
+        "id: CMP-DEDICATED-ONE\n"
+        "name: DedicatedOne\n"
+        "container: CNT-TEST-CORE\n"
+        "status: planned\n"
+        "responsibility: Dedicated component\n"
+        "decisions:\n"
+        "  - id: DEC-DEDICATED-VALID\n"
+        "    title: Dedicated Component Decision\n"
+        "    decision: Keep stateless\n"
+        "    rationale: Simplifies testing\n"
+        "---\n"
+        "= Dedicated\n",
+        encoding="utf-8",
+    )
+
+    (eidos_dir / "architecture" / "system-architecture.adoc").write_text(
+        "---\n"
+        "type: tech/architecture\n"
+        "schema: schemas/v1/tech/architecture.schema.yaml\n"
+        "id: ARCH-TEST-001\n"
+        "title: Test Architecture\n"
+        "topology_style: modular_monolith\n"
+        "c4_context:\n"
+        "  actors: []\n"
+        "c4_containers:\n"
+        "  - CNT-TEST-CORE\n"
+        "solution_strategy:\n"
+        "  - Keep simple\n"
+        "cross_cutting_concepts: {}\n"
+        "deployment_view:\n"
+        "  hosting_model: Local\n"
+        "  ci_cd_engine: GitHub Actions\n"
+        "decisions:\n"
+        "  - id: DEC-ARCH-VALID\n"
+        "    title: Architecture Decision\n"
+        "    decision: Use modular monolith\n"
+        "    rationale: Low operational overhead\n"
+        "    graduated_from: EXP-2026-001\n"
+        "---\n"
+        "= Architecture\n",
+        encoding="utf-8",
+    )
+
+    report = validator.validate_directory(eidos_dir)
+    assert report.schema_errors == {}
+    broken_text = "\n".join(report.broken_references)
+    assert "Duplicate entity ID 'DEC-SHARED-ID'" in broken_text
+    assert "EXP-9999-999" in broken_text
+    assert "EXP-2026-001" not in broken_text
+
+
+def test_spec_validation_cache_warm_hit_and_invalidation(tmp_path: Path, monkeypatch) -> None:
+    """INV-SPEC-VALIDATION & INV-AGENT-GRAPH-INDEX-FRESHNESS: SpecValidator.validate_directory reuses
+    spec_validation_cache on warm runs with zero Draft202012Validator calls, and invalidates on file edit,
+    file deletion, or schema_hash mutation."""
+    import os
+    import sqlite3
+
+    eidos_dir = tmp_path / "eidos"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    comp_dir = eidos_dir / "architecture" / "components"
+    cnt_dir.mkdir(parents=True)
+    comp_dir.mkdir(parents=True)
+    (tmp_path / "src" / "core").mkdir(parents=True)
+    cnt_file = cnt_dir / "core.adoc"
+    comp_file = comp_dir / "worker.adoc"
+
+    cnt_file.write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-CACHE-CORE\n"
+        "name: Cache Core\n"
+        "container_type: library\n"
+        "runtime: Python\n"
+        "package_path: src/core\n"
+        "components:\n"
+        "  - id: CMP-CACHE-WORKER\n"
+        "    ref: eidos/architecture/components/worker.adoc\n"
+        "---\n"
+        "= Core\n",
+        encoding="utf-8",
+    )
+    comp_file.write_text(
+        "---\n"
+        "type: tech/component\n"
+        "schema: schemas/v1/tech/component.schema.yaml\n"
+        "id: CMP-CACHE-WORKER\n"
+        "name: CacheWorker\n"
+        "container: CNT-CACHE-CORE\n"
+        "status: planned\n"
+        "responsibility: Executes cached validation work\n"
+        "---\n"
+        "= Worker\n",
+        encoding="utf-8",
+    )
+
+    validator = SpecValidator()
+    cold_report = validator.validate_directory(eidos_dir)
+    assert cold_report.is_clean
+    db_path = eidos_dir / ".cache" / "index.db"
+    assert db_path.exists()
+
+    # 1. Warm run: zero validate_document / Draft202012Validator executions
+    validated_docs: list[str] = []
+    orig_validate_doc = SpecValidator.validate_document
+
+    def _spy_validate_doc(self, doc):
+        validated_docs.append(doc.file_path.name)
+        return orig_validate_doc(self, doc)
+
+    monkeypatch.setattr(SpecValidator, "validate_document", _spy_validate_doc)
+    warm_report = validator.validate_directory(eidos_dir)
+    assert warm_report.is_clean
+    assert len(warm_report.documents) == 2
+    assert validated_docs == []
+
+    # 2. Modify one .adoc file (introduce schema error): only the edited file is re-validated
+    bad_comp_text = comp_file.read_text(encoding="utf-8").replace("status: planned\n", "status: invalid_status\n")
+    comp_file.write_text(bad_comp_text, encoding="utf-8")
+    st = comp_file.stat()
+    os.utime(comp_file, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
+
+    edited_report = validator.validate_directory(eidos_dir)
+    assert validated_docs == ["worker.adoc"]
+    assert not edited_report.is_clean
+    assert str(comp_file) in edited_report.schema_errors
+
+    # Warm run on invalid document still preserves cached schema_errors without re-running validator
+    validated_docs.clear()
+    warm_invalid_report = validator.validate_directory(eidos_dir)
+    assert validated_docs == []
+    assert not warm_invalid_report.is_clean
+    assert warm_invalid_report.schema_errors == edited_report.schema_errors
+
+    # 3. Delete worker.adoc: cache row is pruned and broken component ref is detected in memory
+    comp_file.unlink()
+    after_delete_report = validator.validate_directory(eidos_dir)
+    assert validated_docs == []
+    assert any("worker.adoc" in br for br in after_delete_report.broken_references)
+    with sqlite3.connect(str(db_path)) as conn:
+        cached_paths = {r[0] for r in conn.execute("SELECT file_path FROM spec_validation_cache;")}
+    assert not any(p.endswith("worker.adoc") for p in cached_paths)
+
+    # 4. Bundled schema hash change invalidates spec_validation_cache
+    validator.schema_hash = "mutated_bundled_schema_hash"
+    validator.validate_directory(eidos_dir)
+    assert validated_docs == ["core.adoc"]
+
+
+def test_strict_container_vs_component_target_separation(tmp_path: Path, validator: SpecValidator) -> None:
+    """DLT-2026-042 (INV-SPEC-VALIDATION & INV-SPEC-GRAPH-INTEGRITY): Verify strict separation between
+    C4 Level 2 Container (CNT-*, tech/container) and Level 3 Component (CMP-*, tech/component) targets
+    across capability, delta, container, domain, and client schemas and runtime x-eidos-ref checks."""
+    from eidos.core.spec.parser import parse_spec_file
+
+    eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    comps_dir = eidos_dir / "architecture" / "components"
+    caps_dir = eidos_dir / "domains" / "core" / "capabilities"
+    deltas_dir = eidos_dir / "deltas"
+    clients_dir = eidos_dir / "design" / "clients" / "web"
+    for d in (cnts_dir, comps_dir, caps_dir, deltas_dir, clients_dir):
+        d.mkdir(parents=True)
+
+    # Catalog entities: CNT-CORE (tech/container) and CMP-PARSER (tech/component)
+    (cnts_dir / "core.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-CORE\n"
+        "name: Core\n"
+        "container_type: library\n"
+        "runtime: Python\n"
+        "package_path: src/core\n"
+        "dependencies:\n"
+        "  internal_components:\n"
+        "    - CNT-CORE\n"
+        "  internal_containers:\n"
+        "    - CMP-PARSER\n"
+        "---\n"
+        "= Core\n",
+        encoding="utf-8",
+    )
+    (comps_dir / "parser.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "schema: schemas/v1/tech/component.schema.yaml\n"
+        "id: CMP-PARSER\n"
+        "name: Parser\n"
+        "container: CNT-CORE\n"
+        "status: planned\n"
+        "responsibility: Parse specs\n"
+        "---\n"
+        "= Parser\n",
+        encoding="utf-8",
+    )
+
+    # 1. Capability placing existing CNT-CORE inside technical.components and CMP-PARSER inside technical.containers
+    cap_file = caps_dir / "cap.adoc"
+    cap_file.write_text(
+        "---\n"
+        "type: product/capability\n"
+        "schema: schemas/v1/product/capability.schema.yaml\n"
+        "id: CAP-CORE-001\n"
+        "title: Core Capability\n"
+        "domain: DOM-CORE\n"
+        "status: planned\n"
+        "business:\n"
+        "  personas: []\n"
+        "  jtbd: Test\n"
+        "technical:\n"
+        "  containers:\n"
+        "    - CMP-PARSER\n"
+        "  components:\n"
+        "    - CNT-CORE\n"
+        "---\n"
+        "= Cap\n",
+        encoding="utf-8",
+    )
+
+    # 2. Delta misusing target_component: CNT-CORE, target_container: CMP-PARSER, and target_architecture: ARCH-001
+    bad_delta = deltas_dir / "dlt-bad.adoc"
+    bad_delta.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-BAD\n"
+        "title: Bad Delta\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: refactor\n"
+        "  motivation: Test\n"
+        "mutations:\n"
+        "  - action: modify_component\n"
+        "    target_component: CNT-CORE\n"
+        "  - action: modify_container\n"
+        "    target_container: CMP-PARSER\n"
+        "  - action: modify_architecture\n"
+        "    target_architecture: ARCH-CORE-001\n"
+        "affects:\n"
+        "  components:\n"
+        "    - CNT-CORE\n"
+        "  containers:\n"
+        "    - CMP-PARSER\n"
+        "blast_radius:\n"
+        "  impacted_components:\n"
+        "    - CNT-CORE\n"
+        "  impacted_containers:\n"
+        "    - CMP-PARSER\n"
+        "---\n"
+        "= Bad Delta\n",
+        encoding="utf-8",
+    )
+    delta_errs = "\n".join(validator.validate_document(parse_spec_file(bad_delta)))
+    assert "target_component" in delta_errs and "CNT-CORE" in delta_errs
+    assert "target_container" in delta_errs and "CMP-PARSER" in delta_errs
+    assert "ARCH-CORE-001" not in delta_errs
+    assert "impacted_components" in delta_errs
+    assert "impacted_containers" in delta_errs
+
+    # 3. Client pointing container to CMP-PARSER
+    (clients_dir / "client.adoc").write_text(
+        "---\n"
+        "type: design/client\n"
+        "schema: schemas/v1/design/client.schema.yaml\n"
+        "id: CLT-WEB\n"
+        "title: Web\n"
+        "status: planned\n"
+        "platform: web\n"
+        "design_system: DS-CORE\n"
+        "container: CMP-PARSER\n"
+        "---\n"
+        "= Web\n",
+        encoding="utf-8",
+    )
+
+    report = validator.validate_directory(eidos_dir)
+    assert not report.is_clean
+    broken_text = "\n".join(report.broken_references)
+    # CNT-CORE exists in catalog_ids, yet placing it in technical.components must fail x-eidos-ref prefix/type check!
+    assert "component 'CNT-CORE'" in broken_text and "technical.components" in broken_text
+    assert "container 'CMP-PARSER'" in broken_text and "technical.containers" in broken_text
+    assert "component 'CNT-CORE'" in broken_text and "dependencies.internal_components" in broken_text
+    assert "container 'CMP-PARSER'" in broken_text and "dependencies.internal_containers" in broken_text
+
+
+
 
 
 

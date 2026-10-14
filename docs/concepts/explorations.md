@@ -142,7 +142,7 @@ eidos drift
 
 ## 4. How AI Agents Use Explorations
 
-When using the [`eidos-explore`](../guides/agent-plugin.md#assistant-integration-guides) agent skill:
+When using the [`eidos-plan`](../guides/agent-plugin.md#assistant-integration-guides) agent skill:
 * Autonomous coding agents will refuse to make sweeping architectural gambles without first proposing an `EXP-*`.
 * Agents run benchmark scripts in isolated workspaces, capture output into the exploration log, and summarize findings for human review.
 * If a human rejects an approach, the agent marks the exploration `discarded` and registers the negative constraint so future agent prompts never re-propose it.

@@ -52,8 +52,8 @@ intent:
   kind: feature_removal
   motivation: "Testing leak detection"
 mutations:
-  - action: remove_component
-    target_component: CNT-MOCK-DELETED
+  - action: remove_container
+    target_container: CNT-MOCK-DELETED
 ---
 = SpecDelta: Remove Test Container
 """
@@ -106,8 +106,8 @@ intent:
   kind: feature_removal
   motivation: "Testing tombstone exemptions"
 mutations:
-  - action: remove_component
-    target_component: CNT-DEPRECATED-DB
+  - action: remove_container
+    target_container: CNT-DEPRECATED-DB
 tombstone:
   allowed_reasons:
     - path: "src/legacy/migration.py"

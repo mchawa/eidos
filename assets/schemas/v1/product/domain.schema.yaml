@@ -74,23 +74,35 @@ properties:
           description: "A specific excluded responsibility."
   technical_mapping:
     type: object
-    description: "Mapping of this business domain to concrete software packages, repositories, or services (optional)."
+    description: "Mapping of this business domain to concrete software packages, repositories, containers, or components (optional)."
     additionalProperties: false
     properties:
-      components:
+      containers:
         type: array
-        description: "Source code directories, modules, or services that realize this domain."
+        description: "C4 Level 2 containers (CNT-* IDs or container spec paths) that realize this domain."
         items:
           type: string
-          description: "Relative path, module name, or container/component ID (e.g. packages/spec-parser or CNT-CORE)."
+          pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Container ID (e.g. CNT-CORE) or relative path to container specification."
           x-eidos-ref:
             target_types:
               - tech/container
-              - tech/component
             prefixes:
               - CNT-
+            entity_label: container
+      components:
+        type: array
+        description: "Source code directories, modules, or C4 Level 3 components (CMP-*) that realize this domain."
+        items:
+          type: string
+          description: "Relative path, module name, or component ID (e.g. packages/spec-parser or CMP-SPEC-PARSER)."
+          x-eidos-ref:
+            target_types:
+              - tech/component
+            prefixes:
               - CMP-
             allow_non_id_string: true
+            entity_label: component
       dependencies:
         type: array
         description: "Other domain IDs that this domain depends on or communicates with."

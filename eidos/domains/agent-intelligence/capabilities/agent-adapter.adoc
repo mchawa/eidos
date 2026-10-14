@@ -5,7 +5,7 @@ id: CAP-AGENT-001
 title: "Universal Agent Adapter & Context Slicing Engine"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.2.0"
+version: "1.3.0"
 
 business:
   personas:
@@ -53,7 +53,7 @@ technical:
       rule: "Context slicing must extract compact, token-efficient architectural subgraphs without phantom dependencies or circular module errors."
       test_binding: "tests/test_context.py::test_context_slice_by_file"
     - id: INV-AGENT-GRAPH-INDEX-FRESHNESS
-      rule: "The embedded architectural knowledge graph must automatically detect drift and lazily synchronize before query execution, maintaining sub-10ms response times with zero external runtime dependencies."
+      rule: "The embedded architectural knowledge graph (along with 'spec_validation_cache' and 'test_binding_cache') must automatically detect mtime/SHA-256 drift and lazily synchronize before query or drift execution, maintaining sub-10ms response times with zero external runtime dependencies."
       test_binding: "tests/test_graph_index.py::test_spike_b_zero_drift_on_mutation"
     - id: INV-SYMBOL-LOCATION-FIDELITY
       rule: "Indexed AST symbols must keep accurate source file and line coordinates, invalidated on edit, deletion, or ownership change, and served to find-symbol and repo-map without re-parsing source."
@@ -81,9 +81,9 @@ Eidos implements a three-tier context compression model:
 [cols="1,2,3", options="header"]
 |===
 | Tier | Approximate Size | Contents Included
-| `anchor` | ~1,500 tokens | Owning container (`CMP-*`), internal module responsibility, primary interface contracts (`CTR-*`), governing policies (`POL-*`), and immediate capability invariants (`INV-*`).
-| `guardrails` | ~3,500 tokens | Everything in `anchor`, plus 1-hop upstream and downstream peer containers, related domain capabilities, and test bindings. Reduces token payload by >=60% compared to raw file loading.
-| `deep` | ~8,000 tokens | Comprehensive architectural audit slice: recursive CTE blast-radius traversal of all downstream dependents, cross-boundary contracts, full policy texts, and complete invariant test suites.
+| `anchor` | ~1,500 tokens | Owning container (`CMP-*`), internal module responsibility, compact `DEC-*` architectural decisions (`title`, `decision`, and rejected option names), primary interface contracts (`CTR-*`), governing policies (`POL-*`), and immediate capability invariants (`INV-*`).
+| `guardrails` | ~3,500 tokens | Everything in `anchor`, plus full `DEC-*` rationale and `rejected_alternatives`, 1-hop upstream and downstream peer containers, related domain capabilities, and test bindings. Reduces token payload by >=60% compared to raw file loading.
+| `deep` | ~8,000 tokens | Comprehensive architectural audit slice: recursive CTE blast-radius traversal of all downstream dependents, cross-boundary contracts, full policy texts, full `DEC-*` trade-off records, and complete invariant test suites.
 |===
 
 == Hybrid Retrieval & Freshness Invariant

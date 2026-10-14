@@ -208,10 +208,8 @@ properties:
           x-eidos-ref:
             target_types:
               - tech/component
-              - tech/container
             prefixes:
               - CMP-
-              - CNT-
             allow_non_id_string: true
             entity_label: component
       contracts:

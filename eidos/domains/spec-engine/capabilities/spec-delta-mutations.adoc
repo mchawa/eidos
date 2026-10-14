@@ -5,7 +5,7 @@ id: CAP-PROD-002
 title: "SpecDelta Semantic Mutation Engine"
 domain: DOM-SPEC-ENGINE
 status: active
-version: "1.2.0"
+version: "1.3.0"
 
 business:
   personas:
@@ -24,6 +24,7 @@ technical:
   contracts:
     interfaces:
       - "eidos delta create --kind [feature|bugfix|removal]"
+      - "eidos delta verify <delta-id> [--json]"
       - "eidos delta apply <delta-id>"
       - "eidos delta impact <delta-id>"
       - "eidos delta audit <delta-id> [--strict] [--json]"
@@ -41,6 +42,9 @@ technical:
     - id: INV-DELTA-CHANGELOG-GENERATION
       rule: "eidos delta changelog must compile an auditable, SpecDelta-backed changelog partitioned by git release tags with zero hallucinated mutations."
       test_binding: "tests/test_changelog.py::test_delta_changelog_generation"
+    - id: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+      rule: "'eidos delta verify' must report modify_*/extend_*/patch_* mutations as verified only on positive evidence of change to the targeted entity (a satisfied expect post-condition, or a content digest differing from the recorded SQLite delta baseline), never on entity existence or filesystem modification time alone."
+      test_binding: "tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence"
 
 ---
 = Capability: SpecDelta Semantic Mutation Engine
@@ -48,4 +52,7 @@ technical:
 
 == Intent
 Replaces traditional essay-style RFCs with declarative, machine-executable mutations. When a feature is added, changed, or removed, a `SpecDelta` specifies the precise mutations and impacted invariants. Upon PR merge, the mutations are applied to update the living baseline documents automatically.
+
+== Key Responsibilities
+* **Modification-Evidence Verification (`eidos delta verify`)**: Verifies `modify_*`, `extend_*`, and `patch_*` mutations only on positive evidence of change to the targeted entity (a satisfied declarative `expect:` post-condition or a canonical content digest differing from the recorded SQLite baseline), with action-aware target extraction, component-entry digest granularity for inline `CMP-*` targets, and parent/sub-target membership treated strictly as a precondition (`INV-DELTA-VERIFY-MODIFICATION-EVIDENCE`).
 

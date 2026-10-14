@@ -262,5 +262,43 @@ def test_cli_index_commands():
     assert "Blast Radius for 'CNT-EIDOS-CORE'" in res_blast.output
 
 
+def test_context_slice_includes_decisions_and_tiered_markdown():
+    """Verify INV-AGENT-CONTEXT-SLICING: eidos context includes container decisions and rejected_alternatives in JSON and formats Markdown by tier."""
+    # 1. CLI JSON output for CNT-EIDOS-INDEX
+    res_json = runner.invoke(app, ["context", "--component", "CNT-EIDOS-INDEX", "--format", "json"])
+    assert res_json.exit_code == 0
+    payload = json.loads(res_json.output)
+    index_comp = next((c for c in payload["components"] if c["id"] == "CNT-EIDOS-INDEX"), None)
+    assert index_comp is not None
+    decisions = index_comp.get("decisions", [])
+    assert any(d.get("id") == "DEC-INDEX-SQLITE-WAL" for d in decisions)
+    sqlite_dec = next(d for d in decisions if d.get("id") == "DEC-INDEX-SQLITE-WAL")
+    assert any("ChromaDB" in a.get("option", "") for a in sqlite_dec.get("rejected_alternatives", []))
+
+    # 2. Tiered Markdown rendering: anchor vs guardrails vs deep
+    slice_anchor = get_context_slice(component="CNT-EIDOS-INDEX", tier="anchor")
+    md_anchor = slice_anchor.to_markdown()
+    assert "DEC-INDEX-SQLITE-WAL" in md_anchor
+    assert "ChromaDB / LanceDB Vector Store" in md_anchor
+    assert "*Rationale:*" not in md_anchor
+
+    slice_guardrails = get_context_slice(component="CNT-EIDOS-INDEX", tier="guardrails")
+    md_guardrails = slice_guardrails.to_markdown()
+    assert "DEC-INDEX-SQLITE-WAL" in md_guardrails
+    assert "*Rationale:*" in md_guardrails
+    assert "*Rejected Alternative:* **ChromaDB / LanceDB Vector Store**" in md_guardrails
+
+    # 3. Base ArchitecturalContextSlice.to_markdown() renders embedded decisions and rejected_alternatives
+    base_slice = ArchitecturalContextSlice(
+        query={"component": "CNT-EIDOS-INDEX"},
+        components=[index_comp],
+    )
+    base_md = base_slice.to_markdown()
+    assert "Architectural Decisions (`DEC-*`)" in base_md
+    assert "DEC-INDEX-SQLITE-WAL" in base_md
+    assert "*Rejected Alternative:* **ChromaDB / LanceDB Vector Store**" in base_md
+
+
+
 
 

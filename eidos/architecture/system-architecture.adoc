@@ -81,6 +81,18 @@ cross_cutting_concepts:
 deployment_view:
   hosting_model: "Distributed: Local developer workstation (CLI tool) and CI/CD Runner environments."
   ci_cd_engine: "CI/CD pipelines executing eidos validate, eidos drift, and test runners."
+
+decisions:
+  - id: DEC-ARCH-CENTRALIZED-HYBRID-C4
+    title: "Centralized Hybrid C4 Component Specifications Outside Source Trees"
+    decision: "Maintain C4 Level 3 components inline within container manifests by default and promote complex components to dedicated manifests under 'eidos/architecture/components/', never co-locating '.adoc' files inside 'src/'."
+    rationale: "Preserves 100% pure implementation source trees while achieving 87-94% context token savings and full C4 Level 3 whitebox governance."
+    rejected_alternatives:
+      - option: "Co-Located Component Specs Inside src/ Directories"
+        reason_rejected: "Pollutes source code packages with documentation artifacts and complicates build packaging and ownership resolution."
+      - option: "Standalone Chronological ADR Directory"
+        reason_rejected: "Decouples architectural rationale from the living components it governs, decaying into a write-only graveyard (POL-001)."
+    graduated_from: EXP-2026-004
 ---
 = Eidos Global System Architecture (Arc42 & C4 Blueprint)
 :doctype: book

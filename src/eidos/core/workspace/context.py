@@ -43,6 +43,60 @@ STOP_WORDS = {
 }
 
 
+def collect_component_decisions(comp: dict[str, Any]) -> list[dict[str, Any]]:
+    """Collect embedded architectural decisions from a container/component and its inline components."""
+    decisions: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for d in comp.get("decisions", []) or []:
+        if isinstance(d, dict):
+            did = str(d.get("id", "")).strip()
+            if not did or did not in seen_ids:
+                if did:
+                    seen_ids.add(did)
+                decisions.append(d)
+    for m in comp.get("components", []) or comp.get("c4_internal_components", []) or []:
+        if isinstance(m, dict):
+            for d in m.get("decisions", []) or []:
+                if isinstance(d, dict):
+                    did = str(d.get("id", "")).strip()
+                    if not did or did not in seen_ids:
+                        if did:
+                            seen_ids.add(did)
+                        decisions.append(d)
+    return decisions
+
+
+def format_decisions_markdown(decisions: list[dict[str, Any]], tier: str = "guardrails") -> list[str]:
+    """Render embedded architectural decisions (DEC-*) and rejected_alternatives according to the requested tier."""
+    if not decisions:
+        return []
+    lines = ["- **Architectural Decisions (`DEC-*`):**"]
+    for dec in decisions:
+        if not isinstance(dec, dict):
+            continue
+        did = dec.get("id", "")
+        dtitle = dec.get("title", "")
+        dtext = dec.get("decision", "")
+        alts = [
+            str(a.get("option", "")).strip()
+            for a in (dec.get("rejected_alternatives") or [])
+            if isinstance(a, dict) and a.get("option")
+        ]
+        if tier == "anchor":
+            rej_suffix = f" *(Rejected: {', '.join(alts)})*" if alts else ""
+            lines.append(f"  - `{did}` (**{dtitle}**): {dtext}{rej_suffix}")
+        else:
+            grad = f" [Graduated from `{dec['graduated_from']}`]" if dec.get("graduated_from") else ""
+            lines.append(f"  - `{did}` (**{dtitle}**){grad}: {dtext}")
+            if dec.get("rationale"):
+                lines.append(f"    - *Rationale:* {dec['rationale']}")
+            for alt in dec.get("rejected_alternatives") or []:
+                if isinstance(alt, dict) and alt.get("option"):
+                    reason = alt.get("reason_rejected", "")
+                    lines.append(f"    - *Rejected Alternative:* **{alt['option']}** — {reason}")
+    return lines
+
+
 @dataclass
 class ArchitecturalContextSlice:
     """Compact architectural subgraph slice containing relevant entities and invariants."""
@@ -117,6 +171,9 @@ class ArchitecturalContextSlice:
                     mname = m.get("name", "")
                     mresp = m.get("responsibility", "")
                     lines.append(f"  - {mid}**{mname}**: {mresp}")
+            decisions = collect_component_decisions(comp)
+            if decisions:
+                lines.extend(format_decisions_markdown(decisions, tier="guardrails"))
             lines.append("")
 
         # 2. Contracts

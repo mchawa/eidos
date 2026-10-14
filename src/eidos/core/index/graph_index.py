@@ -22,7 +22,11 @@ from typing import Any
 
 from eidos.core.index.ast_indexer import get_ast_indexer
 from eidos.core.spec.parser import parse_spec_file
-from eidos.core.workspace.context import ArchitecturalContextSlice
+from eidos.core.workspace.context import (
+    ArchitecturalContextSlice,
+    collect_component_decisions,
+    format_decisions_markdown,
+)
 from eidos.core.workspace.project import extract_entity_paths, find_repo_root, match_path_pattern
 
 
@@ -147,6 +151,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
                                 )
                             else:
                                 lines.append(f"  - {mid}**{m.get('name', '')}**: {m.get('responsibility', '')}")
+            decisions = collect_component_decisions(comp)
+            if decisions:
+                lines.extend(format_decisions_markdown(decisions, tier=self.tier))
             lines.append("")
 
         # 2. Bound Contracts
@@ -239,6 +246,8 @@ _MANAGED_TABLES = (
     "edges",
     "entities",
     "indexed_files",
+    "spec_validation_cache",
+    "test_binding_cache",
     "specs_fts",
     "metadata",
 )
@@ -371,7 +380,7 @@ class _CodeOwnershipResolver:
 class ArchitecturalIndex:
     """Embedded SQLite Architectural Knowledge Graph & Hybrid Retrieval Index."""
 
-    SCHEMA_VERSION = "2.1.0"
+    SCHEMA_VERSION = "2.2.0"
 
     def __init__(
         self,
@@ -446,6 +455,25 @@ class ArchitecturalIndex:
                     doc_id TEXT,
                     doc_type TEXT,
                     last_indexed REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS spec_validation_cache (
+                    file_path TEXT PRIMARY KEY,
+                    mtime_ns INTEGER NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    schema_hash TEXT NOT NULL,
+                    doc_json TEXT NOT NULL,
+                    schema_errors_json TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS test_binding_cache (
+                    file_path TEXT PRIMARY KEY,
+                    mtime_ns INTEGER NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    has_fixture INTEGER NOT NULL DEFAULT 0,
+                    functions_json TEXT NOT NULL,
+                    bindings_json TEXT NOT NULL,
+                    file_tokens_json TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS entities (
@@ -1177,7 +1205,29 @@ class ArchitecturalIndex:
                 # 4. Insert into FTS5
                 jtbd_or_rule = biz.get("jtbd", fm.get("rule", "")) if isinstance(biz, dict) else fm.get("rule", "")
                 body_clean = re.sub(r"[{}\[\]=:#*`]", " ", doc.body or "")
-                keywords = " ".join([doc_id, doc_type, domain, container_type, package_path])
+                embedded_decisions = collect_component_decisions(fm)
+                decision_ids: list[str] = []
+                decision_texts: list[str] = []
+                for dec in embedded_decisions:
+                    did = str(dec.get("id", "")).strip()
+                    if did:
+                        decision_ids.append(did)
+                    grad_ref = str(dec.get("graduated_from", "")).strip()
+                    if grad_ref:
+                        decision_ids.append(grad_ref)
+                    for field_key in ("title", "decision", "rationale"):
+                        fval = str(dec.get(field_key, "")).strip()
+                        if fval:
+                            decision_texts.append(fval)
+                    for alt in dec.get("rejected_alternatives") or []:
+                        if isinstance(alt, dict):
+                            for alt_key in ("option", "reason_rejected"):
+                                aval = str(alt.get(alt_key, "")).strip()
+                                if aval:
+                                    decision_texts.append(aval)
+                if decision_texts:
+                    body_clean = f"{body_clean} " + re.sub(r"[{}\[\]=:#*`]", " ", " ".join(decision_texts))
+                keywords = " ".join([doc_id, doc_type, domain, container_type, package_path, *decision_ids])
                 symbols = " ".join(
                     [m.get("name", "") for m in (fm.get("components", []) or fm.get("c4_internal_components", []))]
                 )
@@ -2000,6 +2050,23 @@ class ArchitecturalIndex:
                 data["title"] = row["title"]
                 matched_components[cid] = data
                 matched_reasons.setdefault(cid, []).append(f"Explicit component parameter '{component}'")
+            if not matched_components:
+                cursor.execute(
+                    """
+                    SELECT e.id, e.title, e.type, e.domain, e.data_json
+                    FROM symbol_mappings s
+                    JOIN entities e ON e.id = s.entity_id
+                    WHERE s.kind = 'component_id' AND UPPER(s.symbol) = ?;
+                    """,
+                    (c_clean,),
+                )
+                for row in cursor.fetchall():
+                    cid = row["id"]
+                    data = json.loads(row["data_json"])
+                    data["id"] = cid
+                    data["title"] = row["title"]
+                    matched_components[cid] = data
+                    matched_reasons.setdefault(cid, []).append(f"Inline component parameter '{component}'")
 
         # 2. Resolve by File paths
         raw_files = [files] if isinstance(files, str) else (files or [])
@@ -2211,6 +2278,12 @@ class ArchitecturalIndex:
                 inv_data = json.loads(row["data_json"])
                 inv_data["id"] = row["id"]
                 matched_invariants.setdefault(row["id"], inv_data)
+
+        # Ensure embedded decisions (including inline component decisions) are surfaced on each matched component
+        for comp_entry in matched_components.values():
+            collected_decs = collect_component_decisions(comp_entry)
+            if collected_decs:
+                comp_entry["decisions"] = collected_decs
 
         # Assemble and sort lists
         sorted_comps = sorted(matched_components.values(), key=lambda x: x.get("id", ""))

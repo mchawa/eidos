@@ -14,15 +14,15 @@ intent:
     hooks into native CLI subcommands ('eidos hook lint', 'eidos hook drift'), and
     enforcing a stateful Block-Once Stop gate.
 mutations:
-- action: modify_component
-  target_component: CNT-EIDOS-PLUGIN
+- action: modify_container
+  target_container: CNT-EIDOS-PLUGIN
   details: Add 'src/eidos/plugin/hooks.py' implementing CLI-native agent lifecycle
     hook execution ('run_lint_hook' and 'run_drift_hook') and a stateful Block-Once
     Stop gate that persists a SHA-256 failure fingerprint in 'eidos/.cache/stop-gate.json'
     to block the first turn completion on drift or validation errors while allowing
     a subsequent Stop with the same fingerprint.
-- action: modify_component
-  target_component: CNT-EIDOS-CLI
+- action: modify_container
+  target_container: CNT-EIDOS-CLI
   details: Expose 'eidos hook lint', 'eidos hook drift', and 'eidos doctor' commands
     in 'src/eidos/cli/main.py', keeping 'eidos' as the sole console script
     entry point in 'pyproject.toml'.
@@ -37,7 +37,7 @@ mutations:
     'eidos' CLI binary (with 'uvx --from eidos-ai eidos' fallback) and enforce the Block-Once Stop
     gate.
 blast_radius:
-  impacted_components:
+  impacted_containers:
   - CNT-EIDOS-PLUGIN
   - CNT-EIDOS-CLI
 ---

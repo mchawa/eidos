@@ -203,28 +203,29 @@ class AuditEngine:
                 continue
             action = str(m.get("action", "")).strip().lower()
             if any(action.startswith(prefix) for prefix in deletion_prefixes):
-                # Explicit target keys
-                for key in (
-                    "target_component",
-                    "target_contract",
-                    "target_capability",
-                    "target_policy",
-                    "target_domain",
-                    "target_screen",
-                    "target_ui_component",
-                    "target_design_system",
-                    "target_invariant_id",
-                ):
-                    val = m.get(key)
-                    if val and isinstance(val, str):
-                        targets.add(val.strip())
+                from eidos.core.lifecycle.delta_engine import _extract_mutation_target
 
-                # Parse IDs mentioned in details
+                primary_target = _extract_mutation_target(m)
+                if (
+                    primary_target
+                    and primary_target != "unspecified_target"
+                    and not primary_target.endswith(".adoc")
+                    and "/" not in primary_target
+                ):
+                    targets.add(primary_target)
+
+                parent_context_ids = {
+                    str(m[k]).strip()
+                    for k in ("target_container", "target_capability", "target_domain")
+                    if m.get(k) and isinstance(m.get(k), str) and str(m[k]).strip() != primary_target
+                }
+
+                # Parse IDs mentioned in details (excluding parent context IDs)
                 details = str(m.get("details", ""))
                 for match in re.findall(r"\b([A-Z]{2,4}-[A-Z0-9_-]+)\b", details):
-                    if any(
+                    if match not in parent_context_ids and any(
                         match.startswith(p)
-                        for p in ("CNT-", "CTR-", "CAP-", "POL-", "DOM-", "DS-", "SCR-", "UIC-", "FLOW-", "INV-")
+                        for p in ("CNT-", "CMP-", "CTR-", "CAP-", "POL-", "DOM-", "DS-", "SCR-", "UIC-", "FLOW-", "INV-")
                     ):
                         targets.add(match)
 

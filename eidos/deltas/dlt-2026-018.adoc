@@ -19,8 +19,8 @@ intent:
 
     '
 mutations:
-- action: modify_component
-  target_component: CNT-EIDOS-PORTAL
+- action: modify_container
+  target_container: CNT-EIDOS-PORTAL
   details: 'Integrate the pre-compiled frontend distribution from ''src/eidos/portal/frontend/dist/index.html''
     into ''src/eidos/portal/assets.py'', packaging the 95.89 KB gzipped single-file
     SPA directly within Python package distribution assets.
@@ -53,7 +53,7 @@ mutations:
 
     '
 blast_radius:
-  impacted_components:
+  impacted_containers:
   - CNT-EIDOS-PORTAL
   invariants_to_enforce:
   - INV-PORTAL-ZERO-NODE-DEP

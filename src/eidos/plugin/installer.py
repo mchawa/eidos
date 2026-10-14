@@ -76,6 +76,34 @@ def locate_plugin_bundle() -> Path:
     raise FileNotFoundError("Could not locate Eidos plugin reference in assets or repository.")
 
 
+ACTIVE_EIDOS_SKILLS: frozenset[str] = frozenset(
+    {
+        "eidos",
+        "eidos-spec",
+        "eidos-plan",
+        "eidos-ops",
+    }
+)
+
+RETIRED_EIDOS_SKILLS: frozenset[str] = frozenset(
+    {
+        "eidos-architecture",
+        "eidos-context",
+        "eidos-delta",
+        "eidos-design",
+        "eidos-drift",
+        "eidos-explore",
+        "eidos-extract",
+        "eidos-init",
+        "eidos-invariants",
+        "eidos-portal",
+        "eidos-product",
+        "eidos-reconcile",
+        "eidos-review",
+    }
+)
+
+
 def _copy_plugin_tree(
     source_dir: Path, target_dir: Path, force: bool = False, launcher: str = "eidos"
 ) -> list[Path]:
@@ -86,6 +114,16 @@ def _copy_plugin_tree(
     if legacy_scripts.exists() and not (source_dir / "scripts").exists():
         with contextlib.suppress(OSError):
             shutil.rmtree(legacy_scripts)
+
+    # Prune retired legacy Eidos skill directories inside the plugin tree
+    target_skills_dir = target_dir / "skills"
+    if target_skills_dir.exists():
+        for retired_name in RETIRED_EIDOS_SKILLS:
+            retired_dir = target_skills_dir / retired_name
+            if retired_dir.exists():
+                with contextlib.suppress(OSError):
+                    shutil.rmtree(retired_dir)
+
     created = []
     for item in source_dir.rglob("*"):
         if item.is_file():
@@ -129,12 +167,19 @@ def _copy_plugin_tree(
 
 
 def _copy_skills_flat(source_dir: Path, target_skills_dir: Path, force: bool = False) -> list[Path]:
-    """Copy individual skills from source bundle into target_skills_dir/<skill-name>/."""
+    """Copy individual skills from source bundle into target_skills_dir/<skill-name>/ and prune retired Eidos skills."""
     source_skills = source_dir / "skills" if (source_dir / "skills").exists() else source_dir
     if not source_skills.exists():
         return []
 
     target_skills_dir.mkdir(parents=True, exist_ok=True)
+    # Prune retired legacy Eidos skill directories while preserving unrelated user skills
+    for retired_name in RETIRED_EIDOS_SKILLS:
+        retired_dir = target_skills_dir / retired_name
+        if retired_dir.exists():
+            with contextlib.suppress(OSError):
+                shutil.rmtree(retired_dir)
+
     created: list[Path] = []
 
     for item in sorted(source_skills.iterdir()):
@@ -152,37 +197,18 @@ def _copy_skills_flat(source_dir: Path, target_skills_dir: Path, force: bool = F
 
 
 def _remove_skills_flat(source_dir: Path | None, target_skills_dir: Path) -> bool:
-    """Remove known Eidos skills from target_skills_dir without removing unrelated user skills."""
+    """Remove known active and retired Eidos skills from target_skills_dir without removing unrelated user skills."""
     if not target_skills_dir.exists():
         return False
 
-    known_skills = set()
+    known_skills = set(ACTIVE_EIDOS_SKILLS | RETIRED_EIDOS_SKILLS)
     if source_dir:
         source_skills = source_dir / "skills" if (source_dir / "skills").exists() else source_dir
         if source_skills.exists():
-            known_skills = {d.name for d in source_skills.iterdir() if d.is_dir() and not d.name.startswith(".")}
-
-    if not known_skills:
-        # Fallback to known 14 Eidos skill names
-        known_skills = {
-            "eidos",
-            "eidos-architecture",
-            "eidos-context",
-            "eidos-delta",
-            "eidos-design",
-            "eidos-drift",
-            "eidos-explore",
-            "eidos-extract",
-            "eidos-init",
-            "eidos-invariants",
-            "eidos-portal",
-            "eidos-product",
-            "eidos-reconcile",
-            "eidos-review",
-        }
+            known_skills |= {d.name for d in source_skills.iterdir() if d.is_dir() and not d.name.startswith(".")}
 
     removed_any = False
-    for skill_name in known_skills:
+    for skill_name in sorted(known_skills):
         skill_dir = target_skills_dir / skill_name
         if skill_dir.exists():
             shutil.rmtree(skill_dir)
@@ -512,14 +538,10 @@ def _write_aider_conventions(file_path: Path) -> Path:
         "- **Architectural Context**: Use `eidos context --file <path>` or `eidos context --task \"<prompt>\"` for token-efficient architectural context.\n\n"
         "## Installed Eidos Skills\n"
         "When performing targeted architectural tasks, load the relevant skill using `/read .aider/skills/<skill>/SKILL.md`:\n"
-        "- Master Orchestration: `/read .aider/skills/eidos/SKILL.md`\n"
-        "- Context Slicing: `/read .aider/skills/eidos-context/SKILL.md`\n"
-        "- Architecture & C4: `/read .aider/skills/eidos-architecture/SKILL.md`\n"
-        "- SpecDeltas: `/read .aider/skills/eidos-delta/SKILL.md`\n"
-        "- Invariants & Policies: `/read .aider/skills/eidos-invariants/SKILL.md`\n"
-        "- Drift & PR Gates: `/read .aider/skills/eidos-drift/SKILL.md`\n"
-        "- Spec Reconciliation: `/read .aider/skills/eidos-reconcile/SKILL.md`\n"
-        "- Staff Review: `/read .aider/skills/eidos-review/SKILL.md`\n"
+        "- Master Orchestration, Context, Drift & Reconcile: `/read .aider/skills/eidos/SKILL.md`\n"
+        "- Living Specs, C4 Architecture, Design Systems & Invariants: `/read .aider/skills/eidos-spec/SKILL.md`\n"
+        "- Explorations, SpecDeltas & Staff Architectural Review: `/read .aider/skills/eidos-plan/SKILL.md`\n"
+        "- Bootstrap, Brownfield Extraction & Web Portal: `/read .aider/skills/eidos-ops/SKILL.md`\n"
     )
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(content)
@@ -544,7 +566,7 @@ def _write_copilot_instructions(file_path: Path) -> Path:
         "- **Specification Validation**: Run `eidos validate eidos` to ensure schema conformance and cross-reference integrity.\n"
         "- **Zero Spec-to-Code Drift**: Run `eidos drift --uncommitted` to verify code changes are synchronized with living specifications before task completion.\n"
         "- **Architectural Context**: Use `eidos context --file <path>` or `eidos context --task \"<prompt>\"` for token-efficient architectural context.\n"
-        "- **Agent Skills**: Consult the 14 installed Eidos skills in `.github/skills/` for specialized architectural workflows.\n"
+        "- **Agent Skills**: Consult the 4 installed Eidos skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) in `.github/skills/` for specialized architectural workflows.\n"
         f"{COPILOT_END_MARKER}\n"
     )
 
@@ -883,7 +905,7 @@ def install_plugin(
                     target="cursor",
                     destination=cursor_rules,
                     success=True,
-                    message="Configured rules in .cursor/rules/eidos.mdc and 14 skills in .cursor/skills/.",
+                    message="Configured rules in .cursor/rules/eidos.mdc and 4 skills in .cursor/skills/.",
                     created_files=[cursor_rules, *created_skills],
                 )
             )
@@ -910,7 +932,7 @@ def install_plugin(
                     target="claude",
                     destination=claude_plugin_dir,
                     success=True,
-                    message="Installed Claude Code plugin at .claude/plugins/eidos, 14 skills in .claude/skills/, commands in .claude/plugins/eidos/commands/, and configured .claude/settings.json.",
+                    message="Installed Claude Code plugin at .claude/plugins/eidos, 4 skills in .claude/skills/, commands in .claude/plugins/eidos/commands/, and configured .claude/settings.json.",
                     created_files=[*created, *created_skills],
                 )
             )
@@ -927,7 +949,7 @@ def install_plugin(
                     target="aider",
                     destination=aider_conf,
                     success=True,
-                    message="Configured .aider.conf.yml, generated .aider.conventions.md, and installed 14 skills into .aider/skills/.",
+                    message="Configured .aider.conf.yml, generated .aider.conventions.md, and installed 4 skills into .aider/skills/.",
                     created_files=[conv_file, aider_conf, *created_skills],
                 )
             )
@@ -944,7 +966,7 @@ def install_plugin(
                     target="cline",
                     destination=cline_plugin,
                     success=True,
-                    message="Configured plugin bundle in .cline/plugins/eidos and 14 skills in .cline/skills/.",
+                    message="Configured plugin bundle in .cline/plugins/eidos and 4 skills in .cline/skills/.",
                     created_files=[*created_plugin, *created_skills],
                 )
             )
@@ -961,7 +983,7 @@ def install_plugin(
                     target="open-code",
                     destination=opencode_plugin_dir,
                     success=True,
-                    message="Configured plugin bundle in .opencode/plugins/eidos and 14 skills in .opencode/skills/.",
+                    message="Configured plugin bundle in .opencode/plugins/eidos and 4 skills in .opencode/skills/.",
                     created_files=[*created_plugin, *created_skills],
                 )
             )
@@ -986,7 +1008,7 @@ def install_plugin(
                     target="codex",
                     destination=codex_dir,
                     success=True,
-                    message="Installed OpenAI Codex plugin bundle (.codex/plugin.json, 14 skills, rules.md).",
+                    message="Installed OpenAI Codex plugin bundle (.codex/plugin.json, 4 skills, rules.md).",
                     created_files=created_codex,
                 )
             )
@@ -1012,7 +1034,7 @@ def install_plugin(
                     target="copilot",
                     destination=copilot_plugin_dir,
                     success=True,
-                    message="Installed GitHub Copilot plugin (.github/plugin/), 14 skills (.github/skills/), settings (.github/copilot/settings.json), and instructions.",
+                    message="Installed GitHub Copilot plugin (.github/plugin/), 4 skills (.github/skills/), settings (.github/copilot/settings.json), and instructions.",
                     created_files=[
                         *created_plugin,
                         *created_skills,

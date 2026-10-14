@@ -19,8 +19,8 @@ intent:
     metadata cards, and adds reader ergonomic controls (measure constraints, font
     scaling, clean syntax blocks).
 mutations:
-- action: modify_component
-  target_component: CNT-EIDOS-PORTAL
+- action: modify_container
+  target_container: CNT-EIDOS-PORTAL
   details: Upgrade the React 19 / Tailwind v4 frontend under 'src/eidos/portal/frontend'
     and compile into 'src/eidos/portal/assets.py' with enhanced reading-first layouts,
     responsive document reader stages, and dynamic heading outline generation while
@@ -61,7 +61,7 @@ mutations:
     65ch-75ch maximum reading measure, hierarchical TOC outline navigation for multi-section
     specs, and non-blocking human-readable metadata headers.
 blast_radius:
-  impacted_components:
+  impacted_containers:
   - CNT-EIDOS-PORTAL
   impacted_design_systems:
   - DS-CORE

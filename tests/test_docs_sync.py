@@ -80,13 +80,13 @@ def test_documentation_and_schemas_in_sync():
         assert cont_id, f"Container file {cont_file} missing id: frontmatter"
         assert cont_id in sys_arch_text, f"Container '{cont_id}' not registered in {sys_arch_path}"
 
-    # 4. Verify all 14 skills are documented in docs/guides/agent-plugin.md
+    # 4. Verify all 4 consolidated skills are documented in docs/guides/agent-plugin.md
     agent_plugin_doc = repo_root / "docs/guides/agent-plugin.md"
     assert agent_plugin_doc.exists(), "agent-plugin.md guide missing"
     agent_plugin_text = agent_plugin_doc.read_text(encoding="utf-8")
     skills_dir = repo_root / "assets/plugin_reference/skills"
     bundled_skills = [d.name for d in skills_dir.iterdir() if d.is_dir()]
-    assert len(bundled_skills) == 14, f"Expected 14 skills, found {len(bundled_skills)}"
+    assert len(bundled_skills) == 4, f"Expected 4 skills, found {len(bundled_skills)}"
     for skill_name in bundled_skills:
         assert f"`{skill_name}`" in agent_plugin_text, f"Skill '{skill_name}' missing in {agent_plugin_doc}"
 

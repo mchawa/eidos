@@ -224,12 +224,40 @@ def list_deltas(eidos_dir: Path, status_filter: str | None = None) -> list[dict[
     return results
 
 
+_ACTION_PRIMARY_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("_invariant", ("target_invariant_id",)),
+    ("_capability", ("new_capability_id", "target_capability")),
+    ("_component", ("target_component",)),
+    ("_container", ("target_container",)),
+    ("_architecture", ("target_architecture",)),
+    ("_contract", ("target_contract",)),
+    ("_policy", ("target_policy",)),
+    ("_domain", ("target_domain",)),
+    ("_persona", ("target_persona",)),
+    ("_screen", ("target_screen",)),
+    ("_ui_component", ("target_ui_component",)),
+    ("_design_system", ("target_design_system",)),
+    ("_client", ("target_client",)),
+    ("_flow", ("target_flow",)),
+)
+
+
 def _extract_mutation_target(m: dict[str, Any]) -> str:
     """Extract primary target identifier or path from a mutation dictionary."""
+    action = str(m.get("action", "")).strip().lower()
+    for suffix, primary_keys in _ACTION_PRIMARY_KEYS:
+        if action.endswith(suffix):
+            for key in primary_keys:
+                val = m.get(key)
+                if val and isinstance(val, str) and val.strip():
+                    return val.strip()
+
     for key in (
         "new_capability_id",
         "target_capability",
         "target_component",
+        "target_container",
+        "target_architecture",
         "target_policy",
         "target_contract",
         "target_domain",
@@ -238,6 +266,8 @@ def _extract_mutation_target(m: dict[str, Any]) -> str:
         "target_ui_component",
         "target_invariant_id",
         "target_design_system",
+        "target_client",
+        "target_flow",
     ):
         val = m.get(key)
         if val and isinstance(val, str) and val.strip():
@@ -246,7 +276,10 @@ def _extract_mutation_target(m: dict[str, Any]) -> str:
     # Fallback to regex in details
     details = m.get("details", "")
     if details:
-        match = re.search(r"\b(CNT|CMP|CAP|CTR|POL|DOM|SCR|UIC|DS|PER|INV)-[A-Z0-9_-]+\b", details)
+        match = re.search(
+            r"\b(CNT|CMP|CAP|CTR|POL|DOM|SCR|UIC|DS|PER|INV|CLT|FLOW|ARCH|SYS)-[A-Z0-9_-]+\b",
+            details,
+        )
         if match:
             return match.group(0)
         path_match = re.search(r"['\"]?([a-zA-Z0-9_\-\./]+\.adoc)['\"]?", details)
@@ -254,6 +287,28 @@ def _extract_mutation_target(m: dict[str, Any]) -> str:
             return path_match.group(1)
 
     return "unspecified_target"
+
+
+def _find_inline_component_dict(
+    comp_id: str,
+    cnt_fm: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Return the inline component dict for comp_id from a container frontmatter, if present."""
+    if not isinstance(cnt_fm, dict):
+        return None
+    comps = cnt_fm.get("components", []) or cnt_fm.get("c4_internal_components", [])
+    if isinstance(comps, list):
+        for c in comps:
+            if isinstance(c, dict) and c.get("id") == comp_id:
+                return c
+    return None
+
+
+def _digest_dict(data: dict[str, Any]) -> str:
+    """Compute a deterministic SHA-256 hex digest for a frontmatter sub-dictionary."""
+    return hashlib.sha256(
+        json.dumps(data, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
 
 
 def _snapshot_delta_baselines(eidos_dir: Path, delta_id: str) -> None:
@@ -270,15 +325,17 @@ def _snapshot_delta_baselines(eidos_dir: Path, delta_id: str) -> None:
                 rows.append((delta_id, spec_id, sha))
                 rows.append((delta_id, str(spec_path.resolve()), sha))
         for comp_id, cnt_id in container_components.items():
-            if cnt_id in specs_by_id and specs_by_id[cnt_id][0].exists():
-                sha = hashlib.sha256(specs_by_id[cnt_id][0].read_bytes()).hexdigest()
-                rows.append((delta_id, comp_id, sha))
+            if cnt_id in specs_by_id:
+                cnt_path, _, cnt_fm = specs_by_id[cnt_id]
+                comp_dict = _find_inline_component_dict(comp_id, cnt_fm)
+                if comp_dict is not None:
+                    rows.append((delta_id, comp_id, _digest_dict(comp_dict)))
+                elif cnt_path.exists():
+                    sha = hashlib.sha256(cnt_path.read_bytes()).hexdigest()
+                    rows.append((delta_id, comp_id, sha))
         for inv_id, (inv_path, inv_dict) in invariant_map.items():
             if inv_path.exists():
-                inv_sha = hashlib.sha256(
-                    json.dumps(inv_dict, sort_keys=True, default=str).encode("utf-8")
-                ).hexdigest()
-                rows.append((delta_id, inv_id, inv_sha))
+                rows.append((delta_id, inv_id, _digest_dict(inv_dict)))
 
         with sqlite3.connect(db_path) as conn:
             conn.execute(
@@ -303,7 +360,8 @@ def _check_or_record_baseline_sha(
     target_file: Path | None,
     current_sha: str,
 ) -> bool:
-    """Compare current_sha against SQLite delta_baselines (with mtime fallback when no baseline exists yet)."""
+    """Compare current_sha against SQLite delta_baselines, recording a baseline and returning False when absent."""
+    _ = (delta_file, target_file)
     try:
         cache_dir = eidos_dir / ".cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -321,14 +379,6 @@ def _check_or_record_baseline_sha(
             if row is not None:
                 return current_sha != row[0]
 
-            if (
-                target_file is not None
-                and target_file.exists()
-                and delta_file.exists()
-                and target_file.stat().st_mtime_ns > delta_file.stat().st_mtime_ns
-            ):
-                return True
-
             conn.execute(
                 "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)",
                 (delta_id, target_key, current_sha),
@@ -336,9 +386,61 @@ def _check_or_record_baseline_sha(
             conn.commit()
             return False
     except (OSError, sqlite3.Error):
-        if target_file is not None and target_file.exists() and delta_file.exists():
-            return target_file.stat().st_mtime_ns > delta_file.stat().st_mtime_ns
         return False
+
+
+def _check_structural_subtarget_precondition(
+    m: dict[str, Any],
+    specs_by_id: dict[str, tuple[Path, str, dict[str, Any]]],
+    container_components: dict[str, str],
+) -> bool:
+    """Verify structural parent/sub-target membership when both parent and child target keys are specified.
+
+    Returns False if a declared parent/sub-target relationship is missing, or True if satisfied (or not applicable).
+    """
+    t_cap = m.get("target_capability")
+    t_inv = m.get("target_invariant_id")
+    if t_cap and t_inv:
+        if t_cap not in specs_by_id:
+            return False
+        _, _, cap_fm = specs_by_id[t_cap]
+        invs = (cap_fm or {}).get("invariants", []) or ((cap_fm or {}).get("technical", {}) or {}).get("invariants", [])
+        inv_ids = {i.get("id") if isinstance(i, dict) else str(i) for i in (invs or [])}
+        if t_inv not in inv_ids:
+            return False
+
+    t_cnt = m.get("target_container")
+    t_cmp = m.get("target_component")
+    if t_cnt and t_cmp and t_cnt != t_cmp:
+        if t_cnt not in specs_by_id:
+            return False
+        in_cnt = container_components.get(t_cmp) == t_cnt or (
+            t_cmp in specs_by_id and (specs_by_id[t_cmp][2] or {}).get("container") == t_cnt
+        )
+        if not in_cnt:
+            return False
+
+    owner_cnt = t_cnt or t_cmp
+    t_ctr = m.get("target_contract")
+    if owner_cnt and t_ctr and owner_cnt != t_ctr:
+        if owner_cnt not in specs_by_id:
+            return False
+        _, _, cnt_fm = specs_by_id[owner_cnt]
+        contracts = (cnt_fm or {}).get("contracts", {}) or {}
+        all_ctrs = (
+            (contracts.get("provides") or [])
+            + (contracts.get("consumes") or [])
+            + (contracts.get("requires") or [])
+        )
+        if t_ctr not in all_ctrs:
+            if t_ctr in specs_by_id:
+                ctr_fm = specs_by_id[t_ctr][2] or {}
+                if (ctr_fm.get("owning_container") or ctr_fm.get("owning_component")) != owner_cnt:
+                    return False
+            else:
+                return False
+
+    return True
 
 
 def _evaluate_declarative_postcondition(
@@ -347,8 +449,9 @@ def _evaluate_declarative_postcondition(
     specs_by_id: dict[str, tuple[Path, str, dict[str, Any]]],
     container_components: dict[str, str],
     invariant_map: dict[str, tuple[Path, dict[str, Any]]],
+    target_file: Path | None = None,
 ) -> bool | None:
-    """Evaluate declarative expect block or structural sub-target if present on a mutation.
+    """Evaluate declarative expect block if present on a mutation.
 
     Returns True if satisfied, False if unsatisfied, or None if no declarative post-condition is specified.
     """
@@ -372,10 +475,14 @@ def _evaluate_declarative_postcondition(
                 cnt_path, _, cnt_fm = specs_by_id[cnt_id]
                 if cnt_path.exists():
                     raw_text = cnt_path.read_text(encoding="utf-8")
-                for c in (cnt_fm or {}).get("components", []):
-                    if isinstance(c, dict) and c.get("id") == target:
-                        target_dict = c
-                        break
+                comp_dict = _find_inline_component_dict(target, cnt_fm)
+                if comp_dict is not None:
+                    target_dict = comp_dict
+        elif target_file is not None and target_file.exists():
+            raw_text = target_file.read_text(encoding="utf-8")
+            parsed_fm, _, _ = extract_frontmatter(raw_text)
+            if isinstance(parsed_fm, dict):
+                target_dict = parsed_fm
 
         for k, exp_v in expect.items():
             if k == "contains":
@@ -392,39 +499,6 @@ def _evaluate_declarative_postcondition(
             elif actual != exp_v:
                 return False
         return True
-
-    # Structural sub-target post-conditions
-    t_cap = m.get("target_capability")
-    t_inv = m.get("target_invariant_id")
-    if t_cap and t_inv and t_cap in specs_by_id:
-        _, _, cap_fm = specs_by_id[t_cap]
-        invs = (cap_fm or {}).get("invariants", []) or ((cap_fm or {}).get("technical", {}) or {}).get("invariants", [])
-        inv_ids = {i.get("id") if isinstance(i, dict) else str(i) for i in (invs or [])}
-        return t_inv in inv_ids
-
-    t_cnt = m.get("target_container")
-    t_cmp = m.get("target_component")
-    if t_cnt and t_cmp and t_cnt != t_cmp and t_cnt in specs_by_id:
-        return container_components.get(t_cmp) == t_cnt or (
-            t_cmp in specs_by_id and (specs_by_id[t_cmp][2] or {}).get("container") == t_cnt
-        )
-
-    owner_cnt = t_cnt or t_cmp
-    t_ctr = m.get("target_contract")
-    if owner_cnt and t_ctr and owner_cnt != t_ctr and owner_cnt in specs_by_id:
-        _, _, cnt_fm = specs_by_id[owner_cnt]
-        contracts = (cnt_fm or {}).get("contracts", {}) or {}
-        all_ctrs = (
-            (contracts.get("provides") or [])
-            + (contracts.get("consumes") or [])
-            + (contracts.get("requires") or [])
-        )
-        if t_ctr in all_ctrs:
-            return True
-        if t_ctr in specs_by_id:
-            ctr_fm = specs_by_id[t_ctr][2] or {}
-            return (ctr_fm.get("owning_container") or ctr_fm.get("owning_component")) == owner_cnt
-        return False
 
     return None
 
@@ -475,7 +549,7 @@ def verify_delta_mutations(
                 target_path_resolved = cand_abs.resolve()
 
         # 1. Removal / Deprecation Actions
-        if action in ("remove_component", "remove_contract", "remove_screen", "remove_ui_component"):
+        if action in ("remove_component", "remove_container", "remove_contract", "remove_screen", "remove_ui_component"):
             still_present = (
                 target in specs_by_id
                 or target in container_components
@@ -503,32 +577,41 @@ def verify_delta_mutations(
 
         # 2. Invariant Actions
         elif action == "add_invariant":
-            if target in invariants:
-                verified = True
-                status = "FOUND"
+            if target in invariants and _check_structural_subtarget_precondition(
+                m, specs_by_id, container_components
+            ):
+                decl_ok = _evaluate_declarative_postcondition(
+                    m, target, specs_by_id, container_components, invariant_map
+                )
+                if decl_ok is False:
+                    verified = False
+                    status = "UNMODIFIED"
+                else:
+                    verified = True
+                    status = "FOUND"
             else:
                 verified = False
                 status = "MISSING"
 
         elif action == "patch_invariant":
-            if target not in invariant_map:
+            if target not in invariant_map or not _check_structural_subtarget_precondition(
+                m, specs_by_id, container_components
+            ):
                 verified = False
                 status = "MISSING"
-            elif delta_status == "applied":
-                verified = True
-                status = "FOUND"
             else:
                 decl_ok = _evaluate_declarative_postcondition(
                     m, target, specs_by_id, container_components, invariant_map
                 )
                 if decl_ok is not None:
                     verified = decl_ok
-                    status = "MODIFIED" if decl_ok else "UNMODIFIED"
+                    status = ("FOUND" if delta_status == "applied" else "MODIFIED") if decl_ok else "UNMODIFIED"
+                elif delta_status == "applied":
+                    verified = True
+                    status = "FOUND"
                 else:
                     inv_file, inv_dict = invariant_map[target]
-                    inv_sha = hashlib.sha256(
-                        json.dumps(inv_dict, sort_keys=True, default=str).encode("utf-8")
-                    ).hexdigest()
+                    inv_sha = _digest_dict(inv_dict)
                     mod_ok = _check_or_record_baseline_sha(
                         eidos_dir, doc.doc_id, file_path, target, inv_file, inv_sha
                     )
@@ -558,21 +641,33 @@ def verify_delta_mutations(
                         target_file = p
                         break
 
-            if target_file is None or not target_file.exists():
+            if (
+                target_file is None
+                or not target_file.exists()
+                or not _check_structural_subtarget_precondition(m, specs_by_id, container_components)
+            ):
                 verified = False
                 status = "MISSING"
-            elif delta_status == "applied":
-                verified = True
-                status = "FOUND"
             else:
                 decl_ok = _evaluate_declarative_postcondition(
-                    m, target, specs_by_id, container_components, invariant_map
+                    m, target, specs_by_id, container_components, invariant_map, target_file=target_file
                 )
                 if decl_ok is not None:
                     verified = decl_ok
-                    status = "MODIFIED" if decl_ok else "UNMODIFIED"
+                    status = ("FOUND" if delta_status == "applied" else "MODIFIED") if decl_ok else "UNMODIFIED"
+                elif delta_status == "applied":
+                    verified = True
+                    status = "FOUND"
                 else:
-                    cur_sha = hashlib.sha256(target_file.read_bytes()).hexdigest()
+                    cur_sha: str | None = None
+                    if target not in specs_by_id and target in container_components:
+                        cnt_id = container_components[target]
+                        if cnt_id in specs_by_id:
+                            comp_dict = _find_inline_component_dict(target, specs_by_id[cnt_id][2])
+                            if comp_dict is not None:
+                                cur_sha = _digest_dict(comp_dict)
+                    if cur_sha is None:
+                        cur_sha = hashlib.sha256(target_file.read_bytes()).hexdigest()
                     mod_ok = _check_or_record_baseline_sha(
                         eidos_dir, doc.doc_id, file_path, target, target_file, cur_sha
                     )
@@ -585,10 +680,22 @@ def verify_delta_mutations(
                 target in specs_by_id
                 or target in container_components
                 or target_path_exists
-            )
+            ) and _check_structural_subtarget_precondition(m, specs_by_id, container_components)
             if found:
-                verified = True
-                status = "FOUND"
+                decl_ok = _evaluate_declarative_postcondition(
+                    m,
+                    target,
+                    specs_by_id,
+                    container_components,
+                    invariant_map,
+                    target_file=target_path_resolved,
+                )
+                if decl_ok is False:
+                    verified = False
+                    status = "UNMODIFIED"
+                else:
+                    verified = True
+                    status = "FOUND"
             else:
                 verified = False
                 status = "MISSING"
@@ -693,8 +800,12 @@ def execute_delta_mutations(
                 specs_by_id[target_id] = (created, "product/policy", {})
 
         # 3. Add Component / Container
-        elif action == "add_component":
-            target_id = m.get("target_component") or target
+        elif action in ("add_component", "add_container"):
+            target_id = (
+                (m.get("target_container") or target)
+                if action == "add_container"
+                else (m.get("target_component") or m.get("target_container") or target)
+            )
             if target_id.startswith("CNT-") and target_id not in specs_by_id:
                 title = m.get("title") or target_id.replace("CNT-", "").replace("-", " ").title()
                 created = create_spec(
@@ -736,9 +847,13 @@ def execute_delta_mutations(
                             if cnt_file not in mutated_files:
                                 mutated_files.append(cnt_file)
 
-        # 4. Remove Component
-        elif action == "remove_component":
-            target_id = m.get("target_component") or target
+        # 4. Remove Component / Container
+        elif action in ("remove_component", "remove_container"):
+            target_id = (
+                (m.get("target_container") or target)
+                if action == "remove_container"
+                else (m.get("target_component") or m.get("target_container") or target)
+            )
             if target_id in container_components:
                 cnt_id = container_components[target_id]
                 if cnt_id in specs_by_id:

@@ -19,7 +19,7 @@ mutations:
   details: Author CTR-EIDOS-PORTAL contract defining the HTTP REST and Web Portal
     endpoints.
 - action: modify_architecture
-  target_component: ARCH-EIDOS-001
+  target_architecture: ARCH-EIDOS-001
   details: Update ARCH-EIDOS-001 c4_containers topology with CMP-EIDOS-PORTAL container.
 - action: modify_contract
   target_component: CMP-EIDOS-CLI

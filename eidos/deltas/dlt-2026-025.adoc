@@ -12,8 +12,8 @@ intent:
     and update VCS lifecycle specifications so Eidos focuses strictly on local Git-native
     drift detection and living specification reconciliation.
 mutations:
-- action: modify_component
-  target_component: CNT-EIDOS-VCS
+- action: modify_container
+  target_container: CNT-EIDOS-VCS
   details: Delete 'src/eidos/vcs/bridge.py' and remove 'VCSBridge', 'VCSIssue', and
     'VCSPullRequest' exports from 'src/eidos/vcs/__init__.py'.
 - action: extend_capability
@@ -23,7 +23,7 @@ mutations:
     invariant 'INV-VCS-PARITY', and align 'DOM-VCS-LIFECYCLE' and 'SYS-EIDOS-001'
     external context with local Git-native drift detection.
 blast_radius:
-  impacted_components:
+  impacted_containers:
   - CNT-EIDOS-VCS
   - CNT-EIDOS-PORTAL
 ---

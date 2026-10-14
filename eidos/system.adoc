@@ -35,6 +35,15 @@ technical_profile:
     - "Cursor / Cline / OpenCode / Aider"
     - "OpenAI Codex"
     - "GitHub Copilot"
+
+decisions:
+  - id: DEC-SYS-ZERO-AI-SUBSTRATE
+    title: "Deterministic CLI & Skill Substrate Without Runtime LLM Calls"
+    decision: "Eidos operates strictly as a deterministic specification, validation, and context-slicing engine invoked by external AI coding agents via CLI and Agent Skills, never calling LLM APIs itself."
+    rationale: "Eliminates API key management, vendor lock-in, non-deterministic CI failures, and token cost overhead while remaining universally compatible with Antigravity, Claude Code, Cursor, and Codex (POL-004)."
+    rejected_alternatives:
+      - option: "Embedded LLM Orchestrator / Agent Daemon"
+        reason_rejected: "Couples the specification engine to proprietary model providers, introduces non-deterministic runtime failures, and violates POL-004."
 ---
 = Eidos System Definition
 :doctype: book

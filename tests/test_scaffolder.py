@@ -360,7 +360,7 @@ def test_cli_spec_lifecycle_tools(tmp_path):
 
 
 def test_all_skills_in_bundle():
-    """Verify that the plugin contains all 14 specialized skills (CAP-AGENT-001)."""
+    """Verify that the plugin contains the 4 cohesive workflow skills (CAP-AGENT-001, DLT-2026-037)."""
     from eidos.plugin.installer import locate_plugin_bundle
     from eidos.plugin.validator import validate_plugin_package
 
@@ -370,22 +370,12 @@ def test_all_skills_in_bundle():
     assert report.is_valid
     expected_skills = {
         "eidos",
-        "eidos-architecture",
-        "eidos-context",
-        "eidos-delta",
-        "eidos-design",
-        "eidos-drift",
-        "eidos-explore",
-        "eidos-extract",
-        "eidos-init",
-        "eidos-invariants",
-        "eidos-portal",
-        "eidos-product",
-        "eidos-reconcile",
-        "eidos-review",
+        "eidos-spec",
+        "eidos-plan",
+        "eidos-ops",
     }
     assert expected_skills == set(report.skills)
-    assert len(report.skills) == 14
+    assert len(report.skills) == 4
 
 
 def test_self_contained_eidos_gitignore(tmp_path):

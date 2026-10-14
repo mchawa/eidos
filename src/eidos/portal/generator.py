@@ -88,7 +88,8 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 "id": ct["id"],
                 "title": ct["title"],
                 "protocol": fm.get("protocol", "cli_args"),
-                "owning_component": fm.get("owning_component", "N/A"),
+                "owning_container": fm.get("owning_container") or fm.get("owning_component", "N/A"),
+                "owning_component": fm.get("owning_container") or fm.get("owning_component", "N/A"),
                 "specification_file": fm.get("specification_file", "N/A"),
                 "description": ct["body"],
             }

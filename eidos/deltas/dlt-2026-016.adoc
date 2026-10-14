@@ -21,8 +21,8 @@ intent:
 
     '
 mutations:
-- action: remove_component
-  target_component: CNT-EIDOS-MCP
+- action: remove_container
+  target_container: CNT-EIDOS-MCP
   details: 'Retire the stdio Model Context Protocol daemon and decommission ''src/eidos/mcp/''
     (CMP-MCP-SERVER-LOOP, CMP-MCP-TOOL-CATALOG, CMP-MCP-TOOL-DISPATCHER).
 
@@ -32,15 +32,15 @@ mutations:
     and its associated JSON-RPC 2.0 stdio protocol specifications.
 
     '
-- action: modify_component
-  target_component: CNT-EIDOS-CLI
+- action: modify_container
+  target_container: CNT-EIDOS-CLI
   details: 'Remove the ''eidos mcp'' command; ensure all inspection commands (validate,
     drift, context, reconcile, index) expose deterministic ''--json'' output and exit
     codes for automated consumption by AI coding assistants.
 
     '
-- action: modify_component
-  target_component: CNT-EIDOS-PLUGIN
+- action: modify_container
+  target_container: CNT-EIDOS-PLUGIN
   details: 'Update plugin installer to sunset generation of ''.mcp.json'' configuration
     files across all targets (Claude, Cursor, Cline, Copilot, Codex, OpenCode), orienting
     all plugins strictly around flat Agent Skills (SKILL.md) and CLI commands.
@@ -54,7 +54,7 @@ mutations:
 
     '
 blast_radius:
-  impacted_components:
+  impacted_containers:
   - CNT-EIDOS-MCP
   - CNT-EIDOS-CLI
   - CNT-EIDOS-PLUGIN

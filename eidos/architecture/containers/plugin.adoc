@@ -15,7 +15,7 @@ tier: extensibility
 components:
   - id: CMP-PLUGIN-INSTALLER
     name: "PluginInstaller"
-    responsibility: "Installs, updates, and removes portable agent plugins conforming to agent-plugins.org v1.0.0, Claude Code, OpenAI Codex, OpenCode, Aider, Cline, and GitHub Copilot."
+    responsibility: "Installs, updates, and removes portable agent plugins and 4 cohesive workflow skills conforming to agent-plugins.org v1.0.0, Claude Code, OpenAI Codex, OpenCode, Aider, Cline, Cursor, and GitHub Copilot, while pruning retired legacy skill directories."
     source_path: "src/eidos/plugin/installer.py"
   - id: CMP-PLUGIN-VALIDATOR
     name: "PluginValidator"
@@ -57,7 +57,7 @@ This container represents the plugin distribution, hook execution, and validatio
 [cols="1,1,2,2", options="header"]
 |===
 | Component ID | Name | Responsibility | Source Path
-| `CMP-PLUGIN-INSTALLER` | **PluginInstaller** | Manages installation and file synchronization into `.agents/plugins/eidos`, `.github/plugin/`, `.github/skills/`, `.claude/plugins/`, `.claude/skills/`, `.cursor/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/skills/`, and `.aider/skills/` | `src/eidos/plugin/installer.py`
+| `CMP-PLUGIN-INSTALLER` | **PluginInstaller** | Manages installation, legacy skill pruning, and synchronization of 4 cohesive workflow skills into `.agents/plugins/eidos`, `.github/plugin/`, `.github/skills/`, `.claude/plugins/`, `.claude/skills/`, `.cursor/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/skills/`, and `.aider/skills/` | `src/eidos/plugin/installer.py`
 | `CMP-PLUGIN-VALIDATOR` | **PluginValidator** | Enforces JSON Schema conformance and SemVer 2.0.0 rules for plugins | `src/eidos/plugin/validator.py`
 | `CMP-HOOK-MANAGER` | **HookManager** | Validates and coordinates lifecycle hooks (`hooks.json`), linter runners, and drift gates supporting JSONC configs (`devcontainer.json`, `.vscode/`) | `src/eidos/plugin/validator.py`
 | `CMP-HOOK-RUNNER` | **HookRunner** | CLI-native hook execution (`eidos hook lint`, `eidos hook drift`) with Block-Once Stop gate | `src/eidos/plugin/hooks.py`

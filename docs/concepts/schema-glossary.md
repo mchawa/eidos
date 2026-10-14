@@ -255,6 +255,15 @@ dependencies:
   external_services:
     - "pyyaml"
     - "jsonschema"
+decisions:
+  - id: DEC-INDEX-SQLITE-WAL
+    title: "Use Embedded SQLite WAL + FTS5 Instead of External Vector DB"
+    decision: "Store the architectural knowledge graph and lexical index in local SQLite3 with WAL mode and FTS5 BM25."
+    rationale: "Guarantees zero external runtime dependencies and sub-2ms local queries."
+    rejected_alternatives:
+      - option: "ChromaDB / LanceDB Vector Store"
+        reason_rejected: "Requires external model weights or API calls, violating POL-004."
+    graduated_from: EXP-2026-002
 ---
 ```
 

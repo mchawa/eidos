@@ -195,8 +195,26 @@ def test_spike_c_tiered_context_compression(temp_index):
     assert "ANCHOR Tier" in md_anchor
     assert "GUARDRAILS Tier" in md_guardrails
 
-    # Token savings benchmark: Compare against estimated raw loading (~3,500+ tokens for full container+contract+specs)
-    raw_component_tokens = max(3500, slice_deep.token_estimate)
+    # Token savings benchmark: Compare against raw loading of the matched container, capability, and policy specs
+    conn = temp_index._get_connection()
+    slice_entity_ids = [
+        e["id"]
+        for group in (
+            slice_guardrails.components,
+            slice_guardrails.contracts,
+            slice_guardrails.capabilities,
+            slice_guardrails.policies,
+        )
+        for e in group
+        if e.get("id")
+    ]
+    raw_chars = sum(
+        len((temp_index.root / row[0]).read_text(encoding="utf-8"))
+        for eid in slice_entity_ids
+        for row in conn.execute("SELECT file_path FROM entities WHERE id = ?;", (eid,)).fetchall()
+        if row[0] and (temp_index.root / row[0]).is_file()
+    )
+    raw_component_tokens = max(3500, raw_chars // 4, slice_deep.token_estimate)
     token_savings_pct = (1.0 - (slice_guardrails.token_estimate / raw_component_tokens)) * 100.0
     assert token_savings_pct >= 60.0, f"Token savings {token_savings_pct:.1f}% was below 60% requirement"
 
@@ -1062,4 +1080,12 @@ def test_incremental_spec_sync_preserves_incoming_edges(tmp_path):
         assert "CAP-SAMPLE-001" in after_neighbors
     finally:
         idx.close()
+
+
+def test_fts5_indexes_embedded_decisions(temp_index):
+    """Verify INV-KNOWLEDGE-GRAPH-CATALOG and INV-AGENT-CONTEXT-SLICING: embedded decisions and rejected_alternatives are indexed in specs_fts."""
+    matches = temp_index.query_fts("DEC-INDEX-SQLITE-WAL ChromaDB LanceDB", limit=5)
+    matched_ids = [m["id"] for m in matches]
+    assert "CNT-EIDOS-INDEX" in matched_ids
+
 

@@ -1,0 +1,215 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-043
+title: "Enforce Strict Enum Taxonomies in SpecDelta Schema (intent.kind, bug_classification, severity, and mutations[].action)"
+status: proposed
+vcs:
+  branch: refactor/delta-schema-enums
+intent:
+  kind: enabler
+  motivation: "Replace open regex string patterns on SpecDelta categorical fields ('intent.kind', 'intent.bug_classification', 'intent.severity', and 'mutations[].action') in 'assets/schemas/v1/delta/delta.schema.yaml' with strict JSON Schema 'enum' taxonomies—separating strategic intent ('feature', 'enabler', 'bug') from structural mutation actions ('add_*', 'modify_*', 'extend_*', 'patch_*', 'deprecate_*', 'remove_*') and enforcing deterministic schema validation and Keep-a-Changelog classification."
+mutations:
+  - action: modify_component
+    target_component: CMP-DELTA-ENGINE
+    target_container: CNT-EIDOS-CORE
+    details: "Replace open 'pattern: ^[a-z0-9_-]+$' constraints in 'assets/schemas/v1/delta/delta.schema.yaml' with strict 'enum' lists for 'intent.kind' ([feature, enabler, bug]), 'intent.bug_classification' ([spec_violation, spec_gap]), 'intent.severity' ([low, medium, high, critical]), and 'mutations[].action' (all canonical Product, Architecture, and Design semantic operations), and normalize historical SpecDeltas in 'eidos/deltas/dlt-2026-*.adoc' to conform to the enum taxonomy."
+    expect:
+      responsibility: "enum"
+  - action: modify_component
+    target_component: CMP-CHANGELOG-GENERATOR
+    target_container: CNT-EIDOS-CORE
+    details: "Update 'ChangelogGenerator._add_delta_to_section()' in 'src/eidos/core/lifecycle/changelog.py' to classify SpecDeltas deterministically using the 'intent.kind' enum ('feature', 'enabler', 'bug') combined with 'mutations[].action' ('remove_*', 'deprecate_*') into Keep-a-Changelog sections ('Added', 'Changed', 'Deprecated', 'Removed', 'Fixed')."
+    expect:
+      responsibility: "intent.kind"
+  - action: modify_component
+    target_component: CMP-LIFECYCLE-SCAFFOLDER
+    target_container: CNT-EIDOS-CORE
+    details: "Update 'create_spec()' default 'kind' parameter in 'src/eidos/core/lifecycle/scaffolder.py' from 'feature_addition' to 'feature' so newly scaffolded SpecDeltas satisfy the 'intent.kind' enum out of the box."
+    expect:
+      responsibility: "safe YAML serialization"
+  - action: modify_component
+    target_component: CMP-CLI-DELTA-COMMANDS
+    target_container: CNT-EIDOS-CLI
+    details: "Update 'eidos delta create --kind' default and help text in 'src/eidos/cli/delta_commands.py' to 'feature' ('Mutation kind: feature, enabler, bug.')."
+    expect:
+      responsibility: "feature, enabler, bug"
+  - action: modify_contract
+    target_contract: CTR-EIDOS-CLI
+    details: "Update 'eidos/architecture/contracts/cli.adoc' and 'tests/fixtures/cli_command_tree.json' to reflect the updated '--kind' option on 'eidos delta create'."
+    expect:
+      contains: "feature, enabler, bug"
+  - action: extend_capability
+    target_capability: CAP-PROD-002
+    details: "Update 'eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc' CLI interface contract to 'eidos delta create --kind [feature|enabler|bug]' and bump capability version to 1.4.0."
+    expect:
+      version: "1.4.0"
+affects:
+  containers:
+    - CNT-EIDOS-CORE
+    - CNT-EIDOS-CLI
+  components:
+    - CMP-DELTA-ENGINE
+    - CMP-CHANGELOG-GENERATOR
+    - CMP-LIFECYCLE-SCAFFOLDER
+    - CMP-CLI-DELTA-COMMANDS
+  contracts:
+    - CTR-EIDOS-CLI
+  capabilities:
+    - CAP-PROD-002
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-CORE
+    - CNT-EIDOS-CLI
+  impacted_components:
+    - CMP-DELTA-ENGINE
+    - CMP-CHANGELOG-GENERATOR
+    - CMP-LIFECYCLE-SCAFFOLDER
+    - CMP-CLI-DELTA-COMMANDS
+  invariants_to_enforce:
+    - INV-SPEC-VALIDATION
+    - INV-DELTA-CHANGELOG-GENERATION
+    - INV-MUTATION-REVERSIBILITY
+---
+= SpecDelta: Enforce Strict Enum Taxonomies in SpecDelta Schema (intent.kind, bug_classification, severity, and mutations[].action)
+:toc: left
+
+== Problem Statement
+
+In `assets/schemas/v1/delta/delta.schema.yaml`, four categorical fields currently use an open regex (`pattern: "^[a-z0-9_-]+$"`) instead of closed JSON Schema `enum` constraints:
+
+1. **`intent.kind`**: Uses open strings (`feature_addition`, `feature_removal`, `modification`, `refactor`, `architectural_refactor`, `feature`, `bugfix`, `performance_optimization`), which conflates *strategic intent* (why a change is made) with *structural mutation operations* (what `mutations[].action` already expresses) and caused author drift across historical `eidos/deltas/*.adoc` files.
+2. **`intent.bug_classification` & `intent.severity`**: Document fixed domains in prose (`spec_violation` / `spec_gap` and `low` / `medium` / `high` / `critical`) without enforcing them at the schema validation boundary.
+3. **`mutations[].action`**: Accepts any snake_case string in schema validation even though `verify_delta_mutations()`, `execute_delta_mutations()`, `_ACTION_PRIMARY_KEYS`, and `AuditEngine._extract_targets_and_tokens()` operate on a concrete set of semantic verbs (`add_*`, `extend_*`, `modify_*`, `patch_*`, `deprecate_*`, `remove_*`).
+
+== Proposed Specification & Schema Changes
+
+=== 1. `intent.kind` Enum (`feature`, `enabler`, `bug`)
+Separate strategic portfolio intent (`intent.kind`) from structural spec operations (`mutations[].action`):
+
+[source,yaml]
+----
+      kind:
+        type: string
+        enum:
+          - feature
+          - enabler
+          - bug
+        description: >
+          The strategic nature of the mutation:
+            - feature (User-facing or product capability delivery, enhancement, or retirement)
+            - enabler (Architectural refactor, technical foundation, performance optimization, contract/schema alignment, or governance)
+            - bug (Defect correction; pair with bug_classification)
+        examples:
+          - "feature"
+          - "enabler"
+          - "bug"
+----
+
+=== 2. Bug Metadata Enums (`intent.bug_classification` & `intent.severity`)
+Lock down the bug taxonomy fields on `intent`:
+
+[source,yaml]
+----
+      bug_classification:
+        type: string
+        enum:
+          - spec_violation
+          - spec_gap
+        description: "Only for bugfixes: 'spec_violation' means code diverged from valid spec; 'spec_gap' means spec lacked coverage for an edge condition."
+        examples:
+          - "spec_violation"
+          - "spec_gap"
+      severity:
+        type: string
+        enum:
+          - low
+          - medium
+          - high
+          - critical
+        description: "Impact severity rating: low, medium, high, or critical."
+        examples:
+          - "low"
+          - "medium"
+          - "high"
+          - "critical"
+----
+
+=== 3. `mutations[].action` Enum
+Replace `pattern: "^[a-z0-9_-]+$"` on `mutations[].action` with the closed list of supported semantic operations across Product, Architecture, and Design specifications:
+
+[source,yaml]
+----
+        action:
+          type: string
+          enum:
+            # Product: Domains, Capabilities, Personas, Policies & Invariants
+            - add_domain
+            - modify_domain
+            - remove_domain
+            - add_capability
+            - extend_capability
+            - modify_capability
+            - deprecate_capability
+            - remove_capability
+            - add_persona
+            - modify_persona
+            - remove_persona
+            - add_policy
+            - modify_policy
+            - patch_policy
+            - deprecate_policy
+            - remove_policy
+            - add_invariant
+            - patch_invariant
+            - remove_invariant
+            # Architecture: System Architecture, Containers, Components & Contracts
+            - modify_architecture
+            - add_container
+            - modify_container
+            - remove_container
+            - add_component
+            - modify_component
+            - remove_component
+            - add_contract
+            - modify_contract
+            - remove_contract
+            # Design: Design Systems, UI Components, Screens, Clients & Flows
+            - add_design_system
+            - modify_design_system
+            - remove_design_system
+            - add_ui_component
+            - modify_ui_component
+            - remove_ui_component
+            - add_screen
+            - modify_screen
+            - remove_screen
+            - add_client
+            - modify_client
+            - remove_client
+            - add_flow
+            - modify_flow
+            - remove_flow
+----
+
+=== 4. Deterministic Changelog Classification (`CMP-CHANGELOG-GENERATOR`)
+Update `ChangelogGenerator._add_delta_to_section()` in `src/eidos/core/lifecycle/changelog.py` to combine `intent.kind` (`feature`, `enabler`, `bug`) with `mutations[].action`:
+
+* `kind == "bug"` -> **Fixed**
+* All mutations start with `remove_` -> **Removed**
+* All mutations start with `deprecate_` -> **Deprecated**
+* `kind == "feature"` -> **Added** (or **Changed** when all mutations are `modify_*` / `extend_*` / `patch_*` without any `add_*`)
+* `kind == "enabler"` -> **Changed**
+
+=== 5. CLI, Scaffolder & Historical SpecDelta Alignment
+* Update `create_spec()` in `src/eidos/core/lifecycle/scaffolder.py` and `delta_create_cmd()` in `src/eidos/cli/delta_commands.py` to default `kind` to `"feature"` (`--kind`: `feature, enabler, bug`).
+* Migrate historical `eidos/deltas/dlt-2026-*.adoc` files:
+  * `feature_addition`, `feature` -> `feature`
+  * `refactor`, `architectural_refactor`, `modification`, `performance_optimization`, `feature_removal` -> `enabler` (or `feature` where product-facing)
+  * `bugfix` -> `bug`
+
+== Verification Criteria
+
+* `eidos validate eidos` rejects any SpecDelta whose `intent.kind`, `intent.bug_classification`, `intent.severity`, or `mutations[].action` is outside the schema enums.
+* All historical SpecDeltas in `eidos/deltas/dlt-2026-*.adoc` validate cleanly with `0` errors.
+* `eidos delta verify DLT-2026-043` and `eidos drift --uncommitted` pass with zero unreconciled drift.

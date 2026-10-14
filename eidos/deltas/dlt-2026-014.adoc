@@ -22,43 +22,43 @@ intent:
     '
 mutations:
 - action: modify_architecture
-  target_component: ARCH-EIDOS-001
+  target_architecture: ARCH-EIDOS-001
   details: 'Refactor ARCH-EIDOS-001 Section 5 to establish strict C4 hierarchy: c4_containers
     now references CNT-* identifiers pointing to ''eidos/architecture/containers/*.adoc''.
     Establish clear taxonomy: L1 System (SYS-*/ARCH-*), L2 Containers (CNT-*), L3
     Components (CMP-*), L4 Code (source_path).
 
     '
-- action: add_component
-  target_component: CNT-EIDOS-CORE
+- action: add_container
+  target_container: CNT-EIDOS-CORE
   details: 'Introduce ''assets/schemas/v1/tech/container.schema.yaml'' (type: tech/container,
     prefix: CNT-*) as the authoritative schema for C4 Level 2 deployables. Migrate
     all 7 existing manifests from eidos/architecture/components/ (CMP-*) to eidos/architecture/containers/
     (CNT-*).
 
     '
-- action: modify_component
-  target_component: CNT-EIDOS-CORE
+- action: modify_container
+  target_container: CNT-EIDOS-CORE
   details: 'Update Eidos parser, schema validator, graph index, and context slicer
     to recognize ''tech/container'' (CNT-*) as L2 Containers and ''CMP-*'' as L3 Components
     declared within each container''s ''components'' array.
 
     '
 - action: modify_contract
-  target_component: CTR-EIDOS-CLI
+  target_contract: CTR-EIDOS-CLI
   details: 'Update interface contracts (CTR-EIDOS-CLI, CTR-EIDOS-MCP, CTR-EIDOS-PORTAL)
     to replace ''owning_component: CMP-*'' with ''owning_container: CNT-*''.
 
     '
-- action: modify_component
-  target_component: CNT-EIDOS-CLI
+- action: modify_container
+  target_container: CNT-EIDOS-CLI
   details: 'Promote ''eidos containers'' as the primary CLI command to list L2 deployables.
     Repurpose ''eidos components [container-id]'' to list L3 in-process components
     (CMP-*) inside a container.
 
     '
-- action: modify_component
-  target_component: CNT-EIDOS-PORTAL
+- action: modify_container
+  target_container: CNT-EIDOS-PORTAL
   details: 'Update the Hierarchical C4 Explorer (generator and interactive UI) to
     strictly map L2 nodes as Containers (CNT-*) and L3 drill-down nodes as Components
     (CMP-*).

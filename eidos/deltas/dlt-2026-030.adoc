@@ -17,22 +17,22 @@ intent:
   bug_classification: spec_violation
   severity: high
 mutations:
-- action: modify_component
-  target_component: CNT-EIDOS-VCS
+- action: modify_container
+  target_container: CNT-EIDOS-VCS
   details: Remove hardcoded 'eidos/system.adoc' and 'eidos/architecture/system-architecture.adoc'
     entries from default 'allowed_paths' in '_collect_1hop_spec_targets()' within
     'src/eidos/vcs/drift.py'; only include system-level architecture specifications
     when a code file is unmapped to any specific container.
-- action: modify_component
-  target_component: CNT-EIDOS-VCS
+- action: modify_container
+  target_container: CNT-EIDOS-VCS
   details: 'Replace the global extension-based ''design_drift'' check in ''detect_drift()''
     with graph-scoped design drift: only frontend files with design-structural changes
     (CSS custom property/@theme/@keyframes token mutations, or exported UI component/Props/route
     changes) whose owning container is bound to a ''CLT-*'' or ''DS-*'' in the knowledge
     graph require a design spec update, satisfied only by that client''s/design system''s
     1-hop design subgraph or by an active SpecDelta declaring a design target.'
-- action: modify_component
-  target_component: CNT-EIDOS-CORE
+- action: modify_container
+  target_container: CNT-EIDOS-CORE
   details: Add 'classify_design_changes(old_content, new_content, file_path)' to 'src/eidos/core/ast_indexer.py'
     classifying frontend/styling diffs into 'token', 'ui_contract', or 'body_only'
     categories.
@@ -43,9 +43,10 @@ mutations:
     or unrelated design specs cannot mask structural code or design drift, and internal
     styling/logic tweaks do not trigger design drift.
 blast_radius:
-  impacted_components:
+  impacted_containers:
   - CNT-EIDOS-VCS
   - CNT-EIDOS-CORE
+  impacted_components:
   - CMP-DRIFT-DETECTOR
   - CMP-AST-SYMBOL-INDEXER
   invariants_to_enforce:

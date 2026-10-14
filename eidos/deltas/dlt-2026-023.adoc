@@ -14,8 +14,8 @@ intent:
     kind, test-to-invariant assertion metrics, and machine-readable '--json' output
     for autonomous AI coding agents.
 mutations:
-- action: modify_component
-  target_component: CNT-EIDOS-INDEX
+- action: modify_container
+  target_container: CNT-EIDOS-INDEX
   details: 'Upgrade ArchitecturalIndex in ''src/eidos/core/graph_index.py'' to: (1)
     Extend is_dirty() with dual spec-and-code file tracking, monitoring filesystem
     mtime across container package_paths, component source_paths, and tests to trigger
@@ -24,14 +24,14 @@ mutations:
     queries; (3) Enhance get_index_status() to return rich AST telemetry: active engine
     (''ast-grep'' vs. ''python-ast''), symbol counts by kind (class, function, method,
     test_binding), total test invariant assertion edges, and covered capability invariants.'
-- action: modify_component
-  target_component: CNT-EIDOS-CLI
+- action: modify_container
+  target_container: CNT-EIDOS-CLI
   details: Upgrade 'eidos index status' in 'src/eidos/cli/main.py' to surface AST
     engine telemetry and invariant traceability in the header Panel, render an 'AST
     Code Symbols & Traceability' breakdown table, and add a deterministic '--json'
     flag for programmatic agent inspection.
-- action: modify_component
-  target_component: CNT-EIDOS-PLUGIN
+- action: modify_container
+  target_container: CNT-EIDOS-PLUGIN
   details: Update agent post-invocation lifecycle hook in '.agents/plugins/eidos/scripts/check_drift.py'
     and 'assets/plugin_reference/scripts/check_drift.py' to lazily ensure ArchitecturalIndex
     synchronization on disk after agent tool actions.
@@ -47,7 +47,7 @@ mutations:
     assertion metrics) and INV-INDEX-CODE-DIRTY-SYNC (enforcing sub-5ms code-aware
     dirty checking and JIT synchronization when source or test files are modified).
 blast_radius:
-  impacted_components:
+  impacted_containers:
   - CNT-EIDOS-INDEX
   - CNT-EIDOS-CLI
   - CNT-EIDOS-PLUGIN

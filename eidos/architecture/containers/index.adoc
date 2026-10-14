@@ -13,7 +13,7 @@ tier: persistence
 components:
   - id: CMP-GRAPH-STORAGE
     name: "GraphStorage"
-    responsibility: "Manages embedded SQLite schema initialization (including the versioned, drop-and-rebuild 'metadata.schema_version' cache and the 'symbol_mappings' lookup and 'code_symbols' AST coordinate tables), connection lifecycle, WAL mode, transaction isolation, repository root discovery, and indexed files tracking."
+    responsibility: "Manages embedded SQLite schema initialization (including the versioned, drop-and-rebuild 'metadata.schema_version' cache and the 'symbol_mappings' lookup, 'code_symbols' AST coordinate, 'spec_validation_cache', and 'test_binding_cache' tables), connection lifecycle, WAL mode, transaction isolation, repository root discovery, and indexed files tracking."
     source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-INCREMENTAL-SYNC-ENGINE
     name: "IncrementalSyncEngine"
@@ -21,7 +21,7 @@ components:
     source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-FTS-QUERY-ENGINE
     name: "FTSQueryEngine"
-    responsibility: "Full-text lexical search and BM25 ranking across titles, descriptions, and keywords using SQLite FTS5."
+    responsibility: "Full-text lexical search and BM25 ranking across titles, descriptions, embedded architectural decisions, and keywords using SQLite FTS5."
     source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-GRAPH-TRAVERSAL-ENGINE
     name: "GraphTraversalEngine"
@@ -29,7 +29,7 @@ components:
     source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-TIERED-CONTEXT-COMPRESSOR
     name: "TieredContextCompressor"
-    responsibility: "Extracts token-compressed architectural slices across anchor, guardrails, and deep tiers for AI coding agents, formatting centralized C4 components with in-process APIs and invariants."
+    responsibility: "Extracts token-compressed architectural slices across anchor, guardrails, and deep tiers for AI coding agents, formatting centralized C4 components with in-process APIs, invariants, and embedded architectural decisions (compact title, decision, and rejected option names in anchor; full rationale and rejected_alternatives in guardrails and deep)."
     source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-AST-SYMBOL-INDEXER
     name: "AstSymbolIndexer"
@@ -52,6 +52,16 @@ quality_attributes:
   idempotent: true
   concurrency_model: "sqlite_wal_multiread"
   max_memory_mb: 128
+
+decisions:
+  - id: DEC-INDEX-SQLITE-WAL
+    title: "Use Embedded SQLite WAL + FTS5 Instead of External Vector DB"
+    decision: "Store the architectural knowledge graph and lexical index in local SQLite3 with WAL mode and FTS5 BM25."
+    rationale: "Guarantees zero external runtime dependencies (Python stdlib), sub-2ms local queries, and 100% deterministic offline operation under POL-004."
+    rejected_alternatives:
+      - option: "ChromaDB / LanceDB Vector Store"
+        reason_rejected: "Requires embedding model weights or external API calls, violating POL-004 and bloating installation size."
+    graduated_from: EXP-2026-002
 ---
 = Container: Architectural Knowledge Graph & Retrieval Index (C4 Level 2 Container & Level 3 Components)
 :toc: left
@@ -66,8 +76,9 @@ This container represents the embedded relational and lexical indexing engine un
 | Component ID | Name | Responsibility | Source Path
 | `CMP-GRAPH-STORAGE` | **GraphStorage** | SQLite schema (`entities`, `edges`, `indexed_files`, `symbol_mappings`, `code_symbols`, `specs_fts`) with versioned drop-and-rebuild migration, WAL mode, repo root discovery, and connection pool | `src/eidos/core/index/graph_index.py`
 | `CMP-INCREMENTAL-SYNC-ENGINE` | **IncrementalSyncEngine** | SHA-256 content and mtime dirty checking across all declared package paths with lazy incremental sync (<5ms), recursive package indexing, and order-independent source ownership resolution | `src/eidos/core/index/graph_index.py`
-| `CMP-FTS-QUERY-ENGINE` | **FTSQueryEngine** | SQLite FTS5 BM25 lexical search mapping natural language tasks to architecture IDs | `src/eidos/core/index/graph_index.py`
+| `CMP-FTS-QUERY-ENGINE` | **FTSQueryEngine** | SQLite FTS5 BM25 lexical search mapping natural language tasks and embedded `DEC-*` decisions to architecture IDs | `src/eidos/core/index/graph_index.py`
 | `CMP-GRAPH-TRAVERSAL-ENGINE` | **GraphTraversalEngine** | Recursive CTE graph queries evaluating k-hop blast radius and incoming references (<2ms) | `src/eidos/core/index/graph_index.py`
-| `CMP-TIERED-CONTEXT-COMPRESSOR` | **TieredContextCompressor** | 3-tier token-budgeted context extraction (`anchor`, `guardrails`, `deep`) with >=60% reduction | `src/eidos/core/index/graph_index.py`
+| `CMP-TIERED-CONTEXT-COMPRESSOR` | **TieredContextCompressor** | 3-tier token-budgeted context extraction (`anchor`, `guardrails`, `deep`) with >=60% reduction and tier-aware architectural `decisions` rendering | `src/eidos/core/index/graph_index.py`
 | `CMP-AST-SYMBOL-INDEXER` | **AstSymbolIndexer** | Polyglot AST symbol extraction (`ast-grep` with stdlib `ast` fallback) feeding persisted symbol coordinates, structural repo maps, and test-to-invariant bindings | `src/eidos/core/index/ast_indexer.py`
 |===
+
