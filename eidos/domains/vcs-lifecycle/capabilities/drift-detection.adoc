@@ -29,7 +29,7 @@ technical:
       - "eidos reconcile"
   invariants:
     - id: INV-DRIFT-DETECTION-ACCURACY
-      rule: "The drift detection engine must accurately identify structural code modifications and verify synchronization with owning or 1-hop linked living specifications."
+      rule: "The drift detection engine must accurately identify structural code and design token/props modifications, verify static test bindings across domain, policy, and architecture component invariants, and enforce component-scoped 1-hop living specification synchronization without global system.adoc bypasses."
       test_binding: "tests/test_drift.py::test_drift_detection_code_without_specs"
 ---
 = Capability: Git-Native Spec-to-Code Drift Detection

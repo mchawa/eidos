@@ -2,6 +2,7 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 title: SystemSchema
 description: "Defines the root software system archetype, strategic identity, architectural profile, and supported platforms."
 type: object
+additionalProperties: false
 required:
   - type
   - schema
@@ -25,6 +26,16 @@ properties:
   title:
     type: string
     description: "Full human-readable display title of the software product or platform."
+  status:
+    type: string
+    enum:
+      - draft
+      - proposed
+      - planned
+      - active
+      - deprecated
+      - retired
+    description: "Optional lifecycle state of the system specification."
   archetypes:
     type: array
     description: >
@@ -50,11 +61,11 @@ properties:
   business_identity:
     type: object
     description: "High-level strategic business intent, target market, and value proposition."
+    additionalProperties: false
     required:
       - vision
       - target_users
       - value_proposition
-    additionalProperties: true
     properties:
       vision:
         type: string
@@ -71,9 +82,9 @@ properties:
   technical_profile:
     type: object
     description: "Foundational technical characteristics, VCS environments, runtimes, and AI agent compatibility."
+    additionalProperties: false
     required:
       - primary_languages
-    additionalProperties: true
     properties:
       primary_languages:
         type: array

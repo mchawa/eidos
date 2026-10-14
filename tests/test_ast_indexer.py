@@ -174,3 +174,40 @@ def test_cli_repo_map_and_find_symbol():
     assert res_top_sym.exit_code == 0
     assert "CNT-EIDOS-IND" in res_top_sym.output
 
+
+
+def test_classify_design_changes_categories():
+    """Verify DLT-2026-030: frontend diffs are classified into token / ui_contract / body_only."""
+    from eidos.core.ast_indexer import classify_design_changes
+
+    # Non-design file
+    assert classify_design_changes("a", "b", "src/app.py")[0] == "none"
+
+    # CSS: custom property value change -> token; utility tweak -> body_only
+    old_css = ":root { --brand: #111; }\n.btn { padding: 4px; }\n"
+    assert classify_design_changes(old_css, old_css.replace("#111", "#222"), "x.css")[0] == "token"
+    assert classify_design_changes(old_css, old_css.replace("4px", "6px"), "x.css")[0] == "body_only"
+    # @keyframes and SCSS variables are tokens
+    assert classify_design_changes(".a{}", ".a{}\n@keyframes spin { to { rotate: 1turn; } }", "x.css")[0] == "token"
+    assert classify_design_changes("$gap: 4px;\n", "$gap: 8px;\n", "x.scss")[0] == "token"
+
+    # TSX: Props contract change -> ui_contract; internal hook edit -> body_only
+    old_tsx = (
+        "interface ButtonProps { label: string }\n"
+        "export function Button({ label }: ButtonProps) {\n"
+        "  const x = useMemo(() => 1, []);\n  return <b>{label}</b>;\n}\n"
+    )
+    props_tsx = old_tsx.replace("label: string }", "label: string; variant?: 'primary' }")
+    body_tsx = old_tsx.replace("() => 1", "() => 2")
+    assert classify_design_changes(old_tsx, props_tsx, "Button.tsx")[0] == "ui_contract"
+    assert classify_design_changes(old_tsx, body_tsx, "Button.tsx")[0] == "body_only"
+
+    # Routes and exports
+    routes_old = "const routes = [{ path: '/home' }];\n"
+    assert classify_design_changes(routes_old, routes_old + "routes.push({ path: '/admin' });\n", "routes.tsx")[0] == "ui_contract"
+    assert classify_design_changes("export const A = 1;", "export const A = 1;\nexport const B = 2;", "ui.jsx")[0] == "ui_contract"
+
+    # Token modules and added/deleted files
+    assert classify_design_changes("export const c = '#111';", "export const c = '#222';", "md3-tokens.ts")[0] == "token"
+    assert classify_design_changes(None, ".a{}", "new.css")[0] == "token"
+    assert classify_design_changes("x", None, "Old.tsx")[0] == "ui_contract"

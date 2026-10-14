@@ -2,6 +2,7 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 title: ContainerSchema
 description: "Defines an independently deployable or runnable unit of code execution or data storage following Arc42 Building Block View (Section 5.1) and C4 Model Level 2 (Containers). Contains an embedded C4 Level 3 Component Whitebox View via the components array."
 type: object
+additionalProperties: false
 required:
   - type
   - schema
@@ -21,10 +22,20 @@ properties:
   id:
     type: string
     pattern: "^CNT-[A-Z0-9_-]+$"
-    description: "Unique C4 Container identifier following CNT-<NAME> (e.g. CNT-EIDOS-CORE, CNT-EIDOS-CLI)."
+    description: "Unique C4 Container identifier following CNT-<NAME> (e.g. CNT-CORE, CNT-CLI)."
   name:
     type: string
     description: "Human-readable display name of the container/package."
+  status:
+    type: string
+    enum:
+      - draft
+      - proposed
+      - planned
+      - active
+      - deprecated
+      - retired
+    description: "Optional lifecycle state of the container specification."
   container_type:
     type: string
     description: "The C4 Container classification: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon, database, driver, or custom slug."
@@ -39,11 +50,17 @@ properties:
           type: string
     description: >
       Relative path(s) or glob pattern(s) from repository root to the package source code (e.g. 'src/core' or ['src/plugin', 'assets/plugin_reference']).
-      Enables dual-layout support: container documents can live centralized under 'eidos/architecture/containers/'
-      OR co-located inside the package directory (e.g. 'src/core/container.adoc').
+      Container documents always live centrally under 'eidos/architecture/containers/'; living specifications are never placed inside source directories.
   domain_binding:
     type: string
+    pattern: "^(DOM-[A-Z0-9_-]+|.*\\.adoc)$"
     description: "The product domain ID (DOM-*) this technical container primarily realizes (optional)."
+    x-eidos-ref:
+      target_types:
+        - product/domain
+      prefixes:
+        - DOM-
+      entity_label: domain
   tier:
     type: string
     description: "Architectural tier classification (optional: presentation, service, core, persistence, or custom tier slug)."
@@ -53,7 +70,8 @@ properties:
     items:
       type: object
       oneOf:
-        - required:
+        - additionalProperties: false
+          required:
             - id
             - name
             - responsibility
@@ -79,7 +97,14 @@ properties:
             spec_path:
               type: string
               description: "Relative path to an optional dedicated component specification document (for complex components)."
-        - required:
+              x-eidos-ref:
+                target_types:
+                  - tech/component
+                prefixes:
+                  - CMP-
+                entity_label: component
+        - additionalProperties: false
+          required:
             - id
             - ref
           properties:
@@ -89,7 +114,13 @@ properties:
               description: "Unique C4 Component identifier following CMP-<NAME> (e.g. CMP-SPEC-PARSER, CMP-AUTH-SERVICE)."
             ref:
               type: string
-              description: "Relative file path to the co-located dedicated component specification (e.g. 'src/eidos/core/validator.adoc')."
+              description: "Relative file path to the centralized dedicated component specification under 'eidos/architecture/components/' (e.g. 'eidos/architecture/components/validator.adoc'). Specs inside source directories violate INV-COMPONENT-CENTRALIZATION-MANDATE."
+              x-eidos-ref:
+                target_types:
+                  - tech/component
+                prefixes:
+                  - CMP-
+                entity_label: component
             name:
               type: string
               description: "Optional cached display name of the referenced component."
@@ -99,12 +130,34 @@ properties:
   dependencies:
     type: object
     description: "Explicit container dependencies and external platform services (optional)."
+    additionalProperties: false
     properties:
       internal_containers:
         type: array
         description: "List of other container IDs (CNT-*) in this repository that this container directly depends on or imports."
         items:
           type: string
+          pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
+          x-eidos-ref:
+            target_types:
+              - tech/container
+            prefixes:
+              - CNT-
+            entity_label: container/component
+      internal_components:
+        type: array
+        description: "List of internal component or container IDs that this container depends on."
+        items:
+          type: string
+          pattern: "^((CMP|CNT)-[A-Z0-9_-]+|.*\\.adoc)$"
+          x-eidos-ref:
+            target_types:
+              - tech/component
+              - tech/container
+            prefixes:
+              - CMP-
+              - CNT-
+            entity_label: container/component
       external_services:
         type: array
         description: "External APIs, databases, or brokers consumed (e.g. PostgreSQL, Redis, GitHub API, Git CLI)."
@@ -113,20 +166,48 @@ properties:
   contracts:
     type: object
     description: "Exposed and consumed interface contracts (optional)."
+    additionalProperties: false
     properties:
       provides:
         type: array
         description: "Paths or IDs of interface contracts (CTR-*) exposed by this container."
         items:
           type: string
+          pattern: "^(CTR-[A-Z0-9_-]+|.*\\.adoc)$"
+          x-eidos-ref:
+            target_types:
+              - tech/contract
+            prefixes:
+              - CTR-
+            entity_label: contract
       consumes:
         type: array
         description: "Paths or IDs of interface contracts (CTR-*) consumed by this container."
         items:
           type: string
+          pattern: "^(CTR-[A-Z0-9_-]+|.*\\.adoc)$"
+          x-eidos-ref:
+            target_types:
+              - tech/contract
+            prefixes:
+              - CTR-
+            entity_label: contract
+      requires:
+        type: array
+        description: "Paths or IDs of interface contracts (CTR-*) required by this container."
+        items:
+          type: string
+          pattern: "^(CTR-[A-Z0-9_-]+|.*\\.adoc)$"
+          x-eidos-ref:
+            target_types:
+              - tech/contract
+            prefixes:
+              - CTR-
+            entity_label: contract
   quality_attributes:
     type: object
     description: "Arc42 Section 10: Quality Requirements and Operational Invariants (optional)."
+    additionalProperties: false
     properties:
       stateless:
         type: boolean

@@ -17,7 +17,7 @@ components:
     source_path: "src/eidos/core/graph_index.py"
   - id: CMP-INCREMENTAL-SYNC-ENGINE
     name: "IncrementalSyncEngine"
-    responsibility: "Detects specification mutations via SHA-256 and mtime hashing across centralized specs (eidos/) and co-located component specs (src/, packages/), lazily updating entities and dependency edges in sub-5ms."
+    responsibility: "Detects specification and test-binding mutations via SHA-256 and mtime hashing across centralized specs (eidos/) and test suites (tests/), lazily updating entities, dependency edges, and invariant assertion edges in sub-5ms."
     source_path: "src/eidos/core/graph_index.py"
   - id: CMP-FTS-QUERY-ENGINE
     name: "FTSQueryEngine"
@@ -29,11 +29,11 @@ components:
     source_path: "src/eidos/core/graph_index.py"
   - id: CMP-TIERED-CONTEXT-COMPRESSOR
     name: "TieredContextCompressor"
-    responsibility: "Extracts token-compressed architectural slices across anchor, guardrails, and deep tiers for AI coding agents, formatting co-located components with in-process APIs and invariants."
+    responsibility: "Extracts token-compressed architectural slices across anchor, guardrails, and deep tiers for AI coding agents, formatting centralized C4 components with in-process APIs and invariants."
     source_path: "src/eidos/core/graph_index.py"
   - id: CMP-AST-SYMBOL-INDEXER
     name: "AstSymbolIndexer"
-    responsibility: "Extracts polyglot AST symbols (classes, functions, interface signatures), generates structural AI repo maps, and binds test functions to capability invariants via ast-grep with stdlib ast fallback."
+    responsibility: "Extracts polyglot AST symbols (classes, functions, interface signatures), classifies frontend/styling diffs into token or UI contract changes, generates structural AI repo maps, and binds test functions to capability and component invariants via ast-grep with stdlib ast fallback."
     source_path: "src/eidos/core/ast_indexer.py"
 
 dependencies:

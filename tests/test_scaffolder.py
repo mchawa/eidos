@@ -692,3 +692,266 @@ def test_cli_design_spec_scaffolding(tmp_path):
     assert cli_res.exit_code == 0
     assert "Created and validated" in cli_res.stdout
     assert (tmp_path / "design" / "systems" / "test" / "system.adoc").exists()
+
+
+def test_create_component_client_flow_and_safe_yaml(tmp_path):
+    """Verify DLT-2026-032: component/client/flow scaffolding routes correctly and YAML-special input stays valid (INV-SPEC-VALIDATION)."""
+    import yaml
+
+
+    create_spec(tmp_path, "container", "CNT-APP", "App Container")
+    tricky = 'Quote: "Test" #hash\nsecond line'
+
+    cmp_file = create_spec(
+        tmp_path, "component", "CMP-TEST-001", tricky, owning_container="CNT-APP", package_path="src/app/test.py"
+    )
+    assert cmp_file == tmp_path / "architecture" / "components" / "test-001.adoc"
+    doc = parse_spec_file(cmp_file)
+    assert doc.doc_type == "tech/component"
+    assert doc.frontmatter["container"] == "CNT-APP"
+    assert doc.frontmatter["name"] == tricky
+    assert doc.frontmatter["source_path"] == "src/app/test.py"
+    assert_valid_spec(SpecValidator(), cmp_file)
+
+    # Bare IDs receive the correct prefix (no CNT-/CMP- cross-over)
+    bare = create_spec(tmp_path, "tech/component", "BARE", "Bare", owning_container="CNT-APP")
+    assert parse_spec_file(bare).doc_id == "CMP-BARE"
+
+    clt_file = create_spec(tmp_path, "client", "CLT-WEB", "Web App", owning_container="CNT-APP")
+    assert clt_file == tmp_path / "design" / "clients" / "web" / "client.adoc"
+    assert parse_spec_file(clt_file).frontmatter["container"] == "CNT-APP"
+    assert_valid_spec(SpecValidator(), clt_file)
+
+    flow_file = create_spec(tmp_path, "flow", "LOGIN", "Login Flow", client_id="CLT-WEB")
+    assert flow_file == tmp_path / "design" / "clients" / "web" / "flows" / "login.adoc"
+    flow_doc = parse_spec_file(flow_file)
+    assert flow_doc.doc_id == "FLOW-LOGIN"
+    assert flow_doc.frontmatter["client"] == "CLT-WEB"
+    assert_valid_spec(SpecValidator(), flow_file)
+
+    cross_flow = create_spec(tmp_path, "design/flow", "FLOW-ONBOARD", "Onboarding")
+    assert cross_flow == tmp_path / "design" / "flows" / "onboard.adoc"
+    assert_valid_spec(SpecValidator(), cross_flow)
+
+    # SpecDelta with quotes/colons/newlines in title and motivation remains valid YAML
+    dlt_file = create_spec(
+        tmp_path, "delta", "DLT-2026-900", 'Fix "quoted": title', motivation='Because: "reasons"\nand more'
+    )
+    fm_text = dlt_file.read_text(encoding="utf-8").split("---")[1]
+    fm = yaml.safe_load(fm_text)
+    assert fm["title"] == 'Fix "quoted": title'
+    assert fm["intent"]["motivation"] == 'Because: "reasons"\nand more'
+    assert_valid_spec(SpecValidator(), dlt_file)
+
+
+def test_cli_spec_create_component_with_container(tmp_path):
+    """Verify DLT-2026-032: 'eidos spec create component --container' scaffolds a tech/component."""
+    create_spec(tmp_path, "container", "CNT-CORE", "Core")
+    res = runner.invoke(
+        app,
+        [
+            "spec", "create", "component", "CMP-CLI-TEST", "--title", "CLI Test",
+            "--container", "CNT-CORE", "--source-path", "src/core/cli_test.py", "--path", str(tmp_path),
+        ],
+    )
+    assert res.exit_code == 0, res.stdout
+    created = tmp_path / "architecture" / "components" / "cli-test.adoc"
+    assert created.exists()
+    assert "type: tech/component" in created.read_text(encoding="utf-8")
+
+
+def test_engine_genericity_zero_self_references():
+    """Verify INV-ENGINE-GENERICITY: runtime (src/eidos/) and skills (assets/plugin_reference/skills/) contain zero Eidos-self IDs or paths."""
+    import re
+
+    forbidden = re.compile(
+        r"\b(SYS-EIDOS-\d+|CNT-EIDOS-[A-Z0-9_-]+|CTR-EIDOS-[A-Z0-9_-]+|DOM-SPEC-ENGINE|DOM-AGENT-INTELLIGENCE|DOM-DEVEX-VCS|CAP-PROD-\d+|CAP-AGENT-\d+|CAP-VCS-\d+)\b|src/eidos"
+    )
+    scan_roots = [Path("src/eidos"), Path("assets/plugin_reference/skills")]
+    violations: list[str] = []
+
+    for root in scan_roots:
+        for p in sorted(root.rglob("*")):
+            if not p.is_file():
+                continue
+            if any(part in ("__pycache__", "node_modules", "dist") for part in p.parts):
+                continue
+            if p.suffix.lower() not in (".py", ".ts", ".tsx", ".md", ".json", ".yaml"):
+                continue
+            text = p.read_text(encoding="utf-8", errors="ignore")
+            for m in forbidden.finditer(text):
+                violations.append(f"{p}: matched '{m.group(0)}'")
+
+    assert violations == [], f"Forbidden self-references found in engine/skills: {violations}"
+
+
+def test_foreign_repo_end_to_end_workflow(tmp_path):
+    """Verify INV-FOREIGN-REPO-E2E: a non-Eidos polyglot repository initialized with eidos init runs the full lifecycle cleanly."""
+    import subprocess
+
+    repo = tmp_path / "acme_payments"
+    ok, _, _ = init_repository(project_dir=repo, name="acme-payments", title="Acme Payments Platform")
+    assert ok
+
+    eidos_dir = repo / "eidos"
+    # Populate a valid non-Eidos system.adoc, domain, capability, container, component, and test
+    (eidos_dir / "system.adoc").write_text(
+        """---
+type: product/system
+schema: schemas/v1/product/system.schema.yaml
+id: SYS-ACME-001
+title: "Acme Payments Platform"
+archetypes:
+  - microservice
+business_identity:
+  vision: "Process global payments reliably."
+  target_users:
+    - "Merchants"
+  value_proposition: "Sub-second settlement."
+technical_profile:
+  primary_languages:
+    - "TypeScript"
+---
+= Acme Payments Platform
+""",
+        encoding="utf-8",
+    )
+    create_spec(eidos_dir, "domain", "DOM-PAYMENTS", "Payments Domain")
+    cnt_file = create_spec(
+        eidos_dir, "container", "CNT-CHECKOUT", "Checkout Service", package_path="services/checkout"
+    )
+    assert cnt_file.exists()
+    cmp_file = create_spec(
+        eidos_dir,
+        "component",
+        "CMP-LEDGER",
+        "Ledger Engine",
+        owning_container="CNT-CHECKOUT",
+        package_path="services/checkout/ledger.ts",
+    )
+    assert cmp_file.exists()
+
+    # Add source and test file in foreign repo
+    svc_dir = repo / "services" / "checkout"
+    svc_dir.mkdir(parents=True)
+    (svc_dir / "ledger.ts").write_text("export function recordEntry(amount: number): boolean {\n  return amount > 0;\n}\n", encoding="utf-8")
+
+    # Initialize git and commit baseline
+    subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.email", "dev@acme.io"], cwd=repo, capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.name", "Acme Dev"], cwd=repo, capture_output=True, check=True)
+    subprocess.run(["git", "add", "."], cwd=repo, capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", "initial commit"], cwd=repo, capture_output=True, check=True)
+
+    # 1. Validate specs
+    val_report = SpecValidator().validate_directory(eidos_dir)
+    assert val_report.is_clean, f"Validation errors: {val_report.schema_errors}, broken refs: {val_report.broken_references}"
+
+    # 2. Index sync & Context slice
+    res_sync = runner.invoke(app, ["index", "sync", "--path", str(eidos_dir)])
+    assert res_sync.exit_code == 0
+
+    res_ctx = runner.invoke(
+        app,
+        ["context", "--component", "CNT-CHECKOUT", "--path", str(eidos_dir), "--format", "json"],
+    )
+    assert res_ctx.exit_code == 0
+    assert "CNT-CHECKOUT" in res_ctx.stdout
+
+    # 3. Drift check on clean foreign repo
+    from eidos.vcs.drift import detect_drift
+
+    drift_clean = detect_drift(repo_root=repo, eidos_dir=eidos_dir, uncommitted=True)
+    assert drift_clean.drift_detected is False
+    assert drift_clean.is_clean is True
+
+
+def test_frontmatter_mutations_preserve_yaml_comments_and_formatting(tmp_path):
+    """Verify apply_delta, promote_component, inline_component, and execute_delta_mutations preserve YAML comments."""
+    from eidos.core.scaffolder import execute_delta_mutations, inline_component, promote_component
+
+    eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    deltas_dir = eidos_dir / "deltas"
+    cnts_dir.mkdir(parents=True)
+    deltas_dir.mkdir(parents=True)
+
+    cnt_file = cnts_dir / "core.adoc"
+    cnt_file.write_text(
+        """---
+# Top-level container comment
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
+id: CNT-CORE # inline id comment
+name: "Core Container"
+container_type: library
+runtime: Python 3.12
+package_path: src/core
+
+# Internal C4 components list
+components:
+  # Parser component comment
+  - id: CMP-PARSER
+    name: "Parser"
+    responsibility: "Parses specs."
+    source_path: "src/core/parser.py"
+---
+= Core Container
+""",
+        encoding="utf-8",
+    )
+
+    # 1. Promote CMP-PARSER and verify comments remain intact
+    promoted_path, _ = promote_component("CMP-PARSER", eidos_dir=eidos_dir, repo_root=tmp_path)
+    assert promoted_path.exists()
+    cnt_after_promote = cnt_file.read_text(encoding="utf-8")
+    assert "# Top-level container comment" in cnt_after_promote
+    assert "# inline id comment" in cnt_after_promote
+    assert "# Internal C4 components list" in cnt_after_promote
+    assert "# Parser component comment" in cnt_after_promote
+
+    # 2. Inline CMP-PARSER back and verify comments still remain intact
+    inline_component("CMP-PARSER", eidos_dir=eidos_dir, repo_root=tmp_path)
+    cnt_after_inline = cnt_file.read_text(encoding="utf-8")
+    assert "# Top-level container comment" in cnt_after_inline
+    assert "# inline id comment" in cnt_after_inline
+    assert "# Internal C4 components list" in cnt_after_inline
+    assert "# Parser component comment" in cnt_after_inline
+
+    # 3. Create a delta with comments and execute + apply it
+    dlt_file = deltas_dir / "dlt-2026-777.adoc"
+    dlt_file.write_text(
+        """---
+# Delta header comment
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-777
+title: "Comment Preservation Delta"
+status: proposed # status inline comment
+intent:
+  kind: feature_addition
+  motivation: "Keep comments intact."
+mutations:
+  - action: add_component
+    target_component: CMP-ADDED
+    details: "Added component."
+---
+= Delta
+""",
+        encoding="utf-8",
+    )
+
+    ok_exec, _, _ = execute_delta_mutations(eidos_dir, "DLT-2026-777")
+    assert ok_exec
+    cnt_after_add = cnt_file.read_text(encoding="utf-8")
+    assert "# Top-level container comment" in cnt_after_add
+    assert "# Parser component comment" in cnt_after_add
+    assert "CMP-ADDED" in cnt_after_add
+
+    ok_apply, _, _, _ = apply_delta(eidos_dir, "DLT-2026-777")
+    assert ok_apply
+    dlt_after_apply = dlt_file.read_text(encoding="utf-8")
+    assert "# Delta header comment" in dlt_after_apply
+    assert "status: applied # status inline comment" in dlt_after_apply
+
+

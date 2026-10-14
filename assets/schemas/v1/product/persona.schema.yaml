@@ -2,6 +2,7 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 title: PersonaSchema
 description: "Defines an actor (end user, customer, admin, team member, or autonomous AI agent) interacting with the ecosystem or product."
 type: object
+additionalProperties: false
 required:
   - type
   - schema
@@ -25,6 +26,16 @@ properties:
   name:
     type: string
     description: "Descriptive name of the persona role (e.g. 'Product Lead', 'Workspace Admin', 'Shopper', 'Autonomous Agent')."
+  status:
+    type: string
+    enum:
+      - draft
+      - proposed
+      - planned
+      - active
+      - deprecated
+      - retired
+    description: "Optional lifecycle state of the persona specification."
   role_type:
     type: string
     pattern: "^[a-z0-9_-]+$"

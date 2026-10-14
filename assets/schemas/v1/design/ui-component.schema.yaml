@@ -2,6 +2,7 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 title: UIComponentSchema
 description: "Defines a reusable UI component contract, variants, states, accessibility invariants (WCAG, ARIA, keyboard), test bindings, and design system ownership."
 type: object
+additionalProperties: false
 required:
   - type
   - schema
@@ -26,17 +27,48 @@ properties:
     description: "Display title of the component (e.g. 'Primary Button', 'Enterprise Header')."
   design_system:
     type: string
+    pattern: "^(DS-[A-Z0-9_-]+|.*\\.adoc)$"
     description: "Owning design system ID or relative path (e.g. 'DS-CORE' or 'eidos/design/systems/core/system.adoc')."
+    x-eidos-ref:
+      target_types:
+        - design/system
+      prefixes:
+        - DS-
+      entity_label: entity
   implements:
     type: string
+    pattern: "^(UIC-[A-Z0-9_-]+|.*\\.adoc)$"
     description: "Optional base UI component ID or relative path this component overrides or specializes (e.g. 'UIC-CORE-HEADER')."
+    x-eidos-ref:
+      target_types:
+        - design/ui-component
+      prefixes:
+        - UIC-
+      entity_label: entity
+  implements_component:
+    type: string
+    pattern: "^(UIC-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Optional alias for base UI component ID or relative path this component overrides."
+    x-eidos-ref:
+      target_types:
+        - design/ui-component
+      prefixes:
+        - UIC-
+      entity_label: entity
   status:
     type: string
-    pattern: "^[a-z0-9_-]+$"
-    description: "Lifecycle status: active, proposed, draft, deprecated."
+    enum:
+      - draft
+      - proposed
+      - planned
+      - active
+      - deprecated
+      - retired
+    description: "Lifecycle status: draft, proposed, planned, active, deprecated, or retired."
     examples:
       - "active"
       - "proposed"
+      - "planned"
       - "draft"
       - "deprecated"
   category:
@@ -48,9 +80,9 @@ properties:
     description: "Supported visual or behavioral variants (e.g. primary, secondary, destructive, ghost, outline)."
     items:
       type: object
+      additionalProperties: false
       required:
         - name
-      additionalProperties: true
       properties:
         name:
           type: string
@@ -66,7 +98,7 @@ properties:
   accessibility:
     type: object
     description: "Non-negotiable accessibility (a11y) invariants and WCAG compliance contracts."
-    additionalProperties: true
+    additionalProperties: false
     properties:
       wcag_level:
         type: string
@@ -83,7 +115,7 @@ properties:
   test_bindings:
     type: object
     description: "Automated verification test bindings: Storybook stories, visual regression tests, and unit specs."
-    additionalProperties: true
+    additionalProperties: false
     properties:
       storybook:
         type: string
@@ -97,9 +129,8 @@ properties:
   external_references:
     type: object
     description: "Design tool component node links."
-    additionalProperties: true
+    additionalProperties: false
     properties:
       figma_node_url:
         type: string
         description: "Direct URL to Figma component or frame."
-

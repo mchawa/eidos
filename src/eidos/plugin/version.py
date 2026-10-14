@@ -102,7 +102,7 @@ def get_bundled_plugin_version() -> str:
                 v = data.get("version")
                 if v and is_valid_semver(v):
                     return v
-    except Exception:
+    except (OSError, json.JSONDecodeError, ValueError):
         pass
 
     # 2. Check embedded in package bundle
@@ -114,7 +114,7 @@ def get_bundled_plugin_version() -> str:
                 v = data.get("version")
                 if v and is_valid_semver(v):
                     return v
-        except Exception:
+        except (OSError, json.JSONDecodeError, ValueError):
             pass
 
     # 3. Fall back to eidos package version
@@ -155,7 +155,7 @@ def get_installed_plugin_version(project_dir: Path | None = None, dest_path: Pat
         with open(manifest_path, encoding="utf-8") as f:
             data = json.load(f)
             return data.get("version")
-    except Exception:
+    except (OSError, json.JSONDecodeError, ValueError):
         return None
 
 

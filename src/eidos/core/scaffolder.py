@@ -1,9 +1,11 @@
 """Lifecycle management, scaffolding, and deletion for Eidos living specifications and SpecDeltas."""
 
 import contextlib
+import hashlib
 import json
 import os
 import re
+import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -66,6 +68,7 @@ VALID_SPEC_TYPES = {
     "container": "tech/container",
     "tech/container": "tech/container",
     "component": "tech/component",
+    "tech/component": "tech/component",
     "persona": "product/persona",
     "exploration": "product/exploration",
     "design-system": "design/system",
@@ -76,6 +79,10 @@ VALID_SPEC_TYPES = {
     "design/ui-component": "design/ui-component",
     "screen": "design/screen",
     "design/screen": "design/screen",
+    "client": "design/client",
+    "design/client": "design/client",
+    "flow": "design/flow",
+    "design/flow": "design/flow",
 }
 
 
@@ -103,15 +110,150 @@ def normalize_id(doc_type_key: str, raw_id: str) -> str:
         "design/ui-component": "UIC-",
         "screen": "SCR-",
         "design/screen": "SCR-",
+        "client": "CLT-",
+        "design/client": "CLT-",
+        "flow": "FLOW-",
+        "design/flow": "FLOW-",
     }
     pfx = prefix_map.get(doc_type_key.lower())
     if pfx and not cleaned.startswith(pfx):
-        if doc_type_key in ("container", "component", "tech/container", "tech/component") and (
-            cleaned.startswith("CNT-") or cleaned.startswith("CMP-")
-        ):
-            return cleaned
         cleaned = f"{pfx}{cleaned}"
     return cleaned
+
+
+def _render_spec(frontmatter: dict[str, Any], body: str) -> str:
+    """Serialize a frontmatter dict with yaml.safe_dump and wrap it with an AsciiDoc body (DLT-2026-032)."""
+    fm_yaml = yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True, default_flow_style=False, width=4096)
+    return f"---\n{fm_yaml}---\n{body.lstrip(chr(10))}"
+
+
+def _split_raw_frontmatter(raw_content: str) -> tuple[str, str] | None:
+    """Split a spec document into (raw_frontmatter_lines, body_text) without re-serializing YAML."""
+    match = re.match(r"^---\s*\n(.*?)\n---\s*(?:\n|$)(.*)", raw_content, re.DOTALL)
+    if not match:
+        return None
+    return match.group(1), match.group(2)
+
+
+def _set_frontmatter_scalar(raw_content: str, key: str, value: str) -> str:
+    """Update a top-level scalar key in YAML frontmatter while preserving comments, quoting, and blank lines."""
+    parts = _split_raw_frontmatter(raw_content)
+    if parts is None:
+        return raw_content
+    raw_yaml, body = parts
+    pattern = re.compile(rf"^({re.escape(key)}\s*:\s*)([^\n#]*?)(\s+#[^\n]*)?$", re.MULTILINE)
+    if pattern.search(raw_yaml):
+        new_yaml = pattern.sub(lambda m: f"{m.group(1)}{value}{m.group(3) or ''}", raw_yaml, count=1)
+    else:
+        new_yaml = f"{raw_yaml.rstrip()}\n{key}: {value}"
+    return f"---\n{new_yaml}\n---\n{body}"
+
+
+def _format_component_item(item: dict[str, Any], indent: str = "  ") -> str:
+    """Serialize a single component list item with the given leading indentation."""
+    dumped = yaml.safe_dump([item], sort_keys=False, allow_unicode=True, default_flow_style=False, width=4096)
+    return "".join((indent + line if line.strip() else line) for line in dumped.splitlines(keepends=True))
+
+
+def _mutate_frontmatter_components(
+    raw_content: str,
+    op: str,
+    target_id: str,
+    item_dict: dict[str, Any] | None = None,
+) -> str:
+    """Mutate a single item in the top-level 'components:' list while preserving all YAML comments and formatting."""
+    parts = _split_raw_frontmatter(raw_content)
+    if parts is None:
+        return raw_content
+    raw_yaml, body = parts
+    lines = raw_yaml.splitlines(keepends=True)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+
+    comp_idx = next((i for i, ln in enumerate(lines) if re.match(r"^components\s*:", ln)), None)
+    if comp_idx is None:
+        if op == "append" and item_dict is not None:
+            lines.append("components:\n")
+            lines.append(_format_component_item(item_dict, "  "))
+            return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
+        return raw_content
+
+    header_m = re.match(r"^(components\s*:\s*)\[\s*\](\s*(?:#.*)?\n?)$", lines[comp_idx])
+    if header_m:
+        if op == "append" and item_dict is not None:
+            trailing = header_m.group(2)
+            if not trailing.endswith("\n"):
+                trailing += "\n"
+            lines[comp_idx] = f"components:{trailing}"
+            lines.insert(comp_idx + 1, _format_component_item(item_dict, "  "))
+            return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
+        return raw_content
+
+    end_idx = len(lines)
+    for i in range(comp_idx + 1, len(lines)):
+        ln = lines[i]
+        stripped = ln.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not ln[0].isspace() and not stripped.startswith("-"):
+            end_idx = i
+            while end_idx > comp_idx + 1 and (
+                not lines[end_idx - 1].strip() or lines[end_idx - 1].startswith("#")
+            ):
+                end_idx -= 1
+            break
+
+    item_indents = [
+        len(m.group(1))
+        for i in range(comp_idx + 1, end_idx)
+        if (m := re.match(r"^(\s*)-\s+", lines[i]))
+    ]
+    base_indent_len = min(item_indents) if item_indents else 2
+    base_indent = " " * base_indent_len
+    item_starts = [
+        i
+        for i in range(comp_idx + 1, end_idx)
+        if (m := re.match(r"^(\s*)-\s+", lines[i])) and len(m.group(1)) == base_indent_len
+    ]
+
+    if op == "append" and item_dict is not None:
+        lines.insert(end_idx, _format_component_item(item_dict, base_indent))
+        return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
+
+    for idx_pos, start_line in enumerate(item_starts):
+        next_bound = item_starts[idx_pos + 1] if idx_pos + 1 < len(item_starts) else end_idx
+        stop_line = next_bound
+        while stop_line > start_line + 1 and (
+            not lines[stop_line - 1].strip() or lines[stop_line - 1].lstrip().startswith("#")
+        ):
+            stop_line -= 1
+        chunk_text = "".join(lines[start_line:stop_line])
+        try:
+            parsed_item = yaml.safe_load(chunk_text)
+        except yaml.YAMLError:
+            continue
+        if (
+            isinstance(parsed_item, list)
+            and len(parsed_item) == 1
+            and isinstance(parsed_item[0], dict)
+            and parsed_item[0].get("id") == target_id
+        ):
+                if op == "replace" and item_dict is not None:
+                    lines[start_line:stop_line] = [_format_component_item(item_dict, base_indent)]
+                elif op == "remove":
+                    del lines[start_line:stop_line]
+                    if len(item_starts) == 1:
+                        lines[comp_idx] = re.sub(
+                            r"^components\s*:[ \t]*", "components: []", lines[comp_idx], count=1
+                        )
+                break
+
+    return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
+
+
+def _single_line(text: str) -> str:
+    """Collapse whitespace/newlines so user input cannot break AsciiDoc headings."""
+    return " ".join(str(text).split())
 
 
 def create_spec(
@@ -138,8 +280,13 @@ def create_spec(
     route: str = "/view",
     design_system: str = "DS-CORE",
     implements_component: str | None = None,
+    platform: str = "web",
 ) -> Path:
-    """Scaffold a new living specification document with valid schema frontmatter."""
+    """Scaffold a new living specification document with valid schema frontmatter.
+
+    Frontmatter is always built as a Python dict and serialized with ``yaml.safe_dump`` so titles,
+    motivations, and rules containing quotes, colons, or newlines cannot corrupt the YAML (DLT-2026-032).
+    """
     type_key = doc_type_key.lower().replace("_", "/")
     # Map short names to standard keys
     key_aliases = {
@@ -156,20 +303,23 @@ def create_spec(
         "tech/contract": "contract",
         "container": "container",
         "tech/container": "container",
-        "component": "container",
-        "tech/component": "container",
+        "component": "component",
+        "tech/component": "component",
         "persona": "persona",
         "product/persona": "persona",
         "exploration": "exploration",
         "product/exploration": "exploration",
         "design-system": "design-system",
-        "design_system": "design-system",
         "design/system": "design-system",
         "ui-component": "ui-component",
-        "ui_component": "ui-component",
+        "ui/component": "ui-component",
         "design/ui-component": "ui-component",
         "screen": "screen",
         "design/screen": "screen",
+        "client": "client",
+        "design/client": "client",
+        "flow": "flow",
+        "design/flow": "flow",
     }
     canonical_key = key_aliases.get(type_key)
     if not canonical_key:
@@ -178,25 +328,32 @@ def create_spec(
 
     doc_id = normalize_id(canonical_key, raw_id)
     slug = doc_id.lower().replace("_", "-")
+    heading = _single_line(title)
+    fm: dict[str, Any]
+    body: str
+
+    def _catalog() -> dict[str, tuple[Path, str, dict[str, Any]]]:
+        specs_by_id, _, _ = _build_spec_catalog(eidos_dir)
+        return specs_by_id
+
+    def _first_of_type(dtype: str, fallback: str) -> str:
+        ids = sorted(i for i, (_, dt, _) in _catalog().items() if dt == dtype)
+        return ids[0] if ids else fallback
 
     # Determine destination directory and content
     if canonical_key == "delta":
         dest_dir = eidos_dir / "deltas"
         dest_file = dest_dir / f"{slug}.adoc"
-        content = f"""---
-type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
-id: {doc_id}
-title: "{title}"
-status: proposed
-
-intent:
-  kind: {kind}
-  motivation: "{motivation}"
-
-mutations: []
----
-= SpecDelta: {title}
+        fm = {
+            "type": "delta/mutation",
+            "schema": "schemas/v1/delta/delta.schema.yaml",
+            "id": doc_id,
+            "title": title,
+            "status": "proposed",
+            "intent": {"kind": kind, "motivation": motivation},
+            "mutations": [],
+        }
+        body = f"""= SpecDelta: {heading}
 :toc: left
 
 == Problem Statement
@@ -207,7 +364,7 @@ Describe the exact behavioral diffs, mutations, and invariant updates here.
 """
 
     elif canonical_key == "capability":
-        specs_by_id, _, _ = _build_spec_catalog(eidos_dir)
+        specs_by_id = _catalog()
         if domain:
             parent_domain = domain
         else:
@@ -219,48 +376,36 @@ Describe the exact behavioral diffs, mutations, and invariant updates here.
             if owning_component and owning_component.startswith("CNT-"):
                 cnt_ref = owning_component
             else:
-                existing_cnts = sorted(
-                    cid for cid, (_, dt, _) in specs_by_id.items() if dt == "tech/container"
-                )
+                existing_cnts = sorted(cid for cid, (_, dt, _) in specs_by_id.items() if dt == "tech/container")
                 cnt_ref = existing_cnts[0] if existing_cnts else "CNT-CORE"
-
-        comp_block = ""
-        if owning_component and owning_component != cnt_ref:
-            comp_block = f"  components:\n    - \"{owning_component}\"\n"
 
         existing_personas = sorted((eidos_dir / "personas").glob("*.adoc")) if (eidos_dir / "personas").exists() else []
         persona_ref = f"eidos/personas/{existing_personas[0].name}" if existing_personas else "PER-USER"
 
         domain_slug = parent_domain.lower().replace("dom-", "")
-        # Find if domains/<domain_slug> exists
         domain_dirs = list(eidos_dir.glob(f"domains/*{domain_slug}*"))
         if domain_dirs and domain_dirs[0].is_dir():
             dest_dir = domain_dirs[0] / "capabilities"
         else:
             dest_dir = eidos_dir / "domains" / domain_slug / "capabilities"
         dest_file = dest_dir / f"{slug}.adoc"
-        content = f"""---
-type: product/capability
-schema: schemas/v1/product/capability.schema.yaml
-id: {doc_id}
-title: "{title}"
-domain: {parent_domain}
-status: draft
-version: "1.0.0"
-
-business:
-  personas:
-    - {persona_ref}
-  jtbd: "{jtbd}"
-
-technical:
-  containers:
-    - "{cnt_ref}"
-{comp_block}  contracts:
-    interfaces: []
-  invariants: []
----
-= Capability: {title}
+        technical: dict[str, Any] = {"containers": [cnt_ref]}
+        if owning_component and owning_component != cnt_ref:
+            technical["components"] = [owning_component]
+        technical["contracts"] = {"interfaces": []}
+        technical["invariants"] = []
+        fm = {
+            "type": "product/capability",
+            "schema": "schemas/v1/product/capability.schema.yaml",
+            "id": doc_id,
+            "title": title,
+            "domain": parent_domain,
+            "status": "draft",
+            "version": "1.0.0",
+            "business": {"personas": [persona_ref], "jtbd": jtbd},
+            "technical": technical,
+        }
+        body = f"""= Capability: {heading}
 :toc: left
 
 == Intent
@@ -271,18 +416,15 @@ Describe the business intent and user outcome realized by this capability.
         dom_slug = slug.replace("dom-", "")
         dest_dir = eidos_dir / "domains" / dom_slug
         dest_file = dest_dir / "domain.adoc"
-        content = f"""---
-type: product/domain
-schema: schemas/v1/product/domain.schema.yaml
-id: {doc_id}
-name: "{title}"
-classification: core
-
-boundaries:
-  responsibilities:
-    - "Primary core responsibility of {title}."
----
-= Domain: {title}
+        fm = {
+            "type": "product/domain",
+            "schema": "schemas/v1/product/domain.schema.yaml",
+            "id": doc_id,
+            "name": title,
+            "classification": "core",
+            "boundaries": {"responsibilities": [f"Primary core responsibility of {heading}."]},
+        }
+        body = f"""= Domain: {heading}
 :toc: left
 
 == Strategic Mission
@@ -292,19 +434,16 @@ Describe the bounded context, scope, and strategic objectives of this domain.
     elif canonical_key == "policy":
         dest_dir = eidos_dir / "policies"
         dest_file = dest_dir / f"{slug}.adoc"
-        content = f"""---
-type: product/policy
-schema: schemas/v1/product/policy.schema.yaml
-id: {doc_id}
-title: "{title}"
-category: {category}
-rule: "{rule}"
-
-enforcement:
-  mechanism: "CI automated validation and invariant testing"
-  severity: critical
----
-= Policy: {title}
+        fm = {
+            "type": "product/policy",
+            "schema": "schemas/v1/product/policy.schema.yaml",
+            "id": doc_id,
+            "title": title,
+            "category": category,
+            "rule": rule,
+            "enforcement": {"mechanism": "CI automated validation and invariant testing", "severity": "critical"},
+        }
+        body = f"""= Policy: {heading}
 :toc: left
 
 == Rule Statement
@@ -319,41 +458,40 @@ Explain why this non-negotiable architectural or product guardrail exists.
         dest_file = dest_dir / f"{slug}.adoc"
         owner_id = owning_container or owning_component
         if not owner_id:
-            specs_by_id, _, _ = _build_spec_catalog(eidos_dir)
             existing_comps = sorted(
-                cid for cid, (_, dt, _) in specs_by_id.items() if dt in ("tech/container", "tech/component")
+                cid for cid, (_, dt, _) in _catalog().items() if dt in ("tech/container", "tech/component")
             )
             owner_id = existing_comps[0] if existing_comps else "CNT-CORE"
-        content = f"""---
-type: tech/contract
-schema: schemas/v1/tech/contract.schema.yaml
-id: {doc_id}
-title: "{title}"
-protocol: "{protocol}"
-owning_container: "{owner_id}"
-specification_file: "{specification_file}"
----
-= Contract: {title}
+        fm = {
+            "type": "tech/contract",
+            "schema": "schemas/v1/tech/contract.schema.yaml",
+            "id": doc_id,
+            "title": title,
+            "protocol": protocol,
+            "owning_container": owner_id,
+            "specification_file": specification_file,
+        }
+        body = f"""= Contract: {heading}
 :toc: left
 
 == Protocol & Interface Specification
 Document the endpoints, command line arguments, payloads, or schemas for this contract.
 """
 
-    elif canonical_key in ("container", "component"):
+    elif canonical_key == "container":
         dest_dir = eidos_dir / "architecture" / "containers"
         dest_file = dest_dir / f"{slug}.adoc"
-        content = f"""---
-type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
-id: {doc_id}
-name: "{title}"
-container_type: "{container_type}"
-runtime: "{runtime}"
-package_path: "{package_path}"
-components: []
----
-= Container: {title}
+        fm = {
+            "type": "tech/container",
+            "schema": "schemas/v1/tech/container.schema.yaml",
+            "id": doc_id,
+            "name": title,
+            "container_type": container_type,
+            "runtime": runtime,
+            "package_path": package_path,
+            "components": [],
+        }
+        body = f"""= Container: {heading}
 :toc: left
 
 == Architectural Boundary
@@ -363,26 +501,51 @@ Describe the container boundary, deployment unit, and responsibilities.
 Internal components and modular building blocks contained within this deployable.
 """
 
+    elif canonical_key == "component":
+        # INV-COMPONENT-CENTRALIZATION-MANDATE: dedicated components live in eidos/architecture/components/
+        dest_dir = eidos_dir / "architecture" / "components"
+        dest_file = dest_dir / f"{slug.replace('cmp-', '', 1)}.adoc"
+        parent_cnt = owning_container or (
+            owning_component if owning_component and owning_component.startswith("CNT-") else None
+        )
+        if not parent_cnt:
+            parent_cnt = _first_of_type("tech/container", "CNT-CORE")
+        fm = {
+            "type": "tech/component",
+            "schema": "schemas/v1/tech/component.schema.yaml",
+            "id": doc_id,
+            "name": title,
+            "container": parent_cnt,
+            "status": "proposed",
+            "source_path": package_path,
+            "responsibility": f"Responsibility of {heading}.",
+            "interfaces": {"provides": [], "consumes": []},
+            "invariants": [],
+        }
+        body = f"""= Component: {heading}
+:toc: left
+
+== Responsibility
+Describe the in-process logic this C4 Level 3 component encapsulates within `{parent_cnt}`.
+
+== In-Process Interfaces
+Document exported language-level APIs (functions, classes, traits) provided to peer components.
+"""
+
     elif canonical_key == "persona":
         dest_dir = eidos_dir / "personas"
         dest_file = dest_dir / f"{slug}.adoc"
-        content = f"""---
-type: product/persona
-schema: schemas/v1/product/persona.schema.yaml
-id: {doc_id}
-name: "{title}"
-role_type: "{role_type}"
-
-goals:
-  - "Primary objective of this persona."
-
-pain_points:
-  - "Key friction or inefficiency faced in current workflows."
-
-interaction_modes:
-  - "CLI commands"
----
-= Persona: {title}
+        fm = {
+            "type": "product/persona",
+            "schema": "schemas/v1/product/persona.schema.yaml",
+            "id": doc_id,
+            "name": title,
+            "role_type": role_type,
+            "goals": ["Primary objective of this persona."],
+            "pain_points": ["Key friction or inefficiency faced in current workflows."],
+            "interaction_modes": ["CLI commands"],
+        }
+        body = f"""= Persona: {heading}
 :toc: left
 
 == Profile & Motivations
@@ -392,17 +555,16 @@ Detailed contextual background, user psychology, and job-to-be-done for this act
     elif canonical_key == "exploration":
         dest_dir = eidos_dir / "explorations"
         dest_file = dest_dir / f"{slug}.adoc"
-        content = f"""---
-type: product/exploration
-schema: schemas/v1/product/exploration.schema.yaml
-id: {doc_id}
-title: "{title}"
-status: proposed
-hypothesis: "Investigating feasibility and performance characteristics of {title}."
-exit_criteria:
-  max_duration: "1_week"
----
-= Exploration: {title}
+        fm = {
+            "type": "product/exploration",
+            "schema": "schemas/v1/product/exploration.schema.yaml",
+            "id": doc_id,
+            "title": title,
+            "status": "proposed",
+            "hypothesis": f"Investigating feasibility and performance characteristics of {heading}.",
+            "exit_criteria": {"max_duration": "1_week"},
+        }
+        body = f"""= Exploration: {heading}
 :toc: left
 
 == Investigation & Hypotheses
@@ -424,45 +586,32 @@ Document prototyping discoveries, trade-offs, and research findings.
                         "primary": {
                             "$value": "#0052cc",
                             "$type": "color",
-                            "$description": f"Primary brand color for {title}",
+                            "$description": f"Primary brand color for {heading}",
                         }
                     }
                 }
             }
             tokens_file.write_text(json.dumps(base_tokens, indent=2), encoding="utf-8")
 
-        client_yaml = f'client_id: "{client_id}"\nbrand_name: "{title}"\n' if client_id else ""
-        extends_yaml = (
-            f"""inheritance:
-  extends: "{extends_system}"
-  override_mode: "token_and_component"
-"""
-            if extends_system
-            else ""
-        )
-
-        content = f"""---
-type: design/system
-schema: schemas/v1/design/system.schema.yaml
-id: {doc_id}
-title: "{title}"
-status: active
-{client_yaml}{extends_yaml}tokens:
-  spec_format: "w3c_design_tokens"
-  manifest: "tokens.json"
-
-theme_capabilities:
-  color_modes:
-    - light
-    - dark
-  density_modes:
-    - comfortable
----
-= Design System: {title}
+        fm = {
+            "type": "design/system",
+            "schema": "schemas/v1/design/system.schema.yaml",
+            "id": doc_id,
+            "title": title,
+            "status": "active",
+        }
+        if client_id:
+            fm["client_id"] = client_id
+            fm["brand_name"] = title
+        if extends_system:
+            fm["inheritance"] = {"extends": extends_system, "override_mode": "token_and_component"}
+        fm["tokens"] = {"spec_format": "w3c_design_tokens", "manifest": "tokens.json"}
+        fm["theme_capabilities"] = {"color_modes": ["light", "dark"], "density_modes": ["comfortable"]}
+        body = f"""= Design System: {heading}
 :toc: left
 
 == Foundations & W3C Tokens
-This specification defines visual primitives, brand tokens, and inheritance rules for {title}.
+This specification defines visual primitives, brand tokens, and inheritance rules for {heading}.
 Tokens are defined in W3C DTCG format at `tokens.json`.
 """
 
@@ -471,84 +620,129 @@ Tokens are defined in W3C DTCG format at `tokens.json`.
         sys_slug = (design_system or "ds-core").lower().replace("ds-", "")
         dest_dir = eidos_dir / "design" / "systems" / sys_slug / "components"
         dest_file = dest_dir / f"{clean_comp}.adoc"
-
-        implements_yaml = f'implements: "{implements_component}"\n' if implements_component else ""
-
-        content = f"""---
-type: design/ui-component
-schema: schemas/v1/design/ui-component.schema.yaml
-id: {doc_id}
-title: "{title}"
-design_system: "{design_system}"
-{implements_yaml}status: active
-category: inputs
-
-variants:
-  - name: "primary"
-    description: "Default visual emphasis."
-  - name: "secondary"
-    description: "Subtle visual emphasis."
-
-states:
-  - default
-  - hover
-  - active
-  - focus
-  - disabled
-
-accessibility:
-  wcag_level: "AA"
-  aria_role: "button"
-  keyboard_nav: "Enter and Space activate; Tab traverses focus."
-
-test_bindings:
-  storybook: "packages/ui/src/{title.replace(" ", "")}.stories.tsx"
----
-= UI Component: {title}
+        fm = {
+            "type": "design/ui-component",
+            "schema": "schemas/v1/design/ui-component.schema.yaml",
+            "id": doc_id,
+            "title": title,
+            "design_system": design_system,
+        }
+        if implements_component:
+            fm["implements"] = implements_component
+        fm.update(
+            {
+                "status": "active",
+                "category": "inputs",
+                "variants": [
+                    {"name": "primary", "description": "Default visual emphasis."},
+                    {"name": "secondary", "description": "Subtle visual emphasis."},
+                ],
+                "states": ["default", "hover", "active", "focus", "disabled"],
+                "accessibility": {
+                    "wcag_level": "AA",
+                    "aria_role": "button",
+                    "keyboard_nav": "Enter and Space activate; Tab traverses focus.",
+                },
+                "test_bindings": {"storybook": f"packages/ui/src/{re.sub(r'[^A-Za-z0-9]', '', heading)}.stories.tsx"},
+            }
+        )
+        body = f"""= UI Component: {heading}
 :toc: left
 
 == Component Contract
-Describes variants, interactive states, accessibility contracts, and visual test bindings for {title}.
+Describes variants, interactive states, accessibility contracts, and visual test bindings for {heading}.
 """
 
     elif canonical_key == "screen":
         clean_screen = slug.replace("scr-", "")
-        dest_dir = eidos_dir / "design" / "screens"
+        if client_id:
+            client_slug = client_id.lower().replace("clt-", "", 1)
+            dest_dir = eidos_dir / "design" / "clients" / client_slug / "screens"
+        else:
+            dest_dir = eidos_dir / "design" / "screens"
         dest_file = dest_dir / f"{clean_screen}.adoc"
-
-        content = f"""---
-type: design/screen
-schema: schemas/v1/design/screen.schema.yaml
-id: {doc_id}
-title: "{title}"
-route: "{route}"
-status: active
-
-capabilities: []
-
-supported_design_systems:
-  - "DS-CORE"
-
-slots:
-  main_content: "Primary view content"
-
-states:
-  - name: "loading"
-    description: "Skeleton loader displayed during data fetch."
-  - name: "active"
-    description: "Standard interactive screen state."
-  - name: "error"
-    description: "Fallback error message if request fails."
----
-= Screen: {title}
+        fm = {
+            "type": "design/screen",
+            "schema": "schemas/v1/design/screen.schema.yaml",
+            "id": doc_id,
+            "title": title,
+            "route": route,
+        }
+        if client_id:
+            fm["client"] = client_id
+        fm.update(
+            {
+                "status": "active",
+                "capabilities": [],
+                "supported_design_systems": [design_system],
+                "slots": {"main_content": "Primary view content"},
+                "states": [
+                    {"name": "loading", "description": "Skeleton loader displayed during data fetch."},
+                    {"name": "active", "description": "Standard interactive screen state."},
+                    {"name": "error", "description": "Fallback error message if request fails."},
+                ],
+            }
+        )
+        body = f"""= Screen: {heading}
 :toc: left
 
 == View Layout & State Machine
-This specification defines the route, layout slots, and state transitions for {title}.
+This specification defines the route, layout slots, and state transitions for {heading}.
+"""
+
+    elif canonical_key == "client":
+        client_slug = slug.replace("clt-", "", 1)
+        dest_dir = eidos_dir / "design" / "clients" / client_slug
+        dest_file = dest_dir / "client.adoc"
+        fm = {
+            "type": "design/client",
+            "schema": "schemas/v1/design/client.schema.yaml",
+            "id": doc_id,
+            "title": title,
+            "status": "active",
+            "platform": platform,
+            "design_system": design_system,
+        }
+        if owning_container:
+            fm["container"] = owning_container
+        fm.update({"capabilities": [], "screens": [], "flows": []})
+        body = f"""= Client: {heading}
+:toc: left
+
+== Client Identity & Platform Archetype
+Describe the runtime platform, bound design system, and implementing container of this client surface.
+"""
+
+    elif canonical_key == "flow":
+        flow_slug = slug.replace("flow-", "", 1)
+        if client_id:
+            client_slug = client_id.lower().replace("clt-", "", 1)
+            dest_dir = eidos_dir / "design" / "clients" / client_slug / "flows"
+        else:
+            dest_dir = eidos_dir / "design" / "flows"
+        dest_file = dest_dir / f"{flow_slug}.adoc"
+        fm = {
+            "type": "design/flow",
+            "schema": "schemas/v1/design/flow.schema.yaml",
+            "id": doc_id,
+            "title": title,
+            "status": "active",
+            "flow_type": "client_internal" if client_id else "cross_client",
+        }
+        if client_id:
+            fm["client"] = client_id
+        fm.update({"capabilities": [], "steps": [{"step": 1, "title": "Entry point"}]})
+        body = f"""= Flow: {heading}
+:toc: left
+
+== User Journey
+Describe the ordered steps, screen transitions, and outcomes of this interaction flow.
 """
 
     else:
         raise ValueError(f"Unsupported canonical key '{canonical_key}'")
+
+    content = _render_spec(fm, body)
 
     if dest_file.exists():
         raise FileExistsError(f"Specification document already exists at: {dest_file}")
@@ -568,6 +762,7 @@ This specification defines the route, layout slots, and state transitions for {t
 
     if canonical_key == "delta":
         sync_delta_views(eidos_dir)
+        _snapshot_delta_baselines(eidos_dir, doc_id)
 
     return dest_file
 
@@ -599,7 +794,7 @@ def find_spec_by_id_or_path(eidos_dir: Path, target: str) -> Path | None:
             doc = parse_spec_file(p)
             if doc.doc_id and doc.doc_id.lower() == target_lower:
                 return p.resolve()
-        except Exception:
+        except OSError:
             continue
 
     return None
@@ -620,7 +815,7 @@ def find_references_to_spec(eidos_dir: Path, target_id: str, target_path: Path) 
             content = p.read_text(encoding="utf-8")
             if target_id in content or target_id_lower in content.lower() or rel_path_str in content:
                 referencing_files.append(p.resolve())
-        except Exception:
+        except OSError:
             continue
 
     return referencing_files
@@ -715,10 +910,10 @@ def _ensure_eidos_gitignore(eidos_dir: Path) -> None:
         ".cache/\n"
     )
     if not gitignore_path.exists():
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError):
             gitignore_path.write_text(default_content, encoding="utf-8")
     else:
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError):
             content = gitignore_path.read_text(encoding="utf-8")
             missing: list[str] = []
             if "deltas/by-status" not in content and "by-status" not in content:
@@ -757,7 +952,7 @@ def sync_delta_views(eidos_dir: Path) -> dict[str, list[Path]]:
         cat_dir = views_dir / cat
         for item in cat_dir.iterdir():
             if item.is_symlink() or item.is_file():
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(OSError):
                     item.unlink()
 
     synced: dict[str, list[Path]] = {cat: [] for cat in categories}
@@ -777,7 +972,7 @@ def sync_delta_views(eidos_dir: Path) -> dict[str, list[Path]]:
             try:
                 link_path.symlink_to(rel_target)
                 synced[cat_name].append(p)
-            except Exception:
+            except OSError:
                 pass
 
             if status in ("proposed", "in_review", "approved", "in_progress", "draft"):
@@ -786,9 +981,9 @@ def sync_delta_views(eidos_dir: Path) -> dict[str, list[Path]]:
                 try:
                     active_link.symlink_to(rel_active)
                     synced["active"].append(p)
-                except Exception:
+                except OSError:
                     pass
-        except Exception:
+        except OSError:
             continue
 
     return synced
@@ -860,7 +1055,7 @@ def list_deltas(eidos_dir: Path, status_filter: str | None = None) -> list[dict[
                     "relative_path": p.relative_to(eidos_dir) if p.is_relative_to(eidos_dir) else p,
                 }
             )
-        except Exception:
+        except OSError:
             continue
 
     return results
@@ -902,9 +1097,17 @@ def _build_spec_catalog(
     eidos_dir: Path,
 ) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, str], set[str]]:
     """Build fast lookup indexes across living specs: specs_by_id, container_components, invariants."""
+    specs_by_id, container_components, invariant_map = _build_spec_catalog_with_invariants(eidos_dir)
+    return specs_by_id, container_components, set(invariant_map.keys())
+
+
+def _build_spec_catalog_with_invariants(
+    eidos_dir: Path,
+) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, str], dict[str, tuple[Path, dict[str, Any]]]]:
+    """Build lookup indexes including owning file and dict for each invariant."""
     specs_by_id: dict[str, tuple[Path, str, dict[str, Any]]] = {}
     container_components: dict[str, str] = {}  # comp_id -> container_id
-    invariants: set[str] = set()
+    invariant_map: dict[str, tuple[Path, dict[str, Any]]] = {}
 
     for p in eidos_dir.rglob("*.adoc"):
         if "deltas" in p.parts or "by-status" in p.parts:
@@ -913,7 +1116,6 @@ def _build_spec_catalog(
             doc = parse_spec_file(p)
             if doc.doc_id:
                 specs_by_id[doc.doc_id] = (p, doc.doc_type, doc.frontmatter)
-                # Check container components
                 if doc.doc_type == "tech/container":
                     comps = (
                         doc.frontmatter.get("components", [])
@@ -923,26 +1125,198 @@ def _build_spec_catalog(
                         for comp in comps:
                             if isinstance(comp, dict) and comp.get("id"):
                                 container_components[comp["id"]] = doc.doc_id
-                # Check capability/policy invariants
                 invs = doc.frontmatter.get("invariants", []) or (
                     doc.frontmatter.get("technical", {}) or {}
                 ).get("invariants", [])
                 if isinstance(invs, list):
                     for inv in invs:
                         if isinstance(inv, dict) and inv.get("id"):
-                            invariants.add(inv["id"])
+                            invariant_map[inv["id"]] = (p, inv)
                         elif isinstance(inv, str):
-                            invariants.add(inv)
-        except Exception:
+                            invariant_map[inv] = (p, {"id": inv})
+        except OSError:
             continue
 
-    return specs_by_id, container_components, invariants
+    return specs_by_id, container_components, invariant_map
+
+
+def _snapshot_delta_baselines(eidos_dir: Path, delta_id: str) -> None:
+    """Record current SHA-256 digests of all living specs into eidos/.cache/index.db for delta verification."""
+    try:
+        cache_dir = eidos_dir / ".cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        db_path = cache_dir / "index.db"
+        specs_by_id, container_components, invariant_map = _build_spec_catalog_with_invariants(eidos_dir)
+        rows: list[tuple[str, str, str]] = []
+        for spec_id, (spec_path, _, _) in specs_by_id.items():
+            if spec_path.exists():
+                sha = hashlib.sha256(spec_path.read_bytes()).hexdigest()
+                rows.append((delta_id, spec_id, sha))
+                rows.append((delta_id, str(spec_path.resolve()), sha))
+        for comp_id, cnt_id in container_components.items():
+            if cnt_id in specs_by_id and specs_by_id[cnt_id][0].exists():
+                sha = hashlib.sha256(specs_by_id[cnt_id][0].read_bytes()).hexdigest()
+                rows.append((delta_id, comp_id, sha))
+        for inv_id, (inv_path, inv_dict) in invariant_map.items():
+            if inv_path.exists():
+                inv_sha = hashlib.sha256(
+                    json.dumps(inv_dict, sort_keys=True, default=str).encode("utf-8")
+                ).hexdigest()
+                rows.append((delta_id, inv_id, inv_sha))
+
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS delta_baselines ("
+                "delta_id TEXT, target_id TEXT, baseline_sha256 TEXT, "
+                "PRIMARY KEY (delta_id, target_id))"
+            )
+            conn.executemany(
+                "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)",
+                rows,
+            )
+            conn.commit()
+    except (OSError, sqlite3.Error):
+        return
+
+
+def _check_or_record_baseline_sha(
+    eidos_dir: Path,
+    delta_id: str,
+    delta_file: Path,
+    target_key: str,
+    target_file: Path | None,
+    current_sha: str,
+) -> bool:
+    """Compare current_sha against SQLite delta_baselines (with mtime fallback when no baseline exists yet)."""
+    try:
+        cache_dir = eidos_dir / ".cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        db_path = cache_dir / "index.db"
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS delta_baselines ("
+                "delta_id TEXT, target_id TEXT, baseline_sha256 TEXT, "
+                "PRIMARY KEY (delta_id, target_id))"
+            )
+            row = conn.execute(
+                "SELECT baseline_sha256 FROM delta_baselines WHERE delta_id = ? AND target_id = ?",
+                (delta_id, target_key),
+            ).fetchone()
+            if row is not None:
+                return current_sha != row[0]
+
+            if (
+                target_file is not None
+                and target_file.exists()
+                and delta_file.exists()
+                and target_file.stat().st_mtime_ns > delta_file.stat().st_mtime_ns
+            ):
+                return True
+
+            conn.execute(
+                "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)",
+                (delta_id, target_key, current_sha),
+            )
+            conn.commit()
+            return False
+    except (OSError, sqlite3.Error):
+        if target_file is not None and target_file.exists() and delta_file.exists():
+            return target_file.stat().st_mtime_ns > delta_file.stat().st_mtime_ns
+        return False
+
+
+def _evaluate_declarative_postcondition(
+    m: dict[str, Any],
+    target: str,
+    specs_by_id: dict[str, tuple[Path, str, dict[str, Any]]],
+    container_components: dict[str, str],
+    invariant_map: dict[str, tuple[Path, dict[str, Any]]],
+) -> bool | None:
+    """Evaluate declarative expect block or structural sub-target if present on a mutation.
+
+    Returns True if satisfied, False if unsatisfied, or None if no declarative post-condition is specified.
+    """
+    expect = m.get("expect")
+    if isinstance(expect, dict) and expect:
+        target_dict: dict[str, Any] = {}
+        raw_text = ""
+        if target in invariant_map:
+            inv_path, inv_data = invariant_map[target]
+            target_dict = inv_data
+            if inv_path.exists():
+                raw_text = inv_path.read_text(encoding="utf-8")
+        elif target in specs_by_id:
+            spec_path, _, spec_fm = specs_by_id[target]
+            target_dict = spec_fm or {}
+            if spec_path.exists():
+                raw_text = spec_path.read_text(encoding="utf-8")
+        elif target in container_components:
+            cnt_id = container_components[target]
+            if cnt_id in specs_by_id:
+                cnt_path, _, cnt_fm = specs_by_id[cnt_id]
+                if cnt_path.exists():
+                    raw_text = cnt_path.read_text(encoding="utf-8")
+                for c in (cnt_fm or {}).get("components", []):
+                    if isinstance(c, dict) and c.get("id") == target:
+                        target_dict = c
+                        break
+
+        for k, exp_v in expect.items():
+            if k == "contains":
+                if str(exp_v) not in raw_text:
+                    return False
+                continue
+            actual = target_dict.get(k)
+            if isinstance(exp_v, str) and isinstance(actual, str):
+                if exp_v not in actual and actual != exp_v:
+                    return False
+            elif isinstance(actual, list) and not isinstance(exp_v, list):
+                if exp_v not in actual:
+                    return False
+            elif actual != exp_v:
+                return False
+        return True
+
+    # Structural sub-target post-conditions
+    t_cap = m.get("target_capability")
+    t_inv = m.get("target_invariant_id")
+    if t_cap and t_inv and t_cap in specs_by_id:
+        _, _, cap_fm = specs_by_id[t_cap]
+        invs = (cap_fm or {}).get("invariants", []) or ((cap_fm or {}).get("technical", {}) or {}).get("invariants", [])
+        inv_ids = {i.get("id") if isinstance(i, dict) else str(i) for i in (invs or [])}
+        return t_inv in inv_ids
+
+    t_cnt = m.get("target_container")
+    t_cmp = m.get("target_component")
+    if t_cnt and t_cmp and t_cnt != t_cmp and t_cnt in specs_by_id:
+        return container_components.get(t_cmp) == t_cnt or (
+            t_cmp in specs_by_id and (specs_by_id[t_cmp][2] or {}).get("container") == t_cnt
+        )
+
+    owner_cnt = t_cnt or t_cmp
+    t_ctr = m.get("target_contract")
+    if owner_cnt and t_ctr and owner_cnt != t_ctr and owner_cnt in specs_by_id:
+        _, _, cnt_fm = specs_by_id[owner_cnt]
+        contracts = (cnt_fm or {}).get("contracts", {}) or {}
+        all_ctrs = (
+            (contracts.get("provides") or [])
+            + (contracts.get("consumes") or [])
+            + (contracts.get("requires") or [])
+        )
+        if t_ctr in all_ctrs:
+            return True
+        if t_ctr in specs_by_id:
+            ctr_fm = specs_by_id[t_ctr][2] or {}
+            return (ctr_fm.get("owning_container") or ctr_fm.get("owning_component")) == owner_cnt
+        return False
+
+    return None
 
 
 def verify_delta_mutations(
     eidos_dir: Path, delta_id_or_path: str
 ) -> tuple[bool, str, DeltaVerificationReport | None]:
-    """Verify that all semantic mutations declared in a SpecDelta exist in the living specifications."""
+    """Verify that all semantic mutations declared in a SpecDelta are fulfilled in living specifications."""
     file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id_or_path)
     if not file_path:
         file_path = find_spec_by_id_or_path(eidos_dir, delta_id_or_path)
@@ -958,7 +1332,9 @@ def verify_delta_mutations(
     if not isinstance(raw_mutations, list):
         raw_mutations = []
 
-    specs_by_id, container_components, invariants = _build_spec_catalog(eidos_dir)
+    delta_status = str(doc.frontmatter.get("status", "proposed")).strip().lower()
+    specs_by_id, container_components, invariant_map = _build_spec_catalog_with_invariants(eidos_dir)
+    invariants = set(invariant_map.keys())
 
     items: list[MutationVerificationItem] = []
     for m in raw_mutations:
@@ -969,11 +1345,18 @@ def verify_delta_mutations(
         verified = False
         status = "UNKNOWN"
 
+        target_path_resolved: Path | None = None
         target_path_exists = False
         if "/" in target or target.endswith(".adoc"):
             clean_p = target.strip("'\"")
-            if (eidos_dir / clean_p).exists() or (Path(clean_p).is_absolute() and Path(clean_p).exists()):
+            cand_rel = eidos_dir / clean_p
+            cand_abs = Path(clean_p)
+            if cand_rel.exists():
                 target_path_exists = True
+                target_path_resolved = cand_rel.resolve()
+            elif cand_abs.is_absolute() and cand_abs.exists():
+                target_path_exists = True
+                target_path_resolved = cand_abs.resolve()
 
         # 1. Removal / Deprecation Actions
         if action in ("remove_component", "remove_contract", "remove_screen", "remove_ui_component"):
@@ -1003,13 +1386,38 @@ def verify_delta_mutations(
                     status = "ACTIVE_NOT_DEPRECATED"
 
         # 2. Invariant Actions
-        elif action in ("add_invariant", "patch_invariant"):
+        elif action == "add_invariant":
             if target in invariants:
                 verified = True
                 status = "FOUND"
             else:
                 verified = False
                 status = "MISSING"
+
+        elif action == "patch_invariant":
+            if target not in invariant_map:
+                verified = False
+                status = "MISSING"
+            elif delta_status == "applied":
+                verified = True
+                status = "FOUND"
+            else:
+                decl_ok = _evaluate_declarative_postcondition(
+                    m, target, specs_by_id, container_components, invariant_map
+                )
+                if decl_ok is not None:
+                    verified = decl_ok
+                    status = "MODIFIED" if decl_ok else "UNMODIFIED"
+                else:
+                    inv_file, inv_dict = invariant_map[target]
+                    inv_sha = hashlib.sha256(
+                        json.dumps(inv_dict, sort_keys=True, default=str).encode("utf-8")
+                    ).hexdigest()
+                    mod_ok = _check_or_record_baseline_sha(
+                        eidos_dir, doc.doc_id, file_path, target, inv_file, inv_sha
+                    )
+                    verified = mod_ok
+                    status = "MODIFIED" if mod_ok else "UNMODIFIED"
 
         elif action == "remove_invariant":
             if target not in invariants:
@@ -1019,17 +1427,43 @@ def verify_delta_mutations(
                 verified = False
                 status = "STILL_PRESENT"
 
-        # 3. Architecture Modification
-        elif action == "modify_architecture":
-            arch_exists = any(d_type == "tech/architecture" for _, d_type, _ in specs_by_id.values()) or target in specs_by_id
-            if arch_exists:
+        # 3. Modification / Extension / Patch Actions
+        elif action == "modify_architecture" or action.startswith(("modify_", "extend_", "patch_")):
+            target_file: Path | None = None
+            if target in specs_by_id:
+                target_file = specs_by_id[target][0]
+            elif target in container_components and container_components[target] in specs_by_id:
+                target_file = specs_by_id[container_components[target]][0]
+            elif target_path_resolved is not None:
+                target_file = target_path_resolved
+            elif action == "modify_architecture":
+                for _, (p, d_type, _) in specs_by_id.items():
+                    if d_type == "tech/architecture":
+                        target_file = p
+                        break
+
+            if target_file is None or not target_file.exists():
+                verified = False
+                status = "MISSING"
+            elif delta_status == "applied":
                 verified = True
                 status = "FOUND"
             else:
-                verified = False
-                status = "MISSING"
+                decl_ok = _evaluate_declarative_postcondition(
+                    m, target, specs_by_id, container_components, invariant_map
+                )
+                if decl_ok is not None:
+                    verified = decl_ok
+                    status = "MODIFIED" if decl_ok else "UNMODIFIED"
+                else:
+                    cur_sha = hashlib.sha256(target_file.read_bytes()).hexdigest()
+                    mod_ok = _check_or_record_baseline_sha(
+                        eidos_dir, doc.doc_id, file_path, target, target_file, cur_sha
+                    )
+                    verified = mod_ok
+                    status = "MODIFIED" if mod_ok else "UNMODIFIED"
 
-        # 4. Standard Addition & Modification Actions
+        # 4. Standard Addition Actions
         else:
             found = (
                 target in specs_by_id
@@ -1165,7 +1599,7 @@ def execute_delta_mutations(
                             break
                 if cnt_file and cnt_file.exists():
                     cnt_content = cnt_file.read_text(encoding="utf-8")
-                    cnt_fm, cnt_body, _ = extract_frontmatter(cnt_content)
+                    cnt_fm, _cnt_body, _ = extract_frontmatter(cnt_content)
                     if cnt_fm is not None:
                         comps = cnt_fm.setdefault("components", [])
                         new_comp = {
@@ -1174,9 +1608,10 @@ def execute_delta_mutations(
                             "responsibility": details or f"Component responsible for {target_id}.",
                         }
                         if not any(c.get("id") == target_id for c in comps):
-                            comps.append(new_comp)
-                            new_yaml = yaml.dump(cnt_fm, sort_keys=False, default_flow_style=False)
-                            cnt_file.write_text(f"---\n{new_yaml}---\n{cnt_body}", encoding="utf-8")
+                            updated_content = _mutate_frontmatter_components(
+                                cnt_content, "append", target_id, new_comp
+                            )
+                            cnt_file.write_text(updated_content, encoding="utf-8")
                             container_components[target_id] = target_cnt or "CNT-CORE"
                             if cnt_file not in mutated_files:
                                 mutated_files.append(cnt_file)
@@ -1190,11 +1625,12 @@ def execute_delta_mutations(
                     cnt_file = specs_by_id[cnt_id][0]
                     if cnt_file.exists():
                         cnt_content = cnt_file.read_text(encoding="utf-8")
-                        cnt_fm, cnt_body, _ = extract_frontmatter(cnt_content)
+                        cnt_fm, _cnt_body, _ = extract_frontmatter(cnt_content)
                         if cnt_fm and "components" in cnt_fm:
-                            cnt_fm["components"] = [c for c in cnt_fm["components"] if c.get("id") != target_id]
-                            new_yaml = yaml.dump(cnt_fm, sort_keys=False, default_flow_style=False)
-                            cnt_file.write_text(f"---\n{new_yaml}---\n{cnt_body}", encoding="utf-8")
+                            updated_content = _mutate_frontmatter_components(
+                                cnt_content, "remove", target_id
+                            )
+                            cnt_file.write_text(updated_content, encoding="utf-8")
                             del container_components[target_id]
                             if cnt_file not in mutated_files:
                                 mutated_files.append(cnt_file)
@@ -1314,15 +1750,13 @@ def apply_delta(
         sync_delta_views(eidos_dir)
         return True, f"SpecDelta '{doc.doc_id}' is already marked as applied.", file_path, mutated_files
 
-    # Read and update frontmatter status to applied in-place
+    # Read and update frontmatter status to applied in-place while preserving YAML comments
     content = file_path.read_text(encoding="utf-8")
-    fm, body, err = extract_frontmatter(content)
+    fm, _body, err = extract_frontmatter(content)
     if err or not fm:
         return False, f"Failed to extract frontmatter: {err}", None, mutated_files
 
-    fm["status"] = "applied"
-    new_yaml = yaml.dump(fm, sort_keys=False, default_flow_style=False)
-    new_content = f"---\n{new_yaml}---\n{body}"
+    new_content = _set_frontmatter_scalar(content, "status", "applied")
 
     file_path.write_text(new_content, encoding="utf-8")
 
@@ -1515,18 +1949,14 @@ Language-level function signatures, traits, and public interfaces provided to th
 
     # Update container document replacing inline dict with {id: norm_id, ref: rel_comp_ref}
     raw_text = target_container_path.read_text(encoding="utf-8")
-    fm_dict, body_raw, _ = extract_frontmatter(raw_text)
+    fm_dict, _body_raw, _ = extract_frontmatter(raw_text)
     if fm_dict:
-        parsed_fm = fm_dict
-        for idx, item in enumerate(parsed_fm.get("components", [])):
-            if isinstance(item, dict) and item.get("id") == norm_id:
-                parsed_fm["components"][idx] = {
-                    "id": norm_id,
-                    "ref": rel_comp_ref,
-                }
-                break
-        new_fm_str = yaml.dump(parsed_fm, sort_keys=False, default_flow_style=False).strip()
-        new_c_content = f"---\n{new_fm_str}\n---\n{body_raw}"
+        new_c_content = _mutate_frontmatter_components(
+            raw_text,
+            "replace",
+            norm_id,
+            {"id": norm_id, "ref": rel_comp_ref},
+        )
         target_container_path.write_text(new_c_content, encoding="utf-8")
 
     return comp_file_path, target_container_path
@@ -1585,22 +2015,21 @@ def inline_component(
     responsibility = comp_fm.get("responsibility", "In-process module logic.")
     source_path = comp_fm.get("source_path", comp_fm.get("package_path", ""))
 
-    # Update container frontmatter
+    # Update container frontmatter while preserving YAML comments and formatting
     raw_text = target_container_path.read_text(encoding="utf-8")
-    fm_dict, body_raw, _ = extract_frontmatter(raw_text)
+    fm_dict, _body_raw, _ = extract_frontmatter(raw_text)
     if fm_dict:
-        parsed_fm = fm_dict
-        for idx, item in enumerate(parsed_fm.get("components", [])):
-            if isinstance(item, dict) and item.get("id") == norm_id:
-                parsed_fm["components"][idx] = {
-                    "id": norm_id,
-                    "name": name,
-                    "responsibility": responsibility,
-                    "source_path": source_path,
-                }
-                break
-        new_fm_str = yaml.dump(parsed_fm, sort_keys=False, default_flow_style=False).strip()
-        new_c_content = f"---\n{new_fm_str}\n---\n{body_raw}"
+        new_c_content = _mutate_frontmatter_components(
+            raw_text,
+            "replace",
+            norm_id,
+            {
+                "id": norm_id,
+                "name": name,
+                "responsibility": responsibility,
+                "source_path": source_path,
+            },
+        )
         target_container_path.write_text(new_c_content, encoding="utf-8")
 
     # Safely remove the dedicated .adoc file

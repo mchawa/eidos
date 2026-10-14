@@ -19,10 +19,11 @@ business_identity:
 technical_profile:
   primary_languages:
     - "YAML / AsciiDoc (Spec Layer)"
-    - "Python / Go / TypeScript (Orchestration Engine)"
+    - "Python 3.11+ (CLI & Governance Engine)"
+    - "TypeScript / React 19 (Portal SPA)"
   runtimes_and_frameworks:
-    - "Container / Docker"
-    - "Node.js / Python 3.12+"
+    - "Python 3.11+ (Typer, Rich, jsonschema, ast-grep-py, SQLite FTS5)"
+    - "Vite / React 19 (Living Web Portal)"
   deployment_targets:
     - "Local Workstation (Developer CLI)"
     - "CI/CD Pipeline Runners"
@@ -31,9 +32,9 @@ technical_profile:
   agent_support:
     - "Antigravity (agy)"
     - "Claude Code"
-    - "OpenAI Codex / Operators"
-    - "GitHub Copilot / Workspace"
-    - "Custom Autonomous / CLI Agents"
+    - "Cursor / Cline / OpenCode / Aider"
+    - "OpenAI Codex"
+    - "GitHub Copilot"
 ---
 = Eidos System Definition
 :doctype: book

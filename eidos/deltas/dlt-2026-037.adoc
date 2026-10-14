@@ -1,0 +1,51 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-037
+title: "Consolidate 14 Fragmented Agent Skills into 4 Cohesive Workflow Skills"
+status: proposed
+vcs:
+  branch: refactor/consolidate-agent-skills
+intent:
+  kind: refactor
+  motivation: "Reduce AI agent system-prompt skill index bloat and eliminate multi-hop skill file reads by consolidating the 14 fragmented Eidos skills into 4 cohesive workflow-aligned skills ('eidos', 'eidos-spec', 'eidos-plan', 'eidos-ops')."
+mutations:
+  - action: modify_component
+    target_component: CNT-EIDOS-PLUGIN
+    details: "Consolidate the 14 skill directories in 'assets/plugin_reference/skills/' and 'assets/plugin_reference/plugin.json' into 4 workflow skills ('eidos', 'eidos-spec', 'eidos-plan', 'eidos-ops'), and update 'PluginInstaller' in 'src/eidos/plugin/installer.py' to automatically prune retired legacy skill directories during 'eidos plugin install' and 'eidos plugin update'."
+  - action: extend_capability
+    target_capability: CAP-AGENT-001
+    details: "Streamline progressive agent skill discovery across Antigravity, Claude Code, Cursor, Cline, OpenCode, Codex, Aider, and GitHub Copilot into 4 cohesive workflow skills."
+blast_radius:
+  impacted_components:
+    - CNT-EIDOS-PLUGIN
+    - CMP-PLUGIN-INSTALLER
+    - CMP-PLUGIN-VALIDATOR
+  invariants_to_enforce:
+    - INV-AGENT-ZERO-AI-DEPENDENCY
+    - INV-DOCS-SYNCHRONIZATION
+---
+= SpecDelta: Consolidate 14 Fragmented Agent Skills into 4 Cohesive Workflow Skills
+:toc: left
+
+== Problem Statement
+
+Currently, `assets/plugin_reference/skills/` defines 14 separate skills (`eidos`, `eidos-architecture`, `eidos-context`, `eidos-delta`, `eidos-design`, `eidos-drift`, `eidos-explore`, `eidos-extract`, `eidos-init`, `eidos-invariants`, `eidos-portal`, `eidos-product`, `eidos-reconcile`, `eidos-review`). In practice:
+1. **System Prompt Bloat**: Every host IDE injects all 14 skill names and descriptions into every conversation's system prompt.
+2. **Multi-Hop Context Thrashing**: A single engineering task in Planned Mode forces the agent to read 4–5 separate `SKILL.md` files sequentially (`eidos` -> `eidos-context` -> `eidos-delta` -> `eidos-architecture` -> `eidos-invariants` -> `eidos-drift`), repeating overlapping governance rules (`NO ADRs`, `POL-001`–`POL-004`, CLI syntax) in each file.
+
+== Architectural & Behavioral Mutations
+
+1. **Four Cohesive Workflow Skills (`assets/plugin_reference/skills/`)**:
+   * **`eidos` (Core Orchestrator, Context, Drift & Reconcile)**: Master workflow router (Direct vs. Planned Mode), token-budgeted context slicing (`eidos context`), continuous drift detection (`eidos drift`), and Direct Mode git-diff reconciliation (`eidos reconcile`). Absorbs `eidos-context`, `eidos-drift`, and `eidos-reconcile`.
+   * **`eidos-spec` (Living Specification & Invariant Authoring)**: Unified authoring reference for Product (`DOM-*`, `CAP-*`, `PER-*`), C4 Architecture (`CNT-*`, `CMP-*`, `CTR-*`, embedded `decisions`), Multi-Design Systems (`DS-*`, `CLT-*`, `SCR-*`, `UIC-*`, `FLOW-*`), and Policies/Invariants (`POL-*`, `INV-*` with `file::func` test bindings). Absorbs `eidos-product`, `eidos-architecture`, `eidos-design`, and `eidos-invariants`.
+   * **`eidos-plan` (Explorations, SpecDeltas & Architectural Review)**: Technical discovery spikes (`EXP-*`), SpecDelta mutation lifecycle (`DLT-*`, `create`, `audit`, `apply`, `changelog`), and Staff Systems Architect review checklists. Absorbs `eidos-explore`, `eidos-delta`, and `eidos-review`.
+   * **`eidos-ops` (Bootstrap, Brownfield Extraction & Web Portal)**: Repository initialization (`eidos init`), systematic reverse-engineering of existing codebases into living specs, and Living Web Portal operations (`eidos serve`, `eidos build-site`). Absorbs `eidos-init`, `eidos-extract`, and `eidos-portal`.
+2. **Automated Legacy Skill Cleanup in `PluginInstaller` (`src/eidos/plugin/installer.py`)**:
+   * Update `install_plugin()` and `update_plugin()` to detect and remove the 10 retired `eidos-*` skill folders across `.agents/plugins/eidos/skills/`, `.claude/skills/`, `.cursor/skills/`, `.github/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/skills/`, and `.aider/skills/`.
+
+== Verification Criteria
+
+* `assets/plugin_reference/plugin.json` and `assets/plugin_reference/skills/` contain exactly the 4 consolidated skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) and pass `eidos plugin validate`.
+* Running `eidos plugin update` in a repository with the old 14 skills cleanly removes the 10 retired skill directories and installs the 4 consolidated skills.
+

@@ -55,7 +55,7 @@ def locate_plugin_bundle() -> Path:
         ref_dir = get_plugin_reference_dir()
         if ref_dir.exists() and (ref_dir / "plugin.json").exists():
             return ref_dir
-    except Exception:
+    except OSError:
         pass
 
     # 2. Check repo root assets/plugin_reference
@@ -112,7 +112,7 @@ def _copy_plugin_tree(
                 data["version"] = bundled_ver
                 with open(target_manifest, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2)
-        except Exception:
+        except (OSError, json.JSONDecodeError, ValueError):
             pass
 
     # Rewrite hook commands if launcher == "uvx"
@@ -122,7 +122,7 @@ def _copy_plugin_tree(
             hooks_text = target_hooks.read_text(encoding="utf-8")
             hooks_text = hooks_text.replace('"command": "eidos hook ', '"command": "uvx --from eidos-ai eidos hook ')
             target_hooks.write_text(hooks_text, encoding="utf-8")
-        except Exception:
+        except OSError:
             pass
 
     return created
@@ -203,7 +203,7 @@ def _remove_project_mcp_server(file_path: Path, server_name: str) -> bool:
     try:
         with open(file_path, encoding="utf-8") as f:
             data = json.load(f)
-    except Exception:
+    except (OSError, json.JSONDecodeError, ValueError):
         return False
 
     servers = data.get("mcpServers", {})
@@ -266,7 +266,7 @@ def _ensure_claude_plugin_manifest(target_dir: Path) -> list[Path]:
                     existing = json.load(f)
                 existing["version"] = bundled_ver
                 manifest_data_to_write = existing
-            except Exception:
+            except (OSError, json.JSONDecodeError, ValueError):
                 manifest_data_to_write = manifest_data
         else:
             manifest_data_to_write = manifest_data
@@ -340,7 +340,7 @@ def _update_project_claude_settings(file_path: Path, plugin_id: str = "eidos") -
         try:
             with open(file_path, encoding="utf-8") as f:
                 data = json.load(f)
-        except Exception:
+        except (OSError, json.JSONDecodeError, ValueError):
             data = {}
 
     if "plugins" not in data or not isinstance(data["plugins"], list):
@@ -374,7 +374,7 @@ def _remove_project_claude_settings(file_path: Path, plugin_id: str = "eidos") -
     try:
         with open(file_path, encoding="utf-8") as f:
             data = json.load(f)
-    except Exception:
+    except (OSError, json.JSONDecodeError, ValueError):
         return False
 
     changed = False
@@ -451,7 +451,7 @@ def _update_project_aider_conf(file_path: Path, conventions_path: str = ".aider.
                 loaded = yaml.safe_load(f)
                 if isinstance(loaded, dict):
                     data = loaded
-        except Exception:
+        except (OSError, yaml.YAMLError):
             data = {}
 
     read_list = data.get("read", [])
@@ -478,7 +478,7 @@ def _remove_project_aider_conf(file_path: Path, conventions_path: str = ".aider.
             data = yaml.safe_load(f)
         if not isinstance(data, dict):
             return False
-    except Exception:
+    except (OSError, yaml.YAMLError):
         return False
 
     read_list = data.get("read", [])
@@ -631,7 +631,7 @@ def _ensure_copilot_plugin_manifest(target_dir: Path) -> Path:
                 "skills": "skills",
             }
             manifest_data = existing
-        except Exception:
+        except (OSError, json.JSONDecodeError, ValueError):
             pass
 
     with open(manifest_file, "w", encoding="utf-8") as f:
@@ -648,7 +648,7 @@ def _update_project_copilot_settings(settings_file: Path) -> bool:
         try:
             with open(settings_file, encoding="utf-8") as f:
                 data = json.load(f)
-        except Exception:
+        except (OSError, json.JSONDecodeError, ValueError):
             data = {}
 
     if "plugins" not in data or not isinstance(data["plugins"], list):
@@ -677,7 +677,7 @@ def _remove_project_copilot_settings(settings_file: Path) -> bool:
     try:
         with open(settings_file, encoding="utf-8") as f:
             data = json.load(f)
-    except Exception:
+    except (OSError, json.JSONDecodeError, ValueError):
         return False
 
     changed = False
@@ -721,7 +721,7 @@ def _remove_project_opencode_json(file_path: Path) -> bool:
     try:
         with open(file_path, encoding="utf-8") as f:
             data = json.load(f)
-    except Exception:
+    except (OSError, json.JSONDecodeError, ValueError):
         return False
 
     mcp = data.get("mcp", {})
@@ -784,7 +784,7 @@ def _ensure_codex_plugin_manifest(target_dir: Path) -> Path:
                 "skills": "skills",
             }
             manifest_data = existing
-        except Exception:
+        except (OSError, json.JSONDecodeError, ValueError):
             pass
 
     with open(manifest_file, "w", encoding="utf-8") as f:
@@ -1086,7 +1086,7 @@ def uninstall_plugin(
 
     try:
         source_dir = locate_plugin_bundle()
-    except Exception:
+    except (FileNotFoundError, OSError):
         source_dir = None
 
     for t in targets_to_run:

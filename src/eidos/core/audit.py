@@ -1,6 +1,6 @@
 """SpecDelta Deletion and Deprecation Blast-Radius Audit Engine.
 
-Implements INV-DELTA-DELETION-AUDIT (CAP-PROD-002):
+Implements INV-DELTA-DELETION-AUDIT:
 - Graph-level invariant verification via embedded SQLite ArchitecturalIndex (index.db).
 - Context-aware semantic reference discovery across the codebase.
 - Semantic classification distinguishing legitimate records (historical ledgers, negative
@@ -260,7 +260,7 @@ class AuditEngine:
                             message=f"Living spec '{src}' ({r.get('type')}) still has active '{r.get('rel_type')}' edge to removed entity '{target}'",
                         )
                     )
-        except Exception:
+        except (OSError, RuntimeError):
             # Fallback gracefully if index cannot be read
             pass
         return violations
@@ -303,7 +303,7 @@ class AuditEngine:
                 try:
                     with open(fpath, encoding="utf-8", errors="ignore") as f:
                         lines = f.readlines()
-                except Exception:
+                except OSError:
                     continue
 
                 for idx, line in enumerate(lines, 1):
@@ -560,5 +560,5 @@ class AuditEngine:
             full_p = self.repo_root / delta_path
             doc = parse_spec_file(full_p)
             return str(doc.frontmatter.get("status", "")).strip().lower() == "applied"
-        except Exception:
+        except OSError:
             return False

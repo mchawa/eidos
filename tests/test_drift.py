@@ -599,3 +599,339 @@ def test_scoped_1hop_neighborhood_drift_verification(monkeypatch):
     res_1hop = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
     assert res_1hop.drift_detected is False
     assert res_1hop.is_clean is True
+
+
+def test_system_spec_does_not_mask_component_drift(monkeypatch):
+    """Verify DLT-2026-030: editing system-level specs cannot silence structural drift inside a mapped container."""
+    for system_spec in ("eidos/system.adoc", "eidos/architecture/system-architecture.adoc"):
+        monkeypatch.setattr(
+            "eidos.vcs.drift.get_git_diff_files",
+            lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, _s=system_spec: [
+                "src/eidos/cli/main.py",
+                _s,
+            ],
+        )
+        result = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+        assert result.drift_detected is True, system_spec
+        assert result.is_clean is False
+
+
+THEME = "src/eidos/portal/frontend/src/theme/theme.css"
+_OLD_CSS = ":root {\n  --md-sys-color-primary: #6750a4;\n}\n.card {\n  padding: 8px;\n}\n"
+_BODY_CSS = ":root {\n  --md-sys-color-primary: #6750a4;\n}\n.card {\n  padding: 12px;\n  gap: 4px;\n}\n"
+_TOKEN_CSS = ":root {\n  --md-sys-color-primary: #7c4dff;\n}\n.card {\n  padding: 8px;\n}\n"
+
+
+def _mock_versions(monkeypatch, new_css):
+    monkeypatch.setattr(
+        "eidos.vcs.drift._get_file_versions",
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (_OLD_CSS, new_css),
+    )
+
+
+def _mock_diff(monkeypatch, files):
+    monkeypatch.setattr(
+        "eidos.vcs.drift.get_git_diff_files",
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: list(files),
+    )
+
+
+def test_body_only_css_tweak_has_no_design_drift(monkeypatch):
+    """Verify DLT-2026-030: layout tweaks that do not touch design tokens produce zero drift."""
+    _mock_diff(monkeypatch, [THEME])
+    _mock_versions(monkeypatch, _BODY_CSS)
+    result = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert result.drift_detected is False
+    assert result.uncovered_design_files == []
+    assert THEME in result.body_only_code_files
+
+
+def test_graph_scoped_design_token_drift(monkeypatch):
+    """Verify DLT-2026-030: token changes are satisfied only by the bound DS-*/CLT-* design subgraph."""
+    _mock_versions(monkeypatch, _TOKEN_CSS)
+
+    # 1. Token change without design spec updates -> design drift
+    _mock_diff(monkeypatch, [THEME])
+    res = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert res.drift_detected is True
+    assert THEME in res.uncovered_design_files
+
+    # 2. Token change + bound DS-CORE token manifest -> clean
+    _mock_diff(monkeypatch, [THEME, "eidos/design/systems/core/tokens.json"])
+    res = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert res.drift_detected is False
+    assert res.uncovered_design_files == []
+
+    # 3. Token change + UI component of the bound design system -> clean
+    _mock_diff(monkeypatch, [THEME, "eidos/design/systems/core/components/portal-reader.adoc"])
+    res = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert res.uncovered_design_files == []
+
+    # 4. Token change + design spec outside the bound subgraph -> still design drift
+    _mock_diff(monkeypatch, [THEME, "eidos/design/flows/cli-serve-and-browse.adoc"])
+    res = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert THEME in res.uncovered_design_files
+    assert any("Design System Drift Detected" in r for r in res.remediation_suggestions)
+
+
+def test_planned_mode_design_target_satisfies_design_drift(monkeypatch):
+    """Verify DLT-2026-030: an active SpecDelta declaring the bound design system satisfies design drift."""
+    _mock_versions(monkeypatch, _TOKEN_CSS)
+    # dlt-2026-019 declares target_design_system: DS-CORE
+    _mock_diff(monkeypatch, [THEME, "eidos/deltas/dlt-2026-019.adoc"])
+    res = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert res.workflow_mode == "planned"
+    assert res.uncovered_design_files == []
+
+
+def test_component_invariants_are_verified(tmp_path):
+    """Verify DLT-2026-031: tech/component and inline container component invariants are statically verified."""  # eidos:fixture
+    from eidos.vcs.drift import detect_orphan_invariants, extract_invariants_and_verify
+
+    eidos_dir = tmp_path / "eidos"
+    comps_dir = eidos_dir / "architecture" / "components"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    comps_dir.mkdir(parents=True)
+    cnts_dir.mkdir(parents=True)
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+
+    (comps_dir / "billing.adoc").write_text(
+        """---
+type: tech/component
+id: CMP-BILLING
+name: Billing
+container: CNT-APP
+source_path: src/billing
+responsibility: Billing
+invariants:
+  - id: INV-CMP-BILLING-OK
+    rule: Covered component invariant
+    test_binding: tests/test_billing.py::test_billing_ok
+  - id: INV-CMP-BILLING-BROKEN
+    rule: Broken binding
+    test_binding: tests/test_billing.py::test_missing
+---
+= Billing
+""",
+        encoding="utf-8",
+    )
+    (cnts_dir / "app.adoc").write_text(
+        """---
+type: tech/container
+id: CNT-APP
+name: App
+package_path: src
+components:
+  - id: CMP-INLINE
+    name: Inline
+    source_path: src/inline.py
+    invariants:
+      - id: INV-CMP-INLINE-OK
+        rule: Inline component invariant
+        test_binding: tests/test_billing.py::test_inline_ok
+---
+= App
+""",
+        encoding="utf-8",
+    )
+    (tests_dir / "test_billing.py").write_text(
+        "# INV-CMP-BILLING-OK\ndef test_billing_ok():\n    assert True\n\n\n"
+        "# INV-CMP-INLINE-OK\ndef test_inline_ok():\n    assert True\n",
+        encoding="utf-8",
+    )
+
+    invariants = extract_invariants_and_verify(eidos_dir, tmp_path)
+    inv_map = {inv.invariant_id: inv for inv in invariants}
+    assert inv_map["INV-CMP-BILLING-OK"].has_test_coverage is True
+    assert inv_map["INV-CMP-BILLING-OK"].spec_id == "CMP-BILLING"
+    assert inv_map["INV-CMP-BILLING-BROKEN"].has_test_coverage is False
+    assert inv_map["INV-CMP-INLINE-OK"].has_test_coverage is True
+    assert inv_map["INV-CMP-INLINE-OK"].spec_id == "CMP-INLINE"
+
+    # Component invariants referenced by tests are no longer reported as orphans
+    orphans = {oid for oid, _ in detect_orphan_invariants(tmp_path, set(inv_map))}
+    assert "INV-CMP-BILLING-OK" not in orphans
+    assert "INV-CMP-INLINE-OK" not in orphans
+
+
+def test_exact_delta_target_matching_rejects_substring_and_slug_collisions(tmp_path, monkeypatch):
+    """Verify A2: delta targets match full entity IDs only (no slug shortening or substring false positives)."""
+    eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    deltas_dir = eidos_dir / "deltas"
+    cnts_dir.mkdir(parents=True)
+    deltas_dir.mkdir(parents=True)
+    src_dir = tmp_path / "src" / "core"
+    src_dir.mkdir(parents=True)
+    (src_dir / "engine.py").write_text("def run_engine(x: int) -> int:\n    return x\n", encoding="utf-8")
+
+    (cnts_dir / "core.adoc").write_text(
+        """---
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
+id: CNT-EIDOS-CORE
+name: Core Engine
+package_path: src/core
+---
+= Core Engine
+""",
+        encoding="utf-8",
+    )
+    # Delta targets CMP-SCORE-ENGINE (contains 'core' as substring) and CNT-API (prefix of CNT-API-GATEWAY)
+    (deltas_dir / "dlt-2026-099.adoc").write_text(
+        """---
+type: vcs/spec-delta
+schema: schemas/v1/vcs/spec-delta.schema.yaml
+id: DLT-2026-099
+title: Unrelated Score Engine Delta
+status: in_progress
+intent:
+  kind: feature
+  motivation: Modify score engine only.
+mutations:
+  - action: modify_component
+    target_component: CMP-SCORE-ENGINE
+    summary: Update score engine
+blast_radius:
+  components:
+    - CMP-SCORE-ENGINE
+    - CNT-API
+---
+= Unrelated Delta
+""",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "eidos.vcs.drift.get_git_diff_files",
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+            "src/core/engine.py",
+            "eidos/deltas/dlt-2026-099.adoc",
+        ],
+    )
+    monkeypatch.setattr(
+        "eidos.vcs.drift._get_file_versions",
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (
+            "def run_engine() -> int:\n    return 0\n",
+            "def run_engine(x: int) -> int:\n    return x\n",
+        ),
+    )
+
+    res = detect_drift(repo_root=tmp_path, eidos_dir=eidos_dir)
+    # CNT-EIDOS-CORE must NOT match CMP-SCORE-ENGINE via 'core' slug/substring -> drift detected!
+    assert res.drift_detected is True
+    assert any("CNT-EIDOS-CORE" in r for r in res.remediation_suggestions)
+
+
+def test_rejected_and_preexisting_applied_deltas_do_not_activate_planned_mode(tmp_path, monkeypatch):
+    """Verify rejected deltas and edits to already-applied deltas do not switch detect_drift into Planned Mode."""
+    eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    deltas_dir = eidos_dir / "deltas"
+    cnts_dir.mkdir(parents=True)
+    deltas_dir.mkdir(parents=True)
+    src_dir = tmp_path / "src" / "core"
+    src_dir.mkdir(parents=True)
+    (src_dir / "engine.py").write_text("def run_engine(x: int) -> int:\n    return x\n", encoding="utf-8")
+
+    (cnts_dir / "core.adoc").write_text(
+        """---
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
+id: CNT-EIDOS-CORE
+name: Core Engine
+package_path: src/core
+components: []
+---
+= Core Engine
+""",
+        encoding="utf-8",
+    )
+    rejected_delta = """---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-101
+title: Rejected Core Delta
+status: rejected
+intent:
+  kind: refactor
+  motivation: Rejected change.
+mutations:
+  - action: modify_component
+    target_component: CNT-EIDOS-CORE
+    details: Touch core
+---
+= Rejected Delta
+"""
+    (deltas_dir / "dlt-2026-101.adoc").write_text(rejected_delta, encoding="utf-8")
+
+    applied_old = """---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-102
+title: Old Applied Delta
+status: applied
+intent:
+  kind: refactor
+  motivation: Previously applied.
+mutations:
+  - action: modify_component
+    target_component: CNT-EIDOS-CORE
+    details: Touch core
+---
+= Old Applied
+"""
+    applied_new = applied_old + "\n// Minor typo fix in historical delta\n"
+    (deltas_dir / "dlt-2026-102.adoc").write_text(applied_new, encoding="utf-8")
+
+    monkeypatch.setattr(
+        "eidos.vcs.drift.get_git_diff_files",
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+            "src/core/engine.py",
+            "eidos/deltas/dlt-2026-101.adoc",
+            "eidos/deltas/dlt-2026-102.adoc",
+        ],
+    )
+    monkeypatch.setattr(
+        "eidos.vcs.drift._get_file_versions",
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (
+            (applied_old, applied_new)
+            if "dlt-2026-102" in rel_path
+            else ("def run_engine() -> int:\n    return 0\n", "def run_engine(x: int) -> int:\n    return x\n")
+        ),
+    )
+
+    res = detect_drift(repo_root=tmp_path, eidos_dir=eidos_dir)
+    assert res.workflow_mode == "direct"
+    assert res.drift_detected is True
+
+
+def test_path_in_requires_separator_boundary_and_no_slug_fallback(tmp_path):
+    """Verify _path_in rejects non-boundary suffix collisions and map_code_to_components does not fallback to slug matching."""
+    from eidos.vcs.drift import _path_in, map_code_to_components
+
+    assert _path_in("eidos/architecture/containers/other-core.adoc", {"core.adoc"}) is False
+    assert _path_in("eidos/architecture/containers/core.adoc", {"architecture/containers/core.adoc"}) is True
+
+    eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    cnts_dir.mkdir(parents=True)
+    (cnts_dir / "core.adoc").write_text(
+        """---
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
+id: CNT-EIDOS-CORE
+name: Core Engine
+package_path: src/core
+components: []
+---
+= Core Engine
+""",
+        encoding="utf-8",
+    )
+
+    mappings = map_code_to_components(eidos_dir, ["src/unrelated/core.py"], repo_root=tmp_path)
+    assert mappings == []
+
+

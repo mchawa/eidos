@@ -2,6 +2,7 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 title: ArchitectureSchema
 description: "Defines the global technical architecture following Arc42 sections (Context, Solution Strategy, Building Blocks, Deployment, Cross-cutting) and C4 Model Levels 1 & 2."
 type: object
+additionalProperties: false
 required:
   - type
   - schema
@@ -28,26 +29,45 @@ properties:
   title:
     type: string
     description: "Human-readable title of the system architecture specification."
+  status:
+    type: string
+    enum:
+      - draft
+      - proposed
+      - planned
+      - active
+      - deprecated
+      - retired
+    description: "Optional lifecycle state of the architecture specification."
   topology_style:
     type: string
     description: "The foundational architectural pattern (e.g. monorepo_orchestrator, microservices, modular_monolith, distributed_mesh, embedded_firmware)."
   c4_context:
     type: object
     description: "Arc42 Section 3 / C4 Level 1: System Context. Identifies human/agent actors and external systems."
+    additionalProperties: false
     required:
       - actors
     properties:
       actors:
         type: array
-        description: "List of existing persona document paths (type: product/persona) representing human or agent actors interacting with the system."
+        description: "List of existing persona document paths or IDs (type: product/persona) representing human or agent actors interacting with the system."
         items:
           type: string
-          description: "Relative path to a defined persona (e.g. eidos/personas/product-lead.adoc)."
+          pattern: "^(PER-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Persona ID or relative path to a defined persona (e.g. eidos/personas/product-lead.adoc)."
+          x-eidos-ref:
+            target_types:
+              - product/persona
+            prefixes:
+              - PER-
+            entity_label: persona
       external_systems:
         type: array
         description: "Third-party platforms, external APIs, or upstream/downstream services outside system boundaries (optional)."
         items:
           type: object
+          additionalProperties: false
           required:
             - name
             - role
@@ -67,15 +87,39 @@ properties:
     items:
       anyOf:
         - type: string
-          description: "Container ID (CNT-*) or relative path to a tech/container document (e.g. CNT-EIDOS-CORE or eidos/architecture/containers/core.adoc)."
+          pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Container ID (CNT-*) or relative path to a tech/container document (e.g. CNT-CORE or eidos/architecture/containers/core.adoc)."
+          x-eidos-ref:
+            target_types:
+              - tech/container
+            prefixes:
+              - CNT-
+            entity_label: container
         - type: object
+          additionalProperties: false
           properties:
             container_ref:
               type: string
+              pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
               description: "Container ID (CNT-*) or relative path to container specification."
+              x-eidos-ref:
+                target_types:
+                  - tech/container
+                prefixes:
+                  - CNT-
+                entity_label: container
             component_ref:
               type: string
+              pattern: "^((CNT|CMP)-[A-Z0-9_-]+|.*\\.adoc)$"
               description: "Legacy alias: Container ID or relative path."
+              x-eidos-ref:
+                target_types:
+                  - tech/container
+                  - tech/component
+                prefixes:
+                  - CNT-
+                  - CMP-
+                entity_label: container
             name:
               type: string
               description: "Display name of the container/package (optional)."
@@ -103,16 +147,6 @@ properties:
     description: >
       Arc42 Section 8: Cross-cutting Concepts. Open, flexible catalog of system-wide conventions,
       patterns, and mechanisms. Architects declare only the concepts that apply to their specific system.
-      
-      Common examples include:
-        - authentication_and_authz (Identity, scopes, tokens)
-        - error_handling (Standard schemas, exit codes, exceptions)
-        - telemetry_and_logging (Structured logs, traces, metrics)
-        - concurrency_and_threading (Async event loop, worker threads, actors)
-        - persistence_and_caching (Data storage, cache invalidation, ORM)
-        - security_and_sandboxing (Process isolation, least privilege)
-        - data_serialization (Protobuf, JSON, FlatBuffers)
-        - power_and_resources (Memory limits, sleep cycles for embedded/IoT)
     additionalProperties:
       anyOf:
         - type: string
@@ -139,10 +173,10 @@ properties:
   deployment_view:
     type: object
     description: "Arc42 Section 7: Deployment View. Target infrastructure, environments, and CI/CD pipelines."
+    additionalProperties: false
     required:
       - hosting_model
       - ci_cd_engine
-    additionalProperties: true
     properties:
       hosting_model:
         type: string
@@ -150,3 +184,13 @@ properties:
       ci_cd_engine:
         type: string
         description: "Automation pipelines for build, test, and release (e.g. GitHub Actions, GitLab CI)."
+      distribution_channels:
+        type: array
+        description: "Package registries, binary distribution channels, or deployment targets (optional)."
+        items:
+          type: string
+      environments:
+        type: array
+        description: "Deployment environments (optional)."
+        items:
+          type: string

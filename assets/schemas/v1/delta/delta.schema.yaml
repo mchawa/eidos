@@ -2,6 +2,7 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 title: DeltaSchema
 description: "Defines declarative semantic mutations applied to the product baseline (feature additions, behavior changes, bug fixes, refactorings, and deprecations)."
 type: object
+additionalProperties: false
 required:
   - type
   - schema
@@ -27,10 +28,18 @@ properties:
     description: "Short, descriptive summary of the proposed product or technical mutation."
   status:
     type: string
-    pattern: "^[a-z0-9_-]+$"
-    description: "Lifecycle status: proposed, in_review, approved, applied, rejected, or custom workflow state."
+    enum:
+      - draft
+      - proposed
+      - planned
+      - in_review
+      - approved
+      - applied
+      - rejected
+    description: "Lifecycle status: draft, proposed, planned, in_review, approved, applied, or rejected."
     examples:
       - "proposed"
+      - "planned"
       - "in_review"
       - "approved"
       - "applied"
@@ -38,6 +47,7 @@ properties:
   intent:
     type: object
     description: "The strategic motivation and nature of the proposed change."
+    additionalProperties: false
     required:
       - kind
       - motivation
@@ -79,6 +89,7 @@ properties:
     description: "Ordered list of atomic semantic operations to perform against the baseline .spec/ documents."
     items:
       type: object
+      additionalProperties: false
       required:
         - action
       properties:
@@ -107,46 +118,152 @@ properties:
             - "modify_design_system"
         target_domain:
           type: string
+          pattern: "^(DOM-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Target domain ID or relative path (e.g. DOM-PRODUCT-CORE or eidos/domains/auth/domain.adoc)."
         target_capability:
           type: string
+          pattern: "^(CAP-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Target capability ID or relative path (e.g. CAP-AUTH-004)."
+        target_container:
+          type: string
+          pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Target container ID or relative path (e.g. CNT-CORE)."
         target_component:
           type: string
-          description: "Target component ID or relative path (e.g. CMP-EIDOS-ENGINE)."
+          pattern: "^((CMP|CNT|ARCH|CTR|SYS)-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Target component or container ID or relative path (e.g. CMP-CORE-VALIDATOR)."
+        target_contract:
+          type: string
+          pattern: "^(CTR-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Target contract ID or relative path (e.g. CTR-OPENAPI)."
         target_policy:
           type: string
+          pattern: "^(POL-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Target policy ID or relative path (e.g. POL-001)."
+        target_persona:
+          type: string
+          pattern: "^(PER-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Target persona ID or relative path (e.g. PER-SOFTWARE-ENGINEER)."
         target_invariant_id:
           type: string
+          pattern: "^INV-[A-Z0-9_-]+$"
           description: "Target invariant ID being patched or removed (e.g. INV-GUEST-001)."
         target_design_system:
           type: string
+          pattern: "^(DS-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Target design system ID or relative path (e.g. DS-CORE or eidos/design/systems/core/system.adoc)."
         target_screen:
           type: string
+          pattern: "^(SCR-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Target screen ID or relative path (e.g. SCR-CHECKOUT or eidos/design/screens/checkout.adoc)."
         target_ui_component:
           type: string
+          pattern: "^(UIC-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Target UI component ID or relative path (e.g. UIC-BUTTON or eidos/design/systems/core/components/button.adoc)."
+        target_client:
+          type: string
+          pattern: "^(CLT-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Target client ID or relative path (e.g. CLT-WEB-PORTAL)."
+        target_flow:
+          type: string
+          pattern: "^(FLOW-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Target flow ID or relative path (e.g. FLOW-CHECKOUT)."
         new_capability_id:
           type: string
+          pattern: "^CAP-[A-Z0-9_-]+$"
           description: "New capability ID being created if action is add_capability."
         details:
           type: string
           description: "Additional operational notes, migration directives, or deprecation sunset timeline."
+        expect:
+          type: object
+          additionalProperties: true
+          description: "Optional declarative post-condition assertions (frontmatter key-value pairs or substrings) expected on the target specification after applying a modify_*/extend_*/patch_* mutation."
+  affects:
+    type: object
+    description: "Explicit entity references affected by this SpecDelta (optional)."
+    additionalProperties: false
+    properties:
+      components:
+        type: array
+        items:
+          type: string
+          x-eidos-ref:
+            target_types:
+              - tech/component
+              - tech/container
+            prefixes:
+              - CMP-
+              - CNT-
+      containers:
+        type: array
+        items:
+          type: string
+          x-eidos-ref:
+            target_types:
+              - tech/container
+            prefixes:
+              - CNT-
+      contracts:
+        type: array
+        items:
+          type: string
+          x-eidos-ref:
+            target_types:
+              - tech/contract
+            prefixes:
+              - CTR-
+      policies:
+        type: array
+        items:
+          type: string
+          x-eidos-ref:
+            target_types:
+              - product/policy
+            prefixes:
+              - POL-
+      capabilities:
+        type: array
+        items:
+          type: string
+          x-eidos-ref:
+            target_types:
+              - product/capability
+            prefixes:
+              - CAP-
+      domains:
+        type: array
+        items:
+          type: string
+          x-eidos-ref:
+            target_types:
+              - product/domain
+            prefixes:
+              - DOM-
   blast_radius:
     type: object
     description: "Automated or computed impact analysis across personas, architecture components, and invariants (optional)."
+    additionalProperties: false
     properties:
       impacted_personas:
         type: array
-        description: "List of persona document paths affected by this change."
+        description: "List of persona IDs or document paths affected by this change."
         items:
           type: string
+          x-eidos-ref:
+            target_types:
+              - product/persona
+            prefixes:
+              - PER-
+            entity_label: persona
       impacted_components:
         type: array
-        description: "List of code packages, modules, or services that must be modified."
+        description: "List of code packages, modules, containers, or components that must be modified."
+        items:
+          type: string
+      impacted_containers:
+        type: array
+        description: "List of C4 Level 2 containers impacted by this change."
         items:
           type: string
       impacted_design_systems:
@@ -154,19 +271,33 @@ properties:
         description: "List of design systems impacted by this change (e.g. DS-CORE, DS-ACME)."
         items:
           type: string
+          x-eidos-ref:
+            target_types:
+              - design/system
+            prefixes:
+              - DS-
+            entity_label: entity
       impacted_screens:
         type: array
         description: "List of screen specifications modified or affected."
         items:
           type: string
+          x-eidos-ref:
+            target_types:
+              - design/screen
+            prefixes:
+              - SCR-
+            entity_label: entity
       invariants_to_enforce:
         type: array
-        description: "List of invariant IDs that must have green passing tests before this delta can merge."
+        description: "List of invariant or policy IDs that must have green passing tests before this delta can merge."
         items:
           type: string
+          pattern: "^(INV|POL)-[A-Z0-9_-]+$"
   vcs:
     type: object
     description: "Traceability link to human issue tracker and pull request."
+    additionalProperties: false
     properties:
       issue:
         type: string

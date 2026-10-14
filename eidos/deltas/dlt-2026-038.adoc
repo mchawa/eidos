@@ -1,0 +1,76 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-038
+title: "Modularize Core and CLI God Modules and Bundle Air-Gapped AsciiDoc/Mermaid in Portal"
+status: proposed
+vcs:
+  branch: refactor/modularize-engine-cli-and-airgap-portal
+intent:
+  kind: refactor
+  motivation: "Decompose monolithic 'src/eidos/core/scaffolder.py' (1,611 lines) and 'src/eidos/cli/main.py' (2,622 lines) so each C4 Level 3 component maps 1-to-1 to a focused Python module, and upgrade the Living Web Portal with a standards-compliant AsciiDoc processor and locally bundled Mermaid.js for true 100% air-gapped operation."
+mutations:
+  - action: modify_component
+    target_component: CNT-EIDOS-CORE
+    details: "Split 'src/eidos/core/scaffolder.py' into focused C4 Level 3 component modules matching 'eidos/architecture/containers/core.adoc': 'src/eidos/core/scaffolder.py' ('CMP-LIFECYCLE-SCAFFOLDER'), 'src/eidos/core/design_engine.py' ('CMP-DESIGN-ENGINE'), 'src/eidos/core/initializer.py' ('CMP-REPO-INITIALIZER'), and 'src/eidos/core/delta_engine.py' ('CMP-DELTA-ENGINE' with git-diff/mtime-aware 'verify_delta_mutations'), preserving re-exports in 'scaffolder.py' for backwards compatibility."
+  - action: modify_component
+    target_component: CNT-EIDOS-CLI
+    details: "Decompose 'src/eidos/cli/main.py' into modular command submodules under 'src/eidos/cli/' matching the C4 Level 3 components in 'eidos/architecture/containers/cli.adoc' ('spec_commands.py', 'delta_commands.py', 'plugin_commands.py', 'drift_commands.py', 'index_commands.py', 'component_commands.py', 'portal_commands.py', 'hook_commands.py'), with 'main.py' serving as the root Typer dispatcher."
+  - action: modify_component
+    target_component: CNT-EIDOS-PORTAL
+    details: "Replace the regex-based 'AsciiDocRenderer.tsx' in 'src/eidos/portal/frontend/' with a comprehensive AsciiDoc AST renderer supporting '[quote]' blocks, callouts, multi-line tables, and 'xref:' links; bundle Mermaid.js and fonts directly into the single-file Vite build ('src/eidos/portal/assets.py') so 'eidos serve' and 'eidos build-site' make zero external CDN requests ('cdn.jsdelivr.net', 'fonts.googleapis.com')."
+  - action: patch_invariant
+    target_invariant_id: INV-PORTAL-ZERO-NODE-DEP
+    target_capability: CAP-EXP-001
+    details: "Verify that the compiled portal HTML bundle ('PORTAL_HTML_TEMPLATE') contains zero external HTTP/HTTPS script or stylesheet CDN dependencies and renders offline in air-gapped environments."
+blast_radius:
+  impacted_components:
+    - CNT-EIDOS-CORE
+    - CNT-EIDOS-CLI
+    - CNT-EIDOS-PORTAL
+    - CMP-LIFECYCLE-SCAFFOLDER
+    - CMP-DESIGN-ENGINE
+    - CMP-REPO-INITIALIZER
+    - CMP-CLI-APP
+    - CMP-PORTAL-ASSETS
+    - CMP-PORTAL-BUILDER
+  invariants_to_enforce:
+    - INV-PORTAL-ZERO-NODE-DEP
+    - INV-PORTAL-INTERACTIVE-C4
+    - INV-PORTAL-READING-ERGONOMICS
+    - INV-MUTATION-REVERSIBILITY
+---
+= SpecDelta: Modularize Core and CLI God Modules and Bundle Air-Gapped AsciiDoc/Mermaid in Portal
+:toc: left
+
+== Problem Statement
+
+1. **C4 Level 3 "God Module" Drift in `CNT-EIDOS-CORE` and `CNT-EIDOS-CLI`**:
+   * `eidos/architecture/containers/core.adoc` declares `CMP-LIFECYCLE-SCAFFOLDER`, `CMP-DESIGN-ENGINE`, and `CMP-REPO-INITIALIZER` as distinct C4 Level 3 components, yet all three point to the same 1,611-line file (`src/eidos/core/scaffolder.py`), which also houses the SpecDelta state machine (`verify_delta_mutations`, `execute_delta_mutations`).
+   * `eidos/architecture/containers/cli.adoc` declares 11 distinct C4 Level 3 components (`CMP-CLI-APP` through `CMP-CLI-DOCTOR-HOOKS`), yet all 11 point to the same 2,622-line `src/eidos/cli/main.py`.
+2. **Shallow `verify_delta_mutations` Check**:
+   * In `scaffolder.py` (lines 942–1074), `verify_delta_mutations()` marks `modify_component`, `extend_capability`, `modify_contract`, and `patch_invariant` as `verified = True` merely if the target entity ID exists in the catalog—even if the specification file was never edited.
+3. **Portal Regex AsciiDoc Parser & External CDN Leakage**:
+   * `AsciiDocRenderer.tsx` is a custom ~400-line line-by-line regex parser that fails on standard AsciiDoc blocks such as `[quote]` (used in `eidos/system.adoc`), `include::`, definition lists, and complex tables.
+   * `src/eidos/portal/assets.py` loads Mermaid v10 (`https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js`) and Google Fonts from external CDNs, breaking C4 diagrams in air-gapped environments despite `builder.py` and `POL-004` promising zero-fetch offline execution.
+
+== Architectural & Behavioral Mutations
+
+1. **1-to-1 C4 Component Modularization in `src/eidos/core/`**:
+   * Extract `src/eidos/core/design_engine.py` (`CMP-DESIGN-ENGINE`: W3C DTCG tokens, design systems, UI components, screens).
+   * Extract `src/eidos/core/initializer.py` (`CMP-REPO-INITIALIZER`: `init_repository` and baseline templates).
+   * Extract `src/eidos/core/delta_engine.py` (`CMP-DELTA-ENGINE`: SpecDelta listing, status, `execute_delta_mutations`, and diff/mtime-aware `verify_delta_mutations` that checks whether `modify_*` / `extend_*` / `patch_*` targets were actually modified relative to the delta creation time or Git base).
+   * Keep `src/eidos/core/scaffolder.py` focused on `CMP-LIFECYCLE-SCAFFOLDER` (`create_spec`, `delete_spec`, `promote_component`, `inline_component`, and backwards-compatible re-exports).
+   * Update `eidos/architecture/containers/core.adoc` `source_path` mappings to reflect the dedicated files.
+2. **1-to-1 C4 Component Modularization in `src/eidos/cli/`**:
+   * Split `src/eidos/cli/main.py` into domain-aligned command modules (`spec_commands.py`, `delta_commands.py`, `plugin_commands.py`, `drift_commands.py`, `index_commands.py`, `component_commands.py`, `portal_commands.py`, `hook_commands.py`) registered on the root `app` in `main.py`, and update `eidos/architecture/containers/cli.adoc` `source_path` entries.
+3. **Air-Gapped Portal Bundle & Full AsciiDoc Rendering (`src/eidos/portal/`)**:
+   * Upgrade `AsciiDocRenderer.tsx` to support `[quote]` blocks, callouts, definition lists, multi-line tables, and cross-spec `xref:` navigation.
+   * Bundle Mermaid and required font metrics locally inside the frontend build and recompile `src/eidos/portal/assets.py` so zero external `https://cdn.jsdelivr.net` or `https://fonts.googleapis.com` URLs appear in `PORTAL_HTML_TEMPLATE`.
+
+== Verification Criteria
+
+* Every C4 Level 3 component in `core.adoc` and `cli.adoc` maps to its own dedicated Python module path, and all existing imports from `eidos.core.scaffolder` and `eidos.cli.main` remain backwards-compatible.
+* `verify_delta_mutations()` reports `modify_component` / `extend_capability` mutations as `PENDING` until the target specification file is modified or contains the expected mutation details.
+* `PORTAL_HTML_TEMPLATE` in `src/eidos/portal/assets.py` contains zero `cdn.jsdelivr.net` or `fonts.googleapis.com` references and renders `[quote]` blocks and C4 Mermaid diagrams 100% offline.
+

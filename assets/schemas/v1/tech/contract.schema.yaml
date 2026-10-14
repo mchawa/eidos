@@ -2,6 +2,7 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 title: ContractSchema
 description: "Defines an explicit protocol, API, or interface boundary contract (OpenAPI, gRPC Protobuf, GraphQL, AsyncAPI, JSON-RPC, or CLI interfaces)."
 type: object
+additionalProperties: false
 required:
   - type
   - schema
@@ -23,20 +24,45 @@ properties:
   id:
     type: string
     pattern: "^CTR-[A-Z0-9_-]+$"
-    description: "Unique contract identifier (e.g. CTR-EIDOS-CLI, CTR-AUTH-OPENAPI)."
+    description: "Unique contract identifier (e.g. CTR-CLI, CTR-AUTH-OPENAPI)."
   title:
     type: string
     description: "Human-readable title of this interface contract."
+  status:
+    type: string
+    enum:
+      - draft
+      - proposed
+      - planned
+      - active
+      - deprecated
+      - retired
+    description: "Optional lifecycle state of the contract specification."
   protocol:
     type: string
     description: "Protocol format: openapi, protobuf, graphql, asyncapi, json_schema, json_rpc_stdio, or cli_args."
   owning_container:
     type: string
-    pattern: "^CNT-[A-Z0-9_-]+$"
+    pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
     description: "The container ID (CNT-*) that owns, implements, and provides this contract."
+    x-eidos-ref:
+      target_types:
+        - tech/container
+      prefixes:
+        - CNT-
+      entity_label: container/component
   owning_component:
     type: string
+    pattern: "^((CNT|CMP)-[A-Z0-9_-]+|.*\\.adoc)$"
     description: "Legacy alias: The container or component ID that owns, implements, and provides this contract."
+    x-eidos-ref:
+      target_types:
+        - tech/container
+        - tech/component
+      prefixes:
+        - CNT-
+        - CMP-
+      entity_label: container/component
   specification_file:
     type: string
     description: "Relative path from repository root to the raw interface schema file (e.g. contracts/api.openapi.yaml)."

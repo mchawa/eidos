@@ -101,7 +101,7 @@ class ChangelogGenerator:
                 if len(parts) >= 3:
                     tags.append({"name": parts[0], "date": parts[1], "commit": parts[2]})
             return tags
-        except Exception:
+        except (OSError, subprocess.SubprocessError):
             return []
 
     def get_applied_deltas(self) -> list[dict[str, Any]]:
@@ -140,7 +140,7 @@ class ChangelogGenerator:
 
                 # Determine git commit that introduced or last modified this delta
                 commit = ""
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(OSError, subprocess.SubprocessError):
                     commit = subprocess.check_output(
                         ["git", "log", "-1", "--format=%H", "--", str(df)],
                         cwd=self.root,
@@ -161,7 +161,7 @@ class ChangelogGenerator:
                         "commit": commit,
                     }
                 )
-            except Exception:
+            except OSError:
                 continue
 
         return results
@@ -190,7 +190,7 @@ class ChangelogGenerator:
             raw = subprocess.check_output(cmd, cwd=self.root, text=True, stderr=subprocess.DEVNULL)
             commits = [c.strip() for c in raw.splitlines() if c.strip()]
             return commits
-        except Exception:
+        except (OSError, subprocess.SubprocessError):
             return []
 
     def generate_changelog(self, include_unreleased: bool = True) -> str:
@@ -337,7 +337,7 @@ class ChangelogGenerator:
             docs_changelog.parent.mkdir(parents=True, exist_ok=True)
             # Create relative symlink if supported
             if docs_changelog.is_symlink() or docs_changelog.exists():
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(OSError):
                     docs_changelog.unlink()
             try:
                 os.symlink("../CHANGELOG.md", docs_changelog)

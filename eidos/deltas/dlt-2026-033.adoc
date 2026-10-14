@@ -1,0 +1,57 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-033
+title: Normalize PreToolUse and PostToolUse Hook Payloads Across AI Agent Harnesses
+status: applied
+vcs:
+  branch: feat/cross-harness-hook-payload-normalization
+intent:
+  kind: modification
+  motivation: Ensure 'eidos hook lint' ('PreToolUse' and 'PostToolUse') accurately
+    extracts target file paths and proposed content edits across Antigravity, Claude
+    Code, Cursor, Cline, OpenCode, and OpenAI Codex instead of only matching Antigravity
+    tool payload keys.
+mutations:
+- action: modify_component
+  target_component: CNT-EIDOS-PLUGIN
+  details: Update 'handle_lint_pre_tool_use()' and 'run_lint_hook()' in 'src/eidos/plugin/hooks.py'
+    with a harness-agnostic payload normalizer supporting Antigravity ('write_to_file',
+    'replace_file_content', 'multi_replace_file_content' -> 'TargetFile', 'CodeContent',
+    'ReplacementContent'), Claude Code ('Write', 'Edit', 'MultiEdit' -> 'file_path',
+    'content', 'old_string', 'new_string', 'edits'), and generic 'agent-plugins.org'
+    / Cursor / Cline tool inputs.
+- action: patch_invariant
+  target_invariant_id: INV-AGENT-LINT-HOOK
+  target_capability: CAP-AGENT-001
+  details: Verify that 'PreToolUse' and 'PostToolUse' lint hooks block malformed '.adoc'
+    YAML frontmatter and broken schema references across Antigravity, Claude Code,
+    and Cursor JSON stdin payloads.
+blast_radius:
+  impacted_components:
+  - CNT-EIDOS-PLUGIN
+  - CMP-HOOK-RUNNER
+  invariants_to_enforce:
+  - INV-AGENT-LINT-HOOK
+---
+= SpecDelta: Normalize PreToolUse and PostToolUse Hook Payloads Across AI Agent Harnesses
+:toc: left
+
+== Problem Statement
+
+In `src/eidos/plugin/hooks.py` (`handle_lint_pre_tool_use`, lines 51–103), the `PreToolUse` linter only inspects `tool_name in ("write_to_file", "replace_file_content")` and reads `TargetFile`, `CodeContent`, `TargetContent`, and `ReplacementContent`. While those match Google Antigravity's tool schema, Claude Code sends `tool_name in ("Write", "Edit", "MultiEdit")` with `tool_input.file_path`, `tool_input.content`, `tool_input.old_string`, and `tool_input.new_string` (and `PostToolUse` payloads also pass file paths in `tool_input` when `EIDOS_TARGET_FILE` is not set in the environment). Consequently, `PreToolUse` and `PostToolUse` specification linting is silently bypassed on non-Antigravity harnesses.
+
+== Architectural & Behavioral Mutations
+
+1. **Harness-Agnostic Tool Input Normalizer (`_extract_tool_edit_request`)**:
+   * Normalize `tool_name` and `tool_input` / `tool_Args` across all supported coding agents:
+     - **Antigravity**: `write_to_file`, `replace_file_content`, `multi_replace_file_content` (`TargetFile`, `CodeContent`, `TargetContent`, `ReplacementContent`, `ReplacementChunks`).
+     - **Claude Code / Cursor / OpenCode / Cline**: `Write`, `Edit`, `MultiEdit`, `create_file`, `edit_file`, `str_replace_editor` (`file_path`, `path`, `target_file`, `content`, `file_text`, `old_string`, `new_string`, `old_str`, `new_str`, `edits`).
+2. **`PostToolUse` Stdin Fallback**:
+   * When `EIDOS_TARGET_FILE` is not set in environment variables during `PostToolUse`, extract `file_path` / `TargetFile` from the stdin JSON payload so single-file `.adoc` validation works identically across all harnesses.
+
+== Verification Criteria
+
+* Passing simulated Antigravity (`write_to_file` / `replace_file_content`), Claude Code (`Write` / `Edit` / `MultiEdit`), and Cursor stdin JSON payloads with invalid `.adoc` YAML frontmatter to `eidos hook lint --event PreToolUse` returns a blocking decision in all cases.
+* Unit tests in `tests/test_plugin.py` cover all supported agent harness payload formats.
+

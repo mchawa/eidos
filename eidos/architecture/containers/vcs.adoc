@@ -13,7 +13,7 @@ tier: core
 components:
   - id: CMP-DRIFT-DETECTOR
     name: "DriftDetector"
-    responsibility: "Analyzes Git diffs and working-tree changes, evaluates structural AST symbol modifications, verifies static invariant test bindings, and detects spec-to-code drift across 1-hop knowledge graph neighborhoods."
+    responsibility: "Analyzes Git diffs and working-tree changes, filters SpecDeltas by active lifecycle status, evaluates structural AST symbol and design token/props modifications, verifies static invariant test bindings across domains, policies, and architecture components, and detects spec-to-code and design drift across component-scoped 1-hop knowledge graph neighborhoods with strict path-boundary matching."
     source_path: "src/eidos/vcs/drift.py"
 
 dependencies:

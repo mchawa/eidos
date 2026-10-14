@@ -35,11 +35,20 @@ technical:
       rule: "Eidos must never initiate calls to AI/LLM APIs directly, functioning strictly as a deterministic substrate for external coding agents."
       test_binding: "tests/test_policy_zero_ai.py::test_pyproject_contains_zero_ai_dependencies"
     - id: INV-AGENT-LINT-HOOK
-      rule: "The AI agent plugin lifecycle hooks must enforce living specification syntax, schema validity, and link integrity before task completion."
+      rule: "The AI agent plugin lifecycle hooks must normalize PreToolUse and PostToolUse payloads across Antigravity, Claude Code, Cursor, Cline, OpenCode, and Codex, enforcing living specification syntax, schema validity, and link integrity before task completion."
       test_binding: "tests/test_plugin.py::test_doc_lint_hook_stop_event"
     - id: INV-AGENT-DRIFT-HOOK
       rule: "The AI agent plugin lifecycle hooks must enforce spec-to-code synchronization (drift gate) before task completion."
       test_binding: "tests/test_plugin.py::test_drift_hook_stop_event_drift_detected"
+    - id: INV-HOOK-CLI-NATIVE
+      rule: "All lifecycle hooks in hooks.json must invoke the native eidos hook CLI entrypoint directly without shell or Python wrapper scripts."
+      test_binding: "tests/test_plugin.py::test_hooks_are_cli_native"
+    - id: INV-HOOK-FAIL-LOUD
+      rule: "Lifecycle hooks (PostInvocation and Stop) must report internal validation or drift execution errors via structured JSON output (injectSteps or decision: continue) rather than failing silently."
+      test_binding: "tests/test_plugin.py::test_hooks_fail_loud_on_internal_error"
+    - id: INV-HOOK-BLOCK-ONCE
+      rule: "Stop lifecycle hooks (eidos hook lint --event Stop and eidos hook drift --event Stop) must block completion once per distinct failure fingerprint and allow subsequent termination attempts with the identical fingerprint."
+      test_binding: "tests/test_plugin.py::test_stop_gate_block_once_and_allow_second_attempt"
     - id: INV-AGENT-CONTEXT-SLICING
       rule: "Context slicing must extract compact, token-efficient architectural subgraphs without phantom dependencies or circular module errors."
       test_binding: "tests/test_context.py::test_context_slice_by_file"

@@ -2,6 +2,7 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 title: CapabilitySchema
 description: "Defines a concrete product capability, bridging human Jobs-To-Be-Done (JTBD) with technical invariants and test bindings."
 type: object
+additionalProperties: false
 required:
   - type
   - schema
@@ -28,14 +29,38 @@ properties:
     description: "Descriptive human-readable title of this capability."
   domain:
     type: string
+    pattern: "^(DOM-[A-Z0-9_-]+|.*\\.adoc)$"
     description: "The parent domain ID (DOM-*) that owns this capability."
+    x-eidos-ref:
+      target_types:
+        - product/domain
+      prefixes:
+        - DOM-
+      entity_label: domain
+  parent_domain:
+    type: string
+    pattern: "^(DOM-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Legacy alias for domain: parent domain ID (DOM-*) that owns this capability."
+    x-eidos-ref:
+      target_types:
+        - product/domain
+      prefixes:
+        - DOM-
+      entity_label: domain
   status:
     type: string
-    pattern: "^[a-z0-9_-]+$"
-    description: "Lifecycle state: draft, proposed, active, deprecated, or custom state slug."
+    enum:
+      - draft
+      - proposed
+      - planned
+      - active
+      - deprecated
+      - retired
+    description: "Lifecycle state: draft, proposed, planned, active, deprecated, or retired."
     examples:
       - "draft"
       - "proposed"
+      - "planned"
       - "active"
       - "deprecated"
   version:
@@ -44,16 +69,24 @@ properties:
   business:
     type: object
     description: "Business lens: personas served, jobs-to-be-done, monetization tiers, and applicable policies."
+    additionalProperties: false
     required:
       - personas
       - jtbd
     properties:
       personas:
         type: array
-        description: "List of persona document paths that benefit from or use this capability."
+        description: "List of persona IDs or document paths that benefit from or use this capability."
         items:
           type: string
-          description: "Relative path to a persona document (e.g. eidos/personas/product-lead.adoc)."
+          pattern: "^(PER-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Persona ID or relative path to a persona document (e.g. PER-PRODUCT-LEAD or eidos/personas/product-lead.adoc)."
+          x-eidos-ref:
+            target_types:
+              - product/persona
+            prefixes:
+              - PER-
+            entity_label: persona
       jtbd:
         type: string
         description: "Core Job-To-Be-Done statement ('When [situation], I want to [action], so that [outcome]')."
@@ -65,48 +98,91 @@ properties:
           description: "Tier name."
       policies:
         type: array
-        description: "List of system policy document paths that govern or constrain this capability."
+        description: "List of system policy IDs or document paths that govern or constrain this capability."
         items:
           type: string
-          description: "Relative path to a policy document (e.g. eidos/policies/POL-001-git-as-single-source-of-truth.adoc)."
+          pattern: "^(POL-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Policy ID or relative path to a policy document (e.g. POL-001-GIT-SOURCE-OF-TRUTH or eidos/policies/POL-001-git-as-single-source-of-truth.adoc)."
+          x-eidos-ref:
+            target_types:
+              - product/policy
+            prefixes:
+              - POL-
+            entity_label: policy
   experience:
     type: object
     description: "Design & UI/UX lens: screens, user flows, UI components, and supporting design systems (optional for headless/backend capabilities)."
-    additionalProperties: true
+    additionalProperties: false
     properties:
       clients:
         type: array
-        description: "List of client application specification paths delivering this capability."
+        description: "List of client application specification paths or IDs delivering this capability."
         items:
           type: string
+          pattern: "^(CLT-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Relative path to client specification or client ID (e.g. CLT-WEB-PORTAL)."
+          x-eidos-ref:
+            target_types:
+              - design/client
+            prefixes:
+              - CLT-
+            entity_label: client
       design_systems:
         type: array
         description: "List of design system paths or IDs supporting this capability (e.g. eidos/design/systems/core/system.adoc or DS-CORE)."
         items:
           type: string
+          pattern: "^(DS-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Relative path to design system specification or design system ID."
+          x-eidos-ref:
+            target_types:
+              - design/system
+            prefixes:
+              - DS-
+            entity_label: entity
       screens:
         type: array
-        description: "List of screen specification document paths delivering this capability."
+        description: "List of screen specification document paths or IDs delivering this capability."
         items:
           type: string
-          description: "Relative path to screen specification (e.g. eidos/design/screens/checkout.adoc)."
+          pattern: "^(SCR-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Relative path to screen specification or screen ID (e.g. eidos/design/screens/checkout.adoc)."
+          x-eidos-ref:
+            target_types:
+              - design/screen
+            prefixes:
+              - SCR-
+            entity_label: entity
       flows:
         type: array
-        description: "List of user flow document paths delivering this capability."
+        description: "List of user flow document paths or IDs delivering this capability."
         items:
           type: string
-          description: "Relative path to user flow specification (e.g. eidos/design/flows/onboarding.adoc)."
+          pattern: "^(FLOW-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Relative path to user flow specification or flow ID (e.g. eidos/design/flows/onboarding.adoc)."
+          x-eidos-ref:
+            target_types:
+              - design/flow
+            prefixes:
+              - FLOW-
+            entity_label: flow
       ui_components:
         type: array
         description: "Key UI component manifests utilized by this capability."
         items:
           type: string
+          pattern: "^(UIC-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Relative path to UI component specification or component ID (e.g. UIC-CORE-BUTTON)."
+          x-eidos-ref:
+            target_types:
+              - design/ui-component
+            prefixes:
+              - UIC-
+            entity_label: entity
   technical:
     type: object
     description: "Technical lens: implementing C4 containers, optional internal components, interface contracts, and non-negotiable test-bound invariants."
+    additionalProperties: false
     required:
       - containers
     properties:
@@ -115,23 +191,83 @@ properties:
         description: "Primary C4 Level 2 containers (CNT-* IDs or container spec paths) that implement this capability."
         items:
           type: string
+          pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Container ID (e.g. CNT-API-SERVER) or relative path to container specification."
+          x-eidos-ref:
+            target_types:
+              - tech/container
+            prefixes:
+              - CNT-
+            entity_label: container
       components:
         type: array
         description: "Optional C4 Level 3 internal components (CMP-* IDs or component spec paths) that implement this capability."
         items:
           type: string
           description: "Component ID (e.g. CMP-AUTH-ENGINE) or relative path to component specification."
+          x-eidos-ref:
+            target_types:
+              - tech/component
+              - tech/container
+            prefixes:
+              - CMP-
+              - CNT-
+            allow_non_id_string: true
+            entity_label: component
       contracts:
         type: object
         description: "External API endpoints, CLI interfaces, and async event contracts (optional)."
+        additionalProperties: false
         properties:
           interfaces:
             type: array
-            description: "Exposed CLI commands, REST endpoints, or RPC procedures."
+            description: "Exposed CLI commands, REST endpoints, RPC procedures, or contract IDs."
             items:
               type: string
-              description: "Interface signature (e.g. 'eidos spec validate' or 'POST /api/v1/invites')."
+              description: "Interface signature (e.g. 'eidos spec validate' or 'POST /api/v1/invites') or contract ID."
+              x-eidos-ref:
+                target_types:
+                  - tech/contract
+                prefixes:
+                  - CTR-
+                allow_non_id_string: true
+                entity_label: contract
+          provides:
+            type: array
+            description: "Contracts (CTR-*) provided by this capability."
+            items:
+              type: string
+              pattern: "^(CTR-[A-Z0-9_-]+|.*\\.adoc)$"
+              x-eidos-ref:
+                target_types:
+                  - tech/contract
+                prefixes:
+                  - CTR-
+                entity_label: contract
+          requires:
+            type: array
+            description: "Contracts (CTR-*) required by this capability."
+            items:
+              type: string
+              pattern: "^(CTR-[A-Z0-9_-]+|.*\\.adoc)$"
+              x-eidos-ref:
+                target_types:
+                  - tech/contract
+                prefixes:
+                  - CTR-
+                entity_label: contract
+          consumes:
+            type: array
+            description: "Contracts (CTR-*) consumed by this capability."
+            items:
+              type: string
+              pattern: "^(CTR-[A-Z0-9_-]+|.*\\.adoc)$"
+              x-eidos-ref:
+                target_types:
+                  - tech/contract
+                prefixes:
+                  - CTR-
+                entity_label: contract
           events_published:
             type: array
             description: "Domain events emitted by this capability."
@@ -149,6 +285,7 @@ properties:
         description: "Deterministic rules and constraints bound directly to automated tests (optional during draft, mandatory for active status)."
         items:
           type: object
+          additionalProperties: false
           required:
             - id
             - rule
@@ -156,6 +293,7 @@ properties:
           properties:
             id:
               type: string
+              pattern: "^INV-[A-Z0-9_-]+$"
               description: "Unique invariant identifier (e.g. INV-SPEC-VALIDATION)."
             rule:
               type: string

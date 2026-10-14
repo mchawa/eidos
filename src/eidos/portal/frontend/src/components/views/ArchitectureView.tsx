@@ -48,7 +48,7 @@ const getTierStyle = (tierId?: string) => {
 export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProps) {
   const [level, setLevelState] = React.useState<1 | 2 | 3>(1);
   const [selectedContainerId, setSelectedContainerId] = React.useState<string>(
-    data.components[0]?.id || "CNT-EIDOS-CORE"
+    data.components[0]?.id || "CNT-CORE"
   );
   const [zoom, setZoom] = React.useState<number>(1);
   const [pan, setPan] = React.useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -193,9 +193,9 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
   // Compute active diagram definition
   const currentDiagramSource = React.useMemo(() => {
     if (level === 1) {
-      return data.diagrams.c4_context || "graph TD\nUser[User]-->Eidos[Eidos Living System]";
+      return data.diagrams.c4_context || "graph TD\nUser[User]-->System[System]";
     } else if (level === 2) {
-      return data.diagrams.c4_containers || "graph TD\nCore[CNT-EIDOS-CORE]";
+      return data.diagrams.c4_containers || "graph TD\nCore[CNT-CORE]";
     } else {
       const compMap = data.diagrams.c4_components || {};
       return (

@@ -1,0 +1,65 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-035
+title: "Incremental SQLite Caching for Specification Validation and Static Invariant Verification"
+status: proposed
+vcs:
+  branch: perf/sqlite-cached-validation-and-invariants
+intent:
+  kind: performance_optimization
+  motivation: "Eliminate O(N) full-repository specification parsing and test-suite AST scanning on every 'PostInvocation' and 'Stop' agent lifecycle hook by caching per-file schema validation and test-function invariant bindings in 'eidos/.cache/index.db' keyed by mtime and SHA-256."
+mutations:
+  - action: modify_component
+    target_component: CNT-EIDOS-INDEX
+    details: "Add 'spec_validation_cache' and 'test_binding_cache' tables in 'src/eidos/core/graph_index.py' ('eidos/.cache/index.db') keyed by relative file path, 'mtime_ns', and 'sha256' digest (plus bundled schema digest) to persist parsed spec frontmatter validation states and extracted test function AST ranges/invariant tokens."
+  - action: modify_component
+    target_component: CNT-EIDOS-CORE
+    details: "Update 'SpecValidator.validate_directory()' in 'src/eidos/core/validator.py' to reuse cached per-document schema validation results for unchanged '.adoc' files while still running fast in-memory cross-reference integrity checks across the catalog."
+  - action: modify_component
+    target_component: CNT-EIDOS-VCS
+    details: "Update 'extract_invariants_and_verify()' and 'detect_orphan_invariants()' in 'src/eidos/vcs/drift.py' to read cached test function definitions and '# INV-*' bindings from 'eidos/.cache/index.db', only re-parsing test files whose 'mtime_ns' or 'sha256' changed since the last run."
+  - action: patch_invariant
+    target_invariant_id: INV-AGENT-GRAPH-INDEX-FRESHNESS
+    target_capability: CAP-AGENT-001
+    details: "Enforce incremental mtime/SHA-256 invalidation for cached specification validation and test invariant bindings so warm 'eidos drift' and 'eidos hook drift' executions avoid redundant disk and AST scans."
+blast_radius:
+  impacted_components:
+    - CNT-EIDOS-INDEX
+    - CNT-EIDOS-CORE
+    - CNT-EIDOS-VCS
+    - CMP-GRAPH-STORAGE
+    - CMP-INCREMENTAL-SYNC-ENGINE
+    - CMP-SPEC-VALIDATOR
+    - CMP-DRIFT-DETECTOR
+  invariants_to_enforce:
+    - INV-AGENT-GRAPH-INDEX-FRESHNESS
+    - INV-SPEC-VALIDATION
+    - INV-DRIFT-DETECTION-ACCURACY
+---
+= SpecDelta: Incremental SQLite Caching for Specification Validation and Static Invariant Verification
+:toc: left
+
+== Problem Statement
+
+Every time `eidos drift` or `eidos hook drift` (`PostInvocation` and `Stop` hooks) runs, [`detect_drift()`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/vcs/drift.py#L848) performs two full $O(N)$ repository crawls from scratch:
+1. `validate_directory(eidos_dir)` parses every `.adoc` file in `eidos/` and runs Draft 2020-12 JSON Schema validation against YAML schemas on disk.
+2. `extract_invariants_and_verify()` and `detect_orphan_invariants()` crawl all test files (`tests/**/*test*.py`, `*.spec.ts`, `*_test.go`, etc.) via `rglob`, read every test file from disk, and run `ASTIndexer.list_test_functions()` + `extract_test_bindings()` on every file.
+
+In repositories with hundreds of specifications and thousands of test files, running this uncached on every agent turn (`PostInvocation`) introduces multi-second latency.
+
+== Architectural & Behavioral Mutations
+
+1. **SQLite Test Binding & Function Cache (`test_binding_cache`)**:
+   * Create `test_binding_cache (file_path TEXT PRIMARY KEY, mtime_ns INTEGER, sha256 TEXT, functions_json TEXT, bindings_json TEXT)` in `eidos/.cache/index.db`.
+   * During `extract_invariants_and_verify()` and `detect_orphan_invariants()`, check each discovered test file's `st_mtime_ns`. If it matches `test_binding_cache.mtime_ns`, load `list_test_functions()` and `extract_test_bindings()` directly from SQLite without reading or AST-parsing the file.
+   * Prune deleted test files from `test_binding_cache` automatically.
+2. **Incremental Spec Validation Cache (`spec_validation_cache`)**:
+   * Create `spec_validation_cache (file_path TEXT PRIMARY KEY, mtime_ns INTEGER, sha256 TEXT, schema_hash TEXT, doc_json TEXT, schema_errors_json TEXT)` in `eidos/.cache/index.db`.
+   * When `SpecValidator.validate_directory()` runs, reuse cached `SpecDocument` frontmatter and per-file JSON Schema validation results for any `.adoc` file whose `mtime_ns` and `schema_hash` are unchanged, then run the cross-document catalog reference check (`_validate_semantic_references`) across the assembled catalog in memory.
+
+== Verification Criteria
+
+* A warm invocation of `eidos drift` when zero `.adoc` or test files have changed executes zero `ASTIndexer.list_test_functions()` calls and zero redundant JSON Schema validations.
+* Modifying a test file or `.adoc` specification immediately invalidates its cache entry via `mtime_ns` / `sha256` and produces identical validation and invariant coverage results to a cold run.
+

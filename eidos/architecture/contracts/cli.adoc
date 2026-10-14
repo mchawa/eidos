@@ -18,7 +18,7 @@ Displays current Eidos engine version (e.g. `eidos 0.8.0`).
 * **Exit Code**: 0
 
 === `eidos info`
-Displays current engine version, loaded v1 schemas, supported VCS platforms, and available agent harnesses.
+Displays current engine version, loaded v1 schemas, and available agent plugin targets.
 * **Exit Code**: 0
 
 === `eidos validate [PATH]`
@@ -196,12 +196,31 @@ Bootstraps a repository with an empty Eidos living specification skeleton, an em
   - `0`: Initialization and immediate validation successful.
   - `1`: Directory already initialized without `--force`, or validation failed.
 
+=== `eidos doctor [--path PATH] [--fix] [--json]`
+Runs a comprehensive workspace health and configuration diagnostic across living specifications, knowledge graph index, agent plugin installations, and git hooks.
+* **Options**:
+  - `--path, -p`: Path to eidos specifications directory (defaults to `./eidos`).
+  - `--fix`: Automatically repair detected index or symlink view issues.
+  - `--json`: Output diagnostic report in JSON format.
+* **Exit Codes**:
+  - `0`: All diagnostic checks passed.
+  - `1`: One or more critical workspace diagnostics failed.
+
+=== `eidos hook`
+Executes CLI-native agent lifecycle hooks for documentation linting and spec-to-code drift gates across supported AI coding harnesses.
+* **Sub-commands**:
+  - `lint [--event <event>] [--workspace <path>]`: Evaluates PreToolUse / PostToolUse documentation and markdown placement policies.
+  - `drift [--event <event>] [--workspace <path>]`: Evaluates PostInvocation / Stop spec-to-code drift gates with Block-Once fingerprint persistence.
+* **Exit Codes**:
+  - `0`: Hook evaluation completed (JSON decision emitted to stdout).
+
 === Convenience Shortcuts
 * `eidos drift`: Runs spec-to-code drift detection.
 * `eidos reconcile`: Runs spec reconciliation assistant (`eidos sync`).
 * `eidos create <type> <id> --title <title>`: Direct shortcut to `eidos spec create`.
 * `eidos delete <id_or_path> [--force]`: Direct shortcut to `eidos spec delete`.
 * `eidos list [--type <type>] [--status <status>]`: Direct shortcut to `eidos spec list`.
+* `eidos containers [--path <path>]`: Direct shortcut to `eidos spec containers`.
 * `eidos serve`: Direct shortcut to `eidos portal serve`.
 * `eidos build-site`: Direct shortcut to `eidos portal build`.
 * `eidos install`: Direct shortcut to `eidos plugin install`.
@@ -213,12 +232,12 @@ Bootstraps a repository with an empty Eidos living specification skeleton, an em
 == Command Groups (Rich Help Panels)
 
 Commands are semantically organized into six functional panels in CLI help output (`eidos --help`):
-1. **Setup & Workspace**: `version`, `info`, `init`
+1. **Setup & Workspace**: `version`, `info`, `init`, `doctor`
 2. **Governance & Verification**: `validate`, `lint`, `drift`, `reconcile`, `sync`
 3. **Living Web Portal**: `portal`, `serve`, `build-site`
 4. **Living Catalog & Mutations**: `spec`, `delta`, `component`, `create`, `delete`, `list`, `containers`, `components`, `changelog`
 5. **Knowledge Graph & AI Context**: `index`, `context`, `repo-map`, `find-symbol`
-6. **Agent Ecosystem & Plugins**: `plugin`, `install`, `uninstall`
+6. **Agent Ecosystem & Plugins**: `plugin`, `install`, `uninstall`, `hook`
 
 
 

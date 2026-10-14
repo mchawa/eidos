@@ -1,5 +1,5 @@
 /**
- * Data contracts for the Eidos Living Web Portal (CTR-EIDOS-PORTAL).
+ * Data contracts for the Eidos Living Web Portal.
  */
 
 export interface SpecOverview {

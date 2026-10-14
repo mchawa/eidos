@@ -171,15 +171,18 @@ def test_capability_semantic_references_broken(tmp_path, validator):
 
 
 def test_component_semantic_references_broken(tmp_path, validator):
-    """Verify Initiative A: Component dependencies and contracts are checked."""
+    """Verify Initiative A: Container and Component dependencies, interfaces, and contracts are checked via x-eidos-ref."""
     eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
     comps_dir = eidos_dir / "architecture" / "components"
+    cnts_dir.mkdir(parents=True)
     comps_dir.mkdir(parents=True)
 
-    (comps_dir / "comp.adoc").write_text(
+    (cnts_dir / "cli.adoc").write_text(
         "---\n"
-        "type: tech/component\n"
-        "id: CMP-TEST-CLI\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-TEST-CLI\n"
         "name: CLI\n"
         "container_type: cli_app\n"
         "runtime: python\n"
@@ -197,6 +200,22 @@ def test_component_semantic_references_broken(tmp_path, validator):
         "= CLI\n"
     )
 
+    (comps_dir / "comp.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "schema: schemas/v1/tech/component.schema.yaml\n"
+        "id: CMP-TEST-PARSER\n"
+        "name: Parser\n"
+        "container: CNT-MISSING-CONTAINER\n"
+        "status: planned\n"
+        "responsibility: Parse specs\n"
+        "interfaces:\n"
+        "  consumes:\n"
+        "    - CMP-MISSING-PEER\n"
+        "---\n"
+        "= Parser\n"
+    )
+
     report = validator.validate_directory(eidos_dir)
     assert not report.is_clean
     broken_str = "\n".join(report.broken_references)
@@ -204,6 +223,8 @@ def test_component_semantic_references_broken(tmp_path, validator):
     assert "CMP-MISSING-DEP" in broken_str
     assert "CTR-MISSING-PROV" in broken_str
     assert "CTR-MISSING-REQ" in broken_str
+    assert "CNT-MISSING-CONTAINER" in broken_str
+    assert "CMP-MISSING-PEER" in broken_str
 
 
 def test_contract_and_domain_semantic_references(tmp_path, validator):
@@ -355,6 +376,176 @@ def test_client_and_flow_semantic_validation(tmp_path, validator):
     assert "DS-NONEXISTENT" in broken_str
     assert "CMP-NONEXISTENT" in broken_str
     assert "CLT-GHOST-CLIENT" in broken_str
+
+
+def test_strict_schemas_reject_unknown_fields_and_enforce_enums_and_patterns(tmp_path, validator):
+    """Verify A5: Strict schemas enforce additionalProperties: false, status enums (with planned), and ID regex patterns."""
+    # 1. Verify all 16 bundled schemas enforce additionalProperties: false on root
+    for schema_key, schema_data in validator._schema_cache.items():
+        if schema_key.endswith(".schema.yaml"):
+            assert schema_data.get("additionalProperties") is False, (
+                f"Schema {schema_key} missing root additionalProperties: false"
+            )
+            props = schema_data.get("properties", {})
+            if "status" in props:
+                status_enum = props["status"].get("enum", [])
+                assert "planned" in status_enum, f"Schema {schema_key} status enum missing 'planned': {status_enum}"
+
+    # 2. Verify 'status: planned' is accepted on capability, component, design, exploration, and delta
+    cap_file = tmp_path / "cap_planned.adoc"
+    cap_file.write_text(
+        "---\n"
+        "type: product/capability\n"
+        "schema: schemas/v1/product/capability.schema.yaml\n"
+        "id: CAP-TEST-PLANNED\n"
+        "title: Planned Capability\n"
+        "domain: DOM-CORE\n"
+        "status: planned\n"
+        "business:\n"
+        "  personas:\n"
+        "    - PER-DEV\n"
+        "  jtbd: When planning, I want status planned, so that roadmap items validate.\n"
+        "technical:\n"
+        "  containers:\n"
+        "    - CNT-CORE\n"
+        "  invariants:\n"
+        "    - id: INV-SPEC-VALIDATION\n"
+        "      rule: Must validate\n"
+        "      test_binding: tests/test_validator.py::test_strict_schemas\n"
+        "---\n"
+        "= Planned Capability\n",
+        encoding="utf-8",
+    )
+    from eidos.core.parser import parse_spec_file
+
+    doc_valid = parse_spec_file(cap_file)
+    assert validator.validate_document(doc_valid) == []
+
+    # 3. Verify unknown property, invalid status, and invalid invariant ID pattern are rejected
+    bad_file = tmp_path / "cap_bad.adoc"
+    bad_file.write_text(
+        "---\n"
+        "type: product/capability\n"
+        "schema: schemas/v1/product/capability.schema.yaml\n"
+        "id: CAP-TEST-BAD\n"
+        "title: Bad Capability\n"
+        "domain: DOM-CORE\n"
+        "status: bogus_status\n"
+        "unrecognized_root_field: true\n"
+        "business:\n"
+        "  personas: []\n"
+        "  jtbd: Test\n"
+        "  unrecognized_nested_field: 123\n"
+        "technical:\n"
+        "  containers:\n"
+        "    - CNT-CORE\n"
+        "  invariants:\n"
+        "    - id: BAD_RULE_001\n"
+        "      rule: Must fail pattern\n"
+        "      test_binding: tests/test_validator.py::test_strict\n"
+        "---\n"
+        "= Bad Capability\n",
+        encoding="utf-8",
+    )
+    doc_bad = parse_spec_file(bad_file)
+    errs = validator.validate_document(doc_bad)
+    err_text = "\n".join(errs)
+    assert "unrecognized_root_field" in err_text
+    assert "unrecognized_nested_field" in err_text
+    assert "bogus_status" in err_text
+    assert "BAD_RULE_001" in err_text
+
+
+def test_schema_driven_x_eidos_ref_annotations_present(validator):
+    """Verify A4: Reference fields across v1 schemas declare x-eidos-ref metadata."""
+
+    def count_refs(node) -> int:
+        if isinstance(node, dict):
+            c = 1 if "x-eidos-ref" in node else 0
+            return c + sum(count_refs(v) for v in node.values())
+        if isinstance(node, list):
+            return sum(count_refs(i) for i in node)
+        return 0
+
+    total_annotations = sum(
+        count_refs(schema)
+        for key, schema in validator._schema_cache.items()
+        if key.endswith(".schema.yaml") and "/" not in key
+    )
+    assert total_annotations >= 35, f"Expected >= 35 x-eidos-ref annotations across v1 schemas, found {total_annotations}"
+
+
+def test_validator_checks_package_path_specification_file_and_cli_contract_parity(tmp_path, validator):
+    """Verify SpecValidator detects missing package_path, missing specification_file, and undocumented CLI commands."""
+    eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    ctrs_dir = eidos_dir / "architecture" / "contracts"
+    cnts_dir.mkdir(parents=True)
+    ctrs_dir.mkdir(parents=True)
+
+    src_cli = tmp_path / "src" / "cli"
+    src_cli.mkdir(parents=True)
+    (src_cli / "main.py").write_text(
+        "import typer\napp = typer.Typer()\n\n"
+        "@app.command()\ndef documented_cmd():\n    pass\n\n"
+        "@app.command()\ndef undocumented_secret_cmd():\n    pass\n",
+        encoding="utf-8",
+    )
+
+    (cnts_dir / "cli.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-CLI\n"
+        "name: CLI Container\n"
+        "container_type: cli\n"
+        "runtime: Python 3.12\n"
+        "package_path:\n"
+        "  - src/cli\n"
+        "  - src/missing_pkg\n"
+        "components: []\n"
+        "---\n"
+        "= CLI Container\n",
+        encoding="utf-8",
+    )
+
+    (ctrs_dir / "cli.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-CLI\n"
+        "title: CLI Contract\n"
+        "protocol: cli_args\n"
+        "owning_container: CNT-CLI\n"
+        "specification_file: src/cli/main.py\n"
+        "---\n"
+        "= CLI Contract\n\n"
+        "=== `documented-cmd`\nDocumented command.\n",
+        encoding="utf-8",
+    )
+
+    (ctrs_dir / "missing.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-MISSING\n"
+        "title: Missing Contract File\n"
+        "protocol: rest_openapi\n"
+        "owning_container: CNT-CLI\n"
+        "specification_file: src/cli/nonexistent_openapi.yaml\n"
+        "---\n"
+        "= Missing Contract\n",
+        encoding="utf-8",
+    )
+
+    report = validator.validate_directory(eidos_dir)
+    broken_text = "\n".join(report.broken_references)
+    assert "src/missing_pkg" in broken_text
+    assert "src/cli/nonexistent_openapi.yaml" in broken_text
+    assert "undocumented-secret-cmd" in broken_text
+    assert "documented-cmd" not in broken_text
+
+
 
 
 

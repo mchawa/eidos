@@ -2,6 +2,7 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 title: ScreenSchema
 description: "Defines a user-facing product screen/view, route, layout slots, state machine (loading, empty, active, error), and bidirectional links to capabilities and design systems."
 type: object
+additionalProperties: false
 required:
   - type
   - schema
@@ -29,40 +30,84 @@ properties:
     description: "URL path, view surface, or deep link identifier (e.g. '/checkout', '/settings/billing', 'App > CheckoutModal')."
   client:
     type: string
+    pattern: "^(CLT-[A-Z0-9_-]+|.*\\.adoc)$"
     description: "ID or relative path of the owning client application (e.g. CLT-WEB-PORTAL)."
+    x-eidos-ref:
+      target_types:
+        - design/client
+      prefixes:
+        - CLT-
+      entity_label: entity
+  design_system:
+    type: string
+    pattern: "^(DS-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Optional primary design system ID or relative path."
+    x-eidos-ref:
+      target_types:
+        - design/system
+      prefixes:
+        - DS-
+      entity_label: entity
   status:
     type: string
-    pattern: "^[a-z0-9_-]+$"
-    description: "Lifecycle status: active, proposed, draft, deprecated."
+    enum:
+      - draft
+      - proposed
+      - planned
+      - active
+      - deprecated
+      - retired
+    description: "Lifecycle status: draft, proposed, planned, active, deprecated, or retired."
     examples:
       - "active"
       - "proposed"
+      - "planned"
       - "draft"
       - "deprecated"
   capabilities:
     type: array
-    description: "List of product capability document paths delivering value on this screen."
+    description: "List of product capability document paths or IDs delivering value on this screen."
     items:
       type: string
-      description: "Relative path to a capability document (e.g. eidos/domains/checkout/capabilities/express-checkout.adoc)."
+      pattern: "^(CAP-[A-Z0-9_-]+|.*\\.adoc)$"
+      description: "Capability ID or relative path to a capability document (e.g. eidos/domains/checkout/capabilities/express-checkout.adoc)."
+      x-eidos-ref:
+        target_types:
+          - product/capability
+        prefixes:
+          - CAP-
+        entity_label: capability
   supported_design_systems:
     type: array
     description: "List of design system document paths or IDs verified to support and style this screen."
     items:
       type: string
+      pattern: "^(DS-[A-Z0-9_-]+|.*\\.adoc)$"
       description: "Relative path or ID of a design system (e.g. eidos/design/systems/core/system.adoc or DS-CORE)."
+      x-eidos-ref:
+        target_types:
+          - design/system
+        prefixes:
+          - DS-
+        entity_label: entity
   slots:
     type: object
     description: "Named layout slots and abstract UI component assignments composing this screen view."
-    additionalProperties: true
+    additionalProperties:
+      anyOf:
+        - type: string
+        - type: array
+          items:
+            type: string
+        - type: object
   states:
     type: array
     description: "Explicit screen state matrix: loading, empty, active/success, error, partial."
     items:
       type: object
+      additionalProperties: false
       required:
         - name
-      additionalProperties: true
       properties:
         name:
           type: string
@@ -72,15 +117,21 @@ properties:
           description: "Visual and behavioral specification for this state."
   user_flows:
     type: array
-    description: "List of user flow document paths that transition through this screen."
+    description: "List of user flow document paths or IDs that transition through this screen."
     items:
       type: string
+      pattern: "^(FLOW-[A-Z0-9_-]+|.*\\.adoc)$"
+      x-eidos-ref:
+        target_types:
+          - design/flow
+        prefixes:
+          - FLOW-
+        entity_label: flow
   external_references:
     type: object
     description: "Design mockups, Figma frames, or live prototypes."
-    additionalProperties: true
+    additionalProperties: false
     properties:
       figma_frame_url:
         type: string
         description: "URL to Figma screen frame or prototype flow."
-

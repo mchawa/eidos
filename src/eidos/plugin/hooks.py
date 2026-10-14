@@ -23,6 +23,12 @@ def find_workspace_root(payload: dict[str, Any] | None = None) -> Path:
             p = Path(ws_paths[0])
             if p.exists():
                 return p.resolve()
+        for key in ("cwd", "workspaceRoot", "workspace_root"):
+            val = payload.get(key)
+            if isinstance(val, str) and val.strip():
+                p = Path(val.strip())
+                if p.exists():
+                    return p.resolve()
 
     return find_repo_root()
 
@@ -48,59 +54,197 @@ def is_eidos_doc(target_file_str: str, workspace_root: Path | None = None) -> bo
     return bool(parts and parts[0] == "eidos")
 
 
+def _extract_tool_edit_request(
+    payload: dict[str, Any], workspace_root: Path | None = None
+) -> tuple[str, str | None]:
+    """Normalize tool target file and proposed content across Antigravity, Claude Code, Cursor, Cline, and OpenCode."""
+    import os
+
+    tool_call = payload.get("toolCall")
+    if isinstance(tool_call, dict):
+        args = tool_call.get("args") or tool_call.get("input") or tool_call.get("arguments") or {}
+    else:
+        args = (
+            payload.get("tool_input")
+            or payload.get("args")
+            or payload.get("input")
+            or payload.get("parameters")
+            or payload.get("arguments")
+            or {}
+        )
+    if not isinstance(args, dict):
+        args = {}
+
+    target_file_str = ""
+    for key in ("TargetFile", "file_path", "path", "target_file", "filepath", "file"):
+        val = args.get(key)
+        if isinstance(val, str) and val.strip():
+            target_file_str = val.strip()
+            break
+
+    if not target_file_str:
+        for key in ("TargetFile", "file_path", "path", "target_file"):
+            val = payload.get(key)
+            if isinstance(val, str) and val.strip():
+                target_file_str = val.strip()
+                break
+
+    if not target_file_str:
+        target_file_str = os.environ.get("EIDOS_TARGET_FILE", "").strip()
+
+    if not target_file_str:
+        return "", None
+
+    ws_root = (workspace_root or find_workspace_root(payload)).resolve()
+    raw_target = Path(target_file_str)
+    resolved_target = raw_target if raw_target.is_absolute() else (ws_root / raw_target)
+    if not resolved_target.exists() and raw_target.exists():
+        resolved_target = raw_target
+
+    content_to_check: str | None = None
+    for content_key in ("CodeContent", "content", "file_text", "new_content"):
+        val = args.get(content_key)
+        if isinstance(val, str):
+            content_to_check = val
+            break
+
+    chunks = args.get("ReplacementChunks") or args.get("edits") or args.get("chunks")
+    old_s = args.get("TargetContent") if "TargetContent" in args else args.get("old_string", args.get("old_str"))
+    new_s = (
+        args.get("ReplacementContent")
+        if "ReplacementContent" in args
+        else args.get("new_string", args.get("new_str"))
+    )
+
+    if content_to_check is None and resolved_target.exists():
+        with contextlib.suppress(OSError, UnicodeDecodeError):
+            curr_text = resolved_target.read_text(encoding="utf-8")
+            if isinstance(chunks, list) and chunks:
+                mutated = curr_text
+                applied_any = False
+                for chunk in chunks:
+                    if isinstance(chunk, dict):
+                        c_old = (
+                            chunk.get("TargetContent")
+                            if "TargetContent" in chunk
+                            else chunk.get("old_string", chunk.get("old_str"))
+                        )
+                        c_new = (
+                            chunk.get("ReplacementContent")
+                            if "ReplacementContent" in chunk
+                            else chunk.get("new_string", chunk.get("new_str"))
+                        )
+                        if isinstance(c_old, str) and isinstance(c_new, str) and c_old in mutated:
+                            mutated = mutated.replace(c_old, c_new, 1)
+                            applied_any = True
+                if applied_any:
+                    content_to_check = mutated
+            elif isinstance(old_s, str) and isinstance(new_s, str) and old_s in curr_text:
+                content_to_check = curr_text.replace(old_s, new_s, 1)
+
+    if content_to_check is None and not resolved_target.exists():
+        if isinstance(new_s, str) and new_s.lstrip("\ufeff").lstrip().startswith("---"):
+            content_to_check = new_s
+        elif isinstance(chunks, list) and chunks and isinstance(chunks[0], dict):
+            first_new = (
+                chunks[0].get("ReplacementContent")
+                if "ReplacementContent" in chunks[0]
+                else chunks[0].get("new_string", chunks[0].get("new_str"))
+            )
+            if isinstance(first_new, str) and first_new.lstrip("\ufeff").lstrip().startswith("---"):
+                content_to_check = first_new
+
+    return target_file_str, content_to_check
+
+
+def _validate_doc_content(target_path: Path, content_to_check: str) -> dict[str, Any]:
+    """Validate JSON syntax or AsciiDoc YAML frontmatter and schema reference."""
+    if target_path.suffix.lower() == ".json":
+        try:
+            json.loads(content_to_check)
+        except json.JSONDecodeError as exc:
+            return {
+                "decision": "deny",
+                "reason": f"[Eidos Doc Linter] JSON Syntax Error in '{target_path.name}': {exc}",
+            }
+
+    stripped = content_to_check.lstrip("\ufeff").lstrip()
+    if stripped.startswith("---") and target_path.suffix.lower() == ".adoc":
+        data, _, parse_err = extract_frontmatter(content_to_check)
+        if parse_err:
+            return {
+                "decision": "deny",
+                "reason": f"[Eidos Doc Linter] YAML Syntax Error in '{target_path.name}': {parse_err}",
+            }
+        if not isinstance(data, dict):
+            return {
+                "decision": "deny",
+                "reason": f"[Eidos Doc Linter] Syntax Error: Frontmatter in '{target_path.name}' must be a YAML mapping dictionary.",
+            }
+        missing = [f for f in ("type", "schema", "id") if f not in data]
+        if missing:
+            return {
+                "decision": "deny",
+                "reason": f"[Eidos Doc Linter] Frontmatter in '{target_path.name}' is missing required fields: {', '.join(missing)}.",
+            }
+        schema_rel = data.get("schema")
+        if isinstance(schema_rel, str) and schema_rel.strip():
+            from eidos.core.assets import get_v1_schemas_dir
+
+            rel_clean = schema_rel.strip().removeprefix("schemas/v1/").removeprefix("schemas/").lstrip("/")
+            schema_file = get_v1_schemas_dir() / rel_clean
+            if not schema_file.exists():
+                return {
+                    "decision": "deny",
+                    "reason": f"[Eidos Doc Linter] Broken schema reference '{schema_rel}' in '{target_path.name}': schema file not found.",
+                }
+
+    return {"decision": "allow"}
+
+
 def handle_lint_pre_tool_use(payload: dict[str, Any], workspace_root: Path | None = None) -> dict[str, Any]:
     """Validate YAML frontmatter or JSON syntax before file modification tools execute on eidos/."""
-    tool_call = payload.get("toolCall", {})
-    tool_name = tool_call.get("name", "")
-    args = tool_call.get("args", {})
-    target_file_str = args.get("TargetFile", "")
+    target_file_str, content_to_check = _extract_tool_edit_request(payload, workspace_root)
 
     if not target_file_str or not is_eidos_doc(target_file_str, workspace_root):
         return {"decision": "allow"}
 
     target_path = Path(target_file_str)
-    content_to_check: str | None = None
-    if tool_name == "write_to_file":
-        content_to_check = args.get("CodeContent", "")
-    elif tool_name == "replace_file_content" and target_path.exists():
-        with contextlib.suppress(OSError, UnicodeDecodeError):
-            curr_text = target_path.read_text(encoding="utf-8")
-            target_str = args.get("TargetContent", "")
-            replace_str = args.get("ReplacementContent", "")
-            if target_str in curr_text:
-                content_to_check = curr_text.replace(target_str, replace_str, 1)
-
     if content_to_check is not None:
-        if target_path.suffix.lower() == ".json":
-            try:
-                json.loads(content_to_check)
-            except json.JSONDecodeError as exc:
-                return {
-                    "decision": "deny",
-                    "reason": f"[Eidos Doc Linter] JSON Syntax Error in '{target_path.name}': {exc}",
-                }
-
-        stripped = content_to_check.lstrip("\ufeff").lstrip()
-        if stripped.startswith("---") and target_path.suffix.lower() == ".adoc":
-            data, _, parse_err = extract_frontmatter(content_to_check)
-            if parse_err:
-                return {
-                    "decision": "deny",
-                    "reason": f"[Eidos Doc Linter] YAML Syntax Error in '{target_path.name}': {parse_err}",
-                }
-            if not isinstance(data, dict):
-                return {
-                    "decision": "deny",
-                    "reason": f"[Eidos Doc Linter] Syntax Error: Frontmatter in '{target_path.name}' must be a YAML mapping dictionary.",
-                }
-            missing = [f for f in ("type", "schema", "id") if f not in data]
-            if missing:
-                return {
-                    "decision": "deny",
-                    "reason": f"[Eidos Doc Linter] Frontmatter in '{target_path.name}' is missing required fields: {', '.join(missing)}.",
-                }
+        return _validate_doc_content(target_path, content_to_check)
 
     return {"decision": "allow"}
+
+
+def handle_lint_post_tool_use(payload: dict[str, Any], workspace_root: Path | None = None) -> dict[str, Any]:
+    """Validate modified Eidos document after tool use across agent harnesses (with stdin fallback)."""
+    is_agy_proto = "stepIdx" in payload or "toolCall" in payload
+    ws_root = (workspace_root or find_workspace_root(payload)).resolve()
+    target_file_str, content_to_check = _extract_tool_edit_request(payload, ws_root)
+
+    if not target_file_str:
+        if is_agy_proto:
+            return {}
+        return handle_lint_post_invocation(payload, ws_root)
+
+    if not is_eidos_doc(target_file_str, ws_root):
+        return {} if is_agy_proto else {"decision": "allow"}
+
+    raw_target = Path(target_file_str)
+    resolved_target = raw_target if raw_target.is_absolute() else (ws_root / raw_target)
+    if content_to_check is None and resolved_target.exists():
+        with contextlib.suppress(OSError, UnicodeDecodeError):
+            content_to_check = resolved_target.read_text(encoding="utf-8")
+
+    if content_to_check is not None:
+        res = _validate_doc_content(raw_target, content_to_check)
+        if is_agy_proto:
+            if res.get("decision") == "deny":
+                print(res.get("reason", "[Eidos Doc Linter] Validation failed."), file=sys.stderr)
+            return {}
+        return res
+
+    return {} if is_agy_proto else {"decision": "allow"}
 
 
 def handle_lint_post_invocation(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]:
@@ -129,7 +273,9 @@ def handle_lint_post_invocation(payload: dict[str, Any], workspace_root: Path) -
             )
             return {"injectSteps": [{"ephemeralMessage": msg}]}
     except Exception as exc:
-        print(f"[Eidos Doc Linter Error] Validator error: {exc}", file=sys.stderr)
+        err_msg = f"⚠️ [Eidos Doc Linter Error] Internal validation error: {exc}"
+        print(err_msg, file=sys.stderr)
+        return {"injectSteps": [{"ephemeralMessage": err_msg}]}
 
     return {"injectSteps": []}
 
@@ -140,7 +286,7 @@ def _check_and_record_stop_gate(eidos_dir: Path, gate_key: str, fingerprint: str
     gate_file = cache_dir / "stop-gate.json"
     state: dict[str, Any] = {}
     if gate_file.is_file():
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError, json.JSONDecodeError, ValueError):
             loaded = json.loads(gate_file.read_text(encoding="utf-8"))
             if isinstance(loaded, dict):
                 state = loaded
@@ -149,7 +295,7 @@ def _check_and_record_stop_gate(eidos_dir: Path, gate_key: str, fingerprint: str
     if prev_fp == fingerprint:
         # Already blocked once for this exact fingerprint; clear key and allow termination
         state.pop(gate_key, None)
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError):
             if state:
                 cache_dir.mkdir(parents=True, exist_ok=True)
                 gate_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
@@ -158,7 +304,7 @@ def _check_and_record_stop_gate(eidos_dir: Path, gate_key: str, fingerprint: str
         return False
 
     state[gate_key] = fingerprint
-    with contextlib.suppress(Exception):
+    with contextlib.suppress(OSError):
         cache_dir.mkdir(parents=True, exist_ok=True)
         gate_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
     return True
@@ -169,7 +315,7 @@ def _clear_stop_gate(eidos_dir: Path, gate_key: str) -> None:
     gate_file = eidos_dir / ".cache" / "stop-gate.json"
     if not gate_file.is_file():
         return
-    with contextlib.suppress(Exception):
+    with contextlib.suppress(OSError, json.JSONDecodeError, ValueError):
         loaded = json.loads(gate_file.read_text(encoding="utf-8"))
         if isinstance(loaded, dict) and gate_key in loaded:
             loaded.pop(gate_key, None)
@@ -244,10 +390,12 @@ def handle_drift_post_invocation(payload: dict[str, Any], workspace_root: Path) 
             )
             return {"injectSteps": [{"ephemeralMessage": msg}]}
     except Exception as exc:
-        print(f"[Eidos Drift Gate Error] Drift detection error: {exc}", file=sys.stderr)
+        err_msg = f"⚠️ [Eidos Drift Gate Error] Internal drift check error: {exc}"
+        print(err_msg, file=sys.stderr)
+        return {"injectSteps": [{"ephemeralMessage": err_msg}]}
 
     # Lazily ensure knowledge graph index is synchronized
-    with contextlib.suppress(Exception):
+    try:
         from eidos.core.graph_index import ArchitecturalIndex
 
         cache_db = eidos_dir / ".cache" / "index.db"
@@ -257,8 +405,22 @@ def handle_drift_post_invocation(payload: dict[str, Any], workspace_root: Path) 
             if dirty:
                 idx.sync()
             idx.close()
+    except Exception as exc:
+        print(f"[Eidos Drift Gate Warning] Knowledge graph cache sync skipped: {exc}", file=sys.stderr)
 
     return {"injectSteps": []}
+
+
+def _hash_files(workspace_root: Path, rel_paths: list[str]) -> dict[str, str]:
+    """Compute SHA-256 content hashes for relative paths so edits to already-drifted files alter the fingerprint."""
+    digests: dict[str, str] = {}
+    for rel in sorted(set(rel_paths)):
+        p = (workspace_root / rel) if not Path(rel).is_absolute() else Path(rel)
+        try:
+            digests[rel] = hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else "MISSING"
+        except OSError:
+            digests[rel] = "UNREADABLE"
+    return digests
 
 
 def handle_drift_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]:
@@ -270,11 +432,17 @@ def handle_drift_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str
     try:
         drift_res = detect_drift(repo_root=workspace_root, eidos_dir=eidos_dir, uncommitted=True)
         if drift_res.drift_detected:
+            all_tracked = (
+                list(drift_res.classification.code_files)
+                + list(drift_res.classification.spec_files)
+                + list(drift_res.classification.delta_files)
+            )
             fp_payload = json.dumps(
                 {
                     "code_files": sorted(drift_res.classification.code_files),
                     "spec_files": sorted(drift_res.classification.spec_files),
                     "delta_files": sorted(drift_res.classification.delta_files),
+                    "file_hashes": _hash_files(workspace_root, all_tracked),
                     "remediation": drift_res.remediation_suggestions,
                 },
                 sort_keys=True,
@@ -314,8 +482,9 @@ def handle_drift_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str
 
 
 def _infer_event(event: str | None, payload: dict[str, Any], default_event: str = "stop") -> str:
-    if event:
-        norm = event.strip().lower()
+    candidate = event or payload.get("hook_event_name") or payload.get("event")
+    if isinstance(candidate, str) and candidate.strip():
+        norm = candidate.strip().lower()
         if norm in ("pretooluse", "pre_tool_use", "pre_tool"):
             return "pre_tool"
         if norm in ("postinvocation", "post_invocation"):
@@ -325,14 +494,14 @@ def _infer_event(event: str | None, payload: dict[str, Any], default_event: str 
         if norm == "stop":
             return "stop"
         return norm
-    if "toolCall" in payload:
+    if "stepIdx" in payload or "tool_response" in payload:
+        return "post_tool"
+    if "toolCall" in payload or "tool_input" in payload or "tool_name" in payload:
         return "pre_tool"
     if "executionNum" in payload or "terminationReason" in payload:
         return "stop"
     if "invocationNum" in payload:
         return "post_invocation"
-    if "stepIdx" in payload:
-        return "post_tool"
     return default_event
 
 
@@ -346,7 +515,7 @@ def execute_lint_hook(
     target_path = path or repo_root
     payload: dict[str, Any] = {}
     if stdin_data is None and not sys.stdin.isatty():
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError):
             stdin_data = sys.stdin.read().strip()
     if stdin_data:
         with contextlib.suppress(json.JSONDecodeError, ValueError):
@@ -381,6 +550,8 @@ def execute_lint_hook(
 
     if resolved_event == "pre_tool":
         res = handle_lint_pre_tool_use(payload, ws_root)
+    elif resolved_event == "post_tool":
+        res = handle_lint_post_tool_use(payload, ws_root)
     elif resolved_event == "post_invocation":
         res = handle_lint_post_invocation(payload, ws_root)
     elif resolved_event == "stop":
@@ -390,6 +561,9 @@ def execute_lint_hook(
 
     print(json.dumps(res))
     return 0
+
+
+run_lint_hook = execute_lint_hook
 
 
 def execute_drift_hook(
@@ -402,7 +576,7 @@ def execute_drift_hook(
     target_path = path or repo_root
     payload: dict[str, Any] = {}
     if stdin_data is None and not sys.stdin.isatty():
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError):
             stdin_data = sys.stdin.read().strip()
     if stdin_data:
         with contextlib.suppress(json.JSONDecodeError, ValueError):
@@ -441,3 +615,4 @@ def execute_drift_hook(
 
     print(json.dumps(res))
     return 0
+

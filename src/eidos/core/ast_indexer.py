@@ -1,6 +1,6 @@
 """Polyglot AST Symbol Indexer and Structural AI Code Graph Engine.
 
-Implements DLT-2026-021 / CAP-AGENT-002:
+Key features:
 - High-performance polyglot AST parsing via ast-grep (ast-grep-py) with Python stdlib ast fallback.
 - Granular reverse code-to-spec symbol mapping (classes, functions, methods, interfaces).
 - Syntax-aware test function extraction for capability invariants (INV-*) and policies (POL-*).
@@ -211,13 +211,13 @@ class AstGrepIndexer(BaseAstIndexer):
         if content is None:
             try:
                 content = p.read_text(encoding="utf-8", errors="replace")
-            except Exception:
+            except OSError:
                 return []
 
         try:
             root = SgRoot(content, lang)
             node = root.root()
-        except Exception:
+        except (RuntimeError, ValueError):
             return []
 
         symbols: list[CodeSymbol] = []
@@ -307,13 +307,13 @@ class AstGrepIndexer(BaseAstIndexer):
         if content is None:
             try:
                 content = p.read_text(encoding="utf-8", errors="replace")
-            except Exception:
+            except OSError:
                 return {}
 
         try:
             root = SgRoot(content, lang)
             node = root.root()
-        except Exception:
+        except (RuntimeError, ValueError):
             return FallbackIndexer().list_test_functions(file_path, content)
 
         lines = content.splitlines()
@@ -383,13 +383,13 @@ class AstGrepIndexer(BaseAstIndexer):
         if content is None:
             try:
                 content = p.read_text(encoding="utf-8", errors="replace")
-            except Exception:
+            except OSError:
                 return []
 
         try:
             root = SgRoot(content, lang)
             node = root.root()
-        except Exception:
+        except (RuntimeError, ValueError):
             return []
 
         lines = content.splitlines()
@@ -518,7 +518,7 @@ class FallbackIndexer(BaseAstIndexer):
         if content is None:
             try:
                 content = p.read_text(encoding="utf-8", errors="replace")
-            except Exception:
+            except OSError:
                 return []
 
         rel_path = str(p)
@@ -568,7 +568,7 @@ class FallbackIndexer(BaseAstIndexer):
                             )
                         )
                 return symbols
-            except Exception:
+            except (SyntaxError, ValueError):
                 # Fallback to regex if Python code has syntax errors
                 pass
 
@@ -631,7 +631,7 @@ class FallbackIndexer(BaseAstIndexer):
         if content is None:
             try:
                 content = p.read_text(encoding="utf-8", errors="replace")
-            except Exception:
+            except OSError:
                 return {}
 
         rel_path = str(p)
@@ -656,7 +656,7 @@ class FallbackIndexer(BaseAstIndexer):
                         full_text = f"{prefix}\n{body}" if prefix else body
                         result[node.name] = full_text
                 return result
-            except Exception:
+            except (SyntaxError, ValueError):
                 pass
 
         test_fn_pattern = re.compile(
@@ -692,7 +692,7 @@ class FallbackIndexer(BaseAstIndexer):
         if content is None:
             try:
                 content = p.read_text(encoding="utf-8", errors="replace")
-            except Exception:
+            except OSError:
                 return []
 
         rel_path = str(p)
@@ -730,7 +730,7 @@ class FallbackIndexer(BaseAstIndexer):
                                     )
                                 )
                 return bindings
-            except Exception:
+            except (SyntaxError, ValueError):
                 pass
 
         # Regex fallback for tests across languages
@@ -852,6 +852,151 @@ def has_structural_changes(
             reasons.append(f"changed signature of {kind} '{qual}'")
 
     return bool(reasons), reasons
+
+
+# ---------------------------------------------------------------------------
+# Design-structural change classification (DLT-2026-030)
+# ---------------------------------------------------------------------------
+
+STYLE_EXTS = {".css", ".scss", ".sass", ".less"}
+UI_COMPONENT_EXTS = {".tsx", ".jsx", ".vue", ".svelte", ".ts", ".js", ".html"}
+DESIGN_EXTS = STYLE_EXTS | UI_COMPONENT_EXTS
+
+_CSS_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+_CSS_CUSTOM_PROP_RE = re.compile(r"(--[A-Za-z0-9_-]+)\s*:\s*([^;}{]+)")
+_PREPROC_VAR_RE = re.compile(r"^\s*([$@][A-Za-z0-9_-]+)\s*:\s*([^;]+);", re.MULTILINE)
+_AT_TOKEN_BLOCK_RE = re.compile(r"@(theme|keyframes|font-face)\b([^{]*)\{", re.IGNORECASE)
+_EXPORT_DECL_RE = re.compile(
+    r"\bexport\s+(?:default\s+)?(?:declare\s+)?(?:async\s+)?"
+    r"(?:function\*?|const|let|var|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)"
+)
+_EXPORT_LIST_RE = re.compile(r"\bexport\s*\{([^}]*)\}")
+_EXPORT_DEFAULT_RE = re.compile(r"\bexport\s+default\s+([A-Za-z_$][\w$]*)\s*;?")
+_PROPS_DECL_RE = re.compile(r"\b(interface|type)\s+([A-Za-z_$][\w$]*Props)\b")
+_ROUTE_RE = re.compile(r"""\bpath\s*[:=]\s*\{?\s*["'`]([^"'`]+)["'`]""")
+_SVELTE_PROP_RE = re.compile(r"\bexport\s+let\s+([A-Za-z_$][\w$]*)")
+_VUE_PROPS_RE = re.compile(r"defineProps\s*(?:<([^>]*)>)?\s*\(([^)]*)\)", re.DOTALL)
+
+
+def _balanced_block(content: str, open_idx: int) -> str:
+    """Return the text of a brace-balanced block starting at content[open_idx] == '{'."""
+    depth = 0
+    for i in range(open_idx, len(content)):
+        ch = content[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return content[open_idx : i + 1]
+    return content[open_idx:]
+
+
+def _normalize_ws(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _extract_style_tokens(content: str) -> set[str]:
+    """Extract design-token declarations from a stylesheet (custom props, preprocessor vars, @theme/@keyframes/@font-face)."""
+    clean = _CSS_COMMENT_RE.sub("", content)
+    tokens: set[str] = set()
+    for name, value in _CSS_CUSTOM_PROP_RE.findall(clean):
+        tokens.add(f"prop:{name}={_normalize_ws(value)}")
+    for name, value in _PREPROC_VAR_RE.findall(clean):
+        tokens.add(f"var:{name}={_normalize_ws(value)}")
+    for m in _AT_TOKEN_BLOCK_RE.finditer(clean):
+        brace_idx = clean.find("{", m.end() - 1)
+        block = _balanced_block(clean, brace_idx)
+        tokens.add(f"at:{m.group(1).lower()}:{_normalize_ws(m.group(2))}:{_normalize_ws(block)}")
+    return tokens
+
+
+def _extract_ui_contract(content: str, suffix: str) -> dict[str, set[str]]:
+    """Extract the public UI contract surface: exported names, *Props shapes, routes, and framework props."""
+    exports: set[str] = set(_EXPORT_DECL_RE.findall(content))
+    for group in _EXPORT_LIST_RE.findall(content):
+        for item in group.split(","):
+            name = item.strip().split(" as ")[-1].strip()
+            if name:
+                exports.add(name)
+    exports.update(_EXPORT_DEFAULT_RE.findall(content))
+
+    props: set[str] = set()
+    for m in _PROPS_DECL_RE.finditer(content):
+        brace_idx = content.find("{", m.end())
+        eq_idx = content.find("=", m.end())
+        if brace_idx != -1 and (eq_idx == -1 or brace_idx <= eq_idx + 3 or m.group(1) == "interface"):
+            body = _balanced_block(content, brace_idx)
+        else:
+            end = content.find(";", m.end())
+            body = content[m.end() : end if end != -1 else len(content)]
+        props.add(f"{m.group(2)}:{_normalize_ws(body)}")
+
+    routes = set(_ROUTE_RE.findall(content))
+    framework_props: set[str] = set()
+    if suffix == ".svelte":
+        framework_props.update(_SVELTE_PROP_RE.findall(content))
+    if suffix == ".vue":
+        for type_arg, runtime_arg in _VUE_PROPS_RE.findall(content):
+            framework_props.add(_normalize_ws(f"{type_arg}|{runtime_arg}"))
+
+    return {"exports": exports, "props": props, "routes": routes, "framework_props": framework_props}
+
+
+def classify_design_changes(
+    old_content: str | None,
+    new_content: str | None,
+    file_path: Path | str,
+) -> tuple[str, list[str]]:
+    """Classify a frontend/styling diff into a design-drift category (DLT-2026-030).
+
+    Returns (category, reasons) where category is one of:
+    - ``"none"``: not a frontend/styling file.
+    - ``"token"``: design token mutation (CSS custom properties, preprocessor variables,
+      ``@theme`` / ``@keyframes`` / ``@font-face`` blocks, or token/theme module edits).
+    - ``"ui_contract"``: exported UI component, ``*Props`` shape, route, or framework prop changes.
+    - ``"body_only"``: internal layout tweaks or component internals with no token/contract impact.
+    """
+    p = Path(file_path)
+    suffix = p.suffix.lower()
+    if suffix not in DESIGN_EXTS:
+        return "none", []
+
+    is_style = suffix in STYLE_EXTS
+    if old_content is None or new_content is None:
+        verb = "added" if old_content is None else "deleted"
+        return ("token" if is_style else "ui_contract"), [f"{verb} file '{p.name}'"]
+    if old_content == new_content:
+        return "body_only", []
+
+    if is_style:
+        old_t, new_t = _extract_style_tokens(old_content), _extract_style_tokens(new_content)
+        if old_t != new_t:
+            changed = sorted(t.split("=", 1)[0] for t in (old_t ^ new_t))
+            return "token", [f"design token declarations changed: {', '.join(changed[:5])}"]
+        return "body_only", []
+
+    # Token / theme modules in TS/JS (e.g. md3-tokens.ts, theme.ts): any substantive edit is a token change.
+    stem = p.stem.lower()
+    if suffix in (".ts", ".js") and ("token" in stem or "theme" in stem):
+        if _normalize_ws(old_content) != _normalize_ws(new_content):
+            return "token", [f"token/theme module '{p.name}' modified"]
+        return "body_only", []
+
+    old_c, new_c = _extract_ui_contract(old_content, suffix), _extract_ui_contract(new_content, suffix)
+    reasons: list[str] = []
+    for key, label in (
+        ("exports", "exported UI symbols"),
+        ("props", "component Props contracts"),
+        ("routes", "route definitions"),
+        ("framework_props", "framework component props"),
+    ):
+        if old_c[key] != new_c[key]:
+            diff = sorted(x.split(":", 1)[0] for x in (old_c[key] ^ new_c[key]))
+            reasons.append(f"{label} changed: {', '.join(diff[:5])}")
+    if reasons:
+        return "ui_contract", reasons
+    return "body_only", []
 
 
 def is_ast_grep_available() -> bool:

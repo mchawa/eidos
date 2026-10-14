@@ -78,7 +78,7 @@ def find_repo_root(start_dir: Path | None = None) -> Path:
         )
         if res.returncode == 0 and res.stdout.strip():
             return Path(res.stdout.strip()).resolve()
-    except Exception:
+    except OSError:
         pass
 
     return cwd
@@ -118,7 +118,7 @@ def load_project(
                 system_id = str(fm["id"]).strip()
             if fm.get("title") or fm.get("name") or doc.title:
                 system_title = str(fm.get("title") or fm.get("name") or doc.title).strip()
-        except Exception:
+        except OSError:
             pass
 
     return ProjectConfig(
@@ -163,7 +163,7 @@ def is_generated_or_vendored(repo_root: Path, rel_paths: list[str]) -> set[str]:
                 if val_str in ("true", "set"):
                     skipped.add(path_str)
                 idx += 3
-    except Exception:
+    except OSError:
         pass
 
     return skipped
@@ -204,7 +204,7 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
                 file_list = sorted(files)
                 ignored_attrs = is_generated_or_vendored(root, file_list)
                 return [f for f in file_list if f not in ignored_attrs]
-        except Exception:
+        except OSError:
             pass
 
     # Fallback filesystem walk for non-git directories (e.g., temporary test fixtures)
@@ -298,7 +298,7 @@ def match_path_pattern(rel_file: str, pattern: str) -> int:
             collapsed = norm_pat.replace("/**/", "/")
             if posix_file.match(collapsed) or fnmatch.fnmatchcase(norm_file, collapsed):
                 matched = True
-    except Exception:
+    except ValueError:
         matched = fnmatch.fnmatchcase(norm_file, norm_pat)
 
     if matched:

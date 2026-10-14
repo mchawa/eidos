@@ -188,7 +188,7 @@ def doctor_cmd(
             check=False,
         )
         git_ok = res.returncode == 0
-    except Exception:
+    except OSError:
         git_ok = False
 
     specs_exist = eidos_dir.exists() and (eidos_dir / "system.adoc").exists()
@@ -210,7 +210,7 @@ def doctor_cmd(
             st = idx.get_index_status()
             index_ok = True
             index_entities = st.get("total_entities", 0)
-        except Exception:
+        except (OSError, RuntimeError):
             index_ok = False
 
     plugin_status = check_plugin_version_status(project_dir=repo_root)
@@ -1186,7 +1186,7 @@ def index_search_cmd(
 def index_blast_radius_cmd(
     entity_id: str = typer.Argument(
         ...,
-        help="Target architectural entity ID (e.g. 'CNT-CORE', 'CAP-PROD-001').",
+        help="Target architectural entity ID (e.g. 'CNT-CORE', 'CAP-BILLING-001').",
     ),
     depth: int = typer.Option(
         2,
@@ -1396,7 +1396,10 @@ def spec_show_cmd(
 def spec_create_cmd(
     doc_type: str = typer.Argument(
         ...,
-        help="Specification type: capability, domain, policy, contract, component, persona, delta, exploration.",
+        help=(
+            "Specification type: capability, domain, policy, contract, container, component, persona, delta, "
+            "exploration, design-system, ui-component, screen, client, flow."
+        ),
     ),
     doc_id: str = typer.Argument(
         ...,
@@ -1454,10 +1457,20 @@ def spec_create_cmd(
         "--owning-component",
         help="Owning component or container ID for contracts.",
     ),
+    container: str | None = typer.Option(
+        None,
+        "--container",
+        help="Parent container ID (CNT-*) for components, implementing container for clients, or owner for contracts.",
+    ),
+    source_path: str = typer.Option(
+        "src",
+        "--source-path",
+        help="Source path or glob owned by a container (package_path) or component (source_path).",
+    ),
     client_id: str | None = typer.Option(
         None,
         "--client",
-        help="Client or brand identifier for client-specific design systems (e.g. acme).",
+        help="Client ID (CLT-*) for screens/flows, or brand identifier for client-specific design systems.",
     ),
     extends_system: str | None = typer.Option(
         None,
@@ -1493,7 +1506,9 @@ def spec_create_cmd(
             category=category,
             rule=rule,
             protocol=protocol,
+            owning_container=container,
             owning_component=owning_component,
+            package_path=source_path,
             client_id=client_id,
             extends_system=extends_system,
             route=route,
@@ -2581,7 +2596,7 @@ def hook_lint_cmd(
         "Stop",
         "--event",
         "-e",
-        help="Hook lifecycle event (PreToolUse, PostInvocation, Stop).",
+        help="Hook lifecycle event (PreToolUse, PostToolUse, PostInvocation, Stop).",
     ),
     path: Path | None = typer.Option(
         None,

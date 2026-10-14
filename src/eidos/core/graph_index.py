@@ -87,7 +87,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 lines.append(f"### `{cid}` ({name}) [C4 Level 3 Component]")
                 lines.append(f"- **Owning Container:** `{parent_cnt}` | **Package:** `{pkg}`")
                 if comp.get("file_path"):
-                    lines.append(f"- **Co-Located Specification:** `{comp['file_path']}`")
+                    lines.append(f"- **Specification:** `{comp['file_path']}`")
                 if comp.get("responsibility"):
                     lines.append(f"- **Responsibility:** {comp['responsibility']}")
                 if self.tier in ("guardrails", "deep"):
@@ -143,7 +143,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
                             mid = f"`{m['id']}` " if m.get("id") else ""
                             if m.get("ref"):
                                 lines.append(
-                                    f"  - {mid}**{m.get('name', m.get('id', ''))}** (co-located): `ref: {m['ref']}`"
+                                    f"  - {mid}**{m.get('name', m.get('id', ''))}** (dedicated): `ref: {m['ref']}`"
                                 )
                             else:
                                 lines.append(f"  - {mid}**{m.get('name', '')}**: {m.get('responsibility', '')}")
@@ -534,7 +534,7 @@ class ArchitecturalIndex:
 
                 try:
                     doc = parse_spec_file(p)
-                except Exception:
+                except OSError:
                     continue
 
                 doc_id = doc.doc_id or p.stem
@@ -701,7 +701,7 @@ class ArchitecturalIndex:
                 if doc_type == "product/policy":
                     invariants = fm.get("invariants", []) or []
 
-                # Dedicated Co-Located Component bindings
+                # Dedicated Component bindings
                 if doc_type == "tech/component":
                     cnt_id = fm.get("container")
                     if cnt_id:
@@ -735,7 +735,7 @@ class ArchitecturalIndex:
                     # Component invariants
                     invariants = fm.get("invariants", []) or []
 
-                # Container references to co-located components
+                # Container references to dedicated components
                 if doc_type == "tech/container":
                     for comp_entry in fm.get("components", []):
                         if isinstance(comp_entry, dict) and comp_entry.get("ref"):
@@ -1057,31 +1057,7 @@ class ArchitecturalIndex:
                     stats.indexed_new += 1
 
                 if is_test:
-                    test_bindings = ast_idx.extract_test_bindings(p)
-                    for binding in test_bindings:
-                        for inv_id in binding.invariants:
-                            conn.execute(
-                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);",
-                                (binding.identifier, inv_id),
-                            )
-                            conn.execute(
-                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);",
-                                (inv_id, binding.identifier),
-                            )
-                            conn.execute(
-                                "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
-                                (rel_p, inv_id),
-                            )
-                            inv_row = conn.execute("SELECT data_json FROM entities WHERE id = ?", (inv_id,)).fetchone()
-                            if inv_row:
-                                idata = json.loads(inv_row["data_json"])
-                                idata["has_test_coverage"] = True
-                                if binding.identifier not in idata.get("matching_tests", []):
-                                    idata.setdefault("matching_tests", []).append(binding.identifier)
-                                conn.execute(
-                                    "UPDATE entities SET data_json = ? WHERE id = ?",
-                                    (json.dumps(idata), inv_id),
-                                )
+                    self._index_test_bindings(conn, ast_idx, p, rel_p)
                     conn.execute(
                         """
                         INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
@@ -1157,34 +1133,11 @@ class ArchitecturalIndex:
                                 """,
                                 (rel_t, stat.st_mtime, t_sha, time.time()),
                             )
-                            for binding in ast_idx.extract_test_bindings(tp):
-                                for inv_id in binding.invariants:
-                                    conn.execute(
-                                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);",
-                                        (binding.identifier, inv_id),
-                                    )
-                                    conn.execute(
-                                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);",
-                                        (inv_id, binding.identifier),
-                                    )
-                                    conn.execute(
-                                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
-                                        (rel_t, inv_id),
-                                    )
-                                    inv_row = conn.execute(
-                                        "SELECT data_json FROM entities WHERE id = ?", (inv_id,)
-                                    ).fetchone()
-                                    if inv_row:
-                                        idata = json.loads(inv_row["data_json"])
-                                        idata["has_test_coverage"] = True
-                                        if binding.identifier not in idata.get("matching_tests", []):
-                                            idata.setdefault("matching_tests", []).append(binding.identifier)
-                                        conn.execute(
-                                            "UPDATE entities SET data_json = ? WHERE id = ?",
-                                            (json.dumps(idata), inv_id),
-                                        )
+                            self._index_test_bindings(conn, ast_idx, tp, rel_t)
 
-            # Resolve any cross-reference edges where target_id or source_id is a file path
+            # Resolve any cross-reference edges where target_id or source_id is a file path.
+            # Test-binding edges ('asserts': test -> INV, 'bound_to': INV -> test) intentionally
+            # reference 'file::func' test identifiers that are not catalog entities (DLT-2026-029).
             conn.execute(
                 """
                 UPDATE OR IGNORE edges
@@ -1196,13 +1149,15 @@ class ArchitecturalIndex:
                        OR rel_path LIKE '%' || edges.target_id
                     LIMIT 1
                 )
-                WHERE target_id NOT IN (SELECT id FROM entities);
+                WHERE target_id NOT IN (SELECT id FROM entities)
+                  AND rel_type != 'bound_to';
                 """
             )
             conn.execute(
                 """
                 DELETE FROM edges
-                WHERE target_id NOT IN (SELECT id FROM entities);
+                WHERE target_id NOT IN (SELECT id FROM entities)
+                  AND rel_type != 'bound_to';
                 """
             )
             conn.execute(
@@ -1216,19 +1171,104 @@ class ArchitecturalIndex:
                        OR rel_path LIKE '%' || edges.source_id
                     LIMIT 1
                 )
-                WHERE source_id NOT IN (SELECT id FROM entities);
+                WHERE source_id NOT IN (SELECT id FROM entities)
+                  AND rel_type != 'asserts';
                 """
             )
             conn.execute(
                 """
                 DELETE FROM edges
-                WHERE source_id NOT IN (SELECT id FROM entities);
+                WHERE source_id NOT IN (SELECT id FROM entities)
+                  AND rel_type != 'asserts';
                 """
             )
+            self._prune_stale_test_binding_edges(conn)
 
         stats.duration_ms = (time.perf_counter() - t0) * 1000
         self._last_synced_check = time.monotonic()
         return stats
+
+    @staticmethod
+    def _index_test_bindings(conn: sqlite3.Connection, ast_idx: Any, test_path: Path, rel_test: str) -> None:
+        """Persist 'file::func' -> INV-* test-binding edges for a single test file (DLT-2026-029).
+
+        Stale edges previously recorded for this test file are cleared first so renamed or
+        untagged test functions do not leave phantom assertions behind.
+        """
+        prefix_like = rel_test.replace("%", "\\%").replace("_", "\\_") + "::%"
+        conn.execute(
+            "DELETE FROM edges WHERE rel_type = 'asserts' AND source_id LIKE ? ESCAPE '\\';",
+            (prefix_like,),
+        )
+        conn.execute(
+            "DELETE FROM edges WHERE rel_type = 'bound_to' AND target_id LIKE ? ESCAPE '\\';",
+            (prefix_like,),
+        )
+        conn.execute(
+            "DELETE FROM symbol_mappings WHERE symbol = ? AND kind = 'test_binding';",
+            (rel_test,),
+        )
+        for binding in ast_idx.extract_test_bindings(test_path):
+            identifier = f"{rel_test}::{binding.test_name}"
+            for inv_id in binding.invariants:
+                conn.execute(
+                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);",
+                    (identifier, inv_id),
+                )
+                conn.execute(
+                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);",
+                    (inv_id, identifier),
+                )
+                conn.execute(
+                    "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
+                    (rel_test, inv_id),
+                )
+                inv_row = conn.execute("SELECT data_json FROM entities WHERE id = ?", (inv_id,)).fetchone()
+                if inv_row:
+                    idata = json.loads(inv_row["data_json"])
+                    idata["has_test_coverage"] = True
+                    if identifier not in idata.get("matching_tests", []):
+                        idata.setdefault("matching_tests", []).append(identifier)
+                    conn.execute(
+                        "UPDATE entities SET data_json = ? WHERE id = ?",
+                        (json.dumps(idata), inv_id),
+                    )
+
+    @staticmethod
+    def _prune_stale_test_binding_edges(conn: sqlite3.Connection) -> None:
+        """Drop test-binding edges whose invariant entity or test file no longer exists.
+
+        Only edges whose test-side endpoint is a non-entity 'file::func' identifier are considered;
+        spec-declared assertions (e.g. CAP-* -> INV-*) are left untouched.
+        """
+        conn.execute(
+            """
+            DELETE FROM edges
+            WHERE rel_type = 'asserts'
+              AND source_id NOT IN (SELECT id FROM entities)
+              AND (
+                target_id NOT IN (SELECT id FROM entities)
+                OR instr(source_id, '::') = 0
+                OR substr(source_id, 1, instr(source_id, '::') - 1) NOT IN (
+                    SELECT rel_path FROM indexed_files WHERE doc_type = 'code/test'
+                )
+              );
+            """
+        )
+        conn.execute(
+            """
+            DELETE FROM edges
+            WHERE rel_type = 'bound_to'
+              AND target_id NOT IN (SELECT id FROM entities)
+              AND (
+                source_id NOT IN (SELECT id FROM entities)
+                OR instr(target_id, '::') = 0
+                OR substr(target_id, 1, instr(target_id, '::') - 1) NOT IN (
+                    SELECT rel_path FROM indexed_files WHERE doc_type = 'code/test'
+                )
+              );
+            """
+        )
 
     def query_fts(self, text: str, limit: int = 10) -> list[dict[str, Any]]:
         """Execute BM25 ranked full-text query using FTS5."""
@@ -1490,11 +1530,17 @@ class ArchitecturalIndex:
         for row in cursor.execute("SELECT kind, COUNT(*) FROM symbol_mappings GROUP BY kind;").fetchall():
             symbol_counts[row[0]] = row[1]
 
-        test_invariant_assertions = cursor.execute("SELECT COUNT(*) FROM edges WHERE rel_type = 'asserts';").fetchone()[
-            0
-        ]
+        # Only count assertions originating from AST test functions ('file::func'), not
+        # spec-declared CAP-*/POL-*/CMP-* -> INV-* ownership edges (DLT-2026-029).
+        test_assert_filter = (
+            "rel_type = 'asserts' AND instr(source_id, '::') > 0 "
+            "AND source_id NOT IN (SELECT id FROM entities)"
+        )
+        test_invariant_assertions = cursor.execute(
+            f"SELECT COUNT(*) FROM edges WHERE {test_assert_filter};"
+        ).fetchone()[0]
         tested_invariants = cursor.execute(
-            "SELECT COUNT(DISTINCT target_id) FROM edges WHERE rel_type = 'asserts';"
+            f"SELECT COUNT(DISTINCT target_id) FROM edges WHERE {test_assert_filter};"
         ).fetchone()[0]
 
         from eidos.core.ast_indexer import get_ast_indexer, is_ast_grep_available

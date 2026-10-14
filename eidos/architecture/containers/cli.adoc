@@ -17,7 +17,7 @@ components:
     source_path: "src/eidos/cli/main.py"
   - id: CMP-CLI-SPEC-COMMANDS
     name: "SpecCommands"
-    responsibility: "Commands for catalog listing, showing, creating, and safely deleting living specifications."
+    responsibility: "Commands for catalog listing, showing, creating (across all 16 schemas including component, client, and flow), and safely deleting living specifications."
     source_path: "src/eidos/cli/main.py"
   - id: CMP-CLI-DELTA-COMMANDS
     name: "DeltaCommands"
@@ -45,7 +45,7 @@ components:
     source_path: "src/eidos/cli/main.py"
   - id: CMP-CLI-COMPONENT-COMMANDS
     name: "ComponentCommands"
-    responsibility: "C4 Level 3 component promotion to co-located specs, inlining back to container, and listing."
+    responsibility: "C4 Level 3 component promotion to centralized specs in eidos/architecture/components/, inlining back to container, and listing."
     source_path: "src/eidos/cli/main.py"
   - id: CMP-CLI-PORTAL-COMMANDS
     name: "PortalCommands"

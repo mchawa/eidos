@@ -2,6 +2,7 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 title: ExplorationSchema
 description: "Defines hypothesis-driven spikes, architectural feasibility research, and early product discovery before committing to formal specifications."
 type: object
+additionalProperties: false
 required:
   - type
   - schema
@@ -28,11 +29,13 @@ properties:
   status:
     type: string
     enum:
+      - draft
       - proposed
+      - planned
       - in_progress
       - adopted
       - discarded
-    description: "Exploration lifecycle state: 'proposed' (queued), 'in_progress' (spike active on experimental branch), 'adopted' (hypothesis proven, graduates to SpecDelta), or 'discarded' (infeasible/rejected, archived with learnings)."
+    description: "Exploration lifecycle state: 'draft', 'proposed', 'planned', 'in_progress' (spike active on experimental branch), 'adopted' (hypothesis proven, graduates to SpecDelta), or 'discarded' (infeasible/rejected, archived with learnings)."
   hypothesis:
     type: string
     description: "The central testable assumption or question being investigated (e.g. 'Using CRDTs will reduce WebSocket latency by 50%')."
@@ -47,6 +50,7 @@ properties:
     description: "Isolated code experiments or prototypes conducted in temporary branches."
     items:
       type: object
+      additionalProperties: false
       required:
         - name
         - target
@@ -60,6 +64,7 @@ properties:
   exit_criteria:
     type: object
     description: "Quantitative benchmarks or timeboxes that determine when the exploration must conclude."
+    additionalProperties: false
     properties:
       max_duration:
         type: string
@@ -70,6 +75,7 @@ properties:
   decision:
     type: object
     description: "Retrospective outcome and transition path upon conclusion of the exploration."
+    additionalProperties: false
     properties:
       outcome:
         type: string
@@ -80,7 +86,14 @@ properties:
         description: "Final verdict: 'adopted' (graduates), 'discarded' (rejected), or 'pivoted' (spawned new follow-up exploration)."
       resulting_delta_id:
         type: string
+        pattern: "^(DLT-[A-Z0-9_-]+|.*\\.adoc)$"
         description: "If adopted, the ID of the formal SpecDelta created (e.g. DLT-2026-095)."
+        x-eidos-ref:
+          target_types:
+            - delta/mutation
+          prefixes:
+            - DLT-
+          entity_label: delta
       learnings:
         type: string
         description: "Key findings, trade-offs, and reasons for the final decision, retained permanently to prevent duplicate dead-end explorations."

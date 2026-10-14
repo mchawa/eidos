@@ -1,5 +1,7 @@
 """Validator for Eidos specifications against JSON/YAML schemas."""
 
+import ast
+import re
 from pathlib import Path
 from typing import Any
 
@@ -84,8 +86,8 @@ class SpecValidator:
                 self._schema_cache[rel_path] = data
                 self._schema_cache[f"schemas/v1/{rel_path}"] = data
                 self._schema_cache[f"schemas/v1/{p.name}"] = data
-        except Exception:
-            pass
+        except (OSError, yaml.YAMLError) as exc:
+            raise RuntimeError(f"Failed to load bundled Eidos schemas: {exc}") from exc
 
     def _walk_traversable(self, node, rel_prefix: str):
         """Recursively walk an importlib Traversable directory."""
@@ -160,7 +162,9 @@ class SpecValidator:
             if not doc.is_valid:
                 report.schema_errors[str(file_path)] = doc.errors
 
-        # Discover co-located component specs referenced by containers or located inside package_path
+        # Discover dedicated component specs referenced by containers via 'components[].ref'. Refs resolving
+        # outside 'eidos/architecture/components/' are still loaded so INV-COMPONENT-CENTRALIZATION-MANDATE
+        # can report them as violations (DLT-2026-032).
         repo_root = root_dir.parent if root_dir.name in ["eidos", ".spec"] else root_dir
         scanned_set = {str(d.file_path.resolve()) for d in report.documents}
 
@@ -223,6 +227,9 @@ class SpecValidator:
             # 3. Check semantic entity ID cross-references
             self._validate_semantic_references(doc, catalog_ids, report, root_dir)
 
+        # 4. Check source/contract file paths on disk and CLI contract command parity
+        self._validate_source_and_contract_paths(report, root_dir)
+
     def _validate_semantic_references(
         self,
         doc: SpecDocument,
@@ -230,125 +237,116 @@ class SpecValidator:
         report: ValidationReport,
         root_dir: Path,
     ):
-        """Validate semantic entity ID references declared across specifications."""
+        """Validate semantic entity ID references via schema-driven x-eidos-ref annotations."""
         fm = doc.frontmatter or {}
-        dtype = doc.doc_type
+        schema = self.resolve_schema(doc)
+        if schema:
+            self._validate_schema_references(schema, fm, "", doc, catalog_ids, report)
+        self._validate_architectural_invariants(doc, fm, report)
 
-        # 1. SpecDeltas: affects.components, affects.contracts, affects.policies, affects.capabilities, affects.domains
-        if dtype == "delta/mutation" or "affects" in fm:
-            affects = fm.get("affects")
-            if isinstance(affects, dict):
-                for field_key, items in [
-                    ("affects.components", affects.get("components")),
-                    ("affects.contracts", affects.get("contracts")),
-                    ("affects.policies", affects.get("policies")),
-                    ("affects.capabilities", affects.get("capabilities")),
-                    ("affects.domains", affects.get("domains")),
-                ]:
-                    if items:
-                        item_list = [items] if isinstance(items, str) else items
-                        if isinstance(item_list, list):
-                            for item in item_list:
-                                if (
-                                    isinstance(item, str)
-                                    and not item.endswith(".adoc")
-                                    and (is_entity_id(item) or not ("/" in item or " " in item))
-                                    and item.strip() not in catalog_ids
-                                ):
-                                    report.broken_references.append(
-                                        f"Broken entity reference in {doc.file_path.name}: "
-                                        f"'{item.strip()}' referenced in {field_key} does not exist in catalog"
-                                    )
+    def _validate_schema_references(
+        self,
+        schema_node: dict[str, Any],
+        value: Any,
+        field_path: str,
+        doc: SpecDocument,
+        catalog_ids: set[str],
+        report: ValidationReport,
+    ) -> None:
+        """Recursively walk schema and frontmatter to enforce x-eidos-ref reference rules."""
+        if value is None or not isinstance(schema_node, dict):
+            return
 
-        # 2. Capabilities: domain / parent_domain, technical.components, technical.contracts
-        if dtype == "product/capability":
-            domain_val = fm.get("domain") or fm.get("parent_domain")
-            if (
-                domain_val
-                and isinstance(domain_val, str)
-                and not domain_val.endswith(".adoc")
-                and domain_val.strip() not in catalog_ids
-            ):
+        ref_meta = schema_node.get("x-eidos-ref")
+        if isinstance(ref_meta, dict):
+            if isinstance(value, str):
+                self._check_eidos_ref(ref_meta, value, field_path, doc, catalog_ids, report)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str):
+                        self._check_eidos_ref(ref_meta, item, field_path, doc, catalog_ids, report)
+
+        if isinstance(value, dict):
+            props = schema_node.get("properties")
+            if isinstance(props, dict):
+                for prop_key, prop_val in value.items():
+                    if prop_key in props:
+                        sub_path = f"{field_path}.{prop_key}" if field_path else prop_key
+                        self._validate_schema_references(
+                            props[prop_key], prop_val, sub_path, doc, catalog_ids, report
+                        )
+            for combiner in ("oneOf", "anyOf", "allOf"):
+                for branch in schema_node.get(combiner, []) or []:
+                    if isinstance(branch, dict) and isinstance(branch.get("properties"), dict):
+                        for prop_key, prop_val in value.items():
+                            if prop_key in branch["properties"]:
+                                sub_path = f"{field_path}.{prop_key}" if field_path else prop_key
+                                self._validate_schema_references(
+                                    branch["properties"][prop_key], prop_val, sub_path, doc, catalog_ids, report
+                                )
+        elif isinstance(value, list):
+            items_schema = schema_node.get("items")
+            if isinstance(items_schema, dict):
+                for item in value:
+                    self._validate_schema_references(items_schema, item, field_path, doc, catalog_ids, report)
+                    for combiner in ("oneOf", "anyOf", "allOf"):
+                        for branch in items_schema.get(combiner, []) or []:
+                            if isinstance(branch, dict):
+                                self._validate_schema_references(branch, item, field_path, doc, catalog_ids, report)
+
+    def _check_eidos_ref(
+        self,
+        ref_meta: dict[str, Any],
+        raw_val: str,
+        field_path: str,
+        doc: SpecDocument,
+        catalog_ids: set[str],
+        report: ValidationReport,
+    ) -> None:
+        """Check a single string reference against x-eidos-ref metadata."""
+        val = raw_val.strip()
+        if not val or val.endswith(".adoc"):
+            return
+
+        prefixes = tuple(str(p).upper() for p in (ref_meta.get("prefixes") or ()))
+        allow_non_id = bool(ref_meta.get("allow_non_id_string", False))
+        val_upper = val.upper()
+        matches_id = is_entity_id(val) or (bool(prefixes) and val_upper.startswith(prefixes))
+
+        if allow_non_id and not matches_id:
+            return
+        if not allow_non_id and not matches_id and ("/" in val or " " in val):
+            return
+
+        if val not in catalog_ids:
+            rule_id = ref_meta.get("rule_id")
+            label = ref_meta.get("entity_label")
+            if rule_id:
+                report.broken_references.append(
+                    f"{rule_id} violation in {doc.file_path.name}: "
+                    f"Component '{doc.doc_id}' references {label or 'entity'} '{val}' which does not exist in catalog"
+                )
+            elif label:
                 report.broken_references.append(
                     f"Broken entity reference in {doc.file_path.name}: "
-                    f"domain '{domain_val.strip()}' does not exist in catalog"
+                    f"{label} '{val}' in {field_path} does not exist in catalog"
+                )
+            else:
+                report.broken_references.append(
+                    f"Broken entity reference in {doc.file_path.name}: "
+                    f"'{val}' referenced in {field_path} does not exist in catalog"
                 )
 
-            tech = fm.get("technical")
-            if isinstance(tech, dict):
-                containers = tech.get("containers", []) or []
-                cnt_list = [containers] if isinstance(containers, str) else containers
-                if isinstance(cnt_list, list):
-                    for cnt in cnt_list:
-                        if (
-                            isinstance(cnt, str)
-                            and (is_entity_id(cnt) or cnt.startswith("CNT-"))
-                            and cnt.strip() not in catalog_ids
-                        ):
-                            report.broken_references.append(
-                                f"Broken entity reference in {doc.file_path.name}: "
-                                f"container '{cnt.strip()}' in technical.containers does not exist in catalog"
-                            )
-
-                components = tech.get("components", []) or []
-                comp_list = [components] if isinstance(components, str) else components
-                if isinstance(comp_list, list):
-                    for comp in comp_list:
-                        if (
-                            isinstance(comp, str)
-                            and (is_entity_id(comp) or comp.startswith("CMP-"))
-                            and comp.strip() not in catalog_ids
-                        ):
-                            report.broken_references.append(
-                                f"Broken entity reference in {doc.file_path.name}: "
-                                f"component '{comp.strip()}' in technical.components does not exist in catalog"
-                            )
-
-                tech_contracts = tech.get("contracts")
-                if isinstance(tech_contracts, dict):
-                    for iface in tech_contracts.get("interfaces", []) or []:
-                        if isinstance(iface, str) and is_entity_id(iface) and iface.strip() not in catalog_ids:
-                            report.broken_references.append(
-                                f"Broken entity reference in {doc.file_path.name}: "
-                                f"contract '{iface.strip()}' in technical.contracts.interfaces does not exist in catalog"
-                            )
-                    for p in tech_contracts.get("provides", []) or []:
-                        if (
-                            isinstance(p, str)
-                            and not p.endswith(".adoc")
-                            and (is_entity_id(p) or not ("/" in p or " " in p))
-                            and p.strip() not in catalog_ids
-                        ):
-                            report.broken_references.append(
-                                f"Broken entity reference in {doc.file_path.name}: "
-                                f"contract '{p.strip()}' in technical.contracts.provides does not exist in catalog"
-                            )
-                    for r in tech_contracts.get("requires", []) or []:
-                        if (
-                            isinstance(r, str)
-                            and not r.endswith(".adoc")
-                            and (is_entity_id(r) or not ("/" in r or " " in r))
-                            and r.strip() not in catalog_ids
-                        ):
-                            report.broken_references.append(
-                                f"Broken entity reference in {doc.file_path.name}: "
-                                f"contract '{r.strip()}' in technical.contracts.requires does not exist in catalog"
-                            )
-
-        # 3. Contracts: owning_container / owning_component
+    def _validate_architectural_invariants(
+        self,
+        doc: SpecDocument,
+        fm: dict[str, Any],
+        report: ValidationReport,
+    ) -> None:
+        """Enforce structural boundary invariants across contracts and dedicated components."""
+        dtype = doc.doc_type
         if dtype == "tech/contract":
             owning_ref = fm.get("owning_container") or fm.get("owning_component")
-            if (
-                owning_ref
-                and isinstance(owning_ref, str)
-                and not owning_ref.endswith(".adoc")
-                and (is_entity_id(owning_ref) or owning_ref.startswith("CNT-") or owning_ref.startswith("CMP-"))
-                and owning_ref.strip() not in catalog_ids
-            ):
-                report.broken_references.append(
-                    f"Broken entity reference in {doc.file_path.name}: "
-                    f"container/component '{owning_ref.strip()}' in owning_container/owning_component does not exist in catalog"
-                )
             if owning_ref and str(owning_ref).startswith("CMP-"):
                 err_msg = (
                     f"INV-INTERFACE-BOUNDARY-GOVERNANCE violation: Contract '{doc.doc_id}' specifies in-process component '{owning_ref}' as owner. "
@@ -356,10 +354,7 @@ class SpecValidator:
                 )
                 doc.errors.append(err_msg)
                 report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
-
-        # 4. Dedicated Components (tech/component)
-        if dtype == "tech/component":
-            # 1. INV-COMPONENT-CENTRALIZATION-MANDATE: MUST reside in eidos/architecture/components/
+        elif dtype == "tech/component":
             rel_parts = doc.file_path.parts
             is_centralized = (
                 "architecture" in rel_parts
@@ -374,15 +369,6 @@ class SpecValidator:
                 doc.errors.append(err_msg)
                 report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
 
-            # 2. INV-COMPONENT-CONTAINER-AFFINITY: parent container must exist
-            cnt_ref = fm.get("container")
-            if cnt_ref and cnt_ref not in catalog_ids:
-                report.broken_references.append(
-                    f"INV-COMPONENT-CONTAINER-AFFINITY violation in {doc.file_path.name}: "
-                    f"Component '{doc.doc_id}' references container '{cnt_ref}' which does not exist in catalog"
-                )
-
-            # 3. INV-INTERFACE-BOUNDARY-GOVERNANCE: Components cannot declare boundary contracts
             if fm.get("contracts"):
                 err_msg = (
                     f"INV-INTERFACE-BOUNDARY-GOVERNANCE violation: Component '{doc.doc_id}' cannot declare boundary protocol contracts. "
@@ -390,177 +376,6 @@ class SpecValidator:
                 )
                 doc.errors.append(err_msg)
                 report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
-
-            # Check consumed components / modules
-            ifaces = fm.get("interfaces", {})
-            if isinstance(ifaces, dict):
-                for consumed in ifaces.get("consumes", []):
-                    if isinstance(consumed, str) and consumed.startswith("CMP-") and consumed not in catalog_ids:
-                        report.broken_references.append(
-                            f"Broken entity reference in {doc.file_path.name}: "
-                            f"consumed component '{consumed}' in interfaces.consumes does not exist in catalog"
-                        )
-
-        # 5. Containers: contracts.provides, contracts.requires/consumes, dependencies.internal_containers/internal_components, domain_binding
-        if dtype in ("tech/container", "tech/component"):
-            contracts = fm.get("contracts")
-            if isinstance(contracts, dict):
-                provides = contracts.get("provides", []) or []
-                prov_list = [provides] if isinstance(provides, str) else provides
-                if isinstance(prov_list, list):
-                    for item in prov_list:
-                        if (
-                            isinstance(item, str)
-                            and not item.endswith(".adoc")
-                            and (is_entity_id(item) or item.startswith("CTR-") or not ("/" in item or " " in item))
-                            and item.strip() not in catalog_ids
-                        ):
-                            report.broken_references.append(
-                                f"Broken entity reference in {doc.file_path.name}: "
-                                f"contract '{item.strip()}' in contracts.provides does not exist in catalog"
-                            )
-
-                for f_key in ("requires", "consumes"):
-                    reqs = contracts.get(f_key, []) or []
-                    req_list = [reqs] if isinstance(reqs, str) else reqs
-                    if isinstance(req_list, list):
-                        for item in req_list:
-                            if (
-                                isinstance(item, str)
-                                and not item.endswith(".adoc")
-                                and (is_entity_id(item) or item.startswith("CTR-") or not ("/" in item or " " in item))
-                                and item.strip() not in catalog_ids
-                            ):
-                                report.broken_references.append(
-                                    f"Broken entity reference in {doc.file_path.name}: "
-                                    f"contract '{item.strip()}' in contracts.{f_key} does not exist in catalog"
-                                )
-
-            deps = fm.get("dependencies")
-            if isinstance(deps, dict):
-                int_comps = deps.get("internal_containers", []) or deps.get("internal_components", []) or []
-                comp_list = [int_comps] if isinstance(int_comps, str) else int_comps
-                if isinstance(comp_list, list):
-                    for item in comp_list:
-                        if isinstance(item, str) and not item.endswith(".adoc") and item.strip() not in catalog_ids:
-                            report.broken_references.append(
-                                f"Broken entity reference in {doc.file_path.name}: "
-                                f"container/component '{item.strip()}' in dependencies does not exist in catalog"
-                            )
-
-            db = fm.get("domain_binding")
-            if (
-                db
-                and isinstance(db, str)
-                and not db.endswith(".adoc")
-                and (is_entity_id(db) or db.startswith("DOM-"))
-                and db.strip() not in catalog_ids
-            ):
-                report.broken_references.append(
-                    f"Broken entity reference in {doc.file_path.name}: "
-                    f"domain '{db.strip()}' in domain_binding does not exist in catalog"
-                )
-
-        # 5. Domains: technical_mapping.dependencies, technical_mapping.components
-        if dtype == "product/domain":
-            tech_map = fm.get("technical_mapping")
-            if isinstance(tech_map, dict):
-                for dep in tech_map.get("dependencies", []) or []:
-                    if (
-                        isinstance(dep, str)
-                        and not dep.endswith(".adoc")
-                        and (is_entity_id(dep) or dep.startswith("DOM-"))
-                        and dep.strip() not in catalog_ids
-                    ):
-                        report.broken_references.append(
-                            f"Broken entity reference in {doc.file_path.name}: "
-                            f"domain '{dep.strip()}' in technical_mapping.dependencies does not exist in catalog"
-                        )
-                for cmp_item in tech_map.get("components", []) or []:
-                    if (
-                        isinstance(cmp_item, str)
-                        and not cmp_item.endswith(".adoc")
-                        and is_entity_id(cmp_item)
-                        and cmp_item.strip() not in catalog_ids
-                    ):
-                        report.broken_references.append(
-                            f"Broken entity reference in {doc.file_path.name}: "
-                            f"component '{cmp_item.strip()}' in technical_mapping.components does not exist in catalog"
-                        )
-
-        # 6. Explorations: decision.resulting_delta_id
-        if dtype == "product/exploration":
-            decision = fm.get("decision")
-            if isinstance(decision, dict):
-                resulting_delta = decision.get("resulting_delta_id")
-                if (
-                    resulting_delta
-                    and isinstance(resulting_delta, str)
-                    and not resulting_delta.endswith(".adoc")
-                    and (is_entity_id(resulting_delta) or resulting_delta.startswith("DLT-"))
-                    and resulting_delta.strip() not in catalog_ids
-                ):
-                    report.broken_references.append(
-                        f"Broken entity reference in {doc.file_path.name}: "
-                        f"delta '{resulting_delta.strip()}' in decision.resulting_delta_id does not exist in catalog"
-                    )
-
-        # 7. Relational design and business references
-        for field_key in ("design_system", "extends_system", "implements_component", "container", "client"):
-            val = fm.get(field_key)
-            if (
-                val
-                and isinstance(val, str)
-                and not val.endswith(".adoc")
-                and is_entity_id(val)
-                and val.strip() not in catalog_ids
-            ):
-                report.broken_references.append(
-                    f"Broken entity reference in {doc.file_path.name}: "
-                    f"entity '{val.strip()}' in {field_key} does not exist in catalog"
-                )
-
-        for client_ref in fm.get("clients", []) or []:
-            if (
-                isinstance(client_ref, str)
-                and not client_ref.endswith(".adoc")
-                and is_entity_id(client_ref)
-                and client_ref.strip() not in catalog_ids
-            ):
-                report.broken_references.append(
-                    f"Broken entity reference in {doc.file_path.name}: "
-                    f"client '{client_ref.strip()}' in clients does not exist in catalog"
-                )
-
-        biz = fm.get("business")
-        if isinstance(biz, dict):
-            for p in biz.get("personas", []) or []:
-                if isinstance(p, str) and not p.endswith(".adoc") and is_entity_id(p) and p.strip() not in catalog_ids:
-                    report.broken_references.append(
-                        f"Broken entity reference in {doc.file_path.name}: "
-                        f"persona '{p.strip()}' in business.personas does not exist in catalog"
-                    )
-            for p in biz.get("policies", []) or []:
-                if isinstance(p, str) and not p.endswith(".adoc") and is_entity_id(p) and p.strip() not in catalog_ids:
-                    report.broken_references.append(
-                        f"Broken entity reference in {doc.file_path.name}: "
-                        f"policy '{p.strip()}' in business.policies does not exist in catalog"
-                    )
-
-        exp = fm.get("experience")
-        if isinstance(exp, dict):
-            for exp_key in ("design_systems", "screens", "ui_components"):
-                for item in exp.get(exp_key, []) or []:
-                    if (
-                        isinstance(item, str)
-                        and not item.endswith(".adoc")
-                        and is_entity_id(item)
-                        and item.strip() not in catalog_ids
-                    ):
-                        report.broken_references.append(
-                            f"Broken entity reference in {doc.file_path.name}: "
-                            f"entity '{item.strip()}' in experience.{exp_key} does not exist in catalog"
-                        )
 
     def _check_dict_references(self, val, source_file: Path, root_dir: Path, report: ValidationReport):
         """Recursively check string fields ending in .adoc to verify they exist."""
@@ -576,4 +391,135 @@ class SpecValidator:
             ref_path_from_doc = source_file.parent / val
             if not (ref_path_from_root.exists() or ref_path_from_doc.exists()):
                 report.broken_references.append(f"Broken reference in {source_file.name}: cannot locate '{val}'")
+
+    def _resolve_source_path(self, repo_root: Path, root_dir: Path, raw_path: str) -> Path | None:
+        """Resolve a non-.adoc source path or glob pattern against repo_root or root_dir."""
+        p = raw_path.strip()
+        if not p or p.upper() in ("N/A", "TBD", "NONE") or p.endswith(".adoc"):
+            return None
+        if any(ch in p for ch in ("*", "?", "[")):
+            matches = list(repo_root.glob(p)) or list(root_dir.glob(p))
+            return matches[0] if matches else None
+        for base in (repo_root, root_dir):
+            cand = base / p
+            if cand.exists():
+                return cand
+        return None
+
+    def _validate_source_and_contract_paths(self, report: ValidationReport, root_dir: Path) -> None:
+        """Verify container package_path, contract specification_file, and CLI contract command parity when source tree exists."""
+        repo_root = root_dir.parent if root_dir.name in ("eidos", ".spec") else root_dir
+
+        candidate_paths: list[str] = []
+        for doc in report.documents:
+            fm = doc.frontmatter or {}
+            if doc.doc_type == "tech/container":
+                pkg = fm.get("package_path")
+                if isinstance(pkg, str) and pkg.strip():
+                    candidate_paths.append(pkg.strip())
+                elif isinstance(pkg, list):
+                    candidate_paths.extend(str(x).strip() for x in pkg if isinstance(x, str) and str(x).strip())
+            elif doc.doc_type == "tech/contract":
+                sf = fm.get("specification_file")
+                if isinstance(sf, str) and sf.strip() and not sf.strip().endswith(".adoc"):
+                    candidate_paths.append(sf.strip())
+
+        has_source_tree = (repo_root != root_dir and (repo_root / "src").exists()) or any(
+            self._resolve_source_path(repo_root, root_dir, p) is not None for p in candidate_paths
+        )
+        if not has_source_tree:
+            return
+
+        inactive_statuses = {"planned", "proposed", "draft", "deprecated", "sunset", "rejected"}
+        for doc in report.documents:
+            fm = doc.frontmatter or {}
+            status = str(fm.get("status", "active")).strip().lower()
+            if status in inactive_statuses:
+                continue
+
+            if doc.doc_type == "tech/container":
+                pkg = fm.get("package_path")
+                pkg_list = [pkg] if isinstance(pkg, str) else (pkg if isinstance(pkg, list) else [])
+                for raw_p in pkg_list:
+                    if (
+                        isinstance(raw_p, str)
+                        and raw_p.strip()
+                        and raw_p.strip().upper() not in ("N/A", "TBD", "NONE")
+                        and self._resolve_source_path(repo_root, root_dir, raw_p) is None
+                    ):
+                        report.broken_references.append(
+                            f"Broken package_path in {doc.file_path.name}: "
+                            f"Container '{doc.doc_id}' references '{raw_p}' which does not exist on disk"
+                        )
+            elif doc.doc_type == "tech/contract":
+                sf = fm.get("specification_file")
+                if isinstance(sf, str) and sf.strip() and sf.strip().upper() not in ("N/A", "TBD", "NONE") and not sf.strip().endswith(".adoc"):
+                    resolved_sf = self._resolve_source_path(repo_root, root_dir, sf)
+                    if resolved_sf is None:
+                        report.broken_references.append(
+                            f"Broken specification_file in {doc.file_path.name}: "
+                            f"Contract '{doc.doc_id}' references '{sf}' which does not exist on disk"
+                        )
+                    elif str(fm.get("protocol", "")).strip().lower() == "cli_args" and resolved_sf.suffix == ".py":
+                        self._verify_cli_contract_commands(doc, resolved_sf, report)
+
+    def _verify_cli_contract_commands(
+        self, doc: SpecDocument, cli_file: Path, report: ValidationReport
+    ) -> None:
+        """Verify that top-level non-hidden Typer CLI commands in specification_file are documented in the contract body."""
+        try:
+            source = cli_file.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except (OSError, SyntaxError):
+            return
+
+        commands: set[str] = set()
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "app"
+                and node.func.attr == "add_typer"
+            ):
+                for kw in node.keywords:
+                    if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                        commands.add(kw.value.value)
+            elif isinstance(node, ast.FunctionDef):
+                for dec in node.decorator_list:
+                    if (
+                        isinstance(dec, ast.Call)
+                        and isinstance(dec.func, ast.Attribute)
+                        and isinstance(dec.func.value, ast.Name)
+                        and dec.func.value.id == "app"
+                        and dec.func.attr == "command"
+                    ):
+                        hidden = any(
+                            kw.arg == "hidden" and isinstance(kw.value, ast.Constant) and kw.value.value is True
+                            for kw in dec.keywords
+                        )
+                        if not hidden:
+                            name = next(
+                                (
+                                    kw.value.value
+                                    for kw in dec.keywords
+                                    if kw.arg == "name"
+                                    and isinstance(kw.value, ast.Constant)
+                                    and isinstance(kw.value.value, str)
+                                ),
+                                None,
+                            )
+                            if not name and dec.args and isinstance(dec.args[0], ast.Constant) and isinstance(dec.args[0].value, str):
+                                name = dec.args[0].value
+                            commands.add(name or node.name.replace("_", "-"))
+
+        if not commands:
+            return
+
+        body = doc.body or ""
+        for cmd_name in sorted(commands):
+            if not re.search(rf"(?:`|\b){re.escape(cmd_name)}\b", body):
+                report.broken_references.append(
+                    f"Contract drift in {doc.file_path.name}: CLI command '{cmd_name}' defined in '{cli_file.name}' is not documented in contract '{doc.doc_id}'"
+                )
 

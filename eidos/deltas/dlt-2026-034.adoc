@@ -1,0 +1,64 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-034
+title: "Rich SQLite AST Symbol Metadata, Recursive Multi-Package Indexing, and Diff-Aware Spec Coverage"
+status: proposed
+vcs:
+  branch: feat/rich-symbol-index-and-diff-aware-drift
+intent:
+  kind: feature_addition
+  motivation: "Persist full AST symbol coordinates and signatures in SQLite so 'find-symbol' and 'get_repo_map()' operate in O(1) without re-parsing source files from disk, index all container 'package_path' entries recursively, and enforce diff-aware spec coverage so trivial whitespace edits cannot silence structural code drift."
+mutations:
+  - action: modify_component
+    target_component: CNT-EIDOS-INDEX
+    details: "Upgrade 'symbol_mappings' in 'src/eidos/core/graph_index.py' to store '(symbol, entity_id, kind, file_path, line_start, line_end, signature, parent_symbol)'; refactor 'find_symbol()' and 'get_repo_map()' to query SQLite directly without disk AST re-parsing; store all container 'package_path' entries for complete 'is_dirty()' mtime tracking; and use recursive 'rglob()' across all container package directories regardless of whether inline components are present."
+  - action: modify_component
+    target_component: CNT-EIDOS-VCS
+    details: "Upgrade '_is_covered_by_changed_specs()' in 'src/eidos/vcs/drift.py' with diff-aware semantic verification that rejects whitespace-only or comment-only 'touch-to-appease' spec edits when new source files or public structural symbols are introduced."
+  - action: extend_capability
+    target_capability: CAP-VCS-001
+    details: "Enforce diff-aware specification coverage and full SQLite AST symbol coordinate resolution across all container package paths."
+blast_radius:
+  impacted_components:
+    - CNT-EIDOS-INDEX
+    - CNT-EIDOS-VCS
+    - CMP-GRAPH-STORAGE
+    - CMP-INCREMENTAL-SYNC-ENGINE
+    - CMP-AST-SYMBOL-INDEXER
+    - CMP-DRIFT-DETECTOR
+  invariants_to_enforce:
+    - INV-KNOWLEDGE-GRAPH-CATALOG
+    - INV-DRIFT-DETECTION-ACCURACY
+---
+= SpecDelta: Rich SQLite AST Symbol Metadata, Recursive Multi-Package Indexing, and Diff-Aware Spec Coverage
+:toc: left
+
+== Problem Statement
+
+1. **Discarded AST Symbol Metadata & Disk Re-Parsing**: `ASTIndexer.extract_symbols()` extracts `file_path`, `line_start`, `line_end`, `signature`, and `parent_symbol` for every class, function, and interface. However, `GraphIndex.sync()` (`src/eidos/core/graph_index.py`, lines 307–312 and 1120) only stores `(symbol, entity_id, kind)` in `symbol_mappings`. Consequently, `eidos index find-symbol` cannot report which file or line defines a symbol, and `get_repo_map()` (lines 1448–1469) must re-read and AST-parse every source file from disk on every invocation.
+2. **Multi-`package_path` Truncation & Non-Recursive Globs**:
+   * When a container defines multiple `package_path` directories (e.g., `["src/eidos/core", "assets/schemas"]`), `entities.package_path` stores only `pkg_list[0]` (line 565), causing `is_dirty()` to miss modifications in secondary directories.
+   * Package directory AST indexing (lines 911–915) only runs `if not all_modules:` and uses non-recursive `abs_pkg.glob(ext)` instead of `rglob(ext)`, skipping unmapped files and subdirectories whenever a container declares even one inline component.
+3. **"Touch-to-Appease" Spec Gaming**: `_is_covered_by_changed_specs()` (`src/eidos/vcs/drift.py`, lines 826–845) only checks whether a 1-hop spec file appears in `git diff`. Adding a blank line or trivial comment to `container.adoc` silences drift for newly added classes, modules, or public endpoints without documenting them.
+
+== Architectural & Behavioral Mutations
+
+1. **Rich `symbol_mappings` Schema & $O(1)$ Repo Map**:
+   * Expand `symbol_mappings` to `(symbol TEXT, entity_id TEXT, kind TEXT, file_path TEXT, line_start INTEGER, line_end INTEGER, signature TEXT, parent_symbol TEXT, PRIMARY KEY (symbol, entity_id, kind, file_path, line_start))`.
+   * Update `find_symbol()` to return `file_path`, `line_start`, `line_end`, and `signature`.
+   * Refactor `get_repo_map()` to reconstruct the structural repository map directly from `file_mappings` and `symbol_mappings` in SQLite in sub-5ms.
+2. **Complete Multi-Package & Recursive `rglob` Indexing**:
+   * Store all container `package_path` entries (JSON-serialized list in `entities.package_path` or dedicated mapping rows) and check all of them in `is_dirty()`.
+   * Recursively index all source files under each `package_path` via `rglob()`, attributing files not claimed by a specific `CMP-*` `source_path` to their parent `CNT-*` container.
+3. **Diff-Aware Specification Coverage**:
+   * When a new source module is added or a new public class/function/component is introduced, `_is_covered_by_changed_specs()` inspects the unified diff of the modified 1-hop specification(s):
+     - Rejects diffs that contain only whitespace, blank lines, or AsciiDoc comment lines (`//`).
+     - When a new source file is added outside an existing glob `source_path`, requires the owning container/component spec diff to either update `source_path` / `components` or add non-trivial substantive prose/frontmatter lines.
+
+== Verification Criteria
+
+* `eidos index find-symbol GraphIndex --json` returns `file_path: "src/eidos/core/graph_index.py"`, `line_start`, `line_end`, and `signature`.
+* `GraphIndex.get_repo_map()` executes with zero `ASTIndexer.extract_symbols()` calls when the index is warm.
+* Appending only whitespace or `// comment` to `eidos/architecture/containers/core.adoc` after adding a new public class in `src/eidos/core/` fails `eidos drift` with an explicit diff-coverage diagnostic.
+

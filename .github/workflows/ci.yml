@@ -40,6 +40,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
+      - name: Lint code with Ruff
+        run: uv run ruff check src/ tests/
+
       - name: Validate Eidos living specifications
         run: uv run eidos validate eidos
 
@@ -47,7 +50,7 @@ jobs:
         run: uv run eidos plugin validate
 
       - name: Verify Spec-to-Code Synchronization & Invariant Traceability
-        run: uv run eidos drift
+        run: uv run eidos drift --base origin/main
 
   test:
     name: Test (Python ${{ matrix.python-version }})

@@ -17,15 +17,15 @@ runner = CliRunner()
 
 
 def test_delta_verify_all_satisfied(tmp_path):
-    """Verify that verify_delta_mutations reports is_verified=True when all mutations exist."""
+    """Verify that verify_delta_mutations rejects unmodified modify_*/extend_* targets and passes once modified."""
     init_repository(tmp_path, name="test-system", with_plugin=False)
     eidos_dir = tmp_path / "eidos"
 
     # 1. Create baseline container, capability, and policy
     create_spec(eidos_dir, "domain", "DOM-AUTH", title="Auth Domain")
-    create_spec(eidos_dir, "capability", "CAP-AUTH-LOGIN", title="User Login", domain="DOM-AUTH")
-    create_spec(eidos_dir, "container", "CNT-AUTH-SVC", title="Auth Service")
-    create_spec(eidos_dir, "policy", "POL-AUTH-PASS", title="Password Policy", rule="Min 8 chars.")
+    cap_path = create_spec(eidos_dir, "capability", "CAP-AUTH-LOGIN", title="User Login", domain="DOM-AUTH")
+    cnt_path = create_spec(eidos_dir, "container", "CNT-AUTH-SVC", title="Auth Service")
+    pol_path = create_spec(eidos_dir, "policy", "POL-AUTH-PASS", title="Password Policy", rule="Min 8 chars.")
 
     # 2. Create a SpecDelta declaring mutations on those entities and a removal of an absent entity
     dlt_path = create_spec(
@@ -54,6 +54,26 @@ def test_delta_verify_all_satisfied(tmp_path):
     new_content = content.replace("mutations: []", mutations_yaml)
     dlt_path.write_text(new_content, encoding="utf-8")
 
+    # 3. Before touching the target specs, modify_*/extend_* must report UNMODIFIED (only remove_component is satisfied)
+    pre_verified, _pre_msg, pre_report = verify_delta_mutations(eidos_dir, "DLT-2026-050")
+    assert pre_verified is False
+    assert pre_report is not None
+    assert pre_report.verified_count == 1
+    assert [m.status for m in pre_report.mutations] == [
+        "UNMODIFIED",
+        "UNMODIFIED",
+        "UNMODIFIED",
+        "ABSENT_AS_EXPECTED",
+    ]
+
+    # 4. Now actually modify the three target living specifications
+    cnt_path.write_text(cnt_path.read_text(encoding="utf-8") + "\n// Hardened auth service\n", encoding="utf-8")
+    cap_path.write_text(cap_path.read_text(encoding="utf-8") + "\n// Added MFA support\n", encoding="utf-8")
+    pol_path.write_text(
+        pol_path.read_text(encoding="utf-8").replace("Min 8 chars.", "Min 12 chars."),
+        encoding="utf-8",
+    )
+
     is_verified, msg, report = verify_delta_mutations(eidos_dir, "DLT-2026-050")
     assert is_verified is True
     assert report is not None
@@ -72,6 +92,48 @@ def test_delta_verify_all_satisfied(tmp_path):
     data = json.loads(res_json.output)
     assert data["is_verified"] is True
     assert data["total_mutations"] == 4
+
+
+def test_delta_verify_declarative_expect_and_patch_invariant(tmp_path):
+    """Verify Option 3: declarative expect post-conditions, structural sub-targets, and patch_invariant baseline checks."""
+    init_repository(tmp_path, name="test-system", with_plugin=False)
+    eidos_dir = tmp_path / "eidos"
+
+    create_spec(eidos_dir, "domain", "DOM-AUTH", title="Auth Domain")
+    cap_path = create_spec(eidos_dir, "capability", "CAP-AUTH-001", title="Auth Cap", domain="DOM-AUTH")
+    pol_path = create_spec(eidos_dir, "policy", "POL-AUTH-001", title="Password Policy", rule="Min 8 chars.")
+
+    # Add an initial invariant to CAP-AUTH-001 before creating the delta
+    cap_text = cap_path.read_text(encoding="utf-8").replace(
+        "invariants: []",
+        'invariants:\n    - id: INV-SPEC-VALIDATION\n      rule: "Initial rule"\n      test_binding: "tests/test_delta_engine.py::test_delta_verify_declarative_expect_and_patch_invariant"',
+    )
+    cap_path.write_text(cap_text, encoding="utf-8")
+
+    dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-054", title="Declarative & Invariant Patch")
+    mutations_yaml = """mutations:
+  - action: modify_policy
+    target_policy: POL-AUTH-001
+    expect:
+      rule: "Min 14 chars."
+  - action: patch_invariant
+    target_invariant_id: INV-SPEC-VALIDATION
+"""
+    dlt_path.write_text(dlt_path.read_text(encoding="utf-8").replace("mutations: []", mutations_yaml), encoding="utf-8")
+
+    # 1. Both fail initially with UNMODIFIED
+    ok1, _, rep1 = verify_delta_mutations(eidos_dir, "DLT-2026-054")
+    assert ok1 is False
+    assert [m.status for m in rep1.mutations] == ["UNMODIFIED", "UNMODIFIED"]
+
+    # 2. Update policy rule to satisfy expect, and patch invariant rule
+    pol_path.write_text(pol_path.read_text(encoding="utf-8").replace("Min 8 chars.", "Min 14 chars."), encoding="utf-8")
+    cap_path.write_text(cap_path.read_text(encoding="utf-8").replace("Initial rule", "Patched rule"), encoding="utf-8")
+
+    ok2, _, rep2 = verify_delta_mutations(eidos_dir, "DLT-2026-054")
+    assert ok2 is True
+    assert [m.status for m in rep2.mutations] == ["MODIFIED", "MODIFIED"]
+
 
 
 def test_delta_verify_unfulfilled_mutations(tmp_path):

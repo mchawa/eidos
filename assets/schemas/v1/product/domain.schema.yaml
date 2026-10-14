@@ -2,6 +2,7 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 title: DomainSchema
 description: "Defines a bounded context (Domain-Driven Design), its architectural boundaries, responsibilities, and components."
 type: object
+additionalProperties: false
 required:
   - type
   - schema
@@ -24,6 +25,16 @@ properties:
   name:
     type: string
     description: "Human-readable name of the domain or bounded context."
+  status:
+    type: string
+    enum:
+      - draft
+      - proposed
+      - planned
+      - active
+      - deprecated
+      - retired
+    description: "Optional lifecycle state of the domain specification."
   classification:
     type: string
     pattern: "^[a-z0-9_-]+$"
@@ -45,6 +56,7 @@ properties:
   boundaries:
     type: object
     description: "Functional boundaries defining what this domain owns."
+    additionalProperties: false
     required:
       - responsibilities
     properties:
@@ -63,16 +75,32 @@ properties:
   technical_mapping:
     type: object
     description: "Mapping of this business domain to concrete software packages, repositories, or services (optional)."
+    additionalProperties: false
     properties:
       components:
         type: array
         description: "Source code directories, modules, or services that realize this domain."
         items:
           type: string
-          description: "Relative path or module name (e.g. packages/spec-parser)."
+          description: "Relative path, module name, or container/component ID (e.g. packages/spec-parser or CNT-CORE)."
+          x-eidos-ref:
+            target_types:
+              - tech/container
+              - tech/component
+            prefixes:
+              - CNT-
+              - CMP-
+            allow_non_id_string: true
       dependencies:
         type: array
         description: "Other domain IDs that this domain depends on or communicates with."
         items:
           type: string
+          pattern: "^(DOM-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Referenced domain ID (e.g. DOM-VCS-SYNC)."
+          x-eidos-ref:
+            target_types:
+              - product/domain
+            prefixes:
+              - DOM-
+            entity_label: domain

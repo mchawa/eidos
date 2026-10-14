@@ -1,0 +1,95 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-030
+title: 'Strict 1-Hop Drift Scoping: Remove Global System Spec Escape Hatch and Graph-Scope
+  Design Drift'
+status: applied
+vcs:
+  branch: fix/strict-1hop-drift-no-system-bypass
+intent:
+  kind: bugfix
+  motivation: 'Close two gaps left by DLT-2026-028: (1) the global drift bypass in
+    ''_collect_1hop_spec_targets()'' where modifying the root system or system-architecture
+    specifications silences structural code drift for every component, and (2) the
+    legacy extension-based ''design_drift'' heuristic that ignores the knowledge graph,
+    ignores Planned Mode SpecDelta targets, and treats every CSS edit as structural.'
+  bug_classification: spec_violation
+  severity: high
+mutations:
+- action: modify_component
+  target_component: CNT-EIDOS-VCS
+  details: Remove hardcoded 'eidos/system.adoc' and 'eidos/architecture/system-architecture.adoc'
+    entries from default 'allowed_paths' in '_collect_1hop_spec_targets()' within
+    'src/eidos/vcs/drift.py'; only include system-level architecture specifications
+    when a code file is unmapped to any specific container.
+- action: modify_component
+  target_component: CNT-EIDOS-VCS
+  details: 'Replace the global extension-based ''design_drift'' check in ''detect_drift()''
+    with graph-scoped design drift: only frontend files with design-structural changes
+    (CSS custom property/@theme/@keyframes token mutations, or exported UI component/Props/route
+    changes) whose owning container is bound to a ''CLT-*'' or ''DS-*'' in the knowledge
+    graph require a design spec update, satisfied only by that client''s/design system''s
+    1-hop design subgraph or by an active SpecDelta declaring a design target.'
+- action: modify_component
+  target_component: CNT-EIDOS-CORE
+  details: Add 'classify_design_changes(old_content, new_content, file_path)' to 'src/eidos/core/ast_indexer.py'
+    classifying frontend/styling diffs into 'token', 'ui_contract', or 'body_only'
+    categories.
+- action: patch_invariant
+  target_invariant_id: INV-DRIFT-DETECTION-ACCURACY
+  target_capability: CAP-VCS-001
+  details: Enforce strict 1-hop component isolation so editing system-level specs
+    or unrelated design specs cannot mask structural code or design drift, and internal
+    styling/logic tweaks do not trigger design drift.
+blast_radius:
+  impacted_components:
+  - CNT-EIDOS-VCS
+  - CNT-EIDOS-CORE
+  - CMP-DRIFT-DETECTOR
+  - CMP-AST-SYMBOL-INDEXER
+  invariants_to_enforce:
+  - INV-DRIFT-DETECTION-ACCURACY
+---
+= SpecDelta: Strict 1-Hop Drift Scoping: Remove Global System Spec Escape Hatch and Graph-Scope Design Drift
+:toc: left
+
+== Problem Statement
+
+=== Gap 1: Global `system.adoc` Escape Hatch
+
+In `src/eidos/vcs/drift.py` (`_collect_1hop_spec_targets`, lines 774–778), `allowed_paths` is initialized with `{"eidos/system.adoc", "eidos/architecture/system-architecture.adoc"}` for every mapped container and component ID. Consequently, if a developer or AI agent makes structural code changes across multiple unrelated containers (`CNT-EIDOS-CORE`, `CNT-EIDOS-PORTAL`, `CNT-EIDOS-PLUGIN`) and touches a single line in `eidos/system.adoc`, `_is_covered_by_changed_specs()` returns `True` for all modified code files, defeating the scoped 1-hop graph neighborhood isolation introduced in `DLT-2026-028`.
+
+=== Gap 2: Legacy Extension-Based Design Drift
+
+`design_drift` in `detect_drift()` (lines 960–975) predates `DLT-2026-028` and contradicts it:
+
+1. **No knowledge graph scoping**: any structural change to `.css`/`.tsx`/`.jsx`/`.vue`/`.svelte`/`.html` triggers design drift unless *any* file under `eidos/design/` or any `tokens.json` changes. Updating the owning `CNT-*` spec does not satisfy it, while editing an unrelated client's design specs does.
+2. **Ignores Planned Mode**: active SpecDeltas declaring `target_design_system`, `target_screen`, or `target_ui_component` do not satisfy design drift.
+3. **Every CSS edit is structural**: `has_structural_changes()` treats any `.css`/`.scss` content change as structural, so a 1px alignment fix forces design spec churn.
+
+== Architectural & Behavioral Mutations
+
+1. **Strict 1-Hop Graph Target Scoping (`_collect_1hop_spec_targets`)**:
+   * Initialize `allowed_paths` only with the owning specification path for mapped `CNT-*` and `CMP-*` entities.
+   * Populate `allowed_paths` strictly from the owning specification's `file_path` and its 1-hop graph neighborhood (`idx.get_k_hop_neighborhood(cid, max_hops=1)`).
+   * Remove the blanket `eidos/design/` acceptance from `_is_covered_by_changed_specs()`; design specs only satisfy code drift when they are part of the 1-hop neighborhood.
+2. **System-Level Spec Scope Restriction**:
+   * Only allow `eidos/system.adoc` or `eidos/architecture/system-architecture.adoc` to satisfy drift for code files with no `CNT-*` ownership mapping.
+3. **Design-Structural Change Classification (`classify_design_changes`)**:
+   * `token`: added/removed/modified CSS custom properties (`--*`), `@theme` blocks, `@keyframes`, or `@font-face` declarations.
+   * `ui_contract`: added/removed/changed exported UI components, `Props`/`*Props` interfaces or types, or route definitions (`path="/..."`, `<Route>`, `createBrowserRouter`).
+   * `body_only`: internal layout utility tweaks, hook bodies, event handlers, or data-fetching helpers that do not alter tokens, exported props, or routes.
+4. **Graph-Scoped Design Drift Resolution**:
+   * Map each design-structural frontend file to its owning `CNT-*`/`CMP-*` and resolve bound `CLT-*` and `DS-*` entities via the knowledge graph (`design/client.container`, `design/system` client bindings).
+   * Containers with no bound `CLT-*`/`DS-*` never demand `eidos/design/` updates.
+   * Design drift is satisfied only by modified specs within the bound clients' and design systems' 1-hop subgraph (`DS-*` spec, its `tokens.json`, its `UIC-*` components, `CLT-*` spec and its `SCR-*`/`FLOW-*` specs) or the owning `CNT-*`/`CMP-*` spec for `ui_contract` changes.
+   * In Planned Mode, active SpecDeltas declaring the bound `DS-*`, `CLT-*`, `SCR-*`, `UIC-*`, or owning container satisfy design drift.
+
+== Verification Criteria
+
+* Modifying a public function signature in `src/eidos/cli/main.py` while editing only `eidos/system.adoc` triggers drift.
+* A body-only CSS tweak (no custom property, `@theme`, or `@keyframes` changes) produces zero design drift.
+* A CSS custom property change in a portal stylesheet without updating `DS-CORE` / `CLT-WEB-PORTAL` subgraph specs triggers design drift; updating `eidos/design/systems/core/tokens.json` clears it.
+* A token change accompanied by an edit to an unrelated design system or client spec (outside the bound subgraph) still triggers design drift.
+* Regression tests added to `tests/test_drift.py` and `tests/test_ast_indexer.py`.

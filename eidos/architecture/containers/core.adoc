@@ -23,7 +23,7 @@ components:
     source_path: "src/eidos/core/validator.py"
   - id: CMP-LIFECYCLE-SCAFFOLDER
     name: "LifecycleScaffolder"
-    responsibility: "Scaffolds living specifications, conducts reference safety checks, manages flat SpecDelta lifecycles, and orchestrates C4 component promotion (promote_component) and inlining (inline_component)."
+    responsibility: "Scaffolds all 16 living specification types using safe YAML serialization (yaml.safe_dump), conducts reference safety checks, manages flat SpecDelta lifecycles, and orchestrates centralized C4 component promotion (promote_component) and inlining (inline_component)."
     source_path: "src/eidos/core/scaffolder.py"
   - id: CMP-DESIGN-ENGINE
     name: "DesignEngine"

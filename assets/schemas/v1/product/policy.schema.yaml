@@ -2,6 +2,7 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 title: PolicySchema
 description: "Defines non-negotiable system invariants, compliance rules, structural guardrails, and quality gates."
 type: object
+additionalProperties: false
 required:
   - type
   - schema
@@ -25,6 +26,16 @@ properties:
   title:
     type: string
     description: "Short human-readable title of the policy."
+  status:
+    type: string
+    enum:
+      - draft
+      - proposed
+      - planned
+      - active
+      - deprecated
+      - retired
+    description: "Optional lifecycle state of the policy specification."
   category:
     type: string
     pattern: "^[a-z0-9_-]+$"
@@ -51,6 +62,7 @@ properties:
   enforcement:
     type: object
     description: "Specification of how this policy is verified and enforced programmatically."
+    additionalProperties: false
     required:
       - mechanism
       - severity

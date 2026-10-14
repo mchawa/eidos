@@ -2,6 +2,7 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 title: DesignSystemSchema
 description: "Defines a visual design system, brand identity, W3C tokens manifest, theme capabilities, and inheritance hierarchy for multi-brand/multi-client products."
 type: object
+additionalProperties: false
 required:
   - type
   - schema
@@ -26,11 +27,18 @@ properties:
     description: "Display title of the design system (e.g. 'Core Product Design System', 'Acme Enterprise Theme')."
   status:
     type: string
-    pattern: "^[a-z0-9_-]+$"
-    description: "Lifecycle status: active, proposed, draft, deprecated."
+    enum:
+      - draft
+      - proposed
+      - planned
+      - active
+      - deprecated
+      - retired
+    description: "Lifecycle status: draft, proposed, planned, active, deprecated, or retired."
     examples:
       - "active"
       - "proposed"
+      - "planned"
       - "draft"
       - "deprecated"
   client_id:
@@ -40,14 +48,31 @@ properties:
   brand_name:
     type: string
     description: "Human-readable client or brand name (e.g. 'Acme Corporation')."
+  extends_system:
+    type: string
+    pattern: "^(DS-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Optional ID or relative path of the parent design system."
+    x-eidos-ref:
+      target_types:
+        - design/system
+      prefixes:
+        - DS-
+      entity_label: entity
   inheritance:
     type: object
     description: "Inheritance topology: allows client design systems to extend a base system and override tokens or components."
-    additionalProperties: true
+    additionalProperties: false
     properties:
       extends:
         type: string
+        pattern: "^(DS-[A-Z0-9_-]+|.*\\.adoc)$"
         description: "ID or relative path of the parent design system (e.g. 'DS-CORE' or 'eidos/design/systems/core/system.adoc')."
+        x-eidos-ref:
+          target_types:
+            - design/system
+          prefixes:
+            - DS-
+          entity_label: entity
       override_mode:
         type: string
         pattern: "^[a-z0-9_-]+$"
@@ -59,10 +84,10 @@ properties:
   tokens:
     type: object
     description: "W3C Design Tokens Community Group (DTCG) standard tokens manifest and configuration."
+    additionalProperties: false
     required:
       - spec_format
       - manifest
-    additionalProperties: true
     properties:
       spec_format:
         type: string
@@ -75,7 +100,7 @@ properties:
   theme_capabilities:
     type: object
     description: "Supported color modes, visual density modes, and accessibility presets defined by this design system."
-    additionalProperties: true
+    additionalProperties: false
     properties:
       color_modes:
         type: array
@@ -90,7 +115,7 @@ properties:
   external_references:
     type: object
     description: "Upstream design tools, team libraries, or documentation portals."
-    additionalProperties: true
+    additionalProperties: false
     properties:
       figma_team_library:
         type: string
@@ -98,4 +123,3 @@ properties:
       storybook_url:
         type: string
         description: "URL to deployed Storybook or component documentation."
-

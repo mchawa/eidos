@@ -714,6 +714,23 @@ def test_plugin_hooks_conformance():
     assert "eidos-doc-linter" in report.hooks
     assert "eidos-drift-gate" in report.hooks
 
+    hooks_file = ref_plugin / "hooks.json"
+    with open(hooks_file, encoding="utf-8") as f:
+        hooks_data = json.load(f)
+
+    linter = hooks_data["eidos-doc-linter"]
+    assert "PreToolUse" in linter
+    assert "PostToolUse" in linter
+
+    # Verify tool matchers cover Antigravity, Claude Code, Cursor, and Cline
+    for event in ("PreToolUse", "PostToolUse"):
+        handlers = linter[event]
+        assert len(handlers) >= 1
+        matcher = handlers[0].get("matcher", "")
+        for tool in ("write_to_file", "replace_file_content", "Write", "Edit", "MultiEdit", "str_replace_editor", "create_file", "edit_file"):
+            assert tool in matcher, f"Tool '{tool}' missing from {event} matcher: {matcher}"
+
+
 
 def test_doc_lint_hook_pre_tool_use():
     """Verify pre_tool linting intercepts and blocks malformed YAML frontmatters."""
@@ -1040,7 +1057,7 @@ def test_drift_hook_post_invocation_clean(tmp_path):
 
 
 def test_stop_gate_block_once_and_allow_second_attempt(tmp_path):
-    """Verify Block-Once Stop Gate (DLT-2026-024): blocks first Stop on drift, allows second Stop with identical fingerprint, and blocks again on new drift."""
+    """Verify Block-Once Stop Gate (INV-HOOK-BLOCK-ONCE, DLT-2026-024): blocks first Stop on drift, allows second Stop with identical fingerprint, and blocks again on new drift."""
     from eidos.plugin.hooks import handle_drift_stop
 
     eidos_dir = tmp_path / "eidos"
@@ -1093,3 +1110,219 @@ def test_cli_doctor_command():
     assert "cli_binary" in data["checks"]
     assert "knowledge_graph_index" in data["checks"]
     assert data["checks"]["living_specs"]["exists"] is True
+
+
+def test_doc_lint_hook_cross_harness_payloads(tmp_path):
+    """Verify PreToolUse and PostToolUse lint hooks normalize payloads across Antigravity, Claude Code, and Cursor (INV-AGENT-LINT-HOOK, DLT-2026-033)."""
+    eidos_dir = tmp_path / "eidos" / "policies"
+    eidos_dir.mkdir(parents=True)
+    target_spec = eidos_dir / "pol-001.adoc"
+    target_spec.write_text(
+        "---\n"
+        "type: product/policy\n"
+        "schema: schemas/v1/product/policy.schema.yaml\n"
+        "id: POL-001\n"
+        "title: Valid Policy\n"
+        "---\n"
+        "= Policy\n",
+        encoding="utf-8",
+    )
+
+    # 1. Claude Code 'Write' with broken schema reference -> denied
+    claude_write_bad_schema = json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "cwd": str(tmp_path),
+            "tool_name": "Write",
+            "tool_input": {
+                "file_path": "eidos/policies/pol-002.adoc",
+                "content": "---\ntype: product/policy\nschema: schemas/v1/product/nonexistent.schema.yaml\nid: POL-002\n---\n",
+            },
+        }
+    )
+    res_cw = runner.invoke(app, ["hook", "lint", "--event", "PreToolUse"], input=claude_write_bad_schema)
+    assert res_cw.exit_code == 0
+    data_cw = json.loads(res_cw.stdout)
+    assert data_cw["decision"] == "deny"
+    assert "Broken schema reference" in data_cw["reason"]
+
+    # 2. Claude Code 'Edit' (old_string / new_string) introducing invalid YAML -> denied
+    claude_edit_bad = json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "cwd": str(tmp_path),
+            "tool_name": "Edit",
+            "tool_input": {
+                "file_path": str(target_spec),
+                "old_string": "title: Valid Policy",
+                "new_string": "title: [unclosed bracket",
+            },
+        }
+    )
+    res_ce = runner.invoke(app, ["hook", "lint", "--event", "PreToolUse"], input=claude_edit_bad)
+    assert res_ce.exit_code == 0
+    data_ce = json.loads(res_ce.stdout)
+    assert data_ce["decision"] == "deny"
+    assert "YAML Syntax Error" in data_ce["reason"]
+
+    # 3. Claude Code 'MultiEdit' removing required 'id' field -> denied
+    claude_multiedit_bad = json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "cwd": str(tmp_path),
+            "tool_name": "MultiEdit",
+            "tool_input": {
+                "file_path": str(target_spec),
+                "edits": [
+                    {"old_string": "id: POL-001\n", "new_string": ""},
+                ],
+            },
+        }
+    )
+    res_cm = runner.invoke(app, ["hook", "lint", "--event", "PreToolUse"], input=claude_multiedit_bad)
+    assert res_cm.exit_code == 0
+    data_cm = json.loads(res_cm.stdout)
+    assert data_cm["decision"] == "deny"
+    assert "missing required fields: id" in data_cm["reason"]
+
+    # 4. Cursor / Cline 'str_replace_editor' (path, old_str, new_str) with valid edit -> allowed
+    cursor_edit_good = json.dumps(
+        {
+            "cwd": str(tmp_path),
+            "tool_name": "str_replace_editor",
+            "parameters": {
+                "path": "eidos/policies/pol-001.adoc",
+                "old_str": "title: Valid Policy",
+                "new_str": "title: Updated Valid Policy",
+            },
+        }
+    )
+    res_cur = runner.invoke(app, ["hook", "lint", "--event", "PreToolUse"], input=cursor_edit_good)
+    assert res_cur.exit_code == 0
+    data_cur = json.loads(res_cur.stdout)
+    assert data_cur["decision"] == "allow"
+
+    # 5. PostToolUse stdin fallback when EIDOS_TARGET_FILE is not set in env
+    target_spec.write_text(
+        "---\ntype: product/policy\nschema: [broken yaml\n---\n",
+        encoding="utf-8",
+    )
+    post_tool_payload = json.dumps(
+        {
+            "hook_event_name": "PostToolUse",
+            "cwd": str(tmp_path),
+            "tool_name": "Write",
+            "tool_input": {
+                "file_path": "eidos/policies/pol-001.adoc",
+            },
+        }
+    )
+    res_post = runner.invoke(app, ["hook", "lint", "--event", "PostToolUse"], input=post_tool_payload)
+    assert res_post.exit_code == 0
+    data_post = json.loads(res_post.stdout)
+    assert data_post["decision"] == "deny"
+    assert "YAML Syntax Error" in data_post["reason"]
+
+
+def test_hooks_are_cli_native():
+    """Verify INV-HOOK-CLI-NATIVE: all hooks in hooks.json invoke 'eidos hook' directly with zero wrapper scripts."""
+    ref_plugin = Path("assets/plugin_reference")
+    assert not (ref_plugin / "scripts").exists(), "Legacy scripts/ wrapper directory must not exist"
+    hooks_data = json.loads((ref_plugin / "hooks.json").read_text(encoding="utf-8"))
+
+    commands: list[str] = []
+    for _hook_name, events in hooks_data.items():
+        if not isinstance(events, dict):
+            continue
+        for _event_name, entries in events.items():
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if "hooks" in entry and isinstance(entry["hooks"], list):
+                    for h in entry["hooks"]:
+                        commands.append(h.get("command", ""))
+                elif "command" in entry:
+                    commands.append(entry["command"])
+
+    assert len(commands) >= 5
+    for cmd in commands:
+        assert cmd.startswith("eidos hook "), f"Expected native 'eidos hook' command, got: {cmd}"
+        assert ".py" not in cmd and ".sh" not in cmd
+
+
+def test_hooks_fail_loud_on_internal_error(tmp_path, monkeypatch):
+    """Verify INV-HOOK-FAIL-LOUD: PostInvocation and Stop hooks emit structured error payloads when internal exceptions occur."""
+    from eidos.plugin.hooks import (
+        handle_drift_post_invocation,
+        handle_drift_stop,
+        handle_lint_post_invocation,
+        handle_lint_stop,
+    )
+
+    eidos_dir = tmp_path / "eidos"
+    eidos_dir.mkdir()
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated internal engine failure")
+
+    monkeypatch.setattr("eidos.plugin.hooks.SpecValidator", _boom)
+    monkeypatch.setattr("eidos.plugin.hooks.detect_drift", _boom)
+
+    lint_post = handle_lint_post_invocation({"invocationNum": 1}, tmp_path)
+    assert len(lint_post["injectSteps"]) == 1
+    assert "simulated internal engine failure" in lint_post["injectSteps"][0]["ephemeralMessage"]
+
+    drift_post = handle_drift_post_invocation({"invocationNum": 1}, tmp_path)
+    assert len(drift_post["injectSteps"]) == 1
+    assert "simulated internal engine failure" in drift_post["injectSteps"][0]["ephemeralMessage"]
+
+    lint_stop = handle_lint_stop({"executionNum": 1}, tmp_path)
+    assert lint_stop["decision"] == "continue"
+    assert "simulated internal engine failure" in lint_stop["reason"]
+
+    drift_stop = handle_drift_stop({"executionNum": 1}, tmp_path)
+    assert drift_stop["decision"] == "continue"
+    assert "simulated internal engine failure" in drift_stop["reason"]
+
+
+def test_stop_hook_fingerprint_retriggers_when_drifted_file_content_changes(tmp_path, monkeypatch):
+    """Verify Stop gate fingerprint includes file content hashes so new edits to a drifted file block again."""
+    from eidos.core.models import ValidationReport
+    from eidos.plugin.hooks import handle_drift_stop
+    from eidos.vcs.drift import ChangedFilesClassification, DriftCheckResult
+
+    eidos_dir = tmp_path / "eidos"
+    eidos_dir.mkdir()
+    src_file = tmp_path / "src" / "app.py"
+    src_file.parent.mkdir(parents=True)
+    src_file.write_text("def v1():\n    return 1\n", encoding="utf-8")
+
+    def _fake_drift(repo_root, eidos_dir=None, uncommitted=False, **kwargs):
+        return DriftCheckResult(
+            base_ref="HEAD",
+            head_ref="WORKTREE",
+            workflow_mode="direct",
+            classification=ChangedFilesClassification(code_files=["src/app.py"]),
+            drift_detected=True,
+            touched_components=["CNT-APP"],
+            remediation_suggestions=["Update app.adoc"],
+            validation_report=ValidationReport(total_docs=1, valid_docs=1),
+        )
+
+    monkeypatch.setattr("eidos.plugin.hooks.detect_drift", _fake_drift)
+
+    # 1st stop attempt: blocks
+    res1 = handle_drift_stop({}, tmp_path)
+    assert res1["decision"] == "continue"
+
+    # 2nd stop attempt with identical file contents: Block-Once allows completion
+    res2 = handle_drift_stop({}, tmp_path)
+    assert res2["decision"] == "allow"
+
+    # Modify the same drifted file -> content hash changes -> Stop gate blocks again!
+    src_file.write_text("def v2():\n    return 2\n", encoding="utf-8")
+    res3 = handle_drift_stop({}, tmp_path)
+    assert res3["decision"] == "continue"
+
+
+

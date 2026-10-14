@@ -1,0 +1,69 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-036
+title: "Structured Architectural Decisions and Trade-Off Records Embedded in Living Specifications"
+status: proposed
+vcs:
+  branch: feat/living-spec-architectural-decisions
+intent:
+  kind: feature_addition
+  motivation: "Preserve architectural 'why', rejected alternatives, and trade-offs directly inside living specifications ('system/root', 'tech/container', 'tech/component') via a structured 'decisions:' schema block without reintroducing standalone ADR graveyard files (POL-001)."
+mutations:
+  - action: modify_component
+    target_component: CNT-EIDOS-CORE
+    details: "Add an optional structured 'decisions' array to 'assets/schemas/v1/system/system.schema.yaml', 'assets/schemas/v1/tech/container.schema.yaml', and 'assets/schemas/v1/tech/component.schema.yaml' capturing 'id' ('DEC-*'), 'title', 'decision', 'rationale', 'rejected_alternatives' ('option' and 'reason_rejected'), and optional 'graduated_from' ('EXP-*' or 'DLT-*'), with cross-reference validation in 'src/eidos/core/validator.py'."
+  - action: modify_component
+    target_component: CNT-EIDOS-INDEX
+    details: "Index embedded 'decisions' blocks in 'src/eidos/core/graph_index.py' into 'specs_fts' and include component/container architectural decisions and rejected alternatives in 'anchor', 'guardrails', and 'deep' context slices ('eidos context') so AI agents do not re-propose previously rejected designs."
+  - action: patch_policy
+    target_policy: POL-001-GIT-SOURCE-OF-TRUTH
+    details: "Clarify that while standalone chronological ADR files remain prohibited, enduring architectural trade-offs and rejected alternatives are recorded in-place within the 'decisions' frontmatter block of the owning system, container, or component living specification."
+blast_radius:
+  impacted_components:
+    - CNT-EIDOS-CORE
+    - CNT-EIDOS-INDEX
+    - CMP-SPEC-VALIDATOR
+    - CMP-GRAPH-STORAGE
+    - CMP-TIERED-CONTEXT-COMPRESSOR
+    - CMP-CONTEXT-SLICER
+  invariants_to_enforce:
+    - INV-SPEC-VALIDATION
+    - INV-SPEC-GRAPH-INTEGRITY
+    - INV-AGENT-CONTEXT-SLICING
+---
+= SpecDelta: Structured Architectural Decisions and Trade-Off Records Embedded in Living Specifications
+:toc: left
+
+== Problem Statement
+
+Eidos strictly prohibits standalone Architecture Decision Records (`NO ADRs`) because chronological ADR folders inevitably rot into write-only graveyards detached from the components they govern. However, pure current-state specifications (`tech/container`, `tech/component`, `system/root`) lack a structured place to record **negative architectural knowledge**—specifically *why* a design was chosen and *which alternatives were evaluated and rejected*. Without this in-place context, developers and AI coding agents repeatedly propose designs (e.g., external vector databases, runtime LLM calls, co-located `src/` specs) that were already rejected for sound architectural reasons.
+
+== Architectural & Behavioral Mutations
+
+1. **In-Place `decisions` Schema Block (`system.schema.yaml`, `container.schema.yaml`, `component.schema.yaml`)**:
+   * Introduce an optional `decisions` array in `system/root`, `tech/container`, and `tech/component` frontmatter:
+     ```yaml
+     decisions:
+       - id: DEC-INDEX-SQLITE-WAL
+         title: "Use Embedded SQLite WAL + FTS5 Instead of External Vector DB"
+         decision: "Store the architectural knowledge graph and lexical index in local SQLite3 with WAL mode and FTS5 BM25."
+         rationale: "Guarantees zero external runtime dependencies (Python stdlib), sub-2ms local queries, and 100% deterministic offline operation under POL-004."
+         rejected_alternatives:
+           - option: "ChromaDB / LanceDB Vector Store"
+             reason_rejected: "Requires embedding model weights or external API calls, violating POL-004 and bloating installation size."
+         graduated_from: EXP-2026-001
+     ```
+2. **Semantic Cross-Reference Validation (`validator.py`)**:
+   * Enforce unique `DEC-*` IDs across the catalog.
+   * When `graduated_from` is specified (`EXP-*` or `DLT-*`), validate that the referenced exploration or SpecDelta ID exists in the catalog.
+3. **Knowledge Graph & Context Slicing Integration (`graph_index.py`, `context.py`)**:
+   * Index `decisions[].title`, `decision`, `rationale`, and `rejected_alternatives` into `specs_fts` for `eidos index search`.
+   * Surface owning container/component `decisions` (including rejected alternatives) in `eidos context` slices so AI coding agents respect historical trade-offs automatically.
+
+== Verification Criteria
+
+* Adding a `decisions:` block to `eidos/system.adoc` and `eidos/architecture/containers/index.adoc` passes `eidos validate eidos`.
+* Referencing a non-existent `graduated_from: EXP-9999-999` triggers a `broken_references` error in `SpecValidator`.
+* Running `eidos context --component CNT-EIDOS-INDEX --format json` includes the container's `decisions` and `rejected_alternatives` in the returned context slice.
+
