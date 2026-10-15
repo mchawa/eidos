@@ -17,10 +17,11 @@ Specifications without verifiable test bindings are merely aspirations. By bindi
 
 == Polyglot Test Verification
 Eidos drift detection scans test directories across polyglot ecosystems:
-* **Python**: `*.py` with pytest docstrings, marks, or function names.
+* **Python**: `*.py` with pytest docstrings, marks, or function/class-qualified (`Class::test_method`) identifiers.
 * **TypeScript / JavaScript**: `*.test.ts`, `*.spec.ts`, `*.test.tsx`, `*.spec.tsx` with Jest, Vitest, or Playwright.
 * **Go**: `*_test.go` with `t.Log("INV-...")` or test identifiers.
 * **Rust**: `tests/*.rs`, `*_test.rs` with doc comments.
 * **Java / Kotlin**: `*Test.java`, `*Test.kt` with JUnit `@DisplayName` or `@Tag`.
 
-
+== Verification Scope (Traceability vs. Runtime Assertions)
+Eidos verifies invariant test bindings strictly by **static bidirectional reference traceability**—confirming that the bound test file and function (or `Class::method`) exist and explicitly reference the `INV-*` identifier in their docstring, comment, decorator, or test title. Eidos intentionally does **not** verify invariants by inspecting AST `assert` statements inside the test body; executing assertions and verifying runtime behavior is the responsibility of the native test runner (`pytest`, `vitest`, `go test`, `cargo test`, `junit`) in CI.

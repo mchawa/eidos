@@ -281,12 +281,12 @@ enforcement:
 ### 5.2 Polyglot Invariant Test Bindings (`POL-002`)
 
 Every capability invariant (`INV-[A-Z0-9_-]+`) MUST have:
-1. A `test_binding` in the capability YAML frontmatter formatted as `<relative_test_file_path>::<test_function_or_method_name>`.
+1. A `test_binding` in the capability YAML frontmatter formatted as `<relative_test_file_path>::<test_function_or_Class::method_name>`.
 2. An explicit mention of the `INV-*` ID inside the bound test's docstring, comment, assertion message, or test name so `eidos validate` and `eidos drift` can verify bidirectional linkage.
 
 | Language | `test_binding` Format | How to Reference `INV-*` in Test Source |
 | :--- | :--- | :--- |
-| **Python (`pytest`)** | `tests/test_auth.py::test_token_expiry` | Include `INV-AUTH-EXPIRY` in the function docstring (`"""Verify INV-AUTH-EXPIRY..."""`). |
+| **Python (`pytest`)** | `tests/test_auth.py::test_token_expiry` (or `::TestAuth::test_token_expiry`) | Include `INV-AUTH-EXPIRY` in the function docstring (`"""Verify INV-AUTH-EXPIRY..."""`). |
 | **TypeScript / JS (`vitest`, `jest`)** | `tests/auth.test.ts::test_token_expiry` | Include `INV-AUTH-EXPIRY` in `describe`/`it`/`test` title or JSDoc comment above `function test_token_expiry`. |
 | **Go (`go test`)** | `pkg/auth/auth_test.go::TestTokenExpiry` | Include `// INV-AUTH-EXPIRY` comment on or inside `func TestTokenExpiry(t *testing.T)`. |
 | **Rust (`cargo test`)** | `tests/auth_test.rs::test_token_expiry` | Include `// INV-AUTH-EXPIRY` doc/line comment on `#[test] fn test_token_expiry()`. |

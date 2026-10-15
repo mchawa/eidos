@@ -13,11 +13,11 @@ tier: persistence
 components:
   - id: CMP-GRAPH-STORAGE
     name: "GraphStorage"
-    responsibility: "Manages embedded SQLite schema initialization (including the versioned, drop-and-rebuild 'metadata.schema_version' cache and the 'symbol_mappings' lookup, 'code_symbols' AST coordinate, 'spec_validation_cache', and 'test_binding_cache' tables), connection lifecycle, WAL mode, transaction isolation, repository root discovery, and indexed files tracking."
+    responsibility: "Manages embedded SQLite schema initialization as the single canonical authority for 'SCHEMA_VERSION' ('2.3.0'), 'ensure_cache_schema', and 'open_cache_connection' (including drop-and-rebuild migration on version mismatch, automatic unlink-and-rebuild recovery on 'sqlite3.DatabaseError' corruption, and shared 'symbol_mappings', 'code_symbols', 'spec_validation_cache', and 'test_binding_cache' tables), connection lifecycle, WAL mode, transaction isolation, repository root discovery, and indexed files tracking."
     source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-INCREMENTAL-SYNC-ENGINE
     name: "IncrementalSyncEngine"
-    responsibility: "Detects specification and test-binding mutations via SHA-256 and mtime hashing across centralized specs (eidos/) and test suites (tests/), lazily updating entities, rebuilding specification-declared dependency edges across persisted entities (preserving incoming edges from unchanged specs), updating invariant assertion edges and per-file AST symbol coordinates in sub-5ms; dirty-tracks every declared container package_path and, when specifications change, reconciles ownership and recursively attributes unclaimed source files via a spec-order-independent precedence (component source_path, owned_path, longest package_path) while sharing single-parse symbols across co-owners."
+    responsibility: "Detects specification and test-binding mutations via SHA-256 and mtime hashing across centralized specs (eidos/) and test suites (tests/), refreshing cached mtime in place when SHA-256 is unchanged, passing dirty_state directly from _ensure_synced() into sync() without redundant directory walks, evicting stale entities/edges/FTS/symbols by the previous doc_id stored in indexed_files when a specification ID is renamed in place, rejecting duplicate entity ID collisions across files, rebuilding specification-declared dependency edges across persisted entities (preserving incoming edges from unchanged specs), updating invariant assertion edges and per-file AST symbol coordinates in sub-5ms; dirty-tracks every declared container package_path and reconciles source ownership via spec-order-independent precedence."
     source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-FTS-QUERY-ENGINE
     name: "FTSQueryEngine"
@@ -29,11 +29,11 @@ components:
     source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-TIERED-CONTEXT-COMPRESSOR
     name: "TieredContextCompressor"
-    responsibility: "Extracts token-compressed architectural slices across anchor, guardrails, and deep tiers for AI coding agents, formatting centralized C4 components with in-process APIs, invariants, and embedded architectural decisions (compact title, decision, and rejected option names in anchor; full rationale and rejected_alternatives in guardrails and deep). Task prompts rank only sliceable entity types (so historical SpecDeltas never consume candidate slots) and FTS-matched domains / design systems expand to their member containers and capabilities, recorded in matched_reasons."
+    responsibility: "Extracts rank-ordered, token-budgeted architectural slices across anchor (<=300 tokens), guardrails (<=1000 tokens), and deep (<=2500 tokens) tiers for AI coding agents across both Markdown (to_markdown) and JSON (to_dict projecting tier-scoped fields rather than raw frontmatter), returning an honest empty slice when an explicit query matches zero entities instead of injecting alphabetical fallbacks, and formatting centralized C4 components with in-process APIs, invariants, and embedded architectural decisions. Task prompts rank only sliceable entity types and FTS-matched domains / design systems expand to their member containers and capabilities, recorded in deduplicated matched_reasons."
     source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-AST-SYMBOL-INDEXER
     name: "AstSymbolIndexer"
-    responsibility: "Extracts polyglot AST symbols (classes, functions, interface signatures), diffs public symbols between file versions (public_symbol_map, diff_symbol_maps, diff_public_symbols), classifies frontend/styling diffs into token or UI contract changes, generates structural AI repo maps (served from persisted primary 'code_symbols' rows without re-parsing), and binds test functions to capability and component invariants via ast-grep with stdlib ast fallback."
+    responsibility: "Extracts polyglot AST symbols (classes, functions, methods, structs, enums, interface signatures across Python, TS/JS, Go including type_spec and receiver methods, Rust, Java, and Kotlin .kt/.kts), diffs public symbols between file versions (public_symbol_map, diff_symbol_maps, diff_public_symbols), classifies frontend/styling diffs into token or UI contract changes, generates structural AI repo maps (served from persisted primary 'code_symbols' rows without re-parsing), and binds test functions under both qualified 'Class::method' and merged 'method' keys to capability and component invariants via core dependency ast-grep-py with stdlib ast fallback."
     source_path: "src/eidos/core/index/ast_indexer.py"
 
 dependencies:
@@ -41,7 +41,7 @@ dependencies:
     - "CNT-EIDOS-CORE"
   external_services:
     - "SQLite3 (Python Standard Library)"
-    - "ast-grep-py (Optional)"
+    - "ast-grep-py (Core Dependency, with stdlib ast fallback)"
 
 contracts:
   provides: []

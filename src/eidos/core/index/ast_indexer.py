@@ -197,10 +197,33 @@ class AstGrepIndexer(BaseAstIndexer):
         ".rs": "rust",
         ".go": "go",
         ".java": "java",
+        ".kt": "kotlin",
+        ".kts": "kotlin",
     }
 
     def _get_lang(self, path: Path) -> str | None:
         return self.LANGUAGE_MAP.get(path.suffix.lower())
+
+    @staticmethod
+    def _node_name(node: Any) -> str | None:
+        name_field = node.field("name")
+        if name_field is not None:
+            return name_field.text()
+        for child in node.children():
+            if child.kind() in ("type_identifier", "simple_identifier", "identifier"):
+                return child.text()
+        return None
+
+    @classmethod
+    def _enclosing_class_name(cls, node: Any) -> str | None:
+        anc = node.parent()
+        while anc is not None:
+            if anc.kind() in ("class_definition", "class_declaration", "object_declaration"):
+                cname = cls._node_name(anc)
+                if cname:
+                    return cname
+            anc = anc.parent()
+        return None
 
     def extract_symbols(self, file_path: Path | str, content: str | None = None) -> list[CodeSymbol]:
         p = Path(file_path)
@@ -223,7 +246,7 @@ class AstGrepIndexer(BaseAstIndexer):
         symbols: list[CodeSymbol] = []
         rel_path = str(p)
 
-        # 1. Classes & Interfaces
+        # 1. Classes, Structs & Interfaces
         class_kinds = {
             "python": ["class_definition"],
             "typescript": ["class_declaration", "interface_declaration"],
@@ -231,18 +254,34 @@ class AstGrepIndexer(BaseAstIndexer):
             "javascript": ["class_declaration"],
             "jsx": ["class_declaration"],
             "rust": ["struct_item", "enum_item", "trait_item"],
-            "go": ["type_declaration"],
+            "go": ["type_spec"],
             "java": ["class_declaration", "interface_declaration"],
+            "kotlin": ["class_declaration", "object_declaration"],
         }.get(lang, [])
 
         class_nodes: dict[str, Any] = {}
         for ck in class_kinds:
             for m in node.find_all(kind=ck):
-                name_field = m.field("name")
-                if name_field:
-                    cname = name_field.text()
+                cname = self._node_name(m)
+                if cname:
                     rng = m.range()
-                    kind_label = "interface" if "interface" in ck else "class"
+                    if ck == "type_spec":
+                        type_node = m.field("type")
+                        type_kind = type_node.kind() if type_node is not None else ""
+                        if "interface" in type_kind:
+                            kind_label = "interface"
+                        elif "struct" in type_kind:
+                            kind_label = "struct"
+                        else:
+                            kind_label = "class"
+                        sig = f"type {_extract_header_signature(m.text())}"
+                    elif lang == "kotlin":
+                        is_iface = any(c.kind() == "interface" for c in m.children())
+                        kind_label = "interface" if is_iface else "class"
+                        sig = _extract_header_signature(m.text())
+                    else:
+                        kind_label = "interface" if "interface" in ck else "class"
+                        sig = _extract_header_signature(m.text())
                     symbols.append(
                         CodeSymbol(
                             name=cname,
@@ -250,7 +289,7 @@ class AstGrepIndexer(BaseAstIndexer):
                             file_path=rel_path,
                             line_start=rng.start.line + 1,
                             line_end=rng.end.line + 1,
-                            signature=_extract_header_signature(m.text()),
+                            signature=sig,
                         )
                     )
                     class_nodes[cname] = m
@@ -265,14 +304,14 @@ class AstGrepIndexer(BaseAstIndexer):
             "rust": ["function_item"],
             "go": ["function_declaration", "method_declaration"],
             "java": ["method_declaration"],
+            "kotlin": ["function_declaration"],
         }.get(lang, [])
 
         for fk in fn_kinds:
             for m in node.find_all(kind=fk):
-                name_field = m.field("name")
-                if not name_field:
+                fname = self._node_name(m)
+                if not fname:
                     continue
-                fname = name_field.text()
                 rng = m.range()
 
                 # Determine parent class if any
@@ -282,6 +321,13 @@ class AstGrepIndexer(BaseAstIndexer):
                     if crng.start.line <= rng.start.line and crng.end.line >= rng.end.line:
                         parent_cls = cname
                         break
+                if parent_cls is None and fk == "method_declaration":
+                    recv = m.field("receiver")
+                    if recv is not None:
+                        for rtok in reversed(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", recv.text())):
+                            if rtok in class_nodes:
+                                parent_cls = rtok
+                                break
 
                 kind_label = "method" if parent_cls or "method" in fk else "function"
                 symbols.append(
@@ -338,7 +384,7 @@ class AstGrepIndexer(BaseAstIndexer):
                             prefix = _extract_preceding_context(lines, start_line)
                             c_text = f"{prefix}\n{c.text()}" if prefix else c.text()
                             result[t_title] = c_text
-        elif lang == "go":
+        elif lang in ("go", "kotlin"):
             fn_nodes = node.find_all(kind="function_declaration")
         elif lang == "rust":
             fn_nodes = node.find_all(kind="function_item")
@@ -346,10 +392,9 @@ class AstGrepIndexer(BaseAstIndexer):
             fn_nodes = node.find_all(kind="method_declaration")
 
         for fn in fn_nodes:
-            n_field = fn.field("name")
-            if not n_field:
+            fname = self._node_name(fn)
+            if not fname:
                 continue
-            fname = n_field.text()
             rng = fn.range()
             start_line = rng.start.line + 1
             parent = fn.parent()
@@ -370,7 +415,11 @@ class AstGrepIndexer(BaseAstIndexer):
                 or "@Test" in full_text
             )
             if is_test:
-                result[fname] = full_text
+                cls_name = self._enclosing_class_name(fn)
+                if cls_name:
+                    qual_key = f"{cls_name}::{fname}"
+                    result[qual_key] = f"{result[qual_key]}\n{full_text}" if qual_key in result else full_text
+                result[fname] = f"{result[fname]}\n{full_text}" if fname in result else full_text
 
         return result
 
@@ -393,8 +442,24 @@ class AstGrepIndexer(BaseAstIndexer):
             return []
 
         lines = content.splitlines()
-        bindings: list[TestFunctionBinding] = []
+        by_name: dict[str, TestFunctionBinding] = {}
         rel_path = str(p)
+
+        def _record_binding(tname: str, lstart: int, lend: int, invs: list[str], pols: list[str]) -> None:
+            if tname in by_name:
+                existing = by_name[tname]
+                existing.invariants = sorted(set(existing.invariants) | set(invs))
+                existing.policies = sorted(set(existing.policies) | set(pols))
+                existing.line_end = max(existing.line_end, lend)
+            else:
+                by_name[tname] = TestFunctionBinding(
+                    test_file=rel_path,
+                    test_name=tname,
+                    line_start=lstart,
+                    line_end=lend,
+                    invariants=list(invs),
+                    policies=list(pols),
+                )
 
         # Detect test function nodes
         fn_nodes: list[Any] = []
@@ -419,17 +484,8 @@ class AstGrepIndexer(BaseAstIndexer):
                             invs = sorted(set(INVARIANT_PATTERN.findall(c_text)))
                             pols = sorted(set(POLICY_PATTERN.findall(c_text)))
                             if invs or pols:
-                                bindings.append(
-                                    TestFunctionBinding(
-                                        test_file=rel_path,
-                                        test_name=t_title,
-                                        line_start=start_line,
-                                        line_end=rng.end.line + 1,
-                                        invariants=invs,
-                                        policies=pols,
-                                    )
-                                )
-        elif lang == "go":
+                                _record_binding(t_title, start_line, rng.end.line + 1, invs, pols)
+        elif lang in ("go", "kotlin"):
             fn_nodes = node.find_all(kind="function_declaration")
         elif lang == "rust":
             fn_nodes = node.find_all(kind="function_item")
@@ -437,10 +493,9 @@ class AstGrepIndexer(BaseAstIndexer):
             fn_nodes = node.find_all(kind="method_declaration")
 
         for fn in fn_nodes:
-            n_field = fn.field("name")
-            if not n_field:
+            fname = self._node_name(fn)
+            if not fname:
                 continue
-            fname = n_field.text()
             rng = fn.range()
             start_line = rng.start.line + 1
             parent = fn.parent()
@@ -458,7 +513,7 @@ class AstGrepIndexer(BaseAstIndexer):
                 fname.startswith("test_")
                 or fname.endswith("_test")
                 or fname.startswith("Test")  # Go convention
-                or (fname.startswith("test") and lang == "java")
+                or (fname.startswith("test") and lang in ("java", "kotlin"))
                 or "#[test]" in fn_text
                 or "@Test" in fn_text
             )
@@ -469,18 +524,13 @@ class AstGrepIndexer(BaseAstIndexer):
             pols = sorted(set(POLICY_PATTERN.findall(fn_text)))
 
             if invs or pols:
-                bindings.append(
-                    TestFunctionBinding(
-                        test_file=rel_path,
-                        test_name=fname,
-                        line_start=start_line,
-                        line_end=rng.end.line + 1,
-                        invariants=invs,
-                        policies=pols,
-                    )
-                )
+                end_line = rng.end.line + 1
+                cls_name = self._enclosing_class_name(fn)
+                if cls_name:
+                    _record_binding(f"{cls_name}::{fname}", start_line, end_line, invs, pols)
+                _record_binding(fname, start_line, end_line, invs, pols)
 
-        return bindings
+        return list(by_name.values())
 
 
 def _python_node_signature(node: ast.AST) -> str:
@@ -510,8 +560,20 @@ class FallbackIndexer(BaseAstIndexer):
         r"^[ \t]*(?:export\s+)?(?:class|interface|type)\s+([a-zA-Z_][a-zA-Z0-9_]*)", re.MULTILINE
     )
 
+    GO_TYPE_REGEX = re.compile(r"^type\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+(struct|interface)\b", re.MULTILINE)
     GO_FN_REGEX = re.compile(r"^func\s+(?:\([^)]+\)\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\s*\(", re.MULTILINE)
+    RUST_TYPE_REGEX = re.compile(
+        r"^[ \t]*(?:pub(?:\([^)]*\))?\s+)?(struct|enum|trait)\s+([a-zA-Z_][a-zA-Z0-9_]*)", re.MULTILINE
+    )
     RUST_FN_REGEX = re.compile(r"^[ \t]*(?:pub\s+)?(?:async\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(", re.MULTILINE)
+    KT_CLS_REGEX = re.compile(
+        r"^[ \t]*(?:(?:public|private|protected|internal|open|abstract|final|sealed|data|value|inner)\s+)*(class|interface|object)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+        re.MULTILINE,
+    )
+    KT_FN_REGEX = re.compile(
+        r"^[ \t]*(?:(?:public|private|protected|internal|open|override|suspend|inline|operator|infix)\s+)*fun\s+(?:<[^>]+>\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\s*\(",
+        re.MULTILINE,
+    )
 
     def extract_symbols(self, file_path: Path | str, content: str | None = None) -> list[CodeSymbol]:
         p = Path(file_path)
@@ -574,14 +636,15 @@ class FallbackIndexer(BaseAstIndexer):
 
         # 2. Regex fallback for polyglot files
         lines = content.splitlines()
+        suffix = p.suffix.lower()
         for idx, line in enumerate(lines, start=1):
             sig = _extract_header_signature(line)
-            if p.suffix in (".ts", ".tsx", ".js", ".jsx"):
+            if suffix in (".ts", ".tsx", ".js", ".jsx"):
                 for m in self.TS_CLS_REGEX.finditer(line):
                     symbols.append(
                         CodeSymbol(
                             name=m.group(1),
-                            kind="class",
+                            kind="interface" if "interface" in line else "class",
                             file_path=rel_path,
                             line_start=idx,
                             line_end=idx,
@@ -599,7 +662,18 @@ class FallbackIndexer(BaseAstIndexer):
                             signature=sig,
                         )
                     )
-            elif p.suffix == ".go":
+            elif suffix == ".go":
+                for m in self.GO_TYPE_REGEX.finditer(line):
+                    symbols.append(
+                        CodeSymbol(
+                            name=m.group(1),
+                            kind="interface" if m.group(2) == "interface" else "struct",
+                            file_path=rel_path,
+                            line_start=idx,
+                            line_end=idx,
+                            signature=sig,
+                        )
+                    )
                 for m in self.GO_FN_REGEX.finditer(line):
                     symbols.append(
                         CodeSymbol(
@@ -611,8 +685,42 @@ class FallbackIndexer(BaseAstIndexer):
                             signature=sig,
                         )
                     )
-            elif p.suffix == ".rs":
+            elif suffix == ".rs":
+                for m in self.RUST_TYPE_REGEX.finditer(line):
+                    symbols.append(
+                        CodeSymbol(
+                            name=m.group(2),
+                            kind="interface" if m.group(1) == "trait" else "class",
+                            file_path=rel_path,
+                            line_start=idx,
+                            line_end=idx,
+                            signature=sig,
+                        )
+                    )
                 for m in self.RUST_FN_REGEX.finditer(line):
+                    symbols.append(
+                        CodeSymbol(
+                            name=m.group(1),
+                            kind="function",
+                            file_path=rel_path,
+                            line_start=idx,
+                            line_end=idx,
+                            signature=sig,
+                        )
+                    )
+            elif suffix in (".kt", ".kts", ".java"):
+                for m in self.KT_CLS_REGEX.finditer(line):
+                    symbols.append(
+                        CodeSymbol(
+                            name=m.group(2),
+                            kind="interface" if m.group(1) == "interface" else "class",
+                            file_path=rel_path,
+                            line_start=idx,
+                            line_end=idx,
+                            signature=sig,
+                        )
+                    )
+                for m in self.KT_FN_REGEX.finditer(line):
                     symbols.append(
                         CodeSymbol(
                             name=m.group(1),
@@ -641,26 +749,40 @@ class FallbackIndexer(BaseAstIndexer):
             try:
                 tree = ast.parse(content, filename=rel_path)
                 lines = content.splitlines()
-                for node in ast.walk(tree):
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
-                        node.name.startswith("test_") or node.name.endswith("_test")
-                    ):
-                        start = (
-                            min(d.lineno for d in node.decorator_list)
-                            if getattr(node, "decorator_list", None)
-                            else node.lineno
-                        )
-                        end = getattr(node, "end_lineno", node.lineno)
-                        prefix = _extract_preceding_context(lines, start)
-                        body = "\n".join(lines[start - 1 : end])
-                        full_text = f"{prefix}\n{body}" if prefix else body
-                        result[node.name] = full_text
+
+                def _visit_py_nodes(nodes: list[ast.stmt], cls_prefix: str | None = None) -> None:
+                    for node in nodes:
+                        if isinstance(node, ast.ClassDef):
+                            next_prefix = f"{cls_prefix}::{node.name}" if cls_prefix else node.name
+                            _visit_py_nodes(node.body, next_prefix)
+                        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            if node.name.startswith("test_") or node.name.endswith("_test"):
+                                start = (
+                                    min(d.lineno for d in node.decorator_list)
+                                    if getattr(node, "decorator_list", None)
+                                    else node.lineno
+                                )
+                                end = getattr(node, "end_lineno", node.lineno)
+                                prefix = _extract_preceding_context(lines, start)
+                                body = "\n".join(lines[start - 1 : end])
+                                full_text = f"{prefix}\n{body}" if prefix else body
+                                if cls_prefix:
+                                    qual_key = f"{cls_prefix}::{node.name}"
+                                    result[qual_key] = (
+                                        f"{result[qual_key]}\n{full_text}" if qual_key in result else full_text
+                                    )
+                                result[node.name] = (
+                                    f"{result[node.name]}\n{full_text}" if node.name in result else full_text
+                                )
+                            _visit_py_nodes(node.body, cls_prefix)
+
+                _visit_py_nodes(tree.body)
                 return result
             except (SyntaxError, ValueError):
                 pass
 
         test_fn_pattern = re.compile(
-            r"(?:def\s+|function\s+|fn\s+|func\s+|void\s+|it\s*\(\s*['\"`]|test\s*\(\s*['\"`])([a-zA-Z0-9_\s-]+)"
+            r"(?:def\s+|function\s+|fn\s+|fun\s+|func\s+|void\s+|it\s*\(\s*['\"`]|test\s*\(\s*['\"`])([a-zA-Z0-9_\s-]+)"
         )
         lines = content.splitlines()
         current_test = None
@@ -673,7 +795,10 @@ class FallbackIndexer(BaseAstIndexer):
                 if current_test:
                     prefix = _extract_preceding_context(lines, current_start)
                     chunk = "\n".join(collected_lines)
-                    result[current_test] = f"{prefix}\n{chunk}" if prefix else chunk
+                    full_chunk = f"{prefix}\n{chunk}" if prefix else chunk
+                    result[current_test] = (
+                        f"{result[current_test]}\n{full_chunk}" if current_test in result else full_chunk
+                    )
                 current_test = m.group(1).strip()
                 current_start = idx
                 collected_lines = [line]
@@ -683,7 +808,8 @@ class FallbackIndexer(BaseAstIndexer):
         if current_test:
             prefix = _extract_preceding_context(lines, current_start)
             chunk = "\n".join(collected_lines)
-            result[current_test] = f"{prefix}\n{chunk}" if prefix else chunk
+            full_chunk = f"{prefix}\n{chunk}" if prefix else chunk
+            result[current_test] = f"{result[current_test]}\n{full_chunk}" if current_test in result else full_chunk
 
         return result
 
@@ -696,46 +822,62 @@ class FallbackIndexer(BaseAstIndexer):
                 return []
 
         rel_path = str(p)
-        bindings: list[TestFunctionBinding] = []
+        by_name: dict[str, TestFunctionBinding] = {}
+
+        def _record_binding(tname: str, lstart: int, lend: int, invs: list[str], pols: list[str]) -> None:
+            if tname in by_name:
+                existing = by_name[tname]
+                existing.invariants = sorted(set(existing.invariants) | set(invs))
+                existing.policies = sorted(set(existing.policies) | set(pols))
+                existing.line_end = max(existing.line_end, lend)
+            else:
+                by_name[tname] = TestFunctionBinding(
+                    test_file=rel_path,
+                    test_name=tname,
+                    line_start=lstart,
+                    line_end=lend,
+                    invariants=list(invs),
+                    policies=list(pols),
+                )
 
         # Python via stdlib ast
         if p.suffix == ".py":
             try:
                 tree = ast.parse(content, filename=rel_path)
                 lines = content.splitlines()
-                for node in ast.walk(tree):
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
-                        node.name.startswith("test_") or node.name.endswith("_test")
-                    ):
-                        start = (
-                            min(d.lineno for d in node.decorator_list)
-                            if getattr(node, "decorator_list", None)
-                            else node.lineno
-                        )
-                        end = getattr(node, "end_lineno", node.lineno)
-                        prefix = _extract_preceding_context(lines, start)
-                        body = "\n".join(lines[start - 1 : end])
-                        fn_body_text = f"{prefix}\n{body}" if prefix else body
-                        invs = sorted(set(INVARIANT_PATTERN.findall(fn_body_text)))
-                        pols = sorted(set(POLICY_PATTERN.findall(fn_body_text)))
-                        if invs or pols:
-                            bindings.append(
-                                TestFunctionBinding(
-                                    test_file=rel_path,
-                                    test_name=node.name,
-                                    line_start=start,
-                                    line_end=end,
-                                        invariants=invs,
-                                        policies=pols,
-                                    )
+
+                def _visit_py_bindings(nodes: list[ast.stmt], cls_prefix: str | None = None) -> None:
+                    for node in nodes:
+                        if isinstance(node, ast.ClassDef):
+                            next_prefix = f"{cls_prefix}::{node.name}" if cls_prefix else node.name
+                            _visit_py_bindings(node.body, next_prefix)
+                        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            if node.name.startswith("test_") or node.name.endswith("_test"):
+                                start = (
+                                    min(d.lineno for d in node.decorator_list)
+                                    if getattr(node, "decorator_list", None)
+                                    else node.lineno
                                 )
-                return bindings
+                                end = getattr(node, "end_lineno", node.lineno)
+                                prefix = _extract_preceding_context(lines, start)
+                                body = "\n".join(lines[start - 1 : end])
+                                fn_body_text = f"{prefix}\n{body}" if prefix else body
+                                invs = sorted(set(INVARIANT_PATTERN.findall(fn_body_text)))
+                                pols = sorted(set(POLICY_PATTERN.findall(fn_body_text)))
+                                if invs or pols:
+                                    if cls_prefix:
+                                        _record_binding(f"{cls_prefix}::{node.name}", start, end, invs, pols)
+                                    _record_binding(node.name, start, end, invs, pols)
+                            _visit_py_bindings(node.body, cls_prefix)
+
+                _visit_py_bindings(tree.body)
+                return list(by_name.values())
             except (SyntaxError, ValueError):
                 pass
 
         # Regex fallback for tests across languages
         test_fn_pattern = re.compile(
-            r"(?:def\s+|function\s+|fn\s+|func\s+|void\s+|it\s*\(\s*['\"`]|test\s*\(\s*['\"`])([a-zA-Z0-9_\s-]+)"
+            r"(?:def\s+|function\s+|fn\s+|fun\s+|func\s+|void\s+|it\s*\(\s*['\"`]|test\s*\(\s*['\"`])([a-zA-Z0-9_\s-]+)"
         )
         lines = content.splitlines()
         current_test = None
@@ -752,16 +894,7 @@ class FallbackIndexer(BaseAstIndexer):
                     invs = sorted(set(INVARIANT_PATTERN.findall(chunk)))
                     pols = sorted(set(POLICY_PATTERN.findall(chunk)))
                     if invs or pols:
-                        bindings.append(
-                            TestFunctionBinding(
-                                test_file=rel_path,
-                                test_name=current_test,
-                                line_start=current_start,
-                                line_end=idx - 1,
-                                invariants=invs,
-                                policies=pols,
-                            )
-                        )
+                        _record_binding(current_test, current_start, idx - 1, invs, pols)
                 current_test = m.group(1).strip()
                 current_start = idx
                 collected_lines = [line]
@@ -775,18 +908,9 @@ class FallbackIndexer(BaseAstIndexer):
             invs = sorted(set(INVARIANT_PATTERN.findall(chunk)))
             pols = sorted(set(POLICY_PATTERN.findall(chunk)))
             if invs or pols:
-                bindings.append(
-                    TestFunctionBinding(
-                        test_file=rel_path,
-                        test_name=current_test,
-                        line_start=current_start,
-                        line_end=len(lines),
-                        invariants=invs,
-                        policies=pols,
-                    )
-                )
+                _record_binding(current_test, current_start, len(lines), invs, pols)
 
-        return bindings
+        return list(by_name.values())
 
 
 def _is_public_symbol(sym: CodeSymbol) -> bool:
@@ -799,7 +923,7 @@ def _is_public_symbol(sym: CodeSymbol) -> bool:
 
 
 #: Source extensions whose public symbols are compared structurally.
-AST_DIFF_EXTS = frozenset({".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java"})
+AST_DIFF_EXTS = frozenset({".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java", ".kt", ".kts"})
 _AST_DIFF_EXTS = AST_DIFF_EXTS
 
 

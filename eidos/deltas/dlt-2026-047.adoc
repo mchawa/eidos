@@ -1,0 +1,93 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-047
+title: Enforced Token-Budget Context Slicing, Mtime Refresh on Sync, and Qualified Polyglot AST Indexing
+status: applied
+intent:
+  kind: enabler
+  motivation: Align context slicing, incremental graph synchronization, and polyglot AST indexing with their architectural guarantees by enforcing real token truncation across Markdown and JSON slices, updating stored mtime when SHA-256 matches on dirty checks, promoting ast-grep-py to a core dependency, and qualifying test methods by Class::method so duplicate method names across test classes never overwrite each other.
+mutations:
+  - action: modify_container
+    target_container: "CNT-EIDOS-INDEX"
+    details: "Update CMP-TIERED-CONTEXT-COMPRESSOR, CMP-INCREMENTAL-SYNC-ENGINE, and CMP-AST-SYMBOL-INDEXER in src/eidos/core/index/ to enforce rank-ordered token budgets in both Markdown and JSON formats, return empty slices on zero matches instead of alphabetical fallbacks, refresh stored mtime_ns when SHA-256 is unchanged, pass dirty check results directly into sync(), promote ast-grep-py to a core dependency, fix Go type_spec and Kotlin indexing, and qualify test functions by Class::method."
+    expect:
+      contains: "CMP-AST-SYMBOL-INDEXER"
+  - action: modify_container
+    target_container: "CNT-EIDOS-VCS"
+    details: "Update CMP-DRIFT-DETECTOR in src/eidos/vcs/drift.py to resolve qualified Class::method test bindings (with fallback to bare method name) and unify invariant ID regexes across ast_indexer.py and drift.py."
+    expect:
+      contains: "CMP-DRIFT-DETECTOR"
+  - action: patch_policy
+    target_policy: "POL-002-INVARIANT-TEST-ENFORCEMENT"
+    details: "Document explicitly in POL-002 that Eidos verifies invariant test bindings via static bidirectional reference/marker traceability (file::func or file::Class::func), delegating runtime assertion execution to the CI test runner."
+    expect:
+      contains: "traceability"
+  - action: modify_capability
+    target_capability: "CAP-AGENT-002"
+    details: "Ensure CAP-AGENT-002 context slicing enforces strict token truncation for both Markdown and JSON outputs and avoids injecting unrelated fallback entities when queries return zero matches."
+    expect:
+      contains: "eidos context"
+
+affects:
+  containers:
+    - "CNT-EIDOS-INDEX"
+    - "CNT-EIDOS-VCS"
+    - "CNT-EIDOS-PLUGIN"
+  components:
+    - "CMP-TIERED-CONTEXT-COMPRESSOR"
+    - "CMP-INCREMENTAL-SYNC-ENGINE"
+    - "CMP-AST-SYMBOL-INDEXER"
+    - "CMP-DRIFT-DETECTOR"
+  policies:
+    - "POL-002-INVARIANT-TEST-ENFORCEMENT"
+  capabilities:
+    - "CAP-AGENT-002"
+    - "CAP-VCS-001"
+  domains:
+    - "DOM-AGENT-INTELLIGENCE"
+    - "DOM-VCS-LIFECYCLE"
+
+blast_radius:
+  impacted_containers:
+    - "CNT-EIDOS-INDEX"
+    - "CNT-EIDOS-VCS"
+    - "CNT-EIDOS-PLUGIN"
+  impacted_components:
+    - "CMP-TIERED-CONTEXT-COMPRESSOR"
+    - "CMP-INCREMENTAL-SYNC-ENGINE"
+    - "CMP-AST-SYMBOL-INDEXER"
+    - "CMP-DRIFT-DETECTOR"
+  invariants_to_enforce:
+    - "INV-INDEX-INCREMENTAL-PARITY"
+    - "INV-CONTEXT-TOKEN-COMPRESSION"
+    - "INV-DRIFT-DETECTION-ACCURACY"
+---
+= SpecDelta: Enforced Token-Budget Context Slicing, Mtime Refresh on Sync, and Qualified Polyglot AST Indexing
+:toc: left
+
+== Problem Statement
+1. **Unbounded Context Slices (`CMP-TIERED-CONTEXT-COMPRESSOR`)**:
+   - `slice_context` (`src/eidos/core/index/graph_index.py:2290-2490`) computes `token_estimate = len(markdown) // 4` *after* building the slice without truncating entities to fit a budget.
+   - `--format json` (`graph_index.py:112-122`) ignores the requested `--tier` (`anchor`, `guardrails`, `deep`) and dumps the complete raw frontmatter of every entity.
+   - When a query matches zero containers, `slice_context` (`lines 2316-2325`) silently injects the first two containers and policies alphabetically, returning unrelated specifications to agents.
+2. **Perpetual SHA-256 Re-Hashing & Double Directory Walks (`CMP-INCREMENTAL-SYNC-ENGINE`)**:
+   - When a file's `mtime` changes without content changes (e.g. after `git checkout`), `is_dirty` (`graph_index.py:886-891, 934-938`) hashes the file, sees the SHA-256 matches, and returns `False` without updating `mtime_ns` in SQLite—causing every future CLI call to re-read and re-hash those files forever.
+   - When dirty, `_ensure_synced` (`line 976`) calls `is_dirty()` and then `sync()` (`line 996`) immediately calls `is_dirty()` a second time.
+3. **Optional AST Engine & Duplicate Method Name Overwrites in Test Classes (`CMP-AST-SYMBOL-INDEXER`, `CMP-DRIFT-DETECTOR`)**:
+   - `ast-grep-py` is an optional extra in `pyproject.toml`, leaving default installations on regex fallback (`FallbackAstIndexer`), and `AstGrepIndexer` misses Go `type_declaration` (`type_spec`) names and Kotlin files.
+   - `list_test_functions` (`ast_indexer.py:373, 657`) keys `result` by bare method name (`fname`), so two test classes in the same file defining `def test_validation(self):` overwrite each other, and `drift.py:693` (`parts[-1]`) discards the class qualifier in `file.py::TestClass::test_method`.
+
+== Proposed Specification & Engine Changes
+1. **Enforced Tier Token Budgets & Honest Empty Slices**:
+   - Enforce rank-ordered token budgets per tier (`anchor`, `guardrails`, `deep`) across both Markdown and JSON outputs (`ContextSlice.to_dict` projecting tier-scoped fields rather than full frontmatter), and return an explicit empty slice when no entities match.
+2. **Single-Pass Dirty Resolution & Mtime Refresh**:
+   - Update `indexed_files.mtime_ns` in place whenever `mtime_ns` changed but `sha256` matched, and pass the dirty set from `_ensure_synced` directly into `sync()`.
+3. **Core `ast-grep-py` Dependency & Qualified `Class::method` Test Binding Resolution**:
+   - Promote `ast-grep-py` to a core dependency in `pyproject.toml` and support Go `type_spec` and Kotlin symbols.
+   - Index class-scoped test methods under both `Class::method` and merged `method` keys in `list_test_functions` and `extract_test_bindings`, and resolve `Class::method` in `_verify_single_invariant` (`drift.py`).
+   - Document in `POL-002-INVARIANT-TEST-ENFORCEMENT` and `eidos-spec` that invariant test verification enforces static bidirectional reference traceability rather than AST assertion inspection.
+
+== Verification Plan
+* `uv run pytest tests/test_graph_index.py tests/test_context.py tests/test_ast_indexer.py tests/test_drift.py`
+* `uv run eidos validate eidos`

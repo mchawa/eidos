@@ -189,36 +189,25 @@ class SpecValidator:
 
         cached_rows: dict[str, sqlite3.Row] = {}
         if eidos_cache_root.exists():
-            with contextlib.suppress(OSError, sqlite3.Error):
-                db_path.parent.mkdir(parents=True, exist_ok=True)
-                with sqlite3.connect(str(db_path), timeout=10.0) as conn:
-                    conn.row_factory = sqlite3.Row
-                    existing_tables = {
-                        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")
-                    }
-                    if not existing_tables:
-                        conn.execute(
-                            "CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
-                        )
-                        conn.execute(
-                            "INSERT OR IGNORE INTO metadata (key, value) VALUES ('schema_version', '2.2.0');"
-                        )
-                    conn.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS spec_validation_cache (
-                            file_path TEXT PRIMARY KEY,
-                            mtime_ns INTEGER NOT NULL,
-                            sha256 TEXT NOT NULL,
-                            schema_hash TEXT NOT NULL,
-                            doc_json TEXT NOT NULL,
-                            schema_errors_json TEXT NOT NULL
-                        );
-                        """
-                    )
-                    for row in conn.execute(
-                        "SELECT file_path, mtime_ns, sha256, schema_hash, doc_json, schema_errors_json FROM spec_validation_cache;"
-                    ):
-                        cached_rows[row["file_path"]] = row
+            from eidos.core.index.graph_index import open_cache_connection
+
+            with contextlib.suppress(OSError, sqlite3.Error), open_cache_connection(db_path) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS spec_validation_cache (
+                        file_path TEXT PRIMARY KEY,
+                        mtime_ns INTEGER NOT NULL,
+                        sha256 TEXT NOT NULL,
+                        schema_hash TEXT NOT NULL,
+                        doc_json TEXT NOT NULL,
+                        schema_errors_json TEXT NOT NULL
+                    );
+                    """
+                )
+                for row in conn.execute(
+                    "SELECT file_path, mtime_ns, sha256, schema_hash, doc_json, schema_errors_json FROM spec_validation_cache;"
+                ):
+                    cached_rows[row["file_path"]] = row
 
         seen_rel_keys: set[str] = set()
         to_upsert: list[tuple[str, int, str, str, str, str]] = []
@@ -367,23 +356,36 @@ class SpecValidator:
             [k for k in cached_rows if k not in seen_rel_keys] if resolved_root == eidos_cache_root else []
         )
         if eidos_cache_root.exists() and (to_upsert or deleted_keys):
-            with contextlib.suppress(OSError, sqlite3.Error):
-                with sqlite3.connect(str(db_path), timeout=10.0) as conn:
-                    if deleted_keys:
-                        conn.executemany(
-                            "DELETE FROM spec_validation_cache WHERE file_path = ?;",
-                            [(k,) for k in deleted_keys],
-                        )
-                    if to_upsert:
-                        conn.executemany(
-                            """
-                            INSERT OR REPLACE INTO spec_validation_cache
-                            (file_path, mtime_ns, sha256, schema_hash, doc_json, schema_errors_json)
-                            VALUES (?, ?, ?, ?, ?, ?);
-                            """,
-                            to_upsert,
-                        )
-                    conn.commit()
+            from eidos.core.index.graph_index import open_cache_connection
+
+            with contextlib.suppress(OSError, sqlite3.Error), open_cache_connection(db_path) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS spec_validation_cache (
+                        file_path TEXT PRIMARY KEY,
+                        mtime_ns INTEGER NOT NULL,
+                        sha256 TEXT NOT NULL,
+                        schema_hash TEXT NOT NULL,
+                        doc_json TEXT NOT NULL,
+                        schema_errors_json TEXT NOT NULL
+                    );
+                    """
+                )
+                if deleted_keys:
+                    conn.executemany(
+                        "DELETE FROM spec_validation_cache WHERE file_path = ?;",
+                        [(k,) for k in deleted_keys],
+                    )
+                if to_upsert:
+                    conn.executemany(
+                        """
+                        INSERT OR REPLACE INTO spec_validation_cache
+                        (file_path, mtime_ns, sha256, schema_hash, doc_json, schema_errors_json)
+                        VALUES (?, ?, ?, ?, ?, ?);
+                        """,
+                        to_upsert,
+                    )
+                conn.commit()
 
         # Cross-reference validation
         self._validate_cross_references(report, root_dir)

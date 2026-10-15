@@ -63,13 +63,14 @@ def test_context_slice_by_task():
 
 
 def test_context_slice_fallback_and_empty():
-    """Verify fallback behavior when empty or unmatched query is provided."""
-    # Unmatched query
+    """Verify honest empty slice when explicit query matches nothing, and full catalog overview when no filters are given."""
+    # Unmatched explicit query returns an honest empty slice (DLT-2026-047)
     res_unmatched = get_context_slice(component="CMP-NONEXISTENT")
-    assert len(res_unmatched.components) >= 1
-    assert any(c["id"] in ["CNT-EIDOS-CLI", "CNT-EIDOS-CORE"] for c in res_unmatched.components)
+    assert res_unmatched.components == []
+    assert res_unmatched.policies == []
+    assert res_unmatched.invariants == []
 
-    # Empty query (all components overview)
+    # Empty query (no filters: all components overview)
     res_empty = get_context_slice()
     assert len(res_empty.components) >= 4
 
@@ -121,10 +122,8 @@ def test_context_slice_substring_no_false_positive():
     """Verify that a file like 'packages/client/index.ts' does not match 'CNT-EIDOS-CLI' via substring 'cli'."""
     res = get_context_slice(files=["packages/client/index.ts"])
     matched_ids = {c["id"] for c in res.components}
-    # CLI should not be matched via "cli" in "client"
-    assert "CNT-EIDOS-CLI" not in matched_ids or "Fallback baseline component anchor" in res.matched_reasons.get("CNT-EIDOS-CLI", [])
-    if "CNT-EIDOS-CLI" in res.matched_reasons:
-        assert not any("matches slug 'cli'" in r for r in res.matched_reasons["CNT-EIDOS-CLI"])
+    assert "CNT-EIDOS-CLI" not in matched_ids
+    assert res.components == []
 
 
 def test_context_slice_string_and_comma_separated_files():
@@ -302,6 +301,54 @@ def test_context_slice_includes_decisions_and_tiered_markdown():
     assert "Architectural Decisions (`DEC-*`)" in base_md
     assert "DEC-INDEX-SQLITE-WAL" in base_md
     assert "*Rejected Alternative:* **ChromaDB / LanceDB Vector Store**" in base_md
+
+
+def test_inv_context_token_compression():
+    """Verify INV-CONTEXT-TOKEN-COMPRESSION: tiered context slicing enforces strict token budgets across Markdown and JSON, projects tier-scoped fields in to_dict(), and returns an honest empty slice on unmatched explicit queries."""
+    from eidos.core.index.graph_index import TIER_TOKEN_BUDGETS
+
+    # 1. Enforce token budgets across anchor (<=300), guardrails (<=1000), and deep (<=2500)
+    for tier, max_budget in TIER_TOKEN_BUDGETS.items():
+        sl = get_context_slice(files=["src/eidos/cli/main.py"], tier=tier)
+        assert sl.token_estimate <= max_budget, f"{tier} token_estimate {sl.token_estimate} > {max_budget}"
+        assert len(sl.to_markdown()) // 4 <= max_budget
+        assert len(sl.to_json()) // 4 <= max_budget
+
+    # 2. Tier-scoped JSON projection in to_dict()
+    anchor_dict = get_context_slice(component="CNT-EIDOS-INDEX", tier="anchor").to_dict()
+    guard_dict = get_context_slice(component="CNT-EIDOS-INDEX", tier="guardrails").to_dict()
+    deep_dict = get_context_slice(component="CNT-EIDOS-INDEX", tier="deep").to_dict()
+
+    assert anchor_dict["capabilities"] == []
+    assert anchor_dict["invariants"] == []
+    assert anchor_dict["policies"] == []
+    anchor_comp = anchor_dict["components"][0]
+    assert "quality_attributes" not in anchor_comp
+    assert "schema" not in anchor_comp
+    if anchor_comp.get("decisions"):
+        assert "rationale" not in anchor_comp["decisions"][0]
+
+    guard_comp = guard_dict["components"][0]
+    assert "quality_attributes" not in guard_comp
+    if guard_comp.get("decisions"):
+        assert "rationale" in guard_comp["decisions"][0]
+
+    deep_comp = deep_dict["components"][0]
+    assert "quality_attributes" in deep_comp or "dependencies" in deep_comp
+
+    # 3. Unmatched explicit queries (files, component, task) return an honest empty slice
+    for kwargs in (
+        {"component": "CNT-DOES-NOT-EXIST-999"},
+        {"files": ["nonexistent/path/that/matches/nothing.rs"]},
+        {"task": "zyxwvutsrqponmlkjihgfedcba987654321"},
+    ):
+        empty_sl = get_context_slice(**kwargs)
+        assert empty_sl.components == []
+        assert empty_sl.contracts == []
+        assert empty_sl.capabilities == []
+        assert empty_sl.invariants == []
+        assert empty_sl.policies == []
+        assert empty_sl.matched_reasons == {}
 
 
 

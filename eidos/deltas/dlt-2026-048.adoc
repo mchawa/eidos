@@ -1,0 +1,80 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-048
+title: Unified SQLite Cache Schema Versioning and Path-Keyed Entity Eviction on Spec ID Rename
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: medium
+  motivation: "Eliminate SQLite cache invalidation thrashing caused by validator.py and drift.py stamping schema_version 2.2.0 while graph_index.py expects 2.3.0, and prevent ghost entities and orphan edges when a specification ID is renamed in place."
+mutations:
+  - action: modify_container
+    target_container: "CNT-EIDOS-INDEX"
+    details: "Update CMP-GRAPH-STORAGE and CMP-INCREMENTAL-SYNC-ENGINE in src/eidos/core/index/graph_index.py to expose a single canonical SQLite schema version and DDL authority, evict stale entities/edges/mappings by the previous doc_id stored in indexed_files for rel_path during incremental sync, and reject duplicate entity ID collisions across spec files."
+    expect:
+      contains: "CMP-GRAPH-STORAGE"
+  - action: modify_container
+    target_container: "CNT-EIDOS-CORE"
+    details: "Update CMP-SPEC-VALIDATOR in src/eidos/core/spec/validator.py to import and stamp the canonical SQLite SCHEMA_VERSION rather than hardcoded '2.2.0'."
+    expect:
+      contains: "CMP-SPEC-VALIDATOR"
+  - action: modify_container
+    target_container: "CNT-EIDOS-VCS"
+    details: "Update CMP-DRIFT-DETECTOR in src/eidos/vcs/drift.py to import and stamp the canonical SQLite SCHEMA_VERSION rather than hardcoded '2.2.0'."
+    expect:
+      contains: "CMP-DRIFT-DETECTOR"
+
+affects:
+  containers:
+    - "CNT-EIDOS-INDEX"
+    - "CNT-EIDOS-CORE"
+    - "CNT-EIDOS-VCS"
+  components:
+    - "CMP-GRAPH-STORAGE"
+    - "CMP-INCREMENTAL-SYNC-ENGINE"
+    - "CMP-SPEC-VALIDATOR"
+    - "CMP-DRIFT-DETECTOR"
+  capabilities:
+    - "CAP-AGENT-002"
+    - "CAP-PROD-001"
+    - "CAP-VCS-001"
+  domains:
+    - "DOM-AGENT-INTELLIGENCE"
+    - "DOM-SPEC-ENGINE"
+    - "DOM-VCS-LIFECYCLE"
+
+blast_radius:
+  impacted_containers:
+    - "CNT-EIDOS-INDEX"
+    - "CNT-EIDOS-CORE"
+    - "CNT-EIDOS-VCS"
+  impacted_components:
+    - "CMP-GRAPH-STORAGE"
+    - "CMP-INCREMENTAL-SYNC-ENGINE"
+    - "CMP-SPEC-VALIDATOR"
+    - "CMP-DRIFT-DETECTOR"
+  invariants_to_enforce:
+    - "INV-INDEX-INCREMENTAL-PARITY"
+---
+= SpecDelta: Unified SQLite Cache Schema Versioning and Path-Keyed Entity Eviction on Spec ID Rename
+:toc: left
+
+== Problem Statement
+1. **SQLite Schema Version Split-Brain (`2.2.0` vs. `2.3.0`)**:
+   - `ArchitecturalIndex.SCHEMA_VERSION` in `src/eidos/core/index/graph_index.py:448` is `"2.3.0"`, and `_init_db` (`lines 502-507`) drops all managed tables whenever `stored_version != "2.3.0"`.
+   - However, both `src/eidos/core/spec/validator.py:204` and `src/eidos/vcs/drift.py:550` initialize a fresh `eidos/.cache/index.db` with `INSERT OR IGNORE INTO metadata (key, value) VALUES ('schema_version', '2.2.0')`. Whenever `eidos validate` or `eidos drift` runs first on a clean checkout, the subsequent `ArchitecturalIndex` open sees `'2.2.0' != '2.3.0'` and drops all tables.
+2. **Ghost Entities & Stale Edges on Specification `id:` Rename**:
+   - During incremental `sync()` (`graph_index.py:1056-1064`), stale rows are deleted using `WHERE id = ?` with the *new* `doc_id` parsed from the modified file. If a specification's `id:` was renamed in place, the previous `doc_id`, its `symbol_mappings`, FTS row, and outgoing `edges` remain in SQLite as ghost nodes until `eidos index sync --force`.
+   - Additionally, `INSERT OR REPLACE INTO entities` (`line 1084`) silently overwrites an existing entity if two specification files accidentally declare the same `id:`.
+
+== Proposed Specification & Engine Changes
+1. **Single Canonical SQLite Schema & Version Authority**:
+   - Export `SCHEMA_VERSION` and shared table initialization from `CMP-GRAPH-STORAGE` (`src/eidos/core/index/graph_index.py`) and consume it in `validator.py` and `drift.py` (including automatic recovery from `sqlite3.DatabaseError` corruption by unlinking and rebuilding the derived cache).
+2. **Path-Keyed Old Entity Eviction**:
+   - Before inserting an updated specification during incremental `sync()`, query `SELECT doc_id FROM indexed_files WHERE file_path = ?` and delete `entities`, `specs_fts`, `symbol_mappings`, `invariants`, and `edges` matching the previous `doc_id` as well as `file_path`.
+
+== Verification Plan
+* `uv run pytest tests/test_graph_index.py tests/test_validator.py tests/test_drift.py`
+* `uv run eidos validate eidos`

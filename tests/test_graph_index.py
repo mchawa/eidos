@@ -1197,3 +1197,129 @@ def test_task_retrieval_indexes_invariants_and_filters_types(tmp_path):
         assert fts_rows == entity_rows
     finally:
         idx.close()
+
+
+def test_inv_index_incremental_parity(tmp_path, monkeypatch):
+    """Verify INV-INDEX-INCREMENTAL-PARITY: mtime refresh on SHA-256 match, single-pass dirty_state handoff,
+    path-keyed entity/edge/FTS eviction on spec ID rename, duplicate ID collision rejection, and unified SQLite schema_version."""
+    from eidos.core.index.graph_index import SCHEMA_VERSION, open_cache_connection
+    from eidos.core.spec.validator import SpecValidator
+    from eidos.vcs.drift import extract_invariants_and_verify
+
+    repo = tmp_path / "parity"
+    eidos_dir = repo / "eidos"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    cap_dir = eidos_dir / "domains" / "core" / "capabilities"
+    cnt_dir.mkdir(parents=True)
+    cap_dir.mkdir(parents=True)
+
+    spec_a = cnt_dir / "alpha.adoc"
+    spec_a.write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-OLD-NAME\n"
+        "name: Old Container\n"
+        "container_type: library\n"
+        "runtime: python\n"
+        "package_path: src/alpha\n"
+        "---\n"
+        "= Old Container\n",
+        encoding="utf-8",
+    )
+
+    # 1. Validator and Drift caches stamp canonical SCHEMA_VERSION (2.3.0), so ArchitecturalIndex does not drop them
+    validator = SpecValidator()
+    validator.validate_directory(eidos_dir)
+    extract_invariants_and_verify(eidos_dir, repo)
+
+    db_path = eidos_dir / ".cache" / "index.db"
+    with sqlite3.connect(str(db_path)) as conn:
+        ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
+        assert ver == SCHEMA_VERSION == "2.3.0"
+        val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
+        assert val_rows_before == 1
+
+    idx = ArchitecturalIndex(db_path=db_path, repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=False)
+        conn = idx._get_connection()
+        val_rows_after = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
+        assert val_rows_after == 1
+
+        # 2. Mtime refresh in place when SHA-256 is unchanged
+        old_mtime = conn.execute(
+            "SELECT mtime FROM indexed_files WHERE rel_path = 'eidos/architecture/containers/alpha.adoc';"
+        ).fetchone()[0]
+        bumped_mtime = old_mtime + 120.0
+        os.utime(spec_a, (bumped_mtime, bumped_mtime))
+
+        dirty, to_update, to_delete = idx.is_dirty()
+        assert not dirty and to_update == [] and to_delete == []
+        refreshed_mtime = conn.execute(
+            "SELECT mtime FROM indexed_files WHERE rel_path = 'eidos/architecture/containers/alpha.adoc';"
+        ).fetchone()[0]
+        assert abs(refreshed_mtime - bumped_mtime) < 1.0
+
+        # 3. _ensure_synced passes dirty_state into sync() without calling is_dirty() a second time
+        spec_a.write_text(spec_a.read_text(encoding="utf-8") + "\nUpdated body.\n", encoding="utf-8")
+        os.utime(spec_a, (bumped_mtime + 60.0, bumped_mtime + 60.0))
+        is_dirty_calls: list[int] = []
+        orig_is_dirty = idx.is_dirty
+
+        def _spy_is_dirty():
+            is_dirty_calls.append(1)
+            return orig_is_dirty()
+
+        monkeypatch.setattr(idx, "is_dirty", _spy_is_dirty)
+        idx._last_synced_check = 0.0
+        idx._ensure_synced()
+        assert len(is_dirty_calls) == 1
+        monkeypatch.setattr(idx, "is_dirty", orig_is_dirty)
+
+        # 4. Path-keyed eviction when a specification ID is renamed in place (CNT-OLD-NAME -> CNT-NEW-NAME)
+        spec_a.write_text(
+            spec_a.read_text(encoding="utf-8").replace("id: CNT-OLD-NAME", "id: CNT-NEW-NAME"),
+            encoding="utf-8",
+        )
+        os.utime(spec_a, (bumped_mtime + 120.0, bumped_mtime + 120.0))
+        idx.sync(force=False)
+
+        entity_ids = {r[0] for r in conn.execute("SELECT id FROM entities;").fetchall()}
+        fts_ids = {r[0] for r in conn.execute("SELECT entity_id FROM specs_fts;").fetchall()}
+        sym_eids = {r[0] for r in conn.execute("SELECT DISTINCT entity_id FROM symbol_mappings;").fetchall()}
+        assert "CNT-NEW-NAME" in entity_ids
+        assert "CNT-OLD-NAME" not in entity_ids
+        assert "CNT-OLD-NAME" not in fts_ids
+        assert "CNT-OLD-NAME" not in sym_eids
+
+        # 5. Duplicate entity ID collision across distinct files is rejected rather than overwriting CNT-NEW-NAME
+        spec_b = cnt_dir / "beta_duplicate.adoc"
+        spec_b.write_text(
+            "---\n"
+            "type: tech/container\n"
+            "schema: schemas/v1/tech/container.schema.yaml\n"
+            "id: CNT-NEW-NAME\n"
+            "name: Colliding Container\n"
+            "container_type: library\n"
+            "runtime: python\n"
+            "package_path: src/beta\n"
+            "---\n"
+            "= Colliding Container\n",
+            encoding="utf-8",
+        )
+        dup_stats = idx.sync(force=False)
+        assert any("CNT-NEW-NAME" in msg for msg in dup_stats.duplicate_id_collisions)
+        stored_row = conn.execute("SELECT title, file_path FROM entities WHERE id = 'CNT-NEW-NAME';").fetchone()
+        assert stored_row["title"] == "Old Container"
+        assert stored_row["file_path"] == "eidos/architecture/containers/alpha.adoc"
+    finally:
+        idx.close()
+
+    # 6. Corruption recovery: corrupted SQLite bytes are unlinked and rebuilt cleanly
+    corrupt_db = tmp_path / "corrupt.db"
+    corrupt_db.write_bytes(b"NOT A VALID SQLITE DATABASE HEADER" * 10)
+    with open_cache_connection(corrupt_db) as recovered_conn:
+        ver = recovered_conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
+        assert ver == SCHEMA_VERSION
+

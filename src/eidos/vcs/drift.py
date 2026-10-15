@@ -465,7 +465,6 @@ class _CachedTestFile:
 
 
 _INV_OR_POL_TOKEN_RE = re.compile(r"\b(?:INV|POL)-[A-Za-z0-9_-]+\b")
-_INV_FIXTURE_TOKEN_RE = re.compile(r"\b(INV-[A-Z0-9-]+)\b")
 
 
 def _build_cached_test_file_entry(
@@ -476,6 +475,8 @@ def _build_cached_test_file_entry(
     ast_idx: Any,
 ) -> tuple[_CachedTestFile, str, str, str]:
     """Extract test functions, fixture-filtered INV tokens, AST bindings, and file-level tokens for caching."""
+    from eidos.core.index.ast_indexer import INVARIANT_PATTERN
+
     has_fixture = "# eidos:fixture" in tcontent or "// eidos:fixture" in tcontent
     raw_funcs = ast_idx.list_test_functions(rel, tcontent)
     functions: dict[str, dict[str, list[str]]] = {}
@@ -486,7 +487,7 @@ def _build_cached_test_file_entry(
             for line in fslice.splitlines():
                 if "eidos:fixture" in line:
                     continue
-                for inv_id in _INV_FIXTURE_TOKEN_RE.findall(line):
+                for inv_id in INVARIANT_PATTERN.findall(line):
                     if inv_id not in fixture_invs:
                         fixture_invs.append(inv_id)
         functions[fname] = {
@@ -535,37 +536,26 @@ def _load_or_update_test_binding_cache(
 
     cached_rows: dict[str, sqlite3.Row] = {}
     if effective_eidos.exists():
-        with contextlib.suppress(OSError, sqlite3.Error):
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-            with sqlite3.connect(str(db_path), timeout=10.0) as conn:
-                conn.row_factory = sqlite3.Row
-                existing_tables = {
-                    r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")
-                }
-                if not existing_tables:
-                    conn.execute(
-                        "CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);"
-                    )
-                    conn.execute(
-                        "INSERT OR IGNORE INTO metadata (key, value) VALUES ('schema_version', '2.2.0');"
-                    )
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS test_binding_cache (
-                        file_path TEXT PRIMARY KEY,
-                        mtime_ns INTEGER NOT NULL,
-                        sha256 TEXT NOT NULL,
-                        has_fixture INTEGER NOT NULL DEFAULT 0,
-                        functions_json TEXT NOT NULL,
-                        bindings_json TEXT NOT NULL,
-                        file_tokens_json TEXT NOT NULL
-                    );
-                    """
-                )
-                for row in conn.execute(
-                    "SELECT file_path, mtime_ns, sha256, has_fixture, functions_json, bindings_json, file_tokens_json FROM test_binding_cache;"
-                ):
-                    cached_rows[row["file_path"]] = row
+        from eidos.core.index.graph_index import open_cache_connection
+
+        with contextlib.suppress(OSError, sqlite3.Error), open_cache_connection(db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS test_binding_cache (
+                    file_path TEXT PRIMARY KEY,
+                    mtime_ns INTEGER NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    has_fixture INTEGER NOT NULL DEFAULT 0,
+                    functions_json TEXT NOT NULL,
+                    bindings_json TEXT NOT NULL,
+                    file_tokens_json TEXT NOT NULL
+                );
+                """
+            )
+            for row in conn.execute(
+                "SELECT file_path, mtime_ns, sha256, has_fixture, functions_json, bindings_json, file_tokens_json FROM test_binding_cache;"
+            ):
+                cached_rows[row["file_path"]] = row
 
     discovered: list[tuple[str, Path, int]] = []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -655,22 +645,36 @@ def _load_or_update_test_binding_cache(
 
     deleted_keys = [k for k in cached_rows if k not in seen_rels]
     if effective_eidos.exists() and (to_upsert or deleted_keys):
-        with contextlib.suppress(OSError, sqlite3.Error):
-            with sqlite3.connect(str(db_path), timeout=10.0) as conn:
-                if deleted_keys:
-                    conn.executemany(
-                        "DELETE FROM test_binding_cache WHERE file_path = ?;",
-                        [(k,) for k in deleted_keys],
-                    )
-                if to_upsert:
-                    conn.executemany(
-                        """
-                        INSERT OR REPLACE INTO test_binding_cache
-                        (file_path, mtime_ns, sha256, has_fixture, functions_json, bindings_json, file_tokens_json)
-                        VALUES (?, ?, ?, ?, ?, ?, ?);
-                        """,
-                        to_upsert,
-                    )
+        from eidos.core.index.graph_index import open_cache_connection
+
+        with contextlib.suppress(OSError, sqlite3.Error), open_cache_connection(db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS test_binding_cache (
+                    file_path TEXT PRIMARY KEY,
+                    mtime_ns INTEGER NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    has_fixture INTEGER NOT NULL DEFAULT 0,
+                    functions_json TEXT NOT NULL,
+                    bindings_json TEXT NOT NULL,
+                    file_tokens_json TEXT NOT NULL
+                );
+                """
+            )
+            if deleted_keys:
+                conn.executemany(
+                    "DELETE FROM test_binding_cache WHERE file_path = ?;",
+                    [(k,) for k in deleted_keys],
+                )
+            if to_upsert:
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO test_binding_cache
+                    (file_path, mtime_ns, sha256, has_fixture, functions_json, bindings_json, file_tokens_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    to_upsert,
+                )
 
     return result
 
@@ -690,7 +694,7 @@ def _verify_single_invariant(
     if tb:
         parts = [p.strip() for p in tb.split("::") if p.strip()]
         tb_file = parts[0].replace("\\", "/")
-        tb_func = parts[-1] if len(parts) > 1 else None
+        tb_func = "::".join(parts[1:]) if len(parts) > 1 else None
         tb_path = repo_root / tb_file
         if not tb_path.exists():
             return []
@@ -717,10 +721,17 @@ def _verify_single_invariant(
 
         if isinstance(entry, _CachedTestFile):
             if tb_func:
-                func_meta = entry.functions.get(tb_func)
-                if func_meta is None:
+                candidate_metas: list[dict[str, list[str]]] = []
+                if tb_func in entry.functions:
+                    candidate_metas.append(entry.functions[tb_func])
+                else:
+                    suffix = f"::{parts[-1]}"
+                    candidate_metas.extend(
+                        meta for k, meta in entry.functions.items() if k == parts[-1] or k.endswith(suffix)
+                    )
+                if not candidate_metas:
                     return []
-                if iid not in func_meta.get("tokens", []):
+                if not any(iid in meta.get("tokens", []) for meta in candidate_metas):
                     return []
                 return list(dict.fromkeys([f"{tb_file}::{tb_func}", *inv_to_test_funcs.get(iid, [])]))
             if iid in entry.file_tokens:
@@ -735,9 +746,17 @@ def _verify_single_invariant(
 
                 ast_idx = get_ast_indexer()
             funcs = ast_idx.list_test_functions(tb_file, file_content)
-            if tb_func not in funcs:
+            candidate_bodies: list[str] = []
+            if tb_func in funcs:
+                candidate_bodies.append(funcs[tb_func])
+            else:
+                suffix = f"::{parts[-1]}"
+                candidate_bodies.extend(
+                    body for k, body in funcs.items() if k == parts[-1] or k.endswith(suffix)
+                )
+            if not candidate_bodies:
                 return []
-            if not pattern.search(funcs[tb_func]):
+            if not any(pattern.search(body) for body in candidate_bodies):
                 return []
             return list(dict.fromkeys([f"{tb_file}::{tb_func}", *inv_to_test_funcs.get(iid, [])]))
         if pattern.search(file_content):
@@ -765,6 +784,8 @@ def detect_orphan_invariants(
     eidos_dir: Path | None = None,
 ) -> list[tuple[str, str]]:
     """Find INV-* tokens referenced in tests that do not exist in any living specification."""
+    from eidos.core.index.ast_indexer import INVARIANT_PATTERN, get_ast_indexer
+
     orphans: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
 
@@ -772,7 +793,12 @@ def detect_orphan_invariants(
         cached_tests = _load_or_update_test_binding_cache(repo_root, eidos_dir=eidos_dir)
         for tpath, entry in sorted(cached_tests.items()):
             if entry.has_fixture:
+                qualified_suffixes = {
+                    fname.split("::", 1)[1] for fname in entry.functions if "::" in fname
+                }
                 for fname, func_meta in entry.functions.items():
+                    if "::" not in fname and fname in qualified_suffixes:
+                        continue
                     for inv_id in func_meta.get("fixture_invs", []):
                         if inv_id not in known_invariant_ids:
                             key = (inv_id, f"{tpath}::{fname}")
@@ -781,8 +807,15 @@ def detect_orphan_invariants(
                                 orphans.append(key)
                 continue
 
+            qualified_binding_suffixes = {
+                b["identifier"].rsplit("::", 1)[-1]
+                for b in entry.bindings
+                if b["identifier"].count("::") >= 2
+            }
             for binding in entry.bindings:
                 ident = binding["identifier"]
+                if ident.count("::") == 1 and ident.rsplit("::", 1)[-1] in qualified_binding_suffixes:
+                    continue
                 for inv_id in binding.get("invariants", []):
                     if inv_id not in known_invariant_ids:
                         key = (inv_id, ident)
@@ -791,21 +824,22 @@ def detect_orphan_invariants(
                             orphans.append(key)
         return orphans
 
-    from eidos.core.index.ast_indexer import get_ast_indexer
-
     ast_idx = get_ast_indexer()
 
     for tpath, tcontent in sorted(all_tests_content.items()):
         if "# eidos:fixture" in tcontent or "// eidos:fixture" in tcontent:
             # Check per-function or skip fixture-marked functions
             funcs = ast_idx.list_test_functions(tpath, tcontent)
+            qualified_suffixes = {fname.split("::", 1)[1] for fname in funcs if "::" in fname}
             for fname, fslice in funcs.items():
+                if "::" not in fname and fname in qualified_suffixes:
+                    continue
                 if "eidos:fixture" in fslice:
                     continue
                 for line in fslice.splitlines():
                     if "eidos:fixture" in line:
                         continue
-                    for inv_id in re.findall(r"\b(INV-[A-Z0-9-]+)\b", line):
+                    for inv_id in INVARIANT_PATTERN.findall(line):
                         if inv_id not in known_invariant_ids:
                             key = (inv_id, f"{tpath}::{fname}")
                             if key not in seen:
@@ -813,7 +847,16 @@ def detect_orphan_invariants(
                                 orphans.append(key)
             continue
 
-        for binding in ast_idx.extract_test_bindings(tpath, tcontent):
+        extracted_bindings = ast_idx.extract_test_bindings(tpath, tcontent)
+        qualified_binding_suffixes = {
+            b.identifier.rsplit("::", 1)[-1] for b in extracted_bindings if b.identifier.count("::") >= 2
+        }
+        for binding in extracted_bindings:
+            if (
+                binding.identifier.count("::") == 1
+                and binding.identifier.rsplit("::", 1)[-1] in qualified_binding_suffixes
+            ):
+                continue
             for inv_id in binding.invariants:
                 if inv_id not in known_invariant_ids:
                     key = (inv_id, binding.identifier)
@@ -871,12 +914,13 @@ def extract_invariants_and_verify(
     spec_cache_rows: dict[str, tuple[int, str]] = {}
     db_path = resolved_eidos_dir / ".cache" / "index.db"
     if db_path.exists():
-        with contextlib.suppress(OSError, sqlite3.Error):
-            with sqlite3.connect(str(db_path), timeout=10.0) as conn:
-                for file_path_col, mtime_col, doc_json_col in conn.execute(
-                    "SELECT file_path, mtime_ns, doc_json FROM spec_validation_cache;"
-                ):
-                    spec_cache_rows[file_path_col] = (int(mtime_col), str(doc_json_col))
+        from eidos.core.index.graph_index import open_cache_connection
+
+        with contextlib.suppress(OSError, sqlite3.Error), open_cache_connection(db_path) as conn:
+            for file_path_col, mtime_col, doc_json_col in conn.execute(
+                "SELECT file_path, mtime_ns, doc_json FROM spec_validation_cache;"
+            ):
+                spec_cache_rows[file_path_col] = (int(mtime_col), str(doc_json_col))
 
     scan_roots: list[tuple[str, tuple[str, ...]]] = [
         ("domains", ("product/capability",)),

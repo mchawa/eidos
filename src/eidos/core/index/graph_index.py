@@ -10,13 +10,14 @@ Implements EXP-2026-002:
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
 import re
 import sqlite3
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,16 @@ from eidos.core.workspace.context import (
     format_decisions_markdown,
 )
 from eidos.core.workspace.project import extract_entity_paths, find_repo_root, match_path_pattern
+
+# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-048).
+SCHEMA_VERSION = "2.3.0"
+
+# Enforced maximum token budgets per context slice tier (DLT-2026-047).
+TIER_TOKEN_BUDGETS: dict[str, int] = {
+    "anchor": 300,
+    "guardrails": 1000,
+    "deep": 2500,
+}
 
 # FTS5 ``bm25()`` weights are positional over *every* declared column of ``specs_fts``, including the UNINDEXED
 # ``entity_id`` column, so the first weight must be a placeholder. Order: entity_id, title, jtbd_or_rule, body_text,
@@ -105,6 +116,7 @@ class IndexSyncStats:
     pruned_deleted: int = 0
     duration_ms: float = 0.0
     was_clean: bool = True
+    duplicate_id_collisions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -115,8 +127,179 @@ class TieredContextSlice(ArchitecturalContextSlice):
     query_latency_ms: float = 0.0
     token_estimate: int = 0
 
+    def _is_secondary_dependency(self, cid: str) -> bool:
+        return self.matched_reasons.get(cid) == ["Internal dependency"]
+
+    def _project_decisions(self, decisions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        projected: list[dict[str, Any]] = []
+        for d in decisions:
+            if not isinstance(d, dict):
+                continue
+            dtext = str(d.get("decision", "") or "")
+            if self.tier == "anchor":
+                short_dtext = f"{dtext[:117].rstrip()}..." if len(dtext) > 120 else dtext
+                alts = [
+                    {"option": str(a.get("option")).strip()}
+                    for a in (d.get("rejected_alternatives") or [])[:2]
+                    if isinstance(a, dict) and a.get("option")
+                ]
+                entry: dict[str, Any] = {
+                    "id": d.get("id", ""),
+                    "title": d.get("title", ""),
+                    "decision": short_dtext,
+                }
+                if alts:
+                    entry["rejected_alternatives"] = alts
+                projected.append(entry)
+            else:
+                entry = {
+                    "id": d.get("id", ""),
+                    "title": d.get("title", ""),
+                    "decision": dtext,
+                }
+                if d.get("graduated_from"):
+                    entry["graduated_from"] = d["graduated_from"]
+                if d.get("rationale"):
+                    entry["rationale"] = d["rationale"]
+                if d.get("rejected_alternatives"):
+                    entry["rejected_alternatives"] = [
+                        {
+                            "option": a.get("option", ""),
+                            "reason_rejected": a.get("reason_rejected", ""),
+                        }
+                        for a in (d.get("rejected_alternatives") or [])
+                        if isinstance(a, dict) and a.get("option")
+                    ]
+                projected.append(entry)
+        return projected
+
+    def _project_component(self, comp: dict[str, Any]) -> dict[str, Any]:
+        cid = comp.get("id", "")
+        name = comp.get("name", comp.get("title", cid))
+        title = comp.get("title", name)
+        out: dict[str, Any] = {
+            "id": cid,
+            "name": name,
+        }
+        if title and title != name:
+            out["title"] = title
+        base_keys = (
+            ("type", "container_type", "runtime", "package_path", "domain_binding", "container")
+            if self.tier == "anchor"
+            else ("type", "container_type", "runtime", "package_path", "domain_binding", "container", "file_path", "responsibility")
+        )
+        for base_key in base_keys:
+            if comp.get(base_key):
+                out[base_key] = comp[base_key]
+
+        is_secondary = self._is_secondary_dependency(cid)
+        if self.tier in ("guardrails", "deep") and not (is_secondary and len(self.components) > 3):
+            if comp.get("dependencies"):
+                out["dependencies"] = comp["dependencies"]
+            if comp.get("contracts"):
+                out["contracts"] = comp["contracts"]
+            if comp.get("interfaces"):
+                out["interfaces"] = comp["interfaces"]
+            if comp.get("invariants"):
+                out["invariants"] = [
+                    {"id": inv.get("id", ""), "rule": inv.get("rule", "")}
+                    for inv in comp.get("invariants", [])
+                    if isinstance(inv, dict)
+                ]
+
+        if self.tier == "deep" and not is_secondary:
+            if comp.get("quality_attributes"):
+                out["quality_attributes"] = comp["quality_attributes"]
+            modules = comp.get("components", []) or comp.get("c4_internal_components", [])
+            if modules:
+                out["components"] = [
+                    {
+                        k: m[k]
+                        for k in ("id", "name", "responsibility", "ref", "source_path")
+                        if isinstance(m, dict) and m.get(k)
+                    }
+                    for m in modules
+                    if isinstance(m, dict)
+                ]
+
+        if not is_secondary and not (self.tier != "deep" and len(self.components) > 4):
+            decisions = collect_component_decisions(comp)
+            if decisions:
+                out["decisions"] = self._project_decisions(decisions)
+
+        return out
+
+    def _project_contract(self, ctr: dict[str, Any]) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "id": ctr.get("id", ""),
+            "title": ctr.get("title", ctr.get("id", "")),
+            "protocol": ctr.get("protocol", "standard"),
+        }
+        for k in ("owning_container", "owning_component"):
+            if ctr.get(k):
+                out[k] = ctr[k]
+        if self.tier in ("guardrails", "deep") and ctr.get("path"):
+            out["path"] = ctr["path"]
+        return out
+
+    def _project_capability(self, cap: dict[str, Any]) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "id": cap.get("id", ""),
+            "title": cap.get("title", cap.get("id", "")),
+            "domain": cap.get("domain", ""),
+            "status": cap.get("status", "active"),
+        }
+        if self.tier == "deep":
+            jtbd = cap.get("jtbd") or (cap.get("business") or {}).get("jtbd")
+            if jtbd:
+                out["jtbd"] = jtbd
+        return out
+
+    def _project_invariant(self, inv: dict[str, Any]) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "id": inv.get("id", ""),
+            "rule": inv.get("rule", ""),
+            "test_binding": inv.get("test_binding", ""),
+            "has_test_coverage": bool(inv.get("has_test_coverage")),
+        }
+        for k in ("policy_id", "capability_id", "component_id"):
+            if inv.get(k):
+                out[k] = inv[k]
+        if self.tier == "deep" and inv.get("matching_tests"):
+            out["matching_tests"] = inv["matching_tests"]
+        return out
+
+    def _project_policy(self, pol: dict[str, Any]) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "id": pol.get("id", ""),
+            "title": pol.get("title", pol.get("id", "")),
+        }
+        if pol.get("category"):
+            out["category"] = pol["category"]
+        if self.tier == "deep" and pol.get("rule"):
+            out["rule"] = pol["rule"]
+        return out
+
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        """Project tier-scoped fields per entity so JSON output honors the requested tier."""
+        return {
+            "query": self.query,
+            "tier": self.tier,
+            "components": [self._project_component(c) for c in self.components],
+            "contracts": [self._project_contract(c) for c in self.contracts],
+            "capabilities": (
+                [] if self.tier == "anchor" else [self._project_capability(c) for c in self.capabilities]
+            ),
+            "invariants": (
+                [] if self.tier == "anchor" else [self._project_invariant(i) for i in self.invariants]
+            ),
+            "policies": (
+                [] if self.tier == "anchor" else [self._project_policy(p) for p in self.policies]
+            ),
+            "matched_reasons": self.matched_reasons,
+            "query_latency_ms": self.query_latency_ms,
+            "token_estimate": self.token_estimate,
+        }
 
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent)
@@ -150,6 +333,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             runtime = comp.get("runtime", "N/A")
             pkg = comp.get("package_path", "")
             is_comp = comp.get("type") == "tech/component" or cid.startswith("CMP-")
+            is_secondary = self._is_secondary_dependency(cid)
 
             if is_comp:
                 parent_cnt = comp.get("container", "N/A")
@@ -183,7 +367,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 if comp.get("domain_binding"):
                     lines.append(f"- **Domain:** `{comp['domain_binding']}`")
 
-                if self.tier in ("guardrails", "deep"):
+                if self.tier in ("guardrails", "deep") and not (is_secondary and len(self.components) > 3):
                     deps = (
                         (comp.get("dependencies") or {}).get("internal_containers", [])
                         or (comp.get("dependencies") or {}).get("internal_components", [])
@@ -204,7 +388,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
                     if req:
                         lines.append(f"- **Requires Contracts:** {', '.join(f'`{r}`' for r in req)}")
 
-                if self.tier == "deep":
+                if self.tier == "deep" and not is_secondary:
                     modules = comp.get("components", []) or comp.get("c4_internal_components", [])
                     if modules:
                         lines.append("- **C4 Level 3 Components:**")
@@ -216,9 +400,10 @@ class TieredContextSlice(ArchitecturalContextSlice):
                                 )
                             else:
                                 lines.append(f"  - {mid}**{m.get('name', '')}**: {m.get('responsibility', '')}")
-            decisions = collect_component_decisions(comp)
-            if decisions:
-                lines.extend(format_decisions_markdown(decisions, tier=self.tier))
+            if not is_secondary and not (self.tier != "deep" and len(self.components) > 4):
+                decisions = collect_component_decisions(comp)
+                if decisions:
+                    lines.extend(format_decisions_markdown(decisions, tier=self.tier))
             lines.append("")
 
         # 2. Bound Contracts
@@ -283,8 +468,71 @@ class TieredContextSlice(ArchitecturalContextSlice):
         )
         return "\n".join(lines)
 
+    def _estimate_tokens(self) -> int:
+        return max(1, len(self.to_markdown()) // 4)
 
-_CODE_EXTS = frozenset({".py", ".ts", ".tsx", ".go", ".rs", ".js", ".jsx", ".java", ".kt"})
+    def _prune_matched_reasons(self) -> None:
+        retained_ids = {
+            e.get("id", "")
+            for group in (self.components, self.contracts, self.capabilities, self.invariants, self.policies)
+            for e in group
+            if e.get("id")
+        }
+        self.matched_reasons = {
+            k: v
+            for k, v in self.matched_reasons.items()
+            if k in retained_ids or k.startswith(("DOM-", "DS-"))
+        }
+
+    def _exceeds_budget(self, budget: int) -> bool:
+        self._prune_matched_reasons()
+        return self._estimate_tokens() > budget or (len(self.to_json()) // 4) > budget
+
+    def _enforce_token_budget(self, primary_cids: set[str]) -> None:
+        """Enforce rank-ordered token budget truncation for the requested tier across Markdown and JSON (DLT-2026-047)."""
+        budget = TIER_TOKEN_BUDGETS.get(self.tier, 1000)
+
+        if self.tier == "anchor":
+            self.capabilities = []
+            self.invariants = []
+            self.policies = []
+            if self._exceeds_budget(budget) and primary_cids:
+                self.components = [c for c in self.components if c.get("id") in primary_cids] or self.components[:1]
+            while self._exceeds_budget(budget) and len(self.contracts) > 1:
+                self.contracts.pop()
+            while self._exceeds_budget(budget) and len(self.components) > 1:
+                self.components.pop()
+            self._prune_matched_reasons()
+            self.token_estimate = self._estimate_tokens()
+            return
+
+        # For guardrails and deep tiers, trim lowest-priority invariants first while keeping core guardrails.
+        while self._exceeds_budget(budget) and len(self.invariants) > 3:
+            self.invariants.pop()
+
+        if self._exceeds_budget(budget) and len(self.components) > 4:
+            # Trim trailing secondary 1-hop dependency components while retaining primary + top dependencies
+            for idx in range(len(self.components) - 1, -1, -1):
+                if not self._exceeds_budget(budget) or len(self.components) <= 4:
+                    break
+                cid = self.components[idx].get("id", "")
+                if cid not in primary_cids:
+                    self.components.pop(idx)
+
+        while self._exceeds_budget(budget) and len(self.invariants) > 1:
+            self.invariants.pop()
+
+        while self._exceeds_budget(budget) and len(self.policies) > 1:
+            self.policies.pop()
+
+        while self._exceeds_budget(budget) and len(self.capabilities) > 1:
+            self.capabilities.pop()
+
+        self._prune_matched_reasons()
+        self.token_estimate = self._estimate_tokens()
+
+
+_CODE_EXTS = frozenset({".py", ".ts", ".tsx", ".go", ".rs", ".js", ".jsx", ".java", ".kt", ".kts"})
 
 _EXCLUDED_CODE_DIRS = frozenset(
     {
@@ -316,6 +564,162 @@ _MANAGED_TABLES = (
     "specs_fts",
     "metadata",
 )
+
+_CACHE_SCHEMA_DDL = """
+CREATE TABLE IF NOT EXISTS metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS indexed_files (
+    rel_path TEXT PRIMARY KEY,
+    mtime REAL NOT NULL,
+    sha256 TEXT NOT NULL,
+    doc_id TEXT,
+    doc_type TEXT,
+    last_indexed REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS spec_validation_cache (
+    file_path TEXT PRIMARY KEY,
+    mtime_ns INTEGER NOT NULL,
+    sha256 TEXT NOT NULL,
+    schema_hash TEXT NOT NULL,
+    doc_json TEXT NOT NULL,
+    schema_errors_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS test_binding_cache (
+    file_path TEXT PRIMARY KEY,
+    mtime_ns INTEGER NOT NULL,
+    sha256 TEXT NOT NULL,
+    has_fixture INTEGER NOT NULL DEFAULT 0,
+    functions_json TEXT NOT NULL,
+    bindings_json TEXT NOT NULL,
+    file_tokens_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS entities (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    status TEXT,
+    domain TEXT,
+    package_path TEXT,
+    runtime TEXT,
+    container_type TEXT,
+    file_path TEXT NOT NULL,
+    data_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type);
+CREATE INDEX IF NOT EXISTS idx_entities_domain ON entities(domain);
+
+CREATE TABLE IF NOT EXISTS edges (
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    rel_type TEXT NOT NULL,
+    metadata_json TEXT,
+    PRIMARY KEY (source_id, target_id, rel_type)
+);
+CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
+CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
+CREATE INDEX IF NOT EXISTS idx_edges_rel ON edges(rel_type);
+
+CREATE TABLE IF NOT EXISTS symbol_mappings (
+    symbol TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    PRIMARY KEY (symbol, entity_id, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_symbols_symbol ON symbol_mappings(symbol);
+CREATE INDEX IF NOT EXISTS idx_symbols_entity ON symbol_mappings(entity_id);
+
+-- AST symbol coordinates (DLT-2026-034), one row set per owning entity of the file ('is_primary' marks the
+-- resolved primary owner; files declared by several entities keep rows for each). 'id' preserves AST order.
+CREATE TABLE IF NOT EXISTS code_symbols (
+    id INTEGER PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    parent_symbol TEXT NOT NULL DEFAULT '',
+    line_start INTEGER NOT NULL,
+    line_end INTEGER NOT NULL,
+    signature TEXT NOT NULL DEFAULT '',
+    entity_id TEXT NOT NULL,
+    component_id TEXT NOT NULL DEFAULT '',
+    is_primary INTEGER NOT NULL DEFAULT 1,
+    UNIQUE (file_path, entity_id, kind, parent_symbol, symbol, line_start)
+);
+CREATE INDEX IF NOT EXISTS idx_code_symbols_symbol ON code_symbols(symbol);
+CREATE INDEX IF NOT EXISTS idx_code_symbols_file ON code_symbols(file_path);
+CREATE INDEX IF NOT EXISTS idx_code_symbols_entity ON code_symbols(entity_id, kind, symbol);
+
+-- FTS5 full-text search table for BM25 ranking
+CREATE VIRTUAL TABLE IF NOT EXISTS specs_fts USING fts5(
+    entity_id UNINDEXED,
+    title,
+    jtbd_or_rule,
+    body_text,
+    keywords,
+    symbols,
+    tokenize='porter unicode61'
+);
+"""
+
+
+def _unlink_cache_files(db_path: Path) -> None:
+    """Remove a corrupted SQLite cache database and its WAL/SHM sidecar files."""
+    for candidate in (db_path, Path(f"{db_path}-wal"), Path(f"{db_path}-shm")):
+        with contextlib.suppress(OSError):
+            if candidate.exists():
+                candidate.unlink()
+
+
+def ensure_cache_schema(conn: sqlite3.Connection) -> None:
+    """Ensure ``conn`` has the canonical ``SCHEMA_VERSION`` tables, dropping stale managed tables on version mismatch."""
+    existing_tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")}
+    if existing_tables & set(_MANAGED_TABLES):
+        stored_version = None
+        if "metadata" in existing_tables:
+            row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()
+            stored_version = row[0] if row else None
+        if stored_version != SCHEMA_VERSION:
+            with conn:
+                for table in _MANAGED_TABLES:
+                    conn.execute(f"DROP TABLE IF EXISTS {table};")
+    with conn:
+        conn.executescript(_CACHE_SCHEMA_DDL)
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?);",
+            (SCHEMA_VERSION,),
+        )
+
+
+def open_cache_connection(db_path: Path) -> sqlite3.Connection:
+    """Open a WAL-configured SQLite cache connection with unified schema versioning and corruption recovery."""
+    db_path = Path(db_path).resolve()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    for attempt in range(2):
+        conn: sqlite3.Connection | None = None
+        try:
+            conn = sqlite3.connect(str(db_path), timeout=10.0)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode = WAL;")
+            conn.execute("PRAGMA synchronous = NORMAL;")
+            conn.execute("PRAGMA foreign_keys = ON;")
+            conn.execute("PRAGMA mmap_size = 268435456;")
+            ensure_cache_schema(conn)
+            return conn
+        except sqlite3.DatabaseError:
+            if conn is not None:
+                with contextlib.suppress(sqlite3.Error):
+                    conn.close()
+            if attempt == 0:
+                _unlink_cache_files(db_path)
+                continue
+            raise
+    raise sqlite3.DatabaseError(f"Failed to initialize SQLite cache at {db_path}")
+
 
 # symbol_mappings kinds that are *not* AST symbols (everything else resolves to code_symbols coordinates).
 _NON_AST_SYMBOL_KINDS = frozenset(
@@ -445,7 +849,7 @@ class _CodeOwnershipResolver:
 class ArchitecturalIndex:
     """Embedded SQLite Architectural Knowledge Graph & Hybrid Retrieval Index."""
 
-    SCHEMA_VERSION = "2.3.0"
+    SCHEMA_VERSION = SCHEMA_VERSION
 
     def __init__(
         self,
@@ -478,140 +882,12 @@ class ArchitecturalIndex:
 
     def _get_connection(self) -> sqlite3.Connection:
         if self._conn is None:
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            self._conn = sqlite3.connect(str(self.db_path), timeout=10.0)
-            self._conn.row_factory = sqlite3.Row
-            # Enable SQLite WAL mode & performance PRAGMAs
-            self._conn.execute("PRAGMA journal_mode = WAL;")
-            self._conn.execute("PRAGMA synchronous = NORMAL;")
-            self._conn.execute("PRAGMA foreign_keys = ON;")
-            self._conn.execute("PRAGMA mmap_size = 268435456;")  # 256MB mmap
+            self._conn = open_cache_connection(self.db_path)
         return self._conn
 
     def _init_db(self) -> None:
-        """Create tables, indexes, and FTS5 virtual tables.
-
-        The database is a derived cache: when the persisted ``schema_version`` is missing or differs from
-        ``SCHEMA_VERSION``, every managed table is dropped and rebuilt on the next sync (DLT-2026-034).
-        """
-        conn = self._get_connection()
-        existing_tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")}
-        if existing_tables & set(_MANAGED_TABLES):
-            stored_version = None
-            if "metadata" in existing_tables:
-                row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()
-                stored_version = row[0] if row else None
-            if stored_version != self.SCHEMA_VERSION:
-                with conn:
-                    for table in _MANAGED_TABLES:
-                        conn.execute(f"DROP TABLE IF EXISTS {table};")
-        with conn:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS metadata (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS indexed_files (
-                    rel_path TEXT PRIMARY KEY,
-                    mtime REAL NOT NULL,
-                    sha256 TEXT NOT NULL,
-                    doc_id TEXT,
-                    doc_type TEXT,
-                    last_indexed REAL NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS spec_validation_cache (
-                    file_path TEXT PRIMARY KEY,
-                    mtime_ns INTEGER NOT NULL,
-                    sha256 TEXT NOT NULL,
-                    schema_hash TEXT NOT NULL,
-                    doc_json TEXT NOT NULL,
-                    schema_errors_json TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS test_binding_cache (
-                    file_path TEXT PRIMARY KEY,
-                    mtime_ns INTEGER NOT NULL,
-                    sha256 TEXT NOT NULL,
-                    has_fixture INTEGER NOT NULL DEFAULT 0,
-                    functions_json TEXT NOT NULL,
-                    bindings_json TEXT NOT NULL,
-                    file_tokens_json TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS entities (
-                    id TEXT PRIMARY KEY,
-                    type TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    status TEXT,
-                    domain TEXT,
-                    package_path TEXT,
-                    runtime TEXT,
-                    container_type TEXT,
-                    file_path TEXT NOT NULL,
-                    data_json TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type);
-                CREATE INDEX IF NOT EXISTS idx_entities_domain ON entities(domain);
-
-                CREATE TABLE IF NOT EXISTS edges (
-                    source_id TEXT NOT NULL,
-                    target_id TEXT NOT NULL,
-                    rel_type TEXT NOT NULL,
-                    metadata_json TEXT,
-                    PRIMARY KEY (source_id, target_id, rel_type)
-                );
-                CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
-                CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
-                CREATE INDEX IF NOT EXISTS idx_edges_rel ON edges(rel_type);
-
-                CREATE TABLE IF NOT EXISTS symbol_mappings (
-                    symbol TEXT NOT NULL,
-                    entity_id TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    PRIMARY KEY (symbol, entity_id, kind)
-                );
-                CREATE INDEX IF NOT EXISTS idx_symbols_symbol ON symbol_mappings(symbol);
-                CREATE INDEX IF NOT EXISTS idx_symbols_entity ON symbol_mappings(entity_id);
-
-                -- AST symbol coordinates (DLT-2026-034), one row set per owning entity of the file ('is_primary' marks the
-                -- resolved primary owner; files declared by several entities keep rows for each). 'id' preserves AST order.
-                CREATE TABLE IF NOT EXISTS code_symbols (
-                    id INTEGER PRIMARY KEY,
-                    file_path TEXT NOT NULL,
-                    symbol TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    parent_symbol TEXT NOT NULL DEFAULT '',
-                    line_start INTEGER NOT NULL,
-                    line_end INTEGER NOT NULL,
-                    signature TEXT NOT NULL DEFAULT '',
-                    entity_id TEXT NOT NULL,
-                    component_id TEXT NOT NULL DEFAULT '',
-                    is_primary INTEGER NOT NULL DEFAULT 1,
-                    UNIQUE (file_path, entity_id, kind, parent_symbol, symbol, line_start)
-                );
-                CREATE INDEX IF NOT EXISTS idx_code_symbols_symbol ON code_symbols(symbol);
-                CREATE INDEX IF NOT EXISTS idx_code_symbols_file ON code_symbols(file_path);
-                CREATE INDEX IF NOT EXISTS idx_code_symbols_entity ON code_symbols(entity_id, kind, symbol);
-
-                -- FTS5 full-text search table for BM25 ranking
-                CREATE VIRTUAL TABLE IF NOT EXISTS specs_fts USING fts5(
-                    entity_id UNINDEXED,
-                    title,
-                    jtbd_or_rule,
-                    body_text,
-                    keywords,
-                    symbols,
-                    tokenize='porter unicode61'
-                );
-                """
-            )
-            conn.execute(
-                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?);",
-                (self.SCHEMA_VERSION,),
-            )
+        """Create tables, indexes, and FTS5 virtual tables with corruption recovery."""
+        self._get_connection()
 
     # ------------------------------------------------------------------
     # Code symbol persistence helpers (DLT-2026-034)
@@ -848,6 +1124,8 @@ class ArchitecturalIndex:
         """Perform sub-5ms dirty checking comparing filesystem mtime with indexed state.
 
         Checks both living specifications in eidos/ and tracked source code and test files.
+        When a file's mtime changed (e.g. git checkout or touch) but its SHA-256 digest matches
+        cached_sha, refreshes indexed_files.mtime in place so subsequent checks do not re-hash.
 
         Returns:
             (is_dirty, modified_or_new_files, deleted_rel_paths)
@@ -859,12 +1137,29 @@ class ArchitecturalIndex:
 
         disk_files: set[str] = set()
         to_update: list[Path] = []
+        mtime_refreshes: list[tuple[float, float, str]] = []
+        now_ts = time.time()
 
         if not self.eidos_dir.exists():
             deleted = [Path(rel) for rel in db_files]
             return len(deleted) > 0, [], deleted
 
         root_str = str(self.root)
+
+        def _check_file(file_path: Path, rel_key: str, st_mtime: float) -> None:
+            cached = db_files.get(rel_key)
+            if not cached:
+                to_update.append(file_path)
+            elif abs(st_mtime - cached[0]) > 0.001:
+                try:
+                    digest = hashlib.sha256(file_path.read_bytes()).hexdigest()
+                except OSError:
+                    return
+                if digest != cached[1]:
+                    to_update.append(file_path)
+                else:
+                    mtime_refreshes.append((st_mtime, now_ts, rel_key))
+                    db_files[rel_key] = (st_mtime, cached[1])
 
         # 1. Living specifications in eidos/ (.adoc)
         for dirpath, dirnames, filenames in os.walk(str(self.eidos_dir)):
@@ -878,17 +1173,8 @@ class ArchitecturalIndex:
                 except ValueError:
                     rel_p = full_path.replace("\\", "/")
                 disk_files.add(rel_p)
-
                 stat = os.stat(full_path)
-                cached = db_files.get(rel_p)
-                if not cached:
-                    to_update.append(Path(full_path))
-                elif abs(stat.st_mtime - cached[0]) > 0.001:
-                    with open(full_path, "rb") as f:
-                        content = f.read()
-                    h = hashlib.sha256(content).hexdigest()
-                    if h != cached[1]:
-                        to_update.append(Path(full_path))
+                _check_file(Path(full_path), rel_p, stat.st_mtime)
 
         # 2. Tracked code and test files
         code_exts = _CODE_EXTS
@@ -913,29 +1199,20 @@ class ArchitecturalIndex:
                         rel_code = str(p_abs).replace("\\", "/")
                     disk_files.add(rel_code)
                     stat = p_abs.stat()
-                    cached = db_files.get(rel_code)
-                    if not cached or (
-                        abs(stat.st_mtime - cached[0]) > 0.001
-                        and hashlib.sha256(p_abs.read_bytes()).hexdigest() != cached[1]
-                    ):
-                        to_update.append(p_abs)
+                    _check_file(p_abs, rel_code, stat.st_mtime)
 
         for std_dir in ("src", "tests", "test"):
             cand = (self.root / std_dir).resolve()
             if cand.is_dir():
                 tracked_code_dirs.add(cand)
 
-        for rel_tracked, (mtime_cached, sha_cached) in db_files.items():
-            if not rel_tracked.endswith(".adoc"):
+        for rel_tracked in list(db_files.keys()):
+            if not rel_tracked.endswith(".adoc") and rel_tracked not in disk_files:
                 abs_tracked = (self.root / rel_tracked).resolve()
                 if abs_tracked.is_file():
                     disk_files.add(rel_tracked)
                     stat = abs_tracked.stat()
-                    if (
-                        abs(stat.st_mtime - mtime_cached) > 0.001
-                        and hashlib.sha256(abs_tracked.read_bytes()).hexdigest() != sha_cached
-                    ):
-                        to_update.append(abs_tracked)
+                    _check_file(abs_tracked, rel_tracked, stat.st_mtime)
 
         excluded_dirs = _EXCLUDED_CODE_DIRS
         for code_dir in tracked_code_dirs:
@@ -956,12 +1233,14 @@ class ArchitecturalIndex:
                     disk_files.add(rel_code)
 
                     stat = p_file.stat()
-                    cached = db_files.get(rel_code)
-                    if not cached or (
-                        abs(stat.st_mtime - cached[0]) > 0.001
-                        and hashlib.sha256(p_file.read_bytes()).hexdigest() != cached[1]
-                    ):
-                        to_update.append(p_file)
+                    _check_file(p_file, rel_code, stat.st_mtime)
+
+        if mtime_refreshes:
+            with conn:
+                conn.executemany(
+                    "UPDATE indexed_files SET mtime = ?, last_indexed = ? WHERE rel_path = ?;",
+                    mtime_refreshes,
+                )
 
         deleted = [Path(rel) for rel in db_files.keys() - disk_files]
         is_dirty = len(to_update) > 0 or len(deleted) > 0
@@ -973,12 +1252,17 @@ class ArchitecturalIndex:
         last_check = getattr(self, "_last_synced_check", 0.0)
         if now - last_check < 0.2:
             return
-        dirty, _, _ = self.is_dirty()
-        if dirty:
-            self.sync()
+        dirty_state = self.is_dirty()
+        if dirty_state[0]:
+            self.sync(dirty_state=dirty_state)
         self._last_synced_check = time.monotonic()
 
-    def sync(self, force: bool = False) -> IndexSyncStats:
+    def sync(
+        self,
+        force: bool = False,
+        dirty_state: tuple[bool, list[Path], list[Path]] | None = None,
+        strict: bool = False,
+    ) -> IndexSyncStats:
         """Incrementally synchronize the index with specifications and code on disk."""
         t0 = time.perf_counter()
         stats = IndexSyncStats()
@@ -993,7 +1277,10 @@ class ArchitecturalIndex:
                 conn.execute("DELETE FROM code_symbols;")
                 conn.execute("DELETE FROM specs_fts;")
 
-        dirty, to_update, deleted = self.is_dirty()
+        if force or dirty_state is None:
+            dirty, to_update, deleted = self.is_dirty()
+        else:
+            dirty, to_update, deleted = dirty_state
         if not dirty and not force:
             stats.duration_ms = (time.perf_counter() - t0) * 1000
             stats.was_clean = True
@@ -1023,6 +1310,7 @@ class ArchitecturalIndex:
                     )
                     conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?", (doc_id,))
                     conn.execute("DELETE FROM code_symbols WHERE entity_id = ?", (doc_id,))
+                    conn.execute("DELETE FROM edges WHERE source_id = ? OR target_id = ?", (doc_id, doc_id))
                     conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
                 else:
                     conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
@@ -1033,37 +1321,86 @@ class ArchitecturalIndex:
             code_updates = [p for p in to_update if p.suffix != ".adoc"]
 
             stats.total_specs_scanned = len(spec_updates)
+            parsed_specs: list[tuple[Path, str, float, str, Any]] = []
             for p in spec_updates:
                 try:
                     rel_p = str(p.relative_to(self.root)).replace("\\", "/")
                 except ValueError:
                     rel_p = str(p).replace("\\", "/")
 
-                mtime = p.stat().st_mtime
-                content = p.read_bytes()
-                sha = hashlib.sha256(content).hexdigest()
-
                 try:
+                    mtime = p.stat().st_mtime
+                    content = p.read_bytes()
                     doc = parse_spec_file(p)
                 except OSError:
                     continue
+                sha = hashlib.sha256(content).hexdigest()
+                parsed_specs.append((p, rel_p, mtime, sha, doc))
 
+            # Pre-pass: evict previous doc_id rows for every updated spec path before inserting new/renamed entities
+            # so path-in-place ID renames leave zero ghost entities, FTS rows, symbol mappings, or edges (DLT-2026-048).
+            updated_rel_paths: set[str] = set()
+            for _p, rel_p, _mtime, _sha, doc in parsed_specs:
+                new_doc_id = doc.doc_id or _p.stem
+                existing_row = conn.execute(
+                    "SELECT doc_id FROM indexed_files WHERE rel_path = ?;",
+                    (rel_p,),
+                ).fetchone()
+                if existing_row is not None:
+                    updated_rel_paths.add(rel_p)
+                    old_doc_id = existing_row["doc_id"]
+                    if old_doc_id:
+                        self._delete_spec_fts_rows(conn, old_doc_id, rel_p)
+                        conn.execute(
+                            "DELETE FROM entities WHERE (id = ? AND file_path = ?) OR (file_path = ? AND type = 'invariant');",
+                            (old_doc_id, rel_p, rel_p),
+                        )
+                        conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?;", (old_doc_id,))
+                        if old_doc_id != new_doc_id:
+                            conn.execute("DELETE FROM code_symbols WHERE entity_id = ?;", (old_doc_id,))
+                            conn.execute(
+                                "DELETE FROM edges WHERE source_id = ? OR target_id = ?;",
+                                (old_doc_id, old_doc_id),
+                            )
+                    if new_doc_id != old_doc_id:
+                        self._delete_spec_fts_rows(conn, new_doc_id, rel_p)
+                        conn.execute(
+                            "DELETE FROM entities WHERE (id = ? AND file_path = ?) OR (file_path = ? AND type = 'invariant');",
+                            (new_doc_id, rel_p, rel_p),
+                        )
+                        conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?;", (new_doc_id,))
+
+            for p, rel_p, mtime, sha, doc in parsed_specs:
                 doc_id = doc.doc_id or p.stem
                 fm = doc.frontmatter or {}
                 doc_type = doc.doc_type or "unknown"
 
-                # Check if it was an update or new
-                existing = conn.execute("SELECT 1 FROM indexed_files WHERE rel_path = ?", (rel_p,)).fetchone()
-                if existing:
+                if rel_p in updated_rel_paths:
                     stats.updated_modified += 1
-                    self._delete_spec_fts_rows(conn, doc_id, rel_p)
-                    conn.execute(
-                        "DELETE FROM entities WHERE id = ? OR (file_path = ? AND type = 'invariant')",
-                        (doc_id, rel_p),
-                    )
-                    conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?", (doc_id,))
                 else:
                     stats.indexed_new += 1
+
+                # Detect and reject duplicate entity ID collisions across distinct specification files (DLT-2026-048)
+                collision = conn.execute(
+                    "SELECT file_path FROM entities WHERE id = ? AND file_path != ?;",
+                    (doc_id, rel_p),
+                ).fetchone()
+                if collision is not None:
+                    msg = (
+                        f"Duplicate entity ID '{doc_id}' in '{rel_p}' "
+                        f"(already indexed from '{collision['file_path']}')"
+                    )
+                    stats.duplicate_id_collisions.append(msg)
+                    if strict:
+                        raise ValueError(msg)
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
+                        VALUES (?, ?, ?, ?, ?, ?);
+                        """,
+                        (rel_p, mtime, sha, doc_id, doc_type, time.time()),
+                    )
+                    continue
 
                 # 1. Insert entity
                 title = doc.title or fm.get("title", doc_id)
@@ -1081,7 +1418,7 @@ class ArchitecturalIndex:
 
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO entities
+                    INSERT INTO entities
                     (id, type, title, status, domain, package_path, runtime, container_type, file_path, data_json)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
@@ -1157,6 +1494,19 @@ class ArchitecturalIndex:
                 for inv in invariants:
                     iid = inv.get("id")
                     if iid:
+                        inv_collision = conn.execute(
+                            "SELECT file_path FROM entities WHERE id = ? AND file_path != ?;",
+                            (iid, rel_p),
+                        ).fetchone()
+                        if inv_collision is not None:
+                            inv_msg = (
+                                f"Duplicate invariant ID '{iid}' in '{rel_p}' "
+                                f"(already indexed from '{inv_collision['file_path']}')"
+                            )
+                            stats.duplicate_id_collisions.append(inv_msg)
+                            if strict:
+                                raise ValueError(inv_msg)
+                            continue
                         rule = inv.get("rule", "")
                         test = inv.get("test_binding", "")
                         test_file = test.split("::")[0] if test else ""
@@ -1898,7 +2248,7 @@ class ArchitecturalIndex:
             JOIN entities e ON e.id = s.entity_id
             WHERE s.symbol = ?
                OR (? LIKE s.symbol || '/%' AND s.kind IN ('package_path', 'inferred_path'))
-               OR (? LIKE '%' || s.symbol AND s.kind IN ('source_path', 'inferred_path', 'specification_file', 'component_ref', 'interface_method', 'class', 'function', 'method', 'interface'))
+               OR (? LIKE '%' || s.symbol AND s.kind IN ('source_path', 'inferred_path', 'specification_file', 'component_ref', 'interface_method', 'class', 'function', 'method', 'interface', 'struct', 'enum'))
                OR (? LIKE s.symbol || '%' AND s.kind = 'test_binding')
             LIMIT 25;
             """,
@@ -2159,6 +2509,12 @@ class ArchitecturalIndex:
         matched_invariants: dict[str, dict[str, Any]] = {}
         matched_policies: dict[str, dict[str, Any]] = {}
         matched_reasons: dict[str, list[str]] = {}
+        direct_inv_ids: set[str] = set()
+
+        def _add_reason(eid: str, reason: str) -> None:
+            bucket = matched_reasons.setdefault(eid, [])
+            if reason not in bucket:
+                bucket.append(reason)
 
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -2180,7 +2536,7 @@ class ArchitecturalIndex:
                 data["id"] = cid
                 data["title"] = row["title"]
                 matched_components[cid] = data
-                matched_reasons.setdefault(cid, []).append(f"Explicit component parameter '{component}'")
+                _add_reason(cid, f"Explicit component parameter '{component}'")
             if not matched_components:
                 cursor.execute(
                     """
@@ -2197,7 +2553,7 @@ class ArchitecturalIndex:
                     data["id"] = cid
                     data["title"] = row["title"]
                     matched_components[cid] = data
-                    matched_reasons.setdefault(cid, []).append(f"Inline component parameter '{component}'")
+                    _add_reason(cid, f"Inline component parameter '{component}'")
 
         # 2. Resolve by File paths
         raw_files = [files] if isinstance(files, str) else (files or [])
@@ -2233,13 +2589,14 @@ class ArchitecturalIndex:
 
                 if etype in ("tech/container", "tech/component"):
                     matched_components[eid] = data
-                    matched_reasons.setdefault(eid, []).append(f"Source file match on '{fpath}'")
+                    _add_reason(eid, f"Source file match on '{fpath}'")
                 elif etype == "invariant":
                     matched_invariants[eid] = data
-                    matched_reasons.setdefault(eid, []).append(f"Test binding match on '{fpath}'")
+                    direct_inv_ids.add(eid)
+                    _add_reason(eid, f"Test binding match on '{fpath}'")
                 elif etype == "tech/contract":
                     matched_contracts[eid] = data
-                    matched_reasons.setdefault(eid, []).append(f"Contract file match on '{fpath}'")
+                    _add_reason(eid, f"Contract file match on '{fpath}'")
 
         # 3. Resolve by Task prompt (FTS5 lexical search restricted to sliceable entity types, so historical
         #    SpecDeltas, explorations, and personas never consume the top-k candidate slots)
@@ -2255,19 +2612,20 @@ class ArchitecturalIndex:
                 reason = f"FTS lexical match on task (BM25 score: {m['rank']:.2f})"
                 if etype in ("tech/container", "tech/component"):
                     matched_components[eid] = data
-                    matched_reasons.setdefault(eid, []).append(reason)
+                    _add_reason(eid, reason)
                 elif etype == "tech/contract":
                     matched_contracts[eid] = data
-                    matched_reasons.setdefault(eid, []).append(reason)
+                    _add_reason(eid, reason)
                 elif etype == "product/capability":
                     matched_capabilities[eid] = data
-                    matched_reasons.setdefault(eid, []).append(reason)
+                    _add_reason(eid, reason)
                 elif etype == "product/policy":
                     matched_policies[eid] = data
-                    matched_reasons.setdefault(eid, []).append(reason)
+                    _add_reason(eid, reason)
                 elif etype == "invariant":
                     matched_invariants[eid] = data
-                    matched_reasons.setdefault(eid, []).append(reason)
+                    direct_inv_ids.add(eid)
+                    _add_reason(eid, reason)
                 elif etype in ("product/domain", "design/system"):
                     # Domains and design systems have no dedicated slice list: surface their member containers and
                     # capabilities, and keep the matched DOM-*/DS-* ID visible in matched_reasons.
@@ -2298,13 +2656,23 @@ class ArchitecturalIndex:
                         else:
                             continue
                         member_ids.append(row["id"])
-                        matched_reasons.setdefault(row["id"], []).append(member_reason)
+                        _add_reason(row["id"], member_reason)
                     expanded = f"; expanded to {', '.join(member_ids)}" if member_ids else ""
-                    matched_reasons.setdefault(eid, []).append(f"{reason}{expanded}")
+                    _add_reason(eid, f"{reason}{expanded}")
 
-        # 4. Fallback if no specific filter matched or empty query
-        if not matched_components and not matched_capabilities and not clean_files and not component and not task:
-            # Full catalog overview: select all components/containers
+        has_explicit_query = bool(clean_files or (component and component.strip()) or (task and task.strip()))
+        any_matched = bool(
+            matched_components
+            or matched_capabilities
+            or matched_contracts
+            or matched_invariants
+            or matched_policies
+        )
+
+        # 4. Full catalog overview ONLY when no query filters were provided at all.
+        #    When explicit filters (files, component, or task) match zero entities, return an honest empty slice
+        #    rather than injecting unrelated fallback containers or policies (DLT-2026-047).
+        if not any_matched and not has_explicit_query:
             cursor.execute(
                 "SELECT id, title, type, domain, data_json FROM entities WHERE type IN ('tech/container', 'tech/component');"
             )
@@ -2313,16 +2681,6 @@ class ArchitecturalIndex:
                 c_data["id"] = row["id"]
                 c_data["title"] = row["title"]
                 matched_components[row["id"]] = c_data
-        elif not matched_components and not matched_capabilities:
-            # Filters provided but nothing matched: fallback baseline anchors (generic)
-            for row in cursor.execute(
-                "SELECT id, title, type, domain, data_json FROM entities WHERE type IN ('tech/container', 'tech/component') ORDER BY id LIMIT 2;"
-            ).fetchall():
-                c_data = json.loads(row["data_json"])
-                c_data["id"] = row["id"]
-                c_data["title"] = row["title"]
-                matched_components[row["id"]] = c_data
-                matched_reasons.setdefault(row["id"], []).append("Fallback baseline component anchor")
 
         # 5. Forward dependency expansion for primary matched components
         primary_cids = list(matched_components.keys())
@@ -2345,9 +2703,11 @@ class ArchitecturalIndex:
                 c_data["id"] = row["id"]
                 c_data["title"] = row["title"]
                 matched_components[row["id"]] = c_data
-                matched_reasons.setdefault(row["id"], []).append("Internal dependency")
+                _add_reason(row["id"], "Internal dependency")
 
         # 6. Include contracts owned by or provided/consumed by primary components
+        direct_cap_ids = list(matched_capabilities.keys())
+        direct_pol_ids = list(matched_policies.keys())
         if primary_cids:
             ph = ",".join("?" for _ in primary_cids)
             cursor.execute(
@@ -2382,6 +2742,25 @@ class ArchitecturalIndex:
                 cap_data["id"] = row["id"]
                 cap_data["title"] = row["title"]
                 matched_capabilities.setdefault(row["id"], cap_data)
+
+        # 7b. Include invariants declared directly on primary components
+        primary_comp_inv_ids: set[str] = set()
+        if primary_cids:
+            ph = ",".join("?" for _ in primary_cids)
+            cursor.execute(
+                f"""
+                SELECT id, title, data_json FROM entities
+                WHERE type = 'invariant' AND id IN (
+                    SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type = 'asserts'
+                );
+                """,
+                tuple(primary_cids),
+            )
+            for row in cursor.fetchall():
+                inv_data = json.loads(row["data_json"])
+                inv_data["id"] = row["id"]
+                matched_invariants.setdefault(row["id"], inv_data)
+                primary_comp_inv_ids.add(row["id"])
 
         # 8. Invariants & Policies expansion from capabilities
         if matched_capabilities:
@@ -2418,8 +2797,8 @@ class ArchitecturalIndex:
                 pol_data["title"] = row["title"]
                 matched_policies.setdefault(row["id"], pol_data)
 
-        # 9. Fallback governing policies if none matched
-        if not matched_policies:
+        # 9. Fallback governing policies if none matched (only when a query matched something or on full catalog overview)
+        if not matched_policies and (any_matched or not has_explicit_query):
             for row in cursor.execute(
                 "SELECT id, title, type, domain, data_json FROM entities WHERE type = 'product/policy' ORDER BY id LIMIT 2;"
             ).fetchall():
@@ -2450,12 +2829,76 @@ class ArchitecturalIndex:
             if collected_decs:
                 comp_entry["decisions"] = collected_decs
 
-        # Assemble and sort lists
-        sorted_comps = sorted(matched_components.values(), key=lambda x: x.get("id", ""))
+        # Assemble and rank-order lists so token-budget truncation retains highest-priority entities first
+        primary_set = set(primary_cids)
+        primary_rank = {cid: idx for idx, cid in enumerate(primary_cids)}
+        direct_cap_rank = {cid: idx for idx, cid in enumerate(direct_cap_ids)}
+        direct_pol_rank = {pid: idx for idx, pid in enumerate(direct_pol_ids)}
+
+        sorted_comps = sorted(
+            matched_components.values(),
+            key=lambda x: (
+                0 if x.get("id", "") in primary_set else 1,
+                primary_rank.get(x.get("id", ""), 999),
+                x.get("id", ""),
+            ),
+        )
         sorted_ctrs = sorted(matched_contracts.values(), key=lambda x: x.get("id", ""))
-        sorted_caps = sorted(matched_capabilities.values(), key=lambda x: x.get("id", ""))
-        sorted_invs = sorted(matched_invariants.values(), key=lambda x: x.get("id", ""))
-        sorted_pols = sorted(matched_policies.values(), key=lambda x: x.get("id", ""))
+        sorted_caps = sorted(
+            matched_capabilities.values(),
+            key=lambda x: (
+                0 if x.get("id", "") in direct_cap_rank else 1,
+                direct_cap_rank.get(x.get("id", ""), 999),
+                x.get("id", ""),
+            ),
+        )
+        sorted_pols = sorted(
+            matched_policies.values(),
+            key=lambda x: (
+                0 if x.get("id", "") in direct_pol_rank else 1,
+                direct_pol_rank.get(x.get("id", ""), 999),
+                x.get("id", ""),
+            ),
+        )
+
+        # Order invariants by rank:
+        # 1) Directly matched invariants (file test binding or FTS match)
+        # 2) Primary component invariants
+        # 3) Round-robin across matched capabilities and policies in their YAML declaration order
+        # 4) Remaining invariants sorted by ID
+        ordered_invs: list[dict[str, Any]] = []
+        seen_inv_ids: set[str] = set()
+        for iid in sorted(direct_inv_ids):
+            if iid in matched_invariants and iid not in seen_inv_ids:
+                ordered_invs.append(matched_invariants[iid])
+                seen_inv_ids.add(iid)
+        for iid in sorted(primary_comp_inv_ids):
+            if iid in matched_invariants and iid not in seen_inv_ids:
+                ordered_invs.append(matched_invariants[iid])
+                seen_inv_ids.add(iid)
+
+        for source_list in (sorted_caps, sorted_pols):
+            inv_lists = [
+                [
+                    inv.get("id")
+                    for inv in ((src.get("technical") or {}).get("invariants") or src.get("invariants") or [])
+                    if isinstance(inv, dict) and inv.get("id")
+                ]
+                for src in source_list
+            ]
+            max_len = max((len(lst) for lst in inv_lists), default=0)
+            for idx in range(max_len):
+                for lst in inv_lists:
+                    if idx < len(lst):
+                        iid = lst[idx]
+                        if iid in matched_invariants and iid not in seen_inv_ids:
+                            ordered_invs.append(matched_invariants[iid])
+                            seen_inv_ids.add(iid)
+
+        for iid in sorted(matched_invariants.keys()):
+            if iid not in seen_inv_ids:
+                ordered_invs.append(matched_invariants[iid])
+                seen_inv_ids.add(iid)
 
         slice_obj = TieredContextSlice(
             tier=tier,
@@ -2463,13 +2906,13 @@ class ArchitecturalIndex:
             components=sorted_comps,
             contracts=sorted_ctrs,
             capabilities=sorted_caps,
-            invariants=sorted_invs,
+            invariants=ordered_invs,
             policies=sorted_pols,
             matched_reasons=matched_reasons,
             query_latency_ms=0.0,
             token_estimate=0,
         )
-        slice_obj.token_estimate = max(1, len(slice_obj.to_markdown()) // 4)
+        slice_obj._enforce_token_budget(primary_set)
         slice_obj.query_latency_ms = (time.perf_counter() - t0) * 1000
         return slice_obj
 

@@ -1413,3 +1413,61 @@ def test_test_binding_cache_warm_drift_and_invalidation(tmp_path, monkeypatch):
     with sqlite3.connect(str(db_path)) as conn:
         cached_test_files = {r[0] for r in conn.execute("SELECT file_path FROM test_binding_cache;")}
     assert cached_test_files == {"tests/test_beta.py"}
+
+
+def test_multiple_test_classes_with_same_method_name_do_not_overwrite(tmp_path):
+    """Verify two test classes defining the same method name do not overwrite each other and qualified bindings stay class-specific."""
+    # eidos:fixture
+    eidos_dir = tmp_path / "eidos"
+    caps_dir = eidos_dir / "domains" / "core" / "capabilities"
+    caps_dir.mkdir(parents=True)
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+
+    (caps_dir / "cap.adoc").write_text(
+        "---\n"
+        "type: product/capability\n"
+        "id: CAP-CLASS-COLLISION\n"
+        "title: Class Method Collision\n"
+        "domain: DOM-CORE\n"
+        "status: active\n"
+        "technical:\n"
+        "  invariants:\n"
+        "    - id: INV-CLASS-FIRST\n"
+        "      rule: First test class method must not be overwritten by second class\n"
+        "      test_binding: tests/test_classes.py::test_shared_name\n"
+        "    - id: INV-CLASS-QUALIFIED\n"
+        "      rule: Qualified Class::method binding must resolve accurately\n"
+        "      test_binding: tests/test_classes.py::TestSecondSuite::test_shared_name\n"
+        "    - id: INV-CLASS-WRONG-SUITE\n"
+        "      rule: Binding to TestFirstSuite must not be satisfied by token only in TestSecondSuite\n"
+        "      test_binding: tests/test_classes.py::TestFirstSuite::test_shared_name\n"
+        "---\n= Cap\n",
+        encoding="utf-8",
+    )
+
+    (tests_dir / "test_classes.py").write_text(
+        "class TestFirstSuite:\n"
+        "    def test_shared_name(self):\n"
+        '        """Verifies INV-CLASS-FIRST."""\n'
+        "        assert True\n\n"
+        "class TestSecondSuite:\n"
+        "    def test_shared_name(self):\n"
+        '        """Verifies INV-CLASS-QUALIFIED and INV-CLASS-WRONG-SUITE."""\n'
+        "        assert True\n",
+        encoding="utf-8",
+    )
+
+    from eidos.vcs.drift import detect_orphan_invariants, extract_invariants_and_verify
+
+    invs = extract_invariants_and_verify(eidos_dir, tmp_path)
+    inv_map = {i.invariant_id: i for i in invs}
+    assert inv_map["INV-CLASS-FIRST"].has_test_coverage is True
+    assert inv_map["INV-CLASS-QUALIFIED"].has_test_coverage is True
+    assert inv_map["INV-CLASS-WRONG-SUITE"].has_test_coverage is False
+
+    # Also verify uncached all_tests_content path and underscore-containing orphan invariant detection
+    raw_content = {"tests/test_classes.py": (tests_dir / "test_classes.py").read_text(encoding="utf-8")}
+    orphans = detect_orphan_invariants(tmp_path, {"INV-CLASS-FIRST", "INV-CLASS-QUALIFIED"}, all_tests_content=raw_content)
+    assert orphans == [("INV-CLASS-WRONG-SUITE", "tests/test_classes.py::TestSecondSuite::test_shared_name")]
+

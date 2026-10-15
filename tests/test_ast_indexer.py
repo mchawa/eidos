@@ -88,6 +88,69 @@ def test_inv_index_polyglot_symbol_precision():
         fn_names = {s.name for s in tsx_symbols}
         assert "App" in fn_names or len(tsx_symbols) > 0
 
+    # 3. Go type_spec (struct / interface) and receiver method parent linking
+    go_code = (
+        "package store\n\n"
+        "type LedgerStore struct {\n    Path string\n}\n\n"
+        "type Reader interface {\n    Read(id string) error\n}\n\n"
+        "func (s *LedgerStore) Append(entry string) error {\n    return nil\n}\n"
+    )
+    go_syms = idx.extract_symbols("pkg/store/ledger.go", go_code)
+    go_by_name = {s.name: s for s in go_syms}
+    assert "LedgerStore" in go_by_name and go_by_name["LedgerStore"].kind == "struct"
+    assert "Reader" in go_by_name and go_by_name["Reader"].kind == "interface"
+    assert "Append" in go_by_name and go_by_name["Append"].parent_symbol == "LedgerStore"
+
+
+def test_polyglot_kotlin_and_qualified_class_test_methods():
+    """Verify Kotlin symbol/test extraction and Class::method test qualification without overwriting."""  # eidos:fixture
+    idx = get_ast_indexer()
+
+    # 1. Kotlin (.kt) symbol extraction and @Test fun discovery
+    kt_code = (
+        "package com.example\n\n"
+        "class OrderService(val repo: String) {\n"
+        "    fun placeOrder(id: String): Boolean {\n"
+        "        return true\n"
+        "    }\n"
+        "}\n\n"
+        "class OrderServiceTest {\n"
+        "    @Test\n"
+        "    fun validatesOrderInvariant() {\n"
+        "        // INV-KT-ORDER-001\n"
+        "        assert(true)\n"
+        "    }\n"
+        "}\n"
+    )
+    kt_syms = idx.extract_symbols("src/main/kotlin/OrderService.kt", kt_code)
+    kt_names = {(s.kind, s.name, s.parent_symbol) for s in kt_syms}
+    assert ("class", "OrderService", None) in kt_names
+    assert ("method", "placeOrder", "OrderService") in kt_names
+    kt_funcs = idx.list_test_functions("src/test/kotlin/OrderServiceTest.kt", kt_code)
+    assert "OrderServiceTest::validatesOrderInvariant" in kt_funcs
+    assert "validatesOrderInvariant" in kt_funcs
+
+    # 2. Qualified Class::method test functions across both AstGrepIndexer and FallbackIndexer
+    dup_py = (
+        "class TestAlpha:\n"
+        "    def test_check(self):\n"
+        "        # INV-ALPHA-001\n"
+        "        assert True\n\n"
+        "class TestBeta:\n"
+        "    def test_check(self):\n"
+        "        # INV-BETA-002\n"
+        "        assert True\n"
+    )
+    for engine in (idx, get_ast_indexer(force_fallback=True)):
+        fn_map = engine.list_test_functions("tests/test_dup.py", dup_py)
+        assert "TestAlpha::test_check" in fn_map and "INV-ALPHA-001" in fn_map["TestAlpha::test_check"]
+        assert "TestBeta::test_check" in fn_map and "INV-BETA-002" in fn_map["TestBeta::test_check"]
+        assert "INV-ALPHA-001" in fn_map["test_check"] and "INV-BETA-002" in fn_map["test_check"]
+        bindings = {b.identifier: b.invariants for b in engine.extract_test_bindings("tests/test_dup.py", dup_py)}
+        assert bindings["tests/test_dup.py::TestAlpha::test_check"] == ["INV-ALPHA-001"]
+        assert bindings["tests/test_dup.py::TestBeta::test_check"] == ["INV-BETA-002"]
+        assert set(bindings["tests/test_dup.py::test_check"]) == {"INV-ALPHA-001", "INV-BETA-002"}
+
 
 def test_inv_index_ai_repo_map_budget():
     """Verify INV-INDEX-AI-REPO-MAP-BUDGET: Repo map achieves >= 85% token compression in sub-15ms."""

@@ -83,8 +83,10 @@ def format_decisions_markdown(decisions: list[dict[str, Any]], tier: str = "guar
             if isinstance(a, dict) and a.get("option")
         ]
         if tier == "anchor":
-            rej_suffix = f" *(Rejected: {', '.join(alts)})*" if alts else ""
-            lines.append(f"  - `{did}` (**{dtitle}**): {dtext}{rej_suffix}")
+            short_dtext = f"{dtext[:117].rstrip()}..." if len(dtext) > 120 else dtext
+            short_alts = [f"{a[:52].rstrip()}..." if len(a) > 55 else a for a in alts[:2]]
+            rej_suffix = f" *(Rejected: {', '.join(short_alts)})*" if short_alts else ""
+            lines.append(f"  - `{did}` (**{dtitle}**): {short_dtext}{rej_suffix}")
         else:
             grad = f" [Graduated from `{dec['graduated_from']}`]" if dec.get("graduated_from") else ""
             lines.append(f"  - `{did}` (**{dtitle}**){grad}: {dtext}")

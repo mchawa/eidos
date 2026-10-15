@@ -15,7 +15,7 @@ tier: extensibility
 components:
   - id: CMP-PLUGIN-INSTALLER
     name: "PluginInstaller"
-    responsibility: "Installs, updates, and removes portable agent plugins and 4 cohesive workflow skills (including SpecDelta enum taxonomy guidance for intent.kind and mutations[].action) conforming to agent-plugins.org v1.0.0, Claude Code, OpenAI Codex, OpenCode, Aider, Cline, Cursor, and GitHub Copilot, while pruning retired legacy skill directories."
+    responsibility: "Installs, updates, and removes portable agent plugins and 4 cohesive workflow skills (including SpecDelta enum taxonomy guidance for intent.kind and mutations[].action, and static bidirectional file::func / file::Class::func invariant test traceability guidance in eidos-spec) conforming to agent-plugins.org v1.0.0, Claude Code, OpenAI Codex, OpenCode, Aider, Cline, Cursor, and GitHub Copilot, while pruning retired legacy skill directories."
     source_path: "src/eidos/plugin/installer.py"
   - id: CMP-PLUGIN-VALIDATOR
     name: "PluginValidator"

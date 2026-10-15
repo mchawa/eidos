@@ -19,7 +19,7 @@ components:
     source_path: "src/eidos/core/spec/parser.py"
   - id: CMP-SPEC-VALIDATOR
     name: "SpecValidator"
-    responsibility: "Resolves bundled JSON/YAML schemas, performs cached per-document schema validation via 'spec_validation_cache' (keyed by mtime_ns, sha256, and schema_hash) while validating document frontmatters (including embedded 'decisions' blocks), verifies schema-driven x-eidos-ref cross-references with strict container vs. component target type enforcement (including 'graduated_from'), enforces global 'DEC-*' decision ID uniqueness, and enforces centralized component invariants (INV-COMPONENT-CENTRALIZATION-MANDATE, INV-COMPONENT-CONTAINER-AFFINITY, INV-INTERFACE-BOUNDARY-GOVERNANCE)."
+    responsibility: "Resolves bundled JSON/YAML schemas, performs cached per-document schema validation via 'spec_validation_cache' (keyed by mtime_ns, sha256, and schema_hash, and opened through the canonical 'open_cache_connection' and 'SCHEMA_VERSION' from CMP-GRAPH-STORAGE) while validating document frontmatters (including embedded 'decisions' blocks), verifies schema-driven x-eidos-ref cross-references with strict container vs. component target type enforcement (including 'graduated_from'), enforces global 'DEC-*' decision ID uniqueness, and enforces centralized component invariants (INV-COMPONENT-CENTRALIZATION-MANDATE, INV-COMPONENT-CONTAINER-AFFINITY, INV-INTERFACE-BOUNDARY-GOVERNANCE)."
     source_path: "src/eidos/core/spec/validator.py"
   - id: CMP-LIFECYCLE-SCAFFOLDER
     name: "LifecycleScaffolder"
@@ -57,7 +57,7 @@ components:
     source_path: "src/eidos/core/lifecycle/audit.py"
   - id: CMP-CONTEXT-SLICER
     name: "ContextSlicer"
-    responsibility: "Extracts compact, token-efficient architectural subgraph slices across C4 components, contracts, capabilities, invariants, policies, and embedded architectural decisions (DEC-*) with rejected_alternatives."
+    responsibility: "Extracts compact, token-efficient architectural subgraph slices across C4 components, contracts, capabilities, invariants, policies, and tier-aware embedded architectural decisions (DEC-* with compact 1-line summaries in anchor and full rationale/rejected_alternatives in guardrails and deep)."
     source_path: "src/eidos/core/workspace/context.py"
   - id: CMP-CHANGELOG-GENERATOR
     name: "ChangelogGenerator"
