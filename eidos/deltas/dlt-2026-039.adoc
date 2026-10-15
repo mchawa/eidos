@@ -51,9 +51,9 @@ NOTE: Split from the original DLT-2026-034 (index enrichment). This delta is ind
 
 == Problem Statement
 
-[`_is_covered_by_changed_specs()`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/vcs/drift.py#L800) only checks whether a changed spec *path* falls inside the 1-hop neighbourhood of a structurally changed code file. It never looks at what changed in that spec. Adding a blank line or an AsciiDoc `// comment` to `container.adoc` silences drift for a brand-new module or public class that the spec never mentions.
+`_is_covered_by_changed_specs()` (`src/eidos/vcs/drift.py`) only checks whether a changed spec *path* falls inside the 1-hop neighbourhood of a structurally changed code file. It never looks at what changed in that spec. Adding a blank line or an AsciiDoc `// comment` to `container.adoc` silences drift for a brand-new module or public class that the spec never mentions.
 
-[`detect_drift()`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/vcs/drift.py#L895) already has the data needed to detect the case: `_get_file_versions()` returns `old = None` for added files, and [`has_structural_changes()`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/core/ast_indexer.py#L801) already computes added public symbols using `_is_public_symbol()`. That information just isn't exposed in structured form.
+`detect_drift()` (`src/eidos/vcs/drift.py`) already has the data needed to detect the case: `_get_file_versions()` returns `old = None` for added files, and `has_structural_changes()` (`src/eidos/core/ast_indexer.py`) already computes added public symbols using `_is_public_symbol()`. That information just isn't exposed in structured form.
 
 == Architectural & Behavioral Mutations
 
@@ -94,9 +94,9 @@ If an added `cf` is not matched by any `source_path` or `owned_path` declared in
 * A new summary/remediation line is added: `Trivial Spec Edit: <n> structural addition(s) are only covered by whitespace/comment-only spec edits — document <additions> in <spec>.`
 
 === 6. Living specification updates
-* [drift-detection.adoc](file:///home/MTS/marwan.chawa/WS/eidos/eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc): add `INV-DRIFT-DIFF-AWARE-COVERAGE`, a "Diff-Aware Spec Coverage" responsibility, and `version: "1.3.0"`.
-* [vcs.adoc](file:///home/MTS/marwan.chawa/WS/eidos/eidos/architecture/containers/vcs.adoc): extend the `CMP-DRIFT-DETECTOR` responsibility with diff-aware coverage of structural additions.
-* [cli.adoc contract](file:///home/MTS/marwan.chawa/WS/eidos/eidos/architecture/contracts/cli.adoc): document `trivially_covered_files` in `eidos drift --json`.
+* link:../domains/vcs-lifecycle/capabilities/drift-detection.adoc[drift-detection.adoc]: add `INV-DRIFT-DIFF-AWARE-COVERAGE`, a "Diff-Aware Spec Coverage" responsibility, and `version: "1.3.0"`.
+* link:../architecture/containers/vcs.adoc[vcs.adoc]: extend the `CMP-DRIFT-DETECTOR` responsibility with diff-aware coverage of structural additions.
+* link:../architecture/contracts/cli.adoc[cli.adoc contract]: document `trivially_covered_files` in `eidos drift --json`.
 
 == Out of Scope
 * Requiring substantive spec edits for signature changes, removals or deletions (possible follow-up once false-positive rates are known).

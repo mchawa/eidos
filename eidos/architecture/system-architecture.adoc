@@ -193,8 +193,8 @@ Container manifests interactively explorable in the Living Web Portal's Hierarch
 
 == 6. Runtime View
 Runtime execution choreographies are defined in:
-* link:../domains/product-core/capabilities/spec-delta-mutations.adoc[SpecDelta Mutation Flow]
-* link:../domains/product-core/capabilities/exploration-discovery.adoc[Exploration & Spike Flow]
+* link:../domains/spec-engine/capabilities/spec-delta-mutations.adoc[SpecDelta Mutation Flow]
+* link:../domains/spec-engine/capabilities/exploration-discovery.adoc[Exploration & Spike Flow]
 
 == 7. Deployment View (Infrastructure & Delivery)
 * **Local Workstation**: Developers and AI agents install the standalone CLI tool (`uv tool install eidos-ai` / `pipx install eidos-ai` / `uvx --from eidos-ai eidos`).

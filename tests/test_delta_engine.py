@@ -135,7 +135,6 @@ def test_delta_verify_declarative_expect_and_patch_invariant(tmp_path):
     assert [m.status for m in rep2.mutations] == ["MODIFIED", "MODIFIED"]
 
 
-
 def test_delta_verify_unfulfilled_mutations(tmp_path):
     """Verify that verify_delta_mutations detects missing specs and un-executed removals."""
     init_repository(tmp_path, name="test-system", with_plugin=False)
@@ -226,6 +225,73 @@ def test_delta_execute_and_verify_lifecycle(tmp_path):
     assert report_after.is_verified is True
     assert report_after.verified_count == 4
 
+    # 2. Type-safe deletion: remove_component passed a capability ID (CAP-INVOICE-GEN) must fail and NOT delete the file
+    cap_file = eidos_dir / "domains" / "billing" / "capabilities" / "cap-invoice-gen.adoc"
+    pol_file = eidos_dir / "policies" / "pol-invoice-tax.adoc"
+    original_pol_bytes = pol_file.read_bytes()
+
+    dlt_bad_del = create_spec(eidos_dir, "delta", "DLT-2026-055", title="Wrong Delete Type")
+    bad_del_yaml = """mutations:
+  - action: add_policy
+    target_policy: POL-SHOULD-ROLLBACK
+    details: "Temporary policy that must be rolled back on subsequent failure."
+  - action: remove_component
+    target_component: CAP-INVOICE-GEN
+"""
+    dlt_bad_del.write_text(
+        dlt_bad_del.read_text(encoding="utf-8").replace("mutations: []", bad_del_yaml),
+        encoding="utf-8",
+    )
+    ok_bad_del, msg_bad_del, mut_bad_del = execute_delta_mutations(eidos_dir, "DLT-2026-055")
+    assert ok_bad_del is False
+    assert "Type mismatch" in msg_bad_del
+    assert mut_bad_del == []
+    assert cap_file.exists()
+    assert not (eidos_dir / "policies" / "pol-should-rollback.adoc").exists()
+
+    # 3. Unsupported action: must fail and roll back prior mutations
+    dlt_unsup = create_spec(eidos_dir, "delta", "DLT-2026-056", title="Unsupported Action Rollback")
+    unsup_yaml = """mutations:
+  - action: add_policy
+    target_policy: POL-UNSUP-ROLLBACK
+    details: "Must be rolled back."
+  - action: hallucinated_action
+    target_policy: POL-INVOICE-TAX
+"""
+    dlt_unsup.write_text(
+        dlt_unsup.read_text(encoding="utf-8").replace("mutations: []", unsup_yaml),
+        encoding="utf-8",
+    )
+    ok_unsup, msg_unsup, _ = execute_delta_mutations(eidos_dir, "DLT-2026-056")
+    assert ok_unsup is False
+    assert "Unsupported mutation action" in msg_unsup
+    assert not (eidos_dir / "policies" / "pol-unsup-rollback.adoc").exists()
+
+    # 4. Pre-commit SpecValidator rollback in apply_delta: invalid frontmatter mutation rolls back all changes
+    from eidos.core.lifecycle.delta_engine import apply_delta
+
+    dlt_invalid = create_spec(eidos_dir, "delta", "DLT-2026-057", title="Schema Validation Rollback")
+    invalid_yaml = """mutations:
+  - action: add_policy
+    target_policy: POL-SCHEMA-ROLLBACK
+    details: "Must be rolled back on schema validation failure."
+  - action: modify_policy
+    target_policy: POL-INVOICE-TAX
+    expect:
+      non_existent_schema_field: "invalid"
+"""
+    dlt_invalid.write_text(
+        dlt_invalid.read_text(encoding="utf-8").replace("mutations: []", invalid_yaml),
+        encoding="utf-8",
+    )
+    ok_apply, msg_apply, _, mut_apply = apply_delta(eidos_dir, "DLT-2026-057", execute=True, verify=True)
+    assert ok_apply is False
+    assert "Transactional rollback" in msg_apply
+    assert mut_apply == []
+    assert not (eidos_dir / "policies" / "pol-schema-rollback.adoc").exists()
+    assert pol_file.read_bytes() == original_pol_bytes
+    assert parse_spec_file(dlt_invalid).frontmatter.get("status") == "proposed"
+
 
 def test_delta_apply_cli_with_execute_and_verify(tmp_path):
     """Verify 'eidos delta apply --execute --verify' via CLI."""
@@ -282,20 +348,24 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
     pol_path = create_spec(eidos_dir, "policy", "POL-CORE-001", title="Core Policy", rule="Initial policy rule.")
 
     # Populate container with two inline components and a contract binding
-    cnt_text = cnt_path.read_text(encoding="utf-8").replace(
-        "components: []",
-        (
-            "components:\n"
-            "  - id: CMP-TARGET\n"
-            '    name: "TargetComponent"\n'
-            '    responsibility: "Initial target responsibility."\n'
-            "  - id: CMP-SIBLING\n"
-            '    name: "SiblingComponent"\n'
-            '    responsibility: "Initial sibling responsibility."'
-        ),
-    ).replace(
-        "provides: []",
-        "provides:\n    - CTR-CORE-API",
+    cnt_text = (
+        cnt_path.read_text(encoding="utf-8")
+        .replace(
+            "components: []",
+            (
+                "components:\n"
+                "  - id: CMP-TARGET\n"
+                '    name: "TargetComponent"\n'
+                '    responsibility: "Initial target responsibility."\n'
+                "  - id: CMP-SIBLING\n"
+                '    name: "SiblingComponent"\n'
+                '    responsibility: "Initial sibling responsibility."'
+            ),
+        )
+        .replace(
+            "provides: []",
+            "provides:\n    - CTR-CORE-API",
+        )
     )
     cnt_path.write_text(cnt_text, encoding="utf-8")
 
@@ -454,3 +524,91 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
     ok_rem, _, rep_rem = verify_delta_mutations(eidos_dir, "DLT-2026-063")
     assert ok_rem is True
     assert [m.status for m in rep_rem.mutations] == ["ABSENT_AS_EXPECTED"] * 5
+
+
+def test_delta_schema_action_coverage_and_git_baseline_fallback(tmp_path):
+    """Verify 100% schema action coverage # eidos:fixture and Git-backed baseline SHA fallback when SQLite cache is absent."""
+    import shutil
+    import subprocess
+
+    import yaml
+
+    from eidos.core.lifecycle.delta_engine import SUPPORTED_MUTATION_ACTIONS
+    from eidos.core.workspace.assets import get_assets_path
+
+    # 1. Verify SUPPORTED_MUTATION_ACTIONS covers 100% of delta.schema.yaml enum values
+    delta_schema_path = get_assets_path("schemas/v1/delta/delta.schema.yaml")
+    schema_data = yaml.safe_load(delta_schema_path.read_text(encoding="utf-8"))
+    schema_actions = set(schema_data["properties"]["mutations"]["items"]["properties"]["action"]["enum"])
+    assert schema_actions == set(SUPPORTED_MUTATION_ACTIONS)
+
+    # 2. Verify Git baseline SHA fallback on fresh clone / cache wipe
+    init_repository(tmp_path, name="git-baseline-test", with_plugin=False)
+    eidos_dir = tmp_path / "eidos"
+
+    create_spec(eidos_dir, "domain", "DOM-GIT", title="Git Domain")
+    pol_path = create_spec(eidos_dir, "policy", "POL-GIT-001", title="Git Policy", rule="Initial git rule.")
+    cnt_path = create_spec(eidos_dir, "container", "CNT-GIT-SVC", title="Git Service")
+    cnt_path.write_text(
+        cnt_path.read_text(encoding="utf-8").replace(
+            "components: []",
+            'components:\n  - id: CMP-GIT-COMP\n    name: "GitComp"\n    responsibility: "Initial comp."',
+        ),
+        encoding="utf-8",
+    )
+    cap_path = create_spec(eidos_dir, "capability", "CAP-GIT-001", title="Git Cap", domain="DOM-GIT")
+    cap_path.write_text(
+        cap_path.read_text(encoding="utf-8").replace(
+            "invariants: []",
+            (
+                "invariants:\n"
+                "    - id: INV-GIT-001\n"
+                '      rule: "Initial inv rule."\n'
+                '      test_binding: "tests/test_delta_engine.py::test_delta_schema_action_coverage_and_git_baseline_fallback"'
+            ),
+        ),
+        encoding="utf-8",
+    )
+
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Baseline specs"], cwd=tmp_path, check=True, capture_output=True)
+
+    # Create delta and modify specs, then commit on branch and wipe eidos/.cache (simulating CI / fresh clone)
+    dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-070", title="Git Fallback Verification")
+    mutations_yaml = """mutations:
+  - action: modify_policy
+    target_policy: POL-GIT-001
+  - action: modify_component
+    target_container: CNT-GIT-SVC
+    target_component: CMP-GIT-COMP
+  - action: patch_invariant
+    target_capability: CAP-GIT-001
+    target_invariant_id: INV-GIT-001
+"""
+    dlt_path.write_text(dlt_path.read_text(encoding="utf-8").replace("mutations: []", mutations_yaml), encoding="utf-8")
+
+    pol_path.write_text(
+        pol_path.read_text(encoding="utf-8").replace("Initial git rule.", "Updated git rule."),
+        encoding="utf-8",
+    )
+    cnt_path.write_text(
+        cnt_path.read_text(encoding="utf-8").replace("Initial comp.", "Updated comp."),
+        encoding="utf-8",
+    )
+    cap_path.write_text(
+        cap_path.read_text(encoding="utf-8").replace("Initial inv rule.", "Updated inv rule."),
+        encoding="utf-8",
+    )
+
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Apply delta changes"], cwd=tmp_path, check=True, capture_output=True)
+
+    # Wipe SQLite cache completely so verification must recover pre-delta baselines from Git history (commit~1)
+    shutil.rmtree(eidos_dir / ".cache", ignore_errors=True)
+
+    ok_git, _, rep_git = verify_delta_mutations(eidos_dir, "DLT-2026-070")
+    assert ok_git is True
+    assert [m.status for m in rep_git.mutations] == ["MODIFIED", "MODIFIED", "MODIFIED"]

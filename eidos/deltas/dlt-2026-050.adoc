@@ -1,0 +1,128 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-050
+title: Core Module Decomposition, Build-Time Portal Asset Bundling, CI Pinning, and Progressive Eidos Lite Profile
+status: proposed
+intent:
+  kind: enabler
+  motivation: Improve long-term maintainability, repository hygiene, and onboarding ergonomics by decomposing 1,000-2,500 LOC god modules, replacing the committed 4.7 MB portal/assets.py literal with build-time bundling and CI frontend tests, deduplicating schemas/models and plugin reference trees, fixing CI ruff drift, and introducing a progressive Eidos Lite onboarding profile.
+mutations:
+  - action: modify_architecture
+    target_architecture: "ARCH-EIDOS-001"
+    details: "Document modular internal package boundaries across CNT-EIDOS-INDEX, CNT-EIDOS-VCS, CNT-EIDOS-PLUGIN, and CNT-EIDOS-PORTAL, plus the progressive Eidos Lite specification profile."
+    expect:
+      contains: "CNT-EIDOS-INDEX"
+  - action: modify_container
+    target_container: "CNT-EIDOS-INDEX"
+    details: "Decompose src/eidos/core/index/graph_index.py (2,587 LOC) into focused storage/schema, incremental sync, FTS/graph query, and context slicing submodules, and remove duplicate ContextSlice.to_markdown implementations."
+    expect:
+      contains: "CMP-GRAPH-STORAGE"
+  - action: modify_container
+    target_container: "CNT-EIDOS-VCS"
+    details: "Decompose src/eidos/vcs/drift.py (2,085 LOC) into git diff/classification, AST structural comparison, invariant binding verification, and CLI report rendering modules."
+    expect:
+      contains: "CMP-DRIFT-DETECTOR"
+  - action: modify_container
+    target_container: "CNT-EIDOS-PLUGIN"
+    details: "Refactor src/eidos/plugin/installer.py (1,414 LOC) into a table-driven target adapter registry and eliminate duplicate tracked copies between .agents/plugins/eidos and assets/plugin_reference."
+    expect:
+      contains: "CMP-PLUGIN-INSTALLER"
+  - action: modify_container
+    target_container: "CNT-EIDOS-PORTAL"
+    details: "Generate src/eidos/portal/assets.py during build/packaging rather than committing a 4.7 MB minified JS literal to Git history, and run frontend vitest and bundle parity verification in CI."
+    expect:
+      contains: "CMP-PORTAL-ASSETS"
+  - action: modify_container
+    target_container: "CNT-EIDOS-CORE"
+    details: "Adopt typed Pydantic frontmatter models in CMP-DOMAIN-MODELS (or remove unused pydantic dependency), extract shared JSON Schema $defs (decisions), and support a progressive 'eidos init --lite' profile."
+    expect:
+      contains: "CMP-DOMAIN-MODELS"
+
+affects:
+  containers:
+    - "CNT-EIDOS-INDEX"
+    - "CNT-EIDOS-VCS"
+    - "CNT-EIDOS-PLUGIN"
+    - "CNT-EIDOS-PORTAL"
+    - "CNT-EIDOS-CORE"
+    - "CNT-EIDOS-CLI"
+    - "CNT-EIDOS-DOCS"
+  components:
+    - "CMP-GRAPH-STORAGE"
+    - "CMP-INCREMENTAL-SYNC-ENGINE"
+    - "CMP-FTS-QUERY-ENGINE"
+    - "CMP-GRAPH-TRAVERSAL-ENGINE"
+    - "CMP-TIERED-CONTEXT-COMPRESSOR"
+    - "CMP-DRIFT-DETECTOR"
+    - "CMP-PLUGIN-INSTALLER"
+    - "CMP-PORTAL-ASSETS"
+    - "CMP-DOMAIN-MODELS"
+    - "CMP-REPO-INITIALIZER"
+  capabilities:
+    - "CAP-PROD-001"
+    - "CAP-AGENT-001"
+    - "CAP-AGENT-002"
+    - "CAP-EXP-001"
+    - "CAP-VCS-001"
+  domains:
+    - "DOM-SPEC-ENGINE"
+    - "DOM-AGENT-INTELLIGENCE"
+    - "DOM-EXPERIENCE-PORTAL"
+    - "DOM-VCS-LIFECYCLE"
+
+blast_radius:
+  impacted_containers:
+    - "CNT-EIDOS-INDEX"
+    - "CNT-EIDOS-VCS"
+    - "CNT-EIDOS-PLUGIN"
+    - "CNT-EIDOS-PORTAL"
+    - "CNT-EIDOS-CORE"
+    - "CNT-EIDOS-CLI"
+    - "CNT-EIDOS-DOCS"
+  impacted_components:
+    - "CMP-GRAPH-STORAGE"
+    - "CMP-INCREMENTAL-SYNC-ENGINE"
+    - "CMP-FTS-QUERY-ENGINE"
+    - "CMP-GRAPH-TRAVERSAL-ENGINE"
+    - "CMP-TIERED-CONTEXT-COMPRESSOR"
+    - "CMP-DRIFT-DETECTOR"
+    - "CMP-PLUGIN-INSTALLER"
+    - "CMP-PORTAL-ASSETS"
+    - "CMP-DOMAIN-MODELS"
+    - "CMP-REPO-INITIALIZER"
+  invariants_to_enforce:
+    - "INV-PORTAL-AIR-GAPPED-BUNDLE"
+    - "INV-DOCS-SYNCHRONIZATION"
+    - "INV-FOREIGN-REPO-E2E"
+---
+= SpecDelta: Core Module Decomposition, Build-Time Portal Asset Bundling, CI Pinning, and Progressive Eidos Lite Profile
+:toc: left
+
+== Problem Statement
+1. **Monolithic Modules & Logic Duplication**:
+   - Core subsystems have grown into multi-thousand-line modules mixing persistence, domain logic, and presentation: `graph_index.py` (2,587 LOC), `drift.py` (2,085 LOC), `installer.py` (1,414 LOC), `ast_indexer.py` (1,061 LOC), and `delta_engine.py` (1,028 LOC).
+   - `ContextSlice.to_markdown` is duplicated across `src/eidos/core/workspace/context.py` and `src/eidos/core/index/graph_index.py`, and `installer.py` repeats ~10 near-identical per-agent install/uninstall branches.
+2. **Unused Pydantic Dependency & Unfactored Schema Blocks**:
+   - `pydantic>=2.7.0` is declared as a core dependency in `pyproject.toml` but never imported in `src/eidos/`, while `SpecDocument.frontmatter` remains an untyped `dict[str, Any]`.
+   - The `decisions:` schema definition is duplicated across 5 YAML schema files in `assets/schemas/v1/`.
+3. **4.7 MB Generated Portal String in Git & Unpinned CI**:
+   - `src/eidos/portal/assets.py` commits a 4.7 MB minified JS/HTML string directly into Git, and `.github/workflows/ci.yml` neither runs frontend `vitest` suites nor uses `uv sync --frozen`, allowing `ruff` version drift (`SIM117`, `I001`) on `main`.
+   - `.agents/plugins/eidos/` duplicates `assets/plugin_reference/` as tracked files rather than a symlink or build artifact.
+4. **High Onboarding Taxonomy Weight**:
+   - With 18 ID prefixes, 16 document types, and 47 delta actions, small and medium repositories face steep initial ceremony.
+
+== Proposed Specification & Engine Changes
+1. **Modular Package Decomposition & Declarative Installer Registry**:
+   - Split `graph_index.py` and `drift.py` into focused internal submodules while preserving public imports, and refactor `installer.py` to use a declarative `TargetAdapter` table.
+2. **Typed Frontmatter Models & Shared Schema `$defs`**:
+   - Validate parsed frontmatter into typed Pydantic models in `CMP-DOMAIN-MODELS` and factor shared schema definitions (`decisions`, `invariants`) into reusable `$defs`.
+3. **Build-Time Portal Bundling & Locked CI**:
+   - Generate `src/eidos/portal/assets.py` via a Hatch build hook during wheel/sdist build, add a frontend `pnpm test` (`vitest`) step and `--frozen` lock enforcement to `.github/workflows/ci.yml`, and fix all `ruff` lint violations.
+4. **Progressive "Eidos Lite" Profile & Delta Compaction**:
+   - Add an `eidos init --lite` mode scaffolding only the essential baseline (`system.adoc`, `containers/`, `capabilities/` with `INV-*`) and provide delta archiving once applied deltas are compiled into `CHANGELOG.md`.
+
+== Verification Plan
+* `uv run ruff check src/ tests/`
+* `uv run pytest`
+* `uv run eidos validate eidos`

@@ -1,6 +1,6 @@
 ---
 name: eidos
-description: Master architecture and engineering orchestrator for repositories managed by Eidos. Consult before modifying code, proposing architectural changes, adding features, refactoring, or altering living specifications in eidos/. Strictly enforces living specs (NO ADRs), dual workflows (Direct vs. Planned), tiered context slicing (eidos context), continuous drift detection (eidos drift), and invariant-test traceability.
+description: Master architecture and engineering orchestrator for repositories managed by Eidos. Consult before modifying code, proposing architectural changes, adding features, refactoring, or altering living specifications in eidos/. Strictly enforces living specs (NO ADRs), dual workflows (Direct vs. Planned), tiered context slicing (eidos context), continuous drift detection (eidos drift), invariant-test traceability, and mandatory autonomous gap self-review.
 ---
 # Eidos: Master Architecture & Engineering Orchestrator
 
@@ -24,6 +24,8 @@ You MUST follow the workflows and guardrails in this skill whenever you inspect,
    Eidos CLI commands are 100% deterministic local operations (`--json` supported). Always use Eidos CLI commands rather than guessing schemas or manually wiring symlinks.
 6. **Zero Unreconciled Drift**:
    Never conclude a task with failing specification schemas or unmanaged code-to-spec drift.
+7. **Mandatory Autonomous Pre-Completion Review**:
+   Never present work or conclude a task without executing an autonomous adversarial review pass over your diffs and requirements. Identify and resolve edge cases, missing tests, spec drift, and gaps *before* responding.
 
 ---
 
@@ -122,16 +124,20 @@ Use Planned Mode when introducing new containers (`CNT-*`), breaking contract (`
 
 ---
 
-## 5. Step 4: Continuous Drift Detection & Pre-Completion Gate (`eidos drift`)
+## 5. Step 4: Autonomous Pre-Completion Gate & Gap Self-Review
 
-Before finishing **any** task, you MUST verify that all living specifications validate and zero unmanaged drift exists:
+Before concluding **any** task or presenting your final response, you MUST complete this two-stage pre-completion verification:
+
+### Stage 1: Deterministic Engine Verification (`eidos drift`)
+
+Run the automated schema and drift checks:
 
 ```bash
 eidos validate eidos
 eidos drift --uncommitted --json
 ```
 
-### How `eidos drift` Works
+#### How `eidos drift` Works
 
 1. **Git Diff Classification**: Classifies modified files into `code_files`, `spec_files`, `delta_files`, and `test_files`.
 2. **Ownership Mapping**: Maps every modified source file to its owning C4 container (`CNT-*`) via `package_path` and C4 component (`CMP-*`) via `source_path`.
@@ -140,12 +146,46 @@ eidos drift --uncommitted --json
    * **Direct Mode** (no active `DLT-*`): Verifies that modified code files are accompanied by corresponding living specification updates (or passes when only tests/non-architectural files are touched).
 4. **Polyglot Invariant Test Verification**: Scans `tests/` across Python (`.py`), TypeScript/JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`), Go (`_test.go`), Rust (`.rs`), and Java/Kotlin (`.java`, `.kt`) to verify every `INV-*` `test_binding` (`file::func`) exists and references the `INV-*` ID.
 
-### Resolving Drift (`drift_detected: true`)
+#### Resolving Drift (`drift_detected: true`)
 
 If `eidos drift --uncommitted --json` reports `drift_detected: true` or `is_clean: false`:
 * Read the `remediation_suggestions` array in the JSON output.
 * Either update the impacted container/component/capability specification in `eidos/` (Direct Mode) or declare the mutation in a SpecDelta in `eidos/deltas/` (Planned Mode).
 * Re-run `eidos validate eidos && eidos drift --uncommitted` until exit code is `0`.
+
+### Stage 2: Mandatory Autonomous Adversarial Gap Review
+
+After deterministic checks pass, you MUST step back, assume the mindset of an adversarial Staff Reviewer auditing your own diff (`git diff`), and execute this pre-completion gap audit:
+
+1. **Requirements & Scope Completeness**:
+   * Re-read the user's initial prompt and constraints carefully.
+   * Did you address every stated requirement and implicit edge condition, or did you stop after the happy path?
+   * Are there any half-implemented features, temporary stubs, or leftover `TODO` comments?
+2. **Edge Cases, Failure Modes & Resilience**:
+   * How does the new/modified code behave with empty inputs, `None`/`null` values, invalid schemas, missing files, or timeout/network failures?
+   * Are exceptions handled cleanly with descriptive error messages, or swallowed silently?
+3. **Interface Contracts & API Consistency (`CTR-*`)**:
+   * Did any function signatures, CLI flags, return schemas, or public APIs change?
+   * If yes, are callers across the repository updated, and are interface contracts (`CTR-*`) synchronized with SemVer bumps?
+4. **Invariant & Test Assertion Rigor (`INV-*`)**:
+   * Did you add or update automated tests for the changes?
+   * Do the tests make genuine assertions on behavior and edge cases, or are they superficial tests that pass vacuously?
+   * Is every capability invariant (`INV-*`) bound to a real test via `test_binding: file::func`?
+5. **Architectural Purity & Decision Capture (`DEC-*`)**:
+   * Were any non-obvious trade-offs or design decisions made during implementation?
+   * If yes, are they captured under `decisions:` (`DEC-*`) in the owning specification frontmatter?
+   * Are there any circular imports or leaky abstractions introduced?
+
+#### Autonomous Remediation Rule
+If this self-review reveals **ANY** gap, omission, missing test assertion, or unhandled edge case:
+* **DO NOT** wait for the user to prompt you or point it out.
+* **IMMEDIATELY fix and implement the missing elements** before declaring completion.
+* Re-run `eidos validate eidos && eidos drift --uncommitted` to ensure zero drift after the fix.
+
+### Stage 3: Transparent Pre-Completion Summary
+In your final response to the user, briefly summarize the results of your pre-completion check:
+* **Deterministic Gate**: Validation & drift status (`clean`).
+* **Self-Review Findings**: Key edge cases, invariant bindings, or potential gaps examined and verified.
 
 ---
 

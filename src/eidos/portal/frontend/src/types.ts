@@ -19,10 +19,25 @@ export interface SpecOverview {
   policies_count?: number;
   personas_count?: number;
   invariants_count?: number;
+  decisions_count?: number;
   system_id: string;
   system_title: string;
   repo_status?: string;
   active_branch?: string;
+}
+
+export interface SpecDecision {
+  id: string;
+  title: string;
+  decision: string;
+  rationale: string;
+  rejected_alternatives?: Array<{
+    option: string;
+    reason_rejected: string;
+  }>;
+  graduated_from?: string;
+  source_entity?: string;
+  source_type?: string;
 }
 
 export interface SpecComponent {
@@ -34,21 +49,38 @@ export interface SpecComponent {
   domain_binding?: string;
   tier?: string;
   tier_name?: string;
+  responsibility?: string;
+  summary?: string;
   internal_components: Array<{
     id: string;
     name: string;
     responsibility: string;
     source_path?: string;
+    spec_path?: string;
+    invariants?: Array<{
+      id: string;
+      rule: string;
+      test_binding?: string;
+    }>;
+    decisions?: SpecDecision[];
   }>;
   dependencies: {
     internal_containers?: string[];
+    internal_components?: string[];
     external_services?: string[];
   };
   contracts: {
     provides?: string[];
     consumes?: string[];
+    requires?: string[];
   };
   quality_attributes?: Record<string, any>;
+  decisions?: SpecDecision[];
+  invariants?: Array<{
+    id: string;
+    rule: string;
+    test_binding?: string;
+  }>;
   description?: string;
 }
 
@@ -72,6 +104,7 @@ export interface SpecDomain {
     out_of_scope?: string[];
   };
   technical_mapping?: {
+    containers?: string[];
     components?: string[];
     dependencies?: string[];
   };
@@ -93,6 +126,7 @@ export interface SpecCapability {
     policies?: string[];
   };
   technical?: {
+    containers?: string[];
     components?: string[];
     contracts?: {
       interfaces?: string[];
@@ -144,8 +178,30 @@ export interface SpecInvariant {
   title?: string;
   rule: string;
   category: string;
-  source_type: "policy" | "capability";
+  source_type: "policy" | "capability" | "container" | "component" | string;
   test_binding?: string;
+}
+
+export interface SpecMutation {
+  action: string;
+  target_component?: string;
+  target_capability?: string;
+  target_domain?: string;
+  target_screen?: string;
+  target_container?: string;
+  target_architecture?: string;
+  target_contract?: string;
+  target_policy?: string;
+  target_persona?: string;
+  target_invariant_id?: string;
+  target_design_system?: string;
+  target_ui_component?: string;
+  target_client?: string;
+  target_flow?: string;
+  new_capability_id?: string;
+  title?: string;
+  details?: string;
+  expect?: Record<string, any>;
 }
 
 export interface SpecDelta {
@@ -154,15 +210,27 @@ export interface SpecDelta {
   kind: string;
   status: "proposed" | "in_review" | "approved" | "applied" | "rejected" | string;
   motivation?: string;
-  mutations?: Array<{
-    action: string;
-    target_component?: string;
-    target_capability?: string;
-    target_domain?: string;
-    target_screen?: string;
-    details?: string;
-  }>;
-  blast_radius?: any;
+  mutations?: SpecMutation[];
+  affects?: {
+    containers?: string[];
+    components?: string[];
+    capabilities?: string[];
+    contracts?: string[];
+    domains?: string[];
+    policies?: string[];
+  };
+  blast_radius?: {
+    impacted_personas?: string[];
+    impacted_components?: string[];
+    impacted_containers?: string[];
+    impacted_design_systems?: string[];
+    impacted_screens?: string[];
+    invariants_to_enforce?: string[];
+    impact_level?: string;
+    domains?: string[];
+    components?: string[];
+    [key: string]: any;
+  };
   vcs?: { branch?: string };
   body?: string;
   path?: string;
@@ -341,6 +409,7 @@ export interface PortalData {
   personas: SpecPersona[];
   policies: SpecPolicy[];
   invariants: SpecInvariant[];
+  decisions?: SpecDecision[];
   deltas: {
     proposed: SpecDelta[];
     in_review: SpecDelta[];

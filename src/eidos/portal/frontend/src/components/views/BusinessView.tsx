@@ -808,6 +808,23 @@ export function BusinessView({ data }: BusinessViewProps) {
                       Technical Architecture Mapping
                     </h4>
                     <div className="p-3 rounded-xl bg-muted/30 border border-border/80 space-y-2">
+                      {selectedEntity.item.technical_mapping.containers && selectedEntity.item.technical_mapping.containers.length > 0 && (
+                        <div>
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase">
+                            Mapped Containers (C4 Level 2)
+                          </span>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {selectedEntity.item.technical_mapping.containers.map((c, i) => (
+                              <span
+                                key={i}
+                                className="font-mono text-[10px] px-2 py-0.5 rounded bg-card border border-border text-primary font-bold"
+                              >
+                                {c}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       {selectedEntity.item.technical_mapping.components && (
                         <div>
                           <span className="text-[10px] font-bold text-muted-foreground uppercase">
@@ -1005,6 +1022,53 @@ export function BusinessView({ data }: BusinessViewProps) {
                             {iface}
                           </div>
                         )
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Realizing Architecture Building Blocks */}
+                {((selectedEntity.item.technical?.containers && selectedEntity.item.technical.containers.length > 0) ||
+                  (selectedEntity.item.technical?.components && selectedEntity.item.technical.components.length > 0)) && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <Layers className="h-3.5 w-3.5 text-primary" />
+                      Realizing Architecture Building Blocks
+                    </h4>
+                    <div className="p-3 rounded-xl bg-muted/30 border border-border/80 space-y-2">
+                      {selectedEntity.item.technical.containers && selectedEntity.item.technical.containers.length > 0 && (
+                        <div>
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase">
+                            Containers (C4 Level 2)
+                          </span>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {selectedEntity.item.technical.containers.map((c, i) => (
+                              <span
+                                key={i}
+                                className="font-mono text-[10px] px-2 py-0.5 rounded bg-card border border-border text-primary font-bold"
+                              >
+                                {c}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {selectedEntity.item.technical.components && selectedEntity.item.technical.components.length > 0 && (
+                        <div>
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase">
+                            Components (C4 Level 3)
+                          </span>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {selectedEntity.item.technical.components.map((c, i) => (
+                              <span
+                                key={i}
+                                className="font-mono text-[10px] px-2 py-0.5 rounded bg-card border border-border text-foreground"
+                              >
+                                {c}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>

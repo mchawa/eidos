@@ -89,7 +89,7 @@ const SPEC_CATEGORIES: SpecCategoryDefinition[] = [
     icon: Network,
     color: "text-blue-500",
     badgeBg: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-    types: ["tech/architecture", "tech/container", "tech/contract"],
+    types: ["tech/architecture", "tech/container", "tech/component", "tech/contract"],
   },
   {
     id: "design",

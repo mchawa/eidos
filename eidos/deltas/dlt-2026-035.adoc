@@ -60,17 +60,17 @@ blast_radius:
 
 == Problem Statement
 
-Every time `eidos drift` or `eidos hook drift` (`PostInvocation` and `Stop` hooks) runs, [`detect_drift()`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/vcs/drift.py#L1238) performs two full $O(N)$ repository crawls from scratch:
+Every time `eidos drift` or `eidos hook drift` (`PostInvocation` and `Stop` hooks) runs, `detect_drift()` (`src/eidos/vcs/drift.py`) performs two full $O(N)$ repository crawls from scratch:
 
-1. [`SpecValidator.validate_directory(eidos_dir)`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/core/spec/validator.py#L143) parses every `.adoc` file in `eidos/` and runs Draft 2020-12 JSON Schema validation against YAML schemas on disk.
-2. [`extract_invariants_and_verify()`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/vcs/drift.py#L533) and [`detect_orphan_invariants()`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/vcs/drift.py#L489) crawl all test files (`tests/**/*test*.py`, `*.spec.ts`, `*_test.go`, etc.) via `collect_polyglot_test_files()`, eagerly read every test file from disk, and run `ASTIndexer.list_test_functions()` + `extract_test_bindings()` on every file.
+1. `SpecValidator.validate_directory(eidos_dir)` (`src/eidos/core/spec/validator.py`) parses every `.adoc` file in `eidos/` and runs Draft 2020-12 JSON Schema validation against YAML schemas on disk.
+2. `extract_invariants_and_verify()` and `detect_orphan_invariants()` (`src/eidos/vcs/drift.py`) crawl all test files (`tests/**/*test*.py`, `*.spec.ts`, `*_test.go`, etc.) via `collect_polyglot_test_files()`, eagerly read every test file from disk, and run `ASTIndexer.list_test_functions()` + `extract_test_bindings()` on every file.
 
 In repositories with hundreds of specifications and thousands of test files, running this uncached on every agent turn (`PostInvocation`) introduces multi-second latency.
 
 == Architectural & Behavioral Mutations
 
 === 1. Schema Versioning & Cache Tables (`CMP-GRAPH-STORAGE` in `src/eidos/core/index/graph_index.py`)
-* Bump `ArchitecturalIndex.SCHEMA_VERSION` from `"2.1.0"` (set by `DLT-2026-034`) to `"2.2.0"` and add `"spec_validation_cache"` and `"test_binding_cache"` to [`_MANAGED_TABLES`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/core/index/graph_index.py#L236).
+* Bump `ArchitecturalIndex.SCHEMA_VERSION` from `"2.1.0"` (set by `DLT-2026-034`) to `"2.2.0"` and add `"spec_validation_cache"` and `"test_binding_cache"` to `_MANAGED_TABLES` (`src/eidos/core/index/graph_index.py`).
 * Create `test_binding_cache (file_path TEXT PRIMARY KEY, mtime_ns INTEGER NOT NULL, sha256 TEXT NOT NULL, has_fixture INTEGER NOT NULL DEFAULT 0, functions_json TEXT NOT NULL, bindings_json TEXT NOT NULL, file_tokens_json TEXT NOT NULL)` in `eidos/.cache/index.db`.
 * Create `spec_validation_cache (file_path TEXT PRIMARY KEY, mtime_ns INTEGER NOT NULL, sha256 TEXT NOT NULL, schema_hash TEXT NOT NULL, doc_json TEXT NOT NULL, schema_errors_json TEXT NOT NULL)` in `eidos/.cache/index.db`.
 

@@ -52,13 +52,54 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     )
     system_id = (sys_doc["id"] if sys_doc else None) or project.system_id
 
-    # Components & Containers (C4 Level 2)
-    raw_components = specs_by_type.get("tech/container", []) + specs_by_type.get("tech/component", [])
+    # Components & Containers (C4 Level 2 Containers and Level 3 Promoted Components)
+    raw_containers = specs_by_type.get("tech/container", [])
+    raw_promoted_components = specs_by_type.get("tech/component", [])
+
+    # Index promoted components by their parent container ID
+    promoted_by_container: dict[str, list[dict[str, Any]]] = {}
+    for pc in raw_promoted_components:
+        p_fm = pc.get("frontmatter", {})
+        target_cnt = p_fm.get("container", "")
+        promoted_dict = {
+            "id": pc["id"],
+            "name": p_fm.get("name", pc["id"]),
+            "responsibility": p_fm.get("responsibility", ""),
+            "source_path": p_fm.get("source_path", ""),
+            "spec_path": pc.get("path", ""),
+            "invariants": p_fm.get("invariants", []),
+            "decisions": p_fm.get("decisions", []),
+            "status": p_fm.get("status", "active"),
+            "description": pc.get("body", ""),
+        }
+        if target_cnt:
+            promoted_by_container.setdefault(target_cnt, []).append(promoted_dict)
+
     components: list[dict[str, Any]] = []
-    for c in raw_components:
+    for c in raw_containers:
         fm = c["frontmatter"]
         raw_pkg = fm.get("package_path", "N/A")
         pkg_path_str = ", ".join(str(p) for p in raw_pkg) if isinstance(raw_pkg, list) else str(raw_pkg)
+
+        # Extract container responsibility / summary from frontmatter or Architectural Boundary
+        resp = fm.get("responsibility") or fm.get("summary")
+        if not resp:
+            m = re.search(r"== Architectural Boundary\s*\n+([^\n=]+(?:\n[^\n=]+)*)", c.get("body", ""))
+            resp = " ".join(m.group(1).split()) if m else f"Core architectural container for {c['id']}."
+
+        # Internal components (inline + promoted)
+        raw_internal = list(fm.get("components", []) or fm.get("c4_internal_components", []))
+        internal_components: list[dict[str, Any]] = []
+        for ic in raw_internal:
+            if isinstance(ic, dict):
+                internal_components.append(dict(ic))
+
+        # Merge any promoted components belonging to this container not already in list
+        existing_ids = {ic.get("id") for ic in internal_components if isinstance(ic, dict)}
+        for pc_dict in promoted_by_container.get(c["id"], []):
+            if pc_dict["id"] not in existing_ids:
+                internal_components.append(pc_dict)
+
         comp_dict = {
             "id": c["id"],
             "name": fm.get("name", c["id"]),
@@ -66,10 +107,13 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             "runtime": fm.get("runtime", "N/A"),
             "package_path": pkg_path_str,
             "domain_binding": fm.get("domain_binding", "N/A"),
-            "internal_components": fm.get("components", []) or fm.get("c4_internal_components", []),
+            "responsibility": resp,
+            "summary": resp,
+            "internal_components": internal_components,
             "dependencies": fm.get("dependencies", {}),
             "contracts": fm.get("contracts", {}),
             "quality_attributes": fm.get("quality_attributes", {}),
+            "decisions": fm.get("decisions", []),
             "tier": fm.get("tier"),
             "description": c["body"],
         }
@@ -176,6 +220,32 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 }
             )
 
+    # Invariants from Containers and Components (DLT-2026-031)
+    for comp in components:
+        for inv in comp.get("invariants", []):
+            invariants.append(
+                {
+                    "id": inv.get("id"),
+                    "title": inv.get("id"),
+                    "rule": inv.get("rule", "Container operational invariant."),
+                    "category": "architecture",
+                    "source_type": f"container ({comp['id']})",
+                    "test_binding": inv.get("test_binding", "N/A"),
+                }
+            )
+        for ic in comp.get("internal_components", []):
+            for inv in ic.get("invariants", []):
+                invariants.append(
+                    {
+                        "id": inv.get("id"),
+                        "title": inv.get("id"),
+                        "rule": inv.get("rule", "Component technical invariant."),
+                        "category": "architecture",
+                        "source_type": f"component ({ic.get('id', comp['id'])})",
+                        "test_binding": inv.get("test_binding", "N/A"),
+                    }
+                )
+
     # 3. SpecDeltas & Kanban status columns
     deltas_by_status: dict[str, list[dict[str, Any]]] = {
         "proposed": [],
@@ -196,6 +266,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             "kind": fm.get("intent", {}).get("kind", "feature_addition"),
             "motivation": fm.get("intent", {}).get("motivation", ""),
             "mutations": fm.get("mutations", []),
+            "affects": fm.get("affects", {}),
             "blast_radius": fm.get("blast_radius", {}),
             "vcs": fm.get("vcs"),
             "body": d["body"],
@@ -205,6 +276,33 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             deltas_by_status[status].append(delta_item)
         else:
             deltas_by_status.setdefault(status, []).append(delta_item)
+
+    # Embedded architectural decisions (DEC-*) across system, architecture, and containers
+    all_decisions: list[dict[str, Any]] = []
+    if sys_doc:
+        for dec in sys_doc.get("frontmatter", {}).get("decisions", []):
+            d_entry = dict(dec)
+            d_entry["source_entity"] = sys_doc["id"]
+            d_entry["source_type"] = "system"
+            all_decisions.append(d_entry)
+    if arch_doc:
+        for dec in arch_doc.get("frontmatter", {}).get("decisions", []):
+            d_entry = dict(dec)
+            d_entry["source_entity"] = arch_doc["id"]
+            d_entry["source_type"] = "architecture"
+            all_decisions.append(d_entry)
+    for comp in components:
+        for dec in comp.get("decisions", []):
+            d_entry = dict(dec)
+            d_entry["source_entity"] = comp["id"]
+            d_entry["source_type"] = "container"
+            all_decisions.append(d_entry)
+        for ic in comp.get("internal_components", []):
+            for dec in ic.get("decisions", []):
+                d_entry = dict(dec)
+                d_entry["source_entity"] = ic.get("id", comp["id"])
+                d_entry["source_type"] = "component"
+                all_decisions.append(d_entry)
 
     # 4. Multi-Design Systems, Tokens, UI Components, Clients, Flows, and Screens
     design_data = _extract_design_systems(eidos_path, specs_by_type)
@@ -267,6 +365,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "clients_count": len(clients),
         "flows_count": len(flows),
         "explorations_count": len(explorations),
+        "decisions_count": len(all_decisions),
     }
 
     return {
@@ -280,6 +379,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "personas": personas,
         "policies": policies,
         "invariants": invariants,
+        "decisions": all_decisions,
         "deltas": deltas_by_status,
         "design_systems": design_systems,
         "ui_components": ui_components,
@@ -295,7 +395,9 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     }
 
 
-def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+def _extract_design_systems(
+    eidos_path: Path, specs_by_type: dict[str, list[dict[str, Any]]]
+) -> dict[str, list[dict[str, Any]]]:
     """Scan and parse multi-design systems, W3C tokens.json, UI components, clients, flows, and screens."""
     systems: list[dict[str, Any]] = []
     design_specs = specs_by_type.get("design/system", [])
@@ -318,7 +420,9 @@ def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict
                 "title": ds["title"],
                 "client": fm.get("client_id", fm.get("client", "core")),
                 "brand_name": fm.get("brand_name", ds["title"]),
-                "extends": fm.get("inheritance", {}).get("extends") if isinstance(fm.get("inheritance"), dict) else fm.get("extends"),
+                "extends": fm.get("inheritance", {}).get("extends")
+                if isinstance(fm.get("inheritance"), dict)
+                else fm.get("extends"),
                 "tokens": tokens_data,
             }
         )
@@ -396,7 +500,9 @@ def _extract_design_systems(eidos_path: Path, specs_by_type: dict[str, list[dict
                 "title": scr["title"],
                 "route": fm.get("route", "/"),
                 "client": fm.get("client", "N/A"),
-                "system_ref": fm.get("supported_design_systems", ["DS-CORE"])[0] if fm.get("supported_design_systems") else "DS-CORE",
+                "system_ref": fm.get("supported_design_systems", ["DS-CORE"])[0]
+                if fm.get("supported_design_systems")
+                else "DS-CORE",
                 "states": states,
                 "slots": fm.get("slots", {}),
                 "capabilities": fm.get("capabilities", []),
@@ -422,25 +528,27 @@ def _generate_c4_context_mermaid(personas: list[dict[str, Any]], system_id: str,
         "  classDef system fill:#059669,stroke:#047857,color:#fff,stroke-width:3px,rx:8px;",
         "  classDef external fill:#334155,stroke:#475569,color:#fff,stroke-width:2px,rx:6px;",
         "",
-        f'  SYS["<div style=\'padding:10px 14px;font-size:15px;\'><b>{system_id}</b><br/>{clean_title}<br/><i>[Software System]</i></div>"]:::system',
-        '  EXT_GIT["<div style=\'padding:8px 12px;\'><b>Git Repository &amp; CI/CD</b><br/>Version Control &amp; Verification Pipeline<br/><i>[External Platform]</i></div>"]:::external',
-        '  EXT_IDE["<div style=\'padding:8px 12px;\'><b>AI IDEs &amp; Coding Agents</b><br/>Antigravity, Cursor, Claude Code<br/><i>[Development Environments]</i></div>"]:::external',
+        f"  SYS[\"<div style='padding:10px 14px;font-size:15px;'><b>{system_id}</b><br/>{clean_title}<br/><i>[Software System]</i></div>\"]:::system",
+        "  EXT_GIT[\"<div style='padding:8px 12px;'><b>Git Repository &amp; CI/CD</b><br/>Version Control &amp; Verification Pipeline<br/><i>[External Platform]</i></div>\"]:::external",
+        "  EXT_IDE[\"<div style='padding:8px 12px;'><b>AI IDEs &amp; Coding Agents</b><br/>Antigravity, Cursor, Claude Code<br/><i>[Development Environments]</i></div>\"]:::external",
     ]
 
     for p in personas:
         pid = p.get("id", "PER")
         pname = p.get("name", pid)
         node_id = pid.replace("-", "_")
-        lines.append(f'  {node_id}["<div style=\'padding:8px 12px;\'><b>{pname}</b><br/>Persona Actor<br/><i>[Human / Autonomous Lead]</i></div>"]:::actor')
+        lines.append(
+            f"  {node_id}[\"<div style='padding:8px 12px;'><b>{pname}</b><br/>Persona Actor<br/><i>[Human / Autonomous Lead]</i></div>\"]:::actor"
+        )
 
     lines.append("")
     for p in personas:
         pid = p.get("id", "PER")
         node_id = pid.replace("-", "_")
-        lines.append(f'  {node_id} ==>|Interacts & Collaborates| SYS')
+        lines.append(f"  {node_id} ==>|Interacts & Collaborates| SYS")
 
-    lines.append('  SYS ==>|Tracks Specs, Commits &amp; Drift| EXT_GIT')
-    lines.append('  SYS ==>|CLI Commands &amp; Agent Skills| EXT_IDE')
+    lines.append("  SYS ==>|Tracks Specs, Commits &amp; Drift| EXT_GIT")
+    lines.append("  SYS ==>|CLI Commands &amp; Agent Skills| EXT_IDE")
 
     return "\n".join(lines)
 
@@ -458,7 +566,17 @@ GENERIC_TIERS: dict[str, dict[str, Any]] = {
         "name": "Service & Processing Layer",
         "icon": "⚡",
         "style_class": "serviceContainer",
-        "types": {"service", "microservice", "worker", "background_worker", "agent", "daemon", "job", "ml_pipeline", "pipeline"},
+        "types": {
+            "service",
+            "microservice",
+            "worker",
+            "background_worker",
+            "agent",
+            "daemon",
+            "job",
+            "ml_pipeline",
+            "pipeline",
+        },
         "keywords": ("SERVICE", "WORKER", "DAEMON", "JOB", "PIPELINE"),
         "order": 2,
     },
@@ -573,10 +691,12 @@ def _generate_c4_containers_mermaid(
             node_id = pid.replace("-", "_")
             pname = p.get("name", pid).replace('"', "'")
             prole = p.get("role", "Actor").replace('"', "'")
-            ptype = str(p.get("archetype", p.get("role_type", "Human Lead"))).replace("_", " ").title().replace('"', "'")
+            ptype = (
+                str(p.get("archetype", p.get("role_type", "Human Lead"))).replace("_", " ").title().replace('"', "'")
+            )
 
             actor_lines.append(
-                f'  {node_id}["<div style=\'padding:6px 10px;\'><b>{pname}</b><br/>{prole}<br/><i>[{ptype}]</i></div>"]:::actor'
+                f"  {node_id}[\"<div style='padding:6px 10px;'><b>{pname}</b><br/>{prole}<br/><i>[{ptype}]</i></div>\"]:::actor"
             )
             actor_nodes_rendered.append(node_id)
 
@@ -617,7 +737,7 @@ def _generate_c4_containers_mermaid(
                 actor_edge_lines.append(f'  {node_id} ==>|"{clean_l}"| {ep_node}')
     else:
         actor_lines.append(
-            '  ACTOR_USERS["<div style=\'padding:6px 10px;\'><b>System Users &amp; Clients</b><br/>Primary Actors<br/><i>[Users &amp; Clients]</i></div>"]:::actor'
+            "  ACTOR_USERS[\"<div style='padding:6px 10px;'><b>System Users &amp; Clients</b><br/>Primary Actors<br/><i>[Users &amp; Clients]</i></div>\"]:::actor"
         )
         actor_nodes_rendered.append("ACTOR_USERS")
         for ep in entrypoints:
@@ -675,7 +795,7 @@ def _generate_c4_containers_mermaid(
             ctype = c.get("container_type", "container")
             runtime = str(c.get("runtime", "N/A")).replace('"', "'")
             lines.append(
-                f'      {node_id}["<div style=\'padding:8px 12px;\'><b>{cid}</b><br/>{cname}<br/><i>[{ctype} • {runtime}]</i></div>"]:::{style_class}'
+                f"      {node_id}[\"<div style='padding:8px 12px;'><b>{cid}</b><br/>{cname}<br/><i>[{ctype} • {runtime}]</i></div>\"]:::{style_class}"
             )
         lines.append("    end")
 
@@ -747,7 +867,7 @@ def _generate_c4_containers_mermaid(
     if ext_service_nodes:
         for ext in ext_service_nodes.values():
             lines.append(
-                f'  {ext["id"]}["<div style=\'padding:6px 10px;\'><b>{ext["title"]}</b><br/><i>[{ext["sub"]}]</i></div>"]:::external'
+                f"  {ext['id']}[\"<div style='padding:6px 10px;'><b>{ext['title']}</b><br/><i>[{ext['sub']}]</i></div>\"]:::external"
             )
         lines.append("")
 
@@ -885,41 +1005,45 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
 
     if not internals:
         fallback_id = f"mod_{cid.replace('-', '_')}_main"
-        lines.append(f'    {fallback_id}["<div style=\'padding:10px 14px;min-width:300px;max-width:420px;white-space:normal;word-break:break-word;\'><b>{html.escape(clean_name)}</b><br/><i>Core Container Logic</i></div>"]:::module')
+        lines.append(
+            f"    {fallback_id}[\"<div style='padding:10px 14px;min-width:300px;max-width:420px;white-space:normal;word-break:break-word;'><b>{html.escape(clean_name)}</b><br/><i>Core Container Logic</i></div>\"]:::module"
+        )
     else:
         for idx, mod in enumerate(internals):
             mid = mod.get("id")
-            mname = mod.get("name", f"Module {idx+1}").replace('"', "'")
+            mname = mod.get("name", f"Module {idx + 1}").replace('"', "'")
             title_text = f"<b>{html.escape(mid)}: {html.escape(mname)}</b>" if mid else f"<b>{html.escape(mname)}</b>"
             resp = mod.get("responsibility", "").replace('"', "'")
             raw_spath = mod.get("source_path", "")
-            spath = (
-                ", ".join(str(p) for p in raw_spath)
-                if isinstance(raw_spath, list)
-                else str(raw_spath)
-            ).replace('"', "'")
+            spath = (", ".join(str(p) for p in raw_spath) if isinstance(raw_spath, list) else str(raw_spath)).replace(
+                '"', "'"
+            )
             mod_id = f"mod_{cid.replace('-', '_')}_{idx}"
             lines.append(
-                f'    {mod_id}["<div style=\'padding:10px 14px;text-align:left;min-width:300px;max-width:420px;white-space:normal;word-break:break-word;line-height:1.45;\'>'
-                f'{title_text}<br/><small style=\'color:#93c5fd;font-family:monospace;font-size:10px;\'>{html.escape(spath)}</small><br/>'
-                f'<span style=\'font-size:11px;color:#cbd5e1;\'>{html.escape(resp)}</span></div>"]:::module'
+                f"    {mod_id}[\"<div style='padding:10px 14px;text-align:left;min-width:300px;max-width:420px;white-space:normal;word-break:break-word;line-height:1.45;'>"
+                f"{title_text}<br/><small style='color:#93c5fd;font-family:monospace;font-size:10px;'>{html.escape(spath)}</small><br/>"
+                f"<span style='font-size:11px;color:#cbd5e1;'>{html.escape(resp)}</span></div>\"]:::module"
             )
 
         # Sequential flow representation among modules
         for idx in range(len(internals) - 1):
             curr_id = f"mod_{cid.replace('-', '_')}_{idx}"
-            next_id = f"mod_{cid.replace('-', '_')}_{idx+1}"
+            next_id = f"mod_{cid.replace('-', '_')}_{idx + 1}"
             lines.append(f"    {curr_id} -.-> {next_id}")
 
     lines.append("  end")
 
     # Inbound / Outbound peer container dependencies
     deps = component.get("dependencies", {})
-    int_deps = (deps.get("internal_containers", []) or deps.get("internal_components", [])) if isinstance(deps, dict) else []
+    int_deps = (
+        (deps.get("internal_containers", []) or deps.get("internal_components", [])) if isinstance(deps, dict) else []
+    )
     for dep_id in int_deps:
         if dep_id != cid:
             peer_node = f"peer_{dep_id.replace('-', '_')}"
-            lines.append(f'  {peer_node}["<div style=\'padding:8px 12px;\'><b>{dep_id}</b><br/><i>[Peer Container]</i></div>"]:::peer')
+            lines.append(
+                f"  {peer_node}[\"<div style='padding:8px 12px;'><b>{dep_id}</b><br/><i>[Peer Container]</i></div>\"]:::peer"
+            )
             first_mod = f"mod_{cid.replace('-', '_')}_0" if internals else f"mod_{cid.replace('-', '_')}_main"
             lines.append(f'  {first_mod} ==>|"Consumes / Depends On"| {peer_node}')
 
@@ -928,8 +1052,12 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
     provides = contracts.get("provides", []) if isinstance(contracts, dict) else []
     for ctr_id in provides:
         ctr_node = f"ctr_{ctr_id.replace('-', '_')}"
-        lines.append(f'  {ctr_node}["<div style=\'padding:8px 12px;\'><b>{ctr_id}</b><br/><i>[Interface Contract]</i></div>"]:::contract')
-        last_mod = f"mod_{cid.replace('-', '_')}_{len(internals)-1}" if internals else f"mod_{cid.replace('-', '_')}_main"
+        lines.append(
+            f"  {ctr_node}[\"<div style='padding:8px 12px;'><b>{ctr_id}</b><br/><i>[Interface Contract]</i></div>\"]:::contract"
+        )
+        last_mod = (
+            f"mod_{cid.replace('-', '_')}_{len(internals) - 1}" if internals else f"mod_{cid.replace('-', '_')}_main"
+        )
         lines.append(f'  {last_mod} -->|"Provides Interface"| {ctr_node}')
 
     return "\n".join(lines)
@@ -953,14 +1081,12 @@ def _generate_screen_state_mermaid(screen_id: str, states: list[Any], transition
 
     if not transitions and len(state_names) > 1:
         for i in range(len(state_names) - 1):
-            lines.append(f"  {state_names[i]} --> {state_names[i+1]}")
+            lines.append(f"  {state_names[i]} --> {state_names[i + 1]}")
 
     return "\n".join(lines)
 
 
-def _extract_or_generate_flow_mermaid(
-    flow_id: str, flow_type: str, steps: list[dict[str, Any]], body: str
-) -> str:
+def _extract_or_generate_flow_mermaid(flow_id: str, flow_type: str, steps: list[dict[str, Any]], body: str) -> str:
     """Extract authored Mermaid block from spec body or generate from steps."""
     match = re.search(r"\[mermaid\]\s*\n----\s*\n(.*?)\n----", body, re.DOTALL)
     if match:
@@ -999,5 +1125,5 @@ def _extract_or_generate_flow_mermaid(
             trigger = s_curr.get("action", "next").replace('"', "'")
             if len(trigger) > 28:
                 trigger = trigger[:25] + "..."
-            lines.append(f'  step{steps[i].get("step", i+1)} -->|"{trigger}"| step{steps[i+1].get("step", i+2)}')
+            lines.append(f'  step{steps[i].get("step", i + 1)} -->|"{trigger}"| step{steps[i + 1].get("step", i + 2)}')
         return "\n".join(lines)

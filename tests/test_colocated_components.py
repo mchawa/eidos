@@ -315,6 +315,7 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
 
     # 3. Verify CLI 'eidos spec component promote' and 'eidos spec component inline' work and legacy shortcuts are rejected
     from typer.testing import CliRunner
+
     from eidos.cli.main import app
 
     runner = CliRunner()

@@ -1030,10 +1030,15 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
             <div id="omnichannelFlowsPanel" className="space-y-3">
               <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                 <Workflow className="h-4 w-4 text-purple-400" />
-                Omnichannel & Lifecycle Flows ({flows.length})
+                Omnichannel & Lifecycle Flows ({omnichannelFlows.length})
               </h4>
               <div className="space-y-3">
-                {flows.map((flow) => (
+                {omnichannelFlows.length === 0 ? (
+                  <div className="p-4 rounded-xl border border-dashed border-border/80 text-xs text-muted-foreground text-center">
+                    No omnichannel flows declared.
+                  </div>
+                ) : (
+                  omnichannelFlows.map((flow) => (
                   <Card key={flow.id} className="p-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="font-mono text-xs font-bold text-purple-400">
@@ -1104,7 +1109,7 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
                       </div>
                     )}
                   </Card>
-                ))}
+                )))}
               </div>
             </div>
           </div>

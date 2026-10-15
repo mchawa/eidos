@@ -1,0 +1,98 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-054
+title: "Portal Data Engine Synchronization, Full C4 Target Schema Coverage, and UI Navigation Polish"
+status: proposed
+vcs:
+  branch: feat/portal-schema-sync
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Synchronize portal data generator with promoted components, embedded decisions, container-level invariants, full mutation target schemas, and polish UI navigation and AsciiDoc rendering."
+mutations:
+  - action: modify_component
+    target_component: CMP-PORTAL-GENERATOR
+    details: "Extract affects, complete blast_radius schema, container responsibility/summary from Architectural Boundary sections, promoted components whitebox hierarchy, embedded decisions, and component-level invariants."
+    expect:
+      source_path: "src/eidos/portal/generator.py"
+      responsibility: "Synthesizes living specifications"
+  - action: modify_component
+    target_component: CMP-PORTAL-ASSETS
+    details: "Deliver updated React 19 bundle supporting full mutation target resolution, mutation expect post-conditions, blast radius keys, container summary subtext, AsciiDoc inspector rendering, embedded decisions display, and CMD+K spotlight focus."
+    expect:
+      source_path: "src/eidos/portal/assets.py"
+      responsibility: "Delivers pre-compiled single-file React 19"
+  - action: extend_capability
+    target_capability: CAP-EXP-001
+    details: "Register portal-explorations screen under experience.screens and enforce full mutation target coverage across living web portal views."
+    expect:
+      contains: "portal-explorations"
+  - action: modify_architecture
+    target_architecture: ARCH-EIDOS-001
+    details: "Reconcile domain paths to spec-engine capabilities in Arc42 Section 6 Runtime View."
+    expect:
+      contains: "spec-engine/capabilities/spec-delta-mutations"
+affects:
+  containers:
+    - CNT-EIDOS-PORTAL
+  capabilities:
+    - CAP-EXP-001
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-PORTAL
+  impacted_components:
+    - CMP-PORTAL-GENERATOR
+    - CMP-PORTAL-ASSETS
+  impacted_screens:
+    - eidos/design/clients/web-portal/screens/portal-architecture.adoc
+    - eidos/design/clients/web-portal/screens/portal-deltas.adoc
+    - eidos/design/clients/web-portal/screens/portal-business.adoc
+    - eidos/design/clients/web-portal/screens/portal-design.adoc
+    - eidos/design/clients/web-portal/screens/portal-catalog.adoc
+  invariants_to_enforce:
+    - INV-PORTAL-ZERO-NODE-DEP
+    - INV-PORTAL-AIR-GAPPED-BUNDLE
+    - INV-PORTAL-INTERACTIVE-C4
+    - INV-PORTAL-READING-ERGONOMICS
+    - INV-PORTAL-C4-CONTAINER-HIERARCHY
+---
+= SpecDelta: Portal Data Engine Synchronization, Full C4 Target Schema Coverage, and UI Navigation Polish
+:toc: left
+
+== Problem Statement
+
+A thorough audit of the Eidos Living Web Portal revealed several accumulated schema desynchronizations and UI rendering gaps:
+
+1. **SpecDelta Mutations Fallback**: 64% of mutations across the 53 SpecDeltas rendered as `"Target Specification"` because `DeltasView.tsx` only inspected `m.target_component || m.target_capability || m.target_domain || m.target_screen`, ignoring `target_container`, `target_architecture`, `target_contract`, `target_policy`, `target_persona`, `target_invariant_id`, `target_design_system`, `target_ui_component`, `target_client`, `target_flow`, and `new_capability_id`. Declarative `expect:` post-conditions were unrendered.
+2. **Blast Radius & `affects:` Extraction**: `generator.py` omitted `affects:`, and `DeltasView.tsx` checked non-standard keys (`impact_level`, `domains`, `components`) while `delta.schema.yaml` specifies `impacted_containers`, `impacted_components`, `impacted_personas`, `impacted_design_systems`, `impacted_screens`, and `invariants_to_enforce`.
+3. **C4 Promoted Components Conflation**: `generator.py` treated standalone `tech/component` specs as C4 Level 2 containers instead of attaching them to their parent container's Level 3 internal components whitebox. `CatalogView.tsx` omitted `tech/component` from `SPEC_CATEGORIES.architecture.types`.
+4. **Decisions (`DEC-*`) and Invariants Missing**: Embedded architectural decisions on system, architecture, and container specs were omitted from the portal data model. Component-level invariants (`INV-*`) declared in containers or components were omitted from the governance invariants table.
+5. **Container Subtext & AsciiDoc Inspector**: Container cards fell back to `"Core system container"` because `generator.py` never populated `responsibility` or `summary`. Container descriptions in the inspector were rendered in plain text rather than `AsciiDocRenderer`.
+6. **Spotlight Search & Drilldown Disconnects**: `CMD+K` spotlight selection switched tabs but failed to select or focus the specific item. `onNavigateDelta` from Explorations did not select the target delta. `DesignView.tsx` duplicated client-specific flows in the Omnichannel panel.
+7. **AsciiDoc Table Corruption**: Regex pipes in `dlt-2026-042.adoc` broke AsciiDoc table parsing, and Markdown `[text](...)` links were embedded in AsciiDoc specs.
+
+== Proposed Specification Changes
+
+1. **Portal Generator (`src/eidos/portal/generator.py`)**:
+   * Extract container `responsibility` and `summary` from frontmatter or the `== Architectural Boundary` body section.
+   * Attach promoted `tech/component` specs to their parent container's Level 3 `internal_components` rather than treating them as top-level containers.
+   * Extract embedded decisions (`decisions`) from system, architecture, and container documents.
+   * Extract component-level invariants (`invariants`) from containers and components into the global invariants list.
+   * Extract `affects:` (`containers`, `components`, `capabilities`, `contracts`, `domains`, `policies`) and preserve full `blast_radius:` on SpecDeltas.
+   * Extract `technical_mapping.containers` on domains and `technical.containers` on capabilities.
+2. **Frontend Views (`src/eidos/portal/frontend/src/`)**:
+   * `types.ts`: Update `SpecDelta`, `SpecComponent`, `SpecCapability`, `SpecDomain`, `CommandItem` interfaces.
+   * `DeltasView.tsx`: Resolve all mutation target keys (`target_container`, `target_architecture`, `target_contract`, `target_policy`, etc.), render `expect:` assertions, and display actual `blast_radius` and `affects` properties. Support focusing a delta via prop.
+   * `ArchitectureView.tsx`: Display container responsibility subtext, render living spec body via `AsciiDocRenderer`, display embedded decisions, and support opening by initial container ID.
+   * `BusinessView.tsx`: Render `technical.containers` and `technical_mapping.containers`.
+   * `DesignView.tsx`: Fix omnichannel flows panel to render `omnichannelFlows` instead of `flows`.
+   * `CatalogView.tsx`: Add `tech/component` to `SPEC_CATEGORIES.architecture.types`.
+   * `App.tsx`: Connect `handleCommandSelect` and `onNavigateDelta` to focus and open target entities.
+3. **Living Specs & Documentation**:
+   * Fix table cell pipe escaping in `dlt-2026-042.adoc`.
+   * Convert markdown links to AsciiDoc syntax in `dlt-2026-034.adoc`, `dlt-2026-035.adoc`, `dlt-2026-039.adoc`, `dlt-2026-042.adoc`.
+   * Reconcile runtime view links in `ARCH-EIDOS-001`.
+   * Register `portal-explorations.adoc` in `CAP-EXP-001`.
+   * Update `docs/guides/living-portal.md`.

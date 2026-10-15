@@ -60,9 +60,9 @@ NOTE: Split from the original DLT-2026-034. The diff-aware specification coverag
 
 == Problem Statement
 
-1. **Discarded symbol coordinates.** `ASTIndexer.extract_symbols()` yields `CodeSymbol(file_path, line_start, line_end, signature, parent_symbol)`, but every sync path in [`ArchitecturalIndex`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/core/graph_index.py) only writes `(symbol, entity_id, kind)` into `symbol_mappings`. As a result:
-   * [`find_symbol()`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/core/graph_index.py#L1444) can only report the owning *spec* (`file_path` = spec path), never the defining source file/line.
-   * [`get_repo_map()`](file:///home/MTS/marwan.chawa/WS/eidos/src/eidos/core/graph_index.py#L1479) re-reads and re-parses every `source_path` file on every call.
+1. **Discarded symbol coordinates.** `ASTIndexer.extract_symbols()` yields `CodeSymbol(file_path, line_start, line_end, signature, parent_symbol)`, but every sync path in `ArchitecturalIndex` (`src/eidos/core/graph_index.py`) only writes `(symbol, entity_id, kind)` into `symbol_mappings`. As a result:
+   * `find_symbol()` (`src/eidos/core/graph_index.py`) can only report the owning *spec* (`file_path` = spec path), never the defining source file/line.
+   * `get_repo_map()` (`src/eidos/core/graph_index.py`) re-reads and re-parses every `source_path` file on every call.
    * Deleted or edited source files leave stale AST rows behind (deletion only removes the `source_path` row).
 2. **Secondary package paths not dirty-tracked.** `entities.package_path` stores only `pkg_list[0]`, and `is_dirty()` reads that column. `is_dirty()` always walks `src/`, `tests/`, `test/`, so the gap is limited to secondary package directories *outside* those roots (e.g. `frontend/`, `packages/*`).
 3. **Non-recursive, gated package indexing.** Package directories are indexed only `if not all_modules` and with non-recursive `glob()`. Any container declaring a single inline component never indexes its unclaimed files or subdirectories.
@@ -113,10 +113,10 @@ CREATE INDEX IF NOT EXISTS idx_code_symbols_file   ON code_symbols(file_path);
 * The result does not depend on the order specs are processed. Example: `src/eidos/core/graph_index.py` stays with `CNT-EIDOS-INDEX` (rule 1) even though it lies under `CNT-EIDOS-CORE`'s `src/eidos/core`.
 
 === 6. Living specification updates
-* [index.adoc](file:///home/MTS/marwan.chawa/WS/eidos/eidos/architecture/containers/index.adoc): add `symbol_mappings` and `code_symbols` to the `CMP-GRAPH-STORAGE` row and add the missing `CMP-AST-SYMBOL-INDEXER` row to the prose table.
-* [cli.adoc contract](file:///home/MTS/marwan.chawa/WS/eidos/eidos/architecture/contracts/cli.adoc): document the `location` object in `find-symbol --json`.
-* [living-spec-engine.adoc](file:///home/MTS/marwan.chawa/WS/eidos/eidos/domains/spec-engine/capabilities/living-spec-engine.adoc): patch `INV-KNOWLEDGE-GRAPH-CATALOG`.
-* [agent-adapter.adoc](file:///home/MTS/marwan.chawa/WS/eidos/eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc): add `INV-SYMBOL-LOCATION-FIDELITY` (agent-facing `find-symbol` / `repo-map` fidelity belongs to `CAP-AGENT-001`; this also keeps the `CNT-EIDOS-CORE` guardrails context slice within its token budget).
+* link:../architecture/containers/index.adoc[index.adoc]: add `symbol_mappings` and `code_symbols` to the `CMP-GRAPH-STORAGE` row and add the missing `CMP-AST-SYMBOL-INDEXER` row to the prose table.
+* link:../architecture/contracts/cli.adoc[cli.adoc contract]: document the `location` object in `find-symbol --json`.
+* link:../domains/spec-engine/capabilities/living-spec-engine.adoc[living-spec-engine.adoc]: patch `INV-KNOWLEDGE-GRAPH-CATALOG`.
+* link:../domains/agent-intelligence/capabilities/agent-adapter.adoc[agent-adapter.adoc]: add `INV-SYMBOL-LOCATION-FIDELITY` (agent-facing `find-symbol` / `repo-map` fidelity belongs to `CAP-AGENT-001`; this also keeps the `CNT-EIDOS-CORE` guardrails context slice within its token budget).
 
 == Out of Scope
 * Dirty-tracking non-code assets (e.g. `assets/schemas/*.yaml`). The schema digest is handled by DLT-2026-035.

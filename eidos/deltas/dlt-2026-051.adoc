@@ -1,0 +1,83 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-051
+title: Close Spec-to-Code Drift Detection Bypasses for Unowned Code, Non-Addition Diffs, and Scoped 1-Hop Neighborhoods
+status: proposed
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Eliminate spec-to-code drift bypasses where unowned source files pass whenever any unrelated spec or SpecDelta is touched, non-addition structural changes pass via trivial comment/whitespace spec edits, editing a shared policy (POL-*) satisfies 1-hop coverage across all linked containers, and production code under docs/ or test_* paths is misclassified."
+mutations:
+  - action: modify_container
+    target_container: "CNT-EIDOS-VCS"
+    details: "Harden CMP-DRIFT-DETECTOR in src/eidos/vcs/drift.py to flag unowned structural code files in both Direct and Planned modes unless a container/component claims ownership or system.adoc is substantively updated, enforce inspector.is_substantive(s) on all spec coverage verdicts (including signature modifications, deletions, and design specs), exclude global POL-* edges from 1-hop component satisfaction neighborhoods, and anchor test/docs exemptions to repo-root test/docs directories rather than any path segment."
+    expect:
+      contains: "CMP-DRIFT-DETECTOR"
+  - action: modify_capability
+    target_capability: "CAP-VCS-001"
+    details: "Extend CAP-VCS-001 invariants (INV-DRIFT-DETECTION-ACCURACY and INV-DRIFT-DIFF-AWARE-COVERAGE) to require substantive spec edits for all structural code and design changes, strict unmapped-file drift enforcement in Direct and Planned modes, and edge-typed 1-hop neighborhood scoping."
+    expect:
+      contains: "INV-DRIFT-DIFF-AWARE-COVERAGE"
+  - action: patch_invariant
+    target_capability: "CAP-VCS-001"
+    target_invariant_id: "INV-DRIFT-DETECTION-ACCURACY"
+    details: "Require unowned structural code files to trigger drift unless claimed by a container/component or covered by a substantive system-level specification update, and exclude global POL-* neighbors from 1-hop component drift satisfaction."
+    expect:
+      test_binding: "tests/test_drift.py::test_drift_detection_code_without_specs"
+  - action: patch_invariant
+    target_capability: "CAP-VCS-001"
+    target_invariant_id: "INV-DRIFT-DIFF-AWARE-COVERAGE"
+    details: "Require substantive (non-comment, non-whitespace) specification diffs across all structural code changes (additions, signature modifications, symbol deletions, and design token/contract edits)."
+    expect:
+      test_binding: "tests/test_drift.py::test_trivial_spec_edit_does_not_cover_structural_addition"
+
+affects:
+  containers:
+    - "CNT-EIDOS-VCS"
+    - "CNT-EIDOS-INDEX"
+  components:
+    - "CMP-DRIFT-DETECTOR"
+    - "CMP-GRAPH-TRAVERSAL-ENGINE"
+  capabilities:
+    - "CAP-VCS-001"
+  domains:
+    - "DOM-VCS-LIFECYCLE"
+
+blast_radius:
+  impacted_containers:
+    - "CNT-EIDOS-VCS"
+    - "CNT-EIDOS-INDEX"
+  impacted_components:
+    - "CMP-DRIFT-DETECTOR"
+    - "CMP-GRAPH-TRAVERSAL-ENGINE"
+  invariants_to_enforce:
+    - "INV-DRIFT-DETECTION-ACCURACY"
+    - "INV-DRIFT-DIFF-AWARE-COVERAGE"
+---
+= SpecDelta: Close Spec-to-Code Drift Detection Bypasses for Unowned Code, Non-Addition Diffs, and Scoped 1-Hop Neighborhoods
+:toc: left
+
+== Problem Statement
+`CMP-DRIFT-DETECTOR` (`src/eidos/vcs/drift.py`) currently permits five spec-to-code drift bypasses:
+
+1. **Unowned Code Cleared by Any Spec Edit**: In `drift.py:1760-1817`, source files with no `CNT-*`/`CMP-*` owner are omitted from `uncovered_direct_components` and only cause drift when `not specs_changed and not has_deltas`. Appending a single blank line to an unrelated persona spec (`eidos/personas/product-lead.adoc`) allows a brand-new unowned Python file (`tools/new_feature.py`) to pass `eidos drift` with `drift_detected: False`.
+2. **Unowned Code Cleared by Any SpecDelta**: Setting `has_deltas = len(active_delta_files) > 0` (`drift.py:1815`) disables `base_direct_drift` globally, allowing unowned code files outside the delta's declared targets to pass in Planned Mode.
+3. **Substantive-Diff Check Restricted to Additions Only**: `_spec_coverage_verdict` (`drift.py:1469-1480`) only invokes `inspector.is_substantive(s)` when `addition is not None`. Signature changes, symbol removals, file deletions, and design coverage (`drift.py:1807`) are still satisfied by whitespace-only or comment-only spec touches.
+4. **1-Hop Fan-Out via Shared Policies (`POL-*`)**: `resolve_satisfying_specs_for_owner` (`drift.py:1104-1118`) includes every non-container 1-hop neighbor in `allowed_ids`. Because nearly all capabilities and containers link to `POL-001`, editing `POL-001` satisfies drift for almost every container in the repository. Additionally, `Path(s_norm).stem in allowed_ids` (`drift.py:1146`) matches any newly created file whose filename stem matches an allowed ID.
+5. **Over-Broad Path Exemptions**: `classify_git_changes` (`drift.py:387-398`) and `is_polyglot_test_file` (`drift.py:243-303`) exempt any path containing `docs`, `test`, or `tests` in any segment (e.g., `src/app/docs/renderer.py`) or named `test_*.py` inside `src/`.
+
+== Proposed Specification & Engine Changes
+1. **Strict Unmapped Code Governance**:
+   - Require every structural code file in `unmapped_code_files` to either be claimed by a `CNT-*`/`CMP-*` ownership update or covered by a substantive edit to `eidos/system.adoc` / `eidos/architecture/system-architecture.adoc` in both Direct and Planned modes.
+2. **Universal Substantive Spec Diff Verification**:
+   - Enforce `inspector.is_substantive(s)` on all specification coverage checks (additions, signature modifications, symbol removals, and design subgraph updates).
+3. **Edge-Scoped 1-Hop Neighborhoods & Exact Spec Path Matching**:
+   - Restrict 1-hop drift satisfaction to owning `CNT-*`, `CMP-*`, bound `CTR-*`, and bound `CAP-*` specifications (excluding global `POL-*` policies and `PER-*` personas), and match exact indexed specification paths rather than arbitrary filename stems.
+4. **Root-Anchored `docs/` and `tests/` Classification**:
+   - Classify files under configured `package_path` / `src/` as production code even if a nested subpackage is named `docs` or `test_helpers.py`.
+
+== Verification Plan
+* `uv run pytest tests/test_drift.py`
+* `uv run eidos validate eidos && uv run eidos drift --uncommitted`

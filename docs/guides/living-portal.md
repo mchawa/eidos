@@ -6,10 +6,11 @@ Structured around a responsive left sidebar, the portal organizes your architect
 
 1. **Executive Dashboard (Home)**: System archetype (`SYS-*`), high-level KPI metric cards, and recent SpecDeltas stream.
 2. **Business Architecture**: Actor Personas (`PER-*`), Bounded Domains (`DOM-*`), Capabilities (`CAP-*`) with JTBD statements, System Policies (`POL-*`), and Governance Invariants (`INV-*`).
-3. **Design & Experience**: Multi-Design Systems (`DS-*`), interactive W3C DTCG Token Studio (`tokens.json`), UI Component Manifests (`UIC-*`), and Screen State Machines (`SCR-*`).
-4. **Technical Architecture**: C4 Level 1 System Context, C4 Level 2 Container Topologies, Monorepo Component Manifests (`CMP-*`), and Protocol Contracts (`CTR-*`).
-5. **SpecDeltas Pipeline**: Interactive Kanban board tracking atomic mutations across `proposed`, `in_review`, `approved`, and `applied` states.
-6. **Specs Master Catalog**: Filterable repository inventory with instant search and document inspection.
+3. **Design & Experience**: Multi-Design Systems (`DS-*`), interactive W3C DTCG Token Studio (`tokens.json`), UI Component Manifests (`UIC-*`), Screen State Machines (`SCR-*`), and Omnichannel User Flows (`FLOW-*`).
+4. **Technical Architecture**: C4 Level 1 System Context, C4 Level 2 Container Topologies with dependency connections, Monorepo Component Manifests (`CMP-*`), and Protocol Contracts (`CTR-*`).
+5. **SpecDeltas Pipeline**: Interactive Kanban board tracking atomic mutations across `proposed`, `in_review`, `approved`, and `applied` states, with full blast-radius visualization.
+6. **Technical Explorations**: Discovery spikes (`EXP-*`) tracking hypotheses, exit criteria, trade-off findings, and resulting SpecDeltas.
+7. **Specs Master Catalog**: Filterable repository inventory with instant fuzzy search (`CMD+K`) and rich document inspection.
 
 ---
 
@@ -33,13 +34,12 @@ You can export the entire portal as a static site that can be hosted on GitHub P
 eidos portal build --path eidos --out public
 ```
 
-This creates a self-contained bundle:
+This creates a self-contained bundle with zero external CDN dependencies (`INV-PORTAL-AIR-GAPPED-BUNDLE`):
 
 ```
 public/
-├── index.html       # Single-Page Application interface
-├── data.json        # Compiled AST and graph metadata of all specifications
-└── assets/          # Stylesheets and visual diagram renderer
+├── index.html       # Fully bundled single-file SPA (embedded Mermaid, Asciidoctor, fonts)
+└── data.json        # Compiled AST and graph metadata of all specifications
 ```
 
 ---

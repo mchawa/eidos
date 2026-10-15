@@ -31,7 +31,7 @@ technical:
       - "eidos delta changelog [--output <file>] [--unreleased]"
   invariants:
     - id: INV-MUTATION-REVERSIBILITY
-      rule: "Applying a SpecDelta must either cleanly mutate the baseline .adoc files or abort without leaving partial state."
+      rule: "Executing or applying a SpecDelta (execute_delta_mutations, apply_delta) must transactionally snapshot target specifications, enforce strict entity type verification on remove_* actions, reject unsupported actions, validate all mutated specifications and the updated SpecDelta via SpecValidator prior to committing status: applied, and roll back all disk changes on any error."
       test_binding: "tests/test_delta_engine.py::test_delta_execute_and_verify_lifecycle"
     - id: INV-REMOVAL-TOMBSTONE
       rule: "Removing a capability via SpecDelta must archive the spec with a tombstone entry rather than silently deleting history."
@@ -43,7 +43,7 @@ technical:
       rule: "eidos delta changelog must compile an auditable, SpecDelta-backed changelog partitioned by git release tags with zero hallucinated mutations."
       test_binding: "tests/test_changelog.py::test_delta_changelog_generation"
     - id: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
-      rule: "'eidos delta verify' must report modify_*/extend_*/patch_* mutations as verified only on positive evidence of change to the targeted entity (a satisfied expect post-condition, or a content digest differing from the recorded SQLite delta baseline), never on entity existence or filesystem modification time alone."
+      rule: "'eidos delta verify' must report modify_*/extend_*/patch_* mutations as verified only on positive evidence of change to the targeted entity (a satisfied expect post-condition, or a content digest differing from the recorded SQLite or Git-history delta baseline), never on entity existence or filesystem modification time alone."
       test_binding: "tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence"
 
 ---
@@ -54,5 +54,6 @@ technical:
 Replaces traditional essay-style RFCs with declarative, machine-executable mutations. When a feature is added, changed, or removed, a `SpecDelta` specifies the precise mutations and impacted invariants. Upon PR merge, the mutations are applied to update the living baseline documents automatically.
 
 == Key Responsibilities
-* **Modification-Evidence Verification (`eidos delta verify`)**: Verifies `modify_*`, `extend_*`, and `patch_*` mutations only on positive evidence of change to the targeted entity (a satisfied declarative `expect:` post-condition or a canonical content digest differing from the recorded SQLite baseline), with action-aware target extraction, component-entry digest granularity for inline `CMP-*` targets, and parent/sub-target membership treated strictly as a precondition (`INV-DELTA-VERIFY-MODIFICATION-EVIDENCE`).
+* **Transactional Mutation Execution & Pre-Commit Validation (`eidos delta apply --execute`)**: Snapshots all living specifications before executing mutations, handles all 44 schema `mutations[].action` values (explicitly rejecting unsupported actions), verifies target specification `type:` before unlinking on `remove_*` mutations, validates all mutated specifications and the `status: applied` SpecDelta via `SpecValidator` prior to committing to disk, and rolls back all disk changes on any verification or validation failure (`INV-MUTATION-REVERSIBILITY`).
+* **Modification-Evidence Verification (`eidos delta verify`)**: Verifies `modify_*`, `extend_*`, and `patch_*` mutations only on positive evidence of change to the targeted entity (a satisfied declarative `expect:` post-condition or a canonical content digest differing from the recorded SQLite baseline, with automatic Git-history fallback via `_resolve_git_baseline_sha` on fresh clones/CI cache misses), with action-aware target extraction, component-entry digest granularity for inline `CMP-*` targets, and parent/sub-target membership treated strictly as a precondition (`INV-DELTA-VERIFY-MODIFICATION-EVIDENCE`).
 

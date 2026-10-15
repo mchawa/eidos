@@ -14,17 +14,21 @@ import {
   Expand,
   Shrink,
   Move,
+  Sparkles,
+  BookOpen,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
+import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
 import { cn } from "@/lib/utils";
 import type { PortalData, SpecComponent } from "@/types";
 
 export interface ArchitectureViewProps {
   data: PortalData;
   darkMode?: boolean;
+  initialComponentId?: string;
 }
 
 const getTierStyle = (tierId?: string) => {
@@ -44,7 +48,7 @@ const getTierStyle = (tierId?: string) => {
   }
 };
 
-export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProps) {
+export function ArchitectureView({ data, darkMode = true, initialComponentId }: ArchitectureViewProps) {
   const [level, setLevelState] = React.useState<1 | 2 | 3>(1);
   const [selectedContainerId, setSelectedContainerId] = React.useState<string>(
     data.components[0]?.id || "CNT-CORE"
@@ -54,6 +58,16 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
   const [isExpanded, setIsExpanded] = React.useState<boolean>(false);
   const [inspectorOpen, setInspectorOpen] = React.useState<boolean>(false);
   const [inspectedComponent, setInspectedComponent] = React.useState<SpecComponent | null>(null);
+
+  React.useEffect(() => {
+    if (initialComponentId && data.components) {
+      const match = data.components.find((c) => c.id === initialComponentId);
+      if (match) {
+        setInspectedComponent(match);
+        setInspectorOpen(true);
+      }
+    }
+  }, [initialComponentId, data.components]);
 
   // Dynamic active tiers from components
   const activeTiers = React.useMemo(() => {
@@ -660,6 +674,18 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
                 </span>
               </div>
 
+              {/* Architectural Responsibility / Summary */}
+              {(inspectedComponent.responsibility || inspectedComponent.summary) && (
+                <div className="p-3.5 rounded-2xl bg-muted/20 border border-border/60 text-xs space-y-1">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                    Architectural Responsibility
+                  </span>
+                  <p className="text-muted-foreground leading-relaxed">
+                    {inspectedComponent.responsibility || inspectedComponent.summary}
+                  </p>
+                </div>
+              )}
+
               {/* Internal Components Whitebox */}
               <div className="space-y-2">
                 <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
@@ -801,6 +827,51 @@ export function ArchitectureView({ data, darkMode = true }: ArchitectureViewProp
                   </div>
                 </div>
               </div>
+
+              {/* Embedded Architectural Decisions (DEC-*) */}
+              {inspectedComponent.decisions && inspectedComponent.decisions.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="h-4 w-4 text-amber-500" />
+                    Embedded Architectural Decisions ({inspectedComponent.decisions.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {inspectedComponent.decisions.map((dec, i) => (
+                      <div key={i} className="p-3 rounded-xl border border-border/70 bg-card text-xs space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono font-bold text-amber-500">{dec.id}</span>
+                          <span className="font-semibold text-foreground">{dec.title}</span>
+                        </div>
+                        <p className="text-muted-foreground text-xs leading-relaxed">{dec.decision}</p>
+                        {dec.rationale && (
+                          <p className="text-[11px] text-muted-foreground/80 italic">
+                            Rationale: {dec.rationale}
+                          </p>
+                        )}
+                        {dec.rejected_alternatives && dec.rejected_alternatives.length > 0 && (
+                          <div className="pt-1 text-[10px] text-muted-foreground">
+                            <span className="font-semibold text-rose-400">Rejected Alternatives: </span>
+                            {dec.rejected_alternatives.map((ra) => ra.option).join(", ")}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Living Specification Document Body rendered via AsciiDocRenderer */}
+              {inspectedComponent.description && (
+                <div className="space-y-2 pt-2 border-t border-border/60">
+                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <BookOpen className="h-3.5 w-3.5 text-purple-400" />
+                    Living Container Specification (`CNT-*`)
+                  </h4>
+                  <div className="max-h-[360px] overflow-y-auto rounded-xl p-3 bg-card border border-border/60">
+                    <AsciiDocRenderer content={inspectedComponent.description} />
+                  </div>
+                </div>
+              )}
 
               <div className="pt-2">
                 <Button

@@ -27,6 +27,8 @@ export function App() {
     return saved ? saved === "dark" : true;
   });
   const [commandOpen, setCommandOpen] = React.useState<boolean>(false);
+  const [selectedDeltaId, setSelectedDeltaId] = React.useState<string | undefined>(undefined);
+  const [selectedComponentId, setSelectedComponentId] = React.useState<string | undefined>(undefined);
 
   // Sync theme to <html> element
   React.useEffect(() => {
@@ -195,8 +197,10 @@ export function App() {
 
   const handleCommandSelect = (item: CommandItem) => {
     if (item.category === "components") {
+      setSelectedComponentId(item.id);
       setActiveTab("architecture");
     } else if (item.category === "deltas") {
+      setSelectedDeltaId(item.id);
       setActiveTab("deltas");
     } else if (item.category === "explorations") {
       setActiveTab("explorations");
@@ -209,6 +213,7 @@ export function App() {
     ) {
       setActiveTab("business");
     } else {
+      setFocusSpec({ id: item.id, nonce: Date.now() });
       setActiveTab("catalog");
     }
   };
@@ -263,13 +268,23 @@ export function App() {
             />
           )}
           {activeTab === "architecture" && (
-            <ArchitectureView data={data} darkMode={darkMode} />
+            <ArchitectureView
+              data={data}
+              darkMode={darkMode}
+              initialComponentId={selectedComponentId}
+            />
           )}
-          {activeTab === "deltas" && <DeltasView data={data} />}
+          {activeTab === "deltas" && (
+            <DeltasView
+              data={data}
+              initialDeltaId={selectedDeltaId}
+            />
+          )}
           {activeTab === "explorations" && (
             <ExplorationsView
               data={data}
               onNavigateDelta={(deltaId) => {
+                setSelectedDeltaId(deltaId);
                 setActiveTab("deltas");
               }}
             />

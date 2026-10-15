@@ -1,0 +1,71 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-046
+title: Manifest-Tracked Plugin Uninstall, Non-Destructive Force Semantics, and Version-Pinned Hook Runner
+status: proposed
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: high
+  motivation: Prevent 'eidos plugin uninstall' from deleting user-owned directories (.codex/, .github/plugin/, or arbitrary --dest paths), honor the 'force' overwrite flag when installing into existing workspace files, refuse symlinked destinations, and pin the package version in 'uvx' fallback hook commands.
+mutations:
+  - action: modify_container
+    target_container: "CNT-EIDOS-PLUGIN"
+    details: "Update CMP-PLUGIN-INSTALLER and CMP-HOOK-MANAGER in src/eidos/plugin/installer.py to record an installation manifest (.eidos-manifest.json with file paths and SHA-256 digests), remove only manifest-tracked files on uninstall, enforce force=False by default on user-owned files, refuse symlinked targets, and pin eidos-ai==<version> in uvx fallback hook commands."
+    expect:
+      contains: "CMP-PLUGIN-INSTALLER"
+  - action: modify_capability
+    target_capability: "CAP-AGENT-001"
+    details: "Extend CAP-AGENT-001 to guarantee non-destructive manifest-tracked plugin installation/uninstallation and version-pinned hook execution."
+    expect:
+      contains: "eidos plugin"
+
+affects:
+  containers:
+    - "CNT-EIDOS-PLUGIN"
+    - "CNT-EIDOS-CLI"
+  components:
+    - "CMP-PLUGIN-INSTALLER"
+    - "CMP-HOOK-MANAGER"
+    - "CMP-CLI-PLUGIN-COMMANDS"
+  capabilities:
+    - "CAP-AGENT-001"
+  domains:
+    - "DOM-AGENT-INTELLIGENCE"
+
+blast_radius:
+  impacted_containers:
+    - "CNT-EIDOS-PLUGIN"
+    - "CNT-EIDOS-CLI"
+  impacted_components:
+    - "CMP-PLUGIN-INSTALLER"
+    - "CMP-HOOK-MANAGER"
+    - "CMP-CLI-PLUGIN-COMMANDS"
+  invariants_to_enforce:
+    - "INV-PLUGIN-SCHEMA-CONFORMANCE"
+---
+= SpecDelta: Manifest-Tracked Plugin Uninstall, Non-Destructive Force Semantics, and Version-Pinned Hook Runner
+:toc: left
+
+== Problem Statement
+`CMP-PLUGIN-INSTALLER` (`src/eidos/plugin/installer.py`) currently exhibits four safety and reproducibility flaws:
+
+1. **Destructive Directory Removal on Uninstall**: `uninstall_plugin` (`installer.py:1335-1360`) calls `shutil.rmtree(root / ".codex")` for the `codex` target and `shutil.rmtree(root / ".github" / "plugin")` for `copilot`, destroying any non-Eidos configuration the user stored in those directories. Similarly, `uninstall_plugin --dest <dir>` (`lines 1062-1066`) runs `shutil.rmtree` on the entire `--dest` path.
+2. **Ignored `force` Parameter & Unconditional Overwrites**: `install_plugin` (`line 837`) defaults `force: bool = True`, never reads `force` inside helper functions (`lines 107, 169`), and unconditionally overwrites `.aider.conventions.md` (`line 545`) and `.codex/rules.md` (`line 998`).
+3. **Symlink Traversal at Destination**: `shutil.copy2` (`lines 139, 194`) follows destination symlinks without checking `dest.is_symlink()`.
+4. **Unpinned `uvx` Hook Execution**: `_rewrite_hook_command_for_target_root` (`line 161`) rewrites hook commands to `uvx --from eidos-ai eidos ...` without pinning the installed package version, causing hook invocations to pull unpinned releases from PyPI.
+
+== Proposed Specification & Engine Changes
+1. **Manifest-Tracked Install & Uninstall**:
+   - Write an installation manifest (`.eidos-manifest.json` storing relative paths and SHA-256 digests of installed files) during `eidos plugin install`.
+   - On `eidos plugin uninstall`, delete only files recorded in the manifest (and prune empty Eidos-created subdirectories), never calling `shutil.rmtree` on shared parent directories (`.codex/`, `.github/plugin/`, or `--dest`).
+2. **Safe Overwrite & Symlink Guards**:
+   - Default `force=False` and require `--force` (or append/merge safely with backup) before overwriting pre-existing user files (`.aider.conventions.md`, `.codex/rules.md`).
+   - Refuse to write through destination symlinks.
+3. **Version-Pinned `uvx` Fallback**:
+   - Pin `uvx --from eidos-ai==<version> eidos ...` using the active Eidos package version from `eidos.plugin.version`.
+
+== Verification Plan
+* `uv run pytest tests/test_plugin.py`
+* `uv run eidos plugin validate`
