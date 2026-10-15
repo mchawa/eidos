@@ -162,7 +162,8 @@ def test_polyglot_test_file_classification():
     ]
     classification = classify_changed_files(poly_files)
     assert "src/app.ts" in classification.code_files
-    assert len(classification.test_files) == 12
+    assert "src/utils/test_helper.py" in classification.code_files
+    assert len(classification.test_files) == 11
     assert "packages/auth/src/index.test.ts" in classification.test_files
     assert "packages/ui/button.test.tsx" in classification.test_files
     assert "pkg/server/server_test.go" in classification.test_files
@@ -1269,8 +1270,9 @@ def test_new_file_already_claimed_by_source_path_only_needs_substantive_edit(tmp
 
 
 def test_non_additive_structural_changes_keep_existing_rule(tmp_path, monkeypatch):
-    """INV-DRIFT-DIFF-AWARE-COVERAGE: signature changes are still covered by any 1-hop spec change (no regression)."""
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: signature changes require substantive spec diffs (whitespace/comments rejected)."""
     changed_sig = "def existing(x):\n    return x\n"
+    # Trivial whitespace edit is rejected
     eidos_dir = _diff_aware_env(
         tmp_path,
         monkeypatch,
@@ -1281,8 +1283,22 @@ def test_non_additive_structural_changes_keep_existing_rule(tmp_path, monkeypatc
         },
     )
     result = detect_drift(repo_root=tmp_path, eidos_dir=eidos_dir)
-    assert result.drift_detected is False
-    assert result.trivially_covered_files == []
+    assert result.drift_detected is True
+    assert [r["rule"] for r in result.trivially_covered_files] == ["trivial_spec_diff"]
+
+    # Substantive edit is accepted
+    eidos_dir_sub = _diff_aware_env(
+        tmp_path / "sub",
+        monkeypatch,
+        changed=["src/pkg/svc.py", _SPEC_REL],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, changed_sig),
+            _SPEC_REL: (_SPEC_BASE, _SPEC_BASE + "\nUpdated existing function signature.\n"),
+        },
+    )
+    result_sub = detect_drift(repo_root=tmp_path / "sub", eidos_dir=eidos_dir_sub)
+    assert result_sub.drift_detected is False
+    assert result_sub.trivially_covered_files == []
 
 
 def test_delta_declared_target_bypasses_diff_check(tmp_path, monkeypatch):
@@ -1405,8 +1421,9 @@ def test_moved_file_is_not_a_structural_addition(tmp_path, monkeypatch):
     classic coverage rule; symbols added during the move are still additions."""
     old_rel, new_rel = "src/pkg/svc.py", "src/pkg/service.py"
     trivial_spec = _SPEC_BASE + "\n// moved\n"
+    substantive_spec = _SPEC_BASE + "\nMoved service implementation.\n"
 
-    def run(sub, moved_content):
+    def run(sub, moved_content, spec_text=substantive_spec):
         root = tmp_path / sub
         root.mkdir()
         env = _diff_aware_env(
@@ -1416,28 +1433,31 @@ def test_moved_file_is_not_a_structural_addition(tmp_path, monkeypatch):
             versions={
                 old_rel: (_CODE_WITH_CLASS, None),
                 new_rel: (None, moved_content),
-                _SPEC_REL: (_SPEC_BASE, trivial_spec),
+                _SPEC_REL: (_SPEC_BASE, spec_text),
             },
             extra_files={new_rel: moved_content},
         )
         return detect_drift(repo_root=root, eidos_dir=env)
 
-    # Identical content, and reformatted content with the same public surface: both pure moves
+    # Identical content, and reformatted content with the same public surface: both pure moves covered by substantive spec (no anchor needed)
     assert run("identical", _CODE_WITH_CLASS).trivially_covered_files == []
     reformatted = _CODE_WITH_CLASS.replace("return 1", "return  1  # same") + "\n\ndef _private():\n    return 0\n"
     pure = run("reformatted", reformatted)
     assert pure.trivially_covered_files == []
     assert pure.drift_detected is False
 
-    # A move that also adds a public symbol: the addition (not the move) needs substantive coverage
-    grown = run("grown", _CODE_WITH_CLASS + "\n\ndef extra():\n    return 2\n")
-    assert [(r["file"], r["rule"], r["additions"]) for r in grown.trivially_covered_files] == [
-        (new_rel, "trivial_spec_diff", ["added function 'extra'"])
+    # Under DLT-2026-051, even pure moves require substantive spec edits (comment-only edits fail)
+    assert run("identical_trivial", _CODE_WITH_CLASS, spec_text=trivial_spec).trivially_covered_files[0]["rule"] == "trivial_spec_diff"
+
+    # A move that also adds a public symbol: with a trivial spec, both the deletion and addition are flagged
+    grown = run("grown", _CODE_WITH_CLASS + "\n\ndef extra():\n    return 2\n", spec_text=trivial_spec)
+    assert (new_rel, "trivial_spec_diff", ["added function 'extra'"]) in [
+        (r["file"], r["rule"], r["additions"]) for r in grown.trivially_covered_files
     ]
 
     # Losing public symbols is not a move: the new path is a genuinely new file
-    shrunk = run("shrunk", "def unrelated():\n    return 3\n")
-    assert [(r["file"], r["rule"]) for r in shrunk.trivially_covered_files] == [(new_rel, "trivial_spec_diff")]
+    shrunk = run("shrunk", "def unrelated():\n    return 3\n", spec_text=trivial_spec)
+    assert (new_rel, "trivial_spec_diff") in [(r["file"], r["rule"]) for r in shrunk.trivially_covered_files]
 
 
 def test_git_diff_lists_both_sides_of_renames(tmp_path):
@@ -1644,4 +1664,110 @@ def test_multiple_test_classes_with_same_method_name_do_not_overwrite(tmp_path):
     raw_content = {"tests/test_classes.py": (tests_dir / "test_classes.py").read_text(encoding="utf-8")}
     orphans = detect_orphan_invariants(tmp_path, {"INV-CLASS-FIRST", "INV-CLASS-QUALIFIED"}, all_tests_content=raw_content)
     assert orphans == [("INV-CLASS-WRONG-SUITE", "tests/test_classes.py::TestSecondSuite::test_shared_name")]
+
+
+def test_nested_docs_subpackage_treated_as_code(tmp_path):
+    """INV-DRIFT-DETECTION-ACCURACY: root-anchored docs/ exempts docs, but nested src/pkg/docs is code."""
+    changed = [
+        "docs/guide.adoc",
+        "docs/sub/readme.md",
+        "src/pkg/docs/renderer.py",
+        "src/docs/builder.py",
+    ]
+    res = classify_changed_files(changed, repo_root=tmp_path)
+    assert set(res.doc_files) == {"docs/guide.adoc", "docs/sub/readme.md"}
+    assert set(res.code_files) == {"src/pkg/docs/renderer.py", "src/docs/builder.py"}
+
+
+def test_unowned_code_triggers_drift_in_direct_and_planned_modes(tmp_path, monkeypatch):
+    """INV-DRIFT-DETECTION-ACCURACY: unowned code triggers drift in direct and planned modes unless covered by system spec."""
+    unowned_tool = "src/unowned/tool.py"
+    persona_spec = "eidos/personas/product-lead.adoc"
+    delta_rel = "eidos/deltas/dlt-2026-900.adoc"
+    delta = """---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-900
+title: Unrelated Delta
+status: proposed
+intent:
+  kind: feature
+  motivation: Unrelated
+mutations:
+  - action: modify_container
+    target_container: CNT-X
+    details: Modify X
+---
+= Delta
+"""
+    tool_code = "def unowned():\n    return 42\n"
+
+    # 1. Direct Mode: unowned code with unrelated persona spec triggers drift
+    root_direct = tmp_path / "direct"
+    env_direct = _diff_aware_env(
+        root_direct,
+        monkeypatch,
+        changed=[unowned_tool, persona_spec],
+        versions={
+            unowned_tool: (None, tool_code),
+            persona_spec: ("old persona", "new persona"),
+        },
+        extra_files={unowned_tool: tool_code, persona_spec: "new persona"},
+    )
+    res_direct = detect_drift(repo_root=root_direct, eidos_dir=env_direct)
+    assert res_direct.drift_detected is True
+    assert unowned_tool in res_direct.unmapped_code_files
+
+    # 2. Planned Mode: unowned code with unrelated delta triggers drift
+    root_planned = tmp_path / "planned"
+    env_planned = _diff_aware_env(
+        root_planned,
+        monkeypatch,
+        changed=[unowned_tool, delta_rel],
+        versions={
+            unowned_tool: (None, tool_code),
+            delta_rel: (None, delta),
+        },
+        extra_files={unowned_tool: tool_code, delta_rel: delta},
+    )
+    res_planned = detect_drift(repo_root=root_planned, eidos_dir=env_planned)
+    assert res_planned.drift_detected is True
+    assert unowned_tool in res_planned.unmapped_code_files
+
+    # 3. System spec substantive edit covers unowned code
+    root_system = tmp_path / "system"
+    system_spec = "eidos/system.adoc"
+    env_system = _diff_aware_env(
+        root_system,
+        monkeypatch,
+        changed=[unowned_tool, system_spec],
+        versions={
+            unowned_tool: (None, tool_code),
+            system_spec: ("old system", "new system architecture overview"),
+        },
+        extra_files={unowned_tool: tool_code, system_spec: "new system architecture overview"},
+    )
+    res_system = detect_drift(repo_root=root_system, eidos_dir=env_system)
+    assert unowned_tool not in res_system.unmapped_code_files
+    assert res_system.drift_detected is False
+
+
+def test_global_policy_does_not_satisfy_1hop_drift(tmp_path, monkeypatch):
+    """INV-DRIFT-DETECTION-ACCURACY: global policies (POL-*) do not satisfy 1-hop drift coverage for containers."""
+    policy_spec = "eidos/policies/pol-001.adoc"
+    root = tmp_path / "policy"
+    env = _diff_aware_env(
+        root,
+        monkeypatch,
+        changed=["src/pkg/svc.py", policy_spec],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, _CODE_WITH_CLASS),
+            policy_spec: ("old policy", "new updated policy"),
+        },
+        extra_files={policy_spec: "new updated policy"},
+    )
+    res = detect_drift(repo_root=root, eidos_dir=env)
+    assert res.drift_detected is True
+    assert "CNT-X" in res.touched_components
+    assert any("CNT-X" in rem for rem in res.remediation_suggestions)
 

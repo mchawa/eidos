@@ -3,7 +3,7 @@ type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-051
 title: Close Spec-to-Code Drift Detection Bypasses for Unowned Code, Non-Addition Diffs, and Scoped 1-Hop Neighborhoods
-status: proposed
+status: applied
 intent:
   kind: bug
   bug_classification: spec_violation

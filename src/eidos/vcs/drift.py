@@ -324,15 +324,21 @@ def is_polyglot_test_file(path: Path | str, repo_root: Path | None = None) -> bo
     else:
         rel_path = p
 
-    # If rel_path is still absolute, it's outside repo/cwd:
-    # only check immediate parent directory names, not the whole filesystem tree
     if rel_path.is_absolute():
         parent_names = [parent.name.lower() for parent in rel_path.parents[:2]]
         in_test_dir = any(d in ("tests", "test", "__tests__") for d in parent_names)
+        is_under_src = False
+        is_src_test = False
     else:
         dir_parts = [part.lower() for part in rel_path.parent.parts]
-        in_test_dir = any(part in ("tests", "test", "__tests__") for part in dir_parts) or any(
+        is_under_src = bool(dir_parts and dir_parts[0] == "src")
+        is_src_test = any(
             dir_parts[i] == "src" and dir_parts[i + 1] == "test" for i in range(len(dir_parts) - 1)
+        )
+        in_test_dir = (
+            (bool(dir_parts and dir_parts[0] in ("tests", "test", "__tests__")))
+            or is_src_test
+            or (not is_under_src and any(part in ("tests", "test", "__tests__") for part in dir_parts))
         )
 
     # TypeScript / JavaScript tests
@@ -370,9 +376,12 @@ def is_polyglot_test_file(path: Path | str, repo_root: Path | None = None) -> bo
     ):
         return True
 
-    # Python tests
-    if (name.startswith("test_") or name.endswith("_test.py")) and p.suffix == ".py":
-        return True
+    # Python tests (DLT-2026-051: under src/, files like test_helpers.py are production code unless inside a test dir)
+    if p.suffix == ".py":
+        if is_under_src and not is_src_test:
+            return bool(in_test_dir)
+        if name.startswith("test_") or name.endswith("_test.py"):
+            return True
 
     # Inside a dedicated test directory, standard code files are considered tests
     return bool(in_test_dir and p.suffix in {".py", ".ts", ".js", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt"})
@@ -463,7 +472,7 @@ def classify_changed_files(
         parsed_files.append((f_str, f, rel_f, parts))
 
         is_in_eidos = len(parts) >= prefix_len and parts[:prefix_len] == eidos_rel_parts
-        is_doc = f.suffix in {".md", ".rst"} or (parts and parts[0] == "docs") or "docs" in parts[1:]
+        is_doc = f.suffix in {".md", ".rst"} or (bool(parts and parts[0] == "docs"))
         if (
             not is_in_eidos
             and not is_polyglot_test_file(rel_f, repo_root=effective_root)
@@ -504,8 +513,8 @@ def classify_changed_files(
             classification.test_files.append(f_str)
             continue
 
-        # Documentation files outside eidos
-        if f.suffix in {".md", ".rst"} or (parts and parts[0] == "docs") or "docs" in parts[1:]:
+        # Documentation files outside eidos (DLT-2026-051: root-anchored docs/ only)
+        if f.suffix in {".md", ".rst"} or (bool(parts and parts[0] == "docs")):
             classification.doc_files.append(f_str)
             continue
 
@@ -1257,7 +1266,13 @@ def _collect_1hop_spec_targets(
             nid = n.get("id", "")
             ntype = n.get("type", "")
             ndata = n.get("data", {}) or {}
+            # DLT-2026-051: Restrict 1-hop drift satisfaction to owning CNT-*/CMP-*, bound CTR-*, and bound CAP-*.
+            # Exclude global POL-* policies and PER-* personas.
+            if ntype not in ("tech/contract", "product/capability", "tech/container", "tech/component"):
+                continue
             if ntype in ("tech/container", "tech/component") and nid not in seed_ids:
+                continue
+            if nid.startswith("POL-") or nid.startswith("PER-"):
                 continue
             if nid:
                 allowed_ids.add(nid.lower())
@@ -1299,7 +1314,7 @@ def _relevant_changed_specs(
         s_norm = s.replace("\\", "/").lower()
         if s_norm in SYSTEM_LEVEL_SPEC_PATHS:
             continue
-        if _path_in(s_norm, allowed_paths) or Path(s_norm).stem in allowed_ids:
+        if _path_in(s_norm, allowed_paths):
             relevant.append(s)
     return relevant
 
@@ -1627,22 +1642,25 @@ def _spec_coverage_verdict(
     relevant = _relevant_changed_specs(changed_specs, allowed_paths, allowed_ids)
     if not relevant:
         return False, None, []
-    if addition is None or inspector is None:
+
+    if inspector is not None:
+        substantive = [s for s in relevant if inspector.is_substantive(s)]
+        if not substantive:
+            return False, "trivial_spec_diff", relevant
+    else:
+        substantive = relevant
+
+    if addition is None or not addition.is_new_file or not owner_spec:
         return True, None, []
 
-    substantive = [s for s in relevant if inspector.is_substantive(s)]
-    if not substantive:
-        return False, "trivial_spec_diff", relevant
-
-    if addition.is_new_file and owner_spec:
-        owner_norm = owner_spec.replace("\\", "/").lower()
-        owner_changed = [s for s in substantive if s.replace("\\", "/").lower() == owner_norm]
-        owner_is_new = any(inspector.is_new_spec(s) for s in owner_changed)
-        needs_anchor = not owner_is_new and not inspector.declares_at_base(owner_spec, addition.file)
-        if needs_anchor and not any(
-            inspector.is_anchored(s, addition.file, addition.symbol_names) for s in owner_changed
-        ):
-            return False, "missing_anchor", relevant
+    owner_norm = owner_spec.replace("\\", "/").lower()
+    owner_changed = [s for s in substantive if s.replace("\\", "/").lower() == owner_norm]
+    owner_is_new = any(inspector.is_new_spec(s) for s in owner_changed)
+    needs_anchor = not owner_is_new and not inspector.declares_at_base(owner_spec, addition.file)
+    if needs_anchor and not any(
+        inspector.is_anchored(s, addition.file, addition.symbol_names) for s in owner_changed
+    ):
+        return False, "missing_anchor", relevant
     return True, None, []
 
 
@@ -1962,12 +1980,13 @@ def detect_drift(
                 inspector=spec_inspector,
             )
             if rejected_rule and not any(r["file"] == cf for r in trivial_records):
-                addition = structural_additions[cf]
+                addition = structural_additions.get(cf)
+                additions_list = list(addition.reasons) if addition is not None else ["modified signature or public symbols"]
                 trivial_records.append(
                     {
                         "file": cf,
                         "owner": str(spath),
-                        "additions": list(addition.reasons),
+                        "additions": additions_list,
                         "spec_files": sorted(rejected_specs),
                         "rule": rejected_rule,
                     }
@@ -1975,10 +1994,18 @@ def detect_drift(
             if not covered_by_spec:
                 (uncovered_components if has_deltas else uncovered_direct_components).append((cf, cid, spath))
 
-    # Unmapped structural code (no CNT-*/CMP-* owner): reported for remediation. System-level specs
-    # remain valid synchronization targets for these files only (DLT-2026-030).
+    # Unmapped structural code (no CNT-*/CMP-* owner): triggers drift in both Direct and Planned
+    # modes unless covered by a substantive update to system-level specs (DLT-2026-051).
     mapped_files = {c for c, _, _ in comp_mappings}
     unmapped_code_files = [cf for cf in structural_code_files if cf not in mapped_files]
+
+    system_spec_substantively_updated = any(
+        any(s.replace("\\", "/").lower().endswith(sys_p.lower()) for sys_p in SYSTEM_LEVEL_SPEC_PATHS)
+        and spec_inspector.is_substantive(s)
+        for s in classification.spec_files
+    )
+    uncovered_unmapped_code = [] if system_spec_substantively_updated else list(unmapped_code_files)
+    unmapped_drift = bool(uncovered_unmapped_code)
 
     # Graph-scoped design drift (DLT-2026-030): token / UI-contract changes must update the bound
     # client's or design system's subgraph (or be declared in an active SpecDelta).
@@ -1992,7 +2019,10 @@ def detect_drift(
         if cat == "ui_contract":
             satisfying_paths |= owner_specs_by_file.get(cf, set())
             satisfying_ids |= {o.lower() for o in owners_by_file.get(cf, set())}
-        covered = any(_path_in(s, satisfying_paths) for s in classification.spec_files)
+        covered = any(
+            _path_in(s, satisfying_paths) and spec_inspector.is_substantive(s)
+            for s in classification.spec_files
+        )
         if not covered and has_deltas:
             covered = bool(declared_delta_targets & satisfying_ids)
         if not covered:
@@ -2004,7 +2034,7 @@ def detect_drift(
         not has_deltas and bool(uncovered_direct_components)
     )
     uncovered_delta_drift = bool(uncovered_components)
-    drift_detected = base_direct_drift or design_drift or uncovered_delta_drift
+    drift_detected = base_direct_drift or design_drift or uncovered_delta_drift or unmapped_drift
 
     # 4. Specification Schema & Link Integrity Validation
     validator = SpecValidator()
@@ -2033,13 +2063,13 @@ def detect_drift(
                 "• Run 'eidos drift' or ask your AI agent to update corresponding living specifications in eidos/."
             )
 
-    if base_direct_drift and unmapped_code_files:
+    if unmapped_drift:
         remediation.append(
-            f"Unmapped Code: {len(unmapped_code_files)} structural code file(s) are not owned by any container or component."
+            f"Unmapped Code Drift Detected: {len(uncovered_unmapped_code)} structural code file(s) are not owned by any container or component."
         )
-        for ucf in unmapped_code_files[:5]:
+        for ucf in uncovered_unmapped_code[:5]:
             remediation.append(
-                f"• '{ucf}' -> declare ownership via 'package_path'/'source_path' in eidos/architecture/ (or update the system architecture spec)."
+                f"• '{ucf}' -> declare ownership via 'package_path'/'source_path' in eidos/architecture/ (or substantively update eidos/system.adoc)."
             )
 
     if design_drift:
@@ -2174,7 +2204,7 @@ def detect_drift(
         orphan_invariants=orphan_invariants,
         body_only_code_files=body_only_code_files,
         uncovered_design_files=frontend_code_files,
-        unmapped_code_files=unmapped_code_files,
+        unmapped_code_files=uncovered_unmapped_code,
         trivially_covered_files=trivial_records,
         remediation_suggestions=remediation,
         summary_markdown=summary_markdown,

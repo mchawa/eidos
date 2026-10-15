@@ -986,9 +986,9 @@ def test_drift_hook_stop_event_synchronized(tmp_path):
     """Verify drift hook allows task completion when code and living specs are co-evolved (INV-AGENT-DRIFT-HOOK)."""
     eidos_dir = tmp_path / "eidos"
     eidos_dir.mkdir()
-    valid_spec = eidos_dir / "policy.adoc"
+    valid_spec = eidos_dir / "container.adoc"
     valid_spec.write_text(
-        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nrule: Must execute safely\nenforcement:\n  mechanism: lint\n  severity: blocking\n---\n",
+        "---\ntype: tech/container\nschema: schemas/v1/tech/container.schema.yaml\nid: CNT-APP\nname: App\nstatus: accepted\npackage_path: src\n---\n= App\n",
         encoding="utf-8",
     )
 
