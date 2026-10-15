@@ -368,6 +368,9 @@ def classify_changed_files(
         eidos_rel_parts = ["eidos"]
     prefix_len = len(eidos_rel_parts)
 
+    # Pre-collect candidate code relative paths for single-pass batched check-attr query (DLT-2026-052)
+    candidate_code_paths: list[str] = []
+    parsed_files: list[tuple[str, Path, Path, list[str]]] = []
     for f_str in files:
         f = Path(f_str)
         if f.is_absolute():
@@ -377,8 +380,27 @@ def classify_changed_files(
                 rel_f = f
         else:
             rel_f = f
-
         parts = [p.lower() for p in rel_f.parts]
+        parsed_files.append((f_str, f, rel_f, parts))
+
+        is_in_eidos = len(parts) >= prefix_len and parts[:prefix_len] == eidos_rel_parts
+        is_doc = f.suffix in {".md", ".rst"} or (parts and parts[0] == "docs") or "docs" in parts[1:]
+        if (
+            not is_in_eidos
+            and not is_polyglot_test_file(rel_f, repo_root=effective_root)
+            and not is_doc
+            and f.suffix in code_extensions
+            and not any(skip in parts for skip in [".venv", "venv", "node_modules", "dist", "build", "__pycache__"])
+        ):
+            candidate_code_paths.append(str(rel_f).replace("\\", "/"))
+
+    vendored_paths = (
+        is_generated_or_vendored(effective_root, candidate_code_paths)
+        if candidate_code_paths
+        else set()
+    )
+
+    for f_str, f, rel_f, parts in parsed_files:
         is_in_eidos = len(parts) >= prefix_len and parts[:prefix_len] == eidos_rel_parts
         sub_parts = parts[prefix_len:] if is_in_eidos else []
 
@@ -409,10 +431,12 @@ def classify_changed_files(
             continue
 
         # Code files (excluding generated or vendored artifacts)
+        rel_str_norm = str(rel_f).replace("\\", "/")
         if (
             f.suffix in code_extensions
             and not any(skip in parts for skip in [".venv", "venv", "node_modules", "dist", "build", "__pycache__"])
-            and not is_generated_or_vendored(effective_root, str(rel_f))
+            and rel_str_norm not in vendored_paths
+            and str(rel_f) not in vendored_paths
         ):
             classification.code_files.append(f_str)
             continue
@@ -1065,6 +1089,31 @@ def get_living_specs_catalog(eidos_dir: Path, repo_root: Path | None = None) -> 
     return catalog
 
 
+def _resolve_base_ref(repo: Path, base_ref: str | None = None) -> str | None:
+    """Resolve the candidate base Git commit reference once per drift run (DLT-2026-052)."""
+    if base_ref:
+        check = subprocess.run(
+            ["git", "rev-parse", "--verify", base_ref],
+            cwd=repo,
+            capture_output=True,
+            check=False,
+        )
+        if check.returncode == 0:
+            return base_ref
+        return None
+
+    for candidate in ["origin/main", "main", "origin/master", "master", "HEAD~1"]:
+        check = subprocess.run(
+            ["git", "rev-parse", "--verify", candidate],
+            cwd=repo,
+            capture_output=True,
+            check=False,
+        )
+        if check.returncode == 0:
+            return candidate
+    return None
+
+
 def _get_file_versions(
     repo_root: Path,
     rel_path: str,
@@ -1100,19 +1149,7 @@ def _get_file_versions(
                 new_content = abs_p.read_text(encoding="utf-8", errors="replace")
         return old_content, new_content
 
-    resolved_base = base_ref
-    if not resolved_base:
-        for candidate in ["origin/main", "main", "origin/master", "master", "HEAD~1"]:
-            check = subprocess.run(
-                ["git", "rev-parse", "--verify", candidate],
-                cwd=repo,
-                capture_output=True,
-                check=False,
-            )
-            if check.returncode == 0:
-                resolved_base = candidate
-                break
-
+    resolved_base = base_ref or _resolve_base_ref(repo, base_ref)
     if not resolved_base:
         return None, None
 
@@ -1639,7 +1676,10 @@ def detect_drift(
     root = repo_root.resolve()
     target_eidos = (eidos_dir or (root / "eidos")).resolve()
 
-    changed_files = get_git_diff_files(root, base_ref=base_ref, head_ref=head_ref, uncommitted=uncommitted)
+    # Single-pass base Git reference resolution (DLT-2026-052)
+    resolved_base_ref = base_ref if uncommitted else _resolve_base_ref(root, base_ref)
+
+    changed_files = get_git_diff_files(root, base_ref=resolved_base_ref, head_ref=head_ref, uncommitted=uncommitted)
     classification = classify_changed_files(changed_files, repo_root=root, eidos_dir=target_eidos)
 
     # 0. Filter code files into structural vs body-only edits (DLT-2026-028)
@@ -1649,7 +1689,7 @@ def detect_drift(
     structural_additions: dict[str, _StructuralAddition] = {}
     design_changes: dict[str, tuple[str, list[str]]] = {}
     versions = {
-        cf: _get_file_versions(root, cf, base_ref=base_ref, head_ref=head_ref, uncommitted=uncommitted)
+        cf: _get_file_versions(root, cf, base_ref=resolved_base_ref, head_ref=head_ref, uncommitted=uncommitted)
         for cf in classification.code_files
     }
     smap = _SymbolMapCache(versions)
@@ -1714,7 +1754,7 @@ def detect_drift(
                 continue
             if status == "applied":
                 old_dc, new_dc = _get_file_versions(
-                    root, df, base_ref=base_ref, head_ref=head_ref, uncommitted=uncommitted
+                    root, df, base_ref=resolved_base_ref, head_ref=head_ref, uncommitted=uncommitted
                 )
                 if old_dc is not None and new_dc is not None and old_dc != new_dc:
                     old_fm, _, _ = extract_frontmatter(old_dc)
@@ -1813,7 +1853,7 @@ def detect_drift(
         return design_subgraph_cache[cf]
 
     trivial_records: list[dict[str, Any]] = []
-    spec_inspector = _SpecDiffInspector(root, base_ref, head_ref, uncommitted)
+    spec_inspector = _SpecDiffInspector(root, resolved_base_ref, head_ref, uncommitted)
     if code_changed:
         for cf, cid, spath in comp_mappings:
             allowed_paths, allowed_ids = _collect_1hop_spec_targets(idx, cf, cid, spath)

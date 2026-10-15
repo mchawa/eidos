@@ -28,7 +28,7 @@ technical:
       - "eidos drift [--uncommitted]"
   invariants:
     - id: INV-DRIFT-DETECTION-ACCURACY
-      rule: "The drift detection engine must accurately identify structural code and design token/props modifications, verify static test bindings across domain, policy, and architecture component invariants, and enforce component-scoped 1-hop living specification synchronization without global system.adoc bypasses."
+      rule: "The drift detection engine must accurately identify structural code and design token/props modifications, filter linguist-generated/vendored files via single-pass batched check-attr queries, resolve base Git references in a single pass, verify static test bindings across domain, policy, and architecture component invariants, and enforce component-scoped 1-hop living specification synchronization without global system.adoc bypasses."
       test_binding: "tests/test_drift.py::test_drift_detection_code_without_specs"
     - id: INV-DRIFT-DIFF-AWARE-COVERAGE
       rule: "Structural code additions (new source files not paired as a move by content/symbols, or new public symbols) are only covered by 1-hop specification edits that change parsed YAML frontmatter or comment- and whitespace-normalized body content (preserving verbatim blocks); new files outside the owner's declared source_path/owned_path additionally require an owner-spec edit that changes ownership keys or mentions the file path, file name with extension, or a new symbol."

@@ -3,7 +3,7 @@ type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-052
 title: Fix Batched is_generated_or_vendored Invocation and Single-Pass Base Ref Resolution in Drift
-status: proposed
+status: applied
 intent:
   kind: bug
   bug_classification: spec_violation

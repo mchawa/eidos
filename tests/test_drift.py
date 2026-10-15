@@ -423,6 +423,70 @@ def test_classify_changed_files_custom_eidos_dir(tmp_path):
     assert str(code_file) in classified.code_files
 
 
+def test_is_generated_or_vendored_scalar_string_and_path_input(tmp_path):
+    """Verify is_generated_or_vendored accepts scalar str and Path inputs without splitting into characters."""
+    from eidos.core.workspace.project import is_generated_or_vendored
+
+    # If repo has no .git, returns empty set cleanly
+    assert is_generated_or_vendored(tmp_path, "src/some_file.py") == set()
+    assert is_generated_or_vendored(tmp_path, Path("src/some_file.py")) == set()
+
+
+def test_classify_changed_files_batches_is_generated_or_vendored(tmp_path, monkeypatch):
+    """Verify classify_changed_files batches is_generated_or_vendored into a single invocation."""
+    from eidos.vcs.drift import classify_changed_files
+
+    calls = []
+
+    def mock_is_generated_or_vendored(repo_root, rel_paths):
+        calls.append((repo_root, list(rel_paths)))
+        # Mark generated.py as vendored
+        return {p for p in rel_paths if "generated.py" in p}
+
+    monkeypatch.setattr("eidos.vcs.drift.is_generated_or_vendored", mock_is_generated_or_vendored)
+
+    files = [
+        "src/app.py",
+        "src/utils.py",
+        "src/generated.py",
+        "tests/test_app.py",
+        "eidos/system.adoc",
+    ]
+    classification = classify_changed_files(files, repo_root=tmp_path)
+
+    # Must be called exactly once with all candidate code paths batched together
+    assert len(calls) == 1
+    assert calls[0][0] == tmp_path.resolve()
+    assert set(calls[0][1]) == {"src/app.py", "src/utils.py", "src/generated.py"}
+
+    # Non-generated code files kept in code_files, generated file excluded
+    assert "src/app.py" in classification.code_files
+    assert "src/utils.py" in classification.code_files
+    assert "src/generated.py" not in classification.code_files
+    assert "src/generated.py" in classification.other_files
+
+
+def test_resolve_base_ref_single_pass(tmp_path, monkeypatch):
+    """Verify _resolve_base_ref resolves the candidate Git ref."""
+    from eidos.vcs.drift import _resolve_base_ref
+
+    # 1. Explicit base ref that verifies successfully
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda cmd, cwd=None, capture_output=False, check=False: type(
+            "SubprocessResult", (), {"returncode": 0 if cmd[-1] in ("origin/main", "feat/my-branch") else 1}
+        )(),
+    )
+
+    res = _resolve_base_ref(tmp_path, "feat/my-branch")
+    assert res == "feat/my-branch"
+
+    # 2. None supplied -> falls back to candidate list
+    res_default = _resolve_base_ref(tmp_path, None)
+    assert res_default == "origin/main"
+
+
+
 def test_design_system_drift_detection(monkeypatch):
     """Verify frontend code or styling modifications require eidos/design/ living spec updates."""
     # 1. Frontend CSS changed without eidos/design updates -> drift detected
