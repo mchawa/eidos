@@ -102,13 +102,13 @@ jobs:
         run: uv sync --all-extras --dev
 
       - name: Generate living architecture changelog
-        run: uv run eidos changelog
+        run: uv run eidos delta changelog
 
       - name: Build documentation site with Zensical
         run: uv run zensical build --strict
 
       - name: Build Living Architecture Portal into site/portal
-        run: uv run eidos build-site --path eidos --out site/portal
+        run: uv run eidos portal build --path eidos --out site/portal
 
       - name: Verify generated static assets
         run: |
@@ -168,7 +168,7 @@ jobs:
 
       - name: Generate release changelog & notes
         run: |
-          uv run eidos changelog
+          uv run eidos delta changelog
           python3 -c "
           import re, pathlib
           content = pathlib.Path('CHANGELOG.md').read_text()
