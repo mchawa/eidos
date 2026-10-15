@@ -29,6 +29,8 @@ export interface ArchitectureViewProps {
   data: PortalData;
   darkMode?: boolean;
   initialComponentId?: string;
+  initialComponentNonce?: number;
+  onClearSelectedComponent?: () => void;
 }
 
 const getTierStyle = (tierId?: string) => {
@@ -48,7 +50,13 @@ const getTierStyle = (tierId?: string) => {
   }
 };
 
-export function ArchitectureView({ data, darkMode = true, initialComponentId }: ArchitectureViewProps) {
+export function ArchitectureView({
+  data,
+  darkMode = true,
+  initialComponentId,
+  initialComponentNonce,
+  onClearSelectedComponent,
+}: ArchitectureViewProps) {
   const [level, setLevelState] = React.useState<1 | 2 | 3>(1);
   const [selectedContainerId, setSelectedContainerId] = React.useState<string>(
     data.components[0]?.id || "CNT-CORE"
@@ -67,7 +75,7 @@ export function ArchitectureView({ data, darkMode = true, initialComponentId }: 
         setInspectorOpen(true);
       }
     }
-  }, [initialComponentId, data.components]);
+  }, [initialComponentId, initialComponentNonce, data.components]);
 
   // Dynamic active tiers from components
   const activeTiers = React.useMemo(() => {
@@ -656,10 +664,56 @@ export function ArchitectureView({ data, darkMode = true, initialComponentId }: 
         </div>
       </div>
 
+      {/* Architectural Decisions (DEC-*) Section */}
+      {data.decisions && data.decisions.length > 0 && (
+        <div id="architectureDecisionsSection" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-amber-500" />
+              Architectural Decisions (`DEC-*`)
+            </h3>
+            <span className="text-xs font-mono text-muted-foreground">
+              {data.decisions.length} decisions
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {data.decisions.map((dec, idx) => (
+              <Card
+                key={`${dec.id}-${idx}`}
+                className="p-4 space-y-2 border-border/80 bg-card flex flex-col justify-between"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs font-bold text-amber-500">{dec.id}</span>
+                    {dec.source_id && (
+                      <Badge variant="outline" className="text-[10px] font-mono">
+                        {dec.source_id}
+                      </Badge>
+                    )}
+                  </div>
+                  <h4 className="text-xs font-bold text-foreground">{dec.title}</h4>
+                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">
+                    {dec.decision}
+                  </p>
+                </div>
+                {dec.rationale && (
+                  <p className="text-[11px] text-muted-foreground/80 italic pt-1 border-t border-border/50 line-clamp-2">
+                    Rationale: {dec.rationale}
+                  </p>
+                )}
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* C4 Inspector Sheet Drawer (id="c4InspectorDrawer") */}
       <Sheet
         open={inspectorOpen}
-        onOpenChange={setInspectorOpen}
+        onOpenChange={(open) => {
+          setInspectorOpen(open);
+          if (!open) onClearSelectedComponent?.();
+        }}
         title={inspectedComponent?.name || "Component Inspector"}
         subtitle={inspectedComponent?.id}
       >
@@ -695,23 +749,108 @@ export function ArchitectureView({ data, darkMode = true, initialComponentId }: 
                 <div className="space-y-2">
                   {(inspectedComponent.internal_components || []).map((sub, i) => (
                     <div
-                      key={i}
-                      className="p-3 rounded-xl border border-border/70 bg-muted/20 space-y-1 text-xs"
+                      key={sub.id || i}
+                      className="p-3 rounded-xl border border-border/70 bg-muted/20 space-y-2 text-xs"
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono font-bold text-primary">{sub.id}</span>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-bold text-primary">{sub.id}</span>
+                          {sub.is_promoted && (
+                            <Badge variant="outline" className="text-[9px] font-mono">
+                              Promoted L3
+                            </Badge>
+                          )}
+                        </div>
                         <span className="font-semibold text-foreground">{sub.name}</span>
                       </div>
                       <p className="text-muted-foreground">{sub.responsibility}</p>
                       {sub.source_path && (
                         <p className="font-mono text-[10px] text-muted-foreground/80">
-                          {sub.source_path}
+                          {Array.isArray(sub.source_path)
+                            ? sub.source_path.join(", ")
+                            : sub.source_path}
                         </p>
+                      )}
+                      {sub.invariants && sub.invariants.length > 0 && (
+                        <div className="pt-1.5 border-t border-border/50 space-y-1">
+                          <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                            <ShieldCheck className="h-3 w-3" />
+                            Component Invariants ({sub.invariants.length})
+                          </span>
+                          {sub.invariants.map((inv, idx) => (
+                            <div
+                              key={inv.id || idx}
+                              className="p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-[11px] space-y-0.5"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-mono font-bold text-emerald-400">
+                                  {inv.id}
+                                </span>
+                                {inv.test_binding && (
+                                  <span className="font-mono text-[10px] text-muted-foreground truncate">
+                                    {inv.test_binding}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-muted-foreground">{inv.rule}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {sub.decisions && sub.decisions.length > 0 && (
+                        <div className="pt-1.5 border-t border-border/50 space-y-1">
+                          <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider flex items-center gap-1">
+                            <Sparkles className="h-3 w-3" />
+                            Component Decisions ({sub.decisions.length})
+                          </span>
+                          {sub.decisions.map((dec, idx) => (
+                            <div
+                              key={dec.id || idx}
+                              className="p-2 rounded-lg bg-amber-500/5 border border-amber-500/20 text-[11px] space-y-0.5"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-mono font-bold text-amber-500">
+                                  {dec.id}
+                                </span>
+                                <span className="font-semibold text-foreground">{dec.title}</span>
+                              </div>
+                              <p className="text-muted-foreground">{dec.decision}</p>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
                   ))}
                 </div>
               </div>
+
+              {/* Container-Level Invariants */}
+              {inspectedComponent.invariants && inspectedComponent.invariants.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                    Container Invariants ({inspectedComponent.invariants.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {inspectedComponent.invariants.map((inv, idx) => (
+                      <div
+                        key={inv.id || idx}
+                        className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 text-xs space-y-1"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono font-bold text-emerald-400">{inv.id}</span>
+                          {inv.test_binding && (
+                            <span className="font-mono text-[10px] text-muted-foreground truncate">
+                              {inv.test_binding}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-muted-foreground leading-relaxed">{inv.rule}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Inter-Container Dependency Connections */}
               <div className="space-y-3">

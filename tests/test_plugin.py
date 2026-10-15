@@ -1494,7 +1494,7 @@ def test_plugin_uninstall_legacy_safe_cleanup_without_manifest(tmp_path):
 
     # Legacy eidos files (without .eidos-manifest.json)
     (codex_dir / "plugin.json").write_text(json.dumps({"name": "eidos", "version": "1.0.0"}), encoding="utf-8")
-    (codex_dir / "rules.md").write_text("# Old rules\n", encoding="utf-8")
+    (codex_dir / "rules.md").write_text("# Eidos Old rules\n", encoding="utf-8")
     legacy_skill = codex_dir / "skills" / "eidos" / "SKILL.md"
     legacy_skill.parent.mkdir(parents=True, exist_ok=True)
     legacy_skill.write_text("# Skill\n", encoding="utf-8")
@@ -1511,6 +1511,13 @@ def test_plugin_uninstall_legacy_safe_cleanup_without_manifest(tmp_path):
     assert not (codex_dir / "skills" / "eidos").exists()
     assert user_file.exists(), "User file must be preserved in legacy uninstall"
     assert codex_dir.exists(), "Parent dir must not be deleted if user files remain"
+
+    # Non-Eidos plugin.json and rules.md must also be preserved in legacy mode
+    (codex_dir / "plugin.json").write_text(json.dumps({"name": "custom-plugin", "version": "1.0.0"}), encoding="utf-8")
+    (codex_dir / "rules.md").write_text("# Custom User Rules\n", encoding="utf-8")
+    uninstall_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path)
+    assert (codex_dir / "plugin.json").exists()
+    assert (codex_dir / "rules.md").exists()
 
 
 def test_plugin_install_force_false_prevents_overwriting(tmp_path):
@@ -1554,8 +1561,51 @@ def test_plugin_install_force_false_prevents_overwriting(tmp_path):
     assert "Eidos Architectural Governance" in cli_rules.read_text(encoding="utf-8")
 
 
+def test_plugin_reinstall_force_false_preserves_manifest_and_uninstalls_cleanly(tmp_path):
+    """Verify install_plugin(..., force=False) on an already-installed target retains manifest entries so uninstall_plugin removes all Eidos files (DLT-2026-046)."""
+    install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=tmp_path, force=True)
+    plugin_dir = tmp_path / ".agents" / "plugins" / "eidos"
+    assert (plugin_dir / "plugin.json").exists()
+    assert (plugin_dir / "skills" / "eidos" / "SKILL.md").exists()
+
+    # Re-run install with force=False
+    install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=tmp_path, force=False)
+
+    # Subsequent uninstall must still remove all manifest-tracked Eidos files and directory
+    uninstall_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=tmp_path)
+    assert not plugin_dir.exists()
+
+
+def test_plugin_install_force_false_and_uninstall_preserves_preexisting_user_files(tmp_path):
+    """Verify pre-existing .codex/rules.md and user scripts/ are preserved across install(force=False) and uninstall() (DLT-2026-046)."""
+    codex_dir = tmp_path / ".codex"
+    codex_dir.mkdir(parents=True, exist_ok=True)
+    rules_file = codex_dir / "rules.md"
+    rules_file.write_text("# User Pre-existing Codex Rules\n", encoding="utf-8")
+
+    install_plugin(project_dir=tmp_path, target=PluginInstallTarget.CODEX, force=False)
+    assert rules_file.exists()
+    assert rules_file.read_text(encoding="utf-8") == "# User Pre-existing Codex Rules\n"
+    assert not (codex_dir / "hooks.json").exists(), "Codex target should not copy hooks.json"
+
+    uninstall_plugin(project_dir=tmp_path, target=PluginInstallTarget.CODEX)
+    assert rules_file.exists(), "Pre-existing user .codex/rules.md must still exist after uninstall!"
+    assert rules_file.read_text(encoding="utf-8") == "# User Pre-existing Codex Rules\n"
+    assert not (codex_dir / "plugin.json").exists()
+    assert not (codex_dir / "skills").exists()
+
+    # Also verify user scripts/ directory in custom dest is preserved when force=False
+    custom_dest = tmp_path / "custom_with_scripts"
+    user_script = custom_dest / "scripts" / "deploy.sh"
+    user_script.parent.mkdir(parents=True, exist_ok=True)
+    user_script.write_text("#!/bin/sh\necho deploy\n", encoding="utf-8")
+
+    install_plugin(dest_path=custom_dest, force=False)
+    assert user_script.exists(), "User scripts/ directory must not be deleted when force=False"
+
+
 def test_plugin_install_refuses_symlink_destination(tmp_path):
-    """Verify install_plugin refuses destination symlinks to prevent symlink traversal (DLT-2026-046)."""
+    """Verify install_plugin refuses destination symlinks and parent symlinks to prevent symlink traversal (DLT-2026-046)."""
     # 1. Symlinked destination directory
     real_target_dir = tmp_path / "real_target"
     real_target_dir.mkdir()
@@ -1582,14 +1632,28 @@ def test_plugin_install_refuses_symlink_destination(tmp_path):
     # Verify secret_file was not overwritten
     assert secret_file.read_text(encoding="utf-8") == "original secret content\n"
 
+    # 3. Symlinked intermediate parent directory (.agents -> outside dir)
+    parent_sym_project = tmp_path / "symlink_parent_project"
+    parent_sym_project.mkdir()
+    outside_dir = tmp_path / "outside_dir"
+    outside_dir.mkdir()
+    (parent_sym_project / ".agents").symlink_to(outside_dir)
+
+    with pytest.raises(FileExistsError, match="symlink"):
+        install_plugin(target=PluginInstallTarget.ANTIGRAVITY, project_dir=parent_sym_project, force=True)
+
+    res_cli = runner.invoke(app, ["plugin", "install", "-t", "antigravity", "-p", str(parent_sym_project)])
+    assert res_cli.exit_code == 1
+    assert "✗ Error:" in res_cli.stdout
+
 
 def test_plugin_uvx_hook_command_version_pinning(tmp_path):
-    """Verify uvx hook command rewriting pins eidos-ai package version (DLT-2026-046)."""
+    """Verify uvx hook command rewriting pins eidos-ai package version and upgrades older pinned versions (DLT-2026-046)."""
     from eidos.plugin.installer import _rewrite_hook_command_for_target_root
 
     bundled_ver = get_bundled_plugin_version()
 
-    # 1. Direct function rewrite
+    # 1. Direct function rewrite (bare, unpinned uvx, and older pinned uvx)
     hooks_file = tmp_path / "hooks.json"
     hooks_file.write_text(
         json.dumps(
@@ -1598,9 +1662,12 @@ def test_plugin_uvx_hook_command_version_pinning(tmp_path):
                     "PreToolUse": [
                         {"command": "eidos hook lint --event PreToolUse"}
                     ],
+                    "PostToolUse": [
+                        {"command": "uvx --from eidos-ai eidos hook lint --event PostToolUse"}
+                    ],
                     "Stop": [
-                        {"command": "uvx --from eidos-ai eidos hook drift --event Stop"}
-                    ]
+                        {"command": "uvx --from eidos-ai==0.1.0 eidos hook drift"}
+                    ],
                 }
             },
             indent=2,
@@ -1612,7 +1679,9 @@ def test_plugin_uvx_hook_command_version_pinning(tmp_path):
     assert success
     rewritten = hooks_file.read_text(encoding="utf-8")
     assert f'"command": "uvx --from eidos-ai=={bundled_ver} eidos hook lint --event PreToolUse"' in rewritten
-    assert f'"command": "uvx --from eidos-ai=={bundled_ver} eidos hook drift --event Stop"' in rewritten
+    assert f'"command": "uvx --from eidos-ai=={bundled_ver} eidos hook lint --event PostToolUse"' in rewritten
+    assert f'"command": "uvx --from eidos-ai=={bundled_ver} eidos hook drift"' in rewritten
+    assert "eidos-ai==0.1.0" not in rewritten
 
     # 2. End-to-end install with launcher="uvx"
     dest = tmp_path / "installed_uvx"
@@ -1622,7 +1691,3 @@ def test_plugin_uvx_hook_command_version_pinning(tmp_path):
         installed_text = installed_hooks.read_text(encoding="utf-8")
         assert f"uvx --from eidos-ai=={bundled_ver} eidos hook" in installed_text
         assert "uvx --from eidos-ai eidos hook" not in installed_text
-
-
-
-

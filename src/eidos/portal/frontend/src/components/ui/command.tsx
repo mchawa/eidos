@@ -1,13 +1,32 @@
 import * as React from "react";
-import { Search, FileText, Box, ShieldCheck, GitCommitHorizontal, X } from "lucide-react";
+import {
+  Search,
+  FileText,
+  Box,
+  ShieldCheck,
+  GitCommitHorizontal,
+  Briefcase,
+  Layers,
+  UserCheck,
+  Lightbulb,
+  Lock,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { SpecItem, SpecComponent, SpecInvariant, SpecDelta } from "@/types";
 
 export interface CommandItem {
   id: string;
   title: string;
   subtitle?: string;
-  category: "components" | "invariants" | "deltas" | "specs";
+  category:
+    | "components"
+    | "invariants"
+    | "deltas"
+    | "specs"
+    | "policies"
+    | "domains"
+    | "capabilities"
+    | "personas"
+    | "explorations";
   raw: any;
 }
 
@@ -87,7 +106,7 @@ export function CommandDialog({
 
   if (!open) return null;
 
-  const getIcon = (category: string) => {
+  const getIcon = (category: CommandItem["category"] | string) => {
     switch (category) {
       case "components":
         return <Box className="h-4 w-4 text-blue-400" />;
@@ -95,6 +114,16 @@ export function CommandDialog({
         return <ShieldCheck className="h-4 w-4 text-emerald-400" />;
       case "deltas":
         return <GitCommitHorizontal className="h-4 w-4 text-purple-400" />;
+      case "policies":
+        return <Lock className="h-4 w-4 text-sky-400" />;
+      case "domains":
+        return <Briefcase className="h-4 w-4 text-indigo-400" />;
+      case "capabilities":
+        return <Layers className="h-4 w-4 text-teal-400" />;
+      case "personas":
+        return <UserCheck className="h-4 w-4 text-pink-400" />;
+      case "explorations":
+        return <Lightbulb className="h-4 w-4 text-amber-400" />;
       default:
         return <FileText className="h-4 w-4 text-muted-foreground" />;
     }

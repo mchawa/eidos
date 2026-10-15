@@ -24,6 +24,36 @@ import type { PortalData, SpecDelta, SpecMutation } from "@/types";
 export interface DeltasViewProps {
   data: PortalData;
   initialDeltaId?: string;
+  initialDeltaNonce?: number;
+  onClearSelectedDelta?: () => void;
+}
+
+const AFFECTS_CATEGORY_LABELS: Record<string, string> = {
+  containers: "Containers",
+  components: "Components",
+  capabilities: "Capabilities",
+  contracts: "Contracts",
+  domains: "Domains",
+  policies: "Policies",
+  personas: "Personas",
+  design_systems: "Design Systems",
+  screens: "Screens",
+  ui_components: "UI Components",
+  clients: "Clients",
+  flows: "Flows",
+};
+
+export function formatAffectsCategory(category: string): string {
+  if (AFFECTS_CATEGORY_LABELS[category]) {
+    return AFFECTS_CATEGORY_LABELS[category];
+  }
+  if (category.endsWith("ies")) {
+    return `${category.slice(0, -3)}y`;
+  }
+  if (category.endsWith("s")) {
+    return category.slice(0, -1);
+  }
+  return category;
 }
 
 export function getMutationTarget(m?: SpecMutation | null): string {
@@ -101,7 +131,12 @@ const STANDARD_COLUMNS: ColumnConfig[] = [
   },
 ];
 
-export function DeltasView({ data, initialDeltaId }: DeltasViewProps) {
+export function DeltasView({
+  data,
+  initialDeltaId,
+  initialDeltaNonce,
+  onClearSelectedDelta,
+}: DeltasViewProps) {
   const [selectedDelta, setSelectedDelta] = React.useState<SpecDelta | null>(null);
   const [filterText, setFilterText] = React.useState<string>("");
   const [selectedStatusFilter, setSelectedStatusFilter] = React.useState<string>("all");
@@ -118,7 +153,7 @@ export function DeltasView({ data, initialDeltaId }: DeltasViewProps) {
         }
       }
     }
-  }, [initialDeltaId, data.deltas]);
+  }, [initialDeltaId, initialDeltaNonce, data.deltas]);
 
   // Dynamically resolve all columns: standard 5 + any custom status in data.deltas
   const columns: ColumnConfig[] = React.useMemo(() => {
@@ -356,7 +391,12 @@ export function DeltasView({ data, initialDeltaId }: DeltasViewProps) {
       {/* Delta Detail Sheet (Centered Modal with AsciiDocRenderer) */}
       <Sheet
         open={Boolean(selectedDelta)}
-        onOpenChange={(open) => !open && setSelectedDelta(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedDelta(null);
+            onClearSelectedDelta?.();
+          }
+        }}
         title={selectedDelta?.title || "SpecDelta Details"}
         subtitle={selectedDelta?.id}
         maxWidth="6xl"
@@ -478,7 +518,7 @@ export function DeltasView({ data, initialDeltaId }: DeltasViewProps) {
                           Array.isArray(items) && items.length > 0 ? (
                             items.map((item, idx) => (
                               <Badge key={`${category}-${idx}`} variant="outline" className="font-mono text-[10px]">
-                                <span className="text-muted-foreground mr-1 capitalize">{category.slice(0, -1)}:</span>
+                                <span className="text-muted-foreground mr-1 capitalize">{formatAffectsCategory(category)}:</span>
                                 <span className="font-semibold text-foreground">{item}</span>
                               </Badge>
                             ))
@@ -489,101 +529,125 @@ export function DeltasView({ data, initialDeltaId }: DeltasViewProps) {
                   )}
 
                   {/* Calculated Blast Radius */}
-                  {selectedDelta.blast_radius && (
-                    <div className="space-y-2.5 pt-2 border-t border-border/40">
-                      {selectedDelta.blast_radius.impact_level && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground">Impact Level:</span>
-                          <Badge variant="outline" className="font-mono text-[10px] uppercase font-bold text-amber-400">
-                            {selectedDelta.blast_radius.impact_level}
-                          </Badge>
-                        </div>
-                      )}
-
-                      {selectedDelta.blast_radius.impacted_containers && selectedDelta.blast_radius.impacted_containers.length > 0 && (
-                        <div>
-                          <span className="text-muted-foreground">Impacted Containers: </span>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {selectedDelta.blast_radius.impacted_containers.map((c: string, idx: number) => (
-                              <span key={idx} className="font-mono text-[10px] px-2 py-0.5 rounded bg-muted text-primary border border-border/50">
-                                {c}
-                              </span>
-                            ))}
+                  {selectedDelta.blast_radius &&
+                    Boolean(
+                      selectedDelta.blast_radius.impact_level ||
+                        selectedDelta.blast_radius.impacted_containers?.length ||
+                        selectedDelta.blast_radius.impacted_components?.length ||
+                        selectedDelta.blast_radius.invariants_to_enforce?.length ||
+                        selectedDelta.blast_radius.impacted_design_systems?.length ||
+                        selectedDelta.blast_radius.impacted_screens?.length ||
+                        selectedDelta.blast_radius.impacted_personas?.length ||
+                        selectedDelta.blast_radius.domains?.length ||
+                        selectedDelta.blast_radius.components?.length
+                    ) && (
+                      <div className="space-y-2.5 pt-2 border-t border-border/40">
+                        {selectedDelta.blast_radius.impact_level && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground">Impact Level:</span>
+                            <Badge variant="outline" className="font-mono text-[10px] uppercase font-bold text-amber-400">
+                              {selectedDelta.blast_radius.impact_level}
+                            </Badge>
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {selectedDelta.blast_radius.impacted_components && selectedDelta.blast_radius.impacted_components.length > 0 && (
-                        <div>
-                          <span className="text-muted-foreground">Impacted Components: </span>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {selectedDelta.blast_radius.impacted_components.map((c: string, idx: number) => (
-                              <span key={idx} className="font-mono text-[10px] px-2 py-0.5 rounded bg-muted text-foreground border border-border/50">
-                                {c}
-                              </span>
-                            ))}
+                        {selectedDelta.blast_radius.impacted_containers && selectedDelta.blast_radius.impacted_containers.length > 0 && (
+                          <div>
+                            <span className="text-muted-foreground">Impacted Containers: </span>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {selectedDelta.blast_radius.impacted_containers.map((c: string, idx: number) => (
+                                <span key={idx} className="font-mono text-[10px] px-2 py-0.5 rounded bg-muted text-primary border border-border/50">
+                                  {c}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {selectedDelta.blast_radius.invariants_to_enforce && selectedDelta.blast_radius.invariants_to_enforce.length > 0 && (
-                        <div>
-                          <span className="text-muted-foreground">Invariants to Enforce: </span>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {selectedDelta.blast_radius.invariants_to_enforce.map((inv: string, idx: number) => (
-                              <span key={idx} className="font-mono text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
-                                {inv}
-                              </span>
-                            ))}
+                        {selectedDelta.blast_radius.impacted_components && selectedDelta.blast_radius.impacted_components.length > 0 && (
+                          <div>
+                            <span className="text-muted-foreground">Impacted Components: </span>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {selectedDelta.blast_radius.impacted_components.map((c: string, idx: number) => (
+                                <span key={idx} className="font-mono text-[10px] px-2 py-0.5 rounded bg-muted text-foreground border border-border/50">
+                                  {c}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {selectedDelta.blast_radius.impacted_screens && selectedDelta.blast_radius.impacted_screens.length > 0 && (
-                        <div>
-                          <span className="text-muted-foreground">Impacted Screens: </span>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {selectedDelta.blast_radius.impacted_screens.map((scr: string, idx: number) => (
-                              <span key={idx} className="font-mono text-[10px] px-2 py-0.5 rounded bg-pink-500/10 text-pink-400 border border-pink-500/20">
-                                {scr}
-                              </span>
-                            ))}
+                        {selectedDelta.blast_radius.invariants_to_enforce && selectedDelta.blast_radius.invariants_to_enforce.length > 0 && (
+                          <div>
+                            <span className="text-muted-foreground">Invariants to Enforce: </span>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {selectedDelta.blast_radius.invariants_to_enforce.map((inv: string, idx: number) => (
+                                <span key={idx} className="font-mono text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+                                  {inv}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {selectedDelta.blast_radius.impacted_personas && selectedDelta.blast_radius.impacted_personas.length > 0 && (
-                        <div>
-                          <span className="text-muted-foreground">Impacted Personas: </span>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {selectedDelta.blast_radius.impacted_personas.map((p: string, idx: number) => (
-                              <span key={idx} className="font-mono text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border/50">
-                                {p}
-                              </span>
-                            ))}
+                        {selectedDelta.blast_radius.impacted_design_systems && selectedDelta.blast_radius.impacted_design_systems.length > 0 && (
+                          <div>
+                            <span className="text-muted-foreground">Impacted Design Systems: </span>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {selectedDelta.blast_radius.impacted_design_systems.map((ds: string, idx: number) => (
+                                <span key={idx} className="font-mono text-[10px] px-2 py-0.5 rounded bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                                  {ds}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {/* Fallback legacy blast_radius properties */}
-                      {selectedDelta.blast_radius.domains && selectedDelta.blast_radius.domains.length > 0 && (
-                        <div className="text-xs">
-                          <span className="text-muted-foreground">Affected Domains: </span>
-                          <span className="font-mono font-semibold text-foreground">
-                            {selectedDelta.blast_radius.domains.join(", ")}
-                          </span>
-                        </div>
-                      )}
-                      {selectedDelta.blast_radius.components && selectedDelta.blast_radius.components.length > 0 && !selectedDelta.blast_radius.impacted_components && (
-                        <div className="text-xs">
-                          <span className="text-muted-foreground">Affected Components: </span>
-                          <span className="font-mono font-semibold text-foreground">
-                            {selectedDelta.blast_radius.components.join(", ")}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                        {selectedDelta.blast_radius.impacted_screens && selectedDelta.blast_radius.impacted_screens.length > 0 && (
+                          <div>
+                            <span className="text-muted-foreground">Impacted Screens: </span>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {selectedDelta.blast_radius.impacted_screens.map((scr: string, idx: number) => (
+                                <span key={idx} className="font-mono text-[10px] px-2 py-0.5 rounded bg-pink-500/10 text-pink-400 border border-pink-500/20">
+                                  {scr}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {selectedDelta.blast_radius.impacted_personas && selectedDelta.blast_radius.impacted_personas.length > 0 && (
+                          <div>
+                            <span className="text-muted-foreground">Impacted Personas: </span>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {selectedDelta.blast_radius.impacted_personas.map((p: string, idx: number) => (
+                                <span key={idx} className="font-mono text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border/50">
+                                  {p}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Fallback legacy blast_radius properties */}
+                        {selectedDelta.blast_radius.domains && selectedDelta.blast_radius.domains.length > 0 && (
+                          <div className="text-xs">
+                            <span className="text-muted-foreground">Affected Domains: </span>
+                            <span className="font-mono font-semibold text-foreground">
+                              {selectedDelta.blast_radius.domains.join(", ")}
+                            </span>
+                          </div>
+                        )}
+                        {selectedDelta.blast_radius.components && selectedDelta.blast_radius.components.length > 0 && !selectedDelta.blast_radius.impacted_components && (
+                          <div className="text-xs">
+                            <span className="text-muted-foreground">Affected Components: </span>
+                            <span className="font-mono font-semibold text-foreground">
+                              {selectedDelta.blast_radius.components.join(", ")}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                 </div>
               </div>
             )}

@@ -37,12 +37,152 @@ ENTITY_ID_PREFIXES = (
 )
 
 
+_ID_PATTERN_PREFIX_RE = re.compile(r"^\^?([A-Z][A-Z0-9]*-)")
+_DYNAMIC_ENTITY_ID_PREFIXES: set[str] = set(ENTITY_ID_PREFIXES)
+
+_SPEC_SUBDIRS = frozenset(
+    {
+        "architecture",
+        "domains",
+        "product",
+        "policies",
+        "personas",
+        "deltas",
+        "explorations",
+        "design",
+    }
+)
+_REPO_MARKERS = (".git", "pyproject.toml", "package.json", "Cargo.toml", "go.mod")
+
+
+def _extract_prefixes_from_schema(schema: dict[str, Any]) -> set[str]:
+    """Extract entity ID prefixes from a schema's top-level id.pattern and all x-eidos-ref annotations."""
+    found: set[str] = set()
+    if not isinstance(schema, dict):
+        return found
+    props = schema.get("properties")
+    if isinstance(props, dict) and isinstance(props.get("id"), dict):
+        pat = props["id"].get("pattern")
+        if isinstance(pat, str):
+            m = _ID_PATTERN_PREFIX_RE.match(pat.strip())
+            if m:
+                found.add(m.group(1).upper())
+
+    def _walk(node: Any) -> None:
+        if isinstance(node, dict):
+            ref_meta = node.get("x-eidos-ref")
+            if isinstance(ref_meta, dict):
+                for p in ref_meta.get("prefixes") or ():
+                    if isinstance(p, str) and p.strip():
+                        found.add(p.strip().upper())
+            for v in node.values():
+                _walk(v)
+        elif isinstance(node, list):
+            for item in node:
+                _walk(item)
+
+    _walk(schema)
+    return found
+
+
+def _resolve_spec_and_repo_roots(
+    root_dir: Path | None, doc_path: Path | None = None
+) -> tuple[Path, Path]:
+    """Resolve (spec_root, repo_root) for standard ('eidos/', '.spec/'), custom ('specs/'), or subdirectory paths."""
+    base = (
+        root_dir
+        if root_dir is not None
+        else (doc_path.parent if doc_path is not None else Path.cwd())
+    ).resolve()
+
+    # 1. If base itself is a repo root containing a standard child spec directory ('eidos', '.spec', 'specs')
+    for child_name in ("eidos", ".spec", "specs"):
+        child = base / child_name
+        if child.is_dir() and (
+            child_name in ("eidos", ".spec")
+            or (child / "system.adoc").is_file()
+            or any((child / s).is_dir() for s in _SPEC_SUBDIRS)
+        ):
+            return child.resolve(), base
+
+    def _is_spec_root(cand: Path) -> bool:
+        if (cand / "eidos").is_dir() or (cand / ".spec").is_dir():
+            return False
+        if cand.name in ("eidos", ".spec"):
+            return True
+        if (cand / "system.adoc").is_file():
+            return True
+        if (cand / "architecture").is_dir():
+            arch = cand / "architecture"
+            if (
+                any((arch / sub).is_dir() for sub in ("containers", "components", "contracts"))
+                or any(arch.glob("*.adoc"))
+                or any((cand / sub).is_dir() for sub in _SPEC_SUBDIRS - {"architecture"})
+            ):
+                return True
+        return bool(cand.name in ("specs", "spec") and any((cand / sub).is_dir() for sub in _SPEC_SUBDIRS))
+
+    def _repo_root_for_spec_root(spec_cand: Path) -> Path:
+        if spec_cand.name in ("eidos", ".spec", "specs", "spec"):
+            return spec_cand.parent
+        if (spec_cand / "src").is_dir() or any((spec_cand / m).exists() for m in _REPO_MARKERS):
+            return spec_cand
+        if spec_cand.parent.name.startswith("pytest-"):
+            return spec_cand
+        return spec_cand.parent
+
+    # 2. Walk (base, *base.parents) (and doc_path parents if provided) to find spec_root
+    search_roots = [base]
+    if doc_path is not None:
+        res_doc_parent = doc_path.resolve().parent
+        if res_doc_parent != base:
+            search_roots.append(res_doc_parent)
+
+    for start in search_roots:
+        for depth, cand in enumerate((start, *start.parents)):
+            if depth > 5:
+                break
+            if cand != start:
+                try:
+                    rel_first = start.relative_to(cand).parts[0]
+                except ValueError:
+                    break
+                if rel_first in _SPEC_SUBDIRS and _is_spec_root(cand):
+                    return cand, _repo_root_for_spec_root(cand)
+            elif _is_spec_root(cand):
+                return cand, _repo_root_for_spec_root(cand)
+            if any((cand / m).exists() for m in _REPO_MARKERS):
+                break
+
+    # 3. Check if an immediate or ancestor directory is a repo root with markers
+    for depth, cand in enumerate((base.parent, *base.parents)):
+        if depth > 5:
+            break
+        if any((cand / m).exists() for m in _REPO_MARKERS):
+            try:
+                rel_parts = base.relative_to(cand).parts
+            except ValueError:
+                break
+            if rel_parts and rel_parts[0] not in ("src", "tests", "services", "packages"):
+                spec_root = (cand / rel_parts[0]).resolve()
+                return spec_root, cand
+            break
+
+    # 4. Fallback
+    if base.name in ("eidos", ".spec", "specs", "spec"):
+        return base, base.parent
+    if (base.parent / "src").is_dir() or (base.parent / ".git").exists():
+        return base, base.parent
+    return base, base
+
+
 def is_entity_id(val: Any) -> bool:
     """Return True if val looks like a standardized Eidos entity ID."""
     if not isinstance(val, str):
         return False
     val_clean = val.strip().upper()
-    return any(val_clean.startswith(prefix) for prefix in ENTITY_ID_PREFIXES)
+    return any(val_clean.startswith(prefix) for prefix in _DYNAMIC_ENTITY_ID_PREFIXES)
+
 
 TYPE_TO_SCHEMA_NAME = {
     "product/system": "product/system.schema.yaml",
@@ -71,6 +211,7 @@ class SpecValidator:
         self._schema_cache: dict[str, dict] = {}
         self._schema_hash: str = ""
         self.schema_hash: str = ""
+        self.entity_id_prefixes: tuple[str, ...] = ENTITY_ID_PREFIXES
         self._load_bundled_schemas()
 
     def _compute_schema_hash(self) -> str:
@@ -95,20 +236,30 @@ class SpecValidator:
                 if isinstance(defs_doc, dict) and isinstance(defs_doc.get("$defs"), dict):
                     shared_defs = defs_doc["$defs"]
 
+            extracted_prefixes: set[str] = set(ENTITY_ID_PREFIXES)
+            for defs_item in shared_defs.values():
+                if isinstance(defs_item, dict):
+                    extracted_prefixes.update(_extract_prefixes_from_schema(defs_item))
+
             for ext in ("*.schema.yaml", "*.schema.json"):
                 for p in schema_dir.rglob(ext):
                     content = p.read_text(encoding="utf-8")
                     data = yaml.safe_load(content)
-                    if isinstance(data, dict) and shared_defs and '"#/$defs/' in json.dumps(data):
-                        merged_defs = dict(shared_defs)
-                        if isinstance(data.get("$defs"), dict):
-                            merged_defs.update(data["$defs"])
-                        data["$defs"] = merged_defs
+                    if isinstance(data, dict):
+                        if shared_defs and '"#/$defs/' in json.dumps(data):
+                            merged_defs = dict(shared_defs)
+                            if isinstance(data.get("$defs"), dict):
+                                merged_defs.update(data["$defs"])
+                            data["$defs"] = merged_defs
+                        extracted_prefixes.update(_extract_prefixes_from_schema(data))
                     rel_path = str(p.relative_to(schema_dir))
                     self._schema_cache[p.name] = data
                     self._schema_cache[rel_path] = data
                     self._schema_cache[f"schemas/v1/{rel_path}"] = data
                     self._schema_cache[f"schemas/v1/{p.name}"] = data
+
+            _DYNAMIC_ENTITY_ID_PREFIXES.update(extracted_prefixes)
+            self.entity_id_prefixes = tuple(sorted(extracted_prefixes))
             self._schema_hash = self._compute_schema_hash()
             self.schema_hash = self._schema_hash
         except (OSError, yaml.YAMLError) as exc:
@@ -164,20 +315,9 @@ class SpecValidator:
         self.schema_hash = effective_schema_hash
 
         resolved_root = root_dir.resolve()
-        repo_root = root_dir.parent if root_dir.name in ["eidos", ".spec"] else root_dir
-        ancestor_eidos = next(
-            (p for p in (resolved_root, *resolved_root.parents) if p.name in ("eidos", ".spec")),
-            None,
-        )
-        if ancestor_eidos is not None:
-            eidos_cache_root = ancestor_eidos
-            resolved_repo_root = ancestor_eidos.parent
-        elif (resolved_root / "eidos").is_dir():
-            eidos_cache_root = (resolved_root / "eidos").resolve()
-            resolved_repo_root = resolved_root
-        else:
-            eidos_cache_root = resolved_root
-            resolved_repo_root = resolved_root
+        spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir)
+        eidos_cache_root = spec_root
+        resolved_repo_root = repo_root
         db_path = eidos_cache_root / ".cache" / "index.db"
 
         cached_rows: dict[str, sqlite3.Row] = {}
@@ -207,7 +347,7 @@ class SpecValidator:
 
         def _rel_key(fp: Path) -> str:
             res_fp = fp.resolve()
-            for base in (resolved_repo_root, resolved_root):
+            for base in (resolved_repo_root, spec_root, resolved_root):
                 try:
                     return str(res_fp.relative_to(base)).replace("\\", "/")
                 except ValueError:
@@ -215,11 +355,18 @@ class SpecValidator:
             return str(res_fp).replace("\\", "/")
 
         def _load_or_validate(fp: Path) -> SpecDocument | None:
+            try:
+                rel_fp_parts = fp.resolve().relative_to(spec_root).parts
+            except ValueError:
+                try:
+                    rel_fp_parts = fp.resolve().relative_to(resolved_repo_root).parts
+                except ValueError:
+                    rel_fp_parts = (fp.name,)
             # Skip README, partial include files, symlinks, generated by-status views, and empty files
             if (
                 fp.name.lower() == "readme.adoc"
                 or fp.name.startswith("_")
-                or "by-status" in fp.parts
+                or "by-status" in rel_fp_parts
                 or fp.is_symlink()
             ):
                 return None
@@ -330,9 +477,11 @@ class SpecValidator:
                         ref_str = comp["ref"]
                         ref_file = (repo_root / ref_str).resolve()
                         if not ref_file.exists():
+                            ref_file = (spec_root / ref_str).resolve()
+                        if not ref_file.exists():
                             ref_file = (root_dir / ref_str).resolve()
                         if not ref_file.exists():
-                            ref_file = (root_dir / "architecture" / "components" / Path(ref_str).name).resolve()
+                            ref_file = (spec_root / "architecture" / "components" / Path(ref_str).name).resolve()
                         if not ref_file.exists():
                             report.broken_references.append(
                                 f"Broken component ref in {doc.file_path.name}: cannot locate '{ref_str}'"
@@ -556,7 +705,11 @@ class SpecValidator:
         target_types = tuple(str(t) for t in (ref_meta.get("target_types") or ()))
         allow_non_id = bool(ref_meta.get("allow_non_id_string", False))
         val_upper = val.upper()
-        matches_id = is_entity_id(val) or (bool(prefixes) and val_upper.startswith(prefixes))
+        matches_id = (
+            is_entity_id(val)
+            or val_upper.startswith(self.entity_id_prefixes)
+            or (bool(prefixes) and val_upper.startswith(prefixes))
+        )
 
         if allow_non_id and not matches_id:
             return
@@ -622,27 +775,24 @@ class SpecValidator:
                 doc.errors.append(err_msg)
                 report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
         elif dtype == "tech/component":
-            if root_dir is not None:
-                root_res = root_dir.resolve()
-                repo_root = root_res.parent if root_res.name in ["eidos", ".spec"] else root_res
-            else:
-                ancestor_eidos = next(
-                    (p for p in doc.file_path.resolve().parents if p.name in ("eidos", ".spec")),
-                    None,
-                )
-                repo_root = ancestor_eidos.parent if ancestor_eidos is not None else Path.cwd().resolve()
+            spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir, doc.file_path)
+            res_doc = doc.file_path.resolve()
+            try:
+                rel_to_spec = res_doc.relative_to(spec_root.resolve()).parts
+            except ValueError:
+                rel_to_spec = ()
 
             try:
-                rel_parts = doc.file_path.resolve().relative_to(repo_root.resolve()).parts
+                rel_to_repo = res_doc.relative_to(repo_root.resolve()).parts
             except ValueError:
-                rel_parts = doc.file_path.parts
+                rel_to_repo = rel_to_spec
 
             is_centralized = (
-                "architecture" in rel_parts
-                and "components" in rel_parts
-                and any(p in ["eidos", ".spec"] for p in rel_parts)
+                len(rel_to_spec) >= 2
+                and rel_to_spec[0] == "architecture"
+                and rel_to_spec[1] == "components"
             )
-            if not is_centralized or "src" in rel_parts:
+            if not is_centralized or "src" in rel_to_repo:
                 err_msg = (
                     f"INV-COMPONENT-CENTRALIZATION-MANDATE violation: Component manifest '{doc.doc_id}' must reside "
                     f"centrally in 'eidos/architecture/components/'. Eidos specifications must never be placed inside source code directories."
@@ -667,10 +817,17 @@ class SpecValidator:
             for item in val:
                 self._check_dict_references(item, source_file, root_dir, report)
         elif isinstance(val, str) and val.endswith(".adoc"):
-            # Resolve relative to repo root or doc folder
-            ref_path_from_root = root_dir.parent / val if root_dir.name in ["eidos", ".spec"] else root_dir / val
+            spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir, source_file)
+            ref_path_from_repo = repo_root / val
+            ref_path_from_spec = spec_root / val
+            ref_path_from_root = root_dir / val
             ref_path_from_doc = source_file.parent / val
-            if not (ref_path_from_root.exists() or ref_path_from_doc.exists()):
+            if not (
+                ref_path_from_repo.exists()
+                or ref_path_from_spec.exists()
+                or ref_path_from_root.exists()
+                or ref_path_from_doc.exists()
+            ):
                 report.broken_references.append(f"Broken reference in {source_file.name}: cannot locate '{val}'")
 
     def _resolve_source_path(self, repo_root: Path, root_dir: Path, raw_path: str) -> Path | None:
@@ -689,7 +846,7 @@ class SpecValidator:
 
     def _validate_source_and_contract_paths(self, report: ValidationReport, root_dir: Path) -> None:
         """Verify container package_path, contract specification_file, and CLI contract command parity when source tree exists."""
-        repo_root = root_dir.parent if root_dir.name in ("eidos", ".spec") else root_dir
+        spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir)
 
         candidate_paths: list[str] = []
         for doc in report.documents:
@@ -705,9 +862,9 @@ class SpecValidator:
                 if isinstance(sf, str) and sf.strip() and not sf.strip().endswith(".adoc"):
                     candidate_paths.append(sf.strip())
 
-        has_source_tree = (repo_root != root_dir and (repo_root / "src").exists()) or any(
-            self._resolve_source_path(repo_root, root_dir, p) is not None for p in candidate_paths
-        )
+        has_source_tree = (
+            (repo_root != spec_root or repo_root != root_dir.resolve()) and (repo_root / "src").exists()
+        ) or any(self._resolve_source_path(repo_root, root_dir, p) is not None for p in candidate_paths)
         if not has_source_tree:
             return
 
@@ -754,16 +911,69 @@ class SpecValidator:
         except (OSError, SyntaxError):
             return
 
-        # Scoped parity: only verify Typer CLI parity if the target source imports Typer
+        # Scoped parity: only verify Typer CLI parity if the target source imports Typer and instantiates a Typer app
         if "typer" not in source.lower():
             return
-        has_typer = any(
-            (isinstance(node, ast.Import) and any(alias.name == "typer" for alias in node.names))
-            or (isinstance(node, ast.ImportFrom) and node.module == "typer")
-            for node in ast.walk(tree)
-        )
-        if not has_typer:
+        typer_module_aliases: set[str] = set()
+        typer_class_aliases: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "typer" or alias.name.startswith("typer."):
+                        typer_module_aliases.add(alias.asname or alias.name.split(".")[0])
+            elif (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and (node.module == "typer" or node.module.startswith("typer."))
+            ):
+                for alias in node.names:
+                    if alias.name == "Typer":
+                        typer_class_aliases.add(alias.asname or alias.name)
+                    elif alias.name == "typer":
+                        typer_module_aliases.add(alias.asname or alias.name)
+        if not typer_module_aliases and not typer_class_aliases:
             return
+
+        def _is_typer_ctor(call_node: ast.AST | None) -> bool:
+            if not isinstance(call_node, ast.Call):
+                return False
+            func = call_node.func
+            if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+                return func.value.id in typer_module_aliases and func.attr == "Typer"
+            if isinstance(func, ast.Name):
+                return func.id in typer_class_aliases
+            return False
+
+        typer_app_vars: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and _is_typer_ctor(node.value):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        typer_app_vars.add(target.id)
+            elif (
+                isinstance(node, ast.AnnAssign)
+                and _is_typer_ctor(node.value)
+                and isinstance(node.target, ast.Name)
+            ):
+                typer_app_vars.add(node.target.id)
+
+        if not typer_app_vars:
+            return
+
+        mounted_sub_apps: set[str] = set()
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id in typer_app_vars
+                and node.func.attr == "add_typer"
+                and node.args
+                and isinstance(node.args[0], ast.Name)
+            ):
+                mounted_sub_apps.add(node.args[0].id)
+
+        root_app_vars = typer_app_vars - mounted_sub_apps or typer_app_vars
 
         commands: set[str] = set()
         for node in ast.walk(tree):
@@ -771,19 +981,35 @@ class SpecValidator:
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Attribute)
                 and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "app"
+                and node.func.value.id in root_app_vars
                 and node.func.attr == "add_typer"
             ):
-                for kw in node.keywords:
-                    if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
-                        commands.add(kw.value.value)
+                sub_name = next(
+                    (
+                        kw.value.value
+                        for kw in node.keywords
+                        if kw.arg == "name"
+                        and isinstance(kw.value, ast.Constant)
+                        and isinstance(kw.value.value, str)
+                    ),
+                    None,
+                )
+                if (
+                    not sub_name
+                    and len(node.args) >= 2
+                    and isinstance(node.args[1], ast.Constant)
+                    and isinstance(node.args[1].value, str)
+                ):
+                    sub_name = node.args[1].value
+                if sub_name:
+                    commands.add(sub_name)
             elif isinstance(node, ast.FunctionDef):
                 for dec in node.decorator_list:
                     if (
                         isinstance(dec, ast.Call)
                         and isinstance(dec.func, ast.Attribute)
                         and isinstance(dec.func.value, ast.Name)
-                        and dec.func.value.id == "app"
+                        and dec.func.value.id in root_app_vars
                         and dec.func.attr == "command"
                     ):
                         hidden = any(
@@ -801,9 +1027,21 @@ class SpecValidator:
                                 ),
                                 None,
                             )
-                            if not name and dec.args and isinstance(dec.args[0], ast.Constant) and isinstance(dec.args[0].value, str):
+                            if (
+                                not name
+                                and dec.args
+                                and isinstance(dec.args[0], ast.Constant)
+                                and isinstance(dec.args[0].value, str)
+                            ):
                                 name = dec.args[0].value
                             commands.add(name or node.name.replace("_", "-"))
+                    elif (
+                        isinstance(dec, ast.Attribute)
+                        and isinstance(dec.value, ast.Name)
+                        and dec.value.id in root_app_vars
+                        and dec.attr == "command"
+                    ):
+                        commands.add(node.name.replace("_", "-"))
 
         if not commands:
             return

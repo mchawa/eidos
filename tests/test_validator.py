@@ -1019,3 +1019,186 @@ def test_typed_pydantic_frontmatter_models(tmp_path):
     assert model["custom_key"] == "custom_value"
     assert model.get("missing", "default") == "default"
 
+
+def test_custom_spec_root_under_parent_src_and_subdirectory_validation(tmp_path: Path, validator: SpecValidator) -> None:
+    """DLT-2026-049: Verify validate_directory resolves (spec_root, repo_root) for custom '--path specs/'
+    and subdirectory 'specs/architecture' even when repo is under a parent 'src/' directory."""
+    repo_root = tmp_path / "src" / "my_repo"
+    specs_dir = repo_root / "specs"
+    cnts_dir = specs_dir / "architecture" / "containers"
+    comps_dir = specs_dir / "architecture" / "components"
+    cnts_dir.mkdir(parents=True)
+    comps_dir.mkdir(parents=True)
+    (repo_root / "src" / "app").mkdir(parents=True)
+    (repo_root / "src" / "app" / "worker.py").write_text("class Worker:\n    pass\n", encoding="utf-8")
+
+    (cnts_dir / "app.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-CUSTOM-APP\n"
+        "name: Custom App\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/app\n"
+        "components:\n"
+        "  - id: CMP-CUSTOM-WORKER\n"
+        "    ref: specs/architecture/components/worker.adoc\n"
+        "---\n"
+        "= Custom App\n",
+        encoding="utf-8",
+    )
+    (comps_dir / "worker.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "schema: schemas/v1/tech/component.schema.yaml\n"
+        "id: CMP-CUSTOM-WORKER\n"
+        "name: Custom Worker\n"
+        "container: CNT-CUSTOM-APP\n"
+        "status: active\n"
+        "source_path: src/app/worker.py\n"
+        "responsibility: Executes background tasks.\n"
+        "---\n"
+        "= Custom Worker\n",
+        encoding="utf-8",
+    )
+
+    # 1. Validate custom spec root 'specs/' directly
+    report_root = validator.validate_directory(specs_dir)
+    assert report_root.is_clean, (
+        f"Custom specs/ root validation failed: {report_root.schema_errors}, {report_root.broken_references}"
+    )
+    assert "CNT-CUSTOM-APP" in report_root.entity_index
+    assert "CMP-CUSTOM-WORKER" in report_root.entity_index
+
+    # 2. Validate subdirectory 'specs/architecture' directly
+    report_subdir = validator.validate_directory(specs_dir / "architecture")
+    assert report_subdir.is_clean, (
+        f"Subdirectory specs/architecture validation failed: {report_subdir.schema_errors}, {report_subdir.broken_references}"
+    )
+
+
+def test_dynamic_schema_entity_id_prefix_extraction(validator: SpecValidator) -> None:
+    """DLT-2026-049: Verify SpecValidator and is_entity_id dynamically extract prefixes from v1 schemas and x-eidos-ref."""
+    from eidos.core.spec.validator import (
+        _DYNAMIC_ENTITY_ID_PREFIXES,
+        _extract_prefixes_from_schema,
+        is_entity_id,
+    )
+
+    for expected in ("CNT-", "CMP-", "CTR-", "CAP-", "DOM-", "POL-", "PER-", "DLT-", "DS-", "UIC-", "SCR-", "CLT-", "FLOW-", "EXP-", "SYS-", "ARCH-", "DEC-"):
+        assert expected in validator.entity_id_prefixes
+        assert is_entity_id(f"{expected}TEST-001")
+
+    custom_schema = {
+        "properties": {
+            "id": {"type": "string", "pattern": "^MOD-[A-Z0-9_-]+$"},
+            "ref_target": {
+                "type": "string",
+                "x-eidos-ref": {"prefixes": ["WIDGET-"]},
+            },
+        }
+    }
+    extracted = _extract_prefixes_from_schema(custom_schema)
+    assert extracted == {"MOD-", "WIDGET-"}
+
+    _DYNAMIC_ENTITY_ID_PREFIXES.update(extracted)
+    try:
+        assert is_entity_id("MOD-CORE-01")
+        assert is_entity_id("WIDGET-BTN")
+    finally:
+        _DYNAMIC_ENTITY_ID_PREFIXES.difference_update(extracted)
+
+
+def test_scoped_typer_cli_contract_parity_non_typer_and_positional_add_typer(
+    tmp_path: Path, validator: SpecValidator
+) -> None:
+    """DLT-2026-049: Verify _verify_cli_contract_commands ignores non-Typer Click/argparse CLIs and supports positional add_typer."""
+    eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    ctrs_dir = eidos_dir / "architecture" / "contracts"
+    cnts_dir.mkdir(parents=True)
+    ctrs_dir.mkdir(parents=True)
+
+    src_cli = tmp_path / "src" / "cli"
+    src_cli.mkdir(parents=True)
+
+    # (a) Non-Typer Click CLI file (even with 'app' group and @app.command) -> must pass with zero false positives
+    (src_cli / "click_cli.py").write_text(
+        "import click\n\n"
+        "@click.group()\ndef app():\n    pass\n\n"
+        "@app.command()\ndef click_only_cmd():\n    pass\n",
+        encoding="utf-8",
+    )
+
+    # (b) Typer CLI file using custom variable name 'cli = Typer()' and positional add_typer(sub, 'subgrp')
+    (src_cli / "typer_cli.py").write_text(
+        "from typer import Typer\n\n"
+        "cli = Typer()\n"
+        "sub = Typer()\n"
+        "cli.add_typer(sub, 'subgrp')\n\n"
+        "@cli.command()\ndef run_job():\n    pass\n\n"
+        "@sub.command()\ndef nested_sub_leaf():\n    pass\n",
+        encoding="utf-8",
+    )
+
+    (cnts_dir / "cli.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-CLI\n"
+        "name: CLI\n"
+        "container_type: cli\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/cli\n"
+        "---\n"
+        "= CLI\n",
+        encoding="utf-8",
+    )
+
+    (ctrs_dir / "click_ctr.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-CLICK-CLI\n"
+        "title: Click CLI Contract\n"
+        "protocol: cli_args\n"
+        "owning_container: CNT-CLI\n"
+        "specification_file: src/cli/click_cli.py\n"
+        "---\n"
+        "= Click CLI Contract\n",
+        encoding="utf-8",
+    )
+
+    typer_ctr = ctrs_dir / "typer_ctr.adoc"
+    typer_ctr.write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-TYPER-CLI\n"
+        "title: Typer CLI Contract\n"
+        "protocol: cli_args\n"
+        "owning_container: CNT-CLI\n"
+        "specification_file: src/cli/typer_cli.py\n"
+        "---\n"
+        "= Typer CLI Contract\n\n"
+        "=== `run-job`\nRuns job.\n",
+        encoding="utf-8",
+    )
+
+    report = validator.validate_directory(eidos_dir)
+    broken_text = "\n".join(report.broken_references)
+    # Click CLI is ignored (no false positive on click-only-cmd)
+    assert "click-only-cmd" not in broken_text
+    # Positional add_typer 'subgrp' is detected as undocumented, while nested_sub_leaf is not treated as root command
+    assert "subgrp" in broken_text
+    assert "nested-sub-leaf" not in broken_text
+
+    # Documenting 'subgrp' makes the report completely clean
+    typer_ctr.write_text(
+        typer_ctr.read_text(encoding="utf-8") + "\n=== `subgrp`\nSubcommand group.\n",
+        encoding="utf-8",
+    )
+    clean_report = validator.validate_directory(eidos_dir)
+    assert clean_report.is_clean, f"Expected clean report, got broken refs: {clean_report.broken_references}"
+

@@ -283,9 +283,11 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         // Multi-level:
         // 1. System Architecture (ARCH-*)
         // 2. C4 Containers (CNT-*)
-        // 3. Interface Contracts (CTR-*)
+        // 3. C4 Components (CMP-*)
+        // 4. Interface Contracts (CTR-*)
         const archOverview = catSpecs.filter((s) => s.type === "tech/architecture");
         const containers = catSpecs.filter((s) => s.type === "tech/container");
+        const components = catSpecs.filter((s) => s.type === "tech/component");
         const contracts = catSpecs.filter((s) => s.type === "tech/contract");
 
         if (archOverview.length > 0) {
@@ -308,6 +310,16 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
             badge: "Containers",
             icon: Box,
             specs: containers,
+          });
+        }
+
+        if (components.length > 0) {
+          subgroups.push({
+            id: "arch-components",
+            name: "Components (C4 L3)",
+            badge: "Components",
+            icon: Layers,
+            specs: components,
           });
         }
 

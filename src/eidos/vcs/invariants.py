@@ -113,7 +113,12 @@ def _load_or_update_test_binding_cache(
     if not root.exists():
         return {}
 
-    effective_eidos = (eidos_dir or (root / "eidos")).resolve()
+    if eidos_dir is None:
+        effective_eidos = (root / "eidos").resolve()
+    elif not eidos_dir.is_absolute():
+        effective_eidos = (root / eidos_dir).resolve()
+    else:
+        effective_eidos = eidos_dir.resolve()
     db_path = effective_eidos / ".cache" / "index.db"
 
     cached_rows: dict[str, sqlite3.Row] = {}
@@ -564,12 +569,23 @@ def get_living_specs_catalog(eidos_dir: Path, repo_root: Path | None = None) -> 
         "policies": [],
     }
 
-    if not eidos_dir.exists():
+    effective_root = (repo_root or Path.cwd()).resolve()
+    resolved_eidos = (
+        (effective_root / eidos_dir).resolve()
+        if not eidos_dir.is_absolute()
+        else eidos_dir.resolve()
+    )
+    if not resolved_eidos.exists():
         return catalog
+
+    try:
+        eidos_prefix = str(resolved_eidos.relative_to(effective_root)).replace("\\", "/").strip("/") or "eidos"
+    except ValueError:
+        eidos_prefix = resolved_eidos.name or "eidos"
 
     from eidos.core.index.graph_index import get_architectural_index
 
-    idx = get_architectural_index(repo_root=repo_root, eidos_dir=eidos_dir)
+    idx = get_architectural_index(repo_root=effective_root, eidos_dir=resolved_eidos)
     entities = idx.get_entities()
 
     for ent in entities:
@@ -577,8 +593,13 @@ def get_living_specs_catalog(eidos_dir: Path, repo_root: Path | None = None) -> 
         eid = ent.get("id", "")
         title = ent.get("title", "")
         file_p = Path(ent.get("file_path", ""))
-        rel = str(file_p.relative_to(eidos_dir)) if file_p.is_relative_to(eidos_dir) else str(file_p)
-        spec_path = f"eidos/{rel}" if not rel.startswith("eidos/") else rel
+        if file_p.is_relative_to(resolved_eidos):
+            rel = str(file_p.relative_to(resolved_eidos)).replace("\\", "/")
+        elif file_p.is_relative_to(eidos_dir):
+            rel = str(file_p.relative_to(eidos_dir)).replace("\\", "/")
+        else:
+            rel = str(file_p).replace("\\", "/")
+        spec_path = f"{eidos_prefix}/{rel}" if not rel.startswith(f"{eidos_prefix}/") else rel
 
         if dtype == "product/capability":
             biz = ent.get("business", {})

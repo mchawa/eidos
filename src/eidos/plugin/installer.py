@@ -5,6 +5,7 @@ import enum
 import hashlib
 import json
 import os
+import re
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -111,6 +112,26 @@ RETIRED_EIDOS_SKILLS: frozenset[str] = frozenset(
 MANIFEST_FILENAME = ".eidos-manifest.json"
 
 
+def _check_not_symlink(path: Path, root: Path | None = None) -> None:
+    """Refuse to write through symlinked files or symlinked parent directories."""
+    if path.is_symlink():
+        raise FileExistsError(f"Destination path '{path}' is a symlink; refusing to write through symlink.")
+    stop_roots: set[Path] = set()
+    if root is not None:
+        if root.is_symlink():
+            raise FileExistsError(f"Destination root '{root}' is a symlink; refusing to write through symlink.")
+        stop_roots.add(root)
+        with contextlib.suppress(OSError):
+            stop_roots.add(root.resolve())
+    for parent in path.parents:
+        if parent in stop_roots:
+            break
+        if parent.is_symlink():
+            raise FileExistsError(
+                f"Parent directory '{parent}' of '{path}' is a symlink; refusing to write through symlink."
+            )
+
+
 def _compute_sha256(file_path: Path) -> str:
     """Compute hex SHA-256 digest of a file."""
     h = hashlib.sha256()
@@ -122,10 +143,27 @@ def _compute_sha256(file_path: Path) -> str:
 
 def _write_installation_manifest(target_dir: Path, created_files: list[Path] | None = None) -> Path:
     """Generate .eidos-manifest.json in target_dir storing relative file paths and SHA-256 digests."""
+    _check_not_symlink(target_dir)
     manifest_file = target_dir / MANIFEST_FILENAME
+    _check_not_symlink(manifest_file, root=target_dir)
+
+    existing_files: dict[str, str] = {}
+    if created_files is not None and manifest_file.exists():
+        try:
+            with open(manifest_file, encoding="utf-8") as f:
+                old_data = json.load(f)
+            old_files = old_data.get("files", {})
+            if isinstance(old_files, dict):
+                for rel_path, digest in old_files.items():
+                    candidate = target_dir / rel_path
+                    if candidate.is_file() and not candidate.is_symlink():
+                        existing_files[rel_path] = str(digest)
+        except (OSError, json.JSONDecodeError, ValueError):
+            existing_files = {}
+
     manifest_data: dict[str, Any] = {
         "version": get_bundled_plugin_version(),
-        "files": {},
+        "files": existing_files,
     }
     if created_files is not None:
         file_list = [f for f in created_files if f.is_file() and f.resolve() != manifest_file.resolve()]
@@ -167,9 +205,12 @@ def _rewrite_hook_command_for_target_root(target: Path, version: str | None = No
     try:
         ver = version or get_bundled_plugin_version()
         hooks_text = target_hooks.read_text(encoding="utf-8")
-        replacement = f'"command": "uvx --from eidos-ai=={ver} eidos hook '
-        new_text = hooks_text.replace('"command": "eidos hook ', replacement)
-        new_text = new_text.replace('"command": "uvx --from eidos-ai eidos hook ', replacement)
+        replacement = f'"command": "uvx --from eidos-ai=={ver} eidos hook'
+        new_text = re.sub(
+            r'"command"\s*:\s*"(?:uvx --from eidos-ai(?:==[^\s"]+)?\s+)?eidos hook\b',
+            replacement,
+            hooks_text,
+        )
         target_hooks.write_text(new_text, encoding="utf-8")
         return True
     except OSError:
@@ -180,15 +221,29 @@ def _copy_plugin_tree(
     source_dir: Path, target_dir: Path, force: bool = False, launcher: str = "eidos"
 ) -> list[Path]:
     """Copy all plugin files to target destination within the project."""
-    if target_dir.is_symlink():
-        raise FileExistsError(f"Destination directory '{target_dir}' is a symlink; refusing to write through symlink.")
+    _check_not_symlink(target_dir)
 
     target_dir.mkdir(parents=True, exist_ok=True)
     # Remove legacy scripts directory if no longer present in source bundle
     legacy_scripts = target_dir / "scripts"
     if legacy_scripts.exists() and not (source_dir / "scripts").exists():
-        with contextlib.suppress(OSError):
-            shutil.rmtree(legacy_scripts)
+        scripts_tracked = False
+        manifest_path = target_dir / MANIFEST_FILENAME
+        if manifest_path.exists() and not manifest_path.is_symlink():
+            try:
+                with open(manifest_path, encoding="utf-8") as mf:
+                    mdata = json.load(mf)
+                mfiles = mdata.get("files", {})
+                if isinstance(mfiles, dict):
+                    scripts_tracked = any(
+                        k == "scripts" or k.startswith("scripts/") or k.startswith("scripts\\")
+                        for k in mfiles
+                    )
+            except (OSError, json.JSONDecodeError, ValueError):
+                scripts_tracked = False
+        if force or scripts_tracked:
+            with contextlib.suppress(OSError):
+                shutil.rmtree(legacy_scripts)
 
     # Prune retired legacy Eidos skill directories inside the plugin tree
     target_skills_dir = target_dir / "skills"
@@ -210,8 +265,7 @@ def _copy_plugin_tree(
             if rel.name in (".mcp.json", "mcp.json", "mcp_config.json", MANIFEST_FILENAME):
                 continue
             dest = target_dir / rel
-            if dest.is_symlink():
-                raise FileExistsError(f"Destination file '{dest}' is a symlink; refusing to write through symlink.")
+            _check_not_symlink(dest, root=target_dir)
             if dest.exists() and not force:
                 continue
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -242,8 +296,7 @@ def _copy_plugin_tree(
 
 def _copy_skills_flat(source_dir: Path, target_skills_dir: Path, force: bool = False) -> list[Path]:
     """Copy individual skills from source bundle into target_skills_dir/<skill-name>/ and prune retired Eidos skills."""
-    if target_skills_dir.is_symlink():
-        raise FileExistsError(f"Destination skills directory '{target_skills_dir}' is a symlink; refusing to write through symlink.")
+    _check_not_symlink(target_skills_dir)
 
     source_skills = source_dir / "skills" if (source_dir / "skills").exists() else source_dir
     if not source_skills.exists():
@@ -262,15 +315,13 @@ def _copy_skills_flat(source_dir: Path, target_skills_dir: Path, force: bool = F
     for item in sorted(source_skills.iterdir()):
         if item.is_dir() and not item.name.startswith("."):
             dest_skill_dir = target_skills_dir / item.name
-            if dest_skill_dir.is_symlink():
-                raise FileExistsError(f"Destination skill directory '{dest_skill_dir}' is a symlink; refusing to write through symlink.")
+            _check_not_symlink(dest_skill_dir, root=target_skills_dir)
             dest_skill_dir.mkdir(parents=True, exist_ok=True)
             for file_path in item.rglob("*"):
                 if file_path.is_file():
                     rel = file_path.relative_to(item)
                     dest_file = dest_skill_dir / rel
-                    if dest_file.is_symlink():
-                        raise FileExistsError(f"Destination file '{dest_file}' is a symlink; refusing to write through symlink.")
+                    _check_not_symlink(dest_file, root=target_skills_dir)
                     if dest_file.exists() and not force:
                         continue
                     dest_file.parent.mkdir(parents=True, exist_ok=True)
@@ -335,14 +386,27 @@ def _remove_project_mcp_server(file_path: Path, server_name: str) -> bool:
     return True
 
 
-def _ensure_claude_plugin_manifest(target_dir: Path) -> list[Path]:
+def _ensure_claude_plugin_manifest(target_dir: Path, force: bool = False) -> list[Path] | None:
     """Ensure plugin.json exists at root and in .claude-plugin/ of target plugin directory."""
+    _check_not_symlink(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
-    claude_meta_dir = target_dir / ".claude-plugin"
-    claude_meta_dir.mkdir(parents=True, exist_ok=True)
-
     manifest_file = target_dir / "plugin.json"
+    _check_not_symlink(manifest_file, root=target_dir)
+
+    if manifest_file.exists() and not force:
+        try:
+            with open(manifest_file, encoding="utf-8") as f:
+                existing_root = json.load(f)
+            if not isinstance(existing_root, dict) or existing_root.get("name") != "eidos":
+                return None
+        except (OSError, json.JSONDecodeError, ValueError):
+            return None
+
+    claude_meta_dir = target_dir / ".claude-plugin"
+    _check_not_symlink(claude_meta_dir, root=target_dir)
+    claude_meta_dir.mkdir(parents=True, exist_ok=True)
     legacy_manifest_file = claude_meta_dir / "plugin.json"
+    _check_not_symlink(legacy_manifest_file, root=target_dir)
     bundled_ver = get_bundled_plugin_version()
 
     manifest_data = {
@@ -367,15 +431,23 @@ def _ensure_claude_plugin_manifest(target_dir: Path) -> list[Path]:
         ],
     }
 
-    created = []
+    created: list[Path] = []
     for mfile in (manifest_file, legacy_manifest_file):
+        _check_not_symlink(mfile, root=target_dir)
         if mfile.exists():
             try:
                 with open(mfile, encoding="utf-8") as f:
                     existing = json.load(f)
-                existing["version"] = bundled_ver
-                manifest_data_to_write = existing
+                if not isinstance(existing, dict) or existing.get("name") != "eidos":
+                    if not force:
+                        continue
+                    manifest_data_to_write = manifest_data
+                else:
+                    existing["version"] = bundled_ver
+                    manifest_data_to_write = existing
             except (OSError, json.JSONDecodeError, ValueError):
+                if not force:
+                    continue
                 manifest_data_to_write = manifest_data
         else:
             manifest_data_to_write = manifest_data
@@ -384,16 +456,14 @@ def _ensure_claude_plugin_manifest(target_dir: Path) -> list[Path]:
             json.dump(manifest_data_to_write, f, indent=2)
         created.append(mfile)
 
-    return created
+    return created if created else None
 
 
 def _write_claude_commands(target_dir: Path, launcher: str = "eidos", force: bool = False) -> list[Path]:
     """Write Claude Code slash commands to target_dir/commands/ (Layer 2: Commands)."""
-    if target_dir.is_symlink():
-        raise FileExistsError(f"Destination directory '{target_dir}' is a symlink; refusing to write through symlink.")
+    _check_not_symlink(target_dir)
     commands_dir = target_dir / "commands"
-    if commands_dir.is_symlink():
-        raise FileExistsError(f"Destination commands directory '{commands_dir}' is a symlink; refusing to write through symlink.")
+    _check_not_symlink(commands_dir, root=target_dir)
     commands_dir.mkdir(parents=True, exist_ok=True)
     created = []
     bundled_ver = get_bundled_plugin_version()
@@ -440,8 +510,7 @@ def _write_claude_commands(target_dir: Path, launcher: str = "eidos", force: boo
 
     for filename, content in commands.items():
         cmd_file = commands_dir / filename
-        if cmd_file.is_symlink():
-            raise FileExistsError(f"Destination command file '{cmd_file}' is a symlink; refusing to write through symlink.")
+        _check_not_symlink(cmd_file, root=target_dir)
         if cmd_file.exists() and not force:
             continue
         cmd_file.write_text(content, encoding="utf-8")
@@ -452,6 +521,7 @@ def _write_claude_commands(target_dir: Path, launcher: str = "eidos", force: boo
 
 def _update_project_claude_settings(file_path: Path, plugin_id: str = "eidos") -> bool:
     """Safely update project-level .claude/settings.json to enable the Eidos plugin."""
+    _check_not_symlink(file_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     data = {}
     if file_path.exists():
@@ -538,8 +608,7 @@ def _remove_project_claude_settings(file_path: Path, plugin_id: str = "eidos") -
 
 def _write_cursor_rules(file_path: Path, force: bool = False) -> Path:
     """Write native Cursor .mdc rule (Cursor Rules standard with YAML frontmatter)."""
-    if file_path.is_symlink():
-        raise FileExistsError(f"Destination cursor rules file '{file_path}' is a symlink; refusing to write through symlink.")
+    _check_not_symlink(file_path)
     if file_path.exists() and not force:
         return file_path
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -565,8 +634,7 @@ def _write_cursor_rules(file_path: Path, force: bool = False) -> Path:
 
 def _update_project_aider_conf(file_path: Path, conventions_path: str = ".aider.conventions.md") -> bool:
     """Ensure conventions file is listed under 'read' in .aider.conf.yml."""
-    if file_path.is_symlink():
-        raise FileExistsError(f"Destination aider config '{file_path}' is a symlink; refusing to write through symlink.")
+    _check_not_symlink(file_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     data = {}
     if file_path.exists():
@@ -623,8 +691,7 @@ def _remove_project_aider_conf(file_path: Path, conventions_path: str = ".aider.
 
 def _write_aider_conventions(file_path: Path, force: bool = False) -> Path:
     """Write .aider.conventions.md guidelines with installed skill mappings."""
-    if file_path.is_symlink():
-        raise FileExistsError(f"Destination conventions file '{file_path}' is a symlink; refusing to write through symlink.")
+    _check_not_symlink(file_path)
     if file_path.exists() and not force:
         return file_path
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -656,8 +723,7 @@ COPILOT_END_MARKER = "<!-- EIDOS_COPILOT_END -->"
 
 def _write_copilot_instructions(file_path: Path, force: bool = False) -> Path:
     """Safely write or update Eidos instructions in .github/copilot-instructions.md."""
-    if file_path.is_symlink():
-        raise FileExistsError(f"Destination copilot instructions '{file_path}' is a symlink; refusing to write through symlink.")
+    _check_not_symlink(file_path)
     if file_path.exists() and not force and COPILOT_START_MARKER not in file_path.read_text(encoding="utf-8"):
         return file_path
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -720,10 +786,12 @@ def _remove_copilot_instructions(file_path: Path) -> bool:
     return True
 
 
-def _ensure_copilot_plugin_manifest(target_dir: Path) -> Path:
+def _ensure_copilot_plugin_manifest(target_dir: Path, force: bool = False) -> Path | None:
     """Ensure .github/plugin/plugin.json exists in target directory with Agent Plugins 1.0 schema and GitHub Copilot metadata."""
+    _check_not_symlink(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     manifest_file = target_dir / "plugin.json"
+    _check_not_symlink(manifest_file, root=target_dir)
     bundled_ver = get_bundled_plugin_version()
 
     manifest_data = {
@@ -751,16 +819,21 @@ def _ensure_copilot_plugin_manifest(target_dir: Path) -> Path:
         try:
             with open(manifest_file, encoding="utf-8") as f:
                 existing = json.load(f)
-            existing["version"] = bundled_ver
-            if "extensions" not in existing or not isinstance(existing["extensions"], dict):
-                existing["extensions"] = {}
-            existing["extensions"]["com.github.copilot"] = {
-                "type": "agent_plugin",
-                "skills": "skills",
-            }
-            manifest_data = existing
+            if not isinstance(existing, dict) or existing.get("name") != "eidos":
+                if not force:
+                    return None
+            else:
+                existing["version"] = bundled_ver
+                if "extensions" not in existing or not isinstance(existing["extensions"], dict):
+                    existing["extensions"] = {}
+                existing["extensions"]["com.github.copilot"] = {
+                    "type": "agent_plugin",
+                    "skills": "skills",
+                }
+                manifest_data = existing
         except (OSError, json.JSONDecodeError, ValueError):
-            pass
+            if not force:
+                return None
 
     with open(manifest_file, "w", encoding="utf-8") as f:
         json.dump(manifest_data, f, indent=2)
@@ -770,6 +843,7 @@ def _ensure_copilot_plugin_manifest(target_dir: Path) -> Path:
 
 def _update_project_copilot_settings(settings_file: Path) -> bool:
     """Safely update .github/copilot/settings.json to enable the Eidos plugin."""
+    _check_not_symlink(settings_file)
     settings_file.parent.mkdir(parents=True, exist_ok=True)
     data = {}
     if settings_file.exists():
@@ -873,11 +947,12 @@ def _remove_project_opencode_json(file_path: Path) -> bool:
     return True
 
 
-
-def _ensure_codex_plugin_manifest(target_dir: Path) -> Path:
+def _ensure_codex_plugin_manifest(target_dir: Path, force: bool = False) -> Path | None:
     """Ensure .codex/plugin.json exists in target plugin directory with OpenAI Codex metadata."""
+    _check_not_symlink(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     manifest_file = target_dir / "plugin.json"
+    _check_not_symlink(manifest_file, root=target_dir)
     bundled_ver = get_bundled_plugin_version()
 
     manifest_data = {
@@ -904,16 +979,21 @@ def _ensure_codex_plugin_manifest(target_dir: Path) -> Path:
         try:
             with open(manifest_file, encoding="utf-8") as f:
                 existing = json.load(f)
-            existing["version"] = bundled_ver
-            if "extensions" not in existing or not isinstance(existing["extensions"], dict):
-                existing["extensions"] = {}
-            existing["extensions"]["com.openai"] = {
-                "type": "agent_plugin",
-                "skills": "skills",
-            }
-            manifest_data = existing
+            if not isinstance(existing, dict) or existing.get("name") != "eidos":
+                if not force:
+                    return None
+            else:
+                existing["version"] = bundled_ver
+                if "extensions" not in existing or not isinstance(existing["extensions"], dict):
+                    existing["extensions"] = {}
+                existing["extensions"]["com.openai"] = {
+                    "type": "agent_plugin",
+                    "skills": "skills",
+                }
+                manifest_data = existing
         except (OSError, json.JSONDecodeError, ValueError):
-            pass
+            if not force:
+                return None
 
     with open(manifest_file, "w", encoding="utf-8") as f:
         json.dump(manifest_data, f, indent=2)
@@ -921,12 +1001,11 @@ def _ensure_codex_plugin_manifest(target_dir: Path) -> Path:
     return manifest_file
 
 
-def _write_codex_rules(file_path: Path, force: bool = False) -> Path:
+def _write_codex_rules(file_path: Path, force: bool = False) -> Path | None:
     """Write .codex/rules.md."""
-    if file_path.is_symlink():
-        raise FileExistsError(f"Destination rules file '{file_path}' is a symlink; refusing to write through symlink.")
+    _check_not_symlink(file_path)
     if file_path.exists() and not force:
-        return file_path
+        return None
     file_path.parent.mkdir(parents=True, exist_ok=True)
     content = (
         "# Eidos Architectural Governance for OpenAI Codex\n\n"
@@ -994,10 +1073,17 @@ def _uninstall_from_manifest_or_legacy(target_dir: Path) -> bool:
                 try:
                     with open(f_path, encoding="utf-8") as pf:
                         pdata = json.load(pf)
-                    if pdata.get("name") != "eidos":
+                    if not isinstance(pdata, dict) or pdata.get("name") != "eidos":
                         continue
                 except (OSError, json.JSONDecodeError, ValueError):
-                    pass
+                    continue
+            elif item_name == "rules.md":
+                try:
+                    rtext = f_path.read_text(encoding="utf-8")
+                    if "Eidos" not in rtext and "# Eidos" not in rtext:
+                        continue
+                except OSError:
+                    continue
             with contextlib.suppress(OSError):
                 f_path.unlink()
                 removed_any = True
@@ -1025,9 +1111,18 @@ def _uninstall_from_manifest_or_legacy(target_dir: Path) -> bool:
     if claude_meta_dir.exists() and claude_meta_dir.is_dir():
         cf = claude_meta_dir / "plugin.json"
         if cf.exists():
-            with contextlib.suppress(OSError):
-                cf.unlink()
-                removed_any = True
+            is_eidos_claude_manifest = False
+            try:
+                with open(cf, encoding="utf-8") as cpf:
+                    cpdata = json.load(cpf)
+                if isinstance(cpdata, dict) and cpdata.get("name") == "eidos":
+                    is_eidos_claude_manifest = True
+            except (OSError, json.JSONDecodeError, ValueError):
+                is_eidos_claude_manifest = False
+            if is_eidos_claude_manifest:
+                with contextlib.suppress(OSError):
+                    cf.unlink()
+                    removed_any = True
         if not any(claude_meta_dir.iterdir()):
             with contextlib.suppress(OSError):
                 claude_meta_dir.rmdir()
@@ -1039,6 +1134,9 @@ def _uninstall_from_manifest_or_legacy(target_dir: Path) -> bool:
             target_dir.rmdir()
 
     return removed_any
+
+
+_legacy_safe_cleanup_codex_or_dest = _uninstall_from_manifest_or_legacy
 
 
 # ---------------------------------------------------------------------------
@@ -1057,7 +1155,9 @@ def _prune_empty_dirs_list(root: Path, rel_dirs: tuple[str, ...]) -> None:
 
 def _claude_pre_manifest_hook(root: Path, plugin_dir: Path, force: bool, launcher: str) -> list[Path]:
     extra: list[Path] = []
-    extra.extend(_ensure_claude_plugin_manifest(plugin_dir))
+    manifests = _ensure_claude_plugin_manifest(plugin_dir, force=force)
+    if manifests is not None:
+        extra.extend(m for m in manifests if m is not None)
     extra.extend(_write_claude_commands(plugin_dir, launcher=launcher, force=force))
     claude_settings = root / ".claude" / "settings.json"
     _update_project_claude_settings(claude_settings, "eidos@plugins-dir")
@@ -1067,11 +1167,22 @@ def _claude_pre_manifest_hook(root: Path, plugin_dir: Path, force: bool, launche
 
 def _codex_pre_manifest_hook(root: Path, source_dir: Path, plugin_dir: Path, force: bool) -> list[Path]:
     extra: list[Path] = []
-    extra.append(_ensure_codex_plugin_manifest(plugin_dir))
+    manifest = _ensure_codex_plugin_manifest(plugin_dir, force=force)
+    if manifest is not None:
+        extra.append(manifest)
     codex_rules = plugin_dir / "rules.md"
-    _write_codex_rules(codex_rules, force=force)
-    extra.append(codex_rules)
+    written_rules = _write_codex_rules(codex_rules, force=force)
+    if written_rules is not None:
+        extra.append(written_rules)
     extra.extend(_copy_skills_flat(source_dir, plugin_dir / "skills", force=force))
+    return extra
+
+
+def _copilot_pre_manifest_hook(root: Path, plugin_dir: Path, force: bool) -> list[Path]:
+    extra: list[Path] = []
+    manifest = _ensure_copilot_plugin_manifest(plugin_dir, force=force)
+    if manifest is not None:
+        extra.append(manifest)
     return extra
 
 
@@ -1102,6 +1213,7 @@ class TargetAdapter:
     install_message: str = ""
     uninstall_removed_message: str = ""
     uninstall_clean_message: str = ""
+    copy_plugin_tree: bool = True
     mcp_cleanup_paths: tuple[str, ...] = ()
     extra_cleanup_files: tuple[str, ...] = ()
     legacy_cleanup_dirs: tuple[str, ...] = ()
@@ -1116,11 +1228,9 @@ class TargetAdapter:
         plugin_dir = (root / self.plugin_subdir) if self.plugin_subdir else None
 
         if plugin_dir is not None:
-            if plugin_dir.is_symlink():
-                raise FileExistsError(
-                    f"Destination directory '{plugin_dir}' is a symlink; refusing to write to symlink target."
-                )
-            created.extend(_copy_plugin_tree(source_dir, plugin_dir, force=force, launcher=launcher))
+            _check_not_symlink(plugin_dir, root=root)
+            if self.copy_plugin_tree:
+                created.extend(_copy_plugin_tree(source_dir, plugin_dir, force=force, launcher=launcher))
             if self.pre_manifest_hook is not None:
                 created.extend(self.pre_manifest_hook(root, source_dir, plugin_dir, force, launcher))
             manifest = _write_installation_manifest(plugin_dir, created)
@@ -1288,6 +1398,7 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         target=PluginInstallTarget.CODEX,
         name="codex",
         plugin_subdir=".codex",
+        copy_plugin_tree=False,
         install_message="Installed OpenAI Codex plugin bundle (.codex/plugin.json, 4 skills, rules.md).",
         uninstall_removed_message="Removed OpenAI Codex plugin bundle (.codex/).",
         uninstall_clean_message="No Codex plugin bundle found (already removed).",
@@ -1305,7 +1416,7 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         uninstall_clean_message="No GitHub Copilot configuration found (already removed).",
         mcp_cleanup_paths=(".github/copilot/mcp.json", ".vscode/mcp.json"),
         prune_dirs=(".github/plugin", ".github/copilot"),
-        pre_manifest_hook=lambda _root, _src, plugin_dir, _force, _l: [_ensure_copilot_plugin_manifest(plugin_dir)],
+        pre_manifest_hook=lambda root, _src, plugin_dir, force, _l: _copilot_pre_manifest_hook(root, plugin_dir, force),
         post_install_hook=lambda root, _src, force, _l: _copilot_post_install_hook(root, force),
         extra_uninstall_hook=_copilot_extra_uninstall,
     ),
@@ -1327,8 +1438,7 @@ def install_plugin(
     # If explicit destination provided, install there directly
     if dest_path is not None:
         target_path = dest_path if dest_path.is_absolute() else (root / dest_path)
-        if target_path.is_symlink():
-            raise FileExistsError(f"Destination target path '{target_path}' is a symlink; refusing to write to symlink target.")
+        _check_not_symlink(target_path, root=root if not dest_path.is_absolute() else None)
         created = _copy_plugin_tree(source_dir, target_path, force=force, launcher=launcher)
         manifest = _write_installation_manifest(target_path, created)
         created.append(manifest)

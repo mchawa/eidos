@@ -77,19 +77,21 @@ A thorough audit of the Eidos Living Web Portal revealed several accumulated sch
 
 1. **Portal Generator (`src/eidos/portal/generator.py`)**:
    * Extract container `responsibility` and `summary` from frontmatter or the `== Architectural Boundary` body section.
-   * Attach promoted `tech/component` specs to their parent container's Level 3 `internal_components` rather than treating them as top-level containers.
-   * Extract embedded decisions (`decisions`) from system, architecture, and container documents.
-   * Extract component-level invariants (`invariants`) from containers and components into the global invariants list.
+   * Attach promoted `tech/component` specs to their parent container's Level 3 `internal_components` by resolving `ref:` / `spec_path` / `id` stubs in-place rather than leaving unresolved stubs or treating them as top-level containers.
+   * Extract embedded decisions (`decisions`) from system, architecture, container, and promoted component documents.
+   * Extract container-level and component-level invariants (`invariants`) from containers and components into the global invariants list.
+   * Normalize top-level `findings`, `recommendation`, and `resulting_deltas` on `product/exploration` specs into `decision` and top-level fields.
    * Extract `affects:` (`containers`, `components`, `capabilities`, `contracts`, `domains`, `policies`) and preserve full `blast_radius:` on SpecDeltas.
    * Extract `technical_mapping.containers` on domains and `technical.containers` on capabilities.
 2. **Frontend Views (`src/eidos/portal/frontend/src/`)**:
-   * `types.ts`: Update `SpecDelta`, `SpecComponent`, `SpecCapability`, `SpecDomain`, `CommandItem` interfaces.
-   * `DeltasView.tsx`: Resolve all mutation target keys (`target_container`, `target_architecture`, `target_contract`, `target_policy`, etc.), render `expect:` assertions, and display actual `blast_radius` and `affects` properties. Support focusing a delta via prop.
-   * `ArchitectureView.tsx`: Display container responsibility subtext, render living spec body via `AsciiDocRenderer`, display embedded decisions, and support opening by initial container ID.
-   * `BusinessView.tsx`: Render `technical.containers` and `technical_mapping.containers`.
+   * `types.ts`: Update `SpecDelta`, `SpecComponent`, `SpecCapability`, `SpecDomain`, `SpecExploration`, `CommandItem` interfaces.
+   * `DeltasView.tsx`: Resolve all mutation target keys (`target_container`, `target_architecture`, `target_contract`, `target_policy`, etc.), render `expect:` assertions, format plural `affects` labels (`Capabilities:`, `Policies:`), display `blast_radius.impacted_design_systems`, and support re-focusing a delta via selection nonce.
+   * `ArchitectureView.tsx`: Display container responsibility subtext, render living spec body via `AsciiDocRenderer`, display `data.decisions` and component-level `invariants`/`decisions` in the C4 Inspector drawer, and support opening/re-opening by initial container ID and nonce.
+   * `BusinessView.tsx`: Render `technical.containers` and `technical_mapping.containers`, add a Governance Invariants (`INV-*`) section and detail drawer, and support focusing items selected via `CMD+K`.
+   * `ExplorationsView.tsx`: Render `resulting_deltas` (clickable to navigate to `DeltasView`), `findings`, and `recommendation`, and support focusing items selected via `CMD+K`.
    * `DesignView.tsx`: Fix omnichannel flows panel to render `omnichannelFlows` instead of `flows`.
-   * `CatalogView.tsx`: Add `tech/component` to `SPEC_CATEGORIES.architecture.types`.
-   * `App.tsx`: Connect `handleCommandSelect` and `onNavigateDelta` to focus and open target entities.
+   * `CatalogView.tsx`: Add `tech/component` to `SPEC_CATEGORIES.architecture.types` and add the `arch-components` (`Components (C4 L3)`) subgroup.
+   * `App.tsx`: Deduplicate `commandItems` across specialized categories and generic specs, include `rejected` deltas, and connect `handleCommandSelect` and `onNavigateDelta` with selection nonces and clear callbacks.
 3. **Living Specs & Documentation**:
    * Fix table cell pipe escaping in `dlt-2026-042.adoc`.
    * Convert markdown links to AsciiDoc syntax in `dlt-2026-034.adoc`, `dlt-2026-035.adoc`, `dlt-2026-039.adoc`, `dlt-2026-042.adoc`.

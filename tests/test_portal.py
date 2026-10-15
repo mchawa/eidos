@@ -416,3 +416,143 @@ def test_portal_bundle_head_close_is_unique():
     assert PORTAL_HTML_TEMPLATE.count("</head>") == 1
     assert PORTAL_HTML_TEMPLATE.index("</head>") > PORTAL_HTML_TEMPLATE.index('<script type="module"')
     assert "</head>\n<body" in PORTAL_HTML_TEMPLATE
+
+
+def test_portal_promoted_components_invariants_decisions_and_explorations(tmp_path: Path):
+    """Verify promoted component ref resolution, container/component invariants, decisions, delta affects/blast_radius, and exploration normalization."""
+    data = get_portal_data(Path("eidos"))
+
+    # 1. Container responsibility/summary and internal components on CNT-EIDOS-CORE (no bare ref stubs)
+    core_container = next(c for c in data["components"] if c["id"] == "CNT-EIDOS-CORE")
+    assert core_container.get("responsibility") or core_container.get("summary")
+    internal_comps = core_container["internal_components"]
+    assert all(ic.get("id") is not None for ic in internal_comps), "No bare {'ref': ...} stub with id=None should remain"
+    slicer_entries = [ic for ic in internal_comps if ic.get("id") == "CMP-CONTEXT-SLICER"]
+    assert len(slicer_entries) == 1
+
+    # 2. Invariants extracted into data["invariants"]
+    inv_ids = {inv["id"] for inv in data["invariants"]}
+    assert "INV-PORTAL-ZERO-NODE-DEP" in inv_ids
+    assert "INV-LIVING-PORTAL-VISUALIZATION" in inv_ids
+
+    # 3. Architectural decisions extracted into data["decisions"]
+    decision_ids = {d["id"] for d in data["decisions"]}
+    assert "DEC-SYS-ZERO-AI-SUBSTRATE" in decision_ids
+    assert "DEC-ARCH-CENTRALIZED-HYBRID-C4" in decision_ids
+    assert len(data["decisions"]) >= 4
+
+    # 4. Deltas preserve affects and blast_radius
+    all_deltas = (
+        data["deltas"]["proposed"]
+        + data["deltas"]["in_review"]
+        + data["deltas"]["approved"]
+        + data["deltas"]["applied"]
+        + data["deltas"]["rejected"]
+    )
+    dlt_054 = next((d for d in all_deltas if d["id"] == "DLT-2026-054"), None)
+    assert dlt_054 is not None
+    assert "containers" in dlt_054["affects"]
+    assert "impacted_containers" in dlt_054["blast_radius"]
+
+    # 5. Live explorations normalize resulting_deltas and findings
+    exp_002 = next((e for e in data["explorations"] if e["id"] == "EXP-2026-002"), None)
+    assert exp_002 is not None
+    assert exp_002["resulting_deltas"] == ["DLT-2026-011"]
+    assert exp_002["decision"]["resulting_deltas"] == ["DLT-2026-011"]
+    assert exp_002["decision"]["resulting_delta_id"] == "DLT-2026-011"
+
+    exp_006 = next((e for e in data["explorations"] if e["id"] == "EXP-2026-006"), None)
+    assert exp_006 is not None
+    assert len(exp_006["findings"]) >= 3
+    assert len(exp_006["decision"]["learnings"]) >= 3
+
+    # 6. Synthetic fixture: verify container-level invariants, ref: stub resolution, and top-level resulting_deltas/findings
+    eidos_dir = tmp_path / "eidos"
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "architecture" / "components").mkdir(parents=True)
+    (eidos_dir / "explorations").mkdir(parents=True)
+
+    cnt_inv_id = "INV-" + "CNT-SYNTH-001"
+    cmp_inv_id = "INV-" + "CMP-SYNTH-001"
+    (eidos_dir / "architecture" / "containers" / "api.adoc").write_text(
+        "---\n"
+        "id: CNT-TEST-API\n"
+        "type: tech/container\n"
+        "name: Test API Container\n"
+        "responsibility: Serves test traffic.\n"
+        "invariants:\n"
+        f"  - id: {cnt_inv_id}\n"
+        "    rule: Container must validate requests.\n"
+        "    test_binding: tests/test_portal.py::test_portal_data_generation\n"
+        "components:\n"
+        "  - ref: architecture/components/auth.adoc\n"
+        "---\n"
+        "= Test API\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "components" / "auth.adoc").write_text(
+        "---\n"
+        "id: CMP-TEST-AUTH\n"
+        "type: tech/component\n"
+        "name: Auth Component\n"
+        "parent_container: CNT-TEST-API\n"
+        "responsibility: Authenticates callers.\n"
+        "source_path: src/eidos/portal/generator.py\n"
+        "invariants:\n"
+        f"  - id: {cmp_inv_id}\n"
+        "    rule: Tokens must be verified.\n"
+        "    test_binding: tests/test_portal.py::test_portal_data_generation\n"
+        "decisions:\n"
+        "  - id: DEC-CMP-TEST-001\n"
+        "    title: Stateless Tokens\n"
+        "    decision: Use signed tokens.\n"
+        "---\n"
+        "= Auth Component\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "explorations" / "exp-test.adoc").write_text(
+        "---\n"
+        "id: EXP-TEST-006\n"
+        "type: product/exploration\n"
+        "title: Synthetic Spike\n"
+        "status: concluded\n"
+        "hypothesis: Hypothesis text.\n"
+        "findings:\n"
+        "  - Finding A\n"
+        "  - Finding B\n"
+        "recommendation: Proceed with Delta.\n"
+        "resulting_deltas:\n"
+        "  - DLT-2026-030\n"
+        "  - DLT-2026-031\n"
+        "  - DLT-2026-032\n"
+        "---\n"
+        "= Synthetic Spike\n",
+        encoding="utf-8",
+    )
+
+    syn_data = get_portal_data(eidos_dir)
+    syn_cnt = syn_data["components"][0]
+    assert len(syn_cnt["internal_components"]) == 1
+    syn_sub = syn_cnt["internal_components"][0]
+    assert syn_sub["id"] == "CMP-TEST-AUTH"
+    assert syn_sub["is_promoted"] is True
+    assert syn_sub["name"] == "Auth Component"
+    assert len(syn_sub["invariants"]) == 1
+    assert len(syn_sub["decisions"]) == 1
+
+    syn_inv_ids = {i["id"] for i in syn_data["invariants"]}
+    assert cnt_inv_id in syn_inv_ids
+    assert cmp_inv_id in syn_inv_ids
+
+    syn_dec_ids = {d["id"] for d in syn_data["decisions"]}
+    assert "DEC-CMP-TEST-001" in syn_dec_ids
+
+    syn_exp = syn_data["explorations"][0]
+    assert syn_exp["findings"] == ["Finding A", "Finding B"]
+    assert syn_exp["decision"]["learnings"] == ["Finding A", "Finding B"]
+    assert syn_exp["recommendation"] == "Proceed with Delta."
+    assert syn_exp["decision"]["outcome"] == "Proceed with Delta."
+    assert syn_exp["resulting_deltas"] == ["DLT-2026-030", "DLT-2026-031", "DLT-2026-032"]
+    assert syn_exp["decision"]["resulting_deltas"] == ["DLT-2026-030", "DLT-2026-031", "DLT-2026-032"]
+    assert syn_exp["decision"]["resulting_delta_id"] == "DLT-2026-030"
+

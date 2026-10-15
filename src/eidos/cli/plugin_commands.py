@@ -87,6 +87,9 @@ def plugin_install(
 
         console.print("\n[bold green]Success![/bold green] The Eidos Agent Plugin is installed and ready.")
         console.print("AI agents can now discover Eidos living specifications, C4 architectures, and Agent Skills.\n")
+    except FileExistsError as e:
+        console.print(f"[bold red]✗ Error:[/bold red] {e}")
+        raise typer.Exit(code=1) from e
     except Exception as e:
         console.print(f"[bold red]Installation Failed:[/bold red] {e}")
         raise typer.Exit(code=1) from e
@@ -257,6 +260,9 @@ def plugin_update(
             console.print(
                 f"\n[bold green]Success![/bold green] Upgraded Eidos Agent Plugin from [bold yellow]v{prev_ver}[/bold yellow] to [bold cyan]v{current_ver}[/bold cyan]!\n"
             )
+    except FileExistsError as e:
+        console.print(f"[bold red]✗ Error:[/bold red] {e}")
+        raise typer.Exit(code=1) from e
     except Exception as e:
         console.print(f"[bold red]Update Failed:[/bold red] {e}")
         raise typer.Exit(code=1) from e

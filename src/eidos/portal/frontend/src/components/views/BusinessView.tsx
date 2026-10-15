@@ -29,27 +29,66 @@ import type {
   SpecCapability,
   SpecPersona,
   SpecPolicy,
+  SpecInvariant,
 } from "@/types";
 
 export interface BusinessViewProps {
   data: PortalData;
+  initialSelectedId?: string;
+  initialSelectedNonce?: number;
+  onClearSelected?: () => void;
 }
 
 type SelectedBusinessEntity =
   | { type: "domain"; item: SpecDomain }
   | { type: "capability"; item: SpecCapability }
   | { type: "policy"; item: SpecPolicy }
-  | { type: "persona"; item: SpecPersona };
+  | { type: "persona"; item: SpecPersona }
+  | { type: "invariant"; item: SpecInvariant };
 
-export function BusinessView({ data }: BusinessViewProps) {
+export function BusinessView({
+  data,
+  initialSelectedId,
+  initialSelectedNonce,
+  onClearSelected,
+}: BusinessViewProps) {
   const { domains, capabilities, personas, policies, invariants } = data;
 
   const [selectedEntity, setSelectedEntity] =
     React.useState<SelectedBusinessEntity | null>(null);
   const [filterCategory, setFilterCategory] = React.useState<
-    "all" | "policies" | "domains" | "personas"
+    "all" | "policies" | "domains" | "personas" | "invariants"
   >("all");
   const [searchQuery, setSearchQuery] = React.useState<string>("");
+
+  React.useEffect(() => {
+    if (!initialSelectedId) return;
+    const pol = (policies || []).find((p) => p.id === initialSelectedId);
+    if (pol) {
+      setSelectedEntity({ type: "policy", item: pol });
+      return;
+    }
+    const dom = (domains || []).find((d) => d.id === initialSelectedId);
+    if (dom) {
+      setSelectedEntity({ type: "domain", item: dom });
+      return;
+    }
+    const cap = (capabilities || []).find((c) => c.id === initialSelectedId);
+    if (cap) {
+      setSelectedEntity({ type: "capability", item: cap });
+      return;
+    }
+    const per = (personas || []).find((p) => p.id === initialSelectedId);
+    if (per) {
+      setSelectedEntity({ type: "persona", item: per });
+      return;
+    }
+    const inv = (invariants || []).find((i) => i.id === initialSelectedId);
+    if (inv) {
+      setSelectedEntity({ type: "invariant", item: inv });
+      return;
+    }
+  }, [initialSelectedId, initialSelectedNonce, policies, domains, capabilities, personas, invariants]);
 
   // Quick lookup maps for cross-entity references
   const domainsById = React.useMemo(() => {
@@ -125,6 +164,19 @@ export function BusinessView({ data }: BusinessViewProps) {
         p.goals?.some((g) => g.toLowerCase().includes(query))
     );
   }, [personas, query]);
+
+  const filteredInvariants = React.useMemo(() => {
+    const list = invariants || [];
+    if (!query) return list;
+    return list.filter(
+      (inv) =>
+        inv.id.toLowerCase().includes(query) ||
+        (inv.title && inv.title.toLowerCase().includes(query)) ||
+        inv.rule.toLowerCase().includes(query) ||
+        (inv.category && inv.category.toLowerCase().includes(query)) ||
+        (inv.test_binding && inv.test_binding.toLowerCase().includes(query))
+    );
+  }, [invariants, query]);
 
   // Helper to resolve policy reference from path or ID
   const resolvePolicy = (ref: string): SpecPolicy | undefined => {
@@ -206,6 +258,14 @@ export function BusinessView({ data }: BusinessViewProps) {
               <UserCheck className="h-3.5 w-3.5" />
               <span>{personas.length} Personas</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setFilterCategory("invariants")}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-teal-500/20 bg-teal-500/10 text-teal-500 dark:text-teal-400 text-xs font-medium hover:bg-teal-500/20 transition-colors cursor-pointer"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span>{(invariants || []).length} Invariants</span>
+            </button>
           </div>
         </div>
 
@@ -214,7 +274,7 @@ export function BusinessView({ data }: BusinessViewProps) {
           {/* Segmented Filter Pills */}
           <div
             id="businessCategoryFilter"
-            className="flex items-center gap-1 p-1 bg-muted/30 rounded-xl border border-border/60 text-xs"
+            className="flex flex-wrap items-center gap-1 p-1 bg-muted/30 rounded-xl border border-border/60 text-xs"
           >
             <button
               type="button"
@@ -264,6 +324,19 @@ export function BusinessView({ data }: BusinessViewProps) {
               )}
             >
               Actor Personas
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterCategory("invariants")}
+              className={cn(
+                "px-3 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5",
+                filterCategory === "invariants"
+                  ? "bg-card text-foreground shadow-xs font-semibold text-teal-500 dark:text-teal-400"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <CheckCircle2 className="h-3 w-3" />
+              <span>Invariants (`INV-*`)</span>
             </button>
           </div>
 
@@ -625,10 +698,72 @@ export function BusinessView({ data }: BusinessViewProps) {
         </div>
       )}
 
+      {/* SECTION 4: GOVERNANCE INVARIANTS & TEST BINDINGS (INV-*) */}
+      {(filterCategory === "all" || filterCategory === "invariants") && (
+        <div id="businessInvariantsSection" className="space-y-6 pt-12 mt-12 border-t-2 border-border/80">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
+            <div className="space-y-1">
+              <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
+                <CheckCircle2 className="h-6 w-6 text-teal-500 shrink-0" />
+                <span>Governance Invariants &amp; Test Bindings (`INV-*`)</span>
+                <Badge variant="outline" className="text-xs font-mono px-2 py-0.5">
+                  {filteredInvariants.length} Invariants
+                </Badge>
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Executable architectural, capability, container, and component invariants with automated test bindings
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {filteredInvariants.map((inv, idx) => (
+              <Card
+                key={`${inv.id}-${idx}`}
+                onClick={() => setSelectedEntity({ type: "invariant", item: inv })}
+                className="p-4 space-y-2.5 cursor-pointer hover:border-teal-500/60 hover:shadow-md transition-all duration-150 group border border-border/80 bg-card rounded-2xl"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs font-bold text-teal-500 dark:text-teal-400 group-hover:underline">
+                    {inv.id}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {inv.category && (
+                      <Badge variant="outline" className="text-[10px] font-mono">
+                        {inv.category}
+                      </Badge>
+                    )}
+                    {inv.severity && (
+                      <Badge variant="outline" className="text-[10px]">
+                        {inv.severity}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-foreground leading-relaxed line-clamp-2">
+                  {inv.rule}
+                </p>
+                {inv.test_binding && (
+                  <div className="pt-1 flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
+                    <Terminal className="h-3 w-3 shrink-0 text-teal-500" />
+                    <span className="truncate">{inv.test_binding}</span>
+                  </div>
+                )}
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* DETAIL INSPECTION DRAWER (SHEET) */}
       <Sheet
         open={Boolean(selectedEntity)}
-        onOpenChange={(open) => !open && setSelectedEntity(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedEntity(null);
+            onClearSelected?.();
+          }
+        }}
         title={
           selectedEntity?.type === "policy"
             ? selectedEntity.item.title
@@ -636,6 +771,8 @@ export function BusinessView({ data }: BusinessViewProps) {
             ? selectedEntity.item.name
             : selectedEntity?.type === "capability"
             ? selectedEntity.item.name || selectedEntity.item.title || "Capability"
+            : selectedEntity?.type === "invariant"
+            ? selectedEntity.item.title || selectedEntity.item.id
             : selectedEntity?.item.name || "Persona"
         }
         subtitle={selectedEntity?.item.id}
@@ -1235,6 +1372,50 @@ export function BusinessView({ data }: BusinessViewProps) {
                       Living Specification Profile
                     </h4>
                     <AsciiDocRenderer content={selectedEntity.item.body} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* INVARIANT DETAIL DRAWER */}
+            {selectedEntity.type === "invariant" && (
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="primary">Invariant</Badge>
+                  {selectedEntity.item.category && (
+                    <Badge variant="outline">{selectedEntity.item.category}</Badge>
+                  )}
+                  {selectedEntity.item.severity && (
+                    <Badge variant="warning">{selectedEntity.item.severity}</Badge>
+                  )}
+                  {selectedEntity.item.path && (
+                    <span className="font-mono text-[11px] text-muted-foreground px-2 py-0.5 rounded bg-muted/40">
+                      {selectedEntity.item.path}
+                    </span>
+                  )}
+                </div>
+
+                {/* Invariant Rule */}
+                <div className="space-y-1.5">
+                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-teal-500" />
+                    Executable Invariant Rule
+                  </h4>
+                  <div className="p-3.5 rounded-xl bg-teal-500/10 border-l-3 border-teal-500 text-xs font-medium text-foreground leading-relaxed">
+                    "{selectedEntity.item.rule}"
+                  </div>
+                </div>
+
+                {/* Test Binding */}
+                {selectedEntity.item.test_binding && (
+                  <div className="space-y-1.5">
+                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <Terminal className="h-3.5 w-3.5 text-primary" />
+                      Automated Test Binding
+                    </h4>
+                    <div className="p-3 rounded-xl bg-muted/30 border border-border/80 font-mono text-xs text-foreground">
+                      {selectedEntity.item.test_binding}
+                    </div>
                   </div>
                 )}
               </div>

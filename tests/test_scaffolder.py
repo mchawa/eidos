@@ -819,7 +819,7 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
     """Verify INV-FOREIGN-REPO-E2E: a non-Eidos polyglot repository initialized with eidos init runs the full lifecycle cleanly."""
     import subprocess
 
-    repo = tmp_path / "acme_payments"
+    repo = tmp_path / "src" / "acme_payments"
     ok, _, _ = init_repository(project_dir=repo, name="acme-payments", title="Acme Payments Platform")
     assert ok
 
@@ -873,9 +873,11 @@ technical_profile:
     subprocess.run(["git", "add", "."], cwd=repo, capture_output=True, check=True)
     subprocess.run(["git", "commit", "-m", "initial commit"], cwd=repo, capture_output=True, check=True)
 
-    # 1. Validate specs
+    # 1. Validate specs (both eidos_dir and eidos_dir/architecture under parent src/ path)
     val_report = SpecValidator().validate_directory(eidos_dir)
     assert val_report.is_clean, f"Validation errors: {val_report.schema_errors}, broken refs: {val_report.broken_references}"
+    sub_report = SpecValidator().validate_directory(eidos_dir / "architecture")
+    assert sub_report.is_clean, f"Subdir validation errors: {sub_report.schema_errors}, broken refs: {sub_report.broken_references}"
 
     # 2. Index sync & Context slice
     res_sync = runner.invoke(app, ["index", "sync", "--path", str(eidos_dir)])

@@ -55,8 +55,12 @@ export interface SpecComponent {
     id: string;
     name: string;
     responsibility: string;
-    source_path?: string;
+    source_path?: string | string[];
     spec_path?: string;
+    file_path?: string;
+    is_promoted?: boolean;
+    status?: string;
+    description?: string;
     invariants?: Array<{
       id: string;
       rule: string;
@@ -374,14 +378,22 @@ export interface SpecExploration {
   hypothesis: string;
   questions_to_answer?: string[];
   spikes_to_run?: Array<{ name: string; target: string }>;
-  exit_criteria?: {
-    max_duration?: string;
-    benchmark?: string;
-  };
+  exit_criteria?:
+    | {
+        max_duration?: string;
+        benchmark?: string;
+      }
+    | string[];
+  findings?: string;
+  recommendation?: string;
+  resulting_deltas?: string[];
   decision?: {
-    outcome: string;
+    outcome?: string;
     resulting_delta_id?: string;
+    resulting_deltas?: string[];
     learnings?: string;
+    findings?: string;
+    recommendation?: string;
   };
   body?: string;
   path?: string;

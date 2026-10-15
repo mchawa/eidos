@@ -6,8 +6,10 @@ specification diffs, and evaluates 1-hop and design subgraph coverage.
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
+import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,12 +25,45 @@ SYSTEM_LEVEL_SPEC_PATHS = (
     "eidos/architecture/system-architecture.adoc",
 )
 
+
+def get_system_level_spec_paths(eidos_rel_prefix: str = "eidos") -> tuple[str, str]:
+    """Return the system-level specification paths for a given eidos directory relative prefix."""
+    prefix = eidos_rel_prefix.strip().replace("\\", "/").strip("/") or "eidos"
+    return (
+        f"{prefix}/system.adoc",
+        f"{prefix}/architecture/system-architecture.adoc",
+    )
+
+
+def _is_system_level_spec(
+    spec_path: str,
+    system_spec_paths: tuple[str, ...] = SYSTEM_LEVEL_SPEC_PATHS,
+) -> bool:
+    """True when spec_path matches one of the system-level specification paths on a path boundary."""
+    s_norm = spec_path.replace("\\", "/").lower().strip("/")
+    for sys_p in (*SYSTEM_LEVEL_SPEC_PATHS, *system_spec_paths):
+        sp = sys_p.replace("\\", "/").lower().strip("/")
+        if s_norm == sp or s_norm.endswith("/" + sp):
+            return True
+    return False
+
+
 _ADOC_LINE_COMMENT_RE = re.compile(r"^\s*//(?!/)")
 _ADOC_COMMENT_DELIM_RE = re.compile(r"^/{4,}$")
 _ADOC_VERBATIM_DELIM_RE = re.compile(r"^(-{4,}|\.{4,}|\+{4,})$")
 _FRONTMATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", re.DOTALL)
 _OWNERSHIP_KEYS = ("components", "source_path", "owned_path", "package_path")
 _MIN_ANCHOR_LEN = 3
+
+
+def _accepts_kwarg(fn: Any, kwarg: str) -> bool:
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return kwarg in params or any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+    )
 
 
 @dataclass
@@ -229,25 +264,46 @@ def _declared_source_patterns(frontmatter: dict[str, Any]) -> list[str]:
 class _SpecDiffInspector:
     """Per-run, cached inspection of how a modified specification changed (DLT-2026-039)."""
 
-    def __init__(self, root: Path, base_ref: str | None, head_ref: str, uncommitted: bool) -> None:
+    def __init__(
+        self,
+        root: Path,
+        base_ref: str | None,
+        head_ref: str,
+        uncommitted: bool,
+        merge_base: str | None = None,
+    ) -> None:
         self._root = root
         self._base_ref = base_ref
         self._head_ref = head_ref
         self._uncommitted = uncommitted
+        self.merge_base = merge_base
         self._versions: dict[str, tuple[str | None, str | None]] = {}
 
     def versions(self, spec: str) -> tuple[str | None, str | None]:
         if spec not in self._versions:
-            import sys
             drift_mod = sys.modules.get("eidos.vcs.drift")
-            get_versions_fn = getattr(drift_mod, "_get_file_versions", _get_file_versions) if drift_mod else _get_file_versions
-            self._versions[spec] = get_versions_fn(
-                self._root,
-                spec,
-                base_ref=self._base_ref,
-                head_ref=self._head_ref,
-                uncommitted=self._uncommitted,
+            get_versions_fn = (
+                getattr(drift_mod, "_get_file_versions", _get_file_versions)
+                if drift_mod
+                else _get_file_versions
             )
+            if _accepts_kwarg(get_versions_fn, "merge_base"):
+                self._versions[spec] = get_versions_fn(
+                    self._root,
+                    spec,
+                    base_ref=self._base_ref,
+                    head_ref=self._head_ref,
+                    uncommitted=self._uncommitted,
+                    merge_base=self.merge_base,
+                )
+            else:
+                self._versions[spec] = get_versions_fn(
+                    self._root,
+                    spec,
+                    base_ref=self._base_ref,
+                    head_ref=self._head_ref,
+                    uncommitted=self._uncommitted,
+                )
         return self._versions[spec]
 
     def is_new_spec(self, spec: str) -> bool:
@@ -259,6 +315,20 @@ class _SpecDiffInspector:
         old, new = self.versions(spec)
         if old is None or new is None or old == new:
             return True
+
+        spec_lower = spec.lower()
+        if spec_lower.endswith(".json"):
+            try:
+                return _canonical(json.loads(old)) != _canonical(json.loads(new))
+            except Exception:
+                return _normalize_ws(old) != _normalize_ws(new)
+
+        if spec_lower.endswith((".yaml", ".yml")):
+            try:
+                return _canonical(yaml.safe_load(old)) != _canonical(yaml.safe_load(new))
+            except Exception:
+                return _normalize_ws(old) != _normalize_ws(new)
+
         old_raw, old_body = _split_spec(old)
         new_raw, new_body = _split_spec(new)
         old_fm, new_fm = _parse_frontmatter(old_raw), _parse_frontmatter(new_raw)
@@ -296,6 +366,7 @@ class _SpecDiffInspector:
         patterns = [
             re.compile(rf"(?<![A-Za-z0-9_]){re.escape(n)}(?![A-Za-z0-9_])")
             for n in sorted(needles)
+            for _ in (0,)
             if n and len(n) >= _MIN_ANCHOR_LEN
         ]
         return any(p.search(line) for line in added for p in patterns)
@@ -306,6 +377,8 @@ def _collect_1hop_spec_targets(
     cf: str,
     cid: str,
     spath: str,
+    *,
+    system_spec_paths: tuple[str, ...] = SYSTEM_LEVEL_SPEC_PATHS,
 ) -> tuple[set[str], set[str]]:
     """Return (allowed_spec_paths, allowed_entity_ids) within 1 hop of a code file's owners."""
     allowed_paths: set[str] = {spath.replace("\\", "/").lower()}
@@ -316,6 +389,8 @@ def _collect_1hop_spec_targets(
 
     seed_ids: set[str] = {cid}
     for m in idx.resolve_symbol_or_path(cf):
+        if m.get("type") not in ("tech/container", "tech/component"):
+            continue
         eid = m.get("entity_id")
         fp = m.get("file_path")
         if eid:
@@ -349,7 +424,7 @@ def _collect_1hop_spec_targets(
                 if pval:
                     allowed_paths.add(str(pval).replace("\\", "/").lower())
 
-    allowed_paths.difference_update(SYSTEM_LEVEL_SPEC_PATHS)
+    allowed_paths = {p for p in allowed_paths if not _is_system_level_spec(p, system_spec_paths)}
     return allowed_paths, allowed_ids
 
 
@@ -368,12 +443,14 @@ def _relevant_changed_specs(
     changed_specs: list[str],
     allowed_paths: set[str],
     allowed_ids: set[str],
+    *,
+    system_spec_paths: tuple[str, ...] = SYSTEM_LEVEL_SPEC_PATHS,
 ) -> list[str]:
     """Modified spec files inside the 1-hop neighborhood of a modified code file (system-level specs excluded)."""
     relevant: list[str] = []
     for s in changed_specs:
         s_norm = s.replace("\\", "/").lower()
-        if s_norm in SYSTEM_LEVEL_SPEC_PATHS:
+        if _is_system_level_spec(s_norm, system_spec_paths):
             continue
         if _path_in(s_norm, allowed_paths):
             relevant.append(s)
@@ -388,9 +465,15 @@ def _spec_coverage_verdict(
     addition: _StructuralAddition | None = None,
     owner_spec: str = "",
     inspector: _SpecDiffInspector | None = None,
+    system_spec_paths: tuple[str, ...] = SYSTEM_LEVEL_SPEC_PATHS,
 ) -> tuple[bool, str | None, list[str]]:
     """Decide whether modified specs cover a code file; returns ``(covered, rejection_rule, rejected_specs)``."""
-    relevant = _relevant_changed_specs(changed_specs, allowed_paths, allowed_ids)
+    relevant = _relevant_changed_specs(
+        changed_specs,
+        allowed_paths,
+        allowed_ids,
+        system_spec_paths=system_spec_paths,
+    )
     if not relevant:
         return False, None, []
 

@@ -426,11 +426,25 @@ def test_classify_changed_files_custom_eidos_dir(tmp_path):
 
 def test_is_generated_or_vendored_scalar_string_and_path_input(tmp_path):
     """Verify is_generated_or_vendored accepts scalar str and Path inputs without splitting into characters."""
+    import subprocess
+
     from eidos.core.workspace.project import is_generated_or_vendored
 
-    # If repo has no .git, returns empty set cleanly
-    assert is_generated_or_vendored(tmp_path, "src/some_file.py") == set()
-    assert is_generated_or_vendored(tmp_path, Path("src/some_file.py")) == set()
+    # 1. If repo has no .git, returns empty set cleanly
+    non_git = tmp_path / "non_git"
+    non_git.mkdir()
+    assert is_generated_or_vendored(non_git, "src/some_file.py") == set()
+    assert is_generated_or_vendored(non_git, Path("src/some_file.py")) == set()
+
+    # 2. Real git repo with .gitattributes marking *.gen.py as linguist-generated
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True, capture_output=True)
+    (repo / ".gitattributes").write_text("*.gen.py linguist-generated=true\n", encoding="utf-8")
+
+    assert is_generated_or_vendored(repo, "src/foo.gen.py") == {"src/foo.gen.py"}
+    assert is_generated_or_vendored(repo, Path("src/foo.gen.py")) == {"src/foo.gen.py"}
+    assert is_generated_or_vendored(repo, "src/normal.py") == set()
 
 
 def test_classify_changed_files_batches_is_generated_or_vendored(tmp_path, monkeypatch):
@@ -468,8 +482,12 @@ def test_classify_changed_files_batches_is_generated_or_vendored(tmp_path, monke
 
 
 def test_resolve_base_ref_single_pass(tmp_path, monkeypatch):
-    """Verify _resolve_base_ref resolves the candidate Git ref."""
+    """Verify _resolve_base_ref resolves the candidate Git ref and detect_drift invokes it at most once across multiple files."""
+    import subprocess
+
     from eidos.vcs.drift import _resolve_base_ref
+
+    orig_run = subprocess.run
 
     # 1. Explicit base ref that verifies successfully
     monkeypatch.setattr(
@@ -486,6 +504,46 @@ def test_resolve_base_ref_single_pass(tmp_path, monkeypatch):
     res_default = _resolve_base_ref(tmp_path, None)
     assert res_default == "origin/main"
 
+    # 3. Real git repo with multiple modified code and spec files: detect_drift calls _resolve_base_ref at most once
+    monkeypatch.setattr("subprocess.run", orig_run)
+    repo = tmp_path / "git_repo"
+    repo.mkdir()
+
+    def git(*args):
+        orig_run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+    (repo / "src" / "pkg").mkdir(parents=True)
+    (repo / "eidos" / "architecture" / "containers").mkdir(parents=True)
+    (repo / "src" / "pkg" / "a.py").write_text("def a():\n    return 1\n", encoding="utf-8")
+    (repo / "src" / "pkg" / "b.py").write_text("def b():\n    return 1\n", encoding="utf-8")
+    (repo / "eidos" / "architecture" / "containers" / "x.adoc").write_text(_SPEC_BASE, encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "c1")
+
+    git("checkout", "-qb", "feat")
+    (repo / "src" / "pkg" / "a.py").write_text("def a(x: int):\n    return x\n", encoding="utf-8")
+    (repo / "src" / "pkg" / "b.py").write_text("def b(y: int):\n    return y\n", encoding="utf-8")
+    (repo / "eidos" / "architecture" / "containers" / "x.adoc").write_text(
+        _SPEC_BASE + "\nUpdated signatures for a and b.\n", encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-qm", "c2")
+
+    resolve_calls: list[str | None] = []
+    orig_resolve_base = _resolve_base_ref
+
+    def spy_resolve_base(r, b=None):
+        resolve_calls.append(b)
+        return orig_resolve_base(r, b)
+
+    monkeypatch.setattr("eidos.vcs.drift._resolve_base_ref", spy_resolve_base)
+    drift_res = detect_drift(repo_root=repo, eidos_dir=repo / "eidos")
+    assert len(resolve_calls) == 1
+    assert drift_res.drift_detected is False
+
 
 def test_git_resolution_error_on_invalid_explicit_base(tmp_path):
     """DLT-2026-053: Fail closed when an explicitly provided base ref cannot be resolved."""
@@ -498,6 +556,34 @@ def test_git_resolution_error_on_invalid_explicit_base(tmp_path):
 
     with pytest.raises(GitResolutionError, match="Cannot resolve base Git reference 'non-existent-ref'"):
         detect_drift(repo_root=tmp_path, base_ref="non-existent-ref")
+
+
+def test_git_resolution_error_on_orphan_base_without_merge_base(tmp_path):
+    """DLT-2026-053: Fail closed when an explicit base_ref is a valid branch but shares no common ancestor with HEAD."""
+    import subprocess
+
+    from eidos.vcs.drift import GitResolutionError, detect_drift, get_git_diff_files
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+    (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "main commit")
+
+    git("checkout", "--orphan", "orphan-branch")
+    (tmp_path / "b.py").write_text("y = 2\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "orphan commit")
+
+    with pytest.raises(GitResolutionError, match="Cannot find merge base between 'main' and 'HEAD'"):
+        get_git_diff_files(tmp_path, base_ref="main")
+
+    with pytest.raises(GitResolutionError, match="Cannot find merge base between 'main' and 'HEAD'"):
+        detect_drift(repo_root=tmp_path, base_ref="main")
 
 
 def test_cli_drift_exits_nonzero_on_git_resolution_error():
@@ -1773,4 +1859,97 @@ def test_global_policy_does_not_satisfy_1hop_drift(tmp_path, monkeypatch):
     assert res.drift_detected is True
     assert "CNT-X" in res.touched_components
     assert any("CNT-X" in rem for rem in res.remediation_suggestions)
+
+
+def test_trivial_system_spec_edit_does_not_clear_unmapped_code_drift(tmp_path, monkeypatch):
+    """DLT-2026-051: trivial whitespace/comment edit to eidos/system.adoc does not clear unmapped_code_files drift."""
+    unowned_tool = "src/unowned/tool.py"
+    system_spec = "eidos/system.adoc"
+    sys_base = "---\ntype: system/context\nid: SYS-TEST\ntitle: Test System\n---\n= System\n\nExisting prose.\n"
+    sys_trivial = sys_base + "\n// trivial comment only\n   \n"
+    tool_code = "def unowned():\n    return 42\n"
+
+    env = _diff_aware_env(
+        tmp_path,
+        monkeypatch,
+        changed=[unowned_tool, system_spec],
+        versions={
+            unowned_tool: (None, tool_code),
+            system_spec: (sys_base, sys_trivial),
+        },
+        extra_files={unowned_tool: tool_code, system_spec: sys_trivial},
+    )
+    res = detect_drift(repo_root=tmp_path, eidos_dir=env)
+    assert res.drift_detected is True
+    assert unowned_tool in res.unmapped_code_files
+    assert any(
+        r["file"] == unowned_tool and r["rule"] == "trivial_spec_diff"
+        for r in res.trivially_covered_files
+    )
+
+
+def test_trivial_tokens_json_edit_does_not_cover_design_token_drift(monkeypatch):
+    """DLT-2026-051: whitespace-only edit to tokens.json is non-substantive and does not satisfy design token drift."""
+    tokens_path = "eidos/design/systems/core/tokens.json"
+    tokens_old = '{\n  "color": {\n    "primary": { "$value": "#6750a4" }\n  }\n}\n'
+    tokens_trivial = '{\n  "color": {\n    "primary": {   "$value":   "#6750a4"   }\n  }\n\n}\n'
+
+    _mock_diff(monkeypatch, [THEME, tokens_path])
+    monkeypatch.setattr(
+        "eidos.vcs.drift._get_file_versions",
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (
+            (tokens_old, tokens_trivial) if rel_path == tokens_path else (_OLD_CSS, _TOKEN_CSS)
+        ),
+    )
+    res = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
+    assert res.drift_detected is True
+    assert THEME in res.uncovered_design_files
+    assert any(
+        r["file"] == THEME and r["rule"] == "trivial_spec_diff"
+        for r in res.trivially_covered_files
+    )
+
+
+def test_src_test_helpers_and_package_path_test_classification(tmp_path, monkeypatch):
+    """DLT-2026-051: src/app/test_helpers.py and <package_path>/test_helpers.py are production code, while nested tests/ is test."""
+    from eidos.vcs.drift import classify_changed_files, is_polyglot_test_file
+
+    assert is_polyglot_test_file("src/app/test_helpers.py", repo_root=tmp_path) is False
+    assert is_polyglot_test_file("backend/app/test_helpers.py", repo_root=tmp_path, package_paths=["backend/app"]) is False
+    assert is_polyglot_test_file("src/pkg/tests/test_unit.py", repo_root=tmp_path) is True
+
+    # Calling with relative path when CWD is <repo>/tests must not prepend tests/
+    tests_cwd = tmp_path / "tests"
+    tests_cwd.mkdir(parents=True)
+    monkeypatch.chdir(tests_cwd)
+    assert is_polyglot_test_file("src/app/test_helpers.py", repo_root=tmp_path) is False
+
+    classified = classify_changed_files(
+        ["src/app/test_helpers.py", "src/pkg/tests/test_unit.py"],
+        repo_root=tmp_path,
+    )
+    assert "src/app/test_helpers.py" in classified.code_files
+    assert "src/pkg/tests/test_unit.py" in classified.test_files
+
+
+def test_deleted_unmapped_file_covered_by_substantive_container_spec_update(tmp_path, monkeypatch):
+    """DLT-2026-051: deleting a file and removing its ownership from a container spec is covered by the substantive container spec edit."""
+    deleted_file = "src/legacy/old_mod.py"
+    spec_old = _SPEC_BASE.replace("package_path: src/pkg\n", "package_path: src/pkg\nsource_path: src/legacy/old_mod.py\n")
+    spec_new = _SPEC_BASE + "\nRemoved legacy module old_mod.py.\n"
+
+    env = _diff_aware_env(
+        tmp_path,
+        monkeypatch,
+        changed=[deleted_file, _SPEC_REL],
+        versions={
+            deleted_file: ("def legacy():\n    return 0\n", None),
+            _SPEC_REL: (spec_old, spec_new),
+        },
+        spec_text=spec_new,
+    )
+    res = detect_drift(repo_root=tmp_path, eidos_dir=env)
+    assert res.unmapped_code_files == []
+    assert res.drift_detected is False
+
 

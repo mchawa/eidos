@@ -26,14 +26,58 @@ import type { PortalData, SpecExploration } from "@/types";
 export interface ExplorationsViewProps {
   data: PortalData;
   onNavigateDelta?: (deltaId: string) => void;
+  initialSelectedId?: string;
+  initialSelectedNonce?: number;
+  onClearSelected?: () => void;
 }
 
-export function ExplorationsView({ data, onNavigateDelta }: ExplorationsViewProps) {
+export function getExplorationDeltas(exp: SpecExploration): string[] {
+  const deltas: string[] = [];
+  if (Array.isArray(exp.resulting_deltas)) {
+    exp.resulting_deltas.forEach((d) => {
+      if (d && !deltas.includes(d)) deltas.push(d);
+    });
+  }
+  if (Array.isArray(exp.decision?.resulting_deltas)) {
+    exp.decision!.resulting_deltas.forEach((d) => {
+      if (d && !deltas.includes(d)) deltas.push(d);
+    });
+  }
+  if (exp.decision?.resulting_delta_id && !deltas.includes(exp.decision.resulting_delta_id)) {
+    deltas.push(exp.decision.resulting_delta_id);
+  }
+  return deltas;
+}
+
+export function getExplorationFindings(exp: SpecExploration): string {
+  return exp.findings || exp.decision?.learnings || exp.decision?.findings || "";
+}
+
+export function getExplorationRecommendation(exp: SpecExploration): string {
+  return exp.recommendation || exp.decision?.recommendation || "";
+}
+
+export function ExplorationsView({
+  data,
+  onNavigateDelta,
+  initialSelectedId,
+  initialSelectedNonce,
+  onClearSelected,
+}: ExplorationsViewProps) {
   const [selectedExp, setSelectedExp] = React.useState<SpecExploration | null>(null);
-  const [filterText, setFilterText] = React.useState<string>("" );
+  const [filterText, setFilterText] = React.useState<string>("");
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
 
   const rawExplorations = data.explorations || [];
+
+  React.useEffect(() => {
+    if (initialSelectedId && rawExplorations.length > 0) {
+      const match = rawExplorations.find((e) => e.id === initialSelectedId);
+      if (match) {
+        setSelectedExp(match);
+      }
+    }
+  }, [initialSelectedId, initialSelectedNonce, rawExplorations]);
 
   // Filtered explorations
   const filteredExplorations = React.useMemo(() => {
@@ -45,12 +89,16 @@ export function ExplorationsView({ data, onNavigateDelta }: ExplorationsViewProp
       }
       // Text filter
       if (!q) return true;
+      const findings = getExplorationFindings(exp).toLowerCase();
+      const recommendation = getExplorationRecommendation(exp).toLowerCase();
+      const deltas = getExplorationDeltas(exp);
       return (
         exp.id.toLowerCase().includes(q) ||
         exp.title.toLowerCase().includes(q) ||
         (exp.hypothesis && exp.hypothesis.toLowerCase().includes(q)) ||
-        (exp.decision?.learnings && exp.decision.learnings.toLowerCase().includes(q)) ||
-        (exp.decision?.resulting_delta_id && exp.decision.resulting_delta_id.toLowerCase().includes(q))
+        findings.includes(q) ||
+        recommendation.includes(q) ||
+        deltas.some((d) => d.toLowerCase().includes(q))
       );
     });
   }, [rawExplorations, filterText, statusFilter]);
@@ -224,250 +272,302 @@ export function ExplorationsView({ data, onNavigateDelta }: ExplorationsViewProp
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {filteredExplorations.map((exp) => (
-            <Card
-              key={exp.id}
-              className="p-5 space-y-4 cursor-pointer hover:border-primary/50 transition-all hover:md-elevation-2 flex flex-col justify-between group"
-              onClick={() => setSelectedExp(exp)}
-            >
-              <div className="space-y-3">
-                {/* Header: ID, Status, Resulting Delta */}
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-amber-500 dark:text-amber-400 group-hover:underline">
-                      {exp.id}
-                    </span>
-                    {getStatusBadge(exp.status)}
+          {filteredExplorations.map((exp) => {
+            const deltas = getExplorationDeltas(exp);
+            const findings = getExplorationFindings(exp);
+            return (
+              <Card
+                key={exp.id}
+                className="p-5 space-y-4 cursor-pointer hover:border-primary/50 transition-all hover:md-elevation-2 flex flex-col justify-between group"
+                onClick={() => setSelectedExp(exp)}
+              >
+                <div className="space-y-3">
+                  {/* Header: ID, Status, Resulting Deltas */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-amber-500 dark:text-amber-400 group-hover:underline">
+                        {exp.id}
+                      </span>
+                      {getStatusBadge(exp.status)}
+                    </div>
+                    {deltas.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {deltas.map((deltaId) => (
+                          <button
+                            key={deltaId}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onNavigateDelta?.(deltaId);
+                            }}
+                            className="font-mono text-[11px] px-2 py-0.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/20 flex items-center gap-1 transition-colors cursor-pointer"
+                            title={`Jump to SpecDelta ${deltaId}`}
+                          >
+                            <GitPullRequest className="h-3 w-3" />
+                            <span>{deltaId}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {exp.decision?.resulting_delta_id && (
-                    <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 flex items-center gap-1">
-                      <GitPullRequest className="h-3 w-3" />
-                      {exp.decision.resulting_delta_id}
-                    </span>
+
+                  {/* Title */}
+                  <h3 className="text-sm font-bold text-foreground leading-snug group-hover:text-primary transition-colors">
+                    {exp.title}
+                  </h3>
+
+                  {/* Hypothesis Callout */}
+                  <div className="p-3.5 rounded-2xl bg-amber-500/5 border border-amber-500/15 text-xs text-muted-foreground space-y-1">
+                    <div className="flex items-center gap-1.5 font-semibold text-amber-600 dark:text-amber-400 text-[11px] uppercase tracking-wider">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Hypothesis
+                    </div>
+                    <p className="line-clamp-3 leading-relaxed">
+                      {exp.hypothesis || "Investigating feasibility and architectural trade-offs."}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Footer Specs & Learnings Preview */}
+                <div className="space-y-3 pt-3 border-t border-border/60">
+                  {findings && (
+                    <p className="text-xs text-muted-foreground line-clamp-2 italic leading-relaxed">
+                      "{findings}"
+                    </p>
                   )}
-                </div>
 
-                {/* Title */}
-                <h3 className="text-sm font-bold text-foreground leading-snug group-hover:text-primary transition-colors">
-                  {exp.title}
-                </h3>
-
-                {/* Hypothesis Callout */}
-                <div className="p-3.5 rounded-2xl bg-amber-500/5 border border-amber-500/15 text-xs text-muted-foreground space-y-1">
-                  <div className="flex items-center gap-1.5 font-semibold text-amber-600 dark:text-amber-400 text-[11px] uppercase tracking-wider">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Hypothesis
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-muted-foreground">
+                    <div className="flex items-center gap-3">
+                      {exp.questions_to_answer && exp.questions_to_answer.length > 0 && (
+                        <span className="flex items-center gap-1">
+                          <FileQuestion className="h-3 w-3 text-primary" />
+                          {exp.questions_to_answer.length} question(s)
+                        </span>
+                      )}
+                      {exp.spikes_to_run && exp.spikes_to_run.length > 0 && (
+                        <span className="flex items-center gap-1">
+                          <FlaskConical className="h-3 w-3 text-purple-400" />
+                          {exp.spikes_to_run.length} spike(s)
+                        </span>
+                      )}
+                    </div>
+                    <span className="flex items-center gap-1 text-primary font-sans font-medium group-hover:translate-x-0.5 transition-transform text-xs">
+                      Inspect Investigation <ArrowRight className="h-3.5 w-3.5" />
+                    </span>
                   </div>
-                  <p className="line-clamp-3 leading-relaxed">
-                    {exp.hypothesis || "Investigating feasibility and architectural trade-offs."}
-                  </p>
                 </div>
-              </div>
-
-              {/* Footer Specs & Learnings Preview */}
-              <div className="space-y-3 pt-3 border-t border-border/60">
-                {exp.decision?.learnings && (
-                  <p className="text-xs text-muted-foreground line-clamp-2 italic leading-relaxed">
-                    "{exp.decision.learnings}"
-                  </p>
-                )}
-
-                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-muted-foreground">
-                  <div className="flex items-center gap-3">
-                    {exp.questions_to_answer && exp.questions_to_answer.length > 0 && (
-                      <span className="flex items-center gap-1">
-                        <FileQuestion className="h-3 w-3 text-primary" />
-                        {exp.questions_to_answer.length} question(s)
-                      </span>
-                    )}
-                    {exp.spikes_to_run && exp.spikes_to_run.length > 0 && (
-                      <span className="flex items-center gap-1">
-                        <FlaskConical className="h-3 w-3 text-purple-400" />
-                        {exp.spikes_to_run.length} spike(s)
-                      </span>
-                    )}
-                  </div>
-                  <span className="flex items-center gap-1 text-primary font-sans font-medium group-hover:translate-x-0.5 transition-transform text-xs">
-                    Inspect Investigation <ArrowRight className="h-3.5 w-3.5" />
-                  </span>
-                </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       )}
 
       {/* Exploration Detail Modal (Centered Sheet with AsciiDocRenderer) */}
       <Sheet
         open={Boolean(selectedExp)}
-        onOpenChange={(open) => !open && setSelectedExp(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedExp(null);
+            onClearSelected?.();
+          }
+        }}
         title={selectedExp?.title || "Architectural Exploration"}
         subtitle={selectedExp?.id}
         maxWidth="6xl"
       >
-        {selectedExp && (
-          <div className="space-y-6">
-            {/* Top Meta Badges & Resulting Delta Bridge */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                {getStatusBadge(selectedExp.status)}
-                {selectedExp.decision?.outcome && (
-                  <Badge variant="outline" className="font-mono text-xs uppercase">
-                    Outcome: {selectedExp.decision.outcome}
-                  </Badge>
-                )}
-                {selectedExp.path && (
-                  <span className="text-xs font-mono text-muted-foreground bg-muted/50 px-2.5 py-1 rounded-xl">
-                    {selectedExp.path}
-                  </span>
+        {selectedExp && (() => {
+          const deltas = getExplorationDeltas(selectedExp);
+          const findings = getExplorationFindings(selectedExp);
+          const recommendation = getExplorationRecommendation(selectedExp);
+          const outcome = selectedExp.decision?.outcome || "";
+          return (
+            <div className="space-y-6">
+              {/* Top Meta Badges & Resulting Delta Bridge */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  {getStatusBadge(selectedExp.status)}
+                  {outcome && (
+                    <Badge variant="outline" className="font-mono text-xs uppercase">
+                      Outcome: {outcome}
+                    </Badge>
+                  )}
+                  {selectedExp.path && (
+                    <span className="text-xs font-mono text-muted-foreground bg-muted/50 px-2.5 py-1 rounded-xl">
+                      {selectedExp.path}
+                    </span>
+                  )}
+                </div>
+
+                {deltas.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {deltas.map((deltaId) => (
+                      <button
+                        key={deltaId}
+                        type="button"
+                        onClick={() => {
+                          onNavigateDelta?.(deltaId);
+                        }}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 text-xs font-mono font-semibold transition-all cursor-pointer"
+                        title="Jump to resulting SpecDelta in Planned Mode"
+                      >
+                        <GitPullRequest className="h-3.5 w-3.5" />
+                        <span>Resulting Delta: {deltaId}</span>
+                        <ArrowRight className="h-3 w-3" />
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
 
-              {selectedExp.decision?.resulting_delta_id && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (onNavigateDelta && selectedExp.decision?.resulting_delta_id) {
-                      onNavigateDelta(selectedExp.decision.resulting_delta_id);
-                    }
-                  }}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 text-xs font-mono font-semibold transition-all cursor-pointer"
-                  title="Jump to resulting SpecDelta in Planned Mode"
-                >
-                  <GitPullRequest className="h-3.5 w-3.5" />
-                  <span>Resulting Delta: {selectedExp.decision.resulting_delta_id}</span>
-                  <ArrowRight className="h-3 w-3" />
-                </button>
+              {/* Core Hypothesis */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <Lightbulb className="h-4 w-4 text-amber-500" />
+                  Core Hypothesis Under Investigation
+                </h4>
+                <p className="text-xs sm:text-sm text-foreground leading-relaxed p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20">
+                  {selectedExp.hypothesis}
+                </p>
+              </div>
+
+              {/* Architectural Decision & Empirical Learnings */}
+              {(outcome || findings || recommendation) && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                    Architectural Decision & Empirical Findings
+                  </h4>
+                  <div className="p-4 rounded-2xl bg-muted/30 border border-border/70 space-y-2 text-xs">
+                    {outcome && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground font-semibold">Outcome:</span>
+                        <Badge
+                          variant={outcome === "adopted" ? "success" : "outline"}
+                          className="capitalize"
+                        >
+                          {outcome}
+                        </Badge>
+                      </div>
+                    )}
+                    {findings && (
+                      <p className="text-foreground leading-relaxed pl-1 pt-1 italic">
+                        "{findings}"
+                      </p>
+                    )}
+                    {recommendation && recommendation !== outcome && (
+                      <p className="text-muted-foreground leading-relaxed pl-1 pt-1">
+                        <span className="font-semibold text-foreground">Recommendation: </span>
+                        {recommendation}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Questions to Answer */}
+              {selectedExp.questions_to_answer && selectedExp.questions_to_answer.length > 0 && (
+                <div className="space-y-2.5">
+                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <FileQuestion className="h-4 w-4 text-primary" />
+                    Questions to Answer ({selectedExp.questions_to_answer.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {selectedExp.questions_to_answer.map((q, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3 rounded-2xl border border-border/60 bg-muted/20 text-xs flex items-start gap-2.5"
+                      >
+                        <span className="h-5 w-5 rounded-full bg-primary/10 text-primary font-mono text-[10px] flex items-center justify-center shrink-0 font-bold">
+                          {idx + 1}
+                        </span>
+                        <p className="text-foreground leading-relaxed">{q}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Spikes to Run */}
+              {selectedExp.spikes_to_run && selectedExp.spikes_to_run.length > 0 && (
+                <div className="space-y-2.5">
+                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <FlaskConical className="h-4 w-4 text-purple-400" />
+                    Empirical Spikes to Run ({selectedExp.spikes_to_run.length})
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {selectedExp.spikes_to_run.map((spike, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3.5 rounded-2xl border border-border/70 bg-card text-xs space-y-1.5"
+                      >
+                        <div className="font-mono font-bold text-primary flex items-center gap-1.5 text-[11px]">
+                          <span className="h-2 w-2 rounded-full bg-primary" />
+                          {spike.name}
+                        </div>
+                        <p className="text-muted-foreground text-[11px] leading-relaxed">
+                          {spike.target}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Exit Criteria */}
+              {selectedExp.exit_criteria && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Gauge className="h-4 w-4 text-indigo-400" />
+                    Exit Criteria & Benchmarks
+                  </h4>
+                  {Array.isArray(selectedExp.exit_criteria) ? (
+                    <div className="p-3.5 rounded-2xl bg-muted/20 border border-border/60 text-xs space-y-1.5">
+                      {selectedExp.exit_criteria.map((crit, idx) => (
+                        <div key={idx} className="font-mono text-xs text-foreground">
+                          • {crit}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-2xl bg-muted/20 border border-border/60 text-xs grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {selectedExp.exit_criteria.max_duration && (
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] font-semibold text-muted-foreground uppercase">
+                            Max Duration
+                          </span>
+                          <p className="font-mono font-bold text-foreground">
+                            {selectedExp.exit_criteria.max_duration}
+                          </p>
+                        </div>
+                      )}
+                      {selectedExp.exit_criteria.benchmark && (
+                        <div className="space-y-0.5 sm:col-span-2">
+                          <span className="text-[10px] font-semibold text-muted-foreground uppercase">
+                            Validation Benchmark
+                          </span>
+                          <p className="font-mono text-xs text-foreground bg-muted/40 p-2 rounded-xl">
+                            {selectedExp.exit_criteria.benchmark}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Full Living Specification Document */}
+              {selectedExp.body && (
+                <div className="space-y-2 pt-2 border-t border-border/60">
+                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <BookOpen className="h-3.5 w-3.5 text-purple-400" />
+                    Living Specification Document (`EXP-*`)
+                  </h4>
+                  <AsciiDocRenderer content={selectedExp.body} />
+                </div>
               )}
             </div>
-
-            {/* Core Hypothesis */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <Lightbulb className="h-4 w-4 text-amber-500" />
-                Core Hypothesis Under Investigation
-              </h4>
-              <p className="text-xs sm:text-sm text-foreground leading-relaxed p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20">
-                {selectedExp.hypothesis}
-              </p>
-            </div>
-
-            {/* Architectural Decision & Empirical Learnings */}
-            {selectedExp.decision && (
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  Architectural Decision & Empirical Findings
-                </h4>
-                <div className="p-4 rounded-2xl bg-muted/30 border border-border/70 space-y-2 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground font-semibold">Outcome:</span>
-                    <Badge variant={selectedExp.decision.outcome === "adopted" ? "success" : "outline"} className="capitalize">
-                      {selectedExp.decision.outcome}
-                    </Badge>
-                  </div>
-                  {selectedExp.decision.learnings && (
-                    <p className="text-foreground leading-relaxed pl-1 pt-1 italic">
-                      "{selectedExp.decision.learnings}"
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Questions to Answer */}
-            {selectedExp.questions_to_answer && selectedExp.questions_to_answer.length > 0 && (
-              <div className="space-y-2.5">
-                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <FileQuestion className="h-4 w-4 text-primary" />
-                  Questions to Answer ({selectedExp.questions_to_answer.length})
-                </h4>
-                <div className="space-y-2">
-                  {selectedExp.questions_to_answer.map((q, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3 rounded-2xl border border-border/60 bg-muted/20 text-xs flex items-start gap-2.5"
-                    >
-                      <span className="h-5 w-5 rounded-full bg-primary/10 text-primary font-mono text-[10px] flex items-center justify-center shrink-0 font-bold">
-                        {idx + 1}
-                      </span>
-                      <p className="text-foreground leading-relaxed">{q}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Spikes to Run */}
-            {selectedExp.spikes_to_run && selectedExp.spikes_to_run.length > 0 && (
-              <div className="space-y-2.5">
-                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <FlaskConical className="h-4 w-4 text-purple-400" />
-                  Empirical Spikes to Run ({selectedExp.spikes_to_run.length})
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {selectedExp.spikes_to_run.map((spike, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3.5 rounded-2xl border border-border/70 bg-card text-xs space-y-1.5"
-                    >
-                      <div className="font-mono font-bold text-primary flex items-center gap-1.5 text-[11px]">
-                        <span className="h-2 w-2 rounded-full bg-primary" />
-                        {spike.name}
-                      </div>
-                      <p className="text-muted-foreground text-[11px] leading-relaxed">
-                        {spike.target}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Exit Criteria */}
-            {selectedExp.exit_criteria && (
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Gauge className="h-4 w-4 text-indigo-400" />
-                  Exit Criteria & Benchmarks
-                </h4>
-                <div className="p-3.5 rounded-2xl bg-muted/20 border border-border/60 text-xs grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {selectedExp.exit_criteria.max_duration && (
-                    <div className="space-y-0.5">
-                      <span className="text-[10px] font-semibold text-muted-foreground uppercase">
-                        Max Duration
-                      </span>
-                      <p className="font-mono font-bold text-foreground">
-                        {selectedExp.exit_criteria.max_duration}
-                      </p>
-                    </div>
-                  )}
-                  {selectedExp.exit_criteria.benchmark && (
-                    <div className="space-y-0.5 sm:col-span-2">
-                      <span className="text-[10px] font-semibold text-muted-foreground uppercase">
-                        Validation Benchmark
-                      </span>
-                      <p className="font-mono text-xs text-foreground bg-muted/40 p-2 rounded-xl">
-                        {selectedExp.exit_criteria.benchmark}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Full Living Specification Document */}
-            {selectedExp.body && (
-              <div className="space-y-2 pt-2 border-t border-border/60">
-                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <BookOpen className="h-3.5 w-3.5 text-purple-400" />
-                  Living Specification Document (`EXP-*`)
-                </h4>
-                <AsciiDocRenderer content={selectedExp.body} />
-              </div>
-            )}
-          </div>
-        )}
+          );
+        })()}
       </Sheet>
     </div>
   );

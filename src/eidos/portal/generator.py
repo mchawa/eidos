@@ -48,9 +48,11 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     system_title = (
         (sys_doc["frontmatter"].get("title") or sys_doc["frontmatter"].get("name") if sys_doc else None)
         or (arch_doc["frontmatter"].get("title") if arch_doc else None)
-        or project.system_name
+        or getattr(project, "system_title", None)
+        or getattr(project, "system_name", None)
+        or "Eidos System"
     )
-    system_id = (sys_doc["id"] if sys_doc else None) or project.system_id
+    system_id = (sys_doc["id"] if sys_doc else None) or getattr(project, "system_id", "SYS-001")
 
     # Components & Containers (C4 Level 2 Containers and Level 3 Promoted Components)
     raw_containers = specs_by_type.get("tech/container", [])
@@ -58,6 +60,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
 
     # Index promoted components by their parent container ID
     promoted_by_container: dict[str, list[dict[str, Any]]] = {}
+    all_promoted_list: list[dict[str, Any]] = []
     for pc in raw_promoted_components:
         p_fm = pc.get("frontmatter", {})
         target_cnt = p_fm.get("container", "")
@@ -66,12 +69,15 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             "name": p_fm.get("name", pc["id"]),
             "responsibility": p_fm.get("responsibility", ""),
             "source_path": p_fm.get("source_path", ""),
+            "file_path": pc.get("path", ""),
             "spec_path": pc.get("path", ""),
             "invariants": p_fm.get("invariants", []),
             "decisions": p_fm.get("decisions", []),
             "status": p_fm.get("status", "active"),
+            "is_promoted": True,
             "description": pc.get("body", ""),
         }
+        all_promoted_list.append(promoted_dict)
         if target_cnt:
             promoted_by_container.setdefault(target_cnt, []).append(promoted_dict)
 
@@ -88,17 +94,59 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             resp = " ".join(m.group(1).split()) if m else f"Core architectural container for {c['id']}."
 
         # Internal components (inline + promoted)
+        doc_id = c["id"]
+        cnt_promoted = promoted_by_container.get(doc_id, [])
         raw_internal = list(fm.get("components", []) or fm.get("c4_internal_components", []))
         internal_components: list[dict[str, Any]] = []
-        for ic in raw_internal:
-            if isinstance(ic, dict):
-                internal_components.append(dict(ic))
+        matched_promoted_ids: set[str] = set()
 
-        # Merge any promoted components belonging to this container not already in list
+        for ic in raw_internal:
+            if not isinstance(ic, dict):
+                continue
+            ic_copy = dict(ic)
+            ic_id = ic_copy.get("id")
+            ref_val = str(ic_copy.get("ref") or ic_copy.get("spec_path") or "").strip().replace("\\", "/").lstrip("./")
+
+            matched_pc: dict[str, Any] | None = None
+            for pc_dict in cnt_promoted + all_promoted_list:
+                pc_path = str(pc_dict.get("file_path", "")).strip().replace("\\", "/").lstrip("./")
+                if ic_id and pc_dict["id"] == ic_id:
+                    matched_pc = pc_dict
+                    break
+                if ref_val and pc_path and (
+                    ref_val == pc_path
+                    or pc_path.endswith(f"/{ref_val}")
+                    or ref_val.endswith(f"/{pc_path}")
+                    or Path(ref_val).stem.lower() == Path(pc_path).stem.lower()
+                ):
+                    matched_pc = pc_dict
+                    break
+
+            if matched_pc is not None:
+                matched_promoted_ids.add(matched_pc["id"])
+                merged_ic = {
+                    **ic_copy,
+                    **matched_pc,
+                    "id": matched_pc["id"],
+                    "name": matched_pc["name"] or ic_copy.get("name", matched_pc["id"]),
+                    "responsibility": matched_pc["responsibility"] or ic_copy.get("responsibility", ""),
+                    "source_path": matched_pc["source_path"] or ic_copy.get("source_path", ""),
+                    "invariants": matched_pc["invariants"] or ic_copy.get("invariants", []),
+                    "decisions": matched_pc["decisions"] or ic_copy.get("decisions", []),
+                    "is_promoted": True,
+                    "file_path": matched_pc["file_path"],
+                    "spec_path": matched_pc["spec_path"],
+                }
+                internal_components.append(merged_ic)
+            elif ic_id:
+                internal_components.append(ic_copy)
+
+        # Merge any promoted components belonging to this container not already matched by a ref or id stub
         existing_ids = {ic.get("id") for ic in internal_components if isinstance(ic, dict)}
-        for pc_dict in promoted_by_container.get(c["id"], []):
-            if pc_dict["id"] not in existing_ids:
-                internal_components.append(pc_dict)
+        for pc_dict in cnt_promoted:
+            if pc_dict["id"] not in matched_promoted_ids and pc_dict["id"] not in existing_ids:
+                internal_components.append(dict(pc_dict))
+                existing_ids.add(pc_dict["id"])
 
         comp_dict = {
             "id": c["id"],
@@ -113,6 +161,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             "dependencies": fm.get("dependencies", {}),
             "contracts": fm.get("contracts", {}),
             "quality_attributes": fm.get("quality_attributes", {}),
+            "invariants": fm.get("invariants", []),
             "decisions": fm.get("decisions", []),
             "tier": fm.get("tier"),
             "description": c["body"],
@@ -317,6 +366,53 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     explorations: list[dict[str, Any]] = []
     for exp in raw_explorations:
         fm = exp["frontmatter"]
+        raw_dec = fm.get("decision")
+        decision_dict: dict[str, Any] = dict(raw_dec) if isinstance(raw_dec, dict) else {}
+
+        findings = fm.get("findings") or decision_dict.get("learnings") or ""
+        if not findings:
+            m_find = re.search(
+                r"(?:\*Findings:\*|^==+\s+[^\n]*Findings[^\n]*)\s*\n+\*?\s*([^\n]+)",
+                exp.get("body", ""),
+                re.MULTILINE,
+            )
+            if m_find:
+                findings = " ".join(m_find.group(1).split())
+
+        recommendation = fm.get("recommendation") or decision_dict.get("recommendation") or ""
+        outcome = (
+            decision_dict.get("outcome")
+            or fm.get("outcome")
+            or (fm.get("status") if fm.get("status") in ("adopted", "discarded", "pivoted") else "")
+            or recommendation
+        )
+
+        raw_res_deltas = fm.get("resulting_deltas") or decision_dict.get("resulting_deltas") or []
+        if isinstance(raw_res_deltas, str):
+            resulting_deltas = [raw_res_deltas]
+        elif isinstance(raw_res_deltas, list):
+            resulting_deltas = [str(d) for d in raw_res_deltas if d]
+        else:
+            resulting_deltas = []
+
+        legacy_delta_id = decision_dict.get("resulting_delta_id") or fm.get("resulting_delta_id")
+        if legacy_delta_id and str(legacy_delta_id) not in resulting_deltas:
+            resulting_deltas.insert(0, str(legacy_delta_id))
+
+        primary_delta_id = legacy_delta_id or (resulting_deltas[0] if resulting_deltas else None)
+
+        if outcome:
+            decision_dict["outcome"] = outcome
+        if findings:
+            decision_dict.setdefault("learnings", findings)
+            decision_dict["findings"] = findings
+        if recommendation:
+            decision_dict["recommendation"] = recommendation
+        if primary_delta_id:
+            decision_dict["resulting_delta_id"] = primary_delta_id
+        if resulting_deltas:
+            decision_dict["resulting_deltas"] = resulting_deltas
+
         explorations.append(
             {
                 "id": exp["id"],
@@ -326,7 +422,10 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 "questions_to_answer": fm.get("questions_to_answer", []),
                 "spikes_to_run": fm.get("spikes_to_run", []),
                 "exit_criteria": fm.get("exit_criteria", {}),
-                "decision": fm.get("decision", {}),
+                "findings": findings,
+                "recommendation": recommendation,
+                "resulting_deltas": resulting_deltas,
+                "decision": decision_dict,
                 "body": exp["body"],
                 "path": exp.get("path", ""),
             }

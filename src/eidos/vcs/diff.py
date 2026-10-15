@@ -7,9 +7,11 @@ polyglot test detection, changed files classification, and component mapping.
 from __future__ import annotations
 
 import contextlib
-import functools
 import os
+import re
 import subprocess
+import sys
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -47,9 +49,22 @@ class ChangedFilesClassification:
         )
 
 
-@functools.lru_cache(maxsize=64)
+_CANDIDATE_BASE_REFS = ("origin/main", "main", "origin/master", "master", "HEAD~1")
+_NESTED_TEST_DIR_NAMES = {"test", "tests", "__tests__", "spec", "specs"}
+_PACKAGE_PATH_LINE_RE = re.compile(r"^package_path:\s*[\"']?([^\"'\n#]+)", re.MULTILINE)
+
+
+def _stdout_str(res: object) -> str:
+    out = getattr(res, "stdout", None)
+    if isinstance(out, bytes):
+        return out.decode("utf-8", errors="replace").strip()
+    if isinstance(out, str):
+        return out.strip()
+    return ""
+
+
 def _query_merge_base(repo: Path, base_ref: str, head_ref: str = "HEAD") -> str | None:
-    """Cached git merge-base query."""
+    """Run git merge-base query for base_ref and head_ref."""
     try:
         check = subprocess.run(
             ["git", "merge-base", base_ref, head_ref],
@@ -59,7 +74,7 @@ def _query_merge_base(repo: Path, base_ref: str, head_ref: str = "HEAD") -> str 
             check=False,
         )
         if check.returncode == 0:
-            sha = check.stdout.strip()
+            sha = _stdout_str(check)
             if sha:
                 return sha
     except OSError:
@@ -96,7 +111,15 @@ def _resolve_base_ref(repo: Path, base_ref: str | None = None) -> str | None:
             f"Cannot resolve base Git reference '{base_ref}'. Ensure the reference exists and is fetched (e.g. git fetch origin <branch>)."
         )
 
-    for candidate in ["origin/main", "main", "origin/master", "master", "HEAD~1"]:
+    head_check = subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        check=False,
+    )
+    head_sha = _stdout_str(head_check) if head_check.returncode == 0 else ""
+
+    for candidate in _CANDIDATE_BASE_REFS:
         check = subprocess.run(
             ["git", "rev-parse", "--verify", candidate],
             cwd=repo,
@@ -104,8 +127,114 @@ def _resolve_base_ref(repo: Path, base_ref: str | None = None) -> str | None:
             check=False,
         )
         if check.returncode == 0:
+            cand_sha = _stdout_str(check)
+            if candidate in ("main", "master") and head_sha and cand_sha == head_sha:
+                prev_check = subprocess.run(
+                    ["git", "rev-parse", "--verify", "HEAD~1"],
+                    cwd=repo,
+                    capture_output=True,
+                    check=False,
+                )
+                if prev_check.returncode == 0 and _resolve_merge_base(
+                    repo, "HEAD~1", "HEAD", fail_loudly=False
+                ):
+                    continue
             return candidate
     return None
+
+
+def _resolve_base_and_merge_base(
+    repo: Path,
+    base_ref: str | None = None,
+    head_ref: str = "HEAD",
+) -> tuple[str | None, str | None, bool]:
+    """Resolve (resolved_base, resolved_merge_base, fell_back_to_uncommitted) in a single pass."""
+    drift_mod = sys.modules.get("eidos.vcs.drift")
+    resolve_base_fn = (
+        getattr(drift_mod, "_resolve_base_ref", _resolve_base_ref) if drift_mod else _resolve_base_ref
+    )
+    resolve_mb_fn = (
+        getattr(drift_mod, "_resolve_merge_base", _resolve_merge_base) if drift_mod else _resolve_merge_base
+    )
+
+    if base_ref is not None:
+        resolved_base = resolve_base_fn(repo, base_ref)
+        if not resolved_base:
+            raise GitResolutionError(
+                f"Cannot resolve base Git reference '{base_ref}'. Ensure the reference exists and is fetched (e.g. git fetch origin <branch>)."
+            )
+        if head_ref != "HEAD":
+            head_check = subprocess.run(
+                ["git", "rev-parse", "--verify", head_ref],
+                cwd=repo,
+                capture_output=True,
+                check=False,
+            )
+            if head_check.returncode != 0:
+                raise GitResolutionError(
+                    f"Cannot resolve head Git reference '{head_ref}'. Ensure the reference exists and is fetched."
+                )
+        resolved_mb = resolve_mb_fn(repo, resolved_base, head_ref, fail_loudly=True)
+        return resolved_base, resolved_mb, False
+
+    if head_ref != "HEAD":
+        head_check = subprocess.run(
+            ["git", "rev-parse", "--verify", head_ref],
+            cwd=repo,
+            capture_output=True,
+            check=False,
+        )
+        if head_check.returncode != 0:
+            raise GitResolutionError(
+                f"Cannot resolve head Git reference '{head_ref}'. Ensure the reference exists and is fetched."
+            )
+
+    candidate = resolve_base_fn(repo, None)
+    if not candidate:
+        return None, None, True
+
+    mb = resolve_mb_fn(repo, candidate, head_ref, fail_loudly=False)
+    if mb:
+        return candidate, mb, False
+
+    # Fallback scan if the initial candidate had no common ancestor with head_ref
+    head_check = subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        check=False,
+    )
+    head_sha = _stdout_str(head_check) if head_check.returncode == 0 else ""
+    start_idx = (
+        _CANDIDATE_BASE_REFS.index(candidate) + 1
+        if candidate in _CANDIDATE_BASE_REFS
+        else 0
+    )
+    for rem_cand in _CANDIDATE_BASE_REFS[start_idx:]:
+        check = subprocess.run(
+            ["git", "rev-parse", "--verify", rem_cand],
+            cwd=repo,
+            capture_output=True,
+            check=False,
+        )
+        if check.returncode == 0:
+            cand_sha = _stdout_str(check)
+            if rem_cand in ("main", "master") and head_sha and cand_sha == head_sha:
+                prev_check = subprocess.run(
+                    ["git", "rev-parse", "--verify", "HEAD~1"],
+                    cwd=repo,
+                    capture_output=True,
+                    check=False,
+                )
+                if prev_check.returncode == 0 and resolve_mb_fn(
+                    repo, "HEAD~1", head_ref, fail_loudly=False
+                ):
+                    continue
+            rem_mb = resolve_mb_fn(repo, rem_cand, head_ref, fail_loudly=False)
+            if rem_mb:
+                return rem_cand, rem_mb, False
+
+    return None, None, True
 
 
 def get_git_diff_files(
@@ -113,6 +242,8 @@ def get_git_diff_files(
     base_ref: str | None = None,
     head_ref: str = "HEAD",
     uncommitted: bool = False,
+    *,
+    merge_base: str | None = None,
 ) -> list[str]:
     """Retrieve list of modified and added files using Git."""
     repo = repo_root.resolve()
@@ -160,30 +291,13 @@ def get_git_diff_files(
             pass
         return sorted(files)
 
-    # Determine base_ref and merge_base (DLT-2026-053)
-    resolved_base = base_ref
-    resolved_mb: str | None = None
-
-    if resolved_base:
-        _resolve_base_ref(repo, resolved_base)
-        resolved_mb = _resolve_merge_base(repo, resolved_base, head_ref, fail_loudly=True)
+    if merge_base is not None:
+        resolved_mb: str | None = merge_base
+        resolved_base: str | None = base_ref or merge_base
     else:
-        for candidate in ["origin/main", "main", "origin/master", "master", "HEAD~1"]:
-            check = subprocess.run(
-                ["git", "rev-parse", "--verify", candidate],
-                cwd=repo,
-                capture_output=True,
-                check=False,
-            )
-            if check.returncode == 0:
-                mb = _resolve_merge_base(repo, candidate, head_ref, fail_loudly=False)
-                if mb:
-                    resolved_base = candidate
-                    resolved_mb = mb
-                    break
-
-    if not resolved_base:
-        return get_git_diff_files(repo_root, uncommitted=True)
+        resolved_base, resolved_mb, fell_back = _resolve_base_and_merge_base(repo, base_ref, head_ref)
+        if fell_back or not resolved_base:
+            return get_git_diff_files(repo_root, uncommitted=True)
 
     try:
         diff_base = resolved_mb or f"{resolved_base}...{head_ref}"
@@ -248,14 +362,20 @@ POLYGLOT_EXCLUDED_DIRS = {
 }
 
 
-def is_polyglot_test_file(path: Path | str, repo_root: Path | None = None) -> bool:
+def is_polyglot_test_file(
+    path: Path | str,
+    repo_root: Path | None = None,
+    package_paths: Iterable[str] | None = None,
+) -> bool:
     """Determine whether a file path corresponds to an automated test file across polyglot languages."""
     p = Path(path)
     name = p.name
 
     if repo_root is not None:
+        root_res = repo_root.resolve()
+        target_p = (root_res / p).resolve() if not p.is_absolute() else p.resolve()
         try:
-            rel_path = p.resolve().relative_to(repo_root.resolve())
+            rel_path = target_p.relative_to(root_res)
         except ValueError:
             rel_path = p
     elif p.is_absolute():
@@ -268,19 +388,33 @@ def is_polyglot_test_file(path: Path | str, repo_root: Path | None = None) -> bo
 
     if rel_path.is_absolute():
         parent_names = [parent.name.lower() for parent in rel_path.parents[:2]]
-        in_test_dir = any(d in ("tests", "test", "__tests__") for d in parent_names)
+        in_test_dir = any(d in _NESTED_TEST_DIR_NAMES for d in parent_names)
         is_under_src = False
-        is_src_test = False
+        nested_test_segment = False
     else:
         dir_parts = [part.lower() for part in rel_path.parent.parts]
         is_under_src = bool(dir_parts and dir_parts[0] == "src")
-        is_src_test = any(
-            dir_parts[i] == "src" and dir_parts[i + 1] == "test" for i in range(len(dir_parts) - 1)
-        )
+        nested_dir_parts: list[str] = dir_parts[1:] if is_under_src else []
+
+        if not is_under_src and package_paths:
+            for raw_pkg in package_paths:
+                norm_pkg = str(raw_pkg).strip().replace("\\", "/").strip("/").lower()
+                if not norm_pkg or norm_pkg == ".":
+                    continue
+                pkg_parts = [pt for pt in norm_pkg.split("/") if pt]
+                if pkg_parts and len(dir_parts) >= len(pkg_parts) and dir_parts[: len(pkg_parts)] == pkg_parts:
+                    is_under_src = True
+                    nested_dir_parts = dir_parts[len(pkg_parts) :]
+                    break
+
+        nested_test_segment = any(seg in _NESTED_TEST_DIR_NAMES for seg in nested_dir_parts)
         in_test_dir = (
-            (bool(dir_parts and dir_parts[0] in ("tests", "test", "__tests__")))
-            or is_src_test
-            or (not is_under_src and any(part in ("tests", "test", "__tests__") for part in dir_parts))
+            nested_test_segment
+            if is_under_src
+            else (
+                bool(dir_parts and dir_parts[0] in _NESTED_TEST_DIR_NAMES)
+                or any(part in _NESTED_TEST_DIR_NAMES for part in dir_parts)
+            )
         )
 
     if any(
@@ -314,11 +448,14 @@ def is_polyglot_test_file(path: Path | str, repo_root: Path | None = None) -> bo
     ):
         return True
 
-    if p.suffix == ".py":
-        if is_under_src and not is_src_test:
-            return bool(in_test_dir)
-        if name.startswith("test_") or name.endswith("_test.py"):
-            return True
+    if is_under_src:
+        return bool(
+            nested_test_segment
+            and p.suffix in {".py", ".ts", ".js", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt"}
+        )
+
+    if p.suffix == ".py" and (name.startswith("test_") or name.endswith("_test.py")):
+        return True
 
     return bool(in_test_dir and p.suffix in {".py", ".ts", ".js", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt"})
 
@@ -346,10 +483,27 @@ def collect_polyglot_test_files(repo_root: Path) -> dict[str, str]:
     return all_tests_content
 
 
+def _discover_container_package_paths(eidos_dir: Path) -> list[str]:
+    """Fast scan of container specs for declared package_path prefixes."""
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    if not cnt_dir.is_dir():
+        return []
+    pkg_paths: list[str] = []
+    for adoc in cnt_dir.glob("*.adoc"):
+        with contextlib.suppress(OSError):
+            content = adoc.read_text(encoding="utf-8", errors="replace")
+            for m in _PACKAGE_PATH_LINE_RE.finditer(content):
+                val = m.group(1).strip()
+                if val and val not in pkg_paths:
+                    pkg_paths.append(val)
+    return pkg_paths
+
+
 def classify_changed_files(
     files: list[str],
     repo_root: Path | None = None,
     eidos_dir: Path | None = None,
+    package_paths: Iterable[str] | None = None,
 ) -> ChangedFilesClassification:
     """Classify file paths into code, living specs, deltas, tests, docs, and other."""
     classification = ChangedFilesClassification()
@@ -382,17 +536,29 @@ def classify_changed_files(
 
     effective_root = (repo_root or Path.cwd()).resolve()
     if eidos_dir is not None:
+        resolved_eidos = (
+            (effective_root / eidos_dir).resolve()
+            if not eidos_dir.is_absolute()
+            else eidos_dir.resolve()
+        )
         try:
-            eff_eidos = eidos_dir.resolve().relative_to(effective_root)
-            eidos_rel_parts = [p.lower() for p in eff_eidos.parts]
+            eff_eidos = resolved_eidos.relative_to(effective_root)
+            eidos_rel_parts = [p.lower() for p in eff_eidos.parts if p not in ("", ".")]
         except ValueError:
-            eidos_rel_parts = [p.lower() for p in eidos_dir.parts]
+            eidos_rel_parts = [p.lower() for p in eidos_dir.parts if p not in ("", ".")]
     else:
+        resolved_eidos = (effective_root / "eidos").resolve()
         eidos_rel_parts = ["eidos"]
     prefix_len = len(eidos_rel_parts)
 
+    eff_pkg_paths = (
+        list(package_paths)
+        if package_paths is not None
+        else _discover_container_package_paths(resolved_eidos)
+    )
+
     candidate_code_paths: list[str] = []
-    parsed_files: list[tuple[str, Path, Path, list[str]]] = []
+    parsed_files: list[tuple[str, Path, Path, list[str], bool, list[str], bool]] = []
     for f_str in files:
         f = Path(f_str)
         if f.is_absolute():
@@ -403,31 +569,40 @@ def classify_changed_files(
         else:
             rel_f = f
         parts = [p.lower() for p in rel_f.parts]
-        parsed_files.append((f_str, f, rel_f, parts))
-
-        is_in_eidos = len(parts) >= prefix_len and parts[:prefix_len] == eidos_rel_parts
+        is_in_eidos = prefix_len > 0 and len(parts) >= prefix_len and parts[:prefix_len] == eidos_rel_parts
+        sub_parts = parts[prefix_len:] if is_in_eidos else []
+        is_eidos_ignored = f.name == ".gitkeep" or (
+            is_in_eidos
+            and (any(p.startswith(".") for p in sub_parts) or ("deltas" in sub_parts and "by-status" in sub_parts))
+        )
+        is_eidos_spec = is_in_eidos and f.suffix in {".adoc", ".json", ".yaml", ".yml"}
+        is_test = is_polyglot_test_file(rel_f, repo_root=effective_root, package_paths=eff_pkg_paths)
         is_doc = f.suffix in {".md", ".rst"} or (bool(parts and parts[0] == "docs"))
+        parsed_files.append((f_str, f, rel_f, parts, is_in_eidos, sub_parts, is_test))
+
         if (
-            not is_in_eidos
-            and not is_polyglot_test_file(rel_f, repo_root=effective_root)
+            not is_eidos_ignored
+            and not is_eidos_spec
+            and not is_test
             and not is_doc
             and f.suffix in code_extensions
             and not any(skip in parts for skip in [".venv", "venv", "node_modules", "dist", "build", "__pycache__"])
         ):
             candidate_code_paths.append(str(rel_f).replace("\\", "/"))
-    import sys
+
     drift_mod = sys.modules.get("eidos.vcs.drift")
-    vendored_fn = getattr(drift_mod, "is_generated_or_vendored", is_generated_or_vendored) if drift_mod else is_generated_or_vendored
+    vendored_fn = (
+        getattr(drift_mod, "is_generated_or_vendored", is_generated_or_vendored)
+        if drift_mod
+        else is_generated_or_vendored
+    )
     vendored_paths = (
         vendored_fn(effective_root, candidate_code_paths)
         if candidate_code_paths
         else set()
     )
 
-    for f_str, f, rel_f, parts in parsed_files:
-        is_in_eidos = len(parts) >= prefix_len and parts[:prefix_len] == eidos_rel_parts
-        sub_parts = parts[prefix_len:] if is_in_eidos else []
-
+    for f_str, f, rel_f, parts, is_in_eidos, sub_parts, is_test in parsed_files:
         if f.name == ".gitkeep" or (
             is_in_eidos
             and (any(p.startswith(".") for p in sub_parts) or ("deltas" in sub_parts and "by-status" in sub_parts))
@@ -442,7 +617,7 @@ def classify_changed_files(
                 classification.spec_files.append(f_str)
             continue
 
-        if is_polyglot_test_file(rel_f, repo_root=effective_root):
+        if is_test:
             classification.test_files.append(f_str)
             continue
 
@@ -544,12 +719,14 @@ def _get_file_versions(
     baseline_ref = merge_base
     if not baseline_ref:
         if base_ref:
-            baseline_ref = _resolve_merge_base(repo, base_ref, head_ref, fail_loudly=False) or base_ref
+            baseline_ref = _resolve_merge_base(repo, base_ref, head_ref, fail_loudly=True)
         else:
-            resolved_base = _resolve_base_ref(repo, None)
-            if not resolved_base:
+            _, baseline_ref, fell_back = _resolve_base_and_merge_base(repo, None, head_ref)
+            if fell_back or not baseline_ref:
                 return None, None
-            baseline_ref = _resolve_merge_base(repo, resolved_base, head_ref, fail_loudly=False) or resolved_base
+
+    if not baseline_ref:
+        return None, None
 
     old_content = _git_show(baseline_ref, norm_rel)
     new_content = _git_show(head_ref, norm_rel)

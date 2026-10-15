@@ -6,6 +6,7 @@ import typer
 from rich.table import Table
 
 from eidos.cli._shared import PANEL_GOVERNANCE, console
+from eidos.core.workspace.project import find_repo_root
 from eidos.vcs import GitResolutionError, detect_drift
 
 
@@ -51,8 +52,15 @@ def drift_cmd(
     ),
 ):
     """Detect spec-to-code drift, schema validity, and invariant test coverage."""
-    eidos_dir = path or Path("eidos")
-    repo_root = Path.cwd()
+    if path is not None:
+        resolved_path = path.resolve()
+        repo_root = find_repo_root(resolved_path) if resolved_path.exists() else Path.cwd()
+        if repo_root == resolved_path:
+            repo_root = resolved_path.parent if resolved_path.is_dir() else Path.cwd()
+        eidos_dir = resolved_path
+    else:
+        repo_root = Path.cwd()
+        eidos_dir = Path("eidos")
 
     try:
         result = detect_drift(

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -17,6 +16,7 @@ from eidos.vcs.diff import (
     ChangedFilesClassification,
     GitResolutionError,
     _get_file_versions,
+    _resolve_base_and_merge_base,
     _resolve_base_ref,
     _resolve_merge_base,
     classify_changed_files,
@@ -31,11 +31,14 @@ from eidos.vcs.invariants import (
     extract_invariants_and_verify,
     get_living_specs_catalog,
 )
+from eidos.vcs.report import build_drift_remediation_and_summary
 from eidos.vcs.structural import (
     SYSTEM_LEVEL_SPEC_PATHS,
     ReconcileSuggestion,
+    _accepts_kwarg,
     _collect_1hop_spec_targets,
     _collect_design_subgraph,
+    _is_system_level_spec,
     _pair_moved_files,
     _path_in,
     _resolve_bound_design_ids,
@@ -44,17 +47,23 @@ from eidos.vcs.structural import (
     _structural_addition_for,
     _StructuralAddition,
     _SymbolMapCache,
+    get_system_level_spec_paths,
 )
 
 __all__ = [
     "POLYGLOT_EXCLUDED_DIRS",
     "POLYGLOT_TEST_PATTERNS",
+    "SYSTEM_LEVEL_SPEC_PATHS",
     "ChangedFilesClassification",
     "DriftCheckResult",
     "GitResolutionError",
     "InvariantTrace",
     "ReconcileResult",
     "ReconcileSuggestion",
+    "_resolve_base_and_merge_base",
+    "_resolve_base_ref",
+    "_resolve_merge_base",
+    "build_drift_remediation_and_summary",
     "classify_changed_files",
     "collect_polyglot_test_files",
     "detect_drift",
@@ -62,6 +71,7 @@ __all__ = [
     "extract_invariants_and_verify",
     "get_git_diff_files",
     "get_living_specs_catalog",
+    "get_system_level_spec_paths",
     "is_generated_or_vendored",
     "is_polyglot_test_file",
     "map_code_to_components",
@@ -110,30 +120,66 @@ def detect_drift(
     from eidos.core.index.ast_indexer import STYLE_EXTS, classify_design_changes, has_structural_changes
 
     root = repo_root.resolve()
-    target_eidos = (eidos_dir or (root / "eidos")).resolve()
+    if eidos_dir is None:
+        target_eidos = (root / "eidos").resolve()
+    elif not eidos_dir.is_absolute():
+        target_eidos = (root / eidos_dir).resolve()
+    else:
+        target_eidos = eidos_dir.resolve()
+
+    try:
+        eidos_rel_prefix = str(target_eidos.relative_to(root)).replace("\\", "/").strip("/") or "eidos"
+    except ValueError:
+        eidos_rel_prefix = target_eidos.name or "eidos"
+    system_spec_paths = get_system_level_spec_paths(eidos_rel_prefix)
 
     # Single-pass base Git reference and merge-base resolution (DLT-2026-052, DLT-2026-053)
-    resolved_base_ref = None
+    resolved_base_ref: str | None = None
+    resolved_mb: str | None = None
+    effective_uncommitted = uncommitted
     if not uncommitted:
-        if base_ref:
-            resolved_base_ref = _resolve_base_ref(root, base_ref)
-            _resolve_merge_base(root, resolved_base_ref, head_ref, fail_loudly=True)
-        else:
-            for candidate in ["origin/main", "main", "origin/master", "master", "HEAD~1"]:
-                check = subprocess.run(
-                    ["git", "rev-parse", "--verify", candidate],
-                    cwd=root,
-                    capture_output=True,
-                    check=False,
-                )
-                if check.returncode == 0:
-                    mb = _resolve_merge_base(root, candidate, head_ref, fail_loudly=False)
-                    if mb:
-                        resolved_base_ref = candidate
-                        break
+        resolved_base_ref, resolved_mb, fell_back = _resolve_base_and_merge_base(
+            root, base_ref, head_ref
+        )
+        if fell_back:
+            effective_uncommitted = True
 
-    changed_files = get_git_diff_files(root, base_ref=resolved_base_ref, head_ref=head_ref, uncommitted=uncommitted)
+    if _accepts_kwarg(get_git_diff_files, "merge_base"):
+        changed_files = get_git_diff_files(
+            root,
+            base_ref=resolved_base_ref,
+            head_ref=head_ref,
+            uncommitted=effective_uncommitted,
+            merge_base=resolved_mb,
+        )
+    else:
+        changed_files = get_git_diff_files(
+            root,
+            base_ref=resolved_base_ref,
+            head_ref=head_ref,
+            uncommitted=effective_uncommitted,
+        )
     classification = classify_changed_files(changed_files, repo_root=root, eidos_dir=target_eidos)
+
+    versions_supports_mb = _accepts_kwarg(_get_file_versions, "merge_base")
+
+    def _fetch_versions(rel_p: str) -> tuple[str | None, str | None]:
+        if versions_supports_mb:
+            return _get_file_versions(
+                root,
+                rel_p,
+                base_ref=resolved_base_ref,
+                head_ref=head_ref,
+                uncommitted=effective_uncommitted,
+                merge_base=resolved_mb,
+            )
+        return _get_file_versions(
+            root,
+            rel_p,
+            base_ref=resolved_base_ref,
+            head_ref=head_ref,
+            uncommitted=effective_uncommitted,
+        )
 
     # 0. Filter code files into structural vs body-only edits (DLT-2026-028)
     #    and classify frontend/styling diffs into design categories (DLT-2026-030)
@@ -141,16 +187,7 @@ def detect_drift(
     body_only_code_files: list[str] = []
     structural_additions: dict[str, _StructuralAddition] = {}
     design_changes: dict[str, tuple[str, list[str]]] = {}
-    versions = {
-        cf: _get_file_versions(
-            root,
-            cf,
-            base_ref=resolved_base_ref,
-            head_ref=head_ref,
-            uncommitted=uncommitted,
-        )
-        for cf in classification.code_files
-    }
+    versions = {cf: _fetch_versions(cf) for cf in classification.code_files}
     smap = _SymbolMapCache(versions)
     # Content-based move detection (DLT-2026-039): an added file paired with a deleted file of the same change set
     moved_from = _pair_moved_files(versions, smap)
@@ -212,13 +249,7 @@ def detect_drift(
             if status in ("rejected", "deprecated", "superseded", "archived"):
                 continue
             if status == "applied":
-                old_dc, new_dc = _get_file_versions(
-                    root,
-                    df,
-                    base_ref=resolved_base_ref,
-                    head_ref=head_ref,
-                    uncommitted=uncommitted,
-                )
+                old_dc, new_dc = _fetch_versions(df)
                 if old_dc is not None and new_dc is not None and old_dc != new_dc:
                     old_fm, _, _ = extract_frontmatter(old_dc)
                     if isinstance(old_fm, dict) and str(old_fm.get("status", "")).strip().lower() == "applied":
@@ -316,10 +347,14 @@ def detect_drift(
         return design_subgraph_cache[cf]
 
     trivial_records: list[dict[str, Any]] = []
-    spec_inspector = _SpecDiffInspector(root, resolved_base_ref, head_ref, uncommitted)
+    spec_inspector = _SpecDiffInspector(
+        root, resolved_base_ref, head_ref, effective_uncommitted, merge_base=resolved_mb
+    )
     if code_changed:
         for cf, cid, spath in comp_mappings:
-            allowed_paths, allowed_ids = _collect_1hop_spec_targets(idx, cf, cid, spath)
+            allowed_paths, allowed_ids = _collect_1hop_spec_targets(
+                idx, cf, cid, spath, system_spec_paths=system_spec_paths
+            )
             if cf in design_changes or Path(cf).suffix.lower() in STYLE_EXTS:
                 _, d_paths, d_ids = _design_subgraph_for(cf)
                 allowed_paths |= d_paths
@@ -333,6 +368,7 @@ def detect_drift(
                 addition=structural_additions.get(cf),
                 owner_spec=str(spath),
                 inspector=spec_inspector,
+                system_spec_paths=system_spec_paths,
             )
             if rejected_rule and not any(r["file"] == cf for r in trivial_records):
                 addition = structural_additions.get(cf)
@@ -354,12 +390,44 @@ def detect_drift(
     mapped_files = {c for c, _, _ in comp_mappings}
     unmapped_code_files = [cf for cf in structural_code_files if cf not in mapped_files]
 
+    changed_sys_specs = [
+        s for s in classification.spec_files if _is_system_level_spec(s, system_spec_paths)
+    ]
     system_spec_substantively_updated = any(
-        any(s.replace("\\", "/").lower().endswith(sys_p.lower()) for sys_p in SYSTEM_LEVEL_SPEC_PATHS)
+        spec_inspector.is_substantive(s) for s in changed_sys_specs
+    )
+    arch_or_system_substantively_updated = system_spec_substantively_updated or any(
+        (
+            "/architecture/containers/" in f"/{s.replace(chr(92), '/').lower().strip('/')}"
+            or "/architecture/components/" in f"/{s.replace(chr(92), '/').lower().strip('/')}"
+        )
         and spec_inspector.is_substantive(s)
         for s in classification.spec_files
     )
-    uncovered_unmapped_code = [] if system_spec_substantively_updated else list(unmapped_code_files)
+    uncovered_unmapped_code: list[str] = []
+    if not system_spec_substantively_updated:
+        for ucf in unmapped_code_files:
+            old_uc, new_uc = versions.get(ucf, (None, None))
+            is_deleted = old_uc is not None and new_uc is None
+            if is_deleted and arch_or_system_substantively_updated:
+                continue
+            uncovered_unmapped_code.append(ucf)
+            if changed_sys_specs and not any(r["file"] == ucf for r in trivial_records):
+                addition = structural_additions.get(ucf)
+                additions_list = (
+                    list(addition.reasons)
+                    if addition is not None
+                    else ["modified unmapped code file"]
+                )
+                trivial_records.append(
+                    {
+                        "file": ucf,
+                        "owner": changed_sys_specs[0],
+                        "additions": additions_list,
+                        "spec_files": sorted(changed_sys_specs),
+                        "rule": "trivial_spec_diff",
+                    }
+                )
     unmapped_drift = bool(uncovered_unmapped_code)
 
     # Graph-scoped design drift (DLT-2026-030): token / UI-contract changes must update the bound
@@ -374,14 +442,24 @@ def detect_drift(
         if cat == "ui_contract":
             satisfying_paths |= owner_specs_by_file.get(cf, set())
             satisfying_ids |= {o.lower() for o in owners_by_file.get(cf, set())}
-        covered = any(
-            _path_in(s, satisfying_paths) and spec_inspector.is_substantive(s)
-            for s in classification.spec_files
-        )
+        matching_design_specs = [
+            s for s in classification.spec_files if _path_in(s, satisfying_paths)
+        ]
+        covered = any(spec_inspector.is_substantive(s) for s in matching_design_specs)
         if not covered and has_deltas:
             covered = bool(declared_delta_targets & satisfying_ids)
         if not covered:
             uncovered_design.append((cf, cat, reasons, sorted(bound)))
+            if matching_design_specs and not any(r["file"] == cf for r in trivial_records):
+                trivial_records.append(
+                    {
+                        "file": cf,
+                        "owner": matching_design_specs[0],
+                        "additions": list(reasons) if reasons else [f"modified {cat}"],
+                        "spec_files": sorted(matching_design_specs),
+                        "rule": "trivial_spec_diff",
+                    }
+                )
     design_drift = bool(uncovered_design)
     frontend_code_files = [cf for cf, _, _, _ in uncovered_design]
 
@@ -404,86 +482,6 @@ def detect_drift(
         eidos_dir=target_eidos,
     )
 
-    # 6. Remediation suggestions
-    remediation: list[str] = []
-    if base_direct_drift:
-        target_list = uncovered_direct_components or comp_mappings
-        remediation.append(
-            f"Drift Detected: {len(structural_code_files)} structural code file(s) changed without corresponding living specification updates in eidos/ (within 1-hop graph neighborhood)."
-        )
-        for cf, cid, spath in target_list[:5]:
-            remediation.append(f"• '{cf}' relates to {cid} -> Update '{spath}' (or a 1-hop linked capability/contract)")
-        if not target_list:
-            remediation.append(
-                "• Run 'eidos drift' or ask your AI agent to update corresponding living specifications in eidos/."
-            )
-
-    if unmapped_drift:
-        remediation.append(
-            f"Unmapped Code Drift Detected: {len(uncovered_unmapped_code)} structural code file(s) are not owned by any container or component."
-        )
-        for ucf in uncovered_unmapped_code[:5]:
-            remediation.append(
-                f"• '{ucf}' -> declare ownership via 'package_path'/'source_path' in eidos/architecture/ (or substantively update eidos/system.adoc)."
-            )
-
-    if design_drift:
-        remediation.append(
-            f"Design System Drift Detected: {len(uncovered_design)} frontend/styling file(s) changed design tokens or UI contracts without updating their bound design subgraph."
-        )
-        for fcf, cat, reasons, bound in uncovered_design[:5]:
-            kind = "design token" if cat == "token" else "UI contract"
-            detail = f" ({reasons[0]})" if reasons else ""
-            remediation.append(
-                f"• {kind} change in '{fcf}'{detail} -> update specs bound to {', '.join(bound)} (tokens.json, UIC-*, SCR-*, FLOW-*, or the CLT-*/DS-* spec)."
-            )
-
-    if uncovered_delta_drift:
-        for cf, cid, spath in uncovered_components[:5]:
-            remediation.append(
-                f"Uncovered Delta Drift: '{cf}' relates to {cid}, which is NOT declared in active SpecDelta mutations. Declare it in the SpecDelta or update '{spath}'."
-            )
-
-    trivial_edit_records = [r for r in trivial_records if r["rule"] == "trivial_spec_diff"]
-    if trivial_edit_records:
-        remediation.append(
-            f"Trivial Spec Edit: {len(trivial_edit_records)} structural addition(s) are only covered by whitespace/comment-only spec edits — document the additions in the owning specification."
-        )
-        for rec in trivial_edit_records[:5]:
-            remediation.append(
-                f"• '{rec['file']}' ({'; '.join(rec['additions'][:3])}) -> document it in {rec['owner']} (spec edits seen: {', '.join(rec['spec_files'])})"
-            )
-    unanchored_records = [r for r in trivial_records if r["rule"] == "missing_anchor"]
-    if unanchored_records:
-        remediation.append(
-            f"Missing Spec Anchor: {len(unanchored_records)} new source file(s) lie outside any declared source_path/owned_path and are not referenced by the owning spec edit."
-        )
-        for rec in unanchored_records[:5]:
-            remediation.append(
-                f"• '{rec['file']}' -> mention it (path, name, or a new public symbol) in {rec['owner']} or declare it under 'components'/'source_path'."
-            )
-
-    if not validation_report.is_clean:
-        remediation.append(
-            f"Specification Validation Failed: {len(validation_report.schema_errors)} error(s), {len(validation_report.broken_references)} broken link(s)."
-        )
-
-    if uncovered_invariants:
-        remediation.append(
-            f"Uncovered Invariants: {len(uncovered_invariants)} invariant(s) lack verified static test bindings (file::func + # INV-* marker)."
-        )
-        for uinv in uncovered_invariants[:5]:
-            remediation.append(f"• {uinv.invariant_id} ({uinv.spec_path}) -> test_binding='{uinv.test_binding}'")
-
-    if orphan_invariants:
-        remediation.append(
-            f"Orphan Invariant References: {len(orphan_invariants)} test reference(s) point to non-existent INV-* IDs."
-        )
-        for oid, loc in orphan_invariants[:5]:
-            remediation.append(
-                f"• {oid} referenced in '{loc}' is not declared in any capability, policy, or component."
-            )
-
     # Overall clean status
     is_clean = (
         (not drift_detected)
@@ -492,61 +490,32 @@ def detect_drift(
         and len(orphan_invariants) == 0
     )
 
-    # 7. Generate Markdown Summary for reports and PR comments
-    summary_lines = [
-        "## 🧭 Eidos Living Specification Drift Detection Summary",
-        "",
-    ]
-
-    mode_badge = (
-        "📋 Mode: **Planned (SpecDelta)**" if workflow_mode == "planned" else "⚡ Mode: **Direct (Co-Evolution)**"
+    # 6 & 7. Remediation suggestions and Markdown Summary (CMP-DRIFT-DETECTOR report module)
+    remediation, summary_markdown = build_drift_remediation_and_summary(
+        workflow_mode=workflow_mode,
+        is_clean=is_clean,
+        drift_detected=drift_detected,
+        base_direct_drift=base_direct_drift,
+        unmapped_drift=unmapped_drift,
+        design_drift=design_drift,
+        uncovered_delta_drift=uncovered_delta_drift,
+        specs_changed=specs_changed,
+        has_deltas=has_deltas,
+        classification=classification,
+        structural_code_files=structural_code_files,
+        comp_mappings=comp_mappings,
+        uncovered_direct_components=uncovered_direct_components,
+        uncovered_components=uncovered_components,
+        uncovered_unmapped_code=uncovered_unmapped_code,
+        uncovered_design=uncovered_design,
+        trivial_records=trivial_records,
+        validation_report=validation_report,
+        invariants=invariants,
+        uncovered_invariants=uncovered_invariants,
+        orphan_invariants=orphan_invariants,
+        touched_components=touched_components,
+        eidos_rel_prefix=eidos_rel_prefix,
     )
-    summary_lines.append(f"{mode_badge}\n")
-
-    if is_clean:
-        summary_lines.append("### ✅ Status: PASSED (Specifications and Code are Synchronized)")
-    elif drift_detected:
-        summary_lines.append("### ⚠️ Status: DRIFT DETECTED (Code modified without living spec updates)")
-    else:
-        summary_lines.append("### ❌ Status: VALIDATION FAILED")
-
-    summary_lines.extend(
-        [
-            "",
-            "| Metric | Count | Status |",
-            "|---|---|---|",
-            f"| Modified Code Files | `{len(classification.code_files)}` (`{len(structural_code_files)}` structural) | {'⚠️ Needs Spec Update' if drift_detected else '✓'} |",
-            f"| Modified Living Specs | `{len(classification.spec_files)}` | {'✓ In Sync' if specs_changed else '—'} |",
-            f"| Modified SpecDeltas | `{len(classification.delta_files)}` | {'✓ Planned' if has_deltas else '— (Direct Mode)'} |",
-            f"| Modified Test Files | `{len(classification.test_files)}` | {'✓' if classification.test_files else '—'} |",
-            f"| Living Specs Validated | `{validation_report.valid_docs}/{validation_report.total_docs}` | {'✓ 100% Green' if validation_report.is_clean else '✗ Errors'} |",
-            f"| Invariants Verified | `{len(invariants) - len(uncovered_invariants)}/{len(invariants)}` | {'✓ 100% Covered' if not uncovered_invariants else f'✗ {len(uncovered_invariants)} Uncovered'} |",
-            "",
-        ]
-    )
-
-    if touched_components:
-        summary_lines.append(f"**Impacted Components:** `{', '.join(touched_components)}`\n")
-
-    if classification.spec_files:
-        summary_lines.append("### 📄 Touched Living Specifications:")
-        for sf in classification.spec_files:
-            summary_lines.append(f"- `{sf}`")
-        summary_lines.append("")
-
-    if classification.delta_files:
-        summary_lines.append("### 📋 Associated SpecDeltas:")
-        for df in classification.delta_files:
-            summary_lines.append(f"- `{df}`")
-        summary_lines.append("")
-
-    if remediation:
-        summary_lines.append("### 💡 Recommended Actions:")
-        for rem in remediation:
-            summary_lines.append(f"- {rem}")
-        summary_lines.append("")
-
-    summary_markdown = "\n".join(summary_lines)
 
     return DriftCheckResult(
         is_clean=is_clean,
@@ -578,7 +547,17 @@ def reconcile_specs(
 ) -> ReconcileResult:
     """Analyze changed code and synthesize recommendations / AI prompt to synchronize living specs."""
     root = repo_root.resolve()
-    target_eidos = (eidos_dir or (root / "eidos")).resolve()
+    if eidos_dir is None:
+        target_eidos = (root / "eidos").resolve()
+    elif not eidos_dir.is_absolute():
+        target_eidos = (root / eidos_dir).resolve()
+    else:
+        target_eidos = eidos_dir.resolve()
+
+    try:
+        eidos_rel_prefix = str(target_eidos.relative_to(root)).replace("\\", "/").strip("/") or "eidos"
+    except ValueError:
+        eidos_rel_prefix = target_eidos.name or "eidos"
 
     changed_files = get_git_diff_files(root, base_ref=base_ref, uncommitted=uncommitted)
     classification = classify_changed_files(changed_files, repo_root=root, eidos_dir=target_eidos)
@@ -589,7 +568,6 @@ def reconcile_specs(
     file_to_comps: dict[str, list[str]] = {}
     for cf, cid, spath in comp_mappings:
         file_to_comps.setdefault(cf, []).append(f"{cid} ({spath})")
-
 
     idx = get_architectural_index(repo_root=root, eidos_dir=target_eidos) if target_eidos.exists() else None
 
@@ -609,7 +587,7 @@ def reconcile_specs(
                         if cand_str not in candidates:
                             candidates.append(cand_str)
         if not candidates:
-            candidates = ["eidos/architecture/system-architecture.adoc"]
+            candidates = [f"{eidos_rel_prefix}/architecture/system-architecture.adoc"]
 
         suggestions.append(
             ReconcileSuggestion(
@@ -644,8 +622,8 @@ def reconcile_specs(
             "## Instructions for the AI Agent:",
             "1. Inspect the Git diff of the modified code files.",
             "2. Think deeply about the architectural implications, touched contracts, capabilities, and invariant tests.",
-            "3. Update the appropriate living specifications in 'eidos/' directly (or create a SpecDelta if this is a complex, breaking change).",
-            "4. Verify that 'eidos validate eidos' and 'eidos drift --uncommitted' pass cleanly.",
+            f"3. Update the appropriate living specifications in '{eidos_rel_prefix}/' directly (or create a SpecDelta if this is a complex, breaking change).",
+            f"4. Verify that 'eidos validate {eidos_rel_prefix}' and 'eidos drift --uncommitted' pass cleanly.",
         ]
     )
 

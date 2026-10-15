@@ -12,7 +12,7 @@ intent:
 mutations:
   - action: modify_container
     target_container: "CNT-EIDOS-VCS"
-    details: "Update CMP-DRIFT-DETECTOR in src/eidos/vcs/drift.py and CMP-CLI-DRIFT-COMMANDS in src/eidos/cli/drift_commands.py to fail loudly when an explicit --base ref cannot be resolved, never fall back from a valid empty 3-dot diff (merge-base) to a 2-dot diff or --uncommitted, and read baseline file contents from the resolved merge-base SHA."
+    details: "Update CMP-DRIFT-DETECTOR in src/eidos/vcs/drift.py and src/eidos/vcs/diff.py and CMP-CLI-DRIFT-COMMANDS in src/eidos/cli/drift_commands.py to fail loudly when an explicit --base ref cannot be resolved, never fall back from a valid empty 3-dot diff (merge-base) to a 2-dot diff or --uncommitted, and read baseline file contents from the resolved merge-base SHA."
     expect:
       contains: "CMP-DRIFT-DETECTOR"
   - action: modify_container
@@ -52,7 +52,7 @@ blast_radius:
 :toc: left
 
 == Problem Statement
-`get_git_diff_files` and `_git_show_text` in `src/eidos/vcs/drift.py` (`lines 149-186, 1045-1062`) have three Git diff resolution flaws that undermine CI gating:
+`get_git_diff_files` and `_get_file_versions` (`_git_show_text`) in `src/eidos/vcs/diff.py` and `src/eidos/vcs/drift.py` (`lines 149-186, 1045-1062`) have three Git diff resolution flaws that undermine CI gating:
 
 1. **Silent Fallback to `--uncommitted` on Invalid or Missing `--base`**:
    - When `--base <ref>` is explicitly supplied (e.g., `eidos drift --base origin/main` in CI) and `git rev-parse --verify` fails (due to a shallow clone without `origin/main` or a misspelled ref), `get_git_diff_files` (`drift.py:168, 186`) silently falls back to `get_git_diff_files(repo_root, uncommitted=True)`.
@@ -61,7 +61,7 @@ blast_radius:
    - `git diff --name-only <base>...<head>` returns `returncode == 0` with empty stdout when `<head>` has zero changes since branching from `<base>`.
    - Because `if lines:` (`line 175`) treats empty stdout as a failure, execution falls through to `git diff --name-only <base> <head>` (2-dot diff), which includes all upstream commits merged into `<base>` after the branch was created—causing false-positive drift failures.
 3. **Mismatched Base Tip vs. Merge-Base File Contents (`drift.py:1061`)**:
-   - While the file list is computed via 3-dot merge-base diff (`base...HEAD`), `_git_show_text` reads the old file content from the tip of `base` (`git show base:path`) rather than the merge-base SHA.
+   - While the file list is computed via 3-dot merge-base diff (`base...HEAD`), `_get_file_versions` (`_git_show_text`) reads the old file content from the tip of `base` (`git show base:path`) rather than the merge-base SHA.
 
 == Proposed Specification & Engine Changes
 1. **Fail-Closed `--base` Resolution**:
@@ -69,7 +69,7 @@ blast_radius:
 2. **Preserve Valid Empty 3-Dot Diffs**:
    - When `git diff --name-only <merge_base> <head_ref>` succeeds with `returncode == 0`, return `lines` directly (even when empty `[]`) without falling back to a 2-dot diff against `<base_ref>`.
 3. **Consistent Merge-Base Content Comparison**:
-   - Pass the resolved `merge_base` SHA to `_git_show_text` so old file versions match the exact commit used to compute the diff file list.
+   - Pass the resolved `merge_base` SHA to `_get_file_versions` (`_git_show_text`) so old file versions match the exact commit used to compute the diff file list.
 
 == Verification Plan
 * `uv run pytest tests/test_drift.py`

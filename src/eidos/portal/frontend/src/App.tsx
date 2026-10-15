@@ -27,8 +27,10 @@ export function App() {
     return saved ? saved === "dark" : true;
   });
   const [commandOpen, setCommandOpen] = React.useState<boolean>(false);
-  const [selectedDeltaId, setSelectedDeltaId] = React.useState<string | undefined>(undefined);
-  const [selectedComponentId, setSelectedComponentId] = React.useState<string | undefined>(undefined);
+  const [selectedDelta, setSelectedDelta] = React.useState<{ id: string; nonce: number } | null>(null);
+  const [selectedComponent, setSelectedComponent] = React.useState<{ id: string; nonce: number } | null>(null);
+  const [selectedExploration, setSelectedExploration] = React.useState<{ id: string; nonce: number } | null>(null);
+  const [selectedBusiness, setSelectedBusiness] = React.useState<{ id: string; nonce: number } | null>(null);
 
   // Sync theme to <html> element
   React.useEffect(() => {
@@ -82,24 +84,15 @@ export function App() {
     setDarkMode((prev) => !prev);
   };
 
-  // Build searchable items for CMD+K spotlight search
+  // Build searchable items for CMD+K spotlight search (deduplicating specialized items against generic specs)
   const commandItems: CommandItem[] = React.useMemo(() => {
     if (!data) return [];
     const items: CommandItem[] = [];
-
-    // Specs
-    data.specs.forEach((s) => {
-      items.push({
-        id: s.id,
-        title: s.title,
-        subtitle: s.path,
-        category: "specs",
-        raw: s,
-      });
-    });
+    const seenIds = new Set<string>();
 
     // C4 Components
     data.components.forEach((c) => {
+      seenIds.add(c.id);
       items.push({
         id: c.id,
         title: c.name,
@@ -111,6 +104,7 @@ export function App() {
 
     // Invariants
     (data.invariants || []).forEach((inv) => {
+      seenIds.add(inv.id);
       items.push({
         id: inv.id,
         title: inv.title || inv.category,
@@ -120,14 +114,16 @@ export function App() {
       });
     });
 
-    // Deltas
+    // Deltas (including rejected)
     const deltasList = [
       ...(data.deltas?.proposed || []),
       ...(data.deltas?.in_review || []),
       ...(data.deltas?.approved || []),
       ...(data.deltas?.applied || []),
+      ...(data.deltas?.rejected || []),
     ];
     deltasList.forEach((d) => {
+      seenIds.add(d.id);
       items.push({
         id: d.id,
         title: d.title,
@@ -139,6 +135,7 @@ export function App() {
 
     // Policies
     (data.policies || []).forEach((pol) => {
+      seenIds.add(pol.id);
       items.push({
         id: pol.id,
         title: pol.title,
@@ -150,6 +147,7 @@ export function App() {
 
     // Domains
     (data.domains || []).forEach((dom) => {
+      seenIds.add(dom.id);
       items.push({
         id: dom.id,
         title: dom.name,
@@ -161,6 +159,7 @@ export function App() {
 
     // Capabilities
     (data.capabilities || []).forEach((cap) => {
+      seenIds.add(cap.id);
       items.push({
         id: cap.id,
         title: cap.name || cap.title || cap.id,
@@ -172,6 +171,7 @@ export function App() {
 
     // Personas
     (data.personas || []).forEach((per) => {
+      seenIds.add(per.id);
       items.push({
         id: per.id,
         title: per.name,
@@ -183,6 +183,7 @@ export function App() {
 
     // Explorations
     (data.explorations || []).forEach((exp) => {
+      seenIds.add(exp.id);
       items.push({
         id: exp.id,
         title: exp.title,
@@ -192,17 +193,33 @@ export function App() {
       });
     });
 
+    // Specs not already indexed under a specialized category
+    data.specs.forEach((s) => {
+      if (!seenIds.has(s.id)) {
+        seenIds.add(s.id);
+        items.push({
+          id: s.id,
+          title: s.title,
+          subtitle: s.path,
+          category: "specs",
+          raw: s,
+        });
+      }
+    });
+
     return items;
   }, [data]);
 
   const handleCommandSelect = (item: CommandItem) => {
+    const nonce = Date.now();
     if (item.category === "components") {
-      setSelectedComponentId(item.id);
+      setSelectedComponent({ id: item.id, nonce });
       setActiveTab("architecture");
     } else if (item.category === "deltas") {
-      setSelectedDeltaId(item.id);
+      setSelectedDelta({ id: item.id, nonce });
       setActiveTab("deltas");
     } else if (item.category === "explorations") {
+      setSelectedExploration({ id: item.id, nonce });
       setActiveTab("explorations");
     } else if (
       item.category === "policies" ||
@@ -211,9 +228,10 @@ export function App() {
       item.category === "personas" ||
       item.category === "invariants"
     ) {
+      setSelectedBusiness({ id: item.id, nonce });
       setActiveTab("business");
     } else {
-      setFocusSpec({ id: item.id, nonce: Date.now() });
+      setFocusSpec({ id: item.id, nonce });
       setActiveTab("catalog");
     }
   };
@@ -271,20 +289,27 @@ export function App() {
             <ArchitectureView
               data={data}
               darkMode={darkMode}
-              initialComponentId={selectedComponentId}
+              initialComponentId={selectedComponent?.id}
+              initialComponentNonce={selectedComponent?.nonce}
+              onClearSelectedComponent={() => setSelectedComponent(null)}
             />
           )}
           {activeTab === "deltas" && (
             <DeltasView
               data={data}
-              initialDeltaId={selectedDeltaId}
+              initialDeltaId={selectedDelta?.id}
+              initialDeltaNonce={selectedDelta?.nonce}
+              onClearSelectedDelta={() => setSelectedDelta(null)}
             />
           )}
           {activeTab === "explorations" && (
             <ExplorationsView
               data={data}
+              initialSelectedId={selectedExploration?.id}
+              initialSelectedNonce={selectedExploration?.nonce}
+              onClearSelected={() => setSelectedExploration(null)}
               onNavigateDelta={(deltaId) => {
-                setSelectedDeltaId(deltaId);
+                setSelectedDelta({ id: deltaId, nonce: Date.now() });
                 setActiveTab("deltas");
               }}
             />
@@ -297,7 +322,14 @@ export function App() {
               onFocusHandled={() => setFocusSpec(null)}
             />
           )}
-          {activeTab === "business" && <BusinessView data={data} />}
+          {activeTab === "business" && (
+            <BusinessView
+              data={data}
+              initialSelectedId={selectedBusiness?.id}
+              initialSelectedNonce={selectedBusiness?.nonce}
+              onClearSelected={() => setSelectedBusiness(null)}
+            />
+          )}
           {activeTab === "design" && <DesignView data={data} darkMode={darkMode} />}
         </div>
       </main>

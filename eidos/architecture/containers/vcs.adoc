@@ -19,6 +19,7 @@ components:
       - "src/eidos/vcs/diff.py"
       - "src/eidos/vcs/invariants.py"
       - "src/eidos/vcs/structural.py"
+      - "src/eidos/vcs/report.py"
 
 dependencies:
   internal_containers:
@@ -41,13 +42,13 @@ quality_attributes:
 :toc: left
 
 == Architectural Boundary
-This container represents the Git-native drift detection and specification reconciliation engine under `src/eidos/vcs/`. It inspects Git commit ranges and uncommitted working-tree diffs, performs structural AST symbol comparison, verifies static invariant test bindings (`file::func`), and evaluates 1-hop knowledge graph neighborhoods to detect specification-to-code drift.
+This container represents the Git-native drift detection and specification reconciliation engine under `src/eidos/vcs/`. It inspects Git commit ranges and uncommitted working-tree diffs, performs structural AST symbol comparison, verifies static invariant test bindings (`file::func`), evaluates 1-hop knowledge graph neighborhoods to detect specification-to-code drift, and renders remediation and Markdown verification reports.
 
 == Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
 
 [cols="1,1,2,2", options="header"]
 |===
 | Component ID | Name | Responsibility | Source Path
-| `CMP-DRIFT-DETECTOR` | **DriftDetector** | Structural Git diff inspection with fail-closed base and merge-base resolution, strict unmapped code governance, universal substantive spec diff enforcement, diff-aware 1-hop spec coverage, static invariant test verification, and edge-scoped graph drift analysis | `src/eidos/vcs/drift.py` (submodules: `diff.py`, `invariants.py`, `structural.py`)
+| `CMP-DRIFT-DETECTOR` | **DriftDetector** | Structural Git diff inspection with fail-closed base and merge-base resolution, strict unmapped code governance, universal substantive spec diff enforcement, diff-aware 1-hop spec coverage, static invariant test verification, edge-scoped graph drift analysis, and remediation/Markdown report rendering | `src/eidos/vcs/drift.py` (submodules: `diff.py`, `invariants.py`, `structural.py`, `report.py`)
 |===
 
