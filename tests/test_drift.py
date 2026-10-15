@@ -397,6 +397,32 @@ def test_classify_changed_files_ancestor_path_named_docs(tmp_path):
     assert str(code_file) not in classified.doc_files
 
 
+def test_classify_changed_files_custom_eidos_dir(tmp_path):
+    """Verify classify_changed_files correctly classifies spec and delta files under a custom eidos_dir."""
+    from eidos.vcs.drift import classify_changed_files
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir(parents=True)
+    custom_specs = repo_dir / "specs"
+    custom_specs.mkdir()
+    (custom_specs / "deltas").mkdir()
+
+    spec_file = custom_specs / "system.adoc"
+    spec_file.write_text("= System\n", encoding="utf-8")
+    delta_file = custom_specs / "deltas" / "dlt-2026-001.adoc"
+    delta_file.write_text("= Delta\n", encoding="utf-8")
+    code_file = repo_dir / "src" / "main.py"
+    code_file.parent.mkdir(parents=True)
+    code_file.write_text("print('hi')\n", encoding="utf-8")
+
+    files = [str(spec_file), str(delta_file), str(code_file)]
+    classified = classify_changed_files(files, repo_root=repo_dir, eidos_dir=custom_specs)
+
+    assert str(spec_file) in classified.spec_files
+    assert str(delta_file) in classified.delta_files
+    assert str(code_file) in classified.code_files
+
+
 def test_design_system_drift_detection(monkeypatch):
     """Verify frontend code or styling modifications require eidos/design/ living spec updates."""
     # 1. Frontend CSS changed without eidos/design updates -> drift detected

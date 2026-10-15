@@ -470,7 +470,7 @@ class SpecValidator:
         schema = self.resolve_schema(doc)
         if schema:
             self._validate_schema_references(schema, fm, "", doc, catalog_ids, report, entity_types)
-        self._validate_architectural_invariants(doc, fm, report)
+        self._validate_architectural_invariants(doc, fm, report, root_dir=root_dir)
 
     def _validate_schema_references(
         self,
@@ -603,6 +603,7 @@ class SpecValidator:
         doc: SpecDocument,
         fm: dict[str, Any],
         report: ValidationReport,
+        root_dir: Path | None = None,
     ) -> None:
         """Enforce structural boundary invariants across contracts and dedicated components."""
         dtype = doc.doc_type
@@ -616,7 +617,21 @@ class SpecValidator:
                 doc.errors.append(err_msg)
                 report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
         elif dtype == "tech/component":
-            rel_parts = doc.file_path.parts
+            if root_dir is not None:
+                root_res = root_dir.resolve()
+                repo_root = root_res.parent if root_res.name in ["eidos", ".spec"] else root_res
+            else:
+                ancestor_eidos = next(
+                    (p for p in doc.file_path.resolve().parents if p.name in ("eidos", ".spec")),
+                    None,
+                )
+                repo_root = ancestor_eidos.parent if ancestor_eidos is not None else Path.cwd().resolve()
+
+            try:
+                rel_parts = doc.file_path.resolve().relative_to(repo_root.resolve()).parts
+            except ValueError:
+                rel_parts = doc.file_path.parts
+
             is_centralized = (
                 "architecture" in rel_parts
                 and "components" in rel_parts
@@ -732,6 +747,17 @@ class SpecValidator:
             source = cli_file.read_text(encoding="utf-8")
             tree = ast.parse(source)
         except (OSError, SyntaxError):
+            return
+
+        # Scoped parity: only verify Typer CLI parity if the target source imports Typer
+        if "typer" not in source.lower():
+            return
+        has_typer = any(
+            (isinstance(node, ast.Import) and any(alias.name == "typer" for alias in node.names))
+            or (isinstance(node, ast.ImportFrom) and node.module == "typer")
+            for node in ast.walk(tree)
+        )
+        if not has_typer:
             return
 
         commands: set[str] = set()

@@ -364,3 +364,35 @@ def test_spike_4_exit_criteria_token_budget_benchmark(repo_env):
     assert guardrails_savings >= 40.0, f"Guardrails savings {guardrails_savings:.1f}% was below 40% target"
 
     index.close()
+
+
+def test_centralization_mandate_parent_path_named_src(tmp_path):
+    """Verify INV-COMPONENT-CENTRALIZATION-MANDATE does not false-positive when repo is in a parent directory named 'src'."""
+    repo_root = tmp_path / "src" / "my_project"
+    repo_root.mkdir(parents=True)
+    eidos_dir = repo_root / "eidos"
+    comp_dir = eidos_dir / "architecture" / "components"
+    comp_dir.mkdir(parents=True)
+
+    # Valid component in eidos/architecture/components/
+    valid_comp = comp_dir / "valid_component.adoc"
+    valid_comp.write_text(
+        "---\n"
+        "type: tech/component\n"
+        "schema: schemas/v1/tech/component.schema.yaml\n"
+        "id: CMP-SRC-PATH-VALID\n"
+        "name: Valid Component Under Src Parent\n"
+        "container: CNT-SAMPLE-CORE\n"
+        "status: active\n"
+        "source_path: src/sample/core/parser.py\n"
+        "responsibility: Valid component placed centrally in eidos/architecture/components/.\n"
+        "---\n"
+        "= Valid Component\n",
+        encoding="utf-8",
+    )
+
+    validator = SpecValidator()
+    report = validator.validate_directory(eidos_dir)
+    errors = report.schema_errors.get(str(valid_comp), [])
+    assert not any("INV-COMPONENT-CENTRALIZATION-MANDATE" in err for err in errors)
+

@@ -323,7 +323,11 @@ def collect_polyglot_test_files(repo_root: Path) -> dict[str, str]:
     return all_tests_content
 
 
-def classify_changed_files(files: list[str], repo_root: Path | None = None) -> ChangedFilesClassification:
+def classify_changed_files(
+    files: list[str],
+    repo_root: Path | None = None,
+    eidos_dir: Path | None = None,
+) -> ChangedFilesClassification:
     """Classify file paths into code, living specs, deltas, tests, docs, and other."""
     classification = ChangedFilesClassification()
 
@@ -354,6 +358,15 @@ def classify_changed_files(files: list[str], repo_root: Path | None = None) -> C
     }
 
     effective_root = (repo_root or Path.cwd()).resolve()
+    if eidos_dir is not None:
+        try:
+            eff_eidos = eidos_dir.resolve().relative_to(effective_root)
+            eidos_rel_parts = [p.lower() for p in eff_eidos.parts]
+        except ValueError:
+            eidos_rel_parts = [p.lower() for p in eidos_dir.parts]
+    else:
+        eidos_rel_parts = ["eidos"]
+    prefix_len = len(eidos_rel_parts)
 
     for f_str in files:
         f = Path(f_str)
@@ -366,19 +379,20 @@ def classify_changed_files(files: list[str], repo_root: Path | None = None) -> C
             rel_f = f
 
         parts = [p.lower() for p in rel_f.parts]
+        is_in_eidos = len(parts) >= prefix_len and parts[:prefix_len] == eidos_rel_parts
+        sub_parts = parts[prefix_len:] if is_in_eidos else []
 
-        # Ignore .gitkeep, eidos/.cache/**, and eidos/deltas/by-status/** symlinks
+        # Ignore .gitkeep, <eidos_dir>/.cache/**, and <eidos_dir>/deltas/by-status/** symlinks
         if f.name == ".gitkeep" or (
-            parts
-            and parts[0] == "eidos"
-            and (any(p.startswith(".") for p in parts[1:]) or ("deltas" in parts and "by-status" in parts))
+            is_in_eidos
+            and (any(p.startswith(".") for p in sub_parts) or ("deltas" in sub_parts and "by-status" in sub_parts))
         ):
             classification.other_files.append(f_str)
             continue
 
-        # Spec / Delta files (must reside within the project's eidos/ specifications directory)
-        if parts and parts[0] == "eidos" and f.suffix in {".adoc", ".json", ".yaml", ".yml"}:
-            if "deltas" in parts:
+        # Spec / Delta files (must reside within the project's specifications directory)
+        if is_in_eidos and f.suffix in {".adoc", ".json", ".yaml", ".yml"}:
+            if "deltas" in sub_parts:
                 classification.delta_files.append(f_str)
             else:
                 classification.spec_files.append(f_str)
@@ -1626,7 +1640,7 @@ def detect_drift(
     target_eidos = (eidos_dir or (root / "eidos")).resolve()
 
     changed_files = get_git_diff_files(root, base_ref=base_ref, head_ref=head_ref, uncommitted=uncommitted)
-    classification = classify_changed_files(changed_files, repo_root=root)
+    classification = classify_changed_files(changed_files, repo_root=root, eidos_dir=target_eidos)
 
     # 0. Filter code files into structural vs body-only edits (DLT-2026-028)
     #    and classify frontend/styling diffs into design categories (DLT-2026-030)
@@ -2052,7 +2066,7 @@ def reconcile_specs(
     target_eidos = (eidos_dir or (root / "eidos")).resolve()
 
     changed_files = get_git_diff_files(root, base_ref=base_ref, uncommitted=uncommitted)
-    classification = classify_changed_files(changed_files, repo_root=root)
+    classification = classify_changed_files(changed_files, repo_root=root, eidos_dir=target_eidos)
     comp_mappings = map_code_to_components(target_eidos, classification.code_files, repo_root=root)
     catalog = get_living_specs_catalog(target_eidos, repo_root=root)
 
