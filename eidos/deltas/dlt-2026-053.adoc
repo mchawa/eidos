@@ -3,7 +3,7 @@ type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-053
 title: Strict Base Git Reference Validation and Merge-Base Diff Resolution Without Silent Fallbacks
-status: proposed
+status: applied
 intent:
   kind: bug
   bug_classification: spec_violation

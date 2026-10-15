@@ -6,7 +6,7 @@ import typer
 from rich.table import Table
 
 from eidos.cli._shared import PANEL_GOVERNANCE, console
-from eidos.vcs import detect_drift
+from eidos.vcs import GitResolutionError, detect_drift
 
 
 def drift_cmd(
@@ -54,13 +54,22 @@ def drift_cmd(
     eidos_dir = path or Path("eidos")
     repo_root = Path.cwd()
 
-    result = detect_drift(
-        repo_root=repo_root,
-        base_ref=base,
-        head_ref=head,
-        eidos_dir=eidos_dir,
-        uncommitted=uncommitted,
-    )
+    try:
+        result = detect_drift(
+            repo_root=repo_root,
+            base_ref=base,
+            head_ref=head,
+            eidos_dir=eidos_dir,
+            uncommitted=uncommitted,
+        )
+    except GitResolutionError as err:
+        if json_output:
+            console.print_json(data={"error": str(err), "is_clean": False})
+        else:
+            console.print(f"[bold red]Git Resolution Error:[/bold red] {err}")
+        if not warn_only:
+            raise typer.Exit(code=1)
+        return
 
     if json_output:
         data = {

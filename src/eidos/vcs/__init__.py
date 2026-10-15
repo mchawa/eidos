@@ -3,6 +3,7 @@
 from eidos.vcs.drift import (
     ChangedFilesClassification,
     DriftCheckResult,
+    GitResolutionError,
     InvariantTrace,
     ReconcileResult,
     ReconcileSuggestion,
@@ -17,6 +18,7 @@ from eidos.vcs.drift import (
 __all__ = [
     "ChangedFilesClassification",
     "DriftCheckResult",
+    "GitResolutionError",
     "InvariantTrace",
     "ReconcileResult",
     "ReconcileSuggestion",

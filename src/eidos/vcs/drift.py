@@ -1,6 +1,7 @@
 """Drift detection, PR verification gate, and living spec reconciliation."""
 
 import contextlib
+import functools
 import hashlib
 import json
 import os
@@ -18,6 +19,10 @@ from eidos.core.workspace.project import (
     is_generated_or_vendored,
     matches_owned_paths,
 )
+
+
+class GitResolutionError(RuntimeError):
+    """Raised when an explicit base Git reference cannot be resolved or has no merge base."""
 
 
 @dataclass
@@ -95,6 +100,67 @@ class ReconcileResult:
     catalog: dict[str, list[dict]] = field(default_factory=dict)
 
 
+@functools.lru_cache(maxsize=64)
+def _query_merge_base(repo: Path, base_ref: str, head_ref: str = "HEAD") -> str | None:
+    """Cached git merge-base query."""
+    try:
+        check = subprocess.run(
+            ["git", "merge-base", base_ref, head_ref],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if check.returncode == 0:
+            sha = check.stdout.strip()
+            if sha:
+                return sha
+    except OSError:
+        pass
+    return None
+
+
+def _resolve_merge_base(
+    repo: Path, base_ref: str, head_ref: str = "HEAD", fail_loudly: bool = False
+) -> str | None:
+    """Resolve the merge-base commit SHA between base_ref and head_ref (DLT-2026-053)."""
+    sha = _query_merge_base(repo, base_ref, head_ref)
+    if sha:
+        return sha
+    if fail_loudly:
+        raise GitResolutionError(
+            f"Cannot find merge base between '{base_ref}' and '{head_ref}'. Ensure commits share a common ancestor."
+        )
+    return None
+
+
+def _resolve_base_ref(repo: Path, base_ref: str | None = None) -> str | None:
+    """Resolve the candidate base Git commit reference once per drift run (DLT-2026-052, DLT-2026-053)."""
+    if base_ref:
+        check = subprocess.run(
+            ["git", "rev-parse", "--verify", base_ref],
+            cwd=repo,
+            capture_output=True,
+            check=False,
+        )
+        if check.returncode == 0:
+            return base_ref
+        raise GitResolutionError(
+            f"Cannot resolve base Git reference '{base_ref}'. Ensure the reference exists and is fetched (e.g. git fetch origin <branch>)."
+        )
+
+    for candidate in ["origin/main", "main", "origin/master", "master", "HEAD~1"]:
+        check = subprocess.run(
+            ["git", "rev-parse", "--verify", candidate],
+            cwd=repo,
+            capture_output=True,
+            check=False,
+        )
+        if check.returncode == 0:
+            return candidate
+    return None
+
+
 def get_git_diff_files(
     repo_root: Path,
     base_ref: str | None = None,
@@ -148,10 +214,16 @@ def get_git_diff_files(
             pass
         return sorted(files)
 
-    # Determine base_ref if not provided
+    # Determine base_ref and merge_base (DLT-2026-053)
     resolved_base = base_ref
-    if not resolved_base:
-        # Try origin/main, then main, then HEAD~1
+    resolved_mb: str | None = None
+
+    if resolved_base:
+        # Explicit base ref supplied: fail closed if verification or merge-base fails
+        _resolve_base_ref(repo, resolved_base)
+        resolved_mb = _resolve_merge_base(repo, resolved_base, head_ref, fail_loudly=True)
+    else:
+        # No base_ref supplied: try standard candidates
         for candidate in ["origin/main", "main", "origin/master", "master", "HEAD~1"]:
             check = subprocess.run(
                 ["git", "rev-parse", "--verify", candidate],
@@ -160,28 +232,35 @@ def get_git_diff_files(
                 check=False,
             )
             if check.returncode == 0:
-                resolved_base = candidate
-                break
+                mb = _resolve_merge_base(repo, candidate, head_ref, fail_loudly=False)
+                if mb:
+                    resolved_base = candidate
+                    resolved_mb = mb
+                    break
 
     if not resolved_base:
-        # Fallback to inspecting uncommitted changes
+        # Fallback to inspecting uncommitted changes ONLY when no base_ref was provided
         return get_git_diff_files(repo_root, uncommitted=True)
 
     try:
-        cmd = ["git", "diff", "--name-only", "--no-renames", f"{resolved_base}...{head_ref}"]
+        diff_base = resolved_mb or f"{resolved_base}...{head_ref}"
+        if resolved_mb:
+            cmd = ["git", "diff", "--name-only", "--no-renames", resolved_mb, head_ref]
+        else:
+            cmd = ["git", "diff", "--name-only", "--no-renames", f"{resolved_base}...{head_ref}"]
+
         res = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
         if res.returncode == 0:
             lines = [line.strip() for line in res.stdout.splitlines() if line.strip()]
-            if lines:
-                return sorted(lines)
+            return sorted(lines)
 
-        # Fallback to direct range
-        cmd_direct = ["git", "diff", "--name-only", "--no-renames", resolved_base, head_ref]
-        res_direct = subprocess.run(cmd_direct, cwd=repo, capture_output=True, text=True, check=False)
-        if res_direct.returncode == 0:
-            return sorted(line.strip() for line in res_direct.stdout.splitlines() if line.strip())
-    except OSError:
-        pass
+        if base_ref:
+            raise GitResolutionError(
+                f"Failed to execute git diff against '{diff_base}': {res.stderr.strip()}"
+            )
+    except OSError as err:
+        if base_ref:
+            raise GitResolutionError(f"Failed to execute git diff: {err}") from err
 
     return get_git_diff_files(repo_root, uncommitted=True)
 
@@ -1089,37 +1168,13 @@ def get_living_specs_catalog(eidos_dir: Path, repo_root: Path | None = None) -> 
     return catalog
 
 
-def _resolve_base_ref(repo: Path, base_ref: str | None = None) -> str | None:
-    """Resolve the candidate base Git commit reference once per drift run (DLT-2026-052)."""
-    if base_ref:
-        check = subprocess.run(
-            ["git", "rev-parse", "--verify", base_ref],
-            cwd=repo,
-            capture_output=True,
-            check=False,
-        )
-        if check.returncode == 0:
-            return base_ref
-        return None
-
-    for candidate in ["origin/main", "main", "origin/master", "master", "HEAD~1"]:
-        check = subprocess.run(
-            ["git", "rev-parse", "--verify", candidate],
-            cwd=repo,
-            capture_output=True,
-            check=False,
-        )
-        if check.returncode == 0:
-            return candidate
-    return None
-
-
 def _get_file_versions(
     repo_root: Path,
     rel_path: str,
     base_ref: str | None = None,
     head_ref: str = "HEAD",
     uncommitted: bool = False,
+    merge_base: str | None = None,
 ) -> tuple[str | None, str | None]:
     """Retrieve (old_content, new_content) for a modified file to evaluate structural AST diffs."""
     repo = repo_root.resolve()
@@ -1149,11 +1204,17 @@ def _get_file_versions(
                 new_content = abs_p.read_text(encoding="utf-8", errors="replace")
         return old_content, new_content
 
-    resolved_base = base_ref or _resolve_base_ref(repo, base_ref)
-    if not resolved_base:
-        return None, None
+    baseline_ref = merge_base
+    if not baseline_ref:
+        if base_ref:
+            baseline_ref = _resolve_merge_base(repo, base_ref, head_ref, fail_loudly=False) or base_ref
+        else:
+            resolved_base = _resolve_base_ref(repo, None)
+            if not resolved_base:
+                return None, None
+            baseline_ref = _resolve_merge_base(repo, resolved_base, head_ref, fail_loudly=False) or resolved_base
 
-    old_content = _git_show(resolved_base, norm_rel)
+    old_content = _git_show(baseline_ref, norm_rel)
     new_content = _git_show(head_ref, norm_rel)
     return old_content, new_content
 
@@ -1676,8 +1737,27 @@ def detect_drift(
     root = repo_root.resolve()
     target_eidos = (eidos_dir or (root / "eidos")).resolve()
 
-    # Single-pass base Git reference resolution (DLT-2026-052)
-    resolved_base_ref = base_ref if uncommitted else _resolve_base_ref(root, base_ref)
+    # Single-pass base Git reference and merge-base resolution (DLT-2026-052, DLT-2026-053)
+    resolved_base_ref = None
+    resolved_merge_base = None
+    if not uncommitted:
+        if base_ref:
+            resolved_base_ref = _resolve_base_ref(root, base_ref)
+            resolved_merge_base = _resolve_merge_base(root, resolved_base_ref, head_ref, fail_loudly=True)
+        else:
+            for candidate in ["origin/main", "main", "origin/master", "master", "HEAD~1"]:
+                check = subprocess.run(
+                    ["git", "rev-parse", "--verify", candidate],
+                    cwd=root,
+                    capture_output=True,
+                    check=False,
+                )
+                if check.returncode == 0:
+                    mb = _resolve_merge_base(root, candidate, head_ref, fail_loudly=False)
+                    if mb:
+                        resolved_base_ref = candidate
+                        resolved_merge_base = mb
+                        break
 
     changed_files = get_git_diff_files(root, base_ref=resolved_base_ref, head_ref=head_ref, uncommitted=uncommitted)
     classification = classify_changed_files(changed_files, repo_root=root, eidos_dir=target_eidos)
@@ -1689,7 +1769,13 @@ def detect_drift(
     structural_additions: dict[str, _StructuralAddition] = {}
     design_changes: dict[str, tuple[str, list[str]]] = {}
     versions = {
-        cf: _get_file_versions(root, cf, base_ref=resolved_base_ref, head_ref=head_ref, uncommitted=uncommitted)
+        cf: _get_file_versions(
+            root,
+            cf,
+            base_ref=resolved_base_ref,
+            head_ref=head_ref,
+            uncommitted=uncommitted,
+        )
         for cf in classification.code_files
     }
     smap = _SymbolMapCache(versions)
@@ -1754,7 +1840,11 @@ def detect_drift(
                 continue
             if status == "applied":
                 old_dc, new_dc = _get_file_versions(
-                    root, df, base_ref=resolved_base_ref, head_ref=head_ref, uncommitted=uncommitted
+                    root,
+                    df,
+                    base_ref=resolved_base_ref,
+                    head_ref=head_ref,
+                    uncommitted=uncommitted,
                 )
                 if old_dc is not None and new_dc is not None and old_dc != new_dc:
                     old_fm, _, _ = extract_frontmatter(old_dc)

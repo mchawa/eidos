@@ -486,6 +486,90 @@ def test_resolve_base_ref_single_pass(tmp_path, monkeypatch):
     assert res_default == "origin/main"
 
 
+def test_git_resolution_error_on_invalid_explicit_base(tmp_path):
+    """DLT-2026-053: Fail closed when an explicitly provided base ref cannot be resolved."""
+    import pytest
+    from eidos.vcs.drift import GitResolutionError, detect_drift, get_git_diff_files
+
+    with pytest.raises(GitResolutionError, match="Cannot resolve base Git reference 'non-existent-ref'"):
+        get_git_diff_files(tmp_path, base_ref="non-existent-ref")
+
+    with pytest.raises(GitResolutionError, match="Cannot resolve base Git reference 'non-existent-ref'"):
+        detect_drift(repo_root=tmp_path, base_ref="non-existent-ref")
+
+
+def test_cli_drift_exits_nonzero_on_git_resolution_error():
+    """DLT-2026-053: eidos drift --base <bad_ref> surfaces Git Resolution Error and exits 1."""
+    res = runner.invoke(app, ["drift", "--base", "invalid-branch-xyz"])
+    assert res.exit_code == 1
+    assert "Git Resolution Error:" in res.output
+    assert "invalid-branch-xyz" in res.output
+
+
+def test_preserve_valid_empty_three_dot_diff(tmp_path):
+    """DLT-2026-053: Zero changes between merge-base and head returns [] without falling back to 2-dot diff."""
+    import subprocess
+    from eidos.vcs.drift import get_git_diff_files
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+    (tmp_path / "app.py").write_text("print('hello')\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "initial on main")
+
+    # Create feature branch pointing to exact same commit
+    git("checkout", "-qb", "feat-empty")
+
+    # On main, commit a new change to make main tip advance past feature branch
+    git("checkout", "-q", "main")
+    (tmp_path / "other.py").write_text("print('other')\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "advance main")
+
+    git("checkout", "-q", "feat-empty")
+    # 3-dot diff (merge-base between main and feat-empty is commit 1; feat-empty has 0 changes since commit 1)
+    diff_files = get_git_diff_files(tmp_path, base_ref="main", head_ref="HEAD")
+    assert diff_files == []
+
+
+def test_merge_base_file_content_comparison(tmp_path):
+    """DLT-2026-053: _get_file_versions retrieves old_content from merge-base SHA, not base branch tip."""
+    import subprocess
+    from eidos.vcs.drift import _get_file_versions
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+    (tmp_path / "app.py").write_text("v1_base\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "c1: base v1")
+
+    # Branch feature from c1
+    git("checkout", "-qb", "feat-branch")
+    (tmp_path / "app.py").write_text("v2_feature\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "c2: feature v2")
+
+    # Advance main with c3
+    git("checkout", "-q", "main")
+    (tmp_path / "app.py").write_text("v3_main_tip\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "c3: main tip v3")
+
+    # Inspect from feature branch
+    git("checkout", "-q", "feat-branch")
+    old_c, new_c = _get_file_versions(tmp_path, "app.py", base_ref="main", head_ref="HEAD")
+    assert old_c == "v1_base\n"
+    assert new_c == "v2_feature\n"
+
+
 
 def test_design_system_drift_detection(monkeypatch):
     """Verify frontend code or styling modifications require eidos/design/ living spec updates."""
