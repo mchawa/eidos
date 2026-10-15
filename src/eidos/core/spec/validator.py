@@ -486,6 +486,18 @@ class SpecValidator:
         if value is None or not isinstance(schema_node, dict):
             return
 
+        if "$ref" in schema_node:
+            ref_val = str(schema_node["$ref"])
+            if ref_val.startswith("#/$defs/"):
+                def_name = ref_val.split("/")[-1]
+                root_schema = self.resolve_schema(doc) or {}
+                resolved_def = (root_schema.get("$defs") or {}).get(def_name)
+                if isinstance(resolved_def, dict):
+                    self._validate_schema_references(
+                        resolved_def, value, field_path, doc, catalog_ids, report, entity_types
+                    )
+            return
+
         ref_meta = schema_node.get("x-eidos-ref")
         if isinstance(ref_meta, dict):
             if isinstance(value, str):

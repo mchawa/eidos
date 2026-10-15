@@ -132,10 +132,7 @@ def load_project(
 
 def is_generated_or_vendored(repo_root: Path, rel_paths: list[str] | str | Path) -> set[str]:
     """Return subset of rel_paths marked linguist-generated or linguist-vendored in .gitattributes."""
-    if isinstance(rel_paths, (str, Path)):
-        rel_paths = [str(rel_paths)]
-    else:
-        rel_paths = [str(p) for p in rel_paths]
+    rel_paths = [str(rel_paths)] if isinstance(rel_paths, (str, Path)) else [str(p) for p in rel_paths]
 
     if not rel_paths or not (repo_root / ".git").exists():
         return set()

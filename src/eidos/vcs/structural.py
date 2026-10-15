@@ -1,0 +1,487 @@
+"""Structural AST diff evaluation, symbol maps, and spec coverage analysis (CMP-DRIFT-DETECTOR).
+
+Compares AST symbol additions, pairs moved files by content, inspects substantive
+specification diffs, and evaluates 1-hop and design subgraph coverage.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from collections import Counter
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from eidos.core.workspace.project import match_path_pattern
+from eidos.vcs.diff import _get_file_versions
+
+SYSTEM_LEVEL_SPEC_PATHS = (
+    "eidos/system.adoc",
+    "eidos/architecture/system-architecture.adoc",
+)
+
+_ADOC_LINE_COMMENT_RE = re.compile(r"^\s*//(?!/)")
+_ADOC_COMMENT_DELIM_RE = re.compile(r"^/{4,}$")
+_ADOC_VERBATIM_DELIM_RE = re.compile(r"^(-{4,}|\.{4,}|\+{4,})$")
+_FRONTMATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", re.DOTALL)
+_OWNERSHIP_KEYS = ("components", "source_path", "owned_path", "package_path")
+_MIN_ANCHOR_LEN = 3
+
+
+@dataclass
+class ReconcileSuggestion:
+    """Actionable recommendation mapping code changes to living specifications."""
+
+    code_file: str
+    candidate_specs: list[str] = field(default_factory=list)
+    reason: str = ""
+
+
+@dataclass
+class _StructuralAddition:
+    """Structural additions of one code file: a new file and/or new public symbols."""
+
+    file: str
+    reasons: list[str]
+    symbol_names: list[str]
+    is_new_file: bool
+
+
+class _SymbolMapCache:
+    """Parses each (file, side) version at most once per drift run."""
+
+    def __init__(self, versions: dict[str, tuple[str | None, str | None]]) -> None:
+        self._versions = versions
+        self._maps: dict[tuple[str, int], dict[tuple[str, str, str], str]] = {}
+
+    @staticmethod
+    def supports(cf: str) -> bool:
+        from eidos.core.index.ast_indexer import AST_DIFF_EXTS
+
+        return Path(cf).suffix.lower() in AST_DIFF_EXTS
+
+    def versions_of(self, cf: str) -> tuple[str | None, str | None]:
+        return self._versions.get(cf, (None, None))
+
+    def get(self, cf: str, side: int) -> dict[tuple[str, str, str], str]:
+        """Public symbol map of ``cf`` at ``side`` (0 = old, 1 = new)."""
+        from eidos.core.index.ast_indexer import public_symbol_map
+
+        key = (cf, side)
+        if key not in self._maps:
+            self._maps[key] = public_symbol_map(self.versions_of(cf)[side], cf)
+        return self._maps[key]
+
+    def diff(self, cf: str, old_from: str | None = None) -> Any:
+        """Public symbol diff of ``cf`` (old side taken from ``old_from`` for moved files)."""
+        from eidos.core.index.ast_indexer import diff_symbol_maps
+
+        return diff_symbol_maps(self.get(old_from or cf, 0), self.get(cf, 1))
+
+
+def _normalize_ws(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _pair_moved_files(
+    versions: dict[str, tuple[str | None, str | None]],
+    smap: _SymbolMapCache,
+) -> dict[str, str]:
+    """Pair added files with deleted files of the same change set that they were moved/renamed from."""
+    added = sorted(cf for cf, (old, new) in versions.items() if old is None and new is not None)
+    deleted = sorted(cf for cf, (old, new) in versions.items() if old is not None and new is None)
+    if not added or not deleted:
+        return {}
+
+    candidates: list[tuple[int, int, str, str]] = []
+    for a in added:
+        a_text = _normalize_ws(versions[a][1] or "")
+        for d in deleted:
+            if Path(a).suffix.lower() != Path(d).suffix.lower():
+                continue
+            if a_text == _normalize_ws(versions[d][0] or ""):
+                candidates.append((0, 0, a, d))
+                continue
+            if not smap.supports(a):
+                continue
+            d_keys = set(smap.get(d, 0))
+            if d_keys and d_keys <= set(smap.get(a, 1)):
+                candidates.append((1, -len(d_keys), a, d))
+
+    pairs: dict[str, str] = {}
+    used: set[str] = set()
+    for _, _, a, d in sorted(candidates):
+        if a not in pairs and d not in used:
+            pairs[a] = d
+            used.add(d)
+    return pairs
+
+
+def _structural_addition_for(
+    cf: str,
+    synthetic: bool,
+    smap: _SymbolMapCache,
+    *,
+    symbol_diff: Any = None,
+    moved_from: str | None = None,
+) -> _StructuralAddition | None:
+    """Return the structural additions of a structurally changed file, or None when it adds nothing."""
+    old_content, new_content = smap.versions_of(cf)
+    if synthetic or new_content is None:
+        return None
+    if moved_from is None and old_content is None:
+        diff = smap.diff(cf)
+        return _StructuralAddition(
+            file=cf,
+            reasons=[f"added file '{cf}'"],
+            symbol_names=[diff.qualified_name(k) for k in diff.added],
+            is_new_file=True,
+        )
+    diff = smap.diff(cf, old_from=moved_from) if moved_from else (symbol_diff or smap.diff(cf))
+    if not diff.added:
+        return None
+    return _StructuralAddition(
+        file=cf,
+        reasons=[f"added {k[0]} '{diff.qualified_name(k)}'" for k in diff.added],
+        symbol_names=[diff.qualified_name(k) for k in diff.added],
+        is_new_file=False,
+    )
+
+
+def _split_spec(content: str | None) -> tuple[str | None, str]:
+    """Split a spec into (raw frontmatter text or None, AsciiDoc body)."""
+    text = content or ""
+    m = _FRONTMATTER_RE.match(text)
+    if not m:
+        return None, text
+    return m.group(1), text[m.end() :]
+
+
+def _normalized_body_lines(body: str) -> list[str]:
+    """AsciiDoc body lines without comments or blank lines, inner whitespace collapsed."""
+    out: list[str] = []
+    open_delim: str | None = None
+    for raw in body.splitlines():
+        line = raw.strip()
+        if open_delim is not None:
+            if line == open_delim:
+                if not _ADOC_COMMENT_DELIM_RE.match(open_delim):
+                    out.append(line)
+                open_delim = None
+            elif line and not _ADOC_COMMENT_DELIM_RE.match(open_delim):
+                out.append(_normalize_ws(line))
+            continue
+        if _ADOC_COMMENT_DELIM_RE.match(line) or _ADOC_VERBATIM_DELIM_RE.match(line):
+            open_delim = line
+            if not _ADOC_COMMENT_DELIM_RE.match(line):
+                out.append(line)
+            continue
+        if not line or _ADOC_LINE_COMMENT_RE.match(raw):
+            continue
+        out.append(_normalize_ws(line))
+    return out
+
+
+def _parse_frontmatter(raw: str | None) -> dict[str, Any] | None:
+    """Parsed frontmatter mapping, ``{}`` when absent, ``None`` when it is not valid YAML."""
+    if raw is None:
+        return {}
+    try:
+        data = yaml.safe_load(raw)
+    except Exception:
+        return None
+    if data is None:
+        return {}
+    return data if isinstance(data, dict) else None
+
+
+def _spec_frontmatter(content: str | None) -> dict[str, Any]:
+    return _parse_frontmatter(_split_spec(content)[0]) or {}
+
+
+def _canonical(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+def _declared_source_patterns(frontmatter: dict[str, Any]) -> list[str]:
+    """Explicit file/glob ownership declared by a spec (top-level and component ``source_path``/``owned_path``)."""
+    patterns: list[str] = []
+
+    def _add(value: Any) -> None:
+        if isinstance(value, str) and value.strip():
+            patterns.append(value.strip())
+        elif isinstance(value, list):
+            for item in value:
+                _add(item)
+
+    for key in ("source_path", "owned_path"):
+        _add(frontmatter.get(key))
+    for comp in frontmatter.get("components", []) or frontmatter.get("c4_internal_components", []) or []:
+        if isinstance(comp, dict):
+            _add(comp.get("source_path"))
+            _add(comp.get("owned_path"))
+    return patterns
+
+
+class _SpecDiffInspector:
+    """Per-run, cached inspection of how a modified specification changed (DLT-2026-039)."""
+
+    def __init__(self, root: Path, base_ref: str | None, head_ref: str, uncommitted: bool) -> None:
+        self._root = root
+        self._base_ref = base_ref
+        self._head_ref = head_ref
+        self._uncommitted = uncommitted
+        self._versions: dict[str, tuple[str | None, str | None]] = {}
+
+    def versions(self, spec: str) -> tuple[str | None, str | None]:
+        if spec not in self._versions:
+            import sys
+            drift_mod = sys.modules.get("eidos.vcs.drift")
+            get_versions_fn = getattr(drift_mod, "_get_file_versions", _get_file_versions) if drift_mod else _get_file_versions
+            self._versions[spec] = get_versions_fn(
+                self._root,
+                spec,
+                base_ref=self._base_ref,
+                head_ref=self._head_ref,
+                uncommitted=self._uncommitted,
+            )
+        return self._versions[spec]
+
+    def is_new_spec(self, spec: str) -> bool:
+        old, new = self.versions(spec)
+        return old is None and new is not None
+
+    def is_substantive(self, spec: str) -> bool:
+        """True when the frontmatter data or the comment/whitespace-normalized body differs."""
+        old, new = self.versions(spec)
+        if old is None or new is None or old == new:
+            return True
+        old_raw, old_body = _split_spec(old)
+        new_raw, new_body = _split_spec(new)
+        old_fm, new_fm = _parse_frontmatter(old_raw), _parse_frontmatter(new_raw)
+        if old_fm is None or new_fm is None:
+            fm_changed = _normalize_ws(old_raw or "") != _normalize_ws(new_raw or "")
+        else:
+            fm_changed = _canonical(old_fm) != _canonical(new_fm)
+        if fm_changed:
+            return True
+        return _normalize_ws(" ".join(_normalized_body_lines(old_body))) != _normalize_ws(
+            " ".join(_normalized_body_lines(new_body))
+        )
+
+    def declares_at_base(self, spec: str, cf: str) -> bool:
+        """True when the spec, at the base revision, already declared ``cf`` via source_path/owned_path."""
+        old, _ = self.versions(spec)
+        return any(match_path_pattern(cf, p) > 0 for p in _declared_source_patterns(_spec_frontmatter(old)))
+
+    def is_anchored(self, spec: str, cf: str, symbol_names: list[str]) -> bool:
+        """True when the spec edit changes ownership keys or its added content names the file or a new symbol."""
+        old, new = self.versions(spec)
+        if old is None:
+            return True
+        if new is None:
+            return False
+        old_raw, old_body = _split_spec(old)
+        new_raw, new_body = _split_spec(new)
+        old_fm, new_fm = _parse_frontmatter(old_raw) or {}, _parse_frontmatter(new_raw) or {}
+        if any(_canonical(old_fm.get(k)) != _canonical(new_fm.get(k)) for k in _OWNERSHIP_KEYS):
+            return True
+
+        added = list((Counter(_normalized_body_lines(new_body)) - Counter(_normalized_body_lines(old_body))).elements())
+        added += [_canonical(v) for k, v in new_fm.items() if _canonical(v) != _canonical(old_fm.get(k))]
+        needles = {cf, Path(cf).name, *symbol_names}
+        patterns = [
+            re.compile(rf"(?<![A-Za-z0-9_]){re.escape(n)}(?![A-Za-z0-9_])")
+            for n in sorted(needles)
+            if n and len(n) >= _MIN_ANCHOR_LEN
+        ]
+        return any(p.search(line) for line in added for p in patterns)
+
+
+def _collect_1hop_spec_targets(
+    idx: Any,
+    cf: str,
+    cid: str,
+    spath: str,
+) -> tuple[set[str], set[str]]:
+    """Return (allowed_spec_paths, allowed_entity_ids) within 1 hop of a code file's owners."""
+    allowed_paths: set[str] = {spath.replace("\\", "/").lower()}
+    allowed_ids: set[str] = {cid.lower()}
+
+    if idx is None:
+        return allowed_paths, allowed_ids
+
+    seed_ids: set[str] = {cid}
+    for m in idx.resolve_symbol_or_path(cf):
+        eid = m.get("entity_id")
+        fp = m.get("file_path")
+        if eid:
+            seed_ids.add(eid)
+            allowed_ids.add(eid.lower())
+        if fp:
+            allowed_paths.add(str(fp).replace("\\", "/").lower())
+
+    for sid in seed_ids:
+        for n in idx.get_k_hop_neighborhood(sid, max_hops=1):
+            nid = n.get("id", "")
+            ntype = n.get("type", "")
+            ndata = n.get("data", {}) or {}
+            if ntype not in ("tech/contract", "product/capability", "tech/container", "tech/component"):
+                continue
+            if ntype in ("tech/container", "tech/component") and nid not in seed_ids:
+                continue
+            if nid.startswith("POL-") or nid.startswith("PER-"):
+                continue
+            if nid:
+                allowed_ids.add(nid.lower())
+            if ntype == "tech/container" and nid in seed_ids:
+                for inline_comp in ndata.get("components", []) or []:
+                    if isinstance(inline_comp, dict) and inline_comp.get("id"):
+                        allowed_ids.add(str(inline_comp["id"]).strip().lower())
+            nfp = n.get("file_path")
+            if nfp:
+                allowed_paths.add(str(nfp).replace("\\", "/").lower())
+            for pkey in ("file_path", "path", "tokens_path"):
+                pval = ndata.get(pkey)
+                if pval:
+                    allowed_paths.add(str(pval).replace("\\", "/").lower())
+
+    allowed_paths.difference_update(SYSTEM_LEVEL_SPEC_PATHS)
+    return allowed_paths, allowed_ids
+
+
+def _path_in(changed_spec: str, allowed_paths: set[str]) -> bool:
+    s_norm = changed_spec.replace("\\", "/").lower().strip("/")
+    for ap in allowed_paths:
+        if not ap:
+            continue
+        ap_norm = ap.replace("\\", "/").lower().strip("/")
+        if s_norm == ap_norm or s_norm.endswith("/" + ap_norm) or ap_norm.endswith("/" + s_norm):
+            return True
+    return False
+
+
+def _relevant_changed_specs(
+    changed_specs: list[str],
+    allowed_paths: set[str],
+    allowed_ids: set[str],
+) -> list[str]:
+    """Modified spec files inside the 1-hop neighborhood of a modified code file (system-level specs excluded)."""
+    relevant: list[str] = []
+    for s in changed_specs:
+        s_norm = s.replace("\\", "/").lower()
+        if s_norm in SYSTEM_LEVEL_SPEC_PATHS:
+            continue
+        if _path_in(s_norm, allowed_paths):
+            relevant.append(s)
+    return relevant
+
+
+def _spec_coverage_verdict(
+    changed_specs: list[str],
+    allowed_paths: set[str],
+    allowed_ids: set[str],
+    *,
+    addition: _StructuralAddition | None = None,
+    owner_spec: str = "",
+    inspector: _SpecDiffInspector | None = None,
+) -> tuple[bool, str | None, list[str]]:
+    """Decide whether modified specs cover a code file; returns ``(covered, rejection_rule, rejected_specs)``."""
+    relevant = _relevant_changed_specs(changed_specs, allowed_paths, allowed_ids)
+    if not relevant:
+        return False, None, []
+
+    if inspector is not None:
+        substantive = [s for s in relevant if inspector.is_substantive(s)]
+        if not substantive:
+            return False, "trivial_spec_diff", relevant
+    else:
+        substantive = relevant
+
+    if addition is None or not addition.is_new_file or not owner_spec:
+        return True, None, []
+
+    owner_norm = owner_spec.replace("\\", "/").lower()
+    owner_changed = [s for s in substantive if s.replace("\\", "/").lower() == owner_norm]
+    owner_is_new = any(inspector.is_new_spec(s) for s in owner_changed)
+    needs_anchor = not owner_is_new and not inspector.declares_at_base(owner_spec, addition.file)
+    if needs_anchor and not any(
+        inspector.is_anchored(s, addition.file, addition.symbol_names) for s in owner_changed
+    ):
+        return False, "missing_anchor", relevant
+    return True, None, []
+
+
+def _resolve_bound_design_ids(idx: Any, cf: str, owner_ids: set[str]) -> set[str]:
+    """Resolve the design clients (CLT-*) and design systems (DS-*) bound to a frontend file via the graph."""
+    bound: set[str] = set()
+    if idx is None:
+        return bound
+    for m in idx.resolve_symbol_or_path(cf):
+        if m.get("type") in ("design/client", "design/system") and m.get("entity_id"):
+            bound.add(m["entity_id"])
+    for oid in owner_ids:
+        for n in idx.get_k_hop_neighborhood(oid, max_hops=1):
+            if n.get("type") in ("design/client", "design/system") and n.get("id"):
+                bound.add(n["id"])
+    return bound
+
+
+def _collect_design_subgraph(
+    design_entities: list[dict[str, Any]],
+    bound_ids: set[str],
+) -> tuple[set[str], set[str]]:
+    """Return (spec_paths, entity_ids) of the design subgraph owned by the bound CLT-*/DS-* entities."""
+    by_id = {e.get("id"): e for e in design_entities if e.get("id")}
+    ids = {b for b in bound_ids if b in by_id}
+    changed = True
+    while changed:
+        changed = False
+        for eid in list(ids):
+            e = by_id.get(eid, {})
+            for key in ("design_system", "extends_system"):
+                ref = e.get(key)
+                if isinstance(ref, str) and ref in by_id and ref not in ids:
+                    ids.add(ref)
+                    changed = True
+
+    paths: set[str] = set()
+    sub_ids: set[str] = set(ids)
+    for eid in ids:
+        e = by_id[eid]
+        fp = str(e.get("file_path") or "").replace("\\", "/")
+        if fp:
+            paths.add(fp.lower())
+        if e.get("type") == "design/system":
+            tokens = e.get("tokens") if isinstance(e.get("tokens"), dict) else {}
+            for tok in (tokens.get("manifest"), e.get("tokens_path")):
+                if isinstance(tok, str) and tok and fp:
+                    tok_path = tok if "/" in tok else str(Path(fp).parent / tok)
+                    paths.add(tok_path.replace("\\", "/").lower())
+        if e.get("type") == "design/client":
+            for key in ("screens", "flows"):
+                for ref in e.get(key, []) or []:
+                    if isinstance(ref, str):
+                        paths.add(ref.replace("\\", "/").lower())
+
+    systems = {i for i in ids if by_id[i].get("type") == "design/system"}
+    clients = {i for i in ids if by_id[i].get("type") == "design/client"}
+    for e in design_entities:
+        eid = e.get("id")
+        if not eid or eid in ids:
+            continue
+        etype = e.get("type")
+        member = False
+        if etype == "design/ui-component":
+            member = e.get("design_system") in systems or e.get("implements_component") in sub_ids
+        elif etype in ("design/screen", "design/flow"):
+            member = e.get("client") in clients
+        if member:
+            sub_ids.add(eid)
+            fp = str(e.get("file_path") or "").replace("\\", "/")
+            if fp:
+                paths.add(fp.lower())
+    return paths, sub_ids

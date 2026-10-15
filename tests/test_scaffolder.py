@@ -475,6 +475,26 @@ def test_init_repository_cli(tmp_path):
     assert not (target / ".agents").exists()
 
 
+def test_init_repository_lite_cli(tmp_path):
+    """Verify eidos init --lite scaffolds progressive minimal baseline skeleton (DLT-2026-050)."""
+    target = tmp_path / "cli_init_lite_target"
+    result = runner.invoke(app, ["init", str(target), "--lite", "--name", "my-lite-app"])
+    assert result.exit_code == 0
+    assert "Successfully initialized" in result.stdout
+    eidos_dir = target / "eidos"
+    assert (eidos_dir / ".gitignore").exists()
+    assert (eidos_dir / "system.adoc").exists()
+    assert (eidos_dir / "architecture" / "containers" / ".gitkeep").exists()
+    assert (eidos_dir / "domains" / "core" / "capabilities" / ".gitkeep").exists()
+    assert (eidos_dir / "deltas" / ".gitkeep").exists()
+    # Lite profile skips heavy optional taxonomies
+    assert not (eidos_dir / "architecture" / "contracts").exists()
+    assert not (eidos_dir / "policies").exists()
+    assert not (eidos_dir / "personas").exists()
+    assert not (eidos_dir / "design").exists()
+    assert not (eidos_dir / "explorations").exists()
+
+
 def test_init_repository_custom(tmp_path):
     """Verify programmatic init_repository call."""
     target = tmp_path / "custom_init_target"

@@ -35,7 +35,7 @@ components:
     source_path: "src/eidos/cli/drift_commands.py"
   - id: CMP-CLI-INIT-COMMAND
     name: "InitCommand"
-    responsibility: "CLI entrypoint for repository bootstrapping, living spec skeleton generation, and baseline validation."
+    responsibility: "CLI entrypoint for repository bootstrapping, living spec skeleton generation (including progressive Eidos Lite onboarding profile via --lite), and baseline validation."
     source_path: "src/eidos/cli/init_command.py"
   - id: CMP-CLI-CONTEXT-COMMAND
     name: "ContextCommand"

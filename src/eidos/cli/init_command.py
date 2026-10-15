@@ -32,6 +32,12 @@ def init_cmd(
         "-f",
         help="Force initialization even if eidos/ directory already exists.",
     ),
+    lite: bool = typer.Option(
+        False,
+        "--lite",
+        "-l",
+        help="Initialize progressive Eidos Lite profile (essential baseline: system, containers, capabilities, deltas).",
+    ),
     _with_plugin: bool = typer.Option(
         False,
         "--with-plugin/--no-plugin",
@@ -48,6 +54,7 @@ def init_cmd(
         name=name,
         title=title,
         force=force,
+        lite=lite,
     )
 
     if not success:

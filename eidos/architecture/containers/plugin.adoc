@@ -15,7 +15,7 @@ tier: extensibility
 components:
   - id: CMP-PLUGIN-INSTALLER
     name: "PluginInstaller"
-    responsibility: "Installs, updates, and safely uninstalls portable agent plugins and 4 cohesive workflow skills via manifest tracking (.eidos-manifest.json) with SHA-256 digests, non-destructive force=False semantics, and symlink protection conforming to agent-plugins.org v1.0.0, Claude Code, OpenAI Codex, OpenCode, Aider, Cline, Cursor, and GitHub Copilot, while pruning retired legacy skill directories."
+    responsibility: "Installs, updates, and safely uninstalls portable agent plugins and 4 cohesive workflow skills via a table-driven TargetAdapter registry and manifest tracking (.eidos-manifest.json) with SHA-256 digests, non-destructive force=False semantics, and symlink protection conforming to agent-plugins.org v1.0.0, Claude Code, OpenAI Codex, OpenCode, Aider, Cline, Cursor, and GitHub Copilot, while pruning retired legacy skill directories."
     source_path: "src/eidos/plugin/installer.py"
   - id: CMP-PLUGIN-VALIDATOR
     name: "PluginValidator"

@@ -1379,6 +1379,7 @@ def test_plugin_install_and_update_prunes_retired_legacy_skills(tmp_path):
 def test_plugin_install_creates_manifest_with_hashes(tmp_path):
     """Verify that installing a plugin generates .eidos-manifest.json with SHA-256 hashes (DLT-2026-046)."""
     import hashlib
+
     from eidos.plugin.installer import MANIFEST_FILENAME
 
     # 1. Test custom destination

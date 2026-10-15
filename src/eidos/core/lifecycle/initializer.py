@@ -14,6 +14,7 @@ def init_repository(
     eidos_dir_name: str = "eidos",
     with_plugin: bool = False,
     force: bool = False,
+    lite: bool = False,
 ) -> tuple[bool, str, list[Path]]:
     """Initialize a repository with an empty Eidos living specification skeleton and governance."""
     eidos_dir = project_dir / eidos_dir_name
@@ -26,21 +27,28 @@ def init_repository(
             [],
         )
 
-    # Standard Eidos living specification directory skeleton
-    skeleton_dirs = [
-        eidos_dir / "architecture" / "containers",
-        eidos_dir / "architecture" / "components",
-        eidos_dir / "architecture" / "contracts",
-        eidos_dir / "domains",
-        eidos_dir / "policies",
-        eidos_dir / "personas",
-        eidos_dir / "deltas",
-        eidos_dir / "explorations",
-        eidos_dir / "design" / "clients",
-        eidos_dir / "design" / "flows",
-        eidos_dir / "design" / "screens",
-        eidos_dir / "design" / "systems" / "core" / "components",
-    ]
+    # Standard vs Progressive Lite Eidos living specification directory skeleton
+    if lite:
+        skeleton_dirs = [
+            eidos_dir / "architecture" / "containers",
+            eidos_dir / "domains" / "core" / "capabilities",
+            eidos_dir / "deltas",
+        ]
+    else:
+        skeleton_dirs = [
+            eidos_dir / "architecture" / "containers",
+            eidos_dir / "architecture" / "components",
+            eidos_dir / "architecture" / "contracts",
+            eidos_dir / "domains",
+            eidos_dir / "policies",
+            eidos_dir / "personas",
+            eidos_dir / "deltas",
+            eidos_dir / "explorations",
+            eidos_dir / "design" / "clients",
+            eidos_dir / "design" / "flows",
+            eidos_dir / "design" / "screens",
+            eidos_dir / "design" / "systems" / "core" / "components",
+        ]
     for d in skeleton_dirs:
         d.mkdir(parents=True, exist_ok=True)
         gitkeep = d / ".gitkeep"

@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -148,7 +149,7 @@ def _prune_empty_dirs(root_dir: Path) -> None:
     """Recursively remove empty subdirectories inside root_dir (bottom-up)."""
     if not root_dir.exists() or not root_dir.is_dir():
         return
-    for dirpath, dirnames, filenames in os.walk(root_dir, topdown=False):
+    for dirpath, _dirnames, _filenames in os.walk(root_dir, topdown=False):
         d = Path(dirpath)
         if d != root_dir:
             try:
@@ -939,254 +940,6 @@ def _write_codex_rules(file_path: Path, force: bool = False) -> Path:
     return file_path
 
 
-def install_plugin(
-    target: PluginInstallTarget = PluginInstallTarget.PROJECT,
-    project_dir: Path | None = None,
-    dest_path: Path | None = None,
-    force: bool = False,
-    launcher: str = "eidos",
-) -> list[InstallResult]:
-    """Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos)."""
-    source_dir = locate_plugin_bundle()
-    root = (project_dir or Path.cwd()).resolve()
-    results = []
-
-    # If explicit destination provided, install there directly
-    if dest_path is not None:
-        target_path = dest_path if dest_path.is_absolute() else (root / dest_path)
-        if target_path.is_symlink():
-            raise FileExistsError(f"Destination target path '{target_path}' is a symlink; refusing to write to symlink target.")
-        created = _copy_plugin_tree(source_dir, target_path, force=force, launcher=launcher)
-        manifest = _write_installation_manifest(target_path, created)
-        created.append(manifest)
-        results.append(
-            InstallResult(
-                target="custom",
-                destination=target_path,
-                success=True,
-                message=f"Installed plugin bundle to custom project path: {target_path}",
-                created_files=created,
-            )
-        )
-        return results
-
-    # Determine project targets
-    targets_to_run = []
-    if target == PluginInstallTarget.ALL:
-        targets_to_run = [
-            PluginInstallTarget.PROJECT,
-            PluginInstallTarget.CURSOR,
-            PluginInstallTarget.CLAUDE,
-            PluginInstallTarget.AIDER,
-            PluginInstallTarget.CLINE,
-            PluginInstallTarget.OPEN_CODE,
-            PluginInstallTarget.CODEX,
-            PluginInstallTarget.COPILOT,
-        ]
-    elif target == PluginInstallTarget.PROJECT:
-        targets_to_run = [
-            PluginInstallTarget.PROJECT,
-            PluginInstallTarget.CURSOR,
-            PluginInstallTarget.CLAUDE,
-        ]
-    else:
-        targets_to_run = [target]
-
-    for t in targets_to_run:
-        if t in (PluginInstallTarget.PROJECT, PluginInstallTarget.ANTIGRAVITY):
-            plugin_dir = root / ".agents" / "plugins" / "eidos"
-            if plugin_dir.is_symlink():
-                raise FileExistsError(f"Destination plugin directory '{plugin_dir}' is a symlink; refusing to write to symlink target.")
-            created = _copy_plugin_tree(source_dir, plugin_dir, force=force, launcher=launcher)
-            manifest = _write_installation_manifest(plugin_dir, created)
-            created.append(manifest)
-            results.append(
-                InstallResult(
-                    target=t.value,
-                    destination=plugin_dir,
-                    success=True,
-                    message="Installed to project scope .agents/plugins/eidos (agent-plugins.org v1.0.0).",
-                    created_files=created,
-                )
-            )
-
-        elif t == PluginInstallTarget.CURSOR:
-            cursor_rules = root / ".cursor" / "rules" / "eidos.mdc"
-            _write_cursor_rules(cursor_rules, force=force)
-
-            cursor_skills = root / ".cursor" / "skills"
-            created_skills = _copy_skills_flat(source_dir, cursor_skills, force=force)
-
-            results.append(
-                InstallResult(
-                    target="cursor",
-                    destination=cursor_rules,
-                    success=True,
-                    message="Configured rules in .cursor/rules/eidos.mdc and 4 skills in .cursor/skills/.",
-                    created_files=[cursor_rules, *created_skills],
-                )
-            )
-
-        elif t == PluginInstallTarget.CLAUDE:
-            claude_plugin_dir = root / ".claude" / "plugins" / "eidos"
-            if claude_plugin_dir.is_symlink():
-                raise FileExistsError(f"Destination directory '{claude_plugin_dir}' is a symlink; refusing to write to symlink target.")
-            created = _copy_plugin_tree(source_dir, claude_plugin_dir, force=force, launcher=launcher)
-
-            manifests = _ensure_claude_plugin_manifest(claude_plugin_dir)
-            created.extend(manifests)
-
-            commands = _write_claude_commands(claude_plugin_dir, launcher=launcher, force=force)
-            created.extend(commands)
-
-            claude_skills = root / ".claude" / "skills"
-            created_skills = _copy_skills_flat(source_dir, claude_skills, force=force)
-
-            claude_settings = root / ".claude" / "settings.json"
-            _update_project_claude_settings(claude_settings, "eidos@plugins-dir")
-            created.append(claude_settings)
-
-            manifest = _write_installation_manifest(claude_plugin_dir, created)
-            created.append(manifest)
-
-            results.append(
-                InstallResult(
-                    target="claude",
-                    destination=claude_plugin_dir,
-                    success=True,
-                    message="Installed Claude Code plugin at .claude/plugins/eidos, 4 skills in .claude/skills/, commands in .claude/plugins/eidos/commands/, and configured .claude/settings.json.",
-                    created_files=[*created, *created_skills],
-                )
-            )
-
-        elif t == PluginInstallTarget.AIDER:
-            conv_file = root / ".aider.conventions.md"
-            _write_aider_conventions(conv_file, force=force)
-            aider_conf = root / ".aider.conf.yml"
-            _update_project_aider_conf(aider_conf, ".aider.conventions.md")
-            aider_skills = root / ".aider" / "skills"
-            created_skills = _copy_skills_flat(source_dir, aider_skills, force=force)
-            results.append(
-                InstallResult(
-                    target="aider",
-                    destination=aider_conf,
-                    success=True,
-                    message="Configured .aider.conf.yml, generated .aider.conventions.md, and installed 4 skills into .aider/skills/.",
-                    created_files=[conv_file, aider_conf, *created_skills],
-                )
-            )
-
-        elif t == PluginInstallTarget.CLINE:
-            cline_plugin = root / ".cline" / "plugins" / "eidos"
-            if cline_plugin.is_symlink():
-                raise FileExistsError(f"Destination directory '{cline_plugin}' is a symlink; refusing to write to symlink target.")
-            created_plugin = _copy_plugin_tree(source_dir, cline_plugin, force=force, launcher=launcher)
-            manifest = _write_installation_manifest(cline_plugin, created_plugin)
-            created_plugin.append(manifest)
-
-            cline_skills = root / ".cline" / "skills"
-            created_skills = _copy_skills_flat(source_dir, cline_skills, force=force)
-
-            results.append(
-                InstallResult(
-                    target="cline",
-                    destination=cline_plugin,
-                    success=True,
-                    message="Configured plugin bundle in .cline/plugins/eidos and 4 skills in .cline/skills/.",
-                    created_files=[*created_plugin, *created_skills],
-                )
-            )
-
-        elif t in (PluginInstallTarget.OPEN_CODE, PluginInstallTarget.OPENCODE):
-            opencode_plugin_dir = root / ".opencode" / "plugins" / "eidos"
-            if opencode_plugin_dir.is_symlink():
-                raise FileExistsError(f"Destination directory '{opencode_plugin_dir}' is a symlink; refusing to write to symlink target.")
-            created_plugin = _copy_plugin_tree(source_dir, opencode_plugin_dir, force=force, launcher=launcher)
-            manifest = _write_installation_manifest(opencode_plugin_dir, created_plugin)
-            created_plugin.append(manifest)
-
-            opencode_skills = root / ".opencode" / "skills"
-            created_skills = _copy_skills_flat(source_dir, opencode_skills, force=force)
-
-            results.append(
-                InstallResult(
-                    target="open-code",
-                    destination=opencode_plugin_dir,
-                    success=True,
-                    message="Configured plugin bundle in .opencode/plugins/eidos and 4 skills in .opencode/skills/.",
-                    created_files=[*created_plugin, *created_skills],
-                )
-            )
-
-        elif t == PluginInstallTarget.CODEX:
-            codex_dir = root / ".codex"
-            if codex_dir.is_symlink():
-                raise FileExistsError(f"Destination directory '{codex_dir}' is a symlink; refusing to write to symlink target.")
-            created_codex = _copy_plugin_tree(source_dir, codex_dir, force=force, launcher=launcher)
-
-            codex_manifest = _ensure_codex_plugin_manifest(codex_dir)
-            created_codex.append(codex_manifest)
-
-            codex_rules = codex_dir / "rules.md"
-            _write_codex_rules(codex_rules, force=force)
-            created_codex.append(codex_rules)
-
-            codex_skills = codex_dir / "skills"
-            created_skills = _copy_skills_flat(source_dir, codex_skills, force=force)
-            created_codex.extend(created_skills)
-
-            manifest = _write_installation_manifest(codex_dir, created_codex)
-            created_codex.append(manifest)
-
-            results.append(
-                InstallResult(
-                    target="codex",
-                    destination=codex_dir,
-                    success=True,
-                    message="Installed OpenAI Codex plugin bundle (.codex/plugin.json, 4 skills, rules.md).",
-                    created_files=created_codex,
-                )
-            )
-
-        elif t == PluginInstallTarget.COPILOT:
-            copilot_plugin_dir = root / ".github" / "plugin"
-            if copilot_plugin_dir.is_symlink():
-                raise FileExistsError(f"Destination directory '{copilot_plugin_dir}' is a symlink; refusing to write to symlink target.")
-            created_plugin = _copy_plugin_tree(source_dir, copilot_plugin_dir, force=force, launcher=launcher)
-
-            copilot_manifest = _ensure_copilot_plugin_manifest(copilot_plugin_dir)
-            created_plugin.append(copilot_manifest)
-
-            manifest = _write_installation_manifest(copilot_plugin_dir, created_plugin)
-            created_plugin.append(manifest)
-
-            copilot_skills = root / ".github" / "skills"
-            created_skills = _copy_skills_flat(source_dir, copilot_skills, force=force)
-
-            copilot_settings = root / ".github" / "copilot" / "settings.json"
-            _update_project_copilot_settings(copilot_settings)
-
-            copilot_instructions = root / ".github" / "copilot-instructions.md"
-            _write_copilot_instructions(copilot_instructions, force=force)
-
-            results.append(
-                InstallResult(
-                    target="copilot",
-                    destination=copilot_plugin_dir,
-                    success=True,
-                    message="Installed GitHub Copilot plugin (.github/plugin/), 4 skills (.github/skills/), settings (.github/copilot/settings.json), and instructions.",
-                    created_files=[
-                        *created_plugin,
-                        *created_skills,
-                        copilot_settings,
-                        copilot_instructions,
-                    ],
-                )
-            )
-
-    return results
-
-
 def _uninstall_from_manifest_or_legacy(target_dir: Path) -> bool:
     """Remove manifest-tracked files or fallback to safe legacy cleanup without wiping shared parent."""
     if not target_dir.exists():
@@ -1251,9 +1004,8 @@ def _uninstall_from_manifest_or_legacy(target_dir: Path) -> bool:
 
     # Check skills/
     skills_dir = target_dir / "skills"
-    if skills_dir.exists() and skills_dir.is_dir():
-        if _remove_skills_flat(None, skills_dir):
-            removed_any = True
+    if skills_dir.exists() and skills_dir.is_dir() and _remove_skills_flat(None, skills_dir):
+        removed_any = True
 
     # Check commands/
     commands_dir = target_dir / "commands"
@@ -1287,6 +1039,642 @@ def _uninstall_from_manifest_or_legacy(target_dir: Path) -> bool:
             target_dir.rmdir()
 
     return removed_any
+
+
+# ---------------------------------------------------------------------------
+# Table-Driven Target Adapter Registry (CMP-PLUGIN-INSTALLER)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TargetAdapter:
+    """Table-driven adapter encapsulating target-specific plugin installation and uninstallation."""
+
+    target: PluginInstallTarget
+    name: str
+    install: Callable[[Path, Path, bool, str], InstallResult]
+    uninstall: Callable[[Path, Path | None], UninstallResult]
+
+
+def _install_project_target(
+    root: Path, source_dir: Path, force: bool = False, launcher: str = "eidos", target_name: str = "project"
+) -> InstallResult:
+    plugin_dir = root / ".agents" / "plugins" / "eidos"
+    if plugin_dir.is_symlink():
+        raise FileExistsError(f"Destination plugin directory '{plugin_dir}' is a symlink; refusing to write to symlink target.")
+    created = _copy_plugin_tree(source_dir, plugin_dir, force=force, launcher=launcher)
+    manifest = _write_installation_manifest(plugin_dir, created)
+    created.append(manifest)
+    return InstallResult(
+        target=target_name,
+        destination=plugin_dir,
+        success=True,
+        message="Installed to project scope .agents/plugins/eidos (agent-plugins.org v1.0.0).",
+        created_files=created,
+    )
+
+
+def _uninstall_project_target(
+    root: Path, source_dir: Path | None = None, target_name: str = "project"
+) -> UninstallResult:
+    plugin_dir = root / ".agents" / "plugins" / "eidos"
+    if plugin_dir.exists():
+        removed = _uninstall_from_manifest_or_legacy(plugin_dir)
+        plugins_dir = plugin_dir.parent
+        if plugins_dir.exists() and not any(plugins_dir.iterdir()):
+            with contextlib.suppress(OSError):
+                plugins_dir.rmdir()
+        agents_dir = plugins_dir.parent
+        if agents_dir.exists() and not any(agents_dir.iterdir()):
+            with contextlib.suppress(OSError):
+                agents_dir.rmdir()
+        rel = plugin_dir.relative_to(root) if plugin_dir.is_relative_to(root) else plugin_dir
+        return UninstallResult(
+            target=target_name,
+            destination=plugin_dir,
+            success=True,
+            message=f"Removed plugin directory at {rel}." if removed else f"No plugin found at {rel} (already removed).",
+            removed=removed,
+        )
+    rel = plugin_dir.relative_to(root) if plugin_dir.is_relative_to(root) else plugin_dir
+    return UninstallResult(
+        target=target_name,
+        destination=plugin_dir,
+        success=True,
+        message=f"No plugin found at {rel} (already removed).",
+        removed=False,
+    )
+
+
+def _install_cursor_target(
+    root: Path, source_dir: Path, force: bool = False, launcher: str = "eidos"
+) -> InstallResult:
+    cursor_rules = root / ".cursor" / "rules" / "eidos.mdc"
+    _write_cursor_rules(cursor_rules, force=force)
+    cursor_skills = root / ".cursor" / "skills"
+    created_skills = _copy_skills_flat(source_dir, cursor_skills, force=force)
+    return InstallResult(
+        target="cursor",
+        destination=cursor_rules,
+        success=True,
+        message="Configured rules in .cursor/rules/eidos.mdc and 4 skills in .cursor/skills/.",
+        created_files=[cursor_rules, *created_skills],
+    )
+
+
+def _uninstall_cursor_target(
+    root: Path, source_dir: Path | None = None
+) -> UninstallResult:
+    cursor_config = root / ".cursor" / "mcp.json"
+    removed_mcp = _remove_project_mcp_server(cursor_config, "eidos")
+
+    cursor_rules = root / ".cursor" / "rules" / "eidos.mdc"
+    removed_rules = False
+    if cursor_rules.exists():
+        cursor_rules.unlink()
+        removed_rules = True
+        rules_dir = cursor_rules.parent
+        if rules_dir.exists() and not any(rules_dir.iterdir()):
+            with contextlib.suppress(OSError):
+                rules_dir.rmdir()
+
+    removed_skills = _remove_skills_flat(source_dir, root / ".cursor" / "skills")
+
+    cursor_dir = root / ".cursor"
+    if cursor_dir.exists() and not any(cursor_dir.iterdir()):
+        with contextlib.suppress(OSError):
+            cursor_dir.rmdir()
+
+    was_removed = removed_mcp or removed_rules or removed_skills
+    return UninstallResult(
+        target="cursor",
+        destination=cursor_config,
+        success=True,
+        message=(
+            "Removed .cursor/rules/eidos.mdc, .cursor/skills/, and updated .cursor/mcp.json."
+            if was_removed
+            else "No Cursor configuration found (already removed)."
+        ),
+        removed=was_removed,
+    )
+
+
+def _install_claude_target(
+    root: Path, source_dir: Path, force: bool = False, launcher: str = "eidos"
+) -> InstallResult:
+    claude_plugin_dir = root / ".claude" / "plugins" / "eidos"
+    if claude_plugin_dir.is_symlink():
+        raise FileExistsError(f"Destination directory '{claude_plugin_dir}' is a symlink; refusing to write to symlink target.")
+    created = _copy_plugin_tree(source_dir, claude_plugin_dir, force=force, launcher=launcher)
+
+    manifests = _ensure_claude_plugin_manifest(claude_plugin_dir)
+    created.extend(manifests)
+
+    commands = _write_claude_commands(claude_plugin_dir, launcher=launcher, force=force)
+    created.extend(commands)
+
+    claude_skills = root / ".claude" / "skills"
+    created_skills = _copy_skills_flat(source_dir, claude_skills, force=force)
+
+    claude_settings = root / ".claude" / "settings.json"
+    _update_project_claude_settings(claude_settings, "eidos@plugins-dir")
+    created.append(claude_settings)
+
+    manifest = _write_installation_manifest(claude_plugin_dir, created)
+    created.append(manifest)
+
+    return InstallResult(
+        target="claude",
+        destination=claude_plugin_dir,
+        success=True,
+        message="Installed Claude Code plugin at .claude/plugins/eidos, 4 skills in .claude/skills/, commands in .claude/plugins/eidos/commands/, and configured .claude/settings.json.",
+        created_files=[*created, *created_skills],
+    )
+
+
+def _uninstall_claude_target(
+    root: Path, source_dir: Path | None = None
+) -> UninstallResult:
+    claude_plugin_dir = root / ".claude" / "plugins" / "eidos"
+    removed_plugin = False
+    if claude_plugin_dir.exists():
+        removed_plugin = _uninstall_from_manifest_or_legacy(claude_plugin_dir)
+        plugins_parent = claude_plugin_dir.parent
+        if plugins_parent.exists() and not any(plugins_parent.iterdir()):
+            with contextlib.suppress(OSError):
+                plugins_parent.rmdir()
+
+    # Also clean legacy .claude/skills/eidos if it existed
+    legacy_claude_plugin = root / ".claude" / "skills" / "eidos"
+    if legacy_claude_plugin.exists():
+        shutil.rmtree(legacy_claude_plugin)
+        removed_plugin = True
+
+    removed_skills = _remove_skills_flat(source_dir, root / ".claude" / "skills")
+
+    claude_settings = root / ".claude" / "settings.json"
+    removed_settings = _remove_project_claude_settings(claude_settings, "eidos@plugins-dir")
+
+    claude_config = root / ".claude" / "mcp.json"
+    removed_mcp = _remove_project_mcp_server(claude_config, "eidos")
+
+    claude_dir = root / ".claude"
+    if claude_dir.exists() and not any(claude_dir.iterdir()):
+        with contextlib.suppress(OSError):
+            claude_dir.rmdir()
+
+    was_removed = removed_plugin or removed_skills or removed_mcp or removed_settings
+    return UninstallResult(
+        target="claude",
+        destination=claude_plugin_dir,
+        success=True,
+        message=(
+            "Removed Claude Code plugin from .claude/plugins/eidos, skills from .claude/skills/, and cleaned up .claude configuration."
+            if was_removed
+            else "No Claude Code plugin or MCP config found (already removed)."
+        ),
+        removed=was_removed,
+    )
+
+
+def _install_aider_target(
+    root: Path, source_dir: Path, force: bool = False, launcher: str = "eidos"
+) -> InstallResult:
+    conv_file = root / ".aider.conventions.md"
+    _write_aider_conventions(conv_file, force=force)
+    aider_conf = root / ".aider.conf.yml"
+    _update_project_aider_conf(aider_conf, ".aider.conventions.md")
+    aider_skills = root / ".aider" / "skills"
+    created_skills = _copy_skills_flat(source_dir, aider_skills, force=force)
+    return InstallResult(
+        target="aider",
+        destination=aider_conf,
+        success=True,
+        message="Configured .aider.conf.yml, generated .aider.conventions.md, and installed 4 skills into .aider/skills/.",
+        created_files=[conv_file, aider_conf, *created_skills],
+    )
+
+
+def _uninstall_aider_target(
+    root: Path, source_dir: Path | None = None
+) -> UninstallResult:
+    conv_file = root / ".aider.conventions.md"
+    removed_conv = False
+    if conv_file.exists():
+        conv_file.unlink()
+        removed_conv = True
+
+    aider_conf = root / ".aider.conf.yml"
+    removed_conf = _remove_project_aider_conf(aider_conf, ".aider.conventions.md")
+    removed_skills = _remove_skills_flat(source_dir, root / ".aider" / "skills")
+    was_removed = removed_conv or removed_conf or removed_skills
+
+    return UninstallResult(
+        target="aider",
+        destination=aider_conf,
+        success=True,
+        message=(
+            "Removed .aider.conventions.md, .aider/skills/, and updated .aider.conf.yml."
+            if was_removed
+            else "No Aider configuration found (already removed)."
+        ),
+        removed=was_removed,
+    )
+
+
+def _install_cline_target(
+    root: Path, source_dir: Path, force: bool = False, launcher: str = "eidos"
+) -> InstallResult:
+    cline_plugin = root / ".cline" / "plugins" / "eidos"
+    if cline_plugin.is_symlink():
+        raise FileExistsError(f"Destination directory '{cline_plugin}' is a symlink; refusing to write to symlink target.")
+    created_plugin = _copy_plugin_tree(source_dir, cline_plugin, force=force, launcher=launcher)
+    manifest = _write_installation_manifest(cline_plugin, created_plugin)
+    created_plugin.append(manifest)
+
+    cline_skills = root / ".cline" / "skills"
+    created_skills = _copy_skills_flat(source_dir, cline_skills, force=force)
+
+    return InstallResult(
+        target="cline",
+        destination=cline_plugin,
+        success=True,
+        message="Configured plugin bundle in .cline/plugins/eidos and 4 skills in .cline/skills/.",
+        created_files=[*created_plugin, *created_skills],
+    )
+
+
+def _uninstall_cline_target(
+    root: Path, source_dir: Path | None = None
+) -> UninstallResult:
+    cline_rules = root / ".clinerules"
+    removed_rules = False
+    if cline_rules.exists():
+        cline_rules.unlink()
+        removed_rules = True
+
+    cline_plugin = root / ".cline" / "plugins" / "eidos"
+    removed_plugin = False
+    if cline_plugin.exists():
+        removed_plugin = _uninstall_from_manifest_or_legacy(cline_plugin)
+        parent_plugins = cline_plugin.parent
+        if parent_plugins.exists() and not any(parent_plugins.iterdir()):
+            with contextlib.suppress(OSError):
+                parent_plugins.rmdir()
+
+    legacy_cline_skills = root / ".cline" / "skills" / "eidos"
+    if legacy_cline_skills.exists():
+        shutil.rmtree(legacy_cline_skills)
+        removed_plugin = True
+
+    removed_skills = _remove_skills_flat(source_dir, root / ".cline" / "skills")
+
+    removed_mcp = _remove_project_mcp_server(root / ".cline" / "mcp.json", "eidos")
+    removed_settings = _remove_project_mcp_server(root / ".cline" / "cline_mcp_settings.json", "eidos")
+
+    cline_dir = root / ".cline"
+    if cline_dir.exists() and not any(cline_dir.iterdir()):
+        with contextlib.suppress(OSError):
+            cline_dir.rmdir()
+
+    was_removed = removed_rules or removed_plugin or removed_skills or removed_mcp or removed_settings
+    return UninstallResult(
+        target="cline",
+        destination=root / ".cline",
+        success=True,
+        message=(
+            "Removed .cline MCP settings, plugin bundle in .cline/plugins/eidos, and .cline/skills/."
+            if was_removed
+            else "No Cline configurations found (already removed)."
+        ),
+        removed=was_removed,
+    )
+
+
+def _install_opencode_target(
+    root: Path, source_dir: Path, force: bool = False, launcher: str = "eidos"
+) -> InstallResult:
+    opencode_plugin_dir = root / ".opencode" / "plugins" / "eidos"
+    if opencode_plugin_dir.is_symlink():
+        raise FileExistsError(f"Destination directory '{opencode_plugin_dir}' is a symlink; refusing to write to symlink target.")
+    created_plugin = _copy_plugin_tree(source_dir, opencode_plugin_dir, force=force, launcher=launcher)
+    manifest = _write_installation_manifest(opencode_plugin_dir, created_plugin)
+    created_plugin.append(manifest)
+
+    opencode_skills = root / ".opencode" / "skills"
+    created_skills = _copy_skills_flat(source_dir, opencode_skills, force=force)
+
+    return InstallResult(
+        target="open-code",
+        destination=opencode_plugin_dir,
+        success=True,
+        message="Configured plugin bundle in .opencode/plugins/eidos and 4 skills in .opencode/skills/.",
+        created_files=[*created_plugin, *created_skills],
+    )
+
+
+def _uninstall_opencode_target(
+    root: Path, source_dir: Path | None = None
+) -> UninstallResult:
+    opencode_json = root / "opencode.json"
+    removed_mcp = _remove_project_opencode_json(opencode_json)
+
+    opencode_rules = root / ".opencode" / "rules.md"
+    removed_rules = False
+    if opencode_rules.exists():
+        opencode_rules.unlink()
+        removed_rules = True
+
+    opencode_plugin_dir = root / ".opencode" / "plugins" / "eidos"
+    removed_plugin = False
+    if opencode_plugin_dir.exists():
+        removed_plugin = _uninstall_from_manifest_or_legacy(opencode_plugin_dir)
+        parent_plugins = opencode_plugin_dir.parent
+        if parent_plugins.exists() and not any(parent_plugins.iterdir()):
+            with contextlib.suppress(OSError):
+                parent_plugins.rmdir()
+
+    removed_skills = _remove_skills_flat(source_dir, root / ".opencode" / "skills")
+
+    opencode_dir = root / ".opencode"
+    if opencode_dir.exists() and not any(opencode_dir.iterdir()):
+        with contextlib.suppress(OSError):
+            opencode_dir.rmdir()
+
+    was_removed = removed_mcp or removed_rules or removed_plugin or removed_skills
+    return UninstallResult(
+        target="open-code",
+        destination=opencode_json,
+        success=True,
+        message=(
+            "Removed opencode.json MCP, .opencode/plugins/eidos, and .opencode/skills/."
+            if was_removed
+            else "No OpenCode configuration found (already removed)."
+        ),
+        removed=was_removed,
+    )
+
+
+def _install_codex_target(
+    root: Path, source_dir: Path, force: bool = False, launcher: str = "eidos"
+) -> InstallResult:
+    codex_dir = root / ".codex"
+    if codex_dir.is_symlink():
+        raise FileExistsError(f"Destination directory '{codex_dir}' is a symlink; refusing to write to symlink target.")
+    created_codex = _copy_plugin_tree(source_dir, codex_dir, force=force, launcher=launcher)
+
+    codex_manifest = _ensure_codex_plugin_manifest(codex_dir)
+    created_codex.append(codex_manifest)
+
+    codex_rules = codex_dir / "rules.md"
+    _write_codex_rules(codex_rules, force=force)
+    created_codex.append(codex_rules)
+
+    codex_skills = codex_dir / "skills"
+    created_skills = _copy_skills_flat(source_dir, codex_skills, force=force)
+    created_codex.extend(created_skills)
+
+    manifest = _write_installation_manifest(codex_dir, created_codex)
+    created_codex.append(manifest)
+
+    return InstallResult(
+        target="codex",
+        destination=codex_dir,
+        success=True,
+        message="Installed OpenAI Codex plugin bundle (.codex/plugin.json, 4 skills, rules.md).",
+        created_files=created_codex,
+    )
+
+
+def _uninstall_codex_target(
+    root: Path, source_dir: Path | None = None
+) -> UninstallResult:
+    codex_dir = root / ".codex"
+    removed_codex = False
+    if codex_dir.exists():
+        removed_codex = _uninstall_from_manifest_or_legacy(codex_dir)
+
+    return UninstallResult(
+        target="codex",
+        destination=codex_dir,
+        success=True,
+        message=(
+            "Removed OpenAI Codex plugin bundle (.codex/)."
+            if removed_codex
+            else "No Codex plugin bundle found (already removed)."
+        ),
+        removed=removed_codex,
+    )
+
+
+def _install_copilot_target(
+    root: Path, source_dir: Path, force: bool = False, launcher: str = "eidos"
+) -> InstallResult:
+    copilot_plugin_dir = root / ".github" / "plugin"
+    if copilot_plugin_dir.is_symlink():
+        raise FileExistsError(f"Destination directory '{copilot_plugin_dir}' is a symlink; refusing to write to symlink target.")
+    created_plugin = _copy_plugin_tree(source_dir, copilot_plugin_dir, force=force, launcher=launcher)
+
+    copilot_manifest = _ensure_copilot_plugin_manifest(copilot_plugin_dir)
+    created_plugin.append(copilot_manifest)
+
+    manifest = _write_installation_manifest(copilot_plugin_dir, created_plugin)
+    created_plugin.append(manifest)
+
+    copilot_skills = root / ".github" / "skills"
+    created_skills = _copy_skills_flat(source_dir, copilot_skills, force=force)
+
+    copilot_settings = root / ".github" / "copilot" / "settings.json"
+    _update_project_copilot_settings(copilot_settings)
+
+    copilot_instructions = root / ".github" / "copilot-instructions.md"
+    _write_copilot_instructions(copilot_instructions, force=force)
+
+    return InstallResult(
+        target="copilot",
+        destination=copilot_plugin_dir,
+        success=True,
+        message="Installed GitHub Copilot plugin (.github/plugin/), 4 skills (.github/skills/), settings (.github/copilot/settings.json), and instructions.",
+        created_files=[
+            *created_plugin,
+            *created_skills,
+            copilot_settings,
+            copilot_instructions,
+        ],
+    )
+
+
+def _uninstall_copilot_target(
+    root: Path, source_dir: Path | None = None
+) -> UninstallResult:
+    copilot_plugin_dir = root / ".github" / "plugin"
+    removed_plugin = False
+    if copilot_plugin_dir.exists():
+        removed_plugin = _uninstall_from_manifest_or_legacy(copilot_plugin_dir)
+        parent_plugin = copilot_plugin_dir.parent
+        if parent_plugin.exists() and not any(parent_plugin.iterdir()):
+            with contextlib.suppress(OSError):
+                parent_plugin.rmdir()
+
+    removed_skills = _remove_skills_flat(source_dir, root / ".github" / "skills")
+    removed_settings = _remove_project_copilot_settings(root / ".github" / "copilot" / "settings.json")
+    removed_copilot_mcp = _remove_project_mcp_server(root / ".github" / "copilot" / "mcp.json", "eidos")
+
+    copilot_dir = root / ".github" / "copilot"
+    if copilot_dir.exists() and not any(copilot_dir.iterdir()):
+        with contextlib.suppress(OSError):
+            copilot_dir.rmdir()
+
+    vscode_mcp = root / ".vscode" / "mcp.json"
+    removed_vscode_mcp = _remove_project_mcp_server(vscode_mcp, "eidos")
+
+    copilot_instructions = root / ".github" / "copilot-instructions.md"
+    removed_instructions = _remove_copilot_instructions(copilot_instructions)
+
+    was_removed = (
+        removed_plugin
+        or removed_skills
+        or removed_settings
+        or removed_copilot_mcp
+        or removed_vscode_mcp
+        or removed_instructions
+    )
+    return UninstallResult(
+        target="copilot",
+        destination=copilot_plugin_dir,
+        success=True,
+        message=(
+            "Removed GitHub Copilot plugin (.github/plugin/), skills (.github/skills/), and configuration."
+            if was_removed
+            else "No GitHub Copilot configuration found (already removed)."
+        ),
+        removed=was_removed,
+    )
+
+
+TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
+    PluginInstallTarget.PROJECT: TargetAdapter(
+        target=PluginInstallTarget.PROJECT,
+        name="project",
+        install=lambda root, src, force, launcher: _install_project_target(root, src, force, launcher, "project"),
+        uninstall=lambda root, src: _uninstall_project_target(root, src, "project"),
+    ),
+    PluginInstallTarget.ANTIGRAVITY: TargetAdapter(
+        target=PluginInstallTarget.ANTIGRAVITY,
+        name="antigravity",
+        install=lambda root, src, force, launcher: _install_project_target(root, src, force, launcher, "antigravity"),
+        uninstall=lambda root, src: _uninstall_project_target(root, src, "antigravity"),
+    ),
+    PluginInstallTarget.CURSOR: TargetAdapter(
+        target=PluginInstallTarget.CURSOR,
+        name="cursor",
+        install=_install_cursor_target,
+        uninstall=_uninstall_cursor_target,
+    ),
+    PluginInstallTarget.CLAUDE: TargetAdapter(
+        target=PluginInstallTarget.CLAUDE,
+        name="claude",
+        install=_install_claude_target,
+        uninstall=_uninstall_claude_target,
+    ),
+    PluginInstallTarget.AIDER: TargetAdapter(
+        target=PluginInstallTarget.AIDER,
+        name="aider",
+        install=_install_aider_target,
+        uninstall=_uninstall_aider_target,
+    ),
+    PluginInstallTarget.CLINE: TargetAdapter(
+        target=PluginInstallTarget.CLINE,
+        name="cline",
+        install=_install_cline_target,
+        uninstall=_uninstall_cline_target,
+    ),
+    PluginInstallTarget.OPEN_CODE: TargetAdapter(
+        target=PluginInstallTarget.OPEN_CODE,
+        name="open-code",
+        install=_install_opencode_target,
+        uninstall=_uninstall_opencode_target,
+    ),
+    PluginInstallTarget.OPENCODE: TargetAdapter(
+        target=PluginInstallTarget.OPENCODE,
+        name="open-code",
+        install=_install_opencode_target,
+        uninstall=_uninstall_opencode_target,
+    ),
+    PluginInstallTarget.CODEX: TargetAdapter(
+        target=PluginInstallTarget.CODEX,
+        name="codex",
+        install=_install_codex_target,
+        uninstall=_uninstall_codex_target,
+    ),
+    PluginInstallTarget.COPILOT: TargetAdapter(
+        target=PluginInstallTarget.COPILOT,
+        name="copilot",
+        install=_install_copilot_target,
+        uninstall=_uninstall_copilot_target,
+    ),
+}
+
+
+def install_plugin(
+    target: PluginInstallTarget = PluginInstallTarget.PROJECT,
+    project_dir: Path | None = None,
+    dest_path: Path | None = None,
+    force: bool = False,
+    launcher: str = "eidos",
+) -> list[InstallResult]:
+    """Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos)."""
+    source_dir = locate_plugin_bundle()
+    root = (project_dir or Path.cwd()).resolve()
+    results = []
+
+    # If explicit destination provided, install there directly
+    if dest_path is not None:
+        target_path = dest_path if dest_path.is_absolute() else (root / dest_path)
+        if target_path.is_symlink():
+            raise FileExistsError(f"Destination target path '{target_path}' is a symlink; refusing to write to symlink target.")
+        created = _copy_plugin_tree(source_dir, target_path, force=force, launcher=launcher)
+        manifest = _write_installation_manifest(target_path, created)
+        created.append(manifest)
+        results.append(
+            InstallResult(
+                target="custom",
+                destination=target_path,
+                success=True,
+                message=f"Installed plugin bundle to custom project path: {target_path}",
+                created_files=created,
+            )
+        )
+        return results
+
+    # Determine project targets
+    targets_to_run: list[PluginInstallTarget] = []
+    if target == PluginInstallTarget.ALL:
+        targets_to_run = [
+            PluginInstallTarget.PROJECT,
+            PluginInstallTarget.CURSOR,
+            PluginInstallTarget.CLAUDE,
+            PluginInstallTarget.AIDER,
+            PluginInstallTarget.CLINE,
+            PluginInstallTarget.OPEN_CODE,
+            PluginInstallTarget.CODEX,
+            PluginInstallTarget.COPILOT,
+        ]
+    elif target == PluginInstallTarget.PROJECT:
+        targets_to_run = [
+            PluginInstallTarget.PROJECT,
+            PluginInstallTarget.CURSOR,
+            PluginInstallTarget.CLAUDE,
+        ]
+    else:
+        targets_to_run = [target]
+
+    for t in targets_to_run:
+        adapter = TARGET_ADAPTERS.get(t)
+        if adapter is not None:
+            results.append(adapter.install(root, source_dir, force, launcher))
+
+    return results
 
 
 def uninstall_plugin(
@@ -1328,7 +1716,7 @@ def uninstall_plugin(
             )
         return results
 
-    targets_to_run = []
+    targets_to_run: list[PluginInstallTarget] = []
     if target == PluginInstallTarget.ALL:
         targets_to_run = [
             PluginInstallTarget.PROJECT,
@@ -1355,286 +1743,9 @@ def uninstall_plugin(
         source_dir = None
 
     for t in targets_to_run:
-        if t in (PluginInstallTarget.PROJECT, PluginInstallTarget.ANTIGRAVITY):
-            plugin_dir = root / ".agents" / "plugins" / "eidos"
-            if plugin_dir.exists():
-                removed = _uninstall_from_manifest_or_legacy(plugin_dir)
-                # Clean up empty parent directories
-                plugins_dir = plugin_dir.parent
-                if plugins_dir.exists() and not any(plugins_dir.iterdir()):
-                    with contextlib.suppress(OSError):
-                        plugins_dir.rmdir()
-                agents_dir = plugins_dir.parent
-                if agents_dir.exists() and not any(agents_dir.iterdir()):
-                    with contextlib.suppress(OSError):
-                        agents_dir.rmdir()
-                rel = plugin_dir.relative_to(root) if plugin_dir.is_relative_to(root) else plugin_dir
-                results.append(
-                    UninstallResult(
-                        target=t.value,
-                        destination=plugin_dir,
-                        success=True,
-                        message=f"Removed plugin directory at {rel}." if removed else f"No plugin found at {rel} (already removed).",
-                        removed=removed,
-                    )
-                )
-            else:
-                rel = plugin_dir.relative_to(root) if plugin_dir.is_relative_to(root) else plugin_dir
-                results.append(
-                    UninstallResult(
-                        target=t.value,
-                        destination=plugin_dir,
-                        success=True,
-                        message=f"No plugin found at {rel} (already removed).",
-                        removed=False,
-                    )
-                )
-
-        elif t == PluginInstallTarget.CURSOR:
-            cursor_config = root / ".cursor" / "mcp.json"
-            removed_mcp = _remove_project_mcp_server(cursor_config, "eidos")
-
-            cursor_rules = root / ".cursor" / "rules" / "eidos.mdc"
-            removed_rules = False
-            if cursor_rules.exists():
-                cursor_rules.unlink()
-                removed_rules = True
-                rules_dir = cursor_rules.parent
-                if rules_dir.exists() and not any(rules_dir.iterdir()):
-                    with contextlib.suppress(OSError):
-                        rules_dir.rmdir()
-
-            removed_skills = _remove_skills_flat(source_dir, root / ".cursor" / "skills")
-
-            cursor_dir = root / ".cursor"
-            if cursor_dir.exists() and not any(cursor_dir.iterdir()):
-                with contextlib.suppress(OSError):
-                    cursor_dir.rmdir()
-
-            was_removed = removed_mcp or removed_rules or removed_skills
-            results.append(
-                UninstallResult(
-                    target="cursor",
-                    destination=cursor_config,
-                    success=True,
-                    message="Removed .cursor/rules/eidos.mdc, .cursor/skills/, and updated .cursor/mcp.json."
-                    if was_removed
-                    else "No Cursor configuration found (already removed).",
-                    removed=was_removed,
-                )
-            )
-
-        elif t == PluginInstallTarget.CLAUDE:
-            claude_plugin_dir = root / ".claude" / "plugins" / "eidos"
-            removed_plugin = False
-            if claude_plugin_dir.exists():
-                removed_plugin = _uninstall_from_manifest_or_legacy(claude_plugin_dir)
-                plugins_parent = claude_plugin_dir.parent
-                if plugins_parent.exists() and not any(plugins_parent.iterdir()):
-                    with contextlib.suppress(OSError):
-                        plugins_parent.rmdir()
-
-            # Also clean legacy .claude/skills/eidos if it existed
-            legacy_claude_plugin = root / ".claude" / "skills" / "eidos"
-            if legacy_claude_plugin.exists():
-                shutil.rmtree(legacy_claude_plugin)
-                removed_plugin = True
-
-            removed_skills = _remove_skills_flat(source_dir, root / ".claude" / "skills")
-
-            claude_settings = root / ".claude" / "settings.json"
-            removed_settings = _remove_project_claude_settings(claude_settings, "eidos@plugins-dir")
-
-            claude_config = root / ".claude" / "mcp.json"
-            removed_mcp = _remove_project_mcp_server(claude_config, "eidos")
-
-            claude_dir = root / ".claude"
-            if claude_dir.exists() and not any(claude_dir.iterdir()):
-                with contextlib.suppress(OSError):
-                    claude_dir.rmdir()
-
-            was_removed = removed_plugin or removed_skills or removed_mcp or removed_settings
-            results.append(
-                UninstallResult(
-                    target="claude",
-                    destination=claude_plugin_dir,
-                    success=True,
-                    message="Removed Claude Code plugin from .claude/plugins/eidos, skills from .claude/skills/, and cleaned up .claude configuration."
-                    if was_removed
-                    else "No Claude Code plugin or MCP config found (already removed).",
-                    removed=was_removed,
-                )
-            )
-
-        elif t == PluginInstallTarget.AIDER:
-            conv_file = root / ".aider.conventions.md"
-            removed_conv = False
-            if conv_file.exists():
-                conv_file.unlink()
-                removed_conv = True
-
-            aider_conf = root / ".aider.conf.yml"
-            removed_conf = _remove_project_aider_conf(aider_conf, ".aider.conventions.md")
-            removed_skills = _remove_skills_flat(source_dir, root / ".aider" / "skills")
-            was_removed = removed_conv or removed_conf or removed_skills
-
-            results.append(
-                UninstallResult(
-                    target="aider",
-                    destination=aider_conf,
-                    success=True,
-                    message="Removed .aider.conventions.md, .aider/skills/, and updated .aider.conf.yml."
-                    if was_removed
-                    else "No Aider configuration found (already removed).",
-                    removed=was_removed,
-                )
-            )
-
-        elif t == PluginInstallTarget.CLINE:
-            cline_rules = root / ".clinerules"
-            removed_rules = False
-            if cline_rules.exists():
-                cline_rules.unlink()
-                removed_rules = True
-
-            cline_plugin = root / ".cline" / "plugins" / "eidos"
-            removed_plugin = False
-            if cline_plugin.exists():
-                removed_plugin = _uninstall_from_manifest_or_legacy(cline_plugin)
-                parent_plugins = cline_plugin.parent
-                if parent_plugins.exists() and not any(parent_plugins.iterdir()):
-                    with contextlib.suppress(OSError):
-                        parent_plugins.rmdir()
-
-            legacy_cline_skills = root / ".cline" / "skills" / "eidos"
-            if legacy_cline_skills.exists():
-                shutil.rmtree(legacy_cline_skills)
-                removed_plugin = True
-
-            removed_skills = _remove_skills_flat(source_dir, root / ".cline" / "skills")
-
-            removed_mcp = _remove_project_mcp_server(root / ".cline" / "mcp.json", "eidos")
-            removed_settings = _remove_project_mcp_server(root / ".cline" / "cline_mcp_settings.json", "eidos")
-
-            cline_dir = root / ".cline"
-            if cline_dir.exists() and not any(cline_dir.iterdir()):
-                with contextlib.suppress(OSError):
-                    cline_dir.rmdir()
-
-            was_removed = removed_rules or removed_plugin or removed_skills or removed_mcp or removed_settings
-            results.append(
-                UninstallResult(
-                    target="cline",
-                    destination=root / ".cline",
-                    success=True,
-                    message="Removed .cline MCP settings, plugin bundle in .cline/plugins/eidos, and .cline/skills/."
-                    if was_removed
-                    else "No Cline configurations found (already removed).",
-                    removed=was_removed,
-                )
-            )
-
-        elif t in (PluginInstallTarget.OPEN_CODE, PluginInstallTarget.OPENCODE):
-            opencode_json = root / "opencode.json"
-            removed_mcp = _remove_project_opencode_json(opencode_json)
-
-            opencode_rules = root / ".opencode" / "rules.md"
-            removed_rules = False
-            if opencode_rules.exists():
-                opencode_rules.unlink()
-                removed_rules = True
-
-            opencode_plugin_dir = root / ".opencode" / "plugins" / "eidos"
-            removed_plugin = False
-            if opencode_plugin_dir.exists():
-                removed_plugin = _uninstall_from_manifest_or_legacy(opencode_plugin_dir)
-                parent_plugins = opencode_plugin_dir.parent
-                if parent_plugins.exists() and not any(parent_plugins.iterdir()):
-                    with contextlib.suppress(OSError):
-                        parent_plugins.rmdir()
-
-            removed_skills = _remove_skills_flat(source_dir, root / ".opencode" / "skills")
-
-            opencode_dir = root / ".opencode"
-            if opencode_dir.exists() and not any(opencode_dir.iterdir()):
-                with contextlib.suppress(OSError):
-                    opencode_dir.rmdir()
-
-            was_removed = removed_mcp or removed_rules or removed_plugin or removed_skills
-            results.append(
-                UninstallResult(
-                    target="open-code",
-                    destination=opencode_json,
-                    success=True,
-                    message="Removed opencode.json MCP, .opencode/plugins/eidos, and .opencode/skills/."
-                    if was_removed
-                    else "No OpenCode configuration found (already removed).",
-                    removed=was_removed,
-                )
-            )
-
-        elif t == PluginInstallTarget.CODEX:
-            codex_dir = root / ".codex"
-            removed_codex = False
-            if codex_dir.exists():
-                removed_codex = _uninstall_from_manifest_or_legacy(codex_dir)
-
-            results.append(
-                UninstallResult(
-                    target="codex",
-                    destination=codex_dir,
-                    success=True,
-                    message="Removed OpenAI Codex plugin bundle (.codex/)."
-                    if removed_codex
-                    else "No Codex plugin bundle found (already removed).",
-                    removed=removed_codex,
-                )
-            )
-
-        elif t == PluginInstallTarget.COPILOT:
-            copilot_plugin_dir = root / ".github" / "plugin"
-            removed_plugin = False
-            if copilot_plugin_dir.exists():
-                removed_plugin = _uninstall_from_manifest_or_legacy(copilot_plugin_dir)
-                parent_plugin = copilot_plugin_dir.parent
-                if parent_plugin.exists() and not any(parent_plugin.iterdir()):
-                    with contextlib.suppress(OSError):
-                        parent_plugin.rmdir()
-
-            removed_skills = _remove_skills_flat(source_dir, root / ".github" / "skills")
-            removed_settings = _remove_project_copilot_settings(root / ".github" / "copilot" / "settings.json")
-            removed_copilot_mcp = _remove_project_mcp_server(root / ".github" / "copilot" / "mcp.json", "eidos")
-
-            copilot_dir = root / ".github" / "copilot"
-            if copilot_dir.exists() and not any(copilot_dir.iterdir()):
-                with contextlib.suppress(OSError):
-                    copilot_dir.rmdir()
-
-            vscode_mcp = root / ".vscode" / "mcp.json"
-            removed_vscode_mcp = _remove_project_mcp_server(vscode_mcp, "eidos")
-
-            copilot_instructions = root / ".github" / "copilot-instructions.md"
-            removed_instructions = _remove_copilot_instructions(copilot_instructions)
-
-            was_removed = (
-                removed_plugin
-                or removed_skills
-                or removed_settings
-                or removed_copilot_mcp
-                or removed_vscode_mcp
-                or removed_instructions
-            )
-            results.append(
-                UninstallResult(
-                    target="copilot",
-                    destination=copilot_plugin_dir,
-                    success=True,
-                    message="Removed GitHub Copilot plugin (.github/plugin/), skills (.github/skills/), and configuration."
-                    if was_removed
-                    else "No GitHub Copilot configuration found (already removed).",
-                    removed=was_removed,
-                )
-            )
+        adapter = TARGET_ADAPTERS.get(t)
+        if adapter is not None:
+            results.append(adapter.uninstall(root, source_dir))
 
     return results
 

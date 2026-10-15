@@ -3,7 +3,7 @@ type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-050
 title: Core Module Decomposition, Build-Time Portal Asset Bundling, CI Pinning, and Progressive Eidos Lite Profile
-status: proposed
+status: applied
 intent:
   kind: enabler
   motivation: Improve long-term maintainability, repository hygiene, and onboarding ergonomics by decomposing 1,000-2,500 LOC god modules, replacing the committed 4.7 MB portal/assets.py literal with build-time bundling and CI frontend tests, deduplicating schemas/models and plugin reference trees, fixing CI ruff drift, and introducing a progressive Eidos Lite onboarding profile.

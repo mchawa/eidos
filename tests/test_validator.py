@@ -976,3 +976,46 @@ def test_delta_schema_enum_taxonomies(tmp_path, validator):
     assert "blocker" in errs
     assert "custom_unknown_action" in errs
 
+
+def test_typed_pydantic_frontmatter_models(tmp_path):
+    """Verify typed Pydantic frontmatter domain models in CMP-DOMAIN-MODELS (DLT-2026-050)."""
+    from eidos.core.spec.models import FrontmatterModel, SpecDocument
+
+    raw_fm = {
+        "id": "CNT-TEST",
+        "type": "tech/container",
+        "name": "Test Container",
+        "status": "accepted",
+        "package_path": "src/test",
+        "decisions": [
+            {
+                "id": "DEC-TEST-001",
+                "title": "Use SQLite",
+                "decision": "Store in SQLite",
+                "rationale": "Embedded and fast",
+                "rejected_alternatives": [
+                    {"option": "PostgreSQL", "reason_rejected": "Heavy external service"}
+                ],
+            }
+        ],
+        "custom_key": "custom_value",
+    }
+    doc = SpecDocument(
+        file_path=tmp_path / "test.adoc",
+        frontmatter=raw_fm,
+        body="= Test",
+        doc_type="tech/container",
+        doc_id="CNT-TEST",
+    )
+    model = doc.as_model()
+    assert isinstance(model, FrontmatterModel)
+    assert model.id == "CNT-TEST"
+    assert model.type == "tech/container"
+    assert model.name == "Test Container"
+    assert len(model.decisions) == 1
+    assert model.decisions[0].id == "DEC-TEST-001"
+    assert model.decisions[0].rejected_alternatives[0].option == "PostgreSQL"
+    # Dict-like backwards compatibility
+    assert model["custom_key"] == "custom_value"
+    assert model.get("missing", "default") == "default"
+

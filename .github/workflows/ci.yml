@@ -38,7 +38,25 @@ jobs:
         run: uv python install 3.15
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --frozen --all-extras --dev
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.11.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+          cache-dependency-path: src/eidos/portal/frontend/pnpm-lock.yaml
+
+      - name: Run frontend tests (vitest)
+        run: |
+          cd src/eidos/portal/frontend
+          pnpm install --frozen-lockfile
+          pnpm test
 
       - name: Lint code with Ruff
         run: uv run ruff check src/ tests/
@@ -70,12 +88,12 @@ jobs:
         with:
           enable-cache: true
           version: "latest"
-
+        
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --python ${{ matrix.python-version }} --all-extras --dev
+        run: uv sync --frozen --python ${{ matrix.python-version }} --all-extras --dev
 
       - name: Run test suite with coverage
         run: uv run pytest -v --cov=src/eidos --cov-report=term-missing
@@ -99,7 +117,7 @@ jobs:
         run: uv python install 3.15
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --frozen --all-extras --dev
 
       - name: Generate living architecture changelog
         run: uv run eidos delta changelog

@@ -490,6 +490,7 @@ def test_resolve_base_ref_single_pass(tmp_path, monkeypatch):
 def test_git_resolution_error_on_invalid_explicit_base(tmp_path):
     """DLT-2026-053: Fail closed when an explicitly provided base ref cannot be resolved."""
     import pytest
+
     from eidos.vcs.drift import GitResolutionError, detect_drift, get_git_diff_files
 
     with pytest.raises(GitResolutionError, match="Cannot resolve base Git reference 'non-existent-ref'"):
@@ -510,6 +511,7 @@ def test_cli_drift_exits_nonzero_on_git_resolution_error():
 def test_preserve_valid_empty_three_dot_diff(tmp_path):
     """DLT-2026-053: Zero changes between merge-base and head returns [] without falling back to 2-dot diff."""
     import subprocess
+
     from eidos.vcs.drift import get_git_diff_files
 
     def git(*args):
@@ -540,6 +542,7 @@ def test_preserve_valid_empty_three_dot_diff(tmp_path):
 def test_merge_base_file_content_comparison(tmp_path):
     """DLT-2026-053: _get_file_versions retrieves old_content from merge-base SHA, not base branch tip."""
     import subprocess
+
     from eidos.vcs.drift import _get_file_versions
 
     def git(*args):

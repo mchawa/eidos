@@ -68,7 +68,7 @@ def drift_cmd(
         else:
             console.print(f"[bold red]Git Resolution Error:[/bold red] {err}")
         if not warn_only:
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from err
         return
 
     if json_output:
