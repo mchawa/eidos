@@ -110,6 +110,12 @@ class ArchitecturalContextSlice:
     invariants: list[dict[str, Any]] = field(default_factory=list)
     policies: list[dict[str, Any]] = field(default_factory=list)
     matched_reasons: dict[str, list[str]] = field(default_factory=dict)
+    tier: str = "guardrails"  # "anchor" | "guardrails" | "deep"
+    query_latency_ms: float = 0.0
+    token_estimate: int = 0
+
+    def _is_secondary_dependency(self, cid: str) -> bool:
+        return self.matched_reasons.get(cid) == ["Internal dependency"]
 
     def to_dict(self) -> dict[str, Any]:
         """Convert slice to dictionary."""
@@ -120,9 +126,9 @@ class ArchitecturalContextSlice:
         return json.dumps(self.to_dict(), indent=indent)
 
     def to_markdown(self) -> str:
-        """Render a clean, token-efficient Markdown representation for LLMs."""
+        """Render a clean, token-efficient Markdown representation formatted for the requested tier."""
         lines = [
-            "# 🧭 Eidos Architectural Context Slice",
+            f"# 🧭 Eidos Architectural Context Slice ({self.tier.upper()} Tier)",
             "",
         ]
 
@@ -132,8 +138,7 @@ class ArchitecturalContextSlice:
         if self.query.get("component"):
             query_parts.append(f"**Component:** `{self.query['component']}`")
         if self.query.get("task"):
-            query_parts.append(f"**Task:** *\"{self.query['task']}\"*")
-
+            query_parts.append(f'**Task:** *"{self.query["task"]}"*')
         if query_parts:
             lines.append(" | ".join(query_parts))
             lines.append("")
@@ -141,41 +146,85 @@ class ArchitecturalContextSlice:
         # 1. Containers & Components
         lines.append(f"## 🧱 C4 Level 2 Containers & Level 3 Components ({len(self.components)})")
         if not self.components:
-            lines.append("*No containers or components directly matched.*")
+            lines.append("*No components or containers directly matched.*")
         for comp in self.components:
             cid = comp.get("id", "")
             name = comp.get("name", cid)
-            ctype = comp.get("container_type", "module")
+            ctype = comp.get("container_type", "service")
             runtime = comp.get("runtime", "N/A")
             pkg = comp.get("package_path", "")
-            lines.append(f"### `{cid}` ({name})")
-            lines.append(f"- **Container Type:** `{ctype}` | **Runtime:** `{runtime}` | **Package:** `{pkg}`")
-            if comp.get("domain_binding"):
-                lines.append(f"- **Domain:** `{comp['domain_binding']}`")
-            deps = (
-                (comp.get("dependencies") or {}).get("internal_containers", [])
-                or (comp.get("dependencies") or {}).get("internal_components", [])
-            ) if isinstance(comp.get("dependencies"), dict) else []
-            if deps:
-                lines.append(f"- **Internal Dependencies:** {', '.join(f'`{d}`' for d in deps)}")
-            contracts = comp.get("contracts") or {}
-            prov = contracts.get("provides", []) if isinstance(contracts, dict) else []
-            if prov:
-                lines.append(f"- **Provides Contracts:** {', '.join(f'`{p}`' for p in prov)}")
-            req = (contracts.get("requires") or contracts.get("consumes") or []) if isinstance(contracts, dict) else []
-            if req:
-                lines.append(f"- **Requires Contracts:** {', '.join(f'`{r}`' for r in req)}")
-            modules = comp.get("components", []) or comp.get("c4_internal_components", [])
-            if modules:
-                lines.append("- **C4 Level 3 Components:**")
-                for m in modules[:6]:
-                    mid = f"`{m['id']}` " if m.get("id") else ""
-                    mname = m.get("name", "")
-                    mresp = m.get("responsibility", "")
-                    lines.append(f"  - {mid}**{mname}**: {mresp}")
-            decisions = collect_component_decisions(comp)
-            if decisions:
-                lines.extend(format_decisions_markdown(decisions, tier="guardrails"))
+            is_comp = comp.get("type") == "tech/component" or cid.startswith("CMP-")
+            is_secondary = self._is_secondary_dependency(cid)
+
+            if is_comp:
+                parent_cnt = comp.get("container", "N/A")
+                lines.append(f"### `{cid}` ({name}) [C4 Level 3 Component]")
+                lines.append(f"- **Owning Container:** `{parent_cnt}` | **Package:** `{pkg}`")
+                if comp.get("file_path"):
+                    lines.append(f"- **Specification:** `{comp['file_path']}`")
+                if comp.get("responsibility"):
+                    lines.append(f"- **Responsibility:** {comp['responsibility']}")
+                if self.tier in ("guardrails", "deep"):
+                    ifaces = comp.get("interfaces", {})
+                    if isinstance(ifaces, dict) and ifaces.get("provides"):
+                        lines.append("- **In-Process APIs (`interfaces.provides`):**")
+                        for p in ifaces["provides"]:
+                            sig = p.get("signature", "")
+                            desc = f": {p.get('description', '')}" if p.get("description") else ""
+                            lines.append(f"  - `{sig}`{desc}")
+                    invs = comp.get("invariants", [])
+                    if invs:
+                        lines.append("- **Component Invariants (`INV-*`):**")
+                        for inv in invs:
+                            lines.append(f"  - `{inv.get('id')}`: {inv.get('rule')}")
+                if self.tier == "deep":
+                    qas = comp.get("quality_attributes", {})
+                    if qas:
+                        qa_str = ", ".join(f"{k}: {v}" for k, v in qas.items())
+                        lines.append(f"- **Quality Attributes:** {qa_str}")
+            else:
+                lines.append(f"### `{cid}` ({name})")
+                lines.append(f"- **Container:** `{ctype}` | **Runtime:** `{runtime}` | **Package:** `{pkg}`")
+                if comp.get("domain_binding"):
+                    lines.append(f"- **Domain:** `{comp['domain_binding']}`")
+
+                if self.tier in ("guardrails", "deep") and not (is_secondary and len(self.components) > 3):
+                    deps = (
+                        (comp.get("dependencies") or {}).get("internal_containers", [])
+                        or (comp.get("dependencies") or {}).get("internal_components", [])
+                    ) if isinstance(comp.get("dependencies"), dict) else []
+                    if deps:
+                        lines.append(f"- **Dependencies:** {', '.join(f'`{d}`' for d in deps)}")
+
+                    contracts = comp.get("contracts") or {}
+                    prov = contracts.get("provides", []) if isinstance(contracts, dict) else []
+                    if prov:
+                        lines.append(f"- **Provides Contracts:** {', '.join(f'`{p}`' for p in prov)}")
+                    req = (contracts.get("requires") or contracts.get("consumes") or []) if isinstance(contracts, dict) else []
+                    if req:
+                        lines.append(f"- **Requires Contracts:** {', '.join(f'`{r}`' for r in req)}")
+
+                    cinvs = comp.get("invariants", [])
+                    if cinvs:
+                        lines.append("- **Container Invariants (`INV-*`):**")
+                        for inv in cinvs:
+                            lines.append(f"  - `{inv.get('id')}`: {inv.get('rule')}")
+
+                if self.tier == "deep" and not is_secondary:
+                    modules = comp.get("components", []) or comp.get("c4_internal_components", [])
+                    if modules:
+                        lines.append("- **C4 Level 3 Components:**")
+                        for m in modules[:6]:
+                            mid = f"`{m['id']}` " if m.get("id") else ""
+                            mname = m.get("name", "")
+                            mresp = m.get("responsibility", "")
+                            lines.append(f"  - {mid}**{mname}**: {mresp}")
+
+            if not is_secondary and not (self.tier != "deep" and len(self.components) > 4):
+                decisions = collect_component_decisions(comp)
+                if decisions:
+                    lines.extend(format_decisions_markdown(decisions, tier=self.tier))
+
             lines.append("")
 
         # 2. Contracts
@@ -192,51 +241,56 @@ class ArchitecturalContextSlice:
             lines.append(f"- **Protocol:** `{protocol}` | **Owner:** `{owner}` | **Path:** `{path}`")
             lines.append("")
 
-        # 3. Domain Capabilities
-        lines.append(f"## 🎯 Domain Capabilities ({len(self.capabilities)})")
-        if not self.capabilities:
-            lines.append("*No capabilities directly matched.*")
-        for cap in self.capabilities:
-            cid = cap.get("id", "")
-            title = cap.get("title", cid)
-            domain = cap.get("domain", "")
-            jtbd = cap.get("jtbd", "")
-            lines.append(f"### `{cid}`: {title}")
-            lines.append(f"- **Domain:** `{domain}` | **Status:** `{cap.get('status', 'active')}`")
-            if jtbd:
-                lines.append(f"- **JTBD:** *\"{jtbd}\"*")
+        # 3. Domain Capabilities (Guardrails & Deep)
+        if self.tier in ("guardrails", "deep"):
+            lines.append(f"## 🎯 Domain Capabilities ({len(self.capabilities)})")
+            if not self.capabilities:
+                lines.append("*No capabilities directly matched.*")
+            for cap in self.capabilities:
+                cid = cap.get("id", "")
+                title = cap.get("title", cid)
+                domain = cap.get("domain", "")
+                lines.append(f"### `{cid}`: {title}")
+                lines.append(f"- **Domain:** `{domain}`")
+                invs = cap.get("invariants", [])
+                if invs:
+                    lines.append("- **Capability Invariants (`INV-*`):**")
+                    for inv in invs:
+                        lines.append(f"  - `{inv.get('id')}`: {inv.get('rule')}")
+                lines.append("")
+
+        # 4. Invariants (Guardrails & Deep)
+        if self.tier in ("guardrails", "deep"):
+            lines.append(f"## 🛡️ Active Invariants ({len(self.invariants)})")
+            if not self.invariants:
+                lines.append("*No active invariants linked to this slice.*")
+            for inv in self.invariants:
+                iid = inv.get("id", "")
+                rule = inv.get("rule", "")
+                tb = inv.get("test_binding", "None")
+                cov = "✓ Covered" if inv.get("has_test_coverage") else "⚠️ Uncovered"
+                lines.append(f"- **`{iid}`** [{cov}]: {rule}")
+                if tb and tb != "None":
+                    lines.append(f"  - *Binding:* `{tb}`")
             lines.append("")
 
-        # 4. Invariants
-        lines.append(f"## 🔒 Active Invariants & Test Bindings ({len(self.invariants)})")
-        if not self.invariants:
-            lines.append("*No active invariants linked to this slice.*")
-        for inv in self.invariants:
-            iid = inv.get("id", "")
-            rule = inv.get("rule", "")
-            tb = inv.get("test_binding", "None")
-            cov = "✓ Covered" if inv.get("has_test_coverage") else "⚠️ Uncovered"
-            lines.append(f"- **`{iid}`** [{cov}]: {rule}")
-            if tb and tb != "None":
-                lines.append(f"  - *Binding:* `{tb}`")
-            elif inv.get("matching_tests"):
-                tests_str = ", ".join(f"`{t}`" for t in inv["matching_tests"][:2])
-                lines.append(f"  - *Discovered in:* {tests_str}")
-        lines.append("")
+        # 5. Policies (Guardrails & Deep)
+        if self.tier in ("guardrails", "deep"):
+            lines.append(f"## 📋 Governing Policies ({len(self.policies)})")
+            if not self.policies:
+                lines.append("*No specific governing policies in slice.*")
+            for pol in self.policies:
+                pid = pol.get("id", "")
+                title = pol.get("title", pid)
+                rule = pol.get("rule", "")
+                lines.append(f"- **`{pid}`** ({title})")
+                if rule and self.tier == "deep":
+                    lines.append(f"  - *Rule:* {rule}")
+            lines.append("")
 
-        # 5. Policies
-        lines.append(f"## 📋 Governing Policies ({len(self.policies)})")
-        if not self.policies:
-            lines.append("*No specific governing policies in slice.*")
-        for pol in self.policies:
-            pid = pol.get("id", "")
-            title = pol.get("title", pid)
-            rule = pol.get("rule", "")
-            lines.append(f"- **`{pid}`** ({title})")
-            if rule:
-                lines.append(f"  - *Rule:* {rule}")
-        lines.append("")
-
+        lines.append(
+            f"> Context Slice generated in {self.query_latency_ms:.2f}ms | Estimated Tokens: ~{self.token_estimate}"
+        )
         return "\n".join(lines)
 
 

@@ -282,20 +282,5 @@ properties:
         type: array
         description: "Deterministic rules and constraints bound directly to automated tests (optional during draft, mandatory for active status)."
         items:
-          type: object
-          additionalProperties: false
-          required:
-            - id
-            - rule
-            - test_binding
-          properties:
-            id:
-              type: string
-              pattern: "^INV-[A-Z0-9_-]+$"
-              description: "Unique invariant identifier (e.g. INV-SPEC-VALIDATION)."
-            rule:
-              type: string
-              description: "Clear, unambiguous statement of the invariant condition."
-            test_binding:
-              type: string
-              description: "Target test file and test function verifying this invariant (e.g. tests/specs/test_schema_validation.py::test_all_specs_conform_to_schema)."
+          $ref: "#/$defs/test_bound_invariant"
+

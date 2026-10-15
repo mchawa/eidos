@@ -46,7 +46,9 @@ c4_containers:
     name: "Eidos Living Web Portal & Static Site Generator"
     container_type: "web_app"
     runtime: "Python 3.12 / HTTP / HTML5 / Mermaid.js"
-    package_path: "src/eidos/portal"
+    package_path:
+      - "src/eidos/portal"
+      - "assets/portal"
   - container_ref: "CNT-EIDOS-INDEX"
     name: "Eidos Architectural Knowledge Graph & Retrieval Index"
     container_type: "library"
@@ -60,15 +62,16 @@ c4_containers:
 
 solution_strategy:
   - "GitOps State Machine: Git repository is the sole source of authoritative truth."
-  - "Specification-as-Code: YAML frontmatter + AsciiDoc technical specifications validated against JSON Schemas."
-  - "Pluggable Agent Execution: Standard adapter protocol supporting Antigravity (agy), Claude Code, and Codex."
+  - "Specification-as-Code: YAML frontmatter + AsciiDoc technical specifications validated against JSON Schemas with factored shared $defs (assets/schemas/v1/common/defs.yaml)."
+  - "Progressive Eidos Lite Profile: Optional 3-file onboarding skeleton (eidos init --lite) alongside the full multi-domain catalog."
+  - "Pluggable Agent Execution: Declarative TargetAdapter registry supporting Antigravity (agy), Claude Code, Cursor, Aider, Cline, OpenCode, Codex, and Copilot."
   - "Living Architecture (Arc42 + C4): Real-time component manifests and topologies without dead ADR graveyards."
   - "Flat SpecDelta Lifecycle: SpecDeltas stored flat under eidos/deltas/ with gitignored symlink views in by-status/ and in-place reconciliation."
   - "Multi-Design System & Experience Trinity: Product capabilities link to screens, user flows, and W3C DTCG tokens across multiple client/brand systems."
   - "Portable Agent Plugins: Strict conformance to agent-plugins.org v1.0.0 packaging specialized skills."
   - "Token-Budgeted Context Slicing: Extracts compact, token-efficient architectural subgraphs (C4 Level 2/3 topology, contracts, capabilities, and invariants) for agent context windows."
-  - "Polyglot Invariant Verification: Drift engine scans tests across Python, TypeScript, Go, Rust, and Java to guarantee mandatory invariant test bindings."
-  - "Embedded SQLite Knowledge Graph: Auto-synchronizing SQLite index (eidos/.cache/index.db) providing sub-millisecond AST and edge catalog lookups, FTS5 BM25 lexical retrieval, and recursive CTE blast-radius traversal with zero external runtime dependencies."
+  - "Polyglot Invariant Verification: Drift engine scans tests across Python, TypeScript, Go, Rust, Java, and Kotlin to guarantee mandatory invariant test bindings."
+  - "Embedded SQLite Knowledge Graph: Auto-synchronizing SQLite index (eidos/.cache/index.db) decomposed across storage.py, sync.py, query.py, context.py, and ast_indexer.py with zero external runtime dependencies."
 
 cross_cutting_concepts:
   authentication_and_authz: "Local Git credentials and environment variables."
@@ -80,7 +83,7 @@ cross_cutting_concepts:
 
 deployment_view:
   hosting_model: "Distributed: Local developer workstation (CLI tool) and CI/CD Runner environments."
-  ci_cd_engine: "CI/CD pipelines executing eidos validate, eidos drift, and test runners."
+  ci_cd_engine: "CI/CD pipelines executing eidos validate, eidos drift, frontend vitest & bundle parity checks, and test runners."
 
 decisions:
   - id: DEC-ARCH-CENTRALIZED-HYBRID-C4
@@ -129,14 +132,15 @@ C4Context
 
 == 4. Solution Strategy
 * **Git as the OS**: All states (PRDs, ADR-free architectures, task graphs, test bindings) reside in Git.
+* **Progressive Onboarding (`eidos init --lite`)**: Supports a compact 3-file starter profile (`system.adoc`, `architecture/system-architecture.adoc`, and `POL-001`) that expands seamlessly as the project grows.
 * **SpecDelta Diff Engine**: Evolutionary changes are semantic mutations (`add`, `modify`, `remove`, `patch`) stored flat with gitignored symlink status views.
 * **Multi-Design Systems & W3C Tokens**: Product capabilities bridge business JTBD with technical code packages and W3C tokenized multi-brand design systems.
-* **Interactive Hierarchical C4 Explorer**: Living Web Portal provides dynamic, clickable drill-down from C4 Level 1 System Context to Level 2 Container Topologies and Level 3 Component Whiteboxes with breadcrumbs and slide-over component inspection.
-* **Embedded SQLite Knowledge Graph & FTS5 Retrieval**: High-speed, zero-dependency caching layer (`eidos/.cache/index.db`) indexing all entities, directed dependency edges, and lexical full-text with sub-2ms dirty checking.
+* **Interactive Hierarchical C4 Explorer**: Living Web Portal provides dynamic, clickable drill-down from C4 Level 1 System Context to Level 2 Container Topologies and Level 3 Component Whiteboxes with breadcrumbs and slide-over component inspection, packaged via deterministic gzipped assets (`assets/portal/bundle.html.gz`) and a Hatch custom build hook.
+* **Embedded SQLite Knowledge Graph & FTS5 Retrieval**: High-speed, zero-dependency caching layer (`eidos/.cache/index.db`) decomposed into focused internal modules (`storage.py`, `sync.py`, `query.py`, `context.py`, `ast_indexer.py`) with sub-2ms dirty checking.
 * **Recursive CTE Blast-Radius & Impact Analysis**: Architectural blast radius and k-hop neighborhood traversal executed natively in SQLite via Common Table Expressions (CTEs).
 * **Tiered Context Compression Model**: Three-tier context extraction (`anchor`, `guardrails`, `deep`) reducing prompt token payloads by 60-80% for AI coding agents.
 * **Token-Budgeted Context Slicing**: Slices bounded C4 topologies, active invariants, and governing policies dynamically for AI agent contexts.
-* **Polyglot Invariant Verification**: Continuous drift detection validating automated test bindings across Python, TypeScript, Go, Rust, and Java.
+* **Polyglot Invariant Verification**: Continuous drift detection decomposed across `diff.py`, `invariants.py`, and `report.py` validating automated test bindings across Python, TypeScript, Go, Rust, Java, and Kotlin.
 
 == 5. Building Block View (C4 Architecture Hierarchy)
 
@@ -159,7 +163,7 @@ Eidos is distributed as a monorepo consisting of the following primary Level 2 c
 |===
 | Container ID | Name | Architectural Tier | Type | Source Path
 | `CNT-EIDOS-CLI` | Eidos Command-Line Interface | Tier 1: Presentation & Interface | CLI Application | `src/eidos/cli`
-| `CNT-EIDOS-PORTAL` | Eidos Living Web Portal & Static Generator | Tier 1: Presentation & Interface | Web Application | `src/eidos/portal`
+| `CNT-EIDOS-PORTAL` | Eidos Living Web Portal & Static Generator | Tier 1: Presentation & Interface | Web Application | `src/eidos/portal`, `assets/portal`
 | `CNT-EIDOS-DOCS` | Eidos User Documentation System | Tier 1: Presentation & Interface | Web Application | `docs`
 | `CNT-EIDOS-PLUGIN` | Eidos Agent Plugin & Extension Manager | Tier 2: Extensibility & Agent Integration | Library | `src/eidos/plugin`, `assets/plugin_reference`
 | `CNT-EIDOS-CORE` | Eidos Living Spec & Design Core Engine | Tier 3: Core Domain & Spec Engine | Library | `src/eidos/core`, `assets/schemas`

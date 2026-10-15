@@ -88,39 +88,32 @@ class SpecValidator:
         """Preload standard schemas recursively from the assets directory or package data."""
         try:
             schema_dir = get_v1_schemas_dir()
-            for p in schema_dir.rglob("*.schema.yaml"):
-                content = p.read_text(encoding="utf-8")
-                data = yaml.safe_load(content)
-                rel_path = str(p.relative_to(schema_dir))
-                self._schema_cache[p.name] = data
-                self._schema_cache[rel_path] = data
-                self._schema_cache[f"schemas/v1/{rel_path}"] = data
-                self._schema_cache[f"schemas/v1/{p.name}"] = data
-            for p in schema_dir.rglob("*.schema.json"):
-                content = p.read_text(encoding="utf-8")
-                data = yaml.safe_load(content)
-                rel_path = str(p.relative_to(schema_dir))
-                self._schema_cache[p.name] = data
-                self._schema_cache[rel_path] = data
-                self._schema_cache[f"schemas/v1/{rel_path}"] = data
-                self._schema_cache[f"schemas/v1/{p.name}"] = data
+            common_defs_path = schema_dir / "common" / "defs.yaml"
+            shared_defs: dict[str, Any] = {}
+            if common_defs_path.is_file():
+                defs_doc = yaml.safe_load(common_defs_path.read_text(encoding="utf-8")) or {}
+                if isinstance(defs_doc, dict) and isinstance(defs_doc.get("$defs"), dict):
+                    shared_defs = defs_doc["$defs"]
+
+            for ext in ("*.schema.yaml", "*.schema.json"):
+                for p in schema_dir.rglob(ext):
+                    content = p.read_text(encoding="utf-8")
+                    data = yaml.safe_load(content)
+                    if isinstance(data, dict) and shared_defs and '"#/$defs/' in json.dumps(data):
+                        merged_defs = dict(shared_defs)
+                        if isinstance(data.get("$defs"), dict):
+                            merged_defs.update(data["$defs"])
+                        data["$defs"] = merged_defs
+                    rel_path = str(p.relative_to(schema_dir))
+                    self._schema_cache[p.name] = data
+                    self._schema_cache[rel_path] = data
+                    self._schema_cache[f"schemas/v1/{rel_path}"] = data
+                    self._schema_cache[f"schemas/v1/{p.name}"] = data
             self._schema_hash = self._compute_schema_hash()
             self.schema_hash = self._schema_hash
         except (OSError, yaml.YAMLError) as exc:
             raise RuntimeError(f"Failed to load bundled Eidos schemas: {exc}") from exc
 
-    def _walk_traversable(self, node, rel_prefix: str):
-        """Recursively walk an importlib Traversable directory."""
-        for item in node.iterdir():
-            sub_rel = f"{rel_prefix}/{item.name}".lstrip("/")
-            if item.is_dir():
-                self._walk_traversable(item, sub_rel)
-            elif item.name.endswith(".schema.yaml") or item.name.endswith(".schema.json"):
-                data = yaml.safe_load(item.read_text(encoding="utf-8"))
-                self._schema_cache[item.name] = data
-                self._schema_cache[sub_rel] = data
-                self._schema_cache[f"schemas/v1/{sub_rel}"] = data
-                self._schema_cache[f"schemas/v1/{item.name}"] = data
 
     def resolve_schema(self, doc: SpecDocument) -> dict | None:
         """Resolve the JSON schema for a document based on its type or explicit schema attribute."""

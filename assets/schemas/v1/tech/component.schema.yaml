@@ -123,77 +123,11 @@ properties:
     type: array
     description: "Component-specific operational or architectural invariants."
     items:
-      type: object
-      additionalProperties: false
-      required:
-        - id
-        - rule
-      properties:
-        id:
-          type: string
-          pattern: "^INV-[A-Z0-9_-]+$"
-          description: "Unique invariant identifier following INV-<NAME>."
-        rule:
-          type: string
-          description: "Formal normative requirement statement (RFC 2119)."
-        test_binding:
-          type: string
-          description: "Relative test path and test function verifying this invariant (e.g. 'tests/test_validator.py::test_rule')."
+      $ref: "#/$defs/invariant"
   decisions:
     type: array
     description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this C4 Level 3 component specification without standalone ADR files (POL-001)."
     items:
       $ref: "#/$defs/decision"
 
-$defs:
-  decision:
-    type: object
-    additionalProperties: false
-    required:
-      - id
-      - title
-      - decision
-      - rationale
-    properties:
-      id:
-        type: string
-        pattern: "^DEC-[A-Z0-9_-]+$"
-        description: "Globally unique architectural decision identifier following DEC-<NAME> (e.g. DEC-VALIDATOR-SCHEMA-CACHE)."
-      title:
-        type: string
-        description: "Concise human-readable title summarizing the architectural decision."
-      decision:
-        type: string
-        description: "Normative statement of the chosen design, algorithm, or component boundary."
-      rationale:
-        type: string
-        description: "Architectural reasoning and trade-offs explaining why this decision was made."
-      rejected_alternatives:
-        type: array
-        description: "Alternative options that were evaluated and rejected, preserving negative architectural knowledge."
-        items:
-          type: object
-          additionalProperties: false
-          required:
-            - option
-            - reason_rejected
-          properties:
-            option:
-              type: string
-              description: "Name or summary of the rejected alternative option."
-            reason_rejected:
-              type: string
-              description: "Architectural or operational reason why this option was rejected."
-      graduated_from:
-        type: string
-        pattern: "^((EXP|DLT)-[A-Z0-9_-]+|.*\\.adoc)$"
-        description: "Optional Exploration (EXP-*) or SpecDelta (DLT-*) ID or relative path from which this decision graduated."
-        x-eidos-ref:
-          target_types:
-            - product/exploration
-            - delta/mutation
-          prefixes:
-            - EXP-
-            - DLT-
-          entity_label: exploration or delta
 

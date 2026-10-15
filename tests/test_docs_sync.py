@@ -14,7 +14,7 @@ def test_documentation_and_schemas_in_sync():
     repo_root = Path(__file__).parent.parent
 
     # 1. Verify all canonical v1 schemas are represented in docs/concepts/schema-glossary.md
-    schema_files = sorted(glob.glob(str(repo_root / "assets/schemas/v1/**/*.yaml"), recursive=True))
+    schema_files = sorted(glob.glob(str(repo_root / "assets/schemas/v1/**/*.schema.yaml"), recursive=True))
     assert len(schema_files) == 16, f"Expected 16 canonical schemas, found {len(schema_files)}"
 
     glossary_path = repo_root / "docs/concepts/schema-glossary.md"

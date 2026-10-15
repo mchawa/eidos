@@ -52,11 +52,13 @@ jobs:
           cache: "pnpm"
           cache-dependency-path: src/eidos/portal/frontend/pnpm-lock.yaml
 
-      - name: Run frontend tests (vitest)
+      - name: Run frontend tests (vitest) & verify bundle parity
         run: |
           cd src/eidos/portal/frontend
           pnpm install --frozen-lockfile
           pnpm test
+          pnpm build
+          python3 scripts/build_assets.py --check
 
       - name: Lint code with Ruff
         run: uv run ruff check src/ tests/
@@ -182,7 +184,7 @@ jobs:
         run: uv python install 3.15
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --frozen --all-extras --dev
 
       - name: Generate release changelog & notes
         run: |

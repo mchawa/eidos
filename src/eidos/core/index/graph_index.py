@@ -1,34 +1,38 @@
 """Embedded SQLite Architectural Knowledge Graph & Hybrid Context Retrieval Index.
 
-Implements EXP-2026-002:
-- Standard library `sqlite3` backed graph store (eidos/.cache/index.db).
-- FTS5 virtual table with BM25 ranking for fuzzy and lexical matching.
-- Recursive CTE queries for sub-millisecond k-hop blast radius and dependency traversal.
-- SHA-256 and mtime dirty-checking for incremental <5ms zero-drift refreshes.
-- Tiered context output (Anchor, Guardrails, Deep) for optimal token compression.
+Implements EXP-2026-002 and DLT-2026-050:
+- Standard library `sqlite3` backed graph store (eidos/.cache/index.db) via `storage.py`.
+- Incremental dirty-checking, spec edge rebuilding, and code ownership resolution via `sync.py`.
+- Column-weighted FTS5 BM25 search, recursive CTE graph traversal, and symbol lookup via `query.py`.
+- Tiered context output (Anchor, Guardrails, Deep) for optimal token compression via `context.py`.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
-import os
-import re
 import sqlite3
 import time
 from pathlib import Path
 from typing import Any
 
-from eidos.core.index.ast_indexer import get_ast_indexer
+from eidos.core.index.ast_indexer import get_ast_indexer, is_ast_grep_available
 from eidos.core.index.context import (
     TIER_TOKEN_BUDGETS,
     TieredContextSlice,
+    build_tiered_context_slice,
 )
 from eidos.core.index.query import (
     FTS_COLUMN_WEIGHTS,
     TASK_SLICE_ENTITY_TYPES,
     build_fts_match_query,
     compound_identifier_subtokens,
+    execute_fts_query,
+    execute_incoming_references,
+    execute_k_hop_traversal,
+    find_symbol_in_db,
+    generate_repo_map_from_db,
+    resolve_symbol_locations_in_db,
+    resolve_symbol_or_path_in_db,
     split_identifier,
 )
 from eidos.core.index.storage import (
@@ -37,17 +41,21 @@ from eidos.core.index.storage import (
     open_cache_connection,
 )
 from eidos.core.index.sync import (
-    _CODE_EXTS,
-    _EXCLUDED_CODE_DIRS,
-    _NON_AST_SYMBOL_KINDS,
     IndexSyncStats,
     _CodeOwnershipResolver,
+    check_index_dirty,
+    delete_spec_fts_rows,
+    index_source_file,
+    index_test_bindings,
+    is_test_code_path,
+    prune_stale_test_binding_edges,
+    rebuild_spec_edges,
+    reconcile_code_ownership,
+    restore_code_mappings,
+    store_code_symbols,
+    sync_index,
 )
-from eidos.core.spec.parser import parse_spec_file
-from eidos.core.workspace.context import (
-    collect_component_decisions,
-)
-from eidos.core.workspace.project import extract_entity_paths, find_repo_root, match_path_pattern
+from eidos.core.workspace.project import find_repo_root
 
 __all__ = [
     "FTS_COLUMN_WEIGHTS",
@@ -109,20 +117,18 @@ class ArchitecturalIndex:
         """Create tables, indexes, and FTS5 virtual tables with corruption recovery."""
         self._get_connection()
 
+    def close(self) -> None:
+        if self._conn:
+            self._conn.close()
+            self._conn = None
+
     # ------------------------------------------------------------------
-    # Code symbol persistence helpers (DLT-2026-034)
+    # Incremental Sync & Code Ownership Delegation (sync.py)
     # ------------------------------------------------------------------
 
     @staticmethod
     def _is_test_code_path(rel_path: str) -> bool:
-        """Return True for test files (by name or by a tests/test/__tests__ directory segment)."""
-        parts = rel_path.replace("\\", "/").split("/")
-        name = parts[-1]
-        return (
-            name.startswith("test_")
-            or name.endswith("_test.py")
-            or any(part in ("tests", "test", "__tests__") for part in parts[:-1])
-        )
+        return is_test_code_path(rel_path)
 
     def _store_code_symbols(
         self,
@@ -131,106 +137,10 @@ class ArchitecturalIndex:
         owners: list[tuple[str, str]],
         symbols: list[Any],
     ) -> None:
-        """Replace all persisted symbols of one source file (delete-then-insert) and keep lookups consistent.
-
-        ``owners`` lists ``(entity_id, component_id)`` pairs, primary owner first; every owner gets the file's AST
-        coordinates in ``code_symbols`` and its lookup rows in ``symbol_mappings``. Mapping rows that were only
-        provided by the file's previous symbols/owners are pruned, so edits, deletions and ownership changes leave
-        nothing stale behind.
-        """
-        previous = conn.execute(
-            "SELECT DISTINCT entity_id, kind, symbol, parent_symbol FROM code_symbols WHERE file_path = ?;",
-            (rel_path,),
-        ).fetchall()
-        conn.execute("DELETE FROM code_symbols WHERE file_path = ?;", (rel_path,))
-
-        for position, (entity_id, component_id) in enumerate(owners):
-            for sym in symbols:
-                parent = sym.parent_symbol or ""
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO code_symbols
-                    (file_path, symbol, kind, parent_symbol, line_start, line_end, signature, entity_id,
-                     component_id, is_primary)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                    """,
-                    (
-                        rel_path,
-                        sym.name,
-                        sym.kind,
-                        parent,
-                        sym.line_start,
-                        sym.line_end,
-                        sym.signature or "",
-                        entity_id,
-                        component_id,
-                        1 if position == 0 else 0,
-                    ),
-                )
-                conn.execute(
-                    "INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind) VALUES (?, ?, ?);",
-                    (sym.name, entity_id, sym.kind),
-                )
-                if parent:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind) VALUES (?, ?, 'method');",
-                        (f"{parent}.{sym.name}", entity_id),
-                    )
-
-        for old in previous:
-            old_entity, old_kind, old_symbol, old_parent = (
-                old["entity_id"],
-                old["kind"],
-                old["symbol"],
-                old["parent_symbol"],
-            )
-            if not conn.execute(
-                "SELECT 1 FROM code_symbols WHERE entity_id = ? AND kind = ? AND symbol = ? LIMIT 1;",
-                (old_entity, old_kind, old_symbol),
-            ).fetchone():
-                conn.execute(
-                    "DELETE FROM symbol_mappings WHERE symbol = ? AND entity_id = ? AND kind = ?;",
-                    (old_symbol, old_entity, old_kind),
-                )
-            if (
-                old_parent
-                and not conn.execute(
-                    "SELECT 1 FROM code_symbols WHERE entity_id = ? AND parent_symbol = ? AND symbol = ? LIMIT 1;",
-                    (old_entity, old_parent, old_symbol),
-                ).fetchone()
-            ):
-                conn.execute(
-                    "DELETE FROM symbol_mappings WHERE symbol = ? AND entity_id = ? AND kind = 'method';",
-                    (f"{old_parent}.{old_symbol}", old_entity),
-                )
+        store_code_symbols(conn, rel_path, owners, symbols)
 
     def _restore_code_mappings(self, conn: sqlite3.Connection, entity_id: str) -> None:
-        """Re-create ``symbol_mappings`` rows for an entity from persisted code state (no source re-parsing)."""
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind)
-            SELECT DISTINCT file_path, entity_id, 'source_path' FROM code_symbols WHERE entity_id = ?
-            UNION
-            SELECT rel_path, doc_id, 'source_path' FROM indexed_files
-            WHERE doc_type = 'code/source' AND doc_id = ?;
-            """,
-            (entity_id, entity_id),
-        )
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind)
-            SELECT symbol, entity_id, kind FROM code_symbols WHERE entity_id = ?;
-            """,
-            (entity_id,),
-        )
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind)
-            SELECT parent_symbol || '.' || symbol, entity_id, 'method' FROM code_symbols
-            WHERE entity_id = ? AND parent_symbol != '';
-            """,
-            (entity_id,),
-        )
+        restore_code_mappings(conn, entity_id)
 
     def _index_source_file(
         self,
@@ -242,32 +152,7 @@ class ArchitecturalIndex:
         sha: str,
         resolver: _CodeOwnershipResolver,
     ) -> None:
-        """Index one non-test source file for all its resolved owners (one AST parse)."""
-        owners = resolver.owners(rel_path)
-        owner_ids = {entity_id for entity_id, _ in owners}
-        # Drop source_path rows of entities that no longer own or declare the file.
-        keep = resolver.declared_owners(rel_path) | owner_ids
-        for stale in conn.execute(
-            "SELECT entity_id FROM symbol_mappings WHERE symbol = ? AND kind = 'source_path';", (rel_path,)
-        ).fetchall():
-            if stale["entity_id"] not in keep:
-                conn.execute(
-                    "DELETE FROM symbol_mappings WHERE symbol = ? AND entity_id = ? AND kind = 'source_path';",
-                    (rel_path, stale["entity_id"]),
-                )
-        for entity_id in sorted(owner_ids):
-            conn.execute(
-                "INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind) VALUES (?, ?, 'source_path');",
-                (rel_path, entity_id),
-            )
-        self._store_code_symbols(conn, rel_path, owners, ast_idx.extract_symbols(path) if owners else [])
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-            VALUES (?, ?, ?, ?, 'code/source', ?);
-            """,
-            (rel_path, mtime, sha, owners[0][0] if owners else "source", time.time()),
-        )
+        index_source_file(conn, ast_idx, path, rel_path, mtime, sha, resolver)
 
     def _reconcile_code_ownership(
         self,
@@ -276,195 +161,11 @@ class ArchitecturalIndex:
         resolver: _CodeOwnershipResolver,
         processed: set[str],
     ) -> None:
-        """Recursively index every container package directory and re-attribute files whose owners changed.
-
-        Runs after all specifications are loaded, so ownership is independent of spec processing order.
-        Candidates are all non-test code files under any declared ``package_path`` (excluded directories pruned),
-        every explicitly declared source file, and every already-indexed source file. A file is (re)indexed when it
-        is unknown, its primary owner differs from the manifest, or its persisted owner set differs from the
-        resolved one.
-        """
-        candidates: dict[str, Path] = {}
-        for pkg in sorted(resolver.package_dirs()):
-            abs_pkg = (self.root / pkg).resolve()
-            if not abs_pkg.is_dir():
-                continue
-            for dirpath, dirnames, filenames in os.walk(str(abs_pkg)):
-                dirnames[:] = sorted(d for d in dirnames if d not in _EXCLUDED_CODE_DIRS and not d.startswith("."))
-                for fn in sorted(filenames):
-                    p_file = Path(dirpath) / fn
-                    if p_file.suffix not in _CODE_EXTS:
-                        continue
-                    try:
-                        rel_code = str(p_file.relative_to(self.root)).replace("\\", "/")
-                    except ValueError:
-                        continue
-                    candidates.setdefault(rel_code, p_file)
-
-        manifest = {
-            r["rel_path"]: r["doc_id"]
-            for r in conn.execute("SELECT rel_path, doc_id FROM indexed_files WHERE doc_type = 'code/source';")
-        }
-        for rel_code in sorted(set(manifest) | resolver.declared_files()):
-            if rel_code not in candidates:
-                abs_known = (self.root / rel_code).resolve()
-                if abs_known.is_file() and abs_known.suffix in _CODE_EXTS:
-                    candidates[rel_code] = abs_known
-
-        for rel_code, p_file in sorted(candidates.items()):
-            if rel_code in processed or self._is_test_code_path(rel_code):
-                continue
-            owners = resolver.owners(rel_code)
-            if rel_code in manifest and manifest[rel_code] == (owners[0][0] if owners else "source"):
-                stored = {
-                    r[0]
-                    for r in conn.execute(
-                        "SELECT DISTINCT entity_id FROM code_symbols WHERE file_path = ?;", (rel_code,)
-                    )
-                }
-                if not stored or stored == {entity_id for entity_id, _ in owners}:
-                    continue
-            stat = p_file.stat()
-            self._index_source_file(
-                conn,
-                ast_idx,
-                p_file,
-                rel_code,
-                stat.st_mtime,
-                hashlib.sha256(p_file.read_bytes()).hexdigest(),
-                resolver,
-            )
-
-    def close(self) -> None:
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        reconcile_code_ownership(self, conn, ast_idx, resolver, processed)
 
     def is_dirty(self) -> tuple[bool, list[Path], list[Path]]:
-        """Perform sub-5ms dirty checking comparing filesystem mtime with indexed state.
-
-        Checks both living specifications in eidos/ and tracked source code and test files.
-        When a file's mtime changed (e.g. git checkout or touch) but its SHA-256 digest matches
-        cached_sha, refreshes indexed_files.mtime in place so subsequent checks do not re-hash.
-
-        Returns:
-            (is_dirty, modified_or_new_files, deleted_rel_paths)
-        """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT rel_path, mtime, sha256 FROM indexed_files;")
-        db_files = {row["rel_path"]: (row["mtime"], row["sha256"]) for row in cursor.fetchall()}
-
-        disk_files: set[str] = set()
-        to_update: list[Path] = []
-        mtime_refreshes: list[tuple[float, float, str]] = []
-        now_ts = time.time()
-
-        if not self.eidos_dir.exists():
-            deleted = [Path(rel) for rel in db_files]
-            return len(deleted) > 0, [], deleted
-
-        root_str = str(self.root)
-
-        def _check_file(file_path: Path, rel_key: str, st_mtime: float) -> None:
-            cached = db_files.get(rel_key)
-            if not cached:
-                to_update.append(file_path)
-            elif abs(st_mtime - cached[0]) > 0.001:
-                try:
-                    digest = hashlib.sha256(file_path.read_bytes()).hexdigest()
-                except OSError:
-                    return
-                if digest != cached[1]:
-                    to_update.append(file_path)
-                else:
-                    mtime_refreshes.append((st_mtime, now_ts, rel_key))
-                    db_files[rel_key] = (st_mtime, cached[1])
-
-        # 1. Living specifications in eidos/ (.adoc)
-        for dirpath, dirnames, filenames in os.walk(str(self.eidos_dir)):
-            dirnames[:] = [d for d in dirnames if not d.startswith(".") and d != "by-status"]
-            for fn in filenames:
-                if not fn.endswith(".adoc") or fn.startswith("_") or fn.lower() == "readme.adoc":
-                    continue
-                full_path = os.path.join(dirpath, fn)
-                try:
-                    rel_p = os.path.relpath(full_path, root_str).replace("\\", "/")
-                except ValueError:
-                    rel_p = full_path.replace("\\", "/")
-                disk_files.add(rel_p)
-                stat = os.stat(full_path)
-                _check_file(Path(full_path), rel_p, stat.st_mtime)
-
-        # 2. Tracked code and test files
-        code_exts = _CODE_EXTS
-        tracked_code_dirs: set[Path] = set()
-
-        # entities.package_path only holds the first entry of a multi-path container; every declared entry is also
-        # persisted as a kind='package_path' mapping (DLT-2026-034).
-        package_paths: set[str] = set()
-        cursor.execute("SELECT DISTINCT package_path FROM entities WHERE package_path != '';")
-        package_paths.update(row[0].strip() for row in cursor.fetchall())
-        cursor.execute("SELECT DISTINCT symbol FROM symbol_mappings WHERE kind = 'package_path';")
-        package_paths.update(row[0].strip() for row in cursor.fetchall())
-        for pp in sorted(package_paths):
-            if pp:
-                p_abs = (self.root / pp).resolve()
-                if p_abs.is_dir():
-                    tracked_code_dirs.add(p_abs)
-                elif p_abs.is_file() and p_abs.suffix in code_exts:
-                    try:
-                        rel_code = str(p_abs.relative_to(self.root)).replace("\\", "/")
-                    except ValueError:
-                        rel_code = str(p_abs).replace("\\", "/")
-                    disk_files.add(rel_code)
-                    stat = p_abs.stat()
-                    _check_file(p_abs, rel_code, stat.st_mtime)
-
-        for std_dir in ("src", "tests", "test"):
-            cand = (self.root / std_dir).resolve()
-            if cand.is_dir():
-                tracked_code_dirs.add(cand)
-
-        for rel_tracked in list(db_files.keys()):
-            if not rel_tracked.endswith(".adoc") and rel_tracked not in disk_files:
-                abs_tracked = (self.root / rel_tracked).resolve()
-                if abs_tracked.is_file():
-                    disk_files.add(rel_tracked)
-                    stat = abs_tracked.stat()
-                    _check_file(abs_tracked, rel_tracked, stat.st_mtime)
-
-        excluded_dirs = _EXCLUDED_CODE_DIRS
-        for code_dir in tracked_code_dirs:
-            if not code_dir.exists():
-                continue
-            for dirpath, dirnames, filenames in os.walk(str(code_dir)):
-                dirnames[:] = [d for d in dirnames if d not in excluded_dirs and not d.startswith(".")]
-                for fn in filenames:
-                    p_file = Path(dirpath) / fn
-                    if p_file.suffix not in code_exts:
-                        continue
-                    try:
-                        rel_code = str(p_file.relative_to(self.root)).replace("\\", "/")
-                    except ValueError:
-                        rel_code = str(p_file).replace("\\", "/")
-                    if rel_code in disk_files:
-                        continue
-                    disk_files.add(rel_code)
-
-                    stat = p_file.stat()
-                    _check_file(p_file, rel_code, stat.st_mtime)
-
-        if mtime_refreshes:
-            with conn:
-                conn.executemany(
-                    "UPDATE indexed_files SET mtime = ?, last_indexed = ? WHERE rel_path = ?;",
-                    mtime_refreshes,
-                )
-
-        deleted = [Path(rel) for rel in db_files.keys() - disk_files]
-        is_dirty = len(to_update) > 0 or len(deleted) > 0
-        return is_dirty, to_update, deleted
+        """Perform sub-5ms dirty checking comparing filesystem mtime with indexed state."""
+        return check_index_dirty(self)
 
     def _ensure_synced(self) -> None:
         """Lazily ensure the index is synchronized (<2ms check when clean)."""
@@ -484,852 +185,27 @@ class ArchitecturalIndex:
         strict: bool = False,
     ) -> IndexSyncStats:
         """Incrementally synchronize the index with specifications and code on disk."""
-        t0 = time.perf_counter()
-        stats = IndexSyncStats()
-
-        if force:
-            conn = self._get_connection()
-            with conn:
-                conn.execute("DELETE FROM indexed_files;")
-                conn.execute("DELETE FROM entities;")
-                conn.execute("DELETE FROM edges;")
-                conn.execute("DELETE FROM symbol_mappings;")
-                conn.execute("DELETE FROM code_symbols;")
-                conn.execute("DELETE FROM specs_fts;")
-
-        if force or dirty_state is None:
-            dirty, to_update, deleted = self.is_dirty()
-        else:
-            dirty, to_update, deleted = dirty_state
-        if not dirty and not force:
-            stats.duration_ms = (time.perf_counter() - t0) * 1000
-            stats.was_clean = True
-            self._last_synced_check = time.monotonic()
-            return stats
-
-        stats.was_clean = False
-        conn = self._get_connection()
-
-        with conn:
-            # Handle deletions
-            specs_deleted = False
-            for d in deleted:
-                d_rel = str(d).replace("\\", "/")
-                row = conn.execute("SELECT doc_id, doc_type FROM indexed_files WHERE rel_path = ?", (d_rel,)).fetchone()
-                if row and row["doc_type"] in ("code/source", "code/test"):
-                    self._store_code_symbols(conn, d_rel, [], [])  # prune coordinates + orphaned AST mappings
-                    conn.execute("DELETE FROM symbol_mappings WHERE symbol = ?;", (d_rel,))
-                    conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
-                elif row and row["doc_id"]:
-                    doc_id = row["doc_id"]
-                    specs_deleted = True
-                    self._delete_spec_fts_rows(conn, doc_id, d_rel)
-                    conn.execute(
-                        "DELETE FROM entities WHERE id = ? OR (file_path = ? AND type = 'invariant')",
-                        (doc_id, d_rel),
-                    )
-                    conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?", (doc_id,))
-                    conn.execute("DELETE FROM code_symbols WHERE entity_id = ?", (doc_id,))
-                    conn.execute("DELETE FROM edges WHERE source_id = ? OR target_id = ?", (doc_id, doc_id))
-                    conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
-                else:
-                    conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
-                stats.pruned_deleted += 1
-
-            # Partition updates into specifications (.adoc) and code/test files
-            spec_updates = [p for p in to_update if p.suffix == ".adoc"]
-            code_updates = [p for p in to_update if p.suffix != ".adoc"]
-
-            stats.total_specs_scanned = len(spec_updates)
-            parsed_specs: list[tuple[Path, str, float, str, Any]] = []
-            for p in spec_updates:
-                try:
-                    rel_p = str(p.relative_to(self.root)).replace("\\", "/")
-                except ValueError:
-                    rel_p = str(p).replace("\\", "/")
-
-                try:
-                    mtime = p.stat().st_mtime
-                    content = p.read_bytes()
-                    doc = parse_spec_file(p)
-                except OSError:
-                    continue
-                sha = hashlib.sha256(content).hexdigest()
-                parsed_specs.append((p, rel_p, mtime, sha, doc))
-
-            # Pre-pass: evict previous doc_id rows for every updated spec path before inserting new/renamed entities
-            # so path-in-place ID renames leave zero ghost entities, FTS rows, symbol mappings, or edges (DLT-2026-048).
-            updated_rel_paths: set[str] = set()
-            for _p, rel_p, _mtime, _sha, doc in parsed_specs:
-                new_doc_id = doc.doc_id or _p.stem
-                existing_row = conn.execute(
-                    "SELECT doc_id FROM indexed_files WHERE rel_path = ?;",
-                    (rel_p,),
-                ).fetchone()
-                if existing_row is not None:
-                    updated_rel_paths.add(rel_p)
-                    old_doc_id = existing_row["doc_id"]
-                    if old_doc_id:
-                        self._delete_spec_fts_rows(conn, old_doc_id, rel_p)
-                        conn.execute(
-                            "DELETE FROM entities WHERE (id = ? AND file_path = ?) OR (file_path = ? AND type = 'invariant');",
-                            (old_doc_id, rel_p, rel_p),
-                        )
-                        conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?;", (old_doc_id,))
-                        if old_doc_id != new_doc_id:
-                            conn.execute("DELETE FROM code_symbols WHERE entity_id = ?;", (old_doc_id,))
-                            conn.execute(
-                                "DELETE FROM edges WHERE source_id = ? OR target_id = ?;",
-                                (old_doc_id, old_doc_id),
-                            )
-                    if new_doc_id != old_doc_id:
-                        self._delete_spec_fts_rows(conn, new_doc_id, rel_p)
-                        conn.execute(
-                            "DELETE FROM entities WHERE (id = ? AND file_path = ?) OR (file_path = ? AND type = 'invariant');",
-                            (new_doc_id, rel_p, rel_p),
-                        )
-                        conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?;", (new_doc_id,))
-
-            for p, rel_p, mtime, sha, doc in parsed_specs:
-                doc_id = doc.doc_id or p.stem
-                fm = doc.frontmatter or {}
-                doc_type = doc.doc_type or "unknown"
-
-                if rel_p in updated_rel_paths:
-                    stats.updated_modified += 1
-                else:
-                    stats.indexed_new += 1
-
-                # Detect and reject duplicate entity ID collisions across distinct specification files (DLT-2026-048)
-                collision = conn.execute(
-                    "SELECT file_path FROM entities WHERE id = ? AND file_path != ?;",
-                    (doc_id, rel_p),
-                ).fetchone()
-                if collision is not None:
-                    msg = (
-                        f"Duplicate entity ID '{doc_id}' in '{rel_p}' "
-                        f"(already indexed from '{collision['file_path']}')"
-                    )
-                    stats.duplicate_id_collisions.append(msg)
-                    if strict:
-                        raise ValueError(msg)
-                    conn.execute(
-                        """
-                        INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-                        VALUES (?, ?, ?, ?, ?, ?);
-                        """,
-                        (rel_p, mtime, sha, doc_id, doc_type, time.time()),
-                    )
-                    continue
-
-                # 1. Insert entity
-                title = doc.title or fm.get("title", doc_id)
-                status = fm.get("status", "active")
-                domain = fm.get("domain", fm.get("domain_binding", ""))
-                raw_pkg = fm.get("package_path", fm.get("source_path", ""))
-                pkg_list = (
-                    [str(x).strip() for x in raw_pkg if str(x).strip()]
-                    if isinstance(raw_pkg, list)
-                    else ([str(raw_pkg).strip()] if str(raw_pkg).strip() else [])
-                )
-                package_path = pkg_list[0] if pkg_list else ""
-                runtime = fm.get("runtime", "")
-                container_type = fm.get("container_type", "")
-
-                conn.execute(
-                    """
-                    INSERT INTO entities
-                    (id, type, title, status, domain, package_path, runtime, container_type, file_path, data_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                    """,
-                    (
-                        doc_id,
-                        doc_type,
-                        title,
-                        status,
-                        domain,
-                        package_path,
-                        runtime,
-                        container_type,
-                        rel_p,
-                        json.dumps(fm),
-                    ),
-                )
-
-                # 2. Extract spec symbol mappings & child invariants (spec edges are rebuilt across all entities below)
-                if doc_type == "tech/contract":
-                    spec_file = fm.get("specification_file")
-                    if spec_file:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'specification_file');",
-                            (spec_file, doc_id),
-                        )
-                    conn.execute(
-                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'contract_path');", (rel_p, doc_id)
-                    )
-
-                biz = fm.get("business", {})
-                tech = fm.get("technical", {})
-                invariants = []
-                if isinstance(tech, dict):
-                    invariants = tech.get("invariants", []) or []
-
-                # Policy invariants
-                if doc_type == "product/policy":
-                    invariants = fm.get("invariants", []) or []
-
-                # Dedicated Component bindings
-                if doc_type == "tech/component":
-                    ifaces = fm.get("interfaces", {})
-                    if isinstance(ifaces, dict):
-                        for prov in ifaces.get("provides", []):
-                            if isinstance(prov, dict) and prov.get("signature"):
-                                sig = prov["signature"]
-                                meth = sig.split("(")[0].strip()
-                                conn.execute(
-                                    "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_method');",
-                                    (meth, doc_id),
-                                )
-                                conn.execute(
-                                    "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_signature');",
-                                    (sig, doc_id),
-                                )
-
-                    # Component invariants
-                    invariants = fm.get("invariants", []) or []
-
-                # Container references to dedicated components
-                if doc_type == "tech/container":
-                    for comp_entry in fm.get("components", []):
-                        if isinstance(comp_entry, dict) and comp_entry.get("ref"):
-                            ref_path = comp_entry["ref"]
-                            cid = comp_entry.get("id")
-                            if cid:
-                                conn.execute(
-                                    "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_ref');",
-                                    (ref_path, cid),
-                                )
-
-                # Insert invariants as child entities
-                for inv in invariants:
-                    iid = inv.get("id")
-                    if iid:
-                        inv_collision = conn.execute(
-                            "SELECT file_path FROM entities WHERE id = ? AND file_path != ?;",
-                            (iid, rel_p),
-                        ).fetchone()
-                        if inv_collision is not None:
-                            inv_msg = (
-                                f"Duplicate invariant ID '{iid}' in '{rel_p}' "
-                                f"(already indexed from '{inv_collision['file_path']}')"
-                            )
-                            stats.duplicate_id_collisions.append(inv_msg)
-                            if strict:
-                                raise ValueError(inv_msg)
-                            continue
-                        rule = inv.get("rule", "")
-                        test = inv.get("test_binding", "")
-                        test_file = test.split("::")[0] if test else ""
-                        test_exists = bool(test_file and (self.root / test_file).exists())
-                        matching = [test] if test else []
-                        for (ast_match,) in conn.execute(
-                            "SELECT source_id FROM edges WHERE rel_type = 'asserts' AND target_id = ? AND instr(source_id, '::') > 0;",
-                            (iid,),
-                        ):
-                            if ast_match not in matching:
-                                matching.append(ast_match)
-                        inv_data = {
-                            "id": iid,
-                            "rule": rule,
-                            "test_binding": test,
-                            "source_id": doc_id,
-                            "capability_id": doc_id if doc_type == "product/capability" else None,
-                            "policy_id": doc_id if doc_type == "product/policy" else None,
-                            "component_id": doc_id if doc_type == "tech/component" else None,
-                            "has_test_coverage": test_exists or bool(matching and not test),
-                            "matching_tests": matching,
-                        }
-                        conn.execute(
-                            """
-                            INSERT OR REPLACE INTO entities
-                            (id, type, title, status, domain, package_path, runtime, container_type, file_path, data_json)
-                            VALUES (?, 'invariant', ?, 'active', ?, '', '', '', ?, ?);
-                            """,
-                            (iid, rule, domain, rel_p, json.dumps(inv_data)),
-                        )
-
-                        # Child invariants get their own FTS row so task prompts can match INV-* rules directly.
-                        test_str = str(test or "")
-                        rule_str = str(rule or "")
-                        test_func = test_str.split("::", 1)[1] if "::" in test_str else ""
-                        conn.execute("DELETE FROM specs_fts WHERE entity_id = ?", (iid,))
-                        conn.execute(
-                            """
-                            INSERT INTO specs_fts (entity_id, title, jtbd_or_rule, body_text, keywords, symbols)
-                            VALUES (?, '', ?, ?, ?, ?);
-                            """,
-                            (
-                                iid,
-                                rule_str,
-                                str(title or ""),
-                                " ".join(str(x) for x in (iid, "invariant", domain, doc_id) if x),
-                                " ".join(
-                                    x for x in (test_str, compound_identifier_subtokens(f"{test_func} {rule_str}")) if x
-                                ),
-                            ),
-                        )
-
-                        if test:
-                            conn.execute(
-                                "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
-                                (test_file, iid),
-                            )
-                            abs_test = (self.root / test_file).resolve()
-                            if abs_test.is_file():
-                                try:
-                                    rel_tf = str(abs_test.relative_to(self.root)).replace("\\", "/")
-                                except ValueError:
-                                    rel_tf = str(abs_test).replace("\\", "/")
-                                conn.execute(
-                                    """
-                                    INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-                                    VALUES (?, ?, ?, ?, 'code/test', ?);
-                                    """,
-                                    (
-                                        rel_tf,
-                                        abs_test.stat().st_mtime,
-                                        hashlib.sha256(abs_test.read_bytes()).hexdigest(),
-                                        iid,
-                                        time.time(),
-                                    ),
-                                )
-
-                # 3. Symbol mappings
-                for pkg_entry in pkg_list:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'package_path');", (pkg_entry, doc_id)
-                    )
-                for owned_pat in extract_entity_paths(fm):
-                    conn.execute(
-                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'owned_path');", (owned_pat, doc_id)
-                    )
-
-                # Internal C4 modules & components: record declarations only. Source files are indexed exactly
-                # once per sync by _reconcile_code_ownership() after every spec is loaded, so ownership (including
-                # files declared by several entities) never depends on spec processing order (DLT-2026-034).
-                all_modules = list(fm.get("components", []) or fm.get("c4_internal_components", []))
-                for module in all_modules:
-                    mname = module.get("name")
-                    raw_mpath = module.get("source_path")
-                    mpath_list = (
-                        [str(x).strip() for x in raw_mpath if str(x).strip()]
-                        if isinstance(raw_mpath, list)
-                        else ([str(raw_mpath).strip()] if raw_mpath and str(raw_mpath).strip() else [])
-                    )
-                    mid = module.get("id")
-                    if mname:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'module_name');", (mname, doc_id)
-                        )
-                    for mpath in mpath_list:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (mpath, doc_id)
-                        )
-                    if mid:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_id');", (mid, doc_id)
-                        )
-
-                for pkg_item in pkg_list:
-                    if any(ch in pkg_item for ch in "*?[") or not (self.root / pkg_item).is_file():
-                        continue
-                    conn.execute(
-                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (pkg_item, doc_id)
-                    )
-
-                # Re-attach previously indexed source files and AST symbols that the per-entity DELETE above removed.
-                self._restore_code_mappings(conn, doc_id)
-
-                # Interface commands
-                if isinstance(fm.get("contracts"), dict):
-                    for iface in fm["contracts"].get("interfaces", []):
-                        cmd = iface.split()[0]
-                        conn.execute(
-                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_command');", (cmd, doc_id)
-                        )
-
-                # 4. Insert into FTS5
-                jtbd_or_rule = biz.get("jtbd", fm.get("rule", "")) if isinstance(biz, dict) else fm.get("rule", "")
-                body_clean = re.sub(r"[{}\[\]=:#*`]", " ", doc.body or "")
-                embedded_decisions = collect_component_decisions(fm)
-                decision_ids: list[str] = []
-                decision_texts: list[str] = []
-                for dec in embedded_decisions:
-                    did = str(dec.get("id", "")).strip()
-                    if did:
-                        decision_ids.append(did)
-                    grad_ref = str(dec.get("graduated_from", "")).strip()
-                    if grad_ref:
-                        decision_ids.append(grad_ref)
-                    for field_key in ("title", "decision", "rationale"):
-                        fval = str(dec.get(field_key, "")).strip()
-                        if fval:
-                            decision_texts.append(fval)
-                    for alt in dec.get("rejected_alternatives") or []:
-                        if isinstance(alt, dict):
-                            for alt_key in ("option", "reason_rejected"):
-                                aval = str(alt.get(alt_key, "")).strip()
-                                if aval:
-                                    decision_texts.append(aval)
-                if decision_texts:
-                    body_clean = f"{body_clean} " + re.sub(r"[{}\[\]=:#*`]", " ", " ".join(decision_texts))
-                keywords = " ".join([doc_id, doc_type, domain, container_type, package_path, *decision_ids])
-                symbols = " ".join(
-                    [m.get("name", "") for m in (fm.get("components", []) or fm.get("c4_internal_components", []))]
-                )
-                # unicode61 keeps camelCase identifiers atomic; index their de-compounded sub-tokens alongside.
-                decompounded = compound_identifier_subtokens(
-                    f"{title or ''} {jtbd_or_rule or ''} {body_clean} {symbols}"
-                )
-                if decompounded:
-                    symbols = f"{symbols} {decompounded}".strip()
-
-                conn.execute(
-                    """
-                    INSERT INTO specs_fts (entity_id, title, jtbd_or_rule, body_text, keywords, symbols)
-                    VALUES (?, ?, ?, ?, ?, ?);
-                    """,
-                    (doc_id, title, jtbd_or_rule, body_clean, keywords, symbols),
-                )
-
-                # Update indexed_files manifest
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-                    VALUES (?, ?, ?, ?, ?, ?);
-                    """,
-                    (rel_p, mtime, sha, doc_id, doc_type, time.time()),
-                )
-
-            if spec_updates or specs_deleted:
-                self._rebuild_spec_edges(conn)
-                conn.execute("DELETE FROM symbol_mappings WHERE kind = 'inferred_path';")
-                # Propagate container owned_path/source_path to bound design/client (CLT-*) and design/system (DS-*)
-                client_cnt_rows = conn.execute(
-                    "SELECT source_id, target_id FROM edges WHERE rel_type = 'implemented_by' AND source_id LIKE 'CLT-%';"
-                ).fetchall()
-                for clt_id, cnt_id in client_cnt_rows:
-                    cnt_paths = [
-                        r[0]
-                        for r in conn.execute(
-                            """
-                            SELECT DISTINCT symbol FROM symbol_mappings
-                            WHERE kind IN ('owned_path', 'package_path', 'source_path')
-                              AND (entity_id = ? OR entity_id IN (
-                                  SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'contains_component'
-                              ));
-                            """,
-                            (cnt_id, cnt_id),
-                        ).fetchall()
-                    ]
-                    if not cnt_paths:
-                        continue
-                    for pat in cnt_paths:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'inferred_path');",
-                            (pat, clt_id),
-                        )
-                    # Propagate to any DS-* styling this client (and parent/child DS-* via extends)
-                    ds_rows = conn.execute(
-                        """
-                        WITH RECURSIVE ds_tree(ds_id) AS (
-                            SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'styled_by'
-                            UNION
-                            SELECT e.target_id FROM edges e JOIN ds_tree d ON e.source_id = d.ds_id
-                            WHERE e.rel_type IN ('extends', 'extended_by')
-                        )
-                        SELECT DISTINCT ds_id FROM ds_tree;
-                        """,
-                        (clt_id,),
-                    ).fetchall()
-                    for (ds_id,) in ds_rows:
-                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);", (cnt_id, ds_id))
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_container', NULL);", (ds_id, cnt_id)
-                        )
-                        for pat in cnt_paths:
-                            conn.execute(
-                                "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'inferred_path');",
-                                (pat, ds_id),
-                            )
-
-            # Handle code and test file updates
-            ast_idx = get_ast_indexer()
-            resolver = _CodeOwnershipResolver(conn)
-            processed_code: set[str] = set()
-            for p in code_updates:
-                if not p.is_file():
-                    continue
-                try:
-                    rel_p = str(p.relative_to(self.root)).replace("\\", "/")
-                except ValueError:
-                    rel_p = str(p).replace("\\", "/")
-
-                mtime = p.stat().st_mtime
-                sha = hashlib.sha256(p.read_bytes()).hexdigest()
-
-                is_test = self._is_test_code_path(rel_p)
-
-                existing = conn.execute("SELECT 1 FROM indexed_files WHERE rel_path = ?", (rel_p,)).fetchone()
-                if existing:
-                    stats.updated_modified += 1
-                else:
-                    stats.indexed_new += 1
-
-                if is_test:
-                    self._index_test_bindings(conn, ast_idx, p, rel_p)
-                    conn.execute(
-                        """
-                        INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-                        VALUES (?, ?, ?, 'tests', 'code/test', ?);
-                        """,
-                        (rel_p, mtime, sha, time.time()),
-                    )
-                else:
-                    self._index_source_file(conn, ast_idx, p, rel_p, mtime, sha, resolver)
-                    processed_code.add(rel_p)
-
-            # Ownership can only change when specifications change: only then walk every package directory and
-            # re-attribute files (code-only syncs index just the dirty files above) (DLT-2026-034).
-            if force or spec_updates or specs_deleted:
-                self._reconcile_code_ownership(conn, ast_idx, resolver, processed_code)
-
-            # Ensure test bindings across tests/ are indexed
-            tests_dir = self.root / "tests"
-            if tests_dir.is_dir():
-                for tp in tests_dir.rglob("*.py"):
-                    if tp.is_file() and (tp.name.startswith("test_") or tp.name.endswith("_test.py")):
-                        try:
-                            rel_t = str(tp.relative_to(self.root)).replace("\\", "/")
-                        except ValueError:
-                            rel_t = str(tp).replace("\\", "/")
-                        cached_entry = conn.execute(
-                            "SELECT mtime, sha256 FROM indexed_files WHERE rel_path = ? AND doc_type = 'code/test';",
-                            (rel_t,),
-                        ).fetchone()
-                        stat = tp.stat()
-                        if not cached_entry or abs(stat.st_mtime - cached_entry["mtime"]) > 0.001 or force:
-                            t_sha = hashlib.sha256(tp.read_bytes()).hexdigest()
-                            conn.execute(
-                                """
-                                INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-                                VALUES (?, ?, ?, 'tests', 'code/test', ?);
-                                """,
-                                (rel_t, stat.st_mtime, t_sha, time.time()),
-                            )
-                            self._index_test_bindings(conn, ast_idx, tp, rel_t)
-
-            # Resolve any cross-reference edges where target_id or source_id is a file path.
-            # Test-binding edges ('asserts': test -> INV, 'bound_to': INV -> test) intentionally
-            # reference 'file::func' test identifiers that are not catalog entities (DLT-2026-029).
-            conn.execute(
-                """
-                UPDATE OR IGNORE edges
-                SET target_id = (
-                    SELECT doc_id FROM indexed_files
-                    WHERE rel_path = edges.target_id
-                       OR 'eidos/' || rel_path = edges.target_id
-                       OR rel_path = 'eidos/' || edges.target_id
-                       OR rel_path LIKE '%' || edges.target_id
-                    LIMIT 1
-                )
-                WHERE target_id NOT IN (SELECT id FROM entities)
-                  AND rel_type != 'bound_to';
-                """
-            )
-            conn.execute(
-                """
-                DELETE FROM edges
-                WHERE target_id NOT IN (SELECT id FROM entities)
-                  AND rel_type != 'bound_to';
-                """
-            )
-            conn.execute(
-                """
-                UPDATE OR IGNORE edges
-                SET source_id = (
-                    SELECT doc_id FROM indexed_files
-                    WHERE rel_path = edges.source_id
-                       OR 'eidos/' || rel_path = edges.source_id
-                       OR rel_path = 'eidos/' || edges.source_id
-                       OR rel_path LIKE '%' || edges.source_id
-                    LIMIT 1
-                )
-                WHERE source_id NOT IN (SELECT id FROM entities)
-                  AND rel_type != 'asserts';
-                """
-            )
-            conn.execute(
-                """
-                DELETE FROM edges
-                WHERE source_id NOT IN (SELECT id FROM entities)
-                  AND rel_type != 'asserts';
-                """
-            )
-            self._prune_stale_test_binding_edges(conn)
-
-        stats.duration_ms = (time.perf_counter() - t0) * 1000
-        self._last_synced_check = time.monotonic()
-        return stats
+        return sync_index(self, force=force, dirty_state=dirty_state, strict=strict)
 
     @staticmethod
     def _rebuild_spec_edges(conn: sqlite3.Connection) -> None:
-        """Rebuild all specification-declared relational edges from persisted entity frontmatter.
-
-        Preserves 'file::func' AST test-binding edges while guaranteeing that incremental updates or deletions of a
-        subset of specs never drop incoming/bidirectional edges declared by unchanged specs.
-        """
-        conn.execute(
-            """
-            DELETE FROM edges
-            WHERE NOT (
-                (rel_type = 'asserts' AND instr(source_id, '::') > 0)
-                OR (rel_type = 'bound_to' AND instr(target_id, '::') > 0)
-            );
-            """
-        )
-        rows = conn.execute(
-            "SELECT id, type, data_json FROM entities WHERE type != 'invariant' ORDER BY id;"
-        ).fetchall()
-        for row in rows:
-            doc_id = row["id"]
-            doc_type = row["type"]
-            try:
-                fm = json.loads(row["data_json"])
-            except (TypeError, ValueError):
-                continue
-            if not isinstance(fm, dict):
-                continue
-
-            domain = fm.get("domain", fm.get("domain_binding", ""))
-            if domain:
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'realizes', NULL);", (doc_id, domain))
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'domain_member', NULL);", (domain, doc_id))
-
-            deps = fm.get("dependencies", {})
-            if isinstance(deps, dict):
-                dep_list = deps.get("internal_containers", []) or deps.get("internal_components", [])
-                for dep in dep_list:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'depends_on', NULL);", (doc_id, dep))
-
-            contracts = fm.get("contracts", {})
-            if isinstance(contracts, dict):
-                for prov in contracts.get("provides", []):
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides', NULL);", (doc_id, prov))
-                for req in contracts.get("requires") or contracts.get("consumes") or []:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes', NULL);", (doc_id, req))
-
-            if doc_type == "tech/contract":
-                owning = fm.get("owning_container") or fm.get("owning_component")
-                if owning:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides', NULL);", (owning, doc_id))
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'owned_by', NULL);", (doc_id, owning))
-
-            if doc_type == "design/client":
-                cnt_ref = fm.get("container")
-                ds_ref = fm.get("design_system")
-                if cnt_ref and isinstance(cnt_ref, str):
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implemented_by', NULL);",
-                        (doc_id, cnt_ref.strip()),
-                    )
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements_client', NULL);",
-                        (cnt_ref.strip(), doc_id),
-                    )
-                if ds_ref and isinstance(ds_ref, str):
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);", (doc_id, ds_ref.strip())
-                    )
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_client', NULL);",
-                        (ds_ref.strip(), doc_id),
-                    )
-                if cnt_ref and isinstance(cnt_ref, str) and ds_ref and isinstance(ds_ref, str):
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);",
-                        (cnt_ref.strip(), ds_ref.strip()),
-                    )
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_container', NULL);",
-                        (ds_ref.strip(), cnt_ref.strip()),
-                    )
-
-            if doc_type == "design/system":
-                for clt_ref in fm.get("clients", []) or []:
-                    if isinstance(clt_ref, str) and clt_ref.strip():
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);",
-                            (clt_ref.strip(), doc_id),
-                        )
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_client', NULL);",
-                            (doc_id, clt_ref.strip()),
-                        )
-                inh = fm.get("inheritance")
-                if isinstance(inh, dict) and inh.get("extends"):
-                    parent_ds = str(inh["extends"]).strip()
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'extends', NULL);", (doc_id, parent_ds))
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'extended_by', NULL);", (parent_ds, doc_id))
-
-            biz = fm.get("business", {})
-            if isinstance(biz, dict):
-                for pol in biz.get("policies", []):
-                    pol_ref = str(pol).strip()
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'governed_by', NULL);", (doc_id, pol_ref))
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'governs', NULL);", (pol_ref, doc_id))
-
-            tech = fm.get("technical", {})
-            invariants = []
-            if isinstance(tech, dict):
-                tech_targets = list(tech.get("containers", []) or []) + list(tech.get("components", []) or [])
-                for comp_ref in tech_targets:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements', NULL);", (doc_id, comp_ref))
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implemented_by', NULL);", (comp_ref, doc_id)
-                    )
-                invariants = tech.get("invariants", []) or []
-
-            if doc_type == "product/policy":
-                invariants = fm.get("invariants", []) or []
-
-            if doc_type == "tech/component":
-                cnt_id = fm.get("container")
-                if cnt_id:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);", (cnt_id, doc_id)
-                    )
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (doc_id, cnt_id))
-                ifaces = fm.get("interfaces", {})
-                if isinstance(ifaces, dict):
-                    for consumed in ifaces.get("consumes", []):
-                        if isinstance(consumed, str):
-                            conn.execute(
-                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api', NULL);",
-                                (doc_id, consumed.strip()),
-                            )
-                invariants = fm.get("invariants", []) or []
-
-            if doc_type == "tech/container":
-                for comp_entry in fm.get("components", []):
-                    if isinstance(comp_entry, dict) and comp_entry.get("ref"):
-                        cid = comp_entry.get("id")
-                        if cid:
-                            conn.execute(
-                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);",
-                                (doc_id, cid),
-                            )
-                            conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (cid, doc_id))
-
-            for inv in invariants:
-                iid = inv.get("id") if isinstance(inv, dict) else None
-                if iid:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);", (doc_id, iid))
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);", (iid, doc_id))
+        rebuild_spec_edges(conn)
 
     @staticmethod
     def _index_test_bindings(conn: sqlite3.Connection, ast_idx: Any, test_path: Path, rel_test: str) -> None:
-        """Persist 'file::func' -> INV-* test-binding edges for a single test file (DLT-2026-029).
-
-        Stale edges previously recorded for this test file are cleared first so renamed or
-        untagged test functions do not leave phantom assertions behind.
-        """
-        prefix_like = rel_test.replace("%", "\\%").replace("_", "\\_") + "::%"
-        conn.execute(
-            "DELETE FROM edges WHERE rel_type = 'asserts' AND source_id LIKE ? ESCAPE '\\';",
-            (prefix_like,),
-        )
-        conn.execute(
-            "DELETE FROM edges WHERE rel_type = 'bound_to' AND target_id LIKE ? ESCAPE '\\';",
-            (prefix_like,),
-        )
-        conn.execute(
-            "DELETE FROM symbol_mappings WHERE symbol = ? AND kind = 'test_binding';",
-            (rel_test,),
-        )
-        for binding in ast_idx.extract_test_bindings(test_path):
-            identifier = f"{rel_test}::{binding.test_name}"
-            for inv_id in binding.invariants:
-                conn.execute(
-                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);",
-                    (identifier, inv_id),
-                )
-                conn.execute(
-                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);",
-                    (inv_id, identifier),
-                )
-                conn.execute(
-                    "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
-                    (rel_test, inv_id),
-                )
-                inv_row = conn.execute("SELECT data_json FROM entities WHERE id = ?", (inv_id,)).fetchone()
-                if inv_row:
-                    idata = json.loads(inv_row["data_json"])
-                    idata["has_test_coverage"] = True
-                    if identifier not in idata.get("matching_tests", []):
-                        idata.setdefault("matching_tests", []).append(identifier)
-                    conn.execute(
-                        "UPDATE entities SET data_json = ? WHERE id = ?",
-                        (json.dumps(idata), inv_id),
-                    )
+        index_test_bindings(conn, ast_idx, test_path, rel_test)
 
     @staticmethod
     def _prune_stale_test_binding_edges(conn: sqlite3.Connection) -> None:
-        """Drop test-binding edges whose invariant entity or test file no longer exists.
-
-        Only edges whose test-side endpoint is a non-entity 'file::func' identifier are considered;
-        spec-declared assertions (e.g. CAP-* -> INV-*) are left untouched.
-        """
-        conn.execute(
-            """
-            DELETE FROM edges
-            WHERE rel_type = 'asserts'
-              AND source_id NOT IN (SELECT id FROM entities)
-              AND (
-                target_id NOT IN (SELECT id FROM entities)
-                OR instr(source_id, '::') = 0
-                OR substr(source_id, 1, instr(source_id, '::') - 1) NOT IN (
-                    SELECT rel_path FROM indexed_files WHERE doc_type = 'code/test'
-                )
-              );
-            """
-        )
-        conn.execute(
-            """
-            DELETE FROM edges
-            WHERE rel_type = 'bound_to'
-              AND target_id NOT IN (SELECT id FROM entities)
-              AND (
-                source_id NOT IN (SELECT id FROM entities)
-                OR instr(target_id, '::') = 0
-                OR substr(target_id, 1, instr(target_id, '::') - 1) NOT IN (
-                    SELECT rel_path FROM indexed_files WHERE doc_type = 'code/test'
-                )
-              );
-            """
-        )
+        prune_stale_test_binding_edges(conn)
 
     @staticmethod
     def _delete_spec_fts_rows(conn: sqlite3.Connection, doc_id: str, rel_path: str) -> None:
-        """Delete the FTS rows of a specification and of every child entity (e.g. ``INV-*``) declared in its file.
+        delete_spec_fts_rows(conn, doc_id, rel_path)
 
-        Must run *before* the ``entities`` rows are deleted, because child FTS rows are keyed by the child ID and
-        located through ``entities.file_path``.
-        """
-        conn.execute(
-            "DELETE FROM specs_fts WHERE entity_id = ? OR entity_id IN (SELECT id FROM entities WHERE file_path = ?);",
-            (doc_id, rel_path),
-        )
+    # ------------------------------------------------------------------
+    # Query & Graph Traversal Delegation (query.py & context.py)
+    # ------------------------------------------------------------------
 
     def query_fts(
         self,
@@ -1338,71 +214,17 @@ class ArchitecturalIndex:
         include_types: tuple[str, ...] | list[str] | None = None,
         exclude_types: tuple[str, ...] | list[str] = (),
     ) -> list[dict[str, Any]]:
-        """Execute a column-weighted BM25 ranked full-text query using FTS5.
-
-        Args:
-            text: Free-text prompt. camelCase / snake_case identifiers are de-compounded into sub-terms.
-            limit: Maximum number of results.
-            include_types: When given, only entities of these ``entities.type`` values are ranked.
-            exclude_types: Entity types never ranked (filtered inside SQL, before ``LIMIT``).
-        """
+        """Execute a column-weighted BM25 ranked full-text query using FTS5."""
         if not text or not text.strip():
             return []
-
         self._ensure_synced()
-
-        fts_query = build_fts_match_query(text)
-        if not fts_query:
-            return []
-
-        type_clauses: list[str] = []
-        type_params: list[str] = []
-        if include_types is not None:
-            include = list(include_types)
-            if not include:
-                return []
-            type_clauses.append(f"e.type IN ({','.join('?' for _ in include)})")
-            type_params.extend(include)
-        exclude = list(exclude_types or ())
-        if exclude:
-            type_clauses.append(f"e.type NOT IN ({','.join('?' for _ in exclude)})")
-            type_params.extend(exclude)
-        type_sql = "".join(f" AND {clause}" for clause in type_clauses)
-        weights_sql = ", ".join(repr(float(w)) for w in FTS_COLUMN_WEIGHTS)
-
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
-        try:
-            cursor.execute(
-                f"""
-                SELECT
-                    e.id, e.type, e.title, e.domain, e.package_path, e.data_json,
-                    bm25(specs_fts, {weights_sql}) as rank
-                FROM specs_fts f
-                JOIN entities e ON e.id = f.entity_id
-                WHERE specs_fts MATCH ?{type_sql}
-                ORDER BY rank, e.id
-                LIMIT ?;
-                """,
-                (fts_query, *type_params, limit),
-            )
-            results = []
-            for row in cursor.fetchall():
-                results.append(
-                    {
-                        "id": row["id"],
-                        "type": row["type"],
-                        "title": row["title"],
-                        "domain": row["domain"],
-                        "package_path": row["package_path"],
-                        "rank": row["rank"],
-                        "data": json.loads(row["data_json"]),
-                    }
-                )
-            return results
-        except sqlite3.OperationalError:
-            return []
+        return execute_fts_query(
+            self._get_connection(),
+            text=text,
+            limit=limit,
+            include_types=include_types,
+            exclude_types=exclude_types,
+        )
 
     def get_k_hop_neighborhood(
         self, entity_id: str, max_depth: int = 2, max_hops: int | None = None
@@ -1411,234 +233,52 @@ class ArchitecturalIndex:
         if max_hops is not None:
             max_depth = max_hops
         self._ensure_synced()
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            WITH RECURSIVE graph_walk(node_id, depth, path) AS (
-                SELECT ?, 0, ?
-                UNION
-                SELECT
-                    CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END,
-                    gw.depth + 1,
-                    gw.path || '->' || CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END
-                FROM edges e
-                JOIN graph_walk gw ON (e.source_id = gw.node_id OR e.target_id = gw.node_id)
-                WHERE gw.depth < ?
-                  AND gw.path NOT LIKE '%' || CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END || '%'
-            )
-            SELECT DISTINCT gw.node_id, gw.depth, ent.type, ent.title, ent.domain, ent.file_path, ent.data_json
-            FROM graph_walk gw
-            JOIN entities ent ON ent.id = gw.node_id
-            ORDER BY gw.depth ASC;
-            """,
-            (entity_id, entity_id, max_depth),
-        )
-
-        results = []
-        for row in cursor.fetchall():
-            results.append(
-                {
-                    "id": row["node_id"],
-                    "depth": row["depth"],
-                    "type": row["type"],
-                    "title": row["title"],
-                    "domain": row["domain"],
-                    "file_path": row["file_path"],
-                    "data": json.loads(row["data_json"]),
-                }
-            )
-        return results
+        return execute_k_hop_traversal(self._get_connection(), entity_id=entity_id, max_depth=max_depth)
 
     def resolve_symbol_or_path(self, query: str) -> list[dict[str, Any]]:
         """Find entity IDs matching source path or symbol."""
         self._ensure_synced()
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
-        clean = query.strip().replace("\\", "/")
-        while clean.startswith("./"):
-            clean = clean[2:]
-
-        cursor.execute(
-            """
-            SELECT s.symbol, s.entity_id, s.kind, e.type, e.title, e.file_path, e.data_json
-            FROM symbol_mappings s
-            JOIN entities e ON e.id = s.entity_id
-            WHERE s.symbol = ?
-               OR (? LIKE s.symbol || '/%' AND s.kind IN ('package_path', 'inferred_path'))
-               OR (? LIKE '%' || s.symbol AND s.kind IN ('source_path', 'inferred_path', 'specification_file', 'component_ref', 'interface_method', 'class', 'function', 'method', 'interface', 'struct', 'enum'))
-               OR (? LIKE s.symbol || '%' AND s.kind = 'test_binding')
-            LIMIT 25;
-            """,
-            (clean, clean, clean, clean),
-        )
-
-        results = []
-        seen_entities: set[str] = set()
-        for row in cursor.fetchall():
-            seen_entities.add(row["entity_id"])
-            results.append(
-                {
-                    "symbol": row["symbol"],
-                    "entity_id": row["entity_id"],
-                    "kind": row["kind"],
-                    "type": row["type"],
-                    "title": row["title"],
-                    "file_path": row["file_path"],
-                    "data": json.loads(row["data_json"]),
-                }
-            )
-
-        # Also check owned_path and inferred_path glob patterns if query looks like a file path
-        if "/" in clean or "." in clean:
-            cursor.execute(
-                """
-                SELECT s.symbol, s.entity_id, s.kind, e.type, e.title, e.file_path, e.data_json
-                FROM symbol_mappings s
-                JOIN entities e ON e.id = s.entity_id
-                WHERE s.kind IN ('owned_path', 'inferred_path');
-                """
-            )
-            scored_matches: list[tuple[int, dict[str, Any]]] = []
-            for row in cursor.fetchall():
-                if row["entity_id"] in seen_entities:
-                    continue
-                score = match_path_pattern(clean, row["symbol"])
-                if score > 0:
-                    scored_matches.append(
-                        (
-                            score,
-                            {
-                                "symbol": row["symbol"],
-                                "entity_id": row["entity_id"],
-                                "kind": row["kind"],
-                                "type": row["type"],
-                                "title": row["title"],
-                                "file_path": row["file_path"],
-                                "data": json.loads(row["data_json"]),
-                            },
-                        )
-                    )
-            scored_matches.sort(key=lambda item: (-item[0], item[1]["entity_id"]))
-            for _, item in scored_matches:
-                if item["entity_id"] not in seen_entities:
-                    seen_entities.add(item["entity_id"])
-                    results.append(item)
-
-        return results
+        return resolve_symbol_or_path_in_db(self._get_connection(), query)
 
     def find_symbol(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
         """Locate symbol matches and their associated living component specs across the Code Graph."""
         self._ensure_synced()
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        q_norm = query.strip()
-        q_alt = q_norm.replace("-", "_") if "-" in q_norm else q_norm.replace("_", "-")
-        cursor.execute(
-            """
-            SELECT s.symbol, s.entity_id, s.kind, e.title, e.type, e.file_path
-            FROM symbol_mappings s
-            JOIN entities e ON e.id = s.entity_id
-            WHERE s.symbol = ?
-               OR s.symbol = ?
-               OR s.symbol LIKE ?
-               OR s.symbol LIKE ?
-            ORDER BY CASE WHEN s.symbol IN (?, ?) THEN 0 ELSE 1 END, s.symbol ASC
-            LIMIT ?;
-            """,
-            (q_norm, q_alt, f"%{q_norm}%", f"%{q_alt}%", q_norm, q_alt, limit),
-        )
-        results: list[dict[str, Any]] = []
-        for r in cursor.fetchall():
-            base = {
-                "symbol": r["symbol"],
-                "entity_id": r["entity_id"],
-                "kind": r["kind"],
-                "title": r["title"],
-                "type": r["type"],
-                # Spec path of the owning entity (unchanged meaning); source coordinates live in 'location'.
-                "file_path": r["file_path"],
-            }
-            locations = (
-                []
-                if r["kind"] in _NON_AST_SYMBOL_KINDS
-                else self._symbol_locations(r["entity_id"], r["kind"], r["symbol"])
-            )
-            if locations:
-                results.extend({**base, "location": loc} for loc in locations)
-            else:
-                results.append({**base, "location": None})
-        return results[:limit]
+        return find_symbol_in_db(self._get_connection(), query, limit=limit)
 
     def _symbol_locations(self, entity_id: str, kind: str, symbol: str) -> list[dict[str, Any]]:
         """Resolve persisted source coordinates (one entry per definition) for an AST symbol mapping."""
-        cursor = self._get_connection().cursor()
-        if kind == "method" and "." in symbol:
-            parent, name = symbol.rsplit(".", 1)
-            cursor.execute(
-                """
-                SELECT file_path, line_start, line_end, signature, parent_symbol FROM code_symbols
-                WHERE entity_id = ? AND kind = 'method' AND parent_symbol = ? AND symbol = ?
-                ORDER BY file_path, line_start;
-                """,
-                (entity_id, parent, name),
-            )
-        else:
-            cursor.execute(
-                """
-                SELECT file_path, line_start, line_end, signature, parent_symbol FROM code_symbols
-                WHERE entity_id = ? AND kind = ? AND symbol = ?
-                ORDER BY file_path, line_start;
-                """,
-                (entity_id, kind, symbol),
-            )
-        return [
-            {
-                "file": row["file_path"],
-                "line_start": row["line_start"],
-                "line_end": row["line_end"],
-                "signature": row["signature"],
-                "parent_symbol": row["parent_symbol"] or None,
-            }
-            for row in cursor.fetchall()
-        ]
+        return resolve_symbol_locations_in_db(self._get_connection(), entity_id, kind, symbol)
 
     def get_repo_map(self, max_tokens: int = 1500) -> str:
-        """Generate a token-budgeted structural repo map outline across all indexed components for AI coding agents.
-
-        Reconstructed entirely from the persisted ``code_symbols`` table; source files are never re-parsed.
-        """
+        """Generate a token-budgeted structural repo map outline across all indexed components for AI coding agents."""
         self._ensure_synced()
-        from eidos.core.index.ast_indexer import CodeSymbol
+        return generate_repo_map_from_db(self._get_connection(), max_tokens=max_tokens)
 
-        indexer = get_ast_indexer()
-        conn = self._get_connection()
-        rows = conn.execute(
-            """
-            SELECT file_path, symbol, kind, parent_symbol, line_start, line_end, signature
-            FROM code_symbols
-            WHERE is_primary = 1
-            ORDER BY file_path, id;
-            """
-        ).fetchall()
+    def get_tiered_context_slice(
+        self,
+        files: list[str] | str | None = None,
+        component: str | None = None,
+        task: str | None = None,
+        tier: str = "guardrails",
+    ) -> TieredContextSlice:
+        """Extract a token-budgeted architectural context slice using hybrid indexed retrieval."""
+        return build_tiered_context_slice(
+            self,
+            files=files,
+            component=component,
+            task=task,
+            tier=tier,
+        )
 
-        symbols_by_file: dict[str, list[Any]] = {}
-        for r in rows:
-            symbols_by_file.setdefault(r["file_path"], []).append(
-                CodeSymbol(
-                    name=r["symbol"],
-                    kind=r["kind"],
-                    file_path=r["file_path"],
-                    line_start=r["line_start"],
-                    line_end=r["line_end"],
-                    parent_symbol=r["parent_symbol"] or None,
-                    signature=r["signature"] or None,
-                )
-            )
+    def get_incoming_references(self, target_id_or_path: str) -> list[dict[str, Any]]:
+        """Find all incoming graph edges pointing to an entity ID or file path."""
+        self._ensure_synced()
+        with self._get_connection() as conn:
+            return execute_incoming_references(conn, target_id_or_path)
 
-        return indexer.generate_repo_map(symbols_by_file, max_tokens=max_tokens)
+    # ------------------------------------------------------------------
+    # Catalog Inspection & Telemetry
+    # ------------------------------------------------------------------
 
     def get_index_status(self) -> dict[str, Any]:
         """Return comprehensive health and statistics of the architectural index."""
@@ -1662,8 +302,6 @@ class ArchitecturalIndex:
         for row in cursor.execute("SELECT kind, COUNT(*) FROM symbol_mappings GROUP BY kind;").fetchall():
             symbol_counts[row[0]] = row[1]
 
-        # Only count assertions originating from AST test functions ('file::func'), not
-        # spec-declared CAP-*/POL-*/CMP-* -> INV-* ownership edges (DLT-2026-029).
         test_assert_filter = (
             "rel_type = 'asserts' AND instr(source_id, '::') > 0 "
             "AND source_id NOT IN (SELECT id FROM entities)"
@@ -1674,8 +312,6 @@ class ArchitecturalIndex:
         tested_invariants = cursor.execute(
             f"SELECT COUNT(DISTINCT target_id) FROM edges WHERE {test_assert_filter};"
         ).fetchone()[0]
-
-        from eidos.core.index.ast_indexer import get_ast_indexer, is_ast_grep_available
 
         ast_avail = is_ast_grep_available()
         ast_idx = get_ast_indexer()
@@ -1711,430 +347,6 @@ class ArchitecturalIndex:
             "entity_counts_by_type": type_counts,
             "ast": ast_telemetry,
         }
-
-    def get_tiered_context_slice(
-        self,
-        files: list[str] | str | None = None,
-        component: str | None = None,
-        task: str | None = None,
-        tier: str = "guardrails",
-    ) -> TieredContextSlice:
-        """Extract a token-budgeted architectural context slice using hybrid indexed retrieval."""
-        t0 = time.perf_counter()
-        self._ensure_synced()
-
-        matched_components: dict[str, dict[str, Any]] = {}
-        matched_contracts: dict[str, dict[str, Any]] = {}
-        matched_capabilities: dict[str, dict[str, Any]] = {}
-        matched_invariants: dict[str, dict[str, Any]] = {}
-        matched_policies: dict[str, dict[str, Any]] = {}
-        matched_reasons: dict[str, list[str]] = {}
-        direct_inv_ids: set[str] = set()
-
-        def _add_reason(eid: str, reason: str) -> None:
-            bucket = matched_reasons.setdefault(eid, [])
-            if reason not in bucket:
-                bucket.append(reason)
-
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
-        # 1. Resolve by Component / Container parameter
-        if component:
-            c_clean = component.strip().upper()
-            cursor.execute(
-                """
-                SELECT id, title, type, domain, data_json
-                FROM entities
-                WHERE type IN ('tech/container', 'tech/component') AND (id = ? OR id LIKE '%' || ? || '%');
-                """,
-                (c_clean, c_clean),
-            )
-            for row in cursor.fetchall():
-                cid = row["id"]
-                data = json.loads(row["data_json"])
-                data["id"] = cid
-                data["title"] = row["title"]
-                matched_components[cid] = data
-                _add_reason(cid, f"Explicit component parameter '{component}'")
-            if not matched_components:
-                cursor.execute(
-                    """
-                    SELECT e.id, e.title, e.type, e.domain, e.data_json
-                    FROM symbol_mappings s
-                    JOIN entities e ON e.id = s.entity_id
-                    WHERE s.kind = 'component_id' AND UPPER(s.symbol) = ?;
-                    """,
-                    (c_clean,),
-                )
-                for row in cursor.fetchall():
-                    cid = row["id"]
-                    data = json.loads(row["data_json"])
-                    data["id"] = cid
-                    data["title"] = row["title"]
-                    matched_components[cid] = data
-                    _add_reason(cid, f"Inline component parameter '{component}'")
-
-        # 2. Resolve by File paths
-        raw_files = [files] if isinstance(files, str) else (files or [])
-        clean_files: list[str] = []
-        for f in raw_files:
-            if not f:
-                continue
-            for sub in str(f).split(","):
-                sub_clean = sub.strip()
-                if not sub_clean:
-                    continue
-                p = Path(sub_clean)
-                if p.is_absolute():
-                    try:
-                        rel = str(p.resolve().relative_to(self.root)).replace("\\", "/")
-                        clean_files.append(rel)
-                    except ValueError:
-                        clean_files.append(sub_clean.replace("\\", "/"))
-                else:
-                    c = sub_clean.replace("\\", "/")
-                    while c.startswith("./"):
-                        c = c[2:]
-                    clean_files.append(c)
-
-        for fpath in clean_files:
-            matches = self.resolve_symbol_or_path(fpath)
-            for m in matches:
-                eid = m["entity_id"]
-                etype = m["type"]
-                data = m["data"]
-                data["id"] = eid
-                data["title"] = m["title"]
-
-                if etype in ("tech/container", "tech/component"):
-                    matched_components[eid] = data
-                    _add_reason(eid, f"Source file match on '{fpath}'")
-                elif etype == "invariant":
-                    matched_invariants[eid] = data
-                    direct_inv_ids.add(eid)
-                    _add_reason(eid, f"Test binding match on '{fpath}'")
-                elif etype == "tech/contract":
-                    matched_contracts[eid] = data
-                    _add_reason(eid, f"Contract file match on '{fpath}'")
-
-        # 3. Resolve by Task prompt (FTS5 lexical search restricted to sliceable entity types, so historical
-        #    SpecDeltas, explorations, and personas never consume the top-k candidate slots)
-        if task and task.strip():
-            fts_matches = self.query_fts(task, limit=8, include_types=TASK_SLICE_ENTITY_TYPES)
-            for m in fts_matches:
-                eid = m["id"]
-                etype = m["type"]
-                data = m["data"]
-                data["id"] = eid
-                data["title"] = m["title"]
-
-                reason = f"FTS lexical match on task (BM25 score: {m['rank']:.2f})"
-                if etype in ("tech/container", "tech/component"):
-                    matched_components[eid] = data
-                    _add_reason(eid, reason)
-                elif etype == "tech/contract":
-                    matched_contracts[eid] = data
-                    _add_reason(eid, reason)
-                elif etype == "product/capability":
-                    matched_capabilities[eid] = data
-                    _add_reason(eid, reason)
-                elif etype == "product/policy":
-                    matched_policies[eid] = data
-                    _add_reason(eid, reason)
-                elif etype == "invariant":
-                    matched_invariants[eid] = data
-                    direct_inv_ids.add(eid)
-                    _add_reason(eid, reason)
-                elif etype in ("product/domain", "design/system"):
-                    # Domains and design systems have no dedicated slice list: surface their member containers and
-                    # capabilities, and keep the matched DOM-*/DS-* ID visible in matched_reasons.
-                    rel_types = ("domain_member",) if etype == "product/domain" else ("styles_container",)
-                    member_reason = (
-                        f"Member of FTS-matched domain {eid}"
-                        if etype == "product/domain"
-                        else f"Styled by FTS-matched design system {eid}"
-                    )
-                    ph = ",".join("?" for _ in rel_types)
-                    member_ids: list[str] = []
-                    for row in cursor.execute(
-                        f"""
-                        SELECT e.id, e.title, e.type, e.data_json FROM edges ed
-                        JOIN entities e ON e.id = ed.target_id
-                        WHERE ed.source_id = ? AND ed.rel_type IN ({ph})
-                        ORDER BY e.id;
-                        """,
-                        (eid, *rel_types),
-                    ).fetchall():
-                        m_data = json.loads(row["data_json"])
-                        m_data["id"] = row["id"]
-                        m_data["title"] = row["title"]
-                        if row["type"] in ("tech/container", "tech/component"):
-                            matched_components.setdefault(row["id"], m_data)
-                        elif row["type"] == "product/capability":
-                            matched_capabilities.setdefault(row["id"], m_data)
-                        else:
-                            continue
-                        member_ids.append(row["id"])
-                        _add_reason(row["id"], member_reason)
-                    expanded = f"; expanded to {', '.join(member_ids)}" if member_ids else ""
-                    _add_reason(eid, f"{reason}{expanded}")
-
-        has_explicit_query = bool(clean_files or (component and component.strip()) or (task and task.strip()))
-        any_matched = bool(
-            matched_components
-            or matched_capabilities
-            or matched_contracts
-            or matched_invariants
-            or matched_policies
-        )
-
-        # 4. Full catalog overview ONLY when no query filters were provided at all.
-        #    When explicit filters (files, component, or task) match zero entities, return an honest empty slice
-        #    rather than injecting unrelated fallback containers or policies (DLT-2026-047).
-        if not any_matched and not has_explicit_query:
-            cursor.execute(
-                "SELECT id, title, type, domain, data_json FROM entities WHERE type IN ('tech/container', 'tech/component');"
-            )
-            for row in cursor.fetchall():
-                c_data = json.loads(row["data_json"])
-                c_data["id"] = row["id"]
-                c_data["title"] = row["title"]
-                matched_components[row["id"]] = c_data
-
-        # 5. Forward dependency expansion for primary matched components
-        primary_cids = list(matched_components.keys())
-        missing_dep_ids: list[str] = []
-        for cid in primary_cids:
-            comp_data = matched_components.get(cid, {})
-            deps_dict = comp_data.get("dependencies") or {}
-            deps = deps_dict.get("internal_containers", []) or deps_dict.get("internal_components", [])
-            for dep_id in deps:
-                if dep_id not in matched_components and dep_id not in missing_dep_ids:
-                    missing_dep_ids.append(dep_id)
-        if missing_dep_ids:
-            ph = ",".join("?" for _ in missing_dep_ids)
-            cursor.execute(
-                f"SELECT id, title, type, domain, data_json FROM entities WHERE id IN ({ph});",
-                tuple(missing_dep_ids),
-            )
-            for row in cursor.fetchall():
-                c_data = json.loads(row["data_json"])
-                c_data["id"] = row["id"]
-                c_data["title"] = row["title"]
-                matched_components[row["id"]] = c_data
-                _add_reason(row["id"], "Internal dependency")
-
-        # 6. Include contracts owned by or provided/consumed by primary components
-        direct_cap_ids = list(matched_capabilities.keys())
-        direct_pol_ids = list(matched_policies.keys())
-        if primary_cids:
-            ph = ",".join("?" for _ in primary_cids)
-            cursor.execute(
-                f"""
-                SELECT id, title, type, domain, data_json FROM entities
-                WHERE type = 'tech/contract' AND (
-                    id IN (SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type IN ('provides', 'consumes'))
-                    OR id IN (SELECT source_id FROM edges WHERE target_id IN ({ph}) AND rel_type = 'provides')
-                );
-                """,
-                tuple(primary_cids + primary_cids),
-            )
-            for row in cursor.fetchall():
-                ctr_data = json.loads(row["data_json"])
-                ctr_data["id"] = row["id"]
-                ctr_data["title"] = row["title"]
-                matched_contracts.setdefault(row["id"], ctr_data)
-
-        # 7. Include domain capabilities for primary components' domains
-        domains = {
-            c.get("domain_binding") or c.get("domain") for c in [matched_components[cid] for cid in primary_cids]
-        }
-        domains.discard("")
-        if domains:
-            ph = ",".join("?" for _ in domains)
-            cursor.execute(
-                f"SELECT id, title, type, domain, data_json FROM entities WHERE type = 'product/capability' AND domain IN ({ph});",
-                tuple(domains),
-            )
-            for row in cursor.fetchall():
-                cap_data = json.loads(row["data_json"])
-                cap_data["id"] = row["id"]
-                cap_data["title"] = row["title"]
-                matched_capabilities.setdefault(row["id"], cap_data)
-
-        # 7b. Include invariants declared directly on primary components
-        primary_comp_inv_ids: set[str] = set()
-        if primary_cids:
-            ph = ",".join("?" for _ in primary_cids)
-            cursor.execute(
-                f"""
-                SELECT id, title, data_json FROM entities
-                WHERE type = 'invariant' AND id IN (
-                    SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type = 'asserts'
-                );
-                """,
-                tuple(primary_cids),
-            )
-            for row in cursor.fetchall():
-                inv_data = json.loads(row["data_json"])
-                inv_data["id"] = row["id"]
-                matched_invariants.setdefault(row["id"], inv_data)
-                primary_comp_inv_ids.add(row["id"])
-
-        # 8. Invariants & Policies expansion from capabilities
-        if matched_capabilities:
-            cap_ids = list(matched_capabilities.keys())
-            ph = ",".join("?" for _ in cap_ids)
-            # Invariants
-            cursor.execute(
-                f"""
-                SELECT id, title, data_json FROM entities
-                WHERE type = 'invariant' AND id IN (
-                    SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type = 'asserts'
-                );
-                """,
-                tuple(cap_ids),
-            )
-            for row in cursor.fetchall():
-                inv_data = json.loads(row["data_json"])
-                inv_data["id"] = row["id"]
-                matched_invariants.setdefault(row["id"], inv_data)
-
-            # Policies
-            cursor.execute(
-                f"""
-                SELECT id, title, data_json FROM entities
-                WHERE type = 'product/policy' AND id IN (
-                    SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type = 'governed_by'
-                );
-                """,
-                tuple(cap_ids),
-            )
-            for row in cursor.fetchall():
-                pol_data = json.loads(row["data_json"])
-                pol_data["id"] = row["id"]
-                pol_data["title"] = row["title"]
-                matched_policies.setdefault(row["id"], pol_data)
-
-        # 9. Fallback governing policies if none matched (only when a query matched something or on full catalog overview)
-        if not matched_policies and (any_matched or not has_explicit_query):
-            for row in cursor.execute(
-                "SELECT id, title, type, domain, data_json FROM entities WHERE type = 'product/policy' ORDER BY id LIMIT 2;"
-            ).fetchall():
-                p_data = json.loads(row["data_json"])
-                p_data["id"] = row["id"]
-                p_data["title"] = row["title"]
-                matched_policies[row["id"]] = p_data
-
-        # 10. Invariants from governing policies
-        for pid in list(matched_policies.keys()):
-            cursor.execute(
-                """
-                SELECT id, title, data_json FROM entities
-                WHERE type = 'invariant' AND id IN (
-                    SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'asserts'
-                );
-                """,
-                (pid,),
-            )
-            for row in cursor.fetchall():
-                inv_data = json.loads(row["data_json"])
-                inv_data["id"] = row["id"]
-                matched_invariants.setdefault(row["id"], inv_data)
-
-        # Ensure embedded decisions (including inline component decisions) are surfaced on each matched component
-        for comp_entry in matched_components.values():
-            collected_decs = collect_component_decisions(comp_entry)
-            if collected_decs:
-                comp_entry["decisions"] = collected_decs
-
-        # Assemble and rank-order lists so token-budget truncation retains highest-priority entities first
-        primary_set = set(primary_cids)
-        primary_rank = {cid: idx for idx, cid in enumerate(primary_cids)}
-        direct_cap_rank = {cid: idx for idx, cid in enumerate(direct_cap_ids)}
-        direct_pol_rank = {pid: idx for idx, pid in enumerate(direct_pol_ids)}
-
-        sorted_comps = sorted(
-            matched_components.values(),
-            key=lambda x: (
-                0 if x.get("id", "") in primary_set else 1,
-                primary_rank.get(x.get("id", ""), 999),
-                x.get("id", ""),
-            ),
-        )
-        sorted_ctrs = sorted(matched_contracts.values(), key=lambda x: x.get("id", ""))
-        sorted_caps = sorted(
-            matched_capabilities.values(),
-            key=lambda x: (
-                0 if x.get("id", "") in direct_cap_rank else 1,
-                direct_cap_rank.get(x.get("id", ""), 999),
-                x.get("id", ""),
-            ),
-        )
-        sorted_pols = sorted(
-            matched_policies.values(),
-            key=lambda x: (
-                0 if x.get("id", "") in direct_pol_rank else 1,
-                direct_pol_rank.get(x.get("id", ""), 999),
-                x.get("id", ""),
-            ),
-        )
-
-        # Order invariants by rank:
-        # 1) Directly matched invariants (file test binding or FTS match)
-        # 2) Primary component invariants
-        # 3) Round-robin across matched capabilities and policies in their YAML declaration order
-        # 4) Remaining invariants sorted by ID
-        ordered_invs: list[dict[str, Any]] = []
-        seen_inv_ids: set[str] = set()
-        for iid in sorted(direct_inv_ids):
-            if iid in matched_invariants and iid not in seen_inv_ids:
-                ordered_invs.append(matched_invariants[iid])
-                seen_inv_ids.add(iid)
-        for iid in sorted(primary_comp_inv_ids):
-            if iid in matched_invariants and iid not in seen_inv_ids:
-                ordered_invs.append(matched_invariants[iid])
-                seen_inv_ids.add(iid)
-
-        for source_list in (sorted_caps, sorted_pols):
-            inv_lists = [
-                [
-                    inv.get("id")
-                    for inv in ((src.get("technical") or {}).get("invariants") or src.get("invariants") or [])
-                    if isinstance(inv, dict) and inv.get("id")
-                ]
-                for src in source_list
-            ]
-            max_len = max((len(lst) for lst in inv_lists), default=0)
-            for idx in range(max_len):
-                for lst in inv_lists:
-                    if idx < len(lst):
-                        iid = lst[idx]
-                        if iid in matched_invariants and iid not in seen_inv_ids:
-                            ordered_invs.append(matched_invariants[iid])
-                            seen_inv_ids.add(iid)
-
-        for iid in sorted(matched_invariants.keys()):
-            if iid not in seen_inv_ids:
-                ordered_invs.append(matched_invariants[iid])
-                seen_inv_ids.add(iid)
-
-        slice_obj = TieredContextSlice(
-            tier=tier,
-            query={"files": clean_files, "component": component, "task": task},
-            components=sorted_comps,
-            contracts=sorted_ctrs,
-            capabilities=sorted_caps,
-            invariants=ordered_invs,
-            policies=sorted_pols,
-            matched_reasons=matched_reasons,
-            query_latency_ms=0.0,
-            token_estimate=0,
-        )
-        slice_obj._enforce_token_budget(primary_set)
-        slice_obj.query_latency_ms = (time.perf_counter() - t0) * 1000
-        return slice_obj
 
     def get_components(self) -> list[dict[str, Any]]:
         """Retrieve all C4 containers and components from the knowledge graph index."""
@@ -2182,38 +394,6 @@ class ArchitecturalIndex:
                     continue
                 entities.append(data)
             return entities
-
-    def get_incoming_references(self, target_id_or_path: str) -> list[dict[str, Any]]:
-        """Find all incoming graph edges pointing to an entity ID or file path."""
-        self._ensure_synced()
-        target = target_id_or_path
-        with self._get_connection() as conn:
-            row = conn.execute(
-                "SELECT doc_id FROM indexed_files WHERE rel_path = ? OR 'eidos/' || rel_path = ?;",
-                (target, target),
-            ).fetchone()
-            if row:
-                target = row["doc_id"]
-            rows = conn.execute(
-                """
-                SELECT e.source_id, e.rel_type, ent.type, ent.title, ent.file_path
-                FROM edges e
-                JOIN entities ent ON ent.id = e.source_id
-                WHERE e.target_id = ?
-                ORDER BY ent.type, e.source_id;
-                """,
-                (target,),
-            ).fetchall()
-            return [
-                {
-                    "source_id": r["source_id"],
-                    "rel_type": r["rel_type"],
-                    "type": r["type"],
-                    "title": r["title"],
-                    "file_path": r["file_path"],
-                }
-                for r in rows
-            ]
 
 
 # Global singleton instance for high-speed module reuse

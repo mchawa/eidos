@@ -19,7 +19,7 @@ components:
     source_path: "src/eidos/core/spec/parser.py"
   - id: CMP-SPEC-VALIDATOR
     name: "SpecValidator"
-    responsibility: "Resolves bundled JSON/YAML schemas (resolving factored reusable $defs), performs cached per-document schema validation via 'spec_validation_cache' (keyed by mtime_ns, sha256, and schema_hash, and opened through the canonical 'open_cache_connection' and 'SCHEMA_VERSION' from CMP-GRAPH-STORAGE) while validating document frontmatters (including embedded 'decisions' blocks), verifies schema-driven x-eidos-ref cross-references with dynamic schema-extracted ID prefixes and strict container vs. component target type enforcement (including 'graduated_from'), enforces global 'DEC-*' decision ID uniqueness, scopes Python Typer CLI contract parity checks, and enforces repo-relative centralized component invariants (INV-COMPONENT-CENTRALIZATION-MANDATE, INV-COMPONENT-CONTAINER-AFFINITY, INV-INTERFACE-BOUNDARY-GOVERNANCE)."
+    responsibility: "Resolves bundled JSON/YAML schemas (merging shared reusable $defs from assets/schemas/v1/common/defs.yaml for decision, invariant, and test_bound_invariant), performs cached per-document schema validation via 'spec_validation_cache' (keyed by mtime_ns, sha256, and schema_hash, and opened through the canonical 'open_cache_connection' and 'SCHEMA_VERSION' from CMP-GRAPH-STORAGE) while validating document frontmatters (including embedded 'decisions' blocks), verifies schema-driven x-eidos-ref cross-references with dynamic schema-extracted ID prefixes and strict container vs. component target type enforcement (including 'graduated_from'), enforces global 'DEC-*' decision ID uniqueness, scopes Python Typer CLI contract parity checks, and enforces repo-relative centralized component invariants (INV-COMPONENT-CENTRALIZATION-MANDATE, INV-COMPONENT-CONTAINER-AFFINITY, INV-INTERFACE-BOUNDARY-GOVERNANCE)."
     source_path: "src/eidos/core/spec/validator.py"
   - id: CMP-LIFECYCLE-SCAFFOLDER
     name: "LifecycleScaffolder"
@@ -57,7 +57,7 @@ components:
     source_path: "src/eidos/core/lifecycle/audit.py"
   - id: CMP-CONTEXT-SLICER
     name: "ContextSlicer"
-    responsibility: "Extracts compact, token-efficient architectural subgraph slices across C4 components, contracts, capabilities, invariants, policies, and tier-aware embedded architectural decisions (DEC-* with compact 1-line summaries in anchor and full rationale/rejected_alternatives in guardrails and deep)."
+    responsibility: "Extracts compact, token-efficient architectural subgraph slices across C4 components, contracts, capabilities, invariants, policies, and tier-aware embedded architectural decisions (DEC-* with compact 1-line summaries in anchor and full rationale/rejected_alternatives in guardrails and deep), providing the single canonical ArchitecturalContextSlice.to_markdown() implementation shared with TieredContextSlice."
     source_path: "src/eidos/core/workspace/context.py"
   - id: CMP-CHANGELOG-GENERATOR
     name: "ChangelogGenerator"
@@ -91,16 +91,16 @@ This container represents the foundational library under `src/eidos/core/` (`spe
 |===
 | Component ID | Name | Responsibility | Source Path
 | `CMP-SPEC-PARSER` | **SpecParser** | Extracts YAML frontmatter metadata and body text from AsciiDoc documents | `src/eidos/core/spec/parser.py`
-| `CMP-SPEC-VALIDATOR` | **SpecValidator** | Resolves bundled JSON/YAML schemas, validates frontmatters (including `decisions`), and checks references (`x-eidos-ref` `prefixes` and `target_types`, `DEC-*` uniqueness, and `graduated_from`) | `src/eidos/core/spec/validator.py`
+| `CMP-SPEC-VALIDATOR` | **SpecValidator** | Resolves bundled JSON/YAML schemas (merging shared `$defs` from `assets/schemas/v1/common/defs.yaml`), validates frontmatters (including `decisions`), and checks references (`x-eidos-ref` `prefixes` and `target_types`, `DEC-*` uniqueness, and `graduated_from`) | `src/eidos/core/spec/validator.py`
 | `CMP-LIFECYCLE-SCAFFOLDER` | **LifecycleScaffolder** | Spec template generation (defaulting SpecDelta `intent.kind` to `feature`), reference safety checks, and component promote/inline (shared helpers in `catalog.py`) | `src/eidos/core/lifecycle/scaffolder.py`, `src/eidos/core/lifecycle/catalog.py`
 | `CMP-DESIGN-ENGINE` | **DesignEngine** | Multi-design system management, token compilation, and UI state machines | `src/eidos/core/lifecycle/design_engine.py`
-| `CMP-REPO-INITIALIZER` | **RepositoryInitializer** | Repository scaffolding with living spec hierarchies and gitignore | `src/eidos/core/lifecycle/initializer.py`
+| `CMP-REPO-INITIALIZER` | **RepositoryInitializer** | Repository scaffolding with living spec hierarchies, progressive Eidos Lite onboarding (`--lite`), and gitignore | `src/eidos/core/lifecycle/initializer.py`
 | `CMP-DELTA-ENGINE` | **DeltaEngine** | SpecDelta lifecycle and strict enum taxonomy enforcement (`intent.kind`, `bug_classification`, `severity`, `mutations[].action`): listing, status views, baselines, verification across all `remove_*` / `modify_*` / `add_*` actions, execution, and apply | `src/eidos/core/lifecycle/delta_engine.py`
 | `CMP-ASSET-LOCATOR` | **AssetLocator** | Resolves bundled schemas and plugin assets across packages and repos | `src/eidos/core/workspace/assets.py`
 | `CMP-PROJECT-RESOLVER` | **ProjectResolver** | Zero-config repository root discovery and path ownership matching | `src/eidos/core/workspace/project.py`
-| `CMP-DOMAIN-MODELS` | **DomainModels** | Typed domain models for living specification entities and validation reports | `src/eidos/core/spec/models.py`
+| `CMP-DOMAIN-MODELS` | **DomainModels** | Typed Pydantic frontmatter models and domain models for living specification entities and validation reports | `src/eidos/core/spec/models.py`
 | `CMP-DELTA-AUDITOR` | **DeltaAuditor** | Reverse-dependency blast-radius auditor for SpecDelta removals across all living spec entity prefixes | `src/eidos/core/lifecycle/audit.py`
-| `CMP-CONTEXT-SLICER` | **ContextSlicer** | Slices token-budgeted architectural subgraphs (including embedded `decisions` and `rejected_alternatives`) for AI coding agents | `src/eidos/core/workspace/context.py`
+| `CMP-CONTEXT-SLICER` | **ContextSlicer** | Slices token-budgeted architectural subgraphs and provides the canonical `ArchitecturalContextSlice.to_markdown()` renderer inherited by `TieredContextSlice` | `src/eidos/core/workspace/context.py`
 | `CMP-CHANGELOG-GENERATOR` | **ChangelogGenerator** | Compiles applied SpecDeltas (deterministically classified via `intent.kind` and `mutations[].action`) and Git release history into a portable Keep a Changelog ledger | `src/eidos/core/lifecycle/changelog.py`
 |===
 

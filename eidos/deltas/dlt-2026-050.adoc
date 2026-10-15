@@ -30,12 +30,12 @@ mutations:
       contains: "CMP-PLUGIN-INSTALLER"
   - action: modify_container
     target_container: "CNT-EIDOS-PORTAL"
-    details: "Generate src/eidos/portal/assets.py during build/packaging rather than committing a 4.7 MB minified JS literal to Git history, and run frontend vitest and bundle parity verification in CI."
+    details: "Replace the committed 4.7 MB minified JS/HTML string literal in src/eidos/portal/assets.py with a 42-line loader reading gzip-compressed assets/portal/bundle.html.gz (marked linguist-generated), wire a Hatch custom build hook (src/eidos/portal/frontend/scripts/hatch_build.py), and run frontend vitest and build_assets.py --check bundle parity verification in CI."
     expect:
       contains: "CMP-PORTAL-ASSETS"
   - action: modify_container
     target_container: "CNT-EIDOS-CORE"
-    details: "Adopt typed Pydantic frontmatter models in CMP-DOMAIN-MODELS (or remove unused pydantic dependency), extract shared JSON Schema $defs (decisions), and support a progressive 'eidos init --lite' profile."
+    details: "Adopt typed Pydantic frontmatter models in CMP-DOMAIN-MODELS, extract shared JSON Schema $defs (decision, invariant, test_bound_invariant) into assets/schemas/v1/common/defs.yaml, unify ContextSlice.to_markdown() in CMP-CONTEXT-SLICER, and support a progressive 'eidos init --lite' profile."
     expect:
       contains: "CMP-DOMAIN-MODELS"
 

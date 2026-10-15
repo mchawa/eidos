@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <defs>
+    <linearGradient id="eidos-fav-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#a855f7" />
+    </linearGradient>
+  </defs>
+
+  <!-- The Eidos Form — Single continuous isometric impossible polygon skeleton -->
+  <path
+    d="M 16,3 L 27.3,9.5 L 19,14.2 L 27.3,22.5 L 16,29 L 16,19.5 L 4.7,22.5 L 4.7,9.5 L 13,14.3 Z"
+    stroke="url(#eidos-fav-grad)"
+    stroke-width="2.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="url(#eidos-fav-grad)"
+    fill-opacity="0.16"
+  />
+</svg>

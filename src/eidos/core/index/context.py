@@ -7,13 +7,15 @@ guardrails (<=1000 tokens), and deep (<=2500 tokens) tiers for AI coding agents.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+from eidos.core.index.query import TASK_SLICE_ENTITY_TYPES
 from eidos.core.workspace.context import (
     ArchitecturalContextSlice,
     collect_component_decisions,
-    format_decisions_markdown,
 )
 
 # Enforced maximum token budgets per context slice tier (DLT-2026-047).
@@ -27,13 +29,6 @@ TIER_TOKEN_BUDGETS: dict[str, int] = {
 @dataclass
 class TieredContextSlice(ArchitecturalContextSlice):
     """Token-budgeted architectural slice matching a query, extending ArchitecturalContextSlice."""
-
-    tier: str = "guardrails"  # "anchor" | "guardrails" | "deep"
-    query_latency_ms: float = 0.0
-    token_estimate: int = 0
-
-    def _is_secondary_dependency(self, cid: str) -> bool:
-        return self.matched_reasons.get(cid) == ["Internal dependency"]
 
     def _project_decisions(self, decisions: list[dict[str, Any]]) -> list[dict[str, Any]]:
         projected: list[dict[str, Any]] = []
@@ -91,7 +86,16 @@ class TieredContextSlice(ArchitecturalContextSlice):
         base_keys = (
             ("type", "container_type", "runtime", "package_path", "domain_binding", "container")
             if self.tier == "anchor"
-            else ("type", "container_type", "runtime", "package_path", "domain_binding", "container", "file_path", "responsibility")
+            else (
+                "type",
+                "container_type",
+                "runtime",
+                "package_path",
+                "domain_binding",
+                "container",
+                "file_path",
+                "responsibility",
+            )
         )
         for base_key in base_keys:
             if comp.get(base_key):
@@ -202,174 +206,6 @@ class TieredContextSlice(ArchitecturalContextSlice):
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent)
 
-    def to_markdown(self) -> str:
-        """Render markdown formatted for the requested tier."""
-        lines = [
-            f"# 🧭 Eidos Architectural Context Slice ({self.tier.upper()} Tier)",
-            "",
-        ]
-
-        query_parts = []
-        if self.query.get("files"):
-            query_parts.append(f"**Files:** `{', '.join(self.query['files'])}`")
-        if self.query.get("component"):
-            query_parts.append(f"**Component:** `{self.query['component']}`")
-        if self.query.get("task"):
-            query_parts.append(f'**Task:** *"{self.query["task"]}"*')
-        if query_parts:
-            lines.append(" | ".join(query_parts))
-            lines.append("")
-
-        # 1. Containers & Components
-        lines.append(f"## 🧱 C4 Level 2 Containers & Level 3 Components ({len(self.components)})")
-        if not self.components:
-            lines.append("*No components or containers directly matched.*")
-        for comp in self.components:
-            cid = comp.get("id", "")
-            name = comp.get("name", cid)
-            ctype = comp.get("container_type", "service")
-            runtime = comp.get("runtime", "N/A")
-            pkg = comp.get("package_path", "")
-            is_comp = comp.get("type") == "tech/component" or cid.startswith("CMP-")
-            is_secondary = self._is_secondary_dependency(cid)
-
-            if is_comp:
-                parent_cnt = comp.get("container", "N/A")
-                lines.append(f"### `{cid}` ({name}) [C4 Level 3 Component]")
-                lines.append(f"- **Owning Container:** `{parent_cnt}` | **Package:** `{pkg}`")
-                if comp.get("file_path"):
-                    lines.append(f"- **Specification:** `{comp['file_path']}`")
-                if comp.get("responsibility"):
-                    lines.append(f"- **Responsibility:** {comp['responsibility']}")
-                if self.tier in ("guardrails", "deep"):
-                    ifaces = comp.get("interfaces", {})
-                    if isinstance(ifaces, dict) and ifaces.get("provides"):
-                        lines.append("- **In-Process APIs (`interfaces.provides`):**")
-                        for p in ifaces["provides"]:
-                            sig = p.get("signature", "")
-                            desc = f": {p.get('description', '')}" if p.get("description") else ""
-                            lines.append(f"  - `{sig}`{desc}")
-                    invs = comp.get("invariants", [])
-                    if invs:
-                        lines.append("- **Component Invariants (`INV-*`):**")
-                        for inv in invs:
-                            lines.append(f"  - `{inv.get('id')}`: {inv.get('rule')}")
-                if self.tier == "deep":
-                    qas = comp.get("quality_attributes", {})
-                    if qas:
-                        qa_str = ", ".join(f"{k}: {v}" for k, v in qas.items())
-                        lines.append(f"- **Quality Attributes:** {qa_str}")
-            else:
-                lines.append(f"### `{cid}` ({name})")
-                lines.append(f"- **Container:** `{ctype}` | **Runtime:** `{runtime}` | **Package:** `{pkg}`")
-                if comp.get("domain_binding"):
-                    lines.append(f"- **Domain:** `{comp['domain_binding']}`")
-
-                if self.tier in ("guardrails", "deep") and not (is_secondary and len(self.components) > 3):
-                    deps = (
-                        (comp.get("dependencies") or {}).get("internal_containers", [])
-                        or (comp.get("dependencies") or {}).get("internal_components", [])
-                    ) if isinstance(comp.get("dependencies"), dict) else []
-                    if deps:
-                        lines.append(f"- **Dependencies:** {', '.join(f'`{d}`' for d in deps)}")
-
-                    contracts = comp.get("contracts") or {}
-                    prov = contracts.get("provides", []) if isinstance(contracts, dict) else []
-                    if prov:
-                        lines.append(f"- **Provides Contracts:** {', '.join(f'`{p}`' for p in prov)}")
-                    req = (contracts.get("requires") or contracts.get("consumes") or []) if isinstance(contracts, dict) else []
-                    if req:
-                        lines.append(f"- **Requires Contracts:** {', '.join(f'`{r}`' for r in req)}")
-
-                    cinvs = comp.get("invariants", [])
-                    if cinvs:
-                        lines.append("- **Container Invariants (`INV-*`):**")
-                        for inv in cinvs:
-                            lines.append(f"  - `{inv.get('id')}`: {inv.get('rule')}")
-
-                if self.tier == "deep" and not is_secondary:
-                    modules = comp.get("components", []) or comp.get("c4_internal_components", [])
-                    if modules:
-                        lines.append("- **C4 Level 3 Components:**")
-                        for m in modules[:6]:
-                            mid = f"`{m['id']}` " if m.get("id") else ""
-                            mname = m.get("name", "")
-                            mresp = m.get("responsibility", "")
-                            lines.append(f"  - {mid}**{mname}**: {mresp}")
-
-            if not is_secondary and not (self.tier != "deep" and len(self.components) > 4):
-                decisions = collect_component_decisions(comp)
-                if decisions:
-                    lines.extend(format_decisions_markdown(decisions, tier=self.tier))
-
-            lines.append("")
-
-        # 2. Contracts
-        lines.append(f"## 📜 Bound Interface Contracts ({len(self.contracts)})")
-        if not self.contracts:
-            lines.append("*No bound contracts in slice.*")
-        for ctr in self.contracts:
-            cid = ctr.get("id", "")
-            title = ctr.get("title", cid)
-            protocol = ctr.get("protocol", "standard")
-            owner = ctr.get("owning_container") or ctr.get("owning_component", "N/A")
-            path = ctr.get("path", "")
-            lines.append(f"### `{cid}`: {title}")
-            lines.append(f"- **Protocol:** `{protocol}` | **Owner:** `{owner}` | **Path:** `{path}`")
-            lines.append("")
-
-        # 3. Domain Capabilities (Guardrails & Deep)
-        if self.tier in ("guardrails", "deep"):
-            lines.append(f"## 🎯 Domain Capabilities ({len(self.capabilities)})")
-            if not self.capabilities:
-                lines.append("*No capabilities directly matched.*")
-            for cap in self.capabilities:
-                cid = cap.get("id", "")
-                title = cap.get("title", cid)
-                domain = cap.get("domain", "")
-                lines.append(f"### `{cid}`: {title}")
-                lines.append(f"- **Domain:** `{domain}`")
-                invs = cap.get("invariants", [])
-                if invs:
-                    lines.append("- **Capability Invariants (`INV-*`):**")
-                    for inv in invs:
-                        lines.append(f"  - `{inv.get('id')}`: {inv.get('rule')}")
-                lines.append("")
-
-        # 4. Invariants (Guardrails & Deep)
-        if self.tier in ("guardrails", "deep"):
-            lines.append(f"## 🛡️ Active Invariants ({len(self.invariants)})")
-            if not self.invariants:
-                lines.append("*No active invariants linked to this slice.*")
-            for inv in self.invariants:
-                iid = inv.get("id", "")
-                rule = inv.get("rule", "")
-                tb = inv.get("test_binding", "None")
-                cov = "✓ Covered" if inv.get("has_test_coverage") else "⚠️ Uncovered"
-                lines.append(f"- **`{iid}`** [{cov}]: {rule}")
-                if tb and tb != "None":
-                    lines.append(f"  - *Binding:* `{tb}`")
-            lines.append("")
-
-        # 5. Policies (Guardrails & Deep)
-        if self.tier in ("guardrails", "deep"):
-            lines.append(f"## 📋 Governing Policies ({len(self.policies)})")
-            if not self.policies:
-                lines.append("*No specific governing policies in slice.*")
-            for pol in self.policies:
-                pid = pol.get("id", "")
-                title = pol.get("title", pid)
-                rule = pol.get("rule", "")
-                lines.append(f"- **`{pid}`** ({title})")
-                if rule and self.tier == "deep":
-                    lines.append(f"  - *Rule:* {rule}")
-            lines.append("")
-
-        lines.append(
-            f"> Context Slice generated in {self.query_latency_ms:.2f}ms | Estimated Tokens: ~{self.token_estimate}"
-        )
-        return "\n".join(lines)
-
     def _estimate_tokens(self) -> int:
         return max(1, len(self.to_markdown()) // 4)
 
@@ -432,3 +268,417 @@ class TieredContextSlice(ArchitecturalContextSlice):
 
         self._prune_matched_reasons()
         self.token_estimate = self._estimate_tokens()
+
+
+def build_tiered_context_slice(
+    index: Any,
+    files: list[str] | str | None = None,
+    component: str | None = None,
+    task: str | None = None,
+    tier: str = "guardrails",
+) -> TieredContextSlice:
+    """Extract a token-budgeted architectural context slice using hybrid indexed retrieval."""
+    t0 = time.perf_counter()
+    index._ensure_synced()
+
+    matched_components: dict[str, dict[str, Any]] = {}
+    matched_contracts: dict[str, dict[str, Any]] = {}
+    matched_capabilities: dict[str, dict[str, Any]] = {}
+    matched_invariants: dict[str, dict[str, Any]] = {}
+    matched_policies: dict[str, dict[str, Any]] = {}
+    matched_reasons: dict[str, list[str]] = {}
+    direct_inv_ids: set[str] = set()
+
+    def _add_reason(eid: str, reason: str) -> None:
+        bucket = matched_reasons.setdefault(eid, [])
+        if reason not in bucket:
+            bucket.append(reason)
+
+    conn = index._get_connection()
+    cursor = conn.cursor()
+
+    # 1. Resolve by Component / Container parameter
+    if component:
+        c_clean = component.strip().upper()
+        cursor.execute(
+            """
+            SELECT id, title, type, domain, data_json
+            FROM entities
+            WHERE type IN ('tech/container', 'tech/component') AND (id = ? OR id LIKE '%' || ? || '%');
+            """,
+            (c_clean, c_clean),
+        )
+        for row in cursor.fetchall():
+            cid = row["id"]
+            data = json.loads(row["data_json"])
+            data["id"] = cid
+            data["title"] = row["title"]
+            matched_components[cid] = data
+            _add_reason(cid, f"Explicit component parameter '{component}'")
+        if not matched_components:
+            cursor.execute(
+                """
+                SELECT e.id, e.title, e.type, e.domain, e.data_json
+                FROM symbol_mappings s
+                JOIN entities e ON e.id = s.entity_id
+                WHERE s.kind = 'component_id' AND UPPER(s.symbol) = ?;
+                """,
+                (c_clean,),
+            )
+            for row in cursor.fetchall():
+                cid = row["id"]
+                data = json.loads(row["data_json"])
+                data["id"] = cid
+                data["title"] = row["title"]
+                matched_components[cid] = data
+                _add_reason(cid, f"Inline component parameter '{component}'")
+
+    # 2. Resolve by File paths
+    raw_files = [files] if isinstance(files, str) else (files or [])
+    clean_files: list[str] = []
+    for f in raw_files:
+        if not f:
+            continue
+        for sub in str(f).split(","):
+            sub_clean = sub.strip()
+            if not sub_clean:
+                continue
+            p = Path(sub_clean)
+            if p.is_absolute():
+                try:
+                    rel = str(p.resolve().relative_to(index.root)).replace("\\", "/")
+                    clean_files.append(rel)
+                except ValueError:
+                    clean_files.append(sub_clean.replace("\\", "/"))
+            else:
+                c = sub_clean.replace("\\", "/")
+                while c.startswith("./"):
+                    c = c[2:]
+                clean_files.append(c)
+
+    for fpath in clean_files:
+        matches = index.resolve_symbol_or_path(fpath)
+        for m in matches:
+            eid = m["entity_id"]
+            etype = m["type"]
+            data = m["data"]
+            data["id"] = eid
+            data["title"] = m["title"]
+
+            if etype in ("tech/container", "tech/component"):
+                matched_components[eid] = data
+                _add_reason(eid, f"Source file match on '{fpath}'")
+            elif etype == "invariant":
+                matched_invariants[eid] = data
+                direct_inv_ids.add(eid)
+                _add_reason(eid, f"Test binding match on '{fpath}'")
+            elif etype == "tech/contract":
+                matched_contracts[eid] = data
+                _add_reason(eid, f"Contract file match on '{fpath}'")
+
+    # 3. Resolve by Task prompt (FTS5 lexical search restricted to sliceable entity types, so historical
+    #    SpecDeltas, explorations, and personas never consume the top-k candidate slots)
+    if task and task.strip():
+        fts_matches = index.query_fts(task, limit=8, include_types=TASK_SLICE_ENTITY_TYPES)
+        for m in fts_matches:
+            eid = m["id"]
+            etype = m["type"]
+            data = m["data"]
+            data["id"] = eid
+            data["title"] = m["title"]
+
+            reason = f"FTS lexical match on task (BM25 score: {m['rank']:.2f})"
+            if etype in ("tech/container", "tech/component"):
+                matched_components[eid] = data
+                _add_reason(eid, reason)
+            elif etype == "tech/contract":
+                matched_contracts[eid] = data
+                _add_reason(eid, reason)
+            elif etype == "product/capability":
+                matched_capabilities[eid] = data
+                _add_reason(eid, reason)
+            elif etype == "product/policy":
+                matched_policies[eid] = data
+                _add_reason(eid, reason)
+            elif etype == "invariant":
+                matched_invariants[eid] = data
+                direct_inv_ids.add(eid)
+                _add_reason(eid, reason)
+            elif etype in ("product/domain", "design/system"):
+                rel_types = ("domain_member",) if etype == "product/domain" else ("styles_container",)
+                member_reason = (
+                    f"Member of FTS-matched domain {eid}"
+                    if etype == "product/domain"
+                    else f"Styled by FTS-matched design system {eid}"
+                )
+                ph = ",".join("?" for _ in rel_types)
+                member_ids: list[str] = []
+                for row in cursor.execute(
+                    f"""
+                    SELECT e.id, e.title, e.type, e.data_json FROM edges ed
+                    JOIN entities e ON e.id = ed.target_id
+                    WHERE ed.source_id = ? AND ed.rel_type IN ({ph})
+                    ORDER BY e.id;
+                    """,
+                    (eid, *rel_types),
+                ).fetchall():
+                    m_data = json.loads(row["data_json"])
+                    m_data["id"] = row["id"]
+                    m_data["title"] = row["title"]
+                    if row["type"] in ("tech/container", "tech/component"):
+                        matched_components.setdefault(row["id"], m_data)
+                    elif row["type"] == "product/capability":
+                        matched_capabilities.setdefault(row["id"], m_data)
+                    else:
+                        continue
+                    member_ids.append(row["id"])
+                    _add_reason(row["id"], member_reason)
+                expanded = f"; expanded to {', '.join(member_ids)}" if member_ids else ""
+                _add_reason(eid, f"{reason}{expanded}")
+
+    has_explicit_query = bool(clean_files or (component and component.strip()) or (task and task.strip()))
+    any_matched = bool(
+        matched_components
+        or matched_capabilities
+        or matched_contracts
+        or matched_invariants
+        or matched_policies
+    )
+
+    # 4. Full catalog overview ONLY when no query filters were provided at all.
+    if not any_matched and not has_explicit_query:
+        cursor.execute(
+            "SELECT id, title, type, domain, data_json FROM entities WHERE type IN ('tech/container', 'tech/component');"
+        )
+        for row in cursor.fetchall():
+            c_data = json.loads(row["data_json"])
+            c_data["id"] = row["id"]
+            c_data["title"] = row["title"]
+            matched_components[row["id"]] = c_data
+
+    # 5. Forward dependency expansion for primary matched components
+    primary_cids = list(matched_components.keys())
+    missing_dep_ids: list[str] = []
+    for cid in primary_cids:
+        comp_data = matched_components.get(cid, {})
+        deps_dict = comp_data.get("dependencies") or {}
+        deps = deps_dict.get("internal_containers", []) or deps_dict.get("internal_components", [])
+        for dep_id in deps:
+            if dep_id not in matched_components and dep_id not in missing_dep_ids:
+                missing_dep_ids.append(dep_id)
+    if missing_dep_ids:
+        ph = ",".join("?" for _ in missing_dep_ids)
+        cursor.execute(
+            f"SELECT id, title, type, domain, data_json FROM entities WHERE id IN ({ph});",
+            tuple(missing_dep_ids),
+        )
+        for row in cursor.fetchall():
+            c_data = json.loads(row["data_json"])
+            c_data["id"] = row["id"]
+            c_data["title"] = row["title"]
+            matched_components[row["id"]] = c_data
+            _add_reason(row["id"], "Internal dependency")
+
+    # 6. Include contracts owned by or provided/consumed by primary components
+    direct_cap_ids = list(matched_capabilities.keys())
+    direct_pol_ids = list(matched_policies.keys())
+    if primary_cids:
+        ph = ",".join("?" for _ in primary_cids)
+        cursor.execute(
+            f"""
+            SELECT id, title, type, domain, data_json FROM entities
+            WHERE type = 'tech/contract' AND (
+                id IN (SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type IN ('provides', 'consumes'))
+                OR id IN (SELECT source_id FROM edges WHERE target_id IN ({ph}) AND rel_type = 'provides')
+            );
+            """,
+            tuple(primary_cids + primary_cids),
+        )
+        for row in cursor.fetchall():
+            ctr_data = json.loads(row["data_json"])
+            ctr_data["id"] = row["id"]
+            ctr_data["title"] = row["title"]
+            matched_contracts.setdefault(row["id"], ctr_data)
+
+    # 7. Include domain capabilities for primary components' domains
+    domains = {
+        c.get("domain_binding") or c.get("domain") for c in [matched_components[cid] for cid in primary_cids]
+    }
+    domains.discard("")
+    if domains:
+        ph = ",".join("?" for _ in domains)
+        cursor.execute(
+            f"SELECT id, title, type, domain, data_json FROM entities WHERE type = 'product/capability' AND domain IN ({ph});",
+            tuple(domains),
+        )
+        for row in cursor.fetchall():
+            cap_data = json.loads(row["data_json"])
+            cap_data["id"] = row["id"]
+            cap_data["title"] = row["title"]
+            matched_capabilities.setdefault(row["id"], cap_data)
+
+    # 7b. Include invariants declared directly on primary components
+    primary_comp_inv_ids: set[str] = set()
+    if primary_cids:
+        ph = ",".join("?" for _ in primary_cids)
+        cursor.execute(
+            f"""
+            SELECT id, title, data_json FROM entities
+            WHERE type = 'invariant' AND id IN (
+                SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type = 'asserts'
+            );
+            """,
+            tuple(primary_cids),
+        )
+        for row in cursor.fetchall():
+            inv_data = json.loads(row["data_json"])
+            inv_data["id"] = row["id"]
+            matched_invariants.setdefault(row["id"], inv_data)
+            primary_comp_inv_ids.add(row["id"])
+
+    # 8. Invariants & Policies expansion from capabilities
+    if matched_capabilities:
+        cap_ids = list(matched_capabilities.keys())
+        ph = ",".join("?" for _ in cap_ids)
+        cursor.execute(
+            f"""
+            SELECT id, title, data_json FROM entities
+            WHERE type = 'invariant' AND id IN (
+                SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type = 'asserts'
+            );
+            """,
+            tuple(cap_ids),
+        )
+        for row in cursor.fetchall():
+            inv_data = json.loads(row["data_json"])
+            inv_data["id"] = row["id"]
+            matched_invariants.setdefault(row["id"], inv_data)
+
+        cursor.execute(
+            f"""
+            SELECT id, title, data_json FROM entities
+            WHERE type = 'product/policy' AND id IN (
+                SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type = 'governed_by'
+            );
+            """,
+            tuple(cap_ids),
+        )
+        for row in cursor.fetchall():
+            pol_data = json.loads(row["data_json"])
+            pol_data["id"] = row["id"]
+            pol_data["title"] = row["title"]
+            matched_policies.setdefault(row["id"], pol_data)
+
+    # 9. Fallback governing policies if none matched
+    if not matched_policies and (any_matched or not has_explicit_query):
+        for row in cursor.execute(
+            "SELECT id, title, type, domain, data_json FROM entities WHERE type = 'product/policy' ORDER BY id LIMIT 2;"
+        ).fetchall():
+            p_data = json.loads(row["data_json"])
+            p_data["id"] = row["id"]
+            p_data["title"] = row["title"]
+            matched_policies[row["id"]] = p_data
+
+    # 10. Invariants from governing policies
+    for pid in list(matched_policies.keys()):
+        cursor.execute(
+            """
+            SELECT id, title, data_json FROM entities
+            WHERE type = 'invariant' AND id IN (
+                SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'asserts'
+            );
+            """,
+            (pid,),
+        )
+        for row in cursor.fetchall():
+            inv_data = json.loads(row["data_json"])
+            inv_data["id"] = row["id"]
+            matched_invariants.setdefault(row["id"], inv_data)
+
+    # Ensure embedded decisions (including inline component decisions) are surfaced on each matched component
+    for comp_entry in matched_components.values():
+        collected_decs = collect_component_decisions(comp_entry)
+        if collected_decs:
+            comp_entry["decisions"] = collected_decs
+
+    # Assemble and rank-order lists so token-budget truncation retains highest-priority entities first
+    primary_set = set(primary_cids)
+    primary_rank = {cid: idx for idx, cid in enumerate(primary_cids)}
+    direct_cap_rank = {cid: idx for idx, cid in enumerate(direct_cap_ids)}
+    direct_pol_rank = {pid: idx for idx, pid in enumerate(direct_pol_ids)}
+
+    sorted_comps = sorted(
+        matched_components.values(),
+        key=lambda x: (
+            0 if x.get("id", "") in primary_set else 1,
+            primary_rank.get(x.get("id", ""), 999),
+            x.get("id", ""),
+        ),
+    )
+    sorted_ctrs = sorted(matched_contracts.values(), key=lambda x: x.get("id", ""))
+    sorted_caps = sorted(
+        matched_capabilities.values(),
+        key=lambda x: (
+            0 if x.get("id", "") in direct_cap_rank else 1,
+            direct_cap_rank.get(x.get("id", ""), 999),
+            x.get("id", ""),
+        ),
+    )
+    sorted_pols = sorted(
+        matched_policies.values(),
+        key=lambda x: (
+            0 if x.get("id", "") in direct_pol_rank else 1,
+            direct_pol_rank.get(x.get("id", ""), 999),
+            x.get("id", ""),
+        ),
+    )
+
+    ordered_invs: list[dict[str, Any]] = []
+    seen_inv_ids: set[str] = set()
+    for iid in sorted(direct_inv_ids):
+        if iid in matched_invariants and iid not in seen_inv_ids:
+            ordered_invs.append(matched_invariants[iid])
+            seen_inv_ids.add(iid)
+    for iid in sorted(primary_comp_inv_ids):
+        if iid in matched_invariants and iid not in seen_inv_ids:
+            ordered_invs.append(matched_invariants[iid])
+            seen_inv_ids.add(iid)
+
+    for source_list in (sorted_caps, sorted_pols):
+        inv_lists = [
+            [
+                inv.get("id")
+                for inv in ((src.get("technical") or {}).get("invariants") or src.get("invariants") or [])
+                if isinstance(inv, dict) and inv.get("id")
+            ]
+            for src in source_list
+        ]
+        max_len = max((len(lst) for lst in inv_lists), default=0)
+        for idx in range(max_len):
+            for lst in inv_lists:
+                if idx < len(lst):
+                    iid = lst[idx]
+                    if iid in matched_invariants and iid not in seen_inv_ids:
+                        ordered_invs.append(matched_invariants[iid])
+                        seen_inv_ids.add(iid)
+
+    for iid in sorted(matched_invariants.keys()):
+        if iid not in seen_inv_ids:
+            ordered_invs.append(matched_invariants[iid])
+            seen_inv_ids.add(iid)
+
+    slice_obj = TieredContextSlice(
+        tier=tier,
+        query={"files": clean_files, "component": component, "task": task},
+        components=sorted_comps,
+        contracts=sorted_ctrs,
+        capabilities=sorted_caps,
+        invariants=ordered_invs,
+        policies=sorted_pols,
+        matched_reasons=matched_reasons,
+        query_latency_ms=0.0,
+        token_estimate=0,
+    )
+    slice_obj._enforce_token_budget(primary_set)
+    slice_obj.query_latency_ms = (time.perf_counter() - t0) * 1000
+    return slice_obj

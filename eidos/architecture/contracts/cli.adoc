@@ -106,11 +106,12 @@ Detects spec-to-code drift, schema validity, and invariant test coverage across 
   - `1`: Spec-to-code drift detected or specification validation errors.
 
 === `eidos init [PATH]`
-Bootstraps a repository with an empty Eidos living specification skeleton, an empty root `system.adoc`, tracking empty directories with `.gitkeep` files, self-contained gitignore, and runs immediate validation. Note: `eidos init` initializes Eidos specifications and does not install plugins (plugins can be installed separately via `eidos plugin install`).
+Bootstraps a repository with an empty Eidos living specification skeleton, an empty root `system.adoc`, tracking empty directories with `.gitkeep` files, self-contained gitignore, and runs immediate validation. Supports a progressive Eidos Lite profile (`--lite`) that scaffolds only the minimal baseline (`system.adoc`, `architecture/system-architecture.adoc`, `architecture/containers/`, and `product/capabilities/`). Note: `eidos init` initializes Eidos specifications and does not install plugins (plugins can be installed separately via `eidos plugin install`).
 * **Arguments**: `PATH` (Optional directory path, defaults to `.`)
 * **Options**:
   - `--name <name>`: Custom machine-readable system name.
   - `--title <title>`: Human-readable display title.
+  - `--lite, -l`: Initialize with the progressive Eidos Lite specification profile (`system.adoc`, `containers/`, `capabilities/`).
   - `--force`: Overwrite existing files if present.
 * **Exit Codes**:
   - `0`: Initialization and immediate validation successful.

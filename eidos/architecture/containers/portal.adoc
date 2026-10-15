@@ -5,7 +5,9 @@ id: CNT-EIDOS-PORTAL
 name: "Eidos Living Web Portal & Static Site Generator"
 container_type: "web_app"
 runtime: "Python 3.12 / HTTP / React 19 / Tailwind v4 / MD3 / Mermaid.js (bundled) / Asciidoctor.js (bundled)"
-package_path: "src/eidos/portal"
+package_path:
+  - "src/eidos/portal"
+  - "assets/portal"
 
 domain_binding: DOM-EXPERIENCE-PORTAL
 tier: presentation
@@ -25,8 +27,11 @@ components:
     source_path: "src/eidos/portal/builder.py"
   - id: CMP-PORTAL-ASSETS
     name: "PortalAssets"
-    responsibility: "Delivers pre-compiled single-file React 19 / Tailwind CSS v4 / Material Design 3 (MD3) SPA with zero remote subresources (Mermaid.js, Asciidoctor.js, and Geist / Geist Mono fonts are embedded; no CDN scripts, stylesheets, or fonts), high-contrast dark theme, reading-friendly specification reader stage (UIC-PORTAL-READER) rendering AsciiDoc bodies through Asciidoctor.js in secure safe mode, dynamic Table of Contents (TOC) outlines, collapsible Navigation Rail, C4 pan/zoom viewer, SpecDelta Kanban board, and CMD+K spotlight search; bundle capped at 5 MiB and regenerated via src/eidos/portal/frontend/scripts/build_assets.py."
-    source_path: "src/eidos/portal/assets.py"
+    responsibility: "Loads the pre-compiled single-file React 19 / Tailwind CSS v4 / Material Design 3 (MD3) SPA with zero remote subresources from deterministic gzip-compressed assets (assets/portal/bundle.html.gz and assets/portal/favicon.svg) rather than a 4.7 MB raw Python string literal, synchronized during wheel/sdist builds via a Hatch custom build hook (hatch_build.py) and verified in CI via build_assets.py --check."
+    source_path:
+      - "src/eidos/portal/assets.py"
+      - "src/eidos/portal/frontend/scripts/build_assets.py"
+      - "src/eidos/portal/frontend/scripts/hatch_build.py"
 
 dependencies:
   internal_containers:
@@ -50,7 +55,7 @@ quality_attributes:
 :toc: left
 
 == Architectural Boundary
-This container represents the graphical web interface under `src/eidos/portal/`. It enables non-IDE stakeholders (product managers, architects, designers, and compliance officers) to visually navigate the living architecture, inspect C4 topologies, monitor SpecDelta lifecycles, and explore multi-design system tokens.
+This container represents the graphical web interface under `src/eidos/portal/` and packaged bundle assets under `assets/portal/`. It enables non-IDE stakeholders (product managers, architects, designers, and compliance officers) to visually navigate the living architecture, inspect C4 topologies, monitor SpecDelta lifecycles, and explore multi-design system tokens.
 
 == Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
 
@@ -60,7 +65,7 @@ This container represents the graphical web interface under `src/eidos/portal/`.
 | `CMP-PORTAL-SERVER` | **PortalServer** | Multi-threaded HTTP daemon hosting the portal UI and REST endpoints | `src/eidos/portal/server.py`
 | `CMP-PORTAL-GENERATOR` | **PortalGenerator** | Synthesizes specs, C4 Mermaid graphs, and SpecDelta Kanban state | `src/eidos/portal/generator.py`
 | `CMP-PORTAL-BUILDER` | **StaticSiteBuilder** | Exports zero-dependency static documentation sites for GitHub/GitLab Pages | `src/eidos/portal/builder.py`
-| `CMP-PORTAL-ASSETS` | **PortalAssets** | Pre-compiled single-file React 19 / Tailwind CSS v4 / Material Design 3 (MD3) SPA with zero remote subresources: Mermaid.js, Asciidoctor.js (secure mode), and Geist / Geist Mono fonts are embedded (5 MiB budget) | `src/eidos/portal/assets.py`
+| `CMP-PORTAL-ASSETS` | **PortalAssets** | Loads the pre-compiled single-file React 19 / Tailwind CSS v4 / MD3 SPA from `assets/portal/bundle.html.gz` and `assets/portal/favicon.svg`, synchronized by `build_assets.py` and `hatch_build.py` (5 MiB uncompressed budget) | `src/eidos/portal/assets.py`, `src/eidos/portal/frontend/scripts/build_assets.py`, `src/eidos/portal/frontend/scripts/hatch_build.py`
 |===
 
 == Air-Gapped Bundle (INV-PORTAL-AIR-GAPPED-BUNDLE)
@@ -69,5 +74,6 @@ The single-file bundle served by `eidos portal serve` and emitted by `eidos port
 * **Mermaid.js** is imported from npm at the version pinned in `package.json` / `pnpm-lock.yaml` (lazy `import()` folded inline by the single-file build; the ELK layout engine is not shipped, `dagre` is the portal layout).
 * **Asciidoctor.js** (`@asciidoctor/core`, `safe: 'secure'`) replaces the former regex AsciiDoc renderer; `include::` is unsupported in the browser.
 * **Fonts**: Geist and Geist Mono latin `woff2` subsets from `@fontsource`; the `Inter` / `JetBrains Mono` stacks in `tokens.json` fall through to system fonts.
-* **Build**: `cd src/eidos/portal/frontend && pnpm build:assets` runs the Vite build and `scripts/build_assets.py`, which regenerates `assets.py` and refuses bundles with remote references, more than one `</head>`, or more than 5 MiB. Node.js is a build-time dependency only (INV-PORTAL-ZERO-NODE-DEP).
+* **Build & Packaging**: `cd src/eidos/portal/frontend && pnpm build:assets` runs the Vite build and `scripts/build_assets.py`, which writes deterministic gzip-compressed `assets/portal/bundle.html.gz` (marked `linguist-generated=true` in `.gitattributes`) and `assets/portal/favicon.svg`, and refuses bundles with remote references, more than one `</head>`, or more than 5 MiB. CI enforces bundle parity via `python3 scripts/build_assets.py --check`, and `hatch_build.py` synchronizes assets during `uv build`. Node.js is a build-time dependency only (INV-PORTAL-ZERO-NODE-DEP).
+
 
