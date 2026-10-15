@@ -29,6 +29,7 @@ technical:
       - "eidos index [status|sync|search|blast-radius] [--json]"
       - "eidos validate [--json]"
       - "eidos drift [--uncommitted] [--json]"
+      - "eidos plugin [install|uninstall|update|validate|info] [--target TARGET] [--dest PATH] [--force]"
   invariants:
     - id: INV-AGENT-ZERO-AI-DEPENDENCY
       rule: "Eidos must never initiate calls to AI/LLM APIs directly, functioning strictly as a deterministic substrate for external coding agents."
@@ -75,6 +76,7 @@ In strict adherence to *POL-004*, Eidos never initiates AI/LLM calls itself. Ins
 * **Hybrid Lexical-Relational Retrieval**: Combining FTS5 BM25 search with graph-neighborhood traversals to resolve engineering prompts to architectural entities.
 * **Architectural Blast-Radius Analysis**: Recursive CTE impact mapping allowing agents to assess blast radius before proposing code changes.
 * **Lifecycle Linting & Safety Hooks**: Pre-completion hooks enforcing specification schemas, valid cross-references, frontmatter syntax integrity, and dedicated spec-to-code synchronization drift gates.
+* **Non-Destructive Plugin Ecosystem Management**: Installing and removing agent plugins via `eidos plugin` with deterministic `.eidos-manifest.json` tracking (preventing destruction of shared parent directories), non-destructive `force=False` overwrite semantics, symlink guards, and version-pinned `uvx` hook execution.
 
 == Tiered Context Slicing Architecture
 
@@ -91,3 +93,4 @@ Eidos implements a three-tier context compression model:
 == Hybrid Retrieval & Freshness Invariant
 * **FTS5 BM25 Lexical Ranking**: Translates natural language engineering tasks (e.g. "update auth token expiration") into exact architectural IDs.
 * **Zero-Drift Freshness (`INV-AGENT-GRAPH-INDEX-FRESHNESS`)**: Every CLI query lazily checks dirty status via SHA-256 and mtime hashing, synchronizing modified specs in sub-5ms so agents never operate on stale architecture.
+* **Non-Destructive Plugin Management (`INV-PLUGIN-SCHEMA-CONFORMANCE`)**: The `eidos plugin` ecosystem ensures non-destructive installation, manifest-tracked uninstallation (`.eidos-manifest.json`), `force=False` overwrite protection, symlink traversal prevention, and version-pinned `uvx` hook commands.

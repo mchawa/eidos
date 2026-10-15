@@ -2132,7 +2132,7 @@
         ],
         "kind": "TyperOption",
         "required": false,
-        "default": "True",
+        "default": "False",
         "help": "Overwrite existing files at destination.",
         "panel": null,
         "envvar": "None",

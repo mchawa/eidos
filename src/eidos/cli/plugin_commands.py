@@ -53,7 +53,7 @@ def plugin_install(
         help="Custom destination directory within the project.",
     ),
     force: bool = typer.Option(
-        True,
+        False,
         "--force/--no-force",
         help="Overwrite existing files at destination.",
     ),
