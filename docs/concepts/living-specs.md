@@ -122,7 +122,7 @@ Eidos implements a hybrid architecture for C4 Level 3 components:
 * **20% Centralized Promoted Specs**: Highly complex subsystems receive dedicated `type: tech/component` specifications residing centrally in `eidos/architecture/components/<component>.adoc` (linking to source code via `package_path` and referenced in the container manifest via `ref:`).
 * **Strict Centralization Mandate (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Dedicated component manifests must always reside centrally under `eidos/architecture/components/`. Specifications must never touch or reside within source code directories (`src/`, `packages/`) to ensure code remains 100% clean.
 * **Interface Separation (`INV-INTERFACE-BOUNDARY-GOVERNANCE`)**: Containers own Boundary Protocol Contracts (`CTR-*`), while components declare local in-process APIs (`interfaces.provides`).
-* **CLI Automation**: Promoted and inlined seamlessly using `eidos component promote <ID>` and `eidos component inline <ID>`.
+* **CLI Automation**: Promoted and inlined seamlessly using `eidos spec component promote <ID>` and `eidos spec component inline <ID>`.
 
 
 

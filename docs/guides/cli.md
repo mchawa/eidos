@@ -7,12 +7,12 @@ eidos [OPTIONS] COMMAND [ARGS]...
 ```
 
 Commands are semantically organized into six functional panels in CLI help output (`eidos --help`):
-1. **Setup & Workspace**: Environment information, versioning, and repository bootstrapping.
-2. **Governance & Verification**: Schema validation, linting, drift detection, and living specification reconciliation.
-3. **Living Web Portal**: Local interactive web portal preview server and static site compilation.
-4. **Living Catalog & Mutations**: Specifications, SpecDeltas, and C4 component lifecycle management.
-5. **Knowledge Graph & AI Context**: Subgraph context extraction and SQLite/FTS5 knowledge graph maintenance.
-6. **Agent Ecosystem & Plugins**: Multi-agent plugin installation, verification, and updates conforming to `agent-plugins.org`.
+1. **Setup & Workspace**: Environment information, versioning, workspace diagnostics, and repository bootstrapping.
+2. **Governance & Verification**: Schema validation and spec-to-code drift detection.
+3. **Knowledge Graph & AI Context**: Subgraph context extraction and SQLite/FTS5 knowledge graph maintenance.
+4. **Living Catalog & Mutations**: Specifications, C4 component lifecycle management (`eidos spec component`), and SpecDeltas.
+5. **Living Web Portal**: Local interactive web portal preview server and static site compilation.
+6. **Agent Ecosystem & Plugins**: Multi-agent plugin installation, verification, updates, and lifecycle hooks conforming to `agent-plugins.org`.
 
 ---
 
@@ -36,6 +36,16 @@ Display the Eidos engine version, bundled schemas, and platform status.
 
 ```bash
 eidos info
+```
+
+---
+
+### `eidos doctor`
+Verify Eidos tool installation, AST engine status, specification directory health, and installed agent plugin hooks:
+
+```bash
+eidos doctor
+eidos doctor --json
 ```
 
 ---
@@ -64,18 +74,6 @@ Validate all AsciiDoc specification documents against their bundled schemas and 
 
 ```bash
 eidos validate eidos
-```
-
-Options:
-* `--path PATH`: Path to the specification directory (default: `eidos`).
-
----
-
-### `eidos lint`
-Lint and validate specification files, catching formatting errors, malformed frontmatter, or broken links before committing.
-
-```bash
-eidos lint eidos
 ```
 
 Options:
@@ -117,31 +115,6 @@ Exit Codes:
 
 ---
 
-### `eidos reconcile`
-Analyze recent code changes against the living specification catalog and generate candidate specs to update or tailored AI prompts for synchronization (alias: `eidos sync`):
-
-```bash
-# Inspect branch changes and suggest candidate specs to update:
-eidos reconcile --base origin/main
-
-# Inspect uncommitted working tree changes:
-eidos reconcile --uncommitted
-
-# Generate a structured AI prompt for copy-pasting into chat:
-eidos reconcile --prompt
-
-# Output candidate specs as machine-readable JSON:
-eidos reconcile --json
-```
-
-Options:
-* `--base, -b REF`: Base git reference to compare against.
-* `--uncommitted, -u`: Analyze uncommitted working tree changes.
-* `--prompt`: Output structured markdown AI prompt for copy-pasting into agent chat.
-* `--json`: Output raw JSON reconcile suggestions and catalog.
-
----
-
 ## 3. Living Web Portal
 
 ### `eidos portal`
@@ -151,11 +124,7 @@ Manage the interactive Living Web Portal and documentation site export.
 Launch the interactive Eidos Living Web Portal locally with live updates.
 
 ```bash
-# Using namespaced command:
 eidos portal serve --path eidos --port 8080
-
-# Or using top-level shortcut:
-eidos serve --path eidos --port 8080
 ```
 
 Options:
@@ -165,14 +134,10 @@ Options:
 * `--open`: Open portal in browser automatically.
 
 #### `eidos portal build`
-Export the Eidos Living Web Portal as a self-contained, offline-first static site suitable for deployment on GitHub Pages or static web servers (alias: `eidos portal build-site`).
+Export the Eidos Living Web Portal as a self-contained, offline-first static site suitable for deployment on GitHub Pages or static web servers.
 
 ```bash
-# Using namespaced command:
 eidos portal build --path eidos --out public
-
-# Or using top-level shortcut:
-eidos build-site --path eidos --out public
 ```
 
 Options:
@@ -181,56 +146,42 @@ Options:
 
 ---
 
-### `eidos serve`
-Top-level shortcut for `eidos portal serve`. Launches the local interactive Eidos Living Web Portal HTTP server.
-
-```bash
-eidos serve --path eidos --port 8080
-```
-
----
-
-### `eidos build-site`
-Top-level shortcut for `eidos portal build`. Exports the Living Web Portal as a self-contained static site.
-
-```bash
-eidos build-site --path eidos --out public
-```
-
----
-
 ## 4. Living Catalog & Mutations
 
 ### `eidos spec`
-Manage the living specification catalog: listing, authoring, inspecting, and deleting specification documents.
+Manage the living specification catalog and C4 Level 3 components: listing, authoring, inspecting, deleting, promoting, and inlining specification documents.
 
 ```bash
-# List all specifications
+# List all specifications (including inline C4 Level 3 components)
 eidos spec list
+
+# Filter by specification type (e.g. container, component, capability, delta)
+eidos spec list --type container
+eidos spec list --type component
 
 # Show details of a specific document
 eidos spec show CMP-EIDOS-CORE
 
 # Scaffold a new specification document
-eidos spec create --type tech/component --id CMP-AUTH-SERVICE
+eidos spec create component CMP-AUTH-SERVICE --title "Authentication Service"
 
 # Safely delete a specification document
 eidos spec delete CMP-AUTH-SERVICE
 
-# List all C4 containers
-eidos spec containers
+# Promote an inline C4 Level 3 component to eidos/architecture/components/
+eidos spec component promote CMP-CORE-VALIDATOR
 
-# List all C4 components
-eidos spec components
+# Demote / inline a dedicated component back into its parent container manifest
+eidos spec component inline CMP-CORE-VALIDATOR
 ```
 
 Sub-commands:
-* `list`: Lists all living specifications in tabular format.
+* `list`: Lists all living specifications (including inline C4 Level 3 components) in tabular or JSON format, with optional `--type` and `--status` filters.
 * `show <id_or_path>`: Displays detailed frontmatter metadata and preview of a specification document.
 * `create <type> <id> --title <title>`: Scaffolds a new specification document with schema validation.
 * `delete <id_or_path>`: Safely deletes a specification document with cross-reference safety checks.
-* `containers`: Lists all C4 Level 2 containers (`CNT-*`).
-* `components`: Lists all C4 Level 3 components (`CMP-*`).
+* `component promote <component_id>`: Promotes an inline C4 Level 3 component (`CMP-*`) to a dedicated specification in `eidos/architecture/components/`.
+* `component inline <component_id>`: Inlines a promoted C4 Level 3 component (`CMP-*`) back into its parent container manifest.
 
 ---
 
@@ -280,50 +231,9 @@ eidos delta sync-views
 # Compile an auditable, SpecDelta-backed changelog from Git release tags
 eidos delta changelog
 
-# Direct shortcut form
-eidos changelog
-
 # Output directly to stdout or export to custom file
-eidos changelog --stdout
-eidos changelog --output RELEASE_NOTES.md --no-unreleased
-```
-
----
-
-### `eidos component`
-Manage C4 Level 3 in-process components (`CMP-*`) (promotion, inlining, and listing):
-
-```bash
-# Promote an inline component to a dedicated specification
-eidos component promote CMP-CORE-VALIDATOR
-
-# Demote / inline a dedicated component back into its container manifest
-eidos component inline CMP-CORE-VALIDATOR
-
-# List all components
-eidos component list
-```
-
----
-
-### `eidos containers`
-Top-level command (also available as `eidos spec containers`). Inspect and list all C4 Level 2 containers (`CNT-*`), their runtimes, package paths, and declared C4 Level 3 components.
-
-```bash
-eidos containers
-```
-
----
-
-### `eidos components`
-Top-level command (also available as `eidos spec components`). Inspect and list all C4 Level 3 in-process components (`CMP-*`), responsibilities, and source file paths, optionally filtered by container ID.
-
-```bash
-# List all internal components across all containers
-eidos components
-
-# List internal components belonging to a specific container
-eidos components CNT-EIDOS-CORE
+eidos delta changelog --stdout
+eidos delta changelog --output RELEASE_NOTES.md --no-unreleased
 ```
 
 ---
@@ -382,11 +292,14 @@ Traverse the architectural knowledge graph using recursive Common Table Expressi
 
 ```bash
 eidos index blast-radius CMP-EIDOS-CORE --depth 2
+# Machine-readable JSON output:
+eidos index blast-radius CMP-EIDOS-CORE --depth 2 --json
 ```
 
 Options:
 * `SYMBOL_OR_PATH`: Component ID, contract ID, domain ID, symbol, or file path.
 * `-d, --depth INTEGER`: Maximum graph traversal distance (default: `2`).
+* `--json`: Output results as machine-readable JSON.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
 #### `eidos index repo-map`
@@ -394,13 +307,13 @@ Generate a token-budgeted structural repo map outline (classes, functions, metho
 
 ```bash
 # Generate structural repo map with default budget (1500 tokens)
-eidos repo-map
+eidos index repo-map
 
 # Or specify a custom token budget and format:
 eidos index repo-map --max-tokens 2000 --format markdown
 
 # Output as structured JSON for autonomous agent harnesses:
-eidos repo-map --format json
+eidos index repo-map --format json
 ```
 
 Options:
@@ -413,13 +326,13 @@ Locate symbol matches (classes, functions, methods, API endpoints) across polygl
 
 ```bash
 # Locate a class or function symbol across the codebase:
-eidos find-symbol "ArchitecturalIndex"
+eidos index find-symbol "ArchitecturalIndex"
 
 # Or search with custom result limit:
 eidos index find-symbol "AstGrepIndexer" --limit 10
 
 # Output as structured JSON:
-eidos find-symbol "validate" --json
+eidos index find-symbol "validate" --json
 ```
 
 Options:
@@ -470,17 +383,17 @@ Manage and validate Eidos agent plugins complying with the `agent-plugins.org v1
 
 ```bash
 # Install plugin for all supported AI agents
-eidos install all
+eidos plugin install all
 
 # Or install for a specific target:
-eidos install antigravity
-eidos install claude
-eidos install cursor
-eidos install aider
-eidos install cline
-eidos install open-code
-eidos install codex
-eidos install copilot
+eidos plugin install antigravity
+eidos plugin install claude
+eidos plugin install cursor
+eidos plugin install aider
+eidos plugin install cline
+eidos plugin install open-code
+eidos plugin install codex
+eidos plugin install copilot
 
 # Inspect installed vs bundled plugin version
 eidos plugin version
@@ -494,7 +407,7 @@ eidos plugin info
 # Update installed plugin to latest bundled engine version
 eidos plugin update --target all
 
-# Uninstall / remove plugin files and agent configurations
+# Uninstall plugin files and agent configurations
 eidos plugin uninstall --target all
 ```
 
@@ -518,55 +431,3 @@ eidos hook lint --event stop
 eidos hook drift --event post_invocation
 eidos hook drift --event stop
 ```
-
----
-
-### `eidos doctor`
-Verify Eidos tool installation, AST engine status, specification directory health, and installed agent plugin hooks:
-
-```bash
-eidos doctor
-eidos doctor --json
-```
-
----
-
-### `eidos install`
-Convenience shortcut for `eidos plugin install`. Installs the Eidos Agent Plugin or client integrations into project scope.
-
-```bash
-eidos install all
-```
-
----
-
-### `eidos uninstall`
-Convenience shortcut for `eidos plugin uninstall`. Uninstalls and cleans up the plugin, skills, and client configurations from project scope.
-
-```bash
-eidos uninstall all
-```
-
----
-
-## Convenience Shortcuts
-
-Eidos provides intuitive root-level shortcuts for common workflows:
-
-* `eidos install [TARGET]`: Direct shortcut to `eidos plugin install` (e.g. `eidos install claude`).
-* `eidos uninstall [TARGET]`: Direct shortcut to `eidos plugin uninstall`.
-* `eidos doctor [--json]`: Inspect Eidos CLI, AST engine, and plugin hook health.
-* `eidos serve`: Direct shortcut to `eidos portal serve`.
-* `eidos build-site`: Direct shortcut to `eidos portal build`.
-* `eidos drift`: Runs spec-to-code drift detection.
-* `eidos reconcile`: Runs the spec reconciliation assistant (`eidos sync`).
-* `eidos create <type> <id> --title <title>`: Direct shortcut to `eidos spec create`.
-* `eidos delete <id_or_path> [--force]`: Direct shortcut to `eidos spec delete`.
-* `eidos list [--type <type>] [--status <status>]`: Direct shortcut to `eidos spec list`.
-* `eidos containers`: Direct shortcut to `eidos spec containers`.
-* `eidos components`: Direct shortcut to `eidos spec components`.
-* `eidos repo-map`: Direct shortcut to `eidos index repo-map`.
-* `eidos find-symbol <query>`: Direct shortcut to `eidos index find-symbol`.
-* `eidos changelog`: Direct shortcut to `eidos delta changelog`.
-
-

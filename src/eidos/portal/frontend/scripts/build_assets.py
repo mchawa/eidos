@@ -7,8 +7,8 @@ Usage (from the portal ``frontend`` directory)::
     pnpm build:assets          # == vite build && python3 scripts/build_assets.py
 
 ``assets.py`` embeds the single-file bundle (``dist/index.html``) as ``PORTAL_HTML_TEMPLATE`` and the
-brand mark (``public/favicon.svg``) as ``PORTAL_FAVICON_SVG`` so that ``eidos serve`` and
-``eidos build-site`` work from a plain ``pip install`` with no Node.js runtime (INV-PORTAL-ZERO-NODE-DEP).
+brand mark (``public/favicon.svg``) as ``PORTAL_FAVICON_SVG`` so that ``eidos portal serve`` and
+``eidos portal build`` work from a plain ``pip install`` with no Node.js runtime (INV-PORTAL-ZERO-NODE-DEP).
 
 The script refuses to emit a bundle that would violate INV-PORTAL-AIR-GAPPED-BUNDLE (remote
 subresources) or the 5 MiB size budget; the same checks are enforced by ``tests/test_portal.py``.

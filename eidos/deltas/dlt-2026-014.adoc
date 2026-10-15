@@ -9,7 +9,7 @@ vcs:
   branch: refactor/c4-first-principles-containers-components
   issue: '#14'
 intent:
-  kind: refactor
+  kind: enabler
   motivation: 'The historical conflation of C4 Level 2 Containers and Level 3 Components
     under the overloaded ''tech/component'' document type and ''CMP-*'' prefix causes
     recurring cognitive dissonance. In early development, breaking compatibility is

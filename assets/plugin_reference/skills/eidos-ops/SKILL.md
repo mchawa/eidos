@@ -1,13 +1,13 @@
 ---
 name: eidos-ops
-description: Initialize greenfield repositories with Eidos (eidos init), systematically reverse-engineer and extract living specifications from existing brownfield codebases, and serve or build the interactive Eidos Living Web Portal and static documentation site (eidos serve, eidos build-site).
+description: Initialize greenfield repositories with Eidos (eidos init), systematically reverse-engineer and extract living specifications from existing brownfield codebases, and serve or build the interactive Eidos Living Web Portal and static documentation site (eidos portal serve, eidos portal build).
 ---
 # Eidos Operations: Bootstrap, Brownfield Extraction & Web Portal (`eidos-ops`)
 
 This skill covers repository-level lifecycle operations in Eidos:
 1. **Greenfield Repository Initialization (`eidos init`)**: Bootstrapping a new repository with an Eidos living specification skeleton.
 2. **Brownfield Codebase Extraction**: Reverse-engineering an existing codebase into accurate Arc42/C4 living specifications, domains, capabilities, and test-bound invariants.
-3. **Living Web Portal & Static Site Operations (`eidos serve`, `eidos build-site`)**: Launching the interactive architecture portal and exporting static documentation bundles for CI/CD (GitHub Pages, GitLab Pages, S3).
+3. **Living Web Portal & Static Site Operations (`eidos portal serve`, `eidos portal build`)**: Launching the interactive architecture portal and exporting static documentation bundles for CI/CD (GitHub Pages, GitLab Pages, S3).
 
 ---
 
@@ -58,7 +58,7 @@ When introducing Eidos into an **existing codebase**, never invent speculative a
 ### Phase 3: Extract C4 Level 2 Containers (`CNT-*`) & Level 3 Components (`CMP-*`)
 * Map each deployable service, CLI binary, web app, worker, or library package to a container in `eidos/architecture/containers/<slug>.adoc` via `eidos spec create container CNT-<NAME> --title "..."`.
 * Set `package_path` to the exact repository-relative source path(s) (e.g., `"src/billing"` or `["src/api", "src/shared"]`) so `eidos drift` and `eidos context` map every source file accurately.
-* Map major internal modules/classes within each container to inline `components:` entries (`id: CMP-*`, `name`, `responsibility`, `source_path`). For complex subsystems, promote them to standalone component specs via `eidos component promote <CMP-ID>`.
+* Map major internal modules/classes within each container to inline `components:` entries (`id: CMP-*`, `name`, `responsibility`, `source_path`). For complex subsystems, promote them to standalone component specs via `eidos spec component promote <CMP-ID>`.
 * Record key as-built architectural trade-offs in the container's `decisions:` (`DEC-*`) frontmatter block.
 
 ### Phase 4: Extract Interface Contracts (`CTR-*`)
@@ -88,16 +88,16 @@ Do not consider brownfield extraction complete until `eidos validate eidos` repo
 
 ---
 
-## 3. Living Web Portal & Static Site Operations (`eidos-portal`)
+## 3. Living Web Portal & Static Site Operations (`eidos portal`)
 
 Eidos includes a zero-config, interactive **Living Web Portal** (React 19 + Tailwind v4 + Cytoscape C4 topology graph + W3C Design Tokens Studio + SpecDelta timeline + Invariant coverage matrix).
 
 ### 3.1 Serve the Interactive Portal Locally
 
 ```bash
-# Launch the local FastAPI + SPA portal server (defaults to http://127.0.0.1:8420)
-eidos serve
-# or:
+# Launch the local FastAPI + SPA portal server (defaults to http://127.0.0.1:3000)
+eidos portal serve
+# or with custom host/port:
 eidos portal serve --port 8420 --host 127.0.0.1
 
 # Open the browser automatically on launch:
@@ -109,10 +109,10 @@ eidos portal serve --open
 Export the entire living specification graph and interactive SPA into a static HTML/JS/JSON directory (no backend server required) for hosting on GitHub Pages, GitLab Pages, Cloudflare Pages, or S3:
 
 ```bash
-# Export static portal bundle (defaults to site/portal/ or custom --output directory)
-eidos build-site --output dist/portal
+# Export static portal bundle (defaults to ./site or custom --out directory)
+eidos portal build --out dist/portal
 # or:
-eidos portal build --output site/portal
+eidos portal build --out site/portal
 ```
 
 ### 3.3 Co-Hosting with Zensical / MkDocs Documentation Sites
@@ -124,6 +124,6 @@ When a repository uses Zensical (`zensical.toml`) or MkDocs to publish narrative
 zensical build
 
 # 2. Export the interactive Eidos Living Portal into site/portal/
-eidos build-site --output site/portal
+eidos portal build --out site/portal
 ```
 The compiled `site/` directory can then be deployed directly by `.github/workflows/docs.yml` to GitHub Pages.

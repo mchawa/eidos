@@ -1,10 +1,10 @@
-"""Living Web Portal commands: interactive preview server and static site compilation."""
+"""Living Web Portal commands (`eidos portal ...`): interactive preview server and static site compilation."""
 
 from pathlib import Path
 
 import typer
 
-from eidos.cli._shared import PANEL_PORTAL, console
+from eidos.cli._shared import console
 from eidos.portal.builder import build_static_portal
 from eidos.portal.server import run_portal_server
 
@@ -50,7 +50,6 @@ def serve_cmd(
 
 
 @portal_app.command("build")
-@portal_app.command("build-site")
 def build_site_cmd(
     target_path: Path | None = typer.Option(
         None,
@@ -77,7 +76,7 @@ def build_site_cmd(
     console.print(f"  Data payload: {generated_dir / 'data.json'}")
 
 
+
 def register(app: typer.Typer) -> None:
     """Attach the root-level commands owned by this module to the root Typer app."""
-    app.command("serve", rich_help_panel=PANEL_PORTAL)(serve_cmd)
-    app.command("build-site", rich_help_panel=PANEL_PORTAL)(build_site_cmd)
+    return None

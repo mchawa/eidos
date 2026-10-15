@@ -169,13 +169,14 @@ def test_cli_plugin_uninstall_project(tmp_path):
 
 
 def test_cli_plugin_remove_alias(tmp_path):
-    """Verify 'eidos plugin remove --project-dir' CLI alias command."""
-    # Install
+    """Verify 'eidos plugin remove' alias is removed in favor of 'eidos plugin uninstall'."""
     runner.invoke(app, ["plugin", "install", "--project-dir", str(tmp_path)])
     assert (tmp_path / ".agents" / "plugins" / "eidos").exists()
 
-    # Remove via alias
-    res = runner.invoke(app, ["plugin", "remove", "--project-dir", str(tmp_path)])
+    res_removed = runner.invoke(app, ["plugin", "remove", "--project-dir", str(tmp_path)])
+    assert res_removed.exit_code != 0
+
+    res = runner.invoke(app, ["plugin", "uninstall", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert "Success!" in res.stdout
     assert not (tmp_path / ".agents" / "plugins" / "eidos").exists()
@@ -245,15 +246,19 @@ def test_plugin_uninstall_claude_plugin(tmp_path):
 
 
 def test_cli_install_and_uninstall_shortcut_claude(tmp_path):
-    """Verify 'eidos install claude' and 'eidos uninstall claude' shortcuts work."""
-    # Install with positional argument
-    res = runner.invoke(app, ["install", "claude", "--project-dir", str(tmp_path)])
+    """Verify 'eidos plugin install claude' and 'eidos plugin uninstall claude' work and root shortcuts are removed."""
+    # Root shortcuts are removed
+    assert runner.invoke(app, ["install", "claude", "--project-dir", str(tmp_path)]).exit_code != 0
+    assert runner.invoke(app, ["uninstall", "claude", "--project-dir", str(tmp_path)]).exit_code != 0
+
+    # Install with positional argument under 'plugin'
+    res = runner.invoke(app, ["plugin", "install", "claude", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert "Success!" in res.stdout
     assert (tmp_path / ".claude" / "plugins" / "eidos" / "plugin.json").exists()
 
-    # Uninstall with positional argument
-    res = runner.invoke(app, ["uninstall", "claude", "--project-dir", str(tmp_path)])
+    # Uninstall with positional argument under 'plugin'
+    res = runner.invoke(app, ["plugin", "uninstall", "claude", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert "Success!" in res.stdout
     assert not (tmp_path / ".claude" / "plugins" / "eidos").exists()
@@ -261,7 +266,7 @@ def test_cli_install_and_uninstall_shortcut_claude(tmp_path):
 
 def test_cli_install_rejects_workspace_target(tmp_path):
     """Verify 'workspace' is rejected as target following strict agent-plugins standard."""
-    res = runner.invoke(app, ["install", "workspace", "--project-dir", str(tmp_path)])
+    res = runner.invoke(app, ["plugin", "install", "workspace", "--project-dir", str(tmp_path)])
     assert res.exit_code != 0
     # Output should contain error indication about invalid choice
     assert "Invalid value" in res.output or "invalid" in res.output.lower()
@@ -469,40 +474,40 @@ def test_plugin_install_and_uninstall_all_targets(tmp_path):
 
 
 def test_cli_install_new_agent_shortcuts(tmp_path):
-    """Verify CLI shortcuts for aider, cline, open-code, opencode, codex, and copilot."""
+    """Verify 'eidos plugin install' and 'eidos plugin uninstall' for aider, cline, open-code, opencode, codex, and copilot."""
     # Aider
-    res = runner.invoke(app, ["install", "aider", "--project-dir", str(tmp_path)])
+    res = runner.invoke(app, ["plugin", "install", "aider", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert (tmp_path / ".aider.conventions.md").exists()
 
     # Cline
-    res = runner.invoke(app, ["install", "cline", "--project-dir", str(tmp_path)])
+    res = runner.invoke(app, ["plugin", "install", "cline", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert (tmp_path / ".cline" / "skills" / "eidos" / "SKILL.md").exists()
 
     # Open-code
-    res = runner.invoke(app, ["install", "open-code", "--project-dir", str(tmp_path)])
+    res = runner.invoke(app, ["plugin", "install", "open-code", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert (tmp_path / ".opencode" / "skills" / "eidos" / "SKILL.md").exists()
 
     # Opencode (alias)
-    res = runner.invoke(app, ["install", "opencode", "--project-dir", str(tmp_path)])
+    res = runner.invoke(app, ["plugin", "install", "opencode", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
 
     # Codex
-    res = runner.invoke(app, ["install", "codex", "--project-dir", str(tmp_path)])
+    res = runner.invoke(app, ["plugin", "install", "codex", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert (tmp_path / ".codex" / "plugin.json").exists()
     assert (tmp_path / ".codex" / "skills" / "eidos" / "SKILL.md").exists()
 
     # Copilot
-    res = runner.invoke(app, ["install", "copilot", "--project-dir", str(tmp_path)])
+    res = runner.invoke(app, ["plugin", "install", "copilot", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert (tmp_path / ".github" / "copilot-instructions.md").exists()
     assert (tmp_path / ".github" / "skills" / "eidos" / "SKILL.md").exists()
 
     # Uninstall all
-    res = runner.invoke(app, ["uninstall", "all", "--project-dir", str(tmp_path)])
+    res = runner.invoke(app, ["plugin", "uninstall", "all", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
 
 
@@ -667,8 +672,11 @@ def test_cli_plugin_update(tmp_path):
 
 
 def test_cli_plugin_upgrade_alias(tmp_path):
-    """Verify 'eidos plugin upgrade' alias CLI command (CTR-EIDOS-CLI)."""
-    res = runner.invoke(app, ["plugin", "upgrade", "--project-dir", str(tmp_path)])
+    """Verify 'eidos plugin upgrade' alias is removed in favor of 'eidos plugin update' (CTR-EIDOS-CLI)."""
+    res_removed = runner.invoke(app, ["plugin", "upgrade", "--project-dir", str(tmp_path)])
+    assert res_removed.exit_code != 0
+
+    res = runner.invoke(app, ["plugin", "update", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
     assert (tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json").exists()
 
@@ -837,8 +845,11 @@ def test_doc_lint_hook_post_invocation(tmp_path):
 
 
 def test_cli_lint_command():
-    """Verify 'eidos lint' CLI command executes and reports clean validation (CTR-EIDOS-CLI)."""
-    res = runner.invoke(app, ["lint", "eidos"])
+    """Verify 'eidos validate' CLI command executes and root 'eidos lint' shortcut is removed (CTR-EIDOS-CLI)."""
+    res_removed = runner.invoke(app, ["lint", "eidos"])
+    assert res_removed.exit_code != 0
+
+    res = runner.invoke(app, ["validate", "eidos"])
     assert res.exit_code == 0
     assert "Success! All" in res.stdout
 

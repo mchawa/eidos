@@ -154,6 +154,7 @@ class ChangelogGenerator:
                         "title": title,
                         "status": status,
                         "kind": kind,
+                        "mutations": fm.get("mutations", []),
                         "summary": summary,
                         "motivation": motivation,
                         "file_path": df,
@@ -263,25 +264,34 @@ class ChangelogGenerator:
         return header + body
 
     def _add_delta_to_section(self, section: ReleaseSection, delta: dict[str, Any]) -> None:
-        """Classify a SpecDelta into Added, Changed, Fixed, Deprecated, or Removed."""
+        """Classify a SpecDelta into Added, Changed, Fixed, Deprecated, or Removed using intent.kind and mutations[].action."""
         delta_id = delta["id"]
         title = delta["title"]
         summary = delta["summary"]
         kind = str(delta.get("kind", "feature")).lower()
+        raw_mutations = delta.get("mutations") or []
+        actions = [
+            str(m.get("action", "")).strip().lower()
+            for m in raw_mutations
+            if isinstance(m, dict) and m.get("action")
+        ]
 
         desc = f": {summary}" if summary and summary.lower() != title.lower() else ""
         item_text = f"**{title}** (`{delta_id}`){desc}"
 
-        if kind in ("creation", "feature", "architecture"):
-            section.added.append(item_text)
-        elif kind in ("modification", "refactor"):
-            section.changed.append(item_text)
-        elif kind in ("bugfix", "fix"):
+        if kind in ("bug", "bugfix", "fix"):
             section.fixed.append(item_text)
-        elif kind in ("deprecation",):
-            section.deprecated.append(item_text)
-        elif kind in ("removal",):
+        elif (actions and all(a.startswith("remove_") for a in actions)) or kind == "removal":
             section.removed.append(item_text)
+        elif (actions and all(a.startswith("deprecate_") for a in actions)) or kind == "deprecation":
+            section.deprecated.append(item_text)
+        elif kind in ("feature", "feature_addition", "creation", "architecture"):
+            if actions and all(a.startswith(("modify_", "extend_", "patch_")) for a in actions):
+                section.changed.append(item_text)
+            else:
+                section.added.append(item_text)
+        elif kind in ("enabler", "modification", "refactor", "architectural_refactor", "performance_optimization"):
+            section.changed.append(item_text)
         else:
             section.changed.append(item_text)
 

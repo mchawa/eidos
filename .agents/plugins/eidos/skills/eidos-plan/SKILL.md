@@ -72,7 +72,7 @@ eidos delta list
 # 2. Scaffold a new SpecDelta (status: proposed)
 eidos delta create DLT-2026-015 \
   --title "Add Webhook Signature Verification Contract" \
-  --kind feature_addition \
+  --kind feature \
   --branch feat/webhook-signatures
 
 # 3. Edit eidos/deltas/dlt-2026-015.adoc to declare mutations, expect post-conditions, affects, and blast_radius
@@ -90,7 +90,7 @@ eidos delta apply DLT-2026-015
 
 # 8. If removing/deprecating entities, audit for dangling references, and optionally regenerate CHANGELOG.md
 eidos delta audit DLT-2026-015 --strict
-eidos changelog
+eidos delta changelog
 ```
 
 ### 2.2 SpecDelta Frontmatter & Declarative `expect:` Post-Conditions
@@ -105,7 +105,7 @@ status: proposed # draft | proposed | planned | in_review | approved | applied |
 vcs:
   branch: feat/webhook-signatures
 intent:
-  kind: feature_addition # feature_addition | feature_removal | modification | bugfix | refactor | security_patch | performance_optimization | chore
+  kind: feature # feature | enabler | bug (for bug, pair with bug_classification: spec_violation | spec_gap and severity: low | medium | high | critical)
   motivation: "Prevent spoofed billing webhooks by enforcing HMAC-SHA256 timestamped signature verification at the ingestion boundary."
 mutations:
   - action: add_component
@@ -192,7 +192,7 @@ Always run these deterministic checks first:
 ```bash
 eidos validate eidos --json
 eidos drift --uncommitted --json
-eidos index blast-radius <TARGET_ENTITY_ID> --hops 2 --json
+eidos index blast-radius <TARGET_ENTITY_ID> --depth 2 --json
 # If reviewing one or more SpecDeltas:
 eidos delta verify <DLT-ID> --json
 eidos delta audit <DLT-ID> --strict

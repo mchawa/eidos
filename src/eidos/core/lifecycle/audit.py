@@ -225,7 +225,21 @@ class AuditEngine:
                 for match in re.findall(r"\b([A-Z]{2,4}-[A-Z0-9_-]+)\b", details):
                     if match not in parent_context_ids and any(
                         match.startswith(p)
-                        for p in ("CNT-", "CMP-", "CTR-", "CAP-", "POL-", "DOM-", "DS-", "SCR-", "UIC-", "FLOW-", "INV-")
+                        for p in (
+                            "CNT-",
+                            "CMP-",
+                            "CTR-",
+                            "CAP-",
+                            "POL-",
+                            "DOM-",
+                            "PER-",
+                            "DS-",
+                            "SCR-",
+                            "UIC-",
+                            "CLT-",
+                            "FLOW-",
+                            "INV-",
+                        )
                     ):
                         targets.add(match)
 

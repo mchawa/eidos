@@ -41,22 +41,24 @@ def test_documentation_and_schemas_in_sync():
     cli_doc_text = cli_doc_path.read_text(encoding="utf-8")
 
     expected_commands = [
-        "drift",
-        "reconcile",
-        "validate",
-        "serve",
-        "build-site",
-        "portal",
-        "plugin",
-        "spec",
-        "delta",
-        "init",
-        "containers",
-        "components",
-        "component",
+        "version",
         "info",
+        "doctor",
+        "init",
+        "validate",
+        "drift",
         "context",
         "index",
+        "spec",
+        "spec component",
+        "delta",
+        "portal",
+        "portal serve",
+        "portal build",
+        "plugin",
+        "plugin install",
+        "plugin uninstall",
+        "hook",
     ]
     for cmd in expected_commands:
         assert f"eidos {cmd}" in cli_doc_text, f"Command 'eidos {cmd}' is not documented in {cli_doc_path}"

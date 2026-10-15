@@ -8,8 +8,8 @@ boundaries:
   responsibilities:
     - "Catalog and organize multi-design systems (DS-*) conforming to W3C Design Tokens Community Group (DTCG) standards."
     - "Manage client applications (CLT-*), screen state machines (SCR-*), UI components (UIC-*), and interaction flows (FLOW-*)."
-    - "Serve an embedded, zero-dependency living web documentation portal (eidos serve) visualizing architecture, specs, and tokens."
-    - "Compile and export static documentation portals (eidos build-site) for CI/CD hosting on GitHub/GitLab Pages."
+    - "Serve an embedded, zero-dependency living web documentation portal (eidos portal serve) visualizing architecture, specs, and tokens."
+    - "Compile and export static documentation portals (eidos portal build) for CI/CD hosting on GitHub/GitLab Pages."
     - "Render interactive C4 Mermaid diagrams, dependency graphs, and SpecDelta Kanban boards."
   out_of_scope:
     - "Parsing and validating AST schemas (delegated to DOM-SPEC-ENGINE)."

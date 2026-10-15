@@ -7,7 +7,7 @@ classification: core
 boundaries:
   responsibilities:
     - "Inspect Git diffs and detect structural spec-to-code drift across working tree, branches, and commits (eidos drift)."
-    - "Enable frictionless Direct Mode co-evolution and bidirectional specification reconciliation (eidos reconcile)."
+    - "Enable frictionless Direct Mode co-evolution and 1-hop neighborhood specification synchronization."
     - "Enforce Git as the Single Source of Truth policy (POL-001) in CI/CD pipeline verification gates."
   out_of_scope:
     - "Parsing and validating specification AST schemas (delegated to DOM-SPEC-ENGINE)."

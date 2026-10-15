@@ -135,19 +135,12 @@ def test_cli_drift_and_reconcile_commands(monkeypatch, tmp_path):
     res_removed = runner.invoke(app, ["check-pr"])
     assert res_removed.exit_code != 0
 
-    # 3. reconcile command
+    # 4. reconcile and sync commands are removed from CLI
     res_rec = runner.invoke(app, ["reconcile"])
-    assert res_rec.exit_code == 0
-    assert "Code Modifications & Candidate Specs" in res_rec.output
+    assert res_rec.exit_code != 0
 
-    # 4. reconcile --prompt
-    res_prompt = runner.invoke(app, ["reconcile", "--prompt"])
-    assert res_prompt.exit_code == 0
-    assert "Instructions for the AI Agent:" in res_prompt.output
-
-    # 5. sync alias
     res_sync = runner.invoke(app, ["sync"])
-    assert res_sync.exit_code == 0
+    assert res_sync.exit_code != 0
 
 
 def test_polyglot_test_file_classification():
@@ -857,7 +850,7 @@ id: DLT-2026-101
 title: Rejected Core Delta
 status: rejected
 intent:
-  kind: refactor
+  kind: enabler
   motivation: Rejected change.
 mutations:
   - action: modify_container
@@ -875,7 +868,7 @@ id: DLT-2026-102
 title: Old Applied Delta
 status: applied
 intent:
-  kind: refactor
+  kind: enabler
   motivation: Previously applied.
 mutations:
   - action: modify_container
@@ -1128,7 +1121,7 @@ id: DLT-2026-900
 title: Declares CNT-X
 status: proposed
 intent:
-  kind: feature_addition
+  kind: feature
   motivation: Add Foo
 mutations:
   - action: modify_container

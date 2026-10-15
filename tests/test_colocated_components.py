@@ -313,6 +313,28 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
     report_after_inline = validator.validate_directory(eidos_dir)
     assert report_after_inline.is_clean
 
+    # 3. Verify CLI 'eidos spec component promote' and 'eidos spec component inline' work and legacy shortcuts are rejected
+    from typer.testing import CliRunner
+    from eidos.cli.main import app
+
+    runner = CliRunner()
+    assert runner.invoke(app, ["component", "promote", "CMP-CORE-PARSER"]).exit_code != 0
+    assert runner.invoke(app, ["spec", "component", "list"]).exit_code != 0
+
+    res_prom = runner.invoke(
+        app,
+        ["spec", "component", "promote", "CMP-CORE-PARSER", "--path", str(eidos_dir), "--repo-root", str(repo_root)],
+    )
+    assert res_prom.exit_code == 0
+    assert promoted_spec.exists()
+
+    res_inl = runner.invoke(
+        app,
+        ["spec", "component", "inline", "CMP-CORE-PARSER", "--path", str(eidos_dir), "--repo-root", str(repo_root)],
+    )
+    assert res_inl.exit_code == 0
+    assert not promoted_spec.exists()
+
 
 def test_spike_4_exit_criteria_token_budget_benchmark(repo_env):
     """Spike 4 / Exit Criteria: Benchmark context retrieval token savings >= 40% in hybrid mode."""

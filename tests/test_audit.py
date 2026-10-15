@@ -49,7 +49,7 @@ id: DLT-2026-999
 title: "Remove Test Container"
 status: proposed
 intent:
-  kind: feature_removal
+  kind: enabler
   motivation: "Testing leak detection"
 mutations:
   - action: remove_container
@@ -103,7 +103,7 @@ id: DLT-2026-998
 title: "Decommission with Tombstone"
 status: proposed
 intent:
-  kind: feature_removal
+  kind: enabler
   motivation: "Testing tombstone exemptions"
 mutations:
   - action: remove_container

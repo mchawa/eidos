@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: feat/remove-vcs-bridge
 intent:
-  kind: feature_removal
+  kind: enabler
   motivation: Remove the unimplemented GitHub/GitLab API bridge ('src/eidos/vcs/bridge.py')
     and update VCS lifecycle specifications so Eidos focuses strictly on local Git-native
     drift detection and living specification reconciliation.

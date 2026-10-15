@@ -5,7 +5,7 @@ id: CAP-AGENT-001
 title: "Universal Agent Adapter & Context Slicing Engine"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.3.0"
+version: "1.4.0"
 
 business:
   personas:
@@ -29,7 +29,6 @@ technical:
       - "eidos index [status|sync|search|blast-radius] [--json]"
       - "eidos validate [--json]"
       - "eidos drift [--uncommitted] [--json]"
-      - "eidos reconcile [--json]"
   invariants:
     - id: INV-AGENT-ZERO-AI-DEPENDENCY
       rule: "Eidos must never initiate calls to AI/LLM APIs directly, functioning strictly as a deterministic substrate for external coding agents."
@@ -58,6 +57,9 @@ technical:
     - id: INV-SYMBOL-LOCATION-FIDELITY
       rule: "Indexed AST symbols must keep accurate source file and line coordinates, invalidated on edit, deletion, or ownership change, and served to find-symbol and repo-map without re-parsing source."
       test_binding: "tests/test_graph_index.py::test_code_symbols_invalidated_on_edit_and_delete"
+    - id: INV-AGENT-TASK-RETRIEVAL-COVERAGE
+      rule: "Task-prompt retrieval must index every entity (including child INV-* invariants) in FTS5, de-compound camelCase/snake_case identifiers on both index and query sides, apply BM25 column weights positionally (UNINDEXED entity_id placeholder first), rank only sliceable entity types for context slices so historical SpecDeltas never consume top-k slots, resolve matched domains and design systems to their member containers and capabilities, and purge stale invariant FTS rows on incremental sync."
+      test_binding: "tests/test_graph_index.py::test_task_retrieval_indexes_invariants_and_filters_types"
 ---
 = Capability: Universal Agent Adapter & Context Slicing Layer
 :toc: left

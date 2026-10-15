@@ -261,6 +261,11 @@ def test_cli_index_commands():
     assert res_blast.exit_code == 0
     assert "Blast Radius for 'CNT-EIDOS-CORE'" in res_blast.output
 
+    res_blast_json = runner.invoke(app, ["index", "blast-radius", "CNT-EIDOS-CORE", "--depth", "1", "--json"])
+    assert res_blast_json.exit_code == 0
+    blast_data = json.loads(res_blast_json.output)
+    assert blast_data["entity_id"] == "CNT-EIDOS-CORE"
+
 
 def test_context_slice_includes_decisions_and_tiered_markdown():
     """Verify INV-AGENT-CONTEXT-SLICING: eidos context includes container decisions and rejected_alternatives in JSON and formats Markdown by tier."""

@@ -5,7 +5,7 @@ id: DLT-2026-007
 title: Architectural Decomposition of Monolithic Engine into C4 Level 2 Containers
 status: applied
 intent:
-  kind: architectural_refactor
+  kind: enabler
   motivation: 'Decompose monolithic CMP-EIDOS-ENGINE into 4 distinct C4 containers:
     CMP-EIDOS-CORE, CMP-EIDOS-CLI, CMP-EIDOS-MCP, and CMP-EIDOS-PLUGIN.'
 mutations:

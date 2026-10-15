@@ -70,6 +70,16 @@ def test_cli_index_status_json_output():
     assert "tested_invariants" in ast
 
 
+def test_cli_index_blast_radius_json_output():
+    """Verify 'eidos index blast-radius <entity> --depth <n> --json' outputs structured JSON."""
+    result = runner.invoke(app, ["index", "blast-radius", "CNT-EIDOS-CORE", "--depth", "1", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["entity_id"] == "CNT-EIDOS-CORE"
+    assert data["depth"] == 1
+    assert data["count"] > 0
+    assert isinstance(data["neighbors"], list)
+    assert any(n["id"] == "CNT-EIDOS-CORE" for n in data["neighbors"])
 
 
 def _walk_command_tree(cmd, path: list[str]) -> list[dict]:

@@ -64,7 +64,7 @@ This container represents the graphical web interface under `src/eidos/portal/`.
 |===
 
 == Air-Gapped Bundle (INV-PORTAL-AIR-GAPPED-BUNDLE)
-The single-file bundle served by `eidos serve` and emitted by `eidos build-site` loads zero scripts, stylesheets, fonts, or other subresources from remote origins, so C4 diagrams and the specification reader work in air-gapped environments and from `file://` static sites:
+The single-file bundle served by `eidos portal serve` and emitted by `eidos portal build` loads zero scripts, stylesheets, fonts, or other subresources from remote origins, so C4 diagrams and the specification reader work in air-gapped environments and from `file://` static sites:
 
 * **Mermaid.js** is imported from npm at the version pinned in `package.json` / `pnpm-lock.yaml` (lazy `import()` folded inline by the single-file build; the ELK layout engine is not shipped, `dagre` is the portal layout).
 * **Asciidoctor.js** (`@asciidoctor/core`, `safe: 'secure'`) replaces the former regex AsciiDoc renderer; `include::` is unsupported in the browser.

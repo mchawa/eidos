@@ -5,7 +5,7 @@ id: CAP-PROD-002
 title: "SpecDelta Semantic Mutation Engine"
 domain: DOM-SPEC-ENGINE
 status: active
-version: "1.3.0"
+version: "1.4.0"
 
 business:
   personas:
@@ -23,7 +23,7 @@ technical:
     - "CNT-EIDOS-CLI"
   contracts:
     interfaces:
-      - "eidos delta create --kind [feature|bugfix|removal]"
+      - "eidos delta create --kind [feature|enabler|bug]"
       - "eidos delta verify <delta-id> [--json]"
       - "eidos delta apply <delta-id>"
       - "eidos delta impact <delta-id>"

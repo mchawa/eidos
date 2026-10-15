@@ -1,0 +1,399 @@
+---
+type: product/exploration
+schema: schemas/v1/product/exploration.schema.yaml
+id: EXP-2026-006
+title: "Model-Free Semantic Similarity & Hybrid Retrieval for Context Slicing and Drift Reconciliation"
+status: in_progress
+hypothesis: >
+  On top of the fixed lexical baseline shipped under DEC-INDEX-FTS-RETRIEVAL-HYGIENE (child INV-* FTS rows,
+  identifier de-compounding, positional column weights, slice-scoped candidate types), adding corpus PPMI
+  query expansion, 256-dimensional signed subword feature hashing, 1-hop degree-normalized graph spreading
+  activation, and zlib Normalized Compression Distance (NCD) via Reciprocal Rank Fusion (RRF) will improve
+  Recall@8 on a held-out set of vocabulary-mismatched prompts by >= 10 percentage points over that fixed
+  baseline (78.6% held-out), and reach >= 70% Top-3 accuracy matching unbound test functions to living
+  invariants (INV-*), in < 3ms per query with zero AI models, zero external runtime dependencies, full POL-004
+  determinism, and incremental-sync compatibility.
+questions_to_answer:
+  - "Why does current FTS5 lexical matching in ArchitecturalIndex.query_fts underperform on compound code identifiers (snake_case, camelCase), invariant discovery, and vocabulary-mismatched prompts? (ANSWERED, section 3.4: mostly coverage bugs, not vocabulary mismatch)"
+  - "Can signed feature hashing over de-compounded tokens and character 3-to-4-grams plus corpus PPMI query expansion bridge synonym and morphological gaps within a <3ms query budget and <64KB SQLite storage overhead, measurably beating exact sparse TF-IDF and the fixed lexical baseline?"
+  - "Does 1-hop, degree-normalized Knowledge Graph spreading activation over typed edges (depends_on, provides, realizes, asserts) recover architecturally coupled entities that share zero lexical overlap with the task prompt, without lowering precision@8?"
+  - "Can hybrid subword cosine similarity combined with stdlib zlib Normalized Compression Distance (NCD) accurately recommend candidate INV-* bindings for unbound tests and detect near-duplicate specifications during eidos drift and eidos validate, with reproducible scores across zlib builds?"
+  - "How are corpus-global statistics (IDF, PPMI) kept fresh under incremental sync without paying a full recompute on every spec edit?"
+spikes_to_run:
+  - name: "spike-fts-audit-and-ppmi-expansion"
+    target: "Audit current specs_fts indexing gaps (missing INV-* child rows, unsplit compound AST symbols, unfiltered DLT-* historical deltas) and prototype corpus PPMI co-occurrence query expansion."
+  - name: "spike-baseline-fix-ablation"
+    target: "(DONE) Fix the audited coverage bugs in Direct Mode and measure each fix in isolation on the published prompts plus a held-out prompt set, establishing the baseline every semantic layer must beat."
+  - name: "spike-subword-hash-and-graph-rrf"
+    target: "Benchmark 256-dim signed feature-hashed subword TF-IDF vectors (quantized to 256-byte int8 SQLite BLOBs) fused with column-weighted BM25 and 1-hop Graph Spreading Activation via Reciprocal Rank Fusion (RRF), ablated layer by layer against the fixed baseline and exact sparse TF-IDF."
+  - name: "spike-drift-reconcile-ncd-matcher"
+    target: "Evaluate hybrid Subword Cosine + zlib NCD similarity for blinded test-function-to-invariant recommendation and all-pairs near-duplicate invariant detection (with labelled duplicate pairs, precision/recall, and order-symmetric NCD)."
+exit_criteria:
+  max_duration: "3_days"
+  benchmark: "Measured on a held-out prompt set (>= 30 prompts, not used for tuning, ideally authored by someone other than the system designer) against the fixed baseline: Recall@8 gain >= 10pp with precision@8 not lower and mean query latency < 3.0ms; unbound test-to-invariant Top-3 accuracy >= 70% with the 95% CI lower bound reported, in < 5ms/test; SQLite vector storage overhead < 64KB; incremental re-sync of one spec < 50ms; 100% stdlib compliance and bit-identical rankings across runs (POL-004)."
+---
+= Exploration: Model-Free Semantic Similarity & Hybrid Retrieval for Context Slicing and Drift Reconciliation
+:toc: left
+:icons: font
+
+[IMPORTANT]
+====
+*Status (2026-10-15 review):* The original benchmark in section 3.1–3.2 is *superseded*. A review found that
+most baseline misses came from coverage bugs, not vocabulary mismatch. It also found that the published hybrid
+BM25 weights were shifted by one column, and that 2 of the 18 ground-truth targets could never appear in a real
+context slice. The bugs were fixed in Direct Mode (`DEC-INDEX-FTS-RETRIEVAL-HYGIENE` on `CNT-EIDOS-INDEX`, guarded by
+`INV-AGENT-TASK-RETRIEVAL-COVERAGE`). Section 3.4 reports the ablation. The hypothesis now asks whether the
+semantic layers add value *over that fixed baseline* on held-out prompts. That is not yet shown, so the
+exploration stays `in_progress`.
+====
+
+== 1. Problem Statement & Baseline Audit
+
+Eidos enforces a strict **Zero AI-Call Dependency (`POL-004-ZERO-AI-CALL-DEPENDENCY`)**: every CLI command must execute deterministically offline with zero LLM API calls, zero neural model weights (`onnxruntime`, `torch`, `sentence-transformers`), and zero external daemons.
+
+Currently, two core workflows rely on purely lexical or path-based matching:
+
+1. **Task-Driven Context Slicing (`eidos context --task "..."` & `eidos index search`):**
+   `ArchitecturalIndex.query_fts` in `src/eidos/core/index/graph_index.py` tokenizes the prompt with `re.findall(r"\w+", text.lower())` and executes an unweighted `OR` prefix query (`"term1"* OR "term2"*`) against the `specs_fts` FTS5 virtual table (`porter unicode61`). _(Pre-fix behavior; see section 3.4.)_
+2. **Drift Detection & Living Spec Verification (`eidos drift` & `eidos validate`):**
+   `src/eidos/vcs/drift.py` maps modified files to owning containers/components strictly via path globs (`package_path`, `source_path`, `owned_path`) and verifies invariant coverage solely by explicit `INV-*` string markers. It cannot suggest candidate `INV-*` rules for newly written, unbound test functions, nor can it flag semantically duplicate invariants or capabilities across domains.
+
+=== 1.1 Structural Bottlenecks Discovered in `specs_fts`
+
+During Spike 1 inspection of `src/eidos/core/index/graph_index.py`, we identified these concrete retrieval bottlenecks in the pre-fix index implementation:
+
+1. **Historical `DLT-*` Slot Starvation** — *FIXED:*
+   `specs_fts` indexes all applied historical `delta/mutation` (`DLT-*`) records alongside active architecture specs. When `get_tiered_context_slice` calls `self.query_fts(task, limit=8)` and subsequently filters results by entity type (`tech/container`, `product/capability`, etc.), up to 5 of the 8 top BM25 slots are consumed by historical `DLT-*` documents and discarded—starving the slice of relevant containers and capabilities. (44 of 136 indexed entities are SpecDeltas.)
+2. **Missing Child `invariant` (`INV-*`) FTS Rows** — *FIXED:*
+   While child `INV-*` rules are extracted into the `entities` table, they were **never inserted into `specs_fts`** (only the parent document was): 97 FTS rows for 136 entities, the gap being exactly the 39 invariants. Consequently, `elif etype == "invariant":` in `get_tiered_context_slice` was dead code for direct lexical matches.
+3. **Compound Identifiers (`snake_case` & `camelCase`)** — *FIXED; original claim corrected:*
+   _Correction:_ `unicode61` *does* split `snake_case` on the index side (`_` is a separator). The real defects were (a) the query side: `\w+` keeps `detect_drift` whole, and FTS5 re-tokenizes a quoted `"detect_drift"*` into an *order-sensitive phrase* (`detect drift`), so it never matches "drift detection"; and (b) `camelCase` identifiers (`ArchitecturalIndex`) stay atomic, so only their leading sub-token is reachable via prefix matching. Persisted AST `code_symbols` are still not projected into `specs_fts.symbols` (open).
+4. **Unweighted FTS Columns & Zero Synonym Expansion** — *weights FIXED (neutral, see 3.4); synonyms open:*
+   `bm25(specs_fts)` weights a match in a 500-word `body_text` prose section equally with a match in `title` or `keywords`, and fails when a user prompt uses domain synonyms (e.g., *"zero llm offline execution"* vs. `POL-004-ZERO-AI-CALL-DEPENDENCY`).
+5. **Dropped Domain / Design-System Matches** — *FIXED (found in review):*
+   `get_tiered_context_slice` had no branch for `product/domain` or `design/system`, so FTS hits on `DOM-*` / `DS-*` were silently discarded. They now expand to their member containers and capabilities (`domain_member`, `styles_container` edges), and the matched ID is kept in `matched_reasons`.
+
+---
+
+== 2. Model-Free Semantic Architecture Under Investigation
+
+To achieve semantic similarity without neural weights or external dependencies, we combine **distributional corpus statistics**, **character/subword random projections**, **information-theoretic compression distance**, and **graph topology** using only Python's standard library (`hashlib`, `math`, `zlib`, `collections`, `sqlite3`).
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                   1. Sync-Time Index Enrichment (<185ms cold)                │
+│  ├── De-compound camelCase / snake_case identifiers across Specs + AST       │
+│  ├── Index child INV-* entities & AST code_symbols into specs_fts            │
+│  ├── Compute Corpus PPMI Co-Occurrence Top-K Neighbors (math.log2)           │
+│  └── Project Subword TF-IDF (words + bigrams + char 3/4-grams) via           │
+│      blake2b Signed Feature Hashing -> 256-byte int8 BLOB per entity         │
+└──────────────────────────────────────┬───────────────────────────────────────┘
+                                       │
+         ┌─────────────────────────────┴─────────────────────────────┐
+         ▼                                                           ▼
+┌─────────────────────────────────────────┐ ┌──────────────────────────────────┐
+│   Use Case 1: Context Slicing & Search  │ │ Use Case 2: Drift & Validation   │
+│   (eidos context -t / index search)     │ │ (eidos drift / eidos validate)   │
+├─────────────────────────────────────────┤ ├──────────────────────────────────┤
+│ 1. Expand query with top PPMI neighbors │ │ 1. Extract AST diff / unbound    │
+│ 2. Scoped Column-Weighted FTS5 BM25     │ │    test function body & symbols  │
+│    bm25(specs_fts, 0, 4, 2, 1, 2, 2)    │ │ 2. Score 256-dim Subword Cosine  │
+│ 3. 256-dim Subword Hash Vector Cosine   │ │    against candidate INV-*/CAP-* │
+│ 4. 1-hop Graph Spreading Activation     │ │ 3. Re-rank top candidates with   │
+│    (degree-normalized, α = 0.35)        │ │    stdlib zlib NCD similarity    │
+│ 5. Reciprocal Rank Fusion (RRF)         │ │ 4. Emit ranked INV-*/spec advice │
+└─────────────────────────────────────────┘ └──────────────────────────────────┘
+```
+
+=== 2.1 Technique A: Corpus Pointwise Mutual Information (PPMI) Query Expansion
+
+During `ArchitecturalIndex.sync()`, we extract salient de-compounded tokens from each active specification (`title`, `jtbd_or_rule`, `keywords`, `symbols`, and primary AST `code_symbols`) and compute pairwise co-occurrence probabilities across the repository:
+
+$$\text{PPMI}(w_1, w_2) = \max\left(0, \log_2 \frac{P(w_1, w_2)}{P(w_1) P(w_2)}\right)$$
+
+Retaining the top-$k$ ($k=3$) highest-PPMI neighbors per term (for pairs with count $\ge 2$ and $\text{PPMI} > 1.0$) creates a deterministic, repository-specific thesaurus in `<15ms` during sync. At query time, searching for `"llm"` or `"tree_sitter"` automatically expands into co-occurring architectural vocabulary (`deterministic`, `dependency`, `ast`, `polyglot`, `symbol`).
+
+=== 2.2 Technique B: 256-Dimensional Signed Subword Feature Hashing (Random Projection)
+
+To capture morphological variants, partial identifier overlap, and code-to-spec vocabulary alignment without storing a large vocabulary matrix, every entity $e$ is converted into a stream of weighted subword features:
+* **De-compounded word tokens** (`w:<token>`, weight $3\times$)
+* **Adjacent token bigrams** (`b:<t1>_<t2>`, weight $2\times$)
+* **Boundary-padded character 3-grams and 4-grams** (`c:<ngram>`, weight $1\times$)
+
+Each feature $f$ with term frequency $\text{tf}(f)$ and corpus inverse document frequency $\text{idf}(f) = \ln\left(\frac{N + 1}{\text{df}(f) + 0.5}\right) + 1$ is projected into a fixed $D = 256$ dimensional vector using deterministic `hashlib.blake2b` (4-byte digest) for both bucket index $h(f) \in [0, 256)$ and Rademacher sign $s(f) \in \{-1, +1\}$ (the **Weinberger et al. Signed Feature Hashing** trick, which guarantees an unbiased inner product $\mathbb{E}[\langle \hat{u}, \hat{v} \rangle] = \langle u, v \rangle$):
+
+$$v[h(f)] \mathrel{+}= s(f) \cdot \bigl(1 + \ln \text{tf}(f)\bigr) \cdot \text{idf}(f)$$
+
+After $L_2$ normalization, each float component $v_i \in [-1, 1]$ is quantized to a signed 8-bit integer (`int8`, `round(v_i * 127)`), occupying **exactly 256 bytes per entity** (`33.5 KB` total across all 134 entities in Eidos).
+
+[NOTE]
+====
+*Review caveats:*
+
+* Unbiasedness holds only in expectation. The variance grows as $\|u\|^2\|v\|^2 / D$, and with tens of thousands of distinct char n-grams per corpus each of the 256 buckets is shared by hundreds of features. A random-pair cosine distribution must be reported as a noise floor before reading scores like `0.48`.
+* At about 136 entities, an *exact* sparse TF-IDF over the same features costs a few KB and has no collision noise. It is the required comparator for this technique.
+* The bucket and sign bits must be specified (for example, bucket = digest byte 0, sign = low bit of digest byte 1). If vectors are L2-normalized before quantization, a separate `norm` column is redundant.
+* IDF (and PPMI in 2.1) are corpus-global statistics. Any spec edit makes every stored vector stale, which conflicts with incremental sync (see section 5).
+====
+
+=== 2.3 Technique C: 1-Hop Graph Spreading Activation & Reciprocal Rank Fusion (RRF)
+
+First-stage rankings from **Scoped Column-Weighted FTS5 BM25** (`bm25(specs_fts, 0.0, 4.0, 2.0, 1.0, 2.0, 2.0)`, now shipped, scoped to sliceable types) and **256-dim Subword Cosine Similarity** are combined via Reciprocal Rank Fusion ($k_0 = 12$):
+
+[WARNING]
+====
+The originally published weights `bm25(specs_fts, 10.0, 6.0, 1.0, 8.0, 6.0)` were *off by one column*. FTS5 assigns weights positionally over *all* columns, including the `UNINDEXED` `entity_id`, so they produced title=6, rule=1, body=8, keywords=6, symbols=1. That boosts long prose, the opposite of the intent. Any RRF result computed with those weights is invalid.
+====
+
+$$S_{\text{seed}}(e) = \frac{1.0}{k_0 + \text{rank}_{\text{BM25}}(e)} + \frac{1.1}{k_0 + \text{rank}_{\text{Cosine}}(e)}$$
+
+We then execute a single **1-hop spreading activation** step over the SQLite `edges` table ($\alpha = 0.35$) from the top-6 seed entities. This is not Personalized PageRank (no iteration, no teleport). The formula below lets hub nodes (`POL-004`, `CNT-EIDOS-CORE`) flood the results; the next iteration must divide by node degree ($\deg(v)$) and report precision@8:
+
+$$S_{\text{final}}(u) = S_{\text{seed}}(u) + \alpha \sum_{v \in \mathcal{N}_{\text{top-6}}(u)} S_{\text{seed}}(v)$$
+
+This surfaces structurally coupled domain capabilities (`CAP-*`), governing policies (`POL-*`), and invariants (`INV-*`) even when they share zero words with the user's prompt.
+
+=== 2.4 Technique D: Normalized Compression Distance (NCD) via `zlib` for Drift & Validation
+
+For `eidos drift` and `eidos validate`, we need to compare richer text passages—such as matching an unbound test function (`def test_...` body + assertions) against candidate `INV-*` rules, or auditing two specifications for semantic duplication. We combine Subword Feature Cosine ($0.75$ weight) with information-theoretic **Normalized Compression Distance** ($0.25$ weight) using Python's built-in `zlib.compress`:
+
+$$\text{Sim}_{\text{NCD}}(x, y) = 1 - \frac{C(x \mathbin{\Vert} y) - \min\bigl(C(x), C(y)\bigr)}{\max\bigl(C(x), C(y)\bigr)}$$
+
+where $C(x) = |\text{zlib.compress}(x)|$ approximates Kolmogorov complexity via LZ77+Huffman shared dictionary compression.
+
+[NOTE]
+====
+*Review caveats:*
+
+* NCD is asymmetric in concatenation order. Use $\min$ or the mean of $C(x \Vert y)$ and $C(y \Vert x)$, and clamp the result to $[0, 1]$.
+* Invariant rules are 100–300 characters, so zlib's fixed header and checksum overhead dominates. NCD is unreliable at that length, and the 0.25 weight needs its own ablation.
+* Compressed lengths can differ between zlib builds (for example zlib-ng), which would make scores non-reproducible across CI machines (POL-004 determinism).
+====
+
+---
+
+== 3. Empirical Benchmark Results on Eidos Repository
+
+All three spikes were prototyped and benchmarked against the live Eidos knowledge graph (`134` entities, `39` bound invariants, `eidos/.cache/index.db`).
+
+[CAUTION]
+====
+*Sections 3.1 and 3.2 are SUPERSEDED.* They are kept for history only, and their PASS verdicts are withdrawn.
+Section 3.3 explains why, and section 3.4 holds the current measurements. The spike prototype code was never
+committed, so these numbers cannot be reproduced.
+====
+
+=== 3.1 Spike 1 & 2: Task-Driven Context Slicing (`Baseline FTS5` vs. `Hybrid Model-Free RRF`) — superseded
+
+We evaluated 6 representative engineering prompts combining `snake_case` symbol names, conceptual synonyms, and cross-cutting architectural concerns (3 ground-truth target entities per query = 18 targets total):
+
+[cols="3,2,2,2", options="header"]
+|===
+| Engineering Task Prompt (`--task`) | Expected Ground-Truth Entities | Baseline `query_fts` Hits (Latency) | Hybrid RRF Hits (Latency)
+
+| `"get_tiered_context_slice token budget"`
+| `CNT-EIDOS-INDEX`, `CAP-AGENT-001`, `CAP-AGENT-002`
+| `3/3` (`0.73 ms`)
+*(Ranked `CNT-EIDOS-INDEX` #6 behind `DLT-*` noise)*
+| **`3/3` (`1.47 ms`)**
+*(`CNT-EIDOS-INDEX` ranked #1)*
+
+| `"zero llm deterministic offline execution"`
+| `POL-004-ZERO-AI-CALL-DEPENDENCY`, `INV-AGENT-ZERO-AI-DEPENDENCY`, `CAP-AGENT-001`
+| `2/3` (`0.46 ms`)
+*(Missed `INV-AGENT-ZERO-AI-DEPENDENCY`)*
+| **`3/3` (`1.17 ms`)**
+
+| `"tree_sitter polyglot symbol mapping"`
+| `CNT-EIDOS-INDEX`, `CAP-AGENT-002`, `INV-INDEX-POLYGLOT-SYMBOL-PRECISION`
+| `2/3` (`0.38 ms`)
+*(Missed `INV-INDEX-POLYGLOT-SYMBOL-PRECISION`)*
+| **`3/3` (`1.18 ms`)**
+
+| `"git diff uncommitted spec sync reconciliation"`
+| `CNT-EIDOS-VCS`, `CAP-VCS-001`, `INV-DRIFT-DETECTION-ACCURACY`
+| `2/3` (`0.65 ms`)
+*(Missed `INV-DRIFT-DETECTION-ACCURACY`)*
+| **`3/3` (`1.47 ms`)**
+
+| `"detect_drift invariant test_binding verification"`
+| `CNT-EIDOS-VCS`, `CAP-VCS-001`, `DOM-VCS-LIFECYCLE`
+| `0/3` (`0.54 ms`)
+*(Compound tokens `detect_drift` / `test_binding` + `DLT-*` crowding)*
+| **`3/3` (`1.43 ms`)**
+
+| `"shadcn tailwind material design tokens portal"`
+| `CNT-EIDOS-PORTAL`, `DS-CORE`, `INV-W3C-DTCG-COMPLIANCE`
+| `2/3` (`0.51 ms`)
+*(Missed `INV-W3C-DTCG-COMPLIANCE`)*
+| **`3/3` (`1.19 ms`)**
+|===
+
+=== 3.2 Consolidated Benchmark Summary vs. Exit Criteria — superseded
+
+[cols="2,2,2,2,1", options="header"]
+|===
+| Metric | Baseline (`FTS5`) | Hybrid Model-Free Engine | Exit Criterion | Status
+
+| **Task Context Recall@8**
+| `61.1%` (`11/18`)
+| **`100.0%` (`18/18`)**
+| `>= 90.0%`
+| **PASS**
+
+| **Mean Query Latency**
+| `0.55 ms`
+| **`1.32 ms`** (`1.07–1.47 ms`)
+| `< 3.00 ms`
+| **PASS**
+
+| **Cold Sync Index Overhead**
+| Baseline sync
+| **`+182.27 ms`** (all 134 entities + AST symbols)
+| `< 250 ms`
+| **PASS**
+
+| **SQLite Vector Storage Footprint**
+| `0 KB`
+| **`33.5 KB`** (`256 B` quantized `int8` / entity)
+| `< 64 KB`
+| **PASS**
+
+| **Unbound Test -> `INV-*` Top-1 / Top-3 Accuracy** *(Blinded to all `INV-*/POL-*/CAP-*` IDs)*
+| `N/A` *(Unsupported)*
+| **`59.0%` Top-1 / `74.4%` Top-3** (`2.24 ms/test`)
+| `>= 70.0%` Top-3 in `< 5ms/test`
+| **PASS**
+
+| **All-Pairs Invariant Near-Duplicate Scan** (`741` pairs)
+| `N/A` *(Unsupported)*
+| **`5.28 ms` total**
+| `< 20 ms`
+| **PASS**
+|===
+
+=== 3.3 Why the Original Results Are Withdrawn (2026-10-15 Review)
+
+1. *No ablation.* 4 of the 7 baseline misses were `INV-*` entities that were never indexed. The other 3 were all in
+   one query that was hurt by SpecDelta crowding. A fixed lexical baseline was never measured, so the gain could
+   not be credited to PPMI, hashing, the graph step, or NCD.
+2. *The weights were invalid.* The published BM25 weights were shifted by one column (see the warning in 2.3).
+3. *The metric was not slice recall.* `get_tiered_context_slice` dropped `product/domain` and `design/system` hits,
+   so 2 of the 18 targets (`DOM-VCS-LIFECYCLE`, `DS-CORE`) could never appear in a real slice. The reported 18/18
+   must have been measured on a raw ranked list. Real slice recall was at most 16/18 (88.9%), below the bar.
+4. *The sample was too small and was used for tuning.* The 95% Wilson lower bound for 18/18 is 82.4%, below the
+   90% criterion. For the test-to-invariant result (29/39 = 74.4%) the interval is [58.9%, 85.4%], so it does not
+   clearly clear 70%. About 10 hyperparameters appear to have been tuned on the same 6 prompts.
+5. *The criteria changed after the fact.* The query budget was < 2 ms in Q2 and < 3 ms elsewhere; storage was
+   < 50 KB vs < 64 KB. The sync (< 250 ms) and near-duplicate scan (< 20 ms) criteria were added in section 3.2 and
+   never declared in the frontmatter. The near-duplicate scan reported only latency, with no quality metric.
+
+=== 3.4 Spike: Baseline-Fix Ablation (DONE, 2026-10-15)
+
+The four coverage fixes (child `INV-*` FTS rows, a slice-scoped type filter applied inside SQL before `LIMIT`,
+identifier de-compounding on both the index and query sides, and positional column weights `(0, 4, 2, 1, 2, 2)`)
+shipped in Direct Mode under `DEC-INDEX-FTS-RETRIEVAL-HYGIENE` (`CNT-EIDOS-INDEX`, index `SCHEMA_VERSION` 2.3.0).
+`INV-AGENT-TASK-RETRIEVAL-COVERAGE` guards them, bound to
+`tests/test_graph_index.py::test_task_retrieval_indexes_invariants_and_filters_types`.
+
+*Method.* The benchmark builds an isolated index (a temporary DB, so `eidos/.cache/index.db` is never touched).
+It measures raw `Recall@8` over the ranked candidates that feed the slice (sliceable types only) and slice recall
+from `get_tiered_context_slice` (a target counts if it is in any slice list or is a `matched_reasons` key). Ablation
+variants were reproduced in SQL on the same index. Variant A reproduces the pre-fix `HEAD` exactly (10/18 and 9/28,
+the same as the real `HEAD` run).
+
+* *DEV* = the 6 published prompts above (18 targets). These were already used to tune the original hybrid engine.
+* *HOLD* = 12 new prompts (28 targets), written *before* any post-fix measurement and not used for tuning. They
+  were written by the same reviewer, and 12 of the 28 targets are invariants, so they lean toward the
+  invariant-coverage fix.
+* The column weights were fixed *a priori* and not tuned.
+
+[cols="4,2,2", options="header"]
+|===
+| Variant (raw Recall@8, slice-scoped candidates) | DEV (18) | HOLD (28)
+
+| A. Pre-fix `HEAD` (no `INV-*` rows, no filter, no splitting, default `bm25`) | 10 (55.6%) | 9 (32.1%)
+| B. + child `INV-*` FTS rows | 13 (72.2%) | 18 (64.3%)
+| C. + slice type filter inside SQL | 15 (83.3%) | 22 (78.6%)
+| D. + identifier de-compounding | 17 (94.4%) | 22 (78.6%)
+| *E. + positional column weights (shipped)* | *17 (94.4%)* | *22 (78.6%)*
+| E minus `INV-*` rows | 14 (77.8%) | 14 (50.0%)
+| E minus type filter | 12 (66.7%) | 18 (64.3%)
+| E minus column weights | 17 (94.4%) | 22 (78.6%)
+|===
+
+*Findings:*
+
+* The shipped baseline reaches 39/46 = *84.8%* combined (95% Wilson CI [71.8%, 92.4%]), up from 19/46 = 41.3%
+  [28.3%, 55.7%]. Mean query latency is 0.48 ms (DEV) and 1.00 ms (HOLD).
+* Most of the gain comes from *invariant FTS rows* (largest drop when removed) and the *type filter*. De-compounding
+  helps only on the identifier-heavy DEV prompts. The *column weights are neutral* on both sets: kept as a
+  principled default, but with no evidence either way.
+* *Slice recall:* 17/18 (94.4%) DEV and 26/28 (92.9%) HOLD. Before the fix, slice recall was 15/18 and 21/28, and
+  graph expansion already covered many raw misses. Slices are large, though: about 40 entities on average (up from
+  33.2 on DEV and 21.2 on HOLD), because more seed matches pull in more neighbors. *Precision is now the bottleneck,
+  and every further layer must report precision@8 and slice size, not just recall.*
+* *Cost:* cold sync +40 ms (about 438 ms to about 478 ms, including AST indexing, noisy). There are no new tables,
+  vectors, or global statistics, so incremental sync is unaffected.
+* *The new failure mode is invariant crowding.* 6 of the 7 remaining misses are a parent capability or container
+  (`CAP-AGENT-001`, `CAP-EXP-001`, `CAP-PROD-002`, `CNT-EIDOS-INDEX`, `CNT-EIDOS-DOCS`) or a domain pushed out of
+  the top 8 by 3–5 sibling invariants. A cheap structural candidate is to promote an invariant's parent
+  (`capability_id`/`policy_id`) when the invariant matches. This was found *after* looking at HOLD, so it was not
+  implemented. It must be validated on a fresh held-out set.
+* Only about 1 of the 7 remaining misses looks like true vocabulary mismatch. That is the target left for the
+  PPMI, subword-hashing, and graph layers, and it is much smaller than the original problem statement implied.
+* *Corpus drift:* numbers move as specs change. For example, adding `INV-AGENT-TASK-RETRIEVAL-COVERAGE` and
+  `DEC-INDEX-FTS-RETRIEVAL-HYGIENE` (both full of retrieval vocabulary) changed some unfiltered results by ±1
+  target. Benchmarks must pin a corpus snapshot (commit SHA).
+
+---
+
+== 4. Target Integration Architecture
+
+=== 4.1 Integration Point 1: `ArchitecturalIndex` (`src/eidos/core/index/graph_index.py`)
+
+1. **Schema Addition (`SCHEMA_VERSION` bump):**
+   * *SHIPPED (2.3.0, Direct Mode):* child `invariant` (`INV-*`) entities are indexed in `specs_fts` (purged with their parent spec on incremental sync), and de-compounded `camelCase`/`snake_case` sub-tokens are added to the `symbols` column. *Open:* projecting primary AST `code_symbols` into `specs_fts`. Code ownership is reconciled after all specs load, so those rows must be refreshed in a later pass.
+   * *CONTINGENT on section 5:* a lightweight `semantic_vectors` table (`entity_id TEXT PRIMARY KEY, vec_int8 BLOB NOT NULL`) and a `ppmi_terms` table (`term TEXT, neighbor TEXT, ppmi REAL`). "Populated incrementally during `sync()`" is not possible as written, because IDF and PPMI are corpus-global (see section 5).
+2. **Upgraded `query_fts` & `get_tiered_context_slice`:**
+   * *SHIPPED:* `query_fts(..., include_types=None, exclude_types=())` with filters applied inside SQL before `LIMIT` and a deterministic `e.id` tie-break. `get_tiered_context_slice` passes `include_types=TASK_SLICE_ENTITY_TYPES`. Matched `DOM-*` / `DS-*` expand to member containers and capabilities.
+   * *SHIPPED:* positional column-weighted BM25 `bm25(specs_fts, 0.0, 4.0, 2.0, 1.0, 2.0, 2.0)` (not the off-by-one weights originally proposed).
+   * *CONTINGENT:* PPMI query expansion, 256-dim `int8` subword vector cosine scoring, and degree-normalized 1-hop graph spreading activation fused via RRF. Each layer is adopted only if it beats the shipped baseline on held-out prompts (see the frontmatter exit criteria).
+   * Surface explainable match provenance in `TieredContextSlice.matched_reasons` (e.g., `"Hybrid RRF match (BM25 #2, Subword Cosine: 0.48, Graph 1-hop from CNT-EIDOS-VCS)"`). The domain and design-system expansion already records `"...; expanded to CNT-..., CAP-..."`.
+
+=== 4.2 Integration Point 2: `detect_drift` (`src/eidos/vcs/drift.py`) — all CONTINGENT
+
+1. **Semantic Diff-to-Spec Ranking in `eidos drift`:**
+   * Extract added/modified identifiers, docstrings, and diff hunks from modified `code_files` and rank candidate capabilities (`CAP-*`), contracts (`CTR-*`), and invariants (`INV-*`) using the Hybrid Subword Cosine + `zlib` NCD scorer instead of listing all 1-hop neighbors unranked.
+2. **Unbound Test-to-Invariant Advisor in `eidos drift`:**
+   * When an uncovered `INV-*` or a newly added test function (`test_*`) without an `INV-*` marker is detected, compute top-3 semantic matches using Subword Cosine + `zlib` NCD and include concrete binding suggestions in `remediation_suggestions`.
+   * About 26% of top-3 suggestions were wrong in the withdrawn spike. Suggestions must stay *advisory*: they must never change `drift` / `lint` exit codes or `is_clean`.
+3. **Near-Duplicate Invariant / Spec Warning in `eidos validate` / `eidos hook lint`:**
+   * Flag invariant or capability pairs whose hybrid Cosine + NCD similarity exceeds a high threshold ($\ge 0.80$) to prevent redundant or conflicting architectural rules. The threshold must first be calibrated on labelled duplicate and non-duplicate pairs.
+4. New JSON fields (`remediation_suggestions` content, richer `matched_reasons`) change the CLI JSON envelope. They must be declared as a `CTR-EIDOS-CLI` version bump in the resulting SpecDelta.
+
+---
+
+== 5. Revised Plan, Open Risks & Next Steps
+
+1. *Freeze the evaluation.* Commit the benchmark harness and both prompt sets under `tests/` or a benchmarks folder
+   (the reviewer's harness currently lives in agent scratch space). Pin the corpus commit SHA. Add >= 30 held-out
+   prompts written by someone other than the system designer, weighted toward real vocabulary mismatch and not
+   dominated by invariants.
+2. *Try structural fixes before statistical ones.* Evaluate "invariant matched -> promote its parent capability
+   or policy" against invariant crowding (section 3.4) on the fresh held-out set before any vector work.
+3. *Ablate each semantic layer separately* against the shipped baseline: PPMI alone, exact sparse subword TF-IDF
+   alone, hashed 256-dim alone (report the random-pair cosine noise floor), and the graph step with and without
+   degree normalization. Report Recall@8, precision@8, MRR, and slice size with 95% CIs.
+4. *Solve corpus-global freshness* before any table lands. Options: recompute IDF and PPMI only when the corpus
+   changes materially (for example, document count drifts by > 5%) and accept bounded staleness, or compute vectors
+   lazily at query time (about 136 entities is small enough), or use fixed hashed IDF-free features. Measure the
+   incremental single-spec sync cost.
+5. *Make the drift advisors reproducible.* Use order-symmetric NCD, test zlib reproducibility across builds or
+   replace NCD with a pure-Python shingle Jaccard score, and calibrate the near-duplicate threshold on labelled
+   pairs.
+6. *Scaling check:* measure query and sync cost on a synthetic 5k-entity corpus, since pure-Python cosine scans
+   grow linearly with entity count.
+7. *Decision gate:* adopt only the layers that pass the frontmatter exit criteria, then graduate them via a
+   SpecDelta that updates `DEC-INDEX-FTS-RETRIEVAL-HYGIENE`. Otherwise set `status: discarded` and keep the shipped
+   lexical baseline.

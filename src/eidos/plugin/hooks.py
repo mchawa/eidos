@@ -386,7 +386,7 @@ def handle_drift_post_invocation(payload: dict[str, Any], workspace_root: Path) 
                 remediation_hint = f"\nAction needed: {drift_res.remediation_suggestions[0]}"
             msg = (
                 f"[Eidos Sync Notice] Uncommitted code changes detected in {top_files}{more} without living spec updates in 'eidos/'.{remediation_hint}\n"
-                f"Remember to synchronize living specifications in 'eidos/' (or run 'eidos reconcile') before concluding."
+                f"Remember to synchronize living specifications in 'eidos/' (and verify with 'eidos drift --uncommitted') before concluding."
             )
             return {"injectSteps": [{"ephemeralMessage": msg}]}
     except Exception as exc:

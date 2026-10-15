@@ -165,14 +165,12 @@ def test_cli_repo_map_and_find_symbol():
     assert sym_data["count"] > 0
     assert any(m["entity_id"] == "CNT-EIDOS-INDEX" for m in sym_data["matches"])
 
-    # 5. top-level shortcuts
+    # 5. top-level shortcuts are removed
     res_top_map = runner.invoke(app, ["repo-map", "--max-tokens", "500"])
-    assert res_top_map.exit_code == 0
-    assert "Structural Code Graph" in res_top_map.output
+    assert res_top_map.exit_code != 0
 
     res_top_sym = runner.invoke(app, ["find-symbol", "AstGrepIndexer"])
-    assert res_top_sym.exit_code == 0
-    assert "CNT-EIDOS-IND" in res_top_sym.output
+    assert res_top_sym.exit_code != 0
 
 
 

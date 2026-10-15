@@ -1,4 +1,4 @@
-"""Architectural knowledge graph commands (`eidos index ...`) and their root shortcuts."""
+"""Architectural knowledge graph commands (`eidos index ...`)."""
 
 from pathlib import Path
 
@@ -6,7 +6,7 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from eidos.cli._shared import PANEL_KNOWLEDGE, console
+from eidos.cli._shared import console
 from eidos.core.index.graph_index import get_architectural_index
 
 index_app = typer.Typer(
@@ -129,25 +129,6 @@ def index_sync_cmd(
         )
 
 
-@index_app.command("update", help="Alias for 'sync': Synchronize the architectural index with specifications on disk.")
-def index_update_cmd(
-    force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        help="Force complete rebuild of the index from scratch.",
-    ),
-    path: Path | None = typer.Option(
-        None,
-        "--path",
-        "-p",
-        help="Path to eidos directory (defaults to ./eidos).",
-    ),
-):
-    """Synchronize the architectural index with specifications on disk."""
-    return index_sync_cmd(force=force, path=path)
-
-
 @index_app.command("search")
 def index_search_cmd(
     query: str = typer.Argument(
@@ -207,11 +188,27 @@ def index_blast_radius_cmd(
         "-p",
         help="Path to eidos directory (defaults to ./eidos).",
     ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output results as machine-readable JSON.",
+    ),
 ):
     """Display recursive CTE graph walk / blast radius for an architectural entity."""
     eidos_dir = path or Path("eidos")
     idx = get_architectural_index(eidos_dir=eidos_dir)
     neighbors = idx.get_k_hop_neighborhood(entity_id, max_depth=depth)
+
+    if json_output:
+        console.print_json(
+            data={
+                "entity_id": entity_id,
+                "depth": depth,
+                "count": len(neighbors),
+                "neighbors": neighbors,
+            }
+        )
+        return
 
     if not neighbors:
         console.print(f"[yellow]Entity '{entity_id}' not found in architectural graph.[/yellow]")
@@ -316,5 +313,5 @@ def index_find_symbol_cmd(
 
 def register(app: typer.Typer) -> None:
     """Attach the root-level commands owned by this module to the root Typer app."""
-    app.command("repo-map", rich_help_panel=PANEL_KNOWLEDGE)(index_repo_map_cmd)
-    app.command("find-symbol", rich_help_panel=PANEL_KNOWLEDGE)(index_find_symbol_cmd)
+    return None
+

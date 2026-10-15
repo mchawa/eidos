@@ -45,19 +45,17 @@ Eidos automatically configures your project for all supported AI coding assistan
 
 ```bash
 # Default installation (configures project scope, Cursor, and Claude Code):
-eidos install
-# or:
 eidos plugin install
 
 # Full installation across all supported AI assistants:
-eidos install all
+eidos plugin install all
 # or:
 eidos plugin install --target all
 
 # Targeted installation for a specific assistant:
-eidos install cursor
-eidos install claude
-eidos install copilot
+eidos plugin install cursor
+eidos plugin install claude
+eidos plugin install copilot
 ```
 
 ### Installation Targets
@@ -100,7 +98,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ├── plugin.json               # agent-plugins.org v1.0.0 manifest
     ├── hooks.json                # Document linting & drift gate hooks
     └── skills/
-        ├── eidos/                # Master orchestrator, context slicing, drift & Direct Mode reconcile
+        ├── eidos/                # Master orchestrator, context slicing & continuous drift detection
         ├── eidos-spec/           # Product, Arc42/C4 architecture, design systems & invariants (NO ADRs)
         ├── eidos-plan/           # Technical spikes (EXP-*), SpecDeltas (DLT-*) & Staff Architect review
         └── eidos-ops/            # Greenfield init, brownfield extraction & Living Web Portal
@@ -108,7 +106,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ### 2. How Antigravity Uses Eidos
 
-    * **Master Engineering Skill**: Antigravity indexes `skills/eidos/SKILL.md` to guide agent decision-making, strictly enforcing the 5 Eidos architectural invariants (Single Source of Truth, No ADRs, SpecDelta lifecycle, Invariant-Test traceability, and Spec validation) alongside `eidos context`, `eidos drift`, and `eidos reconcile`.
+    * **Master Engineering Skill**: Antigravity indexes `skills/eidos/SKILL.md` to guide agent decision-making, strictly enforcing the 5 Eidos architectural invariants (Single Source of Truth, No ADRs, SpecDelta lifecycle, Invariant-Test traceability, and Spec validation) alongside `eidos context` and `eidos drift`.
     * **Workflow-Aligned Agent Skills**: Antigravity agents invoke `/eidos-spec` to author or inspect living specs and invariants, `/eidos-plan` for explorations, SpecDeltas, and Staff reviews, and `/eidos-ops` for repository initialization, brownfield extraction, and Web Portal operations.
     * **Quality Hooks**: Quality gates intercept document edits to verify AsciiDoc schemas before changes are finalized.
 
@@ -120,23 +118,23 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     Claude Code natively supports a standardized, file-based plugin architecture:
     1. **Manifest (`plugin.json`)**: Plugin namespace, versioning, and metadata.
-    2. **Commands (`commands/*.md`)**: Native slash commands (`/validate`, `/drift`, `/reconcile`, `/context`).
+    2. **Commands (`commands/*.md`)**: Native slash commands (`/validate`, `/drift`, `/context`).
     3. **Skills (`skills/*/SKILL.md`)**: Domain expertise triggerable by user tasks.
     4. **Subagents**: Specialized roles dynamically forked by Claude.
     5. **Hooks (`hooks.json`)**: Lifecycle event handlers (pre-tool checks, lint gates).
 
     #### 1. Automatic Installation
-    Install the Eidos Claude Code plugin into your project using the CLI shortcut or target flag:
+    Install the Eidos Claude Code plugin into your project:
 
     ```bash
-    eidos install claude
+    eidos plugin install claude
     # or
     eidos plugin install --target claude
     ```
 
     This automatically:
     - Installs the full plugin bundle into `.claude/plugins/eidos/` (following Claude Code's Method 2: Project Root Injection) with `plugin.json`, `.claude-plugin/plugin.json`, and `hooks.json`.
-    - Generates Claude Code interactive slash commands in `.claude/plugins/eidos/commands/` (`/validate`, `/drift`, `/reconcile`, `/context`).
+    - Generates Claude Code interactive slash commands in `.claude/plugins/eidos/commands/` (`/validate`, `/drift`, `/context`).
     - Installs all 4 cohesive Eidos skills into `.claude/skills/<skill-name>/` so they are immediately discoverable by Claude Code's native `/skills` registry and direct command invocations (`/eidos`, `/eidos-spec`, `/eidos-plan`, `/eidos-ops`).
     - Registers and enables the plugin in `.claude/settings.json` (`plugins: [{"path": ".claude/plugins/eidos"}]`, `enabledPlugins: {"eidos": true, "eidos@plugins-dir": true}`).
 
@@ -162,7 +160,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     Generate Cursor rules and 4 native Agent Skills:
 
     ```bash
-    eidos install cursor
+    eidos plugin install cursor
     # or
     eidos plugin install --target cursor
     ```
@@ -201,7 +199,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ### 1. Installation
     ```bash
-    eidos install copilot
+    eidos plugin install copilot
     # or
     eidos plugin install --target copilot
     ```
@@ -221,7 +219,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ### 1. Installation
     ```bash
-    eidos install aider
+    eidos plugin install aider
     ```
 
     This automatically:
@@ -242,7 +240,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ### 1. Installation
     ```bash
-    eidos install cline
+    eidos plugin install cline
     ```
 
     This automatically:
@@ -256,9 +254,9 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ### 1. Installation
     ```bash
-    eidos install open-code
+    eidos plugin install open-code
     # or
-    eidos install opencode
+    eidos plugin install opencode
     ```
 
     This automatically:
@@ -272,7 +270,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ### 1. Installation
     ```bash
-    eidos install codex
+    eidos plugin install codex
     ```
 
     This automatically:
@@ -309,13 +307,12 @@ AI agents execute Eidos CLI commands directly from terminal / subshell tools. Al
 | `eidos index status` | | Reports index health, cache size, total entity/edge counts, and auto-sync freshness state. |
 | `eidos index sync` | `--force` | Incrementally synchronizes or force-rebuilds the architectural knowledge graph. |
 | `eidos drift` | `--uncommitted`, `--base <ref>`, `--json` | Inspects spec-to-code drift between git branches or uncommitted changes, validates schemas, and checks test bindings. |
-| `eidos reconcile` | `--uncommitted`, `--prompt` | Analyzes code modifications against the living spec catalog and proposes candidate specs or structured prompt. |
 | `eidos validate` | `[PATH]`, `--json` | Validates all living specifications against their bundled JSON Schemas and checks bidirectional cross-references. |
 | `eidos info` | | Returns current engine version, loaded v1 schemas, and supported platforms. |
-| `eidos components` | `[CONTAINER_ID]` | Lists monorepo containers, internal modules, dependencies, and monorepo package paths. |
-| `eidos spec list` | `--type <type>`, `--status <status>` | Lists living specifications matching optional type and lifecycle filters. |
+| `eidos spec list` | `--type <type>`, `--status <status>`, `--json` | Lists living specifications (including inline C4 Level 3 components `CMP-*`) matching optional type and lifecycle filters. |
 | `eidos spec create` | `<type> <id> --title <title>` | Scaffolds a new specification document (capability, domain, policy, contract, component, design system, etc.). |
 | `eidos spec delete` | `<id_or_path> [--force]` | Safely deletes a living specification with cross-reference safety checks. |
+| `eidos spec component` | `[promote\|inline] <id>` | Promotes inline C4 Level 3 components to `eidos/architecture/components/` or inlines them back into their container manifest. |
 | `eidos delta create` | `<id> --title <title> --kind <kind>` | Scaffolds a new SpecDelta mutation document (`DLT-*`) for Planned Mode. |
 | `eidos delta apply` | `<id>` | Reconciles a SpecDelta in-place, updating its lifecycle state to `applied` and synchronizing symlink views. |
 | `eidos init` | `[PATH]` | Bootstraps a repository with an empty living specification skeleton. |
@@ -438,10 +435,10 @@ Before concluding any task, the agent must validate all specifications using `ei
 
 When using an agent client that supports skill bundles (such as Google Antigravity, Claude Code, Cursor, Cline, OpenCode, Codex, Aider, or GitHub Copilot), 4 cohesive workflow skills are available:
 
-* **`eidos`**: Master workflow orchestrator (Direct vs. Planned Mode), token-efficient architectural context slicing (`eidos context`), continuous spec-to-code drift detection (`eidos drift`), and Direct Mode git-diff reconciliation (`eidos reconcile`).
+* **`eidos`**: Master workflow orchestrator (Direct vs. Planned Mode), token-efficient architectural context slicing (`eidos context`), and continuous spec-to-code drift detection (`eidos drift`).
 * **`eidos-spec`**: Unified authoring reference for Product domains (`DOM-*`), capabilities (`CAP-*`), personas (`PER-*`), Arc42/C4 architecture (`CNT-*`, inline and promoted `CMP-*`, `CTR-*`, embedded `decisions:`), Multi-Design Systems (`DS-*`, W3C Design Tokens, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`), and system policies/invariants (`POL-*`, `INV-*` with polyglot `file::func` test bindings).
 * **`eidos-plan`**: Technical feasibility spikes (`EXP-*`), the SpecDelta mutation lifecycle (`DLT-*`, `create`, `verify`, `audit`, `apply`, `changelog`), and 5-dimension Staff Systems Architect reviews.
-* **`eidos-ops`**: Greenfield repository initialization (`eidos init`), systematic reverse-engineering of brownfield codebases into living specifications, and Living Web Portal operations (`eidos serve`, `eidos build-site`).
+* **`eidos-ops`**: Greenfield repository initialization (`eidos init`), systematic reverse-engineering of brownfield codebases into living specifications, and Living Web Portal operations (`eidos portal serve`, `eidos portal build`).
 
 ---
 

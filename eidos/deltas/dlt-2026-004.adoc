@@ -5,7 +5,7 @@ id: DLT-2026-004
 title: Repository Initialization Engine and eidos-init Agent Skill
 status: applied
 intent:
-  kind: feature_addition
+  kind: feature
   motivation: Provide eidos init command, eidos_init_repo MCP tool, and eidos-init
     agent skill to bootstrap living specification workspaces.
 mutations:

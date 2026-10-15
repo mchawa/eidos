@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: fix/component-invariant-drift-verification
 intent:
-  kind: bugfix
+  kind: bug
   motivation: Ensure invariants ('INV-*') declared in standalone 'tech/component'
     specifications under 'eidos/architecture/components/' and inline container components
     are verified by 'eidos drift' under POL-002 alongside capability and policy invariants.

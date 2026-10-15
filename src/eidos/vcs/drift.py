@@ -1842,7 +1842,7 @@ def detect_drift(
             remediation.append(f"• '{cf}' relates to {cid} -> Update '{spath}' (or a 1-hop linked capability/contract)")
         if not target_list:
             remediation.append(
-                "• Run 'eidos reconcile' or ask your AI agent to update corresponding living specifications."
+                "• Run 'eidos drift' or ask your AI agent to update corresponding living specifications in eidos/."
             )
 
     if base_direct_drift and unmapped_code_files:

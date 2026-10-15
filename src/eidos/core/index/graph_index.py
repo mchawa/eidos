@@ -29,6 +29,71 @@ from eidos.core.workspace.context import (
 )
 from eidos.core.workspace.project import extract_entity_paths, find_repo_root, match_path_pattern
 
+# FTS5 ``bm25()`` weights are positional over *every* declared column of ``specs_fts``, including the UNINDEXED
+# ``entity_id`` column, so the first weight must be a placeholder. Order: entity_id, title, jtbd_or_rule, body_text,
+# keywords, symbols. Short, high-signal fields outrank long prose bodies (DEC-INDEX-FTS-RETRIEVAL-HYGIENE).
+FTS_COLUMN_WEIGHTS: tuple[float, ...] = (0.0, 4.0, 2.0, 1.0, 2.0, 2.0)
+
+# Entity types that get_tiered_context_slice can surface from a task prompt. Restricting the BM25 candidate pool to
+# these types keeps historical SpecDeltas, explorations, personas, and screens from consuming the top-k slots.
+TASK_SLICE_ENTITY_TYPES: tuple[str, ...] = (
+    "tech/container",
+    "tech/component",
+    "tech/contract",
+    "product/capability",
+    "product/policy",
+    "invariant",
+    "product/domain",
+    "design/system",
+)
+
+_CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+_IDENTIFIER_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
+
+
+def split_identifier(token: str) -> list[str]:
+    """Split a snake_case / camelCase / PascalCase identifier into lowercase sub-tokens.
+
+    ``get_tiered_context_slice`` -> ``[get, tiered, context, slice]``; ``ArchitecturalIndex`` ->
+    ``[architectural, index]``; ``HTTPServer`` -> ``[http, server]``. Plain words return ``[word]``.
+    """
+    parts: list[str] = []
+    for chunk in token.split("_"):
+        if chunk:
+            parts.extend(p.lower() for p in _CAMEL_BOUNDARY_RE.split(chunk) if p)
+    return parts
+
+
+def compound_identifier_subtokens(text: str) -> str:
+    """Return the de-compounded sub-tokens of every camelCase / snake_case identifier found in ``text``.
+
+    Only compound identifiers contribute (plain words are already tokenized by ``unicode61``), so the output is a
+    compact, order-preserving, de-duplicated supplement for the FTS ``symbols`` column.
+    """
+    seen: dict[str, None] = {}
+    for ident in _IDENTIFIER_RE.findall(text or ""):
+        parts = split_identifier(ident)
+        if len(parts) > 1:
+            for part in parts:
+                seen.setdefault(part, None)
+    return " ".join(seen)
+
+
+def build_fts_match_query(text: str) -> str:
+    """Translate a free-text prompt into a deterministic FTS5 ``OR`` prefix query with de-compounded terms.
+
+    Each ``\\w+`` token contributes its identifier sub-tokens plus, for non-snake_case tokens, the whole lowercased
+    token (so ``ArchitecturalIndex`` still prefix-matches the atomic ``architecturalindex`` index token). snake_case
+    tokens are *not* passed through whole: FTS5 would re-tokenize them into an order-sensitive phrase query.
+    """
+    terms: dict[str, None] = {}
+    for tok in re.findall(r"\w+", text or ""):
+        for part in split_identifier(tok):
+            terms.setdefault(part, None)
+        if "_" not in tok:
+            terms.setdefault(tok.lower(), None)
+    return " OR ".join(f'"{term}"*' for term in terms)
+
 
 @dataclass
 class IndexSyncStats:
@@ -380,7 +445,7 @@ class _CodeOwnershipResolver:
 class ArchitecturalIndex:
     """Embedded SQLite Architectural Knowledge Graph & Hybrid Retrieval Index."""
 
-    SCHEMA_VERSION = "2.2.0"
+    SCHEMA_VERSION = "2.3.0"
 
     def __init__(
         self,
@@ -951,13 +1016,13 @@ class ArchitecturalIndex:
                 elif row and row["doc_id"]:
                     doc_id = row["doc_id"]
                     specs_deleted = True
+                    self._delete_spec_fts_rows(conn, doc_id, d_rel)
                     conn.execute(
                         "DELETE FROM entities WHERE id = ? OR (file_path = ? AND type = 'invariant')",
                         (doc_id, d_rel),
                     )
                     conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?", (doc_id,))
                     conn.execute("DELETE FROM code_symbols WHERE entity_id = ?", (doc_id,))
-                    conn.execute("DELETE FROM specs_fts WHERE entity_id = ?", (doc_id,))
                     conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
                 else:
                     conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
@@ -991,12 +1056,12 @@ class ArchitecturalIndex:
                 existing = conn.execute("SELECT 1 FROM indexed_files WHERE rel_path = ?", (rel_p,)).fetchone()
                 if existing:
                     stats.updated_modified += 1
+                    self._delete_spec_fts_rows(conn, doc_id, rel_p)
                     conn.execute(
                         "DELETE FROM entities WHERE id = ? OR (file_path = ? AND type = 'invariant')",
                         (doc_id, rel_p),
                     )
                     conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?", (doc_id,))
-                    conn.execute("DELETE FROM specs_fts WHERE entity_id = ?", (doc_id,))
                 else:
                     stats.indexed_new += 1
 
@@ -1123,6 +1188,27 @@ class ArchitecturalIndex:
                             (iid, rule, domain, rel_p, json.dumps(inv_data)),
                         )
 
+                        # Child invariants get their own FTS row so task prompts can match INV-* rules directly.
+                        test_str = str(test or "")
+                        rule_str = str(rule or "")
+                        test_func = test_str.split("::", 1)[1] if "::" in test_str else ""
+                        conn.execute("DELETE FROM specs_fts WHERE entity_id = ?", (iid,))
+                        conn.execute(
+                            """
+                            INSERT INTO specs_fts (entity_id, title, jtbd_or_rule, body_text, keywords, symbols)
+                            VALUES (?, '', ?, ?, ?, ?);
+                            """,
+                            (
+                                iid,
+                                rule_str,
+                                str(title or ""),
+                                " ".join(str(x) for x in (iid, "invariant", domain, doc_id) if x),
+                                " ".join(
+                                    x for x in (test_str, compound_identifier_subtokens(f"{test_func} {rule_str}")) if x
+                                ),
+                            ),
+                        )
+
                         if test:
                             conn.execute(
                                 "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
@@ -1231,6 +1317,12 @@ class ArchitecturalIndex:
                 symbols = " ".join(
                     [m.get("name", "") for m in (fm.get("components", []) or fm.get("c4_internal_components", []))]
                 )
+                # unicode61 keeps camelCase identifiers atomic; index their de-compounded sub-tokens alongside.
+                decompounded = compound_identifier_subtokens(
+                    f"{title or ''} {jtbd_or_rule or ''} {body_clean} {symbols}"
+                )
+                if decompounded:
+                    symbols = f"{symbols} {decompounded}".strip()
 
                 conn.execute(
                     """
@@ -1657,34 +1749,73 @@ class ArchitecturalIndex:
             """
         )
 
-    def query_fts(self, text: str, limit: int = 10) -> list[dict[str, Any]]:
-        """Execute BM25 ranked full-text query using FTS5."""
+    @staticmethod
+    def _delete_spec_fts_rows(conn: sqlite3.Connection, doc_id: str, rel_path: str) -> None:
+        """Delete the FTS rows of a specification and of every child entity (e.g. ``INV-*``) declared in its file.
+
+        Must run *before* the ``entities`` rows are deleted, because child FTS rows are keyed by the child ID and
+        located through ``entities.file_path``.
+        """
+        conn.execute(
+            "DELETE FROM specs_fts WHERE entity_id = ? OR entity_id IN (SELECT id FROM entities WHERE file_path = ?);",
+            (doc_id, rel_path),
+        )
+
+    def query_fts(
+        self,
+        text: str,
+        limit: int = 10,
+        include_types: tuple[str, ...] | list[str] | None = None,
+        exclude_types: tuple[str, ...] | list[str] = (),
+    ) -> list[dict[str, Any]]:
+        """Execute a column-weighted BM25 ranked full-text query using FTS5.
+
+        Args:
+            text: Free-text prompt. camelCase / snake_case identifiers are de-compounded into sub-terms.
+            limit: Maximum number of results.
+            include_types: When given, only entities of these ``entities.type`` values are ranked.
+            exclude_types: Entity types never ranked (filtered inside SQL, before ``LIMIT``).
+        """
         if not text or not text.strip():
             return []
 
         self._ensure_synced()
 
-        clean_terms = re.findall(r"\w+", text.lower())
-        if not clean_terms:
+        fts_query = build_fts_match_query(text)
+        if not fts_query:
             return []
 
-        fts_query = " OR ".join(f'"{term}"*' for term in clean_terms)
+        type_clauses: list[str] = []
+        type_params: list[str] = []
+        if include_types is not None:
+            include = list(include_types)
+            if not include:
+                return []
+            type_clauses.append(f"e.type IN ({','.join('?' for _ in include)})")
+            type_params.extend(include)
+        exclude = list(exclude_types or ())
+        if exclude:
+            type_clauses.append(f"e.type NOT IN ({','.join('?' for _ in exclude)})")
+            type_params.extend(exclude)
+        type_sql = "".join(f" AND {clause}" for clause in type_clauses)
+        weights_sql = ", ".join(repr(float(w)) for w in FTS_COLUMN_WEIGHTS)
+
         conn = self._get_connection()
         cursor = conn.cursor()
 
         try:
             cursor.execute(
-                """
+                f"""
                 SELECT
                     e.id, e.type, e.title, e.domain, e.package_path, e.data_json,
-                    bm25(specs_fts) as rank
+                    bm25(specs_fts, {weights_sql}) as rank
                 FROM specs_fts f
                 JOIN entities e ON e.id = f.entity_id
-                WHERE specs_fts MATCH ?
-                ORDER BY rank
+                WHERE specs_fts MATCH ?{type_sql}
+                ORDER BY rank, e.id
                 LIMIT ?;
                 """,
-                (fts_query, limit),
+                (fts_query, *type_params, limit),
             )
             results = []
             for row in cursor.fetchall():
@@ -2110,9 +2241,10 @@ class ArchitecturalIndex:
                     matched_contracts[eid] = data
                     matched_reasons.setdefault(eid, []).append(f"Contract file match on '{fpath}'")
 
-        # 3. Resolve by Task prompt (FTS5 lexical & semantic search)
+        # 3. Resolve by Task prompt (FTS5 lexical search restricted to sliceable entity types, so historical
+        #    SpecDeltas, explorations, and personas never consume the top-k candidate slots)
         if task and task.strip():
-            fts_matches = self.query_fts(task, limit=8)
+            fts_matches = self.query_fts(task, limit=8, include_types=TASK_SLICE_ENTITY_TYPES)
             for m in fts_matches:
                 eid = m["id"]
                 etype = m["type"]
@@ -2136,6 +2268,39 @@ class ArchitecturalIndex:
                 elif etype == "invariant":
                     matched_invariants[eid] = data
                     matched_reasons.setdefault(eid, []).append(reason)
+                elif etype in ("product/domain", "design/system"):
+                    # Domains and design systems have no dedicated slice list: surface their member containers and
+                    # capabilities, and keep the matched DOM-*/DS-* ID visible in matched_reasons.
+                    rel_types = ("domain_member",) if etype == "product/domain" else ("styles_container",)
+                    member_reason = (
+                        f"Member of FTS-matched domain {eid}"
+                        if etype == "product/domain"
+                        else f"Styled by FTS-matched design system {eid}"
+                    )
+                    ph = ",".join("?" for _ in rel_types)
+                    member_ids: list[str] = []
+                    for row in cursor.execute(
+                        f"""
+                        SELECT e.id, e.title, e.type, e.data_json FROM edges ed
+                        JOIN entities e ON e.id = ed.target_id
+                        WHERE ed.source_id = ? AND ed.rel_type IN ({ph})
+                        ORDER BY e.id;
+                        """,
+                        (eid, *rel_types),
+                    ).fetchall():
+                        m_data = json.loads(row["data_json"])
+                        m_data["id"] = row["id"]
+                        m_data["title"] = row["title"]
+                        if row["type"] in ("tech/container", "tech/component"):
+                            matched_components.setdefault(row["id"], m_data)
+                        elif row["type"] == "product/capability":
+                            matched_capabilities.setdefault(row["id"], m_data)
+                        else:
+                            continue
+                        member_ids.append(row["id"])
+                        matched_reasons.setdefault(row["id"], []).append(member_reason)
+                    expanded = f"; expanded to {', '.join(member_ids)}" if member_ids else ""
+                    matched_reasons.setdefault(eid, []).append(f"{reason}{expanded}")
 
         # 4. Fallback if no specific filter matched or empty query
         if not matched_components and not matched_capabilities and not clean_files and not component and not task:

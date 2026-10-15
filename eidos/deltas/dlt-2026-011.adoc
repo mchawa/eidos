@@ -8,7 +8,7 @@ status: applied
 vcs:
   branch: spike/exp-2026-002
 intent:
-  kind: feature_addition
+  kind: feature
   motivation: Graduated from validated feasibility exploration EXP-2026-002 to transition
     Eidos context slicing from linear filesystem scanning to an embedded SQLite knowledge
     graph with FTS5 lexical retrieval and tiered token-budgeted compression.

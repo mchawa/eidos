@@ -6,7 +6,7 @@ title: Solution Architecture Synchronization with Multi-Design Systems, MCP Cont
   and Lifecycle Scaffolding
 status: applied
 intent:
-  kind: refactor
+  kind: enabler
   motivation: Synchronize CMP-EIDOS-ENGINE and ARCH-EIDOS-001 with current engine
     capabilities including MCP stdio contract, multi-design systems, repository initialization,
     and plugin validation.

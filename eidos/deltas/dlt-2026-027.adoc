@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: feat/strict-static-invariant-verification
 intent:
-  kind: architectural_refactor
+  kind: enabler
   motivation: "Enforce strict static-only verification of invariant 'test_binding' declarations ('file::func' existence and exact word-boundary '# INV-*' reference within the bound test function) without executing tests or reading test runner artifacts."
 mutations:
 - action: modify_container

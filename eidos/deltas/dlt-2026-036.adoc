@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: feat/living-spec-architectural-decisions
 intent:
-  kind: feature_addition
+  kind: feature
   motivation: "Preserve architectural 'why', rejected alternatives, and trade-offs directly inside living specifications ('product/system', 'tech/architecture', 'tech/container', 'tech/component') via a structured 'decisions:' schema block without reintroducing standalone ADR graveyard files (POL-001)."
 mutations:
   - action: modify_component

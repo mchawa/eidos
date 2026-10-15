@@ -46,14 +46,14 @@ technical:
     - "CNT-EIDOS-CLI"
   contracts:
     interfaces:
-      - "eidos portal serve [--port <port>] (shortcut: eidos serve)"
-      - "eidos portal build [--out <dir>] (shortcut: eidos build-site)"
+      - "eidos portal serve [--port <port>]"
+      - "eidos portal build [--out <dir>]"
   invariants:
     - id: INV-PORTAL-ZERO-NODE-DEP
       rule: "The web portal daemon and static site builder must operate using Python standard library without external Node.js/npm dependencies."
       test_binding: "tests/test_portal.py::test_portal_data_generation"
     - id: INV-PORTAL-AIR-GAPPED-BUNDLE
-      rule: "The portal bundle served by 'eidos serve' and emitted by 'eidos build-site' must load zero scripts, stylesheets, fonts, or other subresources from remote origins; Mermaid.js, Asciidoctor.js, and web fonts are embedded."
+      rule: "The portal bundle served by 'eidos portal serve' and emitted by 'eidos portal build' must load zero scripts, stylesheets, fonts, or other subresources from remote origins; Mermaid.js, Asciidoctor.js, and web fonts are embedded."
       test_binding: "tests/test_portal.py::test_portal_bundle_has_no_remote_subresources"
     - id: INV-PORTAL-INTERACTIVE-C4
       rule: "The portal must render a dynamic hierarchical C4 architecture explorer enabling clickable drill-down from L1 System Context to L2 Containers and L3 Component Whiteboxes with breadcrumbs and component inspection."
@@ -69,7 +69,7 @@ technical:
 :toc: left
 
 == Intent
-Technical specifications and architecture models are often trapped in raw text files or separate wikis. This capability provides a local, zero-dependency embedded HTTP server (`eidos serve`) and static site builder (`eidos build-site`) that turns living AsciiDoc files into an interactive single-page application.
+Technical specifications and architecture models are often trapped in raw text files or separate wikis. This capability provides a local, zero-dependency embedded HTTP server (`eidos portal serve`) and static site builder (`eidos portal build`) that turns living AsciiDoc files into an interactive single-page application.
 
 == Key Responsibilities
 * Real-time inspection and clickable hierarchical exploration of C4 Level 1 (Context), Level 2 (Containers), and Level 3 (Component Whitebox) models using client-side Mermaid rendering.

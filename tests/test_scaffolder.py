@@ -105,7 +105,7 @@ def test_scaffold_all_spec_types(tmp_path):
         doc_type_key="delta",
         raw_id="DLT-2026-999",
         title="MFA Integration",
-        kind="feature_addition",
+        kind="feature",
         motivation="Require TOTP MFA.",
     )
     assert dlt_file.exists()
@@ -228,6 +228,21 @@ def test_cli_spec_commands(tmp_path):
     assert res_delete.exit_code == 0
     assert "Successfully deleted" in res_delete.stdout
 
+    # 5. Create delta via 'spec create' without --kind defaults to 'feature' (root 'create' shortcut is removed)
+    res_dlt_spec = runner.invoke(
+        app,
+        ["spec", "create", "delta", "DLT-2026-501", "--title", "Spec Create Delta", "--path", str(tmp_path)],
+    )
+    assert res_dlt_spec.exit_code == 0
+    doc_501 = parse_spec_file(tmp_path / "deltas" / "dlt-2026-501.adoc")
+    assert doc_501.frontmatter["intent"]["kind"] == "feature"
+
+    res_dlt_short = runner.invoke(
+        app,
+        ["create", "delta", "DLT-2026-502", "--title", "Shortcut Create Delta", "--path", str(tmp_path)],
+    )
+    assert res_dlt_short.exit_code != 0
+
 
 def test_cli_delta_commands(tmp_path):
     """Verify 'eidos delta' CLI command suite (CTR-EIDOS-CLI)."""
@@ -241,7 +256,7 @@ def test_cli_delta_commands(tmp_path):
             "--title",
             "CLI Expansion",
             "--kind",
-            "feature_addition",
+            "feature",
             "--motivation",
             "Add delta management.",
             "--path",
@@ -280,8 +295,7 @@ def test_cli_delta_commands(tmp_path):
 
 
 def test_cli_top_level_shortcuts(tmp_path):
-    """Verify top-level 'eidos create', 'eidos list', and 'eidos delete' shortcuts (CTR-EIDOS-CLI)."""
-    # Create shortcut
+    """Verify top-level 'eidos create', 'eidos list', and 'eidos delete' shortcuts are removed (CTR-EIDOS-CLI)."""
     res_create = runner.invoke(
         app,
         [
@@ -294,18 +308,13 @@ def test_cli_top_level_shortcuts(tmp_path):
             str(tmp_path),
         ],
     )
-    assert res_create.exit_code == 0
-    assert "POL-009-RULE" in res_create.stdout
+    assert res_create.exit_code != 0
 
-    # List shortcut
     res_list = runner.invoke(app, ["list", "--path", str(tmp_path)])
-    assert res_list.exit_code == 0
-    assert "POL-009-RULE" in res_list.stdout
+    assert res_list.exit_code != 0
 
-    # Delete shortcut
     res_delete = runner.invoke(app, ["delete", "POL-009-RULE", "--path", str(tmp_path)])
-    assert res_delete.exit_code == 0
-    assert "Successfully deleted" in res_delete.stdout
+    assert res_delete.exit_code != 0
 
 
 def test_cli_spec_lifecycle_tools(tmp_path):
@@ -344,7 +353,7 @@ def test_cli_spec_lifecycle_tools(tmp_path):
             "--title",
             "CLI Delta",
             "--kind",
-            "feature_addition",
+            "feature",
             "--motivation",
             "Test CLI delta.",
             "--path",
@@ -505,13 +514,16 @@ def test_cli_version_command_and_options():
 
 
 def test_cli_index_update_alias(tmp_path):
-    """Verify 'eidos index update' acts as an alias to sync (CTR-EIDOS-CLI)."""
+    """Verify 'eidos index sync' works and 'eidos index update' alias is removed (CTR-EIDOS-CLI)."""
     from eidos.core.lifecycle.scaffolder import init_repository
 
     init_repository(project_dir=tmp_path)
-    res = runner.invoke(app, ["index", "update", "--path", str(tmp_path / "eidos")])
-    assert res.exit_code == 0
-    assert "index" in res.output
+    res_sync = runner.invoke(app, ["index", "sync", "--path", str(tmp_path / "eidos")])
+    assert res_sync.exit_code == 0
+    assert "index" in res_sync.output
+
+    res_removed = runner.invoke(app, ["index", "update", "--path", str(tmp_path / "eidos")])
+    assert res_removed.exit_code != 0
 
 
 def test_cli_command_groups_help_and_subapps():
@@ -528,18 +540,26 @@ def test_cli_command_groups_help_and_subapps():
     # Verify sub-apps in help
     assert "spec" in res.stdout
     assert "delta" in res.stdout
-    assert "component" in res.stdout
     assert "index" in res.stdout
     assert "portal" in res.stdout
     assert "plugin" in res.stdout
 
-    # Verify eidos spec containers and components
-    res_containers = runner.invoke(app, ["spec", "containers"])
-    assert res_containers.exit_code == 0
-    assert "Containers" in res_containers.stdout
+    # Verify component subgroup is nested under eidos spec
+    res_spec_help = runner.invoke(app, ["spec", "--help"])
+    assert res_spec_help.exit_code == 0
+    assert "component" in res_spec_help.stdout
 
-    res_components = runner.invoke(app, ["spec", "components"])
+    # Verify eidos spec list --type container and --type component replace spec containers / spec components
+    res_containers = runner.invoke(app, ["spec", "list", "--type", "container"])
+    assert res_containers.exit_code == 0
+    assert "CNT-EIDOS-CLI" in res_containers.stdout
+
+    res_components = runner.invoke(app, ["spec", "list", "--type", "component"])
     assert res_components.exit_code == 0
+    assert "CMP-" in res_components.stdout
+
+    assert runner.invoke(app, ["spec", "containers"]).exit_code != 0
+    assert runner.invoke(app, ["spec", "components"]).exit_code != 0
 
 
 def test_scaffold_design_system_and_tokens(tmp_path):
@@ -919,7 +939,7 @@ id: DLT-2026-777
 title: "Comment Preservation Delta"
 status: proposed # status inline comment
 intent:
-  kind: feature_addition
+  kind: feature
   motivation: "Keep comments intact."
 mutations:
   - action: add_component

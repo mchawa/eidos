@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: fix/delta-verify-modification-evidence
 intent:
-  kind: bugfix
+  kind: bug
   bug_classification: spec_gap
   severity: medium
   motivation: "'eidos delta verify' still reports modify_*/extend_*/patch_* mutations as fulfilled without evidence of change: it falls back to filesystem mtimes when no local baseline exists, hashes inline component targets at container-file granularity, accepts structural sub-target membership (capability/invariant, container/component, container/contract) as proof of modification, and resolves composite mutations like patch_invariant to target_capability instead of the action's primary target. CAP-PROD-002 has no invariant requiring modification evidence."

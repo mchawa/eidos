@@ -1089,3 +1089,111 @@ def test_fts5_indexes_embedded_decisions(temp_index):
     assert "CNT-EIDOS-INDEX" in matched_ids
 
 
+def _write_retrieval_spec(path: Path, text: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+_WIDGET_INV_ID = "INV-WIDGET-TOMBSTONE"  # eidos:fixture (synthetic invariant, intentionally undeclared)
+
+_RETRIEVAL_CAP_WITH_INVARIANT = (
+    "---\n"
+    "type: product/capability\n"
+    "id: CAP-WIDGET-001\n"
+    "title: Widget Archival\n"
+    "domain: DOM-WIDGET\n"
+    "technical:\n"
+    "  containers:\n"
+    "    - CNT-WIDGET\n"
+    "  invariants:\n"
+    f"    - id: {_WIDGET_INV_ID}\n"
+    '      rule: "Archived widgets must keep a tombstone so every frobnicate pass stays reversible."\n'
+    '      test_binding: "tests/test_widget.py::test_frobnicate_tombstone_archive"\n'
+    "---\n"
+    "= Widget Archival\n"
+)
+
+
+def test_task_retrieval_indexes_invariants_and_filters_types(tmp_path):
+    """INV-AGENT-TASK-RETRIEVAL-COVERAGE: task retrieval indexes child invariants, de-compounds identifiers,
+    weights columns positionally, keeps SpecDeltas out of slice slots, resolves matched domains, and purges stale
+    invariant FTS rows on incremental sync."""
+    from eidos.core.index.graph_index import FTS_COLUMN_WEIGHTS, build_fts_match_query, split_identifier
+
+    repo = tmp_path / "retrieval"
+    eidos_dir = repo / "eidos"
+    _write_retrieval_spec(
+        eidos_dir / "domains" / "widget" / "domain.adoc",
+        "---\ntype: product/domain\nid: DOM-WIDGET\ntitle: Quasar Widget Lifecycle\n---\n= Quasar Widget Lifecycle\n",
+    )
+    _write_retrieval_spec(
+        eidos_dir / "architecture" / "containers" / "widget.adoc",
+        "---\ntype: tech/container\nid: CNT-WIDGET\nname: Widget Service\ndomain_binding: DOM-WIDGET\n"
+        "package_path: src/widget\n---\n= Widget Service\n\n"
+        "The WidgetRegistryEngine owns registration for every quasar deployment in the fleet.\n",
+    )
+    cap = _write_retrieval_spec(
+        eidos_dir / "domains" / "widget" / "capabilities" / "cap.adoc", _RETRIEVAL_CAP_WITH_INVARIANT
+    )
+    # Twelve historical SpecDeltas saturated with the task vocabulary (more than the 8 slice slots).
+    for n in range(12):
+        _write_retrieval_spec(
+            eidos_dir / "deltas" / f"dlt-2026-{n:03d}.adoc",
+            f"---\ntype: delta/mutation\nid: DLT-2026-{n:03d}\ntitle: Frobnicate tombstone pass {n}\n"
+            "status: applied\n---\n= Frobnicate tombstone pass\n\nfrobnicate tombstone frobnicate tombstone\n",
+        )
+
+    # Pure helpers: identifier splitting and snake_case-safe query construction.
+    assert split_identifier("get_tiered_context_slice") == ["get", "tiered", "context", "slice"]
+    assert split_identifier("ArchitecturalIndex") == ["architectural", "index"]
+    assert split_identifier("HTTPServer") == ["http", "server"]
+    assert '"detect_drift"' not in build_fts_match_query("detect_drift")
+    # bm25() weights are positional over every column, including the UNINDEXED entity_id placeholder.
+    assert len(FTS_COLUMN_WEIGHTS) == 6 and FTS_COLUMN_WEIGHTS[0] == 0.0
+
+    idx = ArchitecturalIndex(db_path=repo / "eidos" / ".cache" / "index.db", repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+        conn = idx._get_connection()
+        fts_rows = conn.execute("SELECT COUNT(*) FROM specs_fts;").fetchone()[0]
+        entity_rows = conn.execute("SELECT COUNT(*) FROM entities;").fetchone()[0]
+        assert fts_rows == entity_rows  # every entity, including child INV-* rules, is searchable
+
+        # 1. Child invariants are directly searchable, and exclusion filters apply before LIMIT.
+        top = [m["id"] for m in idx.query_fts("frobnicate tombstone", limit=3, exclude_types=("delta/mutation",))]
+        assert top and top[0] == _WIDGET_INV_ID
+        assert not any(i.startswith("DLT-") for i in top)
+
+        # 2. Task slices never spend candidate slots on historical SpecDeltas.
+        sl = idx.get_tiered_context_slice(task="frobnicate tombstone")
+        assert _WIDGET_INV_ID in [inv["id"] for inv in sl.invariants]
+        assert any("FTS lexical match" in r for r in sl.matched_reasons[_WIDGET_INV_ID])
+        assert not any(k.startswith("DLT-") for k in sl.matched_reasons)
+
+        # 3. snake_case prompts match out-of-order words; camelCase identifiers match their sub-tokens.
+        inv_hits = [m["id"] for m in idx.query_fts("tombstone_frobnicate", include_types=("invariant",))]
+        assert inv_hits == [_WIDGET_INV_ID]
+        cnt_hits = [m["id"] for m in idx.query_fts("registry engine", include_types=("tech/container",))]
+        assert cnt_hits == ["CNT-WIDGET"]
+
+        # 4. Title matches outrank body matches (weights land on the intended columns).
+        ranked = [m["id"] for m in idx.query_fts("quasar", include_types=("product/domain", "tech/container"))]
+        assert ranked[:2] == ["DOM-WIDGET", "CNT-WIDGET"]
+
+        # 5. A matched domain resolves to its member container and capability instead of being dropped.
+        dom_slice = idx.get_tiered_context_slice(task="quasar lifecycle")
+        assert "DOM-WIDGET" in dom_slice.matched_reasons
+        assert "CNT-WIDGET" in [c["id"] for c in dom_slice.components]
+        assert "CAP-WIDGET-001" in [c["id"] for c in dom_slice.capabilities]
+
+        # 6. Removing the invariant purges its FTS row on incremental sync (no stale search hits).
+        cap.write_text(_RETRIEVAL_CAP_WITH_INVARIANT.split("  invariants:\n")[0] + "---\n= Widget Archival\n")
+        _touch_later(cap, offset=10)
+        idx.sync()
+        assert idx.query_fts("frobnicate tombstone", include_types=("invariant",)) == []
+        fts_rows = conn.execute("SELECT COUNT(*) FROM specs_fts;").fetchone()[0]
+        entity_rows = conn.execute("SELECT COUNT(*) FROM entities;").fetchone()[0]
+        assert fts_rows == entity_rows
+    finally:
+        idx.close()

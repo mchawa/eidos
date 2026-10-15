@@ -3,7 +3,7 @@ type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-043
 title: "Enforce Strict Enum Taxonomies in SpecDelta Schema (intent.kind, bug_classification, severity, and mutations[].action)"
-status: proposed
+status: applied
 vcs:
   branch: refactor/delta-schema-enums
 intent:
@@ -13,9 +13,15 @@ mutations:
   - action: modify_component
     target_component: CMP-DELTA-ENGINE
     target_container: CNT-EIDOS-CORE
-    details: "Replace open 'pattern: ^[a-z0-9_-]+$' constraints in 'assets/schemas/v1/delta/delta.schema.yaml' with strict 'enum' lists for 'intent.kind' ([feature, enabler, bug]), 'intent.bug_classification' ([spec_violation, spec_gap]), 'intent.severity' ([low, medium, high, critical]), and 'mutations[].action' (all canonical Product, Architecture, and Design semantic operations), and normalize historical SpecDeltas in 'eidos/deltas/dlt-2026-*.adoc' to conform to the enum taxonomy."
+    details: "Replace open 'pattern: ^[a-z0-9_-]+$' constraints in 'assets/schemas/v1/delta/delta.schema.yaml' with strict 'enum' lists for 'intent.kind' ([feature, enabler, bug]), 'intent.bug_classification' ([spec_violation, spec_gap]), 'intent.severity' ([low, medium, high, critical]), and 'mutations[].action' (all canonical Product, Architecture, and Design semantic operations), support all standalone 'remove_*' actions in 'verify_delta_mutations()' and 'execute_delta_mutations()', and normalize historical SpecDeltas in 'eidos/deltas/dlt-2026-*.adoc' to conform to the enum taxonomy."
     expect:
       responsibility: "enum"
+  - action: modify_component
+    target_component: CMP-DELTA-AUDITOR
+    target_container: CNT-EIDOS-CORE
+    details: "Include 'PER-' and 'CLT-' entity prefixes in 'AuditEngine._extract_targets_and_tokens()' in 'src/eidos/core/lifecycle/audit.py' so 'remove_persona' and 'remove_client' mutations are audited across free-text details."
+    expect:
+      responsibility: "PER-*"
   - action: modify_component
     target_component: CMP-CHANGELOG-GENERATOR
     target_container: CNT-EIDOS-CORE
@@ -34,9 +40,20 @@ mutations:
     details: "Update 'eidos delta create --kind' default and help text in 'src/eidos/cli/delta_commands.py' to 'feature' ('Mutation kind: feature, enabler, bug.')."
     expect:
       responsibility: "feature, enabler, bug"
+  - action: modify_component
+    target_component: CMP-CLI-SPEC-COMMANDS
+    target_container: CNT-EIDOS-CLI
+    details: "Update 'eidos spec create --kind' and 'eidos create --kind' defaults and help text in 'src/eidos/cli/spec_commands.py' from 'feature_addition' to 'feature' ('feature, enabler, bug')."
+    expect:
+      responsibility: "feature, enabler, bug"
+  - action: modify_container
+    target_container: CNT-EIDOS-PLUGIN
+    details: "Update bundled and installed agent skills ('eidos/SKILL.md' and 'eidos-plan/SKILL.md') to use '--kind <feature|enabler|bug>' and canonical 'intent.kind' enum values."
+    expect:
+      contains: "SpecDelta enum taxonomy guidance"
   - action: modify_contract
     target_contract: CTR-EIDOS-CLI
-    details: "Update 'eidos/architecture/contracts/cli.adoc' and 'tests/fixtures/cli_command_tree.json' to reflect the updated '--kind' option on 'eidos delta create'."
+    details: "Update 'eidos/architecture/contracts/cli.adoc' and 'tests/fixtures/cli_command_tree.json' to reflect the updated '--kind' option on 'eidos delta create', 'eidos spec create', and 'eidos create'."
     expect:
       contains: "feature, enabler, bug"
   - action: extend_capability
@@ -48,11 +65,14 @@ affects:
   containers:
     - CNT-EIDOS-CORE
     - CNT-EIDOS-CLI
+    - CNT-EIDOS-PLUGIN
   components:
     - CMP-DELTA-ENGINE
+    - CMP-DELTA-AUDITOR
     - CMP-CHANGELOG-GENERATOR
     - CMP-LIFECYCLE-SCAFFOLDER
     - CMP-CLI-DELTA-COMMANDS
+    - CMP-CLI-SPEC-COMMANDS
   contracts:
     - CTR-EIDOS-CLI
   capabilities:
@@ -61,11 +81,14 @@ blast_radius:
   impacted_containers:
     - CNT-EIDOS-CORE
     - CNT-EIDOS-CLI
+    - CNT-EIDOS-PLUGIN
   impacted_components:
     - CMP-DELTA-ENGINE
+    - CMP-DELTA-AUDITOR
     - CMP-CHANGELOG-GENERATOR
     - CMP-LIFECYCLE-SCAFFOLDER
     - CMP-CLI-DELTA-COMMANDS
+    - CMP-CLI-SPEC-COMMANDS
   invariants_to_enforce:
     - INV-SPEC-VALIDATION
     - INV-DELTA-CHANGELOG-GENERATION

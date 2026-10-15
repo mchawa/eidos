@@ -1,4 +1,4 @@
-"""SpecDelta lifecycle commands (`eidos delta ...`) and the `changelog` shortcut."""
+"""SpecDelta lifecycle commands (`eidos delta ...`)."""
 
 import json
 from pathlib import Path
@@ -7,7 +7,7 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from eidos.cli._shared import PANEL_SPECS, console
+from eidos.cli._shared import console
 from eidos.core.lifecycle.audit import AuditEngine
 from eidos.core.lifecycle.changelog import ChangelogGenerator
 from eidos.core.lifecycle.delta_engine import (
@@ -81,10 +81,10 @@ def delta_create_cmd(
         help="Title of the proposed change.",
     ),
     kind: str = typer.Option(
-        "feature_addition",
+        "feature",
         "--kind",
         "-k",
-        help="Mutation kind: feature_addition, bugfix, refactor, modification, feature_removal.",
+        help="Mutation kind: feature, enabler, bug.",
     ),
     motivation: str = typer.Option(
         "Problem statement and motivation.",
@@ -528,4 +528,4 @@ def delta_changelog_cmd(
 
 def register(app: typer.Typer) -> None:
     """Attach the root-level commands owned by this module to the root Typer app."""
-    app.command("changelog", rich_help_panel=PANEL_SPECS)(delta_changelog_cmd)
+    return None

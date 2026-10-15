@@ -35,10 +35,9 @@ eidos spec create screen SCR-BILLING-DASHBOARD --title "Billing Overview Screen"
 eidos spec create flow FLOW-UPGRADE-PLAN --title "Subscription Plan Upgrade Flow"
 
 # Inspect, promote, or inline C4 Level 3 components
-eidos component list
-eidos component list CNT-BILLING-WORKER
-eidos component promote CMP-USAGE-LEDGER
-eidos component inline CMP-USAGE-LEDGER
+eidos spec list --type component
+eidos spec component promote CMP-USAGE-LEDGER
+eidos spec component inline CMP-USAGE-LEDGER
 
 # Validate all specifications, cross-references, and invariant test bindings
 eidos validate eidos --json
@@ -199,10 +198,10 @@ Eidos supports a two-tier progressive disclosure model for C4 Level 3 components
    ```bash
    # Promote an inline component to eidos/architecture/components/<id>.adoc
    # and automatically replace the inline entry with `- ref: eidos/architecture/components/<id>.adoc`
-   eidos component promote CMP-USAGE-LEDGER
+   eidos spec component promote CMP-USAGE-LEDGER
 
    # Fold a promoted component back inline into its parent container
-   eidos component inline CMP-USAGE-LEDGER
+   eidos spec component inline CMP-USAGE-LEDGER
    ```
    **Single-Definition Invariant (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Once promoted, the parent container's `components:` entry MUST use `{ref: "eidos/architecture/components/..."}` only—never duplicate `name`, `responsibility`, or `source_path` in both places.
 

@@ -259,13 +259,16 @@ def test_portal_http_server():
 
 
 def test_cli_build_site_command(tmp_path: Path):
-    """Verify 'eidos build-site' CLI command generates static assets."""
+    """Verify 'eidos portal build' CLI command generates static assets and 'eidos build-site' is removed."""
     target_out = tmp_path / "public"
-    res = runner.invoke(app, ["build-site", "--path", "eidos", "--out", str(target_out)])
+    res = runner.invoke(app, ["portal", "build", "--path", "eidos", "--out", str(target_out)])
     assert res.exit_code == 0
     assert "Successfully generated static portal" in res.stdout
     assert (target_out / "index.html").exists()
     assert (target_out / "data.json").exists()
+
+    res_removed = runner.invoke(app, ["build-site", "--path", "eidos", "--out", str(target_out)])
+    assert res_removed.exit_code != 0
 
 
 def test_cli_portal_subapp_commands(tmp_path: Path):

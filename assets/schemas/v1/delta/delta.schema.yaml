@@ -54,41 +54,44 @@ properties:
     properties:
       kind:
         type: string
-        pattern: "^[a-z0-9_-]+$"
+        enum:
+          - feature
+          - enabler
+          - bug
         description: >
-          The functional nature of the mutation. Open to any engineering workflow.
-          
-          Common conventions include:
-            - feature_addition (New user-facing or technical capability)
-            - feature_removal (Deprecating or deleting a capability)
-            - modification (Changing existing business logic or behavior)
-            - bugfix (Correcting an anomaly)
-            - refactor (Internal code or spec cleanup without behavioral change)
-            - security_patch (Addressing a vulnerability)
-            - performance_optimization (Speed, throughput, or memory improvement)
-            - chore (Tooling, build, or maintenance adjustments)
-            - documentation (Living specification or guide adjustments)
+          The strategic nature of the mutation:
+            - feature (User-facing or product capability delivery, enhancement, or retirement)
+            - enabler (Architectural refactor, technical foundation, performance optimization, contract/schema alignment, or governance)
+            - bug (Defect correction; pair with bug_classification)
         examples:
-          - "feature_addition"
-          - "feature_removal"
-          - "modification"
-          - "bugfix"
-          - "refactor"
-          - "security_patch"
-          - "performance_optimization"
-          - "chore"
-          - "documentation"
+          - "feature"
+          - "enabler"
+          - "bug"
       motivation:
         type: string
         description: "Why this change is needed and the problem it resolves."
       bug_classification:
         type: string
-        pattern: "^[a-z0-9_-]+$"
+        enum:
+          - spec_violation
+          - spec_gap
         description: "Only for bugfixes: 'spec_violation' means code diverged from valid spec; 'spec_gap' means spec lacked coverage for an edge condition."
+        examples:
+          - "spec_violation"
+          - "spec_gap"
       severity:
         type: string
-        pattern: "^[a-z0-9_-]+$"
-        description: "Impact severity rating (e.g. low, medium, high, critical)."
+        enum:
+          - low
+          - medium
+          - high
+          - critical
+        description: "Impact severity rating: low, medium, high, or critical."
+        examples:
+          - "low"
+          - "medium"
+          - "high"
+          - "critical"
   mutations:
     type: array
     description: "Ordered list of atomic semantic operations to perform against the baseline .spec/ documents."
@@ -100,13 +103,60 @@ properties:
       properties:
         action:
           type: string
-          pattern: "^[a-z0-9_-]+$"
+          enum:
+            # Product: Domains, Capabilities, Personas, Policies & Invariants
+            - add_domain
+            - modify_domain
+            - remove_domain
+            - add_capability
+            - extend_capability
+            - modify_capability
+            - deprecate_capability
+            - remove_capability
+            - add_persona
+            - modify_persona
+            - remove_persona
+            - add_policy
+            - modify_policy
+            - patch_policy
+            - deprecate_policy
+            - remove_policy
+            - add_invariant
+            - patch_invariant
+            - remove_invariant
+            # Architecture: System Architecture, Containers, Components & Contracts
+            - modify_architecture
+            - add_container
+            - modify_container
+            - remove_container
+            - add_component
+            - modify_component
+            - remove_component
+            - add_contract
+            - modify_contract
+            - remove_contract
+            # Design: Design Systems, UI Components, Screens, Clients & Flows
+            - add_design_system
+            - modify_design_system
+            - remove_design_system
+            - add_ui_component
+            - modify_ui_component
+            - remove_ui_component
+            - add_screen
+            - modify_screen
+            - remove_screen
+            - add_client
+            - modify_client
+            - remove_client
+            - add_flow
+            - modify_flow
+            - remove_flow
           description: >
             Semantic operation type indicating the exact mutation being executed against the baseline.
             
             Common conventions include:
               - Domains: add_domain, modify_domain, remove_domain
-              - Capabilities: add_capability, extend_capability, deprecate_capability, remove_capability
+              - Capabilities: add_capability, extend_capability, modify_capability, deprecate_capability, remove_capability
               - Invariants: add_invariant, patch_invariant, remove_invariant
               - Containers: add_container, modify_container, remove_container
               - Components: add_component, modify_component, remove_component
@@ -114,7 +164,7 @@ properties:
               - Policies: add_policy, modify_policy, patch_policy, deprecate_policy, remove_policy
               - Contracts: add_contract, modify_contract, remove_contract
               - Personas: add_persona, modify_persona, remove_persona
-              - Design: add_design_system, modify_design_system, add_ui_component, modify_ui_component, remove_ui_component, add_screen, modify_screen, remove_screen, add_client, modify_client, add_flow, modify_flow
+              - Design: add_design_system, modify_design_system, remove_design_system, add_ui_component, modify_ui_component, remove_ui_component, add_screen, modify_screen, remove_screen, add_client, modify_client, remove_client, add_flow, modify_flow, remove_flow
           examples:
             - "add_capability"
             - "extend_capability"

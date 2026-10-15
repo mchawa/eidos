@@ -8,7 +8,7 @@ status: applied
 vcs:
   branch: refactor/cli-only-agent-architecture
 intent:
-  kind: feature_removal
+  kind: enabler
   motivation: 'Sunsets the stdio Model Context Protocol (MCP) server (CNT-EIDOS-MCP)
     and its interface contract (CTR-EIDOS-MCP). Modern AI coding environments (Google
     Antigravity, Claude Code, Cursor, Cline, GitHub Copilot Agent, Aider) now universally

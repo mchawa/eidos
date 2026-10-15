@@ -22,35 +22,11 @@ Displays current engine version, loaded v1 schemas, and available agent plugin t
 * **Exit Code**: 0
 
 === `eidos validate [PATH]`
-Validates all specification documents under `PATH` (defaults to `./eidos`) against the bundled JSON/YAML schemas.
+Validates all specification documents under `PATH` (defaults to `./eidos`) against the bundled JSON/YAML schemas and verifies cross-references.
 * **Arguments**: `PATH` (Optional directory path)
 * **Exit Codes**:
   - `0`: All specifications are valid.
   - `1`: One or more validation errors or broken cross-references found.
-
-=== `eidos lint [PATH]`
-Alias for `eidos validate`: Lints and validates all specification documents under `PATH` against their schemas, frontmatter syntax rules, and cross-reference links.
-* **Arguments**: `PATH` (Optional directory path)
-* **Exit Codes**:
-  - `0`: All specifications are valid and have correct syntax.
-  - `1`: One or more validation errors, syntax failures, or broken cross-references found.
-
-=== `eidos components [PATH]`
-Scans and displays all monorepo containers, C4 components, internal modules, dependencies, and package paths.
-* **Arguments**: `PATH` (Optional directory path, defaults to `eidos/architecture`)
-* **Exit Codes**:
-  - `0`: Scan complete.
-
-=== `eidos component`
-Manages C4 Level 3 in-process components: promotion to dedicated specifications, inlining back into container manifests, and component listing.
-* **Sub-commands**:
-  - `promote <component_id> [--path <path>] [--repo-root <path>]`: Promotes an inline component to a dedicated specification (`.adoc`) inside `eidos/architecture/components/` and updates the container manifest with `ref:`.
-  - `inline <component_id> [--path <path>] [--repo-root <path>]`: Demotes a dedicated component back into its parent container manifest as an inline definition and safely unlinks the dedicated specification file.
-  - `list [--path <path>] [--repo-root <path>]`: Lists all C4 Level 3 components across containers, displaying component ID, name, parent container, specification status/path, and responsibility.
-* **Exit Codes**:
-  - `0`: Component operation succeeded.
-  - `1`: Component not found or validation failure.
-
 
 === `eidos context [--file PATH] [--component ID] [--task PROMPT] [--tier TIER] [--format FORMAT] [--path PATH]`
 Extracts a compact, token-efficient architectural subgraph context slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies).
@@ -70,82 +46,38 @@ Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search
   - `status [--path <path>] [--json]`: Displays index health, AST parser engine telemetry (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, test invariant assertion metrics, cache file size, and continuous code-aware dirty status. Supports `--json` for programmatic agent consumption.
   - `sync [--path <path>] [--force]`: Synchronizes or rebuilds the knowledge graph index.
   - `search <query> [--limit <n>] [--path <path>]`: Performs BM25 full-text search across titles, requirements, and invariants.
-  - `blast-radius <symbol_or_path> [--depth <n>] [--path <path>]`: Computes the transitive dependency and governance blast radius for a symbol or spec path.
+  - `blast-radius <symbol_or_path> [--depth <n>] [--path <path>] [--json]`: Computes the transitive dependency and governance blast radius for a symbol or spec path.
   - `repo-map [--max-tokens <tokens>] [--format <format>] [--path <path>]`: Generates a token-budgeted structural repo map outline (classes, functions, methods, routes) for AI coding agents.
   - `find-symbol <query> [--limit <n>] [--json] [--path <path>]`: Locates code symbols across polyglot AST source files and links them to associated living component specifications. Each `--json` match carries `file_path` (the owning *specification* path) and a `location` object (`file`, `line_start`, `line_end`, `signature`, `parent_symbol`) pointing at the source definition, or `null` for non-AST matches such as paths and component references. The text table shows a `Location` (`file:line`) column.
-
 
 === `eidos portal`
 Manages the interactive Living Web Portal and documentation site export.
 * **Sub-commands**:
   - `serve [--path PATH] [--host HOST] [--port PORT] [--open]`: Launches the local interactive Eidos Living Web Portal HTTP server.
-  - `build [--path PATH] [--out OUT_DIR]`: Exports the Living Web Portal as a self-contained static site (alias: `build-site`).
+  - `build [--path PATH] [--out OUT_DIR]`: Exports the Living Web Portal as a self-contained static site.
 * **Exit Codes**:
   - `0`: Operation completed successfully.
   - `1`: Specifications directory not found.
 
-=== `eidos serve [--path PATH] [--host HOST] [--port PORT] [--open]`
-Shortcut command for `eidos portal serve`. Launches the local interactive Eidos Living Web Portal HTTP server.
-* **Options**:
-  - `--path, -p`: Path to eidos specs directory (defaults to `./eidos`).
-  - `--host, -h`: Host interface (defaults to `127.0.0.1`).
-  - `--port`: Port number (defaults to `3000`).
-  - `--open`: Open portal in browser automatically.
-* **Exit Codes**:
-  - `0`: Clean termination.
-  - `1`: Target directory not found.
-
-=== `eidos build-site [--path PATH] [--out OUT_DIR]`
-Shortcut command for `eidos portal build`. Exports the Eidos Living Web Portal as a self-contained static site for GitHub/GitLab Pages.
-* **Options**:
-  - `--path, -p`: Path to eidos specs directory (defaults to `./eidos`).
-  - `--out, -o`: Output folder (defaults to `./site`).
-* **Exit Codes**:
-  - `0`: Site generated successfully.
-  - `1`: Target directory not found.
-
-=== `eidos install [TARGET] [--target <target>] [--project-dir <path>] [--dest <path>] [--force]`
-Shortcut command for `eidos plugin install`. Installs the Eidos Agent Plugin or client integrations into project scope.
-* **Arguments**: `TARGET` (Optional target: `project`, `antigravity`, `claude`, `cursor`, `aider`, `cline`, `open-code`, `codex`, `copilot`, `all`)
-* **Options**:
-  - `--target, -t`: Target environment (`project`, `antigravity`, `claude`, `cursor`, `aider`, `cline`, `open-code`, `codex`, `copilot`, `all`; default: `project`).
-  - `--project-dir`: Project root directory (default: current working directory).
-  - `--dest`: Custom destination directory.
-  - `--force, -f`: Overwrite existing files.
-* **Exit Codes**:
-  - `0`: Plugin successfully installed.
-  - `1`: Installation failed or bundle missing.
-
-=== `eidos uninstall [TARGET] [--target <target>] [--project-dir <path>] [--dest <path>]`
-Shortcut command for `eidos plugin uninstall`. Uninstalls and cleans up the plugin, skills, and client configurations from project scope.
-* **Arguments**: `TARGET` (Optional target: `project`, `antigravity`, `claude`, `cursor`, `aider`, `cline`, `open-code`, `codex`, `copilot`, `all`)
-* **Options**:
-  - `--target, -t`: Target environment (`project`, `antigravity`, `claude`, `cursor`, `aider`, `cline`, `open-code`, `codex`, `copilot`, `all`; default: `project`).
-  - `--project-dir`: Project root directory.
-  - `--dest`: Custom destination directory.
-* **Exit Codes**:
-  - `0`: Clean uninstallation.
-  - `1`: Uninstallation error.
-
 === `eidos plugin`
-Manages, validates, installs, updates, and removes Eidos Agent Plugins across supported AI agent environments (Antigravity, Claude Code, Cursor, Aider, Cline, OpenCode, OpenAI Codex, and GitHub Copilot).
+Manages, validates, installs, updates, and uninstalls Eidos Agent Plugins across supported AI agent environments (Antigravity, Claude Code, Cursor, Aider, Cline, OpenCode, OpenAI Codex, and GitHub Copilot).
 * **Sub-commands**:
   - `install [TARGET] [--target <target>] [--project-dir <path>] [--dest <path>] [--force]`: Installs the plugin into `.agents/plugins/eidos` (strict `agent-plugins.org` v1.0.0), `.claude/plugins/eidos/` & `.claude/skills/` (Claude Code 6-Layer Plugin Architecture), `.github/plugin/` & `.github/skills/` (Copilot Agent Plugins 1.0), `.cursor/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/skills/`, `.aider/skills/`, and configures client settings and Agent Skills.
-  - `uninstall / remove [TARGET] [--target <target>] [--project-dir <path>] [--dest <path>]`: Uninstalls and cleans up the plugin and tool configurations from project scope.
+  - `uninstall [TARGET] [--target <target>] [--project-dir <path>] [--dest <path>]`: Uninstalls and cleans up the plugin and tool configurations from project scope.
   - `version [--project-dir <path>] [--dest <path>]`: Displays and compares bundled vs installed plugin version and reports SemVer sync status.
-  - `update / upgrade [TARGET] [--target <target>] [--project-dir <path>] [--dest <path>]`: Updates project-scoped plugin to the latest bundled version and syncs configurations.
+  - `update [TARGET] [--target <target>] [--project-dir <path>] [--dest <path>]`: Updates project-scoped plugin to the latest bundled version and syncs configurations.
   - `validate [PATH]`: Validates an Agent Plugin against canonical JSON schemas and SemVer 2.0.0 rules.
   - `info [PATH]`: Displays plugin metadata, skills, hooks, and extensions.
 
 === `eidos spec`
-Manages the living specification catalog: listing, authoring, inspecting, and deleting specification documents.
+Manages the living specification catalog and C4 Level 3 component topology: listing, authoring, inspecting, deleting, promoting, and inlining specifications.
 * **Sub-commands**:
-  - `list [--path <path>] [--type <type>] [--status <status>]`: Lists all living specifications in tabular format.
+  - `list [--path <path>] [--type <type>] [--status <status>] [--json]`: Lists all living specifications (including inline C4 Level 3 components `CMP-*` defined inside container manifests) in tabular or JSON format. Supports short or canonical `--type` filters (e.g. `container`, `component`, `capability`, `delta`).
   - `show <id_or_path> [--path <path>]`: Displays detailed frontmatter metadata and preview of a specification document.
-  - `create <type> <id> --title <title> [options]`: Scaffolds a new specification document (capability, domain, policy, contract, component, persona, delta, exploration, design-system, ui-component, screen) with schema validation and W3C design tokens support.
+  - `create <type> <id> --title <title> [options]`: Scaffolds a new specification document (capability, domain, policy, contract, component, persona, delta, exploration, design-system, ui-component, screen, client, flow; for `delta`, `--kind` accepts `feature, enabler, bug` and defaults to `feature`) with schema validation and W3C design tokens support.
   - `delete <id_or_path> [--force]`: Safely deletes a specification document with cross-reference safety checks.
-  - `containers [--path <path>]`: Scans and lists all C4 Level 2 containers (`CNT-*`).
-  - `components [CONTAINER_ID] [--path <path>]`: Scans and lists all C4 Level 3 components (`CMP-*`).
+  - `component promote <component_id> [--path <path>] [--repo-root <path>]`: Promotes an inline C4 Level 3 component to a dedicated specification (`.adoc`) inside `eidos/architecture/components/` and updates the container manifest with `ref:`.
+  - `component inline <component_id> [--path <path>] [--repo-root <path>]`: Demotes a dedicated C4 Level 3 component back into its parent container manifest as an inline definition and safely unlinks the dedicated specification file.
 
 === `eidos delta`
 Orchestrates SpecDeltas throughout their semantic mutation lifecycle using flat storage and gitignored symlink views.
@@ -153,13 +85,12 @@ Orchestrates SpecDeltas throughout their semantic mutation lifecycle using flat 
   - `list [--path <path>] [--status <status>]`: Lists SpecDeltas from flat `eidos/deltas/` with optional status filter (e.g. `--status active`).
   - `status [--path <path>]`: Displays lifecycle status dashboard, breakdown of in-flight vs. reconciled deltas, and symlink views.
   - `sync-views [--path <path>]`: Regenerates gitignored symlinks in `eidos/deltas/by-status/` partitioned by lifecycle state.
-  - `create <id> --title <title> [--kind <kind>] [--motivation <text>]`: Scaffolds a new SpecDelta in flat storage `eidos/deltas/<id>.adoc` with status `proposed` and syncs views.
+  - `create <id> --title <title> [--kind <kind>] [--motivation <text>]`: Scaffolds a new SpecDelta in flat storage `eidos/deltas/<id>.adoc` with status `proposed` (`--kind`: `feature, enabler, bug`; defaults to `feature`) and syncs views.
   - `verify <id_or_path> [--path <path>] [--json]`: Verifies that all semantic mutations declared in a SpecDelta exist in the living specifications catalog.
   - `audit <id_or_path> [--path <path>] [--strict] [--json]`: Performs reverse-dependency blast-radius audit on entities removed or deprecated by the SpecDelta, classifying references into approved (historical, negative tests, cleanup routines, tombstones) vs. unacknowledged active leaks.
   - `apply <id_or_path> [--execute] [--verify] [--json]`: Reconciles a delta in-place, updates frontmatter status to `applied`, and updates symlink views. If `--execute` is supplied, deterministically scaffolds missing specs and applies structural mutations without LLMs.
   - `delete <id_or_path> [--force]`: Deletes a SpecDelta file and cleans up symlink views.
   - `changelog [--output <path>] [--unreleased/--no-unreleased] [--docs/--no-docs] [--path <path>]`: Compiles an auditable, Keep a Changelog compliant release history partitioned by Git release tags and applied SpecDeltas (`DLT-*`).
-
 
 === `eidos drift [--base REF] [--head REF] [--uncommitted] [--markdown FILE] [--json]`
 Detects spec-to-code drift, schema validity, and invariant test coverage across both Planned Mode and Direct Mode.
@@ -173,17 +104,6 @@ Detects spec-to-code drift, schema validity, and invariant test coverage across 
 * **Exit Codes**:
   - `0`: Specifications and code are synchronized, all schemas valid, invariant tests green.
   - `1`: Spec-to-code drift detected or specification validation errors.
-
-=== `eidos reconcile [--base REF] [--uncommitted] [--prompt] [--json]`
-Analyzes recent code changes against the living specification catalog and generates candidate specs and tailored AI prompts for synchronization.
-* **Alias**: `eidos sync`
-* **Options**:
-  - `--base, -b`: Base git reference to compare against.
-  - `--uncommitted, -u`: Analyze uncommitted working tree changes.
-  - `--prompt`: Output structured markdown AI prompt for copy-pasting into chat.
-  - `--json`: Output raw JSON reconcile suggestions and catalog.
-* **Exit Codes**:
-  - `0`: Analysis complete.
 
 === `eidos init [PATH]`
 Bootstraps a repository with an empty Eidos living specification skeleton, an empty root `system.adoc`, tracking empty directories with `.gitkeep` files, self-contained gitignore, and runs immediate validation. Note: `eidos init` initializes Eidos specifications and does not install plugins (plugins can be installed separately via `eidos plugin install`).
@@ -214,31 +134,12 @@ Executes CLI-native agent lifecycle hooks for documentation linting and spec-to-
 * **Exit Codes**:
   - `0`: Hook evaluation completed (JSON decision emitted to stdout).
 
-=== Convenience Shortcuts
-* `eidos drift`: Runs spec-to-code drift detection.
-* `eidos reconcile`: Runs spec reconciliation assistant (`eidos sync`).
-* `eidos create <type> <id> --title <title>`: Direct shortcut to `eidos spec create`.
-* `eidos delete <id_or_path> [--force]`: Direct shortcut to `eidos spec delete`.
-* `eidos list [--type <type>] [--status <status>]`: Direct shortcut to `eidos spec list`.
-* `eidos containers [--path <path>]`: Direct shortcut to `eidos spec containers`.
-* `eidos serve`: Direct shortcut to `eidos portal serve`.
-* `eidos build-site`: Direct shortcut to `eidos portal build`.
-* `eidos install`: Direct shortcut to `eidos plugin install`.
-* `eidos uninstall`: Direct shortcut to `eidos plugin uninstall`.
-* `eidos repo-map`: Direct shortcut to `eidos index repo-map`.
-* `eidos find-symbol <query>`: Direct shortcut to `eidos index find-symbol`.
-* `eidos changelog`: Direct shortcut to `eidos delta changelog`.
-
 == Command Groups (Rich Help Panels)
 
-Commands are semantically organized into six functional panels in CLI help output (`eidos --help`):
-1. **Setup & Workspace**: `version`, `info`, `init`, `doctor`
-2. **Governance & Verification**: `validate`, `lint`, `drift`, `reconcile`, `sync`
-3. **Living Web Portal**: `portal`, `serve`, `build-site`
-4. **Living Catalog & Mutations**: `spec`, `delta`, `component`, `create`, `delete`, `list`, `containers`, `components`, `changelog`
-5. **Knowledge Graph & AI Context**: `index`, `context`, `repo-map`, `find-symbol`
-6. **Agent Ecosystem & Plugins**: `plugin`, `install`, `uninstall`, `hook`
-
-
-
-
+Every operation has a single canonical command path without top-level shortcuts or intra-group duplicate aliases. Commands are semantically organized into six functional panels in CLI help output (`eidos --help`):
+1. **Setup & Workspace**: `version`, `info`, `doctor`, `init`
+2. **Governance & Verification**: `validate`, `drift`
+3. **Knowledge Graph & AI Context**: `context`, `index`
+4. **Living Catalog & Mutations**: `spec`, `delta`
+5. **Living Web Portal**: `portal`
+6. **Agent Ecosystem & Plugins**: `plugin`, `hook`

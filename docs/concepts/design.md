@@ -355,7 +355,7 @@ eidos spec create screen SCR-CHECKOUT --title "Order Checkout Screen" \
 When running the interactive Living Web Portal:
 
 ```bash
-eidos serve --path eidos --port 3000
+eidos portal serve --path eidos --port 3000
 ```
 
 The portal compiles all W3C Design Tokens, Client Applications, Screen State Machines, and Interaction Flows into an interactive visual experience:

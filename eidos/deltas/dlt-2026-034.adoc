@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: feat/rich-symbol-index
 intent:
-  kind: feature_addition
+  kind: feature
   motivation: "Persist AST symbol coordinates (file, lines, signature, parent) in the SQLite knowledge graph so 'find-symbol' can report where a symbol is defined and 'repo-map' no longer re-parses every source file, and index every declared container 'package_path' recursively with a deterministic, order-independent ownership precedence."
 mutations:
   - action: modify_component

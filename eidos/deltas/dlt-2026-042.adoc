@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: refactor/strict-container-component-targets
 intent:
-  kind: refactor
+  kind: enabler
   motivation: "Eliminate lingering C4 Level 2 Container (CNT-*, tech/container) and Level 3 Component (CMP-*, tech/component) conflation in v1 schemas, x-eidos-ref annotations, and SpecValidator reference checks so container fields exclusively target containers and component fields exclusively target components."
 mutations:
   - action: modify_component

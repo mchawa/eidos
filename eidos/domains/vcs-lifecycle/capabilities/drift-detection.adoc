@@ -26,7 +26,6 @@ technical:
   contracts:
     interfaces:
       - "eidos drift [--uncommitted]"
-      - "eidos reconcile"
   invariants:
     - id: INV-DRIFT-DETECTION-ACCURACY
       rule: "The drift detection engine must accurately identify structural code and design token/props modifications, verify static test bindings across domain, policy, and architecture component invariants, and enforce component-scoped 1-hop living specification synchronization without global system.adoc bypasses."
@@ -41,12 +40,12 @@ technical:
 == Intent
 Ensures that source code and living specifications never diverge. Through local Git diff analysis, AST structural symbol comparison, embedded knowledge graph lookups, and automated CI/CD gating, Eidos continuously verifies that structural code modifications are paired with living specification updates, preserving system documentation integrity with zero manual overhead.
 
-By leveraging the SQLite Knowledge Graph (`eidos/.cache/index.db`), drift detection and reconciliation map code diffs directly to architectural components and traverse 1-hop relational neighborhoods to recommend exact specification targets.
+By leveraging the SQLite Knowledge Graph (`eidos/.cache/index.db`), drift detection maps code diffs directly to architectural components and traverses 1-hop relational neighborhoods to recommend exact specification targets.
 
 == Key Responsibilities
 * **Git Diff Inspection**: Inspecting working trees, staged changes, and branch heads for unmapped architectural modifications.
 * **Graph-Powered Reverse Symbol Resolution**: Resolving modified source code file paths to internal C4 modules and owning container IDs (`CMP-*`) in sub-millisecond SQLite queries rather than linear disk crawls.
-* **1-Hop Neighborhood Reconciliation**: Querying the knowledge graph during `eidos reconcile` to discover bound interface contracts (`CTR-*`), domain capabilities (`CAP-*`), and parent containers affected by code changes.
+* **1-Hop Neighborhood Resolution**: Querying the knowledge graph during `eidos drift` to discover bound interface contracts (`CTR-*`), domain capabilities (`CAP-*`), and parent containers affected by code changes.
 * **Single Source of Truth Enforcement**: Gating CI/CD pipelines via `eidos drift --strict` to guarantee that no pull request merges with un-synchronized specifications (`POL-001`).
 * **Diff-Aware Spec Coverage**: Rejecting "touch-to-appease" spec edits (blank lines, `//` comments, re-wrapping) as coverage for new source files and new public symbols, and reporting them in `trivially_covered_files`.
 * **Direct Mode Frictionless Co-evolution**: Enabling developers and autonomous agents to write code first and instantly reconcile specifications in the same commit.

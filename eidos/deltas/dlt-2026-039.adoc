@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: feat/diff-aware-spec-coverage
 intent:
-  kind: modification
+  kind: enabler
   motivation: "Close the 'touch-to-appease' loophole in 'eidos drift': today any change to a 1-hop spec file (a blank line, a '//' comment) silences drift for newly added source files and public symbols. Coverage for structural additions must require a substantive, deterministically checkable spec edit."
 mutations:
   - action: modify_component

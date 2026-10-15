@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: revamp/portal-reading-friendly-design
 intent:
-  kind: modification
+  kind: enabler
   motivation: Revamp the Living Web Portal's typography, document layout, and reading
     experience to transform dense technical specifications into an effortless, reading-friendly
     documentation surface. Today, living specifications suffer from microscopic 12-13px

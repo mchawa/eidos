@@ -8,7 +8,7 @@ status: applied
 vcs:
   branch: fix/strict-1hop-drift-no-system-bypass
 intent:
-  kind: bugfix
+  kind: bug
   motivation: 'Close two gaps left by DLT-2026-028: (1) the global drift bypass in
     ''_collect_1hop_spec_targets()'' where modifying the root system or system-architecture
     specifications silences structural code drift for every component, and (2) the

@@ -8,7 +8,7 @@ status: applied
 vcs:
   branch: fix/scaffolder-component-routing-safe-yaml
 intent:
-  kind: bugfix
+  kind: bug
   motivation: Fix 'create_spec()' routing where 'component' erroneously creates a
     'tech/container' spec, add missing 'design/client' ('CLT-*') and 'design/flow'
     ('FLOW-*') scaffolders, replace unsafe f-string YAML frontmatter generation with

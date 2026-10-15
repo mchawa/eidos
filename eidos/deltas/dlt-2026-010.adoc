@@ -5,7 +5,7 @@ id: DLT-2026-010
 title: Revamp Eidos Personas and Core Domains Architecture
 status: applied
 intent:
-  kind: refactor
+  kind: enabler
   motivation: Restructure Eidos personas and bounded context domains to align with
     its true agent-agnostic ecosystem, multi-client experience, and Git-native lifecycle
     architecture.

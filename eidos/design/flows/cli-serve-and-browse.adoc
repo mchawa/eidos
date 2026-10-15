@@ -14,7 +14,7 @@ steps:
   - step: 1
     title: "Start Portal Daemon"
     client: "CLT-WEB-PORTAL"
-    action: "Developer runs eidos serve --path eidos --port 3000"
+    action: "Developer runs eidos portal serve --path eidos --port 3000"
     outcome: "Python HTTP/JSON server daemon boots and indexes living specifications"
 
   - step: 2
@@ -46,7 +46,7 @@ sequenceDiagram
   participant Server as Embedded HTTP Server
   participant Portal as CLT-WEB-PORTAL
 
-  Dev->>CLI: eidos serve --path eidos
+  Dev->>CLI: eidos portal serve --path eidos
   CLI->>Server: Start daemon on port 3000
   Server-->>CLI: Listening on http://127.0.0.1:3000
   CLI->>Portal: Launch browser session

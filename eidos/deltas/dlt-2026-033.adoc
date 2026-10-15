@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: feat/cross-harness-hook-payload-normalization
 intent:
-  kind: modification
+  kind: enabler
   motivation: Ensure 'eidos hook lint' ('PreToolUse' and 'PostToolUse') accurately
     extracts target file paths and proposed content edits across Antigravity, Claude
     Code, Cursor, Cline, OpenCode, and OpenAI Codex instead of only matching Antigravity

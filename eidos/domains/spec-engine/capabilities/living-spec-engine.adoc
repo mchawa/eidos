@@ -47,8 +47,8 @@ technical:
     - "CMP-SPEC-VALIDATOR"
   contracts:
     interfaces:
-      - "eidos spec validate"
-      - "eidos spec graph --json"
+      - "eidos validate"
+      - "eidos spec [list|show|create|delete|component]"
       - "eidos index [status|sync|search|blast-radius]"
   invariants:
     - id: INV-SPEC-VALIDATION
@@ -79,7 +79,7 @@ technical:
       rule: "The Eidos runtime (src/eidos/) and bundled Agent Skills (assets/plugin_reference/skills/) must remain 100% project-agnostic with zero hardcoded Eidos-self entity IDs or repository paths."
       test_binding: "tests/test_scaffolder.py::test_engine_genericity_zero_self_references"
     - id: INV-FOREIGN-REPO-E2E
-      rule: "Any external polyglot repository initialized with eidos init must support the complete Eidos lifecycle (spec create, validate, index sync, context, drift, reconcile, and build-site) with zero hardcoded assumptions."
+      rule: "Any external polyglot repository initialized with eidos init must support the complete Eidos lifecycle (spec create, validate, index sync, context, drift, and portal build) with zero hardcoded assumptions."
       test_binding: "tests/test_scaffolder.py::test_foreign_repo_end_to_end_workflow"
 ---
 = Capability: Living Baseline Specification Engine
@@ -95,6 +95,6 @@ Through an embedded SQLite Knowledge Graph (`eidos/.cache/index.db`), Eidos brid
 * **Schema Validation & Integrity**: Schema resolution and Draft 2020-12 validation ensuring strict typing across all 16 specification schemas.
 * **Embedded Knowledge Graph**: Relational indexing linking Personas, Domains, Capabilities, Invariants, Components, Contracts, and SpecDeltas into `eidos/.cache/index.db`.
 * **Zero-Drift Incremental Sync**: Mtime and SHA-256 dirty checking that keeps the SQLite graph continuously synchronized with the working tree in under 2ms.
-* **Sub-Millisecond Catalog Resolution**: Powering `eidos components`, `eidos spec list`, and CLI inspection commands with instant relational queries rather than linear disk scans.
+* **Sub-Millisecond Catalog Resolution**: Powering `eidos spec list`, `eidos spec show`, and CLI inspection commands with instant relational queries rather than linear disk scans.
 * **Recursive Blast-Radius & Search**: SQLite recursive Common Table Expressions (CTEs) traversing k-hop impact boundaries and FTS5 full-text search over titles, descriptions, and keywords.
 

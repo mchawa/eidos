@@ -8,7 +8,7 @@ vcs:
   branch: feat/interactive-c4-explorer
   issue: '#12'
 intent:
-  kind: feature_addition
+  kind: feature
   motivation: Current C4 diagrams in the Eidos Web Portal and static site export are
     static, vertically stacked Level 1 and Level 2 views without interactive drill-down
     navigation or Level 3 (Component Whitebox) visualization. Users cannot click on

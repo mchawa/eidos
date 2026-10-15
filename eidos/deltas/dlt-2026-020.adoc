@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: feat/c4-l2-hierarchy-connections
 intent:
-  kind: modification
+  kind: enabler
   motivation: Enhance the C4 Level 2 Container Diagram in the Living Web Portal to
     visually represent the system boundary, tiered architectural hierarchy (presentation,
     extensibility, core engine, and persistence layers), and explicit inter-container

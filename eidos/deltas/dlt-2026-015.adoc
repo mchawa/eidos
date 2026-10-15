@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: spike/exp-2026-004
 intent:
-  kind: feature_addition
+  kind: feature
   motivation: >
     Following the conclusion of EXP-2026-004, introduce first-class support for dedicated
     C4 Level 3 Component specifications (type: tech/component, CMP-*). Components default to

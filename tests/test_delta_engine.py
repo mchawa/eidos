@@ -433,4 +433,24 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
     assert rep_reg.mutations[0].status == "UNMODIFIED"
     assert rep_reg.mutations[1].target == "ARCH-TEST-001"
 
-
+    # 6. All standalone remove_* enum actions verify ABSENT_AS_EXPECTED when absent
+    dlt_removals = create_spec(eidos_dir, "delta", "DLT-2026-063", title="Standalone Removals")
+    removals_yaml = """mutations:
+  - action: remove_domain
+    target_domain: DOM-REMOVED
+  - action: remove_persona
+    target_persona: PER-REMOVED
+  - action: remove_design_system
+    target_design_system: DS-REMOVED
+  - action: remove_client
+    target_client: CLT-REMOVED
+  - action: remove_flow
+    target_flow: FLOW-REMOVED
+"""
+    dlt_removals.write_text(
+        dlt_removals.read_text(encoding="utf-8").replace("mutations: []", removals_yaml),
+        encoding="utf-8",
+    )
+    ok_rem, _, rep_rem = verify_delta_mutations(eidos_dir, "DLT-2026-063")
+    assert ok_rem is True
+    assert [m.status for m in rep_rem.mutations] == ["ABSENT_AS_EXPECTED"] * 5

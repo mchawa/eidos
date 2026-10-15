@@ -70,11 +70,7 @@ Success! All specification documents are valid.
 Eidos includes a built-in local development server that compiles your living specifications into the interactive Eidos Portal:
 
 ```bash
-# Using namespaced command:
 eidos portal serve --path eidos --port 8080
-
-# Or using shortcut:
-eidos serve --path eidos --port 8080
 ```
 
 Open your browser to `http://localhost:8080` to explore:

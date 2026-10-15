@@ -48,7 +48,7 @@ def create_spec(
     raw_id: str,
     title: str,
     domain: str | None = None,
-    kind: str = "feature_addition",
+    kind: str = "feature",
     motivation: str = "Proposed change motivation.",
     category: str = "governance",
     rule: str = "Rule statement for this policy.",
@@ -439,7 +439,7 @@ def list_specs(
     type_filter: str | None = None,
     status_filter: str | None = None,
 ) -> list[dict[str, Any]]:
-    """List all specifications under eidos_dir with optional filters."""
+    """List all specifications (including inline C4 Level 3 components) under eidos_dir with optional filters."""
     if not eidos_dir.exists():
         return []
 
@@ -449,8 +449,18 @@ def list_specs(
     entities = idx.get_entities(status=status_filter)
     results = []
 
-    type_filter_clean = type_filter.lower() if type_filter else None
-    status_filter_clean = status_filter.lower() if status_filter else None
+    type_filter_clean = type_filter.strip().lower() if type_filter else None
+    canonical_type = VALID_SPEC_TYPES.get(type_filter_clean) if type_filter_clean else None
+    status_filter_clean = status_filter.strip().lower() if status_filter else None
+
+    def _matches_type(doc_type: str, eid: str) -> bool:
+        if not type_filter_clean:
+            return True
+        if canonical_type:
+            return doc_type.lower() == canonical_type
+        return type_filter_clean in doc_type.lower() or type_filter_clean in eid.lower()
+
+    seen_ids: set[str] = {str(ent.get("id", "")) for ent in entities if ent.get("id")}
 
     for ent in entities:
         doc_type = ent.get("type", "")
@@ -458,26 +468,48 @@ def list_specs(
         if doc_type == "invariant":
             continue
 
-        if type_filter_clean and (type_filter_clean not in doc_type.lower() and type_filter_clean not in eid.lower()):
-            continue
-
         status = ent.get("status", "active")
-        if status_filter_clean and str(status).lower() != status_filter_clean:
-            continue
-
         file_p = Path(ent.get("file_path", ""))
         rel_p = file_p.relative_to(eidos_dir) if file_p.is_relative_to(eidos_dir) else file_p
+        resolved_p = file_p.resolve() if file_p.exists() else file_p
 
-        results.append(
-            {
-                "id": eid,
-                "type": doc_type,
-                "title": ent.get("title") or "Untitled",
-                "status": status,
-                "path": file_p.resolve() if file_p.exists() else file_p,
-                "relative_path": rel_p,
-            }
-        )
+        if _matches_type(doc_type, eid) and (not status_filter_clean or str(status).lower() == status_filter_clean):
+            results.append(
+                {
+                    "id": eid,
+                    "type": doc_type,
+                    "title": ent.get("title") or "Untitled",
+                    "status": status,
+                    "path": resolved_p,
+                    "relative_path": rel_p,
+                }
+            )
+
+        if doc_type == "tech/container":
+            inline_comps = ent.get("components", []) or ent.get("c4_internal_components", [])
+            for comp in inline_comps:
+                if not isinstance(comp, dict) or comp.get("ref"):
+                    continue
+                cid = str(comp.get("id", "")).strip()
+                if not cid or cid in seen_ids:
+                    continue
+                comp_type = "tech/component"
+                comp_status = comp.get("status", status)
+                if not _matches_type(comp_type, cid):
+                    continue
+                if status_filter_clean and str(comp_status).lower() != status_filter_clean:
+                    continue
+                seen_ids.add(cid)
+                results.append(
+                    {
+                        "id": cid,
+                        "type": comp_type,
+                        "title": comp.get("name") or comp.get("title") or "Untitled",
+                        "status": comp_status,
+                        "path": resolved_p,
+                        "relative_path": rel_p,
+                    }
+                )
 
     return sorted(results, key=lambda x: str(x.get("id", "")))
 

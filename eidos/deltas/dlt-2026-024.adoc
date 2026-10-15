@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: feat/tool-only-install-and-hooks
 intent:
-  kind: architectural_refactor
+  kind: enabler
   motivation: Eliminate virtual-environment coupled hook scripts and project dependency
     pollution by standardizing Eidos as a standalone developer tool ('uv tool install
     eidos-ai', 'pipx install eidos-ai', 'uvx --from eidos-ai eidos'), migrating agent lifecycle

@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: refactor/modularize-core-and-cli
 intent:
-  kind: refactor
+  kind: enabler
   motivation: "Decompose monolithic 'src/eidos/core/scaffolder.py' (2,039 lines) and 'src/eidos/cli/main.py' (2,636 lines) so each declared C4 Level 3 component maps 1-to-1 to a focused Python module, and declare the SpecDelta engine that currently hides inside 'scaffolder.py' as its own component. Pure code motion: no behavior, CLI surface, or JSON output changes."
 mutations:
   # --- Core container ---

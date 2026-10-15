@@ -1,4 +1,4 @@
-"""Agent plugin lifecycle commands (`eidos plugin ...`) and the `install` / `uninstall` shortcuts."""
+"""Agent plugin lifecycle commands (`eidos plugin ...`)."""
 
 import json
 from pathlib import Path
@@ -8,7 +8,7 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from eidos.cli._shared import PANEL_PLUGINS, console
+from eidos.cli._shared import console
 from eidos.plugin.installer import (
     PluginInstallTarget,
     install_plugin,
@@ -92,52 +92,6 @@ def plugin_install(
         raise typer.Exit(code=1) from e
 
 
-def install_shortcut(
-    target: PluginInstallTarget = typer.Option(
-        PluginInstallTarget.PROJECT,
-        "--target",
-        "-t",
-        help="Installation target in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    ),
-    target_arg: Annotated[
-        PluginInstallTarget | None,
-        typer.Argument(help="Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all."),
-    ] = None,
-    project_dir: Path | None = typer.Option(
-        None,
-        "--project-dir",
-        "-p",
-        help="Root directory of the project (defaults to current working directory).",
-    ),
-    dest: Path | None = typer.Option(
-        None,
-        "--dest",
-        "-d",
-        help="Custom destination directory within the project.",
-    ),
-    force: bool = typer.Option(
-        True,
-        "--force/--no-force",
-        help="Overwrite existing files at destination.",
-    ),
-    launcher: str = typer.Option(
-        "eidos",
-        "--launcher",
-        help="Hook command launcher: 'eidos' (global CLI on PATH) or 'uvx' (ephemeral uvx runner).",
-    ),
-):
-    """Shortcut alias for 'eidos plugin install'."""
-    resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
-    resolved_launcher = launcher if isinstance(launcher, str) else "eidos"
-    plugin_install(
-        target=resolved_target,
-        project_dir=project_dir,
-        dest=dest,
-        force=force,
-        launcher=resolved_launcher,
-    )
-
-
 @plugin_app.command("uninstall")
 def plugin_uninstall(
     target: PluginInstallTarget = typer.Option(
@@ -181,65 +135,6 @@ def plugin_uninstall(
     except Exception as e:
         console.print(f"[bold red]Uninstall Failed:[/bold red] {e}")
         raise typer.Exit(code=1) from e
-
-
-def uninstall_shortcut(
-    target: PluginInstallTarget = typer.Option(
-        PluginInstallTarget.PROJECT,
-        "--target",
-        "-t",
-        help="Target to remove in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    ),
-    target_arg: Annotated[
-        PluginInstallTarget | None,
-        typer.Argument(help="Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all."),
-    ] = None,
-    project_dir: Path | None = typer.Option(
-        None,
-        "--project-dir",
-        "-p",
-        help="Root directory of the project (defaults to current working directory).",
-    ),
-    dest: Path | None = typer.Option(
-        None,
-        "--dest",
-        "-d",
-        help="Custom destination directory within the project to remove.",
-    ),
-):
-    """Shortcut alias for 'eidos plugin uninstall'."""
-    resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
-    plugin_uninstall(target=resolved_target, project_dir=project_dir, dest=dest)
-
-
-@plugin_app.command("remove")
-def plugin_remove(
-    target: PluginInstallTarget = typer.Option(
-        PluginInstallTarget.PROJECT,
-        "--target",
-        "-t",
-        help="Target to remove in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    ),
-    target_arg: Annotated[
-        PluginInstallTarget | None,
-        typer.Argument(help="Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all."),
-    ] = None,
-    project_dir: Path | None = typer.Option(
-        None,
-        "--project-dir",
-        "-p",
-        help="Root directory of the project (defaults to current working directory).",
-    ),
-    dest: Path | None = typer.Option(
-        None,
-        "--dest",
-        "-d",
-        help="Custom destination directory within the project to remove.",
-    ),
-):
-    """Alias for 'eidos plugin uninstall'."""
-    resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
-    plugin_uninstall(target=resolved_target, project_dir=project_dir, dest=dest)
 
 
 @plugin_app.command("version")
@@ -367,42 +262,6 @@ def plugin_update(
         raise typer.Exit(code=1) from e
 
 
-@plugin_app.command("upgrade")
-def plugin_upgrade(
-    target: PluginInstallTarget = typer.Option(
-        PluginInstallTarget.PROJECT,
-        "--target",
-        "-t",
-        help="Target to update in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    ),
-    target_arg: Annotated[
-        PluginInstallTarget | None,
-        typer.Argument(help="Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all."),
-    ] = None,
-    project_dir: Path | None = typer.Option(
-        None,
-        "--project-dir",
-        "-p",
-        help="Root directory of the project (defaults to current working directory).",
-    ),
-    dest: Path | None = typer.Option(
-        None,
-        "--dest",
-        "-d",
-        help="Custom destination directory within the project to update.",
-    ),
-    launcher: str = typer.Option(
-        "eidos",
-        "--launcher",
-        help="Hook command launcher: 'eidos' (global CLI on PATH) or 'uvx' (ephemeral uvx runner).",
-    ),
-):
-    """Alias for 'eidos plugin update'."""
-    resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
-    resolved_launcher = launcher if isinstance(launcher, str) else "eidos"
-    plugin_update(target=resolved_target, project_dir=project_dir, dest=dest, launcher=resolved_launcher)
-
-
 @plugin_app.command("validate")
 def plugin_validate(
     plugin_path: Path | None = typer.Argument(
@@ -493,5 +352,5 @@ def plugin_info(
 
 def register(app: typer.Typer) -> None:
     """Attach the root-level commands owned by this module to the root Typer app."""
-    app.command("install", rich_help_panel=PANEL_PLUGINS)(install_shortcut)
-    app.command("uninstall", rich_help_panel=PANEL_PLUGINS)(uninstall_shortcut)
+    return None
+

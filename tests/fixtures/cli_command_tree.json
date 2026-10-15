@@ -1,3834 +1,2504 @@
 [
- {
-  "help": "Eidos: Git-Native, Agent-Agnostic Development AI Ecosystem & Lifecycle Orchestrator.",
-  "hidden": false,
-  "order": [
-   "version",
-   "info",
-   "doctor",
-   "init",
-   "validate",
-   "lint",
-   "drift",
-   "reconcile",
-   "sync",
-   "serve",
-   "build-site",
-   "containers",
-   "components",
-   "context",
-   "repo-map",
-   "find-symbol",
-   "changelog",
-   "create",
-   "delete",
-   "list",
-   "install",
-   "uninstall",
-   "spec",
-   "delta",
-   "component",
-   "index",
-   "portal",
-   "plugin",
-   "hook"
-  ],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Show Eidos engine version and exit.",
-    "kind": "TyperOption",
-    "name": "version",
-    "opts": [
-     "--version",
-     "-V"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": []
- },
- {
-  "help": "Display the Eidos engine version.",
-  "hidden": false,
-  "order": [],
-  "panel": "Setup & Workspace",
-  "params": [],
-  "path": [
-   "version"
-  ]
- },
- {
-  "help": "Display Eidos engine version, bundled schemas, and platform status.",
-  "hidden": false,
-  "order": [],
-  "panel": "Setup & Workspace",
-  "params": [],
-  "path": [
-   "info"
-  ]
- },
- {
-  "help": "Run health checks on the Eidos CLI installation, Git repository, living specs, index, and agent plugin.",
-  "hidden": false,
-  "order": [],
-  "panel": "Setup & Workspace",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to project or eidos directory (defaults to current directory).",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Output machine-readable JSON diagnostics report.",
-    "kind": "TyperOption",
-    "name": "json_output",
-    "opts": [
-     "--json"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "doctor"
-  ]
- },
- {
-  "help": "Initialize a repository with an empty Eidos living specification skeleton.",
-  "hidden": false,
-  "order": [],
-  "panel": "Setup & Workspace",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Target project directory to initialize with Eidos (defaults to current directory).",
-    "kind": "TyperArgument",
-    "name": "target_path",
-    "opts": [
-     "target_path"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "System identifier (e.g. 'my-app'). Defaults to directory name.",
-    "kind": "TyperOption",
-    "name": "name",
-    "opts": [
-     "--name",
-     "-n"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Human-readable system title (e.g. 'My Application').",
-    "kind": "TyperOption",
-    "name": "title",
-    "opts": [
-     "--title",
-     "-t"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Force initialization even if eidos/ directory already exists.",
-    "kind": "TyperOption",
-    "name": "force",
-    "opts": [
-     "--force",
-     "-f"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Deprecated: plugins are no longer installed by init.",
-    "kind": "TyperOption",
-    "name": "_with_plugin",
-    "opts": [
-     "--with-plugin"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [
-     "--no-plugin"
-    ],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "init"
-  ]
- },
- {
-  "help": "Validate all specification documents against their schemas and verify cross-references.",
-  "hidden": false,
-  "order": [],
-  "panel": "Governance & Verification",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to the directory containing .adoc specifications (defaults to ./eidos).",
-    "kind": "TyperArgument",
-    "name": "target_path",
-    "opts": [
-     "target_path"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Output raw JSON validation report.",
-    "kind": "TyperOption",
-    "name": "json_output",
-    "opts": [
-     "--json"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "validate"
-  ]
- },
- {
-  "help": "Lint and validate all specification documents against schemas and link integrity.",
-  "hidden": false,
-  "order": [],
-  "panel": "Governance & Verification",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to directory containing .adoc specifications (defaults to ./eidos).",
-    "kind": "TyperArgument",
-    "name": "target_path",
-    "opts": [
-     "target_path"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Output raw JSON validation report.",
-    "kind": "TyperOption",
-    "name": "json_output",
-    "opts": [
-     "--json"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "lint"
-  ]
- },
- {
-  "help": "Detect spec-to-code drift, schema validity, and invariant test coverage.",
-  "hidden": false,
-  "order": [],
-  "panel": "Governance & Verification",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Base git reference to compare against (e.g. origin/main, main).",
-    "kind": "TyperOption",
-    "name": "base",
-    "opts": [
-     "--base",
-     "-b"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "HEAD",
-    "envvar": "None",
-    "help": "Head git reference to compare (defaults to HEAD).",
-    "kind": "TyperOption",
-    "name": "head",
-    "opts": [
-     "--head"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Analyze uncommitted working tree and staged changes instead of branch diff.",
-    "kind": "TyperOption",
-    "name": "uncommitted",
-    "opts": [
-     "--uncommitted",
-     "-u"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos specifications directory (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Do not exit with code 1 on drift or validation failures.",
-    "kind": "TyperOption",
-    "name": "warn_only",
-    "opts": [
-     "--warn-only"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Write markdown summary to file (e.g. for CI/CD reports).",
-    "kind": "TyperOption",
-    "name": "markdown_out",
-    "opts": [
-     "--markdown",
-     "-m"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Output raw JSON verification result.",
-    "kind": "TyperOption",
-    "name": "json_output",
-    "opts": [
-     "--json"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "drift"
-  ]
- },
- {
-  "help": "Analyze code changes and suggest living spec updates to eliminate drift.",
-  "hidden": false,
-  "order": [],
-  "panel": "Governance & Verification",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Base git reference to compare against.",
-    "kind": "TyperOption",
-    "name": "base",
-    "opts": [
-     "--base",
-     "-b"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Analyze uncommitted working tree changes.",
-    "kind": "TyperOption",
-    "name": "uncommitted",
-    "opts": [
-     "--uncommitted",
-     "-u"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Print structured AI prompt for copy-pasting to an AI assistant.",
-    "kind": "TyperOption",
-    "name": "prompt",
-    "opts": [
-     "--prompt"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Output raw JSON reconcile analysis.",
-    "kind": "TyperOption",
-    "name": "json_output",
-    "opts": [
-     "--json"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "reconcile"
-  ]
- },
- {
-  "help": "Shortcut alias for 'eidos reconcile'.",
-  "hidden": false,
-  "order": [],
-  "panel": "Governance & Verification",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Base git reference to compare against.",
-    "kind": "TyperOption",
-    "name": "base",
-    "opts": [
-     "--base",
-     "-b"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Analyze uncommitted working tree changes.",
-    "kind": "TyperOption",
-    "name": "uncommitted",
-    "opts": [
-     "--uncommitted",
-     "-u"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Print structured AI prompt.",
-    "kind": "TyperOption",
-    "name": "prompt",
-    "opts": [
-     "--prompt"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "sync"
-  ]
- },
- {
-  "help": "Launch the interactive Eidos Living Web Portal.",
-  "hidden": false,
-  "order": [],
-  "panel": "Living Web Portal",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to directory containing .adoc specifications (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "target_path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "127.0.0.1",
-    "envvar": "None",
-    "help": "Host interface to bind the portal server to.",
-    "kind": "TyperOption",
-    "name": "host",
-    "opts": [
-     "--host",
-     "-h"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "3000",
-    "envvar": "None",
-    "help": "Port number to serve the portal on.",
-    "kind": "TyperOption",
-    "name": "port",
-    "opts": [
-     "--port"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "INT"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Automatically open the portal in your default web browser.",
-    "kind": "TyperOption",
-    "name": "open_browser",
-    "opts": [
-     "--open"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "serve"
-  ]
- },
- {
-  "help": "Export the Eidos Living Web Portal as a self-contained static web site.",
-  "hidden": false,
-  "order": [],
-  "panel": "Living Web Portal",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to directory containing .adoc specifications (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "target_path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "site",
-    "envvar": "None",
-    "help": "Target output directory for the static site (defaults to ./site).",
-    "kind": "TyperOption",
-    "name": "out_dir",
-    "opts": [
-     "--out",
-     "-o"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "build-site"
-  ]
- },
- {
-  "help": "List all C4 Level 2 containers, runtimes, package paths, and internal building blocks.",
-  "hidden": false,
-  "order": [],
-  "panel": "Living Catalog & Mutations",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to scan for container manifests (defaults to eidos/architecture).",
-    "kind": "TyperArgument",
-    "name": "target_path",
-    "opts": [
-     "target_path"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "containers"
-  ]
- },
- {
-  "help": "List all C4 Level 3 internal components across containers.",
-  "hidden": false,
-  "order": [],
-  "panel": "Living Catalog & Mutations",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Optional container ID to filter components (e.g. CNT-CORE).",
-    "kind": "TyperArgument",
-    "name": "container_id",
-    "opts": [
-     "container_id"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to scan for component manifests (defaults to eidos/architecture).",
-    "kind": "TyperOption",
-    "name": "target_path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "components"
-  ]
- },
- {
-  "help": "Extract a compact architectural subgraph slice (C4 components, contracts, capabilities, invariants, policies).",
-  "hidden": false,
-  "order": [],
-  "panel": "Knowledge Graph & AI Context",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Target source code file path(s) to slice context for.",
-    "kind": "TyperOption",
-    "name": "files",
-    "opts": [
-     "--file",
-     "-f"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Target component identifier (e.g. 'CMP-CORE').",
-    "kind": "TyperOption",
-    "name": "component",
-    "opts": [
-     "--component",
-     "-c"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Free-text task description or prompt to slice architectural context for.",
-    "kind": "TyperOption",
-    "name": "task",
-    "opts": [
-     "--task",
-     "-t"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "guardrails",
-    "envvar": "None",
-    "help": "Context slice verbosity tier: 'anchor' (~140 tokens), 'guardrails' (~260 tokens), 'deep' (~500 tokens). Defaults to 'guardrails'.",
-    "kind": "TyperOption",
-    "name": "tier",
-    "opts": [
-     "--tier",
-     "-T"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "markdown",
-    "envvar": "None",
-    "help": "Output format: 'markdown' or 'json' (defaults to 'markdown').",
-    "kind": "TyperOption",
-    "name": "format",
-    "opts": [
-     "--format"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "context"
-  ]
- },
- {
-  "help": "Generate a token-budgeted structural repo map outline for AI coding agents.",
-  "hidden": false,
-  "order": [],
-  "panel": "Knowledge Graph & AI Context",
-  "params": [
-   {
-    "default": "1500",
-    "envvar": "None",
-    "help": "Maximum context tokens allocated for structural repo map outline.",
-    "kind": "TyperOption",
-    "name": "max_tokens",
-    "opts": [
-     "--max-tokens",
-     "-t"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "INT"
-   },
-   {
-    "default": "markdown",
-    "envvar": "None",
-    "help": "Output format: markdown (default) or json.",
-    "kind": "TyperOption",
-    "name": "format_type",
-    "opts": [
-     "--format",
-     "-f"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "repo-map"
-  ]
- },
- {
-  "help": "Locate symbol matches and their associated living component specifications.",
-  "hidden": false,
-  "order": [],
-  "panel": "Knowledge Graph & AI Context",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Exact or partial symbol name (class, method, function, or route).",
-    "kind": "TyperArgument",
-    "name": "query",
-    "opts": [
-     "query"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "20",
-    "envvar": "None",
-    "help": "Maximum number of symbol results to return.",
-    "kind": "TyperOption",
-    "name": "limit",
-    "opts": [
-     "--limit",
-     "-l"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "INT"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Output results as machine-readable JSON.",
-    "kind": "TyperOption",
-    "name": "json_output",
-    "opts": [
-     "--json"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "find-symbol"
-  ]
- },
- {
-  "help": "Generate an auditable, SpecDelta-backed changelog partitioned by Git release tags.",
-  "hidden": false,
-  "order": [],
-  "panel": "Living Catalog & Mutations",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Target changelog file path (defaults to ./CHANGELOG.md).",
-    "kind": "TyperOption",
-    "name": "output",
-    "opts": [
-     "--output",
-     "-o"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "True",
-    "envvar": "None",
-    "help": "Include unreleased changes section.",
-    "kind": "TyperOption",
-    "name": "unreleased",
-    "opts": [
-     "--unreleased"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [
-     "--no-unreleased"
-    ],
-    "type": "BOOL"
-   },
-   {
-    "default": "True",
-    "envvar": "None",
-    "help": "Automatically synchronize docs/changelog.md and register in zensical.toml.",
-    "kind": "TyperOption",
-    "name": "docs",
-    "opts": [
-     "--docs"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [
-     "--no-docs"
-    ],
-    "type": "BOOL"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Print changelog directly to stdout instead of writing to disk.",
-    "kind": "TyperOption",
-    "name": "stdout",
-    "opts": [
-     "--stdout"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "changelog"
-  ]
- },
- {
-  "help": "Shortcut to scaffold a new living specification or SpecDelta.",
-  "hidden": false,
-  "order": [],
-  "panel": "Living Catalog & Mutations",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Specification type: capability, domain, policy, contract, component, persona, delta.",
-    "kind": "TyperArgument",
-    "name": "doc_type",
-    "opts": [
-     "doc_type"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Document ID (e.g. CAP-AUTH-001, POL-002, DLT-2026-002).",
-    "kind": "TyperArgument",
-    "name": "doc_id",
-    "opts": [
-     "doc_id"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Title of the document.",
-    "kind": "TyperOption",
-    "name": "title",
-    "opts": [
-     "--title",
-     "-t"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Path to eidos specifications directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Parent domain for capabilities.",
-    "kind": "TyperOption",
-    "name": "domain",
-    "opts": [
-     "--domain",
-     "-d"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "feature_addition",
-    "envvar": "None",
-    "help": "Mutation kind for deltas.",
-    "kind": "TyperOption",
-    "name": "kind",
-    "opts": [
-     "--kind",
-     "-k"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "Motivation statement.",
-    "envvar": "None",
-    "help": "Motivation statement.",
-    "kind": "TyperOption",
-    "name": "motivation",
-    "opts": [
-     "--motivation",
-     "-m"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "governance",
-    "envvar": "None",
-    "help": "Category for policies.",
-    "kind": "TyperOption",
-    "name": "category",
-    "opts": [
-     "--category",
-     "-c"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "Rule statement.",
-    "envvar": "None",
-    "help": "Rule statement for policies.",
-    "kind": "TyperOption",
-    "name": "rule",
-    "opts": [
-     "--rule",
-     "-r"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   }
-  ],
-  "path": [
-   "create"
-  ]
- },
- {
-  "help": "Shortcut to safely delete a specification document or delta.",
-  "hidden": false,
-  "order": [],
-  "panel": "Living Catalog & Mutations",
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Document ID or path to delete.",
-    "kind": "TyperArgument",
-    "name": "target",
-    "opts": [
-     "target"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Path to eidos specifications directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Force deletion even if referenced.",
-    "kind": "TyperOption",
-    "name": "force",
-    "opts": [
-     "--force",
-     "-f"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "delete"
-  ]
- },
- {
-  "help": "Shortcut to list all living specifications.",
-  "hidden": false,
-  "order": [],
-  "panel": "Living Catalog & Mutations",
-  "params": [
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Path to eidos specifications directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Filter by type.",
-    "kind": "TyperOption",
-    "name": "type_filter",
-    "opts": [
-     "--type",
-     "-t"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Filter by status.",
-    "kind": "TyperOption",
-    "name": "status_filter",
-    "opts": [
-     "--status",
-     "-s"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   }
-  ],
-  "path": [
-   "list"
-  ]
- },
- {
-  "help": "Shortcut alias for 'eidos plugin install'.",
-  "hidden": false,
-  "order": [],
-  "panel": "Agent Ecosystem & Plugins",
-  "params": [
-   {
-    "default": "project",
-    "envvar": "None",
-    "help": "Installation target in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    "kind": "TyperOption",
-    "name": "target",
-    "opts": [
-     "--target",
-     "-t"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    "kind": "TyperArgument",
-    "name": "target_arg",
-    "opts": [
-     "target_arg"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Root directory of the project (defaults to current working directory).",
-    "kind": "TyperOption",
-    "name": "project_dir",
-    "opts": [
-     "--project-dir",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Custom destination directory within the project.",
-    "kind": "TyperOption",
-    "name": "dest",
-    "opts": [
-     "--dest",
-     "-d"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "True",
-    "envvar": "None",
-    "help": "Overwrite existing files at destination.",
-    "kind": "TyperOption",
-    "name": "force",
-    "opts": [
-     "--force"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [
-     "--no-force"
-    ],
-    "type": "BOOL"
-   },
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Hook command launcher: 'eidos' (global CLI on PATH) or 'uvx' (ephemeral uvx runner).",
-    "kind": "TyperOption",
-    "name": "launcher",
-    "opts": [
-     "--launcher"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   }
-  ],
-  "path": [
-   "install"
-  ]
- },
- {
-  "help": "Shortcut alias for 'eidos plugin uninstall'.",
-  "hidden": false,
-  "order": [],
-  "panel": "Agent Ecosystem & Plugins",
-  "params": [
-   {
-    "default": "project",
-    "envvar": "None",
-    "help": "Target to remove in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    "kind": "TyperOption",
-    "name": "target",
-    "opts": [
-     "--target",
-     "-t"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    "kind": "TyperArgument",
-    "name": "target_arg",
-    "opts": [
-     "target_arg"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Root directory of the project (defaults to current working directory).",
-    "kind": "TyperOption",
-    "name": "project_dir",
-    "opts": [
-     "--project-dir",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Custom destination directory within the project to remove.",
-    "kind": "TyperOption",
-    "name": "dest",
-    "opts": [
-     "--dest",
-     "-d"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "uninstall"
-  ]
- },
- {
-  "help": "Manage living specifications (list, create, delete, show).",
-  "hidden": false,
-  "order": [
-   "containers",
-   "components",
-   "list",
-   "show",
-   "create",
-   "delete"
-  ],
-  "panel": "Living Catalog & Mutations",
-  "params": [],
-  "path": [
-   "spec"
-  ]
- },
- {
-  "help": "List all C4 Level 2 containers, runtimes, package paths, and internal building blocks.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to scan for container manifests (defaults to eidos/architecture).",
-    "kind": "TyperArgument",
-    "name": "target_path",
-    "opts": [
-     "target_path"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "spec",
-   "containers"
-  ]
- },
- {
-  "help": "List all C4 Level 3 internal components across containers.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Optional container ID to filter components (e.g. CNT-CORE).",
-    "kind": "TyperArgument",
-    "name": "container_id",
-    "opts": [
-     "container_id"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to scan for component manifests (defaults to eidos/architecture).",
-    "kind": "TyperOption",
-    "name": "target_path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "spec",
-   "components"
-  ]
- },
- {
-  "help": "List living specifications in the repository.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Path to eidos specifications directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Filter by spec type (capability, policy, contract, component, domain, persona, delta).",
-    "kind": "TyperOption",
-    "name": "type_filter",
-    "opts": [
-     "--type",
-     "-t"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Filter by status (active, draft, proposed, applied).",
-    "kind": "TyperOption",
-    "name": "status_filter",
-    "opts": [
-     "--status",
-     "-s"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   }
-  ],
-  "path": [
-   "spec",
-   "list"
-  ]
- },
- {
-  "help": "Display frontmatter metadata and preview of a specification document.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Document ID, relative path, or filename of the specification.",
-    "kind": "TyperArgument",
-    "name": "target",
-    "opts": [
-     "target"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Path to eidos specifications directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "spec",
-   "show"
-  ]
- },
- {
-  "help": "Scaffold a new living specification or SpecDelta.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Specification type: capability, domain, policy, contract, container, component, persona, delta, exploration, design-system, ui-component, screen, client, flow.",
-    "kind": "TyperArgument",
-    "name": "doc_type",
-    "opts": [
-     "doc_type"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Unique identifier (e.g. CAP-AUTH-001, POL-003, CTR-PAYMENT-API).",
-    "kind": "TyperArgument",
-    "name": "doc_id",
-    "opts": [
-     "doc_id"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Human-readable title for the specification document.",
-    "kind": "TyperOption",
-    "name": "title",
-    "opts": [
-     "--title",
-     "-t"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Path to eidos specifications directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Parent domain ID for capabilities (e.g. DOM-CORE).",
-    "kind": "TyperOption",
-    "name": "domain",
-    "opts": [
-     "--domain",
-     "-d"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "feature_addition",
-    "envvar": "None",
-    "help": "Mutation kind for SpecDeltas (feature_addition, bugfix, refactor, modification).",
-    "kind": "TyperOption",
-    "name": "kind",
-    "opts": [
-     "--kind",
-     "-k"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "Proposed specification change.",
-    "envvar": "None",
-    "help": "Motivation/problem statement for deltas.",
-    "kind": "TyperOption",
-    "name": "motivation",
-    "opts": [
-     "--motivation",
-     "-m"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "governance",
-    "envvar": "None",
-    "help": "Category for policies (governance, architectural, security, testing).",
-    "kind": "TyperOption",
-    "name": "category",
-    "opts": [
-     "--category",
-     "-c"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "Authoritative rule statement.",
-    "envvar": "None",
-    "help": "Rule statement for policies.",
-    "kind": "TyperOption",
-    "name": "rule",
-    "opts": [
-     "--rule",
-     "-r"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "cli_args",
-    "envvar": "None",
-    "help": "Protocol for contracts (cli_args, openapi, protobuf, graphql, json_rpc_stdio).",
-    "kind": "TyperOption",
-    "name": "protocol",
-    "opts": [
-     "--protocol"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Owning component or container ID for contracts.",
-    "kind": "TyperOption",
-    "name": "owning_component",
-    "opts": [
-     "--owning-component"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Parent container ID (CNT-*) for components, implementing container for clients, or owner for contracts.",
-    "kind": "TyperOption",
-    "name": "container",
-    "opts": [
-     "--container"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "src",
-    "envvar": "None",
-    "help": "Source path or glob owned by a container (package_path) or component (source_path).",
-    "kind": "TyperOption",
-    "name": "source_path",
-    "opts": [
-     "--source-path"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Client ID (CLT-*) for screens/flows, or brand identifier for client-specific design systems.",
-    "kind": "TyperOption",
-    "name": "client_id",
-    "opts": [
-     "--client"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Base design system ID or path to extend (e.g. DS-CORE).",
-    "kind": "TyperOption",
-    "name": "extends_system",
-    "opts": [
-     "--extends"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "/view",
-    "envvar": "None",
-    "help": "URL route or view identifier for screens.",
-    "kind": "TyperOption",
-    "name": "route",
-    "opts": [
-     "--route"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "DS-CORE",
-    "envvar": "None",
-    "help": "Owning design system ID for UI components.",
-    "kind": "TyperOption",
-    "name": "design_system",
-    "opts": [
-     "--system"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Base component ID being overridden/specialized by a UI component.",
-    "kind": "TyperOption",
-    "name": "implements_component",
-    "opts": [
-     "--implements"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   }
-  ],
-  "path": [
-   "spec",
-   "create"
-  ]
- },
- {
-  "help": "Safely delete a living specification with reference checks.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Document ID, path, or filename of the specification to delete.",
-    "kind": "TyperArgument",
-    "name": "target",
-    "opts": [
-     "target"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Path to eidos specifications directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Force deletion even if other specifications reference this document.",
-    "kind": "TyperOption",
-    "name": "force",
-    "opts": [
-     "--force",
-     "-f"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "spec",
-   "delete"
-  ]
- },
- {
-  "help": "Manage SpecDeltas through their mutation lifecycle (list, create, apply, delete).",
-  "hidden": false,
-  "order": [
-   "list",
-   "create",
-   "verify",
-   "audit",
-   "apply",
-   "status",
-   "sync-views",
-   "delete",
-   "changelog"
-  ],
-  "panel": "Living Catalog & Mutations",
-  "params": [],
-  "path": [
-   "delta"
-  ]
- },
- {
-  "help": "List SpecDeltas in active/ and applied/ states.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Path to eidos directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Filter deltas by status (e.g. proposed, in_review, applied, rejected).",
-    "kind": "TyperOption",
-    "name": "status_filter",
-    "opts": [
-     "--status",
-     "-s"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   }
-  ],
-  "path": [
-   "delta",
-   "list"
-  ]
- },
- {
-  "help": "Create a new SpecDelta in flat storage (eidos/deltas/<id>.adoc) and sync views.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Unique delta identifier (e.g. DLT-2026-002).",
-    "kind": "TyperArgument",
-    "name": "delta_id",
-    "opts": [
-     "delta_id"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Title of the proposed change.",
-    "kind": "TyperOption",
-    "name": "title",
-    "opts": [
-     "--title",
-     "-t"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "feature_addition",
-    "envvar": "None",
-    "help": "Mutation kind: feature_addition, bugfix, refactor, modification, feature_removal.",
-    "kind": "TyperOption",
-    "name": "kind",
-    "opts": [
-     "--kind",
-     "-k"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "Problem statement and motivation.",
-    "envvar": "None",
-    "help": "Problem statement and motivation.",
-    "kind": "TyperOption",
-    "name": "motivation",
-    "opts": [
-     "--motivation",
-     "-m"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Path to eidos directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "delta",
-   "create"
-  ]
- },
- {
-  "help": "Verify that all semantic mutations declared in a SpecDelta exist in the living specifications.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Delta ID, path, or filename of the SpecDelta to verify.",
-    "kind": "TyperArgument",
-    "name": "target",
-    "opts": [
-     "target"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Path to eidos directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Output machine-readable JSON verification result.",
-    "kind": "TyperOption",
-    "name": "json_output",
-    "opts": [
-     "--json"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "delta",
-   "verify"
-  ]
- },
- {
-  "help": "Audit entities removed or deprecated by a SpecDelta for dangling references and active leaks.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Delta ID, path, or filename of the SpecDelta to audit.",
-    "kind": "TyperArgument",
-    "name": "target",
-    "opts": [
-     "target"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Path to eidos directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Exit with code 1 if any unacknowledged active leaks or graph violations exist.",
-    "kind": "TyperOption",
-    "name": "strict",
-    "opts": [
-     "--strict",
-     "-s"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Output machine-readable JSON audit result.",
-    "kind": "TyperOption",
-    "name": "json_output",
-    "opts": [
-     "--json"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "delta",
-   "audit"
-  ]
- },
- {
-  "help": "Reconcile a SpecDelta in-place, updating status to 'applied' and syncing symlink views.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Delta ID, path, or filename of the SpecDelta to apply.",
-    "kind": "TyperArgument",
-    "name": "target",
-    "opts": [
-     "target"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Path to eidos directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Deterministically scaffold missing specs and apply structural mutations declared in the delta.",
-    "kind": "TyperOption",
-    "name": "execute",
-    "opts": [
-     "--execute",
-     "-e"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Verify all mutations are satisfied in the living spec catalog before applying.",
-    "kind": "TyperOption",
-    "name": "verify",
-    "opts": [
-     "--verify",
-     "-v"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Output raw JSON application result.",
-    "kind": "TyperOption",
-    "name": "json_output",
-    "opts": [
-     "--json"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "delta",
-   "apply"
-  ]
- },
- {
-  "help": "Display a status summary of all SpecDeltas and their lifecycle states.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Path to eidos directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "delta",
-   "status"
-  ]
- },
- {
-  "help": "Regenerate gitignored symlinks in eidos/deltas/by-status/ categorized by lifecycle state.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Path to eidos directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "delta",
-   "sync-views"
-  ]
- },
- {
-  "help": "Delete a SpecDelta file.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Delta ID, path, or filename to delete.",
-    "kind": "TyperArgument",
-    "name": "target",
-    "opts": [
-     "target"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Path to eidos directory.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Force deletion.",
-    "kind": "TyperOption",
-    "name": "force",
-    "opts": [
-     "--force",
-     "-f"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "delta",
-   "delete"
-  ]
- },
- {
-  "help": "Generate an auditable, SpecDelta-backed changelog partitioned by Git release tags.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Target changelog file path (defaults to ./CHANGELOG.md).",
-    "kind": "TyperOption",
-    "name": "output",
-    "opts": [
-     "--output",
-     "-o"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "True",
-    "envvar": "None",
-    "help": "Include unreleased changes section.",
-    "kind": "TyperOption",
-    "name": "unreleased",
-    "opts": [
-     "--unreleased"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [
-     "--no-unreleased"
-    ],
-    "type": "BOOL"
-   },
-   {
-    "default": "True",
-    "envvar": "None",
-    "help": "Automatically synchronize docs/changelog.md and register in zensical.toml.",
-    "kind": "TyperOption",
-    "name": "docs",
-    "opts": [
-     "--docs"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [
-     "--no-docs"
-    ],
-    "type": "BOOL"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Print changelog directly to stdout instead of writing to disk.",
-    "kind": "TyperOption",
-    "name": "stdout",
-    "opts": [
-     "--stdout"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "delta",
-   "changelog"
-  ]
- },
- {
-  "help": "Manage C4 Level 3 components (promote, inline, list).",
-  "hidden": false,
-  "order": [
-   "promote",
-   "inline",
-   "list"
-  ],
-  "panel": "Living Catalog & Mutations",
-  "params": [],
-  "path": [
-   "component"
-  ]
- },
- {
-  "help": "Promote an inline C4 Level 3 component to a dedicated specification in eidos/architecture/components/.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Identifier of the inline component to promote (e.g. CMP-CORE-VALIDATOR).",
-    "kind": "TyperArgument",
-    "name": "component_id",
-    "opts": [
-     "component_id"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory.",
-    "kind": "TyperOption",
-    "name": "eidos_dir",
-    "opts": [
-     "--eidos-dir",
-     "-d"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "component",
-   "promote"
-  ]
- },
- {
-  "help": "Demote / inline a dedicated C4 Level 3 component back into its container manifest.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Identifier of the dedicated component to inline back into its container.",
-    "kind": "TyperArgument",
-    "name": "component_id",
-    "opts": [
-     "component_id"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory.",
-    "kind": "TyperOption",
-    "name": "eidos_dir",
-    "opts": [
-     "--eidos-dir",
-     "-d"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "component",
-   "inline"
-  ]
- },
- {
-  "help": "List all C4 Level 3 components across containers.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Optional container ID to filter components.",
-    "kind": "TyperArgument",
-    "name": "container_id",
-    "opts": [
-     "container_id"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to scan.",
-    "kind": "TyperOption",
-    "name": "target_path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "component",
-   "list"
-  ]
- },
- {
-  "help": "Manage and query the embedded SQLite architectural knowledge graph (eidos/.cache/index.db).",
-  "hidden": false,
-  "order": [
-   "status",
-   "sync",
-   "update",
-   "search",
-   "blast-radius",
-   "repo-map",
-   "find-symbol"
-  ],
-  "panel": "Knowledge Graph & AI Context",
-  "params": [],
-  "path": [
-   "index"
-  ]
- },
- {
-  "help": "Display health, schema version, cache size, AST telemetry, and statistics of the architectural index.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Output raw index telemetry as JSON for programmatic inspection.",
-    "kind": "TyperOption",
-    "name": "json_output",
-    "opts": [
-     "--json"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "index",
-   "status"
-  ]
- },
- {
-  "help": "Synchronize the architectural index with specifications on disk.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Force complete rebuild of the index from scratch.",
-    "kind": "TyperOption",
-    "name": "force",
-    "opts": [
-     "--force",
-     "-f"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "index",
-   "sync"
-  ]
- },
- {
-  "help": "Alias for 'sync': Synchronize the architectural index with specifications on disk.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Force complete rebuild of the index from scratch.",
-    "kind": "TyperOption",
-    "name": "force",
-    "opts": [
-     "--force",
-     "-f"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "index",
-   "update"
-  ]
- },
- {
-  "help": "Execute BM25 ranked full-text search (FTS5) across all specifications, capabilities, and invariants.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Search query keywords or phrase.",
-    "kind": "TyperArgument",
-    "name": "query",
-    "opts": [
-     "query"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "10",
-    "envvar": "None",
-    "help": "Maximum number of matches to display.",
-    "kind": "TyperOption",
-    "name": "limit",
-    "opts": [
-     "--limit",
-     "-l"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "INT"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "index",
-   "search"
-  ]
- },
- {
-  "help": "Display recursive CTE graph walk / blast radius for an architectural entity.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Target architectural entity ID (e.g. 'CNT-CORE', 'CAP-BILLING-001').",
-    "kind": "TyperArgument",
-    "name": "entity_id",
-    "opts": [
-     "entity_id"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "2",
-    "envvar": "None",
-    "help": "Maximum graph walk hop distance (defaults to 2).",
-    "kind": "TyperOption",
-    "name": "depth",
-    "opts": [
-     "--depth",
-     "-d"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "INT"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "index",
-   "blast-radius"
-  ]
- },
- {
-  "help": "Generate a token-budgeted structural repo map outline for AI coding agents.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "1500",
-    "envvar": "None",
-    "help": "Maximum context tokens allocated for structural repo map outline.",
-    "kind": "TyperOption",
-    "name": "max_tokens",
-    "opts": [
-     "--max-tokens",
-     "-t"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "INT"
-   },
-   {
-    "default": "markdown",
-    "envvar": "None",
-    "help": "Output format: markdown (default) or json.",
-    "kind": "TyperOption",
-    "name": "format_type",
-    "opts": [
-     "--format",
-     "-f"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "index",
-   "repo-map"
-  ]
- },
- {
-  "help": "Locate symbol matches and their associated living component specifications.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Exact or partial symbol name (class, method, function, or route).",
-    "kind": "TyperArgument",
-    "name": "query",
-    "opts": [
-     "query"
-    ],
-    "panel": null,
-    "required": true,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "20",
-    "envvar": "None",
-    "help": "Maximum number of symbol results to return.",
-    "kind": "TyperOption",
-    "name": "limit",
-    "opts": [
-     "--limit",
-     "-l"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "INT"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Output results as machine-readable JSON.",
-    "kind": "TyperOption",
-    "name": "json_output",
-    "opts": [
-     "--json"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to eidos directory (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "index",
-   "find-symbol"
-  ]
- },
- {
-  "help": "Serve, preview, and build the interactive Eidos Living Web Portal.",
-  "hidden": false,
-  "order": [
-   "serve",
-   "build-site",
-   "build"
-  ],
-  "panel": "Living Web Portal",
-  "params": [],
-  "path": [
-   "portal"
-  ]
- },
- {
-  "help": "Launch the interactive Eidos Living Web Portal.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to directory containing .adoc specifications (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "target_path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "127.0.0.1",
-    "envvar": "None",
-    "help": "Host interface to bind the portal server to.",
-    "kind": "TyperOption",
-    "name": "host",
-    "opts": [
-     "--host",
-     "-h"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "3000",
-    "envvar": "None",
-    "help": "Port number to serve the portal on.",
-    "kind": "TyperOption",
-    "name": "port",
-    "opts": [
-     "--port"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "INT"
-   },
-   {
-    "default": "False",
-    "envvar": "None",
-    "help": "Automatically open the portal in your default web browser.",
-    "kind": "TyperOption",
-    "name": "open_browser",
-    "opts": [
-     "--open"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "BOOL"
-   }
-  ],
-  "path": [
-   "portal",
-   "serve"
-  ]
- },
- {
-  "help": "Export the Eidos Living Web Portal as a self-contained static web site.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to directory containing .adoc specifications (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "target_path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "site",
-    "envvar": "None",
-    "help": "Target output directory for the static site (defaults to ./site).",
-    "kind": "TyperOption",
-    "name": "out_dir",
-    "opts": [
-     "--out",
-     "-o"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "portal",
-   "build-site"
-  ]
- },
- {
-  "help": "Export the Eidos Living Web Portal as a self-contained static web site.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to directory containing .adoc specifications (defaults to ./eidos).",
-    "kind": "TyperOption",
-    "name": "target_path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "site",
-    "envvar": "None",
-    "help": "Target output directory for the static site (defaults to ./site).",
-    "kind": "TyperOption",
-    "name": "out_dir",
-    "opts": [
-     "--out",
-     "-o"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "portal",
-   "build"
-  ]
- },
- {
-  "help": "Manage, install, and validate Eidos agent plugins (agent-plugins.org v1.0.0).",
-  "hidden": false,
-  "order": [
-   "install",
-   "uninstall",
-   "remove",
-   "version",
-   "update",
-   "upgrade",
-   "validate",
-   "info"
-  ],
-  "panel": "Agent Ecosystem & Plugins",
-  "params": [],
-  "path": [
-   "plugin"
-  ]
- },
- {
-  "help": "Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos, agent-plugins.org v1.0.0).",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "project",
-    "envvar": "None",
-    "help": "Installation target in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    "kind": "TyperOption",
-    "name": "target",
-    "opts": [
-     "--target",
-     "-t"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    "kind": "TyperArgument",
-    "name": "target_arg",
-    "opts": [
-     "target_arg"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Root directory of the project (defaults to current working directory).",
-    "kind": "TyperOption",
-    "name": "project_dir",
-    "opts": [
-     "--project-dir",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Custom destination directory within the project.",
-    "kind": "TyperOption",
-    "name": "dest",
-    "opts": [
-     "--dest",
-     "-d"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "True",
-    "envvar": "None",
-    "help": "Overwrite existing files at destination.",
-    "kind": "TyperOption",
-    "name": "force",
-    "opts": [
-     "--force"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [
-     "--no-force"
-    ],
-    "type": "BOOL"
-   },
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Hook command launcher: 'eidos' (global CLI on PATH) or 'uvx' (ephemeral uvx runner).",
-    "kind": "TyperOption",
-    "name": "launcher",
-    "opts": [
-     "--launcher"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   }
-  ],
-  "path": [
-   "plugin",
-   "install"
-  ]
- },
- {
-  "help": "Uninstall / remove the Eidos agent plugin from project scope.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "project",
-    "envvar": "None",
-    "help": "Target to remove in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    "kind": "TyperOption",
-    "name": "target",
-    "opts": [
-     "--target",
-     "-t"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    "kind": "TyperArgument",
-    "name": "target_arg",
-    "opts": [
-     "target_arg"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Root directory of the project (defaults to current working directory).",
-    "kind": "TyperOption",
-    "name": "project_dir",
-    "opts": [
-     "--project-dir",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Custom destination directory within the project to remove.",
-    "kind": "TyperOption",
-    "name": "dest",
-    "opts": [
-     "--dest",
-     "-d"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "plugin",
-   "uninstall"
-  ]
- },
- {
-  "help": "Alias for 'eidos plugin uninstall'.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "project",
-    "envvar": "None",
-    "help": "Target to remove in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    "kind": "TyperOption",
-    "name": "target",
-    "opts": [
-     "--target",
-     "-t"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    "kind": "TyperArgument",
-    "name": "target_arg",
-    "opts": [
-     "target_arg"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Root directory of the project (defaults to current working directory).",
-    "kind": "TyperOption",
-    "name": "project_dir",
-    "opts": [
-     "--project-dir",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Custom destination directory within the project to remove.",
-    "kind": "TyperOption",
-    "name": "dest",
-    "opts": [
-     "--dest",
-     "-d"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "plugin",
-   "remove"
-  ]
- },
- {
-  "help": "Display and compare bundled vs installed Agent Plugin version.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Root directory of the project (defaults to current working directory).",
-    "kind": "TyperOption",
-    "name": "project_dir",
-    "opts": [
-     "--project-dir",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Custom plugin directory within the project to inspect.",
-    "kind": "TyperOption",
-    "name": "dest",
-    "opts": [
-     "--dest",
-     "-d"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "plugin",
-   "version"
-  ]
- },
- {
-  "help": "Update project-scoped Agent Plugin to the latest bundled version.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "project",
-    "envvar": "None",
-    "help": "Target to update in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    "kind": "TyperOption",
-    "name": "target",
-    "opts": [
-     "--target",
-     "-t"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    "kind": "TyperArgument",
-    "name": "target_arg",
-    "opts": [
-     "target_arg"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Root directory of the project (defaults to current working directory).",
-    "kind": "TyperOption",
-    "name": "project_dir",
-    "opts": [
-     "--project-dir",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Custom destination directory within the project to update.",
-    "kind": "TyperOption",
-    "name": "dest",
-    "opts": [
-     "--dest",
-     "-d"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Hook command launcher: 'eidos' (global CLI on PATH) or 'uvx' (ephemeral uvx runner).",
-    "kind": "TyperOption",
-    "name": "launcher",
-    "opts": [
-     "--launcher"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   }
-  ],
-  "path": [
-   "plugin",
-   "update"
-  ]
- },
- {
-  "help": "Alias for 'eidos plugin update'.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "project",
-    "envvar": "None",
-    "help": "Target to update in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    "kind": "TyperOption",
-    "name": "target",
-    "opts": [
-     "--target",
-     "-t"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    "kind": "TyperArgument",
-    "name": "target_arg",
-    "opts": [
-     "target_arg"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Root directory of the project (defaults to current working directory).",
-    "kind": "TyperOption",
-    "name": "project_dir",
-    "opts": [
-     "--project-dir",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Custom destination directory within the project to update.",
-    "kind": "TyperOption",
-    "name": "dest",
-    "opts": [
-     "--dest",
-     "-d"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   },
-   {
-    "default": "eidos",
-    "envvar": "None",
-    "help": "Hook command launcher: 'eidos' (global CLI on PATH) or 'uvx' (ephemeral uvx runner).",
-    "kind": "TyperOption",
-    "name": "launcher",
-    "opts": [
-     "--launcher"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   }
-  ],
-  "path": [
-   "plugin",
-   "upgrade"
-  ]
- },
- {
-  "help": "Validate an Agent Plugin against agent-plugins.org v1.0.0 and agentskills.io specifications.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to plugin directory (defaults to assets/plugin_reference or bundled).",
-    "kind": "TyperArgument",
-    "name": "plugin_path",
-    "opts": [
-     "plugin_path"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "plugin",
-   "validate"
-  ]
- },
- {
-  "help": "Display metadata and configuration for the Eidos Agent Plugin.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Path to plugin directory (defaults to assets/plugin_reference or bundled).",
-    "kind": "TyperArgument",
-    "name": "plugin_path",
-    "opts": [
-     "plugin_path"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "plugin",
-   "info"
-  ]
- },
- {
-  "help": "Execute native Eidos agent plugin lifecycle hooks (lint, drift).",
-  "hidden": false,
-  "order": [
-   "lint",
-   "drift"
-  ],
-  "panel": "Agent Ecosystem & Plugins",
-  "params": [],
-  "path": [
-   "hook"
-  ]
- },
- {
-  "help": "Execute native Eidos specification lint & ADR guard lifecycle hook.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "Stop",
-    "envvar": "None",
-    "help": "Hook lifecycle event (PreToolUse, PostToolUse, PostInvocation, Stop).",
-    "kind": "TyperOption",
-    "name": "event",
-    "opts": [
-     "--event",
-     "-e"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Repository root or eidos directory path.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "hook",
-   "lint"
-  ]
- },
- {
-  "help": "Execute native Eidos spec-to-code drift lifecycle hook with Block-Once Stop gate.",
-  "hidden": false,
-  "order": [],
-  "panel": null,
-  "params": [
-   {
-    "default": "Stop",
-    "envvar": "None",
-    "help": "Hook lifecycle event (PostInvocation, Stop).",
-    "kind": "TyperOption",
-    "name": "event",
-    "opts": [
-     "--event",
-     "-e"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "STRING"
-   },
-   {
-    "default": "None",
-    "envvar": "None",
-    "help": "Repository root or eidos directory path.",
-    "kind": "TyperOption",
-    "name": "path",
-    "opts": [
-     "--path",
-     "-p"
-    ],
-    "panel": null,
-    "required": false,
-    "secondary": [],
-    "type": "<typer.models.TyperPath object>"
-   }
-  ],
-  "path": [
-   "hook",
-   "drift"
-  ]
- }
+  {
+    "order": [
+      "version",
+      "info",
+      "doctor",
+      "init",
+      "validate",
+      "drift",
+      "context",
+      "spec",
+      "delta",
+      "index",
+      "portal",
+      "plugin",
+      "hook"
+    ],
+    "path": [],
+    "help": "Eidos: Git-Native, Agent-Agnostic Development AI Ecosystem & Lifecycle Orchestrator.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "version",
+        "opts": [
+          "--version",
+          "-V"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Show Eidos engine version and exit.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "version"
+    ],
+    "help": "Display the Eidos engine version.",
+    "hidden": false,
+    "panel": "Setup & Workspace",
+    "params": []
+  },
+  {
+    "order": [],
+    "path": [
+      "info"
+    ],
+    "help": "Display Eidos engine version, bundled schemas, and platform status.",
+    "hidden": false,
+    "panel": "Setup & Workspace",
+    "params": []
+  },
+  {
+    "order": [],
+    "path": [
+      "doctor"
+    ],
+    "help": "Run health checks on the Eidos CLI installation, Git repository, living specs, index, and agent plugin.",
+    "hidden": false,
+    "panel": "Setup & Workspace",
+    "params": [
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to project or eidos directory (defaults to current directory).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output machine-readable JSON diagnostics report.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "init"
+    ],
+    "help": "Initialize a repository with an empty Eidos living specification skeleton.",
+    "hidden": false,
+    "panel": "Setup & Workspace",
+    "params": [
+      {
+        "name": "target_path",
+        "opts": [
+          "target_path"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": false,
+        "default": "None",
+        "help": "Target project directory to initialize with Eidos (defaults to current directory).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "name",
+        "opts": [
+          "--name",
+          "-n"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "System identifier (e.g. 'my-app'). Defaults to directory name.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "title",
+        "opts": [
+          "--title",
+          "-t"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Human-readable system title (e.g. 'My Application').",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "force",
+        "opts": [
+          "--force",
+          "-f"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Force initialization even if eidos/ directory already exists.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
+        "name": "_with_plugin",
+        "opts": [
+          "--with-plugin"
+        ],
+        "secondary": [
+          "--no-plugin"
+        ],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Deprecated: plugins are no longer installed by init.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "validate"
+    ],
+    "help": "Validate all specification documents against their schemas and verify cross-references.",
+    "hidden": false,
+    "panel": "Governance & Verification",
+    "params": [
+      {
+        "name": "target_path",
+        "opts": [
+          "target_path"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": false,
+        "default": "None",
+        "help": "Path to the directory containing .adoc specifications (defaults to ./eidos).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output raw JSON validation report.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "drift"
+    ],
+    "help": "Detect spec-to-code drift, schema validity, and invariant test coverage.",
+    "hidden": false,
+    "panel": "Governance & Verification",
+    "params": [
+      {
+        "name": "base",
+        "opts": [
+          "--base",
+          "-b"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Base git reference to compare against (e.g. origin/main, main).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "head",
+        "opts": [
+          "--head"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "HEAD",
+        "help": "Head git reference to compare (defaults to HEAD).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "uncommitted",
+        "opts": [
+          "--uncommitted",
+          "-u"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Analyze uncommitted working tree and staged changes instead of branch diff.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to eidos specifications directory (defaults to ./eidos).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "warn_only",
+        "opts": [
+          "--warn-only"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Do not exit with code 1 on drift or validation failures.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
+        "name": "markdown_out",
+        "opts": [
+          "--markdown",
+          "-m"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Write markdown summary to file (e.g. for CI/CD reports).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output raw JSON verification result.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "context"
+    ],
+    "help": "Extract a compact architectural subgraph slice (C4 components, contracts, capabilities, invariants, policies).",
+    "hidden": false,
+    "panel": "Knowledge Graph & AI Context",
+    "params": [
+      {
+        "name": "files",
+        "opts": [
+          "--file",
+          "-f"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Target source code file path(s) to slice context for.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "component",
+        "opts": [
+          "--component",
+          "-c"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Target component identifier (e.g. 'CMP-CORE').",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "task",
+        "opts": [
+          "--task",
+          "-t"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Free-text task description or prompt to slice architectural context for.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "tier",
+        "opts": [
+          "--tier",
+          "-T"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "guardrails",
+        "help": "Context slice verbosity tier: 'anchor' (~140 tokens), 'guardrails' (~260 tokens), 'deep' (~500 tokens). Defaults to 'guardrails'.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "format",
+        "opts": [
+          "--format"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "markdown",
+        "help": "Output format: 'markdown' or 'json' (defaults to 'markdown').",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to eidos directory (defaults to ./eidos).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [
+      "list",
+      "show",
+      "create",
+      "delete",
+      "component"
+    ],
+    "path": [
+      "spec"
+    ],
+    "help": "Manage living specifications and C4 components (list, show, create, delete, component).",
+    "hidden": false,
+    "panel": "Living Catalog & Mutations",
+    "params": []
+  },
+  {
+    "order": [],
+    "path": [
+      "spec",
+      "list"
+    ],
+    "help": "List living specifications in the repository.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Path to eidos specifications directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "type_filter",
+        "opts": [
+          "--type",
+          "-t"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Filter by spec type (capability, policy, contract, container, component, domain, persona, delta, exploration, design-system, ui-component, screen, client, flow).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "status_filter",
+        "opts": [
+          "--status",
+          "-s"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Filter by status (active, draft, proposed, applied).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "spec",
+      "show"
+    ],
+    "help": "Display frontmatter metadata and preview of a specification document.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "target",
+        "opts": [
+          "target"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": true,
+        "default": "None",
+        "help": "Document ID, relative path, or filename of the specification.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Path to eidos specifications directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "spec",
+      "create"
+    ],
+    "help": "Scaffold a new living specification or SpecDelta.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "doc_type",
+        "opts": [
+          "doc_type"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": true,
+        "default": "None",
+        "help": "Specification type: capability, domain, policy, contract, container, component, persona, delta, exploration, design-system, ui-component, screen, client, flow.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "doc_id",
+        "opts": [
+          "doc_id"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": true,
+        "default": "None",
+        "help": "Unique identifier (e.g. CAP-AUTH-001, POL-003, CTR-PAYMENT-API).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "title",
+        "opts": [
+          "--title",
+          "-t"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": true,
+        "default": "None",
+        "help": "Human-readable title for the specification document.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Path to eidos specifications directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "domain",
+        "opts": [
+          "--domain",
+          "-d"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Parent domain ID for capabilities (e.g. DOM-CORE).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "kind",
+        "opts": [
+          "--kind",
+          "-k"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "feature",
+        "help": "Mutation kind for SpecDeltas (feature, enabler, bug).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "motivation",
+        "opts": [
+          "--motivation",
+          "-m"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "Proposed specification change.",
+        "help": "Motivation/problem statement for deltas.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "category",
+        "opts": [
+          "--category",
+          "-c"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "governance",
+        "help": "Category for policies (governance, architectural, security, testing).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "rule",
+        "opts": [
+          "--rule",
+          "-r"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "Authoritative rule statement.",
+        "help": "Rule statement for policies.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "protocol",
+        "opts": [
+          "--protocol"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "cli_args",
+        "help": "Protocol for contracts (cli_args, openapi, protobuf, graphql, json_rpc_stdio).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "owning_component",
+        "opts": [
+          "--owning-component"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Owning component or container ID for contracts.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "container",
+        "opts": [
+          "--container"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Parent container ID (CNT-*) for components, implementing container for clients, or owner for contracts.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "source_path",
+        "opts": [
+          "--source-path"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "src",
+        "help": "Source path or glob owned by a container (package_path) or component (source_path).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "client_id",
+        "opts": [
+          "--client"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Client ID (CLT-*) for screens/flows, or brand identifier for client-specific design systems.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "extends_system",
+        "opts": [
+          "--extends"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Base design system ID or path to extend (e.g. DS-CORE).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "route",
+        "opts": [
+          "--route"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "/view",
+        "help": "URL route or view identifier for screens.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "design_system",
+        "opts": [
+          "--system"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "DS-CORE",
+        "help": "Owning design system ID for UI components.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "implements_component",
+        "opts": [
+          "--implements"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Base component ID being overridden/specialized by a UI component.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "spec",
+      "delete"
+    ],
+    "help": "Safely delete a living specification with reference checks.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "target",
+        "opts": [
+          "target"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": true,
+        "default": "None",
+        "help": "Document ID, path, or filename of the specification to delete.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Path to eidos specifications directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "force",
+        "opts": [
+          "--force",
+          "-f"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Force deletion even if other specifications reference this document.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      }
+    ]
+  },
+  {
+    "order": [
+      "promote",
+      "inline"
+    ],
+    "path": [
+      "spec",
+      "component"
+    ],
+    "help": "Manage C4 Level 3 components (promote, inline).",
+    "hidden": false,
+    "panel": null,
+    "params": []
+  },
+  {
+    "order": [],
+    "path": [
+      "spec",
+      "component",
+      "promote"
+    ],
+    "help": "Promote an inline C4 Level 3 component to a dedicated specification in eidos/architecture/components/.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "component_id",
+        "opts": [
+          "component_id"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": true,
+        "default": "None",
+        "help": "Identifier of the inline component to promote (e.g. CMP-CORE-VALIDATOR).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "eidos_dir",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to eidos directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "repo_root",
+        "opts": [
+          "--repo-root"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to repository root directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "spec",
+      "component",
+      "inline"
+    ],
+    "help": "Demote / inline a dedicated C4 Level 3 component back into its container manifest.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "component_id",
+        "opts": [
+          "component_id"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": true,
+        "default": "None",
+        "help": "Identifier of the dedicated component to inline back into its container.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "eidos_dir",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to eidos directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "repo_root",
+        "opts": [
+          "--repo-root"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to repository root directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [
+      "list",
+      "create",
+      "verify",
+      "audit",
+      "apply",
+      "status",
+      "sync-views",
+      "delete",
+      "changelog"
+    ],
+    "path": [
+      "delta"
+    ],
+    "help": "Manage SpecDeltas through their mutation lifecycle (list, create, apply, delete).",
+    "hidden": false,
+    "panel": "Living Catalog & Mutations",
+    "params": []
+  },
+  {
+    "order": [],
+    "path": [
+      "delta",
+      "list"
+    ],
+    "help": "List SpecDeltas in active/ and applied/ states.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Path to eidos directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "status_filter",
+        "opts": [
+          "--status",
+          "-s"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Filter deltas by status (e.g. proposed, in_review, applied, rejected).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "delta",
+      "create"
+    ],
+    "help": "Create a new SpecDelta in flat storage (eidos/deltas/<id>.adoc) and sync views.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "delta_id",
+        "opts": [
+          "delta_id"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": true,
+        "default": "None",
+        "help": "Unique delta identifier (e.g. DLT-2026-002).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "title",
+        "opts": [
+          "--title",
+          "-t"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": true,
+        "default": "None",
+        "help": "Title of the proposed change.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "kind",
+        "opts": [
+          "--kind",
+          "-k"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "feature",
+        "help": "Mutation kind: feature, enabler, bug.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "motivation",
+        "opts": [
+          "--motivation",
+          "-m"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "Problem statement and motivation.",
+        "help": "Problem statement and motivation.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Path to eidos directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "delta",
+      "verify"
+    ],
+    "help": "Verify that all semantic mutations declared in a SpecDelta exist in the living specifications.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "target",
+        "opts": [
+          "target"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": true,
+        "default": "None",
+        "help": "Delta ID, path, or filename of the SpecDelta to verify.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Path to eidos directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output machine-readable JSON verification result.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "delta",
+      "audit"
+    ],
+    "help": "Audit entities removed or deprecated by a SpecDelta for dangling references and active leaks.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "target",
+        "opts": [
+          "target"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": true,
+        "default": "None",
+        "help": "Delta ID, path, or filename of the SpecDelta to audit.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Path to eidos directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "strict",
+        "opts": [
+          "--strict",
+          "-s"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Exit with code 1 if any unacknowledged active leaks or graph violations exist.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output machine-readable JSON audit result.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "delta",
+      "apply"
+    ],
+    "help": "Reconcile a SpecDelta in-place, updating status to 'applied' and syncing symlink views.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "target",
+        "opts": [
+          "target"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": true,
+        "default": "None",
+        "help": "Delta ID, path, or filename of the SpecDelta to apply.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Path to eidos directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "execute",
+        "opts": [
+          "--execute",
+          "-e"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Deterministically scaffold missing specs and apply structural mutations declared in the delta.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
+        "name": "verify",
+        "opts": [
+          "--verify",
+          "-v"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Verify all mutations are satisfied in the living spec catalog before applying.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output raw JSON application result.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "delta",
+      "status"
+    ],
+    "help": "Display a status summary of all SpecDeltas and their lifecycle states.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Path to eidos directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "delta",
+      "sync-views"
+    ],
+    "help": "Regenerate gitignored symlinks in eidos/deltas/by-status/ categorized by lifecycle state.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Path to eidos directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "delta",
+      "delete"
+    ],
+    "help": "Delete a SpecDelta file.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "target",
+        "opts": [
+          "target"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": true,
+        "default": "None",
+        "help": "Delta ID, path, or filename to delete.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Path to eidos directory.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "force",
+        "opts": [
+          "--force",
+          "-f"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Force deletion.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "delta",
+      "changelog"
+    ],
+    "help": "Generate an auditable, SpecDelta-backed changelog partitioned by Git release tags.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "output",
+        "opts": [
+          "--output",
+          "-o"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Target changelog file path (defaults to ./CHANGELOG.md).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "unreleased",
+        "opts": [
+          "--unreleased"
+        ],
+        "secondary": [
+          "--no-unreleased"
+        ],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "True",
+        "help": "Include unreleased changes section.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
+        "name": "docs",
+        "opts": [
+          "--docs"
+        ],
+        "secondary": [
+          "--no-docs"
+        ],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "True",
+        "help": "Automatically synchronize docs/changelog.md and register in zensical.toml.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
+        "name": "stdout",
+        "opts": [
+          "--stdout"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Print changelog directly to stdout instead of writing to disk.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to eidos directory (defaults to ./eidos).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [
+      "status",
+      "sync",
+      "search",
+      "blast-radius",
+      "repo-map",
+      "find-symbol"
+    ],
+    "path": [
+      "index"
+    ],
+    "help": "Manage and query the embedded SQLite architectural knowledge graph (eidos/.cache/index.db).",
+    "hidden": false,
+    "panel": "Knowledge Graph & AI Context",
+    "params": []
+  },
+  {
+    "order": [],
+    "path": [
+      "index",
+      "status"
+    ],
+    "help": "Display health, schema version, cache size, AST telemetry, and statistics of the architectural index.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to eidos directory (defaults to ./eidos).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output raw index telemetry as JSON for programmatic inspection.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "index",
+      "sync"
+    ],
+    "help": "Synchronize the architectural index with specifications on disk.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "force",
+        "opts": [
+          "--force",
+          "-f"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Force complete rebuild of the index from scratch.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to eidos directory (defaults to ./eidos).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "index",
+      "search"
+    ],
+    "help": "Execute BM25 ranked full-text search (FTS5) across all specifications, capabilities, and invariants.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "query",
+        "opts": [
+          "query"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": true,
+        "default": "None",
+        "help": "Search query keywords or phrase.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "limit",
+        "opts": [
+          "--limit",
+          "-l"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "10",
+        "help": "Maximum number of matches to display.",
+        "panel": null,
+        "envvar": "None",
+        "type": "INT"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to eidos directory (defaults to ./eidos).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "index",
+      "blast-radius"
+    ],
+    "help": "Display recursive CTE graph walk / blast radius for an architectural entity.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "entity_id",
+        "opts": [
+          "entity_id"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": true,
+        "default": "None",
+        "help": "Target architectural entity ID (e.g. 'CNT-CORE', 'CAP-BILLING-001').",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "depth",
+        "opts": [
+          "--depth",
+          "-d"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "2",
+        "help": "Maximum graph walk hop distance (defaults to 2).",
+        "panel": null,
+        "envvar": "None",
+        "type": "INT"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to eidos directory (defaults to ./eidos).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output results as machine-readable JSON.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "index",
+      "repo-map"
+    ],
+    "help": "Generate a token-budgeted structural repo map outline for AI coding agents.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "max_tokens",
+        "opts": [
+          "--max-tokens",
+          "-t"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "1500",
+        "help": "Maximum context tokens allocated for structural repo map outline.",
+        "panel": null,
+        "envvar": "None",
+        "type": "INT"
+      },
+      {
+        "name": "format_type",
+        "opts": [
+          "--format",
+          "-f"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "markdown",
+        "help": "Output format: markdown (default) or json.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to eidos directory (defaults to ./eidos).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "index",
+      "find-symbol"
+    ],
+    "help": "Locate symbol matches and their associated living component specifications.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "query",
+        "opts": [
+          "query"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": true,
+        "default": "None",
+        "help": "Exact or partial symbol name (class, method, function, or route).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "limit",
+        "opts": [
+          "--limit",
+          "-l"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "20",
+        "help": "Maximum number of symbol results to return.",
+        "panel": null,
+        "envvar": "None",
+        "type": "INT"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output results as machine-readable JSON.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to eidos directory (defaults to ./eidos).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [
+      "serve",
+      "build"
+    ],
+    "path": [
+      "portal"
+    ],
+    "help": "Serve, preview, and build the interactive Eidos Living Web Portal.",
+    "hidden": false,
+    "panel": "Living Web Portal",
+    "params": []
+  },
+  {
+    "order": [],
+    "path": [
+      "portal",
+      "serve"
+    ],
+    "help": "Launch the interactive Eidos Living Web Portal.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "target_path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to directory containing .adoc specifications (defaults to ./eidos).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "host",
+        "opts": [
+          "--host",
+          "-h"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "127.0.0.1",
+        "help": "Host interface to bind the portal server to.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "port",
+        "opts": [
+          "--port"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "3000",
+        "help": "Port number to serve the portal on.",
+        "panel": null,
+        "envvar": "None",
+        "type": "INT"
+      },
+      {
+        "name": "open_browser",
+        "opts": [
+          "--open"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Automatically open the portal in your default web browser.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "portal",
+      "build"
+    ],
+    "help": "Export the Eidos Living Web Portal as a self-contained static web site.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "target_path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Path to directory containing .adoc specifications (defaults to ./eidos).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "out_dir",
+        "opts": [
+          "--out",
+          "-o"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "site",
+        "help": "Target output directory for the static site (defaults to ./site).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [
+      "install",
+      "uninstall",
+      "version",
+      "update",
+      "validate",
+      "info"
+    ],
+    "path": [
+      "plugin"
+    ],
+    "help": "Manage, install, and validate Eidos agent plugins (agent-plugins.org v1.0.0).",
+    "hidden": false,
+    "panel": "Agent Ecosystem & Plugins",
+    "params": []
+  },
+  {
+    "order": [],
+    "path": [
+      "plugin",
+      "install"
+    ],
+    "help": "Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos, agent-plugins.org v1.0.0).",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "target",
+        "opts": [
+          "--target",
+          "-t"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "project",
+        "help": "Installation target in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
+        "panel": null,
+        "envvar": "None",
+        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
+      },
+      {
+        "name": "target_arg",
+        "opts": [
+          "target_arg"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": false,
+        "default": "None",
+        "help": "Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
+        "panel": null,
+        "envvar": "None",
+        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
+      },
+      {
+        "name": "project_dir",
+        "opts": [
+          "--project-dir",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Root directory of the project (defaults to current working directory).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "dest",
+        "opts": [
+          "--dest",
+          "-d"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Custom destination directory within the project.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "force",
+        "opts": [
+          "--force"
+        ],
+        "secondary": [
+          "--no-force"
+        ],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "True",
+        "help": "Overwrite existing files at destination.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
+        "name": "launcher",
+        "opts": [
+          "--launcher"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Hook command launcher: 'eidos' (global CLI on PATH) or 'uvx' (ephemeral uvx runner).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "plugin",
+      "uninstall"
+    ],
+    "help": "Uninstall / remove the Eidos agent plugin from project scope.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "target",
+        "opts": [
+          "--target",
+          "-t"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "project",
+        "help": "Target to remove in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
+        "panel": null,
+        "envvar": "None",
+        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
+      },
+      {
+        "name": "target_arg",
+        "opts": [
+          "target_arg"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": false,
+        "default": "None",
+        "help": "Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
+        "panel": null,
+        "envvar": "None",
+        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
+      },
+      {
+        "name": "project_dir",
+        "opts": [
+          "--project-dir",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Root directory of the project (defaults to current working directory).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "dest",
+        "opts": [
+          "--dest",
+          "-d"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Custom destination directory within the project to remove.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "plugin",
+      "version"
+    ],
+    "help": "Display and compare bundled vs installed Agent Plugin version.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "project_dir",
+        "opts": [
+          "--project-dir",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Root directory of the project (defaults to current working directory).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "dest",
+        "opts": [
+          "--dest",
+          "-d"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Custom plugin directory within the project to inspect.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "plugin",
+      "update"
+    ],
+    "help": "Update project-scoped Agent Plugin to the latest bundled version.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "target",
+        "opts": [
+          "--target",
+          "-t"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "project",
+        "help": "Target to update in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
+        "panel": null,
+        "envvar": "None",
+        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
+      },
+      {
+        "name": "target_arg",
+        "opts": [
+          "target_arg"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": false,
+        "default": "None",
+        "help": "Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
+        "panel": null,
+        "envvar": "None",
+        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
+      },
+      {
+        "name": "project_dir",
+        "opts": [
+          "--project-dir",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Root directory of the project (defaults to current working directory).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "dest",
+        "opts": [
+          "--dest",
+          "-d"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Custom destination directory within the project to update.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "launcher",
+        "opts": [
+          "--launcher"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Hook command launcher: 'eidos' (global CLI on PATH) or 'uvx' (ephemeral uvx runner).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "plugin",
+      "validate"
+    ],
+    "help": "Validate an Agent Plugin against agent-plugins.org v1.0.0 and agentskills.io specifications.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "plugin_path",
+        "opts": [
+          "plugin_path"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": false,
+        "default": "None",
+        "help": "Path to plugin directory (defaults to assets/plugin_reference or bundled).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "plugin",
+      "info"
+    ],
+    "help": "Display metadata and configuration for the Eidos Agent Plugin.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "plugin_path",
+        "opts": [
+          "plugin_path"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": false,
+        "default": "None",
+        "help": "Path to plugin directory (defaults to assets/plugin_reference or bundled).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [
+      "lint",
+      "drift"
+    ],
+    "path": [
+      "hook"
+    ],
+    "help": "Execute native Eidos agent plugin lifecycle hooks (lint, drift).",
+    "hidden": false,
+    "panel": "Agent Ecosystem & Plugins",
+    "params": []
+  },
+  {
+    "order": [],
+    "path": [
+      "hook",
+      "lint"
+    ],
+    "help": "Execute native Eidos specification lint & ADR guard lifecycle hook.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "event",
+        "opts": [
+          "--event",
+          "-e"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "Stop",
+        "help": "Hook lifecycle event (PreToolUse, PostToolUse, PostInvocation, Stop).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Repository root or eidos directory path.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "hook",
+      "drift"
+    ],
+    "help": "Execute native Eidos spec-to-code drift lifecycle hook with Block-Once Stop gate.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "event",
+        "opts": [
+          "--event",
+          "-e"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "Stop",
+        "help": "Hook lifecycle event (PostInvocation, Stop).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Repository root or eidos directory path.",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  }
 ]

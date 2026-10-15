@@ -1,4 +1,4 @@
-"""Living specification commands: validate, lint, containers/components listing, and spec CRUD (`eidos spec ...`)."""
+"""Living specification commands: validate and spec CRUD (`eidos spec ...`)."""
 
 import json
 from pathlib import Path
@@ -7,8 +7,8 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from eidos.cli._shared import PANEL_GOVERNANCE, PANEL_SPECS, console
-from eidos.core.index.graph_index import get_architectural_index
+from eidos.cli._shared import PANEL_GOVERNANCE, console
+from eidos.cli.component_commands import component_app
 from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
 from eidos.core.lifecycle.scaffolder import create_spec, delete_spec, list_specs
 from eidos.core.spec.parser import parse_spec_file
@@ -16,9 +16,10 @@ from eidos.core.spec.validator import SpecValidator
 
 spec_app = typer.Typer(
     name="spec",
-    help="Manage living specifications (list, create, delete, show).",
+    help="Manage living specifications and C4 components (list, show, create, delete, component).",
     add_completion=False,
 )
+spec_app.add_typer(component_app, name="component")
 
 
 def validate(
@@ -112,143 +113,6 @@ def validate(
     console.print(f"\n[bold green]Success![/bold green] All {report.total_docs} specification documents are valid.")
 
 
-def lint_cmd(
-    target_path: Path | None = typer.Argument(
-        None,
-        help="Path to directory containing .adoc specifications (defaults to ./eidos).",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        help="Output raw JSON validation report.",
-    ),
-):
-    """Lint and validate all specification documents against schemas and link integrity."""
-    validate(target_path, json_output=json_output)
-
-
-def _render_containers_table(target_path: Path | None = None) -> None:
-    search_dir = target_path or Path("eidos/architecture")
-    eidos_dir = search_dir.parent if search_dir.name == "architecture" else search_dir
-    if not search_dir.exists() and not eidos_dir.exists():
-        console.print(f"[bold red]Error:[/bold red] Directory '{search_dir}' not found.")
-        raise typer.Exit(code=1)
-
-    idx = get_architectural_index(eidos_dir=eidos_dir)
-    found_containers = idx.get_components()
-
-    if not found_containers:
-        console.print(f"[bold yellow]No container specifications found in '{search_dir}'.[/bold yellow]")
-        return
-
-    table = Table(title="Eidos Monorepo Containers (C4 Level 2)", show_header=True, header_style="bold blue")
-    table.add_column("Container ID", style="bold cyan")
-    table.add_column("Name", style="green")
-    table.add_column("Container Type", style="yellow")
-    table.add_column("Runtime", style="magenta")
-    table.add_column("Package Path", style="dim")
-    table.add_column("L3 Components", style="white")
-
-    for c in found_containers:
-        pkg = c.get("package_path") or "centralized"
-        internals = ", ".join(m.get("name", "") for m in (c.get("components", []) or c.get("c4_internal_components", []))) or "N/A"
-        table.add_row(
-            c.get("id", "N/A"),
-            c.get("name", "N/A"),
-            c.get("container_type", "N/A"),
-            c.get("runtime", "N/A"),
-            str(pkg),
-            internals,
-        )
-
-    console.print(table)
-
-
-@spec_app.command("containers")
-def containers(
-    target_path: Path | None = typer.Argument(
-        None,
-        help="Path to scan for container manifests (defaults to eidos/architecture).",
-    ),
-):
-    """List all C4 Level 2 containers, runtimes, package paths, and internal building blocks."""
-    _render_containers_table(target_path=target_path)
-
-
-@spec_app.command("components")
-def components(
-    container_id: str | None = typer.Argument(
-        None,
-        help="Optional container ID to filter components (e.g. CNT-CORE).",
-    ),
-    target_path: Path | None = typer.Option(
-        None,
-        "--path",
-        "-p",
-        help="Path to scan for component manifests (defaults to eidos/architecture).",
-    ),
-):
-    """List all C4 Level 3 internal components across containers."""
-    search_dir = target_path or Path("eidos/architecture")
-    eidos_dir = search_dir.parent if search_dir.name == "architecture" else search_dir
-    if not search_dir.exists() and not eidos_dir.exists():
-        console.print(f"[bold red]Error:[/bold red] Directory '{search_dir}' not found.")
-        raise typer.Exit(code=1)
-
-    idx = get_architectural_index(eidos_dir=eidos_dir)
-    found_containers = idx.get_components()
-
-    if not found_containers:
-        console.print(f"[bold yellow]No component or container specifications found in '{search_dir}'.[/bold yellow]")
-        return
-
-    table = Table(title="Eidos C4 Level 3 Components (In-Process Building Blocks)", show_header=True, header_style="bold blue")
-    table.add_column("Component ID", style="bold cyan")
-    table.add_column("Name", style="green")
-    table.add_column("Owning Container", style="yellow")
-    table.add_column("Source Path", style="dim")
-    table.add_column("Responsibility", style="white")
-
-    cid_filter = container_id.strip().upper() if container_id else None
-    count = 0
-    for c in found_containers:
-        cid = c.get("id", "N/A")
-        ctype = c.get("type", "tech/container")
-
-        if ctype == "tech/component":
-            if cid_filter and cid_filter not in cid.upper():
-                continue
-            count += 1
-            table.add_row(
-                cid,
-                c.get("name", c.get("title", "N/A")),
-                c.get("container", "N/A"),
-                str(c.get("source_path") or c.get("package_path") or c.get("file_path") or "N/A"),
-                c.get("responsibility", "N/A"),
-            )
-            continue
-
-        if cid_filter and cid_filter not in cid.upper():
-            continue
-        internals = c.get("components", []) or c.get("c4_internal_components", [])
-        for m in internals:
-            count += 1
-            spec_ref = str(m.get("ref", m.get("spec_path", m.get("source_path", "N/A"))))
-            table.add_row(
-                m.get("id", "CMP-INTERNAL"),
-                m.get("name", "N/A"),
-                cid,
-                spec_ref,
-                m.get("responsibility", "N/A"),
-            )
-
-    if count == 0 and cid_filter:
-        console.print(f"[bold yellow]No components found for container '{container_id}'.[/bold yellow]")
-        return
-
-    console.print(table)
-
-
 @spec_app.command("list")
 def spec_list_cmd(
     path: Path = typer.Option(
@@ -261,7 +125,7 @@ def spec_list_cmd(
         None,
         "--type",
         "-t",
-        help="Filter by spec type (capability, policy, contract, component, domain, persona, delta).",
+        help="Filter by spec type (capability, policy, contract, container, component, domain, persona, delta, exploration, design-system, ui-component, screen, client, flow).",
     ),
     status_filter: str | None = typer.Option(
         None,
@@ -359,10 +223,10 @@ def spec_create_cmd(
         help="Parent domain ID for capabilities (e.g. DOM-CORE).",
     ),
     kind: str = typer.Option(
-        "feature_addition",
+        "feature",
         "--kind",
         "-k",
-        help="Mutation kind for SpecDeltas (feature_addition, bugfix, refactor, modification).",
+        help="Mutation kind for SpecDeltas (feature, enabler, bug).",
     ),
     motivation: str = typer.Option(
         "Proposed specification change.",
@@ -495,57 +359,7 @@ def spec_delete_cmd(
         console.print(f"[yellow]Warning:[/yellow] Deleted despite {len(refs)} reference(s) (--force used).")
 
 
-def create_shortcut(
-    doc_type: str = typer.Argument(
-        ..., help="Specification type: capability, domain, policy, contract, component, persona, delta."
-    ),
-    doc_id: str = typer.Argument(..., help="Document ID (e.g. CAP-AUTH-001, POL-002, DLT-2026-002)."),
-    title: str = typer.Option(..., "--title", "-t", help="Title of the document."),
-    path: Path = typer.Option(Path("eidos"), "--path", "-p", help="Path to eidos specifications directory."),
-    domain: str | None = typer.Option(None, "--domain", "-d", help="Parent domain for capabilities."),
-    kind: str = typer.Option("feature_addition", "--kind", "-k", help="Mutation kind for deltas."),
-    motivation: str = typer.Option("Motivation statement.", "--motivation", "-m", help="Motivation statement."),
-    category: str = typer.Option("governance", "--category", "-c", help="Category for policies."),
-    rule: str = typer.Option("Rule statement.", "--rule", "-r", help="Rule statement for policies."),
-):
-    """Shortcut to scaffold a new living specification or SpecDelta."""
-    spec_create_cmd(
-        doc_type=doc_type,
-        doc_id=doc_id,
-        title=title,
-        path=path,
-        domain=domain,
-        kind=kind,
-        motivation=motivation,
-        category=category,
-        rule=rule,
-    )
-
-
-def delete_shortcut(
-    target: str = typer.Argument(..., help="Document ID or path to delete."),
-    path: Path = typer.Option(Path("eidos"), "--path", "-p", help="Path to eidos specifications directory."),
-    force: bool = typer.Option(False, "--force", "-f", help="Force deletion even if referenced."),
-):
-    """Shortcut to safely delete a specification document or delta."""
-    spec_delete_cmd(target=target, path=path, force=force)
-
-
-def list_shortcut(
-    path: Path = typer.Option(Path("eidos"), "--path", "-p", help="Path to eidos specifications directory."),
-    type_filter: str | None = typer.Option(None, "--type", "-t", help="Filter by type."),
-    status_filter: str | None = typer.Option(None, "--status", "-s", help="Filter by status."),
-):
-    """Shortcut to list all living specifications."""
-    spec_list_cmd(path=path, type_filter=type_filter, status_filter=status_filter)
-
-
 def register(app: typer.Typer) -> None:
     """Attach the root-level commands owned by this module to the root Typer app."""
     app.command("validate", rich_help_panel=PANEL_GOVERNANCE)(validate)
-    app.command("lint", rich_help_panel=PANEL_GOVERNANCE)(lint_cmd)
-    app.command("containers", rich_help_panel=PANEL_SPECS)(containers)
-    app.command("components", rich_help_panel=PANEL_SPECS)(components)
-    app.command("create", rich_help_panel=PANEL_SPECS)(create_shortcut)
-    app.command("delete", rich_help_panel=PANEL_SPECS)(delete_shortcut)
-    app.command("list", rich_help_panel=PANEL_SPECS)(list_shortcut)
+

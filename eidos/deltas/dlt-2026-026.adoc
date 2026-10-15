@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: feat/generic-engine-zero-config
 intent:
-  kind: architectural_refactor
+  kind: enabler
   motivation: "Make the Eidos runtime engine and bundled agent skills 100% repository-agnostic with zero configuration files by standardizing 'package_path' on containers, 'source_path' on components, inferring design client/system paths via the knowledge graph, and relocating the index cache to 'eidos/.cache/'."
 mutations:
 - action: modify_container

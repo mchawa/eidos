@@ -1,4 +1,4 @@
-"""Spec-to-code drift detection and living specification reconciliation commands."""
+"""Spec-to-code drift detection command (`eidos drift`)."""
 
 from pathlib import Path
 
@@ -6,7 +6,7 @@ import typer
 from rich.table import Table
 
 from eidos.cli._shared import PANEL_GOVERNANCE, console
-from eidos.vcs import detect_drift, reconcile_specs
+from eidos.vcs import detect_drift
 
 
 def drift_cmd(
@@ -130,7 +130,7 @@ def drift_cmd(
             for rem in result.remediation_suggestions:
                 console.print(f"  [yellow]•[/yellow] {rem}")
             console.print(
-                "\n[dim]Tip: Run [bold green]eidos reconcile[/bold green] to get suggestions for updating living specifications.[/dim]"
+                "\n[dim]Tip: Update the impacted living specifications in eidos/ or create a SpecDelta via [bold green]eidos delta create[/bold green].[/dim]"
             )
 
         if not result.validation_report.is_clean:
@@ -151,104 +151,7 @@ def drift_cmd(
         raise typer.Exit(code=1)
 
 
-def reconcile_cmd(
-    base: str | None = typer.Option(
-        None,
-        "--base",
-        "-b",
-        help="Base git reference to compare against.",
-    ),
-    uncommitted: bool = typer.Option(
-        False,
-        "--uncommitted",
-        "-u",
-        help="Analyze uncommitted working tree changes.",
-    ),
-    path: Path | None = typer.Option(
-        None,
-        "--path",
-        "-p",
-        help="Path to eidos directory (defaults to ./eidos).",
-    ),
-    prompt: bool = typer.Option(
-        False,
-        "--prompt",
-        help="Print structured AI prompt for copy-pasting to an AI assistant.",
-    ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        help="Output raw JSON reconcile analysis.",
-    ),
-):
-    """Analyze code changes and suggest living spec updates to eliminate drift."""
-    eidos_dir = path or Path("eidos")
-    repo_root = Path.cwd()
-
-    result = reconcile_specs(
-        repo_root=repo_root,
-        base_ref=base,
-        eidos_dir=eidos_dir,
-        uncommitted=uncommitted,
-    )
-
-    if json_output:
-        data = {
-            "changed_code_files": result.changed_code_files,
-            "suggestions": [
-                {
-                    "code_file": s.code_file,
-                    "candidate_specs": s.candidate_specs,
-                    "reason": s.reason,
-                }
-                for s in result.suggestions
-            ],
-            "catalog": result.catalog,
-            "ai_prompt": result.ai_prompt,
-        }
-        console.print_json(data=data)
-        return
-
-    if prompt:
-        console.print(result.ai_prompt)
-        return
-
-    console.print("[bold cyan]Eidos Living Specification Reconciliation[/bold cyan]\n")
-
-    if not result.changed_code_files:
-        console.print("[bold green]✓ No code drift detected.[/bold green] Working tree and living specs are in sync.")
-        return
-
-    table = Table(
-        title=f"Code Modifications & Candidate Specs ({len(result.changed_code_files)} files)", show_header=True
-    )
-    table.add_column("Modified Code File", style="bold cyan")
-    table.add_column("Candidate Living Specs", style="white")
-
-    for s in result.suggestions:
-        table.add_row(s.code_file, "\n".join(s.candidate_specs))
-
-    console.print(table)
-    console.print(
-        "\n[dim]Next step:[/dim] Update the candidate living specs in [cyan]eidos/[/cyan] to reflect these changes."
-    )
-    console.print(
-        "[dim]Use [bold green]eidos reconcile --prompt[/bold green] to generate a structured AI prompt for your coding agent.[/dim]\n"
-    )
-
-
-def sync_shortcut(
-    base: str | None = typer.Option(None, "--base", "-b", help="Base git reference to compare against."),
-    uncommitted: bool = typer.Option(False, "--uncommitted", "-u", help="Analyze uncommitted working tree changes."),
-    path: Path | None = typer.Option(None, "--path", "-p", help="Path to eidos directory."),
-    prompt: bool = typer.Option(False, "--prompt", help="Print structured AI prompt."),
-):
-    """Shortcut alias for 'eidos reconcile'."""
-    reconcile_cmd(base=base, uncommitted=uncommitted, path=path, prompt=prompt)
-
-
 def register(app: typer.Typer) -> None:
     """Attach the root-level commands owned by this module to the root Typer app."""
     app.command("drift", rich_help_panel=PANEL_GOVERNANCE)(drift_cmd)
-    app.command("reconcile", rich_help_panel=PANEL_GOVERNANCE)(reconcile_cmd)
-    app.command("sync", rich_help_panel=PANEL_GOVERNANCE)(sync_shortcut)
+

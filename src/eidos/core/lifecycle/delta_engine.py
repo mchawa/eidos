@@ -205,7 +205,7 @@ def list_deltas(eidos_dir: Path, status_filter: str | None = None) -> list[dict[
                 continue
 
             intent = doc.frontmatter.get("intent", {})
-            kind = intent.get("kind", "mutation") if isinstance(intent, dict) else "mutation"
+            kind = intent.get("kind", "feature") if isinstance(intent, dict) else "feature"
 
             results.append(
                 {
@@ -549,7 +549,18 @@ def verify_delta_mutations(
                 target_path_resolved = cand_abs.resolve()
 
         # 1. Removal / Deprecation Actions
-        if action in ("remove_component", "remove_container", "remove_contract", "remove_screen", "remove_ui_component"):
+        if action in (
+            "remove_component",
+            "remove_container",
+            "remove_contract",
+            "remove_domain",
+            "remove_persona",
+            "remove_design_system",
+            "remove_screen",
+            "remove_ui_component",
+            "remove_client",
+            "remove_flow",
+        ):
             still_present = (
                 target in specs_by_id
                 or target in container_components
@@ -892,8 +903,17 @@ def execute_delta_mutations(
                     mutated_files.append(created)
                 specs_by_id[target_id] = (created, "tech/contract", {})
 
-        # 6. Remove Contract
-        elif action == "remove_contract":
+        # 6. Remove Standalone Specification (Contract, Domain, Persona, Design System, Screen, UI Component, Client, Flow)
+        elif action in (
+            "remove_contract",
+            "remove_domain",
+            "remove_persona",
+            "remove_design_system",
+            "remove_screen",
+            "remove_ui_component",
+            "remove_client",
+            "remove_flow",
+        ):
             target_id = m.get("target_contract") or target
             if target_id in specs_by_id:
                 ctr_file = specs_by_id[target_id][0]

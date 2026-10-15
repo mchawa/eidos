@@ -83,7 +83,7 @@ def test_delta_affects_validation_broken_references(tmp_path, validator):
         "title: Test Delta\n"
         "status: proposed\n"
         "intent:\n"
-        "  kind: feature_addition\n"
+        "  kind: feature\n"
         "  motivation: Testing\n"
         "mutations:\n"
         "  - action: add_component\n"
@@ -866,7 +866,7 @@ def test_strict_container_vs_component_target_separation(tmp_path: Path, validat
         "title: Bad Delta\n"
         "status: proposed\n"
         "intent:\n"
-        "  kind: refactor\n"
+        "  kind: enabler\n"
         "  motivation: Test\n"
         "mutations:\n"
         "  - action: modify_component\n"
@@ -922,7 +922,57 @@ def test_strict_container_vs_component_target_separation(tmp_path: Path, validat
     assert "container 'CMP-PARSER'" in broken_text and "dependencies.internal_containers" in broken_text
 
 
+def test_delta_schema_enum_taxonomies(tmp_path, validator):
+    """DLT-2026-043 / INV-SPEC-VALIDATION: Verify delta.schema.yaml enforces strict enums on intent.kind, bug_classification, severity, and mutations[].action."""
+    from eidos.core.spec.parser import parse_spec_file
 
+    delta_file = tmp_path / "dlt-enum.adoc"
 
+    # 1. Valid enum values pass
+    delta_file.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-ENUM\n"
+        "title: Valid Enum Delta\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: bug\n"
+        "  motivation: Fix edge case\n"
+        "  bug_classification: spec_gap\n"
+        "  severity: high\n"
+        "mutations:\n"
+        "  - action: modify_component\n"
+        "    target_component: CMP-DELTA-ENGINE\n"
+        "---\n"
+        "= Enum Delta\n",
+        encoding="utf-8",
+    )
+    assert validator.validate_document(parse_spec_file(delta_file)) == []
 
+    # 2. Invalid enum values on all four categorical fields are rejected
+    delta_file.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-ENUM\n"
+        "title: Invalid Enum Delta\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: feature_addition\n"
+        "  motivation: Legacy kind\n"
+        "  bug_classification: unknown_bug_type\n"
+        "  severity: blocker\n"
+        "mutations:\n"
+        "  - action: custom_unknown_action\n"
+        "    target_component: CMP-DELTA-ENGINE\n"
+        "---\n"
+        "= Invalid Enum Delta\n",
+        encoding="utf-8",
+    )
+    errs = "\n".join(validator.validate_document(parse_spec_file(delta_file)))
+    assert "feature_addition" in errs
+    assert "unknown_bug_type" in errs
+    assert "blocker" in errs
+    assert "custom_unknown_action" in errs
 

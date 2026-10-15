@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: fix/graph-index-test-assertion-edges
 intent:
-  kind: bugfix
+  kind: bug
   motivation: Prevent orphan-edge cleanup at the end of 'GraphIndex.sync()' from deleting
     'asserts' edges that link AST test function bindings ('file.py::test_func') to
     technical invariants ('INV-*').

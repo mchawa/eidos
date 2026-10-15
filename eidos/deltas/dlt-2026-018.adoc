@@ -8,7 +8,7 @@ status: applied
 vcs:
   branch: spike/exp-2026-003-portal-uplift
 intent:
-  kind: feature_addition
+  kind: feature
   motivation: 'Graduated from validated technical spike EXP-2026-003. Replaces the
     monolithic vanilla HTML/JS template in assets.py with a pre-compiled, self-contained
     single-file bundle built with React 19, TypeScript, Tailwind CSS v4, and Material

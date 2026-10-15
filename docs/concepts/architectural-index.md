@@ -19,8 +19,8 @@ The index enables sub-3ms architectural queries, intelligent full-text specifica
 └───────────────┬────────────────────────┬───────────────┘
                 │                        │
        CLI Commands               Agent Skills
-  eidos repo-map                   eidos
-  eidos find-symbol                eidos-spec
+  eidos index repo-map             eidos
+  eidos index find-symbol          eidos-spec
   eidos context --tier anchor      eidos-plan
   eidos index status               eidos-ops
   eidos index search
@@ -167,11 +167,18 @@ Output:
 └───────┴────────────────┴─────────────────┴─────────────────┴─────────────────┘
 ```
 
+How lexical retrieval works (`INV-AGENT-TASK-RETRIEVAL-COVERAGE`):
+
+* **Every entity is searchable**: child invariants (`INV-*`) get their own `specs_fts` row (rule text, parent title, test binding), so prompts can match invariants directly.
+* **Identifier de-compounding**: `camelCase` / `snake_case` identifiers are split on both sides — `ArchitecturalIndex` is indexed as `architectural index` too, and a prompt like `detect_drift` becomes `detect OR drift` instead of an order-sensitive phrase.
+* **Column-weighted BM25**: `title` (4) > `jtbd_or_rule` / `keywords` / `symbols` (2) > `body_text` (1). FTS5 weights are positional over *all* columns, including the `UNINDEXED` `entity_id` placeholder.
+* **Slice-scoped candidates**: `eidos context --task` ranks only sliceable types (containers, components, contracts, capabilities, policies, invariants, domains, design systems), so historical SpecDeltas and explorations never consume its top-8 slots. Matched domains / design systems expand to their member containers and capabilities. `eidos index search` still searches every type.
+
 ### Blast-Radius Impact Analysis
 Before modifying an interface, component, or domain, compute the transitive blast radius using recursive graph traversals:
 
 ```bash
-eidos index blast-radius CMP-EIDOS-CORE --hops 2
+eidos index blast-radius CMP-EIDOS-CORE --depth 2
 ```
 
 This recursively traces all forward dependencies (`depends_on`, `provides`), owning domains, and bound capabilities up to `N` hops away, alerting engineers and AI agents to downstream components that could be impacted.
@@ -189,21 +196,21 @@ In addition to living specifications (`eidos/*.adoc`), Eidos indexes source code
 
 ---
 
-## Token-Budgeted AI Repo Map (`eidos repo-map`)
+## Token-Budgeted AI Repo Map (`eidos index repo-map`)
 
 AI coding agents struggle with whole-codebase awareness: sending thousands of raw code files exceeds LLM context windows, dilutes attention, and explodes cost.
 
-Eidos provides the **Repo Map Engine** (`eidos repo-map` or `eidos index repo-map`), which compiles a high-signal, token-budgeted structural outline of the entire codebase:
+Eidos provides the **Repo Map Engine** (`eidos index repo-map`), which compiles a high-signal, token-budgeted structural outline of the entire codebase:
 
 ```bash
 # Generate structural repo map with default budget (1500 tokens)
-eidos repo-map
+eidos index repo-map
 
 # Or customize token budget:
-eidos repo-map --max-tokens 800
+eidos index repo-map --max-tokens 800
 
 # Output as structured JSON:
-eidos repo-map --format json
+eidos index repo-map --format json
 ```
 
 ### High-Density Compression (~98% Token Reduction)
@@ -234,12 +241,12 @@ In benchmarks, 50,000+ tokens of raw source code compress into **under 1,000 tok
 
 ---
 
-## Fast Symbol Discovery (`eidos find-symbol`)
+## Fast Symbol Discovery (`eidos index find-symbol`)
 
 Developers and AI agents can query any symbol (class name, function name, API route) to find its exact source location and governing living specification:
 
 ```bash
-eidos find-symbol "ArchitecturalIndex"
+eidos index find-symbol "ArchitecturalIndex"
 ```
 
 Output:

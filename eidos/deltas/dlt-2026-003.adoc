@@ -5,7 +5,7 @@ id: DLT-2026-003
 title: Flat SpecDelta Storage with Gitignored Lifecycle Symlink Views
 status: applied
 intent:
-  kind: architectural_refactor
+  kind: enabler
   motivation: Store SpecDeltas at permanent flat file paths under eidos/deltas/ and
     manage browseable lifecycle views via gitignored symlinks in eidos/deltas/by-status/.
 mutations:

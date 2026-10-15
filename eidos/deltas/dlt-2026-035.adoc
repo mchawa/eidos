@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: perf/sqlite-cached-validation-and-invariants
 intent:
-  kind: performance_optimization
+  kind: enabler
   motivation: "Eliminate O(N) full-repository specification parsing and test-suite AST scanning on every 'PostInvocation' and 'Stop' agent lifecycle hook by caching per-file schema validation and test-function invariant bindings in 'eidos/.cache/index.db' keyed by mtime and SHA-256."
 mutations:
   - action: modify_component

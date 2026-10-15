@@ -5,7 +5,7 @@ id: DLT-2026-009
 title: Eidos Living Web Portal & Interactive Architecture Visualizer
 status: applied
 intent:
-  kind: feature_addition
+  kind: feature
   motivation: Provide an interactive web portal (eidos serve and eidos build-site)
     for non-IDE stakeholders to visualize C4 architecture, living specs, multi-design
     systems, and SpecDelta Kanban boards.

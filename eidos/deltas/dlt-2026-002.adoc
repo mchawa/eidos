@@ -5,7 +5,7 @@ id: DLT-2026-002
 title: Relocate Schemas and Plugin Reference to Assets Directory
 status: applied
 intent:
-  kind: architectural_refactor
+  kind: enabler
   motivation: Relocate non-code JSON/YAML schemas and canonical plugin reference assets
     out of the Python source package directory (src/eidos) into a dedicated top-level
     assets/ directory, resolving them dynamically and bundling via Hatchling force-include.

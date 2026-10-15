@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: refactor/consolidate-agent-skills
 intent:
-  kind: refactor
+  kind: enabler
   motivation: "Reduce AI agent system-prompt skill index bloat and eliminate multi-hop skill file reads by consolidating the 14 fragmented Eidos skills into 4 cohesive workflow-aligned skills ('eidos', 'eidos-spec', 'eidos-plan', 'eidos-ops')."
 mutations:
   - action: modify_component

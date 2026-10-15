@@ -27,6 +27,6 @@ Allowing the core specification and governance engine to call AI directly introd
 
 1. **Zero LLM SDK Dependencies**: `pyproject.toml` and runtime package dependencies must never require LLM SDKs (e.g., `openai`, `anthropic`, `google-generativeai`, `langchain`, `litellm`).
 2. **Zero Inbound AI Execution**: Eidos CLI commands must never execute LLM inference loops or dispatch tasks to AI models. All CLI commands must execute deterministically using local CPU, standard library tools, and local SQLite caches.
-3. **Structured Substrate Output**: All inspection commands (`context`, `validate`, `drift`, `index`, `reconcile`) must expose deterministic `--json` outputs with stable schemas so external agents can parse and act upon them reliably.
+3. **Structured Substrate Output**: All inspection commands (`context`, `validate`, `drift`, `index`, `spec`, `delta`) must expose deterministic `--json` outputs with stable schemas so external agents can parse and act upon them reliably.
 4. **Automated Verification**: Verified by automated test `tests/test_policy_zero_ai.py` enforcing that no LLM dependencies exist in package manifests and no remote AI endpoints are configured.
 

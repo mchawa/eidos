@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: feat/scoped-structural-drift
 intent:
-  kind: architectural_refactor
+  kind: enabler
   motivation: Replace coarse boolean repository-wide drift checks ('any code changed
     and no spec changed') with AST structural change detection and 1-hop knowledge
     graph neighborhood verification so internal body-only refactors do not cause false-positive

@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: spike/exp-2026-002
 intent:
-  kind: refactor
+  kind: enabler
   motivation: Eliminate redundant PRCheckResult backwards compatibility alias from
     eidos.vcs and drift modules, maintaining dead-code hygiene and streamlining the
     public VCS API surface.

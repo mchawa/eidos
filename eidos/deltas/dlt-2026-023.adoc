@@ -7,7 +7,7 @@ status: applied
 vcs:
   branch: feat/ast-continuous-indexing
 intent:
-  kind: feature_addition
+  kind: feature
   motivation: Make the Eidos Architectural Knowledge Graph continuously up-to-date
     by extending sub-5ms dirty checking to source code files and tests, and enhance
     'eidos index status' with rich AST engine telemetry, symbol breakdown by syntax

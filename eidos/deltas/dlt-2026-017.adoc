@@ -5,7 +5,7 @@ id: DLT-2026-017
 title: SpecDelta Deletion and Deprecation Audit Engine (eidos delta audit)
 status: applied
 intent:
-  kind: feature_addition
+  kind: feature
   motivation: 'Provides a context-aware reverse-dependency blast-radius audit engine
     (''eidos delta audit'') to verify that entities removed or deprecated by a SpecDelta
     do not leave unacknowledged dangling references or active leaks in living specifications,

@@ -1,6 +1,6 @@
 ---
 name: eidos
-description: Master architecture and engineering orchestrator for repositories managed by Eidos. Consult before modifying code, proposing architectural changes, adding features, refactoring, or altering living specifications in eidos/. Strictly enforces living specs (NO ADRs), dual workflows (Direct vs. Planned), tiered context slicing (eidos context), continuous drift detection (eidos drift), Direct Mode reconciliation (eidos reconcile), and invariant-test traceability.
+description: Master architecture and engineering orchestrator for repositories managed by Eidos. Consult before modifying code, proposing architectural changes, adding features, refactoring, or altering living specifications in eidos/. Strictly enforces living specs (NO ADRs), dual workflows (Direct vs. Planned), tiered context slicing (eidos context), continuous drift detection (eidos drift), and invariant-test traceability.
 ---
 # Eidos: Master Architecture & Engineering Orchestrator
 
@@ -69,16 +69,16 @@ eidos context -t "rate limiting and token expiration" --tier deep --format json
 
 ```bash
 # Generate a token-budgeted structural AST Repo Map (~98% token compression)
-eidos repo-map --max-tokens 1500
+eidos index repo-map --max-tokens 1500
 
 # Locate exact file and line coordinates for any class, function, or method
-eidos find-symbol "JwtValidator"
+eidos index find-symbol "JwtValidator"
 
 # Full-text BM25 search across all living specifications
 eidos index search "authentication" --json
 
 # Compute transitive N-hop dependency and governance blast radius
-eidos index blast-radius CNT-AUTH-SERVICE --hops 2 --json
+eidos index blast-radius CNT-AUTH-SERVICE --depth 2 --json
 
 # Inspect knowledge graph health or force a full rebuild
 eidos index status --json
@@ -89,19 +89,16 @@ eidos index sync --force
 
 ## 4. Step 3: Execute the Selected Workflow
 
-### Workflow A: Direct Mode Execution & Reconciliation (`eidos reconcile`)
+### Workflow A: Direct Mode Execution (`eidos drift`)
 
 Use Direct Mode when your change is localized and does not introduce breaking contract mutations or new C4 containers:
 
 1. **Slice Context**: Run `eidos context -f <touched_file> --format json` to identify the owning container (`CNT-*`), component (`CMP-*`), and bound invariants (`INV-*`).
 2. **Implement Code & Tests**: Modify the source code and update or add automated tests preserving `INV-*` references.
-3. **Inspect Unreconciled Changes**:
+3. **Inspect Impacted Specifications**:
    ```bash
    # Map uncommitted code diffs to affected containers, components, and capabilities
-   eidos reconcile --uncommitted
-
-   # Or generate a structured reconciliation checklist for your current git diff
-   eidos reconcile --prompt
+   eidos drift --uncommitted --json
    ```
 4. **Co-Evolve Living Specs In-Place**:
    * Added or renamed an internal module? Update the `components:` list and C4 Level 3 table in `eidos/architecture/containers/<container>.adoc` (or `eidos/architecture/components/<cmp>.adoc` if promoted).
@@ -114,7 +111,7 @@ Use Direct Mode when your change is localized and does not introduce breaking co
 
 Use Planned Mode when introducing new containers (`CNT-*`), breaking contract (`CTR-*`) changes, cross-domain features, or new policies (`POL-*`). Consult the **`eidos-plan`** skill for full details:
 
-1. **Scaffold SpecDelta**: `eidos delta create DLT-YYYY-NNN --title "..." --kind <feature_addition|refactor|bugfix|modification> --branch <branch>`
+1. **Scaffold SpecDelta**: `eidos delta create DLT-YYYY-NNN --title "..." --kind <feature|enabler|bug> --branch <branch>`
 2. **Author Declarative Mutations**: Populate `mutations:` (with optional `expect:` post-conditions), `affects:`, and `blast_radius:` in `eidos/deltas/dlt-yyyy-nnn.adoc`.
 3. **Implement Code, Specs & Tests**: Apply the architectural and code changes across `src/`, `eidos/`, and `tests/`.
 4. **Verify & Apply**:
@@ -183,15 +180,15 @@ eidos/
 | :--- | :--- |
 | `eidos validate [PATH] [--json]` | Validate all `.adoc` specifications against v1 JSON Schemas, check cross-references, and verify `INV-*` test bindings. |
 | `eidos drift [--uncommitted] [--base REF] [--json]` | Detect spec-to-code drift, validate schemas, and verify polyglot invariant test coverage. |
-| `eidos reconcile [--uncommitted] [--prompt] [--json]` | Map git code diffs to affected C4 containers/components and generate Direct Mode reconciliation prompts. |
 | `eidos context [-f FILE] [-c ID] [-t TASK] [--tier TIER] [--format json]` | Extract token-budgeted (`anchor`, `guardrails`, `deep`) architectural context slices. |
-| `eidos repo-map [--max-tokens N] [--format json]` | Generate an AST-compressed structural repository map. |
-| `eidos find-symbol <QUERY> [--json]` | Resolve class/function/method symbols to exact file/line coordinates and owning specs. |
+| `eidos index repo-map [--max-tokens N] [--format json]` | Generate an AST-compressed structural repository map. |
+| `eidos index find-symbol <QUERY> [--json]` | Resolve class/function/method symbols to exact file/line coordinates and owning specs. |
 | `eidos index [status\|sync\|search\|blast-radius] [--json]` | Inspect, synchronize, search (BM25), or compute N-hop blast radius on the knowledge graph. |
-| `eidos spec [list\|create\|delete]` | List, scaffold, or safely delete living specification documents. |
-| `eidos component [list\|promote\|inline]` | Inspect C4 Level 3 components, promote complex components to standalone `.adoc` files, or inline them back. |
-| `eidos delta [create\|status\|list\|verify\|audit\|apply]` | Manage the SpecDelta (`DLT-*`) lifecycle in Planned Mode. |
-| `eidos changelog [--check] [--output PATH]` | Generate a Keep-a-Changelog `CHANGELOG.md` from applied SpecDeltas. |
+| `eidos spec [list\|show\|create\|delete]` | List (including inline `CMP-*` components), inspect, scaffold, or safely delete living specification documents. |
+| `eidos spec component [promote\|inline] <ID>` | Promote inline C4 Level 3 components to standalone `.adoc` files in `eidos/architecture/components/`, or inline them back. |
+| `eidos delta [create\|status\|list\|verify\|audit\|apply\|changelog]` | Manage the SpecDelta (`DLT-*`) lifecycle in Planned Mode and compile `CHANGELOG.md`. |
+| `eidos portal [serve\|build]` | Launch the interactive Living Web Portal server or export a static site bundle. |
+| `eidos plugin [install\|uninstall\|version\|update\|validate\|info]` | Install, update, and validate Eidos agent plugins across supported coding environments. |
 | `eidos doctor [--json]` | Run workspace diagnostics across CLI binary, living specs, knowledge graph index, and hooks. |
 
 ---
@@ -202,7 +199,7 @@ To avoid context bloat, Eidos organizes all specialized reference material into 
 
 | Skill | Scope & When to Load |
 | :--- | :--- |
-| **`eidos`** *(This Skill)* | **Core Orchestrator, Context, Drift & Reconcile**: Workflow selection (Direct vs. Planned), `eidos context` slicing, `eidos drift` verification, and `eidos reconcile` in Direct Mode. |
+| **`eidos`** *(This Skill)* | **Core Orchestrator, Context & Drift**: Workflow selection (Direct vs. Planned), `eidos context` slicing, and `eidos drift` verification. |
 | **`eidos-spec`** | **Living Specification & Invariant Authoring**: Authoring and updating Product specs (`DOM-*`, `CAP-*`, `PER-*`), Arc42/C4 Architecture (`CNT-*`, inline/promoted `CMP-*`, `CTR-*`, embedded `decisions:`), Multi-Design Systems (`DS-*`, W3C tokens, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`), and Policies/Invariants (`POL-*`, `INV-*` with polyglot `file::func` test bindings). |
 | **`eidos-plan`** | **Explorations, SpecDeltas & Staff Architectural Review**: Running time-boxed technical spikes (`EXP-*`), authoring/verifying/applying SpecDeltas (`DLT-*`) with declarative `expect:` post-conditions, and conducting 5-dimension Staff Systems Architect reviews. |
-| **`eidos-ops`** | **Repository Bootstrap, Brownfield Extraction & Living Web Portal**: Initializing greenfield repositories (`eidos init`), reverse-engineering existing codebases into living specs, and serving/building the interactive Web Portal (`eidos serve`, `eidos build-site`). |
+| **`eidos-ops`** | **Repository Bootstrap, Brownfield Extraction & Living Web Portal**: Initializing greenfield repositories (`eidos init`), reverse-engineering existing codebases into living specs, and serving/building the interactive Web Portal (`eidos portal serve`, `eidos portal build`). |

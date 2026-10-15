@@ -8,7 +8,7 @@ status: applied
 vcs:
   branch: feat/ast-grep-indexing
 intent:
-  kind: feature_addition
+  kind: feature
   motivation: 'Integrate ast-grep (ast-grep-py) to empower the Eidos Architectural
     Knowledge Graph indexer with deep polyglot AST symbol mapping (classes, functions,
     methods, interface signatures), a high-speed structural AI Code Graph / Repo Map

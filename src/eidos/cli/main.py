@@ -1,8 +1,8 @@
 """Eidos CLI root dispatcher (CMP-CLI-APP): builds the Typer app, mounts command modules, and fixes help ordering.
 
 Command implementations live in the sibling ``*_commands.py`` / ``*_command.py`` modules (one per C4 Level 3
-component). Every name that used to be defined in this module is re-exported below so existing imports such as
-``from eidos.cli.main import app`` keep working (DLT-2026-038).
+component). Canonical command functions are re-exported below so existing imports such as
+``from eidos.cli.main import app`` keep working.
 """
 
 import typer
@@ -23,7 +23,7 @@ from eidos.cli import (
     spec_commands,
 )
 
-# Backwards-compatible re-exports (every name formerly defined in this module).
+# Backwards-compatible re-exports of canonical CLI symbols.
 from eidos.cli._shared import (  # noqa: F401
     PANEL_GOVERNANCE,
     PANEL_KNOWLEDGE,
@@ -33,7 +33,7 @@ from eidos.cli._shared import (  # noqa: F401
     PANEL_SPECS,
     console,
 )
-from eidos.cli.component_commands import component_app, component_inline_cmd, component_list_cmd, component_promote_cmd  # noqa: F401
+from eidos.cli.component_commands import component_app, component_inline_cmd, component_promote_cmd  # noqa: F401
 from eidos.cli.context_command import context_cmd  # noqa: F401
 from eidos.cli.delta_commands import (  # noqa: F401
     delta_app,
@@ -48,7 +48,7 @@ from eidos.cli.delta_commands import (  # noqa: F401
     delta_verify_cmd,
 )
 from eidos.cli.doctor_hook_commands import doctor_cmd, hook_app, hook_drift_cmd, hook_lint_cmd  # noqa: F401
-from eidos.cli.drift_commands import drift_cmd, reconcile_cmd, sync_shortcut  # noqa: F401
+from eidos.cli.drift_commands import drift_cmd  # noqa: F401
 from eidos.cli.index_commands import (  # noqa: F401
     index_app,
     index_blast_radius_cmd,
@@ -57,31 +57,19 @@ from eidos.cli.index_commands import (  # noqa: F401
     index_search_cmd,
     index_status_cmd,
     index_sync_cmd,
-    index_update_cmd,
 )
 from eidos.cli.init_command import init_cmd  # noqa: F401
 from eidos.cli.plugin_commands import (  # noqa: F401
-    install_shortcut,
     plugin_app,
     plugin_info,
     plugin_install,
-    plugin_remove,
     plugin_uninstall,
     plugin_update,
-    plugin_upgrade,
     plugin_validate,
     plugin_version,
-    uninstall_shortcut,
 )
 from eidos.cli.portal_commands import build_site_cmd, portal_app, serve_cmd  # noqa: F401
 from eidos.cli.spec_commands import (  # noqa: F401
-    _render_containers_table,
-    components,
-    containers,
-    create_shortcut,
-    delete_shortcut,
-    lint_cmd,
-    list_shortcut,
     spec_app,
     spec_create_cmd,
     spec_delete_cmd,
@@ -99,7 +87,6 @@ app = typer.Typer(
 
 app.add_typer(spec_app, name="spec", rich_help_panel=PANEL_SPECS)
 app.add_typer(delta_app, name="delta", rich_help_panel=PANEL_SPECS)
-app.add_typer(component_app, name="component", rich_help_panel=PANEL_SPECS)
 app.add_typer(index_app, name="index", rich_help_panel=PANEL_KNOWLEDGE)
 app.add_typer(portal_app, name="portal", rich_help_panel=PANEL_PORTAL)
 app.add_typer(plugin_app, name="plugin", rich_help_panel=PANEL_PLUGINS)
@@ -176,23 +163,8 @@ ROOT_COMMAND_ORDER = (
     "doctor",
     "init",
     "validate",
-    "lint",
     "drift",
-    "reconcile",
-    "sync",
-    "serve",
-    "build-site",
-    "containers",
-    "components",
     "context",
-    "repo-map",
-    "find-symbol",
-    "changelog",
-    "create",
-    "delete",
-    "list",
-    "install",
-    "uninstall",
 )
 
 
@@ -205,3 +177,4 @@ app.registered_commands.sort(key=lambda c: ROOT_COMMAND_ORDER.index(_command_nam
 
 if __name__ == "__main__":
     app()
+

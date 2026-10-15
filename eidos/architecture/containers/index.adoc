@@ -21,7 +21,7 @@ components:
     source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-FTS-QUERY-ENGINE
     name: "FTSQueryEngine"
-    responsibility: "Full-text lexical search and BM25 ranking across titles, descriptions, embedded architectural decisions, and keywords using SQLite FTS5."
+    responsibility: "Full-text lexical search with positional column-weighted BM25 (title > rule/keywords/symbols > body; UNINDEXED entity_id placeholder weight first) across titles, rules, descriptions, embedded architectural decisions, keywords, and de-compounded camelCase/snake_case identifier sub-tokens using SQLite FTS5; indexes child INV-* invariants as first-class FTS rows (purged with their parent spec) and supports include/exclude entity-type filters applied before LIMIT with deterministic id tie-breaking."
     source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-GRAPH-TRAVERSAL-ENGINE
     name: "GraphTraversalEngine"
@@ -29,7 +29,7 @@ components:
     source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-TIERED-CONTEXT-COMPRESSOR
     name: "TieredContextCompressor"
-    responsibility: "Extracts token-compressed architectural slices across anchor, guardrails, and deep tiers for AI coding agents, formatting centralized C4 components with in-process APIs, invariants, and embedded architectural decisions (compact title, decision, and rejected option names in anchor; full rationale and rejected_alternatives in guardrails and deep)."
+    responsibility: "Extracts token-compressed architectural slices across anchor, guardrails, and deep tiers for AI coding agents, formatting centralized C4 components with in-process APIs, invariants, and embedded architectural decisions (compact title, decision, and rejected option names in anchor; full rationale and rejected_alternatives in guardrails and deep). Task prompts rank only sliceable entity types (so historical SpecDeltas never consume candidate slots) and FTS-matched domains / design systems expand to their member containers and capabilities, recorded in matched_reasons."
     source_path: "src/eidos/core/index/graph_index.py"
   - id: CMP-AST-SYMBOL-INDEXER
     name: "AstSymbolIndexer"
@@ -62,6 +62,17 @@ decisions:
       - option: "ChromaDB / LanceDB Vector Store"
         reason_rejected: "Requires embedding model weights or external API calls, violating POL-004 and bloating installation size."
     graduated_from: EXP-2026-002
+  - id: DEC-INDEX-FTS-RETRIEVAL-HYGIENE
+    title: "Fix Lexical Retrieval Coverage Before Adding Model-Free Semantic Layers"
+    decision: "Index child INV-* invariants in specs_fts, de-compound camelCase/snake_case identifiers on both index and query sides, apply a priori positional BM25 column weights (0, 4, 2, 1, 2, 2), and restrict context-slice task candidates to sliceable entity types inside SQL."
+    rationale: "The EXP-2026-006 review traced most baseline misses to two coverage bugs (unindexed invariants, SpecDelta slot crowding) rather than vocabulary mismatch. On the 6 published prompts plus 12 held-out prompts, these stdlib-only fixes lift raw Recall@8 from 55.6% to 94.4% (dev) and 32.1% to 78.6% (held-out) at under 1.1 ms per query, with no new tables, vectors, or global corpus statistics. Weights were chosen before measurement and measured neutral, so they were not tuned on the evaluation prompts."
+    rejected_alternatives:
+      - option: "Adopt the full EXP-2026-006 hybrid engine (PPMI expansion, 256-dim signed feature hashing, graph spreading activation, zlib NCD) immediately"
+        reason_rejected: "Its benchmark had no ablation against a fixed baseline, was tuned on its own 6-prompt evaluation set, and relies on corpus-global IDF/PPMI that breaks incremental sync; each layer must first show a gain over this fixed baseline on held-out prompts."
+      - option: "Post-filter SpecDeltas in Python after LIMIT"
+        reason_rejected: "Filtered rows still consume the top-k slots; the filter must run inside SQL before LIMIT."
+      - option: "Exploration weights bm25(specs_fts, 10, 6, 1, 8, 6)"
+        reason_rejected: "Off by one column: FTS5 assigns the first weight to the UNINDEXED entity_id column, so these values put 8x weight on body_text and 1x on symbols, the opposite of the intent."
 ---
 = Container: Architectural Knowledge Graph & Retrieval Index (C4 Level 2 Container & Level 3 Components)
 :toc: left
@@ -76,9 +87,9 @@ This container represents the embedded relational and lexical indexing engine un
 | Component ID | Name | Responsibility | Source Path
 | `CMP-GRAPH-STORAGE` | **GraphStorage** | SQLite schema (`entities`, `edges`, `indexed_files`, `symbol_mappings`, `code_symbols`, `specs_fts`) with versioned drop-and-rebuild migration, WAL mode, repo root discovery, and connection pool | `src/eidos/core/index/graph_index.py`
 | `CMP-INCREMENTAL-SYNC-ENGINE` | **IncrementalSyncEngine** | SHA-256 content and mtime dirty checking across all declared package paths with lazy incremental sync (<5ms), recursive package indexing, and order-independent source ownership resolution | `src/eidos/core/index/graph_index.py`
-| `CMP-FTS-QUERY-ENGINE` | **FTSQueryEngine** | SQLite FTS5 BM25 lexical search mapping natural language tasks and embedded `DEC-*` decisions to architecture IDs | `src/eidos/core/index/graph_index.py`
+| `CMP-FTS-QUERY-ENGINE` | **FTSQueryEngine** | Column-weighted SQLite FTS5 BM25 search (`0, 4, 2, 1, 2, 2`) over specs, child `INV-*` rows, embedded `DEC-*` decisions, and de-compounded `camelCase`/`snake_case` identifiers with SQL entity-type filtering | `src/eidos/core/index/graph_index.py`
 | `CMP-GRAPH-TRAVERSAL-ENGINE` | **GraphTraversalEngine** | Recursive CTE graph queries evaluating k-hop blast radius and incoming references (<2ms) | `src/eidos/core/index/graph_index.py`
-| `CMP-TIERED-CONTEXT-COMPRESSOR` | **TieredContextCompressor** | 3-tier token-budgeted context extraction (`anchor`, `guardrails`, `deep`) with >=60% reduction and tier-aware architectural `decisions` rendering | `src/eidos/core/index/graph_index.py`
+| `CMP-TIERED-CONTEXT-COMPRESSOR` | **TieredContextCompressor** | 3-tier token-budgeted context extraction (`anchor`, `guardrails`, `deep`) with >=60% reduction, tier-aware `decisions` rendering, slice-scoped task filtering, and domain/design-system member expansion | `src/eidos/core/index/graph_index.py`
 | `CMP-AST-SYMBOL-INDEXER` | **AstSymbolIndexer** | Polyglot AST symbol extraction (`ast-grep` with stdlib `ast` fallback) feeding persisted symbol coordinates, structural repo maps, and test-to-invariant bindings | `src/eidos/core/index/ast_indexer.py`
 |===
 
