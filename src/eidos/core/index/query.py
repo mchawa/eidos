@@ -35,6 +35,95 @@ TASK_SLICE_ENTITY_TYPES: tuple[str, ...] = (
 
 _CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 _IDENTIFIER_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
+_ENTITY_ID_TOKEN_RE = re.compile(
+    r"\b(?:CNT|CMP|CAP|INV|CTR|POL|DOM|DEC|DS|UIC|CLT|SCR|FLOW|DLT|EXP)-[A-Za-z0-9-]+\b"
+)
+
+_FTS_STOP_WORDS: frozenset[str] = frozenset(
+    {
+        "a",
+        "about",
+        "all",
+        "also",
+        "an",
+        "and",
+        "any",
+        "are",
+        "as",
+        "at",
+        "be",
+        "been",
+        "both",
+        "but",
+        "by",
+        "can",
+        "do",
+        "does",
+        "each",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "how",
+        "if",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "make",
+        "more",
+        "must",
+        "no",
+        "not",
+        "of",
+        "on",
+        "only",
+        "or",
+        "other",
+        "our",
+        "out",
+        "over",
+        "per",
+        "should",
+        "so",
+        "some",
+        "such",
+        "than",
+        "that",
+        "the",
+        "their",
+        "them",
+        "then",
+        "there",
+        "these",
+        "they",
+        "this",
+        "those",
+        "through",
+        "to",
+        "up",
+        "use",
+        "using",
+        "very",
+        "via",
+        "was",
+        "we",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "who",
+        "will",
+        "with",
+        "within",
+        "without",
+        "would",
+    }
+)
 
 
 def split_identifier(token: str) -> list[str]:
@@ -66,19 +155,28 @@ def compound_identifier_subtokens(text: str) -> str:
 
 
 def build_fts_match_query(text: str) -> str:
-    """Translate a free-text prompt into a deterministic FTS5 ``OR`` prefix query with de-compounded terms.
+    """Translate a free-text prompt into a deterministic FTS5 ``OR`` prefix query with stop-word filtering.
 
     Each ``\\w+`` token contributes its identifier sub-tokens plus, for non-snake_case tokens, the whole lowercased
     token (so ``ArchitecturalIndex`` still prefix-matches the atomic ``architecturalindex`` index token). snake_case
     tokens are *not* passed through whole: FTS5 would re-tokenize them into an order-sensitive phrase query.
+    Common English stop words and single-character noise tokens are filtered out unless the entire query consists of
+    stop words or single-character tokens.
     """
-    terms: dict[str, None] = {}
+    raw_terms: dict[str, None] = {}
+    filtered_terms: dict[str, None] = {}
     for tok in re.findall(r"\w+", text or ""):
         for part in split_identifier(tok):
-            terms.setdefault(part, None)
+            raw_terms.setdefault(part, None)
+            if len(part) > 1 and part not in _FTS_STOP_WORDS:
+                filtered_terms.setdefault(part, None)
         if "_" not in tok:
-            terms.setdefault(tok.lower(), None)
-    return " OR ".join(f'"{term}"*' for term in terms)
+            lowered = tok.lower()
+            raw_terms.setdefault(lowered, None)
+            if len(lowered) > 1 and lowered not in _FTS_STOP_WORDS:
+                filtered_terms.setdefault(lowered, None)
+    active_terms = filtered_terms if filtered_terms else raw_terms
+    return " OR ".join(f'"{term}"*' for term in active_terms)
 
 
 def execute_fts_query(
@@ -88,13 +186,15 @@ def execute_fts_query(
     include_types: tuple[str, ...] | list[str] | None = None,
     exclude_types: tuple[str, ...] | list[str] = (),
 ) -> list[dict[str, Any]]:
-    """Execute a column-weighted BM25 ranked full-text query using FTS5."""
+    """Execute a column-weighted BM25 ranked full-text query using FTS5 with exact entity ID boosting."""
     if not text or not text.strip():
         return []
 
     fts_query = build_fts_match_query(text)
     if not fts_query:
         return []
+
+    explicit_ids = list(dict.fromkeys(m.upper() for m in _ENTITY_ID_TOKEN_RE.findall(text)))
 
     type_clauses: list[str] = []
     type_params: list[str] = []
@@ -111,20 +211,27 @@ def execute_fts_query(
     type_sql = "".join(f" AND {clause}" for clause in type_clauses)
     weights_sql = ", ".join(repr(float(w)) for w in FTS_COLUMN_WEIGHTS)
 
+    id_boost_sql = ""
+    id_boost_params: list[str] = []
+    if explicit_ids:
+        ph = ",".join("?" for _ in explicit_ids)
+        id_boost_sql = f"(CASE WHEN UPPER(e.id) IN ({ph}) THEN -1000.0 ELSE 0.0 END) + "
+        id_boost_params.extend(explicit_ids)
+
     cursor = conn.cursor()
     try:
         cursor.execute(
             f"""
             SELECT
                 e.id, e.type, e.title, e.domain, e.package_path, e.data_json,
-                bm25(specs_fts, {weights_sql}) as rank
+                {id_boost_sql}bm25(specs_fts, {weights_sql}) as rank
             FROM specs_fts f
             JOIN entities e ON e.id = f.entity_id
             WHERE specs_fts MATCH ?{type_sql}
             ORDER BY rank, e.id
             LIMIT ?;
             """,
-            (fts_query, *type_params, limit),
+            (*id_boost_params, fts_query, *type_params, limit),
         )
         results = []
         for row in cursor.fetchall():

@@ -49,7 +49,7 @@ technical:
       rule: "Incremental ArchitecturalIndex.sync() must refresh stored mtime in place when SHA-256 matches, reuse dirty-check state without redundant directory walks, evict stale entities and edges by previous doc_id when a specification ID is renamed in place, reject duplicate entity ID collisions across files, and unify SQLite schema_version across validator, drift, and graph index caches."
       test_binding: "tests/test_graph_index.py::test_inv_index_incremental_parity"
     - id: INV-CONTEXT-TOKEN-COMPRESSION
-      rule: "Tiered context slicing ('eidos context') must enforce rank-ordered token budgets per tier (anchor <= 300, guardrails <= 1000, deep <= 2500 tokens) across both Markdown and JSON outputs (projecting tier-scoped fields in to_dict) and return an honest empty slice when an explicit query matches zero entities."
+      rule: "Tiered context slicing ('eidos context') must enforce rank-ordered token budgets per tier (anchor <= 300, guardrails <= 1000, deep <= 2500 tokens) across both Markdown and JSON outputs (projecting tier-scoped fields in to_dict), apply progressive prose field compression before evicting invariants or policies with incremental token delta accounting in _enforce_token_budget, and return an honest empty slice when an explicit query matches zero entities."
       test_binding: "tests/test_context.py::test_inv_context_token_compression"
 ---
 = Capability: Polyglot AST Code Graph & Structural Repo Map Intelligence

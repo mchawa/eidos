@@ -1144,11 +1144,14 @@ def test_task_retrieval_indexes_invariants_and_filters_types(tmp_path):
             "status: applied\n---\n= Frobnicate tombstone pass\n\nfrobnicate tombstone frobnicate tombstone\n",
         )
 
-    # Pure helpers: identifier splitting and snake_case-safe query construction.
+    # Pure helpers: identifier splitting, stop-word filtering, and snake_case-safe query construction.
     assert split_identifier("get_tiered_context_slice") == ["get", "tiered", "context", "slice"]
     assert split_identifier("ArchitecturalIndex") == ["architectural", "index"]
     assert split_identifier("HTTPServer") == ["http", "server"]
     assert '"detect_drift"' not in build_fts_match_query("detect_drift")
+    assert '"the"*' not in build_fts_match_query("fix the drift in the index")
+    assert '"in"*' not in build_fts_match_query("fix the drift in the index")
+    assert build_fts_match_query("the in and") != ""  # fallback when all tokens are stop words
     # bm25() weights are positional over every column, including the UNINDEXED entity_id placeholder.
     assert len(FTS_COLUMN_WEIGHTS) == 6 and FTS_COLUMN_WEIGHTS[0] == 0.0
 

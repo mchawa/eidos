@@ -31,10 +31,20 @@ class TieredContextSlice(ArchitecturalContextSlice):
     """Token-budgeted architectural slice matching a query, extending ArchitecturalContextSlice."""
 
     _compact_decisions: bool = False
+    _compact_prose: bool = False
 
     @staticmethod
     def _clip(text: str, limit: int) -> str:
         return f"{text[: limit - 3].rstrip()}..." if len(text) > limit else text
+
+    @classmethod
+    def _compact_summary(cls, text: str, limit: int = 120) -> str:
+        first_line = (text or "").strip().splitlines()[0] if (text or "").strip() else ""
+        if ". " in first_line:
+            first_sentence = first_line.split(". ", 1)[0].rstrip(".") + "."
+            if len(first_sentence) <= limit:
+                return first_sentence
+        return cls._clip(first_line, limit)
 
     def _project_decisions(
         self,
@@ -48,7 +58,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 continue
             dtext = str(d.get("decision", "") or "")
             if self.tier == "anchor" or compact or self._compact_decisions:
-                short_dtext = self._clip(dtext, 120)
+                short_dtext = self._compact_summary(dtext, 120)
                 alts = [
                     {"option": self._clip(str(a.get("option")).strip(), 60)}
                     for a in (d.get("rejected_alternatives") or [])[:2]
@@ -66,17 +76,24 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 entry = {
                     "id": d.get("id", ""),
                     "title": d.get("title", ""),
-                    "decision": self._clip(dtext, 140),
+                    "decision": self._compact_summary(dtext, 140) if self._compact_prose else self._clip(dtext, 140),
                 }
                 if d.get("graduated_from"):
                     entry["graduated_from"] = d["graduated_from"]
                 if d.get("rationale"):
-                    entry["rationale"] = self._clip(str(d["rationale"]), 140)
+                    rat = str(d["rationale"])
+                    entry["rationale"] = (
+                        self._compact_summary(rat, 120) if self._compact_prose else self._clip(rat, 140)
+                    )
                 if d.get("rejected_alternatives"):
                     entry["rejected_alternatives"] = [
                         {
                             "option": self._clip(str(a.get("option", "")), 80),
-                            "reason_rejected": self._clip(str(a.get("reason_rejected", "")), 100),
+                            "reason_rejected": (
+                                self._compact_summary(str(a.get("reason_rejected", "")), 80)
+                                if self._compact_prose
+                                else self._clip(str(a.get("reason_rejected", "")), 100)
+                            ),
                         }
                         for a in (d.get("rejected_alternatives") or [])[:2]
                         if isinstance(a, dict) and a.get("option")
@@ -86,17 +103,22 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 entry = {
                     "id": d.get("id", ""),
                     "title": d.get("title", ""),
-                    "decision": dtext,
+                    "decision": self._compact_summary(dtext, 160) if self._compact_prose else dtext,
                 }
                 if d.get("graduated_from"):
                     entry["graduated_from"] = d["graduated_from"]
                 if d.get("rationale"):
-                    entry["rationale"] = d["rationale"]
+                    rat = str(d["rationale"])
+                    entry["rationale"] = self._compact_summary(rat, 140) if self._compact_prose else d["rationale"]
                 if d.get("rejected_alternatives"):
                     entry["rejected_alternatives"] = [
                         {
                             "option": a.get("option", ""),
-                            "reason_rejected": a.get("reason_rejected", ""),
+                            "reason_rejected": (
+                                self._compact_summary(str(a.get("reason_rejected", "")), 100)
+                                if self._compact_prose
+                                else a.get("reason_rejected", "")
+                            ),
                         }
                         for a in (d.get("rejected_alternatives") or [])
                         if isinstance(a, dict) and a.get("option")
@@ -130,7 +152,11 @@ class TieredContextSlice(ArchitecturalContextSlice):
         )
         for base_key in base_keys:
             if comp.get(base_key):
-                out[base_key] = comp[base_key]
+                val = comp[base_key]
+                if base_key == "responsibility" and (self._compact_prose or (self._compact_decisions and index_in_slice > 0)):
+                    out[base_key] = self._compact_summary(str(val), 120)
+                else:
+                    out[base_key] = val
 
         is_secondary = self._is_secondary_dependency(cid)
         compact_comp = self._compact_decisions and index_in_slice > 0
@@ -155,7 +181,11 @@ class TieredContextSlice(ArchitecturalContextSlice):
             if modules:
                 out["components"] = [
                     {
-                        k: m[k]
+                        k: (
+                            self._compact_summary(str(m[k]), 100)
+                            if k == "responsibility" and self._compact_prose
+                            else m[k]
+                        )
                         for k in ("id", "name", "responsibility", "ref", "source_path")
                         if isinstance(m, dict) and m.get(k)
                     }
@@ -170,7 +200,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
         ):
             decisions = collect_component_decisions(comp)
             if decisions:
-                compact_decs = self.tier == "guardrails" and index_in_slice > 0
+                compact_decs = (self.tier == "guardrails" and index_in_slice > 0) or (
+                    self._compact_prose and index_in_slice > 0
+                )
                 out["decisions"] = self._project_decisions(decisions, compact=compact_decs)
 
         return out
@@ -223,8 +255,43 @@ class TieredContextSlice(ArchitecturalContextSlice):
         }
         if self.tier in ("guardrails", "deep") and pol.get("rule"):
             rule = str(pol["rule"])
-            out["rule"] = self._clip(rule, 160) if self.tier == "guardrails" else rule
+            if self._compact_prose:
+                out["rule"] = self._compact_summary(rule, 120)
+            else:
+                out["rule"] = self._clip(rule, 160) if self.tier == "guardrails" else rule
         return out
+
+    def _compress_verbose_fields_in_place(self, primary_cids: set[str]) -> bool:
+        """Progressively compress verbose prose fields (description, rationale, details, responsibility)
+        to compact 1-line summaries before dropping invariants or policies.
+        """
+        changed = False
+        if not self._compact_prose:
+            self._compact_prose = True
+            changed = True
+        for idx, comp in enumerate(self.components):
+            cid = comp.get("id", "")
+            is_non_primary = idx > 0 or (primary_cids and cid not in primary_cids)
+            for prose_key in ("description", "details", "rationale"):
+                if comp.get(prose_key) and len(str(comp[prose_key])) > 120:
+                    comp[prose_key] = self._compact_summary(str(comp[prose_key]), 120)
+                    changed = True
+            if is_non_primary and comp.get("responsibility") and len(str(comp["responsibility"])) > 120:
+                comp["responsibility"] = self._compact_summary(str(comp["responsibility"]), 120)
+                changed = True
+        for cap in self.capabilities:
+            for prose_key in ("description", "details"):
+                if cap.get(prose_key) and len(str(cap[prose_key])) > 120:
+                    cap[prose_key] = self._compact_summary(str(cap[prose_key]), 120)
+                    changed = True
+        for pol in self.policies:
+            for prose_key in ("description", "details", "rationale"):
+                if pol.get(prose_key) and len(str(pol[prose_key])) > 120:
+                    pol[prose_key] = self._compact_summary(str(pol[prose_key]), 120)
+                    changed = True
+        if changed:
+            self._invalidate_budget_cache()
+        return changed
 
     def to_dict(self) -> dict[str, Any]:
         """Project tier-scoped view of matched architectural entities rather than raw frontmatter (DLT-2026-047)."""
@@ -265,6 +332,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             budget,
             self.tier,
             self._compact_decisions,
+            self._compact_prose,
             len(self.components),
             len(self.contracts),
             len(self.capabilities),
@@ -276,42 +344,46 @@ class TieredContextSlice(ArchitecturalContextSlice):
         self.__dict__.pop("_cached_sig", None)
         self.__dict__.pop("_cached_exceeds", None)
         self.__dict__.pop("_md_char_lb", None)
+        self.__dict__.pop("_json_char_lb", None)
+
+    @staticmethod
+    def _item_char_upper_bound(item: dict[str, Any]) -> int:
+        return len(json.dumps(item)) + 160
 
     def _pop_item(self, lst: list[dict[str, Any]], idx: int = -1) -> None:
         item = lst.pop(idx)
+        ub_removed = self._item_char_upper_bound(item)
         md_lb = self.__dict__.get("_md_char_lb", 0)
-        if lst is self.invariants and md_lb > 0:
-            ub_removed = (
-                len(str(item.get("id", "")))
-                + len(str(item.get("rule", "")))
-                + len(str(item.get("test_binding", "")))
-                + 60
-            )
+        json_lb = self.__dict__.get("_json_char_lb", 0)
+        sig_tail = self._state_signature(0)[1:]
+        if md_lb > 0:
             self.__dict__["_md_char_lb"] = max(0, md_lb - ub_removed)
-            self.__dict__["_md_lb_sig"] = self._state_signature(0)[1:]
-        else:
-            self.__dict__.pop("_md_char_lb", None)
+            self.__dict__["_md_lb_sig"] = sig_tail
+        if json_lb > 0:
+            self.__dict__["_json_char_lb"] = max(0, json_lb - ub_removed)
+            self.__dict__["_md_lb_sig"] = sig_tail
         self.__dict__.pop("_cached_sig", None)
 
     def _exceeds_budget(self, budget: int) -> bool:
         sig = self._state_signature(budget)
         if self.__dict__.get("_cached_sig") == sig:
             return bool(self.__dict__.get("_cached_exceeds"))
-        md_lb = self.__dict__.get("_md_char_lb", 0) if self.__dict__.get("_md_lb_sig") == sig[1:] else 0
-        if md_lb // 4 > budget:
+        has_lb_sig = self.__dict__.get("_md_lb_sig") == sig[1:]
+        md_lb = self.__dict__.get("_md_char_lb", 0) if has_lb_sig else 0
+        json_lb = self.__dict__.get("_json_char_lb", 0) if has_lb_sig else 0
+        if max(md_lb, json_lb) // 4 > budget:
             self.__dict__["_cached_sig"] = sig
             self.__dict__["_cached_exceeds"] = True
             return True
         md_len = len(self.to_markdown())
+        self._prune_matched_reasons()
+        d = self.to_dict()
+        # Include 24-byte headroom for post-enforcement query_latency_ms and token_estimate float/int formatting
+        json_len = max(len(json.dumps(d)) + 24, len(json.dumps(d, indent=2)) + 24)
         self.__dict__["_md_char_lb"] = md_len
+        self.__dict__["_json_char_lb"] = json_len
         self.__dict__["_md_lb_sig"] = sig[1:]
-        if max(1, md_len // 4) > budget:
-            exceeds = True
-        else:
-            self._prune_matched_reasons()
-            d = self.to_dict()
-            # Include 24-byte headroom for post-enforcement query_latency_ms and token_estimate float/int formatting
-            exceeds = ((len(json.dumps(d)) + 24) // 4) > budget or ((len(json.dumps(d, indent=2)) + 24) // 4) > budget
+        exceeds = max(1, md_len // 4) > budget or (json_len // 4) > budget
         self.__dict__["_cached_sig"] = sig
         self.__dict__["_cached_exceeds"] = exceeds
         return exceeds
@@ -366,6 +438,11 @@ class TieredContextSlice(ArchitecturalContextSlice):
         _pop_non_direct(self.invariants, direct_invs, min_len=1)
         _pop_non_direct(self.policies, direct_pols, min_len=1)
         _pop_non_direct(self.capabilities, direct_caps, min_len=1)
+
+        # Stage 1b: Progressively compress verbose prose fields (description, rationale, details, responsibility)
+        # before dropping invariants or policies.
+        if self._exceeds_budget(budget):
+            self._compress_verbose_fields_in_place(primary_cids)
 
         # If still over budget and direct invariant/capability/policy matches exist, compact decision prose
         # and trim lower-ranked tail components before evicting direct matches.

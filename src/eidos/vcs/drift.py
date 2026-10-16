@@ -144,6 +144,7 @@ def detect_drift(
         if fell_back:
             effective_uncommitted = True
 
+    versions_supports_mb = _accepts_kwarg(_get_file_versions, "merge_base")
     if _accepts_kwarg(get_git_diff_files, "merge_base"):
         changed_files = get_git_diff_files(
             root,
@@ -159,9 +160,10 @@ def detect_drift(
             head_ref=head_ref,
             uncommitted=effective_uncommitted,
         )
+        if versions_supports_mb and base_ref is None:
+            effective_uncommitted = True
+            resolved_mb = None
     classification = classify_changed_files(changed_files, repo_root=root, eidos_dir=target_eidos)
-
-    versions_supports_mb = _accepts_kwarg(_get_file_versions, "merge_base")
 
     def _fetch_versions(rel_p: str) -> tuple[str | None, str | None]:
         if versions_supports_mb:

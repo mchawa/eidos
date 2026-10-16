@@ -188,8 +188,8 @@ class ArchitecturalIndex:
         return sync_index(self, force=force, dirty_state=dirty_state, strict=strict)
 
     @staticmethod
-    def _rebuild_spec_edges(conn: sqlite3.Connection) -> None:
-        rebuild_spec_edges(conn)
+    def _rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | None = None) -> None:
+        rebuild_spec_edges(conn, updated_doc_ids=updated_doc_ids)
 
     @staticmethod
     def _index_test_bindings(conn: sqlite3.Connection, ast_idx: Any, test_path: Path, rel_test: str) -> None:

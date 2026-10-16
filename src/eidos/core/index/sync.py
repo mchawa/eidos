@@ -548,20 +548,70 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     return is_dirty, to_update, deleted
 
 
-def rebuild_spec_edges(conn: sqlite3.Connection) -> None:
-    """Rebuild all specification-declared relational edges from persisted entity frontmatter."""
-    conn.execute(
-        """
-        DELETE FROM edges
-        WHERE NOT (
-            (rel_type = 'asserts' AND instr(source_id, '::') > 0)
-            OR (rel_type = 'bound_to' AND instr(target_id, '::') > 0)
-        );
-        """
-    )
-    rows = conn.execute(
-        "SELECT id, type, data_json FROM entities WHERE type != 'invariant' ORDER BY id;"
-    ).fetchall()
+def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | None = None) -> None:
+    """Rebuild specification-declared relational edges from persisted entity frontmatter.
+
+    When ``updated_doc_ids`` is provided on incremental single-spec edits, only non-test edges touching
+    ``updated_doc_ids`` (and their child invariants/components) are evicted and rebuilt alongside their
+    1-hop neighbors and any previously unresolved edge sources.
+    """
+    clean_ids = sorted(d for d in (updated_doc_ids or ()) if d)
+    if updated_doc_ids is not None and clean_ids:
+        ph = ",".join("?" for _ in clean_ids)
+        neighbor_rows = conn.execute(
+            f"""
+            SELECT DISTINCT id FROM entities
+            WHERE type != 'invariant' AND (
+                id IN ({ph})
+                OR id IN (SELECT source_id FROM edges WHERE target_id IN ({ph}))
+                OR id IN (SELECT target_id FROM edges WHERE source_id IN ({ph}))
+                OR id IN (SELECT source_id FROM edges WHERE target_id NOT IN (SELECT id FROM entities))
+            );
+            """,
+            (*clean_ids, *clean_ids, *clean_ids),
+        ).fetchall()
+        scope_ids = sorted({r[0] for r in neighbor_rows} | set(clean_ids))
+        child_rows = conn.execute(
+            f"""
+            SELECT target_id FROM edges
+            WHERE source_id IN ({ph}) AND rel_type IN ('asserts', 'contains_component')
+            UNION
+            SELECT id FROM entities
+            WHERE type = 'invariant' AND file_path IN (SELECT file_path FROM entities WHERE id IN ({ph}));
+            """,
+            (*clean_ids, *clean_ids),
+        ).fetchall()
+        evict_ids = sorted(set(clean_ids) | {r[0] for r in child_rows if r[0]})
+        evict_ph = ",".join("?" for _ in evict_ids)
+        conn.execute(
+            f"""
+            DELETE FROM edges
+            WHERE (source_id IN ({evict_ph}) OR target_id IN ({evict_ph}))
+              AND NOT (
+                  (rel_type = 'asserts' AND instr(source_id, '::') > 0)
+                  OR (rel_type = 'bound_to' AND instr(target_id, '::') > 0)
+              );
+            """,
+            (*evict_ids, *evict_ids),
+        )
+        scope_ph = ",".join("?" for _ in scope_ids)
+        rows = conn.execute(
+            f"SELECT id, type, data_json FROM entities WHERE type != 'invariant' AND id IN ({scope_ph}) ORDER BY id;",
+            tuple(scope_ids),
+        ).fetchall()
+    else:
+        conn.execute(
+            """
+            DELETE FROM edges
+            WHERE NOT (
+                (rel_type = 'asserts' AND instr(source_id, '::') > 0)
+                OR (rel_type = 'bound_to' AND instr(target_id, '::') > 0)
+            );
+            """
+        )
+        rows = conn.execute(
+            "SELECT id, type, data_json FROM entities WHERE type != 'invariant' ORDER BY id;"
+        ).fetchall()
     for row in rows:
         doc_id = row["id"]
         doc_type = row["type"]
@@ -964,8 +1014,11 @@ def sync_index(
             parsed_specs.append((p, rel_p, mtime, sha, doc))
 
         updated_rel_paths: set[str] = set()
+        updated_spec_doc_ids: set[str] = set()
+        any_doc_id_renamed = False
         for _p, rel_p, _mtime, _sha, doc in parsed_specs:
             new_doc_id = doc.doc_id or _p.stem
+            updated_spec_doc_ids.add(new_doc_id)
             existing_row = conn.execute(
                 "SELECT doc_id FROM indexed_files WHERE rel_path = ?;",
                 (rel_p,),
@@ -974,6 +1027,7 @@ def sync_index(
                 updated_rel_paths.add(rel_p)
                 old_doc_id = existing_row["doc_id"]
                 if old_doc_id:
+                    updated_spec_doc_ids.add(old_doc_id)
                     index._delete_spec_fts_rows(conn, old_doc_id, rel_p)
                     conn.execute(
                         "DELETE FROM entities WHERE (id = ? AND file_path = ?) OR (file_path = ? AND type = 'invariant');",
@@ -981,12 +1035,14 @@ def sync_index(
                     )
                     conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?;", (old_doc_id,))
                     if old_doc_id != new_doc_id:
+                        any_doc_id_renamed = True
                         conn.execute("DELETE FROM code_symbols WHERE entity_id = ?;", (old_doc_id,))
                         conn.execute(
                             "DELETE FROM edges WHERE source_id = ? OR target_id = ?;",
                             (old_doc_id, old_doc_id),
                         )
                 if new_doc_id != old_doc_id:
+                    any_doc_id_renamed = True
                     index._delete_spec_fts_rows(conn, new_doc_id, rel_p)
                     conn.execute(
                         "DELETE FROM entities WHERE (id = ? AND file_path = ?) OR (file_path = ? AND type = 'invariant');",
@@ -1298,7 +1354,12 @@ def sync_index(
             )
 
         if spec_updates or specs_deleted:
-            index._rebuild_spec_edges(conn)
+            inc_ids = (
+                updated_spec_doc_ids
+                if (not force and not specs_deleted and not any_doc_id_renamed and updated_spec_doc_ids)
+                else None
+            )
+            index._rebuild_spec_edges(conn, updated_doc_ids=inc_ids)
             conn.execute("DELETE FROM symbol_mappings WHERE kind = 'inferred_path';")
             client_cnt_rows = conn.execute(
                 "SELECT source_id, target_id FROM edges WHERE rel_type = 'implemented_by' AND source_id LIKE 'CLT-%';"
