@@ -306,3 +306,55 @@ def test_has_structural_changes_unchanged_after_refactor():
     assert has_structural_changes(old, None, "mod.py") == (True, ["deleted file 'mod.py'"])
     assert has_structural_changes("a: 1\n", "a: 2\n", "cfg.yaml") == (True, ["modified 'cfg.yaml'"])
     assert not diff_public_symbols("a: 1\n", "a: 2\n", "cfg.yaml")
+
+
+def test_polyglot_language_native_visibility_rules():
+    """Verify DLT-2026-055 & INV-DRIFT-DIFF-AWARE-COVERAGE: language-native visibility rules across TS/JS, Go, Rust, Java/Kotlin, and Python __all__."""
+    from eidos.core.index.ast_indexer import has_structural_changes, public_symbol_map
+
+    # 1. TypeScript: non-exported helper is private; exported function is public
+    ts_old = "export function fetchUser(id: string): string {\n  return id;\n}\n"
+    ts_with_private = ts_old + "\nfunction parseInternalHeader(raw: string): string {\n  return raw.trim();\n}\n"
+    ts_with_export = ts_old + "\nexport function createUser(name: string): string {\n  return name;\n}\n"
+    assert has_structural_changes(ts_old, ts_with_private, "client.ts") == (False, [])
+    assert has_structural_changes(ts_old, ts_with_export, "client.ts")[0] is True
+
+    # 2. Go: lowercase function is unexported; uppercase function is exported
+    go_old = "package store\n\nfunc OpenStore(path string) error {\n    return nil\n}\n"
+    go_with_private = go_old + "\nfunc parseHeader(raw string) string {\n    return raw\n}\n"
+    go_with_exported = go_old + "\nfunc CloseStore() error {\n    return nil\n}\n"
+    assert has_structural_changes(go_old, go_with_private, "store.go") == (False, [])
+    assert has_structural_changes(go_old, go_with_exported, "store.go")[0] is True
+
+    # 3. Rust: fn without pub is private; pub fn is public
+    rs_old = "pub fn execute_query(q: &str) -> bool {\n    true\n}\n"
+    rs_with_private = rs_old + "\nfn helper_normalize(q: &str) -> &str {\n    q\n}\n"
+    rs_with_pub = rs_old + "\npub fn validate_query(q: &str) -> bool {\n    !q.is_empty()\n}\n"
+    assert has_structural_changes(rs_old, rs_with_private, "lib.rs") == (False, [])
+    assert has_structural_changes(rs_old, rs_with_pub, "lib.rs")[0] is True
+
+    # 4. Kotlin / Java: private and internal declarations are excluded from public symbols
+    kt_code = (
+        "package com.example\n\n"
+        "public class PublicApi {\n"
+        "    fun execute(): Boolean {\n        return true\n    }\n"
+        "    private fun secretHelper(): Boolean {\n        return false\n    }\n"
+        "}\n\n"
+        "internal fun internalUtil(): Int {\n    return 1\n}\n"
+    )
+    kt_pub = public_symbol_map(kt_code, "PublicApi.kt")
+    assert ("class", "", "PublicApi") in kt_pub
+    assert ("method", "PublicApi", "execute") in kt_pub
+    assert ("method", "PublicApi", "secretHelper") not in kt_pub
+    assert ("function", "", "internalUtil") not in kt_pub
+
+    # 5. Python: module-level __all__ restricts public boundary symbols when defined
+    py_all = (
+        "__all__ = ['exported_fn']\n\n"
+        "def exported_fn():\n    return 1\n\n"
+        "def internal_but_no_underscore():\n    return 2\n"
+    )
+    py_pub = public_symbol_map(py_all, "mod.py")
+    assert ("function", "", "exported_fn") in py_pub
+    assert ("function", "", "internal_but_no_underscore") not in py_pub
+

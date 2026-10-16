@@ -33,7 +33,7 @@ components:
     source_path: "src/eidos/core/index/context.py"
   - id: CMP-AST-SYMBOL-INDEXER
     name: "AstSymbolIndexer"
-    responsibility: "Extracts polyglot AST symbols (classes, functions, methods, structs, enums, interface signatures across Python, TS/JS, Go including type_spec and receiver methods, Rust, Java, and Kotlin .kt/.kts), diffs public symbols between file versions (public_symbol_map, diff_symbol_maps, diff_public_symbols), classifies frontend/styling diffs into token or UI contract changes, generates structural AI repo maps (served from persisted primary 'code_symbols' rows without re-parsing), and binds test functions under both qualified 'Class::method' and merged 'method' keys to capability and component invariants via core dependency ast-grep-py with stdlib ast fallback."
+    responsibility: "Extracts polyglot AST symbols (classes, functions, methods, structs, enums, interface signatures across Python, TS/JS, Go including type_spec and receiver methods, Rust, Java, and Kotlin .kt/.kts), enforces language-native visibility rules (export in TS/JS, uppercase initial rune in Go, pub in Rust, public/protected in Java/Kotlin, and __all__ in Python), diffs public symbols between file versions (public_symbol_map, diff_symbol_maps, diff_public_symbols), classifies frontend/styling diffs into token or UI contract changes, generates structural AI repo maps (served from persisted primary 'code_symbols' rows without re-parsing), and binds test functions under both qualified 'Class::method' and merged 'method' keys to capability and component invariants via core dependency ast-grep-py with stdlib ast fallback."
     source_path: "src/eidos/core/index/ast_indexer.py"
 
 dependencies:

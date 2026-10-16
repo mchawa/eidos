@@ -693,3 +693,26 @@ def test_delta_vcs_base_commit_collision_free_ids_and_cow_transaction(tmp_path):
     assert pol_path.read_bytes() == orig_pol_bytes
     assert not created_tmp.exists()
 
+
+def test_apply_expect_or_details_produces_substantive_non_comment_diff(tmp_path):
+    """Verify DLT-2026-055: _apply_expect_or_details_to_spec never appends '// {details}' comments stripped by _normalized_body_lines."""
+    from eidos.core.lifecycle.delta_engine import _apply_expect_or_details_to_spec
+    from eidos.vcs.structural import _normalized_body_lines, _split_spec
+
+    init_repository(tmp_path, name="substantive-apply-test")
+    eidos_dir = tmp_path / "eidos"
+    cnt_path = create_spec(eidos_dir, "container", "CNT-SUB-SVC", title="Substantive Service")
+    before = cnt_path.read_text(encoding="utf-8")
+
+    # 1. Comment-only details are rejected
+    assert _apply_expect_or_details_to_spec(cnt_path, None, "// comment only") is False
+    assert cnt_path.read_text(encoding="utf-8") == before
+
+    # 2. Substantive details are written as non-comment body content preserved by _normalized_body_lines
+    assert _apply_expect_or_details_to_spec(cnt_path, None, "Added gRPC health check endpoint.") is True
+    after = cnt_path.read_text(encoding="utf-8")
+    assert "// Added gRPC health check endpoint." not in after
+    _, old_body = _split_spec(before)
+    _, new_body = _split_spec(after)
+    assert _normalized_body_lines(old_body) != _normalized_body_lines(new_body)
+

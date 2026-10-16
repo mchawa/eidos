@@ -481,17 +481,26 @@ def _spec_coverage_verdict(
     else:
         substantive = relevant
 
-    if addition is None or not addition.is_new_file or not owner_spec:
+    if addition is None or not owner_spec or inspector is None:
         return True, None, []
 
     owner_norm = owner_spec.replace("\\", "/").lower()
     owner_changed = [s for s in substantive if s.replace("\\", "/").lower() == owner_norm]
-    owner_is_new = any(inspector.is_new_spec(s) for s in owner_changed)
-    needs_anchor = not owner_is_new and not inspector.declares_at_base(owner_spec, addition.file)
-    if needs_anchor and not any(
-        inspector.is_anchored(s, addition.file, addition.symbol_names) for s in owner_changed
-    ):
-        return False, "missing_anchor", relevant
+    if addition.is_new_file:
+        owner_is_new = any(inspector.is_new_spec(s) for s in owner_changed)
+        needs_anchor = not owner_is_new and not inspector.declares_at_base(owner_spec, addition.file)
+        if needs_anchor and not any(
+            inspector.is_anchored(s, addition.file, addition.symbol_names) for s in owner_changed
+        ):
+            return False, "missing_anchor", relevant
+        return True, None, []
+
+    if addition.symbol_names and not owner_changed:
+        if not any(
+            inspector.is_new_spec(s) or inspector.is_anchored(s, addition.file, addition.symbol_names)
+            for s in substantive
+        ):
+            return False, "missing_anchor", relevant
     return True, None, []
 
 

@@ -84,6 +84,7 @@ class CodeSymbol:
     docstring: str | None = None
     parent_symbol: str | None = None
     signature: str | None = None
+    is_public: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -245,12 +246,14 @@ class AstGrepIndexer(BaseAstIndexer):
 
         symbols: list[CodeSymbol] = []
         rel_path = str(p)
+        py_dunder_all = _extract_python_dunder_all_from_source(content) if lang == "python" else None
+        ts_exports = _extract_ts_exported_names(content) if lang in ("typescript", "tsx", "javascript", "jsx") else None
 
         # 1. Classes, Structs & Interfaces
         class_kinds = {
             "python": ["class_definition"],
-            "typescript": ["class_declaration", "interface_declaration"],
-            "tsx": ["class_declaration", "interface_declaration"],
+            "typescript": ["class_declaration", "interface_declaration", "type_alias_declaration"],
+            "tsx": ["class_declaration", "interface_declaration", "type_alias_declaration"],
             "javascript": ["class_declaration"],
             "jsx": ["class_declaration"],
             "rust": ["struct_item", "enum_item", "trait_item"],
@@ -260,6 +263,7 @@ class AstGrepIndexer(BaseAstIndexer):
         }.get(lang, [])
 
         class_nodes: dict[str, Any] = {}
+        class_is_public: dict[str, bool] = {}
         for ck in class_kinds:
             for m in node.find_all(kind=ck):
                 cname = self._node_name(m)
@@ -280,18 +284,32 @@ class AstGrepIndexer(BaseAstIndexer):
                         kind_label = "interface" if is_iface else "class"
                         sig = _extract_header_signature(m.text())
                     else:
-                        kind_label = "interface" if "interface" in ck else "class"
+                        kind_label = "interface" if ("interface" in ck or "type_alias" in ck) else "class"
                         sig = _extract_header_signature(m.text())
-                    symbols.append(
-                        CodeSymbol(
-                            name=cname,
-                            kind=kind_label,
-                            file_path=rel_path,
-                            line_start=rng.start.line + 1,
-                            line_end=rng.end.line + 1,
-                            signature=sig,
-                        )
+                    if lang in ("typescript", "tsx", "javascript", "jsx"):
+                        parent = m.parent()
+                        if (
+                            parent is not None
+                            and parent.kind() == "export_statement"
+                            and not sig.startswith("export ")
+                        ):
+                            sig = f"export {sig}"
+                    sym = CodeSymbol(
+                        name=cname,
+                        kind=kind_label,
+                        file_path=rel_path,
+                        line_start=rng.start.line + 1,
+                        line_end=rng.end.line + 1,
+                        signature=sig,
                     )
+                    sym.is_public = _evaluate_symbol_visibility(
+                        sym,
+                        py_dunder_all=py_dunder_all,
+                        ts_exports=ts_exports,
+                        class_is_public=class_is_public,
+                    )
+                    class_is_public[cname] = bool(sym.is_public)
+                    symbols.append(sym)
                     class_nodes[cname] = m
 
         # 2. Functions & Methods
@@ -324,23 +342,40 @@ class AstGrepIndexer(BaseAstIndexer):
                 if parent_cls is None and fk == "method_declaration":
                     recv = m.field("receiver")
                     if recv is not None:
-                        for rtok in reversed(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", recv.text())):
+                        recv_tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", recv.text())
+                        for rtok in reversed(recv_tokens):
                             if rtok in class_nodes:
                                 parent_cls = rtok
                                 break
+                        if parent_cls is None and recv_tokens:
+                            parent_cls = recv_tokens[-1]
 
                 kind_label = "method" if parent_cls or "method" in fk else "function"
-                symbols.append(
-                    CodeSymbol(
-                        name=fname,
-                        kind=kind_label,
-                        file_path=rel_path,
-                        line_start=rng.start.line + 1,
-                        line_end=rng.end.line + 1,
-                        parent_symbol=parent_cls,
-                        signature=_extract_header_signature(m.text()),
-                    )
+                sig = _extract_header_signature(m.text())
+                if lang in ("typescript", "tsx", "javascript", "jsx") and kind_label != "method":
+                    parent = m.parent()
+                    if (
+                        parent is not None
+                        and parent.kind() == "export_statement"
+                        and not sig.startswith("export ")
+                    ):
+                        sig = f"export {sig}"
+                sym = CodeSymbol(
+                    name=fname,
+                    kind=kind_label,
+                    file_path=rel_path,
+                    line_start=rng.start.line + 1,
+                    line_end=rng.end.line + 1,
+                    parent_symbol=parent_cls,
+                    signature=sig,
                 )
+                sym.is_public = _evaluate_symbol_visibility(
+                    sym,
+                    py_dunder_all=py_dunder_all,
+                    ts_exports=ts_exports,
+                    class_is_public=class_is_public,
+                )
+                symbols.append(sym)
 
         return symbols
 
@@ -590,45 +625,50 @@ class FallbackIndexer(BaseAstIndexer):
         if p.suffix == ".py":
             try:
                 tree = ast.parse(content, filename=rel_path)
+                py_dunder_all = _extract_python_dunder_all(tree)
                 for node in ast.iter_child_nodes(tree):
                     if isinstance(node, ast.ClassDef):
-                        symbols.append(
-                            CodeSymbol(
-                                name=node.name,
-                                kind="class",
-                                file_path=rel_path,
-                                line_start=node.lineno,
-                                line_end=getattr(node, "end_lineno", node.lineno),
-                                docstring=ast.get_docstring(node),
-                                signature=_python_node_signature(node),
-                            )
+                        cls_sym = CodeSymbol(
+                            name=node.name,
+                            kind="class",
+                            file_path=rel_path,
+                            line_start=node.lineno,
+                            line_end=getattr(node, "end_lineno", node.lineno),
+                            docstring=ast.get_docstring(node),
+                            signature=_python_node_signature(node),
                         )
+                        cls_sym.is_public = _evaluate_symbol_visibility(cls_sym, py_dunder_all=py_dunder_all)
+                        symbols.append(cls_sym)
                         for item in node.body:
                             if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                                symbols.append(
-                                    CodeSymbol(
-                                        name=item.name,
-                                        kind="method",
-                                        file_path=rel_path,
-                                        line_start=item.lineno,
-                                        line_end=getattr(item, "end_lineno", item.lineno),
-                                        parent_symbol=node.name,
-                                        docstring=ast.get_docstring(item),
-                                        signature=_python_node_signature(item),
-                                    )
+                                m_sym = CodeSymbol(
+                                    name=item.name,
+                                    kind="method",
+                                    file_path=rel_path,
+                                    line_start=item.lineno,
+                                    line_end=getattr(item, "end_lineno", item.lineno),
+                                    parent_symbol=node.name,
+                                    docstring=ast.get_docstring(item),
+                                    signature=_python_node_signature(item),
                                 )
+                                m_sym.is_public = _evaluate_symbol_visibility(
+                                    m_sym,
+                                    py_dunder_all=py_dunder_all,
+                                    class_is_public={node.name: bool(cls_sym.is_public)},
+                                )
+                                symbols.append(m_sym)
                     elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        symbols.append(
-                            CodeSymbol(
-                                name=node.name,
-                                kind="function",
-                                file_path=rel_path,
-                                line_start=node.lineno,
-                                line_end=getattr(node, "end_lineno", node.lineno),
-                                docstring=ast.get_docstring(node),
-                                signature=_python_node_signature(node),
-                            )
+                        fn_sym = CodeSymbol(
+                            name=node.name,
+                            kind="function",
+                            file_path=rel_path,
+                            line_start=node.lineno,
+                            line_end=getattr(node, "end_lineno", node.lineno),
+                            docstring=ast.get_docstring(node),
+                            signature=_python_node_signature(node),
                         )
+                        fn_sym.is_public = _evaluate_symbol_visibility(fn_sym, py_dunder_all=py_dunder_all)
+                        symbols.append(fn_sym)
                 return symbols
             except (SyntaxError, ValueError):
                 # Fallback to regex if Python code has syntax errors
@@ -637,100 +677,101 @@ class FallbackIndexer(BaseAstIndexer):
         # 2. Regex fallback for polyglot files
         lines = content.splitlines()
         suffix = p.suffix.lower()
+        ts_exports = _extract_ts_exported_names(content) if suffix in (".ts", ".tsx", ".js", ".jsx") else None
         for idx, line in enumerate(lines, start=1):
             sig = _extract_header_signature(line)
             if suffix in (".ts", ".tsx", ".js", ".jsx"):
                 for m in self.TS_CLS_REGEX.finditer(line):
-                    symbols.append(
-                        CodeSymbol(
-                            name=m.group(1),
-                            kind="interface" if "interface" in line else "class",
-                            file_path=rel_path,
-                            line_start=idx,
-                            line_end=idx,
-                            signature=sig,
-                        )
+                    sym = CodeSymbol(
+                        name=m.group(1),
+                        kind="interface" if "interface" in line else "class",
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
                     )
+                    sym.is_public = _evaluate_symbol_visibility(sym, ts_exports=ts_exports)
+                    symbols.append(sym)
                 for m in self.TS_FN_REGEX.finditer(line):
-                    symbols.append(
-                        CodeSymbol(
-                            name=m.group(1),
-                            kind="function",
-                            file_path=rel_path,
-                            line_start=idx,
-                            line_end=idx,
-                            signature=sig,
-                        )
+                    sym = CodeSymbol(
+                        name=m.group(1),
+                        kind="function",
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
                     )
+                    sym.is_public = _evaluate_symbol_visibility(sym, ts_exports=ts_exports)
+                    symbols.append(sym)
             elif suffix == ".go":
                 for m in self.GO_TYPE_REGEX.finditer(line):
-                    symbols.append(
-                        CodeSymbol(
-                            name=m.group(1),
-                            kind="interface" if m.group(2) == "interface" else "struct",
-                            file_path=rel_path,
-                            line_start=idx,
-                            line_end=idx,
-                            signature=sig,
-                        )
+                    sym = CodeSymbol(
+                        name=m.group(1),
+                        kind="interface" if m.group(2) == "interface" else "struct",
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
                     )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
                 for m in self.GO_FN_REGEX.finditer(line):
-                    symbols.append(
-                        CodeSymbol(
-                            name=m.group(1),
-                            kind="function",
-                            file_path=rel_path,
-                            line_start=idx,
-                            line_end=idx,
-                            signature=sig,
-                        )
+                    sym = CodeSymbol(
+                        name=m.group(1),
+                        kind="function",
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
                     )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
             elif suffix == ".rs":
                 for m in self.RUST_TYPE_REGEX.finditer(line):
-                    symbols.append(
-                        CodeSymbol(
-                            name=m.group(2),
-                            kind="interface" if m.group(1) == "trait" else "class",
-                            file_path=rel_path,
-                            line_start=idx,
-                            line_end=idx,
-                            signature=sig,
-                        )
+                    sym = CodeSymbol(
+                        name=m.group(2),
+                        kind="interface" if m.group(1) == "trait" else "class",
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
                     )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
                 for m in self.RUST_FN_REGEX.finditer(line):
-                    symbols.append(
-                        CodeSymbol(
-                            name=m.group(1),
-                            kind="function",
-                            file_path=rel_path,
-                            line_start=idx,
-                            line_end=idx,
-                            signature=sig,
-                        )
+                    sym = CodeSymbol(
+                        name=m.group(1),
+                        kind="function",
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
                     )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
             elif suffix in (".kt", ".kts", ".java"):
                 for m in self.KT_CLS_REGEX.finditer(line):
-                    symbols.append(
-                        CodeSymbol(
-                            name=m.group(2),
-                            kind="interface" if m.group(1) == "interface" else "class",
-                            file_path=rel_path,
-                            line_start=idx,
-                            line_end=idx,
-                            signature=sig,
-                        )
+                    sym = CodeSymbol(
+                        name=m.group(2),
+                        kind="interface" if m.group(1) == "interface" else "class",
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
                     )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
                 for m in self.KT_FN_REGEX.finditer(line):
-                    symbols.append(
-                        CodeSymbol(
-                            name=m.group(1),
-                            kind="function",
-                            file_path=rel_path,
-                            line_start=idx,
-                            line_end=idx,
-                            signature=sig,
-                        )
+                    sym = CodeSymbol(
+                        name=m.group(1),
+                        kind="function",
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
                     )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
 
         return symbols
 
@@ -913,13 +954,130 @@ class FallbackIndexer(BaseAstIndexer):
         return list(by_name.values())
 
 
-def _is_public_symbol(sym: CodeSymbol) -> bool:
-    """Return True if a code symbol represents a public contract/surface."""
+_RUST_PUB_RE = re.compile(
+    r"(?:^|\s)pub(?:\s*\([^)]*\))?\s+(?:async\s+|unsafe\s+|const\s+|extern\s+(?:\"[^\"]*\"\s+)?)?(?:fn|struct|enum|trait|type)\b"
+)
+_JAVA_KT_PRIVATE_RE = re.compile(r"(?:^|\s)(?:private|internal)\s+")
+_TS_PRIVATE_METHOD_RE = re.compile(r"^(?:private\s+|protected\s+|#)")
+
+
+def _extract_python_dunder_all(tree: ast.Module) -> set[str] | None:
+    """Return explicitly declared __all__ symbol names if defined at Python module top level, else None."""
+    names: set[str] = set()
+    found = False
+    for node in tree.body:
+        value: ast.expr | None = None
+        if isinstance(node, ast.Assign):
+            if any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
+                value = node.value
+                found = True
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and node.target.id == "__all__":
+                value = node.value
+                found = True
+        elif isinstance(node, ast.AugAssign):
+            if isinstance(node.target, ast.Name) and node.target.id == "__all__":
+                value = node.value
+                found = True
+        if isinstance(value, (ast.List, ast.Tuple, ast.Set)):
+            for elt in value.elts:
+                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                    names.add(elt.value)
+    return names if found else None
+
+
+def _extract_python_dunder_all_from_source(content: str) -> set[str] | None:
+    try:
+        return _extract_python_dunder_all(ast.parse(content))
+    except (SyntaxError, ValueError):
+        return None
+
+
+def _extract_ts_exported_names(content: str) -> set[str]:
+    """Return all identifier names exported via export declarations, export lists, or export default."""
+    exports: set[str] = set(_EXPORT_DECL_RE.findall(content))
+    for group in _EXPORT_LIST_RE.findall(content):
+        for item in group.split(","):
+            raw = item.strip()
+            if not raw:
+                continue
+            parts = [p.strip() for p in raw.split(" as ") if p.strip()]
+            for p in parts:
+                if p.startswith("type "):
+                    p = p[5:].strip()
+                if p:
+                    exports.add(p)
+    exports.update(_EXPORT_DEFAULT_RE.findall(content))
+    return exports
+
+
+def _evaluate_symbol_visibility(
+    sym: CodeSymbol,
+    *,
+    py_dunder_all: set[str] | None = None,
+    ts_exports: set[str] | None = None,
+    class_is_public: dict[str, bool] | None = None,
+) -> bool:
+    """Evaluate language-native public boundary visibility for a CodeSymbol (DLT-2026-055)."""
+    suffix = Path(sym.file_path).suffix.lower()
+    sig = (sym.signature or "").strip()
+
+    if suffix == ".go":
+        if sym.parent_symbol and (not sym.parent_symbol or not sym.parent_symbol[0].isupper()):
+            return False
+        return bool(sym.name and sym.name[0].isupper())
+
+    if suffix == ".rs":
+        if sym.parent_symbol and class_is_public is not None and not class_is_public.get(sym.parent_symbol, True):
+            return False
+        if sig:
+            return bool(_RUST_PUB_RE.search(sig))
+        return not sym.name.startswith("_")
+
+    if suffix in (".ts", ".tsx", ".js", ".jsx"):
+        if sym.kind == "method":
+            if sym.parent_symbol and class_is_public is not None and not class_is_public.get(sym.parent_symbol, False):
+                return False
+            if sym.parent_symbol and sym.parent_symbol.startswith(("_", "#")):
+                return False
+            if sym.name.startswith(("_", "#")) or _TS_PRIVATE_METHOD_RE.match(sig):
+                return False
+            return True
+        if sig.startswith("export ") or re.match(r"^export\b", sig):
+            return True
+        if ts_exports is not None and sym.name in ts_exports:
+            return True
+        return False
+
+    if suffix in (".java", ".kt", ".kts"):
+        if sym.name.startswith("_"):
+            return False
+        if sym.parent_symbol and class_is_public is not None and not class_is_public.get(sym.parent_symbol, True):
+            return False
+        if sig and _JAVA_KT_PRIVATE_RE.search(sig):
+            return False
+        return True
+
+    # Python (.py) and default fallback
+    if py_dunder_all is not None:
+        if sym.kind == "method":
+            if sym.parent_symbol not in py_dunder_all:
+                return False
+            return not sym.name.startswith("_") or sym.name in ("__init__", "__call__")
+        return sym.name in py_dunder_all
+
     if sym.parent_symbol and sym.parent_symbol.startswith("_"):
         return False
     if sym.kind == "method":
         return not sym.name.startswith("_") or sym.name in ("__init__", "__call__")
     return not sym.name.startswith("_")
+
+
+def _is_public_symbol(sym: CodeSymbol) -> bool:
+    """Return True if a code symbol represents a public contract/surface across supported languages."""
+    if sym.is_public is not None:
+        return sym.is_public
+    return _evaluate_symbol_visibility(sym)
 
 
 #: Source extensions whose public symbols are compared structurally.

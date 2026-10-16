@@ -3,7 +3,7 @@ type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-055
 title: "Polyglot Public Visibility Heuristics, Anchored Boundary Symbol Coverage, and Substantive SpecDelta Apply"
-status: proposed
+status: applied
 vcs:
   branch: fix/drift-polyglot-visibility-and-anchoring
 intent:

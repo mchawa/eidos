@@ -1149,7 +1149,7 @@ def _apply_expect_or_details_to_spec(
     details: str,
     tx: _MutationTransaction | None = None,
 ) -> bool:
-    """Apply declarative expect fields and/or details comment to a specification file on disk."""
+    """Apply declarative expect fields or substantive details to a specification file on disk (never comment-only)."""
     content = spec_file.read_text(encoding="utf-8")
     updated = content
     if isinstance(expect, dict) and expect:
@@ -1171,10 +1171,14 @@ def _apply_expect_or_details_to_spec(
                 fm_changed = True
         if fm_changed:
             updated = _render_spec(fm, body)
-    elif details:
-        marker = f"// {details}"
-        if marker not in updated and details not in updated:
-            updated = f"{updated.rstrip()}\n\n{marker}\n"
+    elif details and not details.lstrip().startswith("//"):
+        fm, _body, err = extract_frontmatter(updated)
+        if not err and isinstance(fm, dict) and "rule" in fm and isinstance(fm.get("rule"), str):
+            updated = _set_frontmatter_scalar(updated, "rule", json.dumps(details))
+        elif not err and isinstance(fm, dict) and "responsibility" in fm and isinstance(fm.get("responsibility"), str):
+            updated = _set_frontmatter_scalar(updated, "responsibility", json.dumps(details))
+        elif details not in updated:
+            updated = f"{updated.rstrip()}\n\n{details}\n"
     else:
         return False
 

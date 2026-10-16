@@ -1953,3 +1953,59 @@ def test_deleted_unmapped_file_covered_by_substantive_container_spec_update(tmp_
     assert res.drift_detected is False
 
 
+def test_1hop_neighbor_requires_symbol_anchor_for_public_api_addition(tmp_path, monkeypatch):
+    """Verify DLT-2026-055 & INV-DRIFT-DIFF-AWARE-COVERAGE: adding public boundary symbols to an existing file requires symbol anchoring when covered only by a 1-hop neighbor spec."""
+    cap_rel = "eidos/domains/core/capabilities/cap-x.adoc"
+    cap_base = """---
+type: product/capability
+schema: schemas/v1/product/capability.schema.yaml
+id: CAP-X-001
+title: X Capability
+domain: DOM-X
+status: active
+business:
+  jtbd: Execute X
+technical:
+  containers:
+    - CNT-X
+---
+= X Capability
+
+Original capability prose.
+"""
+    cap_unanchored = cap_base + "\nUnrelated capability prose update that never mentions the new class.\n"
+    cap_anchored = cap_base + "\nExposes the new `Foo` class and `Foo.run` method.\n"
+
+    # 1. Unanchored 1-hop capability edit -> rejected with missing_anchor
+    root_unanchored = tmp_path / "unanchored"
+    env_unanchored = _diff_aware_env(
+        root_unanchored,
+        monkeypatch,
+        changed=["src/pkg/svc.py", cap_rel],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, _CODE_WITH_CLASS),
+            cap_rel: (cap_base, cap_unanchored),
+        },
+        extra_files={cap_rel: cap_unanchored},
+    )
+    res_unanchored = detect_drift(repo_root=root_unanchored, eidos_dir=env_unanchored)
+    assert res_unanchored.drift_detected is True
+    assert [r["rule"] for r in res_unanchored.trivially_covered_files] == ["missing_anchor"]
+
+    # 2. Anchored 1-hop capability edit naming Foo -> clean
+    root_anchored = tmp_path / "anchored"
+    env_anchored = _diff_aware_env(
+        root_anchored,
+        monkeypatch,
+        changed=["src/pkg/svc.py", cap_rel],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, _CODE_WITH_CLASS),
+            cap_rel: (cap_base, cap_anchored),
+        },
+        extra_files={cap_rel: cap_anchored},
+    )
+    res_anchored = detect_drift(repo_root=root_anchored, eidos_dir=env_anchored)
+    assert res_anchored.drift_detected is False
+    assert res_anchored.trivially_covered_files == []
+
+
