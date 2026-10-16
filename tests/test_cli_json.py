@@ -246,11 +246,91 @@ def test_cli_contract_json_and_create_flags(tmp_path):
     assert len(dash_data["by_status"]["in_review"]) == 1
 
     # 5. index search --json
-    runner.invoke(app, ["index", "sync", "--path", str(eidos_dir)])
-    res_search = runner.invoke(app, ["index", "search", "OpenAPI", "--path", str(eidos_dir), "--json"])
-    assert res_search.exit_code == 0
-    search_data = json.loads(res_search.stdout)
-    assert search_data["query"] == "OpenAPI"
-    assert search_data["count"] >= 1
-    assert any(r["id"] == "CTR-OPENAPI" for r in search_data["results"])
+    import eidos.core.index.graph_index as gi
+
+    try:
+        runner.invoke(app, ["index", "sync", "--path", str(eidos_dir)])
+        res_search = runner.invoke(app, ["index", "search", "OpenAPI", "--path", str(eidos_dir), "--json"])
+        assert res_search.exit_code == 0
+        search_data = json.loads(res_search.stdout)
+        assert search_data["query"] == "OpenAPI"
+        assert search_data["count"] >= 1
+        assert any(r["id"] == "CTR-OPENAPI" for r in search_data["results"])
+
+        # 6. 1-arg delta status lookup (--json)
+        res_single_status = runner.invoke(
+            app, ["delta", "status", "DLT-2026-901", "--path", str(eidos_dir), "--json"]
+        )
+        assert res_single_status.exit_code == 0
+        single_status_data = json.loads(res_single_status.stdout)
+        assert single_status_data["id"] == "DLT-2026-901"
+        assert single_status_data["status"] == "in_review"
+    finally:
+        if gi._INDEX_INSTANCE is not None:
+            gi._INDEX_INSTANCE.close()
+            gi._INDEX_INSTANCE = None
+
+
+def test_cli_error_exit_codes_and_negative_json_contracts(tmp_path):
+    """Verify non-zero exit codes and valid JSON error payloads across CLI commands."""  # eidos:fixture
+    eidos_dir = tmp_path / "eidos"
+    (eidos_dir / "domains").mkdir(parents=True)
+    # Create an invalid spec (missing required title/owner)
+    (eidos_dir / "domains" / "bad.adoc").write_text(
+        "---\n"
+        "type: product/domain\n"
+        "schema: schemas/v1/product/domain.schema.yaml\n"
+        "id: INVALID-ID\n"
+        "---\n"
+        "= Bad Domain\n",
+        encoding="utf-8",
+    )
+
+    # 1. validate --json on broken directory returns exit_code 1 and valid JSON with is_clean=False
+    res_val = runner.invoke(app, ["validate", str(eidos_dir), "--json"])
+    assert res_val.exit_code == 1
+    val_data = json.loads(res_val.stdout)
+    assert val_data["is_clean"] is False
+    assert val_data["valid_docs"] == 0
+
+    # 2. drift --json --markdown mutually exclusive flags return exit_code 2
+    res_mut = runner.invoke(app, ["drift", "--json", "--markdown"])
+    assert res_mut.exit_code == 2
+
+    # 3. drift --base invalid-ref --json returns exit_code 1 and JSON error payload
+    res_drift_err = runner.invoke(app, ["drift", "--base", "nonexistent-git-ref-999999", "--json"])
+    assert res_drift_err.exit_code == 1
+    drift_err_data = json.loads(res_drift_err.stdout)
+    assert "Cannot resolve base Git reference" in drift_err_data["error"]
+
+    # 4. delta status / verify / apply on missing delta return exit_code 1 and JSON error payload
+    res_dlt_status_err = runner.invoke(
+        app, ["delta", "status", "DLT-2026-404", "in_review", "--path", str(eidos_dir), "--json"]
+    )
+    assert res_dlt_status_err.exit_code == 1
+    assert json.loads(res_dlt_status_err.stdout)["success"] is False
+
+    res_dlt_ver_err = runner.invoke(
+        app, ["delta", "verify", "DLT-2026-404", "--path", str(eidos_dir), "--json"]
+    )
+    assert res_dlt_ver_err.exit_code == 1
+    assert json.loads(res_dlt_ver_err.stdout)["is_verified"] is False
+
+    res_dlt_app_err = runner.invoke(
+        app, ["delta", "apply", "DLT-2026-404", "--path", str(eidos_dir), "--json"]
+    )
+    assert res_dlt_app_err.exit_code == 1
+    assert json.loads(res_dlt_app_err.stdout)["success"] is False
+
+    # 5. spec show / delete / promote / inline on missing entity return exit_code 1
+    assert runner.invoke(app, ["spec", "show", "CNT-MISSING", "--path", str(eidos_dir)]).exit_code == 1
+    assert runner.invoke(app, ["spec", "delete", "CNT-MISSING", "--force", "--path", str(eidos_dir)]).exit_code == 1
+    assert runner.invoke(app, ["spec", "component", "promote", "CMP-MISSING", "--path", str(eidos_dir)]).exit_code == 1
+    assert runner.invoke(app, ["spec", "component", "inline", "CMP-MISSING", "--path", str(eidos_dir)]).exit_code == 1
+
+    # 6. doctor on broken workspace returns exit_code 1
+    empty_ws = tmp_path / "empty_ws"
+    empty_ws.mkdir()
+    assert runner.invoke(app, ["doctor", "--path", str(empty_ws)]).exit_code == 1
+
 

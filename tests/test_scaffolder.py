@@ -111,7 +111,7 @@ def test_scaffold_all_spec_types(tmp_path):
     assert dlt_file.exists()
     assert_valid_spec(validator, dlt_file)
 
-    # 8. Exploration
+    # 8. Exploration (INV-SPIKE-ISOLATION: isolated under explorations/ with hypothesis & graduation_target)
     exp_file = create_spec(
         eidos_dir=tmp_path,
         doc_type_key="exploration",
@@ -119,7 +119,67 @@ def test_scaffold_all_spec_types(tmp_path):
         title="WebAuthn Passkey Spike",
     )
     assert exp_file.exists()
+    assert exp_file.parent == tmp_path / "explorations"
+    exp_doc = parse_spec_file(exp_file)
+    assert exp_doc.doc_type == "product/exploration"
+    assert "hypothesis" in exp_doc.frontmatter
     assert_valid_spec(validator, exp_file)
+
+    # 9. Component, 10. Design System, 11. UI Component, 12. Screen, 13. Client, 14. Flow
+    cmp_file = create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="component",
+        raw_id="CMP-AUTH-HASH",
+        title="Password Hasher",
+        owning_container="CNT-AUTH-SERVICE",
+        package_path="packages/auth/hash.rs",
+    )
+    assert_valid_spec(validator, cmp_file)
+
+    ds_file = create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="design-system",
+        raw_id="DS-AUTH",
+        title="Auth Design System",
+    )
+    assert_valid_spec(validator, ds_file)
+
+    uic_file = create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="ui-component",
+        raw_id="UIC-PASSKEY-BTN",
+        title="Passkey Button",
+        design_system="DS-AUTH",
+    )
+    assert_valid_spec(validator, uic_file)
+
+    scr_file = create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="screen",
+        raw_id="SCR-LOGIN",
+        title="Login Screen",
+        route="/login",
+        owning_container="CNT-AUTH-SERVICE",
+    )
+    assert_valid_spec(validator, scr_file)
+
+    clt_file = create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="client",
+        raw_id="CLT-AUTH-WEB",
+        title="Auth Web Client",
+        owning_container="CNT-AUTH-SERVICE",
+    )
+    assert_valid_spec(validator, clt_file)
+
+    flow_file = create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="flow",
+        raw_id="FLOW-PASSKEY-LOGIN",
+        title="Passkey Login Flow",
+        client_id="CLT-AUTH-WEB",
+    )
+    assert_valid_spec(validator, flow_file)
 
 
 def test_list_specs_and_filtering(tmp_path):
@@ -822,12 +882,13 @@ def test_engine_genericity_zero_self_references():
     portal_forbidden = re.compile(
         r'\b(CLT-WEB-PORTAL|SCR-PORTAL-HOME|EXT_GIT|EXT_IDE|DS-CORE)\b|systems/core|"web-portal"|text\.includes\("Eidos"\)'
     )
-    for portal_path in (
-        Path("src/eidos/portal/generator.py"),
-        Path("src/eidos/portal/frontend/src/components/views/CatalogView.tsx"),
-        Path("src/eidos/portal/frontend/src/components/views/DesignView.tsx"),
-        Path("src/eidos/portal/frontend/src/components/views/ArchitectureView.tsx"),
-    ):
+    for portal_path in sorted(Path("src/eidos/portal").rglob("*")):
+        if not portal_path.is_file() or any(
+            part in ("__pycache__", "node_modules", "dist", "static", "theme") for part in portal_path.parts
+        ):
+            continue
+        if portal_path.suffix.lower() not in (".py", ".ts", ".tsx"):
+            continue
         text = portal_path.read_text(encoding="utf-8", errors="ignore")
         for m in portal_forbidden.finditer(text):
             violations.append(f"{portal_path}: matched '{m.group(0)}'")
@@ -836,41 +897,34 @@ def test_engine_genericity_zero_self_references():
 
 
 def test_foreign_repo_end_to_end_workflow(tmp_path):
-    """Verify INV-FOREIGN-REPO-E2E: a non-Eidos polyglot repository initialized with eidos init runs the full lifecycle cleanly."""
+    """Verify INV-FOREIGN-REPO-E2E: a non-Eidos polyglot repository initialized with eidos init runs the full lifecycle cleanly."""  # eidos:fixture
     import subprocess
+
+    import eidos.core.index.graph_index as gi
+    from eidos.portal.builder import build_static_portal
 
     repo = tmp_path / "src" / "acme_payments"
     ok, _, _ = init_repository(project_dir=repo, name="acme-payments", title="Acme Payments Platform")
     assert ok
 
     eidos_dir = repo / "eidos"
-    # Populate a valid non-Eidos system.adoc, domain, capability, container, component, and test
-    (eidos_dir / "system.adoc").write_text(
-        """---
-type: product/system
-schema: schemas/v1/product/system.schema.yaml
-id: SYS-ACME-001
-title: "Acme Payments Platform"
-archetypes:
-  - microservice
-business_identity:
-  vision: "Process global payments reliably."
-  target_users:
-    - "Merchants"
-  value_proposition: "Sub-second settlement."
-technical_profile:
-  primary_languages:
-    - "TypeScript"
----
-= Acme Payments Platform
-""",
-        encoding="utf-8",
-    )
+    # Verify init_repository's generated system.adoc and baseline specs validate cleanly BEFORE any edits
+    initial_report = SpecValidator().validate_directory(eidos_dir)
+    assert initial_report.is_clean, f"Initial eidos init specs failed validation: {initial_report.schema_errors} {initial_report.broken_references}"
+
     create_spec(eidos_dir, "domain", "DOM-PAYMENTS", "Payments Domain")
+    create_spec(eidos_dir, "persona", "PER-USER", "Merchant User", role_type="end_user")
     cnt_file = create_spec(
         eidos_dir, "container", "CNT-CHECKOUT", "Checkout Service", package_path="services/checkout"
     )
     assert cnt_file.exists()
+    cap_file = create_spec(
+        eidos_dir,
+        "capability",
+        "CAP-PAY-001",
+        "Record Ledger Entry",
+        domain="DOM-PAYMENTS",
+    )
     cmp_file = create_spec(
         eidos_dir,
         "component",
@@ -881,10 +935,21 @@ technical_profile:
     )
     assert cmp_file.exists()
 
-    # Add source and test file in foreign repo
+    # Add source and test file in foreign repo and bind CAP-PAY-001 invariant to it
     svc_dir = repo / "services" / "checkout"
     svc_dir.mkdir(parents=True)
     (svc_dir / "ledger.ts").write_text("export function recordEntry(amount: number): boolean {\n  return amount > 0;\n}\n", encoding="utf-8")
+    tests_dir = repo / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir / "test_ledger.py").write_text(
+        "def test_positive_ledger_entry():\n    # INV-ACME-POSITIVE-AMOUNT\n    assert True\n",
+        encoding="utf-8",
+    )
+    cap_text = cap_file.read_text(encoding="utf-8").replace(
+        "  invariants: []",
+        "  invariants:\n    - id: INV-ACME-POSITIVE-AMOUNT\n      rule: Ledger amount must be positive.\n      test_binding: tests/test_ledger.py::test_positive_ledger_entry",
+    )
+    cap_file.write_text(cap_text, encoding="utf-8")
 
     # Initialize git and commit baseline
     subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
@@ -893,29 +958,40 @@ technical_profile:
     subprocess.run(["git", "add", "."], cwd=repo, capture_output=True, check=True)
     subprocess.run(["git", "commit", "-m", "initial commit"], cwd=repo, capture_output=True, check=True)
 
-    # 1. Validate specs (both eidos_dir and eidos_dir/architecture under parent src/ path)
-    val_report = SpecValidator().validate_directory(eidos_dir)
-    assert val_report.is_clean, f"Validation errors: {val_report.schema_errors}, broken refs: {val_report.broken_references}"
-    sub_report = SpecValidator().validate_directory(eidos_dir / "architecture")
-    assert sub_report.is_clean, f"Subdir validation errors: {sub_report.schema_errors}, broken refs: {sub_report.broken_references}"
+    try:
+        # 1. Validate specs (both eidos_dir and eidos_dir/architecture under parent src/ path)
+        val_report = SpecValidator().validate_directory(eidos_dir)
+        assert val_report.is_clean, f"Validation errors: {val_report.schema_errors}, broken refs: {val_report.broken_references}"
+        sub_report = SpecValidator().validate_directory(eidos_dir / "architecture")
+        assert sub_report.is_clean, f"Subdir validation errors: {sub_report.schema_errors}, broken refs: {sub_report.broken_references}"
 
-    # 2. Index sync & Context slice
-    res_sync = runner.invoke(app, ["index", "sync", "--path", str(eidos_dir)])
-    assert res_sync.exit_code == 0
+        # 2. Index sync & Context slice
+        res_sync = runner.invoke(app, ["index", "sync", "--path", str(eidos_dir)])
+        assert res_sync.exit_code == 0
 
-    res_ctx = runner.invoke(
-        app,
-        ["context", "--component", "CNT-CHECKOUT", "--path", str(eidos_dir), "--format", "json"],
-    )
-    assert res_ctx.exit_code == 0
-    assert "CNT-CHECKOUT" in res_ctx.stdout
+        res_ctx = runner.invoke(
+            app,
+            ["context", "--component", "CNT-CHECKOUT", "--path", str(eidos_dir), "--format", "json"],
+        )
+        assert res_ctx.exit_code == 0
+        assert "CNT-CHECKOUT" in res_ctx.stdout
 
-    # 3. Drift check on clean foreign repo
-    from eidos.vcs.drift import detect_drift
+        # 3. Drift check on clean foreign repo
+        from eidos.vcs.drift import detect_drift
 
-    drift_clean = detect_drift(repo_root=repo, eidos_dir=eidos_dir, uncommitted=True)
-    assert drift_clean.drift_detected is False
-    assert drift_clean.is_clean is True
+        drift_clean = detect_drift(repo_root=repo, eidos_dir=eidos_dir, uncommitted=True)
+        assert drift_clean.drift_detected is False
+        assert drift_clean.is_clean is True
+
+        # 4. Build static portal on foreign repo
+        portal_out = tmp_path / "acme_portal_dist"
+        build_static_portal(eidos_dir=eidos_dir, output_dir=portal_out)
+        assert (portal_out / "index.html").exists()
+        assert (portal_out / "data.json").exists()
+    finally:
+        if gi._INDEX_INSTANCE is not None:
+            gi._INDEX_INSTANCE.close()
+            gi._INDEX_INSTANCE = None
 
 
 def test_frontmatter_mutations_preserve_yaml_comments_and_formatting(tmp_path):

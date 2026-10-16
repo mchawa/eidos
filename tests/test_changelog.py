@@ -243,3 +243,92 @@ mutations: []
     assert md.count("DLT-2026-001") == 1
     assert "Resolve standalone edge case" in md
 
+
+def test_changelog_hermetic_multi_tag_partitioning_draft_exclusion_and_docs_sync(tmp_path):
+    """Verify multi-tag release partitioning (v0.1.0, v0.2.0, Unreleased), draft exclusion, chore(release) filtering, and docs sync."""
+    import subprocess
+
+    eidos_dir = tmp_path / "eidos"
+    deltas_dir = eidos_dir / "deltas"
+    docs_dir = tmp_path / "docs"
+    deltas_dir.mkdir(parents=True)
+    docs_dir.mkdir(parents=True)
+
+    (tmp_path / "zensical.toml").write_text(
+        '[project]\nname = "test"\nnav = [\n  { "Overview" = "index.md" },\n  { "Contributing" = "contributing.md" },\n]\n',
+        encoding="utf-8",
+    )
+
+    def _write_delta(did: str, title: str, status: str) -> None:
+        (deltas_dir / f"{did.lower()}.adoc").write_text(
+            f"---\n"
+            f"type: delta/mutation\n"
+            f"schema: schemas/v1/delta/delta.schema.yaml\n"
+            f"id: {did}\n"
+            f"title: {title}\n"
+            f"status: {status}\n"
+            f"intent:\n"
+            f"  kind: feature\n"
+            f"  motivation: Deliver {title}.\n"
+            f"mutations:\n"
+            f"  - action: add_capability\n"
+            f"---\n"
+            f"= {title}\n",
+            encoding="utf-8",
+        )
+
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "rel@example.com"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Rel Eng"], cwd=tmp_path, check=True, capture_output=True)
+
+    # Tag v0.1.0 with DLT-2026-010
+    _write_delta("DLT-2026-010", "Release 0.1 Capability", "applied")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "feat: Release 0.1 Capability (DLT-2026-010)"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "tag", "v0.1.0"], cwd=tmp_path, check=True, capture_output=True)
+
+    # Tag v0.2.0 with DLT-2026-020 + chore(release) commit (which should be filtered out)
+    _write_delta("DLT-2026-020", "Release 0.2 Capability", "applied")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "feat: Release 0.2 Capability (DLT-2026-020)"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "--allow-empty", "-m", "chore(release): v0.2.0"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "tag", "v0.2.0"], cwd=tmp_path, check=True, capture_output=True)
+
+    # Unreleased DLT-2026-030 (applied) + DLT-2026-031 (draft, must be excluded)
+    _write_delta("DLT-2026-030", "Unreleased Capability", "applied")
+    _write_delta("DLT-2026-031", "Draft Secret Capability", "draft")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "feat: Unreleased Capability (DLT-2026-030)"], cwd=tmp_path, check=True, capture_output=True)
+
+    gen = ChangelogGenerator(repo_root=tmp_path, eidos_dir=eidos_dir)
+    applied_ids = {d["id"] for d in gen.get_applied_deltas()}
+    assert applied_ids == {"DLT-2026-010", "DLT-2026-020", "DLT-2026-030"}
+    assert "DLT-2026-031" not in applied_ids
+
+    written = gen.update_changelog_files(include_unreleased=True, update_docs=True)
+    assert written["output_file"] == str(tmp_path / "CHANGELOG.md")
+    assert written["docs_file"] == str(docs_dir / "changelog.md")
+
+    root_md = (tmp_path / "CHANGELOG.md").read_text(encoding="utf-8")
+    docs_md = (docs_dir / "changelog.md").read_text(encoding="utf-8")
+    assert root_md.startswith("# Changelog")
+    assert docs_md == root_md
+    assert "## [Unreleased]" in root_md
+    assert "## [0.2.0]" in root_md
+    assert "## [0.1.0]" in root_md
+    assert "chore(release)" not in root_md
+    assert "DLT-2026-031" not in root_md
+
+    # Verify ordering: Unreleased -> 0.2.0 -> 0.1.0
+    idx_unrel = root_md.index("## [Unreleased]")
+    idx_020 = root_md.index("## [0.2.0]")
+    idx_010 = root_md.index("## [0.1.0]")
+    assert idx_unrel < idx_020 < idx_010
+    assert idx_unrel < root_md.index("DLT-2026-030") < idx_020
+    assert idx_020 < root_md.index("DLT-2026-020") < idx_010
+    assert idx_010 < root_md.index("DLT-2026-010")
+
+    # Verify zensical.toml nav was updated with changelog.md
+    assert "changelog.md" in (tmp_path / "zensical.toml").read_text(encoding="utf-8")
+
+

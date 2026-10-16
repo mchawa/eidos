@@ -763,3 +763,110 @@ tokens:
     c4_cnt = pdata["diagrams"]["c4_components"]["CNT-API"]
     assert "peer_CNT_DB" in c4_cnt
 
+
+def test_portal_zero_node_subprocess_http_endpoints_mermaid_and_build_assets(tmp_path, monkeypatch):
+    """Verify zero node/npm subprocess invocations, live HTTP /api/health, /api/validate cache invalidation,
+    query string stripping, and path traversal rejection."""  # eidos:fixture
+    import subprocess
+    import threading
+    import urllib.error
+    import urllib.request
+    from http.server import HTTPServer
+
+    import eidos.core.index.graph_index as gi
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+    from eidos.portal.builder import build_static_portal
+    from eidos.portal.generator import get_portal_data
+    from eidos.portal.server import EidosPortalHandler
+
+    repo = tmp_path / "portal_ws"
+    init_repository(repo, name="portal-ws", title="Portal Test System")
+    eidos_dir = repo / "eidos"
+    cnt_file = create_spec(eidos_dir, "container", "CNT-BACKEND", "Backend Service", package_path="src/backend")
+    create_spec(
+        eidos_dir,
+        "component",
+        "CMP-AUTH",
+        "Auth Module",
+        owning_container="CNT-BACKEND",
+        package_path="src/backend/auth.py",
+    )
+
+    # 1. Intercept subprocess.run to prove zero node/npm/npx/vite calls during get_portal_data & build_static_portal
+    orig_run = subprocess.run
+    forbidden_bins = {"node", "npm", "npx", "pnpm", "yarn", "vite", "tsc"}
+
+    def _guarded_run(cmd, *args, **kwargs):
+        first = str(cmd[0]).lower() if isinstance(cmd, list | tuple) and cmd else str(cmd).lower()
+        assert all(b not in first for b in forbidden_bins), f"Forbidden Node toolchain subprocess invoked: {cmd}"
+        return orig_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", _guarded_run)
+
+    try:
+        pdata = get_portal_data(eidos_dir)
+        assert "c4_context" in pdata["diagrams"] and pdata["diagrams"]["c4_context"]
+        assert "c4_containers" in pdata["diagrams"] and pdata["diagrams"]["c4_containers"]
+        assert "CNT-BACKEND" in pdata["diagrams"]["c4_components"]
+
+        out_dir = tmp_path / "static_site"
+        res_build = build_static_portal(eidos_dir, out_dir)
+        assert res_build == out_dir.resolve()
+        assert (out_dir / "index.html").exists()
+        assert (out_dir / "favicon.svg").exists()
+        built_data = json.loads((out_dir / "data.json").read_text(encoding="utf-8"))
+        assert built_data["diagrams"]["c4_containers"]
+
+        # 2. Live HTTP server endpoints: /api/health, /api/data?foo=1, /api/validate (cache hit + invalidation), 404 traversal
+        EidosPortalHandler.eidos_dir = eidos_dir
+        EidosPortalHandler._cache_key = None
+        EidosPortalHandler._cached_portal_data = None
+        EidosPortalHandler._cached_validation_key = None
+        EidosPortalHandler._cached_validation_res = None
+
+        httpd = HTTPServer(("127.0.0.1", 0), EidosPortalHandler)
+        port = httpd.server_address[1]
+        t = threading.Thread(target=httpd.serve_forever, daemon=True)
+        t.start()
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health") as resp:
+                assert resp.status == 200
+                health = json.loads(resp.read().decode("utf-8"))
+                assert health["status"] == "ok"
+
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/data?cache_bust=123") as resp:
+                assert resp.status == 200
+                api_data = json.loads(resp.read().decode("utf-8"))
+                assert api_data["overview"]["total_specs"] >= 2
+
+            # First /api/validate populates cache; second hits cache
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/validate") as resp:
+                assert resp.status == 200
+                val1 = json.loads(resp.read().decode("utf-8"))
+                assert "is_clean" in val1
+            assert EidosPortalHandler._cached_validation_res is not None
+            first_key = EidosPortalHandler._cached_validation_key
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/validate") as resp:
+                assert resp.status == 200
+            assert EidosPortalHandler._cached_validation_key == first_key
+
+            # Modify spec file to invalidate _cached_validation_key
+            cnt_file.write_text(cnt_file.read_text(encoding="utf-8") + "\n// updated\n", encoding="utf-8")
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/validate") as resp:
+                assert resp.status == 200
+            assert EidosPortalHandler._cached_validation_key != first_key
+
+            # Unknown/traversal path returns 404
+            with pytest.raises(urllib.error.HTTPError) as exc_info:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/../../etc/passwd")
+            assert exc_info.value.code == 404
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+    finally:
+        if gi._INDEX_INSTANCE is not None:
+            gi._INDEX_INSTANCE.close()
+            gi._INDEX_INSTANCE = None
+
+

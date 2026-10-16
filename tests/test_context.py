@@ -175,6 +175,11 @@ def test_context_slice_non_eidos_project_fallback(tmp_path):
     assert any(p["id"] == "POL-SEC-001" for p in res.policies)
     # Policy invariants should be included
     assert any(i["id"] == "INV-NO-PASSWORD-LOG" for i in res.invariants)
+    import eidos.core.index.graph_index as gi
+
+    if gi._INDEX_INSTANCE is not None:
+        gi._INDEX_INSTANCE.close()
+        gi._INDEX_INSTANCE = None
 
 
 def test_context_slice_absolute_path_normalization():
@@ -220,6 +225,11 @@ def test_context_slice_invariants_policy_id(tmp_path):
     policy_invs = [inv for inv in res.invariants if inv.get("policy_id") == "POL-RET-001"]
     assert len(policy_invs) == 1
     assert policy_invs[0]["id"] == "INV-DATA-RETENTION-90D"
+    import eidos.core.index.graph_index as gi
+
+    if gi._INDEX_INSTANCE is not None:
+        gi._INDEX_INSTANCE.close()
+        gi._INDEX_INSTANCE = None
 
 
 def test_cli_context_tier_option():
@@ -334,7 +344,7 @@ def test_inv_context_token_compression():
         assert "rationale" in guard_comp["decisions"][0]
 
     deep_comp = deep_dict["components"][0]
-    assert "quality_attributes" in deep_comp or "dependencies" in deep_comp
+    assert "quality_attributes" in deep_comp and "components" in deep_comp
 
     # 3. Unmatched explicit queries (files, component, task) return an honest empty slice
     for kwargs in (
@@ -414,3 +424,82 @@ def test_inv_context_token_compression():
     assert synthetic_sl.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
 
 
+def test_progressive_compression_stages_and_inline_component_context():
+    """Verify Stage 1/2/3 eviction under extreme budget pressure, anchor overflow trimming, and inline CMP-* component context."""  # eidos:fixture
+    from eidos.core.index.graph_index import TIER_TOKEN_BUDGETS, TieredContextSlice
+
+    # 1. Stage 1 evicts non-primary 1-hop components, Stage 2 evicts non-direct invariants, Stage 3 caps direct invariants
+    heavy_sl = TieredContextSlice(
+        query={"task": "heavy"},
+        tier="guardrails",
+        components=[
+            {
+                "id": "CNT-PRIMARY",
+                "name": "Primary",
+                "responsibility": "Primary container responsibility.",
+                "components": [{"id": f"CMP-SUB-{i}", "name": f"Sub {i}", "responsibility": "Sub " * 25} for i in range(6)],
+            },
+            {
+                "id": "CNT-HOP1",
+                "name": "Hop1",
+                "responsibility": "Secondary hop responsibility " * 30,
+            },
+        ],
+        capabilities=[{"id": f"CAP-H-{i}", "title": f"Capability {i} " * 15} for i in range(10)],
+        policies=[{"id": f"POL-H-{i}", "title": f"Policy {i}", "rule": "Policy rule " * 20} for i in range(8)],
+        contracts=[{"id": f"CTR-H-{i}", "title": f"Contract {i}", "protocol": "cli"} for i in range(8)],
+        invariants=[
+            {"id": f"RULE-DIRECT-{i}", "rule": f"Direct invariant rule {i} " * 15} for i in range(15)
+        ] + [
+            {"id": f"RULE-INDIRECT-{i}", "rule": f"Indirect invariant rule {i} " * 15} for i in range(10)
+        ],
+    )
+    heavy_sl._enforce_token_budget(
+        primary_cids={"CNT-PRIMARY"},
+        direct_inv_ids={f"RULE-DIRECT-{i}" for i in range(15)},
+    )
+    assert [c["id"] for c in heavy_sl.components] == ["CNT-PRIMARY"]
+    assert all(i["id"].startswith("RULE-DIRECT-") for i in heavy_sl.invariants)
+    assert heavy_sl.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
+
+    # 2. Anchor tier overflow trims excess components and decisions to stay <= 300 tokens
+    anchor_heavy = TieredContextSlice(
+        query={"task": "anchor-heavy"},
+        tier="anchor",
+        components=[
+            {
+                "id": f"CNT-A-{i}",
+                "name": f"Container {i}",
+                "responsibility": "Long responsibility text for anchor container. " * 20,
+                "decisions": [
+                    {
+                        "id": f"DEC-A-{i}-{j}",
+                        "title": f"Decision {j}",
+                        "decision": "Decision details " * 15,
+                        "rejected_alternatives": [{"option": f"Alt {k}" * 10} for k in range(4)],
+                    }
+                    for j in range(5)
+                ],
+            }
+            for i in range(5)
+        ],
+    )
+    anchor_heavy._enforce_token_budget(primary_cids={"CNT-A-0"})
+    assert anchor_heavy.token_estimate <= TIER_TOKEN_BUDGETS["anchor"]
+
+    # 3. Direct query on an inline C4 Level 3 component (CMP-CLI-APP) and base Markdown C4 L3 rendering
+    inline_sl = get_context_slice(component="CMP-CLI-APP", tier="deep")
+    assert any(c["id"] == "CNT-EIDOS-CLI" for c in inline_sl.components)
+    assert "CMP-CLI-APP" in inline_sl.to_markdown()
+    base_l3 = ArchitecturalContextSlice(
+        query={"component": "CNT-EIDOS-CLI"},
+        components=inline_sl.components,
+        contracts=inline_sl.contracts,
+        capabilities=inline_sl.capabilities,
+        invariants=inline_sl.invariants,
+        policies=inline_sl.policies,
+        tier="deep",
+    )
+    base_md = base_l3.to_markdown()
+    assert "C4 Level 3 Components" in base_md
+    assert "CMP-CLI-APP" in base_md

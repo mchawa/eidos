@@ -791,3 +791,217 @@ def test_deep_review_subsystem_3_scaffolder_catalog_delta_and_changelog_edge_cas
     changelog_md = ChangelogGenerator(repo_root=tmp_path, eidos_dir=eidos_dir).generate_changelog()
     assert "add tagless changelog support" in changelog_md.lower()
 
+
+def test_delta_engine_all_mutation_families_and_file_restoration_rollback(tmp_path):
+    """Verify add/patch/remove_invariant, modify_component, modify_architecture, deprecate_*, remove_*, and file deletion rollback."""  # eidos:fixture
+    from eidos.core.lifecycle.catalog import _set_frontmatter_scalar
+    from eidos.core.lifecycle.delta_engine import (
+        apply_delta,
+        execute_delta_mutations,
+        verify_delta_mutations,
+    )
+    from eidos.core.spec.parser import parse_spec_file
+
+    init_repository(tmp_path, name="all-mutations-test")
+    eidos_dir = tmp_path / "eidos"
+    (eidos_dir / "architecture").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "architecture" / "system-architecture.adoc").write_text(
+        "---\n"
+        "type: tech/architecture\n"
+        "schema: schemas/v1/tech/architecture.schema.yaml\n"
+        "id: ARCH-TEST-001\n"
+        "title: Test Technical Architecture\n"
+        "topology_style: modular_monolith\n"
+        "c4_context:\n"
+        "  actors:\n"
+        "    - PER-DEV\n"
+        "c4_containers:\n"
+        "  - CNT-APP\n"
+        "solution_strategy:\n"
+        "  - Deterministic verification\n"
+        "cross_cutting_concepts:\n"
+        "  telemetry_and_logging: Structured JSON\n"
+        "deployment_view:\n"
+        "  hosting_model: Local CLI\n"
+        "  ci_cd_engine: GitHub Actions\n"
+        "---\n"
+        "= Test Technical Architecture\n",
+        encoding="utf-8",
+    )
+
+    create_spec(eidos_dir, "domain", "DOM-CORE", title="Core Domain")
+    create_spec(eidos_dir, "persona", "PER-DEV", title="Developer", role_type="developer")
+    cnt_path = create_spec(eidos_dir, "container", "CNT-APP", title="App Container", package_path="src/app")
+    # Add an inline component to CNT-APP
+    cnt_text = cnt_path.read_text(encoding="utf-8").replace(
+        "components: []",
+        "components:\n  - id: CMP-INLINE-WORKER\n    name: Inline Worker\n    responsibility: Process jobs.\n    source_path: src/app/worker.py",
+    )
+    cnt_path.write_text(cnt_text, encoding="utf-8")
+
+    cap_path = create_spec(eidos_dir, "capability", "CAP-LEGACY-001", title="Legacy Cap", domain="DOM-CORE")
+    pol_path = create_spec(
+        eidos_dir,
+        "policy",
+        "POL-900-TEST",
+        title="Test Policy",
+        category="quality",
+        rule="Enforce test rule.",
+    )
+    pol_del_path = create_spec(
+        eidos_dir,
+        "policy",
+        "POL-901-DELETE",
+        title="Delete Policy",
+        category="quality",
+        rule="To be deleted.",
+    )
+    (tmp_path / "tests").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "tests" / "test_inv.py").write_text(
+        "def test_inv_900():\n    # INV-900-A\n    assert True\n",
+        encoding="utf-8",
+    )
+
+    # 1. Delta exercising add_invariant, modify_component, modify_architecture, deprecate_capability, remove_policy
+    dlt1 = create_spec(eidos_dir, "delta", "DLT-2026-910", title="Mutation Families Wave 1")
+    dlt1_fm = (
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-910\n"
+        "title: Mutation Families Wave 1\n"
+        "status: accepted\n"
+        "intent:\n"
+        "  kind: feature\n"
+        "  motivation: Test all mutation families.\n"
+        "mutations:\n"
+        "  - action: add_invariant\n"
+        "    target_invariant_id: INV-900-A\n"
+        "    target_policy: POL-900-TEST\n"
+        "    expect:\n"
+        "      rule: Initial invariant rule.\n"
+        "      test_binding: tests/test_inv.py::test_inv_900\n"
+        "  - action: modify_component\n"
+        "    target_component: CMP-INLINE-WORKER\n"
+        "    details: Updated inline worker responsibility for batching.\n"
+        "  - action: modify_architecture\n"
+        "    details: Documented cross-cutting telemetry architecture.\n"
+        "  - action: deprecate_capability\n"
+        "    target_capability: CAP-LEGACY-001\n"
+        "  - action: remove_policy\n"
+        "    target_policy: POL-901-DELETE\n"
+        "---\n"
+        "= Mutation Families Wave 1\n"
+    )
+    dlt1.write_text(dlt1_fm, encoding="utf-8")
+
+    exec_ok1, exec_msg1, mutated1 = execute_delta_mutations(eidos_dir, "DLT-2026-910")
+    assert exec_ok1 is True, f"Wave 1 execution failed: {exec_msg1}"
+    assert len(mutated1) >= 4
+    assert not pol_del_path.exists()
+    assert cap_path.exists()
+
+    ver_ok1, ver_msg1, ver_rep1 = verify_delta_mutations(eidos_dir, "DLT-2026-910")
+    assert ver_ok1 is True, f"Wave 1 verification failed: {ver_msg1}"
+    assert ver_rep1 is not None and len(ver_rep1.mutations) == 5
+
+    # 2. Delta exercising patch_invariant, deprecate_policy (retired), and remove_component (inline)
+    dlt2 = create_spec(eidos_dir, "delta", "DLT-2026-911", title="Mutation Families Wave 2")
+    dlt2_fm = (
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-911\n"
+        "title: Mutation Families Wave 2\n"
+        "status: accepted\n"
+        "intent:\n"
+        "  kind: enabler\n"
+        "  motivation: Test patch_invariant, retired policy deprecation, and inline component removal.\n"
+        "mutations:\n"
+        "  - action: patch_invariant\n"
+        "    target_invariant_id: INV-900-A\n"
+        "    target_policy: POL-900-TEST\n"
+        "    expect:\n"
+        "      rule: Patched invariant rule with stricter check.\n"
+        "      test_binding: tests/test_inv.py::test_inv_900\n"
+        "  - action: deprecate_policy\n"
+        "    target_policy: POL-900-TEST\n"
+        "  - action: remove_component\n"
+        "    target_component: CMP-INLINE-WORKER\n"
+        "---\n"
+        "= Mutation Families Wave 2\n"
+    )
+    dlt2.write_text(dlt2_fm, encoding="utf-8")
+
+    exec_ok2, exec_msg2, _ = execute_delta_mutations(eidos_dir, "DLT-2026-911")
+    assert exec_ok2 is True, f"Wave 2 execution failed: {exec_msg2}"
+    # Also verify that setting status: retired on POL-900-TEST satisfies deprecate_policy verification
+    pol_retired = _set_frontmatter_scalar(pol_path.read_text(encoding="utf-8"), "status", "retired")
+    pol_path.write_text(pol_retired, encoding="utf-8")
+    ver_ok2, ver_msg2, _ = verify_delta_mutations(eidos_dir, "DLT-2026-911")
+    assert ver_ok2 is True, f"Wave 2 verification failed: {ver_msg2}"
+
+    # 3. Delta exercising remove_invariant
+    dlt3 = create_spec(eidos_dir, "delta", "DLT-2026-912", title="Remove Invariant Wave 3")
+    dlt3.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-912\n"
+        "title: Remove Invariant Wave 3\n"
+        "status: accepted\n"
+        "intent:\n"
+        "  kind: enabler\n"
+        "  motivation: Remove obsolete invariant.\n"
+        "mutations:\n"
+        "  - action: remove_invariant\n"
+        "    target_invariant_id: INV-900-A\n"
+        "    target_policy: POL-900-TEST\n"
+        "---\n"
+        "= Remove Invariant Wave 3\n",
+        encoding="utf-8",
+    )
+    exec_ok3, exec_msg3, _ = execute_delta_mutations(eidos_dir, "DLT-2026-912")
+    assert exec_ok3 is True, f"Wave 3 execution failed: {exec_msg3}"
+    ver_ok3, ver_msg3, _ = verify_delta_mutations(eidos_dir, "DLT-2026-912")
+    assert ver_ok3 is True, f"Wave 3 verification failed: {ver_msg3}"
+    assert parse_spec_file(pol_path).frontmatter.get("invariants") == []
+
+    # 4. Transactional rollback restores a deleted spec file when a subsequent mutation fails
+    pol_restore = create_spec(
+        eidos_dir,
+        "policy",
+        "POL-902-RESTORE",
+        title="Restore On Rollback Policy",
+        category="security",
+        rule="Must survive failed transaction.",
+    )
+    original_pol_bytes = pol_restore.read_text(encoding="utf-8")
+    dlt_fail = create_spec(eidos_dir, "delta", "DLT-2026-913", title="Rollback Deleted File")
+    dlt_fail.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-913\n"
+        "title: Rollback Deleted File\n"
+        "status: accepted\n"
+        "intent:\n"
+        "  kind: enabler\n"
+        "  motivation: Verify rollback restores unlinked file.\n"
+        "mutations:\n"
+        "  - action: remove_policy\n"
+        "    target_policy: POL-902-RESTORE\n"
+        "  - action: modify_container\n"
+        "    target_container: CNT-DOES-NOT-EXIST\n"
+        "    details: Trigger failure after deleting POL-902-RESTORE.\n"
+        "---\n"
+        "= Rollback Deleted File\n",
+        encoding="utf-8",
+    )
+    apply_ok, apply_msg, _, _ = apply_delta(eidos_dir, "DLT-2026-913", execute=True)
+    assert apply_ok is False
+    assert "cannot execute" in apply_msg.lower() or "not found" in apply_msg.lower()
+    assert pol_restore.exists(), "Deleted policy file was NOT restored on transaction rollback!"
+    assert pol_restore.read_text(encoding="utf-8") == original_pol_bytes
+
+

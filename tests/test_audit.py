@@ -181,7 +181,10 @@ tombstone:
     src_dir.mkdir(parents=True)
     # 1. Substring CMP-CLI-APP must NOT match removed CMP-CLI
     (src_dir / "safe.py").write_text("active = 'CMP-CLI-APP'\n", encoding="utf-8")
-    # 2. Co-occurring terms on the same line: CMP-CLI is exempt, but CMP-LEAKED on the same line must still be inspected!
+    # 2a. Co-occurring terms in src/app.py (which has tombstone pattern "CMP-CLI"):
+    #     CMP-CLI must be approved (tombstone_exempt), while CMP-LEAKED on the SAME line must be flagged!
+    (src_dir / "app.py").write_text("pair = ('CMP-CLI', 'CMP-LEAKED')\n", encoding="utf-8")
+    # 2b. Co-occurring terms in src/other.py (no tombstone): both must be flagged
     (src_dir / "other.py").write_text("pair = ('CMP-CLI', 'CMP-LEAKED')\n", encoding="utf-8")
     # 3. Compressed .gz archive must be skipped
     (src_dir / "bundle.html.gz").write_text("CMP-CLI CMP-LEAKED\n", encoding="utf-8")
@@ -195,7 +198,14 @@ tombstone:
     flagged_files = {f.file_path for f in res.unacknowledged_findings + res.approved_findings}
     assert "src/safe.py" not in flagged_files
     assert "src/bundle.html.gz" not in flagged_files
-    # Both CMP-CLI and CMP-LEAKED on the same line in src/other.py were evaluated
+    # In src/app.py, CMP-CLI is tombstone_exempt while CMP-LEAKED on the same line is unacknowledged!
+    app_unack = {f.matched_term for f in res.unacknowledged_findings if f.file_path == "src/app.py"}
+    app_approved = {
+        (f.matched_term, f.classification) for f in res.approved_findings if f.file_path == "src/app.py"
+    }
+    assert app_unack == {"CMP-LEAKED"}
+    assert app_approved == {("CMP-CLI", "tombstone_exempt")}
+    # Both CMP-CLI and CMP-LEAKED on the same line in src/other.py were evaluated as unacknowledged
     other_terms = {f.matched_term for f in res.unacknowledged_findings if f.file_path == "src/other.py"}
     assert other_terms == {"CMP-CLI", "CMP-LEAKED"}
     # Co-located TypeScript test was classified as negative_test
@@ -213,5 +223,134 @@ tombstone:
     assert err_res.status == "ERROR"
     assert err_res.is_clean is False
     assert "Simulated corrupt index.db" in (err_res.error_message or "")
+
+
+def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
+    """Verify active GraphViolation detection, inline_exempt, historical_ledger, cleanup_routine, active_docs_leak, and --strict CLI exit code."""
+    import eidos.core.index.graph_index as gi
+
+    eidos_dir = tmp_path / "eidos"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    deltas_dir = eidos_dir / "deltas"
+    docs_dir = tmp_path / "docs"
+    src_dir = tmp_path / "src" / "eidos" / "core" / "lifecycle"
+    for d in (cnt_dir, deltas_dir, docs_dir, src_dir):
+        d.mkdir(parents=True)
+
+    # Active container CNT-KEEP has a frontmatter dependency edge pointing to CNT-OLD
+    (cnt_dir / "cnt-keep.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-KEEP\n"
+        "name: Keep Service\n"
+        "container_type: service\n"
+        "runtime: Python\n"
+        "package_path: src/keep\n"
+        "dependencies:\n"
+        "  internal_containers:\n"
+        "    - CNT-OLD\n"
+        "---\n"
+        "= Keep Service\n\n"
+        "Calls xref:cnt-old.adoc[CNT-OLD].\n",
+        encoding="utf-8",
+    )
+    (cnt_dir / "cnt-old.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-OLD\n"
+        "name: Old Service\n"
+        "container_type: service\n"
+        "runtime: Python\n"
+        "package_path: src/old\n"
+        "---\n"
+        "= Old Service\n",
+        encoding="utf-8",
+    )
+    (deltas_dir / "dlt-2026-996.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-996\n"
+        "title: Remove Old Container\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: enabler\n"
+        "  motivation: Retire CNT-OLD\n"
+        "mutations:\n"
+        "  - action: remove_container\n"
+        "    target_container: CNT-OLD\n"
+        "---\n"
+        "= Remove Old Container\n",
+        encoding="utf-8",
+    )
+    # Historical ledger reference in another delta
+    (deltas_dir / "dlt-2026-001.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-001\n"
+        "title: Earlier Delta\n"
+        "status: applied\n"
+        "intent:\n"
+        "  kind: feature\n"
+        "  motivation: Introduced CNT-OLD\n"
+        "mutations: []\n"
+        "---\n"
+        "= Earlier Delta mentioning CNT-OLD\n",
+        encoding="utf-8",
+    )
+    # Inline exemption comment in source code
+    (tmp_path / "src" / "keep.py").write_text(
+        "LEGACY_ID = 'CNT-OLD'  # eidos:allow-retired\n",
+        encoding="utf-8",
+    )
+    # Cleanup routine in src/eidos/core/lifecycle/audit.py
+    (src_dir / "audit.py").write_text(
+        "def remove_legacy(): return 'CNT-OLD'\n",
+        encoding="utf-8",
+    )
+    # Unacknowledged documentation leak in docs/guide.md
+    (docs_dir / "guide.md").write_text(
+        "See CNT-OLD architecture details.\n",
+        encoding="utf-8",
+    )
+
+    try:
+        engine = AuditEngine(repo_root=tmp_path, eidos_dir=eidos_dir)
+        res = engine.audit_delta("DLT-2026-996")
+        assert res.is_clean is False
+        assert res.status == "LEAKS_DETECTED"
+        assert any(
+            v.source_id == "CNT-KEEP" and v.target_id == "CNT-OLD" for v in res.graph_violations
+        )
+        approved_by_class = {f.classification for f in res.approved_findings}
+        assert "tombstone_exempt" in approved_by_class
+        assert "historical_ledger" in approved_by_class
+        assert "cleanup_routine" in approved_by_class
+
+        unack_by_class = {f.classification for f in res.unacknowledged_findings}
+        assert "active_docs_leak" in unack_by_class
+        assert "active_spec_leak" in unack_by_class
+
+        # CLI --strict exits with code 1 when leaks/violations are detected
+        res_strict = runner.invoke(
+            app, ["delta", "audit", "DLT-2026-996", "--path", str(eidos_dir), "--strict"]
+        )
+        assert res_strict.exit_code == 1
+
+        # CLI on missing delta exits with code 1 and outputs JSON error payload
+        res_missing = runner.invoke(
+            app, ["delta", "audit", "DLT-2026-404", "--path", str(eidos_dir), "--json"]
+        )
+        assert res_missing.exit_code == 1
+        missing_payload = json.loads(res_missing.stdout)
+        assert missing_payload["status"] == "ERROR"
+    finally:
+        if gi._INDEX_INSTANCE is not None:
+            gi._INDEX_INSTANCE.close()
+            gi._INDEX_INSTANCE = None
+
 
 

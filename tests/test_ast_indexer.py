@@ -86,7 +86,7 @@ def test_inv_index_polyglot_symbol_precision():
         assert tsx_ms < max_tsx_ms
         # App function should be extracted
         fn_names = {s.name for s in tsx_symbols}
-        assert "App" in fn_names or len(tsx_symbols) > 0
+        assert "App" in fn_names
 
     # 3. Go type_spec (struct / interface) and receiver method parent linking
     go_code = (
@@ -219,6 +219,7 @@ def test_cli_repo_map_and_find_symbol():
 
     # 3. find-symbol text
     res_sym = runner.invoke(app, ["index", "find-symbol", "ArchitecturalIndex"])
+    assert res_sym.exit_code == 0
     assert "CNT-EIDOS-IND" in res_sym.output
 
     # 4. find-symbol json
@@ -234,7 +235,6 @@ def test_cli_repo_map_and_find_symbol():
 
     res_top_sym = runner.invoke(app, ["find-symbol", "AstGrepIndexer"])
     assert res_top_sym.exit_code != 0
-
 
 
 def test_classify_design_changes_categories():
@@ -274,9 +274,21 @@ def test_classify_design_changes_categories():
         == "ui_contract"
     )
 
-    # Token modules and added/deleted files
+    # Token modules, Svelte/Vue props, and added/deleted files
     assert (
         classify_design_changes("export const c = '#111';", "export const c = '#222';", "md3-tokens.ts")[0] == "token"
+    )
+    assert (
+        classify_design_changes("export let size = 'md';", "export let size = 'lg';\nexport let icon = '';", "Btn.svelte")[0]
+        == "ui_contract"
+    )
+    assert (
+        classify_design_changes(
+            "<script setup>defineProps<{id: string}>()</script>",
+            "<script setup>defineProps<{id: string, active: boolean}>()</script>",
+            "Card.vue",
+        )[0]
+        == "ui_contract"
     )
     assert classify_design_changes(None, ".a{}", "new.css")[0] == "token"
     assert classify_design_changes("x", None, "Old.tsx")[0] == "ui_contract"
@@ -358,3 +370,85 @@ def test_polyglot_language_native_visibility_rules():
     assert ("function", "", "exported_fn") in py_pub
     assert ("function", "", "internal_but_no_underscore") not in py_pub
 
+
+def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(monkeypatch):
+    """Verify Rust struct/enum/trait/impl extraction, polyglot test binding extraction, repo-map truncation, and AST_GREP_AVAILABLE=False fallback."""  # eidos:fixture
+    import eidos.core.index.ast_indexer as ast_mod
+    from eidos.core.index.ast_indexer import AstGrepIndexer, FallbackIndexer
+
+    # 1. Rust struct, enum, trait, and impl method extraction across AstGrepIndexer and FallbackIndexer
+    rs_code = (
+        "pub struct VaultConfig {\n    pub key: String,\n}\n\n"
+        "pub enum VaultMode {\n    Strict,\n    Lenient,\n}\n\n"
+        "pub trait Unlocker {\n    fn unlock(&self) -> bool;\n}\n\n"
+        "impl VaultConfig {\n"
+        "    pub fn new(key: String) -> Self {\n        Self { key }\n    }\n"
+        "}\n\n"
+        "#[test]\n"
+        "fn test_vault_invariant() {\n"
+        "    // INV-RS-VAULT-001 and POL-001\n"
+        "    assert!(true);\n"
+        "}\n"
+    )
+    ast_idx = AstGrepIndexer()
+    rs_syms = {s.name: s for s in ast_idx.extract_symbols("src/lib.rs", rs_code)}
+    assert rs_syms["VaultConfig"].kind == "struct"
+    assert rs_syms["VaultMode"].kind == "enum"
+    assert rs_syms["Unlocker"].kind == "interface"
+    assert rs_syms["new"].kind == "method"
+    assert rs_syms["new"].parent_symbol == "VaultConfig"
+
+    fb_idx = FallbackIndexer()
+    fb_rs_syms = {s.name: s for s in fb_idx.extract_symbols("src/lib.rs", rs_code)}
+    assert fb_rs_syms["VaultConfig"].kind == "struct"
+    assert fb_rs_syms["VaultMode"].kind == "enum"
+    assert fb_rs_syms["Unlocker"].kind == "interface"
+
+    # 2. Polyglot extract_test_bindings across TS, Go, Rust, and Java
+    ts_test = (
+        "it('enforces token budget', () => {\n"
+        "  // INV-TS-BUDGET-001\n"
+        "  expect(true).toBe(true);\n"
+        "});\n"
+    )
+    go_test = (
+        "package app\n\n"
+        "func TestStoreSync(t *testing.T) {\n"
+        "    // INV-GO-SYNC-001\n"
+        "}\n"
+    )
+    java_test = (
+        "public class AuthTest {\n"
+        "    @Test\n"
+        "    public void verifiesAuthToken() {\n"
+        "        // INV-JAVA-AUTH-001\n"
+        "    }\n"
+        "}\n"
+    )
+    for engine in (ast_idx, fb_idx):
+        rs_b = engine.extract_test_bindings("src/lib.rs", rs_code)
+        assert any("INV-RS-VAULT-001" in b.invariants for b in rs_b)
+        ts_b = engine.extract_test_bindings("src/app.test.ts", ts_test)
+        assert any("INV-TS-BUDGET-001" in b.invariants for b in ts_b)
+        go_b = engine.extract_test_bindings("pkg/store_test.go", go_test)
+        assert any("INV-GO-SYNC-001" in b.invariants for b in go_b)
+        java_b = engine.extract_test_bindings("src/AuthTest.java", java_test)
+        assert any("INV-JAVA-AUTH-001" in b.invariants for b in java_b)
+
+    # 3. Simulated AST_GREP_AVAILABLE = False delegates cleanly to FallbackIndexer
+    monkeypatch.setattr(ast_mod, "AST_GREP_AVAILABLE", False)
+    assert isinstance(ast_mod.get_ast_indexer(), FallbackIndexer)
+    delegated_syms = ast_idx.extract_symbols("src/lib.rs", rs_code)
+    assert any(s.name == "VaultConfig" for s in delegated_syms)
+    delegated_bindings = ast_idx.extract_test_bindings("src/lib.rs", rs_code)
+    assert any("INV-RS-VAULT-001" in b.invariants for b in delegated_bindings)
+
+    # 4. Broken Python syntax falls back to regex in FallbackIndexer without raising SyntaxError
+    broken_py = "class PartialClass:\n    def ok_func(x):\n        return x\n    def broken(:\n"
+    broken_syms = fb_idx.extract_symbols("broken.py", broken_py)
+    assert {s.name for s in broken_syms} >= {"PartialClass", "ok_func"}
+
+    # 5. Repo map truncation marker under tight token budget
+    many_files = {f"src/mod_{i}.py": delegated_syms for i in range(25)}
+    truncated_map = fb_idx.generate_repo_map(many_files, max_tokens=40)
+    assert "... [remaining modules truncated to preserve context token budget]" in truncated_map

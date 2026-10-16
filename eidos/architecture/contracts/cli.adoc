@@ -117,11 +117,10 @@ Bootstraps a repository with an empty Eidos living specification skeleton, an em
   - `0`: Initialization and immediate validation successful.
   - `1`: Directory already initialized without `--force`, or validation failed.
 
-=== `eidos doctor [--path PATH] [--fix] [--json]`
+=== `eidos doctor [--path PATH] [--json]`
 Runs a comprehensive workspace health and configuration diagnostic across living specifications, knowledge graph index, agent plugin installations, and git hooks.
 * **Options**:
   - `--path, -p`: Path to eidos specifications directory (defaults to `./eidos`).
-  - `--fix`: Automatically repair detected index or symlink view issues.
   - `--json`: Output diagnostic report in JSON format.
 * **Exit Codes**:
   - `0`: All diagnostic checks passed.
@@ -130,8 +129,8 @@ Runs a comprehensive workspace health and configuration diagnostic across living
 === `eidos hook`
 Executes CLI-native agent lifecycle hooks for documentation linting and spec-to-code drift gates across supported AI coding harnesses.
 * **Sub-commands**:
-  - `lint [--event <event>] [--workspace <path>]`: Evaluates PreToolUse / PostToolUse documentation and markdown placement policies.
-  - `drift [--event <event>] [--workspace <path>]`: Evaluates PostInvocation / Stop spec-to-code drift gates with Block-Once fingerprint persistence.
+  - `lint [--event <event>] [--path <path>]`: Evaluates PreToolUse / PostToolUse documentation and markdown placement policies.
+  - `drift [--event <event>] [--path <path>]`: Evaluates PostInvocation / Stop spec-to-code drift gates with Block-Once fingerprint persistence.
 * **Exit Codes**:
   - `0`: Hook evaluation completed (JSON decision emitted to stdout).
 

@@ -13,7 +13,7 @@ def validator():
 
 
 def test_bundled_schemas_loaded(validator):
-    """Verify that all core v1 schemas are successfully preloaded."""
+    """Verify that all 16 core v1 schemas are successfully preloaded (including path-qualified keys)."""
     expected_schemas = [
         "system.schema.yaml",
         "domain.schema.yaml",
@@ -24,7 +24,13 @@ def test_bundled_schemas_loaded(validator):
         "delta.schema.yaml",
         "architecture.schema.yaml",
         "container.schema.yaml",
+        "component.schema.yaml",
         "contract.schema.yaml",
+        "design/system.schema.yaml",
+        "design/ui-component.schema.yaml",
+        "design/screen.schema.yaml",
+        "design/client.schema.yaml",
+        "design/flow.schema.yaml",
     ]
     for schema_name in expected_schemas:
         assert schema_name in validator._schema_cache, f"Missing schema: {schema_name}"
@@ -2005,9 +2011,164 @@ def test_deep_review_subsystem_1_models_workspace_and_validator_edge_cases(tmp_p
     assert full_report.is_clean, f"Unexpected schema/ref errors: {full_report.schema_errors} {full_report.broken_references}"
 
 
+def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp_path):
+    """Verify SQLite spec_validation_cache second-tier SHA-256 hits, DTCG token edge cases, clean contract protocols, parser BOM/rules, and workspace helpers."""  # eidos:fixture
+    import os
+    import sqlite3
 
+    from eidos.core.spec.parser import extract_frontmatter
+    from eidos.core.workspace.assets import (
+        get_agent_plugins_schemas_dir,
+        get_assets_path,
+        get_plugin_reference_dir,
+        get_schemas_dir,
+        get_v1_schemas_dir,
+    )
+    from eidos.core.workspace.project import find_repo_root, get_tracked_files, is_generated_or_vendored
 
+    # 1. Parser edge cases: UTF-8 BOM, multiple --- horizontal rules in body, unclosed ---, non-dict YAML
+    fm_bom, body_bom, err_bom = extract_frontmatter(
+        "\ufeff---\ntype: product/policy\nid: POL-BOM\n---\n= Title\n\n---\nHorizontal rule\n"
+    )
+    assert err_bom is None and fm_bom["id"] == "POL-BOM"
+    assert "---\nHorizontal rule" in body_bom
 
+    _, _, err_unclosed = extract_frontmatter("---\ntype: product/policy\nid: POL-UNCLOSED\n")
+    assert err_unclosed is not None and "No closing frontmatter delimiter" in err_unclosed
 
+    _, _, err_list = extract_frontmatter("---\n- item1\n- item2\n---\n= Body\n")
+    assert err_list is not None and "dictionary" in err_list
+
+    # 2. Workspace helpers: find_repo_root from domains/ or policies/, get_tracked_files, is_generated_or_vendored, assets
+    stand_root = tmp_path / "standalone_ws"
+    (stand_root / "eidos" / "policies").mkdir(parents=True)
+    (stand_root / "src").mkdir(parents=True)
+    (stand_root / "src" / "main.py").write_text("x = 1\n", encoding="utf-8")
+    (stand_root / "node_modules").mkdir(parents=True)
+    (stand_root / "node_modules" / "ignored.js").write_text("x = 1\n", encoding="utf-8")
+    assert find_repo_root(stand_root / "eidos" / "policies") == stand_root
+    assert get_tracked_files(stand_root) == ["src/main.py"]
+    assert is_generated_or_vendored(Path.cwd(), ["src/eidos/core/spec/validator.py"]) == set()
+    assert get_schemas_dir().is_dir()
+    assert get_v1_schemas_dir().is_dir()
+    assert get_agent_plugins_schemas_dir().is_dir()
+    assert get_plugin_reference_dir().is_dir()
+    with pytest.raises(FileNotFoundError):
+        get_assets_path("nonexistent_asset_subpath_999")
+
+    # 3. SQLite spec_validation_cache tier-1 (mtime_ns+size) and tier-2 (mtime bumped, sha256 identical) hits
+    eidos_dir = tmp_path / "eidos"
+    pol_dir = eidos_dir / "policies"
+    ds_dir = eidos_dir / "design" / "systems" / "clean"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    ctr_dir = eidos_dir / "architecture" / "contracts"
+    src_dir = tmp_path / "src" / "clean"
+    for d in (pol_dir, ds_dir, cnt_dir, ctr_dir, src_dir):
+        d.mkdir(parents=True, exist_ok=True)
+
+    pol_file = pol_dir / "pol.adoc"
+    pol_file.write_text(
+        "---\n"
+        "type: product/policy\n"
+        "schema: schemas/v1/product/policy.schema.yaml\n"
+        "id: POL-CACHE-001\n"
+        "title: Cache Policy\n"
+        "category: quality\n"
+        "rule: Validate caching\n"
+        "enforcement:\n"
+        "  severity: blocking\n"
+        "  mechanism: automated_test\n"
+        "---\n"
+        "= Cache Policy\n",
+        encoding="utf-8",
+    )
+    validator = SpecValidator()
+    r1 = validator.validate_directory(eidos_dir)
+    assert r1.is_clean
+    cache_db = eidos_dir / ".cache" / "index.db"
+    assert cache_db.exists()
+
+    # Bump mtime_ns without changing content -> tier-2 sha256 hit updates mtime_ns in cache
+    st = pol_file.stat()
+    os.utime(pol_file, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))
+    r2 = validator.validate_directory(eidos_dir)
+    assert r2.is_clean
+    with sqlite3.connect(cache_db) as conn:
+        row = conn.execute("SELECT mtime_ns FROM spec_validation_cache WHERE file_path LIKE '%pol.adoc'").fetchone()
+        assert row is not None and row[0] == pol_file.stat().st_mtime_ns
+
+    # 4. Positive & negative W3C DTCG token validation (valid manifest, unsupported $type, empty object)
+    (ds_dir / "tokens.json").write_text(
+        '{"$schema": "https://tr.designtokens.org/format/", "color": {"$type": "color", "primary": {"$value": "#0055ff"}}}',
+        encoding="utf-8",
+    )
+    (ds_dir / "system.adoc").write_text(
+        "---\n"
+        "type: design/system\n"
+        "schema: schemas/v1/design/system.schema.yaml\n"
+        "id: DS-CLEAN\n"
+        "title: Clean DS\n"
+        "status: active\n"
+        "tokens:\n"
+        "  spec_format: w3c_design_tokens\n"
+        "  manifest: tokens.json\n"
+        "---\n"
+        "= Clean DS\n",
+        encoding="utf-8",
+    )
+    assert validator.validate_directory(eidos_dir).is_clean
+
+    (ds_dir / "tokens.json").write_text(
+        '{"color": {"bad": {"$value": "#fff", "$type": "not_a_dtcg_type"}, "empty_group": {}}}',
+        encoding="utf-8",
+    )
+    bad_dtcg = "\n".join(validator.validate_directory(eidos_dir).broken_references)
+    assert "unsupported $type 'not_a_dtcg_type'" in bad_dtcg
+    assert "missing required '$value'" in bad_dtcg
+
+    # Restore valid tokens.json and test clean contract protocol verifiers (ABC, Protocol[T], async def)
+    (ds_dir / "tokens.json").write_text(
+        '{"color": {"$type": "color", "primary": {"$value": "#0055ff"}}}',
+        encoding="utf-8",
+    )
+    (cnt_dir / "clean.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-CLEAN\n"
+        "name: Clean Service\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/clean\n"
+        "---\n"
+        "= Clean Service\n",
+        encoding="utf-8",
+    )
+    (src_dir / "ports.py").write_text(
+        "from abc import ABC\n"
+        "from typing import Generic, Protocol, TypeVar\n"
+        "T = TypeVar('T')\n"
+        "class AsyncRepo(Protocol[T]):\n"
+        "    async def fetch_item(self, item_id: str) -> T: ...\n"
+        "class BaseService(ABC):\n"
+        "    def health_check(self) -> bool: return True\n",
+        encoding="utf-8",
+    )
+    (ctr_dir / "clean_proto.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-CLEAN-PROTO\n"
+        "title: Clean Protocol\n"
+        "protocol: python_protocol\n"
+        "owning_container: CNT-CLEAN\n"
+        "specification_file: src/clean/ports.py\n"
+        "---\n"
+        "= Clean Protocol\n\n"
+        "Defines `AsyncRepo` (`fetch_item`) and `BaseService` (`health_check`).\n",
+        encoding="utf-8",
+    )
+    clean_rep = validator.validate_directory(eidos_dir)
+    assert clean_rep.is_clean, f"Expected clean protocol report, got: {clean_rep.broken_references}"
 
 

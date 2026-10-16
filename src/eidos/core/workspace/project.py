@@ -70,6 +70,16 @@ def find_repo_root(start_dir: Path | None = None) -> Path:
     if cwd.is_file():
         cwd = cwd.parent
 
+    def _has_eidos_markers(cand: Path) -> bool:
+        return (
+            (cand / "system.adoc").is_file()
+            or (cand / "architecture").is_dir()
+            or (cand / "domains").is_dir()
+            or (cand / "policies").is_dir()
+            or (cand / "deltas").is_dir()
+            or (cand / "design").is_dir()
+        )
+
     for parent in [cwd, *cwd.parents]:
         if (parent / ".git").exists():
             return parent
@@ -77,14 +87,12 @@ def find_repo_root(start_dir: Path | None = None) -> Path:
         if (
             eidos_cand.is_dir()
             and not _is_inside_plugin_or_assets(eidos_cand)
-            and ((eidos_cand / "system.adoc").exists() or (eidos_cand / "architecture").is_dir())
+            and _has_eidos_markers(eidos_cand)
         ):
             return parent
 
     if not _is_inside_plugin_or_assets(cwd) and (
-        cwd.name == "eidos"
-        or (cwd / "system.adoc").is_file()
-        or (cwd / "architecture").is_dir()
+        cwd.name == "eidos" or _has_eidos_markers(cwd)
     ):
         return cwd.parent
 

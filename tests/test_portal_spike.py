@@ -147,13 +147,13 @@ def test_spike_c_c4_mermaid_kanban_react(repo_root):
     assert "handleKeyDown" in cmd_code
 
 
-def test_spike_d_runtime_zero_node_invariant(repo_root):
+def test_spike_d_runtime_zero_node_invariant(repo_root, tmp_path):
     """Spike D: Verify that eidos serve and build-site run with ZERO Node.js runtime dependencies."""
     from eidos.portal.builder import build_static_portal
     from eidos.portal.server import run_portal_server
 
     # 1. Test build_static_portal runs pure Python without Node.js
-    tmp_out = repo_root / ".eidos" / "test_portal_out"
+    tmp_out = tmp_path / "test_portal_out"
     build_static_portal(repo_root / "eidos", tmp_out)
     assert (tmp_out / "index.html").exists()
     assert (tmp_out / "data.json").exists()

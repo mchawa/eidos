@@ -1831,3 +1831,129 @@ def test_dlt_2026_071_plugin_installer_and_validator_fixes(tmp_path):
     assert val_rep.is_valid, f"Unexpected errors: {val_rep.errors}"
     assert "demo-skill" in val_rep.skills
 
+
+def test_plugin_lint_stop_block_once_json_lint_uninstall_and_semver(tmp_path):
+    """Verify handle_lint_stop block-once & multi-key stop-gate coexistence (INV-HOOK-BLOCK-ONCE),
+    JSON syntax linting, ReplacementChunks, post_tool stderr, uninstall_plugin preservation, and compare_semver."""  # eidos:fixture
+    from eidos.plugin.hooks import (
+        _validate_doc_content,
+        execute_lint_hook,
+        handle_drift_stop,
+        handle_lint_pre_tool_use,
+        handle_lint_stop,
+    )
+    from eidos.plugin.version import compare_semver
+
+    eidos_dir = tmp_path / "eidos"
+    dom_dir = eidos_dir / "domains"
+    ds_dir = eidos_dir / "design" / "systems" / "core"
+    dom_dir.mkdir(parents=True)
+    ds_dir.mkdir(parents=True)
+
+    # 1. Invalid domain spec triggers handle_lint_stop on 1st attempt, then releases on 2nd attempt (INV-HOOK-BLOCK-ONCE)
+    bad_dom = dom_dir / "bad.adoc"
+    bad_dom.write_text("---\ntype: product/domain\nid: BAD\n---\n= Bad\n", encoding="utf-8")
+
+    lint1 = handle_lint_stop({}, tmp_path)
+    assert lint1.get("decision") == "continue"
+    lint2 = handle_lint_stop({}, tmp_path)
+    assert lint2.get("decision") == "allow"
+
+    # Verify stop-gate.json preserves lint_fingerprint when handle_drift_stop also writes fingerprint
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@eidos.ai"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
+
+    handle_lint_stop({}, tmp_path)
+    handle_drift_stop({"executionNum": 1, "terminationReason": "model_stop"}, tmp_path)
+    gate_data = json.loads((eidos_dir / ".cache" / "stop-gate.json").read_text(encoding="utf-8"))
+    assert "lint_fingerprint" in gate_data
+    assert "fingerprint" in gate_data
+
+    # 2. _validate_doc_content on malformed JSON inside eidos/, non-mapping YAML frontmatter, and exempt README.adoc
+    bad_json = ds_dir / "tokens.json"
+    bad_json.write_text("{broken json", encoding="utf-8")
+    res_json = _validate_doc_content(bad_json, "{broken json")
+    assert res_json.get("decision") == "deny"
+    assert "JSON Syntax Error" in res_json.get("reason", "")
+
+    res_nonmap = _validate_doc_content(dom_dir / "list.adoc", "---\n- item1\n---\n= List\n")
+    assert res_nonmap.get("decision") == "deny"
+
+    res_exempt = _validate_doc_content(eidos_dir / "README.adoc", "= README without frontmatter\n")
+    assert res_exempt.get("decision") == "allow"
+
+    # 3. Antigravity ReplacementChunks reconstruction in handle_lint_pre_tool_use & post_tool exit code
+    valid_dom = dom_dir / "valid.adoc"
+    valid_dom.write_text(
+        "---\n"
+        "type: product/domain\n"
+        "schema: schemas/v1/product/domain.schema.yaml\n"
+        "id: DOM-VALID\n"
+        "name: Valid Domain\n"
+        "mission: Valid domain mission.\n"
+        "---\n"
+        "= Valid Domain\n",
+        encoding="utf-8",
+    )
+    chunk_payload = {
+        "tool_name": "replace_file_content",
+        "tool_input": {
+            "TargetFile": str(valid_dom),
+            "ReplacementChunks": [
+                {
+                    "TargetContent": "id: DOM-VALID",
+                    "ReplacementContent": "field_without_id: 1",
+                }
+            ],
+        },
+    }
+    pre_res = handle_lint_pre_tool_use(chunk_payload, tmp_path)
+    assert pre_res.get("decision") == "deny"
+
+    post_rc = execute_lint_hook(
+        path=tmp_path,
+        event="post_tool",
+        stdin_data=json.dumps({"stepIdx": 1, "tool_name": "Write", "tool_input": {"file_path": str(bad_dom)}}),
+    )
+    assert post_rc == 0
+
+    # 4. uninstall_plugin preserves coexisting user settings in .claude/settings.json, .vscode/settings.json, .aider.conf.yml
+    ws = tmp_path / "uninstall_ws"
+    (ws / ".claude").mkdir(parents=True)
+    (ws / ".vscode").mkdir(parents=True)
+    (ws / ".claude" / "settings.json").write_text(
+        json.dumps({"theme": "dark", "hooks": {"CustomHook": [{"hooks": [{"type": "command", "command": "echo hi"}]}]}}),
+        encoding="utf-8",
+    )
+    (ws / ".vscode" / "settings.json").write_text(
+        json.dumps({"editor.tabSize": 2, "chat.promptFilesLocations": {"custom/prompts": True}}),
+        encoding="utf-8",
+    )
+    (ws / ".aider.conf.yml").write_text("model: sonnet\nread:\n  - CONVENTIONS.md\n", encoding="utf-8")
+
+    install_plugin(target=PluginInstallTarget.ALL, project_dir=ws, force=True)
+    uninstall_plugin(target=PluginInstallTarget.ALL, project_dir=ws)
+
+    claude_after = json.loads((ws / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    assert claude_after.get("theme") == "dark"
+    assert "CustomHook" in claude_after.get("hooks", {})
+
+    vscode_after = json.loads((ws / ".vscode" / "settings.json").read_text(encoding="utf-8"))
+    assert vscode_after.get("editor.tabSize") == 2
+    assert vscode_after.get("chat.promptFilesLocations", {}).get("custom/prompts") is True
+
+    aider_after = (ws / ".aider.conf.yml").read_text(encoding="utf-8")
+    assert "CONVENTIONS.md" in aider_after
+    assert "AGENTS.md" not in aider_after
+
+    # 5. compare_semver edge cases
+    assert compare_semver("0.8.0", "0.7.9") == 1
+    assert compare_semver("0.8.0-alpha.1", "0.8.0") == -1
+    assert compare_semver("1.2.0", "1.2.0") == 0
+    with pytest.raises(ValueError, match="Cannot compare invalid semver strings"):
+        compare_semver("invalid", "0.1.0")
+
+

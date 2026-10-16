@@ -89,10 +89,10 @@ This container represents the embedded relational and lexical indexing engine un
 |===
 | Component ID | Name | Responsibility | Source Path
 | `CMP-GRAPH-STORAGE` | **GraphStorage** | SQLite schema (`entities`, `edges`, `indexed_files`, `symbol_mappings`, `code_symbols`, `specs_fts`) with versioned drop-and-rebuild migration, WAL mode, repo root discovery, and connection pool | `src/eidos/core/index/storage.py`
-| `CMP-INCREMENTAL-SYNC-ENGINE` | **IncrementalSyncEngine** | Full incremental sync pipeline (`sync_index`, `check_index_dirty`, `reconcile_code_ownership`) with SHA-256 content and mtime dirty checking across all declared package paths (<5ms) | `src/eidos/core/index/sync.py`
+| `CMP-INCREMENTAL-SYNC-ENGINE` | **IncrementalSyncEngine** | Full incremental sync pipeline (`sync_index`, `check_index_dirty`, `reconcile_code_ownership`) with SHA-256 content, mtime dirty checking (<5ms), and child `INV-*` symbol mapping cleanup on spec update/deletion | `src/eidos/core/index/sync.py`
 | `CMP-FTS-QUERY-ENGINE` | **FTSQueryEngine** | Column-weighted SQLite FTS5 BM25 search (`0, 4, 2, 1, 2, 2`), symbol resolution (`find_symbol_in_db`), and structural repo-map assembly (`generate_repo_map_from_db`) | `src/eidos/core/index/query.py`
 | `CMP-GRAPH-TRAVERSAL-ENGINE` | **GraphTraversalEngine** | Recursive CTE graph queries (`execute_blast_radius`, `execute_incoming_references`, `resolve_symbol_or_path_in_db`) evaluating k-hop blast radius and incoming references (<2ms) | `src/eidos/core/index/query.py`
 | `CMP-TIERED-CONTEXT-COMPRESSOR` | **TieredContextCompressor** | 3-tier token-budgeted context extraction (`build_tiered_context_slice`, `TieredContextSlice` inheriting `ArchitecturalContextSlice.to_markdown`) with >=60% reduction, tier-aware `decisions` rendering, slice-scoped task filtering, and domain/design-system member expansion | `src/eidos/core/index/context.py`
-| `CMP-AST-SYMBOL-INDEXER` | **AstSymbolIndexer** | Polyglot AST symbol extraction (`ast-grep` with stdlib `ast` fallback) feeding persisted symbol coordinates, structural repo maps, and test-to-invariant bindings | `src/eidos/core/index/ast_indexer.py`
+| `CMP-AST-SYMBOL-INDEXER` | **AstSymbolIndexer** | Polyglot AST symbol extraction (`ast-grep` with automatic `FallbackIndexer` delegation, Rust `impl` method parenting, and Python regex fallback) feeding persisted symbol coordinates, structural repo maps, and test-to-invariant bindings | `src/eidos/core/index/ast_indexer.py`
 |===
 

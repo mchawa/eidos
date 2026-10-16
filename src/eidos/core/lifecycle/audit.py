@@ -428,17 +428,31 @@ class AuditEngine:
             if isinstance(entry, dict):
                 allowed_p = entry.get("path", "")
                 pat = entry.get("pattern")
-                if allowed_p and allowed_p in rel_str and (not pat or re.search(str(pat), line_text)):
-                    return AuditFinding(
-                        file_path=rel_str,
-                        line_number=line_number,
-                        matched_term=matched_term,
-                        line_snippet=line_text[:80],
-                        classification="tombstone_exempt",
-                        is_approved=True,
-                        reason=entry.get("reason", "Declared tombstone policy exception"),
-                        risk_level="low",
+                if allowed_p and allowed_p in rel_str:
+                    pat_str = str(pat) if pat else ""
+                    pat_matches = (
+                        True
+                        if not pat_str
+                        else (
+                            bool(re.search(pat_str, matched_term))
+                            if re.search(
+                                r"\b(?:CNT|CMP|CTR|CAP|POL|DOM|PER|DS|SCR|UIC|CLT|FLOW|INV)-[A-Z0-9_-]+\b",
+                                pat_str,
+                            )
+                            else bool(re.search(pat_str, line_text))
+                        )
                     )
+                    if pat_matches:
+                        return AuditFinding(
+                            file_path=rel_str,
+                            line_number=line_number,
+                            matched_term=matched_term,
+                            line_snippet=line_text[:80],
+                            classification="tombstone_exempt",
+                            is_approved=True,
+                            reason=entry.get("reason", "Declared tombstone policy exception"),
+                            risk_level="low",
+                        )
 
         # 4. Inline Source Code Exemption Annotations
         if any(ann in line_text or ann in prev_line for ann in ("# eidos:allow-retired", "# eidos:tombstone")):

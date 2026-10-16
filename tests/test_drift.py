@@ -2243,3 +2243,172 @@ def test_deep_review_subsystem_4_shallow_clone_deleted_spec_and_json_cli(tmp_pat
     assert _infer_event("post-invocation", {}) == "post_invocation"
 
 
+def test_real_git_structural_and_design_drift_and_cache_mtime_hit(tmp_path):
+    """End-to-end Git test (zero diff/version mocks) for structural drift, comment-only vs substantive spec edit,
+    design token drift, HEAD==main fallback to HEAD~1, invalid head_ref, and test_binding_cache SHA-256 hit."""  # eidos:fixture
+    import os
+    import sqlite3
+    import subprocess
+    import time
+
+    import pytest
+
+    import eidos.core.index.graph_index as gi
+    from eidos.vcs.diff import GitResolutionError
+    from eidos.vcs.drift import detect_drift
+    from eidos.vcs.invariants import _load_or_update_test_binding_cache
+
+    repo = tmp_path / "real_git_repo"
+    eidos_dir = repo / "eidos"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    ds_dir = eidos_dir / "design" / "systems" / "core"
+    clt_dir = eidos_dir / "design" / "clients" / "web"
+    pol_dir = eidos_dir / "policies"
+    svc_dir = repo / "src" / "svc"
+    tests_dir = repo / "tests"
+    for d in (cnt_dir, ds_dir, clt_dir, pol_dir, svc_dir, tests_dir):
+        d.mkdir(parents=True)
+
+    cnt_file = cnt_dir / "cnt-svc.adoc"
+    cnt_file.write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-SVC\n"
+        "name: Order Service\n"
+        "container_type: service\n"
+        "runtime: Python\n"
+        "package_path: src/svc\n"
+        "---\n"
+        "= Order Service\n\n"
+        "Baseline architecture.\n",
+        encoding="utf-8",
+    )
+    tokens_file = ds_dir / "tokens.json"
+    tokens_file.write_text(
+        '{"color": {"primary": {"$value": "#0055ff", "$type": "color"}}}',
+        encoding="utf-8",
+    )
+    (ds_dir / "system.adoc").write_text(
+        "---\n"
+        "type: design/system\n"
+        "schema: schemas/v1/design/system.schema.yaml\n"
+        "id: DS-CORE\n"
+        "title: Core Tokens\n"
+        "status: active\n"
+        "tokens:\n"
+        "  spec_format: w3c_design_tokens\n"
+        "  manifest: tokens.json\n"
+        "---\n"
+        "= Core Tokens\n",
+        encoding="utf-8",
+    )
+    (clt_dir / "client.adoc").write_text(
+        "---\n"
+        "type: design/client\n"
+        "schema: schemas/v1/design/client.schema.yaml\n"
+        "id: CLT-WEB\n"
+        "title: Web Client\n"
+        "platform: web-spa\n"
+        "container: CNT-SVC\n"
+        "design_system: DS-CORE\n"
+        "---\n"
+        "= Web Client\n",
+        encoding="utf-8",
+    )
+    (pol_dir / "pol.adoc").write_text(
+        "---\n"
+        "type: product/policy\n"
+        "schema: schemas/v1/product/policy.schema.yaml\n"
+        "id: POL-SVC-001\n"
+        "title: Service Policy\n"
+        "category: quality\n"
+        "rule: Enforce service invariant.\n"
+        "invariants:\n"
+        "  - id: INV-SVC-001\n"
+        "    rule: Service handler must be tested.\n"
+        "    test_binding: tests/test_svc.py::test_inv_svc\n"
+        "---\n"
+        "= Service Policy\n",
+        encoding="utf-8",
+    )
+    handler_py = svc_dir / "handler.py"
+    handler_py.write_text("def health() -> bool:\n    return True\n", encoding="utf-8")
+    theme_css = svc_dir / "theme.css"
+    theme_css.write_text(":root { --color-primary: #0055ff; }\n", encoding="utf-8")
+    test_file = tests_dir / "test_svc.py"
+    test_file.write_text("def test_inv_svc():\n    # INV-SVC-001\n    assert True\n", encoding="utf-8")
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Dev"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "initial baseline"], cwd=repo, check=True, capture_output=True)
+
+    try:
+        # 1. Structural addition in code + comment-only edit in cnt-svc.adoc -> drift detected!
+        handler_py.write_text(
+            "def health() -> bool:\n    return True\n\ndef process_order(order_id: str) -> dict:\n    return {'id': order_id}\n",
+            encoding="utf-8",
+        )
+        cnt_file.write_text(
+            cnt_file.read_text(encoding="utf-8") + "// trivial comment only\n",
+            encoding="utf-8",
+        )
+        rep1 = detect_drift(repo_root=repo, eidos_dir=eidos_dir, uncommitted=True)
+        assert rep1.drift_detected is True
+        assert len(rep1.trivially_covered_files) >= 1
+        assert "CNT-SVC" in rep1.touched_components
+
+        # 2. Substantive update to cnt-svc.adoc -> structural drift resolved!
+        cnt_file.write_text(
+            cnt_file.read_text(encoding="utf-8") + "\nAdded process_order endpoint handler.\n",
+            encoding="utf-8",
+        )
+        rep2 = detect_drift(repo_root=repo, eidos_dir=eidos_dir, uncommitted=True)
+        assert rep2.drift_detected is False
+
+        # 3. Modify CSS token in src/svc/theme.css without updating tokens.json -> design drift detected!
+        theme_css.write_text(":root { --color-primary: #ff0055; }\n", encoding="utf-8")
+        rep3 = detect_drift(repo_root=repo, eidos_dir=eidos_dir, uncommitted=True)
+        assert rep3.drift_detected is True
+        assert len(rep3.uncovered_design_files) >= 1
+
+        # 4. Update tokens.json -> design drift resolved!
+        tokens_file.write_text(
+            '{"color": {"primary": {"$value": "#ff0055", "$type": "color"}}}',
+            encoding="utf-8",
+        )
+        rep4 = detect_drift(repo_root=repo, eidos_dir=eidos_dir, uncommitted=True)
+        assert rep4.drift_detected is False
+
+        # 5. Commit on main so HEAD == main, then run detect_drift(uncommitted=False) to exercise HEAD~1 fallback
+        subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "feat: add process_order and update tokens"], cwd=repo, check=True, capture_output=True)
+        rep_committed = detect_drift(repo_root=repo, eidos_dir=eidos_dir, uncommitted=False)
+        assert rep_committed.drift_detected is False
+        assert "src/svc/handler.py" in rep_committed.classification.code_files
+
+        # 6. Invalid head_ref raises GitResolutionError
+        with pytest.raises(GitResolutionError, match="Cannot resolve head Git reference"):
+            detect_drift(repo_root=repo, eidos_dir=eidos_dir, head_ref="nonexistent-head-999", uncommitted=False)
+
+        # 7. test_binding_cache SHA-256 hit when mtime_ns changes but content is identical
+        _load_or_update_test_binding_cache(repo, eidos_dir=eidos_dir)
+        db_path = eidos_dir / ".cache" / "index.db"
+        bump_ns = time.time_ns() + 5_000_000_000
+        os.utime(test_file, ns=(bump_ns, bump_ns))
+        cached = _load_or_update_test_binding_cache(repo, eidos_dir=eidos_dir)
+        assert "tests/test_svc.py" in cached
+        with sqlite3.connect(db_path) as conn:
+            cached_mtime = conn.execute(
+                "SELECT mtime_ns FROM test_binding_cache WHERE file_path = 'tests/test_svc.py';"
+            ).fetchone()
+            assert cached_mtime is not None and cached_mtime[0] == test_file.stat().st_mtime_ns
+    finally:
+        if gi._INDEX_INSTANCE is not None:
+            gi._INDEX_INSTANCE.close()
+            gi._INDEX_INSTANCE = None
+
+
+

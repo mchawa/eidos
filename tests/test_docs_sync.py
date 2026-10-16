@@ -63,6 +63,23 @@ def test_documentation_and_schemas_in_sync():
     for cmd in expected_commands:
         assert f"eidos {cmd}" in cli_doc_text, f"Command 'eidos {cmd}' is not documented in {cli_doc_path}"
 
+    # Dynamically introspect live Typer/Click command tree so newly added commands cannot be undocumented
+    import typer
+
+    from eidos.cli.main import app
+
+    root_click = typer.main.get_command(app)
+    for top_name, top_cmd in getattr(root_click, "commands", {}).items():
+        if getattr(top_cmd, "hidden", False):
+            continue
+        assert f"eidos {top_name}" in cli_doc_text, f"Live CLI command 'eidos {top_name}' missing from {cli_doc_path}"
+        for sub_name, sub_cmd in getattr(top_cmd, "commands", {}).items():
+            if getattr(sub_cmd, "hidden", False):
+                continue
+            assert (
+                f"eidos {top_name} {sub_name}" in cli_doc_text or f"`{sub_name}`" in cli_doc_text
+            ), f"Live CLI subcommand 'eidos {top_name} {sub_name}' missing from {cli_doc_path}"
+
     # 3. Verify all C4 containers are registered in system-architecture.adoc
     sys_arch_path = repo_root / "eidos/architecture/system-architecture.adoc"
     assert sys_arch_path.exists(), "system-architecture.adoc is missing"

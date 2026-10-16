@@ -1019,12 +1019,21 @@ def sync_index(
                 specs_deleted = True
                 index._delete_spec_fts_rows(conn, doc_id, d_rel)
                 conn.execute(
+                    "DELETE FROM symbol_mappings WHERE entity_id = ? OR entity_id IN "
+                    "(SELECT id FROM entities WHERE file_path = ? AND type = 'invariant')",
+                    (doc_id, d_rel),
+                )
+                conn.execute(
+                    "DELETE FROM edges WHERE source_id = ? OR target_id = ? "
+                    "OR source_id IN (SELECT id FROM entities WHERE file_path = ? AND type = 'invariant') "
+                    "OR target_id IN (SELECT id FROM entities WHERE file_path = ? AND type = 'invariant')",
+                    (doc_id, doc_id, d_rel, d_rel),
+                )
+                conn.execute(
                     "DELETE FROM entities WHERE id = ? OR (file_path = ? AND type = 'invariant')",
                     (doc_id, d_rel),
                 )
-                conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?", (doc_id,))
                 conn.execute("DELETE FROM code_symbols WHERE entity_id = ?", (doc_id,))
-                conn.execute("DELETE FROM edges WHERE source_id = ? OR target_id = ?", (doc_id, doc_id))
                 conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
             else:
                 conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
@@ -1067,10 +1076,14 @@ def sync_index(
                     updated_spec_doc_ids.add(old_doc_id)
                     index._delete_spec_fts_rows(conn, old_doc_id, rel_p)
                     conn.execute(
+                        "DELETE FROM symbol_mappings WHERE entity_id = ? OR entity_id IN "
+                        "(SELECT id FROM entities WHERE file_path = ? AND type = 'invariant');",
+                        (old_doc_id, rel_p),
+                    )
+                    conn.execute(
                         "DELETE FROM entities WHERE (id = ? AND file_path = ?) OR (file_path = ? AND type = 'invariant');",
                         (old_doc_id, rel_p, rel_p),
                     )
-                    conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?;", (old_doc_id,))
                     if old_doc_id != new_doc_id:
                         any_doc_id_renamed = True
                         conn.execute("DELETE FROM code_symbols WHERE entity_id = ?;", (old_doc_id,))
@@ -1082,10 +1095,14 @@ def sync_index(
                     any_doc_id_renamed = True
                     index._delete_spec_fts_rows(conn, new_doc_id, rel_p)
                     conn.execute(
+                        "DELETE FROM symbol_mappings WHERE entity_id = ? OR entity_id IN "
+                        "(SELECT id FROM entities WHERE file_path = ? AND type = 'invariant');",
+                        (new_doc_id, rel_p),
+                    )
+                    conn.execute(
                         "DELETE FROM entities WHERE (id = ? AND file_path = ?) OR (file_path = ? AND type = 'invariant');",
                         (new_doc_id, rel_p, rel_p),
                     )
-                    conn.execute("DELETE FROM symbol_mappings WHERE entity_id = ?;", (new_doc_id,))
 
         for p, rel_p, mtime, sha, doc in parsed_specs:
             doc_id = doc.doc_id or p.stem

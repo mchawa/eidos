@@ -709,6 +709,8 @@ def inline_component(
         "responsibility": responsibility,
         "source_path": source_path,
     }
+    if isinstance(comp_fm.get("domain_binding"), str) and comp_fm["domain_binding"]:
+        inline_entry["domain_binding"] = comp_fm["domain_binding"]
     if isinstance(comp_fm.get("invariants"), list) and comp_fm["invariants"]:
         inline_entry["invariants"] = comp_fm["invariants"]
     if isinstance(comp_fm.get("decisions"), list) and comp_fm["decisions"]:

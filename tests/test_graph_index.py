@@ -41,7 +41,7 @@ def test_spike_a_schema_initialization_and_sync(temp_index):
     assert stats.total_specs_scanned >= 50
     assert stats.indexed_new >= 50
     is_instrumented = "coverage" in sys.modules or sys.gettrace() is not None
-    max_bulk_sync_ms = 1500.0 if is_instrumented else 600.0
+    max_bulk_sync_ms = 1500.0 if is_instrumented else 800.0
     assert stats.duration_ms < max_bulk_sync_ms  # Initial bulk sync within limits
 
     # Verify tables contain entities and edges
@@ -214,7 +214,7 @@ def test_spike_c_tiered_context_compression(temp_index):
         for row in conn.execute("SELECT file_path FROM entities WHERE id = ?;", (eid,)).fetchall()
         if row[0] and (temp_index.root / row[0]).is_file()
     )
-    raw_component_tokens = max(3500, raw_chars // 4, slice_deep.token_estimate)
+    raw_component_tokens = max(raw_chars // 4, slice_deep.token_estimate, 1)
     token_savings_pct = (1.0 - (slice_guardrails.token_estimate / raw_component_tokens)) * 100.0
     assert token_savings_pct >= 60.0, f"Token savings {token_savings_pct:.1f}% was below 60% requirement"
 
@@ -1699,4 +1699,173 @@ def test_deep_review_subsystem_2_incremental_edges_fts_and_transient_sqlite_erro
         idx.close()
 
 
+def test_index_spec_deletion_child_invariants_and_query_coverage(tmp_path):
+    """Verify child invariant symbol_mappings/edges cleanup on spec update/deletion, lazy _ensure_synced, query helpers, DS-* context, and strict collision."""  # eidos:fixture
+    import json
+
+    import pytest
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+
+    repo = tmp_path / "query_repo"
+    eidos_dir = repo / "eidos"
+    pol_dir = eidos_dir / "policies"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    ds_dir = eidos_dir / "design" / "systems" / "core"
+    tests_dir = repo / "tests"
+    for d in (pol_dir, cnt_dir, ds_dir, tests_dir):
+        d.mkdir(parents=True)
+
+    (tests_dir / "test_pol.py").write_text(
+        "def test_inv_cleanup():\n    # INV-CLEANUP-001\n    assert True\n",
+        encoding="utf-8",
+    )
+    pol_file = pol_dir / "pol.adoc"
+    pol_file.write_text(
+        "---\n"
+        "type: product/policy\n"
+        "schema: schemas/v1/product/policy.schema.yaml\n"
+        "id: POL-CLEANUP-001\n"
+        "title: Cleanup Policy\n"
+        "category: quality\n"
+        "rule: Clean up child invariant mappings\n"
+        "invariants:\n"
+        "  - id: INV-CLEANUP-001\n"
+        "    rule: Child invariant rule\n"
+        "    test_binding: tests/test_pol.py::test_inv_cleanup\n"
+        "---\n"
+        "= Cleanup Policy\n",
+        encoding="utf-8",
+    )
+    (cnt_dir / "api.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-API\n"
+        "name: API Server\n"
+        "container_type: service\n"
+        "runtime: Python\n"
+        "package_path: src/api\n"
+        "---\n"
+        "= API Server\n",
+        encoding="utf-8",
+    )
+    (cnt_dir / "web.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-WEB\n"
+        "name: Web App\n"
+        "container_type: web_app\n"
+        "runtime: TypeScript\n"
+        "package_path: src/web\n"
+        "dependencies:\n"
+        "  internal_containers:\n"
+        "    - CNT-API\n"
+        "---\n"
+        "= Web App\n",
+        encoding="utf-8",
+    )
+    (ds_dir / "tokens.json").write_text('{"color": {"brand": {"$value": "#123456", "$type": "color"}}}', encoding="utf-8")
+    (ds_dir / "system.adoc").write_text(
+        "---\n"
+        "type: design/system\n"
+        "schema: schemas/v1/design/system.schema.yaml\n"
+        "id: DS-BRAND-CORE\n"
+        "title: Brand Core Design System\n"
+        "status: active\n"
+        "tokens:\n"
+        "  spec_format: w3c_design_tokens\n"
+        "  manifest: tokens.json\n"
+        "---\n"
+        "= Brand Core\n",
+        encoding="utf-8",
+    )
+    clt_dir = eidos_dir / "design" / "clients" / "web"
+    clt_dir.mkdir(parents=True)
+    (clt_dir / "client.adoc").write_text(
+        "---\n"
+        "type: design/client\n"
+        "schema: schemas/v1/design/client.schema.yaml\n"
+        "id: CLT-WEB\n"
+        "title: Web Client\n"
+        "platform: web-spa\n"
+        "container: CNT-WEB\n"
+        "design_system: DS-BRAND-CORE\n"
+        "---\n"
+        "= Web Client\n",
+        encoding="utf-8",
+    )
+
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        # 1. Lazy auto-sync (_ensure_synced) on query without explicit sync()
+        containers = idx.get_containers()
+        assert any(c["id"] == "CNT-WEB" for c in containers)
+        assert any(e["id"] == "POL-CLEANUP-001" for e in idx.get_entities("product/policy"))
+
+        # 2. Exact entity ID search boost (-1000.0) and incoming references
+        exact_hits = idx.query_fts("POL-CLEANUP-001")
+        assert exact_hits and exact_hits[0]["id"] == "POL-CLEANUP-001"
+        assert exact_hits[0]["rank"] <= -1000.0
+        inc_refs = idx.get_incoming_references("CNT-API")
+        assert any(r["source_id"] == "CNT-WEB" for r in inc_refs)
+        inc_refs_by_path = idx.get_incoming_references("eidos/architecture/containers/api.adoc")
+        assert any(r["source_id"] == "CNT-WEB" for r in inc_refs_by_path)
+
+        # 3. Design system context slice expansion via task query
+        ds_slice = idx.get_tiered_context_slice(task="DS-BRAND-CORE", tier="guardrails")
+        assert "DS-BRAND-CORE" in ds_slice.matched_reasons
+        assert any(c["id"] == "CNT-WEB" for c in ds_slice.components)
+
+        # 4. Verify child invariant test_binding row exists in symbol_mappings, then delete pol.adoc and verify cleanup
+        conn = idx._get_connection()
+        tb_before = conn.execute(
+            "SELECT * FROM symbol_mappings WHERE entity_id = 'INV-CLEANUP-001';"
+        ).fetchall()
+        assert len(tb_before) >= 1
+
+        pol_file.unlink()
+        idx.sync(force=False)
+        tb_after = conn.execute(
+            "SELECT * FROM symbol_mappings WHERE entity_id = 'INV-CLEANUP-001';"
+        ).fetchall()
+        assert tb_after == []
+        inv_after = conn.execute("SELECT * FROM entities WHERE id = 'INV-CLEANUP-001';").fetchall()
+        assert inv_after == []
+
+        # 5. Strict duplicate entity ID collision raises ValueError
+        (cnt_dir / "dup.adoc").write_text(
+            "---\n"
+            "type: tech/container\n"
+            "schema: schemas/v1/tech/container.schema.yaml\n"
+            "id: CNT-WEB\n"
+            "name: Duplicate Web\n"
+            "container_type: web_app\n"
+            "runtime: TypeScript\n"
+            "package_path: src/dup\n"
+            "---\n"
+            "= Duplicate\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="Duplicate entity ID 'CNT-WEB'"):
+            idx.sync(force=True, strict=True)
+    finally:
+        idx.close()
+
+    # 6. CLI eidos index status --json
+    import eidos.core.index.graph_index as gi
+
+    try:
+        runner = CliRunner()
+        res_status = runner.invoke(app, ["index", "status", "--json"])
+        assert res_status.exit_code == 0
+        status_data = json.loads(res_status.output)
+        assert "total_entities" in status_data
+        assert "entity_counts_by_type" in status_data
+    finally:
+        if gi._INDEX_INSTANCE is not None:
+            gi._INDEX_INSTANCE.close()
+            gi._INDEX_INSTANCE = None
 

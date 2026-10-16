@@ -230,7 +230,7 @@ class AstGrepIndexer(BaseAstIndexer):
         p = Path(file_path)
         lang = self._get_lang(p)
         if not lang or not AST_GREP_AVAILABLE:
-            return []
+            return FallbackIndexer().extract_symbols(file_path, content)
 
         if content is None:
             try:
@@ -242,7 +242,7 @@ class AstGrepIndexer(BaseAstIndexer):
             root = SgRoot(content, lang)
             node = root.root()
         except (RuntimeError, ValueError):
-            return []
+            return FallbackIndexer().extract_symbols(file_path, content)
 
         symbols: list[CodeSymbol] = []
         rel_path = str(p)
@@ -282,6 +282,16 @@ class AstGrepIndexer(BaseAstIndexer):
                     elif lang == "kotlin":
                         is_iface = any(c.kind() == "interface" for c in m.children())
                         kind_label = "interface" if is_iface else "class"
+                        sig = _extract_header_signature(m.text())
+                    elif lang == "rust":
+                        if ck == "struct_item":
+                            kind_label = "struct"
+                        elif ck == "enum_item":
+                            kind_label = "enum"
+                        elif ck == "trait_item":
+                            kind_label = "interface"
+                        else:
+                            kind_label = "class"
                         sig = _extract_header_signature(m.text())
                     else:
                         kind_label = "interface" if ("interface" in ck or "type_alias" in ck) else "class"
@@ -370,6 +380,21 @@ class AstGrepIndexer(BaseAstIndexer):
                                 break
                         if parent_cls is None and recv_tokens:
                             parent_cls = recv_tokens[-1]
+                elif parent_cls is None and lang == "rust":
+                    anc_impl = m.parent()
+                    while anc_impl is not None:
+                        if anc_impl.kind() == "impl_item":
+                            impl_type = anc_impl.field("type")
+                            if impl_type is not None:
+                                type_tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", impl_type.text())
+                                for rtok in type_tokens:
+                                    if rtok in class_nodes:
+                                        parent_cls = rtok
+                                        break
+                                if parent_cls is None and type_tokens:
+                                    parent_cls = type_tokens[0]
+                            break
+                        anc_impl = anc_impl.parent()
 
                 kind_label = "method" if parent_cls or "method" in fk else "function"
                 sig = _extract_header_signature(m.text())
@@ -486,7 +511,7 @@ class AstGrepIndexer(BaseAstIndexer):
         p = Path(file_path)
         lang = self._get_lang(p)
         if not lang or not AST_GREP_AVAILABLE:
-            return []
+            return FallbackIndexer().extract_test_bindings(file_path, content)
 
         if content is None:
             try:
@@ -498,7 +523,7 @@ class AstGrepIndexer(BaseAstIndexer):
             root = SgRoot(content, lang)
             node = root.root()
         except (RuntimeError, ValueError):
-            return []
+            return FallbackIndexer().extract_test_bindings(file_path, content)
 
         lines = content.splitlines()
         by_name: dict[str, TestFunctionBinding] = {}
@@ -707,7 +732,30 @@ class FallbackIndexer(BaseAstIndexer):
         ts_exports = _extract_ts_exported_names(content) if suffix in (".ts", ".tsx", ".js", ".jsx") else None
         for idx, line in enumerate(lines, start=1):
             sig = _extract_header_signature(line)
-            if suffix in (".ts", ".tsx", ".js", ".jsx"):
+            if suffix == ".py":
+                for m in self.PYTHON_CLS_REGEX.finditer(line):
+                    sym = CodeSymbol(
+                        name=m.group(1),
+                        kind="class",
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
+                    )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
+                for m in self.PYTHON_FN_REGEX.finditer(line):
+                    sym = CodeSymbol(
+                        name=m.group(1),
+                        kind="function",
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
+                    )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
+            elif suffix in (".ts", ".tsx", ".js", ".jsx"):
                 for m in self.TS_CLS_REGEX.finditer(line):
                     sym = CodeSymbol(
                         name=m.group(1),
@@ -757,7 +805,7 @@ class FallbackIndexer(BaseAstIndexer):
                 for m in self.RUST_TYPE_REGEX.finditer(line):
                     sym = CodeSymbol(
                         name=m.group(2),
-                        kind="interface" if m.group(1) == "trait" else "class",
+                        kind="interface" if m.group(1) == "trait" else m.group(1),
                         file_path=rel_path,
                         line_start=idx,
                         line_end=idx,

@@ -1,5 +1,7 @@
 """Tests verifying POL-004: Zero AI-Call Dependency (Deterministic Governance Substrate)."""
 
+import ast
+import re
 import tomllib
 from pathlib import Path
 
@@ -21,6 +23,22 @@ FORBIDDEN_AI_PACKAGES = {
     "dspy",
 }
 
+FORBIDDEN_IMPORT_ROOTS = {pkg.replace("-", "_") for pkg in FORBIDDEN_AI_PACKAGES} | {
+    "vertexai",
+    "langchain_core",
+    "llama_index",
+}
+
+FORBIDDEN_LLM_ENDPOINTS = (
+    "api.openai.com",
+    "api.anthropic.com",
+    "generativelanguage.googleapis.com",
+)
+
+
+def _extract_pep508_pkg_name(dep: str) -> str:
+    return re.split(r"[<>=!~;\[\s@]", dep, maxsplit=1)[0].strip().lower()
+
 
 def test_pyproject_contains_zero_ai_dependencies():
     """Verify POL-004 and INV-AGENT-ZERO-AI-DEPENDENCY: pyproject.toml does not require any AI/LLM SDK dependencies."""
@@ -33,7 +51,7 @@ def test_pyproject_contains_zero_ai_dependencies():
 
     runtime_deps = data.get("project", {}).get("dependencies", [])
     for dep in runtime_deps:
-        pkg_name = dep.split(">=")[0].split("==")[0].split("<")[0].split("~=")[0].strip().lower()
+        pkg_name = _extract_pep508_pkg_name(dep)
         assert (
             pkg_name not in FORBIDDEN_AI_PACKAGES
         ), f"Violation of POL-004: runtime dependency '{dep}' is an AI/LLM SDK."
@@ -41,7 +59,7 @@ def test_pyproject_contains_zero_ai_dependencies():
     optional_deps = data.get("project", {}).get("optional-dependencies", {})
     for group, deps in optional_deps.items():
         for dep in deps:
-            pkg_name = dep.split(">=")[0].split("==")[0].split("<")[0].split("~=")[0].strip().lower()
+            pkg_name = _extract_pep508_pkg_name(dep)
             assert (
                 pkg_name not in FORBIDDEN_AI_PACKAGES
             ), f"Violation of POL-004: optional dependency '{dep}' in group '{group}' is an AI/LLM SDK."
@@ -52,6 +70,32 @@ def test_src_contains_zero_agent_runner_stubs():
     repo_root = Path(__file__).parent.parent
     agent_base = repo_root / "src/eidos/agent/base.py"
     assert not agent_base.exists(), "src/eidos/agent/base.py must not exist under POL-004"
+
+
+def test_src_ast_contains_zero_ai_sdk_imports_or_endpoints():
+    """Verify INV-AGENT-ZERO-AI-DEPENDENCY: no Python module in src/eidos/ imports any AI SDK or hardcodes LLM API endpoints."""
+    repo_root = Path(__file__).parent.parent
+    src_dir = repo_root / "src" / "eidos"
+    py_files = sorted(src_dir.rglob("*.py"))
+    assert len(py_files) >= 20
+
+    for py_file in py_files:
+        source = py_file.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(py_file))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    root_mod = alias.name.split(".")[0].lower()
+                    assert root_mod not in FORBIDDEN_IMPORT_ROOTS, (
+                        f"Forbidden AI SDK import '{alias.name}' in {py_file}"
+                    )
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                root_mod = node.module.split(".")[0].lower()
+                assert root_mod not in FORBIDDEN_IMPORT_ROOTS, (
+                    f"Forbidden AI SDK import from '{node.module}' in {py_file}"
+                )
+        for endpoint in FORBIDDEN_LLM_ENDPOINTS:
+            assert endpoint not in source, f"Forbidden LLM endpoint '{endpoint}' found in {py_file}"
 
 
 def test_pol_004_spec_is_valid():
@@ -69,4 +113,3 @@ def test_pol_004_spec_is_valid():
     validator = SpecValidator()
     errors = validator.validate_document(doc)
     assert not errors, f"POL-004 document failed schema validation: {errors}"
-

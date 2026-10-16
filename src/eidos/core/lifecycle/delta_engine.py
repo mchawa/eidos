@@ -1098,7 +1098,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                 doc_fm = specs_by_id[lookup_target][2] if lookup_target in specs_by_id else {}
                 if not doc_fm and target_path_resolved and target_path_resolved.exists():
                     doc_fm = parse_spec_file(target_path_resolved).frontmatter or {}
-                if str(doc_fm.get("status", "")).lower() in ("deprecated", "sunset", "removed"):
+                if str(doc_fm.get("status", "")).lower() in ("deprecated", "sunset", "removed", "retired"):
                     verified = True
                     status = "DEPRECATED"
                 else:
@@ -1169,9 +1169,10 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
             elif target_path_resolved is not None:
                 target_file = target_path_resolved
             elif action == "modify_architecture":
-                for _, (p, d_type, _) in specs_by_id.items():
+                for arch_id, (p, d_type, _) in specs_by_id.items():
                     if d_type == "tech/architecture":
                         target_file = p
+                        lookup_target = arch_id
                         break
 
             if (
