@@ -224,10 +224,11 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         const flowSpecs = catSpecs.filter((s) => s.type === "design/flow");
 
         dsSpecs.forEach((ds) => {
+          const dsDir = ds.path ? ds.path.substring(0, ds.path.lastIndexOf("/")) : "";
           const boundUics = uicSpecs.filter(
             (u) =>
               ds.id.toLowerCase() in (u.frontmatter || {}) ||
-              u.path.includes("systems/core") ||
+              (Boolean(dsDir) && u.path.startsWith(`${dsDir}/`)) ||
               u.frontmatter?.design_system === ds.id
           );
           subgroups.push({
@@ -241,15 +242,16 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
         });
 
         clientSpecs.forEach((clt) => {
+          const cltDir = clt.path ? clt.path.substring(0, clt.path.lastIndexOf("/")) : "";
           const clientScreens = screenSpecs.filter(
             (sc) =>
               sc.frontmatter?.client === clt.id ||
-              sc.path.includes("web-portal")
+              (Boolean(cltDir) && sc.path.startsWith(`${cltDir}/`))
           );
           const clientFlows = flowSpecs.filter(
             (fl) =>
               fl.frontmatter?.client === clt.id ||
-              fl.path.includes("web-portal") ||
+              (Boolean(cltDir) && fl.path.startsWith(`${cltDir}/`)) ||
               fl.frontmatter?.clients?.includes(clt.id)
           );
           subgroups.push({

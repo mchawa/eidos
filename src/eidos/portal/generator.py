@@ -42,15 +42,15 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         specs_by_type.setdefault(doc.doc_type, []).append(item)
 
     # 1. System Overview & Architecture
-    arch_doc = next((s for s in specs if s["type"] == "tech/architecture"), None)
-    sys_doc = next((s for s in specs if s["type"] == "product/system"), None)
+    arch_doc = next((s for s in specs if s["type"] in ("tech/architecture", "arch/system")), None)
+    sys_doc = next((s for s in specs if s["type"] in ("product/system", "arch/system")), None)
 
     system_title = (
         (sys_doc["frontmatter"].get("title") or sys_doc["frontmatter"].get("name") if sys_doc else None)
-        or (arch_doc["frontmatter"].get("title") if arch_doc else None)
+        or (arch_doc["frontmatter"].get("title") or arch_doc["frontmatter"].get("name") if arch_doc else None)
         or getattr(project, "system_title", None)
         or getattr(project, "system_name", None)
-        or "Eidos System"
+        or "Living Architecture System"
     )
     system_id = (sys_doc["id"] if sys_doc else None) or getattr(project, "system_id", "SYS-001")
 
@@ -241,9 +241,12 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
 
     # Invariants list
     invariants: list[dict[str, Any]] = []
+    seen_inv_ids: set[str] = set()
     for pol in policies:
         pid = pol.get("id", "")
         tb = pol.get("test_binding") or pol.get("enforcement_command") or "N/A"
+        if pid:
+            seen_inv_ids.add(pid)
         invariants.append(
             {
                 "id": pid,
@@ -254,6 +257,22 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 "test_binding": tb,
             }
         )
+        for inv in pol.get("invariants", []) or []:
+            if not isinstance(inv, dict):
+                continue
+            iid = inv.get("id")
+            if iid and iid not in seen_inv_ids:
+                seen_inv_ids.add(iid)
+                invariants.append(
+                    {
+                        "id": iid,
+                        "title": iid,
+                        "rule": inv.get("rule", pol.get("rule", "Policy invariant rule.")),
+                        "category": pol.get("category", "governance"),
+                        "source_type": f"policy ({pid})",
+                        "test_binding": inv.get("test_binding", tb),
+                    }
+                )
 
     for cap in capabilities:
         cap_id = cap.get("id", "CAP")
@@ -326,32 +345,42 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         else:
             deltas_by_status.setdefault(status, []).append(delta_item)
 
-    # Embedded architectural decisions (DEC-*) across system, architecture, and containers
+    # Embedded architectural decisions (DEC-*) across system, architecture, containers, domains, capabilities, and policies
     all_decisions: list[dict[str, Any]] = []
+    seen_dec_ids: set[str] = set()
+
+    def _append_decisions(dec_list: list[Any], source_entity: str, source_type: str) -> None:
+        for dec in dec_list or []:
+            if not isinstance(dec, dict):
+                continue
+            did = dec.get("id")
+            if did and did in seen_dec_ids:
+                continue
+            if did:
+                seen_dec_ids.add(did)
+            d_entry = dict(dec)
+            d_entry["source_entity"] = source_entity
+            d_entry["source_type"] = source_type
+            all_decisions.append(d_entry)
+
     if sys_doc:
-        for dec in sys_doc.get("frontmatter", {}).get("decisions", []):
-            d_entry = dict(dec)
-            d_entry["source_entity"] = sys_doc["id"]
-            d_entry["source_type"] = "system"
-            all_decisions.append(d_entry)
+        _append_decisions(sys_doc.get("frontmatter", {}).get("decisions", []), sys_doc["id"], "system")
     if arch_doc:
-        for dec in arch_doc.get("frontmatter", {}).get("decisions", []):
-            d_entry = dict(dec)
-            d_entry["source_entity"] = arch_doc["id"]
-            d_entry["source_type"] = "architecture"
-            all_decisions.append(d_entry)
+        _append_decisions(arch_doc.get("frontmatter", {}).get("decisions", []), arch_doc["id"], "architecture")
     for comp in components:
-        for dec in comp.get("decisions", []):
-            d_entry = dict(dec)
-            d_entry["source_entity"] = comp["id"]
-            d_entry["source_type"] = "container"
-            all_decisions.append(d_entry)
+        _append_decisions(comp.get("decisions", []), comp["id"], "container")
         for ic in comp.get("internal_components", []):
-            for dec in ic.get("decisions", []):
-                d_entry = dict(dec)
-                d_entry["source_entity"] = ic.get("id", comp["id"])
-                d_entry["source_type"] = "component"
-                all_decisions.append(d_entry)
+            _append_decisions(ic.get("decisions", []), ic.get("id", comp["id"]), "component")
+    for dom in domains:
+        _append_decisions(dom.get("decisions", []), dom.get("id", "DOM"), "domain")
+    for cap in capabilities:
+        _append_decisions(
+            cap.get("decisions", []) or cap.get("technical", {}).get("decisions", []),
+            cap.get("id", "CAP"),
+            "capability",
+        )
+    for pol in policies:
+        _append_decisions(pol.get("decisions", []), pol.get("id", "POL"), "policy")
 
     # 4. Multi-Design Systems, Tokens, UI Components, Clients, Flows, and Screens
     design_data = _extract_design_systems(eidos_path, specs_by_type)
@@ -432,7 +461,14 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         )
 
     # 6. Dynamic Mermaid Diagrams
-    c4_context_mermaid = _generate_c4_context_mermaid(personas, system_id, system_title)
+    ext_systems = (
+        (arch_doc.get("frontmatter", {}).get("c4_context", {}).get("external_systems", []) if arch_doc else [])
+        or (sys_doc.get("frontmatter", {}).get("c4_context", {}).get("external_systems", []) if sys_doc else [])
+        or []
+    )
+    c4_context_mermaid = _generate_c4_context_mermaid(
+        personas, system_id, system_title, external_systems=ext_systems
+    )
     c4_containers_mermaid = _generate_c4_containers_mermaid(
         components,
         system_id=system_id,
@@ -504,8 +540,26 @@ def _extract_design_systems(
     for ds in design_specs:
         fm = ds["frontmatter"]
         sys_id = ds["id"]
-        sys_dir = eidos_path / "design" / "systems" / sys_id.lower().replace("ds-", "")
+        ds_rel_path = ds.get("path", "")
+        ds_file_path = (eidos_path.parent / ds_rel_path) if ds_rel_path else Path()
+        sys_dir = (
+            ds_file_path.parent
+            if ds_file_path.exists()
+            else (eidos_path / "design" / "systems" / sys_id.lower().replace("ds-", ""))
+        )
+        tok_cfg = fm.get("tokens") if isinstance(fm.get("tokens"), dict) else {}
+        manifest_ref = tok_cfg.get("manifest") or fm.get("tokens_path")
         tokens_file = sys_dir / "tokens.json"
+        if isinstance(manifest_ref, str) and manifest_ref.strip():
+            cand_rel = manifest_ref.strip()
+            for candidate in (
+                sys_dir / cand_rel,
+                eidos_path.parent / cand_rel,
+                eidos_path / cand_rel,
+            ):
+                if candidate.is_file():
+                    tokens_file = candidate
+                    break
         tokens_data: dict[str, Any] = {}
         if tokens_file.exists():
             try:
@@ -513,18 +567,24 @@ def _extract_design_systems(
             except (json.JSONDecodeError, OSError):
                 tokens_data = {}
 
+        inh = fm.get("inheritance")
+        extends_val = (
+            (inh.get("extends") if isinstance(inh, dict) else None)
+            or fm.get("extends_system")
+            or fm.get("extends")
+        )
         systems.append(
             {
                 "id": sys_id,
                 "title": ds["title"],
                 "client": fm.get("client_id", fm.get("client", "core")),
                 "brand_name": fm.get("brand_name", ds["title"]),
-                "extends": fm.get("inheritance", {}).get("extends")
-                if isinstance(fm.get("inheritance"), dict)
-                else fm.get("extends"),
+                "extends": extends_val,
                 "tokens": tokens_data,
             }
         )
+
+    default_ds_id = systems[0]["id"] if systems else "DS-001"
 
     # Clients
     clients: list[dict[str, Any]] = []
@@ -535,7 +595,7 @@ def _extract_design_systems(
                 "id": clt["id"],
                 "title": clt["title"],
                 "platform": fm.get("platform", "web"),
-                "design_system": fm.get("design_system", "DS-CORE"),
+                "design_system": fm.get("design_system", default_ds_id),
                 "container": fm.get("container", "N/A"),
                 "capabilities": fm.get("capabilities", []),
                 "screens": fm.get("screens", []),
@@ -575,7 +635,7 @@ def _extract_design_systems(
             {
                 "id": uic["id"],
                 "title": uic["title"],
-                "design_system": fm.get("design_system", "DS-CORE"),
+                "design_system": fm.get("design_system", default_ds_id),
                 "category": fm.get("category", "layouts"),
                 "status": fm.get("status", "active"),
                 "variants": fm.get("variants", []),
@@ -599,9 +659,9 @@ def _extract_design_systems(
                 "title": scr["title"],
                 "route": fm.get("route", "/"),
                 "client": fm.get("client", "N/A"),
-                "system_ref": fm.get("supported_design_systems", ["DS-CORE"])[0]
+                "system_ref": fm.get("supported_design_systems", [default_ds_id])[0]
                 if fm.get("supported_design_systems")
-                else "DS-CORE",
+                else (fm.get("design_system") or default_ds_id),
                 "states": states,
                 "slots": fm.get("slots", {}),
                 "capabilities": fm.get("capabilities", []),
@@ -618,8 +678,13 @@ def _extract_design_systems(
     }
 
 
-def _generate_c4_context_mermaid(personas: list[dict[str, Any]], system_id: str, system_title: str) -> str:
-    """Generate Mermaid syntax for C4 Level 1 System Context."""
+def _generate_c4_context_mermaid(
+    personas: list[dict[str, Any]],
+    system_id: str,
+    system_title: str,
+    external_systems: list[Any] | None = None,
+) -> str:
+    """Generate Mermaid syntax for C4 Level 1 System Context from declared personas and external_systems."""
     clean_title = system_title.replace('"', "'")
     lines = [
         "graph TD",
@@ -628,9 +693,33 @@ def _generate_c4_context_mermaid(personas: list[dict[str, Any]], system_id: str,
         "  classDef external fill:#334155,stroke:#475569,color:#fff,stroke-width:2px,rx:6px;",
         "",
         f"  SYS[\"<div style='padding:10px 14px;font-size:15px;'><b>{system_id}</b><br/>{clean_title}<br/><i>[Software System]</i></div>\"]:::system",
-        "  EXT_GIT[\"<div style='padding:8px 12px;'><b>Git Repository &amp; CI/CD</b><br/>Version Control &amp; Verification Pipeline<br/><i>[External Platform]</i></div>\"]:::external",
-        "  EXT_IDE[\"<div style='padding:8px 12px;'><b>AI IDEs &amp; Coding Agents</b><br/>Antigravity, Cursor, Claude Code<br/><i>[Development Environments]</i></div>\"]:::external",
     ]
+
+    ext_edges: list[tuple[str, str]] = []
+    for idx, ext in enumerate(external_systems or []):
+        if isinstance(ext, dict):
+            raw_ext_id = str(ext.get("id") or "").strip()
+            ext_node_id = (
+                re.sub(r"[^A-Za-z0-9_]", "_", raw_ext_id) if raw_ext_id else f"EXT_{idx + 1}"
+            )
+            ext_name = html.escape(str(ext.get("name") or ext.get("id") or f"External System {idx + 1}")).replace(
+                '"', "'"
+            )
+            ext_role = html.escape(
+                str(ext.get("role") or ext.get("relationship") or ext.get("description") or "External Integration")
+            ).replace('"', "'")
+            ext_proto = html.escape(str(ext.get("protocol") or ext.get("type") or "External System")).replace(
+                '"', "'"
+            )
+        else:
+            ext_node_id = f"EXT_{idx + 1}"
+            ext_name = html.escape(str(ext)).replace('"', "'")
+            ext_role = "External Integration"
+            ext_proto = "External System"
+        lines.append(
+            f"  {ext_node_id}[\"<div style='padding:8px 12px;'><b>{ext_name}</b><br/>{ext_role}<br/><i>[{ext_proto}]</i></div>\"]:::external"
+        )
+        ext_edges.append((ext_node_id, ext_proto))
 
     for p in personas:
         pid = p.get("id", "PER")
@@ -646,8 +735,8 @@ def _generate_c4_context_mermaid(personas: list[dict[str, Any]], system_id: str,
         node_id = pid.replace("-", "_")
         lines.append(f"  {node_id} ==>|Interacts & Collaborates| SYS")
 
-    lines.append("  SYS ==>|Tracks Specs, Commits &amp; Drift| EXT_GIT")
-    lines.append("  SYS ==>|CLI Commands &amp; Agent Skills| EXT_IDE")
+    for ext_node_id, ext_proto in ext_edges:
+        lines.append(f"  SYS ==>|{ext_proto}| {ext_node_id}")
 
     return "\n".join(lines)
 
@@ -1137,8 +1226,13 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
     int_deps = (
         (deps.get("internal_containers", []) or deps.get("internal_components", [])) if isinstance(deps, dict) else []
     )
-    for dep_id in int_deps:
-        if dep_id != cid:
+    for raw_dep in int_deps:
+        dep_id = (
+            str(raw_dep.get("id") or raw_dep.get("container") or raw_dep.get("target") or "")
+            if isinstance(raw_dep, dict)
+            else str(raw_dep)
+        )
+        if dep_id and dep_id != cid:
             peer_node = f"peer_{dep_id.replace('-', '_')}"
             lines.append(
                 f"  {peer_node}[\"<div style='padding:8px 12px;'><b>{dep_id}</b><br/><i>[Peer Container]</i></div>\"]:::peer"

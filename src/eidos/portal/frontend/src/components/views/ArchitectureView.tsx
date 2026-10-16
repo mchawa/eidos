@@ -228,9 +228,16 @@ export function ArchitectureView({
       const text = node.textContent || "";
       const nodeId = node.id || "";
 
+      const sysTitle = data.overview?.system_title || "";
+      const sysId = data.overview?.system_id || "SYS";
       // Add tooltips to guide user on click actions
       if (level === 1) {
-        if (text.includes("SYS") || text.includes("Eidos") || nodeId.includes("SYS")) {
+        if (
+          text.includes("SYS") ||
+          (sysTitle && text.includes(sysTitle)) ||
+          (sysId && text.includes(sysId)) ||
+          nodeId.includes("SYS")
+        ) {
           node.setAttribute("title", "Click to drill down into Level 2: Containers");
         }
       } else if (level === 2) {
@@ -264,7 +271,8 @@ export function ArchitectureView({
         if (level === 1) {
           if (
             text.includes("SYS") ||
-            text.includes("Eidos") ||
+            (sysTitle && text.includes(sysTitle)) ||
+            (sysId && text.includes(sysId)) ||
             nodeId.includes("SYS")
           ) {
             setC4Level(2);

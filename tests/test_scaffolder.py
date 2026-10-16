@@ -798,7 +798,7 @@ def test_cli_spec_create_component_with_container(tmp_path):
 
 
 def test_engine_genericity_zero_self_references():
-    """Verify INV-ENGINE-GENERICITY: runtime (src/eidos/) and skills (assets/plugin_reference/skills/) contain zero Eidos-self IDs or paths."""
+    """Verify INV-ENGINE-GENERICITY: runtime (src/eidos/), portal frontend views, and skills (assets/plugin_reference/skills/) contain zero Eidos-self IDs or paths."""
     import re
 
     forbidden = re.compile(
@@ -818,6 +818,19 @@ def test_engine_genericity_zero_self_references():
             text = p.read_text(encoding="utf-8", errors="ignore")
             for m in forbidden.finditer(text):
                 violations.append(f"{p}: matched '{m.group(0)}'")
+
+    portal_forbidden = re.compile(
+        r'\b(CLT-WEB-PORTAL|SCR-PORTAL-HOME|EXT_GIT|EXT_IDE|DS-CORE)\b|systems/core|"web-portal"|text\.includes\("Eidos"\)'
+    )
+    for portal_path in (
+        Path("src/eidos/portal/generator.py"),
+        Path("src/eidos/portal/frontend/src/components/views/CatalogView.tsx"),
+        Path("src/eidos/portal/frontend/src/components/views/DesignView.tsx"),
+        Path("src/eidos/portal/frontend/src/components/views/ArchitectureView.tsx"),
+    ):
+        text = portal_path.read_text(encoding="utf-8", errors="ignore")
+        for m in portal_forbidden.finditer(text):
+            violations.append(f"{portal_path}: matched '{m.group(0)}'")
 
     assert violations == [], f"Forbidden self-references found in engine/skills: {violations}"
 

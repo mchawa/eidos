@@ -13,6 +13,11 @@ export interface HomeViewProps {
 
 export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) {
   const { overview } = data;
+  const activeDeltasCount =
+    (data.deltas?.proposed?.length || 0) +
+    (data.deltas?.in_review?.length || 0) +
+    (data.deltas?.approved?.length || 0);
+  const appliedDeltasCount = data.deltas?.applied?.length || 0;
 
   const metricCards = [
     {
@@ -35,8 +40,8 @@ export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) 
     },
     {
       label: "Active SpecDeltas",
-      value: overview.deltas_count,
-      subtext: "Planned Mutations",
+      value: activeDeltasCount,
+      subtext: `${appliedDeltasCount} Applied • ${overview.deltas_count} Total`,
       icon: GitPullRequest,
       color: "text-purple-600 dark:text-purple-400",
       bg: "bg-purple-500/10 dark:bg-purple-400/15",

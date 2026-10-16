@@ -531,8 +531,16 @@ def _collect_design_subgraph(
         changed = False
         for eid in list(ids):
             e = by_id.get(eid, {})
-            for key in ("design_system", "extends_system"):
-                ref = e.get(key)
+            inheritance = e.get("inheritance") if isinstance(e.get("inheritance"), dict) else {}
+            candidates: list[Any] = [
+                e.get("design_system"),
+                e.get("extends_system"),
+                inheritance.get("extends"),
+            ]
+            supported_ds = e.get("supported_design_systems")
+            if isinstance(supported_ds, list):
+                candidates.extend(supported_ds)
+            for ref in candidates:
                 if isinstance(ref, str) and ref in by_id and ref not in ids:
                     ids.add(ref)
                     changed = True
@@ -566,11 +574,17 @@ def _collect_design_subgraph(
         member = False
         if etype == "design/ui-component":
             member = e.get("design_system") in systems or e.get("implements_component") in sub_ids
-        elif etype in ("design/screen", "design/flow"):
+        elif etype == "design/screen":
             member = e.get("client") in clients
+        elif etype == "design/flow":
+            flow_clients = [c for c in (e.get("clients") or []) if isinstance(c, str)]
+            member = e.get("client") in clients or (
+                len(flow_clients) >= 2 and all(c in clients for c in flow_clients)
+            )
         if member:
             sub_ids.add(eid)
             fp = str(e.get("file_path") or "").replace("\\", "/")
             if fp:
                 paths.add(fp.lower())
     return paths, sub_ids
+

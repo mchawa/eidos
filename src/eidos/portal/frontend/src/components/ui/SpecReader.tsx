@@ -43,34 +43,54 @@ export function SpecReader({
   const [copiedId, setCopiedId] = React.useState(false);
   const [activeHeadingId, setActiveHeadingId] = React.useState<string>("");
 
+  const stageRef = React.useRef<HTMLDivElement>(null);
   const outline = useAsciiDocOutline(spec.body);
 
-  // Track active heading on scroll
+  // Track active heading on scroll inside modal/scrollable container or window
   React.useEffect(() => {
     if (outline.length === 0) return;
+
+    const findScrollParent = (node: HTMLElement | null): HTMLElement | Window => {
+      let cur = node?.parentElement || null;
+      while (cur && cur !== document.body) {
+        const style = window.getComputedStyle(cur);
+        if (/(auto|scroll)/.test(style.overflowY)) {
+          return cur;
+        }
+        cur = cur.parentElement;
+      }
+      const mainScroll = document.getElementById("main-scroll");
+      return mainScroll || window;
+    };
+
+    const scrollTarget = findScrollParent(stageRef.current);
 
     const handleScroll = () => {
       const headings = outline
         .map((item) => document.getElementById(item.id))
         .filter(Boolean) as HTMLElement[];
 
-      const scrollPosition = window.scrollY + 120;
+      if (headings.length === 0) return;
+
+      const containerTop =
+        scrollTarget instanceof Window
+          ? 0
+          : scrollTarget.getBoundingClientRect().top;
 
       for (let i = headings.length - 1; i >= 0; i--) {
         const el = headings[i];
-        if (el.offsetTop <= scrollPosition) {
+        const relativeTop = el.getBoundingClientRect().top - containerTop;
+        if (relativeTop <= 140) {
           setActiveHeadingId(el.id);
           return;
         }
       }
-      if (headings[0]) {
-        setActiveHeadingId(headings[0].id);
-      }
+      setActiveHeadingId(headings[0].id);
     };
 
-    window.addEventListener("scroll", handleScroll, { passive: true });
+    scrollTarget.addEventListener("scroll", handleScroll, { passive: true });
     handleScroll();
-    return () => window.removeEventListener("scroll", handleScroll);
+    return () => scrollTarget.removeEventListener("scroll", handleScroll);
   }, [outline]);
 
   const handleCopyId = () => {
@@ -96,7 +116,7 @@ export function SpecReader({
   const vcs = fm.vcs;
 
   return (
-    <div className={cn("space-y-4 spec-reader-stage w-full", className)}>
+    <div ref={stageRef} className={cn("space-y-4 spec-reader-stage w-full", className)}>
       {/* Human-Centric Specification Metadata Header Card */}
       <div className="p-4 sm:p-5 rounded-2xl bg-card border border-border/80 md-elevation-1 space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-4">

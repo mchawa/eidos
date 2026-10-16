@@ -2124,3 +2124,53 @@ technical:
     # 3. reconcile_specs resolves 1-hop neighbor spec paths via get_k_hop_neighborhood
     reconcile_report = reconcile_specs(repo_root=tmp_path, eidos_dir=eidos_dir, uncommitted=True)
     assert any("cap-pkg.adoc" in p for s in reconcile_report.suggestions for p in s.candidate_specs)
+
+
+def test_dlt_2026_074_design_subgraph_inheritance_and_cross_client_flows():
+    """Verify DLT-2026-074: _collect_design_subgraph traverses inheritance.extends, supported_design_systems, and cross_client flows."""
+    from eidos.vcs.structural import _collect_design_subgraph
+
+    entities = [
+        {
+            "id": "CLT-WEB",
+            "type": "design/client",
+            "file_path": "eidos/design/clients/web/client.adoc",
+        },
+        {
+            "id": "CLT-MOBILE",
+            "type": "design/client",
+            "file_path": "eidos/design/clients/mobile/client.adoc",
+            "supported_design_systems": ["DS-BRAND"],
+        },
+        {
+            "id": "DS-BRAND",
+            "type": "design/system",
+            "file_path": "eidos/design/systems/brand/system.adoc",
+            "inheritance": {"extends": "DS-FOUNDATION"},
+        },
+        {
+            "id": "DS-FOUNDATION",
+            "type": "design/system",
+            "file_path": "eidos/design/systems/foundation/system.adoc",
+            "tokens": {"manifest": "tokens.json"},
+        },
+        {
+            "id": "UIC-BTN",
+            "type": "design/ui-component",
+            "file_path": "eidos/design/systems/foundation/components/btn.adoc",
+            "design_system": "DS-FOUNDATION",
+        },
+        {
+            "id": "FLOW-HANDOFF",
+            "type": "design/flow",
+            "file_path": "eidos/design/flows/handoff.adoc",
+            "flow_type": "cross_client",
+            "clients": ["CLT-WEB", "CLT-MOBILE"],
+        },
+    ]
+
+    paths, sub_ids = _collect_design_subgraph(entities, {"CLT-WEB", "CLT-MOBILE"})
+    assert {"CLT-WEB", "CLT-MOBILE", "DS-BRAND", "DS-FOUNDATION", "UIC-BTN", "FLOW-HANDOFF"}.issubset(sub_ids)
+    assert "eidos/design/systems/foundation/tokens.json" in paths
+    assert "eidos/design/flows/handoff.adoc" in paths
+

@@ -19,7 +19,7 @@ components:
     source_path: "src/eidos/portal/server.py"
   - id: CMP-PORTAL-GENERATOR
     name: "PortalGenerator"
-    responsibility: "Synthesizes living specifications into unified portal data model with hierarchical C4 Level 2 container topologies, explicit inter-container dependency connections, and auto-generated Mermaid diagrams."
+    responsibility: "Synthesizes living specifications (including arch/system, nested policy invariants, product DEC-* decisions, and tokens.manifest / inheritance.extends design systems) into unified portal data model with project-agnostic C4 Level 1 external_systems context diagrams, hierarchical C4 Level 2 container topologies, normalized inter-container dependency connections, and auto-generated Mermaid diagrams."
     source_path: "src/eidos/portal/generator.py"
   - id: CMP-PORTAL-BUILDER
     name: "StaticSiteBuilder"
@@ -27,11 +27,12 @@ components:
     source_path: "src/eidos/portal/builder.py"
   - id: CMP-PORTAL-ASSETS
     name: "PortalAssets"
-    responsibility: "Delivers pre-compiled single-file React 19, Tailwind v4, Asciidoctor.js, and Mermaid v11 assets with zero remote subresources by loading from deterministic gzip-compressed assets (assets/portal/bundle.html.gz and assets/portal/favicon.svg) rather than a 4.7 MB raw Python string literal, synchronized during wheel/sdist builds via a Hatch custom build hook (hatch_build.py) and verified in CI via build_assets.py --check."
+    responsibility: "Delivers pre-compiled single-file React 19, Tailwind v4, Asciidoctor.js, and Mermaid v11 SPA assets (compiled from src/eidos/portal/frontend/src) with zero remote subresources by loading from deterministic gzip-compressed assets (assets/portal/bundle.html.gz and assets/portal/favicon.svg) rather than a 4.7 MB raw Python string literal, synchronized during wheel/sdist builds via a Hatch custom build hook (hatch_build.py) and verified in CI via build_assets.py --check."
     source_path:
       - "src/eidos/portal/assets.py"
       - "src/eidos/portal/frontend/scripts/build_assets.py"
       - "src/eidos/portal/frontend/scripts/hatch_build.py"
+      - "src/eidos/portal/frontend/src"
 
 dependencies:
   internal_containers:

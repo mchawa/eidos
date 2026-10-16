@@ -624,3 +624,142 @@ def test_dlt_2026_069_static_portal_builder_escapes_script_tags(tmp_path):
     assert "window.__EIDOS_DATA__ =" in html
     assert "<script>alert(1)</script>" not in html
     assert "<\\/script>" in html
+
+
+def test_dlt_2026_074_portal_genericity_and_complete_extraction(tmp_path):
+    """Verify DLT-2026-074: arch/system support, nested policy invariants, product DEC-* decisions, tokens.manifest & inheritance.extends, dynamic external_systems C4 context, and dict internal_containers # eidos:fixture."""
+    eidos_dir = tmp_path / "eidos"
+    (eidos_dir / "policies").mkdir(parents=True)
+    (eidos_dir / "domains" / "billing" / "capabilities").mkdir(parents=True)
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "design" / "systems" / "brand").mkdir(parents=True)
+
+    (eidos_dir / "system.adoc").write_text(
+        """---
+type: arch/system
+id: SYS-ACME
+title: Acme Cloud
+c4_context:
+  external_systems:
+    - id: EXT-STRIPE
+      name: Stripe Gateway
+      type: external_saas
+      relationship: Processes card charges
+---
+= Acme Cloud
+""",
+        encoding="utf-8",
+    )
+    (eidos_dir / "policies" / "pol-sec.adoc").write_text(
+        """---
+type: product/policy
+id: POL-SEC-01
+title: Security Policy
+category: security
+rule: Enforce TLS
+invariants:
+  - id: INV-POL-NESTED-01
+    rule: All traffic uses TLS 1.3
+    test_binding: tests/test_sec.py::test_tls
+decisions:
+  - id: DEC-POL-01
+    title: Mandate TLS 1.3
+    decision: Use TLS 1.3 everywhere
+    rationale: Modern cipher suites
+---
+= Security Policy
+""",
+        encoding="utf-8",
+    )
+    (eidos_dir / "domains" / "billing" / "domain.adoc").write_text(
+        """---
+type: product/domain
+id: DOM-BILLING
+name: Billing Domain
+mission: Manage subscriptions
+decisions:
+  - id: DEC-DOM-01
+    title: Ledger Double Entry
+    decision: Use immutable double-entry ledger
+    rationale: Auditability
+---
+= Billing Domain
+""",
+        encoding="utf-8",
+    )
+    (eidos_dir / "domains" / "billing" / "capabilities" / "invoicing.adoc").write_text(
+        """---
+type: product/capability
+id: CAP-BILL-01
+title: Invoicing
+domain: DOM-BILLING
+decisions:
+  - id: DEC-CAP-01
+    title: PDF Generation
+    decision: Render invoices asynchronously
+    rationale: Avoid blocking checkout
+---
+= Invoicing
+""",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "api.adoc").write_text(
+        """---
+type: tech/container
+id: CNT-API
+name: API Service
+container_type: service
+runtime: Go
+package_path: cmd/api
+dependencies:
+  internal_containers:
+    - id: CNT-DB
+      protocol: tcp
+---
+= API Service
+""",
+        encoding="utf-8",
+    )
+    (eidos_dir / "design" / "systems" / "brand" / "tokens.json").write_text(
+        '{"color": {"brand": {"primary": {"$value": "#ff0055", "$type": "color"}}}}',
+        encoding="utf-8",
+    )
+    (eidos_dir / "design" / "systems" / "brand" / "system.adoc").write_text(
+        """---
+type: design/system
+id: DS-BRAND
+name: Brand System
+inheritance:
+  extends: DS-BASE
+tokens:
+  manifest: eidos/design/systems/brand/tokens.json
+---
+= Brand System
+""",
+        encoding="utf-8",
+    )
+
+    pdata = get_portal_data(eidos_dir)
+    assert pdata["overview"]["system_id"] == "SYS-ACME"
+    assert pdata["overview"]["system_title"] == "Acme Cloud"
+
+    inv_ids = {i["id"] for i in pdata["invariants"]}
+    assert "INV-POL-NESTED-01" in inv_ids
+
+    dec_ids = {d["id"] for d in pdata["decisions"]}
+    assert {"DEC-POL-01", "DEC-DOM-01", "DEC-CAP-01"}.issubset(dec_ids)
+
+    ds = pdata["design_systems"][0]
+    assert ds["id"] == "DS-BRAND"
+    assert ds["extends"] == "DS-BASE"
+    assert ds["tokens"]["color"]["brand"]["primary"]["$value"] == "#ff0055"
+
+    c4_ctx = pdata["diagrams"]["c4_context"]
+    assert "EXT_STRIPE" in c4_ctx
+    assert "Stripe Gateway" in c4_ctx
+    assert "EXT_GIT" not in c4_ctx
+    assert "EXT_IDE" not in c4_ctx
+
+    c4_cnt = pdata["diagrams"]["c4_components"]["CNT-API"]
+    assert "peer_CNT_DB" in c4_cnt
+

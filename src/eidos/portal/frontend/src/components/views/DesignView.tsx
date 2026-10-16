@@ -41,14 +41,14 @@ type DesignSubTab = "all" | "tokens" | "clients" | "components" | "screens" | "f
 
 export function DesignView({ data, darkMode }: DesignViewProps) {
   const { clients = [], flows = [], design_systems = [], ui_components = [], screens = [] } = data;
-  const activeDS = design_systems[0];
+  const activeDS = design_systems.find((s) => !s.extends) || design_systems[0];
 
   const [activeTab, setActiveTab] = React.useState<DesignSubTab>("all");
   const [selectedClientId, setSelectedClientId] = React.useState<string>(
-    clients[0]?.id || "CLT-WEB-PORTAL"
+    clients[0]?.id || ""
   );
   const [selectedScreenId, setSelectedScreenId] = React.useState<string>(
-    screens[0]?.id || "SCR-PORTAL-HOME"
+    screens[0]?.id || ""
   );
   const [selectedVariantByComp, setSelectedVariantByComp] = React.useState<Record<string, string>>({});
   const [copiedToken, setCopiedToken] = React.useState<string | null>(null);
@@ -98,11 +98,20 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
   };
 
   const renderClientFlows = () => {
-    return flows.filter((f) => f.client === selectedClientId);
+    return flows.filter(
+      (f) => f.client === selectedClientId || (Array.isArray(f.clients) && f.clients.includes(selectedClientId))
+    );
   };
 
   const renderOmnichannelFlows = () => {
-    return flows.filter((f) => !f.client || f.client === "all" || f.client === "omnichannel");
+    return flows.filter(
+      (f) =>
+        !f.client ||
+        f.client === "all" ||
+        f.client === "omnichannel" ||
+        f.flow_type === "cross_client" ||
+        (Array.isArray(f.clients) && f.clients.length > 0)
+    );
   };
 
   const clientFlows = renderClientFlows();
@@ -451,7 +460,7 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
                   </div>
                   <p className="font-mono text-[11px] text-primary">{typographyTokens.mono?.$value}</p>
                   <p className="text-xs text-muted-foreground font-mono pt-1" style={{ fontFamily: typographyTokens.mono?.$value }}>
-                    const eidosPortal = resolveLivingSpec("DS-CORE");
+                    {`const livingPortal = resolveLivingSpec("${activeDS?.id || "DS-BASE"}");`}
                   </p>
                 </div>
               </div>
@@ -508,7 +517,7 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
                 <div className="flex items-center gap-2 text-xs">
                   <span className="text-muted-foreground">Bound Design System:</span>
                   <span className="font-mono font-bold text-primary">
-                    {activeClient.design_system || "DS-CORE"}
+                    {activeClient.design_system || activeDS?.id || "—"}
                   </span>
                 </div>
               </div>
@@ -596,7 +605,7 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
               Living UI Components Catalog (`UIC-*`)
             </h3>
             <span className="text-xs text-muted-foreground">
-              {ui_components.length} components registered in `{activeDS?.id || "DS-CORE"}`
+              {ui_components.length} components registered{activeDS?.id ? ` in \`${activeDS.id}\`` : ""}
             </span>
           </div>
 
@@ -715,7 +724,9 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
                         ✓ {comp.test_bindings.unit_test.split("::").pop()}
                       </span>
                     ) : (
-                      <span className="text-muted-foreground font-mono">DS-CORE</span>
+                      <span className="text-muted-foreground font-mono">
+                        {comp.design_system || activeDS?.id || "—"}
+                      </span>
                     )}
 
                     {comp.body && (
