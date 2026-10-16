@@ -10,7 +10,7 @@ import yaml
 
 
 def test_documentation_and_schemas_in_sync():
-    """Verify INV-DOCS-SYNCHRONIZATION and POL-003: All 15 living specification schemas and CLI commands are accurately documented."""
+    """Verify INV-DOCS-SYNCHRONIZATION and POL-003: All 16 living specification schemas and CLI commands are accurately documented."""
     repo_root = Path(__file__).parent.parent
 
     # 1. Verify all canonical v1 schemas are represented in docs/concepts/schema-glossary.md
@@ -119,7 +119,9 @@ def test_zensical_strict_build():
     assert (site_dir / "index.html").exists(), "site/index.html missing after build"
     assert (site_dir / "search.json").exists(), "site/search.json missing after build"
     assert (site_dir / "sitemap.xml").exists(), "site/sitemap.xml missing after build"
+    assert (site_dir / "concepts" / "how-eidos-works" / "index.html").exists(), "how-eidos-works page missing"
     assert (site_dir / "concepts" / "living-specs" / "index.html").exists(), "living-specs page missing"
+    assert (site_dir / "concepts" / "architectural-index" / "index.html").exists(), "architectural-index page missing"
     assert (site_dir / "concepts" / "explorations" / "index.html").exists(), "explorations page missing"
     assert (site_dir / "concepts" / "design" / "index.html").exists(), "design page missing"
     assert (site_dir / "concepts" / "schema-glossary" / "index.html").exists(), "schema-glossary page missing"

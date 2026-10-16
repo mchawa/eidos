@@ -57,7 +57,7 @@ components:
     source_path: "src/eidos/core/lifecycle/audit.py"
   - id: CMP-CONTEXT-SLICER
     name: "ContextSlicer"
-    responsibility: "Extracts compact, token-efficient architectural subgraph slices across C4 components, contracts, capabilities, invariants, policies, and tier-aware embedded architectural decisions (DEC-* with compact 1-line summaries in anchor and full rationale/rejected_alternatives in guardrails and deep), providing the single canonical ArchitecturalContextSlice.to_markdown() implementation shared with TieredContextSlice."
+    responsibility: "Extracts compact, token-efficient architectural subgraph slices across C4 components, contracts, capabilities, invariants, policies, and tier-aware embedded architectural decisions (DEC-* with compact 1-line summaries in anchor or secondary guardrails components via compact=True, bounded rationale/rejected_alternatives in primary guardrails, and full detail in deep), providing the single canonical ArchitecturalContextSlice.to_markdown() implementation shared with TieredContextSlice."
     source_path: "src/eidos/core/workspace/context.py"
   - id: CMP-CHANGELOG-GENERATOR
     name: "ChangelogGenerator"

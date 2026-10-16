@@ -301,21 +301,26 @@ AI agents execute Eidos CLI commands directly from terminal / subshell tools. Al
 
 | CLI Command | Flags / Options | Description |
 | :--- | :--- | :--- |
-| `eidos context` | `-f <file>`, `-c <cmp>`, `-t <task>`, `--format json` | Slices a compact architectural context subgraph (`anchor`, `guardrails`, `deep`). |
-| `eidos index search` | `"<query>"` | Performs BM25 full-text search across living spec titles, requirements, and invariants. |
-| `eidos index blast-radius` | `<symbol>`, `--depth 2` | Computes transitive dependency and governance blast radius for a symbol or spec path. |
-| `eidos index status` | | Reports index health, cache size, total entity/edge counts, and auto-sync freshness state. |
+| `eidos context` | `-f <file>`, `-c <id>`, `-t <task>`, `--tier <tier>`, `--format json` | Slices a compact architectural context subgraph (`anchor`, `guardrails`, `deep`). |
+| `eidos index repo-map` | `--max-tokens <n>`, `--format json` | Generates an AST-compressed structural repository map (~98% token reduction). |
+| `eidos index find-symbol` | `<query>`, `--limit <n>`, `--json` | Resolves classes, functions, and methods to exact file/line coordinates and owning specs. |
+| `eidos index search` | `"<query>"`, `--limit <n>` | Performs column-weighted BM25 full-text search across living spec titles, rules, and invariants. |
+| `eidos index blast-radius` | `<symbol>`, `--depth 2`, `--json` | Computes transitive dependency and governance blast radius for a symbol or spec path. |
+| `eidos index status` | `--json` | Reports index health, cache size, AST telemetry, entity/edge counts, and auto-sync freshness. |
 | `eidos index sync` | `--force` | Incrementally synchronizes or force-rebuilds the architectural knowledge graph. |
-| `eidos drift` | `--uncommitted`, `--base <ref>`, `--json` | Inspects spec-to-code drift between git branches or uncommitted changes, validates schemas, and checks test bindings. |
-| `eidos validate` | `[PATH]`, `--json` | Validates all living specifications against their bundled JSON Schemas and checks bidirectional cross-references. |
+| `eidos drift` | `--uncommitted`, `--base <ref>`, `--json` | Inspects spec-to-code drift, substantive spec diffs, and polyglot `INV-*` test bindings. |
+| `eidos validate` | `[PATH]`, `--json` | Validates all living specifications against their bundled v1 JSON Schemas and `x-eidos-ref` links. |
 | `eidos info` | | Returns current engine version, loaded v1 schemas, and supported platforms. |
-| `eidos spec list` | `--type <type>`, `--status <status>`, `--json` | Lists living specifications (including inline C4 Level 3 components `CMP-*`) matching optional type and lifecycle filters. |
-| `eidos spec create` | `<type> <id> --title <title>` | Scaffolds a new specification document (capability, domain, policy, contract, component, design system, etc.). |
+| `eidos spec list` | `--type <type>`, `--status <status>`, `--json` | Lists living specifications (including inline C4 Level 3 components `CMP-*`). |
+| `eidos spec create` | `<type> <id> --title <title>` | Scaffolds a new specification document across all 16 schema types. |
 | `eidos spec delete` | `<id_or_path> [--force]` | Safely deletes a living specification with cross-reference safety checks. |
-| `eidos spec component` | `[promote\|inline] <id>` | Promotes inline C4 Level 3 components to `eidos/architecture/components/` or inlines them back into their container manifest. |
-| `eidos delta create` | `<id> --title <title> --kind <kind>` | Scaffolds a new SpecDelta mutation document (`DLT-*`) for Planned Mode. |
-| `eidos delta apply` | `<id>` | Reconciles a SpecDelta in-place, updating its lifecycle state to `applied` and synchronizing symlink views. |
-| `eidos init` | `[PATH]` | Bootstraps a repository with an empty living specification skeleton. |
+| `eidos spec component` | `[promote\|inline] <id>` | Promotes inline C4 Level 3 components to `eidos/architecture/components/` or inlines them back. |
+| `eidos delta create` | `<id> --title <title> --kind <feature\|enabler\|bug>` | Scaffolds a new SpecDelta mutation document (`DLT-*`) for Planned Mode. |
+| `eidos delta verify` | `<id>`, `--json` | Verifies that all declared mutations and `expect:` post-conditions hold in the spec catalog. |
+| `eidos delta audit` | `<id>`, `--strict`, `--json` | Audits removed/deprecated entities for dangling references vs. approved tombstones. |
+| `eidos delta apply` | `<id>`, `--execute`, `--verify`, `--json` | Reconciles a SpecDelta in-place (`status: applied`) and optionally executes structural mutations. |
+| `eidos delta changelog` | `--stdout`, `--output <file>` | Compiles Keep a Changelog release notes from Git tags and applied SpecDeltas. |
+| `eidos init` | `[PATH]`, `--lite` | Bootstraps a repository with the full catalog or progressive 3-file Eidos Lite profile. |
 
 ---
 
@@ -353,12 +358,13 @@ When agents pass `--json` (or `--format json`), Eidos outputs structured JSON pa
   "delta_files": ["eidos/deltas/dlt-2026-016.adoc"],
   "test_files": ["tests/test_cli_json.py"],
   "touched_components": ["CNT-EIDOS-CLI"],
+  "trivially_covered_files": [],
   "valid_specs": 62,
   "total_specs": 62,
   "remediation_suggestions": []
 }
 ```
-* **Exit code**: `0` when clean, `1` when unmanaged code changes exist without specification updates in Direct Mode.
+* **Exit code**: `0` when clean, `1` when unmanaged code changes, trivial comment-only spec edits, or broken test bindings exist.
 
 #### 3. Context Slicing (`eidos context -f src/eidos/cli/main.py --format json`)
 ```json
@@ -366,9 +372,9 @@ When agents pass `--json` (or `--format json`), Eidos outputs structured JSON pa
   "tier": "guardrails",
   "components": [
     {
-      "id": "CMP-EIDOS-CLI",
-      "name": "Eidos CLI",
-      "container": "CNT-EIDOS-CLI",
+      "id": "CNT-EIDOS-CLI",
+      "name": "Eidos Command-Line Interface",
+      "type": "tech/container",
       "package_path": "src/eidos/cli"
     }
   ],
@@ -376,7 +382,7 @@ When agents pass `--json` (or `--format json`), Eidos outputs structured JSON pa
     {
       "id": "CTR-EIDOS-CLI",
       "protocol": "cli_args",
-      "path": "eidos/architecture/contracts/cli.adoc"
+      "owning_container": "CNT-EIDOS-CLI"
     }
   ],
   "capabilities": [
@@ -390,14 +396,14 @@ When agents pass `--json` (or `--format json`), Eidos outputs structured JSON pa
     {
       "id": "INV-AGENT-GRAPH-INDEX-FRESHNESS",
       "rule": "Every CLI query lazily checks dirty status via SHA-256 and mtime hashing.",
-      "covered": true,
-      "test_path": "tests/test_graph_index.py"
+      "has_test_coverage": true,
+      "test_binding": "tests/test_graph_index.py::test_spike_b_incremental_dirty_check_and_lazy_sync"
     }
   ],
   "policies": [
     {
       "id": "POL-001-GIT-SOURCE-OF-TRUTH",
-      "title": "Git Source of Truth Policy"
+      "title": "Git Repository as the Single Source of Truth"
     }
   ]
 }
@@ -405,29 +411,43 @@ When agents pass `--json` (or `--format json`), Eidos outputs structured JSON pa
 
 ---
 
-## The 5 Invariant Architectural Rules
+## The 7 Constitutional Guardrails
 
-Eidos embeds five golden architectural rules in its master skill `skills/eidos/SKILL.md`. When working in an Eidos repository, every AI assistant is instructed to obey them:
+Eidos embeds seven non-negotiable architectural guardrails in its master skill `skills/eidos/SKILL.md`. When working in an Eidos repository, every AI assistant is instructed to obey them:
 
-### 1. Single Source of Truth
-All product requirements, architectural topologies, component interfaces, and policies are codified inside `eidos/` as living AsciiDoc (`.adoc`) files with YAML frontmatter. The living specs are continuously synchronized with the codebase.
+### 1. Single Source of Truth (`POL-001`)
+All product domains, capabilities, personas, C4 architecture containers/components, interface contracts, design systems, and policies live inside `eidos/` as structured AsciiDoc (`.adoc`) files with YAML frontmatter.
 
-### 2. Absolutely No ADRs
-Traditional Architecture Decision Records (ADRs) become write-only documentation graveyards. Decisions and evolutions are recorded directly in the living specifications:
-* System Context & Containers: `eidos/architecture/system-architecture.adoc`
-* Container Manifests: `eidos/architecture/containers/<name>.adoc`
-* Interface Contracts: `eidos/architecture/contracts/<contract>.adoc`
-* Invariants & Policies: `eidos/policies/<policy>.adoc`
-* Semantic Mutations: `eidos/deltas/<delta-id>.adoc`
+### 2. Zero ADRs (`POL-001`)
+Standalone Architecture Decision Records (`docs/adr/`, `eidos/adr/`, or `ADR-*.md`) are strictly prohibited. Current architectural state lives in `eidos/architecture/`, durable design rationale and rejected alternatives are recorded in-place under the `decisions:` (`DEC-*`) frontmatter block of the owning specification, and transitions are governed by **SpecDeltas** (`eidos/deltas/dlt-*.adoc`).
 
-### 3. SpecDelta Mutation Lifecycle
-Before writing code for non-trivial features, refactors, or fixes, the agent must check if a SpecDelta is required. It scaffolds a delta using `eidos delta create`. After implementation and test verification, the delta is reconciled using `eidos delta apply`.
+### 3. Dual Workflow Mode Selection (`POL-003`)
+Every task operates in either **Direct Mode** (fast, in-place co-evolution of code, tests, and owning specs for localized edits) or **Planned Mode** (formal SpecDelta `DLT-*` lifecycle for cross-container or breaking changes). Agents classify the workflow mode *before* writing code.
 
-### 4. Invariant-Test Traceability
-Every policy (`POL-*`) and capability (`CAP-*`) defines explicit, testable invariants. All automated tests in `tests/` must trace back to these IDs in test markers, docstrings, or test function names.
+### 4. Mandatory Invariant-Test Traceability (`POL-002`)
+Every capability invariant (`INV-*`) must declare a concrete `test_binding` (`path/to/test_file::test_function` or `path/to/test_file::TestClass::test_method`), and the bound test function must explicitly reference the `INV-*` ID.
 
-### 5. Specification Integrity & Validation
-Before concluding any task, the agent must validate all specifications using `eidos validate --json` (or `eidos validate eidos`). Specifications must conform to schema with zero broken cross-references.
+### 5. Deterministic Engine Only (`POL-004`)
+Eidos CLI commands are 100% deterministic local operations with zero external AI/LLM runtime calls. Agents always invoke Eidos CLI commands rather than guessing schemas or manually wiring symlinks.
+
+### 6. Zero Unreconciled Drift
+No task may conclude with failing specification schemas (`eidos validate eidos`) or unmanaged code-to-spec drift (`eidos drift --uncommitted`).
+
+### 7. Mandatory Autonomous Adversarial Gap Self-Review
+Before presenting work or concluding a task, the agent executes an autonomous adversarial review over its own `git diff`—auditing requirements completeness, edge cases, contract SemVer consistency (`CTR-*`), genuine test assertions (`INV-*`), and embedded decision capture (`DEC-*`)—and fixes any gaps immediately.
+
+---
+
+## Automated Lifecycle Hooks & the Block-Once Stop Gate (`eidos hook`)
+
+In agent harnesses that support lifecycle hooks (Google Antigravity, Claude Code, Cursor, Cline, OpenCode, and Codex), Eidos registers two CLI-native hooks in `hooks.json`:
+
+1. **`eidos-doc-linter` (`eidos hook lint`)**:
+   * **PreToolUse Gate**: Intercepts file-creation and write tool calls before execution, blocking attempts to create prohibited standalone ADR files (`docs/adr/`, `ADR-*.md`).
+   * **PostToolUse / PostInvocation Gate**: Automatically validates modified `.adoc` files against their v1 JSON Schemas and reports schema errors back to the agent immediately.
+2. **`eidos-drift-gate` (`eidos hook drift`)**:
+   * **Block-Once Stop Gate**: When an agent attempts to end its turn (`Stop` event), `eidos hook drift --event stop` runs `eidos drift --uncommitted`. If unmanaged code drift or broken test bindings are detected, Eidos blocks completion and injects the exact `remediation_suggestions` into the agent's context so it can self-correct.
+   * **Loop Prevention (`eidos/.cache/stop-gate.json`)**: Eidos hashes the current drift state using SHA-256. If an agent is genuinely blocked by an external constraint and hits the exact same drift fingerprint twice in a row, the Block-Once mechanism allows the turn to stop cleanly so the agent can ask the human user for guidance.
 
 ---
 
@@ -438,7 +458,7 @@ When using an agent client that supports skill bundles (such as Google Antigravi
 * **`eidos`**: Master workflow orchestrator (Direct vs. Planned Mode), token-efficient architectural context slicing (`eidos context`), and continuous spec-to-code drift detection (`eidos drift`).
 * **`eidos-spec`**: Unified authoring reference for Product domains (`DOM-*`), capabilities (`CAP-*`), personas (`PER-*`), Arc42/C4 architecture (`CNT-*`, inline and promoted `CMP-*`, `CTR-*`, embedded `decisions:`), Multi-Design Systems (`DS-*`, W3C Design Tokens, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`), and system policies/invariants (`POL-*`, `INV-*` with polyglot `file::func` test bindings).
 * **`eidos-plan`**: Technical feasibility spikes (`EXP-*`), the SpecDelta mutation lifecycle (`DLT-*`, `create`, `verify`, `audit`, `apply`, `changelog`), and 5-dimension Staff Systems Architect reviews.
-* **`eidos-ops`**: Greenfield repository initialization (`eidos init`), systematic reverse-engineering of brownfield codebases into living specifications, and Living Web Portal operations (`eidos portal serve`, `eidos portal build`).
+* **`eidos-ops`**: Greenfield repository initialization (`eidos init`, `eidos init --lite`), systematic reverse-engineering of brownfield codebases into living specifications, and Living Web Portal operations (`eidos portal serve`, `eidos portal build`).
 
 ---
 

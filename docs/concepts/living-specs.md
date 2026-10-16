@@ -20,40 +20,68 @@ Traditional software engineering teams frequently use ADRs to capture architectu
 
 ## Structure of Living Specs
 
-All living specifications are authored in **AsciiDoc (`.adoc`)** with structured **YAML frontmatter**. This allows them to be human-readable, Git-mergeable, and programmatically validated against canonical JSON/YAML schemas.
+All living specifications are authored in **AsciiDoc (`.adoc`)** with structured **YAML frontmatter**. This allows them to be human-readable, Git-mergeable, and programmatically validated against canonical JSON/YAML schemas (`assets/schemas/v1/`).
 
 ```text
 eidos/
-├── system.adoc                   # Root system descriptor (C4 Level 1)
+├── system.adoc                   # Root system descriptor (SYS-*, C4 Level 1)
 ├── architecture/                 # Technical architecture (Arc42 + C4)
-│   ├── system-architecture.adoc  # Global architecture & C4 Container topology (L1 & L2)
-│   ├── containers/               # Container manifests (C4 Level 2)
-│   └── contracts/                # Interface protocol contracts (APIs, CLI)
+│   ├── system-architecture.adoc  # Global architecture & C4 Container topology (ARCH-*, L1 & L2)
+│   ├── containers/               # Container manifests & inline components (CNT-*, C4 Level 2 & L3)
+│   ├── components/               # Promoted standalone component manifests (CMP-*, C4 Level 3)
+│   └── contracts/                # Interface protocol contracts (CTR-*: OpenAPI, gRPC, CLI)
 ├── domains/                      # DDD bounded contexts & capability trees
 │   └── <domain-name>/
 │       ├── domain.adoc           # Bounded context manifest (DOM-*)
-│       └── capabilities/         # Product capabilities (CAP-*)
+│       └── capabilities/         # Product capabilities & invariants (CAP-*, INV-*)
 ├── personas/                     # Human & AI actor roles (PER-*)
 ├── policies/                     # Inviolable system governance policies (POL-*)
 ├── explorations/                 # Spikes, hypotheses & feasibility discovery (EXP-*)
-├── design/                       # Multi-Design Systems & UI contracts
-│   ├── systems/<system>/         # Design systems (DS-*) & W3C DTCG tokens
-│   ├── screens/                  # Screen views & route state machines (SCR-*)
-│   └── flows/                    # User interaction flows (FLOW-*)
-└── deltas/                       # SpecDelta mutations (DLT-*)
+├── design/                       # Multi-Design Systems, Client Surfaces & UI contracts
+│   ├── systems/<system>/         # Design systems (DS-*), W3C DTCG tokens & UI components (UIC-*)
+│   ├── clients/<client>/         # Client apps (CLT-*), client screens (SCR-*) & flows (FLOW-*)
+│   └── flows/                    # Omnichannel cross-client interaction flows (FLOW-*)
+└── deltas/                       # SpecDelta mutations (DLT-*) & gitignored by-status/ views
 ```
 
 ---
 
 ## The Five Living Specification Layers
 
-Eidos models software across five interconnected layers:
+Eidos models software across five interconnected layers across **16 canonical document schemas**:
 
 1. **Product & Governance Layer**: Defines strategic archetypes ([`SYS-*`](schema-glossary.md#productsystem)), bounded contexts ([`DOM-*`](schema-glossary.md#productdomain)), capabilities ([`CAP-*`](schema-glossary.md#productcapability)), actor personas ([`PER-*`](schema-glossary.md#productpersona)), and non-negotiable policies ([`POL-*`](schema-glossary.md#productpolicy)).
 2. **Exploration & Discovery Layer**: Formalizes hypothesis-driven technical spikes and prototypes ([`EXP-*`](explorations.md)) before committing to architectural baselines.
-3. **Technical Architecture Layer**: Codifies Arc42 system context ([`ARCH-*`](schema-glossary.md#techarchitecture)), C4 containers ([`CNT-*`](schema-glossary.md#techcontainer)) with internal components ([`CMP-*`]), and protocol contracts ([`CTR-*`](schema-glossary.md#techcontract)) without ADRs.
-4. **Experience & Design Layer**: Governs multi-brand themes ([`DS-*`](design.md)), official W3C Design Tokens, UI component contracts ([`UIC-*`](design.md#4-ui-component-manifests-uic-)), and screen state machines ([`SCR-*`](design.md#5-screen-state-machines-scr-)).
+3. **Technical Architecture Layer**: Codifies Arc42 system context ([`ARCH-*`](schema-glossary.md#techarchitecture)), C4 containers ([`CNT-*`](schema-glossary.md#techcontainer)), C4 components ([`CMP-*`](schema-glossary.md#techcomponent)), protocol contracts ([`CTR-*`](schema-glossary.md#techcontract)), and embedded design decisions (`DEC-*`) without ADRs.
+4. **Experience & Design Layer**: Governs multi-brand themes ([`DS-*`](design.md)), official W3C Design Tokens, UI component contracts ([`UIC-*`](design.md#4-ui-component-manifests-uic-)), client surfaces ([`CLT-*`](design.md#6-client-applications-clt-)), screen state machines ([`SCR-*`](design.md#5-screen-state-machines-scr-)), and user flows ([`FLOW-*`](design.md#7-interaction-flows-flow-)).
 5. **Evolution & Mutation Layer**: Orchestrates planned architectural changes through auditable SpecDeltas ([`DLT-*`](specdeltas.md)).
+
+---
+
+## How Eidos Replaces ADRs: Embedded Decisions (`DEC-*`)
+
+Instead of scattering chronological `ADR-001.md` files into a separate folder where they quickly go stale, Eidos records durable design trade-offs **in-place** inside the `decisions:` frontmatter block of the owning specification (`ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, or `CAP-*`).
+
+Validated via the shared `$defs/decision` schema (`assets/schemas/v1/common/defs.yaml`), every `DEC-*` entry captures:
+* **`id`**: Globally unique decision identifier (`DEC-<NAME>`).
+* **`title` & `decision`**: Concise summary and normative architectural choice.
+* **`rationale`**: Why this design was chosen.
+* **`rejected_alternatives`**: Options that were evaluated and rejected (with `option` and `reason_rejected`), preserving negative architectural knowledge so future engineers and AI agents never re-introduce rejected designs.
+* **`graduated_from`**: Optional link to the Exploration (`EXP-*`) or SpecDelta (`DLT-*`) that validated the decision.
+
+```yaml
+decisions:
+  - id: DEC-INDEX-SQLITE-WAL
+    title: "Use Embedded SQLite WAL + FTS5 Instead of External Vector DB"
+    decision: "Store the architectural knowledge graph and lexical index in local SQLite3 with WAL mode and FTS5 BM25."
+    rationale: "Guarantees zero external runtime dependencies (Python stdlib), sub-2ms local queries, and 100% deterministic offline operation under POL-004."
+    rejected_alternatives:
+      - option: "ChromaDB / LanceDB Vector Store"
+        reason_rejected: "Requires embedding model weights or external API calls, violating POL-004 and bloating installation size."
+    graduated_from: EXP-2026-002
+```
+
+When an AI agent runs `eidos context`, Eidos automatically includes compact 1-line `DEC-*` summaries in the `anchor` tier and the full `rationale` + `rejected_alternatives` in the `guardrails` and `deep` tiers.
 
 ---
 
@@ -63,7 +91,7 @@ Before committing to a new database, protocol, or framework in a living specific
 
 Eidos solves this by treating spikes as **Explorations (`EXP-*`)**:
 
-* **Hypothesis & Exit Criteria**: Every exploration declares an unambiguous hypothesis, specific questions to answer, benchmark targets, and measurable exit criteria.
+* **Hypothesis & Exit Criteria**: Every exploration declares an unambiguous hypothesis, specific questions to answer, benchmark targets, and measurable exit criteria (`max_duration`, `benchmark`).
 * **Disposable Prototype Branches**: Spikes execute on experimental branches (`spike/exp-*`), recording empirical findings (latency percentiles, memory profiles, locking contention).
 * **Two Deterministic Outcomes**:
   - **Adopted**: If exit criteria are met, the exploration graduates into a formal **SpecDelta (`DLT-*`)** for production integration.
@@ -86,14 +114,15 @@ name: Eidos Core Engine
 container_type: library
 runtime: "Python 3.12+"
 package_path: "src/eidos/core"
+domain_binding: DOM-SPEC-ENGINE
 components:
-  - id: CMP-CORE-PARSER
+  - id: CMP-SPEC-PARSER
     name: SpecParser
-    responsibility: "Parses AsciiDoc files with YAML frontmatter into structured AST models."
+    responsibility: "Extracts YAML frontmatter metadata and body text from AsciiDoc documents."
     source_path: "src/eidos/core/spec/parser.py"
 contracts:
   provides:
-    - "CTR-EIDOS-VALIDATOR"
+    - "CTR-EIDOS-CLI"
 dependencies:
   internal_containers: []
   external_services:
@@ -108,21 +137,30 @@ and AST graph generation for all Eidos operations.
 
 ### Key Elements:
 * **`type`**: Canonical specification type matching the Eidos schema taxonomy.
-* **`id`**: Globally unique document identifier (`CNT-*`, `CMP-*`, `CTR-*`, `CAP-*`, `POL-*`, `EXP-*`, `DS-*`, `DLT-*`).
-* **`schema`**: Reference to the canonical schema file ensuring automated validation.
-* **Frontmatter Metadata**: Strongly-typed architectural properties (contracts, dependencies, invariants, tokens).
+* **`id`**: Globally unique document identifier (`SYS-*`, `DOM-*`, `CAP-*`, `POL-*`, `PER-*`, `EXP-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DS-*`, `UIC-*`, `SCR-*`, `CLT-*`, `FLOW-*`, `DLT-*`).
+* **`schema`**: Reference to the canonical schema file ensuring automated validation and `x-eidos-ref` link checking.
+* **Frontmatter Metadata**: Strongly-typed architectural properties (contracts, dependencies, invariants, decisions, tokens).
 * **Body text**: Rich AsciiDoc documentation that evolves continuously with the code.
 
 ---
 
-## Centralized Hybrid C4 Level 3 Components (`CMP-*`)
+## C4 Model Hierarchy & Centralized Hybrid Components (`CMP-*`)
 
-Eidos implements a hybrid architecture for C4 Level 3 components:
-* **80% Inline**: Lightweight modules remain inline inside Level 2 container manifests (`eidos/architecture/containers/*.adoc`), keeping macro-architecture clean and compact.
-* **20% Centralized Promoted Specs**: Highly complex subsystems receive dedicated `type: tech/component` specifications residing centrally in `eidos/architecture/components/<component>.adoc` (linking to source code via `package_path` and referenced in the container manifest via `ref:`).
-* **Strict Centralization Mandate (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Dedicated component manifests must always reside centrally under `eidos/architecture/components/`. Specifications must never touch or reside within source code directories (`src/`, `packages/`) to ensure code remains 100% clean.
-* **Interface Separation (`INV-INTERFACE-BOUNDARY-GOVERNANCE`)**: Containers own Boundary Protocol Contracts (`CTR-*`), while components declare local in-process APIs (`interfaces.provides`).
-* **CLI Automation**: Promoted and inlined seamlessly using `eidos spec component promote <ID>` and `eidos spec component inline <ID>`.
+Eidos enforces a strict, first-principles mapping to the canonical **C4 Architecture Model**:
+
+| C4 Level | C4 Term | Eidos Specification Entity | Architectural Boundary |
+| :--- | :--- | :--- | :--- |
+| **Level 1** | **System Context** | Root System Spec (`SYS-*`) & Architecture (`ARCH-*`) | System boundaries, human/AI personas (`PER-*`), and external systems |
+| **Level 2** | **Container** | Container Manifests (`CNT-*`, `type: tech/container`) | **Process / Deployable / Package boundary** (CLI app, service, library, SPA, database) |
+| **Level 3** | **Component** | In-Process Modules (`CMP-*`, inline in `CNT-*.adoc` or promoted in `eidos/architecture/components/*.adoc`) | **In-Process / Memory boundary** (internal modules, engines, services, validators) |
+| **Level 4** | **Code** | Source Code & AST Symbols (`package_path`, `source_path`) | Classes, functions, methods, and signatures indexed in `eidos/.cache/index.db` |
+
+### Centralized Hybrid C4 Level 3 Architecture
+* **80% Inline**: Lightweight internal modules remain inline inside Level 2 container manifests (`eidos/architecture/containers/*.adoc`), keeping macro-architecture clean and saving 87–94% of context tokens.
+* **20% Centralized Promoted Specs**: Complex subsystems with dedicated state, invariants (`INV-*`), or rich in-process interfaces receive standalone `type: tech/component` specifications residing centrally in `eidos/architecture/components/<component>.adoc` (linking to implementation files via `source_path` and referenced in the parent container manifest via `ref:`).
+* **Strict Centralization Mandate (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Dedicated component manifests must always reside centrally under `eidos/architecture/components/`. Specifications must never touch or reside within source code directories (`src/`, `packages/`) so implementation trees remain 100% pure.
+* **Interface Boundary Governance (`INV-INTERFACE-BOUNDARY-GOVERNANCE`)**: Containers (`CNT-*`) own cross-process Boundary Protocol Contracts (`CTR-*`), while components (`CMP-*`) declare local in-process language signatures (`interfaces.provides`).
+* **CLI Automation**: Promote or inline components with a single command using `eidos spec component promote <ID>` and `eidos spec component inline <ID>`.
 
 
 

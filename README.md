@@ -25,22 +25,25 @@ pipx install eidos-ai
 # Or run ephemerally without installing
 uvx --from eidos-ai eidos --help
 
-# Initialize Eidos in your repository
+# Initialize Eidos in your repository (or use `eidos init --lite` for a 3-file starter profile)
 eidos init
 
-# Synchronize knowledge graph index
+# Synchronize SQLite + FTS5 + AST knowledge graph index
 eidos index sync
+
+# Extract a token-budgeted architectural context slice for a file or task
+eidos context -t "authentication and drift detection"
 
 # Validate living specifications
 eidos validate eidos
 
-# Verify zero drift between code and living specs
+# Verify zero drift between code, tests, and living specs
 eidos drift
 
 # Launch interactive C4 architecture portal
 eidos portal serve --path eidos --port 8080
 
-# Install AI agent plugin (4 skills for Antigravity, Claude, Cursor, Copilot)
+# Install AI agent plugin (4 skills for Antigravity, Claude, Cursor, Copilot, Aider, Cline, OpenCode, Codex)
 eidos plugin install --target all
 ```
 
@@ -54,23 +57,29 @@ eidos/
 ├── zensical.toml                  # Zensical documentation site configuration
 │
 ├── src/eidos/                     # [THE ENGINE / SOLUTION]
-│   ├── cli/                       # CLI commands (`eidos validate`, `eidos drift`, `eidos delta`, etc.)
-│   ├── core/                      # AsciiDoc + YAML frontmatter parser & schema validator
-│   ├── plugin/                    # Agent plugin packager, validator, and installer (4 skills)
-│   ├── portal/                    # Interactive Living Architecture static portal generator
-│   ├── vcs/                       # Git spec-to-code drift detection & reconciliation engine
-│   └── schemas/v1/                # Portable JSON/YAML Schemas bundled as package data
+│   ├── cli/                       # CLI commands (`eidos validate`, `eidos drift`, `eidos context`, etc.)
+│   ├── core/                      # Spec parser, validator, scaffolder, DeltaEngine & knowledge graph (`index/`)
+│   ├── plugin/                    # Agent plugin installer (`TargetAdapter`), validator, and lifecycle hooks
+│   ├── portal/                    # Interactive Living Architecture server & static portal generator
+│   └── vcs/                       # Git spec-to-code drift detection, AST symbol diffing & invariant verification
 │
-├── eidos/                         # [THE LIVING SPECIFICATION / REAL USAGE]
-│   ├── system.adoc                # Root system descriptor
-│   ├── personas/                  # Human & AI actor roles
-│   ├── policies/                  # Non-negotiable architectural invariants (POL-*)
-│   ├── domains/                   # Bounded contexts & capabilities (CAP-*)
-│   ├── architecture/              # System architecture, components, & contracts
-│   └── deltas/                    # In-flight and applied mutations (DLT-*)
+├── assets/                        # [BUNDLED SCHEMAS, SKILLS & PORTAL ASSETS]
+│   ├── schemas/v1/                # 16 canonical JSON/YAML schemas + shared `common/defs.yaml`
+│   ├── plugin_reference/          # Canonical `agent-plugins.org v1.0.0` bundle & 4 workflow skills
+│   └── portal/                    # Pre-compiled air-gapped portal SPA (`bundle.html.gz`)
+│
+├── eidos/                         # [THE LIVING SPECIFICATION / DOGFOODED CATALOG]
+│   ├── system.adoc                # Root system descriptor (SYS-*)
+│   ├── personas/                  # Human & AI actor roles (PER-*)
+│   ├── policies/                  # Non-negotiable architectural policies (POL-*)
+│   ├── domains/                   # Bounded contexts (DOM-*) & capabilities with test-bound invariants (CAP-*, INV-*)
+│   ├── architecture/              # Arc42/C4 architecture (ARCH-*), containers (CNT-*), components (CMP-*), contracts (CTR-*)
+│   ├── design/                    # Multi-Design Systems (DS-*), W3C tokens, UI components (UIC-*), clients (CLT-*), screens (SCR-*), flows (FLOW-*)
+│   ├── explorations/              # Hypothesis-driven technical spikes (EXP-*)
+│   └── deltas/                    # In-flight and applied SpecDelta mutations (DLT-*)
 │
 ├── docs/                          # User documentation site (Zensical)
-└── tests/                         # Engine & specification test suites
+└── tests/                         # Engine & invariant verification test suites
 ```
 
 ---

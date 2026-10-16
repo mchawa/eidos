@@ -17,8 +17,8 @@ components:
     source_path: "docs/getting-started/quickstart.md"
   - id: CMP-DOCS-CORE-CONCEPTS
     name: "CoreConceptsGuides"
-    responsibility: "In-depth conceptual guides: Living Specs, SpecDeltas, Invariants, Explorations, Design Systems, and Schema Glossary."
-    source_path: "docs/concepts/living-specs.md"
+    responsibility: "In-depth conceptual guides: How Eidos Works (7-container internal architecture & 4-stage execution pipeline), Living Specs, Architectural Index, SpecDeltas, Invariants, Explorations, Design Systems, and the 16-schema Glossary."
+    source_path: "docs/concepts/how-eidos-works.md"
   - id: CMP-DOCS-USER-GUIDES
     name: "UserGuides"
     responsibility: "Operational reference manuals: CLI command reference, Agent Plugin integration with 4 workflow skills, and Living Portal deployment."
@@ -50,7 +50,7 @@ quality_attributes:
 :toc: left
 
 == Architectural Boundary
-This container represents the public documentation site under `docs/` and its build pipeline configured by `zensical.toml`. It publishes comprehensive guides, conceptual frameworks, schema glossaries, and CLI references to GitHub Pages (`https://mchawa.github.io/eidos/`), while embedding the Eidos Living Portal (`site/portal/`).
+This container represents the public documentation site under `docs/` and its build pipeline configured by `zensical.toml`. It publishes comprehensive guides, conceptual frameworks, under-the-hood engine mechanics, 16-schema glossaries, and CLI references to GitHub Pages (`https://mchawa.github.io/eidos/`), while embedding the Eidos Living Portal (`site/portal/`).
 
 == Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
 
@@ -58,7 +58,7 @@ This container represents the public documentation site under `docs/` and its bu
 |===
 | Component ID | Name | Responsibility | Source Path
 | `CMP-DOCS-GETTING-STARTED` | **GettingStartedGuides** | Installation, environment setup, and 5-minute quickstart onboarding | `docs/getting-started/`
-| `CMP-DOCS-CORE-CONCEPTS` | **CoreConceptsGuides** | Explanations of Living Specs, SpecDeltas, Invariants, Explorations, Design Systems, and Schemas | `docs/concepts/`
+| `CMP-DOCS-CORE-CONCEPTS` | **CoreConceptsGuides** | Deep explanations of How Eidos Works (7-container architecture & execution pipeline), Living Specs, Architectural Index, SpecDeltas, Invariants, Explorations, Design Systems, and the 16 Canonical Schemas | `docs/concepts/`
 | `CMP-DOCS-USER-GUIDES` | **UserGuides** | CLI reference, AI Agent Plugin guides (4 workflow skills across Antigravity, Claude, Cursor, Copilot), and Portal operations | `docs/guides/`
 | `CMP-DOCS-CONFIG` | **SiteConfiguration** | Zensical theme styling, search indexing, and navigation topology | `zensical.toml`
 |===

@@ -48,7 +48,7 @@ eidos/design/
 │   │       └── modal.adoc            <- id: UIC-CORE-MODAL
 │   │
 │   └── acme/                         <- White-Label / Client Theme
-│       ├── system.adoc               <- extends: "DS-CORE", client_id: "acme"
+│       ├── system.adoc               <- extends_system: "DS-CORE", client_id: "acme"
 │       └── tokens.json               <- Brand token overrides
 │
 ├── clients/                          <- Client Applications (CLT-*)
@@ -198,7 +198,7 @@ test_bindings:
 
 Screens (`type: design/screen`) bridge product capabilities with visual layout. They define the URL route, layout slots, supported design systems, and the screen state machine (loading, empty, active, error).
 
-### Screen Specification Example (`eidos/design/screens/checkout.adoc`):
+### Screen Specification Example (`eidos/design/clients/web-store/screens/checkout.adoc`):
 
 ```asciidoc
 ---
@@ -207,6 +207,7 @@ schema: schemas/v1/design/screen.schema.yaml
 id: SCR-CHECKOUT
 title: "Order Checkout Screen"
 route: "/checkout"
+client: "CLT-WEB-STORE"
 status: active
 
 capabilities:
@@ -242,7 +243,7 @@ Coordinates payment form submission, address validation, and express wallet inte
 
 Client manifests (`type: design/client`) bind frontend client targets (web SPA, iOS, Android, desktop, or terminal CLI) to their assigned design system, C4 monorepo container, screens, and interaction flows:
 * **`design_system`**: The overarching UI framework and component contracts (`UIC-*`) the client compiles against (e.g. `DS-CORE`).
-* **`container`**: The C4 Level 2 Container manifest implementing this client surface (e.g. `CMP-EIDOS-PORTAL`).
+* **`container`**: The C4 Level 2 Container manifest implementing this client surface (e.g. `CNT-EIDOS-PORTAL`).
 
 ### Client Manifest Example (`eidos/design/clients/web-portal/client.adoc`):
 

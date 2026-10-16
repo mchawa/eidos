@@ -40,13 +40,15 @@ pipx install eidos-ai
 
 ---
 
-## Optional Extras
+## Bundled Polyglot AST Engine & Optional Extras
 
-Eidos provides optional feature sets that can be included when installing the CLI tool:
+`eidos-ai` bundles **`ast-grep-py` by default** as a core dependency (with automatic fallback to Python's standard library `ast` on platforms without native Tree-sitter wheels), enabling out-of-the-box structural code indexing and test-binding verification across **Python, TypeScript, JavaScript, Go, Rust, Java, and Kotlin**.
+
+Optional extras are available for documentation building and repository development:
 
 | Extra | Description | Installation |
 | :--- | :--- | :--- |
-| `ast` | Polyglot AST code indexing via `ast-grep` (Python, TS/JS, Go, Rust) | `uv tool install "eidos-ai[ast]"` or `pipx install "eidos-ai[ast]"` |
+| `ast` | Compatibility alias for polyglot AST code indexing via `ast-grep-py` (included in default install) | `uv tool install "eidos-ai[ast]"` or `pipx install "eidos-ai[ast]"` |
 | `docs` | Documentation site building with Zensical | `uv tool install "eidos-ai[docs]"` |
 | `dev` | Contributor test suite (`pytest`, `pytest-cov`, `ruff`) | `uv sync --all-extras --dev` |
 

@@ -13,6 +13,7 @@ nav = [
     { "Quickstart" = "getting-started/quickstart.md" },
   ]},
   { "Core Concepts" = [
+    { "How Eidos Works" = "concepts/how-eidos-works.md" },
     { "Living Specifications" = "concepts/living-specs.md" },
     { "Knowledge Graph Index" = "concepts/architectural-index.md" },
     { "Explorations (EXP-*)" = "concepts/explorations.md" },

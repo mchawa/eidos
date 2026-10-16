@@ -4,46 +4,61 @@ This guide will walk you through initializing, validating, and exploring Eidos l
 
 ---
 
-## Step 1: Initialize Eidos in your Repository
+## Step 1: Initialize Eidos in Your Repository
 
-Navigate to your project root and run `eidos init`:
+Navigate to your project root and run `eidos init`. You can choose between the **Full Multi-Domain Skeleton** or the progressive **Eidos Lite Profile** (`--lite`):
 
-```bash
-# Initialize living specification skeleton
-eidos init
+=== "Full Catalog (Default)"
 
-# Populate and synchronize the architectural knowledge graph
-eidos index sync
-```
+    ```bash
+    # Initialize complete living specification hierarchy
+    eidos init
 
-This creates the canonical `eidos/` empty directory skeleton, tracked in Git by `.gitkeep` files:
+    # Populate and synchronize the architectural knowledge graph
+    eidos index sync
+    ```
 
-```
+=== "Progressive Eidos Lite (`--lite`)"
+
+    ```bash
+    # Minimal 3-file starter profile (system.adoc, system-architecture.adoc, POL-001)
+    # plus containers/ and capabilities/ directories
+    eidos init --lite
+
+    # Populate and synchronize the architectural knowledge graph
+    eidos index sync
+    ```
+
+The full profile creates the canonical `eidos/` directory skeleton, tracked in Git by `.gitkeep` files and isolated by a self-contained `eidos/.gitignore`:
+
+```text
 eidos/
-├── system.adoc                   # Empty root system specification
+├── system.adoc                   # Root system specification (SYS-*, C4 Level 1)
 ├── architecture/
-│   ├── containers/               # Container manifests (CNT-*, C4 Level 2)
-│   ├── components/               # Dedicated component manifests (CMP-*, C4 Level 3)
-│   └── contracts/                # Interface contracts (CTR-*)
+│   ├── system-architecture.adoc  # Global Arc42 & C4 Level 1-2 topology (ARCH-*)
+│   ├── containers/               # Container manifests (CNT-*, C4 Level 2 + inline Level 3)
+│   ├── components/               # Promoted standalone component manifests (CMP-*, C4 Level 3)
+│   └── contracts/                # Interface protocol contracts (CTR-*)
 ├── domains/                      # Domain & capability models (DOM-*, CAP-*)
 ├── personas/                     # User & agent personas (PER-*)
-├── policies/                     # Architectural policies (POL-*)
+├── policies/                     # Architectural & governance policies (POL-*)
 ├── deltas/                       # SpecDelta mutations (DLT-*)
-├── explorations/                 # Spikes and discoveries (EXP-*)
-└── design/                       # Design systems, screens, and flows
+├── explorations/                 # Technical spikes and discoveries (EXP-*)
+└── design/                       # Multi-design systems, clients, screens, and flows
 ```
 
 > [!NOTE]
-> **C4 Level 3 Components (`CMP-*`)** are declared inline within container manifests or promoted to dedicated manifests in `eidos/architecture/components/<component>.adoc`. Eidos specifications **never touch or reside within source code directories** (`src/`, `packages/`).
+> **C4 Level 3 Components (`CMP-*`)** are declared inline within container manifests (`eidos/architecture/containers/*.adoc`) by default, or promoted to dedicated manifests in `eidos/architecture/components/<component>.adoc` via `eidos spec component promote <ID>`. Eidos specifications **never touch or reside within source code directories** (`src/`, `packages/`).
 
 ---
 
-## Step 2: Validate Your Specifications
+## Step 2: Validate Specifications & Check Drift
 
-Run the specification validator to ensure all AsciiDoc files conform to their JSON/YAML schemas and have valid cross-references:
+Run the specification validator to ensure all AsciiDoc files conform to their JSON/YAML schemas and have valid cross-references, then run drift detection:
 
 ```bash
 eidos validate eidos
+eidos drift --uncommitted
 ```
 
 Output:
@@ -65,41 +80,58 @@ Success! All specification documents are valid.
 
 ---
 
-## Step 3: Launch the Interactive Living Portal
+## Step 3: Slice Architectural Context & Launch the Portal
 
-Eidos includes a built-in local development server that compiles your living specifications into the interactive Eidos Portal:
+Extract a token-budgeted architectural context slice for any file, component, or task prompt:
+
+```bash
+# Slice guardrails context for a container or component
+eidos context -c CNT-EIDOS-CORE --tier guardrails
+
+# Or generate a compressed AST Repo Map of your codebase
+eidos index repo-map --max-tokens 1500
+```
+
+Launch the built-in local HTTP server to explore your living specifications visually in the **Eidos Portal**:
 
 ```bash
 eidos portal serve --path eidos --port 8080
 ```
 
 Open your browser to `http://localhost:8080` to explore:
-* Interactive C4 Level 1–3 diagrams.
-* Component dependency graphs.
-* System capabilities and policy matrices.
-* SpecDelta mutation logs.
+* Interactive hierarchical C4 Level 1–3 diagrams with clickable drill-down.
+* Component dependency graphs, in-process APIs, and embedded architectural decisions (`DEC-*`).
+* System capabilities, policy matrices, and test-bound invariants (`INV-*`).
+* SpecDelta Kanban pipelines and W3C Design Token Studio.
 
 ---
 
-## Step 4: Propose a Change (SpecDelta)
+## Step 4: Evolve Architecture (Direct Mode vs. SpecDelta)
 
-Before modifying code for a new feature, scaffold a semantic **SpecDelta**:
+For routine bug fixes or localized changes within an existing container (**Direct Mode**), simply update the code, tests, and owning `.adoc` spec together, then verify with `eidos drift --uncommitted`.
+
+For cross-container features or breaking contract changes (**Planned Mode**), scaffold a declarative **SpecDelta**:
 
 ```bash
-eidos delta create "Add Webhook Notification Support"
+eidos delta create DLT-2026-001 \
+  --title "Add Webhook Notification Support" \
+  --kind feature \
+  --motivation "Deliver real-time webhook events for external subscribers."
 ```
 
-This scaffolds a new mutation document in `eidos/deltas/dlt-2026-xxx.adoc`. Once your feature is implemented and tests pass, reconcile the delta:
+This scaffolds `eidos/deltas/dlt-2026-001.adoc`. Once your code, spec mutations, and tests are implemented, verify and reconcile the delta in-place:
 
 ```bash
-eidos delta apply dlt-2026-xxx
+eidos delta verify DLT-2026-001
+eidos delta apply DLT-2026-001
 ```
 
 ---
 
 ## Next Steps
 
-* Learn why Eidos enforces **[Living Specifications over ADRs](../concepts/living-specs.md)**.
-* Understand the **[SpecDelta Mutation Lifecycle](../concepts/specdeltas.md)**.
+* Understand **[How Eidos Works Under the Hood](../concepts/how-eidos-works.md)**.
+* Learn why Eidos enforces **[Living Specifications & Embedded Decisions (`DEC-*`) over ADRs](../concepts/living-specs.md)**.
+* Explore the **[SpecDelta Mutation Lifecycle](../concepts/specdeltas.md)**.
 * Configure the **[AI Agent Plugin](../guides/agent-plugin.md)** for your coding assistants.
 

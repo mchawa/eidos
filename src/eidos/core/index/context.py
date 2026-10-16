@@ -30,16 +30,27 @@ TIER_TOKEN_BUDGETS: dict[str, int] = {
 class TieredContextSlice(ArchitecturalContextSlice):
     """Token-budgeted architectural slice matching a query, extending ArchitecturalContextSlice."""
 
-    def _project_decisions(self, decisions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    _compact_decisions: bool = False
+
+    @staticmethod
+    def _clip(text: str, limit: int) -> str:
+        return f"{text[: limit - 3].rstrip()}..." if len(text) > limit else text
+
+    def _project_decisions(
+        self,
+        decisions: list[dict[str, Any]],
+        *,
+        compact: bool = False,
+    ) -> list[dict[str, Any]]:
         projected: list[dict[str, Any]] = []
         for d in decisions:
             if not isinstance(d, dict):
                 continue
             dtext = str(d.get("decision", "") or "")
-            if self.tier == "anchor":
-                short_dtext = f"{dtext[:117].rstrip()}..." if len(dtext) > 120 else dtext
+            if self.tier == "anchor" or compact or self._compact_decisions:
+                short_dtext = self._clip(dtext, 120)
                 alts = [
-                    {"option": str(a.get("option")).strip()}
+                    {"option": self._clip(str(a.get("option")).strip(), 60)}
                     for a in (d.get("rejected_alternatives") or [])[:2]
                     if isinstance(a, dict) and a.get("option")
                 ]
@@ -50,6 +61,26 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 }
                 if alts:
                     entry["rejected_alternatives"] = alts
+                projected.append(entry)
+            elif self.tier == "guardrails":
+                entry = {
+                    "id": d.get("id", ""),
+                    "title": d.get("title", ""),
+                    "decision": self._clip(dtext, 140),
+                }
+                if d.get("graduated_from"):
+                    entry["graduated_from"] = d["graduated_from"]
+                if d.get("rationale"):
+                    entry["rationale"] = self._clip(str(d["rationale"]), 140)
+                if d.get("rejected_alternatives"):
+                    entry["rejected_alternatives"] = [
+                        {
+                            "option": self._clip(str(a.get("option", "")), 80),
+                            "reason_rejected": self._clip(str(a.get("reason_rejected", "")), 100),
+                        }
+                        for a in (d.get("rejected_alternatives") or [])[:2]
+                        if isinstance(a, dict) and a.get("option")
+                    ]
                 projected.append(entry)
             else:
                 entry = {
@@ -73,7 +104,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 projected.append(entry)
         return projected
 
-    def _project_component(self, comp: dict[str, Any]) -> dict[str, Any]:
+    def _project_component(self, comp: dict[str, Any], index_in_slice: int = 0) -> dict[str, Any]:
         cid = comp.get("id", "")
         name = comp.get("name", comp.get("title", cid))
         title = comp.get("title", name)
@@ -134,7 +165,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
         if not is_secondary and not (self.tier != "deep" and len(self.components) > 4):
             decisions = collect_component_decisions(comp)
             if decisions:
-                out["decisions"] = self._project_decisions(decisions)
+                compact_decs = self.tier == "guardrails" and index_in_slice > 0
+                out["decisions"] = self._project_decisions(decisions, compact=compact_decs)
 
         return out
 
@@ -185,7 +217,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
             "title": pol.get("title", pol.get("id", "")),
         }
         if self.tier in ("guardrails", "deep") and pol.get("rule"):
-            out["rule"] = pol["rule"]
+            rule = str(pol["rule"])
+            out["rule"] = self._clip(rule, 160) if self.tier == "guardrails" else rule
         return out
 
     def to_dict(self) -> dict[str, Any]:
@@ -193,7 +226,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
         return {
             "query": self.query,
             "tier": self.tier,
-            "components": [self._project_component(c) for c in self.components],
+            "components": [self._project_component(c, idx) for idx, c in enumerate(self.components)],
             "contracts": [self._project_contract(c) for c in self.contracts],
             "capabilities": [self._project_capability(c) for c in self.capabilities],
             "invariants": [self._project_invariant(i) for i in self.invariants],
@@ -226,7 +259,13 @@ class TieredContextSlice(ArchitecturalContextSlice):
         self._prune_matched_reasons()
         return self._estimate_tokens() > budget or (len(self.to_json()) // 4) > budget
 
-    def _enforce_token_budget(self, primary_cids: set[str]) -> None:
+    def _enforce_token_budget(
+        self,
+        primary_cids: set[str],
+        direct_cap_ids: set[str] | None = None,
+        direct_inv_ids: set[str] | None = None,
+        direct_pol_ids: set[str] | None = None,
+    ) -> None:
         """Enforce rank-ordered token budget truncation for the requested tier across Markdown and JSON (DLT-2026-047)."""
         budget = TIER_TOKEN_BUDGETS.get(self.tier, 1000)
 
@@ -244,24 +283,44 @@ class TieredContextSlice(ArchitecturalContextSlice):
             self.token_estimate = self._estimate_tokens()
             return
 
-        # For guardrails and deep tiers, trim lowest-priority invariants first while keeping core guardrails.
-        while self._exceeds_budget(budget) and len(self.invariants) > 3:
-            self.invariants.pop()
+        direct_caps = direct_cap_ids or set()
+        direct_invs = direct_inv_ids or set()
+        direct_pols = direct_pol_ids or set()
+        has_non_comp_direct = bool(direct_caps or direct_invs or direct_pols)
 
-        if self._exceeds_budget(budget) and len(self.components) > 4:
-            # Trim trailing secondary 1-hop dependency components while retaining primary + top dependencies
-            for idx in range(len(self.components) - 1, -1, -1):
-                if not self._exceeds_budget(budget) or len(self.components) <= 4:
+        def _pop_non_direct(items: list[dict[str, Any]], keep_ids: set[str], min_len: int) -> None:
+            for idx in range(len(items) - 1, -1, -1):
+                if not self._exceeds_budget(budget) or len(items) <= min_len:
                     break
-                cid = self.components[idx].get("id", "")
-                if cid not in primary_cids:
-                    self.components.pop(idx)
+                if items[idx].get("id", "") not in keep_ids:
+                    items.pop(idx)
 
-        while self._exceeds_budget(budget) and len(self.invariants) > 1:
+        # Stage 1: Trim 1-hop expanded (non-direct) entities before touching any direct query matches.
+        _pop_non_direct(self.invariants, direct_invs, min_len=3)
+        _pop_non_direct(self.components, primary_cids, min_len=1 if has_non_comp_direct else 4)
+        _pop_non_direct(self.invariants, direct_invs, min_len=1)
+        _pop_non_direct(self.policies, direct_pols, min_len=1)
+        _pop_non_direct(self.capabilities, direct_caps, min_len=1)
+
+        # If still over budget in guardrails and multiple direct matches exist, compact decision prose before evicting direct matches.
+        if self.tier == "guardrails" and has_non_comp_direct and self._exceeds_budget(budget):
+            self._compact_decisions = True
+
+        # Stage 2: If still over budget, trim lowest-ranked tail items while keeping primary components intact.
+        while self._exceeds_budget(budget) and len(self.invariants) > 3:
             self.invariants.pop()
 
         while self._exceeds_budget(budget) and len(self.policies) > 1:
             self.policies.pop()
+
+        while self._exceeds_budget(budget) and len(self.invariants) > 2:
+            self.invariants.pop()
+
+        while self._exceeds_budget(budget) and len(self.capabilities) > 2:
+            self.capabilities.pop()
+
+        while self._exceeds_budget(budget) and len(self.invariants) > 1:
+            self.invariants.pop()
 
         while self._exceeds_budget(budget) and len(self.capabilities) > 1:
             self.capabilities.pop()
@@ -287,7 +346,7 @@ def build_tiered_context_slice(
     matched_invariants: dict[str, dict[str, Any]] = {}
     matched_policies: dict[str, dict[str, Any]] = {}
     matched_reasons: dict[str, list[str]] = {}
-    direct_inv_ids: set[str] = set()
+    direct_inv_ids: list[str] = []
 
     def _add_reason(eid: str, reason: str) -> None:
         bucket = matched_reasons.setdefault(eid, [])
@@ -370,7 +429,8 @@ def build_tiered_context_slice(
                 _add_reason(eid, f"Source file match on '{fpath}'")
             elif etype == "invariant":
                 matched_invariants[eid] = data
-                direct_inv_ids.add(eid)
+                if eid not in direct_inv_ids:
+                    direct_inv_ids.append(eid)
                 _add_reason(eid, f"Test binding match on '{fpath}'")
             elif etype == "tech/contract":
                 matched_contracts[eid] = data
@@ -402,7 +462,8 @@ def build_tiered_context_slice(
                 _add_reason(eid, reason)
             elif etype == "invariant":
                 matched_invariants[eid] = data
-                direct_inv_ids.add(eid)
+                if eid not in direct_inv_ids:
+                    direct_inv_ids.append(eid)
                 _add_reason(eid, reason)
             elif etype in ("product/domain", "design/system"):
                 rel_types = ("domain_member",) if etype == "product/domain" else ("styles_container",)
@@ -480,6 +541,7 @@ def build_tiered_context_slice(
             _add_reason(row["id"], "Internal dependency")
 
     # 6. Include contracts owned by or provided/consumed by primary components
+    direct_ctr_ids = list(matched_contracts.keys())
     direct_cap_ids = list(matched_capabilities.keys())
     direct_pol_ids = list(matched_policies.keys())
     if primary_cids:
@@ -604,6 +666,7 @@ def build_tiered_context_slice(
     # Assemble and rank-order lists so token-budget truncation retains highest-priority entities first
     primary_set = set(primary_cids)
     primary_rank = {cid: idx for idx, cid in enumerate(primary_cids)}
+    direct_ctr_rank = {cid: idx for idx, cid in enumerate(direct_ctr_ids)}
     direct_cap_rank = {cid: idx for idx, cid in enumerate(direct_cap_ids)}
     direct_pol_rank = {pid: idx for idx, pid in enumerate(direct_pol_ids)}
 
@@ -615,7 +678,14 @@ def build_tiered_context_slice(
             x.get("id", ""),
         ),
     )
-    sorted_ctrs = sorted(matched_contracts.values(), key=lambda x: x.get("id", ""))
+    sorted_ctrs = sorted(
+        matched_contracts.values(),
+        key=lambda x: (
+            0 if x.get("id", "") in direct_ctr_rank else 1,
+            direct_ctr_rank.get(x.get("id", ""), 999),
+            x.get("id", ""),
+        ),
+    )
     sorted_caps = sorted(
         matched_capabilities.values(),
         key=lambda x: (
@@ -635,7 +705,7 @@ def build_tiered_context_slice(
 
     ordered_invs: list[dict[str, Any]] = []
     seen_inv_ids: set[str] = set()
-    for iid in sorted(direct_inv_ids):
+    for iid in direct_inv_ids:
         if iid in matched_invariants and iid not in seen_inv_ids:
             ordered_invs.append(matched_invariants[iid])
             seen_inv_ids.add(iid)
@@ -679,6 +749,11 @@ def build_tiered_context_slice(
         query_latency_ms=0.0,
         token_estimate=0,
     )
-    slice_obj._enforce_token_budget(primary_set)
+    slice_obj._enforce_token_budget(
+        primary_set,
+        direct_cap_ids=set(direct_cap_ids),
+        direct_inv_ids=set(direct_inv_ids),
+        direct_pol_ids=set(direct_pol_ids),
+    )
     slice_obj.query_latency_ms = (time.perf_counter() - t0) * 1000
     return slice_obj

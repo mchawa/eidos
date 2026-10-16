@@ -23,20 +23,20 @@ graph TD
     D -->|Hypothesis Disproven| F["status: discarded<br/>Archived Post-Mortem in Git"]
 ```
 
-### The 4 Lifecycle States (`exploration.schema.yaml`):
+### Lifecycle States (`exploration.schema.yaml`):
 
 | State | Meaning | Next Step |
 | :--- | :--- | :--- |
-| **`proposed`** | A technical question, hypothesis, and exit criteria are queued for research. | Engineer or agent checks out prototype branch. |
+| **`draft` / `proposed` / `planned`** | A technical question, hypothesis, and exit criteria are queued for research. | Engineer or agent checks out prototype branch. |
 | **`in_progress`** | Experimental code and benchmarks are actively being executed in a spike branch. | Record empirical metrics (p99 latency, memory, ops/sec). |
-| **`adopted`** | The hypothesis is verified; the spike proved feasible and met all exit criteria. | Graduate to a production **SpecDelta (`DLT-*`)**. |
-| **`discarded`** | The hypothesis failed or the approach was deemed infeasible. | Document failure reasons in the body and archive. |
+| **`adopted`** | The hypothesis is verified; the spike proved feasible and met all exit criteria. | Graduate to a production **SpecDelta (`DLT-*`)** and link via `decision.resulting_delta_id` and `DEC-*` `graduated_from`. |
+| **`discarded`** | The hypothesis failed or the approach was deemed infeasible. | Document failure reasons under `decision.learnings` and archive in Git. |
 
 ---
 
 ## 2. Anatomy of an Exploration Manifest
 
-Exploration documents live in `eidos/explorations/exp-<year>-<num>.adoc`:
+Exploration documents live in `eidos/explorations/exp-<year>-<num>.adoc` (or `EXP-<YEAR>-<NUM>.adoc`):
 
 ```asciidoc
 ---
@@ -44,7 +44,7 @@ type: product/exploration
 schema: schemas/v1/product/exploration.schema.yaml
 id: EXP-2026-001
 title: "Evaluate SQLite in WAL Mode for Edge Node Caching"
-status: proposed # proposed | in_progress | adopted | discarded
+status: adopted # draft | proposed | planned | in_progress | adopted | discarded
 
 hypothesis: "Adopting SQLite with WAL mode and memory-mapped I/O will reduce cache read latency by 60% compared to local Redis, while eliminating external daemon dependencies."
 
@@ -59,7 +59,14 @@ spikes_to_run:
   - name: "spike-container-build"
     target: "Verify automated static linking inside minimal Docker scratch image."
 
-exit_criteria: "P99 read latency < 5ms under 50 concurrent readers with zero locking exceptions."
+exit_criteria:
+  max_duration: "3_days"
+  benchmark: "P99 read latency < 5ms under 50 concurrent readers with zero locking exceptions."
+
+decision:
+  outcome: adopted # adopted | discarded | pivoted
+  resulting_delta_id: DLT-2026-010
+  learnings: "SQLite WAL mode achieved 1.4ms p99 read latency across 50 threads with 42MB RSS memory."
 ---
 = Exploration: Evaluate SQLite in WAL Mode for Edge Node Caching
 :toc: left
@@ -109,10 +116,14 @@ Document concrete, verifiable numbers directly in the AsciiDoc body:
 
 ### Step 4: Resolve Outcome
 
-#### Path A: Hypothesis Proven -> Graduate to SpecDelta
-1. Update frontmatter status to `adopted`:
+#### Path A: Hypothesis Proven -> Graduate to SpecDelta & Embedded Decision
+1. Update frontmatter `status: adopted` and populate the `decision:` block:
    ```yaml
    status: adopted
+   decision:
+     outcome: adopted
+     resulting_delta_id: DLT-2026-010
+     learnings: "Proven sub-2ms p99 read latency in WAL mode with zero locking contention."
    ```
 2. Scaffold a formal SpecDelta to plan the production integration:
    ```bash
@@ -121,14 +132,17 @@ Document concrete, verifiable numbers directly in the AsciiDoc body:
      --kind feature \
      --motivation "Graduated from validated spike EXP-2026-001."
    ```
-3. Implement clean, production-ready code under the SpecDelta checklist.
+3. Record the enduring architectural trade-off in the target container's `decisions:` block with `graduated_from: EXP-2026-001`, and implement clean, production-ready code under the SpecDelta checklist.
 
 #### Path B: Hypothesis Disproven -> Archive Institutional Knowledge
-1. Update frontmatter status to `discarded`:
+1. Update frontmatter `status: discarded` and populate `decision.learnings`:
    ```yaml
    status: discarded
+   decision:
+     outcome: discarded
+     learnings: "SQLite write-lock contention caused 80% latency degradation under 50 concurrent writers."
    ```
-2. Document the exact reasons for failure in the `Final Decision & Rationale` section (e.g., *"SQLite write-lock contention caused 80% latency degradation under concurrent writes"*).
+2. Document the exact reasons for failure in the `Final Decision & Rationale` section.
 3. Merge the exploration document to `main`. **The failure is preserved as permanent architectural knowledge**, preventing future team members and AI agents from repeating the experiment.
 
 ### Step 5: Verification Gate

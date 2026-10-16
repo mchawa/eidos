@@ -43,18 +43,30 @@ Modern software development often suffers from two major problems:
 
 **Eidos solves both problems** by organizing your project into executable, continuously validated **Living Specifications**:
 
-* **Living Arc42 & C4 Architecture**: Containers, components, and interface contracts are codified as AsciiDoc with YAML frontmatter.
-* **Strictly No ADRs**: Decisions mutate the living architecture directly through auditable **SpecDeltas** (`DLT-*`).
-* **Bidirectional Invariant-Test Traceability**: Every capability and policy enforces invariants (`INV-*`, `POL-*`) that map directly to automated tests in `tests/`.
-* **Multi-Design Systems & W3C Tokens**: White-label and multi-brand design systems, official W3C DTCG tokens, UI component contracts, and screen state machines.
-* **Agent-Agnostic Plugin & Skills**: Equips AI agents (Google Antigravity, Claude Code, Cursor, Codex) with 4 cohesive workflow skills and direct CLI automation to query, mutate, and validate architecture before editing code.
-* **Interactive Living Portal**: Generates a self-contained static visual architecture explorer and graph directly from your specs.
+* **Living Arc42 & C4 Architecture**: System context (`SYS-*`, `ARCH-*`), containers (`CNT-*`), hybrid inline/promoted components (`CMP-*`), and interface contracts (`CTR-*`) are codified as AsciiDoc with YAML frontmatter.
+* **Strictly No ADRs (`POL-001`)**: Durable design trade-offs and rejected alternatives are recorded in-place via embedded `decisions:` (`DEC-*`) blocks, while architectural transitions are governed by auditable **SpecDeltas** (`DLT-*`).
+* **Embedded SQLite + FTS5 + AST Knowledge Graph**: Auto-synchronizes in `<5ms` (`eidos/.cache/index.db`) to serve token-budgeted 3-tier context slices (`eidos context`), structural repo maps (`eidos index repo-map`), and recursive blast-radius analysis.
+* **Bidirectional Polyglot Invariant-Test Traceability (`POL-002`)**: Every capability and policy enforces invariants (`INV-*`, `POL-*`) statically verified against automated tests across Python, TypeScript/JS, Go, Rust, Java, and Kotlin via `eidos drift`.
+* **Multi-Design Systems & W3C Tokens**: White-label and multi-brand design systems (`DS-*`), official W3C DTCG tokens, UI component contracts (`UIC-*`), client manifests (`CLT-*`), screen state machines (`SCR-*`), and interaction flows (`FLOW-*`).
+* **Agent-Agnostic Plugin, 4 Cohesive Skills & Lifecycle Hooks**: Equips AI agents (Google Antigravity, Claude Code, Cursor, GitHub Copilot, Aider, Cline, OpenCode, Codex) with 4 workflow skills and Block-Once drift gates (`eidos hook`).
+* **Interactive Air-Gapped Living Portal**: Generates a self-contained static visual C4 architecture explorer and SpecDelta Kanban dashboard directly from your specs with zero Node.js runtime dependencies.
+
+---
+
+## How Eidos Works in 4 Steps
+
+1. **Slice Context (`eidos context`)**: Before touching code, engineers or AI agents query the embedded SQLite knowledge graph for a token-budgeted slice (`anchor`, `guardrails`, or `deep`) containing the owning `CNT-*`/`CMP-*`, contracts (`CTR-*`), active invariants (`INV-*`), and historical decisions (`DEC-*`).
+2. **Choose Workflow Mode (Direct vs. Planned)**:
+   * **Direct Mode**: Co-evolve code, tests, and `.adoc` specifications in-place for localized fixes and single-container enhancements.
+   * **Planned Mode**: Scaffold a declarative **SpecDelta (`DLT-*`)** (or run a hypothesis-driven **Exploration (`EXP-*`)** spike) for cross-container features or breaking contract changes.
+3. **Implement & Bind Invariants**: Write implementation code in `src/` and bind every new or modified invariant (`INV-*`) to an automated test via `test_binding: path/to/test_file::test_function`.
+4. **Verify Zero Drift (`eidos validate && eidos drift`)**: Eidos validates all 16 JSON Schemas, checks `x-eidos-ref` graph integrity, verifies substantive spec updates across 1-hop component neighborhoods, and confirms polyglot `INV-*` test coverage.
 
 ---
 
 ## Quick Installation
 
-Install Eidos globally as a standalone CLI tool (so it works across any Python, TypeScript, Go, or Rust repository without polluting project dependencies):
+Install Eidos globally as a standalone CLI tool (so it works across any Python, TypeScript, Go, Rust, Java, or Kotlin repository without polluting project dependencies):
 
 === "uv tool (Recommended)"
 
@@ -84,11 +96,12 @@ eidos doctor
 
 ## Next Steps
 
-* **[Installation Guide](getting-started/installation.md)**: System requirements, optional extras, and devcontainer setup.
-* **[5-Minute Quickstart](getting-started/quickstart.md)**: Bootstrap your repository and inspect your first living specifications.
-* **[Core Concepts](concepts/living-specs.md)**: Learn about Living Specs, SpecDeltas, Invariants, and Dual Workflows.
-* **[Explorations & Spikes](concepts/explorations.md)**: Hypothesis-driven technical discovery and prototype spikes.
+* **[How Eidos Works](concepts/how-eidos-works.md)**: Deep dive into the Eidos execution loop, SQLite knowledge graph, AST drift engine, and lifecycle hooks.
+* **[Installation Guide](getting-started/installation.md)**: System requirements, optional extras, and workspace diagnostics.
+* **[5-Minute Quickstart](getting-started/quickstart.md)**: Bootstrap your repository (`eidos init` or `eidos init --lite`) and inspect your first living specifications.
+* **[Core Concepts](concepts/living-specs.md)**: Learn about Living Specs, Embedded Decisions (`DEC-*`), SpecDeltas, Invariants, and Dual Workflows.
+* **[Explorations & Spikes](concepts/explorations.md)**: Hypothesis-driven technical discovery and prototype spikes (`EXP-*`).
 * **[Multi-Design Systems](concepts/design.md)**: Multi-brand design systems, W3C tokens, and UI component contracts.
-* **[Schema Glossary](concepts/schema-glossary.md)**: Comprehensive reference for all 15 living specification schemas.
+* **[Schema Glossary](concepts/schema-glossary.md)**: Comprehensive reference for all 16 living specification schemas.
 * **[CLI Reference](guides/cli.md)**: Explore the complete command-line interface.
 

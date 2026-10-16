@@ -26,12 +26,13 @@ uv tool install --force --editable .
 
 ## Running Quality Checks
 
-### 1. Validate Living Specifications
+### 1. Validate Living Specifications & Check Drift
 
-Eidos uses itself to govern its own architecture! Before submitting any changes, ensure all specifications validate:
+Eidos uses itself to govern its own architecture! Before submitting any changes, ensure all specifications validate and there is zero unreconciled spec-to-code drift:
 
 ```bash
 uv run eidos validate eidos
+uv run eidos drift --uncommitted
 ```
 
 ### 2. Validate Agent Plugin
@@ -61,9 +62,17 @@ uv run ruff format --check .
 
 ## Building the Documentation
 
-This documentation site is built with **Zensical**:
+This documentation site is built with **Zensical** (`zensical.toml`):
 
-### Local Live-Reload Server
+### 1. Generate the Living Architecture Changelog
+
+Generate `CHANGELOG.md` and `docs/changelog.md` from applied SpecDeltas and Git tags:
+
+```bash
+uv run eidos delta changelog
+```
+
+### 2. Local Live-Reload Server
 
 ```bash
 uv run zensical serve
@@ -71,10 +80,10 @@ uv run zensical serve
 
 Open `http://localhost:8000` to preview changes in real time.
 
-### Static Production Build
+### 3. Strict Static Production Build
 
 ```bash
-uv run zensical build
+uv run zensical build --strict
 ```
 
 ---

@@ -66,7 +66,16 @@ def collect_component_decisions(comp: dict[str, Any]) -> list[dict[str, Any]]:
     return decisions
 
 
-def format_decisions_markdown(decisions: list[dict[str, Any]], tier: str = "guardrails") -> list[str]:
+def _clip_text(text: str, limit: int) -> str:
+    return f"{text[: limit - 3].rstrip()}..." if len(text) > limit else text
+
+
+def format_decisions_markdown(
+    decisions: list[dict[str, Any]],
+    tier: str = "guardrails",
+    *,
+    compact: bool = False,
+) -> list[str]:
     """Render embedded architectural decisions (DEC-*) and rejected_alternatives according to the requested tier."""
     if not decisions:
         return []
@@ -76,17 +85,26 @@ def format_decisions_markdown(decisions: list[dict[str, Any]], tier: str = "guar
             continue
         did = dec.get("id", "")
         dtitle = dec.get("title", "")
-        dtext = dec.get("decision", "")
+        dtext = str(dec.get("decision", "") or "")
         alts = [
             str(a.get("option", "")).strip()
             for a in (dec.get("rejected_alternatives") or [])
             if isinstance(a, dict) and a.get("option")
         ]
-        if tier == "anchor":
-            short_dtext = f"{dtext[:117].rstrip()}..." if len(dtext) > 120 else dtext
-            short_alts = [f"{a[:52].rstrip()}..." if len(a) > 55 else a for a in alts[:2]]
+        if tier == "anchor" or compact:
+            short_dtext = _clip_text(dtext, 120)
+            short_alts = [_clip_text(a, 55) for a in alts[:2]]
             rej_suffix = f" *(Rejected: {', '.join(short_alts)})*" if short_alts else ""
             lines.append(f"  - `{did}` (**{dtitle}**): {short_dtext}{rej_suffix}")
+        elif tier == "guardrails":
+            grad = f" [Graduated from `{dec['graduated_from']}`]" if dec.get("graduated_from") else ""
+            lines.append(f"  - `{did}` (**{dtitle}**){grad}: {_clip_text(dtext, 180)}")
+            if dec.get("rationale"):
+                lines.append(f"    - *Rationale:* {_clip_text(str(dec['rationale']), 180)}")
+            for alt in (dec.get("rejected_alternatives") or [])[:2]:
+                if isinstance(alt, dict) and alt.get("option"):
+                    reason = _clip_text(str(alt.get("reason_rejected", "")), 140)
+                    lines.append(f"    - *Rejected Alternative:* **{alt['option']}** — {reason}")
         else:
             grad = f" [Graduated from `{dec['graduated_from']}`]" if dec.get("graduated_from") else ""
             lines.append(f"  - `{did}` (**{dtitle}**){grad}: {dtext}")
@@ -147,7 +165,7 @@ class ArchitecturalContextSlice:
         lines.append(f"## 🧱 C4 Level 2 Containers & Level 3 Components ({len(self.components)})")
         if not self.components:
             lines.append("*No components or containers directly matched.*")
-        for comp in self.components:
+        for idx_comp, comp in enumerate(self.components):
             cid = comp.get("id", "")
             name = comp.get("name", cid)
             ctype = comp.get("container_type", "service")
@@ -223,7 +241,10 @@ class ArchitecturalContextSlice:
             if not is_secondary and not (self.tier != "deep" and len(self.components) > 4):
                 decisions = collect_component_decisions(comp)
                 if decisions:
-                    lines.extend(format_decisions_markdown(decisions, tier=self.tier))
+                    compact_decs = (self.tier == "guardrails" and idx_comp > 0) or getattr(
+                        self, "_compact_decisions", False
+                    )
+                    lines.extend(format_decisions_markdown(decisions, tier=self.tier, compact=compact_decs))
 
             lines.append("")
 
