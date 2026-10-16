@@ -23,7 +23,7 @@ components:
     source_path: "src/eidos/cli/spec_commands.py"
   - id: CMP-CLI-DELTA-COMMANDS
     name: "DeltaCommands"
-    responsibility: "SpecDelta lifecycle commands (`eidos delta`): status dashboard, authoring (--kind: feature, enabler, bug), verification, deletion auditing, changelog generation, in-place application, and view synchronization."
+    responsibility: "SpecDelta lifecycle commands (`eidos delta`): status dashboard, authoring (--kind: feature, enabler, bug), verification, deletion auditing, changelog generation (resolving repo_root via find_repo_root for custom --path directories), in-place application, and view synchronization."
     source_path: "src/eidos/cli/delta_commands.py"
   - id: CMP-CLI-PLUGIN-COMMANDS
     name: "PluginCommands"

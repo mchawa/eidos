@@ -68,6 +68,12 @@ def find_repo_root(start_dir: Path | None = None) -> Path:
         ):
             return parent
 
+    if not any(p in cwd.parts for p in (".agents", "plugins", "assets")) and (
+        cwd.name == "eidos"
+        or any((cwd / marker).exists() for marker in ("system.adoc", "architecture", "domains", "policies", "deltas", "design"))
+    ):
+        return cwd.parent
+
     try:
         res = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],

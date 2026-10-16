@@ -45,7 +45,7 @@ components:
     source_path: "src/eidos/core/workspace/assets.py"
   - id: CMP-PROJECT-RESOLVER
     name: "ProjectResolver"
-    responsibility: "Zero-config repository root discovery, path ownership glob matching, and batched gitattributes linguist-generated/vendored file filtering with scalar input normalization."
+    responsibility: "Zero-config repository root discovery (find_repo_root recognizing .git, eidos/, and custom spec root directories containing system.adoc, architecture/, domains/, policies/, deltas/, or design/), path ownership glob matching, and batched gitattributes linguist-generated/vendored file filtering with scalar input normalization."
     source_path: "src/eidos/core/workspace/project.py"
   - id: CMP-DOMAIN-MODELS
     name: "DomainModels"

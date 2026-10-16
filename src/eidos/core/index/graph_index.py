@@ -273,8 +273,8 @@ class ArchitecturalIndex:
     def get_incoming_references(self, target_id_or_path: str) -> list[dict[str, Any]]:
         """Find all incoming graph edges pointing to an entity ID or file path."""
         self._ensure_synced()
-        with self._get_connection() as conn:
-            return execute_incoming_references(conn, target_id_or_path)
+        conn = self._get_connection()
+        return execute_incoming_references(conn, target_id_or_path)
 
     # ------------------------------------------------------------------
     # Catalog Inspection & Telemetry
@@ -351,17 +351,17 @@ class ArchitecturalIndex:
     def get_components(self) -> list[dict[str, Any]]:
         """Retrieve all C4 containers and components from the knowledge graph index."""
         self._ensure_synced()
-        with self._get_connection() as conn:
-            rows = conn.execute(
-                "SELECT id, title, file_path, data_json FROM entities WHERE type IN ('tech/container', 'tech/component') ORDER BY id;"
-            ).fetchall()
-            components = []
-            for r in rows:
-                data = json.loads(r["data_json"])
-                data["id"] = r["id"]
-                data["file_path"] = r["file_path"]
-                components.append(data)
-            return components
+        conn = self._get_connection()
+        rows = conn.execute(
+            "SELECT id, title, file_path, data_json FROM entities WHERE type IN ('tech/container', 'tech/component') ORDER BY id;"
+        ).fetchall()
+        components = []
+        for r in rows:
+            data = json.loads(r["data_json"])
+            data["id"] = r["id"]
+            data["file_path"] = r["file_path"]
+            components.append(data)
+        return components
 
     def get_containers(self) -> list[dict[str, Any]]:
         """Retrieve all C4 containers (Level 2) from the knowledge graph index."""
@@ -380,20 +380,20 @@ class ArchitecturalIndex:
             query += " AND type = ?"
             params.append(entity_type)
         query += " ORDER BY type, id;"
-        with self._get_connection() as conn:
-            rows = conn.execute(query, params).fetchall()
-            entities = []
-            for r in rows:
-                data = json.loads(r["data_json"])
-                data["id"] = r["id"]
-                data["title"] = r["title"]
-                data["type"] = r["type"]
-                data["domain"] = r["domain"]
-                data["file_path"] = r["file_path"]
-                if status and data.get("status") != status:
-                    continue
-                entities.append(data)
-            return entities
+        conn = self._get_connection()
+        rows = conn.execute(query, params).fetchall()
+        entities = []
+        for r in rows:
+            data = json.loads(r["data_json"])
+            data["id"] = r["id"]
+            data["title"] = r["title"]
+            data["type"] = r["type"]
+            data["domain"] = r["domain"]
+            data["file_path"] = r["file_path"]
+            if status and data.get("status") != status:
+                continue
+            entities.append(data)
+        return entities
 
 
 # Global singleton instance for high-speed module reuse
@@ -420,11 +420,16 @@ def get_architectural_index(
         target_root = find_repo_root(Path(eidos_dir).resolve() if eidos_dir else None)
 
     target_eidos = (eidos_dir or (target_root / "eidos")).resolve()
+    target_db = Path(db_path).resolve() if db_path is not None else (target_eidos / ".cache" / "index.db").resolve()
     if (
         force_new
         or _INDEX_INSTANCE is None
         or _INDEX_INSTANCE.root != target_root
         or _INDEX_INSTANCE.eidos_dir != target_eidos
+        or _INDEX_INSTANCE.db_path != target_db
+        or _INDEX_INSTANCE._conn is None
     ):
+        if _INDEX_INSTANCE is not None:
+            _INDEX_INSTANCE.close()
         _INDEX_INSTANCE = ArchitecturalIndex(db_path=db_path, repo_root=target_root, eidos_dir=target_eidos)
     return _INDEX_INSTANCE

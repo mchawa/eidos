@@ -139,6 +139,10 @@ def _unlink_cache_files(db_path: Path) -> None:
 def ensure_cache_schema(conn: sqlite3.Connection) -> None:
     """Ensure ``conn`` has the canonical ``SCHEMA_VERSION`` tables, dropping stale managed tables on version mismatch."""
     existing_tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")}
+    if existing_tables >= set(_MANAGED_TABLES) and "metadata" in existing_tables:
+        row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()
+        if row and row[0] == SCHEMA_VERSION:
+            return
     if existing_tables & set(_MANAGED_TABLES):
         stored_version = None
         if "metadata" in existing_tables:
@@ -165,7 +169,9 @@ def open_cache_connection(db_path: Path) -> sqlite3.Connection:
         try:
             conn = sqlite3.connect(str(db_path), timeout=10.0)
             conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode = WAL;")
+            jm_row = conn.execute("PRAGMA journal_mode;").fetchone()
+            if not jm_row or str(jm_row[0]).lower() != "wal":
+                conn.execute("PRAGMA journal_mode = WAL;")
             conn.execute("PRAGMA synchronous = NORMAL;")
             conn.execute("PRAGMA foreign_keys = ON;")
             conn.execute("PRAGMA mmap_size = 268435456;")

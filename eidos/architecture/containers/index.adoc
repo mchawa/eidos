@@ -13,7 +13,7 @@ tier: persistence
 components:
   - id: CMP-GRAPH-STORAGE
     name: "GraphStorage"
-    responsibility: "Manages embedded SQLite schema initialization as the single canonical authority for 'SCHEMA_VERSION' ('2.3.0'), 'ensure_cache_schema', and 'open_cache_connection' (including drop-and-rebuild migration on version mismatch, automatic unlink-and-rebuild recovery on 'sqlite3.DatabaseError' corruption, and shared 'symbol_mappings', 'code_symbols', 'spec_validation_cache', and 'test_binding_cache' tables), connection lifecycle, WAL mode, transaction isolation, repository root discovery, and indexed files tracking."
+    responsibility: "Manages embedded SQLite schema initialization as the single canonical authority for 'SCHEMA_VERSION' ('2.3.0'), 'ensure_cache_schema', and 'open_cache_connection' (skipping DDL/DML write transactions on warm cache hits when schema_version and managed tables already match, performing drop-and-rebuild migration on version mismatch, automatic unlink-and-rebuild recovery on 'sqlite3.DatabaseError' corruption, and shared 'symbol_mappings', 'code_symbols', 'spec_validation_cache', and 'test_binding_cache' tables), db_path-aware 'get_architectural_index' singleton replacement with connection cleanup, WAL mode, read-only SELECT queries without transaction context managers, repository root discovery via find_repo_root, and indexed files tracking."
     source_path: "src/eidos/core/index/storage.py"
   - id: CMP-INCREMENTAL-SYNC-ENGINE
     name: "IncrementalSyncEngine"

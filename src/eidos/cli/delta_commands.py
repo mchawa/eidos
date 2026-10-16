@@ -506,8 +506,11 @@ def delta_changelog_cmd(
     ),
 ):
     """Generate an auditable, SpecDelta-backed changelog partitioned by Git release tags."""
+    from eidos.core.workspace.project import find_repo_root
+
     eidos_dir = path or Path("eidos")
-    repo_root = eidos_dir.resolve().parent if eidos_dir.name == "eidos" else Path.cwd()
+    resolved_eidos = eidos_dir.resolve()
+    repo_root = resolved_eidos.parent if resolved_eidos.name == "eidos" else find_repo_root(resolved_eidos)
     gen = ChangelogGenerator(repo_root=repo_root, eidos_dir=eidos_dir)
 
     if stdout:

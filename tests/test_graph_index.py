@@ -1442,3 +1442,48 @@ technical:
     finally:
         idx.close()
 
+
+def test_readonly_warm_cache_open_db_path_singleton_and_custom_repo_root(tmp_path):
+    """DLT-2026-067: Verify open_cache_connection performs zero DDL/DML writes on warm cache hits,
+    get_architectural_index invalidates and closes old singleton when db_path changes, and custom
+    spec roots resolve repo_root via find_repo_root."""
+    from eidos.core.index.graph_index import get_architectural_index
+    from eidos.core.index.storage import open_cache_connection
+
+    # 1. Warm cache open performs zero DDL/DML write statements
+    db1 = tmp_path / "db1.sqlite"
+    conn1 = open_cache_connection(db1)
+    conn1.close()
+
+    executed_sql: list[str] = []
+    conn_warm = open_cache_connection(db1)
+    conn_warm.set_trace_callback(executed_sql.append)
+    from eidos.core.index.storage import ensure_cache_schema
+
+    ensure_cache_schema(conn_warm)
+    conn_warm.close()
+    assert not any(
+        s.lstrip().upper().startswith(("CREATE ", "INSERT ", "DROP ", "BEGIN"))
+        for s in executed_sql
+    )
+
+    # 2. get_architectural_index replaces and closes old singleton when db_path changes
+    custom_repo = tmp_path / "custom_project"
+    custom_specs = custom_repo / "specs"
+    (custom_specs / "architecture" / "containers").mkdir(parents=True)
+    db_a = custom_specs / ".cache" / "a.db"
+    db_b = custom_specs / ".cache" / "b.db"
+
+    idx_a = get_architectural_index(eidos_dir=custom_specs, db_path=db_a, force_new=True)
+    assert idx_a.root == custom_repo.resolve()
+    assert idx_a.db_path == db_a.resolve()
+    assert idx_a._conn is not None
+
+    idx_b = get_architectural_index(eidos_dir=custom_specs, db_path=db_b)
+    assert idx_b is not idx_a
+    assert idx_b.db_path == db_b.resolve()
+    # Old singleton connection was cleanly closed on replacement
+    assert idx_a._conn is None
+    idx_b.close()
+
+

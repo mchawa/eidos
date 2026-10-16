@@ -3,7 +3,7 @@ type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-067
 title: "Read-Only SQLite Cache Connections, db_path-Aware Index Singleton, and Automatic repo_root Resolution"
-status: proposed
+status: applied
 vcs:
   branch: fix/sqlite-cache-readonly-and-index-singleton
 intent:
@@ -24,12 +24,20 @@ mutations:
     expect:
       source_path: "src/eidos/cli/delta_commands.py"
       responsibility: "changelog"
+  - action: modify_component
+    target_component: CMP-PROJECT-RESOLVER
+    details: "Update find_repo_root in src/eidos/core/workspace/project.py to recognize custom spec root directories (system.adoc, architecture/, domains/, policies/, deltas/, design/) when resolving the parent repository root."
+    expect:
+      source_path: "src/eidos/core/workspace/project.py"
+      responsibility: "find_repo_root"
 affects:
   containers:
     - CNT-EIDOS-INDEX
     - CNT-EIDOS-CLI
+    - CNT-EIDOS-CORE
   components:
     - CMP-GRAPH-STORAGE
+    - CMP-PROJECT-RESOLVER
     - CMP-CLI-INDEX-COMMANDS
     - CMP-CLI-CONTEXT-COMMAND
     - CMP-CLI-DELTA-COMMANDS
@@ -41,8 +49,10 @@ blast_radius:
   impacted_containers:
     - CNT-EIDOS-INDEX
     - CNT-EIDOS-CLI
+    - CNT-EIDOS-CORE
   impacted_components:
     - CMP-GRAPH-STORAGE
+    - CMP-PROJECT-RESOLVER
     - CMP-CLI-INDEX-COMMANDS
     - CMP-CLI-CONTEXT-COMMAND
     - CMP-CLI-DELTA-COMMANDS
