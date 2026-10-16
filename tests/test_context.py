@@ -350,7 +350,24 @@ def test_inv_context_token_compression():
         assert empty_sl.policies == []
         assert empty_sl.matched_reasons == {}
 
+    # 4. Direct task matches preserve BM25 rank order, promote owning capability/policy of matched invariants, and survive over 1-hop expansions under budget pressure
+    ranked_sl = get_context_slice(
+        task="hooks should block the stop event only once per failure",
+        tier="guardrails",
+    )
+    assert ranked_sl.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
+    assert ranked_sl.invariants, "Expected direct invariant matches to survive guardrails token budget"
+    assert ranked_sl.invariants[0]["id"] == "INV-HOOK-BLOCK-ONCE"
+    assert any(c["id"] == "CAP-AGENT-001" for c in ranked_sl.capabilities)
 
-
-
+    repo_map_sl = get_context_slice(
+        task="token compression for repository structural map",
+        tier="guardrails",
+    )
+    assert repo_map_sl.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
+    assert [i["id"] for i in repo_map_sl.invariants[:2]] == [
+        "INV-INDEX-AI-REPO-MAP-BUDGET",
+        "INV-CONTEXT-TOKEN-COMPRESSION",
+    ]
+    assert any(c["id"] == "CAP-AGENT-002" for c in repo_map_sl.capabilities)
 

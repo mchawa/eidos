@@ -238,12 +238,14 @@ class ArchitecturalContextSlice:
                             mresp = m.get("responsibility", "")
                             lines.append(f"  - {mid}**{mname}**: {mresp}")
 
-            if not is_secondary and not (self.tier != "deep" and len(self.components) > 4):
+            if (
+                not is_secondary
+                and not getattr(self, "_compact_decisions", False)
+                and not (self.tier != "deep" and len(self.components) > 4)
+            ):
                 decisions = collect_component_decisions(comp)
                 if decisions:
-                    compact_decs = (self.tier == "guardrails" and idx_comp > 0) or getattr(
-                        self, "_compact_decisions", False
-                    )
+                    compact_decs = self.tier == "guardrails" and idx_comp > 0
                     lines.extend(format_decisions_markdown(decisions, tier=self.tier, compact=compact_decs))
 
             lines.append("")

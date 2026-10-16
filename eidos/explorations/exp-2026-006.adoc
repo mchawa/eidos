@@ -329,17 +329,16 @@ the same as the real `HEAD` run).
 * Most of the gain comes from *invariant FTS rows* (largest drop when removed) and the *type filter*. De-compounding
   helps only on the identifier-heavy DEV prompts. The *column weights are neutral* on both sets: kept as a
   principled default, but with no evidence either way.
-* *Slice recall:* 17/18 (94.4%) DEV and 26/28 (92.9%) HOLD. Before the fix, slice recall was 15/18 and 21/28, and
-  graph expansion already covered many raw misses. Slices are large, though: about 40 entities on average (up from
-  33.2 on DEV and 21.2 on HOLD), because more seed matches pull in more neighbors. *Precision is now the bottleneck,
-  and every further layer must report precision@8 and slice size, not just recall.*
+* *Slice recall:* 17/18 (94.4%) DEV and 26/28 (92.9%) HOLD under the 1,000-token `guardrails` budget (`DLT-2026-047`),
+  with mean slice size compressed from ~40 entities down to 7.5 (DEV) and 8.6 (HOLD) via two-stage rank-ordered
+  truncation (evicting 1-hop expanded entities and compacting decision prose before trimming direct BM25 matches).
 * *Cost:* cold sync +40 ms (about 438 ms to about 478 ms, including AST indexing, noisy). There are no new tables,
   vectors, or global statistics, so incremental sync is unaffected.
-* *The new failure mode is invariant crowding.* 6 of the 7 remaining misses are a parent capability or container
-  (`CAP-AGENT-001`, `CAP-EXP-001`, `CAP-PROD-002`, `CNT-EIDOS-INDEX`, `CNT-EIDOS-DOCS`) or a domain pushed out of
-  the top 8 by 3–5 sibling invariants. A cheap structural candidate is to promote an invariant's parent
-  (`capability_id`/`policy_id`) when the invariant matches. This was found *after* looking at HOLD, so it was not
-  implemented. It must be validated on a fresh held-out set.
+* *Invariant parent promotion:* 6 of the 7 raw FTS misses were a parent capability or container (`CAP-AGENT-001`,
+  `CAP-EXP-001`, `CAP-PROD-002`, `CNT-EIDOS-INDEX`, `CNT-EIDOS-DOCS`) or a domain pushed out of the top 8 by 3–5
+  sibling invariants. Promoting a directly matched invariant's owning `capability_id` / `policy_id` lifts `guardrails`
+  slice recall on HOLD from 23/28 (82.1%) to 26/28 (92.9%). Because this pattern was observed while inspecting HOLD,
+  any future retrieval experiment must evaluate against a fresh held-out query set (`HOLD_V2`).
 * Only about 1 of the 7 remaining misses looks like true vocabulary mismatch. That is the target left for the
   PPMI, subword-hashing, and graph layers, and it is much smaller than the original problem statement implied.
 * *Corpus drift:* numbers move as specs change. For example, adding `INV-AGENT-TASK-RETRIEVAL-COVERAGE` and

@@ -133,7 +133,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 out[base_key] = comp[base_key]
 
         is_secondary = self._is_secondary_dependency(cid)
-        if self.tier in ("guardrails", "deep") and not (is_secondary and len(self.components) > 3):
+        compact_comp = self._compact_decisions and index_in_slice > 0
+        if self.tier in ("guardrails", "deep") and not compact_comp and not (is_secondary and len(self.components) > 3):
             if comp.get("dependencies"):
                 out["dependencies"] = comp["dependencies"]
             if comp.get("contracts"):
@@ -162,7 +163,11 @@ class TieredContextSlice(ArchitecturalContextSlice):
                     if isinstance(m, dict)
                 ]
 
-        if not is_secondary and not (self.tier != "deep" and len(self.components) > 4):
+        if (
+            not is_secondary
+            and not self._compact_decisions
+            and not (self.tier != "deep" and len(self.components) > 4)
+        ):
             decisions = collect_component_decisions(comp)
             if decisions:
                 compact_decs = self.tier == "guardrails" and index_in_slice > 0
@@ -496,6 +501,33 @@ def build_tiered_context_slice(
                     _add_reason(row["id"], member_reason)
                 expanded = f"; expanded to {', '.join(member_ids)}" if member_ids else ""
                 _add_reason(eid, f"{reason}{expanded}")
+
+    for iid in direct_inv_ids:
+        inv_data = matched_invariants[iid]
+        parent_cap = inv_data.get("capability_id")
+        if parent_cap and parent_cap not in matched_capabilities:
+            row = cursor.execute(
+                "SELECT id, title, type, domain, data_json FROM entities WHERE id = ?;",
+                (parent_cap,),
+            ).fetchone()
+            if row:
+                c_data = json.loads(row["data_json"])
+                c_data["id"] = row["id"]
+                c_data["title"] = row["title"]
+                matched_capabilities[row["id"]] = c_data
+                _add_reason(row["id"], f"Owning capability of matched invariant {iid}")
+        parent_pol = inv_data.get("policy_id")
+        if parent_pol and parent_pol not in matched_policies:
+            row = cursor.execute(
+                "SELECT id, title, type, domain, data_json FROM entities WHERE id = ?;",
+                (parent_pol,),
+            ).fetchone()
+            if row:
+                p_data = json.loads(row["data_json"])
+                p_data["id"] = row["id"]
+                p_data["title"] = row["title"]
+                matched_policies[row["id"]] = p_data
+                _add_reason(row["id"], f"Owning policy of matched invariant {iid}")
 
     has_explicit_query = bool(clean_files or (component and component.strip()) or (task and task.strip()))
     any_matched = bool(
