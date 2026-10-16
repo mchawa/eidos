@@ -128,14 +128,17 @@ Use Planned Mode when introducing new containers (`CNT-*`), breaking contract (`
 
 Before concluding **any** task or presenting your final response, you MUST complete this two-stage pre-completion verification:
 
-### Stage 1: Deterministic Engine Verification (`eidos drift`)
+### Stage 1: Deterministic Engine Verification (`eidos validate` & `eidos drift`)
 
-Run the automated schema and drift checks:
+Run the automated specification validation and drift checks:
 
 ```bash
 eidos validate eidos
 eidos drift --uncommitted --json
 ```
+
+* **`eidos validate`**: Static catalog linter. Validates all specification frontmatters against bundled JSON Schemas, checks `x-eidos-ref` cross-document graph integrity, verifies declared container `package_path` and contract `specification_file` targets on disk, and enforces Typer CLI contract parity.
+* **`eidos drift`**: Primary Git-native verification gate. Subsumes `eidos validate` (executes it internally) and adds Git diff classification, AST structural change detection, component ownership mapping, and polyglot invariant test verification.
 
 #### How `eidos drift` Works
 
@@ -144,7 +147,8 @@ eidos drift --uncommitted --json
 3. **Workflow Mode Evaluation**:
    * **Planned Mode** (when an active `DLT-*` is touched or declared): Verifies that all touched containers/components are accounted for in the SpecDelta's `affects` / `blast_radius`.
    * **Direct Mode** (no active `DLT-*`): Verifies that modified code files are accompanied by corresponding living specification updates (or passes when only tests/non-architectural files are touched).
-4. **Polyglot Invariant Test Verification**: Scans `tests/` across Python (`.py`), TypeScript/JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`), Go (`_test.go`), Rust (`.rs`), and Java/Kotlin (`.java`, `.kt`) to verify every `INV-*` `test_binding` (`file::func`) exists and references the `INV-*` ID.
+4. **Specification Catalog Validation**: Runs `SpecValidator` across `eidos/` to ensure schema conformance, valid cross-references, and physical disk binding integrity.
+5. **Polyglot Invariant Test Verification**: Scans `tests/` across Python (`.py`), TypeScript/JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`), Go (`_test.go`), Rust (`.rs`), and Java/Kotlin (`.java`, `.kt`) to verify every `INV-*` `test_binding` (`file::func`) exists and references the `INV-*` ID, and detects orphan invariants.
 
 #### Resolving Drift (`drift_detected: true`)
 
@@ -218,8 +222,8 @@ eidos/
 
 | Command | Purpose |
 | :--- | :--- |
-| `eidos validate [PATH] [--json]` | Validate all `.adoc` specifications against v1 JSON Schemas, check cross-references, and verify `INV-*` test bindings. |
-| `eidos drift [--uncommitted] [--base REF] [--json]` | Detect spec-to-code drift, validate schemas, and verify polyglot invariant test coverage. |
+| `eidos validate [PATH] [--json]` | Validate all `.adoc` specifications against v1 JSON Schemas, check cross-references, verify declared container package paths and contract specification files, and enforce Typer CLI contract parity. |
+| `eidos drift [--uncommitted] [--base REF] [--json]` | Primary Git-native verification gate: detects spec-to-code drift, enforces substantive spec diffs, executes full spec validation, and statically verifies polyglot invariant test bindings. |
 | `eidos context [-f FILE] [-c ID] [-t TASK] [--tier TIER] [--format json]` | Extract token-budgeted (`anchor`, `guardrails`, `deep`) architectural context slices. |
 | `eidos index repo-map [--max-tokens N] [--format json]` | Generate an AST-compressed structural repository map. |
 | `eidos index find-symbol <QUERY> [--json]` | Resolve class/function/method symbols to exact file/line coordinates and owning specs. |

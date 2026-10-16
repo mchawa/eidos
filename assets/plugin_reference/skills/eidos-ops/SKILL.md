@@ -84,7 +84,7 @@ eidos index sync --force
 eidos validate eidos
 eidos drift --uncommitted
 ```
-Do not consider brownfield extraction complete until `eidos validate eidos` reports **0 errors** across all extracted specifications and test bindings.
+Do not consider brownfield extraction complete until `eidos validate eidos` reports **0 errors** across all extracted specifications and `eidos drift --uncommitted` reports **0 drift** across living specifications and invariant test bindings.
 
 ---
 

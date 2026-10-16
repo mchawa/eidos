@@ -39,7 +39,7 @@ eidos spec list --type component
 eidos spec component promote CMP-USAGE-LEDGER
 eidos spec component inline CMP-USAGE-LEDGER
 
-# Validate all specifications, cross-references, and invariant test bindings
+# Validate all specifications, cross-references, and declared filesystem bindings
 eidos validate eidos --json
 ```
 
@@ -282,7 +282,7 @@ enforcement:
 
 Every capability invariant (`INV-[A-Z0-9_-]+`) MUST have:
 1. A `test_binding` in the capability YAML frontmatter formatted as `<relative_test_file_path>::<test_function_or_Class::method_name>`.
-2. An explicit mention of the `INV-*` ID inside the bound test's docstring, comment, assertion message, or test name so `eidos validate` and `eidos drift` can verify bidirectional linkage.
+2. An explicit mention of the `INV-*` ID inside the bound test's docstring, comment, assertion message, or test name so `eidos drift` can verify bidirectional linkage.
 
 | Language | `test_binding` Format | How to Reference `INV-*` in Test Source |
 | :--- | :--- | :--- |

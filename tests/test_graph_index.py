@@ -1323,3 +1323,122 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
         ver = recovered_conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
         assert ver == SCHEMA_VERSION
 
+
+def test_sync_invariant_coverage_verifies_function_and_polyglot_tests(tmp_path):
+    """Verify sync_index checks AST function existence + invariant tag rather than mere file existence, and indexes polyglot tests."""  # eidos:fixture
+    import json
+
+    repo = tmp_path / "inv_cov_repo"
+    eidos_dir = repo / "eidos"
+    caps_dir = eidos_dir / "domains" / "core" / "capabilities"
+    caps_dir.mkdir(parents=True)
+
+    tests_dir = repo / "tests"
+    tests_dir.mkdir(parents=True)
+    py_test = tests_dir / "test_auth.py"
+    py_test.write_text(
+        "# Verifies INV-SYNC-COVERED\ndef test_existing_covered():\n    assert True\n\ndef test_untagged_func():\n    assert True\n",  # eidos:fixture
+        encoding="utf-8",
+    )
+
+    ts_test = repo / "packages" / "web" / "src" / "auth.test.ts"
+    ts_test.parent.mkdir(parents=True)
+    ts_test.write_text(
+        "// Verifies INV-SYNC-POLYGLOT-TS\nfunction test_ts_auth() {\n  return true;\n}\n",  # eidos:fixture
+        encoding="utf-8",
+    )
+
+    cap_spec = caps_dir / "cap-auth.adoc"
+    cap_spec.write_text(
+        """---
+type: product/capability
+schema: schemas/v1/product/capability.schema.yaml
+id: CAP-AUTH-SYNC
+title: Auth Sync Capability
+domain: DOM-CORE
+status: active
+business:
+  personas: []
+  jtbd: Verify invariant test bindings in index sync
+technical:
+  containers: []
+  invariants:
+    - id: INV-SYNC-COVERED  # eidos:fixture
+      rule: Covered by existing tagged function
+      test_binding: tests/test_auth.py::test_existing_covered
+    - id: INV-SYNC-MISSING-FUNC  # eidos:fixture
+      rule: File exists on disk but function does not exist
+      test_binding: tests/test_auth.py::test_function_does_not_exist
+    - id: INV-SYNC-UNTAGGED-FUNC  # eidos:fixture
+      rule: File and function exist on disk but function lacks invariant token
+      test_binding: tests/test_auth.py::test_untagged_func
+    - id: INV-SYNC-MISSING-FILE  # eidos:fixture
+      rule: Referenced test file does not exist on disk
+      test_binding: tests/test_nonexistent.py::test_nothing
+    - id: INV-SYNC-POLYGLOT-TS  # eidos:fixture
+      rule: Covered by polyglot TypeScript test outside tests/
+      test_binding: packages/web/src/auth.test.ts::test_ts_auth
+---
+= Auth Sync Capability
+""",
+        encoding="utf-8",
+    )
+
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+        conn = idx._get_connection()
+
+        def _inv_state(iid: str) -> dict:
+            row = conn.execute("SELECT data_json FROM entities WHERE id = ?;", (iid,)).fetchone()
+            assert row is not None
+            return json.loads(row["data_json"])
+
+        cov_ok = _inv_state("INV-SYNC-COVERED")  # eidos:fixture
+        assert cov_ok["has_test_coverage"] is True
+        assert "tests/test_auth.py::test_existing_covered" in cov_ok["matching_tests"]
+
+        cov_missing_fn = _inv_state("INV-SYNC-MISSING-FUNC")  # eidos:fixture
+        assert cov_missing_fn["has_test_coverage"] is False
+        assert cov_missing_fn["matching_tests"] == []
+
+        cov_untagged_fn = _inv_state("INV-SYNC-UNTAGGED-FUNC")  # eidos:fixture
+        assert cov_untagged_fn["has_test_coverage"] is False
+        assert cov_untagged_fn["matching_tests"] == []
+
+        cov_missing_file = _inv_state("INV-SYNC-MISSING-FILE")  # eidos:fixture
+        assert cov_missing_file["has_test_coverage"] is False
+        assert cov_missing_file["matching_tests"] == []
+
+        cov_ts = _inv_state("INV-SYNC-POLYGLOT-TS")  # eidos:fixture
+        assert cov_ts["has_test_coverage"] is True
+        assert "packages/web/src/auth.test.ts::test_ts_auth" in cov_ts["matching_tests"]
+
+        # Incrementally add the missing function and verify coverage updates to True
+        base_mtime = py_test.stat().st_mtime
+        py_test.write_text(
+            "# Verifies INV-SYNC-COVERED\ndef test_existing_covered():\n    assert True\n\n"  # eidos:fixture
+            "# Verifies INV-SYNC-MISSING-FUNC\ndef test_function_does_not_exist():\n    assert True\n",  # eidos:fixture
+            encoding="utf-8",
+        )
+        os.utime(py_test, (base_mtime + 10.0, base_mtime + 10.0))
+        idx.sync(force=False)
+
+        cov_now_added = _inv_state("INV-SYNC-MISSING-FUNC")  # eidos:fixture
+        assert cov_now_added["has_test_coverage"] is True
+        assert "tests/test_auth.py::test_function_does_not_exist" in cov_now_added["matching_tests"]
+
+        # Remove test_existing_covered from py_test and verify coverage reverts to False and stale matching_tests clears
+        py_test.write_text(
+            "# Verifies INV-SYNC-MISSING-FUNC\ndef test_function_does_not_exist():\n    assert True\n",  # eidos:fixture
+            encoding="utf-8",
+        )
+        os.utime(py_test, (base_mtime + 20.0, base_mtime + 20.0))
+        idx.sync(force=False)
+
+        cov_removed = _inv_state("INV-SYNC-COVERED")  # eidos:fixture
+        assert cov_removed["has_test_coverage"] is False
+        assert cov_removed["matching_tests"] == []
+    finally:
+        idx.close()
+

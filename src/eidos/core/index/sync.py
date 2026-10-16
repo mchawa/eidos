@@ -178,13 +178,31 @@ class _CodeOwnershipResolver:
         return owner, ""
 
 
+_POLYGLOT_TEST_SUFFIXES = (
+    "_test.py",
+    ".test.ts",
+    ".spec.ts",
+    ".test.js",
+    ".spec.js",
+    ".test.tsx",
+    ".spec.tsx",
+    ".test.jsx",
+    ".spec.jsx",
+    "_test.go",
+    "_test.rs",
+    "Test.java",
+    "Test.kt",
+    "Spec.kt",
+)
+
+
 def is_test_code_path(rel_path: str) -> bool:
-    """Return True for test files (by name or by a tests/test/__tests__ directory segment)."""
+    """Return True for test files (by polyglot test naming convention or by a tests/test/__tests__ directory segment)."""
     parts = rel_path.replace("\\", "/").split("/")
     name = parts[-1]
     return (
         name.startswith("test_")
-        or name.endswith("_test.py")
+        or any(name.endswith(sfx) for sfx in _POLYGLOT_TEST_SUFFIXES)
         or any(part in ("tests", "test", "__tests__") for part in parts[:-1])
     )
 
@@ -443,7 +461,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     package_paths: set[str] = set()
     cursor.execute("SELECT DISTINCT package_path FROM entities WHERE package_path != '';")
     package_paths.update(row[0].strip() for row in cursor.fetchall())
-    cursor.execute("SELECT DISTINCT symbol FROM symbol_mappings WHERE kind = 'package_path';")
+    cursor.execute("SELECT DISTINCT symbol FROM symbol_mappings WHERE kind IN ('package_path', 'test_binding');")
     package_paths.update(row[0].strip() for row in cursor.fetchall())
     for pp in sorted(package_paths):
         if pp:
@@ -738,6 +756,93 @@ def delete_spec_fts_rows(conn: sqlite3.Connection, doc_id: str, rel_path: str) -
     )
 
 
+def _reconcile_invariant_coverage(
+    index: Any,
+    conn: sqlite3.Connection,
+    ast_idx: Any,
+) -> None:
+    """Reconcile invariant entity has_test_coverage and matching_tests against AST-verified test bindings."""
+    inv_rows = conn.execute(
+        "SELECT id, data_json FROM entities WHERE type = 'invariant';"
+    ).fetchall()
+    if not inv_rows:
+        return
+
+    assert_edges: dict[str, list[str]] = {}
+    for source_id, target_id in conn.execute(
+        "SELECT source_id, target_id FROM edges WHERE rel_type = 'asserts' AND instr(source_id, '::') > 0;"
+    ).fetchall():
+        assert_edges.setdefault(target_id, []).append(source_id)
+
+    test_funcs_cache: dict[str, dict[str, str]] = {}
+    test_content_cache: dict[str, str] = {}
+
+    for row in inv_rows:
+        iid = row["id"]
+        try:
+            inv_data = json.loads(row["data_json"])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(inv_data, dict):
+            continue
+
+        ast_matches = list(dict.fromkeys(assert_edges.get(iid, [])))
+        test = str(inv_data.get("test_binding") or "").strip()
+
+        if test:
+            parts = [p.strip() for p in test.split("::") if p.strip()]
+            tb_file = parts[0].replace("\\", "/") if parts else ""
+            tb_func = "::".join(parts[1:]) if len(parts) > 1 else ""
+            abs_tb = (index.root / tb_file) if tb_file else None
+            tb_verified = False
+
+            if tb_func:
+                target_ref = f"{tb_file}::{tb_func}"
+                if target_ref in ast_matches:
+                    tb_verified = True
+                elif abs_tb is not None and abs_tb.is_file():
+                    if tb_file not in test_funcs_cache:
+                        test_funcs_cache[tb_file] = ast_idx.list_test_functions(abs_tb)
+                    funcs = test_funcs_cache[tb_file]
+                    candidate_bodies: list[str] = []
+                    if tb_func in funcs:
+                        candidate_bodies.append(funcs[tb_func])
+                    elif "::" not in tb_func:
+                        suffix = f"::{parts[-1]}"
+                        candidate_bodies.extend(
+                            body for k, body in funcs.items() if k == parts[-1] or k.endswith(suffix)
+                        )
+                    if candidate_bodies:
+                        pat = re.compile(rf"\b{re.escape(iid)}\b")
+                        tb_verified = any(pat.search(body) for body in candidate_bodies)
+                matching = list(dict.fromkeys([target_ref, *ast_matches])) if tb_verified else []
+                has_coverage = tb_verified
+            else:
+                if any(m.startswith(f"{tb_file}::") for m in ast_matches):
+                    tb_verified = True
+                elif abs_tb is not None and abs_tb.is_file():
+                    if tb_file not in test_content_cache:
+                        try:
+                            test_content_cache[tb_file] = abs_tb.read_text(encoding="utf-8", errors="replace")
+                        except OSError:
+                            test_content_cache[tb_file] = ""
+                    pat = re.compile(rf"\b{re.escape(iid)}\b")
+                    tb_verified = bool(pat.search(test_content_cache[tb_file]))
+                matching = list(dict.fromkeys([tb_file, *ast_matches])) if tb_verified else []
+                has_coverage = tb_verified
+        else:
+            matching = ast_matches
+            has_coverage = bool(matching)
+
+        if inv_data.get("has_test_coverage") != has_coverage or inv_data.get("matching_tests") != matching:
+            inv_data["has_test_coverage"] = has_coverage
+            inv_data["matching_tests"] = matching
+            conn.execute(
+                "UPDATE entities SET data_json = ? WHERE id = ?;",
+                (json.dumps(inv_data), iid),
+            )
+
+
 def sync_index(
     index: Any,
     force: bool = False,
@@ -978,16 +1083,8 @@ def sync_index(
                             raise ValueError(inv_msg)
                         continue
                     rule = inv.get("rule", "")
-                    test = inv.get("test_binding", "")
+                    test = inv.get("test_binding") or inv.get("verification") or ""
                     test_file = test.split("::")[0] if test else ""
-                    test_exists = bool(test_file and (index.root / test_file).exists())
-                    matching = [test] if test else []
-                    for (ast_match,) in conn.execute(
-                        "SELECT source_id FROM edges WHERE rel_type = 'asserts' AND target_id = ? AND instr(source_id, '::') > 0;",
-                        (iid,),
-                    ):
-                        if ast_match not in matching:
-                            matching.append(ast_match)
                     inv_data = {
                         "id": iid,
                         "rule": rule,
@@ -996,8 +1093,8 @@ def sync_index(
                         "capability_id": doc_id if doc_type == "product/capability" else None,
                         "policy_id": doc_id if doc_type == "product/policy" else None,
                         "component_id": doc_id if doc_type == "tech/component" else None,
-                        "has_test_coverage": test_exists or bool(matching and not test),
-                        "matching_tests": matching,
+                        "has_test_coverage": False,
+                        "matching_tests": [],
                     }
                     conn.execute(
                         """
@@ -1033,25 +1130,6 @@ def sync_index(
                             "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
                             (test_file, iid),
                         )
-                        abs_test = (index.root / test_file).resolve()
-                        if abs_test.is_file():
-                            try:
-                                rel_tf = str(abs_test.relative_to(index.root)).replace("\\", "/")
-                            except ValueError:
-                                rel_tf = str(abs_test).replace("\\", "/")
-                            conn.execute(
-                                """
-                                INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-                                VALUES (?, ?, ?, ?, 'code/test', ?);
-                                """,
-                                (
-                                    rel_tf,
-                                    abs_test.stat().st_mtime,
-                                    hashlib.sha256(abs_test.read_bytes()).hexdigest(),
-                                    iid,
-                                    time.time(),
-                                ),
-                            )
 
             for pkg_entry in pkg_list:
                 conn.execute(
@@ -1239,29 +1317,52 @@ def sync_index(
         if force or spec_updates or specs_deleted:
             index._reconcile_code_ownership(conn, ast_idx, resolver, processed_code)
 
-        tests_dir = index.root / "tests"
-        if tests_dir.is_dir():
-            for tp in tests_dir.rglob("*.py"):
-                if tp.is_file() and (tp.name.startswith("test_") or tp.name.endswith("_test.py")):
-                    try:
-                        rel_t = str(tp.relative_to(index.root)).replace("\\", "/")
-                    except ValueError:
-                        rel_t = str(tp).replace("\\", "/")
-                    cached_entry = conn.execute(
-                        "SELECT mtime, sha256 FROM indexed_files WHERE rel_path = ? AND doc_type = 'code/test';",
-                        (rel_t,),
-                    ).fetchone()
-                    stat = tp.stat()
-                    if not cached_entry or abs(stat.st_mtime - cached_entry["mtime"]) > 0.001 or force:
-                        t_sha = hashlib.sha256(tp.read_bytes()).hexdigest()
-                        conn.execute(
-                            """
-                            INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-                            VALUES (?, ?, ?, 'tests', 'code/test', ?);
-                            """,
-                            (rel_t, stat.st_mtime, t_sha, time.time()),
-                        )
-                        index._index_test_bindings(conn, ast_idx, tp, rel_t)
+        candidate_test_files: dict[str, Path] = {}
+        for std_test_dir in ("tests", "test"):
+            tests_dir = index.root / std_test_dir
+            if tests_dir.is_dir():
+                for dirpath, dirnames, filenames in os.walk(str(tests_dir)):
+                    dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_CODE_DIRS and not d.startswith(".")]
+                    for fn in filenames:
+                        tp = Path(dirpath) / fn
+                        if tp.suffix not in _CODE_EXTS:
+                            continue
+                        try:
+                            rel_t = str(tp.relative_to(index.root)).replace("\\", "/")
+                        except ValueError:
+                            rel_t = str(tp).replace("\\", "/")
+                        if index._is_test_code_path(rel_t):
+                            candidate_test_files.setdefault(rel_t, tp)
+
+        for (tb_sym,) in conn.execute(
+            "SELECT DISTINCT symbol FROM symbol_mappings WHERE kind = 'test_binding';"
+        ).fetchall():
+            if not tb_sym:
+                continue
+            abs_tb = (index.root / str(tb_sym).strip()).resolve()
+            if abs_tb.is_file() and abs_tb.suffix in _CODE_EXTS:
+                try:
+                    rel_tb = str(abs_tb.relative_to(index.root)).replace("\\", "/")
+                except ValueError:
+                    rel_tb = str(abs_tb).replace("\\", "/")
+                candidate_test_files.setdefault(rel_tb, abs_tb)
+
+        for rel_t, tp in sorted(candidate_test_files.items()):
+            cached_entry = conn.execute(
+                "SELECT mtime, sha256 FROM indexed_files WHERE rel_path = ? AND doc_type = 'code/test';",
+                (rel_t,),
+            ).fetchone()
+            stat = tp.stat()
+            if not cached_entry or abs(stat.st_mtime - cached_entry["mtime"]) > 0.001 or force:
+                t_sha = hashlib.sha256(tp.read_bytes()).hexdigest()
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
+                    VALUES (?, ?, ?, 'tests', 'code/test', ?);
+                    """,
+                    (rel_t, stat.st_mtime, t_sha, time.time()),
+                )
+                index._index_test_bindings(conn, ast_idx, tp, rel_t)
 
         conn.execute(
             """
@@ -1308,6 +1409,7 @@ def sync_index(
             """
         )
         index._prune_stale_test_binding_edges(conn)
+        _reconcile_invariant_coverage(index, conn, ast_idx)
 
     stats.duration_ms = (time.perf_counter() - t0) * 1000
     index._last_synced_check = time.monotonic()

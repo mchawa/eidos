@@ -82,7 +82,7 @@ Options:
 ## 2. Governance & Verification
 
 ### `eidos validate`
-Validate all AsciiDoc specification documents against their bundled v1 JSON/YAML schemas (including shared `$defs` for `DEC-*` and `INV-*`) and check `x-eidos-ref` cross-document graph integrity.
+Validate all AsciiDoc specification documents against their bundled v1 JSON/YAML schemas (including shared `$defs` for `DEC-*` and `INV-*`), check `x-eidos-ref` cross-document graph integrity, verify on-disk existence of declared container package paths and contract specification files, and enforce Typer CLI contract command parity.
 
 ```bash
 eidos validate eidos
@@ -94,13 +94,16 @@ Options:
 * `--json`: Output structured JSON validation report.
 
 Exit Codes:
-* `0`: All specifications conform to schema with zero broken cross-references.
-* `1`: Schema validation errors or broken cross-references detected.
+* `0`: All specifications conform to schema with zero broken cross-references or missing file bindings.
+* `1`: Schema validation errors, broken cross-references, missing declared files, or undocumented CLI commands detected.
+
+> [!NOTE]
+> `eidos validate` is a static catalog linter. It does not inspect Git diffs or scan the test suite for polyglot invariant coverage, making it sub-second fast for local specification authoring and TDD.
 
 ---
 
 ### `eidos drift`
-Detect spec-to-code drift between Git branches (using fail-closed 3-dot merge-base comparison) or uncommitted working-tree changes, validate schema conformance, enforce substantive spec diffs, and statically verify polyglot invariant test bindings across both Planned Mode and Direct Mode:
+The primary Git-native verification gate. Detects spec-to-code drift between Git branches (using fail-closed 3-dot merge-base comparison) or uncommitted working-tree changes, validates schema conformance, enforces substantive spec diffs, and statically verifies polyglot invariant test bindings across both Planned Mode and Direct Mode:
 
 ```bash
 # Compare current branch against base branch (3-dot merge-base diff):
@@ -128,8 +131,11 @@ Options:
 * `--warn-only`: Do not exit with code 1 when drift is detected.
 
 Exit Codes:
-* `0`: Specifications and code are synchronized, all schemas valid, invariant tests green.
-* `1`: Spec-to-code drift detected, unowned structural code found, or specification validation errors found.
+* `0`: Specifications and code are synchronized, all schemas and bindings valid, invariant tests green.
+* `1`: Spec-to-code drift detected, unowned structural code found, specification validation errors found, or uncovered/orphan invariants detected.
+
+> [!IMPORTANT]
+> `eidos drift` **subsumes `eidos validate`**: it executes the entire `SpecValidator` suite internally as part of its gate, in addition to checking Git diffs, AST structural changes, and polyglot invariant test bindings.
 
 ---
 

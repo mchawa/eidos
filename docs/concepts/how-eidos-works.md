@@ -89,7 +89,7 @@ flowchart TD
 
 ### 3.1 Specification Parser & Schema Validator (`CNT-EIDOS-CORE`)
 
-Every living specification in `eidos/` is an AsciiDoc (`.adoc`) file headed by a YAML frontmatter block (`--- ... ---`). When `eidos validate` runs, `SpecParser` and `SpecValidator` execute a **two-pass validation pipeline**:
+Every living specification in `eidos/` is an AsciiDoc (`.adoc`) file headed by a YAML frontmatter block (`--- ... ---`). When `eidos validate` runs, `SpecParser` and `SpecValidator` execute a **three-pass validation pipeline**:
 
 #### Pass 1: Schema Validation with Shared `$defs` & SQLite Caching
 1. **Frontmatter Extraction**: `SpecParser` splits the `.adoc` file into structured YAML frontmatter metadata, raw YAML line offsets, and AsciiDoc prose body.
@@ -106,6 +106,15 @@ After individual documents validate against their JSON Schema, `SpecValidator` v
   * `INV-COMPONENT-CENTRALIZATION-MANDATE`: Dedicated `tech/component` files must reside under `eidos/architecture/components/` and never inside implementation directories (`src/`, `packages/`).
   * `INV-COMPONENT-CONTAINER-AFFINITY`: Every promoted `CMP-*` component must bind to an existing parent `CNT-*` container via `container:`.
   * `INV-INTERFACE-BOUNDARY-GOVERNANCE`: Containers (`CNT-*`) own cross-process boundary contracts (`CTR-*`), whereas components (`CMP-*`) declare in-process language signatures via `interfaces.provides`.
+
+#### Pass 3: Physical Binding Verification & CLI Contract Parity
+When executed within a repository containing a source tree (`src/`), `SpecValidator` verifies that declared living specification bindings exist in the filesystem:
+* **Container Package Path Resolution**: Verifies that every directory declared in `package_path` on active C4 containers (`CNT-*`) exists on disk.
+* **Contract Specification File Resolution**: Verifies that external specifications (e.g., OpenAPI schemas, protobufs, or CLI entrypoint files) referenced in `specification_file` on active contracts (`CTR-*`) exist on disk.
+* **Scoped Typer CLI Contract Parity**: For contracts specifying `protocol: cli_args` bound to a Python CLI file, parses the Python AST to confirm that all top-level non-hidden Typer commands and subcommand groups are explicitly documented in the specification body.
+
+> [!NOTE]
+> If `eidos validate` runs in a repository without a source tree (e.g. a standalone specification repository or documentation deployment), Pass 3 physical disk checks are automatically skipped.
 
 ---
 
@@ -152,7 +161,7 @@ When an agent runs `eidos context -t "rate limiting and token expiration" --tier
 
 ### 3.3 Git-Native Drift Detection Engine (`CNT-EIDOS-VCS`)
 
-`eidos drift` is the primary verification gate ensuring that code, specifications, and tests never diverge. Located in `src/eidos/vcs/` (`drift.py`, `diff.py`, `structural.py`, `invariants.py`, `report.py`), it executes a **7-step deterministic verification pipeline**:
+`eidos drift` is the primary verification gate ensuring that code, specifications, and tests never diverge. Located in `src/eidos/vcs/` (`drift.py`, `diff.py`, `structural.py`, `invariants.py`, `report.py`), it executes an **8-step deterministic verification pipeline**:
 
 ```mermaid
 flowchart LR
@@ -161,7 +170,8 @@ flowchart LR
     C --> D["4. Path-Boundary<br/>Ownership Mapping"]
     D --> E["5. Substantive Spec<br/>Diff Verification"]
     E --> F["6. Mode Evaluation<br/>(Direct vs. Planned)"]
-    F --> G["7. Polyglot Static<br/>INV-* Test Verification"]
+    F --> G["7. SpecValidator<br/>Catalog Verification"]
+    G --> H["8. Polyglot Static<br/>INV-* Test Verification"]
 ```
 
 1. **Fail-Closed Base Ref & Merge-Base Resolution (`diff.py`)**:
@@ -182,12 +192,15 @@ flowchart LR
 6. **Workflow Mode & 1-Hop Neighborhood Evaluation**:
    * **Planned Mode** (when an active `DLT-*` SpecDelta is modified in the diff): Verifies that all touched containers and components are declared in the active SpecDelta's `mutations`, `affects`, or `blast_radius`.
    * **Direct Mode** (no active `DLT-*` in diff): Verifies that for every touched container/component with structural changes, either its own `.adoc` specification or a specification within its **component-scoped 1-hop knowledge graph neighborhood** (`CAP-*`, `CTR-*`, `CNT-*`, `CMP-*`—explicitly excluding global `POL-*` and `PER-*` edges so editing one policy never rubber-stamps the whole repo) was substantively updated.
-7. **Polyglot Static Invariant Test Verification (`invariants.py`)**:
+7. **Specification Schema & Referential Integrity Gate (`validator.py`)**:
+   * Runs the full 3-pass `SpecValidator` suite over `eidos/`. Before code changes can merge, Eidos guarantees that all specification documents conform to JSON schemas, cross-references resolve, declared container `package_path` and contract `specification_file` targets exist on disk, and CLI contracts maintain command parity.
+8. **Polyglot Static Invariant Test Verification (`invariants.py`)**:
    * Scans every `INV-*` invariant across capabilities (`CAP-*`), policies (`POL-*`), and promoted components (`CMP-*`).
    * Uses `test_binding_cache` and `ast-grep` across **Python (`.py`), TypeScript/JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`), Go (`_test.go`), Rust (`.rs`), Java (`.java`), and Kotlin (`.kt`, `.kts`)** to verify that:
      1. The file in `test_binding: path/to/test_file::test_func` (or `path/to/test_file::TestClass::test_method`) exists.
      2. The target test function or method is defined in the AST.
      3. The test body, docstring, decorator, or comment explicitly references the `INV-*` ID.
+   * **Orphan Invariant Detection**: Scans the test suite to detect tests referencing `INV-*` IDs that do not exist in any living specification.
 
 ---
 

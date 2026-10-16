@@ -1,0 +1,192 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-055
+title: "Polyglot Drift Visibility, Pluggable Contract Verifiers, Git-Portable SpecDeltas, and Graph Index Optimization"
+status: proposed
+vcs:
+  branch: feat/drift-contracts-deltas-index-hardening
+intent:
+  kind: feature
+  motivation: "Address architectural weak points 2, 3, 4, and 5: (2) eliminate polyglot visibility false positives, 1-hop unanchored public symbol bypasses, and non-substantive '// details' comment appends in drift/delta execution; (3) replace Typer-only contract verification with a pluggable protocol verifier registry across CTR-* protocols; (4) make SpecDelta baselines Git-portable across machines/CI via frontmatter base_commit/blob SHAs, collision-free IDs, and copy-on-write transaction snapshots; and (5) harden FTS5 stop-word query generation, incremental spec edge updates, and progressive field compression in tiered context slicing."
+mutations:
+  - action: modify_component
+    target_component: CMP-AST-SYMBOL-INDEXER
+    details: "Enforce language-native visibility rules in AstGrepIndexer.extract_symbols and _is_public_symbol (export in TS/JS, pub in Rust, uppercase initial rune in Go, public/protected modifiers in Java/Kotlin, and __all__ when defined in Python) so private module helpers do not trigger false-positive structural drift."
+    expect:
+      source_path: "src/eidos/core/index/ast_indexer.py"
+      responsibility: "visibility"
+  - action: modify_component
+    target_component: CMP-DRIFT-DETECTOR
+    details: "Require symbol anchoring (inspector.is_anchored) in _spec_coverage_verdict when new public boundary symbols are introduced to existing files, preventing unanchored 1-hop neighborhood spec edits from satisfying public API additions."
+    expect:
+      source_path: "src/eidos/vcs/structural.py"
+      responsibility: "is_anchored"
+  - action: modify_component
+    target_component: CMP-SPEC-VALIDATOR
+    details: "Replace the hardcoded protocol == 'cli_args' Typer-only branch in _validate_source_and_contract_paths with a pluggable protocol verifier registry supporting cli_args, python_protocol, rest_openapi, json_schema, grpc_proto, and graphql contracts."
+    expect:
+      source_path: "src/eidos/core/spec/validator.py"
+      responsibility: "protocol verifier"
+  - action: modify_component
+    target_component: CMP-DELTA-ENGINE
+    details: "Remove the non-substantive '// {details}' comment-append fallback in _apply_expect_or_details_to_spec, persist vcs.base_commit (or target baseline blob SHAs) in DLT-* frontmatter on creation so eidos delta verify is deterministic without gitignored SQLite state, support collision-free branch/slug delta IDs, and scope _MutationTransaction snapshots via copy-on-write to declared mutation targets."
+    expect:
+      source_path: "src/eidos/core/lifecycle/delta_engine.py"
+      responsibility: "copy-on-write"
+  - action: modify_component
+    target_component: CMP-FTS-QUERY-ENGINE
+    details: "Filter common English stop words and single-character noise tokens in build_fts_match_query and apply two-phase retrieval (boosting exact entity IDs and phrase/AND matches before OR prefix fallback) so natural-language task prompts do not match the entire corpus."
+    expect:
+      source_path: "src/eidos/core/index/query.py"
+      responsibility: "stop-word"
+  - action: modify_component
+    target_component: CMP-INCREMENTAL-SYNC-ENGINE
+    details: "Scope rebuild_spec_edges to incrementally update edges for modified doc_ids (and re-resolve pending targets) instead of wiping and rebuilding all specification edges globally on single-spec edits."
+    expect:
+      source_path: "src/eidos/core/index/sync.py"
+      responsibility: "rebuild_spec_edges"
+  - action: modify_component
+    target_component: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: "Compress verbose fields (descriptions, rationales, details) to compact 1-line summaries before dropping invariants or policies in _enforce_token_budget, and track token deltas incrementally instead of re-serializing full Markdown and JSON on every eviction iteration."
+    expect:
+      source_path: "src/eidos/core/index/context.py"
+      responsibility: "progressive"
+  - action: patch_invariant
+    target_invariant_id: INV-DRIFT-DIFF-AWARE-COVERAGE
+    details: "Update INV-DRIFT-DIFF-AWARE-COVERAGE in CAP-VCS-001 to enforce language-native public symbol visibility across polyglot AST extractors and require anchored spec updates for new public boundary symbols."
+    expect:
+      rule: "language-native"
+      test_binding: "tests/test_drift.py::test_trivial_spec_edit_does_not_cover_structural_addition"
+  - action: patch_invariant
+    target_invariant_id: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+    details: "Update INV-DELTA-VERIFY-MODIFICATION-EVIDENCE in CAP-PROD-002 to include Git-portable frontmatter base_commit/baseline blob resolution for uncommitted deltas when .cache/index.db is absent, and disallow non-substantive '// details' comment appends during delta execution."
+    expect:
+      rule: "base_commit"
+      test_binding: "tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence"
+affects:
+  containers:
+    - CNT-EIDOS-VCS
+    - CNT-EIDOS-CORE
+    - CNT-EIDOS-INDEX
+  components:
+    - CMP-AST-SYMBOL-INDEXER
+    - CMP-DRIFT-DETECTOR
+    - CMP-SPEC-VALIDATOR
+    - CMP-DELTA-ENGINE
+    - CMP-FTS-QUERY-ENGINE
+    - CMP-INCREMENTAL-SYNC-ENGINE
+    - CMP-TIERED-CONTEXT-COMPRESSOR
+  capabilities:
+    - CAP-VCS-001
+    - CAP-PROD-001
+    - CAP-PROD-002
+    - CAP-AGENT-001
+    - CAP-AGENT-002
+  domains:
+    - DOM-VCS-LIFECYCLE
+    - DOM-SPEC-ENGINE
+    - DOM-AGENT-INTELLIGENCE
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-VCS
+    - CNT-EIDOS-CORE
+    - CNT-EIDOS-INDEX
+  impacted_components:
+    - CMP-AST-SYMBOL-INDEXER
+    - CMP-DRIFT-DETECTOR
+    - CMP-SPEC-VALIDATOR
+    - CMP-DELTA-ENGINE
+    - CMP-FTS-QUERY-ENGINE
+    - CMP-INCREMENTAL-SYNC-ENGINE
+    - CMP-TIERED-CONTEXT-COMPRESSOR
+  invariants_to_enforce:
+    - INV-DRIFT-DETECTION-ACCURACY
+    - INV-DRIFT-DIFF-AWARE-COVERAGE
+    - INV-SPEC-GRAPH-INTEGRITY
+    - INV-MUTATION-REVERSIBILITY
+    - INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+    - INV-KNOWLEDGE-GRAPH-CATALOG
+    - INV-AGENT-TASK-RETRIEVAL-COVERAGE
+    - INV-CONTEXT-TOKEN-COMPRESSION
+---
+= SpecDelta: Polyglot Drift Visibility, Pluggable Contract Verifiers, Git-Portable SpecDeltas, and Graph Index Optimization
+:toc: left
+
+== Problem Statement
+
+A deep architectural review of Eidos identified four structural weak points across the VCS drift detector (`CNT-EIDOS-VCS`), core specification & delta engines (`CNT-EIDOS-CORE`), and SQLite knowledge graph / context slicer (`CNT-EIDOS-INDEX`):
+
+=== 2. Drift Detection Precision & SpecDelta Comment-Append Fallback
+
+* **Broken Visibility Heuristics in Polyglot Languages (False Positives)**: `_is_public_symbol` in `src/eidos/core/index/ast_indexer.py` (lines 916-923) defines a public symbol strictly as `not name.startswith("_")`. However, `AstGrepIndexer.extract_symbols` (lines 228-345) extracts all functions and classes across TypeScript/JS, Go, Rust, and Java/Kotlin without inspecting language-native visibility (`export` in TS/JS, uppercase initial rune in Go, `pub` in Rust, `public`/`protected` modifiers in Java/Kotlin). Adding any private helper function in those languages triggers `has_structural_changes == True` and flags false-positive `UNSPECIFIED_CODE_CHANGE` drift.
+* **Trivial 1-Hop Neighborhood Bypass on Existing Files (False Negatives)**: In `_spec_coverage_verdict` (`src/eidos/vcs/structural.py`, lines 460-498), symbol anchoring (`inspector.is_anchored`) is only enforced when `addition.is_new_file` is `True`. When new public boundary symbols are added to an existing file, any 1-line edit to an unrelated specification in the 1-hop neighborhood satisfies `covered_by_spec = True` even if the new symbols are never mentioned.
+* **Self-Contradictory `// {details}` Mutation Fallback**: In `_apply_expect_or_details_to_spec` (`src/eidos/core/lifecycle/delta_engine.py`, lines 1001-1005), when a `modify_*` mutation lacks an `expect:` block, `eidos delta apply` appends `// <details>` (an AsciiDoc line comment) to the target spec. Yet `_normalized_body_lines` in `src/eidos/vcs/structural.py` (lines 207-220) explicitly strips `//` comments when verifying whether a spec diff is substantive.
+
+=== 3. Contract Verification (`CTR-*`) Limited to Python Typer CLIs
+
+* **Hardcoded Typer-Only Verification**: While `assets/schemas/v1/tech/contract.schema.yaml` supports `rest_openapi`, `grpc_proto`, `graphql`, `asyncapi_event`, `cli_args`, `python_protocol`, and `json_schema`, `SpecValidator._validate_source_and_contract_paths` (`src/eidos/core/spec/validator.py`, lines 892-903) only verifies contract-to-source parity when `protocol == "cli_args"`, the file ends in `.py`, and `"typer" in source.lower()`. All other contract protocols only check that `specification_file` exists on disk.
+
+=== 4. SpecDelta (`DLT-*`) Lifecycle & Multi-Developer Git Bottlenecks
+
+* **Sequential ID Collisions Across Parallel Branches**: `create_delta` (`src/eidos/core/lifecycle/delta_engine.py`, lines 92-120) assigns `DLT-YYYY-NNN` sequentially by scanning local files in `eidos/deltas/`. Two branches created in parallel off `main` generate identical `DLT-YYYY-NNN` IDs and filenames, colliding on merge.
+* **Fragile Baseline SHA Tracking Across Machines/CI**: `_snapshot_delta_baselines` stores pre-mutation file hashes in `eidos/.cache/index.db` (which is gitignored). When `eidos delta verify` runs on another machine or in CI without `.cache/index.db`, `_check_or_record_baseline_sha` falls back to `_resolve_git_baseline_sha`. If the delta `.adoc` file has not been committed yet (`git log --diff-filter=A` returns empty), `git_sha` is `None` and `baseline_sha` is initialized to `current_sha`, causing `current_sha != baseline_sha` to evaluate to `False` (`UNMODIFIED`) and falsely fail verification.
+* **Full-Directory RAM Snapshot in `_MutationTransaction`**: `_MutationTransaction.snapshot` (`src/eidos/core/lifecycle/delta_engine.py`, lines 575-586) reads every file under `eidos/` (except `.cache`) into an in-memory `dict[Path, bytes]` before executing delta mutations.
+
+=== 5. Knowledge Graph (`CNT-EIDOS-INDEX`) & Context Slicing Bottlenecks
+
+* **FTS5 Stop-Word Query Explosion**: `build_fts_match_query` (`src/eidos/core/index/query.py`, lines 68-81) splits natural-language `--task` prompts and joins every token with `OR` prefix wildcards (`"term"*`) without filtering English stop words (`the`, `in`, `and`, `for`, `to`, `of`, `with`), matching almost every document in the database and diluting BM25 ranking.
+* **Global Spec Edge Wipe on Single-Spec Edit**: Whenever any `.adoc` file is modified, `sync_index` calls `rebuild_spec_edges` (`src/eidos/core/index/sync.py`), which deletes all specification edges globally and re-parses `frontmatter_json` for every entity in SQLite.
+* **Repeated Full Serialization & Blind `.pop()` in Token Budgeting**: `_enforce_token_budget` (`src/eidos/core/index/context.py`, lines 225-271) re-serializes both `self.to_markdown()` and `self.to_json(indent=2)` on every `while` loop iteration while popping entire `invariants` and `policies` instead of progressively compressing verbose prose fields first.
+
+*(Note: The polyglot test discovery and AST-verified `has_test_coverage` reconciliation in `sync_index` were already resolved directly in `src/eidos/core/index/sync.py`.)*
+
+== Proposed Specification Changes
+
+=== 1. Polyglot Visibility, Anchored Boundary Drift, and Substantive Delta Apply (Item 2)
+
+* **`CMP-AST-SYMBOL-INDEXER` (`src/eidos/core/index/ast_indexer.py`)**:
+  ** Update `AstGrepIndexer` and `_is_public_symbol` to evaluate language-native visibility rules:
+     *** **TypeScript / JavaScript**: Require `export` modifier on functions, classes, interfaces, and type aliases (or exported declaration wrapper).
+     *** **Go**: Require an uppercase initial character (`name[0].isupper()`) for exported package-level functions, types, and methods.
+     *** **Rust**: Require `pub` visibility modifier on `fn`, `struct`, `enum`, `trait`, and `type` items.
+     *** **Java / Kotlin**: Exclude `private` and `internal` declarations when classifying public boundary symbols.
+     *** **Python**: Respect module-level `__all__` when explicitly defined, falling back to `not name.startswith("_")`.
+* **`CMP-DRIFT-DETECTOR` (`src/eidos/vcs/structural.py`)**:
+  ** Update `_spec_coverage_verdict` so that when `addition.added_symbols` introduces new public boundary symbols on a contract or component boundary, at least one modified specification in the owning scope must anchor the change (`inspector.is_anchored(addition)` or substantive update to the direct owning container/component/contract spec), rather than accepting an unanchored edit to an unrelated 1-hop neighbor.
+* **`CMP-DELTA-ENGINE` (`src/eidos/core/lifecycle/delta_engine.py`)**:
+  ** Remove the `// {details}` AsciiDoc comment-append fallback in `_apply_expect_or_details_to_spec`. Require `modify_*` / `extend_*` / `patch_*` mutations to either supply a declarative `expect:` block or append/update a non-comment AsciiDoc body entry so `eidos delta apply --execute` never produces a no-op diff under `_normalized_body_lines`.
+
+=== 2. Pluggable Protocol Contract Verifier Registry (Item 3)
+
+* **`CMP-SPEC-VALIDATOR` (`src/eidos/core/spec/validator.py`)**:
+  ** Replace the hardcoded `elif str(fm.get("protocol", "")).strip().lower() == "cli_args"` branch in `_validate_source_and_contract_paths` with a dispatch table (`_CONTRACT_PROTOCOL_VERIFIERS`) keyed by normalized `protocol`:
+     *** `cli_args`: Existing AST-verified Typer command parity check (`_verify_cli_contract_commands`).
+     *** `python_protocol`: Parse `specification_file` via `ASTCodeIndexer` / `ast` and verify that the declared Python `Protocol` / ABC classes and public method names documented in the `CTR-*` spec exist in `specification_file`.
+     *** `rest_openapi` / `json_schema`: Parse the referenced YAML/JSON schema or OpenAPI document and verify valid root schema structure and declared endpoint paths / `$id` / `title` alignment with the `CTR-*` spec.
+     *** `grpc_proto` / `graphql`: Verify that `service` / `rpc` declarations (for `.proto`) or root `type` / `input` definitions (for `.graphql` / `.gql`) referenced in the `CTR-*` document exist in `specification_file`.
+
+=== 3. Git-Portable SpecDelta Baselines, Collision-Free IDs, and Copy-on-Write Transactions (Item 4)
+
+* **`CMP-DELTA-ENGINE` (`src/eidos/core/lifecycle/delta_engine.py` & `assets/schemas/v1/delta/delta.schema.yaml`)**:
+  ** **Frontmatter `vcs.base_commit` Persistence**: When `eidos delta create` scaffolds a new SpecDelta (or when `_snapshot_delta_baselines` records baselines), record `vcs.base_commit` (current `HEAD` SHA) in the delta frontmatter. Update `_resolve_git_baseline_sha` to check `fm.get("vcs", {}).get("base_commit")` and `git merge-base HEAD main` when `git log --diff-filter=A` is empty for an uncommitted delta file, guaranteeing deterministic `eidos delta verify` results even after `rm -rf eidos/.cache`.
+  ** **Collision-Free Delta Identifiers**: Support optional slug/hash suffixes in `DLT-YYYY-NNN` (e.g., `DLT-2026-055` or `DLT-2026-055-<slug>`) and detect ID collisions against remote/base refs during `create_delta`.
+  ** **Copy-on-Write `_MutationTransaction`**: Update `_MutationTransaction` to snapshot files lazily on write (`record_before_write(path)`) plus the target files resolved from `mutations[]`, `system-architecture.adoc`, and the delta `.adoc` file itself, eliminating the eager `rglob("*")` RAM copy of the entire `eidos/` directory.
+
+=== 4. FTS5 Stop-Word Filtering, Incremental Edge Sync, and Progressive Context Compression (Item 5)
+
+* **`CMP-FTS-QUERY-ENGINE` (`src/eidos/core/index/query.py`)**:
+  ** Add `_FTS_STOP_WORDS` filtering in `build_fts_match_query` to strip common English stop words (`the`, `a`, `an`, `in`, `on`, `of`, `for`, `to`, `and`, `or`, `with`, `is`, `are`, `be`, `by`, `from`, `that`, `this`) and single-character tokens (preserving all tokens only if every token in the query is a stop word).
+  ** Boost exact entity ID tokens (`CNT-*`, `CMP-*`, `CAP-*`, `INV-*`, `CTR-*`, `POL-*`, `DOM-*`, `DEC-*`) and high-specificity terms in two-phase BM25 ranking.
+* **`CMP-INCREMENTAL-SYNC-ENGINE` (`src/eidos/core/index/sync.py`)**:
+  ** Update `rebuild_spec_edges` to accept `updated_doc_ids: set[str] | None = None`. When `updated_doc_ids` is a small subset of total specs and no entity ID was deleted/renamed, delete and rebuild outgoing spec edges only for `source_id IN updated_doc_ids` (plus any previously unresolved target edges), falling back to a full edge rebuild only on full resyncs or entity removals.
+* **`CMP-TIERED-CONTEXT-COMPRESSOR` (`src/eidos/core/index/context.py`)**:
+  ** In `_enforce_token_budget`, add a progressive compression pass that first truncates verbose multi-sentence `description` / `rationale` / `details` fields on non-primary entities before popping `invariants` or `policies`, and use incremental character-length accounting before running a single final verification against `to_markdown()` and `to_json()`.
+
+== Verification Plan
+
+* `uv run pytest tests/test_ast_indexer.py tests/test_drift.py` — Verify polyglot private symbols (`function helper()` in TS, `func helper()` in Go, `fn helper()` in Rust, `private void helper()` in Java) do not trigger false-positive structural drift, while exported symbols require anchored spec coverage.
+* `uv run pytest tests/test_validator.py` — Verify pluggable contract verifiers across `cli_args`, `python_protocol`, `rest_openapi`, `json_schema`, and `grpc_proto`.
+* `uv run pytest tests/test_delta_engine.py` — Verify `eidos delta verify` succeeds on an uncommitted delta after deleting `eidos/.cache/index.db` via `vcs.base_commit` / `HEAD` fallback, verify copy-on-write `_MutationTransaction` rollback, and verify `_apply_expect_or_details_to_spec` produces substantive changes.
+* `uv run pytest tests/test_graph_index.py tests/test_context.py` — Verify FTS5 stop-word filtering in `build_fts_match_query`, incremental `rebuild_spec_edges` accuracy, and progressive field compression under token budgets.
+* `uv run eidos validate eidos && uv run eidos drift --uncommitted --json` — Verify 0 schema errors, 0 broken references, and 0 drift.
