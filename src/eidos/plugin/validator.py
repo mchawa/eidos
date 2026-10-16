@@ -173,10 +173,14 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
 
                 try:
                     content = skill_md.read_text(encoding="utf-8")
-                    if content.startswith("---"):
-                        parts = content.split("---", 2)
-                        if len(parts) >= 3:
-                            fm = yaml.safe_load(parts[1])
+                    if re.match(r"\A---[ \t]*(?:\r?\n|\Z)", content):
+                        m_fm = re.match(
+                            r"\A---[ \t]*\r?\n(.*?\r?\n)?---[ \t]*(?:\r?\n|\Z)",
+                            content,
+                            re.DOTALL,
+                        )
+                        if m_fm:
+                            fm = yaml.safe_load(m_fm.group(1) or "")
                             if isinstance(fm, dict):
                                 s_name = fm.get("name")
                                 s_desc = fm.get("description")

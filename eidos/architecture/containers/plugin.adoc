@@ -15,11 +15,11 @@ tier: extensibility
 components:
   - id: CMP-PLUGIN-INSTALLER
     name: "PluginInstaller"
-    responsibility: "Installs, updates, and safely uninstalls portable agent plugins and 4 cohesive workflow skills via a declarative TargetAdapter registry (TargetAdapter.install and TargetAdapter.uninstall driving bundle copying, skill projection, instruction blocks, hook/JSONC merges, and manifest cleanup) and manifest tracking (.eidos-manifest.json) with SHA-256 digests, preserving existing manifest entries and user-owned files (.codex/rules.md, non-Eidos plugin.json, scripts/) on force=False, enforcing ancestor-aware symlink protection (_check_not_symlink), upgrading version-pinned uvx hook commands, and pruning retired legacy skill directories across agent-plugins.org v1.0.0, Claude Code, OpenAI Codex, OpenCode, Aider, Cline, Cursor, and GitHub Copilot."
+    responsibility: "Installs, updates, and safely uninstalls portable agent plugins and 4 cohesive workflow skills via a declarative TargetAdapter registry (TargetAdapter.install and TargetAdapter.uninstall driving bundle copying, skill projection, instruction blocks, hook/JSONC merges, and manifest cleanup, with PluginInstallTarget.PROJECT scoped strictly to .agents/plugins/eidos, Path-typed InstallResult.created_files for Aider, and accurate fallback plugin_dir resolution in check_plugin_version_status) and manifest tracking (.eidos-manifest.json) with SHA-256 digests, preserving existing manifest entries and user-owned files (.codex/rules.md, non-Eidos plugin.json, scripts/) on force=False, enforcing ancestor-aware symlink protection (_check_not_symlink), upgrading version-pinned uvx hook commands, and pruning retired legacy skill directories and retired Claude commands (reconcile.md) across agent-plugins.org v1.0.0, Claude Code, OpenAI Codex, OpenCode, Aider, Cline, Cursor, and GitHub Copilot."
     source_path: "src/eidos/plugin/installer.py"
   - id: CMP-PLUGIN-VALIDATOR
     name: "PluginValidator"
-    responsibility: "Validates plugin packages against agent-plugins.org v1.0.0 and enforces SemVer 2.0.0 versioning across host agent environments."
+    responsibility: "Validates plugin packages against agent-plugins.org v1.0.0 with line-anchored SKILL.md YAML frontmatter extraction and enforces SemVer 2.0.0 versioning across host agent environments."
     source_path: "src/eidos/plugin/validator.py"
   - id: CMP-HOOK-MANAGER
     name: "HookManager"

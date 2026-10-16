@@ -124,8 +124,10 @@ def get_bundled_plugin_version() -> str:
     return "0.2.0"
 
 
-def get_installed_plugin_version(project_dir: Path | None = None, dest_path: Path | None = None) -> str | None:
-    """Retrieve installed plugin version from project scope or custom destination."""
+def _resolve_installed_plugin_manifest(
+    project_dir: Path | None = None, dest_path: Path | None = None
+) -> tuple[Path, Path | None]:
+    """Resolve (plugin_dir, manifest_path) for an installed project or fallback agent plugin."""
     root = (project_dir or Path.cwd()).resolve()
     if dest_path is not None:
         target_dir = dest_path if dest_path.is_absolute() else (root / dest_path)
@@ -133,8 +135,10 @@ def get_installed_plugin_version(project_dir: Path | None = None, dest_path: Pat
         target_dir = root / ".agents" / "plugins" / "eidos"
 
     manifest_path = target_dir / "plugin.json"
-    if not manifest_path.exists():
-        # Fallback to other agent manifests if installed specifically for them
+    if manifest_path.exists():
+        return target_dir, manifest_path
+
+    if dest_path is None:
         fallbacks = [
             root / ".claude" / "plugins" / "eidos" / "plugin.json",
             root / ".claude" / "plugins" / "eidos" / ".claude-plugin" / "plugin.json",
@@ -147,10 +151,17 @@ def get_installed_plugin_version(project_dir: Path | None = None, dest_path: Pat
         ]
         for fb in fallbacks:
             if fb.exists():
-                manifest_path = fb
-                break
-        else:
-            return None
+                matched_dir = fb.parent.parent if fb.parent.name == ".claude-plugin" else fb.parent
+                return matched_dir, fb
+
+    return target_dir, None
+
+
+def get_installed_plugin_version(project_dir: Path | None = None, dest_path: Path | None = None) -> str | None:
+    """Retrieve installed plugin version from project scope or custom destination."""
+    _plugin_dir, manifest_path = _resolve_installed_plugin_manifest(project_dir=project_dir, dest_path=dest_path)
+    if manifest_path is None:
+        return None
     try:
         with open(manifest_path, encoding="utf-8") as f:
             data = json.load(f)
@@ -162,10 +173,7 @@ def get_installed_plugin_version(project_dir: Path | None = None, dest_path: Pat
 def check_plugin_version_status(project_dir: Path | None = None, dest_path: Path | None = None) -> dict[str, Any]:
     """Check version status between bundled plugin and installed project plugin."""
     root = (project_dir or Path.cwd()).resolve()
-    if dest_path is not None:
-        target_dir = dest_path if dest_path.is_absolute() else (root / dest_path)
-    else:
-        target_dir = root / ".agents" / "plugins" / "eidos"
+    target_dir, _manifest_path = _resolve_installed_plugin_manifest(project_dir=project_dir, dest_path=dest_path)
 
     bundled = get_bundled_plugin_version()
     installed = get_installed_plugin_version(project_dir=project_dir, dest_path=dest_path)

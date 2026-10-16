@@ -65,14 +65,11 @@ def test_repo_plugin_conformance():
 
 
 def test_plugin_install_to_project_scope(tmp_path):
-    """Verify project-scoped installation into workspace directories (.agents)."""
+    """Verify project-scoped installation into workspace directories (.agents) without mutating .cursor or .claude."""
     results = install_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path, force=True)
 
-    assert len(results) == 3
-    targets = [r.target for r in results]
-    assert "project" in targets
-    assert "cursor" in targets
-    assert "claude" in targets
+    assert len(results) == 1
+    assert results[0].target == "project"
 
     # Check .agents/plugins/eidos
     agent_dir = tmp_path / ".agents" / "plugins" / "eidos"
@@ -83,17 +80,9 @@ def test_plugin_install_to_project_scope(tmp_path):
     agent_report = validate_plugin_package(agent_dir)
     assert agent_report.is_valid
 
-    # Check project-level configs
-    cursor_mcp = tmp_path / ".cursor" / "mcp.json"
-    cursor_rules = tmp_path / ".cursor" / "rules" / "eidos.mdc"
-    assert not cursor_mcp.exists()
-    assert cursor_rules.exists()
-    assert "alwaysApply: true" in cursor_rules.read_text(encoding="utf-8")
-
-    claude_mcp = tmp_path / ".claude" / "mcp.json"
-    assert not claude_mcp.exists()
-    claude_settings = tmp_path / ".claude" / "settings.json"
-    assert claude_settings.exists()
+    # Isolated project target must not touch .cursor or .claude
+    assert not (tmp_path / ".cursor").exists()
+    assert not (tmp_path / ".claude").exists()
 
 
 def test_plugin_install_to_custom_directory(tmp_path):
@@ -136,23 +125,24 @@ def test_cli_plugin_install_project(tmp_path):
 
 
 def test_plugin_uninstall_project_scope(tmp_path):
-    """Verify uninstalling plugin from project scope removes plugin dir and configs."""
+    """Verify uninstalling plugin from project scope removes .agents/plugins/eidos without deleting .cursor or .claude."""
     # Install first
     install_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path, force=True)
     plugin_dir = tmp_path / ".agents" / "plugins" / "eidos"
     cursor_rules = tmp_path / ".cursor" / "rules" / "eidos.mdc"
+    cursor_rules.parent.mkdir(parents=True, exist_ok=True)
+    cursor_rules.write_text("# Pre-existing Cursor rule\n", encoding="utf-8")
 
     assert plugin_dir.exists()
     assert cursor_rules.exists()
 
-    # Uninstall
+    # Uninstall project target only
     results = uninstall_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path)
-    assert len(results) == 3
-    for r in results:
-        assert r.success
+    assert len(results) == 1
+    assert results[0].success
 
     assert not plugin_dir.exists()
-    assert not cursor_rules.exists()
+    assert cursor_rules.exists()
 
 
 def test_cli_plugin_uninstall_project(tmp_path):
@@ -1395,8 +1385,8 @@ def test_plugin_install_and_update_prunes_retired_legacy_skills(tmp_path):
     custom_user_skill.mkdir(parents=True, exist_ok=True)
     (custom_user_skill / "SKILL.md").write_text("# Custom Team Skill\n", encoding="utf-8")
 
-    # Run install_plugin (which powers both install and update)
-    install_plugin(target=PluginInstallTarget.PROJECT, project_dir=tmp_path, force=True)
+    # Run install_plugin across all targets (which powers both install and update)
+    install_plugin(target=PluginInstallTarget.ALL, project_dir=tmp_path, force=True)
 
     # All retired skills must be removed from both plugin tree and flat skills
     for retired in RETIRED_EIDOS_SKILLS:
@@ -1792,3 +1782,52 @@ invariants:
     # 3. execute_drift_hook standalone CLI exits 1 on non-code invariant failure
     rc = execute_drift_hook(path=tmp_path, stdin_data="")
     assert rc == 1
+
+
+def test_dlt_2026_071_plugin_installer_and_validator_fixes(tmp_path):
+    """Verify DLT-2026-071: no reconcile.md for Claude, Path-typed AIDER created_files, accurate fallback plugin_dir, and line-anchored SKILL.md frontmatter."""
+    # 1. Claude install prunes legacy reconcile.md and does not create reconcile.md
+    legacy_cmd = tmp_path / ".claude" / "plugins" / "eidos" / "commands" / "reconcile.md"
+    legacy_cmd.parent.mkdir(parents=True, exist_ok=True)
+    legacy_cmd.write_text("legacy reconcile\n", encoding="utf-8")
+    install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path, force=True)
+    assert not legacy_cmd.exists()
+    assert (tmp_path / ".claude" / "plugins" / "eidos" / "commands" / "drift.md").exists()
+
+    # 2. Aider created_files contains only Path instances (no bool)
+    aider_res = install_plugin(target=PluginInstallTarget.AIDER, project_dir=tmp_path, force=True)
+    assert len(aider_res) == 1
+    assert all(isinstance(p, Path) and not isinstance(p, bool) for p in aider_res[0].created_files)
+    assert (tmp_path / ".aider.conf.yml") in aider_res[0].created_files
+
+    # 3. Fallback version check reports actual matched plugin directory (.codex)
+    codex_proj = tmp_path / "codex_only"
+    codex_proj.mkdir()
+    install_plugin(target=PluginInstallTarget.CODEX, project_dir=codex_proj, force=True)
+    st = check_plugin_version_status(project_dir=codex_proj)
+    assert st["is_installed"] is True
+    assert Path(st["plugin_dir"]).resolve() == (codex_proj / ".codex").resolve()
+
+    # 4. Line-anchored SKILL.md frontmatter allows '---' inside YAML scalar values
+    custom_plugin = tmp_path / "custom_plugin"
+    skill_dir = custom_plugin / "skills" / "demo-skill"
+    skill_dir.mkdir(parents=True)
+    (custom_plugin / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "demo-plugin",
+                "version": "1.0.0",
+                "description": "Demo plugin",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (skill_dir / "SKILL.md").write_text(
+        '---\nname: demo-skill\ndescription: "Handles --- separator in YAML scalar"\n---\n# Demo Skill\n',
+        encoding="utf-8",
+    )
+    val_rep = validate_plugin_package(custom_plugin)
+    assert val_rep.is_valid, f"Unexpected errors: {val_rep.errors}"
+    assert "demo-skill" in val_rep.skills
+

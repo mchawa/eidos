@@ -488,15 +488,6 @@ def _write_claude_commands(target_dir: Path, launcher: str = "eidos", force: boo
             f"{cmd_prefix} drift --uncommitted\n"
             "```\n"
         ),
-        "reconcile.md": (
-            "---\n"
-            "description: Reconcile code changes to living specifications in Direct Mode\n"
-            "---\n\n"
-            "Run spec reconciliation:\n"
-            "```bash\n"
-            f"{cmd_prefix} reconcile --uncommitted --prompt\n"
-            "```\n"
-        ),
         "context.md": (
             "---\n"
             "description: Extract a token-efficient architectural context slice for current task\n"
@@ -507,6 +498,11 @@ def _write_claude_commands(target_dir: Path, launcher: str = "eidos", force: boo
             "```\n"
         ),
     }
+
+    legacy_reconcile = commands_dir / "reconcile.md"
+    if legacy_reconcile.is_file() and not legacy_reconcile.is_symlink():
+        with contextlib.suppress(OSError):
+            legacy_reconcile.unlink()
 
     for filename, content in commands.items():
         cmd_file = commands_dir / filename
@@ -632,7 +628,7 @@ def _write_cursor_rules(file_path: Path, force: bool = False) -> Path:
     return file_path
 
 
-def _update_project_aider_conf(file_path: Path, conventions_path: str = ".aider.conventions.md") -> bool:
+def _update_project_aider_conf(file_path: Path, conventions_path: str = ".aider.conventions.md") -> Path:
     """Ensure conventions file is listed under 'read' in .aider.conf.yml."""
     _check_not_symlink(file_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -657,7 +653,7 @@ def _update_project_aider_conf(file_path: Path, conventions_path: str = ".aider.
 
     with open(file_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False)
-    return True
+    return file_path
 
 
 def _remove_project_aider_conf(file_path: Path, conventions_path: str = ".aider.conventions.md") -> bool:
@@ -1466,12 +1462,6 @@ def install_plugin(
             PluginInstallTarget.CODEX,
             PluginInstallTarget.COPILOT,
         ]
-    elif target == PluginInstallTarget.PROJECT:
-        targets_to_run = [
-            PluginInstallTarget.PROJECT,
-            PluginInstallTarget.CURSOR,
-            PluginInstallTarget.CLAUDE,
-        ]
     else:
         targets_to_run = [target]
 
@@ -1533,12 +1523,6 @@ def uninstall_plugin(
             PluginInstallTarget.OPEN_CODE,
             PluginInstallTarget.CODEX,
             PluginInstallTarget.COPILOT,
-        ]
-    elif target == PluginInstallTarget.PROJECT:
-        targets_to_run = [
-            PluginInstallTarget.PROJECT,
-            PluginInstallTarget.CURSOR,
-            PluginInstallTarget.CLAUDE,
         ]
     else:
         targets_to_run = [target]
