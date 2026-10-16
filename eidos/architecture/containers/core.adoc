@@ -61,7 +61,7 @@ components:
     source_path: "src/eidos/core/workspace/context.py"
   - id: CMP-CHANGELOG-GENERATOR
     name: "ChangelogGenerator"
-    responsibility: "Compiles applied SpecDeltas (deterministically classified via intent.kind and mutations[].action) and Git release history into a portable Keep a Changelog ledger with inline code badges (INV-DELTA-CHANGELOG-GENERATION)."
+    responsibility: "Compiles applied SpecDeltas (strictly filtering status == 'applied', deterministically classified via intent.kind and mutations[].action, deduplicating Unreleased commits against unreleased_deltas, and resolving Git commit and tag ancestry via batched queries) and Git release history into a portable Keep a Changelog ledger with inline code badges (INV-DELTA-CHANGELOG-GENERATION)."
     source_path: "src/eidos/core/lifecycle/changelog.py"
 
 dependencies:

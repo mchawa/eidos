@@ -81,6 +81,7 @@ class ChangelogGenerator:
         self.root = Path(repo_root).resolve() if repo_root else Path.cwd().resolve()
         self.eidos_dir = Path(eidos_dir).resolve() if eidos_dir else (self.root / "eidos").resolve()
         self.repo_url = repo_url.rstrip("/")
+        self._tag_ancestors_cache: dict[str, set[str]] = {}
 
     def get_git_tags(self) -> list[dict[str, str]]:
         """Return list of git tags in chronological order: [{name, date, commit}]."""
@@ -104,8 +105,47 @@ class ChangelogGenerator:
         except (OSError, subprocess.SubprocessError):
             return []
 
+    def _batch_resolve_delta_commits(self, deltas_dir: Path) -> dict[Path, str]:
+        """Resolve latest Git commit SHA for all delta files in a single git log invocation."""
+        commits_by_path: dict[Path, str] = {}
+        with contextlib.suppress(OSError, subprocess.SubprocessError, ValueError):
+            rel_deltas = str(deltas_dir.resolve().relative_to(self.root)).replace("\\", "/")
+            output = subprocess.check_output(
+                ["git", "log", "--name-only", "--format=COMMIT:%H", "--", rel_deltas],
+                cwd=self.root,
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+            current_sha = ""
+            for raw_line in output.splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith("COMMIT:"):
+                    current_sha = line[7:].strip()
+                elif current_sha:
+                    full_p = (self.root / line).resolve()
+                    if full_p not in commits_by_path:
+                        commits_by_path[full_p] = current_sha
+        return commits_by_path
+
+    def _get_tag_ancestors(self, tag_name: str) -> set[str]:
+        """Return cached set of all commit SHAs reachable from tag_name via a single git rev-list query."""
+        if tag_name not in self._tag_ancestors_cache:
+            ancestors: set[str] = set()
+            with contextlib.suppress(OSError, subprocess.SubprocessError):
+                output = subprocess.check_output(
+                    ["git", "rev-list", tag_name],
+                    cwd=self.root,
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                )
+                ancestors = {ln.strip() for ln in output.splitlines() if ln.strip()}
+            self._tag_ancestors_cache[tag_name] = ancestors
+        return self._tag_ancestors_cache[tag_name]
+
     def get_applied_deltas(self) -> list[dict[str, Any]]:
-        """Scan eidos/deltas and return all SpecDeltas with parsed frontmatter and git commits."""
+        """Scan eidos/deltas and return only applied SpecDeltas (status == 'applied') with parsed frontmatter and git commits."""
         deltas_dir = self.eidos_dir / "deltas"
         if not deltas_dir.exists():
             return []
@@ -118,18 +158,21 @@ class ChangelogGenerator:
             ],
             key=lambda p: p.name,
         )
+        batched_commits = self._batch_resolve_delta_commits(deltas_dir)
 
         results: list[dict[str, Any]] = []
         for df in delta_files:
             try:
                 doc = parse_spec_file(df)
                 fm = doc.frontmatter
+                status = str(fm.get("status", "proposed")).strip().lower()
+                if status != "applied":
+                    continue
                 delta_id = fm.get("id", df.stem.upper())
                 title = fm.get("title", "")
-                status = fm.get("status", "proposed")
                 intent = fm.get("intent", {})
-                kind = intent.get("kind", "feature")
-                motivation = intent.get("motivation", "")
+                kind = intent.get("kind", "feature") if isinstance(intent, dict) else "feature"
+                motivation = intent.get("motivation", "") if isinstance(intent, dict) else ""
                 if isinstance(motivation, str):
                     # Extract first sentence or summary
                     clean_mot = re.sub(r"\s+", " ", motivation).strip()
@@ -138,15 +181,8 @@ class ChangelogGenerator:
                 else:
                     summary = ""
 
-                # Determine git commit that introduced or last modified this delta
-                commit = ""
-                with contextlib.suppress(OSError, subprocess.SubprocessError):
-                    commit = subprocess.check_output(
-                        ["git", "log", "-1", "--format=%H", "--", str(df)],
-                        cwd=self.root,
-                        text=True,
-                        stderr=subprocess.DEVNULL,
-                    ).strip()
+                resolved_df = df.resolve()
+                commit = batched_commits.get(resolved_df, "")
 
                 results.append(
                     {
@@ -168,17 +204,12 @@ class ChangelogGenerator:
         return results
 
     def _resolve_delta_release(self, commit: str, tags: list[dict[str, str]]) -> str:
-        """Find the earliest release tag containing the given commit."""
+        """Find the earliest release tag containing the given commit using cached batched tag ancestry sets."""
         if not commit or not tags:
             return "Unreleased"
 
         for tag in tags:
-            res = subprocess.run(
-                ["git", "merge-base", "--is-ancestor", commit, tag["name"]],
-                cwd=self.root,
-                capture_output=True,
-            )
-            if res.returncode == 0:
+            if commit in self._get_tag_ancestors(tag["name"]):
                 return tag["name"]
 
         return "Unreleased"
@@ -222,7 +253,7 @@ class ChangelogGenerator:
 
         # Also add unreleased conventional commits that don't duplicate deltas
         for msg in unreleased_commits:
-            self._add_commit_to_section(sec_unreleased, msg)
+            self._add_commit_to_section(sec_unreleased, msg, existing_deltas=unreleased_deltas)
 
         if include_unreleased and not sec_unreleased.is_empty():
             sections.append(sec_unreleased)

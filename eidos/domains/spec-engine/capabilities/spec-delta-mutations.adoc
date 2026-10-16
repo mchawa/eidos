@@ -40,7 +40,7 @@ technical:
       rule: "SpecDeltas with deletion or deprecation mutations must pass context-aware blast-radius auditing with word-bounded multi-term token matching, polyglot negative-test classification, fail-loud graph foreign-key verification, and zero unacknowledged active leaks."
       test_binding: "tests/test_audit.py::test_delta_deletion_audit_clean"
     - id: INV-DELTA-CHANGELOG-GENERATION
-      rule: "eidos delta changelog must compile an auditable, SpecDelta-backed changelog partitioned by git release tags with zero hallucinated mutations."
+      rule: "eidos delta changelog must compile an auditable, SpecDelta-backed changelog partitioned by git release tags via batched Git ancestry queries, strictly filtering to applied SpecDeltas (excluding proposed, draft, and rejected deltas), deduplicating Unreleased delta commits, and emitting zero hallucinated mutations."
       test_binding: "tests/test_changelog.py::test_delta_changelog_generation"
     - id: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
       rule: "'eidos delta verify' must report modify_*/extend_*/patch_* mutations as verified only on positive evidence of change to the targeted entity (a satisfied expect post-condition, or a content digest differing from the recorded SQLite or Git-history / vcs.base_commit delta baseline), never on entity existence or filesystem modification time alone."

@@ -147,3 +147,99 @@ def test_changelog_deterministic_delta_classification():
     assert len(sec.removed) == 1 and "DLT-2026-104" in sec.removed[0]
     assert len(sec.deprecated) == 1 and "DLT-2026-105" in sec.deprecated[0]
     assert len(sec.fixed) == 1 and "DLT-2026-106" in sec.fixed[0]
+
+
+def test_changelog_excludes_unapplied_deltas_and_deduplicates_unreleased(tmp_path):
+    """DLT-2026-061: exclude proposed/rejected SpecDeltas and deduplicate Unreleased conventional commits."""
+    import subprocess
+
+    eidos_dir = tmp_path / "eidos"
+    deltas_dir = eidos_dir / "deltas"
+    deltas_dir.mkdir(parents=True)
+
+    # Create one applied delta and two unapplied deltas (proposed and rejected)
+    (deltas_dir / "dlt-2026-001.adoc").write_text(
+        """---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-001
+title: "Applied Feature Alpha"
+status: applied
+intent:
+  kind: feature
+  motivation: "Deliver alpha capability."
+mutations: []
+---
+= Applied Feature Alpha
+""",
+        encoding="utf-8",
+    )
+    (deltas_dir / "dlt-2026-002.adoc").write_text(
+        """---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-002
+title: "Proposed Feature Beta"
+status: proposed
+intent:
+  kind: feature
+  motivation: "Work in progress."
+mutations: []
+---
+= Proposed Feature Beta
+""",
+        encoding="utf-8",
+    )
+    (deltas_dir / "dlt-2026-003.adoc").write_text(
+        """---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-003
+title: "Rejected Feature Gamma"
+status: rejected
+intent:
+  kind: feature
+  motivation: "Rejected proposal."
+mutations: []
+---
+= Rejected Feature Gamma
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "add", "eidos/deltas/dlt-2026-002.adoc"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "chore: initial tag base"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "tag", "v0.1.0"], cwd=tmp_path, check=True, capture_output=True)
+
+    # Unreleased commit referencing DLT-2026-001 + an independent conventional commit
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "feat: Applied Feature Alpha (DLT-2026-001)"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    (tmp_path / "extra.txt").write_text("extra\n", encoding="utf-8")
+    subprocess.run(["git", "add", "extra.txt"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "fix: resolve standalone edge case"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+
+    gen = ChangelogGenerator(repo_root=tmp_path, eidos_dir=eidos_dir)
+    applied = gen.get_applied_deltas()
+    assert [d["id"] for d in applied] == ["DLT-2026-001"]
+
+    md = gen.generate_changelog(include_unreleased=True)
+    assert "DLT-2026-001" in md
+    assert "DLT-2026-002" not in md
+    assert "DLT-2026-003" not in md
+    # Unreleased commit referencing DLT-2026-001 must not be duplicated as a second bullet
+    assert md.count("DLT-2026-001") == 1
+    assert "Resolve standalone edge case" in md
+
