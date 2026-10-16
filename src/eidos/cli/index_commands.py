@@ -1,5 +1,6 @@
 """Architectural knowledge graph commands (`eidos index ...`)."""
 
+import json
 from pathlib import Path
 
 import typer
@@ -147,11 +148,20 @@ def index_search_cmd(
         "-p",
         help="Path to eidos directory (defaults to ./eidos).",
     ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output search results as machine-readable JSON.",
+    ),
 ):
     """Execute BM25 ranked full-text search (FTS5) across all specifications, capabilities, and invariants."""
     eidos_dir = path or Path("eidos")
     idx = get_architectural_index(eidos_dir=eidos_dir)
     results = idx.query_fts(query, limit=limit)
+
+    if json_output:
+        typer.echo(json.dumps({"query": query, "count": len(results), "results": results}, indent=2))
+        return
 
     if not results:
         console.print(f"[yellow]No architectural specifications matched query: '{query}'[/yellow]")

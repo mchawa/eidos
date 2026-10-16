@@ -19,11 +19,11 @@ components:
       - "src/eidos/cli/_shared.py"
   - id: CMP-CLI-SPEC-COMMANDS
     name: "SpecCommands"
-    responsibility: "Root specification validation (`eidos validate`) and `eidos spec` subcommands for catalog listing (including inline `CMP-*` components), showing, creating (across all 16 schemas including component, client, flow, and delta with --kind: feature, enabler, bug), deleting living specifications, and mounting the `eidos spec component` subgroup."
+    responsibility: "Root specification validation (`eidos validate`) and `eidos spec` subcommands for catalog listing (`eidos spec list --json`, including inline `CMP-*` components), showing, creating (across all 16 schemas including component, client with `--platform`, contract with `--spec-file`, flow, and delta with `--kind`: feature, enabler, bug), deleting living specifications, and mounting the `eidos spec component` subgroup."
     source_path: "src/eidos/cli/spec_commands.py"
   - id: CMP-CLI-DELTA-COMMANDS
     name: "DeltaCommands"
-    responsibility: "SpecDelta lifecycle commands (`eidos delta`): status dashboard, authoring (--kind: feature, enabler, bug), verification, deletion auditing, changelog generation (resolving repo_root via find_repo_root for custom --path directories), in-place application, and view synchronization."
+    responsibility: "SpecDelta lifecycle commands (`eidos delta`): status dashboard and status transition (`eidos delta status [ID] [STATUS] --json`), listing (`eidos delta list --json`), authoring (`--kind`: feature, enabler, bug; `--branch` / `-b`), verification, deletion auditing, changelog generation (resolving repo_root via find_repo_root for custom --path directories), in-place application, and view synchronization."
     source_path: "src/eidos/cli/delta_commands.py"
   - id: CMP-CLI-PLUGIN-COMMANDS
     name: "PluginCommands"
@@ -43,7 +43,7 @@ components:
     source_path: "src/eidos/cli/context_command.py"
   - id: CMP-CLI-INDEX-COMMANDS
     name: "IndexCommands"
-    responsibility: "Knowledge graph operations (`eidos index`): sync, status inspection, lexical search, blast-radius impact analysis, and repo-map / find-symbol output including source Location (file:line) for AST symbols."
+    responsibility: "Knowledge graph operations (`eidos index`): sync, status inspection, lexical search (`eidos index search --json`), blast-radius impact analysis, and repo-map / find-symbol output including source Location (file:line) for AST symbols."
     source_path: "src/eidos/cli/index_commands.py"
   - id: CMP-CLI-COMPONENT-COMMANDS
     name: "ComponentCommands"

@@ -281,21 +281,21 @@ index = get_architectural_index()
 
 # 1. Tiered context slice (~2ms)
 context = index.get_tiered_context_slice(
-    component_id="CMP-EIDOS-CORE",
+    component="CNT-EIDOS-CORE",
     tier="guardrails",
 )
-print(f"Tokens: ~{context.estimated_tokens}")
+print(f"Tokens: ~{context.token_estimate}")
 print(context.to_markdown())
 
 # 2. BM25 hybrid full-text search
 results = index.query_fts("SQLite knowledge graph", limit=5)
 for r in results:
-    print(f"[{r.entity_type}] {r.entity_id}: {r.title} (Score: {r.bm25_rank:.2f})")
+    print(f"[{r['type']}] {r['id']}: {r['title']} (Rank: {r['rank']:.2f})")
 
 # 3. Transitive blast-radius analysis
-neighbors = index.get_k_hop_neighborhood("CMP-EIDOS-CORE", max_hops=2)
-for hop, entity in neighbors:
-    print(f"Hop {hop}: {entity.id} ({entity.type})")
+neighbors = index.get_k_hop_neighborhood("CNT-EIDOS-CORE", max_depth=2)
+for n in neighbors:
+    print(f"Hop {n['hop_distance']}: {n['id']} ({n['type']})")
 
 # 4. AI Repo Map generation
 repo_map = index.get_repo_map(max_tokens=1500)

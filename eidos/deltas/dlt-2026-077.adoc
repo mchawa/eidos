@@ -3,7 +3,7 @@ type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-077
 title: "CLI Contract Flag Parity, Design Scaffolder Hygiene, and Documentation & Living Specification Synchronization"
-status: proposed
+status: applied
 vcs:
   branch: fix/cli-flags-design-scaffolder-and-docs-sync
 intent:

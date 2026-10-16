@@ -173,3 +173,45 @@ def test_bundled_skill_yaml_templates_conform_to_v1_schemas():
 
     assert validated_count >= 8, f"Expected at least 8 skill YAML frontmatter templates, validated {validated_count}"
 
+
+def test_schema_glossary_yaml_examples_conform_to_v1_schemas():
+    """Verify YAML frontmatter examples in docs/concepts/schema-glossary.md validate against v1 JSON Schemas (DLT-2026-077)."""
+    import re
+    import yaml
+
+    from eidos.core.spec.models import SpecDocument
+    from eidos.core.spec.parser import split_frontmatter_and_body
+    from eidos.core.spec.validator import SpecValidator
+
+    repo_root = Path(__file__).parent.parent
+    glossary_md = repo_root / "docs/concepts/schema-glossary.md"
+    content = glossary_md.read_text(encoding="utf-8")
+    validator = SpecValidator()
+    yaml_fence_re = re.compile(r"```yaml\n(.*?)```", re.DOTALL)
+
+    validated_count = 0
+    for match in yaml_fence_re.finditer(content):
+        block = match.group(1).strip()
+        if not block.startswith("---"):
+            continue
+        fm_raw, body = split_frontmatter_and_body(block + "\n")
+        assert fm_raw is not None, f"Failed to split frontmatter in schema-glossary.md:\n{block}"
+        fm = yaml.safe_load(fm_raw)
+        assert isinstance(fm, dict)
+        doc = SpecDocument(
+            file_path=glossary_md,
+            doc_type=fm.get("type", ""),
+            doc_id=fm.get("id", ""),
+            schema_ref=fm.get("schema"),
+            frontmatter=fm,
+            body=body,
+        )
+        errors = validator.validate_document(doc)
+        assert errors == [], (
+            f"Glossary example {fm.get('id')} ({fm.get('type')}) failed v1 schema validation: {errors}"
+        )
+        validated_count += 1
+
+    assert validated_count >= 12, f"Expected at least 12 glossary YAML examples, validated {validated_count}"
+
+

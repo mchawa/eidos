@@ -23,10 +23,11 @@ technical:
     - "CNT-EIDOS-CLI"
   contracts:
     interfaces:
-      - "eidos delta create --kind [feature|enabler|bug]"
+      - "eidos delta create <delta-id> --title <title> [--kind feature|enabler|bug] [--branch <branch>]"
+      - "eidos delta list [--status <status>] [--json]"
+      - "eidos delta status [delta-id] [new-status] [--json]"
       - "eidos delta verify <delta-id> [--json]"
-      - "eidos delta apply <delta-id>"
-      - "eidos delta impact <delta-id>"
+      - "eidos delta apply <delta-id> [--execute] [--verify] [--json]"
       - "eidos delta audit <delta-id> [--strict] [--json]"
       - "eidos delta changelog [--output <file>] [--unreleased]"
   invariants:

@@ -22,8 +22,8 @@ technical:
     - "CNT-EIDOS-CORE"
   contracts:
     interfaces:
-      - "eidos explore create <hypothesis>"
-      - "eidos explore graduate <exploration-id> --to-delta"
+      - "eidos spec create exploration <id> --title <title>"
+      - "eidos delta create <delta-id> --title <title>"
   invariants:
     - id: INV-SPIKE-ISOLATION
       rule: "Exploration spikes must execute on isolated Git branches and never mutate production specifications directly."

@@ -55,6 +55,7 @@ business_identity:
   target_users:
     - "Software Engineers & Architects"
     - "Autonomous AI Coding Agents"
+  value_proposition: "Eliminates spec-to-code drift through test-bound living specifications and deterministic AST context slicing."
 technical_profile:
   primary_languages:
     - "Python"
@@ -84,7 +85,6 @@ classification: core # core | supporting | generic
 boundaries:
   responsibilities:
     - "Living specification parsing, AST generation, and schema validation."
-  in_scope:
     - "AsciiDoc + YAML frontmatter parsing and JSON Schema validation."
   out_of_scope:
     - "Git working-tree diff analysis (handled by DOM-VCS-LIFECYCLE)."
@@ -247,6 +247,7 @@ cross_cutting_concepts:
   data_storage: "Git-backed AsciiDoc + YAML frontmatter with SQLite cache (eidos/.cache/index.db)."
 deployment_view:
   hosting_model: "Local developer workstation CLI and CI/CD runners."
+  ci_cd_engine: "GitHub Actions"
 ---
 ```
 
@@ -367,7 +368,9 @@ title: "Acme Enterprise Theme"
 status: active
 client_id: "acme"
 extends_system: "DS-CORE"
-tokens: "eidos/design/systems/acme/tokens.json"
+tokens:
+  spec_format: "w3c_design_tokens"
+  manifest: "tokens.json"
 ---
 ```
 

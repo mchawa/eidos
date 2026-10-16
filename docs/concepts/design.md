@@ -77,7 +77,9 @@ title: "Acme Enterprise Theme"
 status: active
 client_id: "acme"
 extends_system: "DS-CORE"
-tokens: "eidos/design/systems/acme/tokens.json"
+tokens:
+  spec_format: "w3c_design_tokens"
+  manifest: "tokens.json"
 ---
 = Design System: Acme Enterprise Theme
 

@@ -35,10 +35,10 @@ The Catalog View (`SCR-PORTAL-CATALOG`) provides an interactive, unified hierarc
 * **Level 1 (Core Pillars)**: Groups specifications into the three core architectural dimensions plus mutations:
   - **Business & Governance**: Product Domains (`DOM-*`), System Policies (`POL-*`), Personas (`PER-*`), Explorations (`EXP-*`).
   - **Design & Experience**: Design Systems (`DS-*`), Screens (`SCR-*`), UI Component Contracts (`UIC-*`).
-  - **Technical Architecture**: System Architecture (`ARCH-*`), Containers (`CMP-*`), Protocol Contracts (`CTR-*`).
+  - **Technical Architecture**: System Architecture (`ARCH-*`), Containers (`CNT-*`), Components (`CMP-*`), Protocol Contracts (`CTR-*`).
   - **SpecDeltas & Mutations**: Active and completed mutation deltas (`DLT-*`).
-* **Level 2 (Domains & Sub-Pillars)**: Domain boundaries (`DOM-PRODUCT-CORE`, `DOM-AGENT-HARNESS`, `DOM-VCS-SYNC`), Container manifests, Screen groups, and Policy invariants.
-* **Level 3 (Leaf Living Specifications)**: Individual Capabilities (`CAP-*`), Screen State Machines (`SCR-*`), Container Manifests (`CMP-*`), and Contracts (`CTR-*`).
+* **Level 2 (Domains & Sub-Pillars)**: Domain boundaries (`DOM-SPEC-ENGINE`, `DOM-EXPERIENCE-PORTAL`, `DOM-AGENT-INTELLIGENCE`, `DOM-VCS-LIFECYCLE`), Container manifests (`CNT-*`), Screen groups, and Policy invariants.
+* **Level 3 (Leaf Living Specifications)**: Individual Capabilities (`CAP-*`), Screen State Machines (`SCR-*`), Container & Component Manifests (`CNT-*`, `CMP-*`), and Contracts (`CTR-*`).
 
 == 2. Collapsible Navigation & Level Zooming
 The tree-grid toolbar provides instant macro/micro zoom controls:

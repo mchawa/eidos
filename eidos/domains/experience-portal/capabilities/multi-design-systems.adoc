@@ -41,7 +41,7 @@ technical:
       rule: "Design tokens must adhere to W3C Design Tokens Community Group ($value, $type, $description) standard structure in an existing tokens.manifest JSON file, and design system inheritance.extends chains across DS-* specifications must remain acyclic."
       test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
     - id: INV-CLIENT-DESIGN-BINDING
-      rule: "Every client manifest (CLT-*) must explicitly reference a valid design system (DS-*) and container manifest (CMP-*)."
+      rule: "Every client manifest (CLT-*) must explicitly reference a valid design system (DS-*) and container manifest (CNT-*)."
       test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
 ---
 = Capability: Multi-Design Systems, W3C Tokens & Client Surface Management

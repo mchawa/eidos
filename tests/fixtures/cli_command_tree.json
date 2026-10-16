@@ -520,6 +520,20 @@
         "panel": null,
         "envvar": "None",
         "type": "STRING"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output machine-readable JSON specification list.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
       }
     ]
   },
@@ -764,6 +778,20 @@
         "type": "STRING"
       },
       {
+        "name": "specification_file",
+        "opts": [
+          "--spec-file"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "src/main.py",
+        "help": "Relative path to raw interface specification file for contracts.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
         "name": "client_id",
         "opts": [
           "--client"
@@ -813,8 +841,8 @@
         "secondary": [],
         "kind": "TyperOption",
         "required": false,
-        "default": "DS-CORE",
-        "help": "Owning design system ID for UI components.",
+        "default": "None",
+        "help": "Owning design system ID for UI components, screens, or clients (defaults to primary design/system or DS-CORE).",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -829,6 +857,20 @@
         "required": false,
         "default": "None",
         "help": "Base component ID being overridden/specialized by a UI component.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "platform",
+        "opts": [
+          "--platform"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "web",
+        "help": "Runtime platform for clients (web, mobile-ios, mobile-android, desktop, tui, multi-platform).",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -1076,6 +1118,20 @@
         "panel": null,
         "envvar": "None",
         "type": "STRING"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output machine-readable JSON delta list.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
       }
     ]
   },
@@ -1144,6 +1200,21 @@
         "required": false,
         "default": "Problem statement and motivation.",
         "help": "Problem statement and motivation.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "branch",
+        "opts": [
+          "--branch",
+          "-b"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Git branch name for vcs.branch.",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -1381,10 +1452,38 @@
       "delta",
       "status"
     ],
-    "help": "Display a status summary of all SpecDeltas and their lifecycle states.",
+    "help": "Display a status summary of all SpecDeltas or transition a specific SpecDelta's lifecycle status.",
     "hidden": false,
     "panel": null,
     "params": [
+      {
+        "name": "delta_id",
+        "opts": [
+          "delta_id"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": false,
+        "default": "None",
+        "help": "Optional Delta ID or path to inspect or transition status (e.g. DLT-2026-015).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "new_status",
+        "opts": [
+          "new_status"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": false,
+        "default": "None",
+        "help": "Optional target lifecycle status when delta_id is given (draft, proposed, planned, in_review, approved, applied, rejected).",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
       {
         "name": "path",
         "opts": [
@@ -1399,6 +1498,20 @@
         "panel": null,
         "envvar": "None",
         "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output machine-readable JSON status summary or transition result.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
       }
     ]
   },
@@ -1726,6 +1839,20 @@
         "panel": null,
         "envvar": "None",
         "type": "<typer.models.TyperPath object>"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output search results as machine-readable JSON.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
       }
     ]
   },

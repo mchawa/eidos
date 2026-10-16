@@ -67,9 +67,10 @@ def create_spec(
     client_id: str | None = None,
     extends_system: str | None = None,
     route: str = "/view",
-    design_system: str = "DS-CORE",
+    design_system: str | None = None,
     implements_component: str | None = None,
     platform: str = "web",
+    branch: str | None = None,
 ) -> Path:
     """Scaffold a new living specification document with valid schema frontmatter.
 
@@ -146,8 +147,13 @@ def create_spec(
             "mutations": [],
         }
         head_sha = _resolve_git_head_sha(eidos_dir)
+        vcs_dict: dict[str, Any] = {}
+        if branch:
+            vcs_dict["branch"] = branch
         if head_sha:
-            fm["vcs"] = {"base_commit": head_sha}
+            vcs_dict["base_commit"] = head_sha
+        if vcs_dict:
+            fm["vcs"] = vcs_dict
         body = f"""= SpecDelta: {heading}
 :toc: left
 
@@ -367,6 +373,7 @@ Document prototyping discoveries, trade-offs, and research findings.
 """
 
     elif canonical_key in DESIGN_SPEC_KEYS:
+        resolved_design_system = design_system or _first_of_type("design/system", "DS-CORE")
         dest_dir, dest_file, fm, body = build_design_spec(
             canonical_key,
             eidos_dir=eidos_dir,
@@ -378,7 +385,7 @@ Document prototyping discoveries, trade-offs, and research findings.
             client_id=client_id,
             extends_system=extends_system,
             route=route,
-            design_system=design_system,
+            design_system=resolved_design_system,
             implements_component=implements_component,
             platform=platform,
         )

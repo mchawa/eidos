@@ -45,7 +45,7 @@ Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search
 * **Sub-commands**:
   - `status [--path <path>] [--json]`: Displays index health, AST parser engine telemetry (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, test invariant assertion metrics, cache file size, and continuous code-aware dirty status. Supports `--json` for programmatic agent consumption.
   - `sync [--path <path>] [--force]`: Synchronizes or rebuilds the knowledge graph index.
-  - `search <query> [--limit <n>] [--path <path>]`: Performs BM25 full-text search across titles, requirements, and invariants.
+  - `search <query> [--limit <n>] [--path <path>] [--json]`: Performs BM25 full-text search across titles, requirements, and invariants.
   - `blast-radius <symbol_or_path> [--depth <n>] [--path <path>] [--json]`: Computes the transitive dependency and governance blast radius for a symbol or spec path.
   - `repo-map [--max-tokens <tokens>] [--format <format>] [--path <path>]`: Generates a token-budgeted structural repo map outline (classes, functions, methods, routes) for AI coding agents.
   - `find-symbol <query> [--limit <n>] [--json] [--path <path>]`: Locates code symbols across polyglot AST source files and links them to associated living component specifications. Each `--json` match carries `file_path` (the owning *specification* path) and a `location` object (`file`, `line_start`, `line_end`, `signature`, `parent_symbol`) pointing at the source definition, or `null` for non-AST matches such as paths and component references. The text table shows a `Location` (`file:line`) column.
@@ -74,7 +74,7 @@ Manages the living specification catalog and C4 Level 3 component topology: list
 * **Sub-commands**:
   - `list [--path <path>] [--type <type>] [--status <status>] [--json]`: Lists all living specifications (including inline C4 Level 3 components `CMP-*` defined inside container manifests) in tabular or JSON format. Supports short or canonical `--type` filters (e.g. `container`, `component`, `capability`, `delta`).
   - `show <id_or_path> [--path <path>]`: Displays detailed frontmatter metadata and preview of a specification document.
-  - `create <type> <id> --title <title> [options]`: Scaffolds a new specification document (capability, domain, policy, contract, component, persona, delta, exploration, design-system, ui-component, screen, client, flow; for `delta`, `--kind` accepts `feature, enabler, bug` and defaults to `feature`) with schema validation and W3C design tokens support.
+  - `create <type> <id> --title <title> [--platform <platform>] [--spec-file <path>] [options]`: Scaffolds a new specification document (capability, domain, policy, contract, container, component, persona, delta, exploration, design-system, ui-component, screen, client, flow; for `delta`, `--kind` accepts `feature, enabler, bug` and defaults to `feature`) with schema validation and W3C design tokens support.
   - `delete <id_or_path> [--force]`: Safely deletes a specification document with cross-reference safety checks.
   - `component promote <component_id> [--path <path>] [--repo-root <path>]`: Promotes an inline C4 Level 3 component to a dedicated specification (`.adoc`) inside `eidos/architecture/components/` and updates the container manifest with `ref:`.
   - `component inline <component_id> [--path <path>] [--repo-root <path>]`: Demotes a dedicated C4 Level 3 component back into its parent container manifest as an inline definition and safely unlinks the dedicated specification file.
@@ -82,10 +82,10 @@ Manages the living specification catalog and C4 Level 3 component topology: list
 === `eidos delta`
 Orchestrates SpecDeltas throughout their semantic mutation lifecycle using flat storage and gitignored symlink views.
 * **Sub-commands**:
-  - `list [--path <path>] [--status <status>]`: Lists SpecDeltas from flat `eidos/deltas/` with optional status filter (e.g. `--status active`).
-  - `status [--path <path>]`: Displays lifecycle status dashboard, breakdown of in-flight vs. reconciled deltas, and symlink views.
+  - `list [--path <path>] [--status <status>] [--json]`: Lists SpecDeltas from flat `eidos/deltas/` with optional status filter (e.g. `--status active`) and `--json` output.
+  - `status [id] [new_status] [--path <path>] [--json]`: Displays lifecycle status dashboard (or transitions a specific SpecDelta's status when `id` and `new_status` are given), breakdown of in-flight vs. reconciled deltas, and symlink views.
   - `sync-views [--path <path>]`: Regenerates gitignored symlinks in `eidos/deltas/by-status/` partitioned by lifecycle state.
-  - `create <id> --title <title> [--kind <kind>] [--motivation <text>]`: Scaffolds a new SpecDelta in flat storage `eidos/deltas/<id>.adoc` with status `proposed` (`--kind`: `feature, enabler, bug`; defaults to `feature`) and syncs views.
+  - `create <id> --title <title> [--kind <kind>] [--motivation <text>] [--branch <branch>]`: Scaffolds a new SpecDelta in flat storage `eidos/deltas/<id>.adoc` with status `proposed` (`--kind`: `feature, enabler, bug`; defaults to `feature`) and syncs views.
   - `verify <id_or_path> [--path <path>] [--json]`: Verifies that all semantic mutations declared in a SpecDelta exist in the living specifications catalog.
   - `audit <id_or_path> [--path <path>] [--strict] [--json]`: Performs reverse-dependency blast-radius audit on entities removed or deprecated by the SpecDelta, classifying references into approved (historical, negative tests, cleanup routines, tombstones) vs. unacknowledged active leaks.
   - `apply <id_or_path> [--execute] [--verify] [--json]`: Reconciles a delta in-place, updates frontmatter status to `applied`, and updates symlink views. If `--execute` is supplied, deterministically scaffolds missing specs and applies structural mutations without LLMs.

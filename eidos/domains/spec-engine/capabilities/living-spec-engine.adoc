@@ -29,6 +29,7 @@ experience:
     - "eidos/design/clients/web-portal/screens/portal-design.adoc"
     - "eidos/design/clients/web-portal/screens/portal-architecture.adoc"
     - "eidos/design/clients/web-portal/screens/portal-deltas.adoc"
+    - "eidos/design/clients/web-portal/screens/portal-explorations.adoc"
     - "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
   flows:
     - "eidos/design/clients/web-portal/flows/spec-exploration.adoc"
@@ -37,6 +38,7 @@ experience:
     - "eidos/design/systems/core/components/portal-shell.adoc"
     - "eidos/design/systems/core/components/portal-sidebar.adoc"
     - "eidos/design/systems/core/components/portal-metric-card.adoc"
+    - "eidos/design/systems/core/components/portal-reader.adoc"
 
 technical:
   containers:

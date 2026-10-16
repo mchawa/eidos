@@ -14,10 +14,12 @@ from eidos.core.lifecycle.delta_engine import (
     apply_delta,
     get_delta_status_summary,
     list_deltas,
+    set_delta_status,
     sync_delta_views,
     verify_delta_mutations,
 )
-from eidos.core.lifecycle.scaffolder import create_spec, delete_spec
+from eidos.core.lifecycle.scaffolder import create_spec, delete_spec, find_spec_by_id_or_path
+from eidos.core.spec.parser import parse_spec_file
 
 delta_app = typer.Typer(
     name="delta",
@@ -40,9 +42,30 @@ def delta_list_cmd(
         "-s",
         help="Filter deltas by status (e.g. proposed, in_review, applied, rejected).",
     ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output machine-readable JSON delta list.",
+    ),
 ):
     """List SpecDeltas in active/ and applied/ states."""
     deltas = list_deltas(path, status_filter=status_filter)
+    if json_output:
+        serializable = [
+            {
+                "id": d["id"],
+                "title": d["title"],
+                "status": d["status"],
+                "kind": d["kind"],
+                "is_active": d["is_active"],
+                "path": str(d["path"]),
+                "relative_path": str(d["relative_path"]),
+            }
+            for d in deltas
+        ]
+        typer.echo(json.dumps({"count": len(serializable), "deltas": serializable}, indent=2))
+        return
+
     if not deltas:
         console.print(f"[yellow]No SpecDeltas found under '{path}/deltas'.[/yellow]")
         return
@@ -92,6 +115,12 @@ def delta_create_cmd(
         "-m",
         help="Problem statement and motivation.",
     ),
+    branch: str | None = typer.Option(
+        None,
+        "--branch",
+        "-b",
+        help="Git branch name for vcs.branch.",
+    ),
     path: Path = typer.Option(
         Path("eidos"),
         "--path",
@@ -108,6 +137,7 @@ def delta_create_cmd(
             title=title,
             kind=kind,
             motivation=motivation,
+            branch=branch,
         )
         rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
         console.print(f"[bold green]✓ Created SpecDelta:[/bold green] [bold]{dest_file.name}[/bold]")
@@ -376,19 +406,108 @@ def delta_apply_cmd(
 
 @delta_app.command("status")
 def delta_status_cmd(
+    delta_id: str | None = typer.Argument(
+        None,
+        help="Optional Delta ID or path to inspect or transition status (e.g. DLT-2026-015).",
+    ),
+    new_status: str | None = typer.Argument(
+        None,
+        help="Optional target lifecycle status when delta_id is given (draft, proposed, planned, in_review, approved, applied, rejected).",
+    ),
     path: Path = typer.Option(
         Path("eidos"),
         "--path",
         "-p",
         help="Path to eidos directory.",
     ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output machine-readable JSON status summary or transition result.",
+    ),
 ):
-    """Display a status summary of all SpecDeltas and their lifecycle states."""
+    """Display a status summary of all SpecDeltas or transition a specific SpecDelta's lifecycle status."""
+    if delta_id and new_status:
+        ok, msg, file_path, old_status = set_delta_status(path, delta_id, new_status)
+        if json_output:
+            payload = {
+                "success": ok,
+                "message": msg,
+                "delta_id": delta_id,
+                "previous_status": old_status,
+                "status": new_status.strip().lower(),
+                "path": str(file_path) if file_path else None,
+            }
+            typer.echo(json.dumps(payload, indent=2))
+            if not ok:
+                raise typer.Exit(code=1)
+            return
+        if not ok:
+            console.print(f"[bold red]✗ Failed to update SpecDelta status:[/bold red] {msg}")
+            raise typer.Exit(code=1)
+        console.print(f"[bold green]✓[/bold green] {msg}")
+        return
+
+    if delta_id:
+        file_path = find_spec_by_id_or_path(path / "deltas", delta_id) or find_spec_by_id_or_path(path, delta_id)
+        if not file_path or not file_path.exists():
+            if json_output:
+                typer.echo(json.dumps({"error": f"SpecDelta '{delta_id}' not found."}, indent=2))
+            else:
+                console.print(f"[bold red]Error:[/bold red] SpecDelta '{delta_id}' not found.")
+            raise typer.Exit(code=1)
+        doc = parse_spec_file(file_path)
+        current_status = str(doc.frontmatter.get("status", "proposed")).strip().lower()
+        if json_output:
+            typer.echo(
+                json.dumps(
+                    {
+                        "id": doc.doc_id,
+                        "title": doc.title or "Untitled",
+                        "status": current_status,
+                        "path": str(file_path),
+                    },
+                    indent=2,
+                )
+            )
+            return
+        console.print(f"[bold cyan]{doc.doc_id}[/bold cyan]: [bold yellow]{current_status}[/bold yellow] — {doc.title}")
+        return
+
     summary = get_delta_status_summary(path)
     total = summary["total"]
     active_count = summary["active_count"]
     by_status = summary["by_status"]
     views_dir = summary["views_dir"]
+
+    if json_output:
+        serializable_by_status = {
+            st: [
+                {
+                    "id": d["id"],
+                    "title": d["title"],
+                    "status": d["status"],
+                    "kind": d["kind"],
+                    "is_active": d["is_active"],
+                    "path": str(d["path"]),
+                    "relative_path": str(d["relative_path"]),
+                }
+                for d in items
+            ]
+            for st, items in by_status.items()
+        }
+        typer.echo(
+            json.dumps(
+                {
+                    "total": total,
+                    "active_count": active_count,
+                    "by_status": serializable_by_status,
+                    "views_dir": str(views_dir),
+                },
+                indent=2,
+            )
+        )
+        return
 
     console.print(f"[bold cyan]SpecDelta Lifecycle Status Dashboard[/bold cyan] ({total} total)\n")
 

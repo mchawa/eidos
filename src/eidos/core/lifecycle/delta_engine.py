@@ -525,6 +525,7 @@ def create_delta(
     kind: str = "feature",
     motivation: str = "Proposed change motivation.",
     slug_suffix: bool = False,
+    branch: str | None = None,
 ) -> Path:
     """Create a SpecDelta with automatic collision-free ID resolution and vcs.base_commit baseline capture."""
     from eidos.core.lifecycle.scaffolder import create_spec
@@ -542,6 +543,65 @@ def create_delta(
         title=title,
         kind=kind,
         motivation=motivation,
+        branch=branch,
+    )
+
+
+VALID_DELTA_STATUSES: tuple[str, ...] = (
+    "draft",
+    "proposed",
+    "planned",
+    "in_review",
+    "approved",
+    "applied",
+    "rejected",
+)
+
+
+def set_delta_status(
+    eidos_dir: Path,
+    delta_id_or_path: str,
+    new_status: str,
+) -> tuple[bool, str, Path | None, str | None]:
+    """Transition a SpecDelta's frontmatter status and synchronize by-status symlink views."""
+    norm_status = new_status.strip().lower()
+    if norm_status not in VALID_DELTA_STATUSES:
+        allowed = ", ".join(VALID_DELTA_STATUSES)
+        return False, f"Invalid SpecDelta status '{new_status}'. Allowed values: {allowed}.", None, None
+
+    file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id_or_path)
+    if not file_path:
+        file_path = find_spec_by_id_or_path(eidos_dir, delta_id_or_path)
+
+    if not file_path or not file_path.exists():
+        return False, f"SpecDelta '{delta_id_or_path}' not found.", None, None
+
+    doc = parse_spec_file(file_path)
+    if doc.doc_type != "delta/mutation":
+        return False, f"Document at '{file_path}' is not a SpecDelta (type: {doc.doc_type}).", None, None
+
+    old_status = str(doc.frontmatter.get("status", "proposed")).strip().lower()
+    content = file_path.read_text(encoding="utf-8")
+    new_content = _set_frontmatter_scalar(content, "status", norm_status)
+
+    doc_updated = _parse_spec_content(file_path, new_content)
+    validator = SpecValidator()
+    errors = validator.validate_document(doc_updated)
+    if errors:
+        return (
+            False,
+            f"Delta status update failed schema validation: {'; '.join(errors)}",
+            file_path,
+            old_status,
+        )
+
+    file_path.write_text(new_content, encoding="utf-8")
+    sync_delta_views(eidos_dir)
+    return (
+        True,
+        f"Updated SpecDelta '{doc.doc_id}' status from '{old_status}' to '{norm_status}'.",
+        file_path,
+        old_status,
     )
 
 

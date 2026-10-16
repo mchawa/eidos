@@ -35,22 +35,23 @@ def build_design_spec(
         dest_dir = eidos_dir / "design" / "systems" / clean_sys
         dest_file = dest_dir / "system.adoc"
 
-        # Ensure baseline W3C tokens.json exists in dest_dir
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        tokens_file = dest_dir / "tokens.json"
-        if not tokens_file.exists():
-            base_tokens = {
-                "color": {
-                    "brand": {
-                        "primary": {
-                            "$value": "#0052cc",
-                            "$type": "color",
-                            "$description": f"Primary brand color for {heading}",
+        # Ensure baseline W3C tokens.json exists in dest_dir only when dest_file does not already exist
+        if not dest_file.exists():
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            tokens_file = dest_dir / "tokens.json"
+            if not tokens_file.exists():
+                base_tokens = {
+                    "color": {
+                        "brand": {
+                            "primary": {
+                                "$value": "#0052cc",
+                                "$type": "color",
+                                "$description": f"Primary brand color for {heading}",
+                            }
                         }
                     }
                 }
-            }
-            tokens_file.write_text(json.dumps(base_tokens, indent=2), encoding="utf-8")
+                tokens_file.write_text(json.dumps(base_tokens, indent=2), encoding="utf-8")
 
         fm = {
             "type": "design/system",
@@ -90,7 +91,7 @@ Tokens are defined in W3C DTCG format at `tokens.json`.
             fm["implements"] = implements_component
         fm.update(
             {
-                "status": "active",
+                "status": "draft",
                 "category": "inputs",
                 "variants": [
                     {"name": "primary", "description": "Default visual emphasis."},
@@ -102,7 +103,7 @@ Tokens are defined in W3C DTCG format at `tokens.json`.
                     "aria_role": "button",
                     "keyboard_nav": "Enter and Space activate; Tab traverses focus.",
                 },
-                "test_bindings": {"storybook": f"packages/ui/src/{re.sub(r'[^A-Za-z0-9]', '', heading)}.stories.tsx"},
+                "test_bindings": {},
             }
         )
         body = f"""= UI Component: {heading}

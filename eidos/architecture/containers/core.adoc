@@ -23,13 +23,13 @@ components:
     source_path: "src/eidos/core/spec/validator.py"
   - id: CMP-LIFECYCLE-SCAFFOLDER
     name: "LifecycleScaffolder"
-    responsibility: "Scaffolds all 16 living specification types using safe YAML serialization (dump_spec_document / yaml.safe_dump, defaulting SpecDelta intent.kind to 'feature'), lists catalog specifications (including inline C4 Level 3 components CMP-* from container manifests and short/canonical type filtering), conducts word-bounded reference safety checks skipping symlinked delta views (find_references_to_spec), performs safe scalar YAML frontmatter mutations (_set_frontmatter_scalar), and orchestrates lossless centralized C4 component promotion (promote_component) and inlining (inline_component) preserving list source_path, invariants, decisions, interfaces, and quality_attributes. Shared low-level helpers live in catalog.py; scaffolder.py keeps permanent backwards-compatible re-exports of every previously public name."
+    responsibility: "Scaffolds all 16 living specification types using safe YAML serialization (dump_spec_document / yaml.safe_dump, defaulting SpecDelta intent.kind to 'feature', supporting optional vcs.branch via branch parameter, and resolving default design_system dynamically via _first_of_type('design/system', 'DS-CORE')), lists catalog specifications (including inline C4 Level 3 components CMP-* from container manifests and short/canonical type filtering), conducts word-bounded reference safety checks skipping symlinked delta views (find_references_to_spec), performs safe scalar YAML frontmatter mutations (_set_frontmatter_scalar), and orchestrates lossless centralized C4 component promotion (promote_component) and inlining (inline_component) preserving list source_path, invariants, decisions, interfaces, and quality_attributes. Shared low-level helpers live in catalog.py; scaffolder.py keeps permanent backwards-compatible re-exports of every previously public name."
     source_path:
       - "src/eidos/core/lifecycle/scaffolder.py"
       - "src/eidos/core/lifecycle/catalog.py"
   - id: CMP-DESIGN-ENGINE
     name: "DesignEngine"
-    responsibility: "Manages Multi-Design Systems, W3C DTCG tokens, UI component contracts, and screen layout/state machines."
+    responsibility: "Manages Multi-Design Systems, W3C DTCG tokens (writing baseline tokens.json only when system.adoc does not already exist), UI component contracts (scaffolded with status: 'draft' and empty test_bindings: {}), and screen layout/state machines."
     source_path: "src/eidos/core/lifecycle/design_engine.py"
   - id: CMP-REPO-INITIALIZER
     name: "RepositoryInitializer"
@@ -37,7 +37,7 @@ components:
     source_path: "src/eidos/core/lifecycle/initializer.py"
   - id: CMP-DELTA-ENGINE
     name: "DeltaEngine"
-    responsibility: "Owns the SpecDelta lifecycle and strict enum taxonomy enforcement (intent.kind, bug_classification, severity, and all 44 mutations[].action values): collision-free delta ID generation (generate_collision_free_delta_id, create_delta), listing, status summaries, gitignored by-status view sync, SQLite baseline snapshots with vcs.base_commit and Git history fallback (_resolve_git_baseline_sha) on cache misses, verification of declared mutations against living specifications (verify_delta_mutations), copy-on-write transactional execution (_MutationTransaction.record_before_write) with substantive non-comment spec updates (_apply_expect_or_details_to_spec), strict remove_* entity type verification, and pre-commit SpecValidator validation (execute_delta_mutations), and atomic in-place application with full rollback on error (apply_delta)."
+    responsibility: "Owns the SpecDelta lifecycle and strict enum taxonomy enforcement (intent.kind, bug_classification, severity, and all 44 mutations[].action values): collision-free delta ID generation (generate_collision_free_delta_id, create_delta with optional branch), listing, status summaries and schema-validated status transitions (set_delta_status), gitignored by-status view sync, SQLite baseline snapshots with vcs.base_commit and Git history fallback (_resolve_git_baseline_sha) on cache misses, verification of declared mutations against living specifications (verify_delta_mutations), copy-on-write transactional execution (_MutationTransaction.record_before_write) with substantive non-comment spec updates (_apply_expect_or_details_to_spec), strict remove_* entity type verification, and pre-commit SpecValidator validation (execute_delta_mutations), and atomic in-place application with full rollback on error (apply_delta)."
     source_path: "src/eidos/core/lifecycle/delta_engine.py"
   - id: CMP-ASSET-LOCATOR
     name: "AssetLocator"

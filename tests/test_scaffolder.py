@@ -1210,3 +1210,31 @@ components:
     assert reparsed[2] is None
     assert reparsed[0]["name"] == 'Core: "Engine" #1'
 
+
+def test_design_scaffolder_hygiene_and_dynamic_system_fallback(tmp_path):
+    """DLT-2026-077: ui-component scaffolds status=draft and empty test_bindings; design-system protects existing tokens.json."""
+    import pytest
+
+    eidos_dir = tmp_path / "eidos"
+
+    # 1. Create a non-DS-CORE design system first
+    ds_path = create_spec(eidos_dir, "design-system", "DS-BRAND", title="Brand System")
+    tokens_path = ds_path.parent / "tokens.json"
+    assert tokens_path.exists()
+    custom_tokens = '{"custom": true}\n'
+    tokens_path.write_text(custom_tokens, encoding="utf-8")
+
+    # 2. Attempting to re-create DS-BRAND must raise FileExistsError without overwriting custom tokens.json
+    with pytest.raises(FileExistsError):
+        create_spec(eidos_dir, "design-system", "DS-BRAND", title="Duplicate Brand System")
+    assert tokens_path.read_text(encoding="utf-8") == custom_tokens
+
+    # 3. Create ui-component without explicit design_system -> dynamically discovers DS-BRAND, sets status: draft and test_bindings: {}
+    uic_path = create_spec(eidos_dir, "ui-component", "UIC-BRAND-CARD", title="Brand Card")
+    uic_doc = parse_spec_file(uic_path)
+    assert uic_doc.frontmatter["design_system"] == "DS-BRAND"
+    assert uic_doc.frontmatter["status"] == "draft"
+    assert uic_doc.frontmatter["test_bindings"] == {}
+    assert "packages/ui/src" not in uic_path.read_text(encoding="utf-8")
+
+

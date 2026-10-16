@@ -133,9 +133,29 @@ def spec_list_cmd(
         "-s",
         help="Filter by status (active, draft, proposed, applied).",
     ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output machine-readable JSON specification list.",
+    ),
 ):
     """List living specifications in the repository."""
     specs = list_specs(path, type_filter=type_filter, status_filter=status_filter)
+    if json_output:
+        serializable = [
+            {
+                "id": s["id"],
+                "type": s["type"],
+                "status": s["status"],
+                "title": s["title"],
+                "path": str(s["path"]),
+                "relative_path": str(s["relative_path"]),
+            }
+            for s in specs
+        ]
+        typer.echo(json.dumps({"count": len(serializable), "specs": serializable}, indent=2))
+        return
+
     if not specs:
         console.print(f"[yellow]No specifications found under '{path}'.[/yellow]")
         return
@@ -266,6 +286,11 @@ def spec_create_cmd(
         "--source-path",
         help="Source path or glob owned by a container (package_path) or component (source_path).",
     ),
+    specification_file: str = typer.Option(
+        "src/main.py",
+        "--spec-file",
+        help="Relative path to raw interface specification file for contracts.",
+    ),
     client_id: str | None = typer.Option(
         None,
         "--client",
@@ -281,15 +306,20 @@ def spec_create_cmd(
         "--route",
         help="URL route or view identifier for screens.",
     ),
-    design_system: str = typer.Option(
-        "DS-CORE",
+    design_system: str | None = typer.Option(
+        None,
         "--system",
-        help="Owning design system ID for UI components.",
+        help="Owning design system ID for UI components, screens, or clients (defaults to primary design/system or DS-CORE).",
     ),
     implements_component: str | None = typer.Option(
         None,
         "--implements",
         help="Base component ID being overridden/specialized by a UI component.",
+    ),
+    platform: str = typer.Option(
+        "web",
+        "--platform",
+        help="Runtime platform for clients (web, mobile-ios, mobile-android, desktop, tui, multi-platform).",
     ),
 ):
     """Scaffold a new living specification or SpecDelta."""
@@ -307,12 +337,14 @@ def spec_create_cmd(
             protocol=protocol,
             owning_container=container,
             owning_component=owning_component,
+            specification_file=specification_file,
             package_path=source_path,
             client_id=client_id,
             extends_system=extends_system,
             route=route,
             design_system=design_system,
             implements_component=implements_component,
+            platform=platform,
         )
         rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
         console.print(

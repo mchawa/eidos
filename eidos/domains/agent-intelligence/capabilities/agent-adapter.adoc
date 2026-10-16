@@ -85,9 +85,9 @@ Eidos implements a three-tier context compression model:
 [cols="1,2,3", options="header"]
 |===
 | Tier | Approximate Size | Contents Included
-| `anchor` | ~1,500 tokens | Owning container (`CMP-*`), internal module responsibility, compact `DEC-*` architectural decisions (`title`, `decision`, and rejected option names), primary interface contracts (`CTR-*`), governing policies (`POL-*`), and immediate capability invariants (`INV-*`).
-| `guardrails` | ~3,500 tokens | Everything in `anchor`, plus full `DEC-*` rationale and `rejected_alternatives`, 1-hop upstream and downstream peer containers, related domain capabilities, and test bindings. Reduces token payload by >=60% compared to raw file loading.
-| `deep` | ~8,000 tokens | Comprehensive architectural audit slice: recursive CTE blast-radius traversal of all downstream dependents, cross-boundary contracts, full policy texts, full `DEC-*` trade-off records, and complete invariant test suites.
+| `anchor` | ~140 tokens | Owning container (`CNT-*`) and internal component (`CMP-*`), runtime, `package_path`, bound domain, compact `DEC-*` architectural decisions (`title`, `decision`, and rejected option names), and direct interface contract (`CTR-*`) signatures.
+| `guardrails` | ~300–900 tokens | Everything in `anchor`, plus bounded `DEC-*` rationale and `rejected_alternatives`, domain capabilities (`CAP-*`), active invariants (`INV-*`) with `test_binding`, and governing policies (`POL-*`).
+| `deep` | ~500–1,500 tokens | Comprehensive architectural audit slice: C4 Level 3 internal building blocks, full contract schemas, full policy texts, full `DEC-*` trade-off records, and downstream dependents.
 |===
 
 == Hybrid Retrieval & Freshness Invariant

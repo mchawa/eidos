@@ -44,8 +44,8 @@ By leveraging the SQLite Knowledge Graph (`eidos/.cache/index.db`), drift detect
 
 == Key Responsibilities
 * **Git Diff Inspection**: Inspecting working trees, staged changes, and branch heads for unmapped architectural modifications.
-* **Graph-Powered Reverse Symbol Resolution**: Resolving modified source code file paths to internal C4 modules and owning container IDs (`CMP-*`) in sub-millisecond SQLite queries rather than linear disk crawls.
+* **Graph-Powered Reverse Symbol Resolution**: Resolving modified source code file paths to internal C4 components (`CMP-*`) and owning container IDs (`CNT-*`) in sub-millisecond SQLite queries rather than linear disk crawls.
 * **1-Hop Neighborhood Resolution**: Querying the knowledge graph during `eidos drift` to discover bound interface contracts (`CTR-*`), domain capabilities (`CAP-*`), and parent containers affected by code changes.
-* **Single Source of Truth Enforcement**: Gating CI/CD pipelines via `eidos drift --strict` to guarantee that no pull request merges with un-synchronized specifications (`POL-001`).
+* **Single Source of Truth Enforcement**: Gating CI/CD pipelines via `eidos drift` to guarantee that no pull request merges with un-synchronized specifications (`POL-001`).
 * **Diff-Aware Spec Coverage**: Rejecting "touch-to-appease" spec edits (blank lines, `//` comments, re-wrapping) as coverage for new source files and new public symbols, and reporting them in `trivially_covered_files`.
 * **Direct Mode Frictionless Co-evolution**: Enabling developers and autonomous agents to write code first and instantly reconcile specifications in the same commit.
