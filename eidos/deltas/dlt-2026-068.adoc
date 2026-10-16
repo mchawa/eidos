@@ -3,7 +3,7 @@ type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-068
 title: "Unquoted Git Path Resolution, Container-Level Invariant Verification, Single-Pass Test Cache Loading, and reconcile_specs Graph API Fix"
-status: proposed
+status: applied
 vcs:
   branch: fix/vcs-git-quotepath-invariants-and-reconcile
 intent:

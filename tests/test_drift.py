@@ -83,6 +83,17 @@ def test_pr_check_gate_pass_planned(monkeypatch):
             "eidos/deltas/dlt-2026-010.adoc",
         ],
     )
+    monkeypatch.setattr(
+        "eidos.vcs.drift._get_file_versions",
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (
+            (None, (Path.cwd() / rel_path).read_text(encoding="utf-8"))
+            if "dlt-2026-010" in rel_path
+            else (
+                (Path.cwd() / rel_path).read_text(encoding="utf-8"),
+                (Path.cwd() / rel_path).read_text(encoding="utf-8"),
+            )
+        ),
+    )
 
     result = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
     assert result.drift_detected is False
@@ -696,6 +707,14 @@ def test_uncovered_delta_drift_detection(monkeypatch):
             "eidos/deltas/dlt-2026-001.adoc",
             "src/eidos/portal/frontend/src/theme/theme.css",
         ],
+    )
+    monkeypatch.setattr(
+        "eidos.vcs.drift._get_file_versions",
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (
+            (None, (Path.cwd() / rel_path).read_text(encoding="utf-8"))
+            if "dlt-2026-001" in rel_path
+            else (_OLD_CSS, _TOKEN_CSS)
+        ),
     )
     result = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
     assert result.drift_detected is True
@@ -2009,3 +2028,99 @@ Original capability prose.
     assert res_anchored.trivially_covered_files == []
 
 
+def test_dlt_2026_068_unquoted_git_paths_container_invariants_and_reconcile(tmp_path):
+    """Verify DLT-2026-068: unquoted git paths, top-level tech/container invariants, and reconcile_specs 1-hop neighborhood."""  # eidos:fixture
+    import subprocess
+
+    from eidos.vcs.diff import get_git_diff_files, get_tracked_files
+    from eidos.vcs.drift import extract_invariants_and_verify, reconcile_specs
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+
+    # 1. File with spaces and non-ASCII characters must not be returned quoted/octal-escaped
+    src_dir = tmp_path / "src" / "pkg"
+    src_dir.mkdir(parents=True)
+    unicode_rel = "src/pkg/my café.py"
+    (tmp_path / unicode_rel).write_text("def greet():\n    return 'hi'\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "initial")
+
+    tracked = get_tracked_files(tmp_path)
+    assert tracked is not None
+    assert unicode_rel in tracked
+
+    (tmp_path / unicode_rel).write_text("def greet(name: str):\n    return name\n", encoding="utf-8")
+    diff_files = get_git_diff_files(tmp_path, uncommitted=True)
+    assert unicode_rel in diff_files
+
+    # 2. Top-level tech/container invariants and c4_internal_components invariants
+    eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    caps_dir = eidos_dir / "domains" / "core" / "capabilities"
+    cnts_dir.mkdir(parents=True)
+    caps_dir.mkdir(parents=True)
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+
+    (cnts_dir / "pkg.adoc").write_text(
+        """---
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
+id: CNT-PKG
+name: Pkg Container
+package_path: src/pkg
+invariants:
+  - id: INV-CNT-TOP-LEVEL
+    rule: Container-level invariant
+    test_binding: tests/test_pkg.py::test_cnt_top
+c4_internal_components:
+  - id: CMP-C4-INTERNAL
+    name: C4 Internal
+    source_path: src/pkg/internal.py
+    invariants:
+      - id: INV-CMP-C4-INTERNAL
+        rule: C4 internal component invariant
+        test_binding: tests/test_pkg.py::test_c4_internal
+---
+= Pkg Container
+""",
+        encoding="utf-8",
+    )
+    (caps_dir / "cap-pkg.adoc").write_text(
+        """---
+type: product/capability
+schema: schemas/v1/product/capability.schema.yaml
+id: CAP-PKG-001
+title: Pkg Capability
+domain: DOM-CORE
+status: active
+business:
+  jtbd: Run Pkg
+technical:
+  containers:
+    - CNT-PKG
+---
+= Pkg Capability
+""",
+        encoding="utf-8",
+    )
+    (tests_dir / "test_pkg.py").write_text(
+        "# INV-CNT-TOP-LEVEL\ndef test_cnt_top():\n    assert True\n\n\n"
+        "# INV-CMP-C4-INTERNAL\ndef test_c4_internal():\n    assert True\n",
+        encoding="utf-8",
+    )
+
+    invs = {inv.invariant_id: inv for inv in extract_invariants_and_verify(eidos_dir, tmp_path)}
+    assert invs["INV-CNT-TOP-LEVEL"].has_test_coverage is True
+    assert invs["INV-CNT-TOP-LEVEL"].spec_id == "CNT-PKG"
+    assert invs["INV-CMP-C4-INTERNAL"].has_test_coverage is True
+    assert invs["INV-CMP-C4-INTERNAL"].spec_id == "CMP-C4-INTERNAL"
+
+    # 3. reconcile_specs resolves 1-hop neighbor spec paths via get_k_hop_neighborhood
+    reconcile_report = reconcile_specs(repo_root=tmp_path, eidos_dir=eidos_dir, uncommitted=True)
+    assert any("cap-pkg.adoc" in p for s in reconcile_report.suggestions for p in s.candidate_specs)

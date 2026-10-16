@@ -245,7 +245,7 @@ def get_git_diff_files(
     *,
     merge_base: str | None = None,
 ) -> list[str]:
-    """Retrieve list of modified and added files using Git."""
+    """Retrieve list of modified and added files using Git with core.quotePath=false."""
     repo = repo_root.resolve()
 
     if uncommitted:
@@ -253,7 +253,7 @@ def get_git_diff_files(
         files: set[str] = set()
         try:
             diff_res = subprocess.run(
-                ["git", "diff", "--name-only", "--no-renames"],
+                ["git", "-c", "core.quotePath=false", "diff", "--name-only", "--no-renames"],
                 cwd=repo,
                 capture_output=True,
                 text=True,
@@ -263,7 +263,7 @@ def get_git_diff_files(
                 files.update(line.strip() for line in diff_res.stdout.splitlines() if line.strip())
 
             staged_res = subprocess.run(
-                ["git", "diff", "--cached", "--name-only", "--no-renames"],
+                ["git", "-c", "core.quotePath=false", "diff", "--cached", "--name-only", "--no-renames"],
                 cwd=repo,
                 capture_output=True,
                 text=True,
@@ -273,7 +273,7 @@ def get_git_diff_files(
                 files.update(line.strip() for line in staged_res.stdout.splitlines() if line.strip())
 
             status_res = subprocess.run(
-                ["git", "status", "--porcelain", "--no-renames", "-uall"],
+                ["git", "-c", "core.quotePath=false", "status", "--porcelain", "--no-renames", "-uall"],
                 cwd=repo,
                 capture_output=True,
                 text=True,
@@ -302,9 +302,17 @@ def get_git_diff_files(
     try:
         diff_base = resolved_mb or f"{resolved_base}...{head_ref}"
         if resolved_mb:
-            cmd = ["git", "diff", "--name-only", "--no-renames", resolved_mb, head_ref]
+            cmd = ["git", "-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", resolved_mb, head_ref]
         else:
-            cmd = ["git", "diff", "--name-only", "--no-renames", f"{resolved_base}...{head_ref}"]
+            cmd = [
+                "git",
+                "-c",
+                "core.quotePath=false",
+                "diff",
+                "--name-only",
+                "--no-renames",
+                f"{resolved_base}...{head_ref}",
+            ]
 
         res = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
         if res.returncode == 0:
@@ -320,6 +328,24 @@ def get_git_diff_files(
             raise GitResolutionError(f"Failed to execute git diff: {err}") from err
 
     return get_git_diff_files(repo_root, uncommitted=True)
+
+
+def get_tracked_files(repo_root: Path) -> list[str]:
+    """Retrieve all Git-tracked files in repo_root with core.quotePath=false."""
+    repo = repo_root.resolve()
+    try:
+        res = subprocess.run(
+            ["git", "-c", "core.quotePath=false", "ls-files"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode == 0:
+            return [line.strip() for line in res.stdout.splitlines() if line.strip()]
+    except OSError:
+        pass
+    return []
 
 
 POLYGLOT_TEST_PATTERNS = [
@@ -348,9 +374,14 @@ POLYGLOT_EXCLUDED_DIRS = {
     ".venv",
     "venv",
     "node_modules",
+    "vendor",
+    "third_party",
     "dist",
     "build",
+    "out",
     "target",
+    "coverage",
+    "htmlcov",
     "__pycache__",
     ".eidos",
     ".spec",
@@ -359,6 +390,9 @@ POLYGLOT_EXCLUDED_DIRS = {
     ".vscode",
     ".ruff_cache",
     ".pytest_cache",
+    ".mypy_cache",
+    ".tox",
+    ".next",
 }
 
 

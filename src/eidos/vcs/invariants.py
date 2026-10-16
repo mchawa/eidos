@@ -369,6 +369,8 @@ def detect_orphan_invariants(
     known_invariant_ids: set[str],
     all_tests_content: dict[str, str] | None = None,
     eidos_dir: Path | None = None,
+    *,
+    cached_tests: dict[str, _CachedTestFile] | None = None,
 ) -> list[tuple[str, str]]:
     """Find INV-* tokens referenced in tests that do not exist in any living specification."""
     from eidos.core.index.ast_indexer import INVARIANT_PATTERN, get_ast_indexer
@@ -377,7 +379,8 @@ def detect_orphan_invariants(
     seen: set[tuple[str, str]] = set()
 
     if all_tests_content is None:
-        cached_tests = _load_or_update_test_binding_cache(repo_root, eidos_dir=eidos_dir)
+        if cached_tests is None:
+            cached_tests = _load_or_update_test_binding_cache(repo_root, eidos_dir=eidos_dir)
         for tpath, entry in sorted(cached_tests.items()):
             if entry.has_fixture:
                 qualified_suffixes = {
@@ -456,11 +459,14 @@ def detect_orphan_invariants(
 def extract_invariants_and_verify(
     eidos_dir: Path,
     repo_root: Path,
+    *,
+    cached_tests: dict[str, _CachedTestFile] | None = None,
 ) -> list[InvariantTrace]:
-    """Extract all invariants declared in capabilities, policies, and C4 components, and strictly verify static test bindings."""
+    """Extract all invariants declared in capabilities, policies, containers, and C4 components, and strictly verify static test bindings."""
     invariants: list[InvariantTrace] = []
 
-    cached_tests = _load_or_update_test_binding_cache(repo_root, eidos_dir=eidos_dir)
+    if cached_tests is None:
+        cached_tests = _load_or_update_test_binding_cache(repo_root, eidos_dir=eidos_dir)
 
     inv_to_test_funcs: dict[str, list[str]] = {}
     for entry in cached_tests.values():
@@ -547,11 +553,11 @@ def extract_invariants_and_verify(
             if doc_type == "product/capability":
                 inv_list = tech.get("invariants", []) or []
             elif doc_type == "tech/container":
-                for comp in fm.get("components", []) or []:
+                for comp in fm.get("components", []) or fm.get("c4_internal_components", []) or []:
                     if isinstance(comp, dict):
                         for inv in comp.get("invariants", []) or []:
                             _record(inv, spec_path, str(comp.get("id") or doc_id))
-                inv_list = []
+                inv_list = fm.get("invariants", []) or tech.get("invariants", []) or []
             else:
                 inv_list = fm.get("invariants", []) or tech.get("invariants", []) or []
             for inv in inv_list:

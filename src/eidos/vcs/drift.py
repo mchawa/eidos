@@ -22,11 +22,13 @@ from eidos.vcs.diff import (
     classify_changed_files,
     collect_polyglot_test_files,
     get_git_diff_files,
+    get_tracked_files,
     is_polyglot_test_file,
     map_code_to_components,
 )
 from eidos.vcs.invariants import (
     InvariantTrace,
+    _load_or_update_test_binding_cache,
     detect_orphan_invariants,
     extract_invariants_and_verify,
     get_living_specs_catalog,
@@ -72,6 +74,7 @@ __all__ = [
     "get_git_diff_files",
     "get_living_specs_catalog",
     "get_system_level_spec_paths",
+    "get_tracked_files",
     "is_generated_or_vendored",
     "is_polyglot_test_file",
     "map_code_to_components",
@@ -251,8 +254,8 @@ def detect_drift(
             if status in ("rejected", "deprecated", "superseded", "archived"):
                 continue
             if status == "applied":
-                old_dc, new_dc = _fetch_versions(df)
-                if old_dc is not None and new_dc is not None and old_dc != new_dc:
+                old_dc, _new_dc = _fetch_versions(df)
+                if old_dc is not None:
                     old_fm, _, _ = extract_frontmatter(old_dc)
                     if isinstance(old_fm, dict) and str(old_fm.get("status", "")).strip().lower() == "applied":
                         continue
@@ -475,13 +478,15 @@ def detect_drift(
     validator = SpecValidator()
     validation_report = validator.validate_directory(target_eidos)
 
-    # 5. Invariant Traceability & Orphan Invariant Detection (DLT-2026-027)
-    invariants = extract_invariants_and_verify(target_eidos, root)
+    # 5. Invariant Traceability & Orphan Invariant Detection (DLT-2026-027, DLT-2026-068)
+    cached_tests = _load_or_update_test_binding_cache(root, eidos_dir=target_eidos)
+    invariants = extract_invariants_and_verify(target_eidos, root, cached_tests=cached_tests)
     uncovered_invariants = [inv for inv in invariants if not inv.has_test_coverage]
     orphan_invariants = detect_orphan_invariants(
         root,
         {inv.invariant_id for inv in invariants},
         eidos_dir=target_eidos,
+        cached_tests=cached_tests,
     )
 
     # Overall clean status
@@ -579,11 +584,11 @@ def reconcile_specs(
         if idx:
             for entry in base_candidates:
                 cid = entry.split()[0]
-                neighbors = idx.get_k_hop_neighborhood(cid, max_hops=1)
+                neighbors = idx.get_k_hop_neighborhood(cid, max_depth=1)
                 for n in neighbors:
                     ntype = n.get("type")
                     nid = n.get("id")
-                    npath = n.get("data", {}).get("file_path") or n.get("data", {}).get("path")
+                    npath = n.get("file_path") or n.get("data", {}).get("file_path") or n.get("data", {}).get("path")
                     if ntype in ("tech/contract", "product/capability") and npath:
                         cand_str = f"{nid} ({npath})"
                         if cand_str not in candidates:
