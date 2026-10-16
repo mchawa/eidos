@@ -16,10 +16,63 @@ from eidos.portal.generator import get_portal_data
 logger = logging.getLogger("eidos.portal")
 
 
+def _compute_eidos_mtime_snapshot(eidos_dir: Path) -> tuple[int, int, int]:
+    """Compute a lightweight (file_count, max_mtime_ns, total_size) snapshot of eidos_dir."""
+    if not eidos_dir.is_dir():
+        return (0, 0, 0)
+    count = 0
+    max_mtime = 0
+    total_size = 0
+    for p in eidos_dir.rglob("*"):
+        if ".cache" in p.parts or not p.is_file():
+            continue
+        if p.suffix.lower() not in (".adoc", ".json", ".yaml", ".yml"):
+            continue
+        try:
+            st = p.stat()
+            count += 1
+            if st.st_mtime_ns > max_mtime:
+                max_mtime = st.st_mtime_ns
+            total_size += st.st_size
+        except OSError:
+            continue
+    return (count, max_mtime, total_size)
+
+
 class EidosPortalHandler(BaseHTTPRequestHandler):
     """HTTP Request Handler dispatching Portal UI and JSON API endpoints."""
 
     eidos_dir: Path = Path("eidos")
+    _cache_key: tuple[str, int, int, int] | None = None
+    _cached_portal_data: dict[str, Any] | None = None
+    _cached_validation_key: tuple[str, int, int, int] | None = None
+    _cached_validation_res: dict[str, Any] | None = None
+
+    def _get_cached_portal_data(self) -> dict[str, Any]:
+        snap = (str(self.eidos_dir.resolve()), *_compute_eidos_mtime_snapshot(self.eidos_dir))
+        if EidosPortalHandler._cache_key == snap and EidosPortalHandler._cached_portal_data is not None:
+            return EidosPortalHandler._cached_portal_data
+        data = get_portal_data(self.eidos_dir)
+        EidosPortalHandler._cache_key = snap
+        EidosPortalHandler._cached_portal_data = data
+        return data
+
+    def _get_cached_validation(self) -> dict[str, Any]:
+        snap = (str(self.eidos_dir.resolve()), *_compute_eidos_mtime_snapshot(self.eidos_dir))
+        if EidosPortalHandler._cached_validation_key == snap and EidosPortalHandler._cached_validation_res is not None:
+            return EidosPortalHandler._cached_validation_res
+        validator = SpecValidator()
+        report = validator.validate_directory(self.eidos_dir)
+        res = {
+            "total_docs": report.total_docs,
+            "valid_docs": report.valid_docs,
+            "is_clean": report.is_clean,
+            "schema_errors": report.schema_errors,
+            "broken_references": report.broken_references,
+        }
+        EidosPortalHandler._cached_validation_key = snap
+        EidosPortalHandler._cached_validation_res = res
+        return res
 
     def do_GET(self) -> None:
         parsed_url = urllib.parse.urlparse(self.path)
@@ -30,21 +83,13 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
         elif path in ("/favicon.svg", "/favicon.ico"):
             self._send_svg(PORTAL_FAVICON_SVG)
         elif path == "/api/data":
-            data = get_portal_data(self.eidos_dir)
+            data = self._get_cached_portal_data()
             self._send_json(data)
         elif path == "/api/overview":
-            data = get_portal_data(self.eidos_dir)
+            data = self._get_cached_portal_data()
             self._send_json(data.get("overview", {}))
         elif path == "/api/validate":
-            validator = SpecValidator()
-            report = validator.validate_directory(self.eidos_dir)
-            res = {
-                "total_docs": report.total_docs,
-                "valid_docs": report.valid_docs,
-                "is_clean": report.is_clean,
-                "schema_errors": report.schema_errors,
-                "broken_references": report.broken_references,
-            }
+            res = self._get_cached_validation()
             self._send_json(res)
         elif path in ("/health", "/api/health"):
             self._send_json({"status": "ok", "system": "eidos-portal"})

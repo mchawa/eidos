@@ -15,7 +15,7 @@ tier: presentation
 components:
   - id: CMP-PORTAL-SERVER
     name: "PortalServer"
-    responsibility: "Hosts lightweight local multi-threaded HTTP server exposing web UI and JSON endpoints."
+    responsibility: "Hosts lightweight local multi-threaded HTTP server exposing web UI and JSON endpoints with eidos_dir file mtime snapshot response caching on EidosPortalHandler."
     source_path: "src/eidos/portal/server.py"
   - id: CMP-PORTAL-GENERATOR
     name: "PortalGenerator"

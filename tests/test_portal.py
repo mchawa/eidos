@@ -556,3 +556,53 @@ def test_portal_promoted_components_invariants_decisions_and_explorations(tmp_pa
     assert syn_exp["decision"]["resulting_deltas"] == ["DLT-2026-030", "DLT-2026-031", "DLT-2026-032"]
     assert syn_exp["decision"]["resulting_delta_id"] == "DLT-2026-030"
 
+
+def test_dlt_2026_063_hook_digest_short_circuit_and_portal_mtime_cache(tmp_path, monkeypatch):
+    """Verify DLT-2026-063: PostInvocation hook short-circuit via hook-state.json and EidosPortalHandler mtime response caching."""
+    from eidos.plugin.hooks import handle_lint_post_invocation
+    from eidos.portal.server import EidosPortalHandler
+
+    eidos_dir = tmp_path / "eidos"
+    pol_dir = eidos_dir / "policies"
+    pol_dir.mkdir(parents=True)
+    pol_file = pol_dir / "pol-001.adoc"
+    pol_file.write_text(
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-001\ntitle: Policy 1\ncategory: governance\nrule: Rule 1\nenforcement:\n  mechanism: lint\n  severity: blocking\n---\n= Policy 1\n",
+        encoding="utf-8",
+    )
+
+    # 1. First handle_lint_post_invocation records hook-state.json; second short-circuits without calling SpecValidator
+    res1 = handle_lint_post_invocation({"invocationNum": 1}, tmp_path)
+    assert res1 == {"injectSteps": []}
+    assert (eidos_dir / ".cache" / "hook-state.json").is_file()
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("SpecValidator should not be called on unchanged working tree")
+
+    monkeypatch.setattr("eidos.plugin.hooks.SpecValidator", _boom)
+    res2 = handle_lint_post_invocation({"invocationNum": 2}, tmp_path)
+    assert res2 == {"injectSteps": []}
+
+    # 2. EidosPortalHandler caches _get_cached_portal_data until a spec file changes
+    calls = {"count": 0}
+    orig_get_portal_data = get_portal_data
+
+    def _counted_get_portal_data(d):
+        calls["count"] += 1
+        return orig_get_portal_data(d)
+
+    monkeypatch.setattr("eidos.portal.server.get_portal_data", _counted_get_portal_data)
+    dummy = EidosPortalHandler.__new__(EidosPortalHandler)
+    dummy.eidos_dir = eidos_dir
+    EidosPortalHandler._cache_key = None
+    EidosPortalHandler._cached_portal_data = None
+
+    d1 = dummy._get_cached_portal_data()
+    d2 = dummy._get_cached_portal_data()
+    assert calls["count"] == 1
+    assert d1 is d2
+
+    pol_file.write_text(pol_file.read_text(encoding="utf-8") + "\nUpdated prose.\n", encoding="utf-8")
+    d3 = dummy._get_cached_portal_data()
+    assert calls["count"] == 2
+    assert d3 is not d1

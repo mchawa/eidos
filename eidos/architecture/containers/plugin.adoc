@@ -27,7 +27,7 @@ components:
     source_path: "src/eidos/plugin/validator.py"
   - id: CMP-HOOK-RUNNER
     name: "HookRunner"
-    responsibility: "Executes CLI-native PreToolUse/PostToolUse lint hooks with cross-harness payload normalization (Antigravity, Claude Code, Cursor, Cline, OpenCode, Codex) and PostInvocation/Stop drift gates (handle_drift_stop, execute_drift_hook) gated on validation_passed, uncovered_invariants, orphan_invariants, and drift_detected with cause-specific non-code drift diagnostics, validation_errors fingerprinting, and Block-Once fingerprint persistence in eidos/.cache/stop-gate.json."
+    responsibility: "Executes CLI-native PreToolUse/PostToolUse lint hooks with cross-harness payload normalization (Antigravity, Claude Code, Cursor, Cline, OpenCode, Codex) and PostInvocation/Stop drift gates (handle_drift_stop, execute_drift_hook) with fast working-tree digest short-circuit caching in eidos/.cache/hook-state.json, gated on validation_passed, uncovered_invariants, orphan_invariants, and drift_detected with cause-specific non-code drift diagnostics, validation_errors fingerprinting, and Block-Once fingerprint persistence in eidos/.cache/stop-gate.json."
     source_path: "src/eidos/plugin/hooks.py"
 
 dependencies:
