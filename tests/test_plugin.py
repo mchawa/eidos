@@ -1957,3 +1957,412 @@ def test_plugin_lint_stop_block_once_json_lint_uninstall_and_semver(tmp_path):
         compare_semver("invalid", "0.1.0")
 
 
+def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, monkeypatch):
+    """Cover remaining edge branches across plugin/validator.py, plugin/version.py, cli/plugin_commands.py,
+    plugin/hooks.py, and plugin/installer.py."""  # eidos:fixture
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.plugin.hooks import (
+        _clear_hook_state,
+        _extract_tool_edit_request,
+        _infer_event,
+        _record_hook_state_clean,
+        execute_drift_hook,
+        execute_lint_hook,
+        handle_lint_post_tool_use,
+        is_eidos_doc,
+    )
+    from eidos.plugin.installer import (
+        _copy_plugin_tree,
+        _ensure_claude_plugin_manifest,
+        _remove_copilot_instructions,
+        _remove_project_aider_conf,
+        _remove_project_mcp_server,
+        _remove_project_opencode_json,
+        _uninstall_from_manifest_or_legacy,
+        _write_copilot_instructions,
+        locate_plugin_bundle,
+    )
+    from eidos.plugin.validator import _load_bundled_schema, validate_plugin_package
+    from eidos.plugin.version import (
+        check_plugin_version_status,
+        compare_semver,
+        get_bundled_plugin_version,
+        get_installed_plugin_version,
+    )
+
+    # 1. plugin/version.py: prerelease comparisons, corrupt manifest, invalid semver status
+    assert compare_semver("1.0.0-1", "1.0.0-alpha") == -1
+    assert compare_semver("1.0.0-alpha", "1.0.0-1") == 1
+    assert compare_semver("1.0.0-alpha", "1.0.0-beta") == -1
+    assert compare_semver("1.0.0-alpha", "1.0.0-alpha.1") == -1
+    assert compare_semver("1.0.0-alpha.1", "1.0.0-alpha") == 1
+
+    bad_ver_ws = tmp_path / "bad_ver_ws"
+    bad_ver_dir = bad_ver_ws / ".agents" / "plugins" / "eidos"
+    bad_ver_dir.mkdir(parents=True)
+    (bad_ver_dir / "plugin.json").write_text("{corrupt", encoding="utf-8")
+    assert get_installed_plugin_version(project_dir=bad_ver_ws) is None
+    (bad_ver_dir / "plugin.json").write_text('{"name": "eidos", "version": "not-semver"}', encoding="utf-8")
+    st_inv = check_plugin_version_status(project_dir=bad_ver_ws)
+    assert st_inv["status"] == "invalid"
+
+    # 2. plugin/validator.py: missing dir, file instead of dir, missing/corrupt plugin.json, bad name/version,
+    # mcp_config.json / mcp.json, skills edge cases, hooks.json edge cases
+    with pytest.raises(FileNotFoundError):
+        _load_bundled_schema("nonexistent_schema_999.json")
+
+    assert not validate_plugin_package(tmp_path / "no_such_plugin").is_valid
+    file_not_dir = tmp_path / "file.txt"
+    file_not_dir.write_text("hi", encoding="utf-8")
+    assert not validate_plugin_package(file_not_dir).is_valid
+
+    pdir = tmp_path / "bad_plugin"
+    pdir.mkdir()
+    assert not validate_plugin_package(pdir).is_valid  # missing plugin.json
+
+    (pdir / "plugin.json").write_text("{bad json", encoding="utf-8")
+    assert not validate_plugin_package(pdir).is_valid
+
+    # Bad name, bad version, extensions, invalid mcp_config.json, skills without SKILL.md / bad frontmatter, hooks.json errors
+    (pdir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "BAD--NAME",
+                "version": "not_semver",
+                "description": "Desc",
+                "extensions": {"com.example": {}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (pdir / "mcp_config.json").write_text("{bad mcp config", encoding="utf-8")
+    s1 = pdir / "skills" / "empty-skill"
+    s2 = pdir / "skills" / "no-fm"
+    s3 = pdir / "skills" / "non-dict-fm"
+    s4 = pdir / "skills" / "missing-fields"
+    for d in (s1, s2, s3, s4):
+        d.mkdir(parents=True)
+    (s2 / "SKILL.md").write_text("# No frontmatter\n", encoding="utf-8")
+    (s3 / "SKILL.md").write_text("---\n- list_item\n---\n# Body\n", encoding="utf-8")
+    (s4 / "SKILL.md").write_text("---\nother: 1\n---\n# Body\n", encoding="utf-8")
+    (pdir / "hooks.json").write_text(
+        json.dumps(
+            {
+                "bad_hook": "not_a_dict",
+                "main_hook": {
+                    "enabled": True,
+                    "UnknownEvent": "not_a_list",
+                    "PreToolUse": [
+                        "not_a_dict_handler",
+                        {"hooks": [{"type": "command"}]},
+                        {"type": "command", "command": "bash ./scripts/missing_script.sh"},
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    rep_bad = validate_plugin_package(pdir)
+    assert not rep_bad.is_valid
+    assert any("violates naming constraints" in e for e in rep_bad.errors)
+    assert any("not a valid Semantic Version" in e for e in rep_bad.errors)
+    assert any("Invalid JSON in 'mcp_config.json'" in e for e in rep_bad.errors)
+    assert any("missing 'SKILL.md'" in w for w in rep_bad.warnings)
+    assert any("missing required YAML frontmatter" in e for e in rep_bad.errors)
+    assert any("frontmatter is not a dictionary" in e for e in rep_bad.errors)
+    assert any("missing 'name' in frontmatter" in e for e in rep_bad.errors)
+    assert any("non-existent script" in e for e in rep_bad.errors)
+
+    # Also test mcp.json with stdio command containing spaces and non-dict hooks.json
+    (pdir / "mcp_config.json").unlink()
+    (pdir / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"srv": {"type": "stdio", "command": "python -m my_server"}}}),
+        encoding="utf-8",
+    )
+    (pdir / "hooks.json").write_text("[1, 2, 3]", encoding="utf-8")
+    rep_mcp = validate_plugin_package(pdir)
+    assert any("contains spaces" in w for w in rep_mcp.warnings)
+    assert any("root must be a dictionary" in e for e in rep_mcp.errors)
+
+    # 3. cli/plugin_commands.py: validate on bad plugin, info command, version command, update command
+    cli_runner = CliRunner()
+    res_val_fail = cli_runner.invoke(app, ["plugin", "validate", str(pdir)])
+    assert res_val_fail.exit_code == 1
+    res_info = cli_runner.invoke(app, ["plugin", "info", str(locate_plugin_bundle())])
+    assert res_info.exit_code == 0
+    res_ver = cli_runner.invoke(app, ["plugin", "version", "--project-dir", str(bad_ver_ws)])
+    assert res_ver.exit_code == 0
+    assert "Invalid SemVer" in res_ver.output
+
+    # 4. plugin/hooks.py: is_eidos_doc, _extract_tool_edit_request on new file, _clear_hook_state, _infer_event, execute_lint_hook
+    assert is_eidos_doc("", tmp_path) is False
+    assert is_eidos_doc("src/app.py", tmp_path) is False
+    assert is_eidos_doc("./eidos/domains/d.adoc", tmp_path) is True
+    assert _infer_event(None, {"invocationNum": 1}) == "post_invocation"
+    assert _infer_event("Stop", {}) == "stop"
+
+    new_doc_path = str(tmp_path / "eidos" / "domains" / "brand_new.adoc")
+    _, extracted_new = _extract_tool_edit_request(
+        {"tool_input": {"file_path": new_doc_path, "new_string": "---\ntype: product/domain\n---\n= New\n"}},
+        tmp_path,
+    )
+    assert extracted_new is not None and "product/domain" in extracted_new
+    _, extracted_chunk_new = _extract_tool_edit_request(
+        {
+            "tool_input": {
+                "file_path": new_doc_path,
+                "ReplacementChunks": [{"ReplacementContent": "---\ntype: product/domain\n---\n= New\n"}],
+            }
+        },
+        tmp_path,
+    )
+    assert extracted_chunk_new is not None
+
+    assert handle_lint_post_tool_use({"stepIdx": 1}, tmp_path) == {}
+    eidos_cache_ws = tmp_path / "hook_state_ws" / "eidos"
+    _record_hook_state_clean(eidos_cache_ws, "k1", "d1")
+    _record_hook_state_clean(eidos_cache_ws, "k2", "d2")
+    _clear_hook_state(eidos_cache_ws, "k1")
+    assert (eidos_cache_ws / ".cache" / "hook-state.json").exists()
+    _clear_hook_state(eidos_cache_ws, "k2")
+    assert not (eidos_cache_ws / ".cache" / "hook-state.json").exists()
+
+    assert execute_lint_hook(path=tmp_path / "missing_eidos_dir", stdin_data="") == 1
+    assert execute_drift_hook(path=tmp_path / "missing_eidos_dir", stdin_data="") == 1
+
+    # 5. plugin/installer.py helper edge cases: legacy cleanup without .eidos-manifest.json, _remove_project_mcp_server,
+    # _remove_project_opencode_json, _write_copilot_instructions / _remove_copilot_instructions
+    mcp_file = tmp_path / "mcp_test" / "mcp.json"
+    mcp_file.parent.mkdir(parents=True)
+    mcp_file.write_text(json.dumps({"mcpServers": {"eidos": {"command": "eidos"}}}), encoding="utf-8")
+    assert _remove_project_mcp_server(mcp_file, "eidos") is True
+    assert not mcp_file.exists()
+
+    oc_file = tmp_path / "oc_test" / "opencode.json"
+    oc_file.parent.mkdir(parents=True)
+    oc_file.write_text(json.dumps({"$schema": "https://opencode.ai", "mcp": {"eidos": {}}}), encoding="utf-8")
+    assert _remove_project_opencode_json(oc_file) is True
+    assert not oc_file.exists()
+
+    cop_file = tmp_path / "cop_test" / "copilot-instructions.md"
+    _write_copilot_instructions(cop_file, force=True)
+    _write_copilot_instructions(cop_file, force=True)  # updates existing block in-place
+    assert _remove_copilot_instructions(cop_file) is True
+    assert not cop_file.exists()
+
+    # Legacy cleanup when .eidos-manifest.json is removed (including legacy commands/validate.md)
+    legacy_dir = tmp_path / "legacy_plugin_dir"
+    _copy_plugin_tree(locate_plugin_bundle(), legacy_dir, force=True)
+    _ensure_claude_plugin_manifest(legacy_dir, force=True)
+    (legacy_dir / "commands").mkdir(exist_ok=True)
+    (legacy_dir / "commands" / "validate.md").write_text("# Validate\n", encoding="utf-8")
+    (legacy_dir / ".eidos-manifest.json").unlink(missing_ok=True)
+    assert _uninstall_from_manifest_or_legacy(legacy_dir) is True
+    assert not (legacy_dir / "commands").exists()
+
+    # 6. Additional coverage for plugin/version.py, plugin/validator.py, cli/plugin_commands.py,
+    #    plugin/hooks.py, and plugin/installer.py
+    import os
+
+    import eidos.core.workspace.assets as ws_assets
+    import eidos.plugin.installer as inst_mod
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.plugin.version import _resolve_installed_plugin_manifest
+
+    # 6a. plugin/version.py & plugin/installer.py: fallback when get_plugin_reference_dir raises OSError
+    orig_get_ref = ws_assets.get_plugin_reference_dir
+    orig_inst_get_ref = inst_mod.get_plugin_reference_dir
+    orig_cwd = os.getcwd()
+    try:
+        def _raise_oserror():
+            raise OSError("no asset ref")
+
+        ws_assets.get_plugin_reference_dir = _raise_oserror
+        inst_mod.get_plugin_reference_dir = _raise_oserror
+        ver_fb = get_bundled_plugin_version()
+        assert isinstance(ver_fb, str) and len(ver_fb) > 0
+
+        # locate_plugin_bundle CWD fallback (plugins/eidos/plugin.json) and FileNotFoundError
+        cwd_bundle_ws = tmp_path / "cwd_bundle_ws"
+        (cwd_bundle_ws / "plugins" / "eidos").mkdir(parents=True)
+        (cwd_bundle_ws / "plugins" / "eidos" / "plugin.json").write_text(
+            json.dumps({"name": "eidos", "version": "0.1.0"}), encoding="utf-8"
+        )
+        os.chdir(cwd_bundle_ws)
+        assert locate_plugin_bundle() == (cwd_bundle_ws / "plugins" / "eidos").resolve()
+
+        empty_cwd = tmp_path / "empty_cwd_ws"
+        empty_cwd.mkdir(parents=True)
+        os.chdir(empty_cwd)
+        with pytest.raises(FileNotFoundError, match="Could not locate Eidos plugin"):
+            locate_plugin_bundle()
+    finally:
+        ws_assets.get_plugin_reference_dir = orig_get_ref
+        inst_mod.get_plugin_reference_dir = orig_inst_get_ref
+        os.chdir(orig_cwd)
+
+    assert _resolve_installed_plugin_manifest(project_dir=tmp_path, dest_path=Path("rel_dest")) == (
+        (tmp_path / "rel_dest").resolve(),
+        None,
+    )
+
+    # 6b. plugin/validator.py: empty plugin.json {}, valid mcp_config.json, invalid mcp.json, invalid hooks.json
+    pdir2 = tmp_path / "pdir2"
+    pdir2.mkdir()
+    (pdir2 / "plugin.json").write_text("{}", encoding="utf-8")
+    (pdir2 / "mcp_config.json").write_text(json.dumps({"mcpServers": {"eidos": {}}}), encoding="utf-8")
+    (pdir2 / "hooks.json").write_text("{invalid_hooks", encoding="utf-8")
+    rep_p2 = validate_plugin_package(pdir2)
+    assert not rep_p2.is_valid
+    assert any("missing required 'name'" in e for e in rep_p2.errors)
+    assert any("missing required 'version'" in e for e in rep_p2.errors)
+    assert any("Invalid JSON in 'hooks.json'" in e for e in rep_p2.errors)
+    assert "eidos" in rep_p2.mcp_servers
+
+    (pdir2 / "mcp_config.json").unlink()
+    (pdir2 / "mcp.json").write_text("{invalid_mcp", encoding="utf-8")
+    rep_p2_mcp = validate_plugin_package(pdir2)
+    assert any("Invalid JSON in 'mcp.json'" in e for e in rep_p2_mcp.errors)
+
+    # 6c. cli/plugin_commands.py: plugin update twice (prev_ver == current_ver), symlink error on install,
+    #     and FileNotFoundError on validate/info when locate_plugin_bundle fails
+    upd_ws = tmp_path / "upd_ws"
+    upd_ws.mkdir()
+    res_upd1 = cli_runner.invoke(app, ["plugin", "update", "--project-dir", str(upd_ws)])
+    assert res_upd1.exit_code == 0
+    res_upd2 = cli_runner.invoke(app, ["plugin", "update", "--project-dir", str(upd_ws)])
+    assert res_upd2.exit_code == 0 and "already at latest version" in res_upd2.output
+
+    sym_target = tmp_path / "sym_target_dir"
+    sym_target.mkdir()
+    sym_link = tmp_path / "sym_link_dest"
+    sym_link.symlink_to(sym_target)
+    res_sym = cli_runner.invoke(app, ["plugin", "install", "--dest", str(sym_link)])
+    assert res_sym.exit_code == 1
+
+    import eidos.cli.plugin_commands as pcmd_mod
+
+    orig_pcmd_locate = pcmd_mod.locate_plugin_bundle
+    try:
+        def _missing_bundle():
+            raise FileNotFoundError("no bundle")
+
+        pcmd_mod.locate_plugin_bundle = _missing_bundle
+        assert cli_runner.invoke(app, ["plugin", "validate"]).exit_code == 0
+        assert cli_runner.invoke(app, ["plugin", "info"]).exit_code == 0
+    finally:
+        pcmd_mod.locate_plugin_bundle = orig_pcmd_locate
+
+    # 6d. plugin/hooks.py: _infer_event branches, execute_lint_hook on clean & invalid spec repos, execute_drift_hook on clean git repo
+    assert _infer_event(None, {"stepIdx": 1}) == "post_tool"
+    assert _infer_event(None, {"tool_name": "Write"}) == "pre_tool"
+    assert _infer_event(None, {"executionNum": 1}) == "stop"
+    assert _infer_event(None, {}) == "stop"
+
+    hook_ws = tmp_path / "hook_exec_ws"
+    init_repository(hook_ws, name="hook-exec", title="Hook Exec")
+    assert execute_lint_hook(path=hook_ws, stdin_data="") == 0
+    (hook_ws / "eidos" / "domains" / "bad.adoc").write_text(
+        "---\ntype: product/domain\nid: BAD_ID\n---\n= Bad\n", encoding="utf-8"
+    )
+    assert execute_lint_hook(path=hook_ws, stdin_data="") == 1
+    (hook_ws / "eidos" / "domains" / "bad.adoc").unlink()
+
+    import subprocess
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=hook_ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=hook_ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Dev"], cwd=hook_ws, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=hook_ws, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "clean init"], cwd=hook_ws, check=True, capture_output=True)
+    assert execute_drift_hook(path=hook_ws, stdin_data="") == 0
+
+    # 6e. plugin/installer.py: _copy_plugin_tree legacy scripts & retired skills cleanup,
+    #     _remove_project_mcp_server / _remove_project_aider_conf / _remove_project_opencode_json / _ensure_claude_plugin_manifest branches
+    tree_cleanup_dir = tmp_path / "tree_cleanup_dir"
+    (tree_cleanup_dir / "scripts").mkdir(parents=True)
+    (tree_cleanup_dir / "scripts" / "old.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (tree_cleanup_dir / "skills" / "eidos-drift").mkdir(parents=True)
+    (tree_cleanup_dir / ".eidos-manifest.json").write_text(
+        json.dumps({"files": {"scripts/old.sh": "abc"}}), encoding="utf-8"
+    )
+    _copy_plugin_tree(locate_plugin_bundle(), tree_cleanup_dir, force=False)
+    assert not (tree_cleanup_dir / "scripts").exists()
+    assert not (tree_cleanup_dir / "skills" / "eidos-drift").exists()
+
+    # _remove_project_mcp_server with invalid JSON, missing server, and remaining sibling server
+    mcp_f2 = tmp_path / "mcp_f2.json"
+    mcp_f2.write_text("{bad", encoding="utf-8")
+    assert _remove_project_mcp_server(mcp_f2, "eidos") is False
+    mcp_f2.write_text(json.dumps({"mcpServers": {"other": {"command": "other"}}}), encoding="utf-8")
+    assert _remove_project_mcp_server(mcp_f2, "eidos") is False
+    mcp_f2.write_text(
+        json.dumps({"mcpServers": {"eidos": {"command": "eidos"}, "other": {"command": "other"}}}),
+        encoding="utf-8",
+    )
+    assert _remove_project_mcp_server(mcp_f2, "eidos") is True
+    assert mcp_f2.exists() and "other" in json.loads(mcp_f2.read_text(encoding="utf-8"))["mcpServers"]
+
+    # _ensure_claude_plugin_manifest with non-eidos plugin.json, invalid plugin.json, and invalid .claude-plugin/plugin.json
+    c_dir = tmp_path / "claude_manifest_edge"
+    c_dir.mkdir()
+    (c_dir / "plugin.json").write_text(json.dumps({"name": "not-eidos"}), encoding="utf-8")
+    assert _ensure_claude_plugin_manifest(c_dir, force=False) is None
+    (c_dir / "plugin.json").write_text("{bad", encoding="utf-8")
+    assert _ensure_claude_plugin_manifest(c_dir, force=False) is None
+    (c_dir / "plugin.json").write_text(json.dumps({"name": "eidos", "version": "0.1.0"}), encoding="utf-8")
+    (c_dir / ".claude-plugin").mkdir(exist_ok=True)
+    (c_dir / ".claude-plugin" / "plugin.json").write_text("{bad", encoding="utf-8")
+    assert _ensure_claude_plugin_manifest(c_dir, force=True) is not None
+
+    # _remove_project_aider_conf with missing file, invalid YAML, non-dict YAML, and remaining key
+    aider_f = tmp_path / ".aider.conf.yml"
+    assert _remove_project_aider_conf(aider_f) is False
+    aider_f.write_text(": [broken", encoding="utf-8")
+    assert _remove_project_aider_conf(aider_f) is False
+    aider_f.write_text("- item1\n", encoding="utf-8")
+    assert _remove_project_aider_conf(aider_f) is False
+    aider_f.write_text("read:\n  - .aider.conventions.md\nmodel: sonnet\n", encoding="utf-8")
+    assert _remove_project_aider_conf(aider_f) is True
+    assert aider_f.exists() and "model: sonnet" in aider_f.read_text(encoding="utf-8")
+
+    # _remove_project_opencode_json with invalid JSON, missing eidos key, and remaining sibling mcp key
+    oc_f2 = tmp_path / "opencode2.json"
+    oc_f2.write_text("{bad", encoding="utf-8")
+    assert _remove_project_opencode_json(oc_f2) is False
+    oc_f2.write_text(json.dumps({"mcp": {"other": {}}}), encoding="utf-8")
+    assert _remove_project_opencode_json(oc_f2) is False
+    oc_f2.write_text(json.dumps({"mcp": {"eidos": {}, "other": {}}}), encoding="utf-8")
+    assert _remove_project_opencode_json(oc_f2) is True
+    assert oc_f2.exists() and "other" in json.loads(oc_f2.read_text(encoding="utf-8"))["mcp"]
+
+    # 6f. Newer installed version in `plugin version` & `plugin update`, execute_drift_hook with drift,
+    #     corrupt manifest in _copy_plugin_tree, and non-Eidos rules.md / corrupt claude plugin.json in legacy uninstall
+    (bad_ver_dir / "plugin.json").write_text('{"name": "eidos", "version": "99.0.0"}', encoding="utf-8")
+    res_newer = cli_runner.invoke(app, ["plugin", "version", "--project-dir", str(bad_ver_ws)])
+    assert res_newer.exit_code == 0 and "Newer" in res_newer.output
+    res_upd_newer = cli_runner.invoke(app, ["plugin", "update", "--project-dir", str(bad_ver_ws)])
+    assert res_upd_newer.exit_code == 0
+
+    from eidos.core.lifecycle.scaffolder import create_spec
+
+    create_spec(hook_ws / "eidos", "container", "CNT-HOOK", "Hook Svc", package_path="src")
+    subprocess.run(["git", "add", "."], cwd=hook_ws, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "add container"], cwd=hook_ws, check=True, capture_output=True)
+    (hook_ws / "src").mkdir(exist_ok=True)
+    (hook_ws / "src" / "drifted.py").write_text("def drifted(): return 1\n", encoding="utf-8")
+    assert execute_drift_hook(path=hook_ws, stdin_data="") == 1
+
+    (tree_cleanup_dir / "scripts").mkdir(parents=True, exist_ok=True)
+    (tree_cleanup_dir / ".eidos-manifest.json").write_text("{corrupt", encoding="utf-8")
+    _copy_plugin_tree(locate_plugin_bundle(), tree_cleanup_dir, force=True)
+    assert not (tree_cleanup_dir / "scripts").exists()
+
+    leg2 = tmp_path / "leg2"
+    (leg2 / ".claude-plugin").mkdir(parents=True)
+    (leg2 / ".claude-plugin" / "plugin.json").write_text("{corrupt", encoding="utf-8")
+    (leg2 / "rules.md").write_text("Custom non-matching rules\n", encoding="utf-8")
+    assert _uninstall_from_manifest_or_legacy(leg2) is False
+

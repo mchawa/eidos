@@ -870,3 +870,143 @@ def test_portal_zero_node_subprocess_http_endpoints_mermaid_and_build_assets(tmp
             gi._INDEX_INSTANCE = None
 
 
+def test_portal_mermaid_diagram_generators_and_asset_fallbacks(tmp_path, monkeypatch):
+    """Cover portal/generator.py Mermaid state/sequence/journey helpers, C4 container/component edge cases,
+    and portal/assets.py fallback branches."""  # eidos:fixture
+    import eidos.portal.assets as portal_assets
+    from eidos.portal.generator import (
+        _extract_or_generate_flow_mermaid,
+        _generate_c4_component_mermaid,
+        _generate_c4_containers_mermaid,
+        _generate_screen_state_mermaid,
+    )
+
+    # 1. _generate_screen_state_mermaid: empty, states-only (no transitions), and full transitions
+    empty_state = _generate_screen_state_mermaid("SCR-1", [], [])
+    assert "[*] --> SCR_1" in empty_state
+    states_only = _generate_screen_state_mermaid(
+        "SCR-1",
+        [{"name": "Idle", "description": "Waiting"}, "Loaded"],
+        [],
+    )
+    assert "stateDiagram-v2" in states_only and "Idle --> Loaded" in states_only
+    with_trans = _generate_screen_state_mermaid(
+        "SCR-1",
+        ["Idle", "Submitted"],
+        [{"from_state": "Idle", "to_state": "Submitted", "action": "click_submit"}],
+    )
+    assert "Idle --> Submitted: click_submit" in with_trans
+
+    # 2. _extract_or_generate_flow_mermaid: explicit mermaid block, empty steps, cross_client sequenceDiagram, user_journey flowchart
+    explicit = _extract_or_generate_flow_mermaid(
+        "FLOW-1", "user_journey", [], "[mermaid]\n----\ngraph LR\n  A --> B\n----"
+    )
+    assert "A --> B" in explicit
+    assert "Start --> End" in _extract_or_generate_flow_mermaid("FLOW-1", "user_journey", [], "")
+
+    seq_diag = _extract_or_generate_flow_mermaid(
+        "FLOW-SEQ",
+        "cross_client",
+        [
+            {"step": 1, "client": "CLT-WEB", "title": "Login", "action": "POST /auth"},
+            {"step": 2, "client": "CNT-API", "title": "Verify", "action": "200 OK"},
+        ],
+        "",
+    )
+    assert "sequenceDiagram" in seq_diag and "POST /auth" in seq_diag and "200 OK" in seq_diag
+
+    journey_diag = _extract_or_generate_flow_mermaid(
+        "FLOW-JRN",
+        "user_journey",
+        [
+            {"step": 1, "title": "Open Screen", "screen": "screens/home.adoc", "action": "x" * 35},
+            {"step": 2, "title": "Done"},
+        ],
+        "",
+    )
+    assert "flowchart LR" in journey_diag and "home" in journey_diag and "..." in journey_diag
+
+    # 3. _generate_c4_containers_mermaid & _generate_c4_component_mermaid edge branches
+    c4_cnts = _generate_c4_containers_mermaid(
+        [
+            {
+                "id": "CNT-WEB",
+                "name": "Web App",
+                "container_type": "web_app",
+                "runtime": "TypeScript",
+                "dependencies": {
+                    "internal_containers": ["CNT-API", "CNT-WORKER", "CNT-LIB-RS", "CNT-LIB-GO", "CNT-LIB-TS"]
+                },
+            },
+            {
+                "id": "CNT-API",
+                "name": "API",
+                "container_type": "service",
+                "runtime": "Python",
+                "dependencies": {"internal_containers": ["CNT-DB"], "external_services": ["S3 Storage"]},
+            },
+            {
+                "id": "CNT-WORKER",
+                "name": "Worker",
+                "container_type": "worker",
+                "runtime": "Python",
+                "dependencies": {},
+            },
+            {
+                "id": "CNT-LIB-RS",
+                "name": "Rust Core",
+                "container_type": "library",
+                "runtime": "Rust",
+                "dependencies": {},
+            },
+            {
+                "id": "CNT-LIB-GO",
+                "name": "Go SDK",
+                "container_type": "sdk",
+                "runtime": "Go",
+                "dependencies": {},
+            },
+            {
+                "id": "CNT-LIB-TS",
+                "name": "TS SDK",
+                "container_type": "package",
+                "runtime": "TypeScript",
+                "dependencies": {},
+            },
+            {
+                "id": "CNT-DB",
+                "name": "Database",
+                "container_type": "database",
+                "runtime": "PostgreSQL",
+                "dependencies": {},
+            },
+        ],
+        personas=[
+            {"id": "PER-PM", "name": "PM", "role": "Product Manager", "archetype": "human_lead"},
+            {"id": "PER-OPS", "name": "Ops", "role": "SRE", "archetype": "operator"},
+        ],
+    )
+    assert "In-Process Rust API" in c4_cnts and "In-Process Go API" in c4_cnts and "In-Process TypeScript API" in c4_cnts
+
+    c4_empty_cmp = _generate_c4_component_mermaid(
+        {"id": "CNT-EMPTY", "name": "Empty", "internal_components": []},
+        [{"id": "CNT-EMPTY", "name": "Empty"}],
+    )
+    assert "Core Container Logic" in c4_empty_cmp
+
+    # 4. portal/assets.py FileNotFoundError fallback paths
+    def _raise_fnf(_subpath=""):
+        raise FileNotFoundError("simulated missing asset")
+
+    monkeypatch.setattr(portal_assets, "get_assets_path", _raise_fnf)
+    fake_pkg = tmp_path / "fake_portal_pkg"
+    (fake_pkg / "frontend" / "public").mkdir(parents=True)
+    (fake_pkg / "frontend" / "dist").mkdir(parents=True)
+    (fake_pkg / "frontend" / "public" / "favicon.svg").write_text("<svg>fallback</svg>", encoding="utf-8")
+    (fake_pkg / "frontend" / "dist" / "index.html").write_text("<html>fallback</html>", encoding="utf-8")
+    monkeypatch.setattr(portal_assets, "__file__", str(fake_pkg / "assets.py"))
+    assert portal_assets._load_portal_favicon() == "<svg>fallback</svg>"
+    assert portal_assets._load_portal_html_template() == "<html>fallback</html>"
+
+
+

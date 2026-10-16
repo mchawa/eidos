@@ -1004,4 +1004,403 @@ def test_delta_engine_all_mutation_families_and_file_restoration_rollback(tmp_pa
     assert pol_restore.exists(), "Deleted policy file was NOT restored on transaction rollback!"
     assert pol_restore.read_text(encoding="utf-8") == original_pol_bytes
 
+    # 5. Direct unit tests for delta_engine, catalog, and initializer helper edge cases
+    from eidos.core.lifecycle.catalog import (
+        _build_spec_catalog,
+        _mutate_frontmatter_components,
+        _set_frontmatter_scalar,
+        _split_yaml_inline_comment,
+        find_spec_by_id_or_path,
+    )
+    from eidos.core.lifecycle.delta_engine import (
+        _apply_expect_or_details_to_spec,
+        _check_structural_subtarget_precondition,
+        _ensure_eidos_gitignore,
+        _evaluate_declarative_postcondition,
+        _extract_mutation_target,
+        _parse_spec_content,
+        _resolve_target_path_and_id,
+    )
 
+    # _ensure_eidos_gitignore appends missing entries to an incomplete .gitignore
+    gi_file = eidos_dir / ".gitignore"
+    gi_file.write_text("# Partial gitignore\n", encoding="utf-8")
+    _ensure_eidos_gitignore(eidos_dir)
+    gi_text = gi_file.read_text(encoding="utf-8")
+    assert "deltas/by-status/" in gi_text and ".cache/" in gi_text
+
+    # _extract_mutation_target regex fallbacks from details (ID and .adoc path)
+    assert _extract_mutation_target({"action": "modify_container", "details": "Update CNT-999-CORE spec"}) == "CNT-999-CORE"
+    assert (
+        _extract_mutation_target({"action": "modify_container", "details": "Touch 'architecture/containers/svc.adoc'"})
+        == "architecture/containers/svc.adoc"
+    )
+    assert _extract_mutation_target({"action": "modify_container"}) == "unspecified_target"
+
+    # _parse_spec_content empty, parse_error, and missing frontmatter
+    empty_doc = _parse_spec_content(eidos_dir / "system.adoc", "   ")
+    assert empty_doc.doc_type == "product/system"
+    no_fm_doc = _parse_spec_content(eidos_dir / "bad.adoc", "= No Frontmatter\n")
+    assert len(no_fm_doc.errors) == 1
+    bad_yaml_doc = _parse_spec_content(eidos_dir / "bad.adoc", "---\n: [broken\n---\n= Body\n")
+    assert any("Frontmatter parse error" in e for e in bad_yaml_doc.errors)
+
+    # _check_structural_subtarget_precondition negative checks
+    specs_by_id, container_components, _invariant_map = _build_spec_catalog(eidos_dir)[0], _build_spec_catalog(eidos_dir)[1], {}
+    assert (
+        _check_structural_subtarget_precondition(
+            {"target_capability": "CAP-MISSING", "target_invariant_id": "INV-1"}, specs_by_id, container_components
+        )
+        is False
+    )
+    assert (
+        _check_structural_subtarget_precondition(
+            {"target_container": "CNT-MISSING", "target_component": "CMP-1"}, specs_by_id, container_components
+        )
+        is False
+    )
+    assert (
+        _check_structural_subtarget_precondition(
+            {"target_container": "CNT-900-SVC", "target_component": "CMP-NOT-IN-CNT"}, specs_by_id, container_components
+        )
+        is False
+    )
+    assert (
+        _check_structural_subtarget_precondition(
+            {"target_container": "CNT-900-SVC", "target_contract": "CTR-UNLINKED"}, specs_by_id, container_components
+        )
+        is False
+    )
+
+    # _resolve_target_path_and_id by relative .adoc path
+    rel_sid, rel_p, rel_ok = _resolve_target_path_and_id(
+        f"policies/{pol_restore.name}", eidos_dir, specs_by_id
+    )
+    assert rel_ok is True and rel_sid == "POL-902-RESTORE" and rel_p is not None
+
+    # _evaluate_declarative_postcondition & _apply_expect_or_details_to_spec
+    assert (
+        _evaluate_declarative_postcondition(
+            {"expect": {"contains": "NONEXISTENT_TEXT_999"}},
+            "POL-902-RESTORE",
+            specs_by_id,
+            container_components,
+            {},
+        )
+        is False
+    )
+    assert (
+        _evaluate_declarative_postcondition(
+            {"expect": {"category": "wrong_cat"}},
+            "POL-902-RESTORE",
+            specs_by_id,
+            container_components,
+            {},
+        )
+        is False
+    )
+    assert _apply_expect_or_details_to_spec(
+        pol_restore,
+        {"contains": "Appended declarative expectation paragraph.", "category": "governance"},
+        "",
+    )
+    assert "Appended declarative expectation paragraph." in pol_restore.read_text(encoding="utf-8")
+    assert _apply_expect_or_details_to_spec(pol_restore, None, "// comment only") is False
+
+    # catalog.py helpers: _split_yaml_inline_comment, _set_frontmatter_scalar, _mutate_frontmatter_components
+    val_part, cmt_part = _split_yaml_inline_comment(r'"escaped \" quote # inside" # real comment')
+    assert val_part == r'"escaped \" quote # inside"' and "# real comment" in cmt_part
+    assert _set_frontmatter_scalar("no frontmatter", "status", "active") == "no frontmatter"
+    raw_no_comps = "---\ntype: tech/container\nid: CNT-X\n---\n= X\n"
+    appended_comps = _mutate_frontmatter_components(
+        raw_no_comps, "append", "CMP-NEW", {"id": "CMP-NEW", "name": "New"}
+    )
+    assert "CMP-NEW" in appended_comps
+    raw_empty_comps = "---\ntype: tech/container\nid: CNT-X\ncomponents: []\n---\n= X\n"
+    appended_from_empty = _mutate_frontmatter_components(
+        raw_empty_comps, "append", "CMP-NEW", {"id": "CMP-NEW", "name": "New"}
+    )
+    assert "CMP-NEW" in appended_from_empty
+    assert find_spec_by_id_or_path(eidos_dir, str(pol_restore)) == pol_restore.resolve()
+    assert find_spec_by_id_or_path(eidos_dir, f"policies/{pol_restore.stem}") == pol_restore.resolve()
+
+    # execute_delta_mutations negative/abort branches (non-existent delta, non-delta doc, unsupported action, type mismatch)
+    ok_missing, msg_missing, _ = execute_delta_mutations(eidos_dir, "DLT-DOES-NOT-EXIST")
+    assert ok_missing is False and "not found" in msg_missing
+    ok_nondelta, msg_nondelta, _ = execute_delta_mutations(eidos_dir, "POL-902-RESTORE")
+    assert ok_nondelta is False and "not a SpecDelta" in msg_nondelta
+    ok_apply_missing, _, _, _ = apply_delta(eidos_dir, "DLT-DOES-NOT-EXIST")
+    assert ok_apply_missing is False
+    ok_apply_nondelta, _, _, _ = apply_delta(eidos_dir, "POL-902-RESTORE")
+    assert ok_apply_nondelta is False
+
+
+def test_delta_engine_git_baseline_and_remaining_mutations(tmp_path):
+    """Cover _resolve_git_baseline_sha, _evaluate_declarative_postcondition branches,
+    remaining execute_delta_mutations actions, catalog.py helpers, and initializer.py."""  # eidos:fixture
+    import subprocess
+
+    from eidos.core.lifecycle.catalog import (
+        _build_spec_catalog_with_invariants,
+        _mutate_frontmatter_components,
+    )
+    from eidos.core.lifecycle.delta_engine import (
+        _evaluate_declarative_postcondition,
+        _resolve_git_baseline_sha,
+    )
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+
+    # 1. initializer.py branches: existing non-empty dir without force, lite=False without name/title
+    repo_init = tmp_path / "init_full"
+    ok_init, _, _ = init_repository(repo_init, lite=False)
+    assert ok_init is True
+    ok_reinit, msg_reinit, _ = init_repository(repo_init, force=False)
+    assert ok_reinit is False and "Use --force" in msg_reinit
+
+    # 2. catalog.py: _mutate_frontmatter_components when components block precedes another top-level key with comments/blanks
+    raw_with_trailing_key = (
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-TRAIL\n"
+        "components:\n"
+        "  - id: CMP-OLD\n"
+        "    name: Old\n"
+        "\n"
+        "  # comment before next top-level key\n"
+        "decisions: []\n"
+        "---\n"
+        "= Trail\n"
+    )
+    mutated_trail = _mutate_frontmatter_components(
+        raw_with_trailing_key, "append", "CMP-NEW", {"id": "CMP-NEW", "name": "New"}
+    )
+    assert "CMP-NEW" in mutated_trail and "decisions: []" in mutated_trail
+
+    # 3. Git repo for _resolve_git_baseline_sha across CMP-*, INV-*, and CNT-*
+    git_repo = tmp_path / "git_delta_ws"
+    eidos_dir = git_repo / "eidos"
+    init_repository(git_repo, name="git-delta", title="Git Delta")
+    cnt_file = create_spec(eidos_dir, "container", "CNT-BASE", "Base Container", package_path="src/base")
+    doc_cnt = parse_spec_file(cnt_file)
+    doc_cnt.frontmatter["components"] = [
+        {
+            "id": "CMP-INLINE-1",
+            "name": "Inline One",
+            "responsibility": "Core",
+            "source_path": "src/base/inline_one.py",
+        }
+    ]
+    cnt_file.write_text(dump_spec_document(doc_cnt.frontmatter, doc_cnt.body), encoding="utf-8")
+
+    pol_file = create_spec(eidos_dir, "policy", "POL-BASE", "Base Policy")
+    doc_pol = parse_spec_file(pol_file)
+    doc_pol.frontmatter["invariants"] = [
+        {"id": "INV-BASE-001", "rule": "Rule 1", "test_binding": "N/A"}
+    ]
+    pol_file.write_text(dump_spec_document(doc_pol.frontmatter, doc_pol.body), encoding="utf-8")
+    # Also add a string invariant entry in a draft policy to exercise catalog.py string invariant branch (370-371)
+    str_inv_pol = eidos_dir / "policies" / "pol-str-inv.adoc"
+    str_inv_pol.write_text(
+        "---\ntype: product/policy\nid: POL-STR\ntitle: Str\ninvariants:\n  - INV-STR-ONLY\n---\n= Str\n",
+        encoding="utf-8",
+    )
+    _, _, inv_map = _build_spec_catalog_with_invariants(eidos_dir)
+    assert "INV-STR-ONLY" in inv_map
+    str_inv_pol.unlink()
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Dev"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "baseline specs"], cwd=git_repo, check=True, capture_output=True)
+
+    def _mk_delta(dlt_id: str, title: str, mutations: list[dict] | None = None):
+        p = create_spec(eidos_dir, "delta", dlt_id, title=title, motivation="Test")
+        if mutations is not None:
+            d = parse_spec_file(p)
+            d.frontmatter["mutations"] = mutations
+            p.write_text(dump_spec_document(d.frontmatter, d.body), encoding="utf-8")
+        return p
+
+    dlt_file = _mk_delta("DLT-910", "Git Baseline Test")
+    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "add delta"], cwd=git_repo, check=True, capture_output=True)
+
+    # Modify CNT-BASE after DLT-910 creation
+    cnt_file.write_text(cnt_file.read_text(encoding="utf-8") + "\nPost-delta change.\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "modify container"], cwd=git_repo, check=True, capture_output=True)
+
+    sha_cmp = _resolve_git_baseline_sha(eidos_dir, dlt_file, "CMP-INLINE-1", cnt_file)
+    assert sha_cmp is not None
+    sha_inv = _resolve_git_baseline_sha(eidos_dir, dlt_file, "INV-BASE-001", pol_file)
+    assert sha_inv is not None
+    sha_cnt = _resolve_git_baseline_sha(eidos_dir, dlt_file, "CNT-BASE", cnt_file)
+    assert sha_cnt is not None
+
+    # 4. _evaluate_declarative_postcondition for inline component, unknown target with target_file, and list field
+    catalog, comp_map, inv_map = _build_spec_catalog_with_invariants(eidos_dir)
+    ok_cmp_post = _evaluate_declarative_postcondition(
+        {"action": "modify_component", "target": "CMP-INLINE-1", "expect": {"responsibility": "Core"}},
+        "CMP-INLINE-1",
+        catalog,
+        comp_map,
+        inv_map,
+    )
+    assert ok_cmp_post is True
+    ok_cmp_miss = _evaluate_declarative_postcondition(
+        {"action": "modify_component", "target": "CMP-INLINE-1", "expect": {"responsibility": "Other"}},
+        "CMP-INLINE-1",
+        catalog,
+        comp_map,
+        inv_map,
+    )
+    assert ok_cmp_miss is False
+    ok_file_fb = _evaluate_declarative_postcondition(
+        {"action": "modify_container", "target": "UNKNOWN-ID", "expect": {"type": "tech/container"}},
+        "UNKNOWN-ID",
+        catalog,
+        comp_map,
+        inv_map,
+        target_file=cnt_file,
+    )
+    assert ok_file_fb is True
+
+    # Add a list field to CNT-BASE to test list item matching in _evaluate_declarative_postcondition
+    doc_cnt2 = parse_spec_file(cnt_file)
+    doc_cnt2.frontmatter["tags"] = ["core", "api"]
+    cnt_file.write_text(dump_spec_document(doc_cnt2.frontmatter, doc_cnt2.body), encoding="utf-8")
+    catalog2, comp_map2, inv_map2 = _build_spec_catalog_with_invariants(eidos_dir)
+    ok_list_hit = _evaluate_declarative_postcondition(
+        {"action": "modify_container", "target": "CNT-BASE", "expect": {"tags": "api"}},
+        "CNT-BASE",
+        catalog2,
+        comp_map2,
+        inv_map2,
+    )
+    assert ok_list_hit is True
+    ok_list_miss = _evaluate_declarative_postcondition(
+        {"action": "modify_container", "target": "CNT-BASE", "expect": {"tags": "missing"}},
+        "CNT-BASE",
+        catalog2,
+        comp_map2,
+        inv_map2,
+    )
+    assert ok_list_miss is False
+
+    # Remove extra `tags` key before running schema-validated execute_delta_mutations
+    doc_cnt3 = parse_spec_file(cnt_file)
+    doc_cnt3.frontmatter.pop("tags", None)
+    cnt_file.write_text(dump_spec_document(doc_cnt3.frontmatter, doc_cnt3.body), encoding="utf-8")
+
+    # 5. execute_delta_mutations: add_component with expect, add_invariant on capability,
+    # modify_component with expect, patch_invariant with expect+details, remove_component standalone
+    create_spec(eidos_dir, "domain", "DOM-BASE", title="Base Domain")
+    cap_file = create_spec(eidos_dir, "capability", "CAP-BASE", title="Base Capability", domain="DOM-BASE")
+    cmp_standalone = create_spec(
+        eidos_dir, "component", "CMP-STAND", title="Standalone Comp", owning_container="CNT-BASE"
+    )
+    assert cap_file.exists() and cmp_standalone.exists()
+
+    dlt_exec = _mk_delta(
+        "DLT-911",
+        "Exec Remaining Actions",
+        mutations=[
+            {
+                "action": "add_component",
+                "target_container": "CNT-BASE",
+                "target_component": "CMP-INLINE-2",
+                "details": "Add second inline component",
+                "expect": {"responsibility": "Custom Resp"},
+            },
+            {
+                "action": "modify_component",
+                "target_component": "CMP-INLINE-1",
+                "details": "Update inline component",
+                "expect": {"responsibility": "Updated Core", "contains": "Inline body note."},
+            },
+            {
+                "action": "add_invariant",
+                "target_capability": "CAP-BASE",
+                "target_invariant_id": "INV-CAP-NEW-001",
+                "details": "Capability must hold.",
+                "expect": {"test_binding": "N/A"},
+            },
+            {
+                "action": "patch_invariant",
+                "target_invariant_id": "INV-BASE-001",
+                "details": "Patched rule via details",
+                "expect": {"contains": "Extra policy invariant note."},
+            },
+            {
+                "action": "remove_component",
+                "target_component": "CMP-STAND",
+                "details": "Remove standalone component",
+            },
+        ],
+    )
+    assert dlt_exec.exists()
+    ok_exec, msg_exec, _touched = execute_delta_mutations(eidos_dir, "DLT-911")
+    assert ok_exec is True, msg_exec
+    assert not cmp_standalone.exists()
+    assert "Extra policy invariant note." in pol_file.read_text(encoding="utf-8")
+
+    # 6. execute_delta_mutations abort branches (invalid INV prefix, remove_container on inline CMP, remove_invariant on spec ID)
+    for idx, bad_mut in enumerate(
+        [
+            {"action": "add_invariant", "target_policy": "POL-BASE", "target_invariant_id": "NOT-AN-INV", "details": "Bad ID"},
+            {"action": "add_invariant", "target_policy": "MISSING-POL", "target_invariant_id": "INV-X-001", "details": "Missing parent"},
+            {"action": "remove_container", "target_container": "CMP-INLINE-1", "details": "Wrong action for inline"},
+            {"action": "remove_container", "target_container": "POL-BASE", "details": "Wrong spec type"},
+            {"action": "remove_invariant", "target_invariant_id": "POL-BASE", "details": "Spec ID instead of INV"},
+        ],
+        start=920,
+    ):
+        _mk_delta(f"DLT-{idx}", f"Bad Mut {idx}", mutations=[bad_mut])
+        ok_bad, _, _ = execute_delta_mutations(eidos_dir, f"DLT-{idx}")
+        assert ok_bad is False
+
+    # 7. Uncommitted delta file in _resolve_git_baseline_sha (triggers merge-base + HEAD fallback 695-706)
+    uncommitted_dlt = _mk_delta("DLT-930", "Uncommitted Delta")
+    d_unc = parse_spec_file(uncommitted_dlt)
+    d_unc.frontmatter.pop("vcs", None)
+    uncommitted_dlt.write_text(dump_spec_document(d_unc.frontmatter, d_unc.body), encoding="utf-8")
+    sha_uncommitted = _resolve_git_baseline_sha(eidos_dir, uncommitted_dlt, "CNT-BASE", cnt_file)
+    assert sha_uncommitted is not None
+
+    # 8. add_component when no containers exist in eidos_dir (scaffolds standalone tech/component 1457-1468)
+    no_cnt_repo = tmp_path / "no_cnt_ws"
+    init_repository(no_cnt_repo, name="no-cnt", title="No Container WS")
+    no_cnt_eidos = no_cnt_repo / "eidos"
+    dlt_nocnt = create_spec(no_cnt_eidos, "delta", "DLT-931", title="Standalone Add Comp", motivation="Test")
+    d_nc = parse_spec_file(dlt_nocnt)
+    d_nc.frontmatter["mutations"] = [
+        {"action": "add_component", "target_component": "CMP-ORPHAN-1", "details": "Standalone comp"}
+    ]
+    dlt_nocnt.write_text(dump_spec_document(d_nc.frontmatter, d_nc.body), encoding="utf-8")
+    # execute_delta_mutations will scaffold CMP-ORPHAN-1 and then roll back because tech/component requires owning_container
+    execute_delta_mutations(no_cnt_eidos, "DLT-931")
+
+    # 9. initializer.py custom empty directory .gitkeep (67-70) and validation failure branch (114-119)
+    custom_leaf = repo_init / "eidos" / "domains" / "custom_empty_leaf"
+    custom_leaf.mkdir(parents=True, exist_ok=True)
+    ok_force, _, created_force = init_repository(repo_init, name="init-full", force=True)
+    assert ok_force is True and (custom_leaf / ".gitkeep") in created_force
+
+    (repo_init / "eidos" / "policies" / "corrupt.adoc").write_text(
+        "---\ntype: product/policy\nid: INVALID_ID\n---\n= Corrupt\n", encoding="utf-8"
+    )
+    ok_corrupt, msg_corrupt, _ = init_repository(repo_init, name="init-full", force=True)
+    assert ok_corrupt is False and "failed validation" in msg_corrupt
+
+    # 10. list_deltas on missing dir, status_filter mismatch, and non-delta file inside deltas/
+    from eidos.core.lifecycle.delta_engine import list_deltas, sync_delta_views
+
+    assert sync_delta_views(tmp_path / "no_such_eidos") == {}
+    assert list_deltas(tmp_path / "no_such_eidos") == []
+    note_in_deltas = eidos_dir / "deltas" / "note.adoc"
+    note_in_deltas.write_text("---\ntype: product/policy\nid: POL-NOTE\n---\n= Note\n", encoding="utf-8")
+    sync_delta_views(eidos_dir)
+    assert list_deltas(eidos_dir, status_filter="applied") == []
+    note_in_deltas.unlink()

@@ -2411,4 +2411,253 @@ def test_real_git_structural_and_design_drift_and_cache_mtime_hit(tmp_path):
             gi._INDEX_INSTANCE = None
 
 
+def test_drift_report_helpers_and_cli_rich_output(tmp_path):
+    """Cover vcs/report.py remediation/summary helpers and cli/drift_commands.py Rich terminal branches."""  # eidos:fixture
+    import subprocess
+    from types import SimpleNamespace
+
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.vcs.report import generate_remediation_prompt
+
+    # 1. vcs/report.py: generate_remediation_prompt for code drift vs non-code schema/invariant/orphan drift
+    res_code = SimpleNamespace(
+        code_files=["src/app.py"],
+        validation_passed=True,
+        validation_errors=[],
+        uncovered_invariants=[],
+        orphan_invariants=[],
+        remediation_suggestions=["Update CNT-APP"],
+    )
+    prompt_code = generate_remediation_prompt(res_code)
+    assert "Modified Source Code Files" in prompt_code and "Update CNT-APP" in prompt_code
+
+    res_schema_only = SimpleNamespace(
+        code_files=[],
+        classification=SimpleNamespace(code_files=[]),
+        validation_passed=False,
+        validation_errors=["bad schema"],
+        uncovered_invariants=[
+            SimpleNamespace(
+                invariant_id="INV-BRK-1",
+                spec_path="eidos/policies/pol.adoc",
+                test_binding="tests/t.py::test_1",
+            )
+        ],
+        orphan_invariants=[("INV-ORPHAN-1", "tests/t.py:1")],
+        remediation_suggestions=["Fix schema"],
+    )
+    prompt_schema = generate_remediation_prompt(res_schema_only)
+    assert "Non-Code Drift / Governance Verification Failures" in prompt_schema
+    assert "Validation error: bad schema" in prompt_schema
+    assert "Broken invariant binding: `INV-BRK-1`" in prompt_schema
+    assert "Orphan invariant reference: `INV-ORPHAN-1`" in prompt_schema
+
+    # 2. cli/drift_commands.py: invoke `eidos drift --uncommitted --path <eidos_dir>` without --json on a drifting repo
+    repo = tmp_path / "drift_cli_repo"
+    eidos_dir = repo / "eidos"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    svc_dir = repo / "src" / "svc"
+    tests_dir = repo / "tests"
+    for d in (cnt_dir, svc_dir, tests_dir):
+        d.mkdir(parents=True)
+    (cnt_dir / "cnt.adoc").write_text(
+        "---\ntype: tech/container\nschema: schemas/v1/tech/container.schema.yaml\nid: CNT-CLI\nname: CLI\ncontainer_type: service\nruntime: Python\npackage_path: src/svc\n---\n= CLI\n",
+        encoding="utf-8",
+    )
+    code_f = svc_dir / "mod.py"
+    code_f.write_text("def a():\n    return 1\n", encoding="utf-8")
+    (tests_dir / "test_mod.py").write_text("def test_orphan():\n    # INV-ORPHAN-999\n    assert True\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Dev"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+
+    # Introduce uncommitted structural code addition + invalid spec so Rich output renders drift + validation errors
+    code_f.write_text("def a():\n    return 1\n\ndef b():\n    return 2\n", encoding="utf-8")
+    (cnt_dir / "broken.adoc").write_text("---\ntype: tech/container\nid: INVALID_ID\n---\n= Broken\n", encoding="utf-8")
+
+    runner = CliRunner()
+    md_out = tmp_path / "drift_summary.md"
+    res_cli = runner.invoke(app, ["drift", "--uncommitted", "--path", str(eidos_dir), "--markdown", str(md_out)])
+    assert res_cli.exit_code == 1
+    assert "DRIFT DETECTED" in res_cli.output
+    assert "Specification Schema Errors" in res_cli.output
+    assert md_out.exists()
+
+    # 3. vcs/diff.py: collect_polyglot_test_files, _resolve_base_and_merge_base fallback scan & shallow error, get_git_diff_files errors
+    import pytest
+
+    import eidos.vcs.drift as drift_mod
+    from eidos.vcs.diff import (
+        GitResolutionError,
+        _resolve_base_and_merge_base,
+        collect_polyglot_test_files,
+        get_git_diff_files,
+    )
+    from eidos.vcs.invariants import (
+        _verify_single_invariant,
+        detect_orphan_invariants,
+        extract_invariants_and_verify,
+        get_living_specs_catalog,
+    )
+
+    assert collect_polyglot_test_files(tmp_path / "does_not_exist_dir") == {}
+    poly_tests = collect_polyglot_test_files(repo)
+    assert "tests/test_mod.py" in poly_tests
+
+    with pytest.raises(GitResolutionError, match="Cannot resolve base Git reference"):
+        get_git_diff_files(repo, base_ref="nonexistent-base-ref")
+    with pytest.raises(GitResolutionError, match="Cannot resolve head Git reference"):
+        get_git_diff_files(repo, base_ref="main", head_ref="nonexistent-head-ref")
+    assert isinstance(get_git_diff_files(repo, merge_base="HEAD"), list)
+
+    # _resolve_base_and_merge_base fallback scan when first candidate has no merge-base and .git/shallow exists
+    orig_base_fn = getattr(drift_mod, "_resolve_base_ref", None)
+    orig_mb_fn = getattr(drift_mod, "_resolve_merge_base", None)
+    (repo / ".git" / "shallow").write_text("deadbeef\n", encoding="utf-8")
+    try:
+        drift_mod._resolve_base_ref = lambda _r, _b=None: None  # type: ignore[attr-defined]
+        drift_mod._resolve_merge_base = lambda _r, _b, _h="HEAD", fail_loudly=False: None  # type: ignore[attr-defined]
+        with pytest.raises(GitResolutionError, match="shallow clone"):
+            _resolve_base_and_merge_base(repo, base_ref=None, head_ref="HEAD")
+        drift_mod._resolve_base_ref = lambda _r, _b=None: "origin/main"  # type: ignore[attr-defined]
+        with pytest.raises(GitResolutionError, match="shallow clone"):
+            _resolve_base_and_merge_base(repo, base_ref=None, head_ref="HEAD")
+    finally:
+        if orig_base_fn is not None:
+            drift_mod._resolve_base_ref = orig_base_fn  # type: ignore[attr-defined]
+        else:
+            delattr(drift_mod, "_resolve_base_ref")
+        if orig_mb_fn is not None:
+            drift_mod._resolve_merge_base = orig_mb_fn  # type: ignore[attr-defined]
+        else:
+            delattr(drift_mod, "_resolve_merge_base")
+        (repo / ".git" / "shallow").unlink(missing_ok=True)
+
+    # 4. vcs/invariants.py: uncached string path in _verify_single_invariant & detect_orphan_invariants
+    (cnt_dir / "broken.adoc").unlink()
+    pol_p = eidos_dir / "policies" / "pol_inv.adoc"
+    pol_p.parent.mkdir(parents=True, exist_ok=True)
+    pol_p.write_text(
+        "---\n"
+        "type: product/policy\n"
+        "schema: schemas/v1/product/policy.schema.yaml\n"
+        "id: POL-INV-1\n"
+        "title: Inv Pol\n"
+        "category: quality\n"
+        "rule: Test uncached invariant matching.\n"
+        "invariants:\n"
+        "  - id: INV-UNCACHED-1\n"
+        "    rule: Qualified func match\n"
+        "    test_binding: tests/test_mod.py::test_orphan\n"
+        "  - id: INV-UNCACHED-FILE\n"
+        "    rule: File-level match\n"
+        "    test_binding: tests/test_mod.py\n"
+        "  - id: INV-UNCACHED-MISS\n"
+        "    rule: Missing func\n"
+        "    test_binding: tests/test_mod.py::test_missing_fn\n"
+        "---\n"
+        "= Inv Pol\n",
+        encoding="utf-8",
+    )
+    (tests_dir / "test_mod.py").write_text(
+        "def test_orphan():\n    # INV-UNCACHED-1\n    # INV-UNCACHED-FILE\n    assert True\n",
+        encoding="utf-8",
+    )
+    traces = extract_invariants_and_verify(eidos_dir, repo)
+    by_id = {t.invariant_id: t for t in traces}
+    assert by_id["INV-UNCACHED-1"].has_test_coverage is True
+    assert by_id["INV-UNCACHED-FILE"].has_test_coverage is True
+    assert by_id["INV-UNCACHED-MISS"].has_test_coverage is False
+
+    # Call _verify_single_invariant with uncached string dict (uses_cached_entries=False) and missing entry on disk
+    str_map: dict[str, object] = {"tests/other.py": "def test_other(): pass\n"}
+    matched_disk_str = _verify_single_invariant(
+        iid="INV-UNCACHED-1",
+        tb="tests/test_mod.py::test_orphan",
+        repo_root=repo,
+        all_tests_content=str_map,
+        inv_to_test_funcs={},
+        ast_idx=None,
+    )
+    assert "tests/test_mod.py::test_orphan" in matched_disk_str
+    matched_file_str = _verify_single_invariant(
+        iid="INV-UNCACHED-FILE",
+        tb="tests/test_mod.py",
+        repo_root=repo,
+        all_tests_content=str_map,
+        inv_to_test_funcs={},
+        ast_idx=None,
+    )
+    assert "tests/test_mod.py" in matched_file_str
+    matched_no_tb = _verify_single_invariant(
+        iid="INV-UNCACHED-1",
+        tb=None,
+        repo_root=repo,
+        all_tests_content=str_map,
+        inv_to_test_funcs={},
+        ast_idx=None,
+    )
+    assert "tests/test_mod.py" in matched_no_tb
+
+    # Also test _verify_single_invariant with empty dict (uses_cached_entries=True, loads from disk)
+    assert "tests/test_mod.py::test_orphan" in _verify_single_invariant(
+        iid="INV-UNCACHED-1",
+        tb="tests/test_mod.py::test_orphan",
+        repo_root=repo,
+        all_tests_content={},
+        inv_to_test_funcs={},
+        ast_idx=None,
+    )
+
+    # Call detect_orphan_invariants on a file that mixes # eidos:fixture and a non-fixture function with an orphan
+    mixed_orphans = detect_orphan_invariants(
+        repo,
+        {"INV-UNCACHED-1", "INV-UNCACHED-FILE", "INV-UNCACHED-MISS"},
+        all_tests_content={
+            "tests/test_mixed.py": (
+                "def test_fixture_fn():\n"
+                "    \"\"\"Fixture docstring.\"\"\"  # eidos:fixture\n"
+                "    x = 'INV-SYNTHETIC-111'\n"
+                "\n"
+                "def test_real_orphan_fn():\n"
+                "    # INV-REAL-ORPHAN-222\n"
+                "    assert True\n"
+            )
+        },
+    )
+    orphan_ids = {oid for oid, _ in mixed_orphans}
+    assert "INV-SYNTHETIC-111" not in orphan_ids
+    assert "INV-REAL-ORPHAN-222" in orphan_ids
+    assert get_living_specs_catalog(tmp_path / "missing_eidos") == {
+        "capabilities": [],
+        "components": [],
+        "contracts": [],
+        "policies": [],
+    }
+
+    # Exercise _get_file_versions with uncommitted=False (lines 764-778) and _resolve_merge_base fail_loudly (94-97)
+    from eidos.vcs.diff import GitResolutionError, _get_file_versions, _resolve_merge_base
+
+    old_v, new_v = _get_file_versions(repo, "src/svc/mod.py", base_ref="main", head_ref="HEAD", uncommitted=False)
+    assert old_v is not None and new_v is not None
+    old_miss, new_miss = _get_file_versions(
+        repo, "src/svc/nonexistent.py", base_ref="main", head_ref="HEAD", uncommitted=False
+    )
+    assert old_miss is None and new_miss is None
+    assert _get_file_versions(repo, "src/svc/mod.py", base_ref=None, head_ref="HEAD", uncommitted=False)[0] is not None
+    no_git_dir = tmp_path / "no_git_dir"
+    no_git_dir.mkdir(exist_ok=True)
+    assert _get_file_versions(no_git_dir, "src/svc/mod.py", base_ref=None, head_ref="HEAD", uncommitted=False) == (
+        None,
+        None,
+    )
+    assert _resolve_merge_base(repo, "nonexistent-branch-xyz", "HEAD", fail_loudly=False) is None
+    with pytest.raises(GitResolutionError, match="Cannot find merge base"):
+        _resolve_merge_base(repo, "nonexistent-branch-xyz", "HEAD", fail_loudly=True)
+    with pytest.raises(GitResolutionError, match="Failed to execute git diff"):
+        get_git_diff_files(repo, base_ref="main", merge_base="invalid-merge-base-999")
 

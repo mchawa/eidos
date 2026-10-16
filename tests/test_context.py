@@ -424,8 +424,12 @@ def test_inv_context_token_compression():
     assert synthetic_sl.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
 
 
-def test_progressive_compression_stages_and_inline_component_context():
+def test_progressive_compression_stages_and_inline_component_context(tmp_path):
     """Verify Stage 1/2/3 eviction under extreme budget pressure, anchor overflow trimming, and inline CMP-* component context."""  # eidos:fixture
+    from pathlib import Path
+
+    import pytest
+
     from eidos.core.index.graph_index import TIER_TOKEN_BUDGETS, TieredContextSlice
 
     # 1. Stage 1 evicts non-primary 1-hop components, Stage 2 evicts non-direct invariants, Stage 3 caps direct invariants
@@ -503,3 +507,71 @@ def test_progressive_compression_stages_and_inline_component_context():
     base_md = base_l3.to_markdown()
     assert "C4 Level 3 Components" in base_md
     assert "CMP-CLI-APP" in base_md
+
+    # 4. Workspace project.py & assets.py edge cases: _is_inside_plugin_or_assets, load_project, get_tracked_files, globs
+    import subprocess
+
+    from eidos.core.workspace.assets import (
+        get_agent_plugins_schemas_dir,
+        get_assets_path,
+        get_schemas_dir,
+        get_v1_schemas_dir,
+    )
+    from eidos.core.workspace.project import (
+        _is_inside_plugin_or_assets,
+        find_repo_root,
+        get_tracked_files,
+        load_project,
+        match_path_pattern,
+        matches_owned_paths,
+    )
+
+    assert _is_inside_plugin_or_assets(Path("/repo/.claude/plugins/eidos/eidos")) is True
+    assert _is_inside_plugin_or_assets(Path("/repo/assets/schemas/v1")) is True
+    assert get_assets_path("") == get_assets_path()
+    assert get_schemas_dir().is_dir()
+    assert get_v1_schemas_dir().is_dir()
+    assert get_agent_plugins_schemas_dir().is_dir()
+    with pytest.raises(FileNotFoundError):
+        get_assets_path("nonexistent_asset_subpath_999")
+
+    # find_repo_root when start_dir is a file, and load_project with repo_root / eidos_dir
+    file_in_ws = tmp_path / "git_proj" / "sub" / "app.py"
+    file_in_ws.parent.mkdir(parents=True)
+    file_in_ws.write_text("x = 1\n", encoding="utf-8")
+    git_proj = tmp_path / "git_proj"
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=git_proj, check=True)
+    subprocess.run(["git", "config", "user.email", "t@eidos.ai"], cwd=git_proj, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=git_proj, check=True)
+    (git_proj / ".gitattributes").write_text("gen/** linguist-generated=true\n", encoding="utf-8")
+    (git_proj / "gen").mkdir()
+    (git_proj / "gen" / "bundle.js").write_text("// gen\n", encoding="utf-8")
+    subprocess.run(["git", "add", "sub/app.py", ".gitattributes", "gen/bundle.js"], cwd=git_proj, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=git_proj, check=True)
+    (git_proj / "untracked.py").write_text("y = 2\n", encoding="utf-8")
+
+    assert find_repo_root(file_in_ws) == git_proj.resolve()
+    tracked_and_untracked = get_tracked_files(git_proj, include_untracked=True)
+    assert "sub/app.py" in tracked_and_untracked
+    assert "untracked.py" in tracked_and_untracked
+    assert "gen/bundle.js" not in tracked_and_untracked
+    assert get_tracked_files(tmp_path / "missing_dir_999") == []
+
+    cfg1 = load_project(repo_root=git_proj)
+    assert cfg1.repo_root == git_proj.resolve()
+    cfg2 = load_project(eidos_dir=git_proj / "eidos")
+    assert cfg2.repo_root == git_proj.resolve()
+
+    # Glob matching edge cases: /**/, **/, /**, **, ?, [!a-z], []a], unclosed [
+    assert match_path_pattern("src/a/b/c.py", "src/**/c.py") > 0
+    assert match_path_pattern("a/b/test.py", "**/test.py") > 0
+    assert match_path_pattern("src/sub/mod.py", "src/**") > 0
+    assert match_path_pattern("src/a.py", "**") > 0
+    assert match_path_pattern("src/a1.py", "src/a?.py") > 0
+    assert match_path_pattern("src/a9.py", "src/a[!a-z].py") > 0
+    assert match_path_pattern("src/a].py", "src/a[]x].py") > 0
+    assert match_path_pattern("src/a[.py", "src/a[.py") > 0
+    assert match_path_pattern("", "src/**") == 0
+    assert matches_owned_paths("src/core/app.py", ["src/core/**"])[0] is True
+    assert matches_owned_paths("other/app.py", ["src/core/**"])[0] is False
+

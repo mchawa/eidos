@@ -371,7 +371,7 @@ def test_polyglot_language_native_visibility_rules():
     assert ("function", "", "internal_but_no_underscore") not in py_pub
 
 
-def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(monkeypatch):
+def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(monkeypatch, tmp_path):
     """Verify Rust struct/enum/trait/impl extraction, polyglot test binding extraction, repo-map truncation, and AST_GREP_AVAILABLE=False fallback."""  # eidos:fixture
     import eidos.core.index.ast_indexer as ast_mod
     from eidos.core.index.ast_indexer import AstGrepIndexer, FallbackIndexer
@@ -452,3 +452,157 @@ def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(monkeypatch):
     many_files = {f"src/mod_{i}.py": delegated_syms for i in range(25)}
     truncated_map = fb_idx.generate_repo_map(many_files, max_tokens=40)
     assert "... [remaining modules truncated to preserve context token budget]" in truncated_map
+
+    # 6. FallbackIndexer.extract_symbols on TS, Go, and Java/Kotlin + list_test_functions regex fallback
+    ts_src = (
+        "export interface UserDto { id: string }\n"
+        "export class UserService {\n"
+        "  fetchUser() { return 1; }\n"
+        "}\n"
+        "function helperFn() { return 2; }\n"
+        "export { helperFn as publicHelper, type UserDto as ExportedDto }\n"
+    )
+    fb_ts_syms = fb_idx.extract_symbols("src/user.ts", ts_src)
+    assert {s.name for s in fb_ts_syms} >= {"UserDto", "UserService", "helperFn"}
+
+    go_src = (
+        "package store\n"
+        "type Reader interface { Read() error }\n"
+        "type itemStore struct{}\n"
+        "func OpenStore() {}\n"
+        "func internalHelper() {}\n"
+    )
+    fb_go_syms = fb_idx.extract_symbols("pkg/store.go", go_src)
+    assert {s.name for s in fb_go_syms} >= {"Reader", "itemStore", "OpenStore", "internalHelper"}
+
+    kt_src = (
+        "interface AuthPort {}\n"
+        "class AuthAdapter {\n"
+        "    fun verifyToken() {}\n"
+        "    private fun secretHelper() {}\n"
+        "}\n"
+    )
+    fb_kt_syms = fb_idx.extract_symbols("src/Auth.kt", kt_src)
+    assert {s.name for s in fb_kt_syms} >= {"AuthPort", "AuthAdapter", "verifyToken"}
+
+    assert fb_idx.list_test_functions(tmp_path / "does_not_exist_test.py") == {}
+    broken_py_tests = (
+        "# comment before test_first\n"
+        "def test_first():\n"
+        "    # INV-FIRST-001\n"
+        "    assert True\n"
+        "def test_second(:\n"
+        "    # INV-SECOND-001\n"
+    )
+    fb_listed = fb_idx.list_test_functions("tests/broken_test.py", broken_py_tests)
+    assert "test_first" in fb_listed and "test_second" in fb_listed
+
+    # 7. _extract_python_dunder_all_from_source, _evaluate_symbol_visibility, and _is_public_symbol edge cases
+    from eidos.core.index.ast_indexer import (
+        CodeSymbol,
+        _evaluate_symbol_visibility,
+        _extract_python_dunder_all_from_source,
+        _extract_ui_contract,
+        _is_public_symbol,
+        classify_design_changes,
+    )
+
+    assert _extract_python_dunder_all_from_source("__all__: list[str] = ['Alpha', 'Beta']\n") == {"Alpha", "Beta"}
+    assert _extract_python_dunder_all_from_source("def broken(:\n") is None
+
+    assert (
+        _evaluate_symbol_visibility(
+            CodeSymbol(
+                name="Read",
+                kind="method",
+                file_path="a.go",
+                line_start=1,
+                line_end=1,
+                parent_symbol="unexportedStruct",
+            )
+        )
+        is False
+    )
+    assert (
+        _evaluate_symbol_visibility(
+            CodeSymbol(name="compute", kind="function", file_path="a.rs", line_start=1, line_end=1, signature="")
+        )
+        is True
+    )
+    assert (
+        _evaluate_symbol_visibility(
+            CodeSymbol(
+                name="run",
+                kind="method",
+                file_path="a.ts",
+                line_start=1,
+                line_end=1,
+                parent_symbol="InternalCls",
+            ),
+            class_is_public={"InternalCls": False},
+        )
+        is False
+    )
+    assert (
+        _evaluate_symbol_visibility(
+            CodeSymbol(
+                name="run",
+                kind="method",
+                file_path="a.ts",
+                line_start=1,
+                line_end=1,
+                parent_symbol="#priv",
+            )
+        )
+        is False
+    )
+    assert (
+        _evaluate_symbol_visibility(
+            CodeSymbol(name="_hidden", kind="function", file_path="A.java", line_start=1, line_end=1)
+        )
+        is False
+    )
+    assert (
+        _evaluate_symbol_visibility(
+            CodeSymbol(
+                name="work",
+                kind="method",
+                file_path="A.java",
+                line_start=1,
+                line_end=1,
+                parent_symbol="PkgCls",
+            ),
+            class_is_public={"PkgCls": False},
+        )
+        is False
+    )
+    assert (
+        _evaluate_symbol_visibility(
+            CodeSymbol(
+                name="method_a",
+                kind="method",
+                file_path="a.py",
+                line_start=1,
+                line_end=1,
+                parent_symbol="UnlistedCls",
+            ),
+            py_dunder_all={"ListedCls"},
+        )
+        is False
+    )
+    assert (
+        _is_public_symbol(
+            CodeSymbol(name="PublicFn", kind="function", file_path="a.py", line_start=1, line_end=1, is_public=None)
+        )
+        is True
+    )
+
+    # 8. _extract_ui_contract type alias Props without braces and theme.ts whitespace-only change
+    ui_contract = _extract_ui_contract(
+        "type BadgeProps = BaseProps & ExtraProps;\nexport { Button as PrimaryButton };\n", ".tsx"
+    )
+    assert "PrimaryButton" in ui_contract["exports"]
+    assert any(p.startswith("BadgeProps:") for p in ui_contract["props"])
+    cat_ws, _ = classify_design_changes("export const t = 1;", "export  const  t = 1;", "src/theme.ts")
+    assert cat_ws == "body_only"
+

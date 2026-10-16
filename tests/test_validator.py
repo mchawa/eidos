@@ -2171,4 +2171,239 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
     clean_rep = validator.validate_directory(eidos_dir)
     assert clean_rep.is_clean, f"Expected clean protocol report, got: {clean_rep.broken_references}"
 
+    # 5. Architectural boundary invariants: contract owned by CMP-*, component declaring contracts
+    (ctr_dir / "bad_owner.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-BAD-OWNER\n"
+        "title: Bad Owner Contract\n"
+        "protocol: rest_openapi\n"
+        "owning_component: CMP-ILLEGAL\n"
+        "specification_file: N/A\n"
+        "---\n"
+        "= Bad Owner\n",
+        encoding="utf-8",
+    )
+    cmp_dir = eidos_dir / "architecture" / "components"
+    cmp_dir.mkdir(parents=True, exist_ok=True)
+    (cmp_dir / "cmp_with_ctr.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "schema: schemas/v1/tech/component.schema.yaml\n"
+        "id: CMP-WITH-CTR\n"
+        "name: Component With Contracts\n"
+        "owning_container: CNT-CLEAN\n"
+        "responsibility: Invalid boundary contracts.\n"
+        "source_path: src/clean/ports.py\n"
+        "contracts:\n"
+        "  provides:\n"
+        "    - CTR-CLEAN-PROTO\n"
+        "---\n"
+        "= Component With Contracts\n",
+        encoding="utf-8",
+    )
+    inv_rep = validator.validate_directory(eidos_dir)
+    all_schema_errs = "\n".join(e for errs in inv_rep.schema_errors.values() for e in errs)
+    assert "INV-INTERFACE-BOUNDARY-GOVERNANCE" in all_schema_errs
+    (ctr_dir / "bad_owner.adoc").unlink()
+    (cmp_dir / "cmp_with_ctr.adoc").unlink()
+
+    # 6. _test_symbol_exists with class-qualified Python test symbol and non-Python test file
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    py_cls_test = tests_dir / "test_cls.py"
+    py_cls_test.write_text(
+        "class TestSuite:\n    def test_method_ok(self):\n        assert True\n",
+        encoding="utf-8",
+    )
+    assert SpecValidator._test_symbol_exists(py_cls_test, ["TestSuite", "test_method_ok"]) is True
+    assert SpecValidator._test_symbol_exists(py_cls_test, ["TestSuite", "test_missing"]) is False
+    assert SpecValidator._test_symbol_exists(py_cls_test, []) is True
+    ts_test_file = tests_dir / "app.test.ts"
+    ts_test_file.write_text("function verifyWidgetRender() {}\n", encoding="utf-8")
+    assert SpecValidator._test_symbol_exists(ts_test_file, ["verifyWidgetRender"]) is True
+
+    # 7. Design system broken manifest path, malformed JSON, non-dict JSON root, and OpenAPI/JSON Schema parse errors
+    (ds_dir / "tokens.json").write_text("[1, 2, 3]", encoding="utf-8")
+    rep_arr = validator.validate_directory(eidos_dir)
+    assert any("root must be a JSON object" in r for r in rep_arr.broken_references)
+
+    (ds_dir / "tokens.json").write_text("{not valid json", encoding="utf-8")
+    rep_bad_json = validator.validate_directory(eidos_dir)
+    assert any("is not valid JSON" in r for r in rep_bad_json.broken_references)
+
+    (ds_dir / "tokens.json").unlink()
+    rep_missing_manifest = validator.validate_directory(eidos_dir)
+    assert any("Broken tokens.manifest" in r for r in rep_missing_manifest.broken_references)
+
+    # OpenAPI & JSON Schema contract non-dict roots
+    (src_dir / "bad_openapi.yaml").write_text("- item1\n- item2\n", encoding="utf-8")
+    (ctr_dir / "bad_oa.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-BAD-OA\n"
+        "title: Bad OpenAPI\n"
+        "protocol: rest_openapi\n"
+        "owning_container: CNT-CLEAN\n"
+        "specification_file: src/clean/bad_openapi.yaml\n"
+        "---\n"
+        "= Bad OpenAPI\n",
+        encoding="utf-8",
+    )
+    (ctr_dir / "bad_js.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-BAD-JS\n"
+        "title: Bad JSON Schema\n"
+        "protocol: json_schema\n"
+        "owning_container: CNT-CLEAN\n"
+        "specification_file: src/clean/bad_openapi.yaml\n"
+        "---\n"
+        "= Bad JSON Schema\n",
+        encoding="utf-8",
+    )
+    rep_ctrs = validator.validate_directory(eidos_dir)
+    joined_broken = "\n".join(rep_ctrs.broken_references)
+    assert "Invalid OpenAPI specification_file" in joined_broken
+    assert "Invalid JSON Schema specification_file" in joined_broken
+
+    # Malformed test_binding "::" across policy invariants, inline component invariants, and UI component test_bindings,
+    # plus design/system inheritance path and planned status
+    from eidos.core.spec.validator import is_entity_id
+    from eidos.core.workspace.assets import (
+        get_agent_plugins_schemas_dir,
+        get_plugin_reference_dir,
+        get_schemas_dir,
+        get_v1_schemas_dir,
+    )
+
+    assert is_entity_id(123) is False  # type: ignore[arg-type]
+    assert get_schemas_dir().is_dir()
+    assert get_v1_schemas_dir().is_dir()
+    assert get_agent_plugins_schemas_dir().is_dir()
+    assert get_plugin_reference_dir().is_dir()
+
+    uic_dir = eidos_dir / "design" / "systems" / "clean" / "components"
+    uic_dir.mkdir(parents=True, exist_ok=True)
+    (uic_dir / "btn.adoc").write_text(
+        "---\n"
+        "type: design/ui-component\n"
+        "schema: schemas/v1/design/ui-component.schema.yaml\n"
+        "id: UIC-BTN-BAD\n"
+        "title: Bad Button\n"
+        "design_system: DS-CLEAN\n"
+        "status: active\n"
+        "test_bindings:\n"
+        "  unit: \"::\"\n"
+        "  a11y: tests/test_cls.py::TestSuite::missing_fn\n"
+        "---\n"
+        "= Bad Button\n",
+        encoding="utf-8",
+    )
+    (pol_dir / "pol_bad_bind.adoc").write_text(
+        "---\n"
+        "type: product/policy\n"
+        "schema: schemas/v1/product/policy.schema.yaml\n"
+        "id: POL-BAD-BIND\n"
+        "title: Bad Bind\n"
+        "category: security\n"
+        "rule: Must bind.\n"
+        "invariants:\n"
+        "  - id: INV-BAD-BIND-1\n"
+        "    rule: R\n"
+        "    test_binding: \"::\"\n"
+        "---\n"
+        "= Bad Bind\n",
+        encoding="utf-8",
+    )
+    ds2_dir = eidos_dir / "design" / "systems" / "sub"
+    ds2_dir.mkdir(parents=True, exist_ok=True)
+    (ds2_dir / "system.adoc").write_text(
+        "---\n"
+        "type: design/system\n"
+        "schema: schemas/v1/design/system.schema.yaml\n"
+        "id: DS-SUB\n"
+        "title: Sub Tokens\n"
+        "status: planned\n"
+        "extends_system: DS-CLEAN\n"
+        "inheritance:\n"
+        "  extends: ../clean/system.adoc\n"
+        "tokens:\n"
+        "  spec_format: w3c_design_tokens\n"
+        "  manifest: missing_planned_tokens.json\n"
+        "---\n"
+        "= Sub Tokens\n",
+        encoding="utf-8",
+    )
+    rep_more = validator.validate_directory(eidos_dir)
+    joined_more = "\n".join(rep_more.broken_references)
+    assert "has invalid test binding '::'" in joined_more
+    assert "which does not exist in 'tests/test_cls.py'" in joined_more
+    assert "has invalid test_binding '::'" in joined_more
+
+    # Also cover inline component invariants (line 1114), TBD bindings (1082, 1124), and workspace/assets.py CWD fallback (22-26)
+    import eidos.core.workspace.assets as ws_assets
+
+    (cnt_dir / "clean.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-CLEAN\n"
+        "name: Clean Service\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/clean\n"
+        "components:\n"
+        "  - id: CMP-CLEAN-INL\n"
+        "    name: Clean Inline\n"
+        "    responsibility: Core\n"
+        "    source_path: src/clean/ports.py\n"
+        "    invariants:\n"
+        "      - id: INV-CMP-INL-1\n"
+        "        rule: Must hold\n"
+        "        test_binding: \"::\"\n"
+        "      - id: INV-CMP-INL-2\n"
+        "        rule: TBD binding\n"
+        "        test_binding: TBD\n"
+        "---\n"
+        "= Clean Service\n",
+        encoding="utf-8",
+    )
+    rep_inl = validator.validate_directory(eidos_dir)
+    assert any("INV-CMP-INL-1" in r for r in rep_inl.broken_references)
+
+    orig_file = ws_assets.__file__
+    orig_cwd = os.getcwd()
+    try:
+        deep_fake = tmp_path / "a" / "b" / "c" / "d" / "e" / "f" / "g" / "assets.py"
+        deep_fake.parent.mkdir(parents=True, exist_ok=True)
+        ws_assets.__file__ = str(deep_fake)
+        cwd_with_assets = tmp_path / "cwd_ws"
+        (cwd_with_assets / "assets").mkdir(parents=True, exist_ok=True)
+        os.chdir(cwd_with_assets)
+        assert ws_assets.get_assets_root() == (cwd_with_assets / "assets").resolve()
+        os.chdir(deep_fake.parent)
+        with pytest.raises(FileNotFoundError):
+            ws_assets.get_assets_root()
+    finally:
+        ws_assets.__file__ = orig_file
+        os.chdir(orig_cwd)
+
+    # Also cover _resolve_spec_and_repo_roots for custom spec folder inside a .git repo and fallback path (lines 162-177)
+    from eidos.core.spec.validator import _resolve_spec_and_repo_roots
+
+    repo_m = tmp_path / "repo_m"
+    (repo_m / ".git").mkdir(parents=True)
+    custom_specs = repo_m / "custom_specs"
+    custom_specs.mkdir()
+    sr_m, rr_m = _resolve_spec_and_repo_roots(custom_specs)
+    assert sr_m == custom_specs.resolve() and rr_m == repo_m.resolve()
+
+    fb_specs = tmp_path / "no_git_root" / "specs"
+    fb_specs.mkdir(parents=True)
+    sr_fb, rr_fb = _resolve_spec_and_repo_roots(fb_specs)
+    assert sr_fb == fb_specs.resolve() and rr_fb == fb_specs.parent.resolve()
 

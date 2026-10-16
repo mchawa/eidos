@@ -333,4 +333,83 @@ def test_cli_error_exit_codes_and_negative_json_contracts(tmp_path):
     empty_ws.mkdir()
     assert runner.invoke(app, ["doctor", "--path", str(empty_ws)]).exit_code == 1
 
+    # 7. validate on missing directory (with and without --json) & non-JSON validation failure output
+    missing_dir = tmp_path / "does_not_exist_eidos"
+    assert runner.invoke(app, ["validate", str(missing_dir)]).exit_code == 1
+    res_missing_json = runner.invoke(app, ["validate", str(missing_dir), "--json"])
+    assert res_missing_json.exit_code == 1
+    assert json.loads(res_missing_json.stdout)["is_clean"] is False
+    # Add broken reference to eidos_dir and run non-JSON validate
+    (eidos_dir / "domains" / "bad.adoc").write_text(
+        "---\n"
+        "type: product/capability\n"
+        "schema: schemas/v1/product/capability.schema.yaml\n"
+        "id: CAP-BROKEN-001\n"
+        "title: Broken Cap\n"
+        "domain: DOM-NONEXISTENT\n"
+        "status: active\n"
+        "---\n"
+        "= Broken Cap\n",
+        encoding="utf-8",
+    )
+    assert runner.invoke(app, ["validate", str(eidos_dir)]).exit_code == 1
+
+    # 8. spec list on empty dir, spec create invalid type, spec delete referenced spec (blocked then --force)
+    empty_eidos = tmp_path / "empty_eidos"
+    empty_eidos.mkdir()
+    res_empty_list = runner.invoke(app, ["spec", "list", "--path", str(empty_eidos)])
+    assert res_empty_list.exit_code == 0
+    assert "No specifications found" in res_empty_list.stdout
+
+    assert (
+        runner.invoke(
+            app, ["spec", "create", "not_a_valid_type", "FOO-1", "-t", "Bad", "--path", str(empty_eidos)]
+        ).exit_code
+        == 1
+    )
+
+    ref_ws = tmp_path / "ref_ws" / "eidos"
+    runner.invoke(app, ["spec", "create", "domain", "DOM-REF", "-t", "Ref Domain", "--path", str(ref_ws)])
+    runner.invoke(
+        app,
+        ["spec", "create", "capability", "CAP-REF-001", "-t", "Ref Cap", "--domain", "DOM-REF", "--path", str(ref_ws)],
+    )
+    # Deleting DOM-REF without --force is blocked because CAP-REF-001 references it
+    res_del_blocked = runner.invoke(app, ["spec", "delete", "DOM-REF", "--path", str(ref_ws)])
+    assert res_del_blocked.exit_code == 1
+    assert "Referencing specifications" in res_del_blocked.stdout
+    # Deleting DOM-REF with --force succeeds with warning
+    res_del_forced = runner.invoke(app, ["spec", "delete", "DOM-REF", "--force", "--path", str(ref_ws)])
+    assert res_del_forced.exit_code == 0
+    assert "Warning:" in res_del_forced.stdout
+
+    # 9. delta create invalid kind, non-JSON delta verify/audit/status/apply branches, and portal missing path
+    assert (
+        runner.invoke(
+            app, ["delta", "create", "DLT-2026-990", "-t", "Bad Kind", "-k", "invalid_kind", "--path", str(ref_ws)]
+        ).exit_code
+        == 1
+    )
+    assert runner.invoke(app, ["delta", "verify", "DLT-404", "--path", str(ref_ws)]).exit_code == 1
+    assert runner.invoke(app, ["delta", "audit", "DLT-404", "--path", str(ref_ws)]).exit_code == 1
+    assert runner.invoke(app, ["delta", "status", "DLT-404", "--path", str(ref_ws)]).exit_code == 1
+    assert runner.invoke(app, ["delta", "status", "DLT-404", "--path", str(ref_ws), "--json"]).exit_code == 1
+    assert runner.invoke(app, ["delta", "status", "DLT-404", "in_review", "--path", str(ref_ws)]).exit_code == 1
+
+    runner.invoke(app, ["delta", "create", "DLT-2026-991", "-t", "No Deletions Delta", "--path", str(ref_ws)])
+    assert runner.invoke(app, ["delta", "status", "DLT-2026-991", "--path", str(ref_ws)]).exit_code == 0
+    res_audit_nodel = runner.invoke(app, ["delta", "audit", "DLT-2026-991", "--path", str(ref_ws)])
+    assert res_audit_nodel.exit_code == 0
+    assert "No deletion or deprecation mutations found" in res_audit_nodel.stdout
+    assert runner.invoke(app, ["delta", "verify", "DLT-2026-991", "--path", str(ref_ws)]).exit_code == 0
+
+    # portal serve & build on missing directory return exit_code 1
+    assert runner.invoke(app, ["portal", "serve", "--path", str(missing_dir)]).exit_code == 1
+    assert runner.invoke(app, ["portal", "build", "--path", str(missing_dir)]).exit_code == 1
+
+    # drift non-JSON error and --warn-only on invalid git ref
+    assert runner.invoke(app, ["drift", "--base", "nonexistent-ref-999"]).exit_code == 1
+    assert runner.invoke(app, ["drift", "--base", "nonexistent-ref-999", "--warn-only"]).exit_code == 0
+
+
 
