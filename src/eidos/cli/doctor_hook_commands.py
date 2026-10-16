@@ -3,6 +3,7 @@
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import typer
@@ -41,9 +42,21 @@ def doctor_cmd(
     """Run health checks on the Eidos CLI installation, Git repository, living specs, index, and agent plugin."""
     start = (path or Path.cwd()).resolve()
     repo_root = find_repo_root(start)
-    eidos_dir = repo_root / "eidos"
+    if path is None:
+        eidos_dir = repo_root / "eidos"
+    elif (
+        (start / "system.adoc").exists()
+        or (start != repo_root and not (start / "eidos").is_dir())
+        or any(start.glob("*.adoc"))
+    ):
+        eidos_dir = start
+    else:
+        eidos_dir = start / "eidos"
 
-    eidos_bin = shutil.which("eidos")
+    path_bin = shutil.which("eidos")
+    venv_bin = Path(sys.executable).resolve().parent / ("eidos.exe" if sys.platform == "win32" else "eidos")
+    eidos_bin = path_bin or (str(venv_bin) if venv_bin.is_file() else sys.executable)
+    cli_on_path = bool(path_bin)
     cli_ok = bool(eidos_bin)
 
     git_ok = False
@@ -59,7 +72,7 @@ def doctor_cmd(
     except OSError:
         git_ok = False
 
-    specs_exist = eidos_dir.exists() and (eidos_dir / "system.adoc").exists()
+    specs_exist = eidos_dir.exists() and ((eidos_dir / "system.adoc").exists() or any(eidos_dir.rglob("*.adoc")))
     specs_valid = False
     total_specs = 0
     valid_specs = 0
@@ -88,6 +101,7 @@ def doctor_cmd(
     checks = {
         "cli_binary": {
             "ok": cli_ok,
+            "on_path": cli_on_path,
             "eidos_bin": eidos_bin,
             "version": eidos.__version__,
         },
@@ -131,8 +145,10 @@ def doctor_cmd(
 
     table.add_row(
         "CLI Binary on PATH",
-        "[bold green]PASS[/bold green]" if cli_ok else "[bold yellow]WARN[/bold yellow]",
-        f"{eidos_bin or 'Not on PATH (install via: uv tool install eidos-ai)'} (v{eidos.__version__})",
+        "[bold green]PASS[/bold green]" if cli_on_path else "[bold yellow]WARN[/bold yellow]",
+        f"{eidos_bin} (v{eidos.__version__})"
+        if cli_on_path
+        else f"Active via virtualenv/interpreter ({eidos_bin}); not on global PATH (v{eidos.__version__})",
     )
     table.add_row(
         "Git Repository",

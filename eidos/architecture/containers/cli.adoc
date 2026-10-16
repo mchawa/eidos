@@ -55,7 +55,7 @@ components:
     source_path: "src/eidos/cli/portal_commands.py"
   - id: CMP-CLI-DOCTOR-HOOKS
     name: "DoctorAndHookCommands"
-    responsibility: "Installation health diagnostics (`eidos doctor`) and CLI-native agent lifecycle hook dispatchers (`eidos hook lint`, `eidos hook drift`)."
+    responsibility: "Installation health diagnostics (`eidos doctor --path`) with custom specification directory resolution and virtualenv-aware CLI binary checks, plus CLI-native agent lifecycle hook dispatchers (`eidos hook lint`, `eidos hook drift`)."
     source_path: "src/eidos/cli/doctor_hook_commands.py"
 
 dependencies:

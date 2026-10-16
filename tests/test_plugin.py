@@ -1106,8 +1106,8 @@ def test_stop_gate_block_once_and_allow_second_attempt(tmp_path):
     assert res3["decision"] == "continue"
 
 
-def test_cli_doctor_command():
-    """Verify 'eidos doctor' and 'eidos doctor --json' CLI health check (DLT-2026-024)."""
+def test_cli_doctor_command(tmp_path, monkeypatch):
+    """Verify 'eidos doctor' and 'eidos doctor --json' CLI health check, custom --path, and virtualenv fallback (DLT-2026-024, DLT-2026-070)."""
     res = runner.invoke(app, ["doctor"])
     assert res.exit_code == 0
     assert "Eidos Environment & Workspace Doctor" in res.stdout
@@ -1120,6 +1120,49 @@ def test_cli_doctor_command():
     assert "cli_binary" in data["checks"]
     assert "knowledge_graph_index" in data["checks"]
     assert data["checks"]["living_specs"]["exists"] is True
+
+    # Virtualenv execution when 'eidos' is not on global PATH still succeeds (healthy=True, on_path=False)
+    monkeypatch.setattr("eidos.cli.doctor_hook_commands.shutil.which", lambda _cmd: None)
+    res_venv = runner.invoke(app, ["doctor", "--json"])
+    assert res_venv.exit_code == 0
+    venv_data = json.loads(res_venv.stdout)
+    assert venv_data["healthy"] is True
+    assert venv_data["checks"]["cli_binary"]["ok"] is True
+    assert venv_data["checks"]["cli_binary"]["on_path"] is False
+
+    # Custom --path specification directory resolution inside a git repository
+    import subprocess
+
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    custom_specs = tmp_path / "custom_specs"
+    custom_specs.mkdir(parents=True)
+    (custom_specs / "system.adoc").write_text(
+        """---
+type: product/system
+schema: schemas/v1/product/system.schema.yaml
+id: SYS-CUSTOM-001
+title: Custom System
+archetypes:
+  - cli_tool
+business_identity:
+  vision: Vision
+  target_users:
+    - Developers
+  value_proposition: Value
+technical_profile:
+  primary_languages:
+    - Python
+---
+= Custom System
+""",
+        encoding="utf-8",
+    )
+    res_custom = runner.invoke(app, ["doctor", "--path", str(custom_specs), "--json"])
+    assert res_custom.exit_code == 0
+    custom_data = json.loads(res_custom.stdout)
+    assert custom_data["healthy"] is True
+    assert Path(custom_data["checks"]["living_specs"]["eidos_dir"]).resolve() == custom_specs.resolve()
+    assert custom_data["checks"]["living_specs"]["valid_docs"] == 1
 
 
 def test_doc_lint_hook_cross_harness_payloads(tmp_path):
