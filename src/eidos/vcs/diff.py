@@ -192,6 +192,11 @@ def _resolve_base_and_merge_base(
 
     candidate = resolve_base_fn(repo, None)
     if not candidate:
+        if (repo / ".git" / "shallow").exists():
+            raise GitResolutionError(
+                "Cannot resolve base Git reference in a shallow clone (.git/shallow detected). "
+                "Fetch full history (fetch-depth: 0) or pass --uncommitted."
+            )
         return None, None, True
 
     mb = resolve_mb_fn(repo, candidate, head_ref, fail_loudly=False)
@@ -235,6 +240,11 @@ def _resolve_base_and_merge_base(
             if rem_mb:
                 return rem_cand, rem_mb, False
 
+    if (repo / ".git" / "shallow").exists():
+        raise GitResolutionError(
+            "Cannot resolve merge base in a shallow clone (.git/shallow detected). "
+            "Fetch full history (fetch-depth: 0) or pass --uncommitted."
+        )
     return None, None, True
 
 

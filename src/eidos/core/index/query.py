@@ -272,10 +272,11 @@ def execute_k_hop_traversal(
             WHERE gw.depth < ?
               AND ('->' || gw.path || '->') NOT LIKE '%->' || CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END || '->%'
         )
-        SELECT DISTINCT gw.node_id, gw.depth, ent.type, ent.title, ent.domain, ent.file_path, ent.data_json
+        SELECT gw.node_id, MIN(gw.depth) AS depth, ent.type, ent.title, ent.domain, ent.file_path, ent.data_json
         FROM graph_walk gw
         JOIN entities ent ON ent.id = gw.node_id
-        ORDER BY gw.depth ASC;
+        GROUP BY gw.node_id
+        ORDER BY depth ASC, gw.node_id ASC;
         """,
         (entity_id, entity_id, max_depth),
     )
@@ -303,8 +304,8 @@ def execute_incoming_references(
     """Find all incoming graph edges pointing to an entity ID or file path."""
     target = target_id_or_path
     row = conn.execute(
-        "SELECT doc_id FROM indexed_files WHERE rel_path = ? OR 'eidos/' || rel_path = ?;",
-        (target, target),
+        "SELECT doc_id FROM indexed_files WHERE rel_path = ? OR 'eidos/' || rel_path = ? OR rel_path = 'eidos/' || ?;",
+        (target, target, target),
     ).fetchone()
     if row:
         target = row["doc_id"]
@@ -338,18 +339,21 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
     while clean.startswith("./"):
         clean = clean[2:]
 
+    esc_sym = "replace(replace(replace(s.symbol, '\\', '\\\\'), '%', '\\%'), '_', '\\_')"
     cursor.execute(
-        """
+        f"""
         SELECT s.symbol, s.entity_id, s.kind, e.type, e.title, e.file_path, e.data_json
         FROM symbol_mappings s
         JOIN entities e ON e.id = s.entity_id
         WHERE s.symbol = ?
-           OR (? LIKE s.symbol || '/%' AND s.kind IN ('package_path', 'inferred_path'))
-           OR (? LIKE '%' || s.symbol AND s.kind IN ('source_path', 'inferred_path', 'specification_file', 'component_ref', 'interface_method', 'class', 'function', 'method', 'interface', 'struct', 'enum'))
-           OR (? LIKE s.symbol || '%' AND s.kind = 'test_binding')
+           OR (? LIKE {esc_sym} || '/%' ESCAPE '\\' AND s.kind IN ('package_path', 'inferred_path'))
+           OR ((? LIKE '%/' || {esc_sym} ESCAPE '\\' OR ? LIKE '%.' || {esc_sym} ESCAPE '\\' OR ? LIKE '%::' || {esc_sym} ESCAPE '\\')
+               AND s.kind IN ('source_path', 'inferred_path', 'specification_file', 'component_ref', 'interface_method', 'class', 'function', 'method', 'interface', 'struct', 'enum'))
+           OR (? LIKE {esc_sym} || '%' ESCAPE '\\' AND s.kind = 'test_binding')
+        ORDER BY CASE WHEN s.symbol = ? THEN 0 ELSE 1 END, length(s.symbol) DESC, s.entity_id ASC
         LIMIT 25;
         """,
-        (clean, clean, clean, clean),
+        (clean, clean, clean, clean, clean, clean, clean),
     )
 
     results = []
@@ -446,6 +450,10 @@ def resolve_symbol_locations_in_db(
     ]
 
 
+def _escape_like(val: str) -> str:
+    return val.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def find_symbol_in_db(
     conn: sqlite3.Connection,
     query: str,
@@ -455,6 +463,8 @@ def find_symbol_in_db(
     cursor = conn.cursor()
     q_norm = query.strip()
     q_alt = q_norm.replace("-", "_") if "-" in q_norm else q_norm.replace("_", "-")
+    q_norm_like = f"%{_escape_like(q_norm)}%"
+    q_alt_like = f"%{_escape_like(q_alt)}%"
     cursor.execute(
         """
         SELECT s.symbol, s.entity_id, s.kind, e.title, e.type, e.file_path
@@ -462,12 +472,12 @@ def find_symbol_in_db(
         JOIN entities e ON e.id = s.entity_id
         WHERE s.symbol = ?
            OR s.symbol = ?
-           OR s.symbol LIKE ?
-           OR s.symbol LIKE ?
+           OR s.symbol LIKE ? ESCAPE '\\'
+           OR s.symbol LIKE ? ESCAPE '\\'
         ORDER BY CASE WHEN s.symbol IN (?, ?) THEN 0 ELSE 1 END, s.symbol ASC
         LIMIT ?;
         """,
-        (q_norm, q_alt, f"%{q_norm}%", f"%{q_alt}%", q_norm, q_alt, limit),
+        (q_norm, q_alt, q_norm_like, q_alt_like, q_norm, q_alt, limit),
     )
     results: list[dict[str, Any]] = []
     for r in cursor.fetchall():

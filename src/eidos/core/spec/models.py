@@ -13,12 +13,17 @@ class _DictCompatibleModel(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     def __getitem__(self, key: str) -> Any:
-        if hasattr(self, key):
-            val = getattr(self, key)
-            if val is not None or key in self.__class__.model_fields:
-                return val
+        if key in self.__class__.model_fields:
+            return getattr(self, key)
+        for field_name, field_info in self.__class__.model_fields.items():
+            if field_info.alias == key:
+                return getattr(self, field_name)
         if self.__pydantic_extra__ and key in self.__pydantic_extra__:
             return self.__pydantic_extra__[key]
+        if hasattr(self, key):
+            val = getattr(self, key)
+            if not callable(val) and val is not None:
+                return val
         raise KeyError(key)
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -32,6 +37,9 @@ class _DictCompatibleModel(BaseModel):
             return False
         if key in self.__class__.model_fields and getattr(self, key, None) is not None:
             return True
+        for field_name, field_info in self.__class__.model_fields.items():
+            if field_info.alias == key and getattr(self, field_name, None) is not None:
+                return True
         return bool(self.__pydantic_extra__ and key in self.__pydantic_extra__)
 
 
@@ -67,6 +75,8 @@ class InlineComponentModel(_DictCompatibleModel):
     id: str
     name: str | None = None
     ref: str | None = None
+    status: str | None = None
+    domain_binding: str | None = None
     responsibility: str | None = None
     source_path: list[str] | str | None = None
     decisions: list[DecisionModel] = Field(default_factory=list)
@@ -186,8 +196,18 @@ class SpecDocument:
     def as_model(self) -> FrontmatterModel:
         """Return the frontmatter parsed into a typed Pydantic FrontmatterModel."""
         if self._model is None:
-            self._model = FrontmatterModel.model_validate(self.frontmatter or {})
+            raw = dict(self.frontmatter or {})
+            for scalar_key in ("id", "type", "title", "name", "status", "version", "schema"):
+                val = raw.get(scalar_key)
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    raw[scalar_key] = str(val)
+            self._model = FrontmatterModel.model_validate(raw)
         return self._model
+
+    @property
+    def model(self) -> FrontmatterModel:
+        """Convenience property returning the typed Pydantic FrontmatterModel."""
+        return self.as_model()
 
 
 @dataclass

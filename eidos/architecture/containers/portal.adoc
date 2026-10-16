@@ -15,11 +15,11 @@ tier: presentation
 components:
   - id: CMP-PORTAL-SERVER
     name: "PortalServer"
-    responsibility: "Hosts lightweight local multi-threaded HTTP server exposing web UI and JSON endpoints with eidos_dir file mtime snapshot response caching on EidosPortalHandler."
+    responsibility: "Hosts lightweight local multi-threaded HTTP server exposing web UI and JSON endpoints with thread-safe (_cache_lock) eidos_dir file mtime snapshot response caching on EidosPortalHandler."
     source_path: "src/eidos/portal/server.py"
   - id: CMP-PORTAL-GENERATOR
     name: "PortalGenerator"
-    responsibility: "Synthesizes living specifications (including arch/system, nested policy invariants, product DEC-* decisions, and tokens.manifest / inheritance.extends design systems) into unified portal data model with project-agnostic C4 Level 1 external_systems context diagrams, hierarchical C4 Level 2 container topologies, normalized inter-container dependency connections, and auto-generated Mermaid diagrams."
+    responsibility: "Synthesizes living specifications (including arch/system, nested policy invariants, product DEC-* decisions with both source_entity and source_id, and tokens.manifest / inheritance.extends design systems) into unified portal data model with project-agnostic C4 Level 1 external_systems context diagrams, hierarchical C4 Level 2 container topologies, normalized inter-container dependency connections, and auto-generated Mermaid diagrams."
     source_path: "src/eidos/portal/generator.py"
   - id: CMP-PORTAL-BUILDER
     name: "StaticSiteBuilder"

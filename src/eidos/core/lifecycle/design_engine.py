@@ -30,7 +30,7 @@ def build_design_spec(
     body: str
 
     if canonical_key == "design-system":
-        clean_sys = slug.replace("ds-", "")
+        clean_sys = slug.removeprefix("ds-")
         dest_dir = eidos_dir / "design" / "systems" / clean_sys
         dest_file = dest_dir / "system.adoc"
 
@@ -75,8 +75,8 @@ Tokens are defined in W3C DTCG format at `tokens.json`.
 """
 
     elif canonical_key == "ui-component":
-        clean_comp = slug.replace("uic-", "")
-        sys_slug = (design_system or "ds-core").lower().replace("ds-", "")
+        clean_comp = slug.removeprefix("uic-")
+        sys_slug = (design_system or "ds-core").lower().removeprefix("ds-")
         dest_dir = eidos_dir / "design" / "systems" / sys_slug / "components"
         dest_file = dest_dir / f"{clean_comp}.adoc"
         fm = {
@@ -113,9 +113,9 @@ Describes variants, interactive states, accessibility contracts, and visual test
 """
 
     elif canonical_key == "screen":
-        clean_screen = slug.replace("scr-", "")
+        clean_screen = slug.removeprefix("scr-")
         if client_id:
-            client_slug = client_id.lower().replace("clt-", "", 1)
+            client_slug = client_id.lower().removeprefix("clt-")
             dest_dir = eidos_dir / "design" / "clients" / client_slug / "screens"
         else:
             dest_dir = eidos_dir / "design" / "screens"
@@ -150,7 +150,7 @@ This specification defines the route, layout slots, and state transitions for {h
 """
 
     elif canonical_key == "client":
-        client_slug = slug.replace("clt-", "", 1)
+        client_slug = slug.removeprefix("clt-")
         dest_dir = eidos_dir / "design" / "clients" / client_slug
         dest_file = dest_dir / "client.adoc"
         fm = {
@@ -173,9 +173,9 @@ Describe the runtime platform, bound design system, and implementing container o
 """
 
     elif canonical_key == "flow":
-        flow_slug = slug.replace("flow-", "", 1)
+        flow_slug = slug.removeprefix("flow-")
         if client_id:
-            client_slug = client_id.lower().replace("clt-", "", 1)
+            client_slug = client_id.lower().removeprefix("clt-")
             dest_dir = eidos_dir / "design" / "clients" / client_slug / "flows"
         else:
             dest_dir = eidos_dir / "design" / "flows"

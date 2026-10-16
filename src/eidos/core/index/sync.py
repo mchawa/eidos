@@ -438,7 +438,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
         cached = db_files.get(rel_key)
         if not cached:
             to_update.append(Path(full_str))
-        elif abs(st_mtime - cached[0]) > 0.001:
+        elif abs(st_mtime - cached[0]) > 1e-7:
             try:
                 with open(full_str, "rb") as f:
                     digest = hashlib.sha256(f.read()).hexdigest()
@@ -558,31 +558,55 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
     clean_ids = sorted(d for d in (updated_doc_ids or ()) if d)
     if updated_doc_ids is not None and clean_ids:
         ph = ",".join("?" for _ in clean_ids)
-        neighbor_rows = conn.execute(
-            f"""
-            SELECT DISTINCT id FROM entities
-            WHERE type != 'invariant' AND (
-                id IN ({ph})
-                OR id IN (SELECT source_id FROM edges WHERE target_id IN ({ph}))
-                OR id IN (SELECT target_id FROM edges WHERE source_id IN ({ph}))
-                OR id IN (SELECT source_id FROM edges WHERE target_id NOT IN (SELECT id FROM entities))
-            );
-            """,
-            (*clean_ids, *clean_ids, *clean_ids),
-        ).fetchall()
-        scope_ids = sorted({r[0] for r in neighbor_rows} | set(clean_ids))
         child_rows = conn.execute(
             f"""
             SELECT target_id FROM edges
-            WHERE source_id IN ({ph}) AND rel_type IN ('asserts', 'contains_component')
+            WHERE source_id IN ({ph}) AND rel_type IN ('asserts', 'contains_component', 'implemented_by', 'styled_by')
+            UNION
+            SELECT source_id FROM edges
+            WHERE target_id IN ({ph}) AND rel_type IN ('implements_client', 'styles_client')
             UNION
             SELECT id FROM entities
             WHERE type = 'invariant' AND file_path IN (SELECT file_path FROM entities WHERE id IN ({ph}));
             """,
-            (*clean_ids, *clean_ids),
+            (*clean_ids, *clean_ids, *clean_ids),
         ).fetchall()
         evict_ids = sorted(set(clean_ids) | {r[0] for r in child_rows if r[0]})
         evict_ph = ",".join("?" for _ in evict_ids)
+
+        neighbor_rows = conn.execute(
+            f"""
+            SELECT DISTINCT id FROM entities
+            WHERE type != 'invariant' AND (
+                id IN ({evict_ph})
+                OR id IN (SELECT source_id FROM edges WHERE target_id IN ({evict_ph}))
+                OR id IN (SELECT target_id FROM edges WHERE source_id IN ({evict_ph}))
+                OR id IN (SELECT source_id FROM edges WHERE target_id NOT IN (SELECT id FROM entities))
+            );
+            """,
+            (*evict_ids, *evict_ids, *evict_ids),
+        ).fetchall()
+        scope_set = {r[0] for r in neighbor_rows} | set(clean_ids) | (set(evict_ids) & {
+            r[0] for r in conn.execute("SELECT id FROM entities WHERE type != 'invariant';").fetchall()
+        })
+
+        # Also include any existing entity whose frontmatter JSON mentions one of clean_ids (or its file stem),
+        # so previously dangling references to a newly created target spec are linked on incremental sync.
+        like_clauses = " OR ".join("instr(data_json, ?) > 0" for _ in clean_ids)
+        if like_clauses:
+            ref_rows = conn.execute(
+                f"SELECT id FROM entities WHERE type != 'invariant' AND ({like_clauses});",
+                tuple(clean_ids),
+            ).fetchall()
+            scope_set.update(r[0] for r in ref_rows if r[0])
+
+        # If any design/client or design/system is in scope, include all design/client entities so indirect
+        # (CNT, DS, 'styled_by') / (DS, CNT, 'styles_container') edges stay consistent.
+        clt_rows = conn.execute("SELECT id FROM entities WHERE type = 'design/client';").fetchall()
+        if clt_rows:
+            scope_set.update(r[0] for r in clt_rows if r[0])
+
+        scope_ids = sorted(scope_set)
         conn.execute(
             f"""
             DELETE FROM edges
@@ -813,6 +837,7 @@ def prune_stale_test_binding_edges(conn: sqlite3.Connection) -> None:
         DELETE FROM edges
         WHERE rel_type = 'asserts'
           AND source_id NOT IN (SELECT id FROM entities)
+          AND source_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id')
           AND (
             target_id NOT IN (SELECT id FROM entities)
             OR instr(source_id, '::') = 0
@@ -827,6 +852,7 @@ def prune_stale_test_binding_edges(conn: sqlite3.Connection) -> None:
         DELETE FROM edges
         WHERE rel_type = 'bound_to'
           AND target_id NOT IN (SELECT id FROM entities)
+          AND target_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id')
           AND (
             source_id NOT IN (SELECT id FROM entities)
             OR instr(target_id, '::') = 0
@@ -905,6 +931,15 @@ def _reconcile_invariant_coverage(
                     if candidate_bodies:
                         pat = re.compile(rf"\b{re.escape(iid)}\b")
                         tb_verified = any(pat.search(body) for body in candidate_bodies)
+                    if tb_verified:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);",
+                            (target_ref, iid),
+                        )
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);",
+                            (iid, target_ref),
+                        )
                 matching = list(dict.fromkeys([target_ref, *ast_matches])) if tb_verified else []
                 has_coverage = tb_verified
             else:
@@ -970,10 +1005,12 @@ def sync_index(
 
     with conn:
         specs_deleted = False
+        code_deleted = False
         for d in deleted:
             d_rel = str(d).replace("\\", "/")
             row = conn.execute("SELECT doc_id, doc_type FROM indexed_files WHERE rel_path = ?", (d_rel,)).fetchone()
             if row and row["doc_type"] in ("code/source", "code/test"):
+                code_deleted = True
                 index._store_code_symbols(conn, d_rel, [], [])
                 conn.execute("DELETE FROM symbol_mappings WHERE symbol = ?;", (d_rel,))
                 conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
@@ -1446,12 +1483,12 @@ def sync_index(
         if force or spec_updates or specs_deleted:
             index._reconcile_code_ownership(conn, ast_idx, resolver, processed_code)
 
-        if force or spec_updates or specs_deleted or processed_code:
+        if force or spec_updates or specs_deleted or processed_code or code_deleted:
             _project_ast_code_symbols_into_fts(conn)
 
         candidate_test_files: dict[str, Path] = {}
-        for std_test_dir in ("tests", "test"):
-            tests_dir = index.root / std_test_dir
+        for std_test_dir in ("tests", "test", *sorted(resolver.package_dirs())):
+            tests_dir = (index.root / std_test_dir).resolve()
             if tests_dir.is_dir():
                 for dirpath, dirnames, filenames in os.walk(str(tests_dir)):
                     dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_CODE_DIRS and not d.startswith(".")]
@@ -1485,7 +1522,7 @@ def sync_index(
                 (rel_t,),
             ).fetchone()
             stat = tp.stat()
-            if not cached_entry or abs(stat.st_mtime - cached_entry["mtime"]) > 0.001 or force:
+            if not cached_entry or abs(stat.st_mtime - cached_entry["mtime"]) > 1e-7 or force or spec_updates:
                 t_sha = hashlib.sha256(tp.read_bytes()).hexdigest()
                 conn.execute(
                     """
@@ -1551,8 +1588,9 @@ def sync_index(
 
 
 def _project_ast_code_symbols_into_fts(conn: sqlite3.Connection) -> None:
-    """Project primary AST code_symbols (class, function, interface, struct, enum) into specs_fts.symbols."""
+    """Deterministically project primary AST code_symbols (class, function, interface, struct, enum) into specs_fts.symbols."""
     from eidos.core.index.query import compound_identifier_subtokens
+
     by_entity: dict[str, list[str]] = {}
     for row in conn.execute(
         """
@@ -1563,20 +1601,54 @@ def _project_ast_code_symbols_into_fts(conn: sqlite3.Connection) -> None:
     ).fetchall():
         by_entity.setdefault(row[0], []).append(row[1])
 
-    if not by_entity:
-        return
+    spec_rows = conn.execute(
+        """
+        SELECT f.rowid, f.entity_id, f.title, f.jtbd_or_rule, f.body_text, f.symbols, e.type, e.data_json
+        FROM specs_fts f
+        JOIN entities e ON e.id = f.entity_id
+        WHERE e.type != 'invariant';
+        """
+    ).fetchall()
 
-    for entity_id, ast_syms in by_entity.items():
-        fts_row = conn.execute(
-            "SELECT rowid, symbols FROM specs_fts WHERE entity_id = ?;",
-            (entity_id,),
-        ).fetchone()
-        if fts_row is None:
-            continue
-        rowid, cur_symbols = fts_row[0], str(fts_row[1] or "")
-        existing_tokens = set(cur_symbols.split())
+    for srow in spec_rows:
+        rowid = srow[0]
+        entity_id = srow[1]
+        title = str(srow[2] or "")
+        jtbd_or_rule = str(srow[3] or "")
+        body_clean = str(srow[4] or "")
+        cur_symbols = str(srow[5] or "")
+        doc_type = str(srow[6] or "")
+        try:
+            fm = json.loads(srow[7] or "{}")
+        except (TypeError, ValueError):
+            fm = {}
+        if not isinstance(fm, dict):
+            fm = {}
+
+        symbol_parts: list[str] = [
+            str(m.get("name", ""))
+            for m in (fm.get("components", []) or fm.get("c4_internal_components", []))
+            if isinstance(m, dict) and m.get("name")
+        ]
+        symbol_parts.extend(
+            str(m.get("id", ""))
+            for m in (fm.get("components", []) or fm.get("c4_internal_components", []))
+            if isinstance(m, dict) and m.get("id")
+        )
+        if doc_type == "tech/component" and isinstance(fm.get("interfaces"), dict):
+            for sig in (fm["interfaces"].get("provides") or []) + (fm["interfaces"].get("consumes") or []):
+                if isinstance(sig, str) and sig.strip():
+                    symbol_parts.append(sig.split("(")[0].strip())
+        base_symbols = " ".join(symbol_parts)
+        decompounded = compound_identifier_subtokens(
+            f"{title} {jtbd_or_rule} {body_clean} {base_symbols}"
+        )
+        if decompounded:
+            base_symbols = f"{base_symbols} {decompounded}".strip()
+
+        existing_tokens = set(base_symbols.split())
         new_parts: list[str] = []
-        for sym in ast_syms:
+        for sym in by_entity.get(entity_id, ()):
             if sym and sym not in existing_tokens:
                 new_parts.append(sym)
                 existing_tokens.add(sym)
@@ -1586,6 +1658,7 @@ def _project_ast_code_symbols_into_fts(conn: sqlite3.Connection) -> None:
                     if st not in existing_tokens:
                         new_parts.append(st)
                         existing_tokens.add(st)
-        if new_parts:
-            updated_symbols = f"{cur_symbols} {' '.join(new_parts)}".strip()
-            conn.execute("UPDATE specs_fts SET symbols = ? WHERE rowid = ?;", (updated_symbols, rowid))
+
+        recomputed = f"{base_symbols} {' '.join(new_parts)}".strip()
+        if recomputed != cur_symbols:
+            conn.execute("UPDATE specs_fts SET symbols = ? WHERE rowid = ?;", (recomputed, rowid))

@@ -34,6 +34,7 @@ ENTITY_ID_PREFIXES = (
     "SYS-",
     "ARCH-",
     "DEC-",
+    "INV-",
 )
 
 
@@ -270,20 +271,23 @@ class SpecValidator:
 
     def resolve_schema(self, doc: SpecDocument) -> dict | None:
         """Resolve the JSON schema for a document based on its type or explicit schema attribute."""
+        schema_ref_str = doc.schema_ref if isinstance(doc.schema_ref, str) else None
+        doc_type_str = doc.doc_type if isinstance(doc.doc_type, str) else None
+
         # 1. Check explicit relative schema reference (containing a directory component)
-        if doc.schema_ref:
-            norm_ref = doc.schema_ref.replace(".spec/", "").strip().replace("\\", "/")
+        if schema_ref_str:
+            norm_ref = schema_ref_str.replace(".spec/", "").strip().replace("\\", "/")
             if "/" in norm_ref and norm_ref in self._schema_cache:
                 return self._schema_cache[norm_ref]
 
         # 2. Check document type mapping (disambiguates colliding basenames like system.schema.yaml)
-        if doc.doc_type in TYPE_TO_SCHEMA_NAME:
-            schema_name = TYPE_TO_SCHEMA_NAME[doc.doc_type]
+        if doc_type_str and doc_type_str in TYPE_TO_SCHEMA_NAME:
+            schema_name = TYPE_TO_SCHEMA_NAME[doc_type_str]
             return self._schema_cache.get(schema_name)
 
         # 3. Fallback to basename lookup for custom/unmapped types
-        if doc.schema_ref:
-            basename = Path(doc.schema_ref.replace(".spec/", "").strip()).name
+        if schema_ref_str:
+            basename = Path(schema_ref_str.replace(".spec/", "").strip()).name
             if basename in self._schema_cache:
                 return self._schema_cache[basename]
 
@@ -476,11 +480,13 @@ class SpecValidator:
 
         for doc in list(report.documents):
             if doc.doc_type == "tech/container" and doc.frontmatter:
-                doc.frontmatter.get("package_path")
+                comps_raw = doc.frontmatter.get("components")
+                if not isinstance(comps_raw, list):
+                    continue
                 # 1. Check explicit component refs in components array
-                for comp in doc.frontmatter.get("components", []):
-                    if isinstance(comp, dict) and comp.get("ref"):
-                        ref_str = comp["ref"]
+                for comp in comps_raw:
+                    if isinstance(comp, dict) and isinstance(comp.get("ref"), str) and comp["ref"].strip():
+                        ref_str = comp["ref"].strip()
                         ref_file = (repo_root / ref_str).resolve()
                         if not ref_file.exists():
                             ref_file = (spec_root / ref_str).resolve()
@@ -545,7 +551,7 @@ class SpecValidator:
         # 1. Index all document IDs across the specification catalog and detect duplicate IDs
         report.entity_index = {}
         for doc in report.documents:
-            if doc.doc_id:
+            if isinstance(doc.doc_id, str) and doc.doc_id:
                 if doc.doc_id in report.entity_index:
                     prev_doc = report.entity_index[doc.doc_id]
                     report.broken_references.append(
@@ -556,17 +562,54 @@ class SpecValidator:
 
         catalog_ids = set(report.entity_index.keys())
         entity_types: dict[str, str] = {
-            doc_id: doc.doc_type for doc_id, doc in report.entity_index.items() if doc.doc_type
+            doc_id: doc.doc_type
+            for doc_id, doc in report.entity_index.items()
+            if isinstance(doc.doc_type, str) and doc.doc_type
         }
+
+        # When validating a subdirectory of an existing spec_root (e.g. eidos/domains), seed
+        # catalog_ids and entity_types from sibling specs in spec_root so cross-directory
+        # references (such as SYS-* or CNT-*) do not falsely fail.
+        spec_root, _ = _resolve_spec_and_repo_roots(root_dir)
+        resolved_root = root_dir.resolve()
+        if (
+            spec_root != resolved_root
+            and resolved_root.is_relative_to(spec_root)
+            and ((spec_root / "system.adoc").is_file() or (spec_root / "architecture").is_dir())
+        ):
+            scanned_paths = {d.file_path.resolve() for d in report.documents}
+            for ext_fp in sorted(spec_root.rglob("*.adoc")):
+                if (
+                    ext_fp.name.lower() == "readme.adoc"
+                    or ext_fp.name.startswith("_")
+                    or ext_fp.is_symlink()
+                    or "by-status" in ext_fp.parts
+                    or ext_fp.resolve() in scanned_paths
+                ):
+                    continue
+                with contextlib.suppress(OSError):
+                    ext_doc = parse_spec_file(ext_fp)
+                    if isinstance(ext_doc.doc_id, str) and ext_doc.doc_id:
+                        catalog_ids.add(ext_doc.doc_id)
+                        if isinstance(ext_doc.doc_type, str) and ext_doc.doc_type:
+                            entity_types.setdefault(ext_doc.doc_id, ext_doc.doc_type)
+                    if ext_doc.doc_type == "tech/container" and isinstance(ext_doc.frontmatter, dict):
+                        for comp in ext_doc.frontmatter.get("components") or []:
+                            if isinstance(comp, dict) and comp.get("id"):
+                                cid = str(comp["id"]).strip()
+                                catalog_ids.add(cid)
+                                entity_types.setdefault(cid, "tech/component")
 
         # Also register inline component IDs declared directly within containers in catalog_ids
         for doc in report.documents:
             if doc.doc_type == "tech/container" and doc.frontmatter:
-                for comp in doc.frontmatter.get("components", []):
-                    if isinstance(comp, dict) and comp.get("id"):
-                        cid = str(comp["id"]).strip()
-                        catalog_ids.add(cid)
-                        entity_types.setdefault(cid, "tech/component")
+                comps_raw = doc.frontmatter.get("components")
+                if isinstance(comps_raw, list):
+                    for comp in comps_raw:
+                        if isinstance(comp, dict) and comp.get("id"):
+                            cid = str(comp["id"]).strip()
+                            catalog_ids.add(cid)
+                            entity_types.setdefault(cid, "tech/component")
 
         # Register embedded architectural decision IDs (DEC-*) and enforce global uniqueness across the catalog
         decision_owners: dict[str, SpecDocument] = {}
@@ -577,7 +620,8 @@ class SpecValidator:
             if isinstance(doc.frontmatter.get("decisions"), list):
                 doc_decisions.extend(d for d in doc.frontmatter["decisions"] if isinstance(d, dict))
             if doc.doc_type == "tech/container":
-                for comp in doc.frontmatter.get("components", []) or []:
+                comps_raw = doc.frontmatter.get("components")
+                for comp in comps_raw if isinstance(comps_raw, list) else []:
                     if isinstance(comp, dict) and isinstance(comp.get("decisions"), list):
                         doc_decisions.extend(d for d in comp["decisions"] if isinstance(d, dict))
             for dec in doc_decisions:
@@ -885,6 +929,7 @@ class SpecValidator:
                             for item in ast.walk(node):
                                 if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == leaf_sym:
                                     return True
+                    return False
                 for node in ast.walk(tree):
                     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == leaf_sym:
                         return True
@@ -907,7 +952,8 @@ class SpecValidator:
                     candidate_paths.append(pkg.strip())
                 elif isinstance(pkg, list):
                     candidate_paths.extend(str(x).strip() for x in pkg if isinstance(x, str) and str(x).strip())
-                for comp in fm.get("components") or ():
+                comps_raw = fm.get("components")
+                for comp in comps_raw if isinstance(comps_raw, list) else ():
                     if isinstance(comp, dict) and "ref" not in comp:
                         sp = comp.get("source_path")
                         if isinstance(sp, str) and sp.strip():
@@ -944,7 +990,16 @@ class SpecValidator:
         if not has_source_tree and not has_test_tree:
             return
 
-        inactive_statuses = {"planned", "proposed", "draft", "deprecated", "sunset", "rejected"}
+        inactive_statuses = {
+            "planned",
+            "proposed",
+            "draft",
+            "deprecated",
+            "retired",
+            "discarded",
+            "sunset",
+            "rejected",
+        }
         for doc in report.documents:
             fm = doc.frontmatter or {}
             status = str(fm.get("status", "active")).strip().lower()
@@ -966,7 +1021,8 @@ class SpecValidator:
                                 f"Broken package_path in {doc.file_path.name}: "
                                 f"Container '{doc.doc_id}' references '{raw_p}' which does not exist on disk"
                             )
-                    for comp in fm.get("components") or ():
+                    comps_raw = fm.get("components")
+                    for comp in comps_raw if isinstance(comps_raw, list) else ():
                         if not isinstance(comp, dict) or "ref" in comp:
                             continue
                         comp_status = str(comp.get("status", "active")).strip().lower()
@@ -1025,6 +1081,12 @@ class SpecValidator:
                             ):
                                 continue
                             parts = [p.strip() for p in tb_val.split("::") if p.strip()]
+                            if not parts:
+                                report.broken_references.append(
+                                    f"Broken test_bindings.{tb_key} in {doc.file_path.name}: "
+                                    f"UI Component '{doc.doc_id}' has invalid test binding '{tb_val}'"
+                                )
+                                continue
                             file_part = parts[0]
                             sym_parts = parts[1:]
                             resolved_tf = self._resolve_source_path(repo_root, root_dir, file_part)
@@ -1046,7 +1108,8 @@ class SpecValidator:
                 tech_block = fm.get("technical")
                 if isinstance(tech_block, dict) and isinstance(tech_block.get("invariants"), list):
                     inv_entries.extend(i for i in tech_block["invariants"] if isinstance(i, dict))
-                for comp in fm.get("components") or ():
+                comps_raw = fm.get("components")
+                for comp in comps_raw if isinstance(comps_raw, list) else ():
                     if isinstance(comp, dict) and isinstance(comp.get("invariants"), list):
                         inv_entries.extend(i for i in comp["invariants"] if isinstance(i, dict))
 
@@ -1060,6 +1123,12 @@ class SpecValidator:
                     ):
                         continue
                     parts = [p.strip() for p in raw_tb.split("::") if p.strip()]
+                    if not parts:
+                        report.broken_references.append(
+                            f"Broken test_binding in {doc.file_path.name}: "
+                            f"Invariant '{inv_id}' has invalid test_binding '{raw_tb}'"
+                        )
+                        continue
                     file_part = parts[0]
                     sym_parts = parts[1:]
                     resolved_tf = self._resolve_source_path(repo_root, root_dir, file_part)
@@ -1095,18 +1164,44 @@ class SpecValidator:
     def _validate_design_systems(self, report: ValidationReport, root_dir: Path) -> None:
         """Validate design/system W3C DTCG tokens.manifest files and acyclic inheritance.extends chains."""
         spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir)
-        inactive_statuses = {"planned", "proposed", "draft", "deprecated", "sunset", "rejected"}
+        inactive_statuses = {
+            "planned",
+            "proposed",
+            "draft",
+            "deprecated",
+            "retired",
+            "discarded",
+            "sunset",
+            "rejected",
+        }
+
+        ds_docs_by_path: dict[Path, str] = {
+            d.file_path.resolve(): d.doc_id
+            for d in report.documents
+            if d.doc_type == "design/system" and isinstance(d.doc_id, str) and d.doc_id
+        }
 
         extends_map: dict[str, tuple[str, SpecDocument]] = {}
         for doc in report.documents:
             if doc.doc_type != "design/system":
                 continue
             fm = doc.frontmatter or {}
+            parent_ref = ""
             inh = fm.get("inheritance")
-            if isinstance(inh, dict):
-                parent_id = str(inh.get("extends") or "").strip()
-                if parent_id and doc.doc_id:
-                    extends_map[doc.doc_id] = (parent_id, doc)
+            if isinstance(inh, dict) and inh.get("extends"):
+                parent_ref = str(inh.get("extends") or "").strip()
+            elif fm.get("extends_system"):
+                parent_ref = str(fm.get("extends_system") or "").strip()
+
+            if parent_ref and isinstance(doc.doc_id, str) and doc.doc_id:
+                parent_id = parent_ref
+                if parent_ref.endswith(".adoc"):
+                    for base in (doc.file_path.parent, spec_root, root_dir, repo_root):
+                        cand = (base / parent_ref).resolve()
+                        if cand in ds_docs_by_path:
+                            parent_id = ds_docs_by_path[cand]
+                            break
+                extends_map[doc.doc_id] = (parent_id, doc)
 
             status = str(fm.get("status", "active")).strip().lower()
             if status in inactive_statuses:
@@ -1178,12 +1273,13 @@ class SpecValidator:
                     non_meta_scalars = [
                         k for k, v in node.items() if not str(k).startswith("$") and not isinstance(v, dict)
                     ]
-                    if path_prefix and not child_dicts and non_meta_scalars:
+                    if path_prefix and (non_meta_scalars or not child_dicts):
                         report.broken_references.append(
                             f"Invalid W3C DTCG token in {doc_name} ({m_rel}): "
                             f"token '{path_prefix}' is missing required '$value' property"
                         )
-                        return
+                        if not child_dicts:
+                            return
 
                     for k, v in child_dicts.items():
                         sub = f"{path_prefix}.{k}" if path_prefix else str(k)
@@ -1495,7 +1591,7 @@ class SpecValidator:
             return
         body = doc.body or ""
         for route in sorted(str(k) for k in paths):
-            if route not in body:
+            if not re.search(rf"{re.escape(route)}(?=$|[\s`\"'|),;\]>])", body):
                 report.broken_references.append(
                     f"Contract drift in {doc.file_path.name}: OpenAPI path '{route}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
                 )
@@ -1535,8 +1631,10 @@ class SpecValidator:
             text = spec_file.read_text(encoding="utf-8")
         except OSError:
             return
-        services = re.findall(r"\bservice\s+([A-Za-z_][A-Za-z0-9_]*)\b", text)
-        rpcs = re.findall(r"\brpc\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", text)
+        stripped_text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+        stripped_text = re.sub(r"//[^\r\n]*", "", stripped_text)
+        services = re.findall(r"\bservice\s+([A-Za-z_][A-Za-z0-9_]*)\b", stripped_text)
+        rpcs = re.findall(r"\brpc\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", stripped_text)
         body = doc.body or ""
         for sym in [*services, *rpcs]:
             if not re.search(rf"(?:`|\b){re.escape(sym)}\b", body):
@@ -1555,13 +1653,18 @@ class SpecValidator:
         operations: list[str] = []
         for block_match in re.finditer(r"\btype\s+(?:Query|Mutation|Subscription)\s*\{([^}]*)\}", text, re.DOTALL):
             block = block_match.group(1)
+            paren_depth = 0
             for line in block.splitlines():
                 cleaned = line.split("#", 1)[0].strip()
                 if not cleaned:
                     continue
-                m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(|:)", cleaned)
-                if m:
-                    operations.append(m.group(1))
+                if paren_depth == 0:
+                    m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(|:)", cleaned)
+                    if m:
+                        operations.append(m.group(1))
+                paren_depth += cleaned.count("(") - cleaned.count(")")
+                if paren_depth < 0:
+                    paren_depth = 0
         body = doc.body or ""
         for op in operations:
             if not re.search(rf"(?:`|\b){re.escape(op)}\b", body):
@@ -1573,8 +1676,10 @@ class SpecValidator:
         "cli_args": "_verify_cli_contract_commands",
         "python_protocol": "_verify_python_protocol_contract",
         "rest_openapi": "_verify_rest_openapi_contract",
+        "openapi": "_verify_rest_openapi_contract",
         "json_schema": "_verify_json_schema_contract",
         "grpc_proto": "_verify_grpc_proto_contract",
+        "protobuf": "_verify_grpc_proto_contract",
         "graphql": "_verify_graphql_contract",
     }
 

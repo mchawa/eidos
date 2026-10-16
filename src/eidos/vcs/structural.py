@@ -310,7 +310,9 @@ class _SpecDiffInspector:
     def is_substantive(self, spec: str) -> bool:
         """True when the frontmatter data or the comment/whitespace-normalized body differs."""
         old, new = self.versions(spec)
-        if old is None or new is None or old == new:
+        if new is None:
+            return False
+        if old is None or old == new:
             return True
 
         spec_lower = spec.lower()

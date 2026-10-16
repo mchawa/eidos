@@ -325,8 +325,29 @@ class AstGrepIndexer(BaseAstIndexer):
             "kotlin": ["function_declaration"],
         }.get(lang, [])
 
+        all_fn_kinds = frozenset(
+            {
+                "function_definition",
+                "function_declaration",
+                "method_definition",
+                "function_item",
+                "method_declaration",
+            }
+        )
+
         for fk in fn_kinds:
             for m in node.find_all(kind=fk):
+                # Skip nested local helper functions defined inside another function or method
+                anc = m.parent()
+                nested_in_fn = False
+                while anc is not None:
+                    if anc.kind() in all_fn_kinds:
+                        nested_in_fn = True
+                        break
+                    anc = anc.parent()
+                if nested_in_fn:
+                    continue
+
                 fname = self._node_name(m)
                 if not fname:
                     continue
@@ -411,9 +432,12 @@ class AstGrepIndexer(BaseAstIndexer):
                 if fn_ident and fn_ident.text() in ("it", "test", "describe"):
                     args = c.field("arguments")
                     if args:
-                        first_arg = args.children()
-                        if first_arg:
-                            t_title = first_arg[0].text().strip("'\"`")
+                        arg_node = next(
+                            (ch for ch in args.children() if ch.text() not in ("(", ")", ",") and ch.text().strip("'\"`")),
+                            None,
+                        )
+                        if arg_node is not None:
+                            t_title = arg_node.text().strip("'\"`")
                             rng = c.range()
                             start_line = rng.start.line + 1
                             prefix = _extract_preceding_context(lines, start_line)
@@ -509,9 +533,12 @@ class AstGrepIndexer(BaseAstIndexer):
                 if fn_ident and fn_ident.text() in ("it", "test", "describe"):
                     args = c.field("arguments")
                     if args:
-                        first_arg = args.children()
-                        if first_arg:
-                            t_title = first_arg[0].text().strip("'\"`")
+                        arg_node = next(
+                            (ch for ch in args.children() if ch.text() not in ("(", ")", ",") and ch.text().strip("'\"`")),
+                            None,
+                        )
+                        if arg_node is not None:
+                            t_title = arg_node.text().strip("'\"`")
                             rng = c.range()
                             start_line = rng.start.line + 1
                             prefix = _extract_preceding_context(lines, start_line)
@@ -1045,7 +1072,8 @@ def _evaluate_symbol_visibility(
             return False
         if sym.parent_symbol and class_is_public is not None and not class_is_public.get(sym.parent_symbol, True):
             return False
-        return not (sig and _JAVA_KT_PRIVATE_RE.search(sig))
+        sig_prefix = sig.split("(", 1)[0] if sig else ""
+        return not (sig_prefix and _JAVA_KT_PRIVATE_RE.search(sig_prefix))
 
     # Python (.py) and default fallback
     if py_dunder_all is not None:

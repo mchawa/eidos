@@ -63,7 +63,7 @@ eidos plugin install copilot
 | Target Flag | Target Path / Config | Description |
 | :--- | :--- | :--- |
 | `--target all` | All environments below | Installs plugins and configs for Antigravity, Claude, Cursor, Aider, Cline, OpenCode, Codex, and GitHub Copilot |
-| `--target project` | `.agents/plugins/eidos/` | Standard project-scope installation conforming strictly to `agent-plugins.org v1.0.0` (also configures Cursor and Claude) |
+| `--target project` | `.agents/plugins/eidos/` | Standard project-scope installation conforming strictly to `agent-plugins.org v1.0.0` |
 | `--target antigravity` | `.agents/plugins/eidos/` | Installs plugin bundle with rules, 4 skills, hooks, and extensions (agent-plugins.org v1.0.0) |
 | `--target claude` | `.claude/plugins/eidos/`, `.claude/skills/` | Installs Claude Code plugin, 4 flat skills, slash commands (`/validate`, `/drift`), and configures `.claude/settings.json` |
 | `--target cursor` | `.cursor/skills/`, `.cursor/rules/eidos.mdc` | Installs 4 flat skills and Cursor rules (`.mdc`) for CLI execution |
@@ -331,21 +331,14 @@ When agents pass `--json` (or `--format json`), Eidos outputs structured JSON pa
 #### 1. Specification Validation (`eidos validate --json`)
 ```json
 {
-  "valid": true,
-  "total": 62,
-  "passed": 62,
-  "failed": 0,
-  "documents": [
-    {
-      "id": "CNT-EIDOS-CORE",
-      "type": "tech/container",
-      "is_valid": true,
-      "path": "eidos/architecture/containers/core.adoc"
-    }
-  ]
+  "is_clean": true,
+  "total_docs": 62,
+  "valid_docs": 62,
+  "schema_errors": {},
+  "broken_references": []
 }
 ```
-* **Exit code**: `0` when all documents are valid, `1` when any schema or cross-reference error is detected.
+* **Exit code**: `0` when all documents are valid (`is_clean: true`), `1` when any schema or cross-reference error is detected.
 
 #### 2. Drift Detection (`eidos drift --uncommitted --json`)
 ```json
@@ -358,10 +351,14 @@ When agents pass `--json` (or `--format json`), Eidos outputs structured JSON pa
   "delta_files": ["eidos/deltas/dlt-2026-016.adoc"],
   "test_files": ["tests/test_cli_json.py"],
   "touched_components": ["CNT-EIDOS-CLI"],
-  "trivially_covered_files": [],
+  "unmapped_code_files": [],
   "valid_specs": 62,
   "total_specs": 62,
-  "remediation_suggestions": []
+  "validation_errors": [],
+  "uncovered_invariants": [],
+  "orphan_invariants": [],
+  "remediation_suggestions": [],
+  "trivially_covered_files": []
 }
 ```
 * **Exit code**: `0` when clean, `1` when unmanaged code changes, trivial comment-only spec edits, or broken test bindings exist.

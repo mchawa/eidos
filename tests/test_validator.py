@@ -1914,6 +1914,97 @@ def test_pluggable_contract_protocol_verifier_registry(
     assert "fetchInvoice" in broken_text
 
 
+def test_deep_review_subsystem_1_models_workspace_and_validator_edge_cases(tmp_path):
+    """Verify deep-review fixes across models, parser, workspace path matching, and validator."""
+    import pytest
+
+    from eidos.core.spec.parser import _parse_spec_content
+    from eidos.core.workspace.project import _normalize_rel_path, match_path_pattern
+
+    # 1. Non-string frontmatter scalars normalize cleanly and _DictCompatibleModel resolves field aliases
+    doc = _parse_spec_content(
+        tmp_path / "num.adoc",
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: 42\n"
+        "name: Numeric Container\n"
+        "package_path: src/num\n"
+        "components:\n"
+        "  - id: CMP-NUM\n"
+        "    name: NumComp\n"
+        "    responsibility: Handles numbers.\n"
+        "    status: accepted\n"
+        "    domain_binding: DOM-CORE\n"
+        "---\n"
+        "= Numeric Container\n",
+    )
+    assert doc.doc_id == "42"
+    assert doc.model["schema"] == "schemas/v1/tech/container.schema.yaml"
+    assert "schema" in doc.model
+    with pytest.raises(KeyError):
+        _ = doc.model["model_dump"]
+    assert doc.model.components[0].status == "accepted"
+    assert doc.model.components[0].domain_binding == "DOM-CORE"
+
+    # 2. Path normalization preserves dotfiles and specificity favors deeper subpackage over parent dir/**
+    assert _normalize_rel_path(".github/workflows/ci.yml") == ".github/workflows/ci.yml"
+    assert _normalize_rel_path("./src/app.py") == "src/app.py"
+    spec_sub = match_path_pattern("src/pkg/sub/file.py", "src/pkg/sub")
+    spec_glob = match_path_pattern("src/pkg/sub/file.py", "src/pkg/**")
+    spec_dir = match_path_pattern("src/pkg/sub/file.py", "src/pkg")
+    assert spec_sub > spec_glob == spec_dir > 0
+
+    # 3. Subdirectory validate_directory seeds cross-references from spec_root
+    eidos_dir = tmp_path / "eidos"
+    dom_dir = eidos_dir / "domains"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    dom_dir.mkdir(parents=True)
+    cnt_dir.mkdir(parents=True)
+    (cnt_dir / "svc.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-BILLING\n"
+        "name: Billing Container\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/billing\n"
+        "components:\n"
+        "  - id: CMP-BILLING-CORE\n"
+        "    name: BillingCore\n"
+        "    responsibility: Core billing.\n"
+        "    source_path: src/billing/core.py\n"
+        "    status: accepted\n"
+        "    domain_binding: DOM-BILLING\n"
+        "---\n"
+        "= Billing Container\n",
+        encoding="utf-8",
+    )
+    (dom_dir / "billing.adoc").write_text(
+        "---\n"
+        "type: product/domain\n"
+        "schema: schemas/v1/product/domain.schema.yaml\n"
+        "id: DOM-BILLING\n"
+        "name: Billing Domain\n"
+        "classification: core\n"
+        "boundaries:\n"
+        "  responsibilities:\n"
+        "    - Invoicing\n"
+        "technical_mapping:\n"
+        "  containers:\n"
+        "    - CNT-BILLING\n"
+        "---\n"
+        "= Billing Domain\n",
+        encoding="utf-8",
+    )
+    validator = SpecValidator()
+    sub_report = validator.validate_directory(dom_dir)
+    assert sub_report.is_clean, f"Unexpected errors on subdirectory validation: {sub_report.broken_references}"
+    full_report = validator.validate_directory(eidos_dir)
+    assert full_report.is_clean, f"Unexpected schema/ref errors: {full_report.schema_errors} {full_report.broken_references}"
+
+
 
 
 

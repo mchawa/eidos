@@ -1582,4 +1582,121 @@ def test_container_inline_component_invariants_ast_fts_projection_and_anchored_t
         idx.close()
 
 
+def test_deep_review_subsystem_2_incremental_edges_fts_and_transient_sqlite_errors(tmp_path, monkeypatch):
+    """Verify incremental rebuild_spec_edges retains promoted CMP-* and design/client edges,
+    recomputes specs_fts.symbols on symbol removal, and open_cache_connection does not unlink on lock error."""
+    import sqlite3
+
+    import pytest
+
+    from eidos.core.index.ast_indexer import CodeSymbol, _evaluate_symbol_visibility
+    from eidos.core.index.storage import open_cache_connection
+
+    # 1. Transient lock OperationalError does NOT delete existing SQLite db file
+    db_file = tmp_path / "locked.db"
+    c = open_cache_connection(db_file)
+    c.close()
+    assert db_file.exists()
+
+    orig_connect = sqlite3.connect
+
+    def _locked_connect(*args, **kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(sqlite3, "connect", _locked_connect)
+    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+        open_cache_connection(db_file)
+    assert db_file.exists()
+    monkeypatch.setattr(sqlite3, "connect", orig_connect)
+
+    # 2. Java/Kotlin parameter names containing 'internal' or 'private' do not misclassify public methods
+    pub_sym = CodeSymbol(
+        name="runTask",
+        kind="method",
+        file_path="src/TaskRunner.java",
+        line_start=1,
+        line_end=3,
+        signature="public void runTask(String internal)",
+    )
+    priv_sym = CodeSymbol(
+        name="runTask",
+        kind="method",
+        file_path="src/TaskRunner.java",
+        line_start=1,
+        line_end=3,
+        signature="private void runTask(String arg)",
+    )
+    assert _evaluate_symbol_visibility(pub_sym) is True
+    assert _evaluate_symbol_visibility(priv_sym) is False
+
+    # 3. Incremental sync retains promoted CMP-* belongs_to edges and removes deleted AST symbols from specs_fts
+    repo = tmp_path / "inc_repo"
+    eidos_dir = repo / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    cmps_dir = eidos_dir / "architecture" / "components"
+    src_dir = repo / "src" / "svc"
+    cnts_dir.mkdir(parents=True)
+    cmps_dir.mkdir(parents=True)
+    src_dir.mkdir(parents=True)
+
+    code_file = src_dir / "worker.py"
+    code_file.write_text(
+        "def LegacyEphemeralRoutine():\n    return 1\n\ndef StableWorkerHandler():\n    return 2\n",
+        encoding="utf-8",
+    )
+    cnt_file = cnts_dir / "svc.adoc"
+    cnt_file.write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-SVC\n"
+        "name: Worker Service\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/svc\n"
+        "components:\n"
+        "  - id: CMP-PROMOTED\n"
+        "    name: PromotedWorker\n"
+        "    spec_path: eidos/architecture/components/cmp-promoted.adoc\n"
+        "---\n"
+        "= Worker Service\n",
+        encoding="utf-8",
+    )
+    (cmps_dir / "cmp-promoted.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "schema: schemas/v1/tech/component.schema.yaml\n"
+        "id: CMP-PROMOTED\n"
+        "name: PromotedWorker\n"
+        "container: CNT-SVC\n"
+        "responsibility: Promoted worker component.\n"
+        "source_path: src/svc/worker.py\n"
+        "---\n"
+        "= Promoted Worker\n",
+        encoding="utf-8",
+    )
+
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+        assert any(h["id"] == "CMP-PROMOTED" for h in idx.query_fts("LegacyEphemeralRoutine"))
+
+        # Touch only CNT-SVC and run incremental sync -> CMP-PROMOTED -> CNT-SVC edge must remain intact
+        cnt_file.write_text(cnt_file.read_text(encoding="utf-8") + "\nUpdated body.\n", encoding="utf-8")
+        idx.sync(force=False)
+        conn = idx._get_connection()
+        edge_row = conn.execute(
+            "SELECT 1 FROM edges WHERE source_id = 'CMP-PROMOTED' AND target_id = 'CNT-SVC' AND rel_type = 'part_of';"
+        ).fetchone()
+        assert edge_row is not None
+
+        # Remove LegacyEphemeralRoutine from code_file and run incremental sync -> FTS must no longer match it
+        code_file.write_text("def StableWorkerHandler():\n    return 2\n", encoding="utf-8")
+        idx.sync(force=False)
+        assert not any(h["id"] == "CMP-PROMOTED" for h in idx.query_fts("LegacyEphemeralRoutine"))
+        assert any(h["id"] == "CMP-PROMOTED" for h in idx.query_fts("StableWorkerHandler"))
+    finally:
+        idx.close()
+
+
 

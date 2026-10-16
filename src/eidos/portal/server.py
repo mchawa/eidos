@@ -2,6 +2,7 @@
 
 import json
 import logging
+import threading
 import urllib.parse
 import webbrowser
 from http import HTTPStatus
@@ -43,6 +44,7 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
     """HTTP Request Handler dispatching Portal UI and JSON API endpoints."""
 
     eidos_dir: Path = Path("eidos")
+    _cache_lock: threading.Lock = threading.Lock()
     _cache_key: tuple[str, int, int, int] | None = None
     _cached_portal_data: dict[str, Any] | None = None
     _cached_validation_key: tuple[str, int, int, int] | None = None
@@ -50,29 +52,34 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
 
     def _get_cached_portal_data(self) -> dict[str, Any]:
         snap = (str(self.eidos_dir.resolve()), *_compute_eidos_mtime_snapshot(self.eidos_dir))
-        if EidosPortalHandler._cache_key == snap and EidosPortalHandler._cached_portal_data is not None:
-            return EidosPortalHandler._cached_portal_data
-        data = get_portal_data(self.eidos_dir)
-        EidosPortalHandler._cache_key = snap
-        EidosPortalHandler._cached_portal_data = data
-        return data
+        with EidosPortalHandler._cache_lock:
+            if EidosPortalHandler._cache_key == snap and EidosPortalHandler._cached_portal_data is not None:
+                return EidosPortalHandler._cached_portal_data
+            data = get_portal_data(self.eidos_dir)
+            EidosPortalHandler._cache_key = snap
+            EidosPortalHandler._cached_portal_data = data
+            return data
 
     def _get_cached_validation(self) -> dict[str, Any]:
         snap = (str(self.eidos_dir.resolve()), *_compute_eidos_mtime_snapshot(self.eidos_dir))
-        if EidosPortalHandler._cached_validation_key == snap and EidosPortalHandler._cached_validation_res is not None:
-            return EidosPortalHandler._cached_validation_res
-        validator = SpecValidator()
-        report = validator.validate_directory(self.eidos_dir)
-        res = {
-            "total_docs": report.total_docs,
-            "valid_docs": report.valid_docs,
-            "is_clean": report.is_clean,
-            "schema_errors": report.schema_errors,
-            "broken_references": report.broken_references,
-        }
-        EidosPortalHandler._cached_validation_key = snap
-        EidosPortalHandler._cached_validation_res = res
-        return res
+        with EidosPortalHandler._cache_lock:
+            if (
+                EidosPortalHandler._cached_validation_key == snap
+                and EidosPortalHandler._cached_validation_res is not None
+            ):
+                return EidosPortalHandler._cached_validation_res
+            validator = SpecValidator()
+            report = validator.validate_directory(self.eidos_dir)
+            res = {
+                "total_docs": report.total_docs,
+                "valid_docs": report.valid_docs,
+                "is_clean": report.is_clean,
+                "schema_errors": report.schema_errors,
+                "broken_references": report.broken_references,
+            }
+            EidosPortalHandler._cached_validation_key = snap
+            EidosPortalHandler._cached_validation_res = res
+            return res
 
     def do_GET(self) -> None:
         parsed_url = urllib.parse.urlparse(self.path)

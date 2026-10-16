@@ -360,6 +360,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 seen_dec_ids.add(did)
             d_entry = dict(dec)
             d_entry["source_entity"] = source_entity
+            d_entry["source_id"] = source_entity
             d_entry["source_type"] = source_type
             all_decisions.append(d_entry)
 

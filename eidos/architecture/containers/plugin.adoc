@@ -29,12 +29,13 @@ components:
     source_path: "src/eidos/plugin/validator.py"
   - id: CMP-HOOK-RUNNER
     name: "HookRunner"
-    responsibility: "Executes CLI-native PreToolUse/PostToolUse lint hooks with cross-harness payload normalization (Antigravity, Claude Code, Cursor, Cline, OpenCode, Codex) and PostInvocation/Stop drift gates (handle_drift_stop, execute_drift_hook) with fast working-tree digest short-circuit caching in eidos/.cache/hook-state.json, gated on validation_passed, uncovered_invariants, orphan_invariants, and drift_detected with cause-specific non-code drift diagnostics, validation_errors fingerprinting, and Block-Once fingerprint persistence in eidos/.cache/stop-gate.json."
+    responsibility: "Executes CLI-native PreToolUse/PostToolUse lint hooks with cross-harness payload normalization (Antigravity, Claude Code, Cursor, Cline, OpenCode, Codex; normalizing hyphenated/underscored event names and rejecting non-exempt .adoc specifications missing YAML frontmatter) and PostInvocation/Stop drift gates (handle_drift_stop, execute_drift_hook) with fast working-tree digest short-circuit caching in eidos/.cache/hook-state.json, gated on validation_passed, uncovered_invariants, orphan_invariants, and drift_detected with cause-specific non-code drift diagnostics, validation_errors fingerprinting, and Block-Once fingerprint persistence in eidos/.cache/stop-gate.json."
     source_path: "src/eidos/plugin/hooks.py"
 
 dependencies:
   internal_containers:
     - "CNT-EIDOS-CORE"
+    - "CNT-EIDOS-VCS"
   external_services:
     - "Host IDE & Agent Configs (.cursor/rules/, .cursor/skills/, .claude/plugins/, .claude/settings.json, .claude/skills/, opencode.json, .opencode/plugins/, .opencode/skills/, .codex/plugin.json, .codex/skills/, .aider.conventions.md, .aider/skills/, .cline/plugins/, .cline/skills/, .github/plugin/plugin.json, .github/skills/, .github/copilot/settings.json)"
 

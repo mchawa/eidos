@@ -245,7 +245,7 @@ class ChangelogGenerator:
         # 1. Unreleased section
         unreleased_deltas = deltas_by_tag.get("Unreleased", [])
         latest_tag = tags[-1]["name"] if tags else None
-        unreleased_commits = self._get_commits_between(latest_tag, "HEAD") if latest_tag else []
+        unreleased_commits = self._get_commits_between(latest_tag, "HEAD")
 
         sec_unreleased = ReleaseSection(tag="Unreleased", version_label="Unreleased", date="")
         for d in unreleased_deltas:

@@ -2197,3 +2197,49 @@ def test_nested_spec_subpackage_treated_as_code(tmp_path):
     assert set(classified.test_files) == {"spec/auth_helper.py", "src/pkg/tests/test_validator.py"}
 
 
+def test_deep_review_subsystem_4_shallow_clone_deleted_spec_and_json_cli(tmp_path):
+    """Verify shallow clone auto-discovery fails closed, deleted specs are not substantive updates,
+    and plugin hooks reject frontmatter-less .adoc files."""
+    import subprocess
+
+    import pytest
+
+    from eidos.plugin.hooks import _infer_event, _validate_doc_content
+    from eidos.vcs.diff import GitResolutionError, _resolve_base_and_merge_base
+    from eidos.vcs.structural import _SpecDiffInspector
+
+    # 1. Deleted spec (new is None) is NOT treated as a substantive spec update
+    inspector = _SpecDiffInspector(
+        tmp_path,
+        base_ref=None,
+        head_ref="HEAD",
+        uncommitted=True,
+    )
+    inspector._versions["eidos/architecture/containers/cnt-x.adoc"] = (
+        "---\nid: CNT-X\n---\n= Old\n",
+        None,
+    )
+    assert inspector.is_substantive("eidos/architecture/containers/cnt-x.adoc") is False
+
+    # 2. Shallow clone (.git/shallow exists) fails closed when base_ref is not resolvable during auto-discovery
+    repo = tmp_path / "shallow_repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    (repo / ".git" / "shallow").write_text("deadbeef\n", encoding="utf-8")
+    with pytest.raises(GitResolutionError, match="shallow"):
+        _resolve_base_and_merge_base(repo, base_ref=None, head_ref="HEAD")
+
+    # 3. Plugin hook rejects non-exempt .adoc missing YAML frontmatter and normalizes hyphenated event names
+    from pathlib import Path
+
+    res_doc = _validate_doc_content(
+        Path("eidos/domains/dom-test.adoc"),
+        "= Missing Frontmatter\nBody only.\n",
+    )
+    assert res_doc["decision"] == "deny"
+    assert "Missing YAML frontmatter" in res_doc["reason"]
+    assert _infer_event("pre-tool", {}) == "pre_tool"
+    assert _infer_event("post-tool", {}) == "post_tool"
+    assert _infer_event("post-invocation", {}) == "post_invocation"
+
+

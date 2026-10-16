@@ -6,7 +6,7 @@ import fnmatch
 import os
 import subprocess
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
 from eidos.core.spec.parser import parse_spec_file
@@ -51,6 +51,19 @@ class ProjectConfig:
     )
 
 
+def _is_inside_plugin_or_assets(path: Path) -> bool:
+    """Return True if path is inside a .agents, plugins, or assets bundle directory."""
+    parts = path.parts
+    for idx, part in enumerate(parts):
+        if part == ".agents":
+            return True
+        if part == "plugins" and idx > 0 and parts[idx - 1] in (".agents", ".claude", ".cursor"):
+            return True
+        if part == "assets" and idx + 1 < len(parts) and parts[idx + 1] in ("plugin_reference", "schemas", "templates"):
+            return True
+    return False
+
+
 def find_repo_root(start_dir: Path | None = None) -> Path:
     """Find the repository or workspace root containing .git or eidos/ living specifications."""
     cwd = (start_dir or Path.cwd()).resolve()
@@ -63,14 +76,15 @@ def find_repo_root(start_dir: Path | None = None) -> Path:
         eidos_cand = parent / "eidos"
         if (
             eidos_cand.is_dir()
-            and not any(p in eidos_cand.parts for p in (".agents", "plugins", "assets"))
+            and not _is_inside_plugin_or_assets(eidos_cand)
             and ((eidos_cand / "system.adoc").exists() or (eidos_cand / "architecture").is_dir())
         ):
             return parent
 
-    if not any(p in cwd.parts for p in (".agents", "plugins", "assets")) and (
+    if not _is_inside_plugin_or_assets(cwd) and (
         cwd.name == "eidos"
-        or any((cwd / marker).exists() for marker in ("system.adoc", "architecture", "domains", "policies", "deltas", "design"))
+        or (cwd / "system.adoc").is_file()
+        or (cwd / "architecture").is_dir()
     ):
         return cwd.parent
 
@@ -101,7 +115,7 @@ def load_project(
     elif eidos_dir is not None:
         ed = Path(eidos_dir).resolve()
         if (ed / "system.adoc").exists() or (
-            ed.name == "eidos" and not any(p in ed.parts for p in (".agents", "plugins", "assets"))
+            ed.name == "eidos" and not _is_inside_plugin_or_assets(ed)
         ):
             root = ed.parent
         else:
@@ -196,20 +210,21 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
                     if item and (root / item).is_file():
                         files.add(item)
 
-            if include_untracked:
-                untracked = subprocess.run(
-                    ["git", "ls-files", "--others", "--exclude-standard", "-z"],
-                    cwd=root,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if untracked.returncode == 0:
-                    for item in untracked.stdout.split("\0"):
-                        if item and (root / item).is_file():
-                            files.add(item)
+                if include_untracked:
+                    untracked = subprocess.run(
+                        ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+                        cwd=root,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if untracked.returncode == 0:
+                        for item in untracked.stdout.split("\0"):
+                            if item and (root / item).is_file():
+                                files.add(item)
 
-            if files:
+                if not files:
+                    return []
                 file_list = sorted(files)
                 ignored_attrs = is_generated_or_vendored(root, file_list)
                 return [f for f in file_list if f not in ignored_attrs]
@@ -261,22 +276,82 @@ def extract_entity_paths(entity_data: dict[str, Any]) -> list[str]:
     return patterns
 
 
+def _normalize_rel_path(raw: str) -> str:
+    """Normalize a relative path or pattern without stripping leading dots from dotfiles."""
+    s = raw.strip().replace("\\", "/")
+    while s.startswith("./"):
+        s = s[2:]
+    return s.lstrip("/")
+
+
+def _glob_to_anchored_regex(glob_pat: str) -> str:
+    """Convert a POSIX path glob pattern into a full-path anchored regex where '*' does not cross '/'."""
+    import re
+
+    i = 0
+    n = len(glob_pat)
+    out = ["^"]
+    while i < n:
+        if glob_pat[i : i + 4] == "/**/":
+            out.append("(?:/|/.+/)")
+            i += 4
+        elif glob_pat[i : i + 3] == "**/":
+            out.append("(?:.+/)?")
+            i += 3
+        elif glob_pat[i : i + 3] == "/**":
+            out.append("(?:/.*)?")
+            i += 3
+        elif glob_pat[i : i + 2] == "**":
+            out.append(".*")
+            i += 2
+        elif glob_pat[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif glob_pat[i] == "?":
+            out.append("[^/]")
+            i += 1
+        elif glob_pat[i] == "[":
+            j = i + 1
+            if j < n and glob_pat[j] in ("!", "^"):
+                j += 1
+            if j < n and glob_pat[j] == "]":
+                j += 1
+            while j < n and glob_pat[j] != "]":
+                j += 1
+            if j < n:
+                cls_body = glob_pat[i + 1 : j]
+                if cls_body.startswith("!"):
+                    cls_body = "^" + cls_body[1:]
+                out.append(f"[{cls_body}]")
+                i = j + 1
+            else:
+                out.append(re.escape("["))
+                i += 1
+        else:
+            out.append(re.escape(glob_pat[i]))
+            i += 1
+    out.append("$")
+    return "".join(out)
+
+
 def match_path_pattern(rel_file: str, pattern: str) -> int:
     """Return specificity score (>0) if rel_file matches pattern, or 0 if no match.
 
     Higher scores indicate more specific ownership matches:
     - Exact file path match: 2000 + len(pattern)
-    - Glob match with directory prefix: 1000 + len(literal_prefix)
-    - Directory prefix match: 500 + len(prefix)
+    - Glob match with directory prefix: 1000 + len(literal_chars)
+    - Directory prefix or 'dir/**' match: 500 + len(prefix)
     - Wildcard-only glob match (e.g. '**/*.css'): 100 + len(literal_chars)
     """
-    norm_file = rel_file.strip().replace("\\", "/").lstrip("./")
-    norm_pat = pattern.strip().replace("\\", "/").lstrip("./")
+    import re
+
+    norm_file = _normalize_rel_path(rel_file)
+    norm_pat = _normalize_rel_path(pattern)
     if not norm_file or not norm_pat:
         return 0
 
     # 1. Exact file match
-    if norm_file == norm_pat:
+    if not any(ch in norm_pat for ch in ("*", "?", "[")) and norm_file == norm_pat:
         return 2000 + len(norm_pat)
 
     # 2. Directory prefix without glob wildcards
@@ -290,24 +365,17 @@ def match_path_pattern(rel_file: str, pattern: str) -> int:
     literal_chars = "".join(ch for ch in norm_pat if ch not in "*?[]/")
     has_leading_dir = not norm_pat.startswith("*")
 
-    # Handle 'dir/**' recursive prefix
-    if norm_pat.endswith("/**"):
+    # Handle 'dir/**' recursive directory prefix (equivalent specificity family to directory prefix)
+    if norm_pat.endswith("/**") and not any(ch in norm_pat[:-3] for ch in ("*", "?", "[")):
         base_dir = norm_pat[:-3].rstrip("/")
         if norm_file == base_dir or norm_file.startswith(base_dir + "/"):
-            return (1000 if has_leading_dir else 100) + len(base_dir)
+            return (500 if has_leading_dir else 100) + len(base_dir)
+        return 0
 
-    # Handle 'dir/**/*' or general glob
-    posix_file = PurePosixPath(norm_file)
-    matched = False
+    regex_str = _glob_to_anchored_regex(norm_pat)
     try:
-        if posix_file.match(norm_pat) or fnmatch.fnmatchcase(norm_file, norm_pat):
-            matched = True
-        elif "**/" in norm_pat:
-            # PurePosixPath.match('a/**/b.py') in Python 3.12 matches 1+ subdirs; also check 0 subdirs ('a/b.py')
-            collapsed = norm_pat.replace("/**/", "/")
-            if posix_file.match(collapsed) or fnmatch.fnmatchcase(norm_file, collapsed):
-                matched = True
-    except ValueError:
+        matched = bool(re.match(regex_str, norm_file))
+    except re.error:
         matched = fnmatch.fnmatchcase(norm_file, norm_pat)
 
     if matched:

@@ -84,6 +84,27 @@ properties:
             name:
               type: string
               description: "Internal component name (e.g. 'SpecParser', 'SchemaValidator', 'CliEntrypoint')."
+            status:
+              type: string
+              enum:
+                - draft
+                - proposed
+                - planned
+                - accepted
+                - active
+                - deprecated
+                - retired
+              description: "Optional lifecycle state of this inline component."
+            domain_binding:
+              type: string
+              pattern: "^(DOM-[A-Z0-9_-]+|.*\\.adoc)$"
+              description: "Optional product domain ID (DOM-*) this inline component realizes."
+              x-eidos-ref:
+                target_types:
+                  - product/domain
+                prefixes:
+                  - DOM-
+                entity_label: domain
             responsibility:
               type: string
               description: "What this internal component does and what domain logic it encapsulates."

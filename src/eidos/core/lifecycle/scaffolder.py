@@ -183,7 +183,7 @@ Describe the exact behavioral diffs, mutations, and invariant updates here.
         existing_personas = sorted((eidos_dir / "personas").glob("*.adoc")) if (eidos_dir / "personas").exists() else []
         persona_ref = f"eidos/personas/{existing_personas[0].name}" if existing_personas else "PER-USER"
 
-        domain_slug = parent_domain.lower().replace("dom-", "")
+        domain_slug = parent_domain.lower().removeprefix("dom-")
         domain_dirs = list(eidos_dir.glob(f"domains/*{domain_slug}*"))
         if domain_dirs and domain_dirs[0].is_dir():
             dest_dir = domain_dirs[0] / "capabilities"
@@ -214,7 +214,7 @@ Describe the business intent and user outcome realized by this capability.
 """
 
     elif canonical_key == "domain":
-        dom_slug = slug.replace("dom-", "")
+        dom_slug = slug.removeprefix("dom-")
         dest_dir = eidos_dir / "domains" / dom_slug
         dest_file = dest_dir / "domain.adoc"
         fm = {
@@ -257,12 +257,11 @@ Explain why this non-negotiable architectural or product guardrail exists.
     elif canonical_key == "contract":
         dest_dir = eidos_dir / "architecture" / "contracts"
         dest_file = dest_dir / f"{slug}.adoc"
-        owner_id = owning_container or owning_component
+        owner_id = owning_container or (
+            owning_component if owning_component and owning_component.startswith("CNT-") else None
+        )
         if not owner_id:
-            existing_comps = sorted(
-                cid for cid, (_, dt, _) in _catalog().items() if dt in ("tech/container", "tech/component")
-            )
-            owner_id = existing_comps[0] if existing_comps else "CNT-CORE"
+            owner_id = _first_of_type("tech/container", "CNT-CORE")
         fm = {
             "type": "tech/contract",
             "schema": "schemas/v1/tech/contract.schema.yaml",
@@ -305,7 +304,7 @@ Internal components and modular building blocks contained within this deployable
     elif canonical_key == "component":
         # INV-COMPONENT-CENTRALIZATION-MANDATE: dedicated components live in eidos/architecture/components/
         dest_dir = eidos_dir / "architecture" / "components"
-        dest_file = dest_dir / f"{slug.replace('cmp-', '', 1)}.adoc"
+        dest_file = dest_dir / f"{slug.removeprefix('cmp-')}.adoc"
         parent_cnt = owning_container or (
             owning_component if owning_component and owning_component.startswith("CNT-") else None
         )
@@ -540,8 +539,14 @@ def promote_component(
     Returns:
         (component_spec_path, container_path)
     """
-    root = (repo_root or Path.cwd()).resolve()
-    edir = (eidos_dir or (root / "eidos")).resolve()
+    if repo_root is not None:
+        root = Path(repo_root).resolve()
+    elif eidos_dir is not None:
+        edir_resolved = Path(eidos_dir).resolve()
+        root = edir_resolved.parent if edir_resolved.name == "eidos" else edir_resolved
+    else:
+        root = Path.cwd().resolve()
+    edir = (Path(eidos_dir) if eidos_dir is not None else (root / "eidos")).resolve()
     containers_dir = edir / "architecture" / "containers"
 
     if not containers_dir.exists():
@@ -580,9 +585,13 @@ def promote_component(
     # Place dedicated component specification centrally in eidos/architecture/components/
     components_dir = edir / "architecture" / "components"
     components_dir.mkdir(parents=True, exist_ok=True)
-    slug = norm_id.replace("CMP-", "").lower().replace("_", "-")
+    slug = norm_id.removeprefix("CMP-").lower().replace("_", "-")
     comp_file_path = components_dir / f"{slug}.adoc"
-    rel_comp_ref = str(comp_file_path.relative_to(root)).replace("\\", "/")
+    rel_comp_ref = (
+        str(comp_file_path.relative_to(root)).replace("\\", "/")
+        if comp_file_path.is_relative_to(root)
+        else str(comp_file_path.relative_to(edir)).replace("\\", "/")
+    )
 
     # Author centralized tech/component specification losslessly via safe YAML serialization
     comp_name = target_comp_data.get("name", norm_id)
@@ -643,8 +652,14 @@ def inline_component(
     Returns:
         (container_path, deleted_spec_path)
     """
-    root = (repo_root or Path.cwd()).resolve()
-    edir = (eidos_dir or (root / "eidos")).resolve()
+    if repo_root is not None:
+        root = Path(repo_root).resolve()
+    elif eidos_dir is not None:
+        edir_resolved = Path(eidos_dir).resolve()
+        root = edir_resolved.parent if edir_resolved.name == "eidos" else edir_resolved
+    else:
+        root = Path.cwd().resolve()
+    edir = (Path(eidos_dir) if eidos_dir is not None else (root / "eidos")).resolve()
     containers_dir = edir / "architecture" / "containers"
 
     if not containers_dir.exists():

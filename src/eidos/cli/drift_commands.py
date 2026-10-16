@@ -89,8 +89,14 @@ def drift_cmd(
             "delta_files": result.classification.delta_files,
             "test_files": result.classification.test_files,
             "touched_components": result.touched_components,
+            "unmapped_code_files": result.unmapped_code_files,
             "valid_specs": result.validation_report.valid_docs,
             "total_specs": result.validation_report.total_docs,
+            "validation_errors": result.validation_errors,
+            "uncovered_invariants": [inv.invariant_id for inv in result.uncovered_invariants],
+            "orphan_invariants": [
+                {"invariant_id": oid, "location": loc} for oid, loc in result.orphan_invariants
+            ],
             "remediation_suggestions": result.remediation_suggestions,
             "trivially_covered_files": result.trivially_covered_files,
         }
@@ -170,7 +176,8 @@ def drift_cmd(
 
     if markdown_out:
         markdown_out.write_text(result.summary_markdown, encoding="utf-8")
-        console.print(f"\n[dim]Saved markdown summary to: {markdown_out}[/dim]")
+        if not json_output:
+            console.print(f"\n[dim]Saved markdown summary to: {markdown_out}[/dim]")
 
     if not result.is_clean and not warn_only:
         raise typer.Exit(code=1)

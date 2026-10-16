@@ -111,6 +111,30 @@ def _format_yaml_scalar_value(value: str) -> str:
     return val
 
 
+def _split_yaml_inline_comment(val_and_comment: str) -> tuple[str, str]:
+    """Split a single-line YAML scalar value from a trailing '# ...' comment while respecting quotes."""
+    in_single = False
+    in_double = False
+    escaped = False
+    for idx, ch in enumerate(val_and_comment):
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\" and in_double:
+            escaped = True
+            continue
+        if ch == "'" and not in_double:
+            in_single = not in_single
+        elif ch == '"' and not in_single:
+            in_double = not in_double
+        elif ch == "#" and not in_single and not in_double and (idx == 0 or val_and_comment[idx - 1] in (" ", "\t")):
+            ws_start = idx
+            while ws_start > 0 and val_and_comment[ws_start - 1] in (" ", "\t"):
+                ws_start -= 1
+            return val_and_comment[:ws_start], val_and_comment[ws_start:]
+    return val_and_comment.rstrip(" \t"), ""
+
+
 def _set_frontmatter_scalar(raw_content: str, key: str, value: str) -> str:
     """Update a top-level scalar key in YAML frontmatter while preserving comments, quoting, and blank lines."""
     parts = _split_raw_frontmatter(raw_content)
@@ -118,9 +142,14 @@ def _set_frontmatter_scalar(raw_content: str, key: str, value: str) -> str:
         return raw_content
     raw_yaml, body = parts
     safe_val = _format_yaml_scalar_value(value)
-    pattern = re.compile(rf"^({re.escape(key)}\s*:\s*)([^\n#]*?)(\s+#[^\n]*)?$", re.MULTILINE)
+    pattern = re.compile(rf"^({re.escape(key)}[ \t]*:[ \t]*)([^\r\n]*)$", re.MULTILINE)
     if pattern.search(raw_yaml):
-        new_yaml = pattern.sub(lambda m: f"{m.group(1)}{safe_val}{m.group(3) or ''}", raw_yaml, count=1)
+        def _repl(m: re.Match[str]) -> str:
+            _old_val, trailing_comment = _split_yaml_inline_comment(m.group(2))
+            prefix = m.group(1) if m.group(1).endswith((" ", "\t")) else f"{m.group(1)} "
+            return f"{prefix}{safe_val}{trailing_comment}"
+
+        new_yaml = pattern.sub(_repl, raw_yaml, count=1)
     else:
         new_yaml = f"{raw_yaml.rstrip()}\n{key}: {safe_val}"
     return f"---\n{new_yaml}\n---\n{body}"
@@ -273,9 +302,10 @@ def find_references_to_spec(eidos_dir: Path, target_id: str, target_path: Path) 
     referencing_files: list[Path] = []
     seen_resolved: set[Path] = set()
     target_resolved = target_path.resolve()
+    eidos_resolved = eidos_dir.resolve()
     rel_path_str = (
-        str(target_path.relative_to(eidos_dir)).replace("\\", "/")
-        if target_path.is_relative_to(eidos_dir)
+        str(target_resolved.relative_to(eidos_resolved)).replace("\\", "/")
+        if target_resolved.is_relative_to(eidos_resolved)
         else target_path.name
     )
     id_pattern = re.compile(rf"(?<![A-Za-z0-9_-]){re.escape(target_id)}(?![A-Za-z0-9_-])", re.IGNORECASE)

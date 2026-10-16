@@ -156,10 +156,20 @@ def _ensure_eidos_gitignore(eidos_dir: Path) -> None:
                 )
 
 
+ACTIVE_DELTA_STATUSES: tuple[str, ...] = (
+    "draft",
+    "proposed",
+    "planned",
+    "in_review",
+    "approved",
+    "in_progress",
+)
+
+
 def sync_delta_views(eidos_dir: Path) -> dict[str, list[Path]]:
     """Synchronize gitignored symlink views in eidos/deltas/by-status/ based on frontmatter status.
 
-    Categories: proposed, in_review, approved, applied, rejected, active (in-flight).
+    Categories: draft, proposed, planned, in_review, approved, applied, rejected, active (in-flight).
     """
     deltas_dir = eidos_dir / "deltas"
     if not deltas_dir.exists():
@@ -169,7 +179,7 @@ def sync_delta_views(eidos_dir: Path) -> dict[str, list[Path]]:
     _ensure_eidos_gitignore(eidos_dir)
 
     views_dir = deltas_dir / "by-status"
-    categories = ["proposed", "in_review", "approved", "applied", "rejected", "active"]
+    categories = ["draft", "proposed", "planned", "in_review", "approved", "applied", "rejected", "active"]
 
     # Ensure target category directories exist
     for cat in categories:
@@ -203,7 +213,7 @@ def sync_delta_views(eidos_dir: Path) -> dict[str, list[Path]]:
             except OSError:
                 pass
 
-            if status in ("proposed", "in_review", "approved", "in_progress", "draft"):
+            if status in ACTIVE_DELTA_STATUSES:
                 active_link = views_dir / "active" / p.name
                 rel_active = os.path.relpath(p, views_dir / "active")
                 try:
@@ -221,7 +231,9 @@ def get_delta_status_summary(eidos_dir: Path) -> dict[str, Any]:
     """Get count and listing breakdown of deltas grouped by lifecycle status."""
     deltas = list_deltas(eidos_dir)
     by_status: dict[str, list[dict]] = {
+        "draft": [],
         "proposed": [],
+        "planned": [],
         "in_review": [],
         "approved": [],
         "applied": [],
@@ -233,7 +245,7 @@ def get_delta_status_summary(eidos_dir: Path) -> dict[str, Any]:
             by_status[st] = []
         by_status[st].append(d)
 
-    active_count = sum(len(by_status.get(s, [])) for s in ("proposed", "in_review", "approved"))
+    active_count = sum(len(by_status.get(s, [])) for s in ACTIVE_DELTA_STATUSES)
 
     return {
         "total": len(deltas),
@@ -261,7 +273,7 @@ def list_deltas(eidos_dir: Path, status_filter: str | None = None) -> list[dict[
                 continue
 
             status = str(doc.frontmatter.get("status", "proposed")).lower().strip()
-            is_active = status in ("proposed", "in_review", "approved", "in_progress", "draft")
+            is_active = status in ACTIVE_DELTA_STATUSES
 
             if status_filter_clean and (
                 (status_filter_clean == "active" and not is_active)
@@ -374,7 +386,7 @@ def _digest_dict(data: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode("utf-8")).hexdigest()
 
 
-def _snapshot_delta_baselines(eidos_dir: Path, delta_id: str) -> None:
+def _snapshot_delta_baselines(eidos_dir: Path, delta_id: str, overwrite: bool = True) -> None:
     """Record current SHA-256 digests of all living specs into eidos/.cache/index.db for delta verification."""
     try:
         cache_dir = eidos_dir / ".cache"
@@ -400,16 +412,18 @@ def _snapshot_delta_baselines(eidos_dir: Path, delta_id: str) -> None:
             if inv_path.exists():
                 rows.append((delta_id, inv_id, _digest_dict(inv_dict)))
 
+        insert_sql = (
+            "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)"
+            if overwrite
+            else "INSERT OR IGNORE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)"
+        )
         with sqlite3.connect(db_path) as conn:
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS delta_baselines ("
                 "delta_id TEXT, target_id TEXT, baseline_sha256 TEXT, "
                 "PRIMARY KEY (delta_id, target_id))"
             )
-            conn.executemany(
-                "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)",
-                rows,
-            )
+            conn.executemany(insert_sql, rows)
             conn.commit()
     except (OSError, sqlite3.Error):
         return
@@ -581,6 +595,17 @@ def set_delta_status(
         return False, f"Document at '{file_path}' is not a SpecDelta (type: {doc.doc_type}).", None, None
 
     old_status = str(doc.frontmatter.get("status", "proposed")).strip().lower()
+    if norm_status == "applied" and old_status != "applied":
+        ver_ok, ver_msg, report = verify_delta_mutations(eidos_dir, delta_id_or_path)
+        if not ver_ok:
+            unfulfilled = [f"{m.action}:{m.target}" for m in (report.mutations if report else []) if not m.verified]
+            return (
+                False,
+                f"Cannot transition SpecDelta '{doc.doc_id}' to 'applied' with unverified mutations: {ver_msg} Unfulfilled: {', '.join(unfulfilled)}",
+                file_path,
+                old_status,
+            )
+
     content = file_path.read_text(encoding="utf-8")
     new_content = _set_frontmatter_scalar(content, "status", norm_status)
 
@@ -717,6 +742,8 @@ def _check_or_record_baseline_sha(
     target_key: str,
     target_file: Path | None,
     current_sha: str,
+    *,
+    allow_applied_fallback: bool = False,
 ) -> bool:
     """Compare current_sha against SQLite delta_baselines (with Git history fallback on cache miss)."""
     try:
@@ -737,15 +764,25 @@ def _check_or_record_baseline_sha(
                 return current_sha != row[0]
 
             git_sha = _resolve_git_baseline_sha(eidos_dir, delta_file, target_key, target_file)
-            baseline_sha = git_sha if git_sha is not None else current_sha
+            if git_sha is not None:
+                conn.execute(
+                    "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)",
+                    (delta_id, target_key, git_sha),
+                )
+                conn.commit()
+                return current_sha != git_sha
+
+            if allow_applied_fallback:
+                return True
+
             conn.execute(
                 "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)",
-                (delta_id, target_key, baseline_sha),
+                (delta_id, target_key, current_sha),
             )
             conn.commit()
-            return current_sha != baseline_sha
+            return False
     except (OSError, sqlite3.Error):
-        return False
+        return allow_applied_fallback
 
 
 def _parse_spec_content(path: Path, content: str) -> SpecDocument:
@@ -912,6 +949,28 @@ def _check_structural_subtarget_precondition(
     return True
 
 
+def _resolve_target_path_and_id(
+    target: str,
+    eidos_dir: Path,
+    specs_by_id: dict[str, tuple[Path, str, dict[str, Any]]],
+) -> tuple[str, Path | None, bool]:
+    """Resolve a mutation target (entity ID or relative/eidos-prefixed .adoc path) to (catalog_id, resolved_path, exists)."""
+    if target in specs_by_id:
+        p = specs_by_id[target][0]
+        return target, p.resolve() if p.exists() else p, p.exists()
+    if "/" in target or target.endswith(".adoc"):
+        clean_p = target.strip("'\"").replace("\\", "/")
+        clean_rel = clean_p.removeprefix("eidos/")
+        for cand in (eidos_dir / clean_p, eidos_dir / clean_rel, Path(clean_p)):
+            if cand.exists() and cand.is_file():
+                resolved_cand = cand.resolve()
+                for sid, (spath, _, _) in specs_by_id.items():
+                    if spath.resolve() == resolved_cand:
+                        return sid, resolved_cand, True
+                return target, resolved_cand, True
+    return target, None, False
+
+
 def _evaluate_declarative_postcondition(
     m: dict[str, Any],
     target: str,
@@ -1002,18 +1061,9 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
         verified = False
         status = "UNKNOWN"
 
-        target_path_resolved: Path | None = None
-        target_path_exists = False
-        if "/" in target or target.endswith(".adoc"):
-            clean_p = target.strip("'\"")
-            cand_rel = eidos_dir / clean_p
-            cand_abs = Path(clean_p)
-            if cand_rel.exists():
-                target_path_exists = True
-                target_path_resolved = cand_rel.resolve()
-            elif cand_abs.is_absolute() and cand_abs.exists():
-                target_path_exists = True
-                target_path_resolved = cand_abs.resolve()
+        lookup_target, target_path_resolved, target_path_exists = _resolve_target_path_and_id(
+            target, eidos_dir, specs_by_id
+        )
 
         if action not in SUPPORTED_MUTATION_ACTIONS:
             verified = False
@@ -1032,7 +1082,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
             "remove_client",
             "remove_flow",
         ):
-            still_present = target in specs_by_id or target in container_components or target_path_exists
+            still_present = lookup_target in specs_by_id or lookup_target in container_components or target_path_exists
             if not still_present:
                 verified = True
                 status = "ABSENT_AS_EXPECTED"
@@ -1041,11 +1091,13 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                 status = "STILL_PRESENT"
 
         elif action in ("deprecate_capability", "remove_capability", "deprecate_policy", "remove_policy"):
-            if target not in specs_by_id and not target_path_exists:
+            if lookup_target not in specs_by_id and not target_path_exists:
                 verified = True
                 status = "ABSENT_AS_EXPECTED"
             else:
-                doc_fm = specs_by_id[target][2] if target in specs_by_id else {}
+                doc_fm = specs_by_id[lookup_target][2] if lookup_target in specs_by_id else {}
+                if not doc_fm and target_path_resolved and target_path_resolved.exists():
+                    doc_fm = parse_spec_file(target_path_resolved).frontmatter or {}
                 if str(doc_fm.get("status", "")).lower() in ("deprecated", "sunset", "removed"):
                     verified = True
                     status = "DEPRECATED"
@@ -1055,9 +1107,11 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
 
         # 2. Invariant Actions
         elif action == "add_invariant":
-            if target in invariants and _check_structural_subtarget_precondition(m, specs_by_id, container_components):
+            if lookup_target in invariants and _check_structural_subtarget_precondition(
+                m, specs_by_id, container_components
+            ):
                 decl_ok = _evaluate_declarative_postcondition(
-                    m, target, specs_by_id, container_components, invariant_map
+                    m, lookup_target, specs_by_id, container_components, invariant_map
                 )
                 if decl_ok is False:
                     verified = False
@@ -1070,30 +1124,35 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                 status = "MISSING"
 
         elif action == "patch_invariant":
-            if target not in invariant_map or not _check_structural_subtarget_precondition(
+            if lookup_target not in invariant_map or not _check_structural_subtarget_precondition(
                 m, specs_by_id, container_components
             ):
                 verified = False
                 status = "MISSING"
             else:
                 decl_ok = _evaluate_declarative_postcondition(
-                    m, target, specs_by_id, container_components, invariant_map
+                    m, lookup_target, specs_by_id, container_components, invariant_map
                 )
                 if decl_ok is not None:
                     verified = decl_ok
                     status = ("FOUND" if delta_status == "applied" else "MODIFIED") if decl_ok else "UNMODIFIED"
-                elif delta_status == "applied":
-                    verified = True
-                    status = "FOUND"
                 else:
-                    inv_file, inv_dict = invariant_map[target]
+                    inv_file, inv_dict = invariant_map[lookup_target]
                     inv_sha = _digest_dict(inv_dict)
-                    mod_ok = _check_or_record_baseline_sha(eidos_dir, doc.doc_id, file_path, target, inv_file, inv_sha)
+                    mod_ok = _check_or_record_baseline_sha(
+                        eidos_dir,
+                        doc.doc_id,
+                        file_path,
+                        lookup_target,
+                        inv_file,
+                        inv_sha,
+                        allow_applied_fallback=(delta_status == "applied"),
+                    )
                     verified = mod_ok
-                    status = "MODIFIED" if mod_ok else "UNMODIFIED"
+                    status = ("FOUND" if delta_status == "applied" else "MODIFIED") if mod_ok else "UNMODIFIED"
 
         elif action == "remove_invariant":
-            if target not in invariants:
+            if lookup_target not in invariants:
                 verified = True
                 status = "ABSENT_AS_EXPECTED"
             else:
@@ -1103,10 +1162,10 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
         # 3. Modification / Extension / Patch Actions
         elif action in MODIFY_ACTION_EXPECTED_TYPES:
             target_file: Path | None = None
-            if target in specs_by_id:
-                target_file = specs_by_id[target][0]
-            elif target in container_components and container_components[target] in specs_by_id:
-                target_file = specs_by_id[container_components[target]][0]
+            if lookup_target in specs_by_id:
+                target_file = specs_by_id[lookup_target][0]
+            elif lookup_target in container_components and container_components[lookup_target] in specs_by_id:
+                target_file = specs_by_id[container_components[lookup_target]][0]
             elif target_path_resolved is not None:
                 target_file = target_path_resolved
             elif action == "modify_architecture":
@@ -1124,39 +1183,42 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                 status = "MISSING"
             else:
                 decl_ok = _evaluate_declarative_postcondition(
-                    m, target, specs_by_id, container_components, invariant_map, target_file=target_file
+                    m, lookup_target, specs_by_id, container_components, invariant_map, target_file=target_file
                 )
                 if decl_ok is not None:
                     verified = decl_ok
                     status = ("FOUND" if delta_status == "applied" else "MODIFIED") if decl_ok else "UNMODIFIED"
-                elif delta_status == "applied":
-                    verified = True
-                    status = "FOUND"
                 else:
                     cur_sha: str | None = None
-                    if target not in specs_by_id and target in container_components:
-                        cnt_id = container_components[target]
+                    if lookup_target not in specs_by_id and lookup_target in container_components:
+                        cnt_id = container_components[lookup_target]
                         if cnt_id in specs_by_id:
-                            comp_dict = _find_inline_component_dict(target, specs_by_id[cnt_id][2])
+                            comp_dict = _find_inline_component_dict(lookup_target, specs_by_id[cnt_id][2])
                             if comp_dict is not None:
                                 cur_sha = _digest_dict(comp_dict)
                     if cur_sha is None:
                         cur_sha = hashlib.sha256(target_file.read_bytes()).hexdigest()
                     mod_ok = _check_or_record_baseline_sha(
-                        eidos_dir, doc.doc_id, file_path, target, target_file, cur_sha
+                        eidos_dir,
+                        doc.doc_id,
+                        file_path,
+                        lookup_target,
+                        target_file,
+                        cur_sha,
+                        allow_applied_fallback=(delta_status == "applied"),
                     )
                     verified = mod_ok
-                    status = "MODIFIED" if mod_ok else "UNMODIFIED"
+                    status = ("FOUND" if delta_status == "applied" else "MODIFIED") if mod_ok else "UNMODIFIED"
 
         # 4. Standard Addition Actions
         elif action in ADD_ACTIONS:
             found = (
-                target in specs_by_id or target in container_components or target_path_exists
+                lookup_target in specs_by_id or lookup_target in container_components or target_path_exists
             ) and _check_structural_subtarget_precondition(m, specs_by_id, container_components)
             if found:
                 decl_ok = _evaluate_declarative_postcondition(
                     m,
-                    target,
+                    lookup_target,
                     specs_by_id,
                     container_components,
                     invariant_map,
@@ -1274,6 +1336,9 @@ def execute_delta_mutations(
     if not isinstance(raw_mutations, list):
         raw_mutations = []
 
+    # Record pre-execution baselines if not already present so subsequent verification succeeds
+    _snapshot_delta_baselines(eidos_dir, doc.doc_id, overwrite=False)
+
     tx = _tx if _tx is not None else _MutationTransaction(eidos_dir)
     if _tx is None:
         tx.snapshot(target_files=[file_path])
@@ -1291,7 +1356,8 @@ def execute_delta_mutations(
             if not isinstance(m, dict):
                 return _abort(f"Invalid mutation entry in '{doc.doc_id}': expected mapping.")
             action = str(m.get("action", "")).strip().lower()
-            target = _extract_mutation_target(m)
+            raw_target = _extract_mutation_target(m)
+            target, _resolved_target_path, _ = _resolve_target_path_and_id(raw_target, eidos_dir, specs_by_id)
             details = str(m.get("details", "")).strip()
             expect = m.get("expect") if isinstance(m.get("expect"), dict) else None
 

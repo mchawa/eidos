@@ -169,7 +169,20 @@ def _validate_doc_content(target_path: Path, content_to_check: str) -> dict[str,
             }
 
     stripped = content_to_check.lstrip("\ufeff").lstrip()
-    if stripped.startswith("---") and target_path.suffix.lower() == ".adoc":
+    if target_path.suffix.lower() == ".adoc":
+        fname_lower = target_path.name.lower()
+        is_exempt_adoc = (
+            fname_lower == "readme.adoc"
+            or fname_lower.startswith("_")
+            or (fname_lower == "system.adoc" and not stripped)
+        )
+        if not stripped.startswith("---"):
+            if not is_exempt_adoc:
+                return {
+                    "decision": "deny",
+                    "reason": f"[Eidos Doc Linter] Missing YAML frontmatter block (delimited by '---') in '{target_path.name}'.",
+                }
+            return {"decision": "allow"}
         data, _, parse_err = extract_frontmatter(content_to_check)
         if parse_err:
             return {
@@ -627,7 +640,7 @@ def handle_drift_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str
 def _infer_event(event: str | None, payload: dict[str, Any], default_event: str = "stop") -> str:
     candidate = event or payload.get("hook_event_name") or payload.get("event")
     if isinstance(candidate, str) and candidate.strip():
-        norm = candidate.strip().lower()
+        norm = candidate.strip().lower().replace("-", "_")
         if norm in ("pretooluse", "pre_tool_use", "pre_tool"):
             return "pre_tool"
         if norm in ("postinvocation", "post_invocation"):

@@ -90,12 +90,12 @@ Do not consider brownfield extraction complete until `eidos validate eidos` repo
 
 ## 3. Living Web Portal & Static Site Operations (`eidos portal`)
 
-Eidos includes a zero-config, interactive **Living Web Portal** (React 19 + Tailwind v4 + Cytoscape C4 topology graph + W3C Design Tokens Studio + SpecDelta timeline + Invariant coverage matrix).
+Eidos includes a zero-config, interactive **Living Web Portal** (React 19 + Tailwind v4 + Mermaid.js v11 C4 topology & sequence diagrams + W3C Design Tokens Studio + SpecDelta timeline + Invariant coverage matrix).
 
 ### 3.1 Serve the Interactive Portal Locally
 
 ```bash
-# Launch the local FastAPI + SPA portal server (defaults to http://127.0.0.1:3000)
+# Launch the local stdlib ThreadingHTTPServer + SPA portal server (defaults to http://127.0.0.1:3000)
 eidos portal serve
 # or with custom host/port:
 eidos portal serve --port 8420 --host 127.0.0.1

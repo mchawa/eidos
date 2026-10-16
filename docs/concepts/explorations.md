@@ -90,8 +90,7 @@ Create the exploration document using the Eidos CLI:
 
 ```bash
 eidos spec create exploration EXP-2026-001 \
-  --title "Evaluate SQLite in WAL Mode for Edge Node Caching" \
-  --motivation "Assess whether SQLite WAL mode can sustain 10k reads/sec with under 5ms p99 latency."
+  --title "Evaluate SQLite in WAL Mode for Edge Node Caching"
 ```
 
 Validate the new spec:

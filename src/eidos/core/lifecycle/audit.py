@@ -125,8 +125,9 @@ class AuditEngine:
     def __init__(self, repo_root: Path | None = None, eidos_dir: Path | None = None):
         if repo_root is not None:
             self.repo_root = Path(repo_root).resolve()
-        elif eidos_dir is not None and Path(eidos_dir).name == "eidos":
-            self.repo_root = Path(eidos_dir).resolve().parent
+        elif eidos_dir is not None:
+            edir_resolved = Path(eidos_dir).resolve()
+            self.repo_root = edir_resolved.parent
         else:
             self.repo_root = Path.cwd().resolve()
 
@@ -323,7 +324,12 @@ class AuditEngine:
             return [], []
 
         compiled_terms = [(term, self._compile_term_pattern(term)) for term in all_terms]
-        delta_rel = delta_file.resolve().relative_to(self.repo_root)
+        delta_resolved = delta_file.resolve()
+        delta_rel = (
+            delta_resolved.relative_to(self.repo_root)
+            if delta_resolved.is_relative_to(self.repo_root)
+            else Path(delta_file.name)
+        )
 
         approved: list[AuditFinding] = []
         unacknowledged: list[AuditFinding] = []

@@ -95,10 +95,30 @@ def _parse_spec_content(path: Path, content: str) -> SpecDocument:
 
     frontmatter_dict, body, parse_error = extract_frontmatter(content)
 
-    doc_type = frontmatter_dict.get("type", "unknown") if frontmatter_dict else "unknown"
-    doc_id = frontmatter_dict.get("id", path.stem) if frontmatter_dict else path.stem
-    schema_ref = frontmatter_dict.get("schema") if frontmatter_dict else None
-    title = (frontmatter_dict.get("title") or frontmatter_dict.get("name")) if frontmatter_dict else None
+    raw_type = frontmatter_dict.get("type") if frontmatter_dict else None
+    doc_type = (
+        str(raw_type).strip()
+        if isinstance(raw_type, (str, int, float)) and not isinstance(raw_type, bool) and str(raw_type).strip()
+        else "unknown"
+    )
+    raw_id = frontmatter_dict.get("id") if frontmatter_dict else None
+    doc_id = (
+        str(raw_id).strip()
+        if isinstance(raw_id, (str, int, float)) and not isinstance(raw_id, bool) and str(raw_id).strip()
+        else path.stem
+    )
+    raw_schema = frontmatter_dict.get("schema") if frontmatter_dict else None
+    schema_ref = (
+        str(raw_schema).strip()
+        if isinstance(raw_schema, (str, int, float)) and not isinstance(raw_schema, bool) and str(raw_schema).strip()
+        else None
+    )
+    raw_title = (frontmatter_dict.get("title") or frontmatter_dict.get("name")) if frontmatter_dict else None
+    title = (
+        str(raw_title).strip()
+        if isinstance(raw_title, (str, int, float)) and not isinstance(raw_title, bool) and str(raw_title).strip()
+        else None
+    )
 
     doc = SpecDocument(
         file_path=path,

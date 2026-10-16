@@ -177,11 +177,15 @@ def open_cache_connection(db_path: Path) -> sqlite3.Connection:
             conn.execute("PRAGMA mmap_size = 268435456;")
             ensure_cache_schema(conn)
             return conn
-        except sqlite3.DatabaseError:
+        except sqlite3.DatabaseError as exc:
             if conn is not None:
                 with contextlib.suppress(sqlite3.Error):
                     conn.close()
-            if attempt == 0:
+            err_msg = str(exc).lower()
+            is_transient_lock = isinstance(exc, sqlite3.OperationalError) and (
+                "locked" in err_msg or "busy" in err_msg
+            )
+            if attempt == 0 and not is_transient_lock:
                 _unlink_cache_files(db_path)
                 continue
             raise

@@ -90,7 +90,7 @@ eidos validate --json
 ```
 
 Options:
-* `PATH` / `--path PATH`: Path to the specification directory (default: `eidos`).
+* `PATH`: Positional path to the specification directory or file (default: `eidos`).
 * `--json`: Output structured JSON validation report.
 
 Exit Codes:

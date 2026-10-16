@@ -716,3 +716,78 @@ def test_apply_expect_or_details_produces_substantive_non_comment_diff(tmp_path)
     _, new_body = _split_spec(after)
     assert _normalized_body_lines(old_body) != _normalized_body_lines(new_body)
 
+
+def test_deep_review_subsystem_3_scaffolder_catalog_delta_and_changelog_edge_cases(tmp_path):
+    """Verify contract owning_container fallback ignores CMP-*, _set_frontmatter_scalar preserves '#' in quotes,
+    set_delta_status('applied') enforces verification, and generate_changelog includes commits in tagless repos."""
+    import subprocess
+
+    from eidos.core.lifecycle.catalog import _set_frontmatter_scalar
+    from eidos.core.lifecycle.changelog import ChangelogGenerator
+    from eidos.core.lifecycle.delta_engine import get_delta_status_summary, list_deltas, set_delta_status
+    from eidos.core.spec.parser import parse_spec_file
+
+    init_repository(tmp_path, name="subsystem-3-deep")
+    eidos_dir = tmp_path / "eidos"
+
+    # 1. Contract owning_container fallback selects tech/container even when a promoted component sorts earlier
+    (eidos_dir / "architecture" / "components").mkdir(parents=True, exist_ok=True)
+    (eidos_dir / "architecture" / "components" / "cmp-aaa.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "schema: schemas/v1/tech/component.schema.yaml\n"
+        "id: CMP-AAA\n"
+        "name: Alpha Component\n"
+        "responsibility: Sorts before containers.\n"
+        "---\n"
+        "= Alpha Component\n",
+        encoding="utf-8",
+    )
+    create_spec(eidos_dir, "container", "CNT-ZZZ", title="Zeta Container")
+    ctr_path = create_spec(eidos_dir, "contract", "CTR-AUTO-OWNER", title="Auto Owner Contract")
+    ctr_doc = parse_spec_file(ctr_path)
+    assert ctr_doc.frontmatter.get("owning_container") == "CNT-ZZZ"
+
+    # 2. _set_frontmatter_scalar preserves '#' inside quoted YAML strings and handles empty scalar keys
+    sample_fm = (
+        "---\n"
+        'title: "Channel #general & #alerts"\n'
+        "status:\n"
+        "---\n"
+        "= Sample\n"
+    )
+    updated_fm = _set_frontmatter_scalar(sample_fm, "title", '"Updated #channel"')
+    updated_fm = _set_frontmatter_scalar(updated_fm, "status", "accepted")
+    assert 'title: "Updated #channel"' in updated_fm
+    assert "status: accepted" in updated_fm
+
+    # 3. Draft delta is included in active deltas and set_delta_status(..., 'applied') rejects unverified mutations
+    dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-088", title="Draft Gate Delta")
+    dlt_text = dlt_path.read_text(encoding="utf-8")
+    dlt_text = _set_frontmatter_scalar(dlt_text, "status", "draft")
+    dlt_text = dlt_text.replace(
+        "mutations: []",
+        "mutations:\n  - action: modify_container\n    target_container: CNT-ZZZ\n    details: Require TLS 1.3",
+    )
+    dlt_path.write_text(dlt_text, encoding="utf-8")
+
+    active_list = list_deltas(eidos_dir)
+    assert any(d["id"] == "DLT-2026-088" for d in active_list)
+    summary = get_delta_status_summary(eidos_dir)
+    assert summary["active_count"] >= 1
+    assert any(d["id"] == "DLT-2026-088" for d in summary["by_status"]["draft"])
+
+    ok_apply, msg_apply, _, _ = set_delta_status(eidos_dir, "DLT-2026-088", "applied")
+    assert ok_apply is False
+    assert "Cannot transition" in msg_apply
+
+    # 4. ChangelogGenerator includes conventional commits even when the repo has 0 Git tags
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "feat(core): add tagless changelog support"], cwd=tmp_path, check=True, capture_output=True)
+
+    changelog_md = ChangelogGenerator(repo_root=tmp_path, eidos_dir=eidos_dir).generate_changelog()
+    assert "add tagless changelog support" in changelog_md.lower()
+
