@@ -28,9 +28,12 @@ from eidos.core.lifecycle.delta_engine import (  # noqa: F401  (backwards-compat
     _ensure_eidos_gitignore,
     _evaluate_declarative_postcondition,
     _extract_mutation_target,
+    _resolve_git_head_sha,
     _snapshot_delta_baselines,
     apply_delta,
+    create_delta,
     execute_delta_mutations,
+    generate_collision_free_delta_id,
     get_delta_status_summary,
     list_deltas,
     sync_delta_views,
@@ -112,7 +115,10 @@ def create_spec(
         supported = ", ".join(sorted(set(key_aliases.values())))
         raise ValueError(f"Unknown specification type '{doc_type_key}'. Supported types: {supported}")
 
-    doc_id = normalize_id(canonical_key, raw_id)
+    if canonical_key == "delta" and raw_id.strip().lower() in ("", "auto", "auto-slug"):
+        doc_id = generate_collision_free_delta_id(eidos_dir, raw_id=raw_id, title=title)
+    else:
+        doc_id = normalize_id(canonical_key, raw_id)
     slug = doc_id.lower().replace("_", "-")
     heading = _single_line(title)
     fm: dict[str, Any]
@@ -139,6 +145,9 @@ def create_spec(
             "intent": {"kind": kind, "motivation": motivation},
             "mutations": [],
         }
+        head_sha = _resolve_git_head_sha(eidos_dir)
+        if head_sha:
+            fm["vcs"] = {"base_commit": head_sha}
         body = f"""= SpecDelta: {heading}
 :toc: left
 

@@ -415,21 +415,147 @@ def _snapshot_delta_baselines(eidos_dir: Path, delta_id: str) -> None:
         return
 
 
+def _resolve_git_repo_root(eidos_dir: Path) -> Path | None:
+    """Return the enclosing Git repository root for eidos_dir if one exists directly on or above eidos_dir."""
+    for candidate in (eidos_dir.resolve(), eidos_dir.resolve().parent):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+def _resolve_git_head_sha(eidos_dir: Path) -> str | None:
+    """Resolve the current Git HEAD commit SHA for eidos_dir, or None if not in a Git repository with commits."""
+    repo_root = _resolve_git_repo_root(eidos_dir)
+    if repo_root is None:
+        return None
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        res = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "--verify", "--quiet", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+    return None
+
+
+def generate_collision_free_delta_id(
+    eidos_dir: Path,
+    raw_id: str | None = None,
+    title: str = "",
+    slug_suffix: bool = False,
+) -> str:
+    """Generate or normalize a SpecDelta ID, scanning local and Git ref deltas and optionally appending a collision-free slug/hash."""
+    import datetime
+
+    from eidos.core.lifecycle.catalog import normalize_id
+
+    deltas_dir = eidos_dir / "deltas"
+    existing_ids: set[str] = set()
+    max_seq_by_year: dict[int, int] = {}
+    seq_re = re.compile(r"^DLT-(\d{4})-(\d{3,})(?:-[A-Z0-9_-]+)?$", re.IGNORECASE)
+
+    def _record_candidate(stem_or_id: str) -> None:
+        norm = stem_or_id.strip().upper().replace("_", "-")
+        if not norm.startswith("DLT-"):
+            return
+        existing_ids.add(norm)
+        m = seq_re.match(norm)
+        if m:
+            yr, seq = int(m.group(1)), int(m.group(2))
+            if seq > max_seq_by_year.get(yr, 0):
+                max_seq_by_year[yr] = seq
+
+    if deltas_dir.exists():
+        for p in deltas_dir.rglob("*.adoc"):
+            if "by-status" in p.parts:
+                continue
+            _record_candidate(p.stem)
+
+    repo_root = _resolve_git_repo_root(eidos_dir)
+    if repo_root is not None:
+        with contextlib.suppress(ValueError, OSError, subprocess.SubprocessError):
+            rel_deltas = str(deltas_dir.resolve().relative_to(repo_root)).replace("\\", "/")
+            for ref in ("HEAD", "main", "origin/main", "master", "origin/master"):
+                ls_res = subprocess.run(
+                    ["git", "-C", str(repo_root), "ls-tree", "--name-only", ref, f"{rel_deltas}/"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                if ls_res.returncode == 0:
+                    for ln in ls_res.stdout.splitlines():
+                        name = Path(ln.strip()).stem
+                        if name:
+                            _record_candidate(name)
+
+    cleaned_raw = (raw_id or "").strip()
+    is_auto = cleaned_raw.lower() in ("", "auto", "auto-slug")
+    if cleaned_raw.lower() == "auto-slug":
+        slug_suffix = True
+
+    year = datetime.datetime.now(datetime.timezone.utc).year
+    if is_auto:
+        next_seq = max_seq_by_year.get(year, 0) + 1
+        base_id = f"DLT-{year}-{next_seq:03d}"
+    else:
+        base_id = normalize_id("delta", cleaned_raw)
+
+    if slug_suffix or (is_auto and base_id in existing_ids):
+        slug_tokens = [tok for tok in re.split(r"[^A-Za-z0-9]+", title.upper()) if len(tok) >= 2][:2]
+        suffix = "-".join(slug_tokens) if slug_tokens else hashlib.sha256(
+            f"{base_id}:{title}:{os.getpid()}".encode("utf-8")
+        ).hexdigest()[:6].upper()
+        candidate_id = f"{base_id}-{suffix}"
+        if candidate_id in existing_ids:
+            short_hash = hashlib.sha256(f"{candidate_id}:{title}".encode("utf-8")).hexdigest()[:4].upper()
+            candidate_id = f"{candidate_id}-{short_hash}"
+        return candidate_id
+
+    return base_id
+
+
+def create_delta(
+    eidos_dir: Path,
+    raw_id: str = "auto",
+    title: str = "Untitled SpecDelta",
+    kind: str = "feature",
+    motivation: str = "Proposed change motivation.",
+    slug_suffix: bool = False,
+) -> Path:
+    """Create a SpecDelta with automatic collision-free ID resolution and vcs.base_commit baseline capture."""
+    from eidos.core.lifecycle.scaffolder import create_spec
+
+    resolved_id = generate_collision_free_delta_id(
+        eidos_dir,
+        raw_id=raw_id,
+        title=title,
+        slug_suffix=slug_suffix,
+    )
+    return create_spec(
+        eidos_dir=eidos_dir,
+        doc_type_key="delta",
+        raw_id=resolved_id,
+        title=title,
+        kind=kind,
+        motivation=motivation,
+    )
+
+
 def _resolve_git_baseline_sha(
     eidos_dir: Path,
     delta_file: Path,
     target_key: str,
     target_file: Path | None,
 ) -> str | None:
-    """Recover the pre-delta baseline SHA-256 of target_key from Git history when the local SQLite cache is absent."""
+    """Recover the pre-delta baseline SHA-256 of target_key from vcs.base_commit or Git history when SQLite cache is absent."""
     if target_file is None or not target_file.exists():
         return None
 
-    repo_root: Path | None = None
-    for candidate in (eidos_dir.resolve(), eidos_dir.resolve().parent):
-        if (candidate / ".git").exists():
-            repo_root = candidate
-            break
+    repo_root = _resolve_git_repo_root(eidos_dir)
     if repo_root is None:
         return None
 
@@ -439,6 +565,23 @@ def _resolve_git_baseline_sha(
         return None
 
     revs: list[str] = []
+
+    def _add_rev(rev_candidate: str | None) -> None:
+        if rev_candidate and rev_candidate not in revs:
+            revs.append(rev_candidate)
+
+    # 1. Check vcs.base_commit recorded in the SpecDelta frontmatter (portable across machines/CI and uncommitted deltas)
+    if delta_file.exists():
+        with contextlib.suppress(OSError):
+            dlt_fm, _, _ = extract_frontmatter(delta_file.read_text(encoding="utf-8"))
+            if isinstance(dlt_fm, dict):
+                vcs_block = dlt_fm.get("vcs")
+                if isinstance(vcs_block, dict):
+                    base_commit = vcs_block.get("base_commit")
+                    if isinstance(base_commit, str) and base_commit.strip():
+                        _add_rev(base_commit.strip())
+
+    # 2. Check Git commit history where the SpecDelta file was added
     with contextlib.suppress(ValueError, OSError, subprocess.SubprocessError):
         rel_delta = str(delta_file.resolve().relative_to(repo_root)).replace("\\", "/")
         log_res = subprocess.run(
@@ -459,11 +602,23 @@ def _resolve_git_baseline_sha(
                 check=False,
             )
             if parent_check.returncode == 0:
-                revs.append(f"{first_commit}~1")
-            revs.append(first_commit)
+                _add_rev(f"{first_commit}~1")
+            _add_rev(first_commit)
 
+    # 3. For uncommitted delta files without vcs.base_commit, try merge-base against main/origin/main then HEAD
     if not revs:
-        revs.append("HEAD")
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            for base_branch in ("origin/main", "main", "origin/master", "master"):
+                mb_res = subprocess.run(
+                    ["git", "-C", str(repo_root), "merge-base", "HEAD", base_branch],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                if mb_res.returncode == 0 and mb_res.stdout.strip():
+                    _add_rev(mb_res.stdout.strip())
+        _add_rev("HEAD")
 
     for rev in revs:
         with contextlib.suppress(OSError, subprocess.SubprocessError):
@@ -568,16 +723,21 @@ def _parse_spec_content(path: Path, content: str) -> SpecDocument:
 
 
 class _MutationTransaction:
-    """Transactional filesystem snapshot and rollback manager for SpecDelta execution and application."""
+    """Copy-on-write transactional filesystem snapshot and rollback manager for SpecDelta execution and application."""
 
     def __init__(self, eidos_dir: Path) -> None:
         self.eidos_dir = eidos_dir.resolve()
         self.original_files: dict[Path, bytes] = {}
         self.original_dirs: set[Path] = set()
+        self._initial_files: set[Path] = set()
+        self.created_files: set[Path] = set()
 
-    def snapshot(self) -> None:
+    def snapshot(self, target_files: list[Path] | None = None) -> None:
+        """Record initial directory/file inventory without reading all of eidos/ into RAM; optionally pre-snapshot target_files."""
         self.original_files.clear()
         self.original_dirs.clear()
+        self._initial_files.clear()
+        self.created_files.clear()
         if not self.eidos_dir.exists():
             return
         self.original_dirs.add(self.eidos_dir)
@@ -589,10 +749,22 @@ class _MutationTransaction:
                 self.original_dirs.add((root_path / d).resolve())
             for fn in files:
                 fp = (root_path / fn).resolve()
-                if fp.is_symlink():
-                    continue
-                with contextlib.suppress(OSError):
-                    self.original_files[fp] = fp.read_bytes()
+                if not fp.is_symlink():
+                    self._initial_files.add(fp)
+        for tf in target_files or ():
+            self.record_before_write(tf)
+
+    def record_before_write(self, path: Path) -> None:
+        """Copy-on-write snapshot of a single file immediately prior to mutation or deletion."""
+        fp = path.resolve()
+        if fp in self.original_files or fp in self.created_files:
+            return
+        if fp.exists() and not fp.is_symlink():
+            with contextlib.suppress(OSError):
+                self.original_files[fp] = fp.read_bytes()
+                self._initial_files.add(fp)
+        else:
+            self.created_files.add(fp)
 
     def rollback(self) -> None:
         if not self.eidos_dir.exists():
@@ -608,7 +780,7 @@ class _MutationTransaction:
                 if not fp.is_symlink():
                     current_files.add(fp)
 
-        for fp in current_files - set(self.original_files.keys()):
+        for fp in (current_files - self._initial_files) | self.created_files:
             with contextlib.suppress(OSError):
                 if fp.exists():
                     fp.unlink()
@@ -975,6 +1147,7 @@ def _apply_expect_or_details_to_spec(
     spec_file: Path,
     expect: dict[str, Any] | None,
     details: str,
+    tx: _MutationTransaction | None = None,
 ) -> bool:
     """Apply declarative expect fields and/or details comment to a specification file on disk."""
     content = spec_file.read_text(encoding="utf-8")
@@ -1006,12 +1179,18 @@ def _apply_expect_or_details_to_spec(
         return False
 
     if updated != content:
+        if tx is not None:
+            tx.record_before_write(spec_file)
         spec_file.write_text(updated, encoding="utf-8")
     return True
 
 
-def execute_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool, str, list[Path]]:
-    """Deterministically scaffold and execute mutations declared in a SpecDelta with transactional rollback."""
+def execute_delta_mutations(
+    eidos_dir: Path,
+    delta_id_or_path: str,
+    _tx: _MutationTransaction | None = None,
+) -> tuple[bool, str, list[Path]]:
+    """Deterministically scaffold and execute mutations declared in a SpecDelta with copy-on-write transactional rollback."""
     # Function-local import: create_spec (scaffolder) itself depends on this module's view/baseline helpers,
     # so a module-level import would create an import cycle (DLT-2026-038).
     from eidos.core.lifecycle.scaffolder import create_spec
@@ -1031,8 +1210,9 @@ def execute_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[boo
     if not isinstance(raw_mutations, list):
         raw_mutations = []
 
-    tx = _MutationTransaction(eidos_dir)
-    tx.snapshot()
+    tx = _tx if _tx is not None else _MutationTransaction(eidos_dir)
+    if _tx is None:
+        tx.snapshot(target_files=[file_path])
 
     specs_by_id, container_components, invariant_map = _build_spec_catalog_with_invariants(eidos_dir)
     mutated_files: list[Path] = []
@@ -1084,6 +1264,7 @@ def execute_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[boo
                         if m.get("target_container"):
                             kwargs["owning_container"] = m["target_container"]
                     created = create_spec(**kwargs)
+                    tx.created_files.add(created.resolve())
                     if expect:
                         _apply_expect_or_details_to_spec(created, expect, "")
                     if created and created not in mutated_files:
@@ -1133,6 +1314,7 @@ def execute_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[boo
                                 updated_content = _mutate_frontmatter_components(
                                     cnt_content, "append", target_id, new_comp
                                 )
+                                tx.record_before_write(cnt_file)
                                 cnt_file.write_text(updated_content, encoding="utf-8")
                                 container_components[target_id] = target_cnt or "CNT-CORE"
                                 updated_doc = parse_spec_file(cnt_file)
@@ -1148,6 +1330,7 @@ def execute_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[boo
                             raw_id=target_id,
                             title=title,
                         )
+                        tx.created_files.add(created.resolve())
                         if created and created not in mutated_files:
                             mutated_files.append(created)
                         created_doc = parse_spec_file(created)
@@ -1187,6 +1370,7 @@ def execute_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[boo
                         inv_list = p_fm.setdefault("invariants", [])
                     if not any(isinstance(i, dict) and i.get("id") == inv_id for i in inv_list):
                         inv_list.append(new_inv)
+                        tx.record_before_write(parent_file)
                         parent_file.write_text(_render_spec(p_fm, p_body), encoding="utf-8")
                         invariant_map[inv_id] = (parent_file, new_inv)
                         specs_by_id[parent_id] = (parent_file, parent_type, p_fm)
@@ -1213,6 +1397,7 @@ def execute_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[boo
                             cnt_fm, _cnt_body, _ = extract_frontmatter(cnt_content)
                             if cnt_fm and "components" in cnt_fm:
                                 updated_content = _mutate_frontmatter_components(cnt_content, "remove", target_id)
+                                tx.record_before_write(cnt_file)
                                 cnt_file.write_text(updated_content, encoding="utf-8")
                                 del container_components[target_id]
                                 updated_doc = parse_spec_file(cnt_file)
@@ -1226,6 +1411,7 @@ def execute_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[boo
                             f"Type mismatch for 'remove_component': target '{target_id}' has type '{actual_type}', expected 'tech/component'."
                         )
                     if spec_file.exists():
+                        tx.record_before_write(spec_file)
                         spec_file.unlink()
                         deleted_files.add(spec_file)
                         del specs_by_id[target_id]
@@ -1246,6 +1432,7 @@ def execute_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[boo
                             f"Type mismatch for '{action}': target '{target_id}' has type '{actual_type}', expected '{expected_type}'."
                         )
                     if spec_file.exists():
+                        tx.record_before_write(spec_file)
                         spec_file.unlink()
                         deleted_files.add(spec_file)
                         del specs_by_id[target_id]
@@ -1276,6 +1463,7 @@ def execute_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[boo
                                 for i in p_fm["technical"]["invariants"]
                                 if not (isinstance(i, dict) and i.get("id") == inv_id)
                             ]
+                        tx.record_before_write(inv_file)
                         inv_file.write_text(_render_spec(p_fm, p_body), encoding="utf-8")
                         del invariant_map[inv_id]
                         if inv_file not in mutated_files:
@@ -1293,6 +1481,7 @@ def execute_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[boo
                     )
                 content = spec_file.read_text(encoding="utf-8")
                 updated_content = _set_frontmatter_scalar(content, "status", "deprecated")
+                tx.record_before_write(spec_file)
                 spec_file.write_text(updated_content, encoding="utf-8")
                 updated_doc = parse_spec_file(spec_file)
                 specs_by_id[target] = (spec_file, actual_type, updated_doc.frontmatter)
@@ -1337,6 +1526,7 @@ def execute_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[boo
                                     elif details:
                                         item["rule"] = details
                                     inv_dict = item
+                    tx.record_before_write(inv_file)
                     inv_file.write_text(_render_spec(p_fm, p_body), encoding="utf-8")
                     invariant_map[inv_id] = (inv_file, inv_dict)
                     if inv_file not in mutated_files:
@@ -1374,6 +1564,7 @@ def execute_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[boo
                         updated_content = _mutate_frontmatter_components(cnt_content, "replace", target, updated_comp)
                         if expect and "contains" in expect and str(expect["contains"]) not in updated_content:
                             updated_content = f"{updated_content.rstrip()}\n\n{expect['contains']}\n"
+                        tx.record_before_write(cnt_file)
                         cnt_file.write_text(updated_content, encoding="utf-8")
                         updated_doc = parse_spec_file(cnt_file)
                         specs_by_id[cnt_id] = (cnt_file, cnt_type, updated_doc.frontmatter)
@@ -1400,7 +1591,7 @@ def execute_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[boo
                         m, target, specs_by_id, container_components, invariant_map, target_file=target_file
                     )
                     if decl_ok is not True:
-                        if not _apply_expect_or_details_to_spec(target_file, expect, details):
+                        if not _apply_expect_or_details_to_spec(target_file, expect, details, tx=tx):
                             return _abort(
                                 f"Cannot execute '{action}' on '{target}': no 'expect' or 'details' provided."
                             )
@@ -1462,11 +1653,11 @@ def apply_delta(
         return False, f"Document at '{file_path}' is not a SpecDelta (type: {doc.doc_type}).", None, []
 
     tx = _MutationTransaction(eidos_dir)
-    tx.snapshot()
+    tx.snapshot(target_files=[file_path])
 
     mutated_files: list[Path] = []
     if execute:
-        exec_ok, exec_msg, mutated_files = execute_delta_mutations(eidos_dir, delta_id_or_path)
+        exec_ok, exec_msg, mutated_files = execute_delta_mutations(eidos_dir, delta_id_or_path, _tx=tx)
         if not exec_ok:
             tx.rollback()
             return False, f"Failed executing delta mutations: {exec_msg}", file_path, []
@@ -1509,6 +1700,7 @@ def apply_delta(
             [],
         )
 
+    tx.record_before_write(file_path)
     file_path.write_text(new_content, encoding="utf-8")
     sync_delta_views(eidos_dir)
 

@@ -37,7 +37,7 @@ components:
     source_path: "src/eidos/core/lifecycle/initializer.py"
   - id: CMP-DELTA-ENGINE
     name: "DeltaEngine"
-    responsibility: "Owns the SpecDelta lifecycle and strict enum taxonomy enforcement (intent.kind, bug_classification, severity, and all 44 mutations[].action values): listing, status summaries, gitignored by-status view sync, SQLite baseline snapshots with Git history fallback (_resolve_git_baseline_sha) on cache misses, verification of declared mutations against living specifications (verify_delta_mutations), transactional execution with strict remove_* entity type verification and pre-commit SpecValidator validation (execute_delta_mutations), and atomic in-place application with full rollback on error (apply_delta)."
+    responsibility: "Owns the SpecDelta lifecycle and strict enum taxonomy enforcement (intent.kind, bug_classification, severity, and all 44 mutations[].action values): collision-free delta ID generation (generate_collision_free_delta_id, create_delta), listing, status summaries, gitignored by-status view sync, SQLite baseline snapshots with vcs.base_commit and Git history fallback (_resolve_git_baseline_sha) on cache misses, verification of declared mutations against living specifications (verify_delta_mutations), copy-on-write transactional execution (_MutationTransaction.record_before_write) with strict remove_* entity type verification and pre-commit SpecValidator validation (execute_delta_mutations), and atomic in-place application with full rollback on error (apply_delta)."
     source_path: "src/eidos/core/lifecycle/delta_engine.py"
   - id: CMP-ASSET-LOCATOR
     name: "AssetLocator"

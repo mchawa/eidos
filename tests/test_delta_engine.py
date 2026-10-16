@@ -612,3 +612,84 @@ def test_delta_schema_action_coverage_and_git_baseline_fallback(tmp_path):
     ok_git, _, rep_git = verify_delta_mutations(eidos_dir, "DLT-2026-070")
     assert ok_git is True
     assert [m.status for m in rep_git.mutations] == ["MODIFIED", "MODIFIED", "MODIFIED"]
+
+
+def test_delta_vcs_base_commit_collision_free_ids_and_cow_transaction(tmp_path):
+    """Verify vcs.base_commit on uncommitted deltas, collision-free delta IDs, and copy-on-write _MutationTransaction."""
+    import shutil
+    import subprocess
+
+    from eidos.core.lifecycle.delta_engine import (
+        _MutationTransaction,
+        create_delta,
+        generate_collision_free_delta_id,
+    )
+
+    init_repository(tmp_path, name="cow-baseline-test")
+    eidos_dir = tmp_path / "eidos"
+
+    create_spec(eidos_dir, "domain", "DOM-COW", title="COW Domain")
+    pol_path = create_spec(eidos_dir, "policy", "POL-COW-001", title="COW Policy", rule="Initial cow rule.")
+    unmodified_pol = create_spec(
+        eidos_dir, "policy", "POL-UNTOUCHED-001", title="Untouched Policy", rule="Untouched rule."
+    )
+
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Initial baseline"], cwd=tmp_path, check=True, capture_output=True)
+
+    # 1. Collision-free auto and slug-qualified delta IDs + vcs.base_commit persistence
+    dlt_auto = create_delta(eidos_dir, raw_id="auto", title="Automated Portable Baseline", slug_suffix=True)
+    dlt_doc = parse_spec_file(dlt_auto)
+    assert dlt_doc.doc_id.startswith("DLT-")
+    assert "AUTOMATED-PORTABLE" in dlt_doc.doc_id
+    vcs_meta = dlt_doc.frontmatter.get("vcs", {})
+    assert isinstance(vcs_meta, dict) and len(vcs_meta.get("base_commit", "")) >= 7
+
+    next_id = generate_collision_free_delta_id(eidos_dir, raw_id="auto", title="Second Delta")
+    assert next_id != dlt_doc.doc_id
+
+    # 2. Uncommitted delta + wiped .cache/index.db resolves baseline deterministically via vcs.base_commit
+    mutations_yaml = """mutations:
+  - action: modify_policy
+    target_policy: POL-COW-001
+"""
+    dlt_auto.write_text(
+        dlt_auto.read_text(encoding="utf-8").replace("mutations: []", mutations_yaml),
+        encoding="utf-8",
+    )
+    pol_path.write_text(
+        pol_path.read_text(encoding="utf-8").replace("Initial cow rule.", "Modified cow rule on branch."),
+        encoding="utf-8",
+    )
+    # Even if the policy modification is committed while the delta file remains uncommitted AND .cache is wiped:
+    subprocess.run(["git", "add", str(pol_path)], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Modify policy before committing delta"], cwd=tmp_path, check=True, capture_output=True)
+    shutil.rmtree(eidos_dir / ".cache", ignore_errors=True)
+
+    ok_uncommitted, _, rep_uncommitted = verify_delta_mutations(eidos_dir, dlt_doc.doc_id)
+    assert ok_uncommitted is True
+    assert rep_uncommitted.mutations[0].status == "MODIFIED"
+
+    # 3. Copy-on-write _MutationTransaction snapshots only targeted files, not untouched specs
+    tx = _MutationTransaction(eidos_dir)
+    tx.snapshot()
+    assert tx.original_files == {}
+    assert unmodified_pol.resolve() not in tx.original_files
+
+    orig_pol_bytes = pol_path.read_bytes()
+    tx.record_before_write(pol_path)
+    assert pol_path.resolve() in tx.original_files
+    assert unmodified_pol.resolve() not in tx.original_files
+
+    pol_path.write_text("corrupted content", encoding="utf-8")
+    created_tmp = eidos_dir / "policies" / "pol-temp-created.adoc"
+    tx.record_before_write(created_tmp)
+    created_tmp.write_text("temp created", encoding="utf-8")
+
+    tx.rollback()
+    assert pol_path.read_bytes() == orig_pol_bytes
+    assert not created_tmp.exists()
+
