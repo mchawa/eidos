@@ -2174,3 +2174,26 @@ def test_dlt_2026_074_design_subgraph_inheritance_and_cross_client_flows():
     assert "eidos/design/systems/foundation/tokens.json" in paths
     assert "eidos/design/flows/handoff.adoc" in paths
 
+
+def test_nested_spec_subpackage_treated_as_code(tmp_path):
+    """Verify nested src/.../spec/*.py subpackages are classified as code_files while root spec/ and nested tests/ are test_files."""
+    from eidos.vcs.drift import is_polyglot_test_file
+
+    assert is_polyglot_test_file("src/pkg/spec/validator.py", repo_root=tmp_path) is False
+    assert is_polyglot_test_file("src/pkg/specs/models.py", repo_root=tmp_path) is False
+    assert is_polyglot_test_file("spec/auth_helper.py", repo_root=tmp_path) is True
+    assert is_polyglot_test_file("src/pkg/tests/test_validator.py", repo_root=tmp_path) is True
+
+    classified = classify_changed_files(
+        [
+            "src/pkg/spec/validator.py",
+            "src/pkg/specs/models.py",
+            "spec/auth_helper.py",
+            "src/pkg/tests/test_validator.py",
+        ],
+        repo_root=tmp_path,
+    )
+    assert set(classified.code_files) == {"src/pkg/spec/validator.py", "src/pkg/specs/models.py"}
+    assert set(classified.test_files) == {"spec/auth_helper.py", "src/pkg/tests/test_validator.py"}
+
+

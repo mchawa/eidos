@@ -495,12 +495,15 @@ def _spec_coverage_verdict(
             return False, "missing_anchor", relevant
         return True, None, []
 
-    if addition.symbol_names and not owner_changed:
-        if not any(
+    if (
+        addition.symbol_names
+        and not owner_changed
+        and not any(
             inspector.is_new_spec(s) or inspector.is_anchored(s, addition.file, addition.symbol_names)
             for s in substantive
-        ):
-            return False, "missing_anchor", relevant
+        )
+    ):
+        return False, "missing_anchor", relevant
     return True, None, []
 
 

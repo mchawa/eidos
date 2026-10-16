@@ -133,6 +133,7 @@ def test_zensical_strict_build():
 def test_bundled_skill_yaml_templates_conform_to_v1_schemas():
     """Verify all YAML frontmatter templates in bundled skills validate against v1 JSON Schemas."""
     import re
+
     from eidos.core.spec.models import SpecDocument
     from eidos.core.spec.parser import split_frontmatter_and_body
     from eidos.core.spec.validator import SpecValidator
@@ -177,6 +178,7 @@ def test_bundled_skill_yaml_templates_conform_to_v1_schemas():
 def test_schema_glossary_yaml_examples_conform_to_v1_schemas():
     """Verify YAML frontmatter examples in docs/concepts/schema-glossary.md validate against v1 JSON Schemas (DLT-2026-077)."""
     import re
+
     import yaml
 
     from eidos.core.spec.models import SpecDocument

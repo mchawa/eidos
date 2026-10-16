@@ -287,9 +287,9 @@ def _compute_working_tree_digest(workspace_root: Path, eidos_dir: Path) -> str:
         p = workspace_root / rel
         try:
             stat = p.stat()
-            h.update(f"D:{rel}:{stat.st_mtime_ns}:{stat.st_size}\n".encode("utf-8"))
+            h.update(f"D:{rel}:{stat.st_mtime_ns}:{stat.st_size}\n".encode())
         except OSError:
-            h.update(f"D:{rel}:MISSING\n".encode("utf-8"))
+            h.update(f"D:{rel}:MISSING\n".encode())
 
     if eidos_dir.is_dir():
         for p in sorted(eidos_dir.rglob("*")):
@@ -298,7 +298,7 @@ def _compute_working_tree_digest(workspace_root: Path, eidos_dir: Path) -> str:
             try:
                 stat = p.stat()
                 rel = str(p.relative_to(eidos_dir))
-                h.update(f"E:{rel}:{stat.st_mtime_ns}:{stat.st_size}\n".encode("utf-8"))
+                h.update(f"E:{rel}:{stat.st_mtime_ns}:{stat.st_size}\n".encode())
             except OSError:
                 continue
 

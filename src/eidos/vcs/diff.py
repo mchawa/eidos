@@ -50,7 +50,8 @@ class ChangedFilesClassification:
 
 
 _CANDIDATE_BASE_REFS = ("origin/main", "main", "origin/master", "master", "HEAD~1")
-_NESTED_TEST_DIR_NAMES = {"test", "tests", "__tests__", "spec", "specs"}
+_NESTED_TEST_DIR_NAMES = {"test", "tests", "__tests__"}
+_ROOT_TEST_DIR_NAMES = {"test", "tests", "__tests__", "spec", "specs"}
 _PACKAGE_PATH_LINE_RE = re.compile(r"^package_path:\s*[\"']?([^\"'\n#]+)", re.MULTILINE)
 
 
@@ -422,7 +423,7 @@ def is_polyglot_test_file(
 
     if rel_path.is_absolute():
         parent_names = [parent.name.lower() for parent in rel_path.parents[:2]]
-        in_test_dir = any(d in _NESTED_TEST_DIR_NAMES for d in parent_names)
+        in_test_dir = any(d in _ROOT_TEST_DIR_NAMES for d in parent_names)
         is_under_src = False
         nested_test_segment = False
     else:
@@ -446,7 +447,7 @@ def is_polyglot_test_file(
             nested_test_segment
             if is_under_src
             else (
-                bool(dir_parts and dir_parts[0] in _NESTED_TEST_DIR_NAMES)
+                bool(dir_parts and dir_parts[0] in _ROOT_TEST_DIR_NAMES)
                 or any(part in _NESTED_TEST_DIR_NAMES for part in dir_parts)
             )
         )

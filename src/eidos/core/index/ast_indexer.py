@@ -971,14 +971,9 @@ def _extract_python_dunder_all(tree: ast.Module) -> set[str] | None:
             if any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
                 value = node.value
                 found = True
-        elif isinstance(node, ast.AnnAssign):
-            if isinstance(node.target, ast.Name) and node.target.id == "__all__":
-                value = node.value
-                found = True
-        elif isinstance(node, ast.AugAssign):
-            if isinstance(node.target, ast.Name) and node.target.id == "__all__":
-                value = node.value
-                found = True
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)) and isinstance(node.target, ast.Name) and node.target.id == "__all__":
+            value = node.value
+            found = True
         if isinstance(value, (ast.List, ast.Tuple, ast.Set)):
             for elt in value.elts:
                 if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
@@ -1040,23 +1035,17 @@ def _evaluate_symbol_visibility(
                 return False
             if sym.parent_symbol and sym.parent_symbol.startswith(("_", "#")):
                 return False
-            if sym.name.startswith(("_", "#")) or _TS_PRIVATE_METHOD_RE.match(sig):
-                return False
-            return True
+            return not (sym.name.startswith(("_", "#")) or _TS_PRIVATE_METHOD_RE.match(sig))
         if sig.startswith("export ") or re.match(r"^export\b", sig):
             return True
-        if ts_exports is not None and sym.name in ts_exports:
-            return True
-        return False
+        return bool(ts_exports is not None and sym.name in ts_exports)
 
     if suffix in (".java", ".kt", ".kts"):
         if sym.name.startswith("_"):
             return False
         if sym.parent_symbol and class_is_public is not None and not class_is_public.get(sym.parent_symbol, True):
             return False
-        if sig and _JAVA_KT_PRIVATE_RE.search(sig):
-            return False
-        return True
+        return not (sig and _JAVA_KT_PRIVATE_RE.search(sig))
 
     # Python (.py) and default fallback
     if py_dunder_all is not None:

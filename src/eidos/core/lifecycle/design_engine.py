@@ -1,7 +1,6 @@
 """Design engine: scaffolds Multi-Design Systems, W3C DTCG tokens, UI components, screens, clients, and flows."""
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 

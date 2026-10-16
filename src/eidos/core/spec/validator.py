@@ -7,7 +7,7 @@ import json
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import jsonschema
 import yaml
@@ -1153,7 +1153,12 @@ class SpecValidator:
 
                 token_count = 0
 
-                def _walk_tokens(node: dict[str, Any], path_prefix: str) -> None:
+                def _walk_tokens(
+                    node: dict[str, Any],
+                    path_prefix: str,
+                    doc_name: str = doc.file_path.name,
+                    m_rel: str = manifest_rel,
+                ) -> None:
                     nonlocal token_count
                     if "$value" in node:
                         token_count += 1
@@ -1162,7 +1167,7 @@ class SpecValidator:
                             not isinstance(tok_type, str) or tok_type not in self._VALID_DTCG_TYPES
                         ):
                             report.broken_references.append(
-                                f"Invalid W3C DTCG token $type in {doc.file_path.name} ({manifest_rel}): "
+                                f"Invalid W3C DTCG token $type in {doc_name} ({m_rel}): "
                                 f"token '{path_prefix}' has unsupported $type '{tok_type}'"
                             )
                         return
@@ -1175,14 +1180,14 @@ class SpecValidator:
                     ]
                     if path_prefix and not child_dicts and non_meta_scalars:
                         report.broken_references.append(
-                            f"Invalid W3C DTCG token in {doc.file_path.name} ({manifest_rel}): "
+                            f"Invalid W3C DTCG token in {doc_name} ({m_rel}): "
                             f"token '{path_prefix}' is missing required '$value' property"
                         )
                         return
 
                     for k, v in child_dicts.items():
                         sub = f"{path_prefix}.{k}" if path_prefix else str(k)
-                        _walk_tokens(v, sub)
+                        _walk_tokens(v, sub, doc_name, m_rel)
 
                 _walk_tokens(token_data, "")
                 if token_count == 0:
@@ -1489,7 +1494,7 @@ class SpecValidator:
         if not isinstance(paths, dict):
             return
         body = doc.body or ""
-        for route in sorted(str(k) for k in paths.keys()):
+        for route in sorted(str(k) for k in paths):
             if route not in body:
                 report.broken_references.append(
                     f"Contract drift in {doc.file_path.name}: OpenAPI path '{route}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
@@ -1564,7 +1569,7 @@ class SpecValidator:
                     f"Contract drift in {doc.file_path.name}: GraphQL operation '{op}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
                 )
 
-    _CONTRACT_PROTOCOL_VERIFIERS: dict[str, str] = {
+    _CONTRACT_PROTOCOL_VERIFIERS: ClassVar[dict[str, str]] = {
         "cli_args": "_verify_cli_contract_commands",
         "python_protocol": "_verify_python_protocol_contract",
         "rest_openapi": "_verify_rest_openapi_contract",

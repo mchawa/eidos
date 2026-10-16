@@ -497,7 +497,7 @@ def generate_collision_free_delta_id(
     if cleaned_raw.lower() == "auto-slug":
         slug_suffix = True
 
-    year = datetime.datetime.now(datetime.timezone.utc).year
+    year = datetime.datetime.now(datetime.UTC).year
     if is_auto:
         next_seq = max_seq_by_year.get(year, 0) + 1
         base_id = f"DLT-{year}-{next_seq:03d}"
@@ -507,11 +507,11 @@ def generate_collision_free_delta_id(
     if slug_suffix or (is_auto and base_id in existing_ids):
         slug_tokens = [tok for tok in re.split(r"[^A-Za-z0-9]+", title.upper()) if len(tok) >= 2][:2]
         suffix = "-".join(slug_tokens) if slug_tokens else hashlib.sha256(
-            f"{base_id}:{title}:{os.getpid()}".encode("utf-8")
+            f"{base_id}:{title}:{os.getpid()}".encode()
         ).hexdigest()[:6].upper()
         candidate_id = f"{base_id}-{suffix}"
         if candidate_id in existing_ids:
-            short_hash = hashlib.sha256(f"{candidate_id}:{title}".encode("utf-8")).hexdigest()[:4].upper()
+            short_hash = hashlib.sha256(f"{candidate_id}:{title}".encode()).hexdigest()[:4].upper()
             candidate_id = f"{candidate_id}-{short_hash}"
         return candidate_id
 
