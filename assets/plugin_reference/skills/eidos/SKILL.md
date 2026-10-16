@@ -207,13 +207,14 @@ eidos/
 │   └── <domain-slug>/
 │       ├── domain.adoc                  # Bounded Context & Ubiquitous Language (DOM-*)
 │       └── capabilities/                # Functional Capabilities, JTBD & Invariants (CAP-*)
-├── design/                              # Optional Multi-Design Systems (DS-*), Tokens, UI Components (UIC-*)
-├── clients/                             # Optional Client Apps (CLT-*), Screens (SCR-*), Flows (FLOW-*)
+├── design/                              # Optional Multi-Design Systems & Client UX
+│   ├── systems/<slug>/                  # Design Systems (DS-*), W3C tokens.json & UI Components (UIC-*)
+│   ├── clients/<app>/                   # Client Apps (CLT-*) & Screen State Machines (SCR-*)
+│   └── flows/                           # User Interaction Flows (FLOW-*)
 ├── personas/                            # Actor Personas (PER-*)
 ├── policies/                            # System-wide Governance & NFR Policies (POL-*)
 ├── explorations/                        # Technical Spikes & Feasibility Discovery (EXP-*)
-├── deltas/                              # SpecDelta Mutations (DLT-*)
-└── views/                               # Auto-generated symlink projections (DO NOT EDIT MANUALLY)
+└── deltas/                              # SpecDelta Mutations (DLT-*) & auto-synced by-status/ views
 ```
 
 ---

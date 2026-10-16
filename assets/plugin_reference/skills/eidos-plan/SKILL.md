@@ -18,7 +18,7 @@ When an engineering problem has high uncertainty (e.g., evaluating two storage e
 ### 1.1 Exploration Lifecycle States
 
 ```text
-proposed ──► in_progress ──► adopted   (Graduates to a SpecDelta DLT-* via resulting_deltas)
+proposed ──► in_progress ──► adopted   (Graduates to a SpecDelta DLT-* via decision.resulting_delta_id)
                          └──► discarded (Preserved in Git so future agents never repeat failed approaches)
 ```
 
@@ -34,28 +34,33 @@ type: product/exploration
 schema: schemas/v1/product/exploration.schema.yaml
 id: EXP-2026-001
 title: "Evaluate Embedded DuckDB vs SQLite FTS5 for Local Search"
-status: in_progress # proposed | in_progress | adopted | discarded
-timebox: "2 days"
+status: in_progress # draft | proposed | planned | in_progress | adopted | discarded
 
 hypothesis: "We believe Python's stdlib sqlite3 with FTS5 can execute hybrid lexical + graph queries in <5ms for 500 specs without external binary wheels."
 
+questions_to_answer:
+  - "Can stdlib sqlite3 FTS5 execute hybrid BM25 + graph queries in <5ms for 500 specs?"
+  - "Does incremental dirty checking avoid full rebuilds on clean working trees?"
+
+spikes_to_run:
+  - name: "sqlite-fts5-prototype"
+    target: "Benchmark cold index build and incremental dirty-check latency on 500 synthetic specs"
+
 exit_criteria:
-  - "Cold index build completes in <150ms for 500 documents."
-  - "Incremental dirty check completes in <5ms on a clean working tree."
-  - "Zero third-party C-extension installation required."
+  max_duration: "2 days"
+  benchmark: "Cold index build <150ms for 500 documents; incremental dirty check <5ms with zero C-extension wheels."
 
-findings: "SQLite FTS5 achieved 1.8ms incremental dirty checks and 0.9ms BM25 queries using stdlib sqlite3."
-
-recommendation: "Adopt stdlib sqlite3 + FTS5 and record rejected alternatives in the container's decisions block."
-resulting_deltas:
-  - "DLT-2026-011"
+decision:
+  outcome: adopted # adopted | discarded | pivoted
+  resulting_delta_id: DLT-2026-011
+  learnings: "SQLite FTS5 achieved 1.8ms incremental dirty checks and 0.9ms BM25 queries using stdlib sqlite3."
 ---
 = Exploration: Evaluate Embedded DuckDB vs SQLite FTS5 for Local Search
 ```
 
 ### 1.3 Graduating or Archiving a Spike
-* **If `adopted`**: Scaffold a SpecDelta (`eidos delta create DLT-YYYY-NNN`), add its ID to `resulting_deltas:` in the `EXP-*` frontmatter, and record the winning rationale + `rejected_alternatives` in the target container/component's `decisions:` block.
-* **If `discarded`**: Set `status: discarded` and document the empirical failure reasons in `findings:` so the institutional memory remains queryable via `eidos index search`.
+* **If `adopted`**: Scaffold a SpecDelta (`eidos delta create DLT-YYYY-NNN`), set `decision.outcome: adopted` and `decision.resulting_delta_id: DLT-YYYY-NNN` in the `EXP-*` frontmatter, and record the winning rationale + `rejected_alternatives` in the target container/component's `decisions:` block.
+* **If `discarded`**: Set `status: discarded` and `decision.outcome: discarded`, and document the empirical failure reasons in `decision.learnings:` so the institutional memory remains queryable via `eidos index search`.
 
 ---
 

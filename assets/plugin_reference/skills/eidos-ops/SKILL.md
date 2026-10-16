@@ -71,7 +71,7 @@ When introducing Eidos into an **existing codebase**, never invent speculative a
 * For each user-facing or system feature, create a capability in `eidos/domains/<slug>/capabilities/<cap>.adoc` linking `personas`, `jtbd`, `policies`, `technical.containers`, and `technical.contracts`.
 
 ### Phase 6: Extract Frontend Design Systems & Client Flows (If Applicable)
-* If the repository includes a frontend or TUI client, extract design tokens into `eidos/design/systems/<slug>/tokens.json` (`DS-*`), reusable UI components (`UIC-*`), client manifest (`CLT-*`), screens (`SCR-*`), and critical user journeys (`FLOW-*`).
+* If the repository includes a frontend or TUI client, extract design systems into `eidos/design/systems/<slug>/system.adoc` (`DS-*`) with W3C tokens (`tokens.json`), reusable UI components in `eidos/design/systems/<slug>/components/<comp>.adoc` (`UIC-*`), client manifests in `eidos/design/clients/<app>/client.adoc` (`CLT-*`), screens in `eidos/design/clients/<app>/screens/<screen>.adoc` (`SCR-*`), and critical user journeys in `eidos/design/flows/<flow>.adoc` (`FLOW-*`).
 
 ### Phase 7: Bind Existing Automated Tests to Capability Invariants (`INV-*`)
 * Scan the existing `tests/` suite for critical business rules, security checks, and regression tests.

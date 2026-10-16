@@ -92,6 +92,9 @@ def test_documentation_and_schemas_in_sync():
     for skill_name in bundled_skills:
         assert f"`{skill_name}`" in agent_plugin_text, f"Skill '{skill_name}' missing in {agent_plugin_doc}"
 
+    # 5. Verify all YAML frontmatter templates in bundled skills validate against v1 JSON Schemas
+    test_bundled_skill_yaml_templates_conform_to_v1_schemas()
+
 
 def test_zensical_strict_build():
     """Verify INV-DOCS-SYNCHRONIZATION and POL-003: Zensical strict documentation build succeeds with zero errors."""
@@ -125,4 +128,48 @@ def test_zensical_strict_build():
     assert (site_dir / "concepts" / "explorations" / "index.html").exists(), "explorations page missing"
     assert (site_dir / "concepts" / "design" / "index.html").exists(), "design page missing"
     assert (site_dir / "concepts" / "schema-glossary" / "index.html").exists(), "schema-glossary page missing"
+
+
+def test_bundled_skill_yaml_templates_conform_to_v1_schemas():
+    """Verify all YAML frontmatter templates in bundled skills validate against v1 JSON Schemas."""
+    import re
+    from eidos.core.spec.models import SpecDocument
+    from eidos.core.spec.parser import split_frontmatter_and_body
+    from eidos.core.spec.validator import SpecValidator
+
+    repo_root = Path(__file__).parent.parent
+    skills_dir = repo_root / "assets/plugin_reference/skills"
+    validator = SpecValidator()
+    yaml_fence_re = re.compile(r"```yaml\n(.*?)```", re.DOTALL)
+
+    validated_count = 0
+    for skill_md in sorted(skills_dir.glob("*/SKILL.md")):
+        content = skill_md.read_text(encoding="utf-8")
+        assert "eidos/clients/" not in content, f"Stale path 'eidos/clients/' found in {skill_md}"
+        assert "type: tech/system" not in content, f"Invalid system type 'tech/system' found in {skill_md}"
+
+        for match in yaml_fence_re.finditer(content):
+            block = match.group(1).strip()
+            if not block.startswith("---"):
+                continue
+            fm_raw, body = split_frontmatter_and_body(block + "\n")
+            assert fm_raw is not None, f"Failed to split frontmatter in {skill_md}:\n{block}"
+            fm = yaml.safe_load(fm_raw)
+            assert isinstance(fm, dict), f"Frontmatter in {skill_md} is not a mapping"
+            doc = SpecDocument(
+                file_path=skill_md,
+                doc_type=fm.get("type", ""),
+                doc_id=fm.get("id", ""),
+                schema_ref=fm.get("schema"),
+                frontmatter=fm,
+                body=body,
+            )
+            errors = validator.validate_document(doc)
+            assert errors == [], (
+                f"Skill template {fm.get('id')} ({fm.get('type')}) in {skill_md.relative_to(repo_root)} "
+                f"failed v1 schema validation: {errors}"
+            )
+            validated_count += 1
+
+    assert validated_count >= 8, f"Expected at least 8 skill YAML frontmatter templates, validated {validated_count}"
 

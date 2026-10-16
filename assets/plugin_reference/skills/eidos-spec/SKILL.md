@@ -59,6 +59,13 @@ id: DOM-BILLING
 name: "Subscription & Usage Billing"
 classification: core
 
+boundaries:
+  responsibilities:
+    - "Metered usage event ingestion and deduplication"
+    - "Tariff rating and monthly invoice lifecycle"
+  out_of_scope:
+    - "Payment gateway card tokenization"
+
 ubiquitous_language:
   - term: "Usage Event"
     definition: "An immutable, timestamped record of a billable customer action."
@@ -85,7 +92,7 @@ schema: schemas/v1/product/capability.schema.yaml
 id: CAP-BILL-001
 title: "Metered Usage Aggregation"
 domain: DOM-BILLING
-status: active # draft | active | deprecated | retired
+status: active # draft | proposed | planned | active | deprecated | retired
 version: "1.0.0"
 
 business:
@@ -120,10 +127,10 @@ type: product/persona
 schema: schemas/v1/product/persona.schema.yaml
 id: PER-FINANCE-ADMIN
 name: "Enterprise Finance Administrator"
-role: "Financial Controller & Billing Auditor"
+role_type: "admin" # end_user | admin | human_engineer | autonomous_agent
 goals:
   - "Reconcile monthly usage invoices against raw telemetry logs"
-frustrations:
+pain_points:
   - "Opaque line-item adjustments without audit trails"
 ---
 = Persona: Enterprise Finance Administrator
@@ -134,7 +141,7 @@ frustrations:
 ## 3. Arc42 & C4 Architecture (`SYS-*`, `CNT-*`, `CMP-*`, `CTR-*`)
 
 ### 3.1 C4 Level 1 & Arc42 Master Architecture
-* **`eidos/system.adoc`** (`type: tech/system`, `id: SYS-*`): C4 Level 1 System Context, external actors, and upstream/downstream systems.
+* **`eidos/system.adoc`** (`type: product/system`, `id: SYS-*`): C4 Level 1 System Context, external actors, and upstream/downstream systems.
 * **`eidos/architecture/system-architecture.adoc`**: Master Arc42 Sections 1–12 narrative and C4 Level 2 Container Topology overview.
 
 ### 3.2 C4 Level 2 Containers (`eidos/architecture/containers/<name>.adoc`)
@@ -147,19 +154,20 @@ type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
 id: CNT-BILLING-WORKER
 name: "Billing Aggregation Worker"
-container_type: "worker" # microservice | monolithic_backend | cli | library | web_app | mobile_app | database | message_broker | worker | serverless_function
+container_type: "background_worker" # service | library | cli_app | frontend_spa | background_worker | ml_pipeline | daemon | database | driver
 runtime: "Python 3.12 / FastAPI"
 package_path: "src/billing"
 
 domain_binding: DOM-BILLING
-tier: application # presentation | gateway | application | domain | data | infrastructure | extensibility
+tier: service # presentation | service | core | persistence | extensibility
 
 components:
   - id: CMP-BILLING-INGESTOR
     name: "UsageEventIngestor"
     responsibility: "Validates incoming usage payloads and enforces idempotency keys."
     source_path: "src/billing/ingestor.py"
-  - ref: "eidos/architecture/components/cmp-usage-ledger.adoc"
+  - id: CMP-USAGE-LEDGER
+    ref: "eidos/architecture/components/cmp-usage-ledger.adoc"
 
 dependencies:
   internal_containers:
@@ -197,13 +205,13 @@ Eidos supports a two-tier progressive disclosure model for C4 Level 3 components
 2. **Promoted Standalone Components (`eidos/architecture/components/<slug>.adoc`)**: When a component has complex internal design, multiple `source_path` entries, component-specific `invariants`, or dedicated `decisions:`, promote it to a standalone file:
    ```bash
    # Promote an inline component to eidos/architecture/components/<id>.adoc
-   # and automatically replace the inline entry with `- ref: eidos/architecture/components/<id>.adoc`
+   # and automatically replace the inline entry with '{id: CMP-USAGE-LEDGER, ref: eidos/architecture/components/cmp-usage-ledger.adoc}'
    eidos spec component promote CMP-USAGE-LEDGER
 
    # Fold a promoted component back inline into its parent container
    eidos spec component inline CMP-USAGE-LEDGER
    ```
-   **Single-Definition Invariant (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Once promoted, the parent container's `components:` entry MUST use `{ref: "eidos/architecture/components/..."}` only—never duplicate `name`, `responsibility`, or `source_path` in both places.
+   **Single-Definition Invariant (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Once promoted, the parent container's `components:` entry MUST use `{id: CMP-*, ref: "eidos/architecture/components/..."}` (with optional cached `name`/`responsibility`)—never duplicate `source_path`, `invariants`, or `decisions` in both places.
 
 ### 3.4 Interface Contracts (`eidos/architecture/contracts/<name>.adoc`)
 
@@ -212,12 +220,13 @@ Eidos supports a two-tier progressive disclosure model for C4 Level 3 components
 type: tech/contract
 schema: schemas/v1/tech/contract.schema.yaml
 id: CTR-BILLING-API
-name: "Billing Usage Ingestion REST Contract"
+title: "Billing Usage Ingestion REST Contract"
 version: "1.1.0" # Strictly SemVer 2.0.0
-provider: CNT-BILLING-WORKER
+owning_container: CNT-BILLING-WORKER
+specification_file: "src/billing/openapi.yaml"
 consumers:
   - CNT-API-GATEWAY
-protocol: rest_openapi # rest_openapi | grpc_proto | graphql | asyncapi_event | cli_args | python_protocol | json_schema
+protocol: openapi # openapi | protobuf | graphql | asyncapi | json_schema | json_rpc_stdio | cli_args | python_protocol
 ---
 = Contract: Billing Usage Ingestion REST Contract
 ```
@@ -242,18 +251,18 @@ decisions:
 
 ## 4. Multi-Design Systems & Client UX (`DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`)
 
-For repositories with web, mobile, desktop, or rich TUI frontends, Eidos models design systems and client state machines under `eidos/design/` and `eidos/clients/`:
+For repositories with web, mobile, desktop, or rich TUI frontends, Eidos models design systems and client state machines under `eidos/design/`:
 
-1. **Design System (`DS-*`, `type: design/system`)**: Lives at `eidos/design/systems/<slug>/system.adoc`. References a W3C Design Tokens Community Group (DTCG) file (`tokens.json`) using `$value` and `$type` keys (`color`, `dimension`, `fontFamily`, `duration`, etc.) and declares `wcag_level` (`AA` or `AAA`).
-2. **UI Component Contract (`UIC-*`, `type: design/ui-component`)**: Lives at `eidos/design/systems/<slug>/components/<comp>.adoc`. Defines typed `props`, interactive `states` (`default`, `hover`, `focus`, `disabled`, `loading`, `error`), `tokens_consumed`, `accessibility` (ARIA role, keyboard interactions), and `source_binding`.
-3. **Client Application (`CLT-*`, `type: design/client`)**: Lives at `eidos/clients/<app>/client.adoc`. Binds a frontend platform (`web_spa`, `ios_native`, `cli_tui`, etc.) to a `CNT-*` container and `DS-*` design system.
-4. **Screen Specification (`SCR-*`, `type: design/screen`)**: Lives at `eidos/clients/<app>/screens/<screen>.adoc`. Defines `route`, `personas`, `capabilities`, `ui_components` (`UIC-*`), and finite `view_states` (`loading`, `empty`, `ideal`, `partial`, `error`).
-5. **Interaction Flow (`FLOW-*`, `type: design/flow`)**: Lives at `eidos/clients/<app>/flows/<flow>.adoc`. Models multi-screen user journeys (`steps` with `screen: SCR-*`, `trigger`, `system_action`, `next_step`) and `invariants`.
+1. **Design System (`DS-*`, `type: design/system`)**: Lives at `eidos/design/systems/<slug>/system.adoc`. Declares `tokens: { spec_format: "w3c_design_tokens", manifest: "tokens.json" }` referencing a W3C Design Tokens Community Group (DTCG) file using `$value` and `$type` keys (`color`, `dimension`, `fontFamily`, `duration`, etc.), plus optional `inheritance` (`extends`, `override_mode`) and `theme_capabilities` (`color_modes`, `density_modes`).
+2. **UI Component Contract (`UIC-*`, `type: design/ui-component`)**: Lives at `eidos/design/systems/<slug>/components/<comp>.adoc`. Defines `design_system` (`DS-*`), `category`, visual/behavioral `variants` (`name`, `description`), interactive `states` (`default`, `hover`, `active`, `focus`, `disabled`, `loading`, `skeleton`, `error`), `accessibility` (`wcag_level`, `aria_role`, `keyboard_nav`), and `test_bindings` (`storybook`, `visual_regression`, `unit_test`).
+3. **Client Application (`CLT-*`, `type: design/client`)**: Lives at `eidos/design/clients/<app>/client.adoc`. Binds a frontend `platform` (`web`, `mobile-ios`, `mobile-android`, `desktop`, `tui`, or `multi-platform`) to a `design_system` (`DS-*`), C4 `container` (`CNT-*`), `capabilities` (`CAP-*`), owned `screens` (`SCR-*`), and `flows` (`FLOW-*`).
+4. **Screen Specification (`SCR-*`, `type: design/screen`)**: Lives at `eidos/design/clients/<app>/screens/<screen>.adoc` (or `eidos/design/screens/<screen>.adoc`). Defines `route`, owning `client` (`CLT-*`), `capabilities` (`CAP-*`), `supported_design_systems` (`DS-*`), layout `slots`, explicit `states` (`[{name, description}]` covering `loading`, `empty`, `active`, `error`, `partial`), and `user_flows` (`FLOW-*`).
+5. **Interaction Flow (`FLOW-*`, `type: design/flow`)**: Lives at `eidos/design/flows/<flow>.adoc` (or `eidos/design/clients/<app>/flows/<flow>.adoc`). Models user journeys with `flow_type` (`client_internal` or `cross_client`), `client` / `clients` (`CLT-*`), `capabilities` (`CAP-*`), and ordered `steps` (`[{step, title, screen, client, action, outcome}]`).
 
 ### Frontend Co-Evolution Checklist
 Whenever you modify UI components, design tokens, routes, or user flows:
 * Added/changed design tokens? Update `tokens.json` in the `DS-*` directory.
-* Changed component props or ARIA behavior? Update `UIC-*`.
+* Changed component variants, states, or ARIA behavior? Update `UIC-*`.
 * Added a new route or screen state? Create/update `SCR-*` and register it in `CLT-*`.
 * Altered a checkout/onboarding/wizard journey? Update `FLOW-*`.
 
@@ -269,11 +278,11 @@ type: product/policy
 schema: schemas/v1/product/policy.schema.yaml
 id: POL-005-WEBHOOK-IDEMPOTENCY
 title: "Idempotent External Webhook Processing"
-category: reliability # security | privacy | reliability | performance | architecture | governance | accessibility
+category: architectural # governance | architectural | security | compliance | testing | performance | lifecycle
 rule: "All external webhook handlers must deduplicate incoming deliveries by provider event ID before mutating domain state."
 enforcement:
   mechanism: automated_test # automated_test | ci_gate | schema_validation | lint | architectural_review
-  severity: blocking # blocking | warning
+  severity: blocking # blocking | warning | advisory | info
 ---
 = Policy: Idempotent External Webhook Processing
 ```
@@ -298,5 +307,5 @@ Every capability invariant (`INV-[A-Z0-9_-]+`) MUST have:
 
 `eidos validate` enforces strict referential integrity across the entire specification graph:
 * **File Path References** (`personas`, `policies`, `components[].ref`): Must be valid repository-relative paths (`eidos/personas/...`, `eidos/policies/...`, `eidos/architecture/components/...`) pointing to existing `.adoc` files.
-* **Entity ID References** (`domain`, `domain_binding`, `provider`, `consumers`, `internal_containers`, `containers`, `provides`, `consumes`): Must match the exact `id:` declared in the target specification's YAML frontmatter.
+* **Entity ID References** (`domain`, `domain_binding`, `owning_container`, `consumers`, `internal_containers`, `containers`, `provides`, `consumes`): Must match the exact `id:` declared in the target specification's YAML frontmatter.
 * **Safe Deletion**: Always use `eidos spec delete <ID_OR_PATH>` to check for incoming references before removing any specification file.
