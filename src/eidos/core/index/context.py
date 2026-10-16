@@ -260,9 +260,61 @@ class TieredContextSlice(ArchitecturalContextSlice):
             if k in retained_ids or k.startswith(("DOM-", "DS-"))
         }
 
+    def _state_signature(self, budget: int) -> tuple[Any, ...]:
+        return (
+            budget,
+            self.tier,
+            self._compact_decisions,
+            len(self.components),
+            len(self.contracts),
+            len(self.capabilities),
+            len(self.invariants),
+            len(self.policies),
+        )
+
+    def _invalidate_budget_cache(self) -> None:
+        self.__dict__.pop("_cached_sig", None)
+        self.__dict__.pop("_cached_exceeds", None)
+        self.__dict__.pop("_md_char_lb", None)
+
+    def _pop_item(self, lst: list[dict[str, Any]], idx: int = -1) -> None:
+        item = lst.pop(idx)
+        md_lb = self.__dict__.get("_md_char_lb", 0)
+        if lst is self.invariants and md_lb > 0:
+            ub_removed = (
+                len(str(item.get("id", "")))
+                + len(str(item.get("rule", "")))
+                + len(str(item.get("test_binding", "")))
+                + 60
+            )
+            self.__dict__["_md_char_lb"] = max(0, md_lb - ub_removed)
+            self.__dict__["_md_lb_sig"] = self._state_signature(0)[1:]
+        else:
+            self.__dict__.pop("_md_char_lb", None)
+        self.__dict__.pop("_cached_sig", None)
+
     def _exceeds_budget(self, budget: int) -> bool:
-        self._prune_matched_reasons()
-        return self._estimate_tokens() > budget or (len(self.to_json()) // 4) > budget
+        sig = self._state_signature(budget)
+        if self.__dict__.get("_cached_sig") == sig:
+            return bool(self.__dict__.get("_cached_exceeds"))
+        md_lb = self.__dict__.get("_md_char_lb", 0) if self.__dict__.get("_md_lb_sig") == sig[1:] else 0
+        if md_lb // 4 > budget:
+            self.__dict__["_cached_sig"] = sig
+            self.__dict__["_cached_exceeds"] = True
+            return True
+        md_len = len(self.to_markdown())
+        self.__dict__["_md_char_lb"] = md_len
+        self.__dict__["_md_lb_sig"] = sig[1:]
+        if max(1, md_len // 4) > budget:
+            exceeds = True
+        else:
+            self._prune_matched_reasons()
+            d = self.to_dict()
+            # CPython C encoder (_json.make_encoder) runs when indent is None and is strictly <= indented length
+            exceeds = (len(json.dumps(d)) // 4) > budget or (len(json.dumps(d, indent=2)) // 4) > budget
+        self.__dict__["_cached_sig"] = sig
+        self.__dict__["_cached_exceeds"] = exceeds
+        return exceeds
 
     def _enforce_token_budget(
         self,
@@ -273,18 +325,22 @@ class TieredContextSlice(ArchitecturalContextSlice):
     ) -> None:
         """Enforce rank-ordered token budget truncation for the requested tier across Markdown and JSON (DLT-2026-047)."""
         budget = TIER_TOKEN_BUDGETS.get(self.tier, 1000)
+        self._invalidate_budget_cache()
 
         if self.tier == "anchor":
             self.capabilities = []
             self.invariants = []
             self.policies = []
+            self._invalidate_budget_cache()
             if self._exceeds_budget(budget) and primary_cids:
                 self.components = [c for c in self.components if c.get("id") in primary_cids] or self.components[:1]
-            while self._exceeds_budget(budget) and len(self.contracts) > 1:
-                self.contracts.pop()
-            while self._exceeds_budget(budget) and len(self.components) > 1:
-                self.components.pop()
+                self._invalidate_budget_cache()
+            while len(self.contracts) > 1 and self._exceeds_budget(budget):
+                self._pop_item(self.contracts)
+            while len(self.components) > 1 and self._exceeds_budget(budget):
+                self._pop_item(self.components)
             self._prune_matched_reasons()
+            self._invalidate_budget_cache()
             self.token_estimate = self._estimate_tokens()
             return
 
@@ -294,11 +350,15 @@ class TieredContextSlice(ArchitecturalContextSlice):
         has_non_comp_direct = bool(direct_caps or direct_invs or direct_pols)
 
         def _pop_non_direct(items: list[dict[str, Any]], keep_ids: set[str], min_len: int) -> None:
+            if len(items) <= min_len or not self._exceeds_budget(budget):
+                return
             for idx in range(len(items) - 1, -1, -1):
-                if not self._exceeds_budget(budget) or len(items) <= min_len:
+                if len(items) <= min_len:
                     break
                 if items[idx].get("id", "") not in keep_ids:
-                    items.pop(idx)
+                    self._pop_item(items, idx)
+                    if not self._exceeds_budget(budget):
+                        break
 
         # Stage 1: Trim 1-hop expanded (non-direct) entities before touching any direct query matches.
         _pop_non_direct(self.invariants, direct_invs, min_len=3)
@@ -310,27 +370,29 @@ class TieredContextSlice(ArchitecturalContextSlice):
         # If still over budget in guardrails and multiple direct matches exist, compact decision prose before evicting direct matches.
         if self.tier == "guardrails" and has_non_comp_direct and self._exceeds_budget(budget):
             self._compact_decisions = True
+            self._invalidate_budget_cache()
 
         # Stage 2: If still over budget, trim lowest-ranked tail items while keeping primary components intact.
-        while self._exceeds_budget(budget) and len(self.invariants) > 3:
-            self.invariants.pop()
+        while len(self.invariants) > 3 and self._exceeds_budget(budget):
+            self._pop_item(self.invariants)
 
-        while self._exceeds_budget(budget) and len(self.policies) > 1:
-            self.policies.pop()
+        while len(self.policies) > 1 and self._exceeds_budget(budget):
+            self._pop_item(self.policies)
 
-        while self._exceeds_budget(budget) and len(self.invariants) > 2:
-            self.invariants.pop()
+        while len(self.invariants) > 2 and self._exceeds_budget(budget):
+            self._pop_item(self.invariants)
 
-        while self._exceeds_budget(budget) and len(self.capabilities) > 2:
-            self.capabilities.pop()
+        while len(self.capabilities) > 2 and self._exceeds_budget(budget):
+            self._pop_item(self.capabilities)
 
-        while self._exceeds_budget(budget) and len(self.invariants) > 1:
-            self.invariants.pop()
+        while len(self.invariants) > 1 and self._exceeds_budget(budget):
+            self._pop_item(self.invariants)
 
-        while self._exceeds_budget(budget) and len(self.capabilities) > 1:
-            self.capabilities.pop()
+        while len(self.capabilities) > 1 and self._exceeds_budget(budget):
+            self._pop_item(self.capabilities)
 
         self._prune_matched_reasons()
+        self._invalidate_budget_cache()
         self.token_estimate = self._estimate_tokens()
 
 

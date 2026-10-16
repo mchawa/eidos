@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from eidos.core.index.ast_indexer import get_ast_indexer
-from eidos.core.spec.parser import parse_spec_file
+from eidos.core.spec.parser import _parse_spec_content
 from eidos.core.workspace.context import collect_component_decisions
 from eidos.core.workspace.project import extract_entity_paths, match_path_pattern
 
@@ -423,18 +423,29 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
         return len(deleted) > 0, [], deleted
 
     root_str = str(index.root)
+    root_prefix = root_str if root_str.endswith(("/", "\\")) else root_str + os.sep
+    root_len = len(root_prefix)
 
-    def _check_file(file_path: Path, rel_key: str, st_mtime: float) -> None:
+    def _rel_path(full_str: str) -> str:
+        if full_str.startswith(root_prefix):
+            return full_str[root_len:].replace("\\", "/")
+        try:
+            return os.path.relpath(full_str, root_str).replace("\\", "/")
+        except ValueError:
+            return full_str.replace("\\", "/")
+
+    def _check_file_str(full_str: str, rel_key: str, st_mtime: float) -> None:
         cached = db_files.get(rel_key)
         if not cached:
-            to_update.append(file_path)
+            to_update.append(Path(full_str))
         elif abs(st_mtime - cached[0]) > 0.001:
             try:
-                digest = hashlib.sha256(file_path.read_bytes()).hexdigest()
+                with open(full_str, "rb") as f:
+                    digest = hashlib.sha256(f.read()).hexdigest()
             except OSError:
                 return
             if digest != cached[1]:
-                to_update.append(file_path)
+                to_update.append(Path(full_str))
             else:
                 mtime_refreshes.append((st_mtime, now_ts, rel_key))
                 db_files[rel_key] = (st_mtime, cached[1])
@@ -446,17 +457,17 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
             if not fn.endswith(".adoc") or fn.startswith("_") or fn.lower() == "readme.adoc":
                 continue
             full_path = os.path.join(dirpath, fn)
-            try:
-                rel_p = os.path.relpath(full_path, root_str).replace("\\", "/")
-            except ValueError:
-                rel_p = full_path.replace("\\", "/")
+            rel_p = _rel_path(full_path)
             disk_files.add(rel_p)
-            stat = os.stat(full_path)
-            _check_file(Path(full_path), rel_p, stat.st_mtime)
+            try:
+                stat = os.stat(full_path)
+            except OSError:
+                continue
+            _check_file_str(full_path, rel_p, stat.st_mtime)
 
     # 2. Tracked code and test files
     code_exts = _CODE_EXTS
-    tracked_code_dirs: set[Path] = set()
+    tracked_code_dirs: set[str] = set()
 
     package_paths: set[str] = set()
     cursor.execute("SELECT DISTINCT package_path FROM entities WHERE package_path != '';")
@@ -465,51 +476,63 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     package_paths.update(row[0].strip() for row in cursor.fetchall())
     for pp in sorted(package_paths):
         if pp:
-            p_abs = (index.root / pp).resolve()
-            if p_abs.is_dir():
-                tracked_code_dirs.add(p_abs)
-            elif p_abs.is_file() and p_abs.suffix in code_exts:
-                try:
-                    rel_code = str(p_abs.relative_to(index.root)).replace("\\", "/")
-                except ValueError:
-                    rel_code = str(p_abs).replace("\\", "/")
-                disk_files.add(rel_code)
-                stat = p_abs.stat()
-                _check_file(p_abs, rel_code, stat.st_mtime)
+            full_pp = os.path.normpath(os.path.join(root_str, pp))
+            if os.path.isdir(full_pp):
+                tracked_code_dirs.add(full_pp)
+            elif os.path.isfile(full_pp):
+                _, ext = os.path.splitext(full_pp)
+                if ext in code_exts:
+                    rel_code = _rel_path(full_pp)
+                    disk_files.add(rel_code)
+                    try:
+                        stat = os.stat(full_pp)
+                    except OSError:
+                        continue
+                    _check_file_str(full_pp, rel_code, stat.st_mtime)
 
     for std_dir in ("src", "tests", "test"):
-        cand = (index.root / std_dir).resolve()
-        if cand.is_dir():
+        cand = os.path.normpath(os.path.join(root_str, std_dir))
+        if os.path.isdir(cand):
             tracked_code_dirs.add(cand)
 
     for rel_tracked in list(db_files.keys()):
         if not rel_tracked.endswith(".adoc") and rel_tracked not in disk_files:
-            abs_tracked = (index.root / rel_tracked).resolve()
-            if abs_tracked.is_file():
+            abs_tracked = os.path.normpath(os.path.join(root_str, rel_tracked))
+            if os.path.isfile(abs_tracked):
                 disk_files.add(rel_tracked)
-                stat = abs_tracked.stat()
-                _check_file(abs_tracked, rel_tracked, stat.st_mtime)
+                try:
+                    stat = os.stat(abs_tracked)
+                except OSError:
+                    continue
+                _check_file_str(abs_tracked, rel_tracked, stat.st_mtime)
+
+    # Deduplicate child directories whose parent directory is already in tracked_code_dirs
+    top_code_dirs: list[str] = []
+    for d in sorted(tracked_code_dirs):
+        if not any(d == parent or d.startswith(parent + os.sep) for parent in top_code_dirs):
+            top_code_dirs.append(d)
 
     excluded_dirs = _EXCLUDED_CODE_DIRS
-    for code_dir in tracked_code_dirs:
-        if not code_dir.exists():
+    for code_dir in top_code_dirs:
+        if not os.path.exists(code_dir):
             continue
-        for dirpath, dirnames, filenames in os.walk(str(code_dir)):
+        for dirpath, dirnames, filenames in os.walk(code_dir):
             dirnames[:] = [d for d in dirnames if d not in excluded_dirs and not d.startswith(".")]
             for fn in filenames:
-                p_file = Path(dirpath) / fn
-                if p_file.suffix not in code_exts:
+                _, ext = os.path.splitext(fn)
+                if ext not in code_exts:
                     continue
-                try:
-                    rel_code = str(p_file.relative_to(index.root)).replace("\\", "/")
-                except ValueError:
-                    rel_code = str(p_file).replace("\\", "/")
+                full_file = os.path.join(dirpath, fn)
+                rel_code = _rel_path(full_file)
                 if rel_code in disk_files:
                     continue
                 disk_files.add(rel_code)
 
-                stat = p_file.stat()
-                _check_file(p_file, rel_code, stat.st_mtime)
+                try:
+                    stat = os.stat(full_file)
+                except OSError:
+                    continue
+                _check_file_str(full_file, rel_code, stat.st_mtime)
 
     if mtime_refreshes:
         with conn:
@@ -916,11 +939,11 @@ def sync_index(
 
             try:
                 mtime = p.stat().st_mtime
-                content = p.read_bytes()
-                doc = parse_spec_file(p)
+                raw_bytes = p.read_bytes()
+                doc = _parse_spec_content(p, raw_bytes.decode("utf-8", errors="replace"))
             except OSError:
                 continue
-            sha = hashlib.sha256(content).hexdigest()
+            sha = hashlib.sha256(raw_bytes).hexdigest()
             parsed_specs.append((p, rel_p, mtime, sha, doc))
 
         updated_rel_paths: set[str] = set()

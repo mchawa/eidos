@@ -5,6 +5,11 @@ from pathlib import Path
 
 import yaml
 
+try:
+    from yaml import CSafeLoader as _YamlSafeLoader
+except ImportError:  # pragma: no cover
+    from yaml import SafeLoader as _YamlSafeLoader
+
 from eidos.core.spec.models import SpecDocument
 
 _FRONTMATTER_DELIMITER_RE = re.compile(r"^---\s*$", re.MULTILINE)
@@ -12,7 +17,11 @@ _FRONTMATTER_DELIMITER_RE = re.compile(r"^---\s*$", re.MULTILINE)
 
 def parse_spec_file(path: Path) -> SpecDocument:
     """Parse an .adoc specification file with YAML frontmatter."""
-    content = path.read_text(encoding="utf-8")
+    return _parse_spec_content(path, path.read_text(encoding="utf-8"))
+
+
+def _parse_spec_content(path: Path, content: str) -> SpecDocument:
+    """Parse an .adoc specification from pre-read content."""
     if not content.strip():
         doc_type = "product/system" if path.name == "system.adoc" else "unknown"
         return SpecDocument(
@@ -69,7 +78,7 @@ def extract_frontmatter(content: str) -> tuple[dict | None, str, str | None]:
         body = body[1:]
 
     try:
-        data = yaml.safe_load(yaml_text)
+        data = yaml.load(yaml_text, Loader=_YamlSafeLoader)
         if not isinstance(data, dict):
             return None, body, "Frontmatter must be a YAML mapping (key-value dictionary)"
         return data, body, None
