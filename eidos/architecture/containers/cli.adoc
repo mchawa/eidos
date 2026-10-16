@@ -13,7 +13,7 @@ tier: presentation
 components:
   - id: CMP-CLI-APP
     name: "CliApp"
-    responsibility: "Root command dispatcher, error code translation, and formatted diagnostic table rendering."
+    responsibility: "Root command dispatcher, error code translation, eidos info reporting across all 16 bundled v1 schemas, and formatted diagnostic table rendering."
     source_path:
       - "src/eidos/cli/main.py"
       - "src/eidos/cli/_shared.py"

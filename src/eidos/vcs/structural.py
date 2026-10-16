@@ -17,6 +17,7 @@ from typing import Any
 
 import yaml
 
+from eidos.core.spec.parser import split_frontmatter_and_body
 from eidos.core.workspace.project import match_path_pattern
 from eidos.vcs.diff import _get_file_versions
 
@@ -188,11 +189,7 @@ def _structural_addition_for(
 
 def _split_spec(content: str | None) -> tuple[str | None, str]:
     """Split a spec into (raw frontmatter text or None, AsciiDoc body)."""
-    text = content or ""
-    m = _FRONTMATTER_RE.match(text)
-    if not m:
-        return None, text
-    return m.group(1), text[m.end() :]
+    return split_frontmatter_and_body(content or "")
 
 
 def _normalized_body_lines(body: str) -> list[str]:

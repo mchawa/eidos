@@ -1,0 +1,79 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-066
+title: "Parameterized Repository Initialization (--name, --title) and Scoped Empty Root System Specification Parser & Validator Exemption"
+status: applied
+vcs:
+  branch: fix/init-repository-params-and-empty-spec-parser
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: medium
+  motivation: "Honor the --name and --title parameters in init_repository when provided, remove the dead with_plugin parameter, and scope the 0-byte / whitespace-only empty-file exemption in both parse_spec_file and SpecValidator._load_or_validate strictly to the root system specification file so empty non-system specification files fail validation."
+mutations:
+  - action: modify_component
+    target_component: CMP-REPO-INITIALIZER
+    details: "Update init_repository in src/eidos/core/lifecycle/initializer.py to scaffold arch/system frontmatter in eidos/system.adoc when name or title is explicitly provided, while keeping 0-byte system.adoc support for bare eidos init, and remove the dead with_plugin parameter."
+    expect:
+      source_path: "src/eidos/core/lifecycle/initializer.py"
+      responsibility: "Bootstraps repositories"
+  - action: modify_component
+    target_component: CMP-SPEC-PARSER
+    details: "Update parse_spec_file and extract_frontmatter in src/eidos/core/spec/parser.py so that 0-byte files only synthesize placeholder arch/system metadata when the filename is system.adoc, causing any other accidentally empty .adoc file to fail schema validation."
+    expect:
+      source_path: "src/eidos/core/spec/parser.py"
+      responsibility: "system.adoc"
+  - action: modify_component
+    target_component: CMP-SPEC-VALIDATOR
+    details: "Update _load_or_validate in src/eidos/core/spec/validator.py to allow empty raw_content only on root system.adoc and report a missing frontmatter validation error on any other 0-byte or whitespace-only .adoc file."
+    expect:
+      source_path: "src/eidos/core/spec/validator.py"
+      responsibility: "system.adoc"
+affects:
+  containers:
+    - CNT-EIDOS-CORE
+    - CNT-EIDOS-CLI
+  components:
+    - CMP-REPO-INITIALIZER
+    - CMP-SPEC-PARSER
+    - CMP-SPEC-VALIDATOR
+    - CMP-CLI-INIT-COMMAND
+  capabilities:
+    - CAP-PROD-001
+  domains:
+    - DOM-SPEC-ENGINE
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-CORE
+    - CNT-EIDOS-CLI
+  impacted_components:
+    - CMP-REPO-INITIALIZER
+    - CMP-SPEC-PARSER
+    - CMP-SPEC-VALIDATOR
+    - CMP-CLI-INIT-COMMAND
+  invariants_to_enforce:
+    - INV-SPEC-VALIDATION
+---
+= SpecDelta: Parameterized Repository Initialization (--name, --title) and Scoped Empty system.adoc Parser & Validator Exemption
+:toc: left
+
+== Problem Statement
+
+1. **Ignored `name` and `title` Parameters in `init_repository` (`src/eidos/core/lifecycle/initializer.py`, lines 10-82)**:
+   * `init_repository` accepts `name: str | None`, `title: str | None`, and `with_plugin: bool` (and `eidos init` exposes `--name` and `--title` CLI options in `src/eidos/cli/init_command.py`), but line 31 explicitly discards all three (`_ = (name, title, with_plugin)`) and always writes an empty 0-byte `eidos/system.adoc`.
+2. **Global 0-Byte Validation Loophole in `extract_frontmatter` and `SpecValidator._load_or_validate` (`src/eidos/core/spec/parser.py`, lines 16-24 & `src/eidos/core/spec/validator.py`, lines 377-378, 405-406)**:
+   * To allow an unedited 0-byte `eidos/system.adoc` to pass `eidos validate` immediately after `eidos init`, `extract_frontmatter` returns synthetic valid `arch/system` frontmatter whenever *any* input string is empty (`if not content.strip(): return {"type": "arch/system", "id": "SYS-UNINITIALIZED", ...}`), and `SpecValidator._load_or_validate` returns `None` whenever `not doc.raw_content.strip()`.
+   * As a result, any accidentally truncated 0-byte or whitespace-only `.adoc` file anywhere under `eidos/domains/`, `eidos/architecture/`, `eidos/policies/`, or `eidos/deltas/` silently passes `eidos validate`.
+
+== Proposed Specification Changes
+
+1. **Honor `name` and `title` in `CMP-REPO-INITIALIZER` (`src/eidos/core/lifecycle/initializer.py`)**:
+   * When `name` or `title` is passed to `init_repository`, populate `eidos/system.adoc` with valid `arch/system` YAML frontmatter using `yaml.safe_dump` and the normalized `SYS-*` identifier and title; retain the empty `system.adoc` skeleton when neither is specified.
+2. **Scope Empty-File Exemption Strictly to `system.adoc` in `CMP-SPEC-PARSER` and `CMP-SPEC-VALIDATOR` (`src/eidos/core/spec/parser.py`, `src/eidos/core/spec/validator.py`)**:
+   * In `parse_spec_file(file_path)` (`parser.py`) and `_load_or_validate(file_path)` (`validator.py`), only apply the empty-file `SYS-UNINITIALIZED` exemption when `file_path.name.lower() == "system.adoc"`. For any other 0-byte or whitespace-only `.adoc` file, report a missing frontmatter validation error.
+
+== Verification Plan
+
+* `uv run pytest tests/test_validator.py tests/test_scaffolder.py` — Verify `eidos init --name my-sys --title "My System"` writes valid `arch/system` metadata, bare `eidos init` remains valid, and a 0-byte file in `eidos/domains/empty.adoc` fails `eidos validate`.
+* `uv run eidos validate eidos && uv run eidos drift --uncommitted --json`

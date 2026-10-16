@@ -31,7 +31,7 @@ def test_bundled_schemas_loaded(validator):
 
 
 def test_validate_eidos_specifications(validator):
-    """Verify INV-SPEC-VALIDATION, INV-SPEC-GRAPH-INTEGRITY, and INV-CLIENT-DESIGN-BINDING: all living specifications pass schema validation and entity ID graph integrity."""
+    """Verify INV-SPEC-VALIDATION, INV-SPEC-GRAPH-INTEGRITY, INV-W3C-DTCG-COMPLIANCE, and INV-CLIENT-DESIGN-BINDING: all living specifications pass schema validation and entity ID graph integrity."""
     eidos_dir = Path("eidos")
     assert eidos_dir.exists(), "eidos/ specification directory does not exist"
 
@@ -1201,4 +1201,722 @@ def test_scoped_typer_cli_contract_parity_non_typer_and_positional_add_typer(
     )
     clean_report = validator.validate_directory(eidos_dir)
     assert clean_report.is_clean, f"Expected clean report, got broken refs: {clean_report.broken_references}"
+
+
+def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
+    tmp_path: Path, validator: SpecValidator
+) -> None:
+    """DLT-2026-073 (# eidos:fixture): Verify container/policy invariants, domain/capability/policy/contract decisions,
+    domain ubiquitous_language/owners, contract version/consumers, and delta affects/blast_radius x-eidos-ref."""
+    eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    ctrs_dir = eidos_dir / "architecture" / "contracts"
+    pols_dir = eidos_dir / "policies"
+    dom_dir = eidos_dir / "domains" / "billing"
+    caps_dir = dom_dir / "capabilities"
+    deltas_dir = eidos_dir / "deltas"
+    for d in (cnts_dir, ctrs_dir, pols_dir, caps_dir, deltas_dir):
+        d.mkdir(parents=True)
+    (tmp_path / "src" / "billing").mkdir(parents=True)
+    (tmp_path / "src" / "billing" / "api.yaml").write_text("openapi: 3.0.0\n", encoding="utf-8")
+
+    # 1. Container with top-level invariants + inline component invariants
+    (cnts_dir / "billing.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-BILLING\n"
+        "name: Billing Service\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/billing\n"
+        "invariants:\n"
+        "  - id: INV-CNT-BILLING-001\n"
+        "    rule: Container must remain stateless.\n"
+        "    test_binding: tests/test_billing.py::test_stateless\n"
+        "components:\n"
+        "  - id: CMP-BILLING-LEDGER\n"
+        "    name: BillingLedger\n"
+        "    responsibility: Double-entry ledger.\n"
+        "    source_path: src/billing\n"
+        "    invariants:\n"
+        "      - id: INV-CMP-LEDGER-001\n"
+        "        rule: Debits must equal credits.\n"
+        "        test_binding: tests/test_billing.py::test_ledger\n"
+        "---\n"
+        "= Billing\n",
+        encoding="utf-8",
+    )
+
+    # 2. Policy with invariants + decisions
+    (pols_dir / "pol.adoc").write_text(
+        "---\n"
+        "type: product/policy\n"
+        "schema: schemas/v1/product/policy.schema.yaml\n"
+        "id: POL-001-AUDIT\n"
+        "title: Audit Policy\n"
+        "category: compliance\n"
+        "enforcement:\n"
+        "  mechanism: ci_cd_gate\n"
+        "  severity: hard_block\n"
+        "status: active\n"
+        "rule: Every ledger mutation must emit an audit event.\n"
+        "invariants:\n"
+        "  - id: INV-POL-AUDIT-001\n"
+        "    rule: Audit events are append-only.\n"
+        "    test_binding: tests/test_billing.py::test_audit\n"
+        "decisions:\n"
+        "  - id: DEC-POL-001\n"
+        "    title: Immutable Audit Log\n"
+        "    decision: Store audit log in append-only table.\n"
+        "    rationale: Regulatory compliance.\n"
+        "---\n"
+        "= Policy\n",
+        encoding="utf-8",
+    )
+
+    # 3. Domain with ubiquitous_language, owners, and decisions
+    (dom_dir / "domain.adoc").write_text(
+        "---\n"
+        "type: product/domain\n"
+        "schema: schemas/v1/product/domain.schema.yaml\n"
+        "id: DOM-BILLING\n"
+        "name: Billing Domain\n"
+        "classification: core\n"
+        "boundaries:\n"
+        "  responsibilities:\n"
+        "    - Billing bounded context.\n"
+        "owners:\n"
+        "  - FinOps Team\n"
+        "ubiquitous_language:\n"
+        "  - term: Invoice\n"
+        "    definition: Immutable billing statement.\n"
+        "decisions:\n"
+        "  - id: DEC-DOM-001\n"
+        "    title: Exact Decimal Arithmetic\n"
+        "    decision: Use fixed-point decimal representation.\n"
+        "    rationale: Prevent floating-point rounding drift.\n"
+        "---\n"
+        "= Domain\n",
+        encoding="utf-8",
+    )
+
+    # 4. Capability with decisions
+    (caps_dir / "invoicing.adoc").write_text(
+        "---\n"
+        "type: product/capability\n"
+        "schema: schemas/v1/product/capability.schema.yaml\n"
+        "id: CAP-BILLING-001\n"
+        "title: Invoicing\n"
+        "domain: DOM-BILLING\n"
+        "status: active\n"
+        "business:\n"
+        "  personas: []\n"
+        "  jtbd: Issue invoices.\n"
+        "technical:\n"
+        "  containers:\n"
+        "    - CNT-BILLING\n"
+        "  components:\n"
+        "    - CMP-BILLING-LEDGER\n"
+        "decisions:\n"
+        "  - id: DEC-CAP-001\n"
+        "    title: Async Invoice Generation\n"
+        "    decision: Generate PDFs asynchronously.\n"
+        "    rationale: Keep API latency low.\n"
+        "---\n"
+        "= Capability\n",
+        encoding="utf-8",
+    )
+
+    # 5. Contract with version, consumers (x-eidos-ref), and decisions
+    (ctrs_dir / "api.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-BILLING-API\n"
+        "title: Billing REST API\n"
+        "version: 1.2.0\n"
+        "protocol: rest_openapi\n"
+        "owning_container: CNT-BILLING\n"
+        "consumers:\n"
+        "  - CMP-BILLING-LEDGER\n"
+        "specification_file: src/billing/api.yaml\n"
+        "decisions:\n"
+        "  - id: DEC-CTR-001\n"
+        "    title: Cursor Pagination\n"
+        "    decision: Use opaque cursor pagination.\n"
+        "    rationale: Stable pagination under concurrent inserts.\n"
+        "---\n"
+        "= Contract\n",
+        encoding="utf-8",
+    )
+
+    # 6. Proposed SpecDelta with affects design keys, vcs.base_commit, and a missing blast_radius component
+    (deltas_dir / "dlt-test.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-001\n"
+        "title: Billing Update\n"
+        "status: proposed\n"
+        "vcs:\n"
+        "  branch: feat/billing\n"
+        "  base_commit: abc1234\n"
+        "intent:\n"
+        "  kind: feature\n"
+        "  motivation: Extend billing\n"
+        "mutations:\n"
+        "  - action: modify_component\n"
+        "    target_component: CMP-BILLING-LEDGER\n"
+        "affects:\n"
+        "  components:\n"
+        "    - CMP-BILLING-LEDGER\n"
+        "  design_systems: []\n"
+        "  clients: []\n"
+        "  flows: []\n"
+        "  screens: []\n"
+        "  ui_components: []\n"
+        "  personas: []\n"
+        "blast_radius:\n"
+        "  impacted_containers:\n"
+        "    - CNT-BILLING\n"
+        "  impacted_components:\n"
+        "    - CMP-MISSING-GHOST\n"
+        "---\n"
+        "= Delta\n",
+        encoding="utf-8",
+    )
+
+    report = validator.validate_directory(eidos_dir)
+    assert report.schema_errors == {}, f"Unexpected schema errors: {report.schema_errors}"
+    broken_text = "\n".join(report.broken_references)
+    assert "CMP-MISSING-GHOST" in broken_text
+
+
+def test_unified_block_scalar_safe_frontmatter_parser_and_extended_models(tmp_path: Path) -> None:
+    """DLT-2026-060 (# eidos:fixture): Verify split_frontmatter_and_body ignores indented '---' inside YAML block scalars
+    across parser, catalog, and structural helpers, and verify extended FrontmatterModel accessors."""
+    from eidos.core.lifecycle.catalog import _set_frontmatter_scalar, _split_raw_frontmatter
+    from eidos.core.spec.parser import dump_spec_document, extract_frontmatter, split_frontmatter_and_body
+    from eidos.vcs.structural import _spec_frontmatter, _split_spec
+
+    spec_text = (
+        "---\n"
+        "type: product/policy\n"
+        "id: POL-001\n"
+        "status: draft\n"
+        "rule: |\n"
+        "  First paragraph.\n"
+        "  ---\n"
+        "  Second paragraph after horizontal rule.\n"
+        "---\n"
+        "= Policy Title\n\n"
+        "Body paragraph.\n"
+    )
+    raw_yaml, body = split_frontmatter_and_body(spec_text)
+    assert raw_yaml is not None
+    assert "Second paragraph after horizontal rule." in raw_yaml
+    assert body.startswith("= Policy Title")
+
+    fm, parsed_body, err = extract_frontmatter(spec_text)
+    assert err is None
+    assert fm is not None
+    assert "---\nSecond paragraph" in fm["rule"]
+    assert parsed_body.startswith("= Policy Title")
+
+    # catalog.py and structural.py share the exact same splitter
+    assert _split_raw_frontmatter(spec_text) == (raw_yaml, body)
+    assert _split_spec(spec_text) == (raw_yaml, body)
+    assert _spec_frontmatter(spec_text)["id"] == "POL-001"
+
+    updated = _set_frontmatter_scalar(spec_text, "status", "active")
+    assert _spec_frontmatter(updated)["status"] == "active"
+    assert "Second paragraph after horizontal rule." in _spec_frontmatter(updated)["rule"]
+
+    # File without opening delimiter at line 0 must NOT match '---' in the body
+    body_only = "\n= Document Without Frontmatter\n---\nSection\n---\n"
+    assert split_frontmatter_and_body(body_only) == (None, body_only)
+    fm_none, _, err_none = extract_frontmatter(body_only)
+    assert fm_none is None
+    assert err_none is not None
+
+    # Extended FrontmatterModel accessors
+    dumped = dump_spec_document(
+        {
+            "id": "CNT-TEST",
+            "type": "tech/container",
+            "package_path": ["src/a", "src/b"],
+            "invariants": [{"id": "INV-CNT-1", "rule": "Top rule", "test_binding": "tests/t.py::test_1"}],
+            "decisions": [{"id": "DEC-CNT-1", "title": "T1", "decision": "D1", "rationale": "R1"}],
+            "components": [
+                {
+                    "id": "CMP-INLINE-1",
+                    "name": "Inline1",
+                    "source_path": "src/a/mod.py",
+                    "invariants": [{"id": "INV-CMP-1", "rule": "Comp rule"}],
+                    "decisions": [{"id": "DEC-CMP-1", "title": "T2", "decision": "D2", "rationale": "R2"}],
+                }
+            ],
+        },
+        "= Container\n",
+    )
+    spec_file = tmp_path / "cnt.adoc"
+    spec_file.write_text(dumped, encoding="utf-8")
+    from eidos.core.spec.parser import parse_spec_file
+
+    doc = parse_spec_file(spec_file)
+    model = doc.as_model()
+    assert model.package_paths() == ["src/a", "src/b"]
+    assert model.components[0].id == "CMP-INLINE-1"
+    assert model.components[0]["id"] == "CMP-INLINE-1"
+    assert model.components[0].source_paths() == ["src/a/mod.py"]
+    assert [i.id for i in model.all_invariants()] == ["INV-CNT-1", "INV-CMP-1"]
+    assert [d.id for d in model.all_decisions()] == ["DEC-CNT-1", "DEC-CMP-1"]
+
+
+def test_scoped_empty_system_adoc_exemption_and_non_system_empty_failure(
+    tmp_path: Path, validator: SpecValidator
+) -> None:
+    """DLT-2026-066: Verify 0-byte root system.adoc is permitted as SYS-UNINITIALIZED while any other
+    0-byte or whitespace-only .adoc file fails parse_spec_file and validate_directory."""
+    from eidos.core.spec.parser import parse_spec_file
+
+    eidos_dir = tmp_path / "eidos"
+    caps_dir = eidos_dir / "domains" / "core" / "capabilities"
+    caps_dir.mkdir(parents=True)
+
+    sys_file = eidos_dir / "system.adoc"
+    sys_file.write_text("", encoding="utf-8")
+    sys_doc = parse_spec_file(sys_file)
+    assert sys_doc.is_valid
+    assert sys_doc.doc_id == "SYS-UNINITIALIZED"
+    assert validator.validate_directory(eidos_dir).is_clean
+
+    # Empty non-system .adoc file must fail both parse_spec_file and validate_directory
+    empty_cap = caps_dir / "empty_cap.adoc"
+    empty_cap.write_text("   \n", encoding="utf-8")
+    empty_doc = parse_spec_file(empty_cap)
+    assert not empty_doc.is_valid
+    assert any("Missing YAML frontmatter" in e for e in empty_doc.errors)
+
+    report = validator.validate_directory(eidos_dir)
+    assert not report.is_clean
+    assert str(empty_cap) in report.schema_errors
+
+
+def test_schema_cache_collision_free_and_functional_cli_parity(
+    tmp_path: Path, validator: SpecValidator
+) -> None:
+    """DLT-2026-072: Verify product/system.schema.yaml and design/system.schema.yaml do not collide,
+    eidos info lists all 16 bundled schemas, and _verify_cli_contract_commands discovers functional
+    app.command(...)(fn) and *_commands.register(app) root commands."""
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.spec.models import SpecDocument
+
+    # 1. Both product/system and design/system schemas resolve distinctly even with bare schema_ref
+    assert validator._schema_cache["product/system.schema.yaml"]["title"] == "SystemSchema"
+    assert validator._schema_cache["design/system.schema.yaml"]["title"] == "DesignSystemSchema"
+    prod_doc = SpecDocument(
+        file_path=tmp_path / "sys.adoc",
+        frontmatter={},
+        body="",
+        doc_type="product/system",
+        doc_id="SYS-1",
+        schema_ref="system.schema.yaml",
+    )
+    ds_doc = SpecDocument(
+        file_path=tmp_path / "ds.adoc",
+        frontmatter={},
+        body="",
+        doc_type="design/system",
+        doc_id="DS-1",
+        schema_ref="system.schema.yaml",
+    )
+    assert validator.resolve_schema(prod_doc)["title"] == "SystemSchema"
+    assert validator.resolve_schema(ds_doc)["title"] == "DesignSystemSchema"
+
+    # 2. eidos info reports 16 loaded schemas
+    res = CliRunner().invoke(app, ["info"])
+    assert res.exit_code == 0
+    assert "16 loaded" in res.stdout
+    assert "product/system.schema.yaml" in res.stdout
+    assert "design/system.schema.yaml" in res.stdout
+
+    # 3. Functional app.command(...)(fn) and sibling register(app) commands are discovered
+    eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    ctrs_dir = eidos_dir / "architecture" / "contracts"
+    src_cli = tmp_path / "src" / "cli"
+    for d in (cnts_dir, ctrs_dir, src_cli):
+        d.mkdir(parents=True)
+
+    (src_cli / "extra_command.py").write_text(
+        "import typer\n"
+        "def extra_cmd():\n    pass\n"
+        "def register(app: typer.Typer) -> None:\n"
+        "    app.command('delegated-cmd')(extra_cmd)\n",
+        encoding="utf-8",
+    )
+    (src_cli / "main.py").write_text(
+        "import typer\n"
+        "from . import extra_command\n"
+        "app = typer.Typer()\n"
+        "def info():\n    pass\n"
+        "app.command()(info)\n"
+        "extra_command.register(app)\n",
+        encoding="utf-8",
+    )
+
+    (cnts_dir / "cli.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-CLI\n"
+        "name: CLI\n"
+        "container_type: cli\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/cli\n"
+        "---\n"
+        "= CLI\n",
+        encoding="utf-8",
+    )
+    ctr_file = ctrs_dir / "cli.adoc"
+    ctr_file.write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-CLI\n"
+        "title: CLI Contract\n"
+        "protocol: cli_args\n"
+        "owning_container: CNT-CLI\n"
+        "specification_file: src/cli/main.py\n"
+        "---\n"
+        "= CLI Contract\n\n"
+        "=== `info`\n",
+        encoding="utf-8",
+    )
+
+    rep = validator.validate_directory(eidos_dir)
+    broken_text = "\n".join(rep.broken_references)
+    assert "info" not in broken_text
+    assert "delegated-cmd" in broken_text
+
+    ctr_file.write_text(ctr_file.read_text(encoding="utf-8") + "\n=== `delegated-cmd`\n", encoding="utf-8")
+    assert validator.validate_directory(eidos_dir).is_clean
+
+
+def test_component_source_path_ui_test_bindings_and_invariant_test_binding_validation(
+    tmp_path: Path, validator: SpecValidator
+) -> None:
+    """DLT-2026-059 (# eidos:fixture): Verify SpecValidator checks active CMP-* source_path, UIC-* test_bindings,
+    and INV-* test_binding (file::func) file and symbol existence on disk."""
+    eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    uic_dir = eidos_dir / "design" / "systems" / "core" / "components"
+    pols_dir = eidos_dir / "policies"
+    src_dir = tmp_path / "src" / "app"
+    tests_dir = tmp_path / "tests"
+    for d in (cnts_dir, uic_dir, pols_dir, src_dir, tests_dir):
+        d.mkdir(parents=True)
+
+    (src_dir / "real.py").write_text("def run():\n    return True\n", encoding="utf-8")
+    (tests_dir / "test_app.py").write_text("def test_existing_rule():\n    assert True\n", encoding="utf-8")
+
+    # 1. Container with one valid inline component source_path and one missing inline component source_path
+    cnt_file = cnts_dir / "app.adoc"
+    cnt_file.write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-APP\n"
+        "name: App\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/app\n"
+        "components:\n"
+        "  - id: CMP-VALID\n"
+        "    name: ValidComp\n"
+        "    responsibility: Valid\n"
+        "    source_path: src/app/real.py\n"
+        "  - id: CMP-BROKEN-SRC\n"
+        "    name: BrokenComp\n"
+        "    responsibility: Broken\n"
+        "    source_path: src/app/missing.py\n"
+        "---\n"
+        "= App\n",
+        encoding="utf-8",
+    )
+
+    # 2. UI Component with broken test_bindings file
+    uic_file = uic_dir / "btn.adoc"
+    uic_file.write_text(
+        "---\n"
+        "type: design/ui-component\n"
+        "schema: schemas/v1/design/ui-component.schema.yaml\n"
+        "id: UIC-BTN\n"
+        "title: Button\n"
+        "design_system: DS-CORE\n"
+        "status: active\n"
+        "category: actions\n"
+        "variants:\n"
+        "  - name: primary\n"
+        "    description: Primary button\n"
+        "states:\n"
+        "  - default\n"
+        "accessibility:\n"
+        "  wcag_level: AA\n"
+        "  aria_role: button\n"
+        "  keyboard_nav: Enter activates\n"
+        "test_bindings:\n"
+        "  unit_test: tests/test_missing_ui.py::test_btn\n"
+        "---\n"
+        "= Button\n",
+        encoding="utf-8",
+    )
+
+    # 3. Policy with one valid INV-* test_binding, one missing file, and one missing symbol
+    pol_file = pols_dir / "pol.adoc"
+    pol_file.write_text(
+        "---\n"
+        "type: product/policy\n"
+        "schema: schemas/v1/product/policy.schema.yaml\n"
+        "id: POL-001-TEST\n"
+        "title: Test Policy\n"
+        "category: architecture\n"
+        "enforcement:\n"
+        "  mechanism: ci_cd_gate\n"
+        "  severity: hard_block\n"
+        "status: active\n"
+        "rule: Test rule.\n"
+        "invariants:\n"
+        "  - id: INV-OK\n"
+        "    rule: Valid binding\n"
+        "    test_binding: tests/test_app.py::test_existing_rule\n"
+        "  - id: INV-MISSING-FILE\n"
+        "    rule: Missing file\n"
+        "    test_binding: tests/no_such_file.py::test_x\n"
+        "  - id: INV-MISSING-SYM\n"
+        "    rule: Missing symbol\n"
+        "    test_binding: tests/test_app.py::test_nonexistent_symbol\n"
+        "---\n"
+        "= Policy\n",
+        encoding="utf-8",
+    )
+
+    report = validator.validate_directory(eidos_dir)
+    broken_text = "\n".join(report.broken_references)
+    assert "CMP-VALID" not in broken_text
+    assert "CMP-BROKEN-SRC" in broken_text and "src/app/missing.py" in broken_text
+    assert "UIC-BTN" in broken_text and "tests/test_missing_ui.py" in broken_text
+    assert "INV-OK" not in broken_text
+    assert "INV-MISSING-FILE" in broken_text and "tests/no_such_file.py" in broken_text
+    assert "INV-MISSING-SYM" in broken_text and "test_nonexistent_symbol" in broken_text
+
+
+def test_design_system_w3c_dtcg_manifest_and_acyclic_inheritance(
+    tmp_path: Path, validator: SpecValidator
+) -> None:
+    """DLT-2026-064 (INV-W3C-DTCG-COMPLIANCE): Verify SpecValidator validates W3C DTCG tokens.manifest
+    existence and $value/$type structure and detects circular inheritance.extends chains."""
+    eidos_dir = tmp_path / "eidos"
+    ds_a_dir = eidos_dir / "design" / "systems" / "brand_a"
+    ds_b_dir = eidos_dir / "design" / "systems" / "brand_b"
+    ds_a_dir.mkdir(parents=True)
+    ds_b_dir.mkdir(parents=True)
+
+    # DS-A has malformed token missing $value and extends DS-B
+    (ds_a_dir / "tokens.json").write_text(
+        '{"color": {"primary": {"hex": "#ffffff"}}}',
+        encoding="utf-8",
+    )
+    (ds_a_dir / "system.adoc").write_text(
+        "---\n"
+        "type: design/system\n"
+        "schema: schemas/v1/design/system.schema.yaml\n"
+        "id: DS-BRAND-A\n"
+        "title: Brand A\n"
+        "status: active\n"
+        "inheritance:\n"
+        "  extends: DS-BRAND-B\n"
+        "tokens:\n"
+        "  spec_format: w3c_design_tokens\n"
+        "  manifest: tokens.json\n"
+        "---\n"
+        "= Brand A\n",
+        encoding="utf-8",
+    )
+
+    # DS-B has missing tokens.json and extends DS-A (cycle!)
+    (ds_b_dir / "system.adoc").write_text(
+        "---\n"
+        "type: design/system\n"
+        "schema: schemas/v1/design/system.schema.yaml\n"
+        "id: DS-BRAND-B\n"
+        "title: Brand B\n"
+        "status: active\n"
+        "inheritance:\n"
+        "  extends: DS-BRAND-A\n"
+        "tokens:\n"
+        "  spec_format: w3c_design_tokens\n"
+        "  manifest: missing_tokens.json\n"
+        "---\n"
+        "= Brand B\n",
+        encoding="utf-8",
+    )
+
+    report = validator.validate_directory(eidos_dir)
+    broken_text = "\n".join(report.broken_references)
+    assert "missing required '$value'" in broken_text
+    assert "missing_tokens.json" in broken_text
+    assert "Circular design system inheritance" in broken_text
+    assert "DS-BRAND-A -> DS-BRAND-B -> DS-BRAND-A" in broken_text or "DS-BRAND-B -> DS-BRAND-A -> DS-BRAND-B" in broken_text
+
+
+def test_pluggable_contract_protocol_verifier_registry(
+    tmp_path: Path, validator: SpecValidator
+) -> None:
+    """DLT-2026-056: Verify _CONTRACT_PROTOCOL_VERIFIERS checks python_protocol, rest_openapi,
+    json_schema, grpc_proto, and graphql contracts against their specification_file."""
+    eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    ctrs_dir = eidos_dir / "architecture" / "contracts"
+    src_dir = tmp_path / "src" / "api"
+    for d in (cnts_dir, ctrs_dir, src_dir):
+        d.mkdir(parents=True)
+
+    (cnts_dir / "api.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-API\n"
+        "name: API\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/api\n"
+        "---\n"
+        "= API\n",
+        encoding="utf-8",
+    )
+
+    # 1. python_protocol
+    (src_dir / "ports.py").write_text(
+        "from typing import Protocol\n"
+        "class PaymentGateway(Protocol):\n"
+        "    def charge_card(self, amount: int) -> bool: ...\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "py_proto.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-PY-PROTO\n"
+        "title: Payment Gateway Protocol\n"
+        "protocol: python_protocol\n"
+        "owning_container: CNT-API\n"
+        "specification_file: src/api/ports.py\n"
+        "---\n"
+        "= PaymentGateway\n",
+        encoding="utf-8",
+    )
+
+    # 2. rest_openapi
+    (src_dir / "openapi.yaml").write_text(
+        "openapi: 3.0.0\n"
+        "paths:\n"
+        "  /v1/charges:\n"
+        "    post: {}\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "openapi.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-OPENAPI\n"
+        "title: Charges REST API\n"
+        "protocol: rest_openapi\n"
+        "owning_container: CNT-API\n"
+        "specification_file: src/api/openapi.yaml\n"
+        "---\n"
+        "= Charges REST API\n",
+        encoding="utf-8",
+    )
+
+    # 3. json_schema
+    (src_dir / "event.schema.json").write_text(
+        '{"type": "object", "required": ["invoice_id"], "properties": {"invoice_id": {"type": "string"}}}',
+        encoding="utf-8",
+    )
+    (ctrs_dir / "json_schema.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-JSON-SCHEMA\n"
+        "title: Invoice Event Schema\n"
+        "protocol: json_schema\n"
+        "owning_container: CNT-API\n"
+        "specification_file: src/api/event.schema.json\n"
+        "---\n"
+        "= Invoice Event Schema\n",
+        encoding="utf-8",
+    )
+
+    # 4. grpc_proto
+    (src_dir / "ledger.proto").write_text(
+        "syntax = \"proto3\";\n"
+        "service LedgerService {\n"
+        "  rpc RecordEntry (EntryReq) returns (EntryResp);\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "grpc.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-GRPC\n"
+        "title: Ledger gRPC\n"
+        "protocol: grpc_proto\n"
+        "owning_container: CNT-API\n"
+        "specification_file: src/api/ledger.proto\n"
+        "---\n"
+        "= LedgerService\n",
+        encoding="utf-8",
+    )
+
+    # 5. graphql
+    (src_dir / "schema.graphql").write_text(
+        "type Query {\n"
+        "  fetchInvoice(id: ID!): Invoice\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "graphql.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-GRAPHQL\n"
+        "title: GraphQL Schema\n"
+        "protocol: graphql\n"
+        "owning_container: CNT-API\n"
+        "specification_file: src/api/schema.graphql\n"
+        "---\n"
+        "= GraphQL Schema\n",
+        encoding="utf-8",
+    )
+
+    report = validator.validate_directory(eidos_dir)
+    broken_text = "\n".join(report.broken_references)
+    assert "charge_card" in broken_text
+    assert "/v1/charges" in broken_text
+    assert "invoice_id" in broken_text
+    assert "RecordEntry" in broken_text
+    assert "fetchInvoice" in broken_text
+
+
+
+
+
+
+
 

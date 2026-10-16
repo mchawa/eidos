@@ -7,7 +7,11 @@ from typing import Any
 
 import yaml
 
-from eidos.core.spec.parser import parse_spec_file
+from eidos.core.spec.parser import (
+    dump_spec_document,
+    parse_spec_file,
+    split_frontmatter_and_body,
+)
 
 VALID_SPEC_TYPES = {
     "delta": "delta/mutation",
@@ -74,16 +78,15 @@ def normalize_id(doc_type_key: str, raw_id: str) -> str:
 
 def _render_spec(frontmatter: dict[str, Any], body: str) -> str:
     """Serialize a frontmatter dict with yaml.safe_dump and wrap it with an AsciiDoc body (DLT-2026-032)."""
-    fm_yaml = yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True, default_flow_style=False, width=4096)
-    return f"---\n{fm_yaml}---\n{body.lstrip(chr(10))}"
+    return dump_spec_document(frontmatter, body)
 
 
 def _split_raw_frontmatter(raw_content: str) -> tuple[str, str] | None:
     """Split a spec document into (raw_frontmatter_lines, body_text) without re-serializing YAML."""
-    match = re.match(r"^---\s*\n(.*?)\n---\s*(?:\n|$)(.*)", raw_content, re.DOTALL)
-    if not match:
+    raw_yaml, body = split_frontmatter_and_body(raw_content)
+    if raw_yaml is None:
         return None
-    return match.group(1), match.group(2)
+    return raw_yaml, body
 
 
 def _set_frontmatter_scalar(raw_content: str, key: str, value: str) -> str:

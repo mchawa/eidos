@@ -1,0 +1,149 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-077
+title: "CLI Contract Flag Parity, Design Scaffolder Hygiene, and Documentation & Living Specification Synchronization"
+status: proposed
+vcs:
+  branch: fix/cli-flags-design-scaffolder-and-docs-sync
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Implement missing CLI flags and positional arguments promised by CTR-EIDOS-CLI, POL-004, bundled skills, and docs/ (eidos spec list --json, eidos index search --json, eidos delta create --branch, eidos delta status [ID] [STATUS] --json, eidos delta list --json, and eidos spec create --platform / --spec-file), fix hardcoded DS-CORE and fake packages/ui/src/*.stories.tsx scaffolding in build_design_spec, and synchronize schema-invalid YAML examples and stale CLI/entity references across docs/concepts/ and eidos/ capability/screen specifications."
+mutations:
+  - action: modify_component
+    target_component: CMP-CLI-SPEC-COMMANDS
+    details: "Add --json output mode to eidos spec list (returning structured count and specs array per CTR-EIDOS-CLI and POL-004 Rule 3) and expose --platform and --spec-file options on eidos spec create in src/eidos/cli/spec_commands.py."
+    expect:
+      source_path: "src/eidos/cli/spec_commands.py"
+      responsibility: "--json"
+  - action: modify_component
+    target_component: CMP-CLI-DELTA-COMMANDS
+    details: "Add --branch / -b option to eidos delta create, support optional positional delta_id and new_status arguments plus --json on eidos delta status, and add --json output mode to eidos delta list in src/eidos/cli/delta_commands.py."
+    expect:
+      source_path: "src/eidos/cli/delta_commands.py"
+      responsibility: "--branch"
+  - action: modify_component
+    target_component: CMP-CLI-INDEX-COMMANDS
+    details: "Add --json output mode to eidos index search in src/eidos/cli/index_commands.py and update tests/fixtures/cli_command_tree.json in lockstep with the expanded CLI command tree."
+    expect:
+      source_path: "src/eidos/cli/index_commands.py"
+      responsibility: "--json"
+  - action: modify_component
+    target_component: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Add branch parameter to create_spec for delta/mutation scaffolding and resolve default design_system dynamically via _first_of_type('design/system', 'DS-CORE') in src/eidos/core/lifecycle/scaffolder.py."
+    expect:
+      source_path:
+        - "src/eidos/core/lifecycle/scaffolder.py"
+        - "src/eidos/core/lifecycle/catalog.py"
+      responsibility: "_first_of_type"
+  - action: modify_component
+    target_component: CMP-DESIGN-ENGINE
+    details: "Update build_design_spec in src/eidos/core/lifecycle/design_engine.py to scaffold ui-component specs with status: 'draft' and empty test_bindings: {} instead of fake 'packages/ui/src/<Heading>.stories.tsx' paths, resolve default design_system dynamically, and defer tokens.json creation until after create_spec verifies dest_file does not already exist."
+    expect:
+      source_path: "src/eidos/core/lifecycle/design_engine.py"
+      responsibility: "draft"
+  - action: modify_component
+    target_component: CMP-DOCS-CORE-CONCEPTS
+    details: "Fix schema-invalid YAML examples in docs/concepts/schema-glossary.md and docs/concepts/design.md (product/system value_proposition, product/domain boundaries.responsibilities, tech/architecture deployment_view.ci_cd_engine, design/system tokens object) and fix CNT-EIDOS-CORE / token_estimate usage in docs/concepts/architectural-index.md."
+    expect:
+      source_path: "docs/concepts/how-eidos-works.md"
+      responsibility: "16-schema Glossary"
+  - action: extend_capability
+    target_capability: CAP-PROD-001
+    details: "Add portal-explorations.adoc to experience.screens and portal-reader.adoc to experience.ui_components in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc, and synchronize stale CLI strings, legacy CMP-*/DOM-* prose references, and pre-compression token numbers across CAP-PROD-002, CAP-PROD-003, CAP-EXP-002, CAP-AGENT-001, CAP-VCS-001, and SCR-PORTAL-CATALOG."
+    expect:
+      status: active
+affects:
+  containers:
+    - CNT-EIDOS-CLI
+    - CNT-EIDOS-CORE
+    - CNT-EIDOS-DOCS
+  components:
+    - CMP-CLI-SPEC-COMMANDS
+    - CMP-CLI-DELTA-COMMANDS
+    - CMP-CLI-INDEX-COMMANDS
+    - CMP-LIFECYCLE-SCAFFOLDER
+    - CMP-DESIGN-ENGINE
+    - CMP-DOCS-CORE-CONCEPTS
+  contracts:
+    - CTR-EIDOS-CLI
+  capabilities:
+    - CAP-PROD-001
+    - CAP-PROD-002
+    - CAP-PROD-003
+    - CAP-EXP-002
+    - CAP-AGENT-001
+    - CAP-VCS-001
+  domains:
+    - DOM-SPEC-ENGINE
+    - DOM-EXPERIENCE-PORTAL
+    - DOM-AGENT-INTELLIGENCE
+    - DOM-VCS-LIFECYCLE
+  policies:
+    - POL-003-CONTINUOUS-DOCUMENTATION-SYNC
+    - POL-004-ZERO-AI-CALL-DEPENDENCY
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-CLI
+    - CNT-EIDOS-CORE
+    - CNT-EIDOS-DOCS
+  impacted_components:
+    - CMP-CLI-SPEC-COMMANDS
+    - CMP-CLI-DELTA-COMMANDS
+    - CMP-CLI-INDEX-COMMANDS
+    - CMP-LIFECYCLE-SCAFFOLDER
+    - CMP-DESIGN-ENGINE
+    - CMP-DOCS-CORE-CONCEPTS
+  invariants_to_enforce:
+    - INV-SPEC-VALIDATION
+    - INV-DOCS-SYNCHRONIZATION
+    - INV-AGENT-ZERO-AI-DEPENDENCY
+---
+= SpecDelta: CLI Contract Flag Parity, Design Scaffolder Hygiene, and Documentation & Living Specification Synchronization
+:toc: left
+
+== Problem Statement
+
+Auditing the CLI command implementations (`src/eidos/cli/`), design scaffolder (`src/eidos/core/lifecycle/`), conceptual documentation (`docs/concepts/`), and living capability/screen specifications (`eidos/`) revealed four categories of contract and schema discrepancies:
+
+1. **Missing CLI Flags & Arguments Promised by `CTR-EIDOS-CLI`, `POL-004`, Bundled Skills, and `docs/` (`src/eidos/cli/spec_commands.py`, `src/eidos/cli/index_commands.py`, `src/eidos/cli/delta_commands.py`)**:
+   * `eidos spec list --json` is documented in `CTR-EIDOS-CLI` (line 75), `docs/guides/cli.md` (lines 291, 310), and `docs/guides/agent-plugin.md` (line 314), but `spec_list_cmd` (`src/eidos/cli/spec_commands.py`, lines 116-159) lacks a `--json` flag.
+   * `eidos index search --json` is documented in `assets/plugin_reference/skills/eidos/SKILL.md` (lines 80, 230) and `CAP-AGENT-001` (`agent-adapter.adoc`, line 29), but `index_search_cmd` (`src/eidos/cli/index_commands.py`, lines 132-171) lacks a `--json` flag.
+   * `eidos delta create --branch <branch>` is documented in `eidos/SKILL.md` (line 116), `eidos-plan/SKILL.md` (line 76), and `docs/concepts/specdeltas.md` (line 129), but `delta_create_cmd` (`src/eidos/cli/delta_commands.py`, lines 71-101) and `create_spec` (`src/eidos/core/lifecycle/scaffolder.py`, lines 45-70) hardcode `f"feat/{slug}"` and omit `--branch` / `-b`.
+   * `eidos delta status <ID> <STATUS>` is documented in `eidos-plan/SKILL.md` (line 81), whereas `delta_status_cmd` (`src/eidos/cli/delta_commands.py`, lines 377-429) accepts zero positional arguments and lacks `--json` (as does `eidos delta list`).
+   * `eidos spec create` (`src/eidos/cli/spec_commands.py`, lines 195-316) omits `--platform` and `--spec-file` CLI flags even though `create_spec` accepts `platform` and `specification_file`.
+2. **Design Scaffolder Hardcodes `"DS-CORE"`, Scaffolds Non-Existent `packages/ui/src/*.stories.tsx` with `status: active`, and Writes `tokens.json` Before Existence Check (`src/eidos/core/lifecycle/scaffolder.py`, `src/eidos/core/lifecycle/design_engine.py`)**:
+   * `design_system` defaults to hardcoded `"DS-CORE"` (`scaffolder.py` line 67, `spec_commands.py` line 284, `design_engine.py` line 79) instead of discovering the repository's primary design system via `_first_of_type("design/system", "DS-CORE")`.
+   * `build_design_spec("ui-component")` (`design_engine.py`, lines 93-106) scaffolds `status: "active"` with a fake `"storybook": f"packages/ui/src/{heading.replace(' ', '')}.stories.tsx"` path, which fails `eidos validate` once `CMP-SPEC-VALIDATOR` verifies `UIC-*` `test_bindings` on disk (`DLT-2026-059`).
+   * `build_design_spec("design-system")` (`design_engine.py`, lines 38-54) writes `tokens.json` to disk *before* `create_spec` (`scaffolder.py`, line 382) checks `if dest_file.exists(): raise FileExistsError`.
+3. **Schema-Invalid YAML Examples & Stale Entity IDs in `docs/concepts/`**:
+   * `docs/concepts/schema-glossary.md` omits required `business_identity.value_proposition` on `product/system` (lines 53-57), uses forbidden `boundaries.in_scope` on `product/domain` (lines 87-88), omits required `deployment_view.ci_cd_engine` on `tech/architecture` (lines 248-250), and shows `tokens: "eidos/design/systems/acme/tokens.json"` as a string instead of `{ spec_format: "w3c_design_tokens", manifest: "tokens.json" }` on `design/system` (line 370; also in `docs/concepts/design.md` line 80).
+   * `docs/concepts/architectural-index.md` (lines 284 & 296) uses non-existent `CMP-EIDOS-CORE` (`component_id="CMP-EIDOS-CORE"` and `context.estimated_tokens`) instead of `component="CNT-EIDOS-CORE"` and `context.token_estimate`.
+4. **Stale CLI Interface Strings & Legacy `CMP-*` / `DOM-*` Terminology in `eidos/` Capability & Screen Specs**:
+   * `CAP-PROD-003` (`exploration-discovery.adoc`, lines 23-26) lists non-existent `"eidos explore create <hypothesis>"` and `"eidos explore graduate <exploration-id> --to-delta"`.
+   * `CAP-PROD-002` (`spec-delta-mutations.adoc`, line 29) lists non-existent `"eidos delta impact <delta-id>"`.
+   * `CAP-EXP-002` (`multi-design-systems.adoc`, line 44) `INV-CLIENT-DESIGN-BINDING` rule says `container manifest (CMP-*)` instead of `(CNT-*)`.
+   * `SCR-PORTAL-CATALOG` (`portal-catalog.adoc`, lines 38-41) uses `Containers (CMP-*)` and legacy domain IDs `DOM-PRODUCT-CORE`, `DOM-AGENT-HARNESS`, `DOM-VCS-SYNC`.
+   * `CAP-AGENT-001` (`agent-adapter.adoc`, lines 85-91) lists pre-compression token budgets (`~1,500`, `~3,500`, `~8,000`) and `Owning container (CMP-*)`.
+   * `CAP-VCS-001` (`drift-detection.adoc`, lines 47-49) references `owning container IDs (CMP-*)` and non-existent `eidos drift --strict`.
+   * `CAP-PROD-001` (`living-spec-engine.adoc`, lines 26-40) omits `portal-explorations.adoc` from `experience.screens` and `portal-reader.adoc` from `experience.ui_components`.
+
+== Proposed Specification Changes
+
+1. **Complete CLI Contract Flag & Argument Parity (`src/eidos/cli/spec_commands.py`, `src/eidos/cli/index_commands.py`, `src/eidos/cli/delta_commands.py`, `tests/fixtures/cli_command_tree.json`)**:
+   * Add `--json` to `eidos spec list`, `eidos index search`, `eidos delta list`, and `eidos delta status`.
+   * Add `--branch` / `-b` to `eidos delta create` (and `branch: str | None = None` to `create_spec`).
+   * Support optional `[DELTA_ID] [NEW_STATUS]` positional arguments on `eidos delta status` to transition a SpecDelta's frontmatter `status` (`proposed`, `in_review`, `approved`, `applied`, `rejected`) and sync by-status views when both arguments are supplied.
+   * Add `--platform` and `--spec-file` to `eidos spec create`, and update `tests/fixtures/cli_command_tree.json` to match the updated Typer command tree.
+2. **Fix Design Scaffolder Defaults & Side-Effect Ordering (`src/eidos/core/lifecycle/scaffolder.py`, `src/eidos/core/lifecycle/design_engine.py`)**:
+   * Resolve default `design_system` via `_first_of_type("design/system", "DS-CORE")` when not explicitly passed.
+   * Scaffold `design/ui-component` with `status: "draft"` and `test_bindings: {}` instead of fake `packages/ui/src/*.stories.tsx` paths, and defer `tokens.json` creation until after `dest_file.exists()` is checked.
+3. **Synchronize `docs/concepts/` Examples and `eidos/` Capability & Screen Specifications**:
+   * Fix the YAML examples in `docs/concepts/schema-glossary.md`, `docs/concepts/design.md`, and `docs/concepts/architectural-index.md`, and update the CLI interface strings, `CNT-*`/`DOM-*` references, token budgets, and experience links across `CAP-PROD-001`, `CAP-PROD-002`, `CAP-PROD-003`, `CAP-EXP-002`, `CAP-AGENT-001`, `CAP-VCS-001`, and `SCR-PORTAL-CATALOG`.
+
+== Verification Plan
+
+* `uv run pytest tests/test_cli_json.py tests/test_scaffolder.py tests/test_docs_sync.py` — Verify all new `--json` flags, `eidos delta create --branch`, `eidos delta status <ID> <STATUS>`, `eidos spec create --platform / --spec-file`, `cli_command_tree.json` parity, and design scaffolder defaults.
+* `uv run eidos validate eidos && uv run eidos drift --uncommitted --json`

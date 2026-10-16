@@ -1,0 +1,173 @@
+---
+type: product/exploration
+schema: schemas/v1/product/exploration.schema.yaml
+id: EXP-2026-007
+title: "Evaluating a Minimalist Model Context Protocol (MCP) Bridge for Guaranteed Agent Tool Invocation"
+status: proposed
+hypothesis: >
+  Reintroducing a minimalist, zero-state Model Context Protocol (MCP) transport wrapper exposing strictly
+  three high-impact tools (eidos_context, eidos_drift, eidos_validate) with a total prompt footprint
+  < 400 tokens will increase autonomous agent compliance for context slicing and drift verification
+  from < 30% to >= 90% across coding sessions, while avoiding the 2,500-token prompt bloat and dual-surface
+  maintenance defects that caused the original 17-tool MCP daemon decommissioning under DLT-2026-016.
+questions_to_answer:
+  - "Why do autonomous AI agents in modern IDEs (Antigravity, Cursor, Claude Code) frequently skip executing Eidos CLI commands despite the presence of Agent Skills (SKILL.md)?"
+  - "Can a curated 3-tool MCP schema (eidos_context, eidos_drift, eidos_validate) remain strictly under 400 tokens of prompt overhead, compared to the 2,500-3,500 tokens of the legacy 17-tool server?"
+  - "How can the MCP server be implemented as a purely stateless stdio JSON-RPC wrapper delegating directly to core CLI handlers, eliminating dual maintenance and preventing stdio desynchronization?"
+  - "What is the agent compliance delta across three configurations: (A) Passive Agent Skills only, (B) Active Workspace Rules (AGENTS.md), and (C) First-Class MCP Tool Palette?"
+  - "How can the Eidos plugin manager (agent-plugins.org v1.0.0) optionally scaffold MCP configurations for environments that support it without regressing CLI-first environments?"
+spikes_to_run:
+  - name: "spike-agent-compliance-baseline"
+    target: "Measure autonomous agent invocation rates of eidos context and eidos drift across 20 synthetic coding tasks under Skill-only vs Workspace-Rule vs MCP configurations."
+  - name: "spike-minimalist-mcp-schema-audit"
+    target: "Draft and measure token budgets for a 3-tool MCP specification (eidos_context, eidos_drift, eidos_validate) ensuring strict schema compactness under 400 tokens."
+  - name: "spike-stateless-stdio-prototype"
+    target: "Prototype a thin, zero-daemon stdio JSON-RPC 2.0 handler (eidos mcp serve) directly invoking core CLI controller functions with sub-50ms cold start."
+exit_criteria:
+  max_duration: "3_days"
+  benchmark: "Agent compliance on drift verification >= 90%; MCP schema prompt overhead <= 400 tokens; stdio cold start < 50ms; 100% adherence to POL-004 (zero runtime AI calls)."
+---
+= Exploration: Evaluating a Minimalist Model Context Protocol (MCP) Bridge for Guaranteed Agent Tool Invocation
+:toc: left
+:icons: font
+:sectnums:
+
+== 1. Problem Statement & Operational Observations
+
+In `DLT-2026-016`, Eidos formally deprecated and decommissioned its original Model Context Protocol daemon (legacy MCP container and contract in `src/eidos/mcp/`) in favor of direct CLI commands (`eidos <cmd> --json`) and progressive disclosure via Agent Skills (`SKILL.md`).
+
+The rationale behind `DLT-2026-016` remains technically sound:
+1. **Prompt Overhead:** The original 17-tool MCP catalog injected 2,500–3,500 tokens of JSON Schema into every turn.
+2. **Dual-Surface Debt:** Maintaining dual implementations in `src/eidos/cli/` and `src/eidos/mcp/` created subtle divergence.
+3. **Daemon Fragility:** Background stdio daemons suffered from buffer desynchronization, zombie processes, and IDE restart hangs.
+
+=== 1.1 The Emerging Failure Mode: The "Passive Skill" Dilemma
+
+Despite the elegance of CLI + Progressive Skills, empirical observation of autonomous AI agents (Google Antigravity, Claude Code, Cursor, Copilot) in real-world workflows reveals a significant behavioral gap:
+
+[quote, Operational Finding]
+____
+Autonomous AI agents frequently neglect or fail to take full advantage of the Eidos CLI during normal coding loops.
+____
+
+This behavioral failure stems from three concrete architectural factors:
+
+1. **Passive Skill Discovery Failure:**
+   Agent Skills (`SKILL.md`) rely on the agent's LLM router reading a high-level description and proactively loading the skill. When a developer prompts an agent with a routine task (*"fix the parsing bug in parser.py"* or *"optimize the SQL query"*), the LLM's classification layer categorizes it as a local code fix rather than an architectural event. Consequently, the agent **never loads `eidos/SKILL.md`**, and never learns to run `eidos context` or `eidos drift`.
+2. **Tool Palette Structural Bias:**
+   LLMs are heavily fine-tuned to prefer their **native first-class tool palette** (`view_file`, `replace_file_content`, `grep_search`). Using the Eidos CLI requires the model to formulate a subshell call (`run_command` or `bash`). Without explicit prompting, models default to raw file viewing and heuristic editing, bypassing Eidos's AST knowledge graph and invariant checks.
+3. **Absence of Forced Feedback Loops:**
+   Unless an active drift gate or pre-commit hook aborts the agent's turn, an agent can complete entire multi-file refactors without ever running `eidos drift`, leaving living specifications unmaintained and silently decaying.
+
+---
+
+== 2. Hypotheses & Proposed Architectural Model
+
+Instead of an all-or-nothing dichotomy between *No MCP* and *Monolithic 17-Tool MCP Daemon*, we hypothesize that a **hybrid architecture** provides the optimal balance.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        AI Coding Agent Run Loop                        │
+│                                                                        │
+│   ┌──────────────────────────┐         ┌───────────────────────────┐   │
+│   │ First-Class Tool Palette │         │ Progressive Agent Skills  │   │
+│   │ (3 Curated MCP Tools)    │         │ (Specialized Guidelines)  │   │
+│   │                          │         │                           │   │
+│   │  • eidos_context         │         │  • eidos (Orchestrator)   │   │
+│   │  • eidos_drift           │         │  • eidos-spec             │   │
+│   │  • eidos_validate        │         │  • eidos-plan             │   │
+│   │  (~380 tokens)           │         │  • eidos-ops              │   │
+│   └─────────────┬────────────┘         └─────────────┬─────────────┘   │
+└─────────────────┼────────────────────────────────────┼─────────────────┘
+                  │ stdio JSON-RPC                     │ CLI invocations
+                  ▼                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                         CNT-EIDOS-CLI Engine                           │
+│  (Typer commands, shared JSON response models, zero AI dependency)     │
+│                                                                        │
+│   eidos context  │  eidos drift  │  eidos validate  │  eidos delta     │
+└─────────────────────────────────┬──────────────────────────────────────┘
+                                  │
+                                  ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│            CNT-EIDOS-CORE / CNT-EIDOS-INDEX / CNT-EIDOS-VCS            │
+│   SQLite FTS5 Knowledge Graph | AST Drift Engine | JSON Schemas        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+=== 2.1 The Minimalist 3-Tool Surface
+
+By exposing strictly three essential governance tools, prompt overhead remains negligible while guaranteeing discovery:
+
+1. **`eidos_context`**:
+   - *Inputs:* `file?: string`, `task?: string`, `tier?: "anchor" | "guardrails" | "deep"`
+   - *Behavior:* Returns token-budgeted architectural context slice directly into tool response.
+2. **`eidos_drift`**:
+   - *Inputs:* `uncommitted?: boolean`, `base_ref?: string`
+   - *Behavior:* Returns Git spec-to-code drift status, affected components, and remediation actions.
+3. **`eidos_validate`**:
+   - *Inputs:* `path?: string`
+   - *Behavior:* Validates `.adoc` specifications against JSON Schemas and reports errors.
+
+All complex lifecycle actions (scaffolding explorations, managing SpecDeltas, running migration changelogs) remain cleanly in the CLI and progressive skills.
+
+=== 2.2 Core Architectural Principles for the MCP Bridge
+
+To prevent repeating the architectural failures of the legacy MCP implementation, any new MCP component must adhere to:
+
+* **Zero Duplication (Strict Thin Wrapper):** The MCP handler must not implement any validation, drift, or context logic. It must be a thin transport layer (`src/eidos/cli/mcp.py` or `src/eidos/mcp/`) that calls existing CLI controller functions and returns the exact same Pydantic/JSON models.
+* **Ephemeral Stdio Lifecycle:** No persistent background daemon state or separate process management. The server starts instantly on stdio per session and shuts down cleanly.
+* **Strict Token Budget (< 400 Tokens):** The cumulative tool definitions for all 3 tools must not exceed 400 tokens of JSON Schema in the model prompt.
+* **POL-004 Determinism:** 100% deterministic local execution, zero LLM calls inside the engine.
+
+---
+
+== 3. Investigation & Empirical Spikes
+
+=== Spike 1: Agent Compliance Benchmark (`spike-agent-compliance-baseline`)
+Evaluate agent invocation compliance across 20 common software engineering prompts (5 bug fixes, 5 refactors, 5 feature additions, 5 test updates) under three isolated configurations:
+
+* **Config A (Current Baseline):** Passive Agent Skills only (`.agents/plugins/eidos/skills/`).
+* **Config B (Rules-Enhanced):** Passive Skills + Mandatory Workspace Rule (`AGENTS.md` / `.cursorrules`).
+* **Config C (Hybrid 3-Tool MCP):** 3-Tool MCP Bridge active in agent tool palette.
+
+*Metrics to capture:*
+* % of tasks where architectural context was extracted prior to code edits.
+* % of tasks where drift verification was executed prior to completion.
+* Total prompt token overhead per turn.
+
+=== Spike 2: Token Overhead & Schema Audit (`spike-minimalist-mcp-schema-audit`)
+Measure exact BPE token counts for:
+* Legacy 17-tool MCP schema catalog (`~2,850` tokens).
+* Proposed 3-tool minimal schema catalog (`eidos_context`, `eidos_drift`, `eidos_validate`).
+* Comparison with raw `SKILL.md` system injection.
+
+=== Spike 3: Stateless Stdio Prototype (`spike-stateless-stdio-prototype`)
+Prototype a zero-dependency stdio JSON-RPC 2.0 dispatcher:
+```bash
+eidos mcp serve
+```
+Verify cold start latency is `< 50ms`, memory consumption is `< 20MB`, and tool execution maps 1:1 with `eidos context --format json` and `eidos drift --uncommitted --json`.
+
+---
+
+== 4. Risks & Mitigations
+
+[cols="1,2,2", options="header"]
+|===
+| Risk | Impact | Mitigation
+| **Dual Maintenance Burden** | CLI and MCP schemas drift out of sync over time. | Generate MCP tool schemas and handler dispatch directly from the shared Typer CLI or core index controller functions.
+| **Client Configuration Fragmentation** | Users struggle to configure `.mcp.json` or `claude_desktop_config.json`. | Integrate MCP configuration generation into `eidos plugin install` as an optional flag (`eidos plugin install --with-mcp`).
+| **Prompt Bloat Creep** | Temptation to add `eidos_delta_create`, `eidos_spec_delete`, etc., returning to the 2,500-token problem. | Strictly enforce a 3-tool cap in `POL-004` or container invariants.
+|===
+
+---
+
+== 5. Next Steps & Graduation Path
+
+If this exploration confirms that:
+1. Agent compliance on drift and context extraction increases to $\ge 90\%$, AND
+2. Total tool schema token footprint remains $\le 400$ tokens with sub-50ms stdio responsiveness,
+
+This exploration will graduate to a formal SpecDelta:
+* **`DLT-2026-079`**: Introduce Minimalist Stdio MCP Bridge (`CMP-CLI-MCP-BRIDGE` thin wrapper over `CNT-EIDOS-CLI`).

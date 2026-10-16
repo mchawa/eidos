@@ -116,3 +116,24 @@ properties:
             prefixes:
               - DOM-
             entity_label: domain
+  ubiquitous_language:
+    oneOf:
+      - type: object
+        additionalProperties:
+          type: string
+      - type: array
+        items:
+          type: object
+          additionalProperties: true
+    description: "Canonical Domain-Driven Design glossary terms and definitions scoped to this bounded context (optional)."
+  owners:
+    type: array
+    description: "Teams, roles, or individuals accountable for this bounded context (optional)."
+    items:
+      type: string
+  decisions:
+    type: array
+    description: "In-place domain and architectural decisions recorded on this domain specification (POL-001)."
+    items:
+      $ref: "#/$defs/decision"
+

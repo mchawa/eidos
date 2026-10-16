@@ -122,7 +122,13 @@ def version_cmd():
 def info():
     """Display Eidos engine version, bundled schemas, and platform status."""
     validator = SpecValidator()
-    schemas = sorted({s for s in validator._schema_cache if "/" not in s})
+    schemas = sorted(
+        {
+            s.removeprefix("schemas/v1/")
+            for s in validator._schema_cache
+            if s.startswith("schemas/v1/") and "/" in s.removeprefix("schemas/v1/")
+        }
+    )
 
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style="bold cyan", justify="right")

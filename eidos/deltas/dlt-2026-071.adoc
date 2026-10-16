@@ -1,0 +1,82 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-071
+title: "Isolated project Plugin Install Target, Accurate Fallback Version Path Reporting, AIDER Created-Files Typing, and Retired reconcile.md Command Cleanup"
+status: proposed
+vcs:
+  branch: fix/plugin-installer-targets-and-validator
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Prevent PluginInstallTarget.PROJECT from implicitly mutating or deleting .cursor/ and .claude/, remove the retired broken reconcile.md Claude slash command, fix AIDER post_install_hook appending a boolean into InstallResult.created_files, report the actual matched manifest directory in check_plugin_version_status, and use line-anchored YAML frontmatter parsing in _validate_skill_md."
+mutations:
+  - action: modify_component
+    target_component: CMP-PLUGIN-INSTALLER
+    details: "Update install_plugin and uninstall_plugin in src/eidos/plugin/installer.py so PluginInstallTarget.PROJECT scopes strictly to .agents/plugins/eidos; remove reconcile.md from _write_claude_commands and prune legacy .claude/plugins/eidos/commands/reconcile.md on install; return Path from _update_project_aider_conf so InstallResult.created_files contains only Path objects; and update check_plugin_version_status in src/eidos/plugin/version.py to return the actual matched fallback plugin directory."
+    expect:
+      source_path: "src/eidos/plugin/installer.py"
+      responsibility: "TargetAdapter"
+  - action: modify_component
+    target_component: CMP-PLUGIN-VALIDATOR
+    details: "Update _validate_skill_md in src/eidos/plugin/validator.py to extract SKILL.md YAML frontmatter using line-anchored ^---\\s*$ delimiters instead of naive content.split('---', 2)."
+    expect:
+      source_path: "src/eidos/plugin/validator.py"
+      responsibility: "line-anchored"
+affects:
+  containers:
+    - CNT-EIDOS-PLUGIN
+  components:
+    - CMP-PLUGIN-INSTALLER
+    - CMP-PLUGIN-VALIDATOR
+  capabilities:
+    - CAP-AGENT-001
+  domains:
+    - DOM-AGENT-INTELLIGENCE
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-PLUGIN
+  impacted_components:
+    - CMP-PLUGIN-INSTALLER
+    - CMP-PLUGIN-VALIDATOR
+  invariants_to_enforce:
+    - INV-PLUGIN-PROJECT-SCOPE
+    - INV-PLUGIN-SCHEMA-CONFORMANCE
+    - INV-PLUGIN-SAFE-UNINSTALL
+---
+= SpecDelta: Isolated project Plugin Install Target, Accurate Fallback Version Path Reporting, AIDER Created-Files Typing, and Retired reconcile.md Command Cleanup
+:toc: left
+
+== Problem Statement
+
+`CNT-EIDOS-PLUGIN` (`src/eidos/plugin/installer.py`, `src/eidos/plugin/version.py`, and `src/eidos/plugin/validator.py`) has five defects:
+
+1. **Retired `eidos reconcile` Slash Command Installed for Claude Code (`src/eidos/plugin/installer.py`, lines 491-499)**:
+   * Although `eidos reconcile` was retired in `DLT-2026-047`, `_write_claude_commands` still writes `.claude/plugins/eidos/commands/reconcile.md` instructing Claude Code to run `eidos reconcile --uncommitted --prompt` (which fails with `No such command 'reconcile'`).
+2. **`PluginInstallTarget.AIDER` Appends `bool` (`True`) into `InstallResult.created_files: list[Path]` (`src/eidos/plugin/installer.py`, lines 635-660 & 1375-1378)**:
+   * `_update_project_aider_conf` returns `True` (`bool`), which `TARGET_ADAPTERS[PluginInstallTarget.AIDER].post_install_hook` includes in its returned list passed to `created.extend(...)`, polluting `InstallResult.created_files` with a boolean instead of `Path(root / ".aider.conf.yml")`.
+3. **`check_plugin_version_status` Reports Hardcoded `.agents/plugins/eidos` Path on Fallback Hits (`src/eidos/plugin/version.py`, lines 96-199)**:
+   * `get_installed_plugin_version` probes 8 fallback locations (`.claude/plugins/eidos/plugin.json`, `.codex/plugin.json`, `.github/plugin/plugin.json`, etc.) when `.agents/plugins/eidos/plugin.json` is absent, but `check_plugin_version_status` always returns `plugin_dir = root / ".agents" / "plugins" / "eidos"` even when the detected version came from `.claude/` or `.codex/`.
+4. **Naive `content.split("---", 2)` in `_validate_skill_md` (`src/eidos/plugin/validator.py`, lines 176-181)**:
+   * Splits `SKILL.md` on any substring `---` instead of line-anchored `^---\s*$`, breaking validation if a YAML scalar in `SKILL.md` frontmatter contains `---`.
+5. **`PluginInstallTarget.PROJECT` Implicitly Installs/Deletes `.cursor/` and `.claude/` (`src/eidos/plugin/installer.py`, lines 1469-1474 & 1537-1542)**:
+   * When `target == PluginInstallTarget.PROJECT`, `targets_to_run` expands to `[PROJECT, CURSOR, CLAUDE]`, causing `eidos plugin install -t project` and `eidos plugin uninstall -t project` to create or delete `.cursor/` and `.claude/` configurations outside `.agents/plugins/eidos`.
+
+== Proposed Specification Changes
+
+1. **Remove `reconcile.md` from `_write_claude_commands` (`src/eidos/plugin/installer.py`)**:
+   * Stop generating `reconcile.md` in `.claude/plugins/eidos/commands/` and prune any existing `reconcile.md` during install/update while keeping `reconcile.md` in the uninstaller cleanup list for legacy installs.
+2. **Return `Path` from `_update_project_aider_conf` (`src/eidos/plugin/installer.py`)**:
+   * Return `file_path` (`Path`) from `_update_project_aider_conf` so `InstallResult.created_files` contains only `Path` instances.
+3. **Accurate `plugin_dir` Resolution in `check_plugin_version_status` (`src/eidos/plugin/version.py`)**:
+   * Resolve and return the actual directory of the matched plugin manifest when a fallback agent target is installed.
+4. **Line-Anchored `SKILL.md` Frontmatter Parsing in `CMP-PLUGIN-VALIDATOR` (`src/eidos/plugin/validator.py`)**:
+   * Parse `SKILL.md` frontmatter using line-anchored `^---\s*$` matching (`extract_frontmatter`).
+5. **Isolate `PluginInstallTarget.PROJECT` (`src/eidos/plugin/installer.py`)**:
+   * Scope `PluginInstallTarget.PROJECT` to `[PluginInstallTarget.PROJECT]` (`.agents/plugins/eidos`), while preserving `PluginInstallTarget.ALL` for multi-agent installation/uninstallation.
+
+== Verification Plan
+
+* `uv run pytest tests/test_plugin.py` — Verify `AIDER` `created_files` contains only `Path` objects, `_write_claude_commands` does not emit `reconcile.md`, `check_plugin_version_status` reports the matched fallback directory, and `_validate_skill_md` handles `---` inside YAML strings.
+* `uv run eidos validate eidos && uv run eidos drift --uncommitted --json`

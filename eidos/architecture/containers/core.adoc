@@ -15,15 +15,15 @@ tier: core
 components:
   - id: CMP-SPEC-PARSER
     name: "SpecParser"
-    responsibility: "Extracts YAML frontmatter metadata and body text from AsciiDoc documents."
+    responsibility: "Extracts and serializes YAML frontmatter metadata and body text from AsciiDoc documents via canonical file-start-anchored, block-scalar-safe split_frontmatter_and_body and dump_spec_document helpers, scoping the 0-byte SYS-UNINITIALIZED placeholder strictly to root system.adoc."
     source_path: "src/eidos/core/spec/parser.py"
   - id: CMP-SPEC-VALIDATOR
     name: "SpecValidator"
-    responsibility: "Resolves bundled JSON/YAML schemas (merging shared reusable $defs from assets/schemas/v1/common/defs.yaml and dynamically extracting entity ID prefixes via _extract_prefixes_from_schema), performs cached per-document schema validation via 'spec_validation_cache' (keyed relative to repo_root via _resolve_spec_and_repo_roots across standard, custom --path, and subdirectory roots), verifies schema-driven x-eidos-ref cross-references with strict container vs. component target type enforcement (including 'graduated_from'), enforces global 'DEC-*' decision ID uniqueness, scopes Python Typer CLI contract parity checks to AST-verified Typer instances (supporting positional and keyword add_typer names), and enforces repo-relative centralized component invariants (INV-COMPONENT-CENTRALIZATION-MANDATE, INV-COMPONENT-CONTAINER-AFFINITY, INV-INTERFACE-BOUNDARY-GOVERNANCE)."
+    responsibility: "Resolves bundled JSON/YAML schemas via a deterministic relative-keyed _schema_cache (merging shared reusable $defs from assets/schemas/v1/common/defs.yaml for container/policy invariants and cross-layer decisions, and dynamically extracting entity ID prefixes via _extract_prefixes_from_schema), performs cached per-document schema validation via 'spec_validation_cache' (keyed relative to repo_root via _resolve_spec_and_repo_roots across standard, custom --path, and subdirectory roots, scoping the 0-byte empty-file exemption strictly to root system.adoc), verifies schema-driven x-eidos-ref cross-references across all 16 schemas including contract consumers, SpecDelta affects design/persona lists, and blast_radius impacted_components/impacted_containers with strict container vs. component target type enforcement (including 'graduated_from'), validates container package_path, component source_path, contract specification_file, UI component test_bindings, invariant test_binding (file::func) file and symbol existence on disk, and design/system W3C DTCG tokens.manifest structure and acyclic DS-* inheritance, enforces global 'DEC-*' decision ID uniqueness, dispatches multi-protocol CTR-* parity checks through a pluggable protocol verifier registry (_CONTRACT_PROTOCOL_VERIFIERS supporting cli_args, python_protocol, rest_openapi, json_schema, grpc_proto, and graphql, scoping Python Typer CLI contract parity checks to AST-verified Typer instances with positional/keyword add_typer names, functional app.command(...)(fn) calls, and delegated *_commands.register(app) modules), and enforces repo-relative centralized component invariants (INV-COMPONENT-CENTRALIZATION-MANDATE, INV-COMPONENT-CONTAINER-AFFINITY, INV-INTERFACE-BOUNDARY-GOVERNANCE)."
     source_path: "src/eidos/core/spec/validator.py"
   - id: CMP-LIFECYCLE-SCAFFOLDER
     name: "LifecycleScaffolder"
-    responsibility: "Scaffolds all 16 living specification types using safe YAML serialization (yaml.safe_dump, defaulting SpecDelta intent.kind to 'feature'), lists catalog specifications (including inline C4 Level 3 components CMP-* from container manifests and short/canonical type filtering), conducts reference safety checks, and orchestrates centralized C4 component promotion (promote_component) and inlining (inline_component). Shared low-level helpers (spec lookup, ID normalization, YAML frontmatter surgery, catalog indexes) live in catalog.py; scaffolder.py keeps permanent backwards-compatible re-exports of every previously public name."
+    responsibility: "Scaffolds all 16 living specification types using safe YAML serialization (dump_spec_document / yaml.safe_dump, defaulting SpecDelta intent.kind to 'feature'), lists catalog specifications (including inline C4 Level 3 components CMP-* from container manifests and short/canonical type filtering), conducts reference safety checks, and orchestrates centralized C4 component promotion (promote_component) and inlining (inline_component). Shared low-level helpers (spec lookup, ID normalization, YAML frontmatter surgery via split_frontmatter_and_body, catalog indexes) live in catalog.py; scaffolder.py keeps permanent backwards-compatible re-exports of every previously public name."
     source_path:
       - "src/eidos/core/lifecycle/scaffolder.py"
       - "src/eidos/core/lifecycle/catalog.py"
@@ -33,7 +33,7 @@ components:
     source_path: "src/eidos/core/lifecycle/design_engine.py"
   - id: CMP-REPO-INITIALIZER
     name: "RepositoryInitializer"
-    responsibility: "Bootstraps repositories with living specification skeletons, baseline policies, architecture, progressive Eidos Lite onboarding profile (eidos init --lite), immediate validation, and self-contained gitignore (plugins managed via eidos plugin)."
+    responsibility: "Bootstraps repositories with living specification skeletons, optional parameterized product/system frontmatter in eidos/system.adoc (--name / --title) or 0-byte bare system.adoc, baseline policies, architecture, progressive Eidos Lite onboarding profile (eidos init --lite), immediate validation, and self-contained gitignore (plugins managed via eidos plugin)."
     source_path: "src/eidos/core/lifecycle/initializer.py"
   - id: CMP-DELTA-ENGINE
     name: "DeltaEngine"
@@ -49,7 +49,7 @@ components:
     source_path: "src/eidos/core/workspace/project.py"
   - id: CMP-DOMAIN-MODELS
     name: "DomainModels"
-    responsibility: "Typed Pydantic frontmatter models (FrontmatterModel, DecisionModel, InvariantModel, RejectedAlternativeModel) and dataclass domain models representing living specification documents and validation reports."
+    responsibility: "Typed Pydantic frontmatter models (FrontmatterModel, InlineComponentModel, CapabilityTechnicalModel, DeltaIntentModel, DeltaMutationModel, DecisionModel, InvariantModel, RejectedAlternativeModel) with helper accessors (source_paths, package_paths, all_invariants, all_decisions) and dataclass domain models representing living specification documents and validation reports."
     source_path: "src/eidos/core/spec/models.py"
   - id: CMP-DELTA-AUDITOR
     name: "DeltaAuditor"

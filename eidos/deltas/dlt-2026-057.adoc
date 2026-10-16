@@ -1,0 +1,79 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-057
+title: "Git-Portable SpecDelta Baselines, Collision-Free Delta IDs, and Copy-on-Write Mutation Transactions"
+status: proposed
+vcs:
+  branch: feat/delta-git-portability-and-cow
+intent:
+  kind: enabler
+  motivation: "Make SpecDelta verification 100% deterministic across machines and CI without relying on gitignored SQLite .cache/index.db state by recording vcs.base_commit in DLT-* frontmatter, support collision-free branch/slug delta IDs to prevent parallel branch merge conflicts, and replace the full-directory eidos/ RAM snapshot in _MutationTransaction with copy-on-write snapshotting."
+mutations:
+  - action: modify_component
+    target_component: CMP-DELTA-ENGINE
+    details: "Persist vcs.base_commit (or target baseline blob SHAs) in DLT-* frontmatter on creation so _resolve_git_baseline_sha resolves baselines deterministically even when .cache/index.db is missing and the delta file is uncommitted; support collision-free slug/hash-qualified delta IDs in create_delta; and scope _MutationTransaction snapshots via copy-on-write to declared mutation target files rather than reading all of eidos/ into RAM."
+    expect:
+      source_path: "src/eidos/core/lifecycle/delta_engine.py"
+      responsibility: "copy-on-write"
+  - action: patch_invariant
+    target_invariant_id: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+    details: "Update INV-DELTA-VERIFY-MODIFICATION-EVIDENCE in CAP-PROD-002 to guarantee deterministic baseline resolution via frontmatter vcs.base_commit when .cache/index.db is absent on uncommitted branches."
+    expect:
+      rule: "base_commit"
+      test_binding: "tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence"
+  - action: patch_invariant
+    target_invariant_id: INV-MUTATION-REVERSIBILITY
+    details: "Update INV-MUTATION-REVERSIBILITY in CAP-PROD-002 to specify copy-on-write transactional snapshotting of targeted specifications."
+    expect:
+      rule: "copy-on-write"
+      test_binding: "tests/test_delta_engine.py::test_delta_execute_and_verify_lifecycle"
+affects:
+  containers:
+    - CNT-EIDOS-CORE
+  components:
+    - CMP-DELTA-ENGINE
+  capabilities:
+    - CAP-PROD-002
+  domains:
+    - DOM-SPEC-ENGINE
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-CORE
+  impacted_components:
+    - CMP-DELTA-ENGINE
+  invariants_to_enforce:
+    - INV-MUTATION-REVERSIBILITY
+    - INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+    - INV-DELTA-CHANGELOG-GENERATION
+---
+= SpecDelta: Git-Portable SpecDelta Baselines, Collision-Free Delta IDs, and Copy-on-Write Mutation Transactions
+:toc: left
+
+== Problem Statement
+
+In multi-developer and multi-agent Git workflows with concurrent branches and stateless CI runners, `CMP-DELTA-ENGINE` (`src/eidos/core/lifecycle/delta_engine.py`) has three lifecycle bottlenecks:
+
+1. **Guaranteed Merge Conflicts on Sequential IDs (`create_delta`, lines 92-120)**:
+   * `create_delta` assigns `DLT-YYYY-NNN` sequentially by scanning local files in `eidos/deltas/`. Two engineers or agents branching off `main` in parallel generate the exact same `DLT-YYYY-NNN` ID and filename, colliding on merge.
+2. **Fragile Baseline SHA Tracking Across Machines/CI (`_snapshot_delta_baselines` & `_check_or_record_baseline_sha`, lines 377-542)**:
+   * `_snapshot_delta_baselines` stores pre-mutation file hashes in `eidos/.cache/index.db`, which is gitignored.
+   * When `eidos delta verify` runs in CI or after `.cache/index.db` is cleared, `_check_or_record_baseline_sha` falls back to `_resolve_git_baseline_sha`.
+   * If the delta `.adoc` file has not been committed yet (`git log --diff-filter=A` returns empty), `git_sha` is `None`, and line 525 sets `baseline_sha = current_sha`—causing `current_sha != baseline_sha` to evaluate to `False` (`UNMODIFIED`) and falsely failing verification!
+3. **Full-Directory RAM Snapshot in `_MutationTransaction` (lines 575-586)**:
+   * `_MutationTransaction.snapshot` reads every file under `eidos/` (except `.cache`) into an in-memory `dict[Path, bytes]` prior to running `eidos delta apply`.
+
+== Proposed Specification Changes
+
+1. **Persist `vcs.base_commit` in `DLT-*` Frontmatter (`src/eidos/core/lifecycle/delta_engine.py` & `assets/schemas/v1/delta/delta.schema.yaml`)**:
+   * Record `vcs.base_commit` (current `HEAD` commit SHA) directly in the `DLT-*` YAML frontmatter when `eidos delta create` scaffolds a SpecDelta.
+   * Update `_resolve_git_baseline_sha` to consult `vcs.base_commit` (and fall back to `git merge-base HEAD main` / `HEAD`) when `git log --diff-filter=A` returns empty for an uncommitted delta file, making `eidos delta verify` 100% deterministic across machines and CI without relying on gitignored SQLite state.
+2. **Collision-Free Delta Identifiers (`create_delta`)**:
+   * Support optional slug or short hash suffixes in `DLT-YYYY-NNN` identifiers and filenames (e.g., `DLT-2026-057-<slug>` or `DLT-20260416-<hash>`) and check remote/base refs when auto-generating IDs.
+3. **Copy-on-Write `_MutationTransaction` Snapshots**:
+   * Replace the eager `rglob("*")` full-directory read in `_MutationTransaction.snapshot` with copy-on-write snapshotting (`record_before_write(path)`) scoped to the target specification paths resolved from `mutations[]`, `system-architecture.adoc`, and the delta file itself.
+
+== Verification Plan
+
+* `uv run pytest tests/test_delta_engine.py` — Verify `eidos delta verify` succeeds on an uncommitted delta after deleting `eidos/.cache/index.db` via `vcs.base_commit`, verify collision-free ID generation, and verify copy-on-write transaction rollback.
+* `uv run eidos validate eidos && uv run eidos drift --uncommitted --json`

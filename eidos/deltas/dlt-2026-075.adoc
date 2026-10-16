@@ -1,0 +1,95 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-075
+title: "Accurate Non-Code Invariant/Delta/Validation Drift Diagnostics in Hooks & CLI and Push-Aware CI Drift Base Resolution"
+status: proposed
+vcs:
+  branch: fix/drift-hook-diagnostics-and-ci-base
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Ensure handle_drift_stop, execute_drift_hook, generate_remediation_prompt, and eidos drift report accurate root causes when drift is triggered by broken invariant bindings, unverified SpecDelta mutations, or spec validation failures with 0 modified code files, and fix .github/workflows/ci.yml so push events to main diff against github.event.before instead of origin/main (HEAD...HEAD)."
+mutations:
+  - action: modify_component
+    target_component: CMP-HOOK-RUNNER
+    details: "Update handle_drift_stop and execute_drift_hook in src/eidos/plugin/hooks.py to gate standalone eidos hook drift on report.validation_passed as well as report.drift_detected, include validation_errors in the Stop-gate fingerprint and message, and tailor the diagnostic summary to the actual failure cause (validation errors, broken invariant bindings, unverified SpecDelta mutations, or unmapped code changes) instead of claiming '0 code file(s) were modified without corresponding updates to eidos/ specifications'."
+    expect:
+      source_path: "src/eidos/plugin/hooks.py"
+      responsibility: "validation_passed"
+  - action: modify_component
+    target_component: CMP-DRIFT-DETECTOR
+    details: "Update generate_remediation_prompt in src/eidos/vcs/report.py to describe invariant test binding failures, SpecDelta verification failures, and validation errors accurately when report.code_files is empty."
+    expect:
+      source_path:
+        - "src/eidos/vcs/drift.py"
+        - "src/eidos/vcs/diff.py"
+        - "src/eidos/vcs/invariants.py"
+        - "src/eidos/vcs/structural.py"
+        - "src/eidos/vcs/report.py"
+      responsibility: "remediation"
+  - action: modify_component
+    target_component: CMP-CLI-DRIFT-COMMANDS
+    details: "Update drift in src/eidos/cli/drift_commands.py and .github/workflows/ci.yml so non-code drift prints a cause-appropriate status headline instead of 'Code modified without corresponding spec updates!', and CI push events diff against github.event.before when github.event_name == 'push'."
+    expect:
+      source_path: "src/eidos/cli/drift_commands.py"
+      responsibility: "non-code drift"
+affects:
+  containers:
+    - CNT-EIDOS-PLUGIN
+    - CNT-EIDOS-VCS
+    - CNT-EIDOS-CLI
+  components:
+    - CMP-HOOK-RUNNER
+    - CMP-DRIFT-DETECTOR
+    - CMP-CLI-DRIFT-COMMANDS
+  capabilities:
+    - CAP-AGENT-001
+    - CAP-VCS-001
+  domains:
+    - DOM-AGENT-INTELLIGENCE
+    - DOM-VCS-LIFECYCLE
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-PLUGIN
+    - CNT-EIDOS-VCS
+    - CNT-EIDOS-CLI
+  impacted_components:
+    - CMP-HOOK-RUNNER
+    - CMP-DRIFT-DETECTOR
+    - CMP-CLI-DRIFT-COMMANDS
+  invariants_to_enforce:
+    - INV-AGENT-DRIFT-HOOK
+    - INV-HOOK-BLOCK-ONCE
+    - INV-DRIFT-DETECTION-ACCURACY
+---
+= SpecDelta: Accurate Non-Code Invariant/Delta/Validation Drift Diagnostics in Hooks & CLI and Push-Aware CI Drift Base Resolution
+:toc: left
+
+== Problem Statement
+
+`CMP-HOOK-RUNNER` (`src/eidos/plugin/hooks.py`), `CMP-DRIFT-DETECTOR` (`src/eidos/vcs/report.py`), `CMP-CLI-DRIFT-COMMANDS` (`src/eidos/cli/drift_commands.py`), and `.github/workflows/ci.yml` have three defects:
+
+1. **Misleading `"0 code file(s) were modified"` Diagnostics on Non-Code Drift (`src/eidos/plugin/hooks.py`, lines 455-462 & 592-600; `src/eidos/vcs/report.py`, lines 135-145; `src/eidos/cli/drift_commands.py`, lines 116-122)**:
+   * When `report.drift_detected` is `True` solely because of a broken `INV-*` test binding (`tests/` edit or spec edit) or an unverified active `DLT-*` mutation while `len(report.code_files) == 0`:
+     - `handle_drift_stop` and `execute_drift_hook` emit `"0 code file(s) were modified without corresponding updates to eidos/ specifications."` and omit `unverified_delta_mutations` from the failure message.
+     - `generate_remediation_prompt` emits `"Modified Source Code Files (causing drift):\n(none)"`.
+     - `drift_commands.py` prints `"DRIFT DETECTED: Code modified without corresponding spec updates!"`.
+2. **Standalone `eidos hook drift` Ignores Spec Validation Errors (`src/eidos/plugin/hooks.py`, line 588)**:
+   * `execute_drift_hook` checks `if report.drift_detected:` instead of `if not report.is_clean:` (`report.drift_detected or not report.validation_passed`), and `handle_drift_stop` omits `report.validation_errors` from the Stop-gate fingerprint and message.
+3. **No-Op `eidos drift --base origin/main` on `push` Events in CI (`.github/workflows/ci.yml`, lines 72-73)**:
+   * On `push` events to `main`, `origin/main` already points to `HEAD`, so `uv run eidos drift --base origin/main` evaluates `git diff origin/main...HEAD` (`HEAD...HEAD`, 0 changed files) instead of comparing against `${{ github.event.before }}`.
+
+== Proposed Specification Changes
+
+1. **Cause-Aware Drift Diagnostics in `hooks.py`, `report.py`, and `drift_commands.py`**:
+   * Gate `execute_drift_hook` and `handle_drift_stop` on `not report.is_clean`, include `validation_errors` and `unverified_delta_mutations` in the fingerprint and message, and construct the summary headline from the active failure category (spec validation failure, broken invariant test bindings, unverified SpecDelta mutations, or unmapped code changes).
+   * Update `generate_remediation_prompt` (`src/eidos/vcs/report.py`) and `drift` (`src/eidos/cli/drift_commands.py`) to describe non-code drift accurately when `report.code_files` is empty.
+2. **Push-Aware Base Commit Resolution in `.github/workflows/ci.yml`**:
+   * On `pull_request` events, use `origin/${{ github.base_ref || 'main' }}`; on `push` events with a valid non-zero `github.event.before` SHA, pass `--base ${{ github.event.before }}` to `eidos drift`.
+
+== Verification Plan
+
+* `uv run pytest tests/test_plugin.py tests/test_drift.py` — Verify `handle_drift_stop`, `execute_drift_hook`, `generate_remediation_prompt`, and `eidos drift` produce accurate messages when `code_files` is empty and invariant/delta/validation failures occur.
+* `uv run eidos validate eidos && uv run eidos drift --uncommitted --json`

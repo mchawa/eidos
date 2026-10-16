@@ -18,7 +18,7 @@ runner = CliRunner()
 
 def test_delta_verify_all_satisfied(tmp_path):
     """Verify that verify_delta_mutations rejects unmodified modify_*/extend_* targets and passes once modified."""
-    init_repository(tmp_path, name="test-system", with_plugin=False)
+    init_repository(tmp_path, name="test-system")
     eidos_dir = tmp_path / "eidos"
 
     # 1. Create baseline container, capability, and policy
@@ -96,7 +96,7 @@ def test_delta_verify_all_satisfied(tmp_path):
 
 def test_delta_verify_declarative_expect_and_patch_invariant(tmp_path):
     """Verify Option 3: declarative expect post-conditions, structural sub-targets, and patch_invariant baseline checks."""
-    init_repository(tmp_path, name="test-system", with_plugin=False)
+    init_repository(tmp_path, name="test-system")
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-AUTH", title="Auth Domain")
@@ -137,7 +137,7 @@ def test_delta_verify_declarative_expect_and_patch_invariant(tmp_path):
 
 def test_delta_verify_unfulfilled_mutations(tmp_path):
     """Verify that verify_delta_mutations detects missing specs and un-executed removals."""
-    init_repository(tmp_path, name="test-system", with_plugin=False)
+    init_repository(tmp_path, name="test-system")
     eidos_dir = tmp_path / "eidos"
 
     # Create container that should be removed
@@ -172,7 +172,7 @@ def test_delta_verify_unfulfilled_mutations(tmp_path):
 
 def test_delta_execute_and_verify_lifecycle(tmp_path):
     """Verify INV-MUTATION-REVERSIBILITY: execute_delta_mutations deterministically scaffolds missing specs and updates components."""
-    init_repository(tmp_path, name="test-system", with_plugin=False)
+    init_repository(tmp_path, name="test-system")
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-BILLING", title="Billing Domain")
@@ -295,7 +295,7 @@ def test_delta_execute_and_verify_lifecycle(tmp_path):
 
 def test_delta_apply_cli_with_execute_and_verify(tmp_path):
     """Verify 'eidos delta apply --execute --verify' via CLI."""
-    init_repository(tmp_path, name="test-system", with_plugin=False)
+    init_repository(tmp_path, name="test-system")
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-NOTIFY", title="Notification Domain")
@@ -337,7 +337,7 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
     import os
     import shutil
 
-    init_repository(tmp_path, name="test-system", with_plugin=False)
+    init_repository(tmp_path, name="test-system")
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-CORE", title="Core Domain")
@@ -543,7 +543,7 @@ def test_delta_schema_action_coverage_and_git_baseline_fallback(tmp_path):
     assert schema_actions == set(SUPPORTED_MUTATION_ACTIONS)
 
     # 2. Verify Git baseline SHA fallback on fresh clone / cache wipe
-    init_repository(tmp_path, name="git-baseline-test", with_plugin=False)
+    init_repository(tmp_path, name="git-baseline-test")
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-GIT", title="Git Domain")

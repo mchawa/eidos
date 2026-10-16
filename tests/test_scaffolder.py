@@ -417,9 +417,11 @@ def test_init_repository_programmatic(tmp_path):
     assert (eidos_dir / ".gitignore").exists()
     assert not (tmp_path / ".agents").exists()
 
-    # Verify system.adoc exists but is empty
+    # Verify system.adoc is scaffolded when name and title are provided
     assert (eidos_dir / "system.adoc").exists()
-    assert (eidos_dir / "system.adoc").read_text(encoding="utf-8") == ""
+    sys_content = (eidos_dir / "system.adoc").read_text(encoding="utf-8")
+    assert "SYS-TEST-PROJECT" in sys_content
+    assert "Test Project System" in sys_content
 
     # Verify no other example .adoc specifications exist
     other_adocs = [p for p in eidos_dir.rglob("*.adoc") if p.name != "system.adoc"]
@@ -448,9 +450,10 @@ def test_init_repository_programmatic(tmp_path):
     assert not success2
     assert "already exist" in msg2
 
-    # Re-init with force succeeds
+    # Re-init with force (without name/title) resets system.adoc to 0 bytes
     success3, _, _ = init_repository(project_dir=tmp_path, force=True)
     assert success3
+    assert (eidos_dir / "system.adoc").read_text(encoding="utf-8") == ""
 
     # Validate directory (empty skeleton should be clean)
     validator = SpecValidator()
@@ -467,7 +470,9 @@ def test_init_repository_cli(tmp_path):
     assert "Successfully initialized" in result.stdout
     assert (target / "eidos" / ".gitignore").exists()
     assert (target / "eidos" / "system.adoc").exists()
-    assert (target / "eidos" / "system.adoc").read_text(encoding="utf-8") == ""
+    sys_text = (target / "eidos" / "system.adoc").read_text(encoding="utf-8")
+    assert "SYS-MY-APP" in sys_text
+    assert "My Application" in sys_text
     assert (target / "eidos" / "policies" / ".gitkeep").exists()
     assert (target / "eidos" / "architecture" / "containers" / ".gitkeep").exists()
     assert (target / "eidos" / "architecture" / "components" / ".gitkeep").exists()
@@ -506,7 +511,9 @@ def test_init_repository_custom(tmp_path):
     assert ok
     assert (target / "eidos" / ".gitignore").exists()
     assert (target / "eidos" / "system.adoc").exists()
-    assert (target / "eidos" / "system.adoc").read_text(encoding="utf-8") == ""
+    sys_text = (target / "eidos" / "system.adoc").read_text(encoding="utf-8")
+    assert "SYS-CUSTOM-SERVICE" in sys_text
+    assert "Custom Service" in sys_text
     assert (target / "eidos" / "architecture" / "containers" / ".gitkeep").exists()
     assert (target / "eidos" / "architecture" / "components" / ".gitkeep").exists()
     assert not any(p for p in (target / "eidos").rglob("*.adoc") if p.name != "system.adoc")

@@ -1,0 +1,77 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-062
+title: "Word-Bounded Multi-Term Reference Matching, Polyglot Test Classification, Archive Exclusion, and Fail-Loud Graph Checks in DeltaAuditor"
+status: proposed
+vcs:
+  branch: fix/audit-word-bounds-and-polyglot-tests
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Eliminate substring false positives and early single-term loop breaks in AuditEngine._scan_and_classify_references by evaluating all target terms per line with word-bounded regexes, skip compressed .gz bundles in SKIP_EXTENSIONS, classify polyglot test files via is_test_code_path instead of hardcoding 'tests/', and surface SQLite index errors in _check_graph_integrity instead of silently swallowing exceptions."
+mutations:
+  - action: modify_component
+    target_component: CMP-DELTA-AUDITOR
+    details: "Use pre-compiled word-bounded regexes (rf'(?<![A-Za-z0-9_-]){re.escape(term)}(?![A-Za-z0-9_-])') in AuditEngine._scan_and_classify_references without breaking after the first matched term on a line, add '.gz' to SKIP_EXTENSIONS, classify negative tests across polyglot test paths via is_test_code_path instead of 'rel_str.startswith(\"tests/\")', and fail loudly in _check_graph_integrity when the SQLite knowledge graph raises an error."
+    expect:
+      source_path: "src/eidos/core/lifecycle/audit.py"
+      responsibility: "word-bounded"
+  - action: patch_invariant
+    target_invariant_id: INV-DELTA-DELETION-AUDIT
+    details: "Update INV-DELTA-DELETION-AUDIT in CAP-PROD-002 to require word-bounded multi-term token matching, polyglot negative-test classification, and fail-loud graph foreign-key verification."
+    expect:
+      rule: "word-bounded"
+      test_binding: "tests/test_audit.py::test_delta_deletion_audit_clean"
+affects:
+  containers:
+    - CNT-EIDOS-CORE
+  components:
+    - CMP-DELTA-AUDITOR
+  capabilities:
+    - CAP-PROD-002
+  domains:
+    - DOM-SPEC-ENGINE
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-CORE
+  impacted_components:
+    - CMP-DELTA-AUDITOR
+  invariants_to_enforce:
+    - INV-DELTA-DELETION-AUDIT
+    - INV-REMOVAL-TOMBSTONE
+---
+= SpecDelta: Word-Bounded Multi-Term Reference Matching, Polyglot Test Classification, Archive Exclusion, and Fail-Loud Graph Checks in DeltaAuditor
+:toc: left
+
+== Problem Statement
+
+`AuditEngine` (`CMP-DELTA-AUDITOR` in `src/eidos/core/lifecycle/audit.py`) has five defects when auditing reverse-dependency blast radius for deleted or deprecated entities:
+
+1. **Unbounded Substring Matching (`_scan_and_classify_references`, line 326)**:
+   * Line 326 checks `if term in line:` using raw substring containment rather than word-bounded token matching.
+   * Auditing `CAP-PROD-001`, `CMP-CLI`, or a short `search_tokens` identifier falsely matches longer identifiers such as `CAP-PROD-0010` or `CMP-CLI-APP`.
+2. **Early `break` Skips Co-Occurring Removed Terms on the Same Line (`_scan_and_classify_references`, lines 325-340)**:
+   * `for term in target_terms:` ends with `break` after the first matched term on a line. If `term_1` is exempted by a path/pattern rule in `allowed_reasons` while `term_2` on the same line is an unexempted active leak, `term_2` is never inspected.
+3. **Compressed `.gz` Bundles Scanned During Deletion Audit (`SKIP_EXTENSIONS`, lines 98-115)**:
+   * `SKIP_EXTENSIONS` omits `.gz`, causing `_collect_scannable_files` to read `assets/portal/bundle.html.gz` on every `eidos delta audit`.
+4. **Hardcoded `tests/` Prefix in Negative-Test Classification (`_classify_occurrence`, line 420)**:
+   * Line 420 checks `if rel_str.startswith("tests/"):`, ignoring `test/` directories and co-located polyglot test files (`src/**/*.test.ts`, `*_test.go`, `*_test.rs`, `*Test.java`, `*Test.kt`) as well as JS/TS/Go/Rust negative assertion patterns (`expect(...).toThrow`, `assert.False`, `#[should_panic]`).
+5. **Silent Exception Swallowing on Graph Foreign-Key Check (`_check_graph_integrity`, lines 278-280)**:
+   * `_check_graph_integrity` catches `(OSError, RuntimeError)` and `pass`es silently, returning `[]` (`0 graph_violations`) even if the SQLite index failed to open or sync.
+
+== Proposed Specification Changes
+
+1. **Word-Bounded Multi-Term Token Matching & `.gz` Exclusion (`src/eidos/core/lifecycle/audit.py`)**:
+   * Add `".gz"` to `SKIP_EXTENSIONS`.
+   * Pre-compile word-bounded regexes (`re.compile(rf"(?<![A-Za-z0-9_-]){re.escape(term)}(?![A-Za-z0-9_-])")`) for entity IDs and `re.compile(rf"\b{re.escape(term)}\b")` for general search tokens in `_scan_and_classify_references`, and evaluate all target terms on a line without breaking after the first match.
+2. **Polyglot Negative-Test Classification**:
+   * Replace `if rel_str.startswith("tests/"):` in `_classify_occurrence` with `is_test_code_path(rel_str)` from `src/eidos/core/index/sync.py`, and expand `negative_patterns` to include polyglot negative assertions (`toThrow`, `rejects`, `should_panic`, `assertFalse`, `assertNil`).
+3. **Fail-Loud Graph Foreign-Key Verification**:
+   * Surface index errors from `_check_graph_integrity` into `DeltaAuditResult` (`status="ERROR"`, `is_clean=False`, `error_message=...`) rather than silently ignoring them.
+
+== Verification Plan
+
+* `uv run pytest tests/test_audit.py`
+* `uv run eidos validate eidos && uv run eidos drift --uncommitted --json`

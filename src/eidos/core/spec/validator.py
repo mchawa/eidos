@@ -219,7 +219,7 @@ class SpecValidator:
         canonical = {
             k: self._schema_cache[k]
             for k in sorted(self._schema_cache)
-            if k.startswith("schemas/v1/") or "/" not in k
+            if k.startswith("schemas/v1/") and "/" in k.removeprefix("schemas/v1/")
         }
         return hashlib.sha256(
             json.dumps(canonical, sort_keys=True, default=str).encode("utf-8")
@@ -241,22 +241,25 @@ class SpecValidator:
                 if isinstance(defs_item, dict):
                     extracted_prefixes.update(_extract_prefixes_from_schema(defs_item))
 
-            for ext in ("*.schema.yaml", "*.schema.json"):
-                for p in schema_dir.rglob(ext):
-                    content = p.read_text(encoding="utf-8")
-                    data = yaml.safe_load(content)
-                    if isinstance(data, dict):
-                        if shared_defs and '"#/$defs/' in json.dumps(data):
-                            merged_defs = dict(shared_defs)
-                            if isinstance(data.get("$defs"), dict):
-                                merged_defs.update(data["$defs"])
-                            data["$defs"] = merged_defs
-                        extracted_prefixes.update(_extract_prefixes_from_schema(data))
-                    rel_path = str(p.relative_to(schema_dir))
-                    self._schema_cache[p.name] = data
-                    self._schema_cache[rel_path] = data
-                    self._schema_cache[f"schemas/v1/{rel_path}"] = data
-                    self._schema_cache[f"schemas/v1/{p.name}"] = data
+            all_schema_paths = sorted(
+                p for ext in ("*.schema.yaml", "*.schema.json") for p in schema_dir.rglob(ext)
+            )
+
+            for p in all_schema_paths:
+                content = p.read_text(encoding="utf-8")
+                data = yaml.safe_load(content)
+                if isinstance(data, dict):
+                    if shared_defs and '"#/$defs/' in json.dumps(data):
+                        merged_defs = dict(shared_defs)
+                        if isinstance(data.get("$defs"), dict):
+                            merged_defs.update(data["$defs"])
+                        data["$defs"] = merged_defs
+                    extracted_prefixes.update(_extract_prefixes_from_schema(data))
+                rel_path = str(p.relative_to(schema_dir)).replace("\\", "/")
+                self._schema_cache[rel_path] = data
+                self._schema_cache[f"schemas/v1/{rel_path}"] = data
+                self._schema_cache[p.name] = data
+                self._schema_cache[f"schemas/v1/{p.name}"] = data
 
             _DYNAMIC_ENTITY_ID_PREFIXES.update(extracted_prefixes)
             self.entity_id_prefixes = tuple(sorted(extracted_prefixes))
@@ -265,22 +268,24 @@ class SpecValidator:
         except (OSError, yaml.YAMLError) as exc:
             raise RuntimeError(f"Failed to load bundled Eidos schemas: {exc}") from exc
 
-
     def resolve_schema(self, doc: SpecDocument) -> dict | None:
         """Resolve the JSON schema for a document based on its type or explicit schema attribute."""
-        # 1. Check explicit schema reference
+        # 1. Check explicit relative schema reference (containing a directory component)
         if doc.schema_ref:
-            norm_ref = doc.schema_ref.replace(".spec/", "").strip()
-            if norm_ref in self._schema_cache:
+            norm_ref = doc.schema_ref.replace(".spec/", "").strip().replace("\\", "/")
+            if "/" in norm_ref and norm_ref in self._schema_cache:
                 return self._schema_cache[norm_ref]
-            basename = Path(norm_ref).name
-            if basename in self._schema_cache:
-                return self._schema_cache[basename]
 
-        # 2. Check document type mapping
+        # 2. Check document type mapping (disambiguates colliding basenames like system.schema.yaml)
         if doc.doc_type in TYPE_TO_SCHEMA_NAME:
             schema_name = TYPE_TO_SCHEMA_NAME[doc.doc_type]
             return self._schema_cache.get(schema_name)
+
+        # 3. Fallback to basename lookup for custom/unmapped types
+        if doc.schema_ref:
+            basename = Path(doc.schema_ref.replace(".spec/", "").strip()).name
+            if basename in self._schema_cache:
+                return self._schema_cache[basename]
 
         return None
 
@@ -374,7 +379,8 @@ class SpecValidator:
                 st = fp.stat()
             except OSError:
                 return None
-            if st.st_size == 0:
+            is_root_system = fp.name == "system.adoc" and rel_fp_parts == ("system.adoc",)
+            if st.st_size == 0 and is_root_system:
                 return None
 
             mtime_ns = st.st_mtime_ns
@@ -402,7 +408,7 @@ class SpecValidator:
             except OSError:
                 return None
             content = raw_bytes.decode("utf-8", errors="replace")
-            if not content.strip():
+            if not content.strip() and is_root_system:
                 return None
             sha256 = hashlib.sha256(raw_bytes).hexdigest()
 
@@ -599,6 +605,9 @@ class SpecValidator:
         # 4. Check source/contract file paths on disk and CLI contract command parity
         self._validate_source_and_contract_paths(report, root_dir)
 
+        # 5. Check design/system W3C DTCG token manifests and acyclic DS-* inheritance
+        self._validate_design_systems(report, root_dir)
+
     def _validate_semantic_references(
         self,
         doc: SpecDocument,
@@ -728,6 +737,18 @@ class SpecValidator:
             return
 
         if val not in catalog_ids:
+            if doc.doc_type == "delta/mutation":
+                fm = doc.frontmatter or {}
+                delta_status = str(fm.get("status") or "").strip().lower()
+                if delta_status in ("applied", "rejected"):
+                    return
+                for mut in fm.get("mutations") or []:
+                    if isinstance(mut, dict):
+                        act = str(mut.get("action") or "").strip().lower()
+                        if act.startswith(("add_", "remove_", "deprecate_")) and val in {
+                            str(v).strip() for k, v in mut.items() if k.startswith(("target_", "new_")) and v
+                        }:
+                            return
             rule_id = ref_meta.get("rule_id")
             label = ref_meta.get("entity_label")
             if rule_id:
@@ -844,11 +865,40 @@ class SpecValidator:
                 return cand
         return None
 
+    @staticmethod
+    def _test_symbol_exists(test_file: Path, symbol_parts: list[str]) -> bool:
+        """Return True if the target test function/method symbol exists inside test_file."""
+        if not symbol_parts:
+            return True
+        try:
+            source = test_file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+        leaf_sym = symbol_parts[-1]
+        if test_file.suffix == ".py":
+            try:
+                tree = ast.parse(source)
+                if len(symbol_parts) >= 2:
+                    cls_name = symbol_parts[0]
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.ClassDef) and node.name == cls_name:
+                            for item in ast.walk(node):
+                                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == leaf_sym:
+                                    return True
+                for node in ast.walk(tree):
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == leaf_sym:
+                        return True
+                return False
+            except SyntaxError:
+                pass
+        return bool(re.search(rf"\b{re.escape(leaf_sym)}\b", source))
+
     def _validate_source_and_contract_paths(self, report: ValidationReport, root_dir: Path) -> None:
-        """Verify container package_path, contract specification_file, and CLI contract command parity when source tree exists."""
+        """Verify container package_path, component source_path, contract specification_file, UI component test_bindings, and invariant test_binding references when source/test trees exist on disk."""
         spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir)
 
         candidate_paths: list[str] = []
+        candidate_test_files: list[str] = []
         for doc in report.documents:
             fm = doc.frontmatter or {}
             if doc.doc_type == "tech/container":
@@ -857,15 +907,41 @@ class SpecValidator:
                     candidate_paths.append(pkg.strip())
                 elif isinstance(pkg, list):
                     candidate_paths.extend(str(x).strip() for x in pkg if isinstance(x, str) and str(x).strip())
+                for comp in fm.get("components") or ():
+                    if isinstance(comp, dict) and "ref" not in comp:
+                        sp = comp.get("source_path")
+                        if isinstance(sp, str) and sp.strip():
+                            candidate_paths.append(sp.strip())
+                        elif isinstance(sp, list):
+                            candidate_paths.extend(str(x).strip() for x in sp if isinstance(x, str) and str(x).strip())
+            elif doc.doc_type == "tech/component":
+                sp = fm.get("source_path")
+                if isinstance(sp, str) and sp.strip():
+                    candidate_paths.append(sp.strip())
+                elif isinstance(sp, list):
+                    candidate_paths.extend(str(x).strip() for x in sp if isinstance(x, str) and str(x).strip())
             elif doc.doc_type == "tech/contract":
                 sf = fm.get("specification_file")
                 if isinstance(sf, str) and sf.strip() and not sf.strip().endswith(".adoc"):
                     candidate_paths.append(sf.strip())
+            elif doc.doc_type == "design/ui-component":
+                tb = fm.get("test_bindings")
+                if isinstance(tb, dict):
+                    for v in tb.values():
+                        if isinstance(v, str) and v.strip():
+                            candidate_test_files.append(v.split("::", 1)[0].strip())
 
         has_source_tree = (
             (repo_root != spec_root or repo_root != root_dir.resolve()) and (repo_root / "src").exists()
         ) or any(self._resolve_source_path(repo_root, root_dir, p) is not None for p in candidate_paths)
-        if not has_source_tree:
+
+        has_test_tree = (
+            (repo_root / "tests").exists()
+            or (root_dir / "tests").exists()
+            or any(self._resolve_source_path(repo_root, root_dir, tf) is not None for tf in candidate_test_files)
+        )
+
+        if not has_source_tree and not has_test_tree:
             return
 
         inactive_statuses = {"planned", "proposed", "draft", "deprecated", "sunset", "rejected"}
@@ -875,31 +951,264 @@ class SpecValidator:
             if status in inactive_statuses:
                 continue
 
-            if doc.doc_type == "tech/container":
-                pkg = fm.get("package_path")
-                pkg_list = [pkg] if isinstance(pkg, str) else (pkg if isinstance(pkg, list) else [])
-                for raw_p in pkg_list:
+            if has_source_tree:
+                if doc.doc_type == "tech/container":
+                    pkg = fm.get("package_path")
+                    pkg_list = [pkg] if isinstance(pkg, str) else (pkg if isinstance(pkg, list) else [])
+                    for raw_p in pkg_list:
+                        if (
+                            isinstance(raw_p, str)
+                            and raw_p.strip()
+                            and raw_p.strip().upper() not in ("N/A", "TBD", "NONE")
+                            and self._resolve_source_path(repo_root, root_dir, raw_p) is None
+                        ):
+                            report.broken_references.append(
+                                f"Broken package_path in {doc.file_path.name}: "
+                                f"Container '{doc.doc_id}' references '{raw_p}' which does not exist on disk"
+                            )
+                    for comp in fm.get("components") or ():
+                        if not isinstance(comp, dict) or "ref" in comp:
+                            continue
+                        comp_status = str(comp.get("status", "active")).strip().lower()
+                        if comp_status in inactive_statuses:
+                            continue
+                        comp_id = str(comp.get("id", "unknown"))
+                        sp = comp.get("source_path")
+                        sp_list = [sp] if isinstance(sp, str) else (sp if isinstance(sp, list) else [])
+                        for raw_sp in sp_list:
+                            if (
+                                isinstance(raw_sp, str)
+                                and raw_sp.strip()
+                                and raw_sp.strip().upper() not in ("N/A", "TBD", "NONE")
+                                and self._resolve_source_path(repo_root, root_dir, raw_sp) is None
+                            ):
+                                report.broken_references.append(
+                                    f"Broken source_path in {doc.file_path.name}: "
+                                    f"Component '{comp_id}' references '{raw_sp}' which does not exist on disk"
+                                )
+                elif doc.doc_type == "tech/component":
+                    sp = fm.get("source_path")
+                    sp_list = [sp] if isinstance(sp, str) else (sp if isinstance(sp, list) else [])
+                    for raw_sp in sp_list:
+                        if (
+                            isinstance(raw_sp, str)
+                            and raw_sp.strip()
+                            and raw_sp.strip().upper() not in ("N/A", "TBD", "NONE")
+                            and self._resolve_source_path(repo_root, root_dir, raw_sp) is None
+                        ):
+                            report.broken_references.append(
+                                f"Broken source_path in {doc.file_path.name}: "
+                                f"Component '{doc.doc_id}' references '{raw_sp}' which does not exist on disk"
+                            )
+                elif doc.doc_type == "tech/contract":
+                    sf = fm.get("specification_file")
+                    if isinstance(sf, str) and sf.strip() and sf.strip().upper() not in ("N/A", "TBD", "NONE") and not sf.strip().endswith(".adoc"):
+                        resolved_sf = self._resolve_source_path(repo_root, root_dir, sf)
+                        if resolved_sf is None:
+                            report.broken_references.append(
+                                f"Broken specification_file in {doc.file_path.name}: "
+                                f"Contract '{doc.doc_id}' references '{sf}' which does not exist on disk"
+                            )
+                        else:
+                            protocol = str(fm.get("protocol", "")).strip().lower()
+                            self._verify_contract_protocol(protocol, doc, resolved_sf, report)
+
+            if has_test_tree:
+                if doc.doc_type == "design/ui-component":
+                    tb_map = fm.get("test_bindings")
+                    if isinstance(tb_map, dict):
+                        for tb_key, tb_val in tb_map.items():
+                            if (
+                                not isinstance(tb_val, str)
+                                or not tb_val.strip()
+                                or tb_val.strip().upper() in ("N/A", "TBD", "NONE")
+                            ):
+                                continue
+                            parts = [p.strip() for p in tb_val.split("::") if p.strip()]
+                            file_part = parts[0]
+                            sym_parts = parts[1:]
+                            resolved_tf = self._resolve_source_path(repo_root, root_dir, file_part)
+                            if resolved_tf is None:
+                                report.broken_references.append(
+                                    f"Broken test_bindings.{tb_key} in {doc.file_path.name}: "
+                                    f"UI Component '{doc.doc_id}' references '{file_part}' which does not exist on disk"
+                                )
+                            elif sym_parts and not self._test_symbol_exists(resolved_tf, sym_parts):
+                                report.broken_references.append(
+                                    f"Broken test_bindings.{tb_key} in {doc.file_path.name}: "
+                                    f"UI Component '{doc.doc_id}' references symbol '{'::'.join(sym_parts)}' which does not exist in '{file_part}'"
+                                )
+
+                # Collect invariants from top-level, technical.invariants, and inline components
+                inv_entries: list[dict[str, Any]] = []
+                if isinstance(fm.get("invariants"), list):
+                    inv_entries.extend(i for i in fm["invariants"] if isinstance(i, dict))
+                tech_block = fm.get("technical")
+                if isinstance(tech_block, dict) and isinstance(tech_block.get("invariants"), list):
+                    inv_entries.extend(i for i in tech_block["invariants"] if isinstance(i, dict))
+                for comp in fm.get("components") or ():
+                    if isinstance(comp, dict) and isinstance(comp.get("invariants"), list):
+                        inv_entries.extend(i for i in comp["invariants"] if isinstance(i, dict))
+
+                for inv in inv_entries:
+                    inv_id = str(inv.get("id", "unknown"))
+                    raw_tb = inv.get("test_binding")
                     if (
-                        isinstance(raw_p, str)
-                        and raw_p.strip()
-                        and raw_p.strip().upper() not in ("N/A", "TBD", "NONE")
-                        and self._resolve_source_path(repo_root, root_dir, raw_p) is None
+                        not isinstance(raw_tb, str)
+                        or not raw_tb.strip()
+                        or raw_tb.strip().upper() in ("N/A", "TBD", "NONE")
                     ):
+                        continue
+                    parts = [p.strip() for p in raw_tb.split("::") if p.strip()]
+                    file_part = parts[0]
+                    sym_parts = parts[1:]
+                    resolved_tf = self._resolve_source_path(repo_root, root_dir, file_part)
+                    if resolved_tf is None:
                         report.broken_references.append(
-                            f"Broken package_path in {doc.file_path.name}: "
-                            f"Container '{doc.doc_id}' references '{raw_p}' which does not exist on disk"
+                            f"Broken test_binding in {doc.file_path.name}: "
+                            f"Invariant '{inv_id}' references '{file_part}' which does not exist on disk"
                         )
-            elif doc.doc_type == "tech/contract":
-                sf = fm.get("specification_file")
-                if isinstance(sf, str) and sf.strip() and sf.strip().upper() not in ("N/A", "TBD", "NONE") and not sf.strip().endswith(".adoc"):
-                    resolved_sf = self._resolve_source_path(repo_root, root_dir, sf)
-                    if resolved_sf is None:
+                    elif sym_parts and not self._test_symbol_exists(resolved_tf, sym_parts):
                         report.broken_references.append(
-                            f"Broken specification_file in {doc.file_path.name}: "
-                            f"Contract '{doc.doc_id}' references '{sf}' which does not exist on disk"
+                            f"Broken test_binding in {doc.file_path.name}: "
+                            f"Invariant '{inv_id}' references symbol '{'::'.join(sym_parts)}' which does not exist in '{file_part}'"
                         )
-                    elif str(fm.get("protocol", "")).strip().lower() == "cli_args" and resolved_sf.suffix == ".py":
-                        self._verify_cli_contract_commands(doc, resolved_sf, report)
+
+    _VALID_DTCG_TYPES = frozenset(
+        {
+            "color",
+            "dimension",
+            "fontFamily",
+            "fontWeight",
+            "duration",
+            "cubicBezier",
+            "number",
+            "strokeStyle",
+            "border",
+            "transition",
+            "shadow",
+            "gradient",
+            "typography",
+        }
+    )
+
+    def _validate_design_systems(self, report: ValidationReport, root_dir: Path) -> None:
+        """Validate design/system W3C DTCG tokens.manifest files and acyclic inheritance.extends chains."""
+        spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir)
+        inactive_statuses = {"planned", "proposed", "draft", "deprecated", "sunset", "rejected"}
+
+        extends_map: dict[str, tuple[str, SpecDocument]] = {}
+        for doc in report.documents:
+            if doc.doc_type != "design/system":
+                continue
+            fm = doc.frontmatter or {}
+            inh = fm.get("inheritance")
+            if isinstance(inh, dict):
+                parent_id = str(inh.get("extends") or "").strip()
+                if parent_id and doc.doc_id:
+                    extends_map[doc.doc_id] = (parent_id, doc)
+
+            status = str(fm.get("status", "active")).strip().lower()
+            if status in inactive_statuses:
+                continue
+
+            tokens_cfg = fm.get("tokens")
+            if not isinstance(tokens_cfg, dict):
+                continue
+            manifest_rel = str(tokens_cfg.get("manifest") or "").strip()
+            spec_fmt = str(tokens_cfg.get("spec_format") or "w3c_design_tokens").strip().lower()
+            if not manifest_rel or manifest_rel.upper() in ("N/A", "TBD", "NONE"):
+                continue
+
+            manifest_path: Path | None = None
+            for base in (doc.file_path.parent, spec_root, root_dir, repo_root):
+                cand = base / manifest_rel
+                if cand.is_file():
+                    manifest_path = cand
+                    break
+
+            if manifest_path is None:
+                report.broken_references.append(
+                    f"Broken tokens.manifest in {doc.file_path.name}: "
+                    f"Design System '{doc.doc_id}' references '{manifest_rel}' which does not exist on disk"
+                )
+                continue
+
+            if spec_fmt == "w3c_design_tokens":
+                try:
+                    token_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError) as exc:
+                    report.broken_references.append(
+                        f"Invalid W3C DTCG tokens.manifest in {doc.file_path.name}: "
+                        f"'{manifest_rel}' is not valid JSON ({exc})"
+                    )
+                    continue
+
+                if not isinstance(token_data, dict):
+                    report.broken_references.append(
+                        f"Invalid W3C DTCG tokens.manifest in {doc.file_path.name}: "
+                        f"'{manifest_rel}' root must be a JSON object"
+                    )
+                    continue
+
+                token_count = 0
+
+                def _walk_tokens(node: dict[str, Any], path_prefix: str) -> None:
+                    nonlocal token_count
+                    if "$value" in node:
+                        token_count += 1
+                        tok_type = node.get("$type")
+                        if tok_type is not None and (
+                            not isinstance(tok_type, str) or tok_type not in self._VALID_DTCG_TYPES
+                        ):
+                            report.broken_references.append(
+                                f"Invalid W3C DTCG token $type in {doc.file_path.name} ({manifest_rel}): "
+                                f"token '{path_prefix}' has unsupported $type '{tok_type}'"
+                            )
+                        return
+
+                    child_dicts = {
+                        k: v for k, v in node.items() if not str(k).startswith("$") and isinstance(v, dict)
+                    }
+                    non_meta_scalars = [
+                        k for k, v in node.items() if not str(k).startswith("$") and not isinstance(v, dict)
+                    ]
+                    if path_prefix and not child_dicts and non_meta_scalars:
+                        report.broken_references.append(
+                            f"Invalid W3C DTCG token in {doc.file_path.name} ({manifest_rel}): "
+                            f"token '{path_prefix}' is missing required '$value' property"
+                        )
+                        return
+
+                    for k, v in child_dicts.items():
+                        sub = f"{path_prefix}.{k}" if path_prefix else str(k)
+                        _walk_tokens(v, sub)
+
+                _walk_tokens(token_data, "")
+                if token_count == 0:
+                    report.broken_references.append(
+                        f"Invalid W3C DTCG tokens.manifest in {doc.file_path.name} ({manifest_rel}): "
+                        f"no tokens with '$value' found"
+                    )
+
+        # Detect circular inheritance.extends chains across DS-* specifications
+        reported_cycles: set[frozenset[str]] = set()
+        for start_id, (first_parent, start_doc) in extends_map.items():
+            chain = [start_id]
+            curr: str | None = first_parent
+            while curr:
+                if curr in chain:
+                    cycle_key = frozenset(chain)
+                    if cycle_key not in reported_cycles:
+                        reported_cycles.add(cycle_key)
+                        cycle_str = " -> ".join([*chain, curr])
+                        report.broken_references.append(
+                            f"Circular design system inheritance in {start_doc.file_path.name}: {cycle_str}"
+                        )
+                    break
+                chain.append(curr)
+                nxt = extends_map.get(curr)
+                curr = nxt[0] if nxt else None
 
     def _verify_cli_contract_commands(
         self, doc: SpecDocument, cli_file: Path, report: ValidationReport
@@ -975,73 +1284,141 @@ class SpecValidator:
 
         root_app_vars = typer_app_vars - mounted_sub_apps or typer_app_vars
 
-        commands: set[str] = set()
+        def _extract_command_name_from_call(
+            cmd_call: ast.Call, fallback_func_name: str | None
+        ) -> str | None:
+            hidden = any(
+                kw.arg == "hidden" and isinstance(kw.value, ast.Constant) and kw.value.value is True
+                for kw in cmd_call.keywords
+            )
+            if hidden:
+                return None
+            name = next(
+                (
+                    kw.value.value
+                    for kw in cmd_call.keywords
+                    if kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ),
+                None,
+            )
+            if (
+                not name
+                and cmd_call.args
+                and isinstance(cmd_call.args[0], ast.Constant)
+                and isinstance(cmd_call.args[0].value, str)
+            ):
+                name = cmd_call.args[0].value
+            if name:
+                return name
+            if fallback_func_name:
+                return fallback_func_name.replace("_", "-")
+            return None
+
+        def _collect_commands_from_ast(scope_node: ast.AST, target_vars: set[str]) -> set[str]:
+            found: set[str] = set()
+            for node in ast.walk(scope_node):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id in target_vars
+                    and node.func.attr == "add_typer"
+                ):
+                    sub_name = next(
+                        (
+                            kw.value.value
+                            for kw in node.keywords
+                            if kw.arg == "name"
+                            and isinstance(kw.value, ast.Constant)
+                            and isinstance(kw.value.value, str)
+                        ),
+                        None,
+                    )
+                    if (
+                        not sub_name
+                        and len(node.args) >= 2
+                        and isinstance(node.args[1], ast.Constant)
+                        and isinstance(node.args[1].value, str)
+                    ):
+                        sub_name = node.args[1].value
+                    if sub_name:
+                        found.add(sub_name)
+                elif (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Call)
+                    and isinstance(node.func.func, ast.Attribute)
+                    and isinstance(node.func.func.value, ast.Name)
+                    and node.func.func.value.id in target_vars
+                    and node.func.func.attr == "command"
+                ):
+                    # Functional registration: app.command("version", ...)(version_cmd) or app.command(...)(info)
+                    fn_arg_name = (
+                        node.args[0].id
+                        if node.args and isinstance(node.args[0], ast.Name)
+                        else None
+                    )
+                    cmd_name = _extract_command_name_from_call(node.func, fn_arg_name)
+                    if cmd_name:
+                        found.add(cmd_name)
+                elif isinstance(node, ast.FunctionDef):
+                    for dec in node.decorator_list:
+                        if (
+                            isinstance(dec, ast.Call)
+                            and isinstance(dec.func, ast.Attribute)
+                            and isinstance(dec.func.value, ast.Name)
+                            and dec.func.value.id in target_vars
+                            and dec.func.attr == "command"
+                        ):
+                            cmd_name = _extract_command_name_from_call(dec, node.name)
+                            if cmd_name:
+                                found.add(cmd_name)
+                        elif (
+                            isinstance(dec, ast.Attribute)
+                            and isinstance(dec.value, ast.Name)
+                            and dec.value.id in target_vars
+                            and dec.attr == "command"
+                        ):
+                            found.add(node.name.replace("_", "-"))
+            return found
+
+        commands: set[str] = _collect_commands_from_ast(tree, root_app_vars)
+
+        # Follow delegated `<sibling_module>.register(app)` calls in the same package directory
+        sibling_module_aliases: dict[str, str] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    sibling_module_aliases[alias.asname or alias.name] = alias.name
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    mod_leaf = alias.name.rsplit(".", 1)[-1]
+                    sibling_module_aliases[alias.asname or mod_leaf] = mod_leaf
+
         for node in ast.walk(tree):
             if (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "register"
                 and isinstance(node.func.value, ast.Name)
-                and node.func.value.id in root_app_vars
-                and node.func.attr == "add_typer"
+                and node.args
+                and isinstance(node.args[0], ast.Name)
+                and node.args[0].id in root_app_vars
             ):
-                sub_name = next(
-                    (
-                        kw.value.value
-                        for kw in node.keywords
-                        if kw.arg == "name"
-                        and isinstance(kw.value, ast.Constant)
-                        and isinstance(kw.value.value, str)
-                    ),
-                    None,
-                )
-                if (
-                    not sub_name
-                    and len(node.args) >= 2
-                    and isinstance(node.args[1], ast.Constant)
-                    and isinstance(node.args[1].value, str)
-                ):
-                    sub_name = node.args[1].value
-                if sub_name:
-                    commands.add(sub_name)
-            elif isinstance(node, ast.FunctionDef):
-                for dec in node.decorator_list:
-                    if (
-                        isinstance(dec, ast.Call)
-                        and isinstance(dec.func, ast.Attribute)
-                        and isinstance(dec.func.value, ast.Name)
-                        and dec.func.value.id in root_app_vars
-                        and dec.func.attr == "command"
-                    ):
-                        hidden = any(
-                            kw.arg == "hidden" and isinstance(kw.value, ast.Constant) and kw.value.value is True
-                            for kw in dec.keywords
-                        )
-                        if not hidden:
-                            name = next(
-                                (
-                                    kw.value.value
-                                    for kw in dec.keywords
-                                    if kw.arg == "name"
-                                    and isinstance(kw.value, ast.Constant)
-                                    and isinstance(kw.value.value, str)
-                                ),
-                                None,
-                            )
+                mod_name = sibling_module_aliases.get(node.func.value.id, node.func.value.id)
+                sibling_py = cli_file.parent / f"{mod_name}.py"
+                if sibling_py.is_file():
+                    with contextlib.suppress(OSError, SyntaxError):
+                        sib_tree = ast.parse(sibling_py.read_text(encoding="utf-8"))
+                        for sib_node in sib_tree.body:
                             if (
-                                not name
-                                and dec.args
-                                and isinstance(dec.args[0], ast.Constant)
-                                and isinstance(dec.args[0].value, str)
+                                isinstance(sib_node, ast.FunctionDef)
+                                and sib_node.name == "register"
+                                and sib_node.args.args
                             ):
-                                name = dec.args[0].value
-                            commands.add(name or node.name.replace("_", "-"))
-                    elif (
-                        isinstance(dec, ast.Attribute)
-                        and isinstance(dec.value, ast.Name)
-                        and dec.value.id in root_app_vars
-                        and dec.attr == "command"
-                    ):
-                        commands.add(node.name.replace("_", "-"))
+                                app_param = sib_node.args.args[0].arg
+                                commands.update(_collect_commands_from_ast(sib_node, {app_param}))
 
         if not commands:
             return
@@ -1052,4 +1429,161 @@ class SpecValidator:
                 report.broken_references.append(
                     f"Contract drift in {doc.file_path.name}: CLI command '{cmd_name}' defined in '{cli_file.name}' is not documented in contract '{doc.doc_id}'"
                 )
+
+    def _verify_python_protocol_contract(
+        self, doc: SpecDocument, spec_file: Path, report: ValidationReport
+    ) -> None:
+        """Verify that Python Protocol / ABC classes and public methods in specification_file are documented in the contract."""
+        if spec_file.suffix != ".py":
+            return
+        try:
+            tree = ast.parse(spec_file.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            return
+
+        protocol_symbols: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                is_proto = any(
+                    (isinstance(b, ast.Name) and b.id in ("Protocol", "ABC"))
+                    or (isinstance(b, ast.Attribute) and b.attr in ("Protocol", "ABC"))
+                    or (
+                        isinstance(b, ast.Subscript)
+                        and (
+                            (isinstance(b.value, ast.Name) and b.value.id in ("Protocol", "ABC"))
+                            or (isinstance(b.value, ast.Attribute) and b.value.attr in ("Protocol", "ABC"))
+                        )
+                    )
+                    for b in node.bases
+                )
+                if is_proto:
+                    protocol_symbols.append(node.name)
+                    for item in node.body:
+                        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and not item.name.startswith("_"):
+                            protocol_symbols.append(item.name)
+
+        body = doc.body or ""
+        for sym in protocol_symbols:
+            if not re.search(rf"(?:`|\b){re.escape(sym)}\b", body):
+                report.broken_references.append(
+                    f"Contract drift in {doc.file_path.name}: Python protocol symbol '{sym}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
+                )
+
+    def _verify_rest_openapi_contract(
+        self, doc: SpecDocument, spec_file: Path, report: ValidationReport
+    ) -> None:
+        """Verify that OpenAPI specification_file is valid YAML/JSON and its paths are documented in the contract."""
+        try:
+            data = yaml.safe_load(spec_file.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError) as exc:
+            report.broken_references.append(
+                f"Invalid OpenAPI specification_file in {doc.file_path.name}: '{spec_file.name}' failed to parse ({exc})"
+            )
+            return
+        if not isinstance(data, dict):
+            report.broken_references.append(
+                f"Invalid OpenAPI specification_file in {doc.file_path.name}: '{spec_file.name}' root must be a mapping"
+            )
+            return
+        paths = data.get("paths")
+        if not isinstance(paths, dict):
+            return
+        body = doc.body or ""
+        for route in sorted(str(k) for k in paths.keys()):
+            if route not in body:
+                report.broken_references.append(
+                    f"Contract drift in {doc.file_path.name}: OpenAPI path '{route}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
+                )
+
+    def _verify_json_schema_contract(
+        self, doc: SpecDocument, spec_file: Path, report: ValidationReport
+    ) -> None:
+        """Verify that JSON Schema specification_file is valid YAML/JSON and its required properties are documented in the contract."""
+        try:
+            data = yaml.safe_load(spec_file.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError) as exc:
+            report.broken_references.append(
+                f"Invalid JSON Schema specification_file in {doc.file_path.name}: '{spec_file.name}' failed to parse ({exc})"
+            )
+            return
+        if not isinstance(data, dict):
+            report.broken_references.append(
+                f"Invalid JSON Schema specification_file in {doc.file_path.name}: '{spec_file.name}' root must be a mapping"
+            )
+            return
+        props = data.get("properties")
+        if not isinstance(props, dict) or not props:
+            return
+        required_props = [str(p) for p in (data.get("required") or props.keys()) if str(p) in props]
+        body = doc.body or ""
+        for prop_name in required_props:
+            if not re.search(rf"(?:`|\b){re.escape(prop_name)}\b", body):
+                report.broken_references.append(
+                    f"Contract drift in {doc.file_path.name}: JSON Schema property '{prop_name}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
+                )
+
+    def _verify_grpc_proto_contract(
+        self, doc: SpecDocument, spec_file: Path, report: ValidationReport
+    ) -> None:
+        """Verify that gRPC service and rpc declarations in .proto specification_file are documented in the contract."""
+        try:
+            text = spec_file.read_text(encoding="utf-8")
+        except OSError:
+            return
+        services = re.findall(r"\bservice\s+([A-Za-z_][A-Za-z0-9_]*)\b", text)
+        rpcs = re.findall(r"\brpc\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", text)
+        body = doc.body or ""
+        for sym in [*services, *rpcs]:
+            if not re.search(rf"(?:`|\b){re.escape(sym)}\b", body):
+                report.broken_references.append(
+                    f"Contract drift in {doc.file_path.name}: gRPC symbol '{sym}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
+                )
+
+    def _verify_graphql_contract(
+        self, doc: SpecDocument, spec_file: Path, report: ValidationReport
+    ) -> None:
+        """Verify that root Query / Mutation / Subscription fields in GraphQL specification_file are documented in the contract."""
+        try:
+            text = spec_file.read_text(encoding="utf-8")
+        except OSError:
+            return
+        operations: list[str] = []
+        for block_match in re.finditer(r"\btype\s+(?:Query|Mutation|Subscription)\s*\{([^}]*)\}", text, re.DOTALL):
+            block = block_match.group(1)
+            for line in block.splitlines():
+                cleaned = line.split("#", 1)[0].strip()
+                if not cleaned:
+                    continue
+                m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(|:)", cleaned)
+                if m:
+                    operations.append(m.group(1))
+        body = doc.body or ""
+        for op in operations:
+            if not re.search(rf"(?:`|\b){re.escape(op)}\b", body):
+                report.broken_references.append(
+                    f"Contract drift in {doc.file_path.name}: GraphQL operation '{op}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
+                )
+
+    _CONTRACT_PROTOCOL_VERIFIERS: dict[str, str] = {
+        "cli_args": "_verify_cli_contract_commands",
+        "python_protocol": "_verify_python_protocol_contract",
+        "rest_openapi": "_verify_rest_openapi_contract",
+        "json_schema": "_verify_json_schema_contract",
+        "grpc_proto": "_verify_grpc_proto_contract",
+        "graphql": "_verify_graphql_contract",
+    }
+
+    def _verify_contract_protocol(
+        self, protocol: str, doc: SpecDocument, spec_file: Path, report: ValidationReport
+    ) -> None:
+        """Dispatch contract-to-specification_file verification via _CONTRACT_PROTOCOL_VERIFIERS."""
+        method_name = self._CONTRACT_PROTOCOL_VERIFIERS.get(protocol)
+        if not method_name:
+            return
+        if protocol == "cli_args" and spec_file.suffix != ".py":
+            return
+        verifier = getattr(self, method_name, None)
+        if callable(verifier):
+            verifier(doc, spec_file, report)
+
 

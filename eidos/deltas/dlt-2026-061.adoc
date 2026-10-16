@@ -1,0 +1,72 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-061
+title: "Filter Unapplied Deltas, Deduplicate Unreleased Commits, and Batch Git Tag Ancestry Queries in ChangelogGenerator"
+status: proposed
+vcs:
+  branch: fix/changelog-applied-filter-and-batch-git
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Filter ChangelogGenerator.get_applied_deltas strictly to status == 'applied' so proposed, draft, and rejected SpecDeltas do not leak into CHANGELOG.md, deduplicate Unreleased Git commits against unreleased_deltas, and replace the O(D * T) per-delta git log and git merge-base subprocess storm with batched Git queries."
+mutations:
+  - action: modify_component
+    target_component: CMP-CHANGELOG-GENERATOR
+    details: "Filter get_applied_deltas in src/eidos/core/lifecycle/changelog.py strictly to status == 'applied', pass existing_deltas=unreleased_deltas to _add_commit_to_section when populating the Unreleased section in generate_changelog, and batch Git commit and tag ancestry resolution into constant-count Git subprocess calls instead of spawning git log -1 per delta and git merge-base --is-ancestor per (delta, tag) pair."
+    expect:
+      source_path: "src/eidos/core/lifecycle/changelog.py"
+      responsibility: "applied SpecDeltas"
+  - action: patch_invariant
+    target_invariant_id: INV-DELTA-CHANGELOG-GENERATION
+    details: "Update INV-DELTA-CHANGELOG-GENERATION in CAP-PROD-002 to explicitly require excluding non-applied (proposed, draft, rejected) SpecDeltas, deduplicating Unreleased delta commits, and resolving release tags via batched Git ancestry queries."
+    expect:
+      rule: "applied"
+      test_binding: "tests/test_changelog.py::test_delta_changelog_generation"
+affects:
+  containers:
+    - CNT-EIDOS-CORE
+  components:
+    - CMP-CHANGELOG-GENERATOR
+  capabilities:
+    - CAP-PROD-002
+  domains:
+    - DOM-SPEC-ENGINE
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-CORE
+  impacted_components:
+    - CMP-CHANGELOG-GENERATOR
+  invariants_to_enforce:
+    - INV-DELTA-CHANGELOG-GENERATION
+---
+= SpecDelta: Filter Unapplied Deltas, Deduplicate Unreleased Commits, and Batch Git Tag Ancestry Queries in ChangelogGenerator
+:toc: left
+
+== Problem Statement
+
+`ChangelogGenerator` (`CMP-CHANGELOG-GENERATOR` in `src/eidos/core/lifecycle/changelog.py`) has three bugs that violate `INV-DELTA-CHANGELOG-GENERATION`:
+
+1. **Unapplied (`proposed` / `draft` / `in_review` / `approved` / `rejected`) Deltas Leak Into `CHANGELOG.md` (`get_applied_deltas`, lines 107-168)**:
+   * Despite the method name `get_applied_deltas` and the `CNT-EIDOS-CORE` specification stating `"Compiles applied SpecDeltas"`, `get_applied_deltas` reads `status = fm.get("status", "proposed")` at line 129 and appends **every** `dlt-*.adoc` file in `eidos/deltas/` without checking `status == "applied"`.
+   * As a result, `proposed`, `draft`, `in_review`, `approved`, and `rejected` SpecDeltas are rendered directly into `## [Unreleased]` and tagged release sections of `CHANGELOG.md`.
+2. **Missing SpecDelta Deduplication in `Unreleased` Commit Section (`generate_changelog`, lines 219-227)**:
+   * In tagged release sections (line 277), `_add_commit_to_section(sec, msg, existing_deltas=rel_deltas)` suppresses Git commits that already reference a `DLT-*` listed in that section. In `Unreleased` (line 225), `self._add_commit_to_section(sec_unreleased, msg)` is called *without* `existing_deltas=unreleased_deltas`, duplicating every unreleased delta commit alongside its SpecDelta entry.
+3. **$O(D \times T)$ Git Subprocess Storm (`get_applied_deltas` & `_resolve_delta_release`, lines 141-184)**:
+   * `get_applied_deltas` spawns a separate `git log -1 --format=%H -- <file>` subprocess for every delta file ($D$ subprocesses).
+   * `_resolve_delta_release` then spawns `git merge-base --is-ancestor <commit> <tag>` for every `(delta, tag)` combination ($D \times T$ subprocesses). With 100 deltas and 20 tags, `eidos delta changelog` spawns up to 2,100 `git` subprocesses.
+
+== Proposed Specification Changes
+
+1. **Strict `status == "applied"` Filtering & Unreleased Commit Deduplication (`src/eidos/core/lifecycle/changelog.py`)**:
+   * In `ChangelogGenerator.get_applied_deltas`, skip any SpecDelta whose normalized `frontmatter.get("status")` is not `"applied"`.
+   * In `generate_changelog`, pass `existing_deltas=unreleased_deltas` to `self._add_commit_to_section(sec_unreleased, msg, existing_deltas=unreleased_deltas)`.
+2. **Batched Git Commit & Tag Ancestry Resolution**:
+   * Resolve the latest commit SHA for all `eidos/deltas/dlt-*.adoc` files in a single `git log --name-only --format="COMMIT:%H" -- eidos/deltas/` pass.
+   * Resolve tag containment across all tags in a single batched pass (e.g., `git rev-list <tag>` commit set per tag or `git tag --contains`) instead of spawning `git merge-base --is-ancestor` inside a nested loop.
+
+== Verification Plan
+
+* `uv run pytest tests/test_changelog.py` — Verify `proposed` and `rejected` SpecDeltas are excluded from `generate_changelog()`, unreleased commits referencing applied deltas are deduplicated, and batched tag attribution matches release tags.
+* `uv run eidos validate eidos && uv run eidos drift --uncommitted --json`

@@ -1,0 +1,81 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-067
+title: "Read-Only SQLite Cache Connections, db_path-Aware Index Singleton, and Automatic repo_root Resolution"
+status: proposed
+vcs:
+  branch: fix/sqlite-cache-readonly-and-index-singleton
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Eliminate unconditional SQLite write transactions on read-only cache opens, include db_path and connection cleanup in the get_architectural_index singleton, and automatically resolve repo_root via find_repo_root when custom --path directories are passed."
+mutations:
+  - action: modify_component
+    target_component: CMP-GRAPH-STORAGE
+    details: "Update open_cache_connection in src/eidos/core/index/storage.py to avoid DDL/DML write transactions when schema version already matches; update ArchitecturalIndex and get_architectural_index in src/eidos/core/index/graph_index.py to key singleton replacement on db_path, close evicted SQLite connections, avoid transaction context managers on read-only SELECT queries, and default repo_root to find_repo_root(eidos_dir)."
+    expect:
+      source_path: "src/eidos/core/index/storage.py"
+      responsibility: "open_cache_connection"
+  - action: modify_component
+    target_component: CMP-CLI-DELTA-COMMANDS
+    details: "Update delta_changelog_cmd in src/eidos/cli/delta_commands.py to resolve repo_root via find_repo_root(eidos_dir.resolve()) when a custom --path is provided."
+    expect:
+      source_path: "src/eidos/cli/delta_commands.py"
+      responsibility: "changelog"
+affects:
+  containers:
+    - CNT-EIDOS-INDEX
+    - CNT-EIDOS-CLI
+  components:
+    - CMP-GRAPH-STORAGE
+    - CMP-CLI-INDEX-COMMANDS
+    - CMP-CLI-CONTEXT-COMMAND
+    - CMP-CLI-DELTA-COMMANDS
+  capabilities:
+    - CAP-AGENT-001
+  domains:
+    - DOM-AGENT-INTELLIGENCE
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-INDEX
+    - CNT-EIDOS-CLI
+  impacted_components:
+    - CMP-GRAPH-STORAGE
+    - CMP-CLI-INDEX-COMMANDS
+    - CMP-CLI-CONTEXT-COMMAND
+    - CMP-CLI-DELTA-COMMANDS
+  invariants_to_enforce:
+    - INV-INDEX-GITIGNORED
+---
+= SpecDelta: Read-Only SQLite Cache Connections, db_path-Aware Index Singleton, and Automatic repo_root Resolution
+:toc: left
+
+== Problem Statement
+
+1. **Unconditional SQLite Write Transactions on Every Cache Open (`src/eidos/core/index/storage.py`, lines 139-173 & `graph_index.py`, lines 276-386)**:
+   * `open_cache_connection` unconditionally executes `CREATE TABLE IF NOT EXISTS metadata` and `INSERT OR REPLACE INTO metadata VALUES ('cache_schema_version', ...)` inside a `with conn:` transaction on every call, even when `cache_schema_version` already matches `SCHEMA_VERSION`. Read-only operations (`eidos validate`, `eidos drift`, `eidos context`, `eidos portal`) acquire SQLite write locks and mutate database mtimes on every run.
+   * `get_incoming_references`, `get_components`, and `get_entities` in `ArchitecturalIndex` (`graph_index.py`, lines 276, 354, 383) wrap `SELECT` queries in `with self._get_connection() as conn:`, entering unnecessary transaction context managers.
+2. **`get_architectural_index` Singleton Ignores `db_path` and Leaks Connections (`src/eidos/core/index/graph_index.py`, lines 403-430)**:
+   * `get_architectural_index` checks `_INDEX_INSTANCE.root != target_root or _INDEX_INSTANCE.eidos_dir != target_eidos` but ignores `db_path`, returning a stale singleton when a custom `db_path` is passed.
+   * When `_INDEX_INSTANCE` is replaced, the previous instance's `sqlite3.Connection` (`self._conn`) is never closed.
+3. **Wrong `repo_root` Resolution on Custom `--path` (`src/eidos/core/index/graph_index.py`, line 97 & `src/eidos/cli/delta_commands.py`, line 510)**:
+   * `ArchitecturalIndex.__init__` defaults `repo_root` to `Path.cwd()` instead of `find_repo_root(self.eidos_dir)`. Invoking `eidos index sync -p /other/repo/eidos` or `eidos context -p /other/repo/eidos` resolves source code against `Path.cwd()` instead of `/other/repo`.
+   * `delta_changelog_cmd` (`delta_commands.py`, line 510) checks `if eidos_dir.name == "eidos"` and otherwise falls back to `Path.cwd()` instead of `find_repo_root(eidos_dir.resolve())`.
+
+== Proposed Specification Changes
+
+1. **Write-Free Cache Hit Path in `open_cache_connection` (`src/eidos/core/index/storage.py`)**:
+   * When `ver_str == SCHEMA_VERSION`, return `conn` immediately without executing `CREATE TABLE` or `INSERT OR REPLACE INTO metadata`.
+2. **`db_path`-Aware Singleton, Connection Cleanup & `find_repo_root` Default in `ArchitecturalIndex` (`src/eidos/core/index/graph_index.py`)**:
+   * Add a `close()` method to `ArchitecturalIndex`, compare `target_db` in `get_architectural_index` before reusing `_INDEX_INSTANCE`, and close the old instance on replacement.
+   * When `repo_root is None`, resolve `self.root = find_repo_root(self.eidos_dir)` (falling back to `self.eidos_dir.parent` if `self.eidos_dir` exists, else `Path.cwd().resolve()`).
+   * Remove `with` context blocks around read-only `SELECT` calls in `get_incoming_references`, `get_components`, and `get_entities`.
+3. **Unified `find_repo_root` in `delta_changelog_cmd` (`src/eidos/cli/delta_commands.py`)**:
+   * Resolve `repo_root` via `find_repo_root(eidos_dir.resolve())`.
+
+== Verification Plan
+
+* `uv run pytest tests/test_graph_index.py` — Add unit tests verifying `get_architectural_index(db_path=...)` invalidates the singleton and closes the old connection, `open_cache_connection` performs no writes on a warm cache hit, and custom `--path` resolves `repo_root` accurately.
+* `uv run eidos validate eidos && uv run eidos drift --uncommitted --json`

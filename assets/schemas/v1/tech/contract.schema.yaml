@@ -66,3 +66,26 @@ properties:
   specification_file:
     type: string
     description: "Relative path from repository root to the raw interface schema file (e.g. contracts/api.openapi.yaml)."
+  version:
+    type: string
+    description: "Optional semantic version of this interface contract (e.g. '1.0.0')."
+  consumers:
+    type: array
+    description: "Optional list of internal containers (CNT-*), components (CMP-*), or external consumer identifiers that consume this contract."
+    items:
+      type: string
+      x-eidos-ref:
+        target_types:
+          - tech/container
+          - tech/component
+        prefixes:
+          - CNT-
+          - CMP-
+        allow_non_id_string: true
+        entity_label: container or component
+  decisions:
+    type: array
+    description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this contract specification (POL-001)."
+    items:
+      $ref: "#/$defs/decision"
+

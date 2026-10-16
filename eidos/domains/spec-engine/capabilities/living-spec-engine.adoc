@@ -52,10 +52,10 @@ technical:
       - "eidos index [status|sync|search|blast-radius]"
   invariants:
     - id: INV-SPEC-VALIDATION
-      rule: "Every .adoc file with a YAML frontmatter across all 16 living specification types must serialize safely via yaml.safe_dump and validate against its referenced JSON/YAML schema."
+      rule: "Every .adoc file with a YAML frontmatter across all 16 living specification types must extract frontmatter cleanly across YAML block scalars containing embedded horizontal rules ('---'), serialize safely via yaml.safe_dump, and validate against its referenced JSON/YAML schema."
       test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
     - id: INV-SPEC-GRAPH-INTEGRITY
-      rule: "All cross-document references and entity IDs (containers, components, contracts, policies, domains, deltas, decisions) must resolve to valid catalog entity IDs with zero collisions and strictly match the target entity prefix and type declared by x-eidos-ref."
+      rule: "All cross-document references and entity IDs (containers, components, contracts, policies, domains, deltas, decisions) must resolve to valid catalog entity IDs with zero collisions, strictly match the target entity prefix and type declared by x-eidos-ref, resolve declared container package_path, component source_path, contract specification_file, UI component test_bindings, and invariant test_binding (file::func) file and symbol references on disk, and enforce multi-protocol contract parity across CTR-* specifications."
       test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
     - id: INV-KNOWLEDGE-GRAPH-CATALOG
       rule: "The core engine must maintain an embedded SQLite knowledge graph indexing all living specifications, schemas, relational edges, recursively indexed AST code symbols, and AST test-to-invariant assertion edges with sub-2ms dirty checking and query resolution."

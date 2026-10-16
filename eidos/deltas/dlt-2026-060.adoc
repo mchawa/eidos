@@ -1,0 +1,98 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-060
+title: "Unify YAML Frontmatter Delimiter Parsing and Adopt Typed Pydantic Domain Models Across Core Engines"
+status: applied
+vcs:
+  branch: refactor/unified-frontmatter-parser-and-models
+intent:
+  kind: enabler
+  motivation: "Eliminate the three divergent YAML frontmatter delimiter regexes across parser.py, structural.py, and catalog.py in favor of a single block-scalar-safe parser anchored at file start, and expand Pydantic domain models in models.py so core engines operate on typed attributes rather than raw dictionary lookups."
+mutations:
+  - action: modify_component
+    target_component: CMP-SPEC-PARSER
+    details: "Centralize YAML frontmatter extraction and serialization in src/eidos/core/spec/parser.py using a canonical delimiter scanner anchored at file start (\\A---) that ignores indented '---' lines inside YAML block scalars, and expose a shared split_frontmatter_and_body / dump_spec_document helper."
+    expect:
+      source_path: "src/eidos/core/spec/parser.py"
+      responsibility: "split_frontmatter_and_body"
+  - action: modify_component
+    target_component: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Replace the duplicate _FRONTMATTER_RE regex in src/eidos/core/lifecycle/catalog.py with the canonical frontmatter splitter and serializer from CMP-SPEC-PARSER."
+    expect:
+      source_path: "src/eidos/core/lifecycle/catalog.py"
+      responsibility: "YAML frontmatter"
+  - action: modify_component
+    target_component: CMP-DRIFT-DETECTOR
+    details: "Replace the duplicate _FRONTMATTER_RE regex in src/eidos/vcs/structural.py with the canonical frontmatter splitter from CMP-SPEC-PARSER."
+    expect:
+      source_path: "src/eidos/vcs/structural.py"
+      responsibility: "substantive"
+  - action: modify_component
+    target_component: CMP-DOMAIN-MODELS
+    details: "Expand FrontmatterModel in src/eidos/core/spec/models.py with typed Pydantic models and helper accessors for containers, components, capabilities, contracts, policies, and SpecDeltas so downstream engines can consume SpecDocument.as_model() without repetitive isinstance(..., dict) boilerplate."
+    expect:
+      source_path: "src/eidos/core/spec/models.py"
+      responsibility: "Pydantic"
+  - action: patch_invariant
+    target_invariant_id: INV-SPEC-VALIDATION
+    details: "Update INV-SPEC-VALIDATION in CAP-PROD-001 to guarantee consistent frontmatter extraction across YAML block scalars containing embedded horizontal rules ('---')."
+    expect:
+      rule: "yaml.safe_dump"
+      test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+affects:
+  containers:
+    - CNT-EIDOS-CORE
+    - CNT-EIDOS-VCS
+  components:
+    - CMP-SPEC-PARSER
+    - CMP-LIFECYCLE-SCAFFOLDER
+    - CMP-DRIFT-DETECTOR
+    - CMP-DOMAIN-MODELS
+  capabilities:
+    - CAP-PROD-001
+    - CAP-VCS-001
+  domains:
+    - DOM-SPEC-ENGINE
+    - DOM-VCS-LIFECYCLE
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-CORE
+    - CNT-EIDOS-VCS
+  impacted_components:
+    - CMP-SPEC-PARSER
+    - CMP-LIFECYCLE-SCAFFOLDER
+    - CMP-DRIFT-DETECTOR
+    - CMP-DOMAIN-MODELS
+  invariants_to_enforce:
+    - INV-SPEC-VALIDATION
+    - INV-DRIFT-DIFF-AWARE-COVERAGE
+---
+= SpecDelta: Unify YAML Frontmatter Delimiter Parsing and Adopt Typed Pydantic Domain Models Across Core Engines
+:toc: left
+
+== Problem Statement
+
+`CNT-EIDOS-CORE` and `CNT-EIDOS-VCS` currently suffer from two parser and data-model fragilities:
+
+1. **Three Divergent Frontmatter Regexes**:
+   * `src/eidos/core/spec/parser.py` (line 10) uses `re.compile(r"^---\s*$", re.MULTILINE)`.
+   * `src/eidos/vcs/structural.py` (line 54) uses `re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", re.DOTALL)`.
+   * `src/eidos/core/lifecycle/catalog.py` (line 83) uses `re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n|$)(.*)", re.DOTALL)`.
+   * If a YAML block scalar (`|` or `>`) inside frontmatter contains an indented `---` (or if an AsciiDoc body contains a `---` thematic break), `parser.py`, `structural.py`, and `catalog.py` split the document differently.
+2. **Underutilized Pydantic Domain Models (`CMP-DOMAIN-MODELS`)**:
+   * `src/eidos/core/spec/models.py` defines `FrontmatterModel`, `DecisionModel`, and `InvariantModel`, and `SpecDocument.as_model()` exposes them.
+   * However, downstream engines (`validator.py`, `delta_engine.py`, `sync.py`, `drift.py`, `generator.py`) ignore `as_model()` and manipulate raw `dict[str, Any]` with hundreds of defensive `isinstance(..., dict)` checks.
+
+== Proposed Specification Changes
+
+1. **Single Canonical Frontmatter Parser (`CMP-SPEC-PARSER` in `src/eidos/core/spec/parser.py`)**:
+   * Implement a single `split_frontmatter_and_body(content: str)` and `dump_spec_document(frontmatter: dict[str, Any], body: str)` in `parser.py` that requires the opening `---` delimiter at the start of the document (`\A`) and only closes frontmatter on an unindented column-0 `---` line.
+   * Reuse `split_frontmatter_and_body` in `src/eidos/vcs/structural.py` and `src/eidos/core/lifecycle/catalog.py`.
+2. **Typed Pydantic Domain Models (`CMP-DOMAIN-MODELS` in `src/eidos/core/spec/models.py`)**:
+   * Expand `FrontmatterModel` subclasses / typed accessors for `ContainerSpec`, `ComponentSpec`, `CapabilitySpec`, `ContractSpec`, `PolicySpec`, and `DeltaSpec` so core engines can consume normalized, strongly typed fields via `doc.as_model()`.
+
+== Verification Plan
+
+* `uv run pytest tests/test_validator.py tests/test_scaffolder.py tests/test_drift.py`
+* `uv run eidos validate eidos && uv run eidos drift --uncommitted --json`

@@ -283,4 +283,10 @@ properties:
         description: "Deterministic rules and constraints bound directly to automated tests (optional during draft, mandatory for active status)."
         items:
           $ref: "#/$defs/test_bound_invariant"
+  decisions:
+    type: array
+    description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this capability specification (POL-001)."
+    items:
+      $ref: "#/$defs/decision"
+
 

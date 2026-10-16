@@ -108,6 +108,11 @@ properties:
               description: "In-place architectural decisions, trade-offs, and rejected alternatives scoped to this inline C4 Level 3 component."
               items:
                 $ref: "#/$defs/decision"
+            invariants:
+              type: array
+              description: "Test-bound architectural invariants scoped to this inline C4 Level 3 component."
+              items:
+                $ref: "#/$defs/invariant"
         - additionalProperties: false
           required:
             - id
@@ -224,6 +229,11 @@ properties:
       max_memory_mb:
         type: integer
         description: "Maximum allowable memory allocation limit in MB."
+  invariants:
+    type: array
+    description: "Test-bound architectural invariants enforced by this C4 Level 2 container."
+    items:
+      $ref: "#/$defs/invariant"
   decisions:
     type: array
     description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this C4 Level 2 container specification without standalone ADR files (POL-001)."

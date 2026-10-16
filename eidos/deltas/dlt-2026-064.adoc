@@ -1,0 +1,71 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-064
+title: "Validate Design System W3C DTCG Token Manifests and Acyclic Inheritance in SpecValidator"
+status: applied
+vcs:
+  branch: feat/validate-design-tokens-and-inheritance
+intent:
+  kind: feature
+  motivation: "Extend SpecValidator to verify that design/system specifications reference an existing, valid JSON tokens.manifest adhering to W3C DTCG ($value / $type) structure and that inheritance.extends chains across DS-* specifications are acyclic."
+mutations:
+  - action: modify_component
+    target_component: CMP-SPEC-VALIDATOR
+    details: "Extend SpecValidator in src/eidos/core/spec/validator.py to verify that active design/system specifications have an existing tokens.manifest JSON file on disk, validate W3C DTCG leaf token objects ($value presence and valid $type), and detect circular inheritance.extends chains across DS-* documents."
+    expect:
+      source_path: "src/eidos/core/spec/validator.py"
+      responsibility: "W3C DTCG"
+  - action: patch_invariant
+    target_invariant_id: INV-W3C-DTCG-COMPLIANCE
+    details: "Update INV-W3C-DTCG-COMPLIANCE in CAP-EXP-002 to enforce static SpecValidator verification of tokens.manifest existence, W3C DTCG $value/$type structure, and acyclic DS-* inheritance."
+    expect:
+      rule: "acyclic"
+      test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+affects:
+  containers:
+    - CNT-EIDOS-CORE
+  components:
+    - CMP-SPEC-VALIDATOR
+    - CMP-DESIGN-ENGINE
+  capabilities:
+    - CAP-EXP-002
+    - CAP-PROD-001
+  domains:
+    - DOM-EXPERIENCE-PORTAL
+    - DOM-SPEC-ENGINE
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-CORE
+  impacted_components:
+    - CMP-SPEC-VALIDATOR
+    - CMP-DESIGN-ENGINE
+  invariants_to_enforce:
+    - INV-W3C-DTCG-COMPLIANCE
+    - INV-CLIENT-DESIGN-BINDING
+    - INV-SPEC-VALIDATION
+---
+= SpecDelta: Validate Design System W3C DTCG Token Manifests and Acyclic Inheritance in SpecValidator
+:toc: left
+
+== Problem Statement
+
+`CMP-DESIGN-ENGINE` (`src/eidos/core/lifecycle/design_engine.py`, lines 33-75) scaffolds `design/system` (`DS-*`) specifications with `tokens: {spec_format: w3c_design_tokens, manifest: tokens.json}` and optional `inheritance: {extends: DS-*}`.
+
+However, `SpecValidator` (`src/eidos/core/spec/validator.py`) currently performs no validation on the referenced `tokens.manifest` file or the `inheritance.extends` graph:
+
+1. **Missing or Malformed `tokens.json` Uncaught**: If `tokens.manifest` points to a missing file, invalid JSON, or non-DTCG objects lacking `$value`, `eidos validate` still passes.
+2. **Circular `inheritance.extends` Chains Uncaught**: If `DS-BRAND-A` extends `DS-BRAND-B` and `DS-BRAND-B` extends `DS-BRAND-A`, `eidos validate` does not report a cycle error.
+
+== Proposed Specification Changes
+
+1. **W3C DTCG Manifest & Inheritance Validation in `CMP-SPEC-VALIDATOR` (`src/eidos/core/spec/validator.py`)**:
+   * For every active `design/system` document:
+     ** Resolve `tokens.manifest` relative to `doc.file_path.parent` (and `repo_root` / `root_dir`). Report a broken reference in `report.broken_references` if the manifest file does not exist on disk.
+     ** Parse the manifest JSON and verify that when `tokens.spec_format == "w3c_design_tokens"`, every leaf token object defines a `$value` property (recording schema errors in `report.schema_errors[doc.file_path]` if malformed).
+     ** Traverse `inheritance.extends` across `design/system` documents and report a broken reference / cycle error if any `DS-*` inheritance chain contains a cycle.
+
+== Verification Plan
+
+* `uv run pytest tests/test_validator.py` — Add unit tests for missing `tokens.json`, invalid W3C DTCG token leaf objects lacking `$value`, and circular `inheritance.extends` chains (`DS-A -> DS-B -> DS-A`).
+* `uv run eidos validate eidos && uv run eidos drift --uncommitted --json`

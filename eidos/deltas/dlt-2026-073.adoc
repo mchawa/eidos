@@ -1,0 +1,72 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-073
+title: "Unified v1 JSON Schema Parity for Container & Policy Invariants, Cross-Layer Embedded Decisions, Contract Versioning, and SpecDelta Design References"
+status: applied
+vcs:
+  branch: fix/v1-schemas-invariants-decisions-and-delta-refs
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Align the bundled v1 JSON Schemas (container, policy, domain, capability, contract, and delta) with the living specification engine, knowledge graph indexer, drift detector, and SpecDelta lifecycle so valid invariants, embedded DEC-* decisions, contract SemVer versions/consumers, and design entity references are not rejected by additionalProperties: false."
+mutations:
+  - action: modify_component
+    target_component: CMP-SPEC-VALIDATOR
+    details: "Update assets/schemas/v1/tech/container.schema.yaml and assets/schemas/v1/product/policy.schema.yaml to permit invariants ($ref: '#/$defs/invariant'); update assets/schemas/v1/product/domain.schema.yaml, assets/schemas/v1/product/capability.schema.yaml, assets/schemas/v1/product/policy.schema.yaml, and assets/schemas/v1/tech/contract.schema.yaml to permit decisions ($ref: '#/$defs/decision'); allow optional ubiquitous_language and owners on domain.schema.yaml and optional version and consumers (with x-eidos-ref) on contract.schema.yaml; and update assets/schemas/v1/delta/delta.schema.yaml to allow design_systems, clients, flows, screens, ui_components, and personas under affects and attach x-eidos-ref metadata to blast_radius.impacted_components and impacted_containers."
+    expect:
+      source_path: "src/eidos/core/spec/validator.py"
+      responsibility: "assets/schemas/v1/common/defs.yaml"
+affects:
+  containers:
+    - CNT-EIDOS-CORE
+  components:
+    - CMP-SPEC-VALIDATOR
+  capabilities:
+    - CAP-PROD-001
+    - CAP-PROD-002
+  domains:
+    - DOM-SPEC-ENGINE
+blast_radius:
+  impacted_containers:
+    - CNT-EIDOS-CORE
+  impacted_components:
+    - CMP-SPEC-VALIDATOR
+  invariants_to_enforce:
+    - INV-SPEC-VALIDATION
+    - INV-SPEC-GRAPH-INTEGRITY
+---
+= SpecDelta: Unified v1 JSON Schema Parity for Container & Policy Invariants, Cross-Layer Embedded Decisions, Contract Versioning, and SpecDelta Design References
+:toc: left
+
+== Problem Statement
+
+Six bundled v1 JSON Schemas under `assets/schemas/v1/` enforce `additionalProperties: false` while omitting properties that are actively indexed, sliced, or verified by the Eidos engine (`sync.py`, `context.py`, `invariants.py`, `delta_engine.py`, `structural.py`):
+
+1. **`container.schema.yaml` Forbids Top-Level and Inline Component `invariants` (`assets/schemas/v1/tech/container.schema.yaml`, lines 73-110 & 210-232)**:
+   * `sync.py`, `context.py`, and `invariants.py` extract `invariants` from `tech/container` and inline `components[]`, and `SpecValidator` injects `$defs.invariant` into `container.schema.yaml`, but `container.schema.yaml` never declares `invariants` in top-level `properties` or inline `components[].properties`.
+2. **`policy.schema.yaml` Forbids `invariants` and `decisions` (`assets/schemas/v1/product/policy.schema.yaml`, lines 5-82)**:
+   * `invariants.py`, `sync.py`, and `delta_engine.py` (`add_invariant` / `patch_invariant`) support `invariants` and `decisions` on `product/policy` specs, but `policy.schema.yaml` rejects both keys.
+3. **`domain.schema.yaml` and `capability.schema.yaml` Forbid `decisions` (and `ubiquitous_language` / `owners` on Domains) (`assets/schemas/v1/product/domain.schema.yaml`, lines 5-119 & `assets/schemas/v1/product/capability.schema.yaml`, lines 5-286)**:
+   * `sync.py` (`_upsert_decisions`) and `eidos/SKILL.md` support embedded `DEC-*` architectural decisions on `DOM-*` and `CAP-*` specs, and `eidos-spec/SKILL.md` documents `ubiquitous_language` and `owners` on `DOM-*` specs, yet both schemas reject those keys.
+4. **`contract.schema.yaml` Forbids `version`, `consumers`, and `decisions` (`assets/schemas/v1/tech/contract.schema.yaml`, lines 5-69)**:
+   * `delta_engine.py` (`modify_contract` with `expect: { version: "1.2.0" }`), `eidos/SKILL.md`, `eidos-plan/SKILL.md`, and `eidos-spec/SKILL.md` rely on SemVer `version`, `consumers`, and `decisions` on `CTR-*` contracts, which `contract.schema.yaml` currently forbids.
+5. **`delta.schema.yaml` `affects` Omits Design/Persona Keys and `blast_radius` Omits `x-eidos-ref` (`assets/schemas/v1/delta/delta.schema.yaml`, lines 250-368)**:
+   * `structural.py` (`_collect_claimed_entities`) reads `affects.{design_systems,clients,flows,screens,ui_components}`, and `delta.schema.yaml` `mutations[].action` supports `add_design_system`, `modify_screen`, `add_persona`, etc., yet `affects` rejects those keys.
+   * `blast_radius.impacted_components` and `blast_radius.impacted_containers` lack `x-eidos-ref` metadata, so `SpecValidator._validate_references` never verifies that impacted component/container IDs exist in the catalog.
+
+== Proposed Specification Changes
+
+1. **Allow `invariants` and `decisions` Across Owning Schemas (`container.schema.yaml`, `policy.schema.yaml`, `domain.schema.yaml`, `capability.schema.yaml`, `contract.schema.yaml`)**:
+   * Add `invariants` (`$ref: "#/$defs/invariant"`) to `container.schema.yaml` (top-level and inline `components[]`) and `policy.schema.yaml`.
+   * Add `decisions` (`$ref: "#/$defs/decision"`) to `domain.schema.yaml`, `capability.schema.yaml`, `policy.schema.yaml`, and `contract.schema.yaml`.
+   * Add optional `ubiquitous_language` and `owners` to `domain.schema.yaml`, and optional `version` and `consumers` (with `x-eidos-ref` targeting `CNT-*` / `CMP-*`) to `contract.schema.yaml`.
+2. **Complete `affects` and `blast_radius` Reference Validation in `delta.schema.yaml`**:
+   * Add `design_systems`, `clients`, `flows`, `screens`, `ui_components`, and `personas` (with `x-eidos-ref`) to `affects.properties`.
+   * Add `x-eidos-ref` metadata to `blast_radius.impacted_components` (`tech/component`, `CMP-`) and `blast_radius.impacted_containers` (`tech/container`, `CNT-`).
+
+== Verification Plan
+
+* `uv run pytest tests/test_validator.py tests/test_docs_sync.py` — Verify specs with container/policy `invariants`, domain/capability/policy/contract `decisions`, contract `version`/`consumers`, and delta `affects` design keys validate cleanly, while invalid `blast_radius.impacted_components` IDs are caught by `x-eidos-ref`.
+* `uv run eidos validate eidos && uv run eidos drift --uncommitted --json`

@@ -38,8 +38,8 @@ technical:
       - "eidos spec create ui-component <id>"
   invariants:
     - id: INV-W3C-DTCG-COMPLIANCE
-      rule: "Design tokens must adhere to W3C Design Tokens Community Group ($value, $type, $description) standard structure."
-      test_binding: "tests/test_portal.py::test_portal_data_generation"
+      rule: "Design tokens must adhere to W3C Design Tokens Community Group ($value, $type, $description) standard structure in an existing tokens.manifest JSON file, and design system inheritance.extends chains across DS-* specifications must remain acyclic."
+      test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
     - id: INV-CLIENT-DESIGN-BINDING
       rule: "Every client manifest (CLT-*) must explicitly reference a valid design system (DS-*) and container manifest (CMP-*)."
       test_binding: "tests/test_validator.py::test_validate_eidos_specifications"

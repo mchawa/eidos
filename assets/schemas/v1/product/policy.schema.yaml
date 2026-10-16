@@ -79,3 +79,14 @@ properties:
           - "warning"
           - "advisory"
           - "info"
+  invariants:
+    type: array
+    description: "Test-bound invariants enforcing this policy across the codebase."
+    items:
+      $ref: "#/$defs/invariant"
+  decisions:
+    type: array
+    description: "In-place architectural and governance decisions recorded on this policy specification (POL-001)."
+    items:
+      $ref: "#/$defs/decision"
+

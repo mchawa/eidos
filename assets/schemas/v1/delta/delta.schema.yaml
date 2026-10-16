@@ -310,6 +310,66 @@ properties:
               - product/domain
             prefixes:
               - DOM-
+      personas:
+        type: array
+        items:
+          type: string
+          x-eidos-ref:
+            target_types:
+              - product/persona
+            prefixes:
+              - PER-
+            entity_label: persona
+      design_systems:
+        type: array
+        items:
+          type: string
+          x-eidos-ref:
+            target_types:
+              - design/system
+            prefixes:
+              - DS-
+            entity_label: design_system
+      clients:
+        type: array
+        items:
+          type: string
+          x-eidos-ref:
+            target_types:
+              - design/client
+            prefixes:
+              - CLT-
+            entity_label: client
+      flows:
+        type: array
+        items:
+          type: string
+          x-eidos-ref:
+            target_types:
+              - design/flow
+            prefixes:
+              - FLOW-
+            entity_label: flow
+      screens:
+        type: array
+        items:
+          type: string
+          x-eidos-ref:
+            target_types:
+              - design/screen
+            prefixes:
+              - SCR-
+            entity_label: screen
+      ui_components:
+        type: array
+        items:
+          type: string
+          x-eidos-ref:
+            target_types:
+              - design/ui-component
+            prefixes:
+              - UIC-
+            entity_label: ui_component
   blast_radius:
     type: object
     description: "Automated or computed impact analysis across personas, architecture components, and invariants (optional)."
@@ -332,12 +392,24 @@ properties:
         items:
           type: string
           pattern: "^(CMP-[A-Z0-9_-]+|.*\\.adoc)$"
+          x-eidos-ref:
+            target_types:
+              - tech/component
+            prefixes:
+              - CMP-
+            entity_label: component
       impacted_containers:
         type: array
         description: "List of C4 Level 2 containers (CNT-*) impacted by this change."
         items:
           type: string
           pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
+          x-eidos-ref:
+            target_types:
+              - tech/container
+            prefixes:
+              - CNT-
+            entity_label: container
       impacted_design_systems:
         type: array
         description: "List of design systems impacted by this change (e.g. DS-CORE, DS-ACME)."
@@ -378,7 +450,6 @@ properties:
           type: string
       allowed_reasons:
         type: array
-        description: "Explicit path/pattern exemptions for legitimate historical or compatibility references."
         items:
           type: object
           additionalProperties: false
@@ -394,6 +465,7 @@ properties:
             reason:
               type: string
               description: "Justification for why this reference is exempt from deletion audit failures."
+        description: "Explicit path/pattern exemptions for legitimate historical or compatibility references."
   vcs:
     type: object
     description: "Traceability link to human issue tracker and pull request."
@@ -416,3 +488,7 @@ properties:
       branch:
         type: string
         description: "Git branch name."
+      base_commit:
+        type: string
+        description: "Optional base Git commit SHA recorded when the SpecDelta was created."
+

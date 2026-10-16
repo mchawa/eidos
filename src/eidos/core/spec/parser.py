@@ -2,6 +2,7 @@
 
 import re
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -12,7 +13,58 @@ except ImportError:  # pragma: no cover
 
 from eidos.core.spec.models import SpecDocument
 
-_FRONTMATTER_DELIMITER_RE = re.compile(r"^---\s*$", re.MULTILINE)
+_OPENING_DELIMITER_RE = re.compile(r"\A---[ \t]*(?:\r?\n|\Z)")
+_CLOSING_DELIMITER_RE = re.compile(r"^---[ \t]*(?:\r?\n|\Z)", re.MULTILINE)
+
+
+def split_frontmatter_and_body(content: str) -> tuple[str | None, str]:
+    """Split an AsciiDoc specification into (raw_frontmatter_yaml_or_None, body_text).
+
+    Anchored strictly at file start (after optional UTF-8 BOM) and ignores indented
+    '---' lines inside YAML block scalars or multiline strings.
+    """
+    if not content:
+        return None, ""
+    cleaned = content.lstrip("\ufeff")
+    open_match = _OPENING_DELIMITER_RE.match(cleaned)
+    if not open_match or open_match.end() >= len(cleaned):
+        return None, content
+
+    rest = cleaned[open_match.end() :]
+    close_matches = list(_CLOSING_DELIMITER_RE.finditer(rest))
+    if not close_matches:
+        return None, content
+
+    # Try each column-0 '---' delimiter in order; if there are multiple column-0 '---'
+    # lines (e.g. an unindented '---' inside a multiline quoted scalar or in the body),
+    # prefer the first delimiter whose preceding slice is a valid YAML mapping.
+    chosen = close_matches[0]
+    if len(close_matches) > 1:
+        for cand in close_matches:
+            cand_yaml = rest[: cand.start()].rstrip("\r\n")
+            try:
+                parsed = yaml.load(cand_yaml, Loader=_YamlSafeLoader)
+                if isinstance(parsed, dict):
+                    chosen = cand
+                    break
+            except yaml.YAMLError:
+                continue
+
+    raw_yaml = rest[: chosen.start()].rstrip("\r\n")
+    body = rest[chosen.end() :]
+    return raw_yaml, body
+
+
+def dump_spec_document(frontmatter: dict[str, Any], body: str) -> str:
+    """Serialize a frontmatter mapping with yaml.safe_dump and wrap it with an AsciiDoc body."""
+    fm_yaml = yaml.safe_dump(
+        frontmatter,
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+        width=4096,
+    )
+    return f"---\n{fm_yaml}---\n{body.lstrip(chr(10))}"
 
 
 def parse_spec_file(path: Path) -> SpecDocument:
@@ -23,13 +75,22 @@ def parse_spec_file(path: Path) -> SpecDocument:
 def _parse_spec_content(path: Path, content: str) -> SpecDocument:
     """Parse an .adoc specification from pre-read content."""
     if not content.strip():
-        doc_type = "product/system" if path.name == "system.adoc" else "unknown"
+        is_root_system = path.name == "system.adoc" and "design" not in path.parts
+        if is_root_system:
+            return SpecDocument(
+                file_path=path,
+                frontmatter={},
+                body="",
+                doc_type="product/system",
+                doc_id="SYS-UNINITIALIZED",
+            )
         return SpecDocument(
             file_path=path,
             frontmatter={},
             body="",
-            doc_type=doc_type,
+            doc_type="unknown",
             doc_id=path.stem,
+            errors=["Missing YAML frontmatter block (delimited by '---')"],
         )
 
     frontmatter_dict, body, parse_error = extract_frontmatter(content)
@@ -58,29 +119,20 @@ def _parse_spec_content(path: Path, content: str) -> SpecDocument:
 
 
 def extract_frontmatter(content: str) -> tuple[dict | None, str, str | None]:
-    """Extract YAML frontmatter between line-anchored '---' markers."""
+    """Extract YAML frontmatter between file-start-anchored '---' markers."""
     cleaned = content.lstrip("\ufeff")
-    stripped = cleaned.lstrip()
-    if not stripped.startswith("---"):
+    if not _OPENING_DELIMITER_RE.match(cleaned):
         return None, content, "No opening frontmatter delimiter ('---')"
 
-    matches = list(_FRONTMATTER_DELIMITER_RE.finditer(stripped))
-    if not matches or matches[0].start() != 0:
-        return None, content, "No opening frontmatter delimiter ('---')"
-    if len(matches) < 2:
+    raw_yaml, body = split_frontmatter_and_body(cleaned)
+    if raw_yaml is None:
         return None, content, "No closing frontmatter delimiter ('---')"
 
-    yaml_text = stripped[matches[0].end() : matches[1].start()]
-    body = stripped[matches[1].end() :]
-    if body.startswith("\r\n"):
-        body = body[2:]
-    elif body.startswith("\n"):
-        body = body[1:]
-
     try:
-        data = yaml.load(yaml_text, Loader=_YamlSafeLoader)
+        data = yaml.load(raw_yaml, Loader=_YamlSafeLoader)
         if not isinstance(data, dict):
             return None, body, "Frontmatter must be a YAML mapping (key-value dictionary)"
         return data, body, None
     except yaml.YAMLError as exc:
         return None, body, str(exc)
+
