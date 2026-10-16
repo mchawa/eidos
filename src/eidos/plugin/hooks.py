@@ -424,18 +424,24 @@ def _hash_files(workspace_root: Path, rel_paths: list[str]) -> dict[str, str]:
 
 
 def handle_drift_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str, Any]:
-    """Block agent completion once per drift fingerprint if spec-to-code drift is detected."""
+    """Block agent completion once per drift fingerprint if spec-to-code, invariant, or validation drift is detected."""
     eidos_dir = workspace_root / "eidos"
     if not eidos_dir.exists():
         return {"decision": "allow"}
 
     try:
         drift_res = detect_drift(repo_root=workspace_root, eidos_dir=eidos_dir, uncommitted=True)
-        if drift_res.drift_detected:
+        has_non_code_failure = (
+            not drift_res.validation_passed
+            or bool(drift_res.uncovered_invariants)
+            or bool(drift_res.orphan_invariants)
+        )
+        if drift_res.drift_detected or has_non_code_failure:
             all_tracked = (
                 list(drift_res.classification.code_files)
                 + list(drift_res.classification.spec_files)
                 + list(drift_res.classification.delta_files)
+                + list(drift_res.classification.test_files)
             )
             fp_payload = json.dumps(
                 {
@@ -444,6 +450,9 @@ def handle_drift_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str
                     "delta_files": sorted(drift_res.classification.delta_files),
                     "file_hashes": _hash_files(workspace_root, all_tracked),
                     "remediation": drift_res.remediation_suggestions,
+                    "validation_errors": drift_res.validation_errors,
+                    "uncovered_invariants": [inv.invariant_id for inv in drift_res.uncovered_invariants],
+                    "orphan_invariants": [f"{oid}:{loc}" for oid, loc in drift_res.orphan_invariants],
                 },
                 sort_keys=True,
             )
@@ -452,14 +461,35 @@ def handle_drift_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str
                 return {"decision": "allow"}
 
             remediation_lines = "\n".join(f"  {rem}" for rem in drift_res.remediation_suggestions)
-            code_files_str = "\n".join(f"  - {cf}" for cf in drift_res.classification.code_files[:8])
-            if len(drift_res.classification.code_files) > 8:
-                code_files_str += f"\n  ... and {len(drift_res.classification.code_files) - 8} more files"
+            if drift_res.classification.code_files:
+                code_files_str = "\n".join(f"  - {cf}" for cf in drift_res.classification.code_files[:8])
+                if len(drift_res.classification.code_files) > 8:
+                    code_files_str += f"\n  ... and {len(drift_res.classification.code_files) - 8} more files"
+                cause_block = (
+                    f"{len(drift_res.classification.code_files)} code file(s) were modified without corresponding living specification updates in 'eidos/':\n"
+                    f"{code_files_str}"
+                )
+            else:
+                cause_parts: list[str] = []
+                if not drift_res.validation_passed:
+                    err_lines = "\n".join(f"  - {ve}" for ve in drift_res.validation_errors[:5])
+                    cause_parts.append(
+                        f"Specification validation failed ({len(drift_res.validation_errors)} error(s)):\n{err_lines}"
+                    )
+                if drift_res.uncovered_invariants or drift_res.orphan_invariants:
+                    cause_parts.append(
+                        f"Invariant test binding verification failed ({len(drift_res.uncovered_invariants)} uncovered invariant(s), "
+                        f"{len(drift_res.orphan_invariants)} orphan test reference(s))."
+                    )
+                if not cause_parts:
+                    cause_parts.append(
+                        "Specification or SpecDelta synchronization issue detected in 'eidos/'."
+                    )
+                cause_block = "\n".join(cause_parts)
 
             reason = (
                 f"🛑 [Eidos Drift Gate] Cannot complete task: Spec-to-code drift detected!\n"
-                f"{len(drift_res.classification.code_files)} code file(s) were modified without corresponding living specification updates in 'eidos/':\n"
-                f"{code_files_str}\n\n"
+                f"{cause_block}\n\n"
                 f"Recommended Actions:\n"
                 f"{remediation_lines}\n\n"
                 f"Structural code changes must co-evolve with living specs in 'eidos/'. "
@@ -593,10 +623,17 @@ def execute_drift_hook(
             print(f"Error: Living specifications directory '{eidos_dir}' does not exist.", file=sys.stderr)
             return 1
         drift_res = detect_drift(repo_root=ws_root, eidos_dir=eidos_dir, uncommitted=True)
-        if drift_res.drift_detected:
-            print(f"Drift detected in {len(drift_res.classification.code_files)} code file(s):", file=sys.stderr)
-            for cf in drift_res.classification.code_files:
-                print(f"  - {cf}", file=sys.stderr)
+        if not drift_res.is_clean or drift_res.drift_detected or not drift_res.validation_passed:
+            if drift_res.classification.code_files and drift_res.drift_detected:
+                print(f"Drift detected in {len(drift_res.classification.code_files)} code file(s):", file=sys.stderr)
+                for cf in drift_res.classification.code_files:
+                    print(f"  - {cf}", file=sys.stderr)
+            else:
+                print("Drift or specification governance failure detected:", file=sys.stderr)
+            for rem in drift_res.remediation_suggestions:
+                print(f"  - {rem}", file=sys.stderr)
+            for ve in drift_res.validation_errors:
+                print(f"  - Validation error: {ve}", file=sys.stderr)
             return 1
         print("✓ SUCCESS: No spec-to-code drift detected.")
         return 0

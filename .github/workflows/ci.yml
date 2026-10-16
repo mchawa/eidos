@@ -70,7 +70,12 @@ jobs:
         run: uv run eidos plugin validate
 
       - name: Verify Spec-to-Code Synchronization & Invariant Traceability
-        run: uv run eidos drift --base origin/main
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            uv run eidos drift --base "${{ github.event.before }}"
+          else
+            uv run eidos drift --base "origin/${{ github.base_ref || 'main' }}"
+          fi
 
   test:
     name: Test (Python ${{ matrix.python-version }})

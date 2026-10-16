@@ -31,7 +31,7 @@ components:
     source_path: "src/eidos/cli/plugin_commands.py"
   - id: CMP-CLI-DRIFT-COMMANDS
     name: "DriftCommands"
-    responsibility: "Spec-to-code drift detection (`eidos drift`) across uncommitted working trees and Git commit ranges, resolving custom --path specification roots via find_repo_root, surfacing explicit Git base resolution errors, and exiting non-zero when --base is invalid or missing in shallow clones."
+    responsibility: "Spec-to-code and non-code drift detection (`eidos drift`) across uncommitted working trees and Git commit ranges, resolving custom --path specification roots via find_repo_root, distinguishing code vs. non-code drift and invariant traceability failures in terminal reports, surfacing explicit Git base resolution errors, and exiting non-zero when --base is invalid or missing in shallow clones."
     source_path: "src/eidos/cli/drift_commands.py"
   - id: CMP-CLI-INIT-COMMAND
     name: "InitCommand"

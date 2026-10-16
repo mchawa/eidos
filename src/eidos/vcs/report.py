@@ -133,7 +133,12 @@ def build_drift_remediation_and_summary(
     if is_clean:
         summary_lines.append("### ✅ Status: PASSED (Specifications and Code are Synchronized)")
     elif drift_detected:
-        summary_lines.append("### ⚠️ Status: DRIFT DETECTED (Code modified without living spec updates)")
+        if classification.code_files:
+            summary_lines.append("### ⚠️ Status: DRIFT DETECTED (Code modified without living spec updates)")
+        else:
+            summary_lines.append("### ⚠️ Status: DRIFT DETECTED (Specification or SpecDelta synchronization required)")
+    elif uncovered_invariants or orphan_invariants:
+        summary_lines.append("### ❌ Status: INVARIANT VERIFICATION FAILED (Broken or orphan invariant test bindings)")
     else:
         summary_lines.append("### ❌ Status: VALIDATION FAILED")
 
@@ -142,7 +147,7 @@ def build_drift_remediation_and_summary(
             "",
             "| Metric | Count | Status |",
             "|---|---|---|",
-            f"| Modified Code Files | `{len(classification.code_files)}` (`{len(structural_code_files)}` structural) | {'⚠️ Needs Spec Update' if drift_detected else '✓'} |",
+            f"| Modified Code Files | `{len(classification.code_files)}` (`{len(structural_code_files)}` structural) | {'⚠️ Needs Spec Update' if (drift_detected and classification.code_files) else '✓'} |",
             f"| Modified Living Specs | `{len(classification.spec_files)}` | {'✓ In Sync' if specs_changed else '—'} |",
             f"| Modified SpecDeltas | `{len(classification.delta_files)}` | {'✓ Planned' if has_deltas else '— (Direct Mode)'} |",
             f"| Modified Test Files | `{len(classification.test_files)}` | {'✓' if classification.test_files else '—'} |",
@@ -174,3 +179,32 @@ def build_drift_remediation_and_summary(
         summary_lines.append("")
 
     return remediation, "\n".join(summary_lines)
+
+
+def generate_remediation_prompt(report: Any) -> str:
+    """Format an actionable AI remediation prompt from a DriftCheckResult, handling non-code drift accurately."""
+    lines = ["# Eidos Drift & Governance Remediation Prompt", ""]
+    code_files = list(getattr(report, "code_files", None) or getattr(report.classification, "code_files", []))
+    if code_files:
+        lines.append("Modified Source Code Files (causing drift):")
+        for cf in code_files:
+            lines.append(f"- `{cf}`")
+        lines.append("")
+    else:
+        lines.append("Non-Code Drift / Governance Verification Failures (0 code files modified):")
+        if not getattr(report, "validation_passed", True):
+            for err in getattr(report, "validation_errors", []):
+                lines.append(f"- Validation error: {err}")
+        for uinv in getattr(report, "uncovered_invariants", []):
+            lines.append(f"- Broken invariant binding: `{uinv.invariant_id}` ({uinv.spec_path}) -> `{uinv.test_binding}`")
+        for oid, loc in getattr(report, "orphan_invariants", []):
+            lines.append(f"- Orphan invariant reference: `{oid}` in `{loc}`")
+        lines.append("")
+
+    remediation = list(getattr(report, "remediation_suggestions", []))
+    if remediation:
+        lines.append("Recommended Actions:")
+        for rem in remediation:
+            lines.append(f"- {rem}")
+    return "\n".join(lines)
+

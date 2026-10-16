@@ -988,7 +988,7 @@ def test_drift_hook_stop_event_synchronized(tmp_path):
     eidos_dir.mkdir()
     valid_spec = eidos_dir / "container.adoc"
     valid_spec.write_text(
-        "---\ntype: tech/container\nschema: schemas/v1/tech/container.schema.yaml\nid: CNT-APP\nname: App\nstatus: accepted\npackage_path: src\n---\n= App\n",
+        "---\ntype: tech/container\nschema: schemas/v1/tech/container.schema.yaml\nid: CNT-APP\nname: App\ncontainer_type: service\nruntime: python\nstatus: active\npackage_path: src\n---\n= App\n\nProvides `feature.py` (`do_feature`).\n",
         encoding="utf-8",
     )
 
@@ -1691,3 +1691,61 @@ def test_plugin_uvx_hook_command_version_pinning(tmp_path):
         installed_text = installed_hooks.read_text(encoding="utf-8")
         assert f"uvx --from eidos-ai=={bundled_ver} eidos hook" in installed_text
         assert "uvx --from eidos-ai eidos hook" not in installed_text
+
+
+def test_dlt_2026_075_non_code_drift_diagnostics_in_hooks_report_and_cli(tmp_path):
+    """Verify DLT-2026-075: non-code invariant/validation failures in hooks, generate_remediation_prompt, and eidos drift."""  # eidos:fixture
+    from eidos.plugin.hooks import execute_drift_hook, handle_drift_stop
+    from eidos.vcs.drift import detect_drift, generate_remediation_prompt
+
+    eidos_dir = tmp_path / "eidos"
+    pol_dir = eidos_dir / "policies"
+    pol_dir.mkdir(parents=True)
+
+    # Policy with an uncovered invariant test_binding and 0 modified code files
+    (pol_dir / "pol-001.adoc").write_text(
+        """---
+type: product/policy
+schema: schemas/v1/product/policy.schema.yaml
+id: POL-001
+title: Sample Policy
+category: governance
+rule: Must enforce invariant
+enforcement:
+  mechanism: test
+  severity: blocking
+invariants:
+  - id: INV-NONCODE-001
+    rule: Bound test must exist
+    test_binding: tests/test_missing.py::test_noncode
+---
+= Sample Policy
+""",
+        encoding="utf-8",
+    )
+
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@eidos.ai"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
+
+    drift_res = detect_drift(repo_root=tmp_path, eidos_dir=eidos_dir, uncommitted=True)
+    assert drift_res.code_files == []
+    assert drift_res.validation_passed is True
+    assert len(drift_res.uncovered_invariants) == 1
+
+    # 1. generate_remediation_prompt reports non-code invariant failure without claiming modified source code files
+    prompt = generate_remediation_prompt(drift_res)
+    assert "Non-Code Drift / Governance Verification Failures (0 code files modified):" in prompt
+    assert "INV-NONCODE-001" in prompt
+
+    # 2. handle_drift_stop blocks once with cause-specific invariant message (not "0 code file(s) were modified")
+    stop_res = handle_drift_stop({"executionNum": 1, "terminationReason": "model_stop"}, tmp_path)
+    assert stop_res["decision"] == "continue"
+    assert "0 code file(s) were modified" not in stop_res["reason"]
+    assert "Invariant test binding verification failed" in stop_res["reason"]
+
+    # 3. execute_drift_hook standalone CLI exits 1 on non-code invariant failure
+    rc = execute_drift_hook(path=tmp_path, stdin_data="")
+    assert rc == 1

@@ -33,7 +33,7 @@ from eidos.vcs.invariants import (
     extract_invariants_and_verify,
     get_living_specs_catalog,
 )
-from eidos.vcs.report import build_drift_remediation_and_summary
+from eidos.vcs.report import build_drift_remediation_and_summary, generate_remediation_prompt
 from eidos.vcs.structural import (
     SYSTEM_LEVEL_SPEC_PATHS,
     ReconcileSuggestion,
@@ -71,6 +71,7 @@ __all__ = [
     "detect_drift",
     "detect_orphan_invariants",
     "extract_invariants_and_verify",
+    "generate_remediation_prompt",
     "get_git_diff_files",
     "get_living_specs_catalog",
     "get_system_level_spec_paths",
@@ -100,6 +101,32 @@ class DriftCheckResult:
     trivially_covered_files: list[dict[str, Any]] = field(default_factory=list)
     remediation_suggestions: list[str] = field(default_factory=list)
     summary_markdown: str = ""
+
+    @property
+    def validation_passed(self) -> bool:
+        """Whether living specification schema and reference validation passed."""
+        return bool(self.validation_report.is_clean)
+
+    @property
+    def validation_errors(self) -> list[str]:
+        """Flattened list of schema validation errors and broken reference messages."""
+        errs: list[str] = []
+        for path, messages in self.validation_report.schema_errors.items():
+            for msg in messages:
+                errs.append(f"{path}: {msg}")
+        for ref in self.validation_report.broken_references:
+            errs.append(f"Broken reference: {ref}")
+        return errs
+
+    @property
+    def uncovered_invariants(self) -> list[InvariantTrace]:
+        """Invariants lacking a verified static test binding."""
+        return [inv for inv in self.invariants if not inv.has_test_coverage]
+
+    @property
+    def code_files(self) -> list[str]:
+        """Modified source code files in the evaluated diff."""
+        return self.classification.code_files
 
 
 @dataclass

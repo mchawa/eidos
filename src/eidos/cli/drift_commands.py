@@ -114,7 +114,9 @@ def drift_cmd(
         delta_count = len(result.classification.delta_files)
 
         code_status = (
-            "[bold yellow]Needs Spec[/bold yellow]" if result.drift_detected else "[bold green]Synced[/bold green]"
+            "[bold yellow]Needs Spec[/bold yellow]"
+            if (result.drift_detected and code_count > 0)
+            else "[bold green]Synced[/bold green]"
         )
         spec_status = "[bold green]Updated[/bold green]" if spec_count else "[dim]Unchanged[/dim]"
         delta_status = "[bold cyan]Active[/bold cyan]" if delta_count else "[dim]None (Direct)[/dim]"
@@ -142,8 +144,14 @@ def drift_cmd(
         if result.touched_components:
             console.print(f"\n[bold blue]Impacted Components:[/bold blue] {', '.join(result.touched_components)}")
 
-        if result.drift_detected:
-            console.print("\n[bold yellow]⚠️  SPEC-TO-CODE DRIFT DETECTED:[/bold yellow]")
+        has_non_code_drift = bool(result.uncovered_invariants or result.orphan_invariants)
+        if result.drift_detected or has_non_code_drift:
+            if result.drift_detected and code_count > 0:
+                console.print("\n[bold yellow]⚠️  SPEC-TO-CODE DRIFT DETECTED:[/bold yellow]")
+            elif result.drift_detected:
+                console.print("\n[bold yellow]⚠️  NON-CODE SPECIFICATION DRIFT DETECTED:[/bold yellow]")
+            else:
+                console.print("\n[bold red]✗ INVARIANT TRACEABILITY DRIFT DETECTED:[/bold red]")
             for rem in result.remediation_suggestions:
                 console.print(f"  [yellow]•[/yellow] {rem}")
             console.print(
