@@ -606,3 +606,21 @@ def test_dlt_2026_063_hook_digest_short_circuit_and_portal_mtime_cache(tmp_path,
     d3 = dummy._get_cached_portal_data()
     assert calls["count"] == 2
     assert d3 is not d1
+
+
+def test_dlt_2026_069_static_portal_builder_escapes_script_tags(tmp_path):
+    """Verify DLT-2026-069: build_static_portal escapes '</script>' and U+2028/U+2029 in inline window.__EIDOS_DATA__."""
+    eidos_dir = tmp_path / "eidos"
+    pol_dir = eidos_dir / "policies"
+    pol_dir.mkdir(parents=True)
+    (pol_dir / "pol-xss.adoc").write_text(
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-XSS\ntitle: Script Escape\ncategory: security\nrule: Escape </script>\nenforcement:\n  mechanism: test\n  severity: blocking\n---\n= Script Escape\n\nBody with <script>alert(1)</script> and \u2028\u2029.\n",
+        encoding="utf-8",
+    )
+
+    out_dir = tmp_path / "site"
+    build_static_portal(eidos_dir, out_dir)
+    html = (out_dir / "index.html").read_text(encoding="utf-8")
+    assert "window.__EIDOS_DATA__ =" in html
+    assert "<script>alert(1)</script>" not in html
+    assert "<\\/script>" in html

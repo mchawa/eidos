@@ -23,7 +23,7 @@ components:
     source_path: "src/eidos/portal/generator.py"
   - id: CMP-PORTAL-BUILDER
     name: "StaticSiteBuilder"
-    responsibility: "Compiles self-contained static documentation portals for GitHub Pages and GitLab Pages."
+    responsibility: "Compiles self-contained static documentation portals for GitHub Pages and GitLab Pages and escapes inline </script> and U+2028/U+2029 sequences when embedding window.__EIDOS_DATA__ into index.html."
     source_path: "src/eidos/portal/builder.py"
   - id: CMP-PORTAL-ASSETS
     name: "PortalAssets"
