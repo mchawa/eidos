@@ -89,17 +89,40 @@ def _split_raw_frontmatter(raw_content: str) -> tuple[str, str] | None:
     return raw_yaml, body
 
 
+def _format_yaml_scalar_value(value: str) -> str:
+    """Safely format a scalar string for in-place single-line YAML insertion without corrupting frontmatter."""
+    import json
+
+    val = str(value)
+    if len(val) >= 2 and ((val[0] == '"' and val[-1] == '"') or (val[0] == "'" and val[-1] == "'")):
+        try:
+            loaded = yaml.safe_load(val)
+            if isinstance(loaded, (str, int, float, bool)):
+                return val
+        except yaml.YAMLError:
+            pass
+    needs_quoting = (
+        not val
+        or val != val.strip()
+        or any(ch in val for ch in (":", "#", "\n", "\r", '"', "'", "{", "}", "[", "]", "&", "*", "!", "|", ">", "%", "@", "`"))
+    )
+    if needs_quoting:
+        return json.dumps(val, ensure_ascii=False)
+    return val
+
+
 def _set_frontmatter_scalar(raw_content: str, key: str, value: str) -> str:
     """Update a top-level scalar key in YAML frontmatter while preserving comments, quoting, and blank lines."""
     parts = _split_raw_frontmatter(raw_content)
     if parts is None:
         return raw_content
     raw_yaml, body = parts
+    safe_val = _format_yaml_scalar_value(value)
     pattern = re.compile(rf"^({re.escape(key)}\s*:\s*)([^\n#]*?)(\s+#[^\n]*)?$", re.MULTILINE)
     if pattern.search(raw_yaml):
-        new_yaml = pattern.sub(lambda m: f"{m.group(1)}{value}{m.group(3) or ''}", raw_yaml, count=1)
+        new_yaml = pattern.sub(lambda m: f"{m.group(1)}{safe_val}{m.group(3) or ''}", raw_yaml, count=1)
     else:
-        new_yaml = f"{raw_yaml.rstrip()}\n{key}: {value}"
+        new_yaml = f"{raw_yaml.rstrip()}\n{key}: {safe_val}"
     return f"---\n{new_yaml}\n---\n{body}"
 
 
@@ -231,6 +254,8 @@ def find_spec_by_id_or_path(eidos_dir: Path, target: str) -> Path | None:
     # 2. Search by ID across all .adoc files in eidos_dir
     target_lower = target_clean.lower()
     for p in eidos_dir.rglob("*.adoc"):
+        if p.is_symlink() or "by-status" in p.parts:
+            continue
         if p.stem.lower() == target_lower:
             return p.resolve()
         try:
@@ -244,20 +269,29 @@ def find_spec_by_id_or_path(eidos_dir: Path, target: str) -> Path | None:
 
 
 def find_references_to_spec(eidos_dir: Path, target_id: str, target_path: Path) -> list[Path]:
-    """Find other specification documents that reference target_id or target_path."""
-    referencing_files = []
-    target_id_lower = target_id.lower()
+    """Find other specification documents that reference target_id or target_path using word-bounded matching."""
+    referencing_files: list[Path] = []
+    seen_resolved: set[Path] = set()
+    target_resolved = target_path.resolve()
     rel_path_str = (
-        str(target_path.relative_to(eidos_dir)) if target_path.is_relative_to(eidos_dir) else target_path.name
+        str(target_path.relative_to(eidos_dir)).replace("\\", "/")
+        if target_path.is_relative_to(eidos_dir)
+        else target_path.name
     )
+    id_pattern = re.compile(rf"(?<![A-Za-z0-9_-]){re.escape(target_id)}(?![A-Za-z0-9_-])", re.IGNORECASE)
+    path_pattern = re.compile(rf"(?<![A-Za-z0-9_./-]){re.escape(rel_path_str)}(?![A-Za-z0-9_./-])")
 
-    for p in eidos_dir.rglob("*.adoc"):
-        if p.resolve() == target_path.resolve():
+    for p in sorted(eidos_dir.rglob("*.adoc")):
+        if p.is_symlink() or "by-status" in p.parts:
+            continue
+        resolved_p = p.resolve()
+        if resolved_p == target_resolved or resolved_p in seen_resolved:
             continue
         try:
             content = p.read_text(encoding="utf-8")
-            if target_id in content or target_id_lower in content.lower() or rel_path_str in content:
-                referencing_files.append(p.resolve())
+            if id_pattern.search(content) or path_pattern.search(content):
+                referencing_files.append(resolved_p)
+                seen_resolved.add(resolved_p)
         except OSError:
             continue
 

@@ -113,6 +113,42 @@ properties:
               description: "Test-bound architectural invariants scoped to this inline C4 Level 3 component."
               items:
                 $ref: "#/$defs/invariant"
+            interfaces:
+              type: object
+              description: "Optional in-process language protocols and APIs (provides/consumes) preserved when inlining a promoted component."
+              additionalProperties: false
+              properties:
+                provides:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required:
+                      - signature
+                    properties:
+                      signature:
+                        type: string
+                      description:
+                        type: string
+                consumes:
+                  type: array
+                  items:
+                    type: string
+            quality_attributes:
+              type: object
+              description: "Optional operational quality attributes preserved when inlining a promoted component."
+              additionalProperties: false
+              properties:
+                stateless:
+                  type: boolean
+                reentrant:
+                  type: boolean
+                concurrency_model:
+                  type: string
+                max_memory_mb:
+                  type: number
+                max_validation_latency_ms:
+                  type: number
         - additionalProperties: false
           required:
             - id

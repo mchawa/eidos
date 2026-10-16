@@ -3,7 +3,7 @@ type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-065
 title: "Lossless C4 Component Promotion/Inlining and Word-Bounded Specification Reference & Scalar Mutations"
-status: proposed
+status: applied
 vcs:
   branch: fix/scaffolder-component-promotion-and-catalog-refs
 intent:

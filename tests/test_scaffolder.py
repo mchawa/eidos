@@ -1103,3 +1103,97 @@ def test_core_and_cli_modules_import_without_cycles():
     for name, deps in graph.items():
         if name.startswith("eidos.cli.") and name != "eidos.cli.main":
             assert "eidos.cli.main" not in deps, f"{name} must not import eidos.cli.main"
+
+
+def test_lossless_component_promote_inline_and_word_bounded_references(tmp_path):
+    """DLT-2026-065: lossless promote_component / inline_component and word-bounded find_references_to_spec # eidos:fixture."""
+    from eidos.core.lifecycle.catalog import _set_frontmatter_scalar, find_references_to_spec
+    from eidos.core.lifecycle.scaffolder import create_spec, delete_spec, inline_component, promote_component
+    from eidos.core.spec.parser import parse_spec_file
+
+    eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    cnts_dir.mkdir(parents=True)
+    (tmp_path / "src" / "a.py").parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "src" / "a.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "src" / "b.py").write_text("y = 2\n", encoding="utf-8")
+
+    cnt_file = cnts_dir / "core.adoc"
+    cnt_file.write_text(
+        """---
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
+id: CNT-CORE
+name: "Core Container"
+container_type: library
+runtime: Python 3.12
+package_path: src
+
+components:
+  - id: CMP-MULTI-SRC
+    name: 'Parser: "Core" Engine'
+    responsibility: "Handles parsing: YAML & AsciiDoc."
+    source_path:
+      - "src/a.py"
+      - "src/b.py"
+    decisions:
+      - id: DEC-COMP-001
+        title: "Use safe YAML dump"
+        status: accepted
+        context: "Raw f-strings corrupt list source_path."
+        decision: "Serialize via yaml.safe_dump."
+    invariants:
+      - id: INV-COMP-ROUNDTRIP
+        rule: "Preserve component invariants across promote/inline."
+        test_binding: "tests/test_scaffolder.py::test_lossless_component_promote_inline_and_word_bounded_references"
+---
+= Core Container
+""",
+        encoding="utf-8",
+    )
+
+    # 1. Promote CMP-MULTI-SRC and verify list[str] source_path, decisions, and invariants are preserved
+    promoted_path, _ = promote_component("CMP-MULTI-SRC", eidos_dir=eidos_dir, repo_root=tmp_path)
+    promoted_doc = parse_spec_file(promoted_path)
+    assert not promoted_doc.errors
+    assert promoted_doc.frontmatter["source_path"] == ["src/a.py", "src/b.py"]
+    assert promoted_doc.frontmatter["name"] == 'Parser: "Core" Engine'
+    assert len(promoted_doc.frontmatter.get("decisions", [])) == 1
+    assert promoted_doc.frontmatter["decisions"][0]["id"] == "DEC-COMP-001"
+    assert len(promoted_doc.frontmatter.get("invariants", [])) == 1
+    assert promoted_doc.frontmatter["invariants"][0]["id"] == "INV-COMP-ROUNDTRIP"
+
+    # 2. Inline CMP-MULTI-SRC back into CNT-CORE and verify round-trip preservation
+    inline_component("CMP-MULTI-SRC", eidos_dir=eidos_dir, repo_root=tmp_path)
+    cnt_doc = parse_spec_file(cnt_file)
+    assert not cnt_doc.errors
+    inlined_comp = cnt_doc.frontmatter["components"][0]
+    assert inlined_comp["source_path"] == ["src/a.py", "src/b.py"]
+    assert inlined_comp["decisions"][0]["id"] == "DEC-COMP-001"
+    assert inlined_comp["invariants"][0]["id"] == "INV-COMP-ROUNDTRIP"
+
+    # 3. Word-bounded find_references_to_spec: CNT-CORE-API must NOT count as a reference to CNT-CORE
+    api_cnt = create_spec(eidos_dir, "container", "CNT-CORE-API", title="Core API Container")
+    other_pol = create_spec(eidos_dir, "policy", "POL-REF-CHECK", title="Ref Policy", rule="Applies only to CNT-CORE-API.")
+    _ = (api_cnt, other_pol)
+    refs_to_core = find_references_to_spec(eidos_dir, "CNT-CORE", cnt_file)
+    assert other_pol.resolve() not in refs_to_core
+
+    # Also verify symlinked deltas/by-status/ do not produce duplicate references
+    dlt_ref = create_spec(eidos_dir, "delta", "DLT-2026-888", title="Ref Delta", motivation="Touches CNT-CORE.")
+    refs_with_delta = find_references_to_spec(eidos_dir, "CNT-CORE", cnt_file)
+    assert refs_with_delta.count(dlt_ref.resolve()) == 1
+    _ = delete_spec
+
+    # 4. _set_frontmatter_scalar safely quotes values containing colons, hashes, and quotes
+    from eidos.core.spec.parser import extract_frontmatter
+
+    updated_raw = _set_frontmatter_scalar(
+        cnt_file.read_text(encoding="utf-8"),
+        "name",
+        'Core: "Engine" #1',
+    )
+    reparsed = extract_frontmatter(updated_raw)
+    assert reparsed[2] is None
+    assert reparsed[0]["name"] == 'Core: "Engine" #1'
+

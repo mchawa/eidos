@@ -568,7 +568,7 @@ def promote_component(
     c_doc = parse_spec_file(target_container_path)
     c_fm = c_doc.frontmatter or {}
     container_id = c_fm.get("id", target_container_path.stem)
-    source_path_str = target_comp_data.get("source_path", "")
+    source_path_val = target_comp_data.get("source_path", "")
 
     # Place dedicated component specification centrally in eidos/architecture/components/
     components_dir = edir / "architecture" / "components"
@@ -577,33 +577,29 @@ def promote_component(
     comp_file_path = components_dir / f"{slug}.adoc"
     rel_comp_ref = str(comp_file_path.relative_to(root)).replace("\\", "/")
 
-    # Author centralized tech/component specification
+    # Author centralized tech/component specification losslessly via safe YAML serialization
     comp_name = target_comp_data.get("name", norm_id)
     responsibility = target_comp_data.get("responsibility", "In-process module logic and domain services.")
+    promoted_fm: dict[str, Any] = {
+        "type": "tech/component",
+        "schema": "schemas/v1/tech/component.schema.yaml",
+        "id": norm_id,
+        "name": comp_name,
+        "container": container_id,
+        "status": target_comp_data.get("status", "active"),
+        "source_path": source_path_val,
+        "responsibility": responsibility,
+        "interfaces": target_comp_data.get("interfaces") or {"provides": [], "consumes": []},
+        "quality_attributes": target_comp_data.get("quality_attributes") or {"stateless": True, "reentrant": True},
+        "invariants": target_comp_data.get("invariants") if isinstance(target_comp_data.get("invariants"), list) else [],
+    }
+    if isinstance(target_comp_data.get("domain_binding"), str) and target_comp_data["domain_binding"]:
+        promoted_fm["domain_binding"] = target_comp_data["domain_binding"]
+    if isinstance(target_comp_data.get("decisions"), list) and target_comp_data["decisions"]:
+        promoted_fm["decisions"] = target_comp_data["decisions"]
 
-    component_content = f"""---
-type: tech/component
-schema: schemas/v1/tech/component.schema.yaml
-id: {norm_id}
-name: "{comp_name}"
-container: {container_id}
-status: active
-source_path: "{source_path_str}"
-responsibility: >
-  {responsibility}
-
-# IN-PROCESS INTERFACES (Language-level APIs, NOT boundary contracts)
-interfaces:
-  provides: []
-  consumes: []
-
-quality_attributes:
-  stateless: true
-  reentrant: true
-
-invariants: []
----
-= Component: {comp_name}
+    heading_name = _single_line(comp_name)
+    component_body = f"""= Component: {heading_name}
 :toc: left
 
 == 1. Internal Architecture & Subsystem Design
@@ -612,7 +608,7 @@ invariants: []
 == 2. In-Process APIs & Interfaces
 Language-level function signatures, traits, and public interfaces provided to the owning container.
 """
-
+    component_content = _render_spec(promoted_fm, component_body)
     comp_file_path.write_text(component_content, encoding="utf-8")
 
     # Update container document replacing inline dict with {id: norm_id, ref: rel_comp_ref}
@@ -681,7 +677,26 @@ def inline_component(
     comp_fm = comp_doc.frontmatter or {}
     name = comp_fm.get("name", norm_id)
     responsibility = comp_fm.get("responsibility", "In-process module logic.")
+    if isinstance(responsibility, str):
+        responsibility = responsibility.strip()
     source_path = comp_fm.get("source_path", comp_fm.get("package_path", ""))
+
+    inline_entry: dict[str, Any] = {
+        "id": norm_id,
+        "name": name,
+        "responsibility": responsibility,
+        "source_path": source_path,
+    }
+    if isinstance(comp_fm.get("invariants"), list) and comp_fm["invariants"]:
+        inline_entry["invariants"] = comp_fm["invariants"]
+    if isinstance(comp_fm.get("decisions"), list) and comp_fm["decisions"]:
+        inline_entry["decisions"] = comp_fm["decisions"]
+    interfaces = comp_fm.get("interfaces")
+    if isinstance(interfaces, dict) and (interfaces.get("provides") or interfaces.get("consumes")):
+        inline_entry["interfaces"] = interfaces
+    qa = comp_fm.get("quality_attributes")
+    if isinstance(qa, dict) and qa and qa != {"stateless": True, "reentrant": True}:
+        inline_entry["quality_attributes"] = qa
 
     # Update container frontmatter while preserving YAML comments and formatting
     raw_text = target_container_path.read_text(encoding="utf-8")
@@ -691,12 +706,7 @@ def inline_component(
             raw_text,
             "replace",
             norm_id,
-            {
-                "id": norm_id,
-                "name": name,
-                "responsibility": responsibility,
-                "source_path": source_path,
-            },
+            inline_entry,
         )
         target_container_path.write_text(new_c_content, encoding="utf-8")
 
