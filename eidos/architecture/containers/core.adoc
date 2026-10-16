@@ -53,7 +53,7 @@ components:
     source_path: "src/eidos/core/spec/models.py"
   - id: CMP-DELTA-AUDITOR
     name: "DeltaAuditor"
-    responsibility: "Audits reverse-dependency blast radius for entities deprecated or removed by SpecDeltas across all living specification prefixes (CNT-*, CMP-*, CTR-*, CAP-*, POL-*, DOM-*, PER-*, DS-*, SCR-*, UIC-*, CLT-*, FLOW-*, INV-*)."
+    responsibility: "Audits reverse-dependency blast radius for entities deprecated or removed by SpecDeltas across all living specification prefixes (CNT-*, CMP-*, CTR-*, CAP-*, POL-*, DOM-*, PER-*, DS-*, SCR-*, UIC-*, CLT-*, FLOW-*, INV-*) using word-bounded multi-term regex matching, polyglot test classification (is_test_code_path), compressed archive exclusion (.gz), and fail-loud graph foreign-key verification."
     source_path: "src/eidos/core/lifecycle/audit.py"
   - id: CMP-CONTEXT-SLICER
     name: "ContextSlicer"

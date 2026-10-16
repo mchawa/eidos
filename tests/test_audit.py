@@ -146,3 +146,72 @@ def test_cli_delta_audit():
     assert payload["is_clean"] is True
     assert "CNT-EIDOS-MCP" in payload["targets_audited"]
 
+
+def test_delta_audit_word_bounded_multi_term_polyglot_and_fail_loud(tmp_path, monkeypatch):
+    """DLT-2026-062: word-bounded multi-term matching, .gz exclusion, polyglot negative tests, and fail-loud graph check."""
+    eidos_dir = tmp_path / "eidos"
+    deltas_dir = eidos_dir / "deltas"
+    deltas_dir.mkdir(parents=True)
+
+    delta_content = """---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-997
+title: "Remove Dual Components"
+status: proposed
+intent:
+  kind: enabler
+  motivation: "Test word bounds and multi-term line matching"
+mutations:
+  - action: remove_component
+    target_component: CMP-CLI
+  - action: remove_component
+    target_component: CMP-LEAKED
+tombstone:
+  allowed_reasons:
+    - path: "src/app.py"
+      pattern: "CMP-CLI"
+      reason: "Exempt only CMP-CLI on lines matching pattern"
+---
+= SpecDelta: Remove Dual Components
+"""
+    (deltas_dir / "dlt-2026-997.adoc").write_text(delta_content, encoding="utf-8")
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir(parents=True)
+    # 1. Substring CMP-CLI-APP must NOT match removed CMP-CLI
+    (src_dir / "safe.py").write_text("active = 'CMP-CLI-APP'\n", encoding="utf-8")
+    # 2. Co-occurring terms on the same line: CMP-CLI is exempt, but CMP-LEAKED on the same line must still be inspected!
+    (src_dir / "other.py").write_text("pair = ('CMP-CLI', 'CMP-LEAKED')\n", encoding="utf-8")
+    # 3. Compressed .gz archive must be skipped
+    (src_dir / "bundle.html.gz").write_text("CMP-CLI CMP-LEAKED\n", encoding="utf-8")
+    # 4. Co-located TypeScript test file with polyglot negative assertion (.toThrow) must be classified as negative_test
+    (src_dir / "client.test.ts").write_text("expect(() => load('CMP-CLI')).toThrow();\n", encoding="utf-8")
+
+    engine = AuditEngine(repo_root=tmp_path, eidos_dir=eidos_dir)
+    res = engine.audit_delta("DLT-2026-997")
+    assert res.status == "LEAKS_DETECTED"
+    # safe.py (CMP-CLI-APP) and bundle.html.gz must NOT be flagged
+    flagged_files = {f.file_path for f in res.unacknowledged_findings + res.approved_findings}
+    assert "src/safe.py" not in flagged_files
+    assert "src/bundle.html.gz" not in flagged_files
+    # Both CMP-CLI and CMP-LEAKED on the same line in src/other.py were evaluated
+    other_terms = {f.matched_term for f in res.unacknowledged_findings if f.file_path == "src/other.py"}
+    assert other_terms == {"CMP-CLI", "CMP-LEAKED"}
+    # Co-located TypeScript test was classified as negative_test
+    assert any(
+        f.file_path == "src/client.test.ts" and f.classification == "negative_test" and f.is_approved
+        for f in res.approved_findings
+    )
+
+    # 5. Fail-loud graph integrity check when get_architectural_index raises RuntimeError
+    def _boom(*args, **kwargs):
+        raise RuntimeError("Simulated corrupt index.db")
+
+    monkeypatch.setattr("eidos.core.lifecycle.audit.get_architectural_index", _boom)
+    err_res = engine.audit_delta("DLT-2026-997")
+    assert err_res.status == "ERROR"
+    assert err_res.is_clean is False
+    assert "Simulated corrupt index.db" in (err_res.error_message or "")
+
+

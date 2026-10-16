@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from eidos.core.index.graph_index import get_architectural_index
+from eidos.core.index.sync import is_test_code_path
 from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
 from eidos.core.spec.parser import parse_spec_file
 
@@ -103,7 +104,23 @@ class AuditEngine:
         ".cache",
         ".eidos",
     }
-    IGNORE_EXTS: ClassVar[set[str]] = {".pyc", ".db", ".sqlite", ".sqlite3", ".lock", ".png", ".jpg", ".jpeg", ".ico", ".wasm"}
+    IGNORE_EXTS: ClassVar[set[str]] = {
+        ".pyc",
+        ".db",
+        ".sqlite",
+        ".sqlite3",
+        ".lock",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".ico",
+        ".wasm",
+        ".gz",
+        ".tar",
+        ".zip",
+        ".tgz",
+    }
+    SKIP_EXTENSIONS: ClassVar[set[str]] = IGNORE_EXTS
 
     def __init__(self, repo_root: Path | None = None, eidos_dir: Path | None = None):
         if repo_root is not None:
@@ -152,8 +169,18 @@ class AuditEngine:
                 summary={"approved": 0, "unacknowledged": 0, "graph_violations": 0},
             )
 
-        # Phase 1: Graph-level foreign key checks
-        graph_violations = self._check_graph_integrity(targets, delta_id)
+        # Phase 1: Graph-level foreign key checks (fail loudly if index cannot be read)
+        try:
+            graph_violations = self._check_graph_integrity(targets, delta_id)
+        except Exception as exc:
+            return DeltaAuditResult(
+                delta_id=delta_id,
+                status="ERROR",
+                is_clean=False,
+                targets_audited=sorted(targets),
+                search_tokens=sorted(search_tokens),
+                error_message=f"Graph integrity verification failed: {exc}",
+            )
 
         # Phase 2: Semantic reference scan and classification
         approved, unacknowledged = self._scan_and_classify_references(
@@ -256,29 +283,32 @@ class AuditEngine:
     def _check_graph_integrity(self, targets: set[str], delta_id: str) -> list[GraphViolation]:
         """Check SQLite knowledge graph for any active incoming edges pointing to deleted targets."""
         violations: list[GraphViolation] = []
-        try:
-            index = get_architectural_index(repo_root=self.repo_root, eidos_dir=self.eidos_dir)
-            for target in targets:
-                refs = index.get_incoming_references(target)
-                for r in refs:
-                    src = r.get("source_id", "")
-                    if src == delta_id or src.startswith("DLT-"):
-                        # Deltas are audit records; only living specs are graph violations
-                        continue
-                    violations.append(
-                        GraphViolation(
-                            source_id=src,
-                            target_id=target,
-                            rel_type=r.get("rel_type", "references"),
-                            source_file=r.get("file_path", ""),
-                            source_type=r.get("type", "unknown"),
-                            message=f"Living spec '{src}' ({r.get('type')}) still has active '{r.get('rel_type')}' edge to removed entity '{target}'",
-                        )
+        index = get_architectural_index(repo_root=self.repo_root, eidos_dir=self.eidos_dir)
+        for target in targets:
+            refs = index.get_incoming_references(target)
+            for r in refs:
+                src = r.get("source_id", "")
+                if src == delta_id or src.startswith("DLT-"):
+                    # Deltas are audit records; only living specs are graph violations
+                    continue
+                violations.append(
+                    GraphViolation(
+                        source_id=src,
+                        target_id=target,
+                        rel_type=r.get("rel_type", "references"),
+                        source_file=r.get("file_path", ""),
+                        source_type=r.get("type", "unknown"),
+                        message=f"Living spec '{src}' ({r.get('type')}) still has active '{r.get('rel_type')}' edge to removed entity '{target}'",
                     )
-        except (OSError, RuntimeError):
-            # Fallback gracefully if index cannot be read
-            pass
+                )
         return violations
+
+    @staticmethod
+    def _compile_term_pattern(term: str) -> re.Pattern[str]:
+        """Compile a word-bounded regex pattern for an entity ID or search token."""
+        if re.match(r"^[A-Za-z0-9_-]+$", term):
+            return re.compile(rf"(?<![A-Za-z0-9_-]){re.escape(term)}(?![A-Za-z0-9_-])")
+        return re.compile(rf"(?<![A-Za-z0-9_]){re.escape(term)}(?![A-Za-z0-9_])")
 
     def _scan_and_classify_references(
         self,
@@ -287,11 +317,12 @@ class AuditEngine:
         delta_file: Path,
         tombstone: dict[str, Any],
     ) -> tuple[list[AuditFinding], list[AuditFinding]]:
-        """Scan text files in repository and classify all occurrences."""
+        """Scan text files in repository and classify all occurrences with word-bounded multi-term matching."""
         all_terms = sorted(targets | search_tokens)
         if not all_terms:
             return [], []
 
+        compiled_terms = [(term, self._compile_term_pattern(term)) for term in all_terms]
         delta_rel = delta_file.resolve().relative_to(self.repo_root)
 
         approved: list[AuditFinding] = []
@@ -307,7 +338,8 @@ class AuditEngine:
                 if fname.startswith("."):
                     continue
                 fpath = Path(root) / fname
-                if fpath.suffix.lower() in self.IGNORE_EXTS:
+                suffixes_lower = {s.lower() for s in fpath.suffixes}
+                if fpath.suffix.lower() in self.IGNORE_EXTS or (suffixes_lower & self.IGNORE_EXTS):
                     continue
 
                 try:
@@ -322,8 +354,8 @@ class AuditEngine:
                     continue
 
                 for idx, line in enumerate(lines, 1):
-                    for term in all_terms:
-                        if term in line:
+                    for term, term_re in compiled_terms:
+                        if term_re.search(line):
                             finding = self._classify_occurrence(
                                 rel_path=rel_p,
                                 line_number=idx,
@@ -337,7 +369,6 @@ class AuditEngine:
                                 approved.append(finding)
                             else:
                                 unacknowledged.append(finding)
-                            break  # Avoid duplicate matches on same line for multiple overlapping terms
 
         return approved, unacknowledged
 
@@ -352,7 +383,7 @@ class AuditEngine:
         prev_line: str,
     ) -> AuditFinding:
         """Classify a single occurrence into approved (exempt) or unacknowledged (leak)."""
-        rel_str = str(rel_path)
+        rel_str = str(rel_path).replace("\\", "/")
 
         # 1. Current SpecDelta being audited
         if rel_path == delta_rel or rel_path.name == delta_rel.name:
@@ -416,8 +447,8 @@ class AuditEngine:
                 risk_level="low",
             )
 
-        # 5. Tests in test suite
-        if rel_str.startswith("tests/"):
+        # 5. Tests in polyglot test suites
+        if rel_str.startswith("tests/") or is_test_code_path(rel_str):
             # Check if this is audit/test tooling or inspecting the audit results
             if any(term in line_text for term in ("targets_audited", "audit_delta", "AuditEngine", "DeltaAuditResult")) or rel_path.name == "test_audit.py":
                 return AuditFinding(
@@ -438,6 +469,12 @@ class AuditEngine:
                 r"\bassert\s+.*is\s+False\b",
                 r"\bassert\s+.*not\s+in\b",
                 r"\bpytest\.raises\b",
+                r"\btoThrow\b",
+                r"\.rejects\b",
+                r"\bshould_panic\b",
+                r"\bassertFalse\b",
+                r"\bassertNil\b",
+                r"\bassert\.False\b",
             )
             for pat in negative_patterns:
                 if re.search(pat, line_text):
@@ -456,7 +493,7 @@ class AuditEngine:
                     risk_level="low",
                 )
 
-            if line_text.startswith(("#", '"""', "'''", "*")):
+            if line_text.startswith(("#", '"""', "'''", "*", "//", "/*")):
                 return AuditFinding(
                     file_path=rel_str,
                     line_number=line_number,

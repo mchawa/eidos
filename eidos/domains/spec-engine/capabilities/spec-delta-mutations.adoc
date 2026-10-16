@@ -37,7 +37,7 @@ technical:
       rule: "Removing a capability via SpecDelta must archive the spec with a tombstone entry rather than silently deleting history."
       test_binding: "tests/test_audit.py::test_delta_audit_tombstone_exemption"
     - id: INV-DELTA-DELETION-AUDIT
-      rule: "SpecDeltas with deletion or deprecation mutations must pass context-aware blast-radius auditing with zero unacknowledged active leaks."
+      rule: "SpecDeltas with deletion or deprecation mutations must pass context-aware blast-radius auditing with word-bounded multi-term token matching, polyglot negative-test classification, fail-loud graph foreign-key verification, and zero unacknowledged active leaks."
       test_binding: "tests/test_audit.py::test_delta_deletion_audit_clean"
     - id: INV-DELTA-CHANGELOG-GENERATION
       rule: "eidos delta changelog must compile an auditable, SpecDelta-backed changelog partitioned by git release tags with zero hallucinated mutations."
