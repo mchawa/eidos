@@ -1487,3 +1487,96 @@ def test_readonly_warm_cache_open_db_path_singleton_and_custom_repo_root(tmp_pat
     idx_b.close()
 
 
+def test_container_inline_component_invariants_ast_fts_projection_and_anchored_traversal(tmp_path):
+    """DLT-2026-078 (# eidos:fixture): Verify container and inline-component invariants are indexed into
+    entities/specs_fts/edges, AST code_symbols are projected into specs_fts.symbols, build_tiered_context_slice
+    promotes owning container/component for directly matched invariants, and execute_k_hop_traversal uses
+    delimiter-bounded cycle prevention."""
+    repo = tmp_path / "repo"
+    eidos_dir = repo / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    src_dir = repo / "src" / "ledger"
+    cnts_dir.mkdir(parents=True)
+    src_dir.mkdir(parents=True)
+
+    (src_dir / "engine.py").write_text(
+        "class QuantumReconciliationEngine:\n"
+        "    def settle_atomic_batch(self) -> bool:\n"
+        "        return True\n",
+        encoding="utf-8",
+    )
+
+    # Create two containers where CNT-LEDGER-2 is a prefix-extension of CNT-LEDGER
+    (cnts_dir / "ledger2.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-LEDGER-2\n"
+        "name: Secondary Ledger\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/ledger2\n"
+        "dependencies:\n"
+        "  internal_containers:\n"
+        "    - CNT-LEDGER\n"
+        "---\n"
+        "= Secondary Ledger\n",
+        encoding="utf-8",
+    )
+    (cnts_dir / "ledger.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-LEDGER\n"
+        "name: Primary Ledger\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/ledger\n"
+        "invariants:\n"
+        "  - id: INV-CNT-LEDGER-TOP\n"
+        "    rule: Primary ledger container must enforce idempotency keys.\n"
+        "components:\n"
+        "  - id: CMP-LEDGER-SETTLER\n"
+        "    name: LedgerSettler\n"
+        "    responsibility: Settles batches.\n"
+        "    source_path: src/ledger/engine.py\n"
+        "    invariants:\n"
+        "      - id: INV-CMP-SETTLER-INLINE\n"
+        "        rule: Batch settlement must be atomic across partitions.\n"
+        "---\n"
+        "= Primary Ledger\n",
+        encoding="utf-8",
+    )
+
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+        conn = idx._get_connection()
+
+        # 1. Both top-level container invariant and inline component invariant are in entities and specs_fts
+        inv_ids = {
+            r[0]
+            for r in conn.execute("SELECT id FROM entities WHERE type = 'invariant';").fetchall()
+        }
+        assert "INV-CNT-LEDGER-TOP" in inv_ids
+        assert "INV-CMP-SETTLER-INLINE" in inv_ids
+
+        # 2. AST symbol 'QuantumReconciliationEngine' is projected into specs_fts.symbols for CNT-LEDGER
+        fts_hits = idx.query_fts("QuantumReconciliationEngine")
+        assert any(h["id"] == "CNT-LEDGER" for h in fts_hits)
+
+        # 3. Context slice matching inline component invariant promotes owning container CNT-LEDGER
+        ctx_slice = idx.get_tiered_context_slice(task="atomic across partitions", tier="guardrails")
+        assert any(i["id"] == "INV-CMP-SETTLER-INLINE" for i in ctx_slice.invariants)
+        assert any(c["id"] == "CNT-LEDGER" for c in ctx_slice.components)
+
+        # 4. k-hop traversal from CNT-LEDGER-2 reaches CNT-LEDGER (not blocked by substring 'CNT-LEDGER' in 'CNT-LEDGER-2')
+        neighbors = idx.get_k_hop_neighborhood("CNT-LEDGER-2", max_depth=2)
+        neighbor_ids = {n["id"] for n in neighbors}
+        assert "CNT-LEDGER" in neighbor_ids
+        assert "INV-CNT-LEDGER-TOP" in neighbor_ids
+    finally:
+        idx.close()
+
+
+

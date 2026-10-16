@@ -310,8 +310,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
         else:
             self._prune_matched_reasons()
             d = self.to_dict()
-            # CPython C encoder (_json.make_encoder) runs when indent is None and is strictly <= indented length
-            exceeds = (len(json.dumps(d)) // 4) > budget or (len(json.dumps(d, indent=2)) // 4) > budget
+            # Include 24-byte headroom for post-enforcement query_latency_ms and token_estimate float/int formatting
+            exceeds = ((len(json.dumps(d)) + 24) // 4) > budget or ((len(json.dumps(d, indent=2)) + 24) // 4) > budget
         self.__dict__["_cached_sig"] = sig
         self.__dict__["_cached_exceeds"] = exceeds
         return exceeds
@@ -367,10 +367,14 @@ class TieredContextSlice(ArchitecturalContextSlice):
         _pop_non_direct(self.policies, direct_pols, min_len=1)
         _pop_non_direct(self.capabilities, direct_caps, min_len=1)
 
-        # If still over budget in guardrails and multiple direct matches exist, compact decision prose before evicting direct matches.
-        if self.tier == "guardrails" and has_non_comp_direct and self._exceeds_budget(budget):
-            self._compact_decisions = True
-            self._invalidate_budget_cache()
+        # If still over budget and direct invariant/capability/policy matches exist, compact decision prose
+        # and trim lower-ranked tail components before evicting direct matches.
+        if has_non_comp_direct and self._exceeds_budget(budget):
+            if self.tier == "guardrails":
+                self._compact_decisions = True
+                self._invalidate_budget_cache()
+            while len(self.components) > 1 and self._exceeds_budget(budget):
+                self._pop_item(self.components)
 
         # Stage 2: If still over budget, trim lowest-ranked tail items while keeping primary components intact.
         while len(self.invariants) > 3 and self._exceeds_budget(budget):
@@ -390,6 +394,17 @@ class TieredContextSlice(ArchitecturalContextSlice):
 
         while len(self.capabilities) > 1 and self._exceeds_budget(budget):
             self._pop_item(self.capabilities)
+
+        # Stage 3: If still over budget, trim remaining non-primary 1-hop components and compact decisions.
+        if self._exceeds_budget(budget):
+            _pop_non_direct(self.components, primary_cids, min_len=1)
+        if self._exceeds_budget(budget) and not self._compact_decisions:
+            self._compact_decisions = True
+            self._invalidate_budget_cache()
+        while len(self.contracts) > 1 and self._exceeds_budget(budget):
+            self._pop_item(self.contracts)
+        while len(self.components) > 1 and self._exceeds_budget(budget):
+            self._pop_item(self.components)
 
         self._prune_matched_reasons()
         self._invalidate_budget_cache()
@@ -590,6 +605,19 @@ def build_tiered_context_slice(
                 p_data["title"] = row["title"]
                 matched_policies[row["id"]] = p_data
                 _add_reason(row["id"], f"Owning policy of matched invariant {iid}")
+        for parent_comp_key in ("component_id", "container_id"):
+            parent_comp = inv_data.get(parent_comp_key)
+            if parent_comp and parent_comp not in matched_components:
+                row = cursor.execute(
+                    "SELECT id, title, type, domain, data_json FROM entities WHERE id = ?;",
+                    (parent_comp,),
+                ).fetchone()
+                if row:
+                    comp_data = json.loads(row["data_json"])
+                    comp_data["id"] = row["id"]
+                    comp_data["title"] = row["title"]
+                    matched_components[row["id"]] = comp_data
+                    _add_reason(row["id"], f"Owning component/container of matched invariant {iid}")
 
     has_explicit_query = bool(clean_files or (component and component.strip()) or (task and task.strip()))
     any_matched = bool(
@@ -808,15 +836,16 @@ def build_tiered_context_slice(
             ordered_invs.append(matched_invariants[iid])
             seen_inv_ids.add(iid)
 
-    for source_list in (sorted_caps, sorted_pols):
-        inv_lists = [
-            [
-                inv.get("id")
-                for inv in ((src.get("technical") or {}).get("invariants") or src.get("invariants") or [])
-                if isinstance(inv, dict) and inv.get("id")
-            ]
-            for src in source_list
-        ]
+    for source_list in (sorted_comps, sorted_caps, sorted_pols):
+        inv_lists: list[list[str]] = []
+        for src in source_list:
+            raw_invs = list((src.get("technical") or {}).get("invariants") or src.get("invariants") or [])
+            for comp_item in src.get("components") or src.get("c4_internal_components") or []:
+                if isinstance(comp_item, dict):
+                    raw_invs.extend(comp_item.get("invariants") or [])
+            inv_lists.append(
+                [inv.get("id") for inv in raw_invs if isinstance(inv, dict) and inv.get("id")]
+            )
         max_len = max((len(lst) for lst in inv_lists), default=0)
         for idx in range(max_len):
             for lst in inv_lists:

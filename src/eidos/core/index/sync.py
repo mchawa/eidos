@@ -472,7 +472,9 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     package_paths: set[str] = set()
     cursor.execute("SELECT DISTINCT package_path FROM entities WHERE package_path != '';")
     package_paths.update(row[0].strip() for row in cursor.fetchall())
-    cursor.execute("SELECT DISTINCT symbol FROM symbol_mappings WHERE kind IN ('package_path', 'test_binding');")
+    cursor.execute(
+        "SELECT DISTINCT symbol FROM symbol_mappings WHERE kind IN ('package_path', 'source_path', 'test_binding');"
+    )
     package_paths.update(row[0].strip() for row in cursor.fetchall())
     for pp in sorted(package_paths):
         if pp:
@@ -680,15 +682,30 @@ def rebuild_spec_edges(conn: sqlite3.Connection) -> None:
             invariants = fm.get("invariants", []) or []
 
         if doc_type == "tech/container":
-            for comp_entry in fm.get("components", []):
-                if isinstance(comp_entry, dict) and comp_entry.get("ref"):
-                    cid = comp_entry.get("id")
-                    if cid:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);",
-                            (doc_id, cid),
-                        )
-                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (cid, doc_id))
+            invariants = list(fm.get("invariants", []) or [])
+            for comp_entry in fm.get("components", []) or fm.get("c4_internal_components", []):
+                if not isinstance(comp_entry, dict):
+                    continue
+                cid = comp_entry.get("id")
+                if comp_entry.get("ref") and cid:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);",
+                        (doc_id, cid),
+                    )
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (cid, doc_id))
+                for c_inv in comp_entry.get("invariants", []) or []:
+                    if isinstance(c_inv, dict) and c_inv.get("id"):
+                        invariants.append(c_inv)
+                        if cid:
+                            c_iid = c_inv["id"]
+                            conn.execute(
+                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);",
+                                (cid, c_iid),
+                            )
+                            conn.execute(
+                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);",
+                                (c_iid, cid),
+                            )
 
         for inv in invariants:
             iid = inv.get("id") if isinstance(inv, dict) else None
@@ -1079,17 +1096,27 @@ def sync_index(
                 invariants = fm.get("invariants", []) or []
 
             if doc_type == "tech/container":
-                for comp_entry in fm.get("components", []):
-                    if isinstance(comp_entry, dict) and comp_entry.get("ref"):
+                invariants = list(fm.get("invariants", []) or [])
+                for comp_entry in fm.get("components", []) or fm.get("c4_internal_components", []):
+                    if not isinstance(comp_entry, dict):
+                        continue
+                    cid = comp_entry.get("id")
+                    if comp_entry.get("ref") and cid:
                         ref_path = comp_entry["ref"]
-                        cid = comp_entry.get("id")
-                        if cid:
-                            conn.execute(
-                                "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_ref');",
-                                (ref_path, cid),
-                            )
+                        conn.execute(
+                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_ref');",
+                            (ref_path, cid),
+                        )
+                    for c_inv in comp_entry.get("invariants", []) or []:
+                        if isinstance(c_inv, dict) and c_inv.get("id"):
+                            inv_copy = dict(c_inv)
+                            if cid:
+                                inv_copy["_inline_component_id"] = cid
+                            invariants.append(inv_copy)
 
             for inv in invariants:
+                if not isinstance(inv, dict):
+                    continue
                 iid = inv.get("id")
                 if iid:
                     inv_collision = conn.execute(
@@ -1108,6 +1135,7 @@ def sync_index(
                     rule = inv.get("rule", "")
                     test = inv.get("test_binding") or inv.get("verification") or ""
                     test_file = test.split("::")[0] if test else ""
+                    inline_comp_id = inv.get("_inline_component_id")
                     inv_data = {
                         "id": iid,
                         "rule": rule,
@@ -1115,7 +1143,12 @@ def sync_index(
                         "source_id": doc_id,
                         "capability_id": doc_id if doc_type == "product/capability" else None,
                         "policy_id": doc_id if doc_type == "product/policy" else None,
-                        "component_id": doc_id if doc_type == "tech/component" else None,
+                        "container_id": (
+                            doc_id
+                            if doc_type == "tech/container"
+                            else (fm.get("container") if doc_type == "tech/component" else None)
+                        ),
+                        "component_id": doc_id if doc_type == "tech/component" else inline_comp_id,
                         "has_test_coverage": False,
                         "matching_tests": [],
                     }
@@ -1141,7 +1174,7 @@ def sync_index(
                             iid,
                             rule_str,
                             str(title or ""),
-                            " ".join(str(x) for x in (iid, "invariant", domain, doc_id) if x),
+                            " ".join(str(x) for x in (iid, "invariant", domain, doc_id, inline_comp_id) if x),
                             " ".join(
                                 x for x in (test_str, compound_identifier_subtokens(f"{test_func} {rule_str}")) if x
                             ),
@@ -1227,9 +1260,21 @@ def sync_index(
             if decision_texts:
                 body_clean = f"{body_clean} " + re.sub(r"[{}\[\]=:#*`]", " ", " ".join(decision_texts))
             keywords = " ".join([doc_id, doc_type, domain, container_type, package_path, *decision_ids])
-            symbols = " ".join(
-                [m.get("name", "") for m in (fm.get("components", []) or fm.get("c4_internal_components", []))]
+            symbol_parts: list[str] = [
+                str(m.get("name", ""))
+                for m in (fm.get("components", []) or fm.get("c4_internal_components", []))
+                if isinstance(m, dict) and m.get("name")
+            ]
+            symbol_parts.extend(
+                str(m.get("id", ""))
+                for m in (fm.get("components", []) or fm.get("c4_internal_components", []))
+                if isinstance(m, dict) and m.get("id")
             )
+            if doc_type == "tech/component" and isinstance(fm.get("interfaces"), dict):
+                for sig in (fm["interfaces"].get("provides") or []) + (fm["interfaces"].get("consumes") or []):
+                    if isinstance(sig, str) and sig.strip():
+                        symbol_parts.append(sig.split("(")[0].strip())
+            symbols = " ".join(symbol_parts)
             decompounded = compound_identifier_subtokens(
                 f"{title or ''} {jtbd_or_rule or ''} {body_clean} {symbols}"
             )
@@ -1340,6 +1385,9 @@ def sync_index(
         if force or spec_updates or specs_deleted:
             index._reconcile_code_ownership(conn, ast_idx, resolver, processed_code)
 
+        if force or spec_updates or specs_deleted or processed_code:
+            _project_ast_code_symbols_into_fts(conn)
+
         candidate_test_files: dict[str, Path] = {}
         for std_test_dir in ("tests", "test"):
             tests_dir = index.root / std_test_dir
@@ -1395,7 +1443,8 @@ def sync_index(
                 WHERE rel_path = edges.target_id
                    OR 'eidos/' || rel_path = edges.target_id
                    OR rel_path = 'eidos/' || edges.target_id
-                   OR rel_path LIKE '%' || edges.target_id
+                   OR rel_path LIKE '%/' || edges.target_id
+                ORDER BY length(rel_path) ASC
                 LIMIT 1
             )
             WHERE target_id NOT IN (SELECT id FROM entities)
@@ -1417,7 +1466,8 @@ def sync_index(
                 WHERE rel_path = edges.source_id
                    OR 'eidos/' || rel_path = edges.source_id
                    OR rel_path = 'eidos/' || edges.source_id
-                   OR rel_path LIKE '%' || edges.source_id
+                   OR rel_path LIKE '%/' || edges.source_id
+                ORDER BY length(rel_path) ASC
                 LIMIT 1
             )
             WHERE source_id NOT IN (SELECT id FROM entities)
@@ -1437,3 +1487,44 @@ def sync_index(
     stats.duration_ms = (time.perf_counter() - t0) * 1000
     index._last_synced_check = time.monotonic()
     return stats
+
+
+def _project_ast_code_symbols_into_fts(conn: sqlite3.Connection) -> None:
+    """Project primary AST code_symbols (class, function, interface, struct, enum) into specs_fts.symbols."""
+    from eidos.core.index.query import compound_identifier_subtokens
+    by_entity: dict[str, list[str]] = {}
+    for row in conn.execute(
+        """
+        SELECT DISTINCT entity_id, symbol FROM code_symbols
+        WHERE is_primary = 1 AND kind IN ('class', 'function', 'interface', 'struct', 'enum')
+        ORDER BY entity_id, symbol;
+        """
+    ).fetchall():
+        by_entity.setdefault(row[0], []).append(row[1])
+
+    if not by_entity:
+        return
+
+    for entity_id, ast_syms in by_entity.items():
+        fts_row = conn.execute(
+            "SELECT rowid, symbols FROM specs_fts WHERE entity_id = ?;",
+            (entity_id,),
+        ).fetchone()
+        if fts_row is None:
+            continue
+        rowid, cur_symbols = fts_row[0], str(fts_row[1] or "")
+        existing_tokens = set(cur_symbols.split())
+        new_parts: list[str] = []
+        for sym in ast_syms:
+            if sym and sym not in existing_tokens:
+                new_parts.append(sym)
+                existing_tokens.add(sym)
+            sub = compound_identifier_subtokens(sym)
+            if sub:
+                for st in sub.split():
+                    if st not in existing_tokens:
+                        new_parts.append(st)
+                        existing_tokens.add(st)
+        if new_parts:
+            updated_symbols = f"{cur_symbols} {' '.join(new_parts)}".strip()
+            conn.execute("UPDATE specs_fts SET symbols = ? WHERE rowid = ?;", (updated_symbols, rowid))

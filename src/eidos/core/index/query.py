@@ -163,7 +163,7 @@ def execute_k_hop_traversal(
             FROM edges e
             JOIN graph_walk gw ON (e.source_id = gw.node_id OR e.target_id = gw.node_id)
             WHERE gw.depth < ?
-              AND gw.path NOT LIKE '%' || CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END || '%'
+              AND ('->' || gw.path || '->') NOT LIKE '%->' || CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END || '->%'
         )
         SELECT DISTINCT gw.node_id, gw.depth, ent.type, ent.title, ent.domain, ent.file_path, ent.data_json
         FROM graph_walk gw
