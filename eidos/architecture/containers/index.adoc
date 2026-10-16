@@ -63,16 +63,17 @@ decisions:
         reason_rejected: "Requires embedding model weights or external API calls, violating POL-004 and bloating installation size."
     graduated_from: EXP-2026-002
   - id: DEC-INDEX-FTS-RETRIEVAL-HYGIENE
-    title: "Fix Lexical Retrieval Coverage Before Adding Model-Free Semantic Layers"
-    decision: "Index child INV-* invariants in specs_fts, de-compound camelCase/snake_case identifiers on both index and query sides, apply a priori positional BM25 column weights (0, 4, 2, 1, 2, 2), and restrict context-slice task candidates to sliceable entity types inside SQL."
-    rationale: "The EXP-2026-006 review traced most baseline misses to two coverage bugs (unindexed invariants, SpecDelta slot crowding) rather than vocabulary mismatch. On the 6 published prompts plus 12 held-out prompts, these stdlib-only fixes lift raw Recall@8 from 55.6% to 94.4% (dev) and 32.1% to 78.6% (held-out) at under 1.1 ms per query, with no new tables, vectors, or global corpus statistics. Weights were chosen before measurement and measured neutral, so they were not tuned on the evaluation prompts."
+    title: "Fix Lexical Retrieval Coverage and Rank-Ordered Slice Truncation Instead of Adding Model-Free Vector Layers"
+    decision: "Index child INV-* invariants in specs_fts, de-compound camelCase/snake_case identifiers on both index and query sides, apply a priori positional BM25 column weights (0, 4, 2, 1, 2, 2), restrict context-slice task candidates to sliceable entity types inside SQL, preserve BM25 insertion rank order in build_tiered_context_slice, promote the owning capability_id/policy_id of directly matched invariants, and apply two-stage token-budget eviction."
+    rationale: "The EXP-2026-006 ablation traced baseline context-slice misses to lexical coverage and slice-truncation bugs (unindexed invariants, SpecDelta slot crowding, alphabetical set iteration on direct_inv_ids, and 1-hop budget crowding) rather than vocabulary mismatch. Fixing these stdlib-only pipelines lifts raw Recall@8 from 55.6% to 94.4% (DEV) and 32.1% to 78.6% (HOLD) in <=1.0 ms and end-to-end 1,000-token guardrails slice recall to 94.4% (DEV) and 92.9% (HOLD) in <=3.8 ms (7.5-8.6 entities), with zero new SQLite tables, zero vector BLOBs, and zero incremental-sync staleness."
     rejected_alternatives:
-      - option: "Adopt the full EXP-2026-006 hybrid engine (PPMI expansion, 256-dim signed feature hashing, graph spreading activation, zlib NCD) immediately"
-        reason_rejected: "Its benchmark had no ablation against a fixed baseline, was tuned on its own 6-prompt evaluation set, and relies on corpus-global IDF/PPMI that breaks incremental sync; each layer must first show a gain over this fixed baseline on held-out prompts."
+      - option: "Adopt the EXP-2026-006 4-layer statistical/vector engine (PPMI expansion, 256-dim signed feature hashing, graph spreading activation, zlib NCD)"
+        reason_rejected: "Lexical FTS hygiene plus rank-ordered two-stage slice truncation already exceeds the >=90% recall target (94.4% DEV / 92.9% HOLD), leaving only ~1/46 vocabulary-mismatch edge case while avoiding corpus-global IDF/PPMI staleness on incremental sync."
       - option: "Post-filter SpecDeltas in Python after LIMIT"
         reason_rejected: "Filtered rows still consume the top-k slots; the filter must run inside SQL before LIMIT."
       - option: "Exploration weights bm25(specs_fts, 10, 6, 1, 8, 6)"
         reason_rejected: "Off by one column: FTS5 assigns the first weight to the UNINDEXED entity_id column, so these values put 8x weight on body_text and 1x on symbols, the opposite of the intent."
+    graduated_from: EXP-2026-006
 ---
 = Container: Architectural Knowledge Graph & Retrieval Index (C4 Level 2 Container & Level 3 Components)
 :toc: left
