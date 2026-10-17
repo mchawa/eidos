@@ -308,16 +308,18 @@ class TieredContextSlice(ArchitecturalContextSlice):
             "token_estimate": self.token_estimate,
         }
 
+    _STRUCTURAL_STRIP_TABLE = str.maketrans("", "", "{}[]:,\"'`|")
+
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent)
 
-    @staticmethod
-    def _estimate_text_tokens(text: str) -> int:
+    @classmethod
+    def _estimate_text_tokens(cls, text: str) -> int:
         """Estimate BPE token count weighting structural syntax/punctuation at ~3.0 chars/token and prose at ~4.0 chars/token."""
         if not text:
             return 1
-        structural_chars = sum(1 for ch in text if ch in "{}[]:,\"'`|")
-        prose_chars = len(text) - structural_chars
+        prose_chars = len(text.translate(cls._STRUCTURAL_STRIP_TABLE))
+        structural_chars = len(text) - prose_chars
         return max(1, int(prose_chars / 4.0 + structural_chars / 3.0))
 
     def _estimate_tokens(self) -> int:
@@ -353,6 +355,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
         self.__dict__.pop("_cached_sig", None)
         self.__dict__.pop("_cached_exceeds", None)
         self.__dict__.pop("_md_char_lb", None)
+        self.__dict__.pop("_md_tok_lb", None)
         self.__dict__.pop("_json_char_lb", None)
 
     @staticmethod
@@ -363,10 +366,14 @@ class TieredContextSlice(ArchitecturalContextSlice):
         item = lst.pop(idx)
         ub_removed = self._item_char_upper_bound(item)
         md_lb = self.__dict__.get("_md_char_lb", 0)
+        md_tok_lb = self.__dict__.get("_md_tok_lb", 0)
         json_lb = self.__dict__.get("_json_char_lb", 0)
         sig_tail = self._state_signature(0)[1:]
         if md_lb > 0:
             self.__dict__["_md_char_lb"] = max(0, md_lb - ub_removed)
+            self.__dict__["_md_lb_sig"] = sig_tail
+        if md_tok_lb > 0:
+            self.__dict__["_md_tok_lb"] = max(0, md_tok_lb - (ub_removed // 3 + 1))
             self.__dict__["_md_lb_sig"] = sig_tail
         if json_lb > 0:
             self.__dict__["_json_char_lb"] = max(0, json_lb - ub_removed)
@@ -379,8 +386,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
             return bool(self.__dict__.get("_cached_exceeds"))
         has_lb_sig = self.__dict__.get("_md_lb_sig") == sig[1:]
         md_lb = self.__dict__.get("_md_char_lb", 0) if has_lb_sig else 0
+        md_tok_lb = self.__dict__.get("_md_tok_lb", 0) if has_lb_sig else 0
         json_lb = self.__dict__.get("_json_char_lb", 0) if has_lb_sig else 0
-        if max(md_lb, json_lb) // 4 > budget:
+        if md_tok_lb > budget or max(md_lb, json_lb) // 4 > budget:
             self.__dict__["_cached_sig"] = sig
             self.__dict__["_cached_exceeds"] = True
             return True
@@ -388,13 +396,18 @@ class TieredContextSlice(ArchitecturalContextSlice):
         md_len = len(md_text)
         md_tokens = self._estimate_text_tokens(md_text)
         self._prune_matched_reasons()
+        self.__dict__["_md_char_lb"] = md_len
+        self.__dict__["_md_tok_lb"] = md_tokens
+        self.__dict__["_md_lb_sig"] = sig[1:]
+        if md_tokens > budget or max(1, md_len // 4) > budget:
+            self.__dict__["_cached_sig"] = sig
+            self.__dict__["_cached_exceeds"] = True
+            return True
         d = self.to_dict()
         # Include 24-byte headroom for post-enforcement query_latency_ms and token_estimate float/int formatting
-        json_len = max(len(json.dumps(d)) + 24, len(json.dumps(d, indent=2)) + 24)
-        self.__dict__["_md_char_lb"] = md_len
+        json_len = len(json.dumps(d, indent=2)) + 24
         self.__dict__["_json_char_lb"] = json_len
-        self.__dict__["_md_lb_sig"] = sig[1:]
-        exceeds = md_tokens > budget or max(1, md_len // 4) > budget or (json_len // 4) > budget
+        exceeds = (json_len // 4) > budget
         self.__dict__["_cached_sig"] = sig
         self.__dict__["_cached_exceeds"] = exceeds
         return exceeds
