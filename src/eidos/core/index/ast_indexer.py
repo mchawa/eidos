@@ -85,6 +85,7 @@ class CodeSymbol:
     parent_symbol: str | None = None
     signature: str | None = None
     is_public: bool | None = None
+    is_boundary_export: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -96,6 +97,7 @@ class CodeSymbol:
             "docstring": self.docstring,
             "parent_symbol": self.parent_symbol,
             "signature": self.signature,
+            "is_boundary_export": self.is_boundary_export,
         }
 
 
@@ -200,7 +202,21 @@ class AstGrepIndexer(BaseAstIndexer):
         ".java": "java",
         ".kt": "kotlin",
         ".kts": "kotlin",
+        ".c": "c",
+        ".cpp": "cpp",
+        ".h": "c",
+        ".hpp": "cpp",
+        ".cs": "csharp",
+        ".rb": "ruby",
+        ".php": "php",
+        ".swift": "swift",
+        ".vue": "vue",
+        ".svelte": "svelte",
     }
+
+    _FALLBACK_SIGNATURE_LANGS: ClassVar[frozenset[str]] = frozenset(
+        {"c", "cpp", "csharp", "ruby", "php", "swift", "vue", "svelte"}
+    )
 
     def _get_lang(self, path: Path) -> str | None:
         return self.LANGUAGE_MAP.get(path.suffix.lower())
@@ -229,7 +245,7 @@ class AstGrepIndexer(BaseAstIndexer):
     def extract_symbols(self, file_path: Path | str, content: str | None = None) -> list[CodeSymbol]:
         p = Path(file_path)
         lang = self._get_lang(p)
-        if not lang or not AST_GREP_AVAILABLE:
+        if not lang or not AST_GREP_AVAILABLE or lang in self._FALLBACK_SIGNATURE_LANGS:
             return FallbackIndexer().extract_symbols(file_path, content)
 
         if content is None:
@@ -318,6 +334,7 @@ class AstGrepIndexer(BaseAstIndexer):
                         ts_exports=ts_exports,
                         class_is_public=class_is_public,
                     )
+                    sym.is_boundary_export = _evaluate_boundary_export(sym, py_dunder_all=py_dunder_all)
                     class_is_public[cname] = bool(sym.is_public)
                     symbols.append(sym)
                     class_nodes[cname] = m
@@ -421,6 +438,7 @@ class AstGrepIndexer(BaseAstIndexer):
                     ts_exports=ts_exports,
                     class_is_public=class_is_public,
                 )
+                sym.is_boundary_export = _evaluate_boundary_export(sym, py_dunder_all=py_dunder_all)
                 symbols.append(sym)
 
         return symbols
@@ -661,6 +679,53 @@ class FallbackIndexer(BaseAstIndexer):
         r"^[ \t]*(?:(?:public|private|protected|internal|open|override|suspend|inline|operator|infix)\s+)*fun\s+(?:<[^>]+>\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\s*\(",
         re.MULTILINE,
     )
+    C_TYPE_REGEX = re.compile(
+        r"^[ \t]*(?:typedef\s+)?(struct|class|enum)(?:\s+class)?\s+([a-zA-Z_][a-zA-Z0-9_]*)\b",
+        re.MULTILINE,
+    )
+    C_FN_REGEX = re.compile(
+        r"^[ \t]*(?:(?:static|inline|extern|virtual|constexpr|explicit|friend)\s+)*(?:(?:const|unsigned|signed|long|short|struct|class|enum|typename)\s+)*[a-zA-Z_][a-zA-Z0-9_:<>]*[\s\*&]+([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^;{}]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:\{|;|$)",
+        re.MULTILINE,
+    )
+    CS_TYPE_REGEX = re.compile(
+        r"^[ \t]*(?:(?:public|private|protected|internal|static|abstract|sealed|partial|readonly)\s+)*(class|interface|struct|enum|record)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+        re.MULTILINE,
+    )
+    CS_FN_REGEX = re.compile(
+        r"^[ \t]*(?:(?:public|private|protected|internal|static|virtual|override|abstract|async|extern|unsafe|new)\s+)+[a-zA-Z_][a-zA-Z0-9_<>,\.\[\]\?\s]*\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:<[^>]+>)?\s*\(",
+        re.MULTILINE,
+    )
+    RB_CLS_REGEX = re.compile(r"^[ \t]*(class|module)\s+([A-Z][a-zA-Z0-9_:]*)", re.MULTILINE)
+    RB_FN_REGEX = re.compile(r"^[ \t]*def\s+(?:self\.)?([a-zA-Z_][a-zA-Z0-9_!\?=]*)", re.MULTILINE)
+    PHP_CLS_REGEX = re.compile(
+        r"^[ \t]*(?:(?:abstract|final|readonly)\s+)*(class|interface|trait|enum)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+        re.MULTILINE,
+    )
+    PHP_FN_REGEX = re.compile(
+        r"^[ \t]*(?:(?:public|private|protected|static|abstract|final)\s+)*function\s+&?([a-zA-Z_][a-zA-Z0-9_]*)\s*\(",
+        re.MULTILINE,
+    )
+    SWIFT_CLS_REGEX = re.compile(
+        r"^[ \t]*(?:(?:public|private|fileprivate|internal|open|final|indirect)\s+)*(class|struct|enum|protocol|actor)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+        re.MULTILINE,
+    )
+    SWIFT_FN_REGEX = re.compile(
+        r"^[ \t]*(?:(?:public|private|fileprivate|internal|open|static|class|mutating|nonmutating|override)\s+)*func\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:<[^>]+>)?\s*\(",
+        re.MULTILINE,
+    )
+    _C_CONTROL_KEYWORDS: ClassVar[frozenset[str]] = frozenset(
+        {"if", "for", "while", "switch", "return", "sizeof", "catch", "else", "do"}
+    )
+
+    @staticmethod
+    def _strip_block_comments_preserving_lines(text: str) -> str:
+        """Replace C-style /* ... */, HTML <!-- ... -->, and Ruby =begin ... =end block comments with spaces while preserving line numbers."""
+        return re.sub(
+            r"/\*.*?\*/|<!--.*?-->|^=begin\b.*?^=end\b",
+            lambda m: "".join("\n" if ch == "\n" else " " for ch in m.group(0)),
+            text,
+            flags=re.DOTALL | re.MULTILINE,
+        )
 
     def extract_symbols(self, file_path: Path | str, content: str | None = None) -> list[CodeSymbol]:
         p = Path(file_path)
@@ -690,6 +755,7 @@ class FallbackIndexer(BaseAstIndexer):
                             signature=_python_node_signature(node),
                         )
                         cls_sym.is_public = _evaluate_symbol_visibility(cls_sym, py_dunder_all=py_dunder_all)
+                        cls_sym.is_boundary_export = _evaluate_boundary_export(cls_sym, py_dunder_all=py_dunder_all)
                         symbols.append(cls_sym)
                         for item in node.body:
                             if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -708,6 +774,7 @@ class FallbackIndexer(BaseAstIndexer):
                                     py_dunder_all=py_dunder_all,
                                     class_is_public={node.name: bool(cls_sym.is_public)},
                                 )
+                                m_sym.is_boundary_export = _evaluate_boundary_export(m_sym, py_dunder_all=py_dunder_all)
                                 symbols.append(m_sym)
                     elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         fn_sym = CodeSymbol(
@@ -720,17 +787,27 @@ class FallbackIndexer(BaseAstIndexer):
                             signature=_python_node_signature(node),
                         )
                         fn_sym.is_public = _evaluate_symbol_visibility(fn_sym, py_dunder_all=py_dunder_all)
+                        fn_sym.is_boundary_export = _evaluate_boundary_export(fn_sym, py_dunder_all=py_dunder_all)
                         symbols.append(fn_sym)
                 return symbols
             except (SyntaxError, ValueError):
                 # Fallback to regex if Python code has syntax errors
                 pass
 
-        # 2. Regex fallback for polyglot files
-        lines = content.splitlines()
+        # 2. Regex fallback for polyglot files (with block comments stripped to avoid false positives)
         suffix = p.suffix.lower()
-        ts_exports = _extract_ts_exported_names(content) if suffix in (".ts", ".tsx", ".js", ".jsx") else None
+        clean_content = content if suffix == ".py" else self._strip_block_comments_preserving_lines(content)
+        lines = clean_content.splitlines()
+        ts_exports = (
+            _extract_ts_exported_names(clean_content)
+            if suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte")
+            else None
+        )
+        rb_visibility = "public"
         for idx, line in enumerate(lines, start=1):
+            stripped_line = line.strip()
+            if not stripped_line or stripped_line.startswith(("//", "#", "*")):
+                continue
             sig = _extract_header_signature(line)
             if suffix == ".py":
                 for m in self.PYTHON_CLS_REGEX.finditer(line):
@@ -755,7 +832,7 @@ class FallbackIndexer(BaseAstIndexer):
                     )
                     sym.is_public = _evaluate_symbol_visibility(sym)
                     symbols.append(sym)
-            elif suffix in (".ts", ".tsx", ".js", ".jsx"):
+            elif suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"):
                 for m in self.TS_CLS_REGEX.finditer(line):
                     sym = CodeSymbol(
                         name=m.group(1),
@@ -778,6 +855,29 @@ class FallbackIndexer(BaseAstIndexer):
                     )
                     sym.is_public = _evaluate_symbol_visibility(sym, ts_exports=ts_exports)
                     symbols.append(sym)
+                if suffix in (".vue", ".svelte"):
+                    for m in _SVELTE_PROP_RE.finditer(line):
+                        sym = CodeSymbol(
+                            name=m.group(1),
+                            kind="interface",
+                            file_path=rel_path,
+                            line_start=idx,
+                            line_end=idx,
+                            signature=sig,
+                        )
+                        sym.is_public = True
+                        symbols.append(sym)
+                    if "defineProps" in line:
+                        sym = CodeSymbol(
+                            name="defineProps",
+                            kind="interface",
+                            file_path=rel_path,
+                            line_start=idx,
+                            line_end=idx,
+                            signature=sig,
+                        )
+                        sym.is_public = True
+                        symbols.append(sym)
             elif suffix == ".go":
                 for m in self.GO_TYPE_REGEX.finditer(line):
                     sym = CodeSymbol(
@@ -837,6 +937,140 @@ class FallbackIndexer(BaseAstIndexer):
                     sym.is_public = _evaluate_symbol_visibility(sym)
                     symbols.append(sym)
                 for m in self.KT_FN_REGEX.finditer(line):
+                    sym = CodeSymbol(
+                        name=m.group(1),
+                        kind="function",
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
+                    )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
+            elif suffix in (".c", ".cpp", ".h", ".hpp"):
+                type_matched = False
+                for m in self.C_TYPE_REGEX.finditer(line):
+                    type_matched = True
+                    sym = CodeSymbol(
+                        name=m.group(2),
+                        kind="struct" if m.group(1) == "struct" else ("enum" if m.group(1) == "enum" else "class"),
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
+                    )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
+                if not type_matched:
+                    for m in self.C_FN_REGEX.finditer(line):
+                        fname = m.group(1)
+                        if fname in self._C_CONTROL_KEYWORDS:
+                            continue
+                        sym = CodeSymbol(
+                            name=fname,
+                            kind="function",
+                            file_path=rel_path,
+                            line_start=idx,
+                            line_end=idx,
+                            signature=sig,
+                        )
+                        sym.is_public = _evaluate_symbol_visibility(sym)
+                        symbols.append(sym)
+            elif suffix == ".cs":
+                type_matched = False
+                for m in self.CS_TYPE_REGEX.finditer(line):
+                    type_matched = True
+                    kind_raw = m.group(1)
+                    sym = CodeSymbol(
+                        name=m.group(2),
+                        kind="interface" if kind_raw == "interface" else ("struct" if kind_raw == "struct" else ("enum" if kind_raw == "enum" else "class")),
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
+                    )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
+                if not type_matched:
+                    for m in self.CS_FN_REGEX.finditer(line):
+                        fname = m.group(1)
+                        if fname in self._C_CONTROL_KEYWORDS:
+                            continue
+                        sym = CodeSymbol(
+                            name=fname,
+                            kind="function",
+                            file_path=rel_path,
+                            line_start=idx,
+                            line_end=idx,
+                            signature=sig,
+                        )
+                        sym.is_public = _evaluate_symbol_visibility(sym)
+                        symbols.append(sym)
+            elif suffix == ".rb":
+                if stripped_line in ("private", "protected", "public"):
+                    rb_visibility = stripped_line
+                    continue
+                for m in self.RB_CLS_REGEX.finditer(line):
+                    rb_visibility = "public"
+                    sym = CodeSymbol(
+                        name=m.group(2),
+                        kind="class",
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
+                    )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
+                for m in self.RB_FN_REGEX.finditer(line):
+                    rb_sig = sig if rb_visibility == "public" else f"{rb_visibility} {sig}"
+                    sym = CodeSymbol(
+                        name=m.group(1),
+                        kind="function",
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=rb_sig,
+                    )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
+            elif suffix == ".php":
+                for m in self.PHP_CLS_REGEX.finditer(line):
+                    sym = CodeSymbol(
+                        name=m.group(2),
+                        kind="interface" if m.group(1) in ("interface", "trait") else ("enum" if m.group(1) == "enum" else "class"),
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
+                    )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
+                for m in self.PHP_FN_REGEX.finditer(line):
+                    sym = CodeSymbol(
+                        name=m.group(1),
+                        kind="function",
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
+                    )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
+            elif suffix == ".swift":
+                for m in self.SWIFT_CLS_REGEX.finditer(line):
+                    kind_raw = m.group(1)
+                    sym = CodeSymbol(
+                        name=m.group(2),
+                        kind="interface" if kind_raw == "protocol" else ("struct" if kind_raw == "struct" else ("enum" if kind_raw == "enum" else "class")),
+                        file_path=rel_path,
+                        line_start=idx,
+                        line_end=idx,
+                        signature=sig,
+                    )
+                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    symbols.append(sym)
+                for m in self.SWIFT_FN_REGEX.finditer(line):
                     sym = CodeSymbol(
                         name=m.group(1),
                         kind="function",
@@ -1104,14 +1338,14 @@ def _evaluate_symbol_visibility(
             return bool(_RUST_PUB_RE.search(sig))
         return not sym.name.startswith("_")
 
-    if suffix in (".ts", ".tsx", ".js", ".jsx"):
+    if suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"):
         if sym.kind == "method":
             if sym.parent_symbol and class_is_public is not None and not class_is_public.get(sym.parent_symbol, False):
                 return False
             if sym.parent_symbol and sym.parent_symbol.startswith(("_", "#")):
                 return False
             return not (sym.name.startswith(("_", "#")) or _TS_PRIVATE_METHOD_RE.match(sig))
-        if sig.startswith("export ") or re.match(r"^export\b", sig):
+        if sig.startswith("export ") or re.match(r"^export\b", sig) or sym.name == "defineProps":
             return True
         return bool(ts_exports is not None and sym.name in ts_exports)
 
@@ -1122,6 +1356,37 @@ def _evaluate_symbol_visibility(
             return False
         sig_prefix = sig.split("(", 1)[0] if sig else ""
         return not (sig_prefix and _JAVA_KT_PRIVATE_RE.search(sig_prefix))
+
+    if suffix in (".c", ".cpp", ".h", ".hpp"):
+        if sym.name.startswith("_"):
+            return False
+        sig_prefix = sig.split("(", 1)[0] if sig else ""
+        return not bool(re.search(r"\bstatic\b", sig_prefix))
+
+    if suffix == ".cs":
+        if sym.name.startswith("_"):
+            return False
+        sig_prefix = sig.split("(", 1)[0] if sig else ""
+        return bool(re.search(r"\bpublic\b", sig_prefix)) and not bool(
+            re.search(r"\b(?:private|internal|protected)\b", sig_prefix)
+        )
+
+    if suffix == ".rb":
+        if sym.name.startswith("_"):
+            return False
+        return not sig.startswith(("private ", "protected "))
+
+    if suffix == ".php":
+        if sym.name.startswith("_"):
+            return False
+        sig_prefix = sig.split("(", 1)[0] if sig else ""
+        return not bool(re.search(r"\b(?:private|protected)\b", sig_prefix))
+
+    if suffix == ".swift":
+        if sym.name.startswith("_"):
+            return False
+        sig_prefix = sig.split("(", 1)[0] if sig else ""
+        return not bool(re.search(r"\b(?:private|fileprivate|internal)\b", sig_prefix))
 
     # Python (.py) and default fallback
     if py_dunder_all is not None:
@@ -1145,14 +1410,87 @@ def _is_public_symbol(sym: CodeSymbol) -> bool:
     return _evaluate_symbol_visibility(sym)
 
 
+_BOUNDARY_ENTRYPOINT_NAMES = frozenset(
+    {
+        "__init__.py",
+        "main.py",
+        "cli.py",
+        "index.ts",
+        "index.tsx",
+        "index.js",
+        "index.jsx",
+        "mod.rs",
+        "lib.rs",
+        "main.rs",
+        "main.go",
+    }
+)
+
+
+def _evaluate_boundary_export(
+    sym: CodeSymbol,
+    *,
+    py_dunder_all: set[str] | None = None,
+) -> bool:
+    """Distinguish package/contract boundary exports from module-internal helper functions (DLT-2026-081)."""
+    if not _is_public_symbol(sym):
+        return False
+    p = Path(sym.file_path)
+    suffix = p.suffix.lower()
+    fname = p.name.lower()
+    if fname in _BOUNDARY_ENTRYPOINT_NAMES:
+        return True
+    if py_dunder_all is not None:
+        if sym.kind == "method":
+            return bool(sym.parent_symbol and sym.parent_symbol in py_dunder_all)
+        return sym.name in py_dunder_all
+    if sym.kind in ("class", "interface", "struct", "enum", "type", "method"):
+        return True
+    return not (suffix == ".py" and sym.kind == "function")
+
+
+def _is_boundary_export_symbol(
+    sym: CodeSymbol,
+    *,
+    py_dunder_all: set[str] | None = None,
+) -> bool:
+    """Return True if a public symbol is a package/contract boundary export rather than a module-internal helper."""
+    if sym.is_boundary_export is not None:
+        return sym.is_boundary_export
+    return _evaluate_boundary_export(sym, py_dunder_all=py_dunder_all)
+
+
 #: Source extensions whose public symbols are compared structurally.
-AST_DIFF_EXTS = frozenset({".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java", ".kt", ".kts"})
+AST_DIFF_EXTS = frozenset(
+    {
+        ".py",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".go",
+        ".rs",
+        ".java",
+        ".kt",
+        ".kts",
+        ".c",
+        ".cpp",
+        ".h",
+        ".hpp",
+        ".cs",
+        ".rb",
+        ".php",
+        ".swift",
+        ".vue",
+        ".svelte",
+    }
+)
 _AST_DIFF_EXTS = AST_DIFF_EXTS
 
 
 @dataclass
 class PublicSymbolDiff:
-    """Structured diff of public symbols between two versions of a source file (DLT-2026-039).
+    """Structured diff of public symbols between two versions of a source file (DLT-2026-039, DLT-2026-081).
 
     Each entry is a ``(kind, parent_symbol, name)`` key with ``parent_symbol == ""`` for top-level symbols.
     """
@@ -1160,6 +1498,7 @@ class PublicSymbolDiff:
     added: list[tuple[str, str, str]] = field(default_factory=list)
     removed: list[tuple[str, str, str]] = field(default_factory=list)
     changed: list[tuple[str, str, str]] = field(default_factory=list)
+    boundary_added: list[tuple[str, str, str]] = field(default_factory=list)
 
     @staticmethod
     def qualified_name(key: tuple[str, str, str]) -> str:
@@ -1196,15 +1535,69 @@ def public_symbol_map(content: str | None, file_path: Path | str) -> dict[tuple[
     }
 
 
+def boundary_symbol_map(content: str | None, file_path: Path | str) -> dict[tuple[str, str, str], str]:
+    """Map ``(kind, parent_symbol, name) -> signature`` of package/contract boundary symbols in one file version (DLT-2026-081)."""
+    p = Path(file_path)
+    suffix = p.suffix.lower()
+    if content is None or suffix not in _AST_DIFF_EXTS:
+        return {}
+    py_dunder_all: set[str] | None = None
+    reexported: dict[tuple[str, str, str], str] = {}
+    if suffix == ".py":
+        try:
+            tree = ast.parse(content, filename=str(p))
+            py_dunder_all = _extract_python_dunder_all(tree)
+            if p.name.lower() == "__init__.py":
+                for node in ast.iter_child_nodes(tree):
+                    if isinstance(node, ast.ImportFrom):
+                        for alias in node.names:
+                            bound_name = alias.asname or alias.name
+                            if (
+                                bound_name != "*"
+                                and not bound_name.startswith("_")
+                                and (py_dunder_all is None or bound_name in py_dunder_all)
+                            ):
+                                reexported[("export", "", bound_name)] = f"reexport {bound_name}"
+        except (SyntaxError, ValueError):
+            py_dunder_all = None
+    elif p.name.lower() in ("index.ts", "index.tsx", "index.js", "index.jsx"):
+        for name in _extract_ts_exported_names(content):
+            if not name.startswith("_"):
+                reexported[("export", "", name)] = f"reexport {name}"
+    elif p.name.lower() in ("mod.rs", "lib.rs"):
+        for m in re.finditer(r"^\s*pub\s+use\s+[^;]*::([A-Za-z_][A-Za-z0-9_]*)\s*;", content, re.MULTILINE):
+            reexported[("export", "", m.group(1))] = f"pub use {m.group(1)}"
+
+    indexer: BaseAstIndexer = FallbackIndexer() if suffix == ".py" else get_ast_indexer()
+    out: dict[tuple[str, str, str], str] = {
+        (s.kind, s.parent_symbol or "", s.name): (s.signature or "")
+        for s in indexer.extract_symbols(p, content)
+        if _is_boundary_export_symbol(s, py_dunder_all=py_dunder_all)
+    }
+    for k, v in reexported.items():
+        if not any(existing_k[2] == k[2] for existing_k in out):
+            out[k] = v
+    return out
+
+
 def diff_symbol_maps(
     old_map: dict[tuple[str, str, str], str],
     new_map: dict[tuple[str, str, str], str],
+    *,
+    old_boundary_map: dict[tuple[str, str, str], str] | None = None,
+    new_boundary_map: dict[tuple[str, str, str], str] | None = None,
 ) -> PublicSymbolDiff:
-    """Diff two ``public_symbol_map()`` results."""
+    """Diff two ``public_symbol_map()`` results, optionally tracking boundary-only symbol additions."""
+    added = sorted(set(new_map) - set(old_map))
+    if old_boundary_map is not None and new_boundary_map is not None:
+        boundary_added = sorted(set(new_boundary_map) - set(old_boundary_map))
+    else:
+        boundary_added = list(added)
     return PublicSymbolDiff(
-        added=sorted(set(new_map) - set(old_map)),
+        added=added,
         removed=sorted(set(old_map) - set(new_map)),
         changed=sorted(k for k in set(old_map) & set(new_map) if old_map[k] != new_map[k]),
+        boundary_added=boundary_added,
     )
 
 
@@ -1218,7 +1611,12 @@ def diff_public_symbols(
     ``None`` content is treated as an empty file (so every public symbol of an added file is ``added``).
     Files without AST support (non-code extensions) yield an empty diff.
     """
-    return diff_symbol_maps(public_symbol_map(old_content, file_path), public_symbol_map(new_content, file_path))
+    return diff_symbol_maps(
+        public_symbol_map(old_content, file_path),
+        public_symbol_map(new_content, file_path),
+        old_boundary_map=boundary_symbol_map(old_content, file_path),
+        new_boundary_map=boundary_symbol_map(new_content, file_path),
+    )
 
 
 def has_structural_changes(

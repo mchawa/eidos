@@ -781,6 +781,34 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                                 (c_iid, cid),
                             )
 
+        if doc_type == "delta/mutation":
+            for m in fm.get("mutations", []) or []:
+                if not isinstance(m, dict):
+                    continue
+                for k, v in m.items():
+                    if (k.startswith("target_") or k == "new_capability_id") and isinstance(v, str) and v.strip():
+                        target_val = v.strip()
+                        if target_val.endswith(".adoc") or "/" in target_val:
+                            clean_p = target_val.replace("\\", "/")
+                            p_row = conn.execute(
+                                "SELECT id FROM entities WHERE file_path = ? OR file_path LIKE ? LIMIT 1;",
+                                (clean_p, f"%/{clean_p}"),
+                            ).fetchone()
+                            if p_row:
+                                target_val = p_row["id"]
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'affects', NULL);",
+                            (doc_id, target_val),
+                        )
+                        for c_row in conn.execute(
+                            "SELECT entity_id FROM symbol_mappings WHERE symbol = ? AND kind = 'component_id';",
+                            (target_val,),
+                        ).fetchall():
+                            conn.execute(
+                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'affects', NULL);",
+                                (doc_id, c_row["entity_id"]),
+                            )
+
         for inv in invariants:
             iid = inv.get("id") if isinstance(inv, dict) else None
             if iid:

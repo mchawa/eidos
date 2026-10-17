@@ -47,7 +47,7 @@ technical:
       rule: "Lifecycle hooks (PostInvocation and Stop) must report internal validation or drift execution errors via structured JSON output (injectSteps or decision: continue) rather than failing silently."
       test_binding: "tests/test_plugin.py::test_hooks_fail_loud_on_internal_error"
     - id: INV-HOOK-BLOCK-ONCE
-      rule: "Stop lifecycle hooks (eidos hook lint --event Stop and eidos hook drift --event Stop) must block completion once per distinct failure fingerprint and allow subsequent termination attempts with the identical fingerprint."
+      rule: "Stop lifecycle hooks (eidos hook lint --event Stop and eidos hook drift --event Stop) must block completion once per active failure fingerprint (scoped by TTL and optional session ID in stop-gate.json) and allow subsequent termination attempts with the identical fingerprint while emitting a non-blocking systemMessage warning."
       test_binding: "tests/test_plugin.py::test_stop_gate_block_once_and_allow_second_attempt"
     - id: INV-AGENT-CONTEXT-SLICING
       rule: "Context slicing must extract compact, token-efficient architectural subgraphs without phantom dependencies or circular module errors."
@@ -75,7 +75,7 @@ In strict adherence to *POL-004*, Eidos never initiates AI/LLM calls itself. Ins
 * **Tiered Architectural Context Slicing**: Dynamically extracting token-compressed architectural subgraphs matching task requirements.
 * **Hybrid Lexical-Relational Retrieval**: Combining FTS5 BM25 search with graph-neighborhood traversals to resolve engineering prompts to architectural entities.
 * **Architectural Blast-Radius Analysis**: Recursive CTE impact mapping allowing agents to assess blast radius before proposing code changes.
-* **Lifecycle Linting & Safety Hooks**: Pre-completion hooks enforcing specification schemas, valid cross-references, frontmatter syntax integrity, and dedicated spec-to-code synchronization drift gates.
+* **Lifecycle Linting & Safety Hooks**: Pre-completion hooks enforcing specification schemas, valid cross-references, frontmatter syntax integrity, and dedicated spec-to-code synchronization drift gates with TTL/session-scoped Block-Once Stop gate state in `eidos/.cache/stop-gate.json` and explicit `systemMessage` bypass warnings.
 * **Non-Destructive Plugin Ecosystem Management**: Installing and removing agent plugins via `eidos plugin` with deterministic `.eidos-manifest.json` tracking (preventing destruction of shared parent directories), non-destructive `force=False` overwrite semantics, symlink guards, and version-pinned `uvx` hook execution.
 
 == Tiered Context Slicing Architecture
@@ -91,6 +91,7 @@ Eidos implements a three-tier context compression model:
 |===
 
 == Hybrid Retrieval & Freshness Invariant
-* **FTS5 BM25 Lexical Ranking**: Translates natural language engineering tasks (e.g. "update auth token expiration") into exact architectural IDs.
+* **FTS5 BM25 Lexical Ranking**: Translates natural language engineering tasks (e.g. "update auth token expiration") into exact architectural IDs using two-tier multi-term `AND` coordination boosting over `OR` prefix matches and hop $\ge 2$ organizational hub fan-out suppression across `product/domain` and `design/system` nodes.
+* **Calibrated Token Budget Estimation**: `TieredContextSlice._estimate_tokens` weights structural syntax characters (`{}[]:,"'|`) at ~3.0 characters per token and natural-language prose at ~4.0 characters per token so `anchor`, `guardrails`, and `deep` slices honor strict token budgets across both Markdown and JSON outputs.
 * **Zero-Drift Freshness (`INV-AGENT-GRAPH-INDEX-FRESHNESS`)**: Every CLI query lazily checks dirty status via SHA-256 and mtime hashing, synchronizing modified specs in sub-5ms so agents never operate on stale architecture.
 * **Non-Destructive Plugin Management (`INV-PLUGIN-SCHEMA-CONFORMANCE`)**: The `eidos plugin` ecosystem ensures non-destructive installation, manifest-tracked uninstallation (`.eidos-manifest.json`), `force=False` overwrite protection, symlink traversal prevention, and version-pinned `uvx` hook commands.

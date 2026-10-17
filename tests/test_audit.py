@@ -353,4 +353,52 @@ def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
             gi._INDEX_INSTANCE = None
 
 
+def test_dlt_2026_083_audit_ignores_gitignored_files(tmp_path):
+    """Verify DLT-2026-083: AuditEngine._scan_and_classify_references skips gitignored directories."""
+    import subprocess
+
+    from eidos.core.lifecycle.audit import AuditEngine
+    from eidos.core.lifecycle.initializer import init_repository
+
+    init_repository(tmp_path)
+    eidos_dir = tmp_path / "eidos"
+    deltas_dir = eidos_dir / "deltas"
+    deltas_dir.mkdir(parents=True, exist_ok=True)
+    (deltas_dir / "dlt-2026-001.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-001\n"
+        "title: Remove Old Container\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: enabler\n"
+        "  motivation: Test gitignore exclusion\n"
+        "mutations:\n"
+        "  - action: remove_container\n"
+        "    target_container: CNT-OLD-LEGACY\n"
+        "---\n"
+        "= SpecDelta\n",
+        encoding="utf-8",
+    )
+
+    (tmp_path / ".gitignore").write_text("custom_scratch_build/\n", encoding="utf-8")
+    ignored_dir = tmp_path / "custom_scratch_build"
+    ignored_dir.mkdir(parents=True, exist_ok=True)
+    (ignored_dir / "stale.py").write_text("client = 'CNT-OLD-LEGACY'\n", encoding="utf-8")
+
+    tracked_dir = tmp_path / "src"
+    tracked_dir.mkdir(parents=True, exist_ok=True)
+    (tracked_dir / "service.py").write_text("client = 'CNT-OLD-LEGACY'\n", encoding="utf-8")
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
+
+    engine = AuditEngine(repo_root=tmp_path, eidos_dir=eidos_dir)
+    result = engine.audit_delta("DLT-2026-001")
+    files_scanned = {f.file_path for f in result.unacknowledged_findings}
+    assert "src/service.py" in files_scanned
+    assert "custom_scratch_build/stale.py" not in files_scanned
+
+
+
 

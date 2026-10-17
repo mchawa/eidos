@@ -606,3 +606,157 @@ def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(monkeypatch, tmp
     cat_ws, _ = classify_design_changes("export const t = 1;", "export  const  t = 1;", "src/theme.ts")
     assert cat_ws == "body_only"
 
+
+def test_dlt_2026_083_polyglot_fallback_and_block_comment_stripping(tmp_path):
+    """Verify DLT-2026-083: FallbackIndexer extracts symbols across C/C++/C#/Ruby/PHP/Swift/Vue/Svelte while ignoring block-commented declarations."""
+    from eidos.core.index.ast_indexer import FallbackIndexer
+
+    indexer = FallbackIndexer()
+
+    cpp_file = tmp_path / "engine.hpp"
+    cpp_file.write_text(
+        "/*\n"
+        "class CommentedOutEngine {};\n"
+        "void commented_fn(int x) {}\n"
+        "*/\n"
+        "class RenderEngine {\n"
+        "};\n"
+        "static void internal_helper(int a) {\n"
+        "}\n"
+        "int compute_frame(int width, int height) {\n"
+        "    return width * height;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    cpp_syms = indexer.extract_symbols(cpp_file)
+    cpp_names = {s.name: s for s in cpp_syms}
+    assert "CommentedOutEngine" not in cpp_names
+    assert "commented_fn" not in cpp_names
+    assert "RenderEngine" in cpp_names
+    assert cpp_names["RenderEngine"].is_public is True
+    assert "internal_helper" in cpp_names
+    assert cpp_names["internal_helper"].is_public is False
+    assert "compute_frame" in cpp_names
+    assert cpp_names["compute_frame"].is_public is True
+    assert cpp_names["compute_frame"].line_start == 9
+
+    cs_file = tmp_path / "OrderService.cs"
+    cs_file.write_text(
+        "public class OrderService {\n"
+        "    public void SubmitOrder(string id) {}\n"
+        "    private void ValidateInternal(string id) {}\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    cs_syms = {s.name: s for s in indexer.extract_symbols(cs_file)}
+    assert cs_syms["OrderService"].is_public is True
+    assert cs_syms["SubmitOrder"].is_public is True
+    assert cs_syms["ValidateInternal"].is_public is False
+
+    rb_file = tmp_path / "billing.rb"
+    rb_file.write_text(
+        "=begin\n"
+        "def commented_ruby_method(x)\n"
+        "end\n"
+        "=end\n"
+        "class BillingProcessor\n"
+        "  def charge_card(amount)\n"
+        "  end\n"
+        "  def _internal_audit\n"
+        "  end\n"
+        "end\n",
+        encoding="utf-8",
+    )
+    rb_syms = {s.name: s for s in indexer.extract_symbols(rb_file)}
+    assert "commented_ruby_method" not in rb_syms
+    assert rb_syms["BillingProcessor"].is_public is True
+    assert rb_syms["charge_card"].is_public is True
+    assert rb_syms["_internal_audit"].is_public is False
+
+    vue_file = tmp_path / "UserCard.vue"
+    vue_file.write_text(
+        "<script setup lang=\"ts\">\n"
+        "export interface UserCardProps {\n"
+        "  userId: string;\n"
+        "}\n"
+        "const props = defineProps<UserCardProps>();\n"
+        "export function formatUserName(name: string): string {\n"
+        "  return name.trim();\n"
+        "}\n"
+        "function localHelper() {}\n"
+        "</script>\n",
+        encoding="utf-8",
+    )
+    vue_syms = {s.name: s for s in indexer.extract_symbols(vue_file)}
+    assert vue_syms["UserCardProps"].is_public is True
+    assert vue_syms["defineProps"].is_public is True
+    assert vue_syms["formatUserName"].is_public is True
+    assert vue_syms["localHelper"].is_public is False
+
+    svelte_file = tmp_path / "Counter.svelte"
+    svelte_file.write_text(
+        "<script lang=\"ts\">\n"
+        "export let initialCount = 0;\n"
+        "function increment() { initialCount += 1; }\n"
+        "</script>\n",
+        encoding="utf-8",
+    )
+    svelte_syms = {s.name: s for s in indexer.extract_symbols(svelte_file)}
+    assert svelte_syms["initialCount"].is_public is True
+    assert svelte_syms["increment"].is_public is False
+
+    php_file = tmp_path / "InvoiceService.php"
+    php_file.write_text(
+        "<?php\n"
+        "interface Chargeable {}\n"
+        "enum InvoiceStatus {}\n"
+        "class InvoiceService {\n"
+        "    public function issueInvoice($id) {}\n"
+        "    private function recalcInternal($id) {}\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    php_syms = {s.name: s for s in indexer.extract_symbols(php_file)}
+    assert php_syms["Chargeable"].kind == "interface"
+    assert php_syms["InvoiceStatus"].kind == "enum"
+    assert php_syms["InvoiceService"].is_public is True
+    assert php_syms["issueInvoice"].is_public is True
+    assert php_syms["recalcInternal"].is_public is False
+
+    swift_file = tmp_path / "AuthManager.swift"
+    swift_file.write_text(
+        "public protocol Authenticatable {}\n"
+        "public struct AuthToken {}\n"
+        "public enum AuthState {}\n"
+        "public class AuthManager {\n"
+        "    public func verifyToken() {}\n"
+        "    private func clearCache() {}\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    swift_syms = {s.name: s for s in indexer.extract_symbols(swift_file)}
+    assert swift_syms["Authenticatable"].kind == "interface"
+    assert swift_syms["AuthToken"].kind == "struct"
+    assert swift_syms["AuthState"].kind == "enum"
+    assert swift_syms["AuthManager"].is_public is True
+    assert swift_syms["verifyToken"].is_public is True
+    assert swift_syms["clearCache"].is_public is False
+
+    # AstGrepIndexer.list_test_functions on TypeScript/JavaScript/Rust/Go/Java
+    from eidos.core.index.ast_indexer import AstGrepIndexer, boundary_symbol_map
+
+    ag = AstGrepIndexer()
+    ts_funcs = ag.list_test_functions(
+        "src/auth.test.ts",
+        "// preceding comment\nit('validates token expiry', () => { expect(1).toBe(1); });\nfunction testHelper() {}\n",
+    )
+    assert "validates token expiry" in ts_funcs
+    assert "testHelper" in ts_funcs
+
+    # boundary_symbol_map re-exports across __init__.py, index.ts, and lib.rs
+    py_reexp = boundary_symbol_map("from .core import PublicClient as Client, _private\n", "src/pkg/__init__.py")
+    assert ("export", "", "Client") in py_reexp
+    ts_reexp = boundary_symbol_map("export { UserDto, type OrderDto } from './models';\n", "src/pkg/index.ts")
+    assert ("export", "", "UserDto") in ts_reexp
+    rs_reexp = boundary_symbol_map("pub use crate::engine::VaultEngine;\n", "src/lib.rs")
+    assert ("export", "", "VaultEngine") in rs_reexp

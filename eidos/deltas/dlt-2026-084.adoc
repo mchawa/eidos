@@ -1,0 +1,77 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-084
+title: "Stateful Block-Once Stop Gate with TTL/Session Expiry and Explicit Bypass Warning Message"
+status: applied
+vcs:
+  branch: feat/stop-gate-ttl-and-warning
+  base_commit: 21860a2b4c524667f21f69c72de66d8b3baac936
+intent:
+  kind: enabler
+  motivation: "Preserve the loop-preventing Block-Once Stop Gate contract (INV-HOOK-BLOCK-ONCE) while fixing stale cross-session fingerprints in stop-gate.json via TTL/session scoping and surfacing an explicit systemMessage warning when a second identical Stop attempt releases the gate."
+mutations:
+  - action: modify_component
+    target_component: CMP-HOOK-RUNNER
+    details: "Update _check_and_record_stop_gate, handle_lint_stop, and handle_drift_stop in src/eidos/plugin/hooks.py to retain strict Block-Once per failure fingerprint while recording metadata (fingerprint, timestamp, session_id) in eidos/.cache/stop-gate.json with TTL expiration (default 600s) and session scoping, and include an explicit systemMessage warning alongside decision: allow when a repeated identical fingerprint releases the Stop gate."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/plugin/hooks.py"
+        responsibility: "stop-gate.json"
+  - action: extend_capability
+    target_capability: CAP-AGENT-001
+    details: "Extend CAP-AGENT-001 and INV-HOOK-BLOCK-ONCE in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc to specify TTL/session expiry on recorded stop-gate fingerprints and explicit systemMessage warning emission on second-attempt release."
+    expect:
+      frontmatter:
+        status: active
+      body:
+        contains:
+          - "stop-gate.json"
+  - action: patch_invariant
+    target_capability: CAP-AGENT-001
+    target_invariant_id: INV-HOOK-BLOCK-ONCE
+    details: "Update INV-HOOK-BLOCK-ONCE rule to specify that Stop lifecycle hooks block completion once per active failure fingerprint (scoped by TTL and optional session ID in stop-gate.json) and allow subsequent termination attempts with the identical fingerprint while emitting a non-blocking systemMessage warning."
+    expect:
+      frontmatter:
+        rule: "block completion once"
+        test_binding: "tests/test_plugin.py::test_stop_gate_block_once_and_allow_second_attempt"
+---
+= SpecDelta: Stateful Block-Once Stop Gate with TTL/Session Expiry and Explicit Bypass Warning Message
+:toc: left
+
+== Problem Statement
+
+In `src/eidos/plugin/hooks.py` (`_check_and_record_stop_gate`, `handle_lint_stop`, `handle_drift_stop`), the Block-Once Stop Gate (`INV-HOOK-BLOCK-ONCE`, introduced in `DLT-2026-024`) prevents infinite agent loops when the working tree has pre-existing drift during a read-only user query. However, two operational flaws exist in its current state management:
+
+1. **Stale Fingerprints Across Separate Sessions (No TTL or Session Scope)**:
+   `eidos/.cache/stop-gate.json` stores bare string values (`{"fingerprint": "<sha256>"}`) with no timestamp or session identifier. If an agent is blocked once and the user interrupts or starts a new prompt 30 minutes later with the same working-tree state, the *first* `Stop` of the new session matches the stale `prev_fp == fingerprint`, deletes the gate, and allows termination without blocking even once.
+
+2. **Silent Bypass Without Warning (`systemMessage` Omitted)**:
+   `DLT-2026-024` specified that when releasing the gate on the second attempt with an identical fingerprint, the hook should return `{"decision": "allow", "systemMessage": ...}` so the user and agent are explicitly notified that unresolved drift or validation errors remain. Currently, `handle_lint_stop` and `handle_drift_stop` return bare `{"decision": "allow"}` silently.
+
+== Proposed Specification Changes
+
+1. **Keep Block-Once Semantics with TTL & Session Scoping (`CMP-HOOK-RUNNER`)**:
+   * Store structured gate records in `eidos/.cache/stop-gate.json` (while remaining backward-compatible with legacy string values):
+     ```json
+     {
+       "fingerprint": {
+         "hash": "<sha256>",
+         "timestamp": 1760650000.0,
+         "session_id": "<optional-session-or-conversation-id>"
+       }
+     }
+     ```
+   * Treat a recorded gate entry as expired if `now - timestamp > 600` seconds (configurable via `EIDOS_STOP_GATE_TTL_SECONDS`, defaulting to `600`) or if the incoming hook payload provides a `session_id` / `conversation_id` that differs from the recorded non-empty `session_id`.
+   * On the first `Stop` with a given fingerprint (or after TTL/session expiry), record the entry and block (`{"decision": "continue", "reason": ...}`).
+   * On the second `Stop` within the active TTL/session with the identical fingerprint, clear the key from `stop-gate.json` and allow termination (`Block-Once`).
+
+2. **Explicit Warning `systemMessage` on Second-Attempt Release (`CMP-HOOK-RUNNER`, `INV-HOOK-BLOCK-ONCE`)**:
+   * When `_check_and_record_stop_gate` releases on the second identical attempt, return `{"decision": "allow", "systemMessage": "⚠️ [Eidos Stop Gate] Allowing termination on repeated failure fingerprint, but unresolved drift/validation issues remain in 'eidos/'."}` so bypasses are always visible.
+
+== Verification Plan
+
+* Update and expand `tests/test_plugin.py::test_stop_gate_block_once_and_allow_second_attempt` to verify:
+  ** First Stop blocks (`decision == "continue"`), second Stop with identical fingerprint within TTL allows (`decision == "allow"`) and includes `systemMessage`.
+  ** Expired `stop-gate.json` entries (exceeding TTL) or entries from a different `session_id` block again on the first Stop of the new session.
+* Run `eidos validate eidos` and `eidos delta verify DLT-2026-084`.

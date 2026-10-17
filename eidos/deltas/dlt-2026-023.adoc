@@ -46,14 +46,7 @@ mutations:
     reporting of AST parser engine identity, symbol counts by kind, and test invariant
     assertion metrics) and INV-INDEX-CODE-DIRTY-SYNC (enforcing sub-5ms code-aware
     dirty checking and JIT synchronization when source or test files are modified).
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-INDEX
-  - CNT-EIDOS-CLI
-  - CNT-EIDOS-PLUGIN
 ---
-
-
 = SpecDelta: Continuous Code-Aware AST Indexing and Status Telemetry
 :toc: left
 

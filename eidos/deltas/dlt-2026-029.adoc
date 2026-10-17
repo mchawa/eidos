@@ -27,14 +27,6 @@ mutations:
   details: Assert that 'GraphIndex.sync()' retains 'asserts' edges in 'eidos/.cache/index.db'
     and that 'get_index_status()["test_invariant_assertions"]' reports the non-zero
     count of verified test-to-invariant bindings.
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-INDEX
-  impacted_components:
-  - CMP-GRAPH-STORAGE
-  - CMP-INCREMENTAL-SYNC-ENGINE
-  invariants_to_enforce:
-  - INV-KNOWLEDGE-GRAPH-CATALOG
 ---
 = SpecDelta: Preserve Test-to-Invariant Assertion Edges in Knowledge Graph Sync
 :toc: left

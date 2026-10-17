@@ -341,22 +341,44 @@ def get_git_diff_files(
     return get_git_diff_files(repo_root, uncommitted=True)
 
 
-def get_tracked_files(repo_root: Path) -> list[str]:
-    """Retrieve all Git-tracked files in repo_root with core.quotePath=false."""
+def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[str]:
+    """Retrieve all Git-tracked and non-ignored untracked files in repo_root with core.quotePath=false."""
     repo = repo_root.resolve()
     try:
+        cmd = (
+            ["git", "-c", "core.quotePath=false", "ls-files", "--cached", "--others", "--exclude-standard"]
+            if include_untracked
+            else ["git", "-c", "core.quotePath=false", "ls-files"]
+        )
         res = subprocess.run(
-            ["git", "-c", "core.quotePath=false", "ls-files"],
+            cmd,
             cwd=repo,
             capture_output=True,
             text=True,
             check=False,
         )
         if res.returncode == 0:
-            return [line.strip() for line in res.stdout.splitlines() if line.strip()]
+            seen: dict[str, None] = {}
+            for line in res.stdout.splitlines():
+                rel = line.strip()
+                if rel and rel not in seen and (repo / rel).is_file():
+                    seen[rel] = None
+            return list(seen)
     except OSError:
         pass
     return []
+
+
+def _has_structural_ast_change(
+    old_content: str | None,
+    new_content: str | None,
+    file_path: Path | str,
+) -> bool:
+    """Return True if (old_content, new_content) for file_path has structural AST symbol changes."""
+    from eidos.core.index.ast_indexer import has_structural_changes
+
+    is_structural, _ = has_structural_changes(old_content, new_content, file_path)
+    return is_structural
 
 
 POLYGLOT_TEST_PATTERNS = [
@@ -513,6 +535,20 @@ def collect_polyglot_test_files(repo_root: Path) -> dict[str, str]:
     if not root.exists():
         return all_tests_content
 
+    if (root / ".git").exists():
+        tracked_rels = get_tracked_files(root)
+        if tracked_rels:
+            for rel in tracked_rels:
+                rel_parts = Path(rel).parts
+                if any(d in POLYGLOT_EXCLUDED_DIRS or d.startswith(".") for d in rel_parts[:-1]):
+                    continue
+                if is_polyglot_test_file(Path(rel), repo_root=root):
+                    try:
+                        all_tests_content[rel] = (root / rel).read_text(encoding="utf-8", errors="replace")
+                    except OSError:
+                        continue
+            return all_tests_content
+
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in POLYGLOT_EXCLUDED_DIRS and not d.startswith(".")]
 
@@ -572,11 +608,13 @@ def classify_changed_files(
         ".c",
         ".cpp",
         ".h",
+        ".hpp",
         ".cs",
         ".rb",
         ".php",
         ".swift",
         ".kt",
+        ".kts",
     }
 
     effective_root = (repo_root or Path.cwd()).resolve()

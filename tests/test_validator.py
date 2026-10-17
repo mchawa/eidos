@@ -61,7 +61,7 @@ def test_validate_eidos_specifications(validator):
 
 
 def test_delta_affects_validation_broken_references(tmp_path, validator):
-    """Verify Initiative A: SpecDelta affects.* entity ID references are validated and report broken references."""
+    """Verify SpecDelta mutations[].target_* entity ID references are validated and report broken references."""
     eidos_dir = tmp_path / "eidos"
     deltas_dir = eidos_dir / "deltas"
     comps_dir = eidos_dir / "architecture" / "components"
@@ -81,7 +81,7 @@ def test_delta_affects_validation_broken_references(tmp_path, validator):
         "= Core\n"
     )
 
-    # Delta with 1 valid component and 3 broken references
+    # Delta with 1 valid existing component, 1 newly added component, and 3 broken references on modify_*
     (deltas_dir / "dlt-test.adoc").write_text(
         "---\n"
         "type: delta/mutation\n"
@@ -93,14 +93,15 @@ def test_delta_affects_validation_broken_references(tmp_path, validator):
         "  motivation: Testing\n"
         "mutations:\n"
         "  - action: add_component\n"
-        "affects:\n"
-        "  components:\n"
-        "    - CMP-TEST-CORE\n"
-        "    - CMP-NONEXISTENT\n"
-        "  contracts:\n"
-        "    - CTR-NONEXISTENT\n"
-        "  policies:\n"
-        "    - POL-NONEXISTENT\n"
+        "    target_component: CMP-NEW-ADDED\n"
+        "  - action: modify_component\n"
+        "    target_component: CMP-TEST-CORE\n"
+        "  - action: modify_component\n"
+        "    target_component: CMP-NONEXISTENT\n"
+        "  - action: modify_contract\n"
+        "    target_contract: CTR-NONEXISTENT\n"
+        "  - action: modify_policy\n"
+        "    target_policy: POL-NONEXISTENT\n"
         "---\n"
         "= Delta\n"
     )
@@ -112,6 +113,8 @@ def test_delta_affects_validation_broken_references(tmp_path, validator):
     assert "CTR-NONEXISTENT" in broken_str
     assert "POL-NONEXISTENT" in broken_str
     assert "CMP-TEST-CORE" not in broken_str
+    assert "CMP-NEW-ADDED" not in broken_str
+
 
 
 def test_capability_semantic_references_broken(tmp_path, validator):
@@ -881,16 +884,6 @@ def test_strict_container_vs_component_target_separation(tmp_path: Path, validat
         "    target_container: CMP-PARSER\n"
         "  - action: modify_architecture\n"
         "    target_architecture: ARCH-CORE-001\n"
-        "affects:\n"
-        "  components:\n"
-        "    - CNT-CORE\n"
-        "  containers:\n"
-        "    - CMP-PARSER\n"
-        "blast_radius:\n"
-        "  impacted_components:\n"
-        "    - CNT-CORE\n"
-        "  impacted_containers:\n"
-        "    - CMP-PARSER\n"
         "---\n"
         "= Bad Delta\n",
         encoding="utf-8",
@@ -899,8 +892,7 @@ def test_strict_container_vs_component_target_separation(tmp_path: Path, validat
     assert "target_component" in delta_errs and "CNT-CORE" in delta_errs
     assert "target_container" in delta_errs and "CMP-PARSER" in delta_errs
     assert "ARCH-CORE-001" not in delta_errs
-    assert "impacted_components" in delta_errs
-    assert "impacted_containers" in delta_errs
+
 
     # 3. Client pointing container to CMP-PARSER
     (clients_dir / "client.adoc").write_text(
@@ -1357,7 +1349,7 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
         encoding="utf-8",
     )
 
-    # 6. Proposed SpecDelta with affects design keys, vcs.base_commit, and a missing blast_radius component
+    # 6. Proposed SpecDelta with vcs.base_commit and a missing target_component reference on modify_component
     (deltas_dir / "dlt-test.adoc").write_text(
         "---\n"
         "type: delta/mutation\n"
@@ -1374,20 +1366,8 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
         "mutations:\n"
         "  - action: modify_component\n"
         "    target_component: CMP-BILLING-LEDGER\n"
-        "affects:\n"
-        "  components:\n"
-        "    - CMP-BILLING-LEDGER\n"
-        "  design_systems: []\n"
-        "  clients: []\n"
-        "  flows: []\n"
-        "  screens: []\n"
-        "  ui_components: []\n"
-        "  personas: []\n"
-        "blast_radius:\n"
-        "  impacted_containers:\n"
-        "    - CNT-BILLING\n"
-        "  impacted_components:\n"
-        "    - CMP-MISSING-GHOST\n"
+        "  - action: modify_component\n"
+        "    target_component: CMP-MISSING-GHOST\n"
         "---\n"
         "= Delta\n",
         encoding="utf-8",
@@ -1397,6 +1377,7 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
     assert report.schema_errors == {}, f"Unexpected schema errors: {report.schema_errors}"
     broken_text = "\n".join(report.broken_references)
     assert "CMP-MISSING-GHOST" in broken_text
+
 
 
 def test_unified_block_scalar_safe_frontmatter_parser_and_extended_models(tmp_path: Path) -> None:
@@ -2406,4 +2387,363 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
     fb_specs.mkdir(parents=True)
     sr_fb, rr_fb = _resolve_spec_and_repo_roots(fb_specs)
     assert sr_fb == fb_specs.resolve() and rr_fb == fb_specs.parent.resolve()
+
+
+def test_delta_expect_closed_schema_rejects_unknown_keys(tmp_path):
+    """Verify DLT-2026-079: delta.schema.yaml enforces additionalProperties: false on mutations[].expect,
+    expect.body, and expect.frontmatter, permitting only structured body/frontmatter blocks."""
+    from eidos.core.spec.parser import parse_spec_file
+
+    validator = SpecValidator()
+    dlt_bad_top = tmp_path / "dlt-bad-top.adoc"
+    dlt_bad_top.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-991\n"
+        "title: Typo or flat key in expect\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: bug\n"
+        "  motivation: Test top-level unknown/flat key rejection.\n"
+        "mutations:\n"
+        "  - action: modify_component\n"
+        "    target_component: CMP-CORE\n"
+        "    expect:\n"
+        "      responsibility: flat_not_allowed\n"
+        "---\n"
+        "= Bad Delta\n",
+        encoding="utf-8",
+    )
+    errs_top = validator.validate_document(parse_spec_file(dlt_bad_top))
+    assert any("responsibility" in e and "Additional properties are not allowed" in e for e in errs_top)
+
+    dlt_bad_nested = tmp_path / "dlt-bad-nested.adoc"
+    dlt_bad_nested.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-992\n"
+        "title: Typo in nested expect.body\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: bug\n"
+        "  motivation: Test nested typo rejection.\n"
+        "mutations:\n"
+        "  - action: modify_component\n"
+        "    target_component: CMP-CORE\n"
+        "    expect:\n"
+        "      body:\n"
+        "        contain: misspelled\n"
+        "---\n"
+        "= Bad Nested Delta\n",
+        encoding="utf-8",
+    )
+    errs_nested = validator.validate_document(parse_spec_file(dlt_bad_nested))
+    assert any("contain" in e and "Additional properties are not allowed" in e for e in errs_nested)
+
+
+def test_dlt_2026_082_bidirectional_contract_parity_and_multi_framework_cli(tmp_path):
+    """Verify DLT-2026-082: bidirectional contract parity detects phantom/deleted operations in CTR-* specs and extracts Click/argparse/sub-Typer CLI commands."""
+    validator = SpecValidator()
+    eidos_dir = tmp_path / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    ctrs_dir = eidos_dir / "architecture" / "contracts"
+    cnts_dir.mkdir(parents=True)
+    ctrs_dir.mkdir(parents=True)
+    src_dir = tmp_path / "src" / "svc"
+    src_dir.mkdir(parents=True)
+
+    (cnts_dir / "svc.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-SVC\n"
+        "name: Service\n"
+        "container_type: backend_service\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/svc\n"
+        "---\n"
+        "= Service\n",
+        encoding="utf-8",
+    )
+
+    # 1. Typer CLI with sub-app and phantom documented command + phantom subcommand
+    (src_dir / "cli.py").write_text(
+        "import typer\n"
+        "app = typer.Typer()\n"
+        "db_app = typer.Typer()\n"
+        "app.add_typer(db_app, name='db')\n\n"
+        "@app.command()\n"
+        "def serve():\n"
+        "    pass\n\n"
+        "@db_app.command()\n"
+        "def migrate():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "cli.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-CLI\n"
+        "title: CLI Contract\n"
+        "protocol: cli_args\n"
+        "owning_container: CNT-SVC\n"
+        "specification_file: src/svc/cli.py\n"
+        "---\n"
+        "= CLI Contract\n\n"
+        "=== `mybin serve`\nServes app.\n\n"
+        "=== `mybin removed-legacy-cmd`\nDeleted command still in spec.\n\n"
+        "=== `mybin db`\n"
+        "* **Sub-commands**:\n"
+        "  - `migrate`: Runs migrations.\n"
+        "  - `phantom-rollback`: Deleted subcommand.\n",
+        encoding="utf-8",
+    )
+
+    # 2. Click CLI and argparse CLI extraction
+    (src_dir / "click_app.py").write_text(
+        "import click\n\n"
+        "@click.group()\n"
+        "def cli():\n"
+        "    pass\n\n"
+        "@cli.command()\n"
+        "def sync_users():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "click_ctr.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-CLICK\n"
+        "title: Click Contract\n"
+        "protocol: cli_args\n"
+        "owning_container: CNT-SVC\n"
+        "specification_file: src/svc/click_app.py\n"
+        "---\n"
+        "= Click Contract\n\n"
+        "=== `phantom-click-cmd`\n",
+        encoding="utf-8",
+    )
+
+    (src_dir / "arg_app.py").write_text(
+        "import argparse\n"
+        "parser = argparse.ArgumentParser()\n"
+        "sub = parser.add_subparsers()\n"
+        "sub.add_parser('export-report')\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "arg_ctr.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-ARG\n"
+        "title: Argparse Contract\n"
+        "protocol: cli_args\n"
+        "owning_container: CNT-SVC\n"
+        "specification_file: src/svc/arg_app.py\n"
+        "---\n"
+        "= Argparse Contract\n\n"
+        "=== `old-arg-cmd`\n",
+        encoding="utf-8",
+    )
+
+    # 3. Bidirectional OpenAPI, gRPC, GraphQL, and Python Protocol phantom operations
+    (src_dir / "openapi.yaml").write_text(
+        "openapi: 3.0.0\npaths:\n  /v1/users:\n    get: {}\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "openapi.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-OA\n"
+        "title: OpenAPI Contract\n"
+        "protocol: rest_openapi\n"
+        "owning_container: CNT-SVC\n"
+        "specification_file: src/svc/openapi.yaml\n"
+        "---\n"
+        "= OpenAPI\n\n"
+        "Exposes `GET /v1/users` and `DELETE /v1/legacy-orders`.\n",
+        encoding="utf-8",
+    )
+
+    (src_dir / "svc.proto").write_text(
+        'syntax = "proto3";\nservice Billing {\n  rpc Charge (Req) returns (Resp);\n}\n',
+        encoding="utf-8",
+    )
+    (ctrs_dir / "grpc.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-GRPC\n"
+        "title: gRPC Contract\n"
+        "protocol: grpc_proto\n"
+        "owning_container: CNT-SVC\n"
+        "specification_file: src/svc/svc.proto\n"
+        "---\n"
+        "= Billing\n\n"
+        "Defines `service Billing`, `rpc Charge`, and `rpc RefundDeleted`.\n",
+        encoding="utf-8",
+    )
+
+    (src_dir / "schema.graphql").write_text(
+        "type Query {\n  activeUser(id: ID!): User\n}\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "graphql.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-GQL\n"
+        "title: GraphQL Contract\n"
+        "protocol: graphql\n"
+        "owning_container: CNT-SVC\n"
+        "specification_file: src/svc/schema.graphql\n"
+        "---\n"
+        "= GraphQL\n\n"
+        "Operations: `activeUser(id: ID!)` and `deletedMutation(id: ID!)`.\n",
+        encoding="utf-8",
+    )
+
+    (src_dir / "ports.py").write_text(
+        "from typing import Protocol\n\n"
+        "class StoragePort(Protocol):\n"
+        "    def save_blob(self, key: str) -> bool: ...\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "proto.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-PROTO\n"
+        "title: Storage Protocol\n"
+        "protocol: python_protocol\n"
+        "owning_container: CNT-SVC\n"
+        "specification_file: src/svc/ports.py\n"
+        "---\n"
+        "= StoragePort\n\n"
+        "Methods: `save_blob(key: str)` and `purge_deleted_blob(key: str)`.\n",
+        encoding="utf-8",
+    )
+
+    report = validator.validate_directory(eidos_dir)
+    broken = "\n".join(report.broken_references)
+    assert "removed-legacy-cmd" in broken
+    assert "db phantom-rollback" in broken
+    assert "sync-users" in broken
+    assert "phantom-click-cmd" in broken
+    assert "export-report" in broken
+    assert "old-arg-cmd" in broken
+    assert "/v1/legacy-orders" in broken
+    assert "RefundDeleted" in broken
+    assert "deletedMutation" in broken
+    assert "purge_deleted_blob" in broken
+
+
+def test_dlt_2026_085_mutations_target_ref_validation_and_schema_rejection(tmp_path: Path, validator: SpecValidator) -> None:
+    """DLT-2026-085 (# eidos:fixture): Verify hand-authored affects/blast_radius are rejected by schema
+    and mutations[].target_* enforces prefix/type and action-aware catalog existence."""
+    from eidos.core.spec.parser import parse_spec_file
+
+    eidos_dir = tmp_path / "eidos"
+
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    deltas_dir = eidos_dir / "deltas"
+    cnts_dir.mkdir(parents=True)
+    deltas_dir.mkdir(parents=True)
+
+    (cnts_dir / "core.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-CORE\n"
+        "name: Core\n"
+        "container_type: library\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/core\n"
+        "components:\n"
+        "  - id: CMP-EXISTING\n"
+        "    name: Existing\n"
+        "    responsibility: Existing component.\n"
+        "    source_path: src/core\n"
+        "---\n"
+        "= Core\n",
+        encoding="utf-8",
+    )
+
+    # 1. Legacy affects / blast_radius rejected by JSON Schema
+    legacy_delta = deltas_dir / "dlt-legacy.adoc"
+    legacy_delta.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-098\n"
+        "title: Legacy Delta\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: refactor\n"
+        "  motivation: Test legacy fields\n"
+        "mutations:\n"
+        "  - action: modify_component\n"
+        "    target_component: CMP-EXISTING\n"
+        "affects:\n"
+        "  components:\n"
+        "    - CMP-EXISTING\n"
+        "blast_radius:\n"
+        "  impacted_containers:\n"
+        "    - CNT-CORE\n"
+        "---\n"
+        "= Legacy\n",
+        encoding="utf-8",
+    )
+    legacy_errs = "\n".join(validator.validate_document(parse_spec_file(legacy_delta)))
+    assert "affects" in legacy_errs and "blast_radius" in legacy_errs
+    legacy_delta.unlink()
+
+    # 2. Action-aware catalog existence on mutations[].target_*
+    (deltas_dir / "dlt-targets.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-099\n"
+        "title: Target Validation Delta\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: feature\n"
+        "  motivation: Test action-aware target validation\n"
+        "mutations:\n"
+        "  - action: add_component\n"
+        "    target_component: CMP-NEW-ADDED\n"
+        "    target_container: CNT-CORE\n"
+        "  - action: add_capability\n"
+        "    new_capability_id: CAP-NEW-001\n"
+        "  - action: add_capability\n"
+        "    new_capability_id: CAP-NEW-BAD-DOM\n"
+        "    target_domain: DOM-MISSING-PARENT\n"
+        "  - action: add_invariant\n"
+        "    target_invariant_id: INV-NEW-001\n"
+        "    target_capability: CAP-NEW-001\n"
+        "  - action: add_invariant\n"
+        "    target_invariant_id: INV-ORPHAN-001\n"
+        "    target_capability: CAP-MISSING-PARENT\n"
+        "  - action: modify_component\n"
+        "    target_component: CMP-MISSING-MODIFIED\n"
+        "---\n"
+        "= Target Validation\n",
+        encoding="utf-8",
+    )
+
+    report = validator.validate_directory(eidos_dir)
+    assert report.schema_errors == {}
+    broken = "\n".join(report.broken_references)
+    assert "CMP-NEW-ADDED" not in broken
+    assert "CAP-NEW-001" not in broken
+    assert "CAP-NEW-BAD-DOM" not in broken
+    assert "DOM-MISSING-PARENT" in broken
+    assert "INV-NEW-001" not in broken
+    assert "CAP-MISSING-PARENT" in broken
+    assert "CMP-MISSING-MODIFIED" in broken
 

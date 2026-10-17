@@ -184,34 +184,82 @@ properties:
           type: string
           pattern: "^(DOM-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Target domain ID or relative path (e.g. DOM-PRODUCT-CORE or eidos/domains/auth/domain.adoc)."
+          x-eidos-ref:
+            target_types:
+              - product/domain
+            prefixes:
+              - DOM-
+            entity_label: domain
         target_capability:
           type: string
           pattern: "^(CAP-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Target capability ID or relative path (e.g. CAP-AUTH-004)."
+          x-eidos-ref:
+            target_types:
+              - product/capability
+            prefixes:
+              - CAP-
+            entity_label: capability
         target_container:
           type: string
           pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Target C4 Level 2 container ID or relative path (e.g. CNT-CORE)."
+          x-eidos-ref:
+            target_types:
+              - tech/container
+            prefixes:
+              - CNT-
+            entity_label: container
         target_component:
           type: string
           pattern: "^(CMP-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Target C4 Level 3 component ID or relative path (e.g. CMP-CORE-VALIDATOR)."
+          x-eidos-ref:
+            target_types:
+              - tech/component
+            prefixes:
+              - CMP-
+            entity_label: component
         target_architecture:
           type: string
           pattern: "^(ARCH-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Target architecture ID or relative path (e.g. ARCH-EIDOS-001 or eidos/architecture/system-architecture.adoc)."
+          x-eidos-ref:
+            target_types:
+              - tech/architecture
+            prefixes:
+              - ARCH-
+            entity_label: architecture
         target_contract:
           type: string
           pattern: "^(CTR-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Target contract ID or relative path (e.g. CTR-OPENAPI)."
+          x-eidos-ref:
+            target_types:
+              - tech/contract
+            prefixes:
+              - CTR-
+            entity_label: contract
         target_policy:
           type: string
           pattern: "^(POL-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Target policy ID or relative path (e.g. POL-001)."
+          x-eidos-ref:
+            target_types:
+              - product/policy
+            prefixes:
+              - POL-
+            entity_label: policy
         target_persona:
           type: string
           pattern: "^(PER-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Target persona ID or relative path (e.g. PER-SOFTWARE-ENGINEER)."
+          x-eidos-ref:
+            target_types:
+              - product/persona
+            prefixes:
+              - PER-
+            entity_label: persona
         target_invariant_id:
           type: string
           pattern: "^INV-[A-Z0-9_-]+$"
@@ -220,224 +268,141 @@ properties:
           type: string
           pattern: "^(DS-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Target design system ID or relative path (e.g. DS-CORE or eidos/design/systems/core/system.adoc)."
-        target_screen:
-          type: string
-          pattern: "^(SCR-[A-Z0-9_-]+|.*\\.adoc)$"
-          description: "Target screen ID or relative path (e.g. SCR-CHECKOUT or eidos/design/screens/checkout.adoc)."
-        target_ui_component:
-          type: string
-          pattern: "^(UIC-[A-Z0-9_-]+|.*\\.adoc)$"
-          description: "Target UI component ID or relative path (e.g. UIC-BUTTON or eidos/design/systems/core/components/button.adoc)."
-        target_client:
-          type: string
-          pattern: "^(CLT-[A-Z0-9_-]+|.*\\.adoc)$"
-          description: "Target client ID or relative path (e.g. CLT-WEB-PORTAL)."
-        target_flow:
-          type: string
-          pattern: "^(FLOW-[A-Z0-9_-]+|.*\\.adoc)$"
-          description: "Target flow ID or relative path (e.g. FLOW-CHECKOUT)."
-        new_capability_id:
-          type: string
-          pattern: "^CAP-[A-Z0-9_-]+$"
-          description: "New capability ID being created if action is add_capability."
-        details:
-          type: string
-          description: "Additional operational notes, migration directives, or deprecation sunset timeline."
-        expect:
-          type: object
-          additionalProperties: true
-          description: "Optional declarative post-condition assertions (frontmatter key-value pairs or substrings) expected on the target specification after applying an add_*, modify_*, extend_*, or patch_* mutation."
-  affects:
-    type: object
-    description: "Explicit entity references affected by this SpecDelta (optional)."
-    additionalProperties: false
-    properties:
-      components:
-        type: array
-        items:
-          type: string
-          pattern: "^(CMP-[A-Z0-9_-]+|.*\\.adoc)$"
-          x-eidos-ref:
-            target_types:
-              - tech/component
-            prefixes:
-              - CMP-
-            entity_label: component
-      containers:
-        type: array
-        items:
-          type: string
-          pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
-          x-eidos-ref:
-            target_types:
-              - tech/container
-            prefixes:
-              - CNT-
-            entity_label: container
-      contracts:
-        type: array
-        items:
-          type: string
-          x-eidos-ref:
-            target_types:
-              - tech/contract
-            prefixes:
-              - CTR-
-      policies:
-        type: array
-        items:
-          type: string
-          x-eidos-ref:
-            target_types:
-              - product/policy
-            prefixes:
-              - POL-
-      capabilities:
-        type: array
-        items:
-          type: string
-          x-eidos-ref:
-            target_types:
-              - product/capability
-            prefixes:
-              - CAP-
-      domains:
-        type: array
-        items:
-          type: string
-          x-eidos-ref:
-            target_types:
-              - product/domain
-            prefixes:
-              - DOM-
-      personas:
-        type: array
-        items:
-          type: string
-          x-eidos-ref:
-            target_types:
-              - product/persona
-            prefixes:
-              - PER-
-            entity_label: persona
-      design_systems:
-        type: array
-        items:
-          type: string
           x-eidos-ref:
             target_types:
               - design/system
             prefixes:
               - DS-
             entity_label: design_system
-      clients:
-        type: array
-        items:
+        target_screen:
           type: string
-          x-eidos-ref:
-            target_types:
-              - design/client
-            prefixes:
-              - CLT-
-            entity_label: client
-      flows:
-        type: array
-        items:
-          type: string
-          x-eidos-ref:
-            target_types:
-              - design/flow
-            prefixes:
-              - FLOW-
-            entity_label: flow
-      screens:
-        type: array
-        items:
-          type: string
+          pattern: "^(SCR-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Target screen ID or relative path (e.g. SCR-CHECKOUT or eidos/design/screens/checkout.adoc)."
           x-eidos-ref:
             target_types:
               - design/screen
             prefixes:
               - SCR-
             entity_label: screen
-      ui_components:
-        type: array
-        items:
+        target_ui_component:
           type: string
+          pattern: "^(UIC-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Target UI component ID or relative path (e.g. UIC-BUTTON or eidos/design/systems/core/components/button.adoc)."
           x-eidos-ref:
             target_types:
               - design/ui-component
             prefixes:
               - UIC-
             entity_label: ui_component
-  blast_radius:
-    type: object
-    description: "Automated or computed impact analysis across personas, architecture components, and invariants (optional)."
-    additionalProperties: false
-    properties:
-      impacted_personas:
-        type: array
-        description: "List of persona IDs or document paths affected by this change."
-        items:
+        target_client:
           type: string
+          pattern: "^(CLT-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Target client ID or relative path (e.g. CLT-WEB-PORTAL)."
           x-eidos-ref:
             target_types:
-              - product/persona
+              - design/client
             prefixes:
-              - PER-
-            entity_label: persona
-      impacted_components:
-        type: array
-        description: "List of C4 Level 3 components (CMP-*) or spec paths that must be modified."
-        items:
+              - CLT-
+            entity_label: client
+        target_flow:
           type: string
-          pattern: "^(CMP-[A-Z0-9_-]+|.*\\.adoc)$"
+          pattern: "^(FLOW-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Target flow ID or relative path (e.g. FLOW-CHECKOUT)."
           x-eidos-ref:
             target_types:
-              - tech/component
+              - design/flow
             prefixes:
-              - CMP-
-            entity_label: component
-      impacted_containers:
-        type: array
-        description: "List of C4 Level 2 containers (CNT-*) impacted by this change."
-        items:
+              - FLOW-
+            entity_label: flow
+        new_capability_id:
           type: string
-          pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
+          pattern: "^CAP-[A-Z0-9_-]+$"
+          description: "New capability ID being created if action is add_capability."
           x-eidos-ref:
             target_types:
-              - tech/container
+              - product/capability
             prefixes:
-              - CNT-
-            entity_label: container
-      impacted_design_systems:
-        type: array
-        description: "List of design systems impacted by this change (e.g. DS-CORE, DS-ACME)."
-        items:
+              - CAP-
+            entity_label: capability
+        details:
           type: string
-          x-eidos-ref:
-            target_types:
-              - design/system
-            prefixes:
-              - DS-
-            entity_label: design_system
-      impacted_screens:
-        type: array
-        description: "List of screen specifications modified or affected."
-        items:
-          type: string
-          x-eidos-ref:
-            target_types:
-              - design/screen
-            prefixes:
-              - SCR-
-            entity_label: screen
-      invariants_to_enforce:
-        type: array
-        description: "List of invariant or policy IDs that must have green passing tests before this delta can merge."
-        items:
-          type: string
-          pattern: "^(INV|POL)-[A-Z0-9_-]+$"
+          description: "Additional operational notes, migration directives, or deprecation sunset timeline."
+        expect:
+          type: object
+          additionalProperties: false
+          description: "Optional declarative post-condition assertions (structured body and/or frontmatter blocks) expected on the target specification after applying an add_*, modify_*, extend_*, or patch_* mutation."
+          properties:
+            body:
+              type: object
+              additionalProperties: false
+              description: "Declarative post-condition assertions evaluated against the uncommented AsciiDoc specification body."
+              properties:
+                contains:
+                  oneOf:
+                    - type: string
+                    - type: array
+                      items:
+                        type: string
+                  description: "Required substring or list of substrings that must appear in the specification body."
+                not_contains:
+                  oneOf:
+                    - type: string
+                    - type: array
+                      items:
+                        type: string
+                  description: "Forbidden substring or list of substrings that must NOT appear in the specification body."
+            frontmatter:
+              type: object
+              additionalProperties: false
+              description: "Typed declarative post-condition assertions evaluated against specification YAML frontmatter fields."
+              properties:
+                responsibility:
+                  type: string
+                  description: "Expected component or container responsibility statement (or required substring)."
+                source_path:
+                  oneOf:
+                    - type: string
+                    - type: array
+                      items:
+                        type: string
+                  description: "Expected component source_path (string or subset of paths)."
+                rule:
+                  type: string
+                  description: "Expected policy or invariant rule statement (or required substring)."
+                test_binding:
+                  type: string
+                  pattern: "^(.+::.+|N/A|TBD)$"
+                  description: "Expected invariant test binding (file::func, N/A, or TBD)."
+                status:
+                  type: string
+                  enum:
+                    - draft
+                    - proposed
+                    - planned
+                    - in_review
+                    - approved
+                    - applied
+                    - rejected
+                    - in_progress
+                    - adopted
+                    - discarded
+                    - active
+                    - deprecated
+                    - sunset
+                    - retired
+                    - removed
+                  description: "Expected specification lifecycle status."
+                version:
+                  type: string
+                  pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+                  description: "Expected SemVer version string."
+                category:
+                  type: string
+                  description: "Expected policy category."
+                custom:
+                  type: object
+                  additionalProperties: true
+                  description: "Optional dictionary of additional frontmatter key-value post-conditions."
   tombstone:
     type: object
     description: "Optional tombstone policy and search-token exemptions for deletion/deprecation audits (eidos delta audit)."

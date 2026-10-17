@@ -314,37 +314,6 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                     }
                 )
 
-    # 3. SpecDeltas & Kanban status columns
-    deltas_by_status: dict[str, list[dict[str, Any]]] = {
-        "proposed": [],
-        "in_review": [],
-        "approved": [],
-        "applied": [],
-        "rejected": [],
-    }
-
-    raw_deltas = specs_by_type.get("delta/mutation", [])
-    for d in raw_deltas:
-        fm = d["frontmatter"]
-        status = str(fm.get("status", "proposed")).lower()
-        delta_item = {
-            "id": d["id"],
-            "title": d["title"],
-            "status": status,
-            "kind": fm.get("intent", {}).get("kind", "feature_addition"),
-            "motivation": fm.get("intent", {}).get("motivation", ""),
-            "mutations": fm.get("mutations", []),
-            "affects": fm.get("affects", {}),
-            "blast_radius": fm.get("blast_radius", {}),
-            "vcs": fm.get("vcs"),
-            "body": d["body"],
-            "path": d.get("path", ""),
-        }
-        if status in deltas_by_status:
-            deltas_by_status[status].append(delta_item)
-        else:
-            deltas_by_status.setdefault(status, []).append(delta_item)
-
     # Embedded architectural decisions (DEC-*) across system, architecture, containers, domains, capabilities, and policies
     all_decisions: list[dict[str, Any]] = []
     seen_dec_ids: set[str] = set()
@@ -383,13 +352,273 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     for pol in policies:
         _append_decisions(pol.get("decisions", []), pol.get("id", "POL"), "policy")
 
-    # 4. Multi-Design Systems, Tokens, UI Components, Clients, Flows, and Screens
+    # 3. Multi-Design Systems, Tokens, UI Components, Clients, Flows, and Screens
     design_data = _extract_design_systems(eidos_path, specs_by_type)
     design_systems = design_data.get("systems", [])
     screens = design_data.get("screens", [])
     ui_components = design_data.get("ui_components", [])
     clients = design_data.get("clients", [])
     flows = design_data.get("flows", [])
+
+    # 4. SpecDeltas & Kanban status columns (dynamically computes delta affects and blast_radius from mutations[].target_* and graph)
+    deltas_by_status: dict[str, list[dict[str, Any]]] = {
+        "proposed": [],
+        "in_review": [],
+        "approved": [],
+        "applied": [],
+        "rejected": [],
+    }
+
+    path_to_id: dict[str, str] = {}
+    for s in specs:
+        sid = s.get("id")
+        spath = str(s.get("path", "")).replace("\\", "/").strip().lstrip("./")
+        if sid and spath:
+            path_to_id[spath.lower()] = sid
+            if spath.lower().startswith("eidos/"):
+                path_to_id[spath[6:].lower()] = sid
+
+    def _resolve_ref_id(raw_val: Any) -> str:
+        val = str(raw_val or "").strip()
+        if not val:
+            return ""
+        norm = val.replace("\\", "/").lstrip("./").lower()
+        return path_to_id.get(norm, val)
+
+    def _add_unique(lst: list[str], item: str) -> None:
+        if item and item not in lst:
+            lst.append(item)
+
+    comp_to_container: dict[str, str] = {}
+    comp_dependents: dict[str, list[str]] = {}
+    cnt_dependents: dict[str, list[str]] = {}
+    entity_invariants: dict[str, list[str]] = {}
+    for cnt in components:
+        cnt_id = cnt["id"]
+        cnt_invs = [str(inv["id"]) for inv in cnt.get("invariants", []) if isinstance(inv, dict) and inv.get("id")]
+        if cnt_invs:
+            entity_invariants[cnt_id] = cnt_invs
+        cnt_deps = cnt.get("dependencies", {})
+        cnt_int_deps = cnt_deps.get("internal", []) if isinstance(cnt_deps, dict) else []
+        for dep_ref in cnt_int_deps or []:
+            dep_id = _resolve_ref_id(dep_ref)
+            if dep_id:
+                _add_unique(cnt_dependents.setdefault(dep_id, []), cnt_id)
+        for ic in cnt.get("internal_components", []):
+            ic_id = ic.get("id")
+            if ic_id:
+                comp_to_container[ic_id] = cnt_id
+                ic_invs = [str(inv["id"]) for inv in ic.get("invariants", []) if isinstance(inv, dict) and inv.get("id")]
+                if ic_invs:
+                    entity_invariants[ic_id] = ic_invs
+                ic_deps = ic.get("dependencies", {})
+                ic_int_deps = (
+                    ic_deps.get("internal", [])
+                    if isinstance(ic_deps, dict)
+                    else (ic_deps if isinstance(ic_deps, list) else [])
+                )
+                for dep_ref in ic_int_deps or []:
+                    dep_id = _resolve_ref_id(dep_ref)
+                    if dep_id:
+                        _add_unique(comp_dependents.setdefault(dep_id, []), ic_id)
+
+    contract_to_container: dict[str, str] = {
+        ct["id"]: ct["owning_container"]
+        for ct in contracts
+        if ct.get("id") and ct.get("owning_container") and str(ct["owning_container"]).startswith("CNT-")
+    }
+    cap_by_id: dict[str, dict[str, Any]] = {}
+    entity_to_caps: dict[str, list[str]] = {}
+    for cap in capabilities:
+        cid = cap.get("id")
+        if cid:
+            cap_by_id[cid] = cap
+            tech = cap.get("technical", {}) or {}
+            c_invs = [str(inv["id"]) for inv in tech.get("invariants", []) if isinstance(inv, dict) and inv.get("id")]
+            if c_invs:
+                entity_invariants[cid] = c_invs
+            for ref in (tech.get("containers", []) or []) + (tech.get("components", []) or []):
+                ref_id = _resolve_ref_id(ref)
+                if ref_id:
+                    _add_unique(entity_to_caps.setdefault(ref_id, []), cid)
+
+    for pol in policies:
+        pid = pol.get("id")
+        if pid:
+            p_invs = [str(inv["id"]) for inv in pol.get("invariants", []) if isinstance(inv, dict) and inv.get("id")]
+            entity_invariants[pid] = p_invs or [pid]
+
+    client_by_id: dict[str, dict[str, Any]] = {cl["id"]: cl for cl in clients if cl.get("id")}
+    container_to_clients: dict[str, list[dict[str, Any]]] = {}
+    for cl in clients:
+        cnt_ref = cl.get("container")
+        if isinstance(cnt_ref, str) and cnt_ref:
+            container_to_clients.setdefault(cnt_ref, []).append(cl)
+
+    raw_deltas = specs_by_type.get("delta/mutation", [])
+    for d in raw_deltas:
+        fm = d["frontmatter"]
+        status = str(fm.get("status", "proposed")).lower()
+        muts = fm.get("mutations", []) or []
+
+        aff_lists: dict[str, list[str]] = {
+            "containers": [],
+            "components": [],
+            "contracts": [],
+            "capabilities": [],
+            "domains": [],
+            "policies": [],
+            "personas": [],
+            "design_systems": [],
+            "screens": [],
+            "ui_components": [],
+            "clients": [],
+            "flows": [],
+        }
+        br_lists: dict[str, list[str]] = {
+            "impacted_containers": [],
+            "impacted_components": [],
+            "impacted_design_systems": [],
+            "impacted_screens": [],
+            "impacted_personas": [],
+            "invariants_to_enforce": [],
+        }
+
+        target_key_to_cat = (
+            ("target_container", "containers"),
+            ("target_component", "components"),
+            ("target_contract", "contracts"),
+            ("target_capability", "capabilities"),
+            ("new_capability_id", "capabilities"),
+            ("target_domain", "domains"),
+            ("target_policy", "policies"),
+            ("target_persona", "personas"),
+            ("target_design_system", "design_systems"),
+            ("target_screen", "screens"),
+            ("target_ui_component", "ui_components"),
+            ("target_client", "clients"),
+            ("target_flow", "flows"),
+        )
+        seed_entities: list[str] = []
+        for m in muts:
+            if not isinstance(m, dict):
+                continue
+            inv_t = m.get("target_invariant_id")
+            if isinstance(inv_t, str) and inv_t.strip():
+                _add_unique(br_lists["invariants_to_enforce"], inv_t.strip())
+            for tkey, cat in target_key_to_cat:
+                raw_t = m.get(tkey)
+                if not raw_t:
+                    continue
+                resolved_id = _resolve_ref_id(raw_t)
+                _add_unique(aff_lists[cat], resolved_id)
+                _add_unique(seed_entities, resolved_id)
+                if cat == "components" and resolved_id in comp_to_container:
+                    _add_unique(aff_lists["containers"], comp_to_container[resolved_id])
+                elif cat == "contracts" and resolved_id in contract_to_container:
+                    _add_unique(aff_lists["containers"], contract_to_container[resolved_id])
+                elif cat == "capabilities" and resolved_id in cap_by_id:
+                    dom_id = cap_by_id[resolved_id].get("domain")
+                    if isinstance(dom_id, str) and dom_id:
+                        _add_unique(aff_lists["domains"], _resolve_ref_id(dom_id))
+
+        # Preserve any explicit affects/blast_radius fields on legacy or synthetic fixtures
+        raw_aff = fm.get("affects")
+        if isinstance(raw_aff, dict):
+            for k, vals in raw_aff.items():
+                if isinstance(vals, list):
+                    for v in vals:
+                        _add_unique(aff_lists.setdefault(k, []), _resolve_ref_id(v))
+
+        for cnt_id in aff_lists["containers"]:
+            _add_unique(br_lists["impacted_containers"], cnt_id)
+            for dep_cnt in cnt_dependents.get(cnt_id, []):
+                _add_unique(br_lists["impacted_containers"], dep_cnt)
+            for cl in container_to_clients.get(cnt_id, []):
+                if cl.get("design_system"):
+                    _add_unique(br_lists["impacted_design_systems"], str(cl["design_system"]))
+                for scr_ref in cl.get("screens", []) or []:
+                    _add_unique(br_lists["impacted_screens"], _resolve_ref_id(scr_ref))
+
+        for cmp_id in aff_lists["components"]:
+            _add_unique(br_lists["impacted_components"], cmp_id)
+            for dep_cmp in comp_dependents.get(cmp_id, []):
+                _add_unique(br_lists["impacted_components"], dep_cmp)
+                if dep_cmp in comp_to_container:
+                    _add_unique(br_lists["impacted_containers"], comp_to_container[dep_cmp])
+            if cmp_id in comp_to_container:
+                _add_unique(br_lists["impacted_containers"], comp_to_container[cmp_id])
+
+        for ds_id in aff_lists["design_systems"]:
+            _add_unique(br_lists["impacted_design_systems"], ds_id)
+        for scr_id in aff_lists["screens"]:
+            _add_unique(br_lists["impacted_screens"], scr_id)
+        for per_id in aff_lists["personas"]:
+            _add_unique(br_lists["impacted_personas"], per_id)
+        for cl_id in aff_lists["clients"]:
+            cl_obj = client_by_id.get(cl_id)
+            if cl_obj:
+                if cl_obj.get("container"):
+                    _add_unique(br_lists["impacted_containers"], str(cl_obj["container"]))
+                if cl_obj.get("design_system"):
+                    _add_unique(br_lists["impacted_design_systems"], str(cl_obj["design_system"]))
+                for scr_ref in cl_obj.get("screens", []) or []:
+                    _add_unique(br_lists["impacted_screens"], _resolve_ref_id(scr_ref))
+
+        related_caps = list(aff_lists["capabilities"])
+        for ent_id in seed_entities + aff_lists["containers"] + aff_lists["components"]:
+            for cid in entity_to_caps.get(ent_id, []):
+                _add_unique(related_caps, cid)
+
+        for cap_id in related_caps:
+            cap_obj = cap_by_id.get(cap_id)
+            if not cap_obj:
+                continue
+            tech = cap_obj.get("technical", {}) or {}
+            if cap_id in aff_lists["capabilities"]:
+                for cnt_ref in tech.get("containers", []) or []:
+                    _add_unique(br_lists["impacted_containers"], _resolve_ref_id(cnt_ref))
+                for cmp_ref in tech.get("components", []) or []:
+                    _add_unique(br_lists["impacted_components"], _resolve_ref_id(cmp_ref))
+            bus = cap_obj.get("business", {}) or {}
+            for per_ref in bus.get("personas", []) or []:
+                _add_unique(br_lists["impacted_personas"], _resolve_ref_id(per_ref))
+            exp = cap_obj.get("experience", {}) or {}
+            for scr_ref in exp.get("screens", []) or []:
+                _add_unique(br_lists["impacted_screens"], _resolve_ref_id(scr_ref))
+
+        for seed_id in seed_entities + aff_lists["containers"] + br_lists["impacted_components"]:
+            for inv_id in entity_invariants.get(seed_id, []):
+                _add_unique(br_lists["invariants_to_enforce"], inv_id)
+
+
+        raw_br = fm.get("blast_radius")
+        if isinstance(raw_br, dict):
+            for k, vals in raw_br.items():
+                if isinstance(vals, list):
+                    for v in vals:
+                        _add_unique(br_lists.setdefault(k, []), _resolve_ref_id(v))
+
+        derived_affects = {k: v for k, v in aff_lists.items() if v}
+        derived_blast_radius = {k: v for k, v in br_lists.items() if v}
+
+        delta_item = {
+            "id": d["id"],
+            "title": d["title"],
+            "status": status,
+            "kind": fm.get("intent", {}).get("kind", "feature_addition"),
+            "motivation": fm.get("intent", {}).get("motivation", ""),
+            "mutations": muts,
+            "affects": derived_affects,
+            "blast_radius": derived_blast_radius,
+            "vcs": fm.get("vcs"),
+            "body": d["body"],
+            "path": d.get("path", ""),
+        }
+        if status in deltas_by_status:
+            deltas_by_status[status].append(delta_item)
+        else:
+            deltas_by_status.setdefault(status, []).append(delta_item)
 
     # 5. Product Explorations & Spikes
     raw_explorations = specs_by_type.get("product/exploration", [])

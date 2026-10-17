@@ -2661,3 +2661,200 @@ def test_drift_report_helpers_and_cli_rich_output(tmp_path):
     with pytest.raises(GitResolutionError, match="Failed to execute git diff"):
         get_git_diff_files(repo, base_ref="main", merge_base="invalid-merge-base-999")
 
+
+def test_dlt_2026_081_boundary_aware_symbol_anchoring(tmp_path, monkeypatch):
+    """Verify DLT-2026-081: module-internal helper functions are covered by substantive 1-hop spec updates without forcing helper names into prose, while boundary exports require anchoring."""
+    cap_rel = "eidos/domains/core/capabilities/cap-x.adoc"
+    cap_base = """---
+type: product/capability
+schema: schemas/v1/product/capability.schema.yaml
+id: CAP-X
+title: X Capability
+domain: DOM-CORE
+status: active
+business:
+  jtbd: Execute X
+technical:
+  containers:
+    - CNT-X
+---
+= X Capability
+
+Original capability prose.
+"""
+    cap_substantive = cap_base + "\nEnhances payload checksum validation during execution.\n"
+
+    # 1. Module-internal helper function in src/pkg/svc.py (no __all__, not __init__.py)
+    # covered by a substantive 1-hop capability update without pasting helper_checksum_fn into prose -> clean!
+    code_with_internal_helper = _CODE_OLD + "\ndef helper_checksum_fn(data):\n    return len(data)\n"
+    root_internal = tmp_path / "internal_helper"
+    env_internal = _diff_aware_env(
+        root_internal,
+        monkeypatch,
+        changed=["src/pkg/svc.py", cap_rel],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, code_with_internal_helper),
+            cap_rel: (cap_base, cap_substantive),
+        },
+        extra_files={cap_rel: cap_substantive},
+    )
+    res_internal = detect_drift(repo_root=root_internal, eidos_dir=env_internal)
+    assert res_internal.drift_detected is False
+    assert res_internal.trivially_covered_files == []
+
+    # 2. Boundary export via __all__ in src/pkg/svc.py covered only by unanchored 1-hop capability update -> missing_anchor!
+    code_with_dunder_all = (
+        '__all__ = ["existing", "exported_boundary_fn"]\n'
+        + _CODE_OLD
+        + "\ndef exported_boundary_fn(data):\n    return data\n"
+    )
+    root_boundary = tmp_path / "boundary_unanchored"
+    env_boundary = _diff_aware_env(
+        root_boundary,
+        monkeypatch,
+        changed=["src/pkg/svc.py", cap_rel],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, code_with_dunder_all),
+            cap_rel: (cap_base, cap_substantive),
+        },
+        extra_files={cap_rel: cap_substantive},
+    )
+    res_boundary = detect_drift(repo_root=root_boundary, eidos_dir=env_boundary)
+    assert res_boundary.drift_detected is True
+    assert [r["rule"] for r in res_boundary.trivially_covered_files] == ["missing_anchor"]
+
+    # 3. Boundary export via __all__ anchored in 1-hop capability update -> clean!
+    cap_anchored = cap_base + "\nExposes `exported_boundary_fn` for external callers.\n"
+    root_boundary_ok = tmp_path / "boundary_anchored"
+    env_boundary_ok = _diff_aware_env(
+        root_boundary_ok,
+        monkeypatch,
+        changed=["src/pkg/svc.py", cap_rel],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, code_with_dunder_all),
+            cap_rel: (cap_base, cap_anchored),
+        },
+        extra_files={cap_rel: cap_anchored},
+    )
+    res_boundary_ok = detect_drift(repo_root=root_boundary_ok, eidos_dir=env_boundary_ok)
+    assert res_boundary_ok.drift_detected is False
+    assert res_boundary_ok.trivially_covered_files == []
+
+
+def test_dlt_2026_085_planned_mode_scope_from_mutations_targets_and_diff_helpers(tmp_path: Path, monkeypatch) -> None:
+    """DLT-2026-085 (# eidos:fixture): Verify detect_drift derives Planned Mode scope strictly from
+    mutations[].target_* (ignoring legacy affects/blast_radius) and cover vcs/diff.py helpers."""
+    import subprocess
+
+    from eidos.vcs.diff import (
+        GitResolutionError,
+        _has_structural_ast_change,
+        collect_polyglot_test_files,
+        get_git_diff_files,
+        get_tracked_files,
+    )
+
+    # 1. DLT-2026-085: Active delta mutating CNT-OTHER does not authorize edits to src/pkg/svc.py (owned by CNT-X),
+    #    even if legacy affects/blast_radius lists CNT-X.
+    dlt_rel = "eidos/deltas/dlt-2026-085-test.adoc"
+    dlt_unscoped = (
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-085\n"
+        "title: Unscoped Delta\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: refactor\n"
+        "  motivation: Test scope\n"
+        "mutations:\n"
+        "  - action: modify_container\n"
+        "    target_container: CNT-OTHER\n"
+        "affects:\n"
+        "  containers:\n"
+        "    - CNT-X\n"
+        "blast_radius:\n"
+        "  impacted_containers:\n"
+        "    - CNT-X\n"
+        "---\n"
+        "= Unscoped\n\nAdds `Foo` handler.\n"
+    )
+    root_unscoped = tmp_path / "unscoped_delta"
+    env_unscoped = _diff_aware_env(
+        root_unscoped,
+        monkeypatch,
+        changed=["src/pkg/svc.py", dlt_rel],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, _CODE_WITH_CLASS),
+            dlt_rel: (None, dlt_unscoped),
+        },
+        extra_files={dlt_rel: dlt_unscoped},
+    )
+    res_unscoped = detect_drift(repo_root=root_unscoped, eidos_dir=env_unscoped)
+    assert res_unscoped.drift_detected is True
+    assert any("src/pkg/svc.py" in s and "CNT-X" in s for s in res_unscoped.remediation_suggestions)
+
+    # When mutations[].target_container targets CNT-X, Planned Mode authorizes src/pkg/svc.py
+    dlt_scoped = (
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-085\n"
+        "title: Scoped Delta\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: refactor\n"
+        "  motivation: Test scope\n"
+        "mutations:\n"
+        "  - action: modify_container\n"
+        "    target_container: CNT-X\n"
+        "---\n"
+        "= Scoped\n\nAdds `Foo` handler.\n"
+    )
+    root_scoped = tmp_path / "scoped_delta"
+    env_scoped = _diff_aware_env(
+        root_scoped,
+        monkeypatch,
+        changed=["src/pkg/svc.py", dlt_rel],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, _CODE_WITH_CLASS),
+            dlt_rel: (None, dlt_scoped),
+        },
+        extra_files={dlt_rel: dlt_scoped},
+    )
+    res_scoped = detect_drift(repo_root=root_scoped, eidos_dir=env_scoped)
+    assert res_scoped.drift_detected is False
+    assert not any("src/pkg/svc.py" in s for s in res_scoped.remediation_suggestions)
+
+
+
+
+
+    # 2. Cover vcs/diff.py helpers: _has_structural_ast_change, collect_polyglot_test_files (non-git + missing), get_git_diff_files
+    assert _has_structural_ast_change("def a(): return 1\n", "def a(x): return x\n", "src/a.py") is True
+    assert _has_structural_ast_change("def a(): return 1\n", "def a(): return 2\n", "src/a.py") is False
+    assert collect_polyglot_test_files(tmp_path / "nonexistent_dir") == {}
+
+    nongit_dir = tmp_path / "nongit_ws"
+    (nongit_dir / "tests").mkdir(parents=True)
+    (nongit_dir / "tests" / "test_sample.py").write_text("def test_one(): pass\n", encoding="utf-8")
+    collected_nongit = collect_polyglot_test_files(nongit_dir)
+    assert "tests/test_sample.py" in collected_nongit
+
+    # Real git repo diff with merge_base, invalid base_ref raising GitResolutionError, and get_tracked_files
+    git_ws = tmp_path / "git_diff_ws"
+    git_ws.mkdir(parents=True)
+    subprocess.run(["git", "init"], cwd=git_ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@eidos.dev"], cwd=git_ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=git_ws, check=True, capture_output=True)
+    (git_ws / "a.py").write_text("x = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=git_ws, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "c1"], cwd=git_ws, check=True, capture_output=True)
+    c1_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=git_ws, check=True, capture_output=True, text=True).stdout.strip()
+    (git_ws / "b.py").write_text("y = 2\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=git_ws, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "c2"], cwd=git_ws, check=True, capture_output=True)
+
+    assert get_git_diff_files(git_ws, base_ref=c1_sha, head_ref="HEAD", merge_base=c1_sha) == ["b.py"]
+    assert get_git_diff_files(git_ws, base_ref=c1_sha, head_ref="HEAD", merge_base="") == ["b.py"]
+    assert set(get_tracked_files(git_ws, include_untracked=False)) == {"a.py", "b.py"}
+    with pytest.raises(GitResolutionError):
+        get_git_diff_files(git_ws, base_ref="bad_nonexistent_ref_xyz", head_ref="HEAD", merge_base="bad_nonexistent_ref_xyz")

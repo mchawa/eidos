@@ -31,27 +31,6 @@ mutations:
   - action: add_invariant
     target_invariant_id: INV-SYMBOL-LOCATION-FIDELITY
     details: "[CAP-AGENT-001] Rule: 'The knowledge graph must persist source file and line coordinates for every indexed AST symbol, invalidate them on source edit or deletion, and serve find-symbol and repo-map queries without re-parsing source files when the index is warm.' test_binding: 'tests/test_graph_index.py::test_code_symbols_invalidated_on_edit_and_delete'."
-affects:
-  containers:
-    - CNT-EIDOS-INDEX
-    - CNT-EIDOS-CLI
-  contracts:
-    - CTR-EIDOS-CLI
-  capabilities:
-    - CAP-PROD-001
-    - CAP-AGENT-001
-blast_radius:
-  impacted_containers:
-    - CNT-EIDOS-INDEX
-    - CNT-EIDOS-CLI
-  impacted_components:
-    - CMP-GRAPH-STORAGE
-    - CMP-INCREMENTAL-SYNC-ENGINE
-    - CMP-AST-SYMBOL-INDEXER
-    - CMP-CLI-INDEX-COMMANDS
-  invariants_to_enforce:
-    - INV-KNOWLEDGE-GRAPH-CATALOG
-    - INV-SYMBOL-LOCATION-FIDELITY
 ---
 = SpecDelta: Persistent AST Symbol Locations and Recursive Multi-Package Code Indexing
 :toc: left

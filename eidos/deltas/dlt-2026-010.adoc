@@ -91,23 +91,7 @@ mutations:
 - action: modify_component
   target_component: CMP-EIDOS-CLI
   details: Update domain_binding from DOM-PRODUCT-CORE to DOM-SPEC-ENGINE.
-blast_radius:
-  impacted_personas:
-  - eidos/personas/product-lead.adoc
-  - eidos/personas/autonomous-agent.adoc
-  impacted_components:
-  - CMP-EIDOS-CORE
-  - CMP-EIDOS-PORTAL
-  - CMP-EIDOS-MCP
-  - CMP-EIDOS-PLUGIN
-  - CMP-EIDOS-CLI
-  invariants_to_enforce:
-  - INV-SPEC-VALIDATION
-  - INV-SPEC-GRAPH-INTEGRITY
-  - INV-LIVING-PORTAL-VISUALIZATION
 ---
-
-
 = SpecDelta: Revamp Eidos Personas and Core Domains Architecture
 :toc: left
 

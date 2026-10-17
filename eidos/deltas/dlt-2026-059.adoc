@@ -2,45 +2,28 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-059
-title: "Validate Component source_path, UI Component test_bindings, and Invariant test_binding File & Symbol References in SpecValidator"
+title: Validate Component source_path, UI Component test_bindings, and Invariant test_binding File & Symbol References in SpecValidator
 status: applied
 vcs:
   branch: feat/validator-source-and-test-binding-refs
 intent:
   kind: feature
-  motivation: "Extend SpecValidator (eidos validate) so that when a repository source/test tree is present on disk, declared tech/component and inline components[].source_path, design/ui-component test_bindings, and INV-* test_binding references (file::func or file::Class::method) are validated for file and test symbol existence, closing the reference-validation gap in _validate_source_and_contract_paths without performing INV-* token matching."
+  motivation: Extend SpecValidator (eidos validate) so that when a repository source/test tree is present on disk, declared tech/component and inline components[].source_path, design/ui-component test_bindings, and INV-* test_binding references (file::func or file::Class::method) are validated for file and test symbol existence, closing the reference-validation gap in _validate_source_and_contract_paths without performing INV-* token matching.
 mutations:
-  - action: modify_component
-    target_component: CMP-SPEC-VALIDATOR
-    details: "Extend SpecValidator._validate_source_and_contract_paths in src/eidos/core/spec/validator.py to verify that active tech/component source_path and inline tech/container components[].source_path exist on disk, active design/ui-component test_bindings.{storybook,visual_regression,unit_test} exist on disk (stripping any ::func selector), and active INV-* test_binding references (across capabilities, policies, containers, components, and applied SpecDeltas) resolve to existing files and test symbols on disk."
-    expect:
-      source_path: "src/eidos/core/spec/validator.py"
-      responsibility: "test_binding"
-  - action: patch_invariant
-    target_invariant_id: INV-SPEC-GRAPH-INTEGRITY
-    details: "Expand INV-SPEC-GRAPH-INTEGRITY in CAP-PROD-001 to explicitly include source/test path and symbol reference integrity for container package_path, component source_path, contract specification_file, UI component test_bindings, and invariant test_binding (file::func) pointers when the repository source/test tree exists on disk."
-    expect:
-      rule: "test_binding"
-      test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
-affects:
-  containers:
-    - CNT-EIDOS-CORE
-  components:
-    - CMP-SPEC-VALIDATOR
-  capabilities:
-    - CAP-PROD-001
-  domains:
-    - DOM-SPEC-ENGINE
-blast_radius:
-  impacted_containers:
-    - CNT-EIDOS-CORE
-  impacted_components:
-    - CMP-SPEC-VALIDATOR
-  invariants_to_enforce:
-    - INV-SPEC-VALIDATION
-    - INV-SPEC-GRAPH-INTEGRITY
-    - INV-ENGINE-GENERICITY
-    - INV-FOREIGN-REPO-E2E
+- action: modify_component
+  target_component: CMP-SPEC-VALIDATOR
+  details: Extend SpecValidator._validate_source_and_contract_paths in src/eidos/core/spec/validator.py to verify that active tech/component source_path and inline tech/container components[].source_path exist on disk, active design/ui-component test_bindings.{storybook,visual_regression,unit_test} exist on disk (stripping any ::func selector), and active INV-* test_binding references (across capabilities, policies, containers, components, and applied SpecDeltas) resolve to existing files and test symbols on disk.
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/spec/validator.py
+      responsibility: test_binding
+- action: patch_invariant
+  target_invariant_id: INV-SPEC-GRAPH-INTEGRITY
+  details: Expand INV-SPEC-GRAPH-INTEGRITY in CAP-PROD-001 to explicitly include source/test path and symbol reference integrity for container package_path, component source_path, contract specification_file, UI component test_bindings, and invariant test_binding (file::func) pointers when the repository source/test tree exists on disk.
+  expect:
+    frontmatter:
+      rule: test_binding
+      test_binding: tests/test_validator.py::test_validate_eidos_specifications
 ---
 = SpecDelta: Validate Component source_path, UI Component test_bindings, and Invariant test_binding File & Symbol References in SpecValidator
 :toc: left

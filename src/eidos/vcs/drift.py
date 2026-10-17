@@ -303,42 +303,11 @@ def detect_drift(
                         "target_flow",
                         "target_contract",
                         "target_persona",
+                        "new_capability_id",
                     ):
                         val = m.get(key)
                         if val:
                             declared_delta_targets.add(str(val).lower())
-            aff = fm.get("affects", {}) or {}
-            if isinstance(aff, dict):
-                for sub in (
-                    "containers",
-                    "components",
-                    "domains",
-                    "capabilities",
-                    "contracts",
-                    "design_systems",
-                    "clients",
-                    "flows",
-                    "screens",
-                    "ui_components",
-                ):
-                    for val in aff.get(sub, []) or []:
-                        declared_delta_targets.add(str(val).lower())
-            br = fm.get("blast_radius", {}) or {}
-            if isinstance(br, dict):
-                for sub in (
-                    "components",
-                    "containers",
-                    "domains",
-                    "capabilities",
-                    "screens",
-                    "design_systems",
-                    "impacted_components",
-                    "impacted_containers",
-                    "impacted_design_systems",
-                    "impacted_screens",
-                ):
-                    for val in br.get(sub, []) or []:
-                        declared_delta_targets.add(str(val).lower())
         except OSError:
             pass
 

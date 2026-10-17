@@ -36,10 +36,6 @@ mutations:
   details: Upgrade agent lifecycle hooks to execute through the globally installed
     'eidos' CLI binary (with 'uvx --from eidos-ai eidos' fallback) and enforce the Block-Once Stop
     gate.
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-PLUGIN
-  - CNT-EIDOS-CLI
 ---
 = SpecDelta: Tool-Only Installation, CLI-Native Agent Hooks, and Block-Once Stop Gate
 :toc: left

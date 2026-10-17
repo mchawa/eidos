@@ -33,21 +33,7 @@ mutations:
   target_capability: CAP-AGENT-001
   details: Enforce sub-10ms context slice resolution and sub-5ms dirty checking with
     zero external runtime dependencies.
-blast_radius:
-  impacted_personas:
-  - eidos/personas/software-architect.adoc
-  - eidos/personas/software-engineer.adoc
-  - eidos/personas/autonomous-agent.adoc
-  impacted_components:
-  - CMP-EIDOS-CORE
-  - CMP-EIDOS-MCP
-  - CMP-EIDOS-CLI
-  invariants_to_enforce:
-  - INV-AGENT-CONTEXT-SLICING
-  - INV-SPEC-GRAPH-INTEGRITY
-  - INV-SPEC-VALIDATION
 ---
-
 = SpecDelta: Integrate Embedded Architectural Knowledge Graph & Hybrid Context Retrieval Index
 :toc: left
 

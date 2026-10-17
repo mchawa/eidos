@@ -27,10 +27,6 @@ mutations:
 - action: extend_capability
   target_capability: CAP-VCS-001
   details: Enforce scoped 1-hop structural drift detection under 'INV-DRIFT-DETECTION-ACCURACY'.
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-CORE
-  - CNT-EIDOS-VCS
 ---
 = SpecDelta: Scoped 1-Hop Graph Neighborhood and AST Structural Drift Detection
 :toc: left

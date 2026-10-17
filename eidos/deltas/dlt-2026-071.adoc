@@ -2,7 +2,7 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-071
-title: "Isolated project Plugin Install Target, Accurate Fallback Version Path Reporting, AIDER Created-Files Typing, and Retired reconcile.md Command Cleanup"
+title: Isolated project Plugin Install Target, Accurate Fallback Version Path Reporting, AIDER Created-Files Typing, and Retired reconcile.md Command Cleanup
 status: applied
 vcs:
   branch: fix/plugin-installer-targets-and-validator
@@ -10,40 +10,22 @@ intent:
   kind: bug
   bug_classification: spec_violation
   severity: high
-  motivation: "Prevent PluginInstallTarget.PROJECT from implicitly mutating or deleting .cursor/ and .claude/, remove the retired broken reconcile.md Claude slash command, fix AIDER post_install_hook appending a boolean into InstallResult.created_files, report the actual matched manifest directory in check_plugin_version_status, and use line-anchored YAML frontmatter parsing in _validate_skill_md."
+  motivation: Prevent PluginInstallTarget.PROJECT from implicitly mutating or deleting .cursor/ and .claude/, remove the retired broken reconcile.md Claude slash command, fix AIDER post_install_hook appending a boolean into InstallResult.created_files, report the actual matched manifest directory in check_plugin_version_status, and use line-anchored YAML frontmatter parsing in _validate_skill_md.
 mutations:
-  - action: modify_component
-    target_component: CMP-PLUGIN-INSTALLER
-    details: "Update install_plugin and uninstall_plugin in src/eidos/plugin/installer.py so PluginInstallTarget.PROJECT scopes strictly to .agents/plugins/eidos; remove reconcile.md from _write_claude_commands and prune legacy .claude/plugins/eidos/commands/reconcile.md on install; return Path from _update_project_aider_conf so InstallResult.created_files contains only Path objects; and update check_plugin_version_status in src/eidos/plugin/version.py to return the actual matched fallback plugin directory."
-    expect:
-      source_path: "src/eidos/plugin/installer.py"
-      responsibility: "TargetAdapter"
-  - action: modify_component
-    target_component: CMP-PLUGIN-VALIDATOR
-    details: "Update _validate_skill_md in src/eidos/plugin/validator.py to extract SKILL.md YAML frontmatter using line-anchored ^---\\s*$ delimiters instead of naive content.split('---', 2)."
-    expect:
-      source_path: "src/eidos/plugin/validator.py"
-      responsibility: "line-anchored"
-affects:
-  containers:
-    - CNT-EIDOS-PLUGIN
-  components:
-    - CMP-PLUGIN-INSTALLER
-    - CMP-PLUGIN-VALIDATOR
-  capabilities:
-    - CAP-AGENT-001
-  domains:
-    - DOM-AGENT-INTELLIGENCE
-blast_radius:
-  impacted_containers:
-    - CNT-EIDOS-PLUGIN
-  impacted_components:
-    - CMP-PLUGIN-INSTALLER
-    - CMP-PLUGIN-VALIDATOR
-  invariants_to_enforce:
-    - INV-PLUGIN-PROJECT-SCOPE
-    - INV-PLUGIN-SCHEMA-CONFORMANCE
-    - INV-PLUGIN-SAFE-UNINSTALL
+- action: modify_component
+  target_component: CMP-PLUGIN-INSTALLER
+  details: Update install_plugin and uninstall_plugin in src/eidos/plugin/installer.py so PluginInstallTarget.PROJECT scopes strictly to .agents/plugins/eidos; remove reconcile.md from _write_claude_commands and prune legacy .claude/plugins/eidos/commands/reconcile.md on install; return Path from _update_project_aider_conf so InstallResult.created_files contains only Path objects; and update check_plugin_version_status in src/eidos/plugin/version.py to return the actual matched fallback plugin directory.
+  expect:
+    frontmatter:
+      source_path: src/eidos/plugin/installer.py
+      responsibility: TargetAdapter
+- action: modify_component
+  target_component: CMP-PLUGIN-VALIDATOR
+  details: Update _validate_skill_md in src/eidos/plugin/validator.py to extract SKILL.md YAML frontmatter using line-anchored ^---\s*$ delimiters instead of naive content.split('---', 2).
+  expect:
+    frontmatter:
+      source_path: src/eidos/plugin/validator.py
+      responsibility: line-anchored
 ---
 = SpecDelta: Isolated project Plugin Install Target, Accurate Fallback Version Path Reporting, AIDER Created-Files Typing, and Retired reconcile.md Command Cleanup
 :toc: left

@@ -2,44 +2,28 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-056
-title: "Pluggable Contract Protocol Verifier Registry for Multi-Protocol CTR-* Specifications"
+title: Pluggable Contract Protocol Verifier Registry for Multi-Protocol CTR-* Specifications
 status: applied
 vcs:
   branch: feat/contract-protocol-verifiers
 intent:
   kind: feature
-  motivation: "Replace the hardcoded Python Typer-only CLI contract check in SpecValidator with a pluggable protocol verifier registry supporting cli_args, python_protocol, rest_openapi, json_schema, grpc_proto, and graphql so non-Typer CTR-* contracts cannot silently diverge from their specification_file."
+  motivation: Replace the hardcoded Python Typer-only CLI contract check in SpecValidator with a pluggable protocol verifier registry supporting cli_args, python_protocol, rest_openapi, json_schema, grpc_proto, and graphql so non-Typer CTR-* contracts cannot silently diverge from their specification_file.
 mutations:
-  - action: modify_component
-    target_component: CMP-SPEC-VALIDATOR
-    details: "Replace the hardcoded protocol == 'cli_args' Typer-only branch in _validate_source_and_contract_paths with a pluggable protocol verifier registry (_CONTRACT_PROTOCOL_VERIFIERS) supporting cli_args, python_protocol, rest_openapi, json_schema, grpc_proto, and graphql contracts."
-    expect:
-      source_path: "src/eidos/core/spec/validator.py"
-      responsibility: "protocol verifier"
-  - action: patch_invariant
-    target_invariant_id: INV-SPEC-GRAPH-INTEGRITY
-    details: "Expand INV-SPEC-GRAPH-INTEGRITY in CAP-PROD-001 to include multi-protocol contract parity verification between CTR-* specifications and their referenced specification_file."
-    expect:
-      rule: "protocol"
-      test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
-affects:
-  containers:
-    - CNT-EIDOS-CORE
-  components:
-    - CMP-SPEC-VALIDATOR
-  capabilities:
-    - CAP-PROD-001
-  domains:
-    - DOM-SPEC-ENGINE
-blast_radius:
-  impacted_containers:
-    - CNT-EIDOS-CORE
-  impacted_components:
-    - CMP-SPEC-VALIDATOR
-  invariants_to_enforce:
-    - INV-SPEC-VALIDATION
-    - INV-SPEC-GRAPH-INTEGRITY
-    - INV-INTERFACE-BOUNDARY-GOVERNANCE
+- action: modify_component
+  target_component: CMP-SPEC-VALIDATOR
+  details: Replace the hardcoded protocol == 'cli_args' Typer-only branch in _validate_source_and_contract_paths with a pluggable protocol verifier registry (_CONTRACT_PROTOCOL_VERIFIERS) supporting cli_args, python_protocol, rest_openapi, json_schema, grpc_proto, and graphql contracts.
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/spec/validator.py
+      responsibility: protocol verifier
+- action: patch_invariant
+  target_invariant_id: INV-SPEC-GRAPH-INTEGRITY
+  details: Expand INV-SPEC-GRAPH-INTEGRITY in CAP-PROD-001 to include multi-protocol contract parity verification between CTR-* specifications and their referenced specification_file.
+  expect:
+    frontmatter:
+      rule: protocol
+      test_binding: tests/test_validator.py::test_validate_eidos_specifications
 ---
 = SpecDelta: Pluggable Contract Protocol Verifier Registry for Multi-Protocol CTR-* Specifications
 :toc: left

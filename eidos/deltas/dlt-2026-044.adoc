@@ -8,101 +8,48 @@ intent:
   kind: enabler
   motivation: Eliminate all root-level CLI shortcut commands, intra-group duplicate aliases, and redundant C4/reconcile commands so every CLI operation has a single canonical command path and 'component' is nested under 'eidos spec component'.
 mutations:
-  - action: modify_contract
-    target_contract: "CTR-EIDOS-CLI"
-    details: "Remove all root-level CLI shortcut commands (install, uninstall, create, delete, list, containers, components, lint, serve, build-site, repo-map, find-symbol, changelog), remove eidos reconcile / sync, remove intra-group aliases (spec containers, spec components, plugin remove, plugin upgrade, index update, portal build-site), and nest component [promote|inline] under eidos spec component."
-    expect:
-      contains: "component promote <component_id>"
-  - action: modify_container
-    target_container: "CNT-EIDOS-CLI"
-    details: "Update CMP-CLI-* component responsibilities in CNT-EIDOS-CLI to reflect canonical single-path CLI command groups and nested eidos spec component."
-    expect:
-      contains: "mounting the `eidos spec component` subgroup"
-  - action: modify_container
-    target_container: "CNT-EIDOS-CORE"
-    details: "Update CMP-LIFECYCLE-SCAFFOLDER responsibility so list_specs() includes inline C4 Level 3 components (CMP-*) from container manifests and normalizes short/canonical spec type filters."
-    expect:
-      contains: "CMP-LIFECYCLE-SCAFFOLDER"
-  - action: modify_capability
-    target_capability: "CAP-PROD-001"
-    details: "Update CAP-PROD-001 CLI interfaces and INV-FOREIGN-REPO-E2E rule to reference canonical CLI commands."
-    expect:
-      contains: "eidos spec [list|show|create|delete|component]"
-  - action: modify_capability
-    target_capability: "CAP-EXP-001"
-    details: "Update CAP-EXP-001 CLI interfaces and INV-PORTAL-AIR-GAPPED-BUNDLE to reference eidos portal serve and eidos portal build without root shortcuts."
-    expect:
-      contains: "eidos portal build"
-  - action: modify_capability
-    target_capability: "CAP-VCS-001"
-    details: "Remove eidos reconcile from CAP-VCS-001 interfaces and update 1-hop neighborhood resolution narrative to reference eidos drift."
-    expect:
-      contains: "eidos drift"
-  - action: modify_capability
-    target_capability: "CAP-AGENT-001"
-    details: "Remove eidos reconcile from CAP-AGENT-001 contracts.interfaces."
-    expect:
-      contains: "eidos drift [--uncommitted] [--json]"
-
-affects:
-  containers:
-    - "CNT-EIDOS-CLI"
-    - "CNT-EIDOS-CORE"
-    - "CNT-EIDOS-PORTAL"
-    - "CNT-EIDOS-VCS"
-    - "CNT-EIDOS-PLUGIN"
-    - "CNT-EIDOS-DOCS"
-  components:
-    - "CMP-CLI-APP"
-    - "CMP-CLI-SPEC-COMMANDS"
-    - "CMP-CLI-DELTA-COMMANDS"
-    - "CMP-CLI-PLUGIN-COMMANDS"
-    - "CMP-CLI-DRIFT-COMMANDS"
-    - "CMP-CLI-INDEX-COMMANDS"
-    - "CMP-CLI-COMPONENT-COMMANDS"
-    - "CMP-CLI-PORTAL-COMMANDS"
-    - "CMP-LIFECYCLE-SCAFFOLDER"
-    - "CMP-DRIFT-DETECTOR"
-    - "CMP-HOOK-RUNNER"
-    - "CMP-PORTAL-ASSETS"
-  contracts:
-    - "CTR-EIDOS-CLI"
-  policies:
-    - "POL-004-ZERO-AI-CALL-DEPENDENCY"
-  capabilities:
-    - "CAP-PROD-001"
-    - "CAP-EXP-001"
-    - "CAP-VCS-001"
-    - "CAP-AGENT-001"
-  domains:
-    - "DOM-VCS-LIFECYCLE"
-    - "DOM-EXPERIENCE-PORTAL"
-
-blast_radius:
-  impacted_containers:
-    - "CNT-EIDOS-CLI"
-    - "CNT-EIDOS-CORE"
-    - "CNT-EIDOS-PORTAL"
-    - "CNT-EIDOS-VCS"
-    - "CNT-EIDOS-PLUGIN"
-    - "CNT-EIDOS-DOCS"
-  impacted_components:
-    - "CMP-CLI-APP"
-    - "CMP-CLI-SPEC-COMMANDS"
-    - "CMP-CLI-DELTA-COMMANDS"
-    - "CMP-CLI-PLUGIN-COMMANDS"
-    - "CMP-CLI-DRIFT-COMMANDS"
-    - "CMP-CLI-INDEX-COMMANDS"
-    - "CMP-CLI-COMPONENT-COMMANDS"
-    - "CMP-CLI-PORTAL-COMMANDS"
-    - "CMP-LIFECYCLE-SCAFFOLDER"
-    - "CMP-DRIFT-DETECTOR"
-    - "CMP-HOOK-RUNNER"
-    - "CMP-PORTAL-ASSETS"
-  invariants_to_enforce:
-    - "INV-DOCS-SYNCHRONIZATION"
-    - "INV-FOREIGN-REPO-E2E"
-    - "INV-PORTAL-AIR-GAPPED-BUNDLE"
+- action: modify_contract
+  target_contract: CTR-EIDOS-CLI
+  details: Remove all root-level CLI shortcut commands (install, uninstall, create, delete, list, containers, components, lint, serve, build-site, repo-map, find-symbol, changelog), remove eidos reconcile / sync, remove intra-group aliases (spec containers, spec components, plugin remove, plugin upgrade, index update, portal build-site), and nest component [promote|inline] under eidos spec component.
+  expect:
+    body:
+      contains: component promote <component_id>
+- action: modify_container
+  target_container: CNT-EIDOS-CLI
+  details: Update CMP-CLI-* component responsibilities in CNT-EIDOS-CLI to reflect canonical single-path CLI command groups and nested eidos spec component.
+  expect:
+    body:
+      contains: mounting the `eidos spec component` subgroup
+- action: modify_container
+  target_container: CNT-EIDOS-CORE
+  details: Update CMP-LIFECYCLE-SCAFFOLDER responsibility so list_specs() includes inline C4 Level 3 components (CMP-*) from container manifests and normalizes short/canonical spec type filters.
+  expect:
+    body:
+      contains: CMP-LIFECYCLE-SCAFFOLDER
+- action: modify_capability
+  target_capability: CAP-PROD-001
+  details: Update CAP-PROD-001 CLI interfaces and INV-FOREIGN-REPO-E2E rule to reference canonical CLI commands.
+  expect:
+    body:
+      contains: eidos spec [list|show|create|delete|component]
+- action: modify_capability
+  target_capability: CAP-EXP-001
+  details: Update CAP-EXP-001 CLI interfaces and INV-PORTAL-AIR-GAPPED-BUNDLE to reference eidos portal serve and eidos portal build without root shortcuts.
+  expect:
+    body:
+      contains: eidos portal build
+- action: modify_capability
+  target_capability: CAP-VCS-001
+  details: Remove eidos reconcile from CAP-VCS-001 interfaces and update 1-hop neighborhood resolution narrative to reference eidos drift.
+  expect:
+    body:
+      contains: eidos drift
+- action: modify_capability
+  target_capability: CAP-AGENT-001
+  details: Remove eidos reconcile from CAP-AGENT-001 contracts.interfaces.
+  expect:
+    body:
+      contains: eidos drift [--uncommitted] [--json]
 ---
 = SpecDelta: Remove CLI Shortcuts and Duplicate Aliases, Nest Component Under Spec
 :toc: left

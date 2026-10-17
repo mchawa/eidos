@@ -80,7 +80,7 @@ eidos delta create DLT-2026-015 \
   --kind feature \
   --branch feat/webhook-signatures
 
-# 3. Edit eidos/deltas/dlt-2026-015.adoc to declare mutations, expect post-conditions, affects, and blast_radius
+# 3. Edit eidos/deltas/dlt-2026-015.adoc to declare mutations and expect post-conditions (scope and blast radius are derived from the graph)
 
 # 4. Transition status during active review/implementation (optional)
 eidos delta status DLT-2026-015 in_review
@@ -117,38 +117,25 @@ mutations:
     target_component: CMP-WEBHOOK-VERIFIER
     details: "Introduce WebhookSignatureVerifier in src/billing/verifier.py."
     expect:
-      source_path: "src/billing/verifier.py"
-      responsibility: "HMAC-SHA256 signature verification"
+      frontmatter:
+        source_path: "src/billing/verifier.py"
+        responsibility: "HMAC-SHA256 signature verification"
   - action: modify_contract
     target_contract: CTR-BILLING-API
     details: "Require X-Webhook-Signature and X-Webhook-Timestamp headers on POST /v1/usage/webhooks and bump contract version to 1.2.0."
     expect:
-      version: "1.2.0"
+      frontmatter:
+        version: "1.2.0"
   - action: extend_capability
     target_capability: CAP-BILL-001
     details: "Extend capability to cover HMAC webhook verification and bump capability version to 1.1.0."
     expect:
-      version: "1.1.0"
+      frontmatter:
+        version: "1.1.0"
   - action: add_invariant
     target_capability: CAP-BILL-001
     target_invariant_id: INV-BILL-WEBHOOK-SIG
     details: "Add INV-BILL-WEBHOOK-SIG invariant bound to tests/billing/test_webhooks.py::test_webhook_hmac_signature."
-affects:
-  containers:
-    - CNT-BILLING-WORKER
-  contracts:
-    - CTR-BILLING-API
-  capabilities:
-    - CAP-BILL-001
-blast_radius:
-  impacted_containers:
-    - CNT-BILLING-WORKER
-  impacted_components:
-    - CMP-WEBHOOK-VERIFIER
-    - CMP-BILLING-INGESTOR
-  invariants_to_enforce:
-    - INV-BILL-IDEMPOTENCY
-    - INV-BILL-WEBHOOK-SIG
 ---
 = SpecDelta: Add Webhook Signature Verification Contract and Ingestor Component
 ```
@@ -165,26 +152,27 @@ blast_radius:
 | `remove_component` | `target_component: CMP-*` | Verifies the component has been removed (`ABSENT_AS_EXPECTED`). |
 | `modify_architecture` | `target_architecture: ARCH-*` | Verifies the system architecture overview exists and satisfies `expect:` or shows digest modification evidence. |
 | `add_contract` | `target_contract: CTR-*` | Verifies the contract specification exists in `eidos/architecture/contracts/`. |
-| `modify_contract` | `target_contract: CTR-*` | Verifies the contract exists and satisfies `expect:` (e.g. `version`) or digest change. |
+| `modify_contract` | `target_contract: CTR-*` | Verifies the contract exists and satisfies `expect:` (e.g. `frontmatter.version`) or digest change. |
 | `remove_contract` | `target_contract: CTR-*` | Verifies the contract specification has been removed. |
 | `add_capability` | `target_capability: CAP-*` | Verifies the capability specification exists in `eidos/domains/<domain>/capabilities/`. |
-| `extend_capability` | `target_capability: CAP-*` | Verifies the capability exists and satisfies `expect:` (`version`, `contains`) or digest change. |
+| `extend_capability` | `target_capability: CAP-*` | Verifies the capability exists and satisfies `expect:` (`frontmatter.version`, `body.contains`) or digest change. |
 | `deprecate_capability` | `target_capability: CAP-*` | Verifies the capability's `status` is `deprecated` or removed. |
 | `add_invariant` | `target_invariant_id: INV-*` (+ `target_capability: CAP-*`) | Verifies the invariant ID exists in the target capability's `invariants`. |
-| `patch_invariant` | `target_invariant_id: INV-*` (+ `target_capability: CAP-*`) | Verifies the invariant exists on the capability and satisfies `expect:` (`rule`, `test_binding`) or digest change. |
+| `patch_invariant` | `target_invariant_id: INV-*` (+ `target_capability: CAP-*`) | Verifies the invariant exists on the capability and satisfies `expect:` (`frontmatter.rule`, `frontmatter.test_binding`) or digest change. |
 | `remove_invariant` | `target_invariant_id: INV-*` | Verifies the invariant has been removed from all specifications. |
-| `add_policy` / `patch_policy` | `target_policy: POL-*` | Verifies the policy exists in `eidos/policies/` and satisfies `expect:` (`rule`, `severity`) or digest change. |
+| `add_policy` / `patch_policy` | `target_policy: POL-*` | Verifies the policy exists in `eidos/policies/` and satisfies `expect:` (`frontmatter.rule`, `frontmatter.category`) or digest change. |
 
 ### 2.4 Declarative `expect:` Post-Condition Keys
 Adding `expect:` makes `eidos delta verify` branch-independent and self-verifying:
-* `version: "1.2.0"` — exact or substring match on target spec `version`.
-* `status: "active"` — exact match on target spec `status`.
-* `source_path: "src/..."` — exact or list membership match on component `source_path` / container `package_path`.
-* `responsibility: "substring"` — substring match against inline or standalone component `responsibility`.
-* `rule: "substring"` — substring match against policy or invariant `rule`.
-* `test_binding: "tests/...::test_..."` — exact or substring match on an invariant's `test_binding`.
-* `contains: "substring"` — verifies that the raw specification file text contains the given substring.
-* Any frontmatter key (`<key>: <expected_value>`) — checks equality, substring containment (for string values), or list membership (when the target field is a YAML list).
+* `frontmatter.version: "1.2.0"` — exact or substring match on target spec `version`.
+* `frontmatter.status: "active"` — exact match on target spec `status`.
+* `frontmatter.source_path: "src/..."` — exact or list membership match on component `source_path` / container `package_path`.
+* `frontmatter.responsibility: "substring"` — substring match against inline or standalone component `responsibility`.
+* `frontmatter.rule: "substring"` — substring match against policy or invariant `rule`.
+* `frontmatter.test_binding: "tests/...::test_..."` — exact or substring match on an invariant's `test_binding`.
+* `frontmatter.custom: { <key>: <expected_value> }` — checks equality, substring containment (for string values), or list membership (when the target field is a YAML list).
+* `body.contains: "substring"` (or list of strings) — verifies that the uncommented AsciiDoc specification body contains the given substring(s).
+* `body.not_contains: "substring"` (or list of strings) — verifies that the uncommented AsciiDoc specification body does NOT contain the given substring(s).
 
 ---
 

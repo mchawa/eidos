@@ -115,7 +115,8 @@ def test_delta_verify_declarative_expect_and_patch_invariant(tmp_path):
   - action: modify_policy
     target_policy: POL-AUTH-001
     expect:
-      rule: "Min 14 chars."
+      frontmatter:
+        rule: "Min 14 chars."
   - action: patch_invariant
     target_invariant_id: INV-SPEC-VALIDATION
 """
@@ -278,7 +279,9 @@ def test_delta_execute_and_verify_lifecycle(tmp_path):
   - action: modify_policy
     target_policy: POL-INVOICE-TAX
     expect:
-      non_existent_schema_field: "invalid"
+      frontmatter:
+        custom:
+          non_existent_schema_field: "invalid"
 """
     dlt_invalid.write_text(
         dlt_invalid.read_text(encoding="utf-8").replace("mutations: []", invalid_yaml),
@@ -488,7 +491,8 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
   - action: modify_policy
     target_policy: POL-CORE-001
     expect:
-      rule: "Expected post-apply rule."
+      frontmatter:
+        rule: "Expected post-apply rule."
   - action: modify_architecture
     target_architecture: ARCH-TEST-001
 """
@@ -879,8 +883,9 @@ def test_delta_engine_all_mutation_families_and_file_restoration_rollback(tmp_pa
         "    target_invariant_id: INV-900-A\n"
         "    target_policy: POL-900-TEST\n"
         "    expect:\n"
-        "      rule: Initial invariant rule.\n"
-        "      test_binding: tests/test_inv.py::test_inv_900\n"
+        "      frontmatter:\n"
+        "        rule: Initial invariant rule.\n"
+        "        test_binding: tests/test_inv.py::test_inv_900\n"
         "  - action: modify_component\n"
         "    target_component: CMP-INLINE-WORKER\n"
         "    details: Updated inline worker responsibility for batching.\n"
@@ -922,8 +927,9 @@ def test_delta_engine_all_mutation_families_and_file_restoration_rollback(tmp_pa
         "    target_invariant_id: INV-900-A\n"
         "    target_policy: POL-900-TEST\n"
         "    expect:\n"
-        "      rule: Patched invariant rule with stricter check.\n"
-        "      test_binding: tests/test_inv.py::test_inv_900\n"
+        "      frontmatter:\n"
+        "        rule: Patched invariant rule with stricter check.\n"
+        "        test_binding: tests/test_inv.py::test_inv_900\n"
         "  - action: deprecate_policy\n"
         "    target_policy: POL-900-TEST\n"
         "  - action: remove_component\n"
@@ -1081,7 +1087,7 @@ def test_delta_engine_all_mutation_families_and_file_restoration_rollback(tmp_pa
     # _evaluate_declarative_postcondition & _apply_expect_or_details_to_spec
     assert (
         _evaluate_declarative_postcondition(
-            {"expect": {"contains": "NONEXISTENT_TEXT_999"}},
+            {"expect": {"body": {"contains": "NONEXISTENT_TEXT_999"}}},
             "POL-902-RESTORE",
             specs_by_id,
             container_components,
@@ -1091,7 +1097,7 @@ def test_delta_engine_all_mutation_families_and_file_restoration_rollback(tmp_pa
     )
     assert (
         _evaluate_declarative_postcondition(
-            {"expect": {"category": "wrong_cat"}},
+            {"expect": {"frontmatter": {"category": "wrong_cat"}}},
             "POL-902-RESTORE",
             specs_by_id,
             container_components,
@@ -1101,7 +1107,10 @@ def test_delta_engine_all_mutation_families_and_file_restoration_rollback(tmp_pa
     )
     assert _apply_expect_or_details_to_spec(
         pol_restore,
-        {"contains": "Appended declarative expectation paragraph.", "category": "governance"},
+        {
+            "body": {"contains": "Appended declarative expectation paragraph."},
+            "frontmatter": {"category": "governance"},
+        },
         "",
     )
     assert "Appended declarative expectation paragraph." in pol_restore.read_text(encoding="utf-8")
@@ -1242,7 +1251,11 @@ def test_delta_engine_git_baseline_and_remaining_mutations(tmp_path):
     # 4. _evaluate_declarative_postcondition for inline component, unknown target with target_file, and list field
     catalog, comp_map, inv_map = _build_spec_catalog_with_invariants(eidos_dir)
     ok_cmp_post = _evaluate_declarative_postcondition(
-        {"action": "modify_component", "target": "CMP-INLINE-1", "expect": {"responsibility": "Core"}},
+        {
+            "action": "modify_component",
+            "target": "CMP-INLINE-1",
+            "expect": {"frontmatter": {"responsibility": "Core"}},
+        },
         "CMP-INLINE-1",
         catalog,
         comp_map,
@@ -1250,7 +1263,11 @@ def test_delta_engine_git_baseline_and_remaining_mutations(tmp_path):
     )
     assert ok_cmp_post is True
     ok_cmp_miss = _evaluate_declarative_postcondition(
-        {"action": "modify_component", "target": "CMP-INLINE-1", "expect": {"responsibility": "Other"}},
+        {
+            "action": "modify_component",
+            "target": "CMP-INLINE-1",
+            "expect": {"frontmatter": {"responsibility": "Other"}},
+        },
         "CMP-INLINE-1",
         catalog,
         comp_map,
@@ -1258,7 +1275,11 @@ def test_delta_engine_git_baseline_and_remaining_mutations(tmp_path):
     )
     assert ok_cmp_miss is False
     ok_file_fb = _evaluate_declarative_postcondition(
-        {"action": "modify_container", "target": "UNKNOWN-ID", "expect": {"type": "tech/container"}},
+        {
+            "action": "modify_container",
+            "target": "UNKNOWN-ID",
+            "expect": {"frontmatter": {"type": "tech/container"}},
+        },
         "UNKNOWN-ID",
         catalog,
         comp_map,
@@ -1273,7 +1294,7 @@ def test_delta_engine_git_baseline_and_remaining_mutations(tmp_path):
     cnt_file.write_text(dump_spec_document(doc_cnt2.frontmatter, doc_cnt2.body), encoding="utf-8")
     catalog2, comp_map2, inv_map2 = _build_spec_catalog_with_invariants(eidos_dir)
     ok_list_hit = _evaluate_declarative_postcondition(
-        {"action": "modify_container", "target": "CNT-BASE", "expect": {"tags": "api"}},
+        {"action": "modify_container", "target": "CNT-BASE", "expect": {"frontmatter": {"tags": "api"}}},
         "CNT-BASE",
         catalog2,
         comp_map2,
@@ -1281,7 +1302,7 @@ def test_delta_engine_git_baseline_and_remaining_mutations(tmp_path):
     )
     assert ok_list_hit is True
     ok_list_miss = _evaluate_declarative_postcondition(
-        {"action": "modify_container", "target": "CNT-BASE", "expect": {"tags": "missing"}},
+        {"action": "modify_container", "target": "CNT-BASE", "expect": {"frontmatter": {"tags": "missing"}}},
         "CNT-BASE",
         catalog2,
         comp_map2,
@@ -1312,26 +1333,29 @@ def test_delta_engine_git_baseline_and_remaining_mutations(tmp_path):
                 "target_container": "CNT-BASE",
                 "target_component": "CMP-INLINE-2",
                 "details": "Add second inline component",
-                "expect": {"responsibility": "Custom Resp"},
+                "expect": {"frontmatter": {"responsibility": "Custom Resp"}},
             },
             {
                 "action": "modify_component",
                 "target_component": "CMP-INLINE-1",
                 "details": "Update inline component",
-                "expect": {"responsibility": "Updated Core", "contains": "Inline body note."},
+                "expect": {
+                    "frontmatter": {"responsibility": "Updated Core"},
+                    "body": {"contains": "Inline body note."},
+                },
             },
             {
                 "action": "add_invariant",
                 "target_capability": "CAP-BASE",
                 "target_invariant_id": "INV-CAP-NEW-001",
                 "details": "Capability must hold.",
-                "expect": {"test_binding": "N/A"},
+                "expect": {"frontmatter": {"test_binding": "N/A"}},
             },
             {
                 "action": "patch_invariant",
                 "target_invariant_id": "INV-BASE-001",
                 "details": "Patched rule via details",
-                "expect": {"contains": "Extra policy invariant note."},
+                "expect": {"body": {"contains": "Extra policy invariant note."}},
             },
             {
                 "action": "remove_component",
@@ -1404,3 +1428,447 @@ def test_delta_engine_git_baseline_and_remaining_mutations(tmp_path):
     sync_delta_views(eidos_dir)
     assert list_deltas(eidos_dir, status_filter="applied") == []
     note_in_deltas.unlink()
+
+
+def test_dlt_2026_079_structured_expect_assertions_and_diagnostics(tmp_path):
+    """Verify DLT-2026-079: structured body/frontmatter expect post-conditions, multi-string contains/not_contains,
+    list-subset matching, comment stripping, baseline SHA verification alongside expect, and failure_reason diagnostics."""
+    from eidos.core.lifecycle.catalog import _build_spec_catalog_with_invariants
+    from eidos.core.lifecycle.delta_engine import (
+        _apply_expect_or_details_to_spec,
+        _evaluate_declarative_postcondition,
+        execute_delta_mutations,
+        verify_delta_mutations,
+    )
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+
+    init_repository(tmp_path, name="dlt-079-ws")
+    eidos_dir = tmp_path / "eidos"
+
+    cnt_path = create_spec(eidos_dir, "container", "CNT-API", title="API Service")
+    cnt_doc = parse_spec_file(cnt_path)
+    cnt_doc.frontmatter["components"] = [
+        {
+            "id": "CMP-ROUTER",
+            "name": "Router",
+            "responsibility": "Routes HTTP requests and enforces rate limits.",
+            "source_path": ["src/api/router.py", "src/api/middleware.py", "src/api/ratelimit.py"],
+        }
+    ]
+    cnt_body = (
+        f"{cnt_doc.body.rstrip()}\n\n"
+        "// COMMENTED_SECRET_TOKEN\n"
+        "////\n"
+        "BLOCK_COMMENTED_TOKEN\n"
+        "////\n"
+        "Active endpoint routing and rate limit enforcement.\n"
+    )
+    cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_body), encoding="utf-8")
+
+    catalog, comp_map, inv_map = _build_spec_catalog_with_invariants(eidos_dir)
+
+    # 1. Structured body (multi-string contains + not_contains) and frontmatter (responsibility + source_path list-subset)
+    diag_ok: list[str] = []
+    assert (
+        _evaluate_declarative_postcondition(
+            {
+                "action": "modify_component",
+                "target_component": "CMP-ROUTER",
+                "expect": {
+                    "body": {
+                        "contains": ["Active endpoint routing", "rate limit enforcement"],
+                        "not_contains": ["COMMENTED_SECRET_TOKEN", "BLOCK_COMMENTED_TOKEN", "DEPRECATED_V1_ROUTE"],
+                    },
+                    "frontmatter": {
+                        "responsibility": "enforces rate limits",
+                        "source_path": ["src/api/router.py", "src/api/ratelimit.py"],
+                    },
+                },
+            },
+            "CMP-ROUTER",
+            catalog,
+            comp_map,
+            inv_map,
+            target_file=cnt_path,
+            diagnostics=diag_ok,
+        )
+        is True
+    )
+    assert diag_ok == []
+
+    # 2. Failure diagnostics for body.contains, body.not_contains, and frontmatter list-subset mismatch
+    diag_contains: list[str] = []
+    assert (
+        _evaluate_declarative_postcondition(
+            {"expect": {"body": {"contains": ["Active endpoint routing", "MISSING_PHRASE_XYZ"]}}},
+            "CMP-ROUTER",
+            catalog,
+            comp_map,
+            inv_map,
+            target_file=cnt_path,
+            diagnostics=diag_contains,
+        )
+        is False
+    )
+    assert any("MISSING_PHRASE_XYZ" in d for d in diag_contains)
+
+    diag_not_contains: list[str] = []
+    assert (
+        _evaluate_declarative_postcondition(
+            {"expect": {"body": {"not_contains": "rate limit enforcement"}}},
+            "CMP-ROUTER",
+            catalog,
+            comp_map,
+            inv_map,
+            target_file=cnt_path,
+            diagnostics=diag_not_contains,
+        )
+        is False
+    )
+    assert any("body.not_contains matched forbidden" in d for d in diag_not_contains)
+
+    diag_subset: list[str] = []
+    assert (
+        _evaluate_declarative_postcondition(
+            {"expect": {"frontmatter": {"source_path": ["src/api/router.py", "src/api/nonexistent.py"]}}},
+            "CMP-ROUTER",
+            catalog,
+            comp_map,
+            inv_map,
+            target_file=cnt_path,
+            diagnostics=diag_subset,
+        )
+        is False
+    )
+    assert any("missing expected list items" in d for d in diag_subset)
+
+    # 3. Pre-existing value on unapplied modify_component with recorded baseline SHA must fail until target is modified
+    dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-079", title="Structured Expect Test")
+    dlt_doc = parse_spec_file(dlt_path)
+    dlt_doc.frontmatter["mutations"] = [
+        {
+            "action": "modify_component",
+            "target_component": "CMP-ROUTER",
+            "details": "Add circuit breaker to router.",
+            "expect": {
+                "frontmatter": {
+                    "responsibility": "enforces rate limits",
+                }
+            },
+        }
+    ]
+    dlt_path.write_text(dump_spec_document(dlt_doc.frontmatter, dlt_doc.body), encoding="utf-8")
+
+    # Because create_spec recorded the pre-delta baseline of CMP-ROUTER and CMP-ROUTER has not changed since,
+    # verify_delta_mutations must report UNMODIFIED with a diagnostic failure_reason!
+    ver_before, _, rep_before = verify_delta_mutations(eidos_dir, "DLT-2026-079")
+    assert ver_before is False
+    assert rep_before is not None
+    assert rep_before.mutations[0].status == "UNMODIFIED"
+    assert rep_before.mutations[0].failure_reason is not None
+    assert "matches pre-delta baseline" in rep_before.mutations[0].failure_reason
+
+    # 4. Execute structured expect mutation and verify it passes
+    dlt_doc.frontmatter["mutations"] = [
+        {
+            "action": "modify_component",
+            "target_component": "CMP-ROUTER",
+            "details": "Add circuit breaker to router.",
+            "expect": {
+                "frontmatter": {
+                    "responsibility": "Routes HTTP requests, enforces rate limits, and trips circuit breakers.",
+                },
+                "body": {
+                    "contains": "Circuit breaker trips after 5 consecutive upstream timeouts.",
+                },
+            },
+        }
+    ]
+    dlt_path.write_text(dump_spec_document(dlt_doc.frontmatter, dlt_doc.body), encoding="utf-8")
+    ok_exec, msg_exec, _ = execute_delta_mutations(eidos_dir, "DLT-2026-079")
+    assert ok_exec is True, msg_exec
+
+    ver_after, _, rep_after = verify_delta_mutations(eidos_dir, "DLT-2026-079")
+    assert ver_after is True
+    assert rep_after is not None
+    assert rep_after.mutations[0].verified is True
+    assert rep_after.mutations[0].failure_reason is None
+
+    # 5. _apply_expect_or_details_to_spec with details-only preserves frontmatter rule/responsibility
+    pol_path = create_spec(eidos_dir, "policy", "POL-RATE", title="Rate Policy", rule="Original rule preserved.")
+    assert _apply_expect_or_details_to_spec(pol_path, None, "Appended operational note in body.") is True
+    pol_after = parse_spec_file(pol_path)
+    assert pol_after.frontmatter["rule"] == "Original rule preserved."
+    assert "Appended operational note in body." in pol_after.body
+
+
+def test_dlt_2026_080_cross_ref_collision_resolution_and_cli_slug(tmp_path):
+    """Verify DLT-2026-080: cross-ref collision resolution across parallel Git branches, explicit colliding ID resolution, and optional ID + --slug CLI ergonomics."""
+    import subprocess
+
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.lifecycle.delta_engine import generate_collision_free_delta_id
+    from eidos.core.lifecycle.initializer import init_repository
+
+    init_repository(tmp_path)
+    eidos_dir = tmp_path / "eidos"
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@eidos.dev"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=tmp_path, check=True, capture_output=True)
+
+    # Create a parallel feature branch with DLT-2026-001
+    subprocess.run(["git", "checkout", "-b", "feat/parallel-branch"], cwd=tmp_path, check=True, capture_output=True)
+    d1 = create_spec(eidos_dir, "delta", "DLT-2026-001", title="Parallel Branch Feature")
+    assert d1.name == "dlt-2026-001.adoc"
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Add DLT-2026-001 on parallel branch"], cwd=tmp_path, check=True, capture_output=True)
+
+    # Switch back to main where dlt-2026-001.adoc does NOT exist in working tree
+    subprocess.run(["git", "checkout", "main"], cwd=tmp_path, check=True, capture_output=True)
+    assert not (eidos_dir / "deltas" / "dlt-2026-001.adoc").exists()
+
+    # 1. Explicit DLT-2026-001 on main must detect the collision on feat/parallel-branch and append slug suffix
+    resolved_explicit = generate_collision_free_delta_id(
+        eidos_dir, raw_id="DLT-2026-001", title="Main Branch Feature"
+    )
+    assert resolved_explicit == "DLT-2026-001-MAIN-BRANCH"
+
+    d2 = create_spec(eidos_dir, "delta", "DLT-2026-001", title="Main Branch Feature")
+    assert d2.name == "dlt-2026-001-main-branch.adoc"
+
+    # 2. CLI: eidos delta create --title "..." --slug (without positional delta_id)
+    cli_runner = CliRunner()
+    res = cli_runner.invoke(
+        app,
+        ["delta", "create", "--title", "Zero Config Auth", "--slug", "--path", str(eidos_dir)],
+    )
+    assert res.exit_code == 0, res.stdout
+    assert "dlt-2026-002-zero-config.adoc" in res.stdout.lower()
+    assert (eidos_dir / "deltas" / "dlt-2026-002-zero-config.adoc").exists()
+
+
+def test_dlt_2026_083_invariant_comment_preservation_and_baseline_retention(tmp_path):
+    """Verify DLT-2026-083: _mutate_frontmatter_invariants preserves YAML comments and delta_baselines survives schema version rebuilds."""
+    from eidos.core.index.storage import ensure_cache_schema, open_cache_connection
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.spec.parser import dump_spec_document
+
+    init_repository(tmp_path)
+    eidos_dir = tmp_path / "eidos"
+
+    inv_1 = "INV-" + "AUTH-001"
+    inv_2 = "INV-" + "AUTH-002"
+    cap_file = create_spec(eidos_dir, "capability", "CAP-AUTH-001", title="Auth Capability")
+    cap_text = cap_file.read_text(encoding="utf-8")
+    cap_text = cap_text.replace(
+        "  invariants: []\n",
+        "  # Keep this technical header comment\n"
+        "  invariants:\n"
+        "    # Critical invariant comment that must survive mutations\n"
+        f"    - id: {inv_1}\n"
+        "      rule: Tokens must expire within 15 minutes.\n"
+        "      test_binding: tests/test_auth.py::test_token_expiry\n",
+    )
+    cap_file.write_text(cap_text, encoding="utf-8")
+
+    dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-001", title="Add Second Auth Invariant")
+    dlt_doc = parse_spec_file(dlt_path)
+    dlt_doc.frontmatter["mutations"] = [
+        {
+            "action": "add_invariant",
+            "target_capability": "CAP-AUTH-001",
+            "target_invariant_id": inv_2,
+            "expect": {
+                "rule": "Refresh tokens must be rotated on every use.",
+                "test_binding": "tests/test_auth.py::test_refresh_rotation",
+            },
+        }
+    ]
+    dlt_path.write_text(dump_spec_document(dlt_doc.frontmatter, dlt_doc.body), encoding="utf-8")
+
+    ok, msg, _ = execute_delta_mutations(eidos_dir, "DLT-2026-001")
+    assert ok is True, msg
+    raw_after = cap_file.read_text(encoding="utf-8")
+    assert "# Keep this technical header comment" in raw_after
+    assert "# Critical invariant comment that must survive mutations" in raw_after
+    assert inv_2 in raw_after
+
+    # Verify delta_baselines survives ensure_cache_schema rebuild when schema_version changes
+    db_path = eidos_dir / ".cache" / "index.db"
+    conn = open_cache_connection(db_path)
+    try:
+        rows_before = conn.execute(
+            "SELECT delta_id, target_id, baseline_sha256 FROM delta_baselines;"
+        ).fetchall()
+        assert len(rows_before) >= 1
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '0.0-outdated');"
+        )
+        conn.commit()
+        ensure_cache_schema(conn)
+        rows_after = conn.execute(
+            "SELECT delta_id, target_id, baseline_sha256 FROM delta_baselines;"
+        ).fetchall()
+        assert rows_after == rows_before
+    finally:
+        conn.close()
+
+
+def test_catalog_and_delta_engine_edge_cases(tmp_path):
+    """Cover _mutate_frontmatter_invariants branches in catalog.py and status/postcondition branches in delta_engine.py."""
+
+    from eidos.core.lifecycle.catalog import (
+        _mutate_frontmatter_invariants,
+        find_references_to_spec,
+        find_spec_by_id_or_path,
+    )
+    from eidos.core.lifecycle.delta_engine import (
+        _evaluate_declarative_postcondition,
+        create_delta,
+        get_delta_status_summary,
+        set_delta_status,
+        verify_delta_mutations,
+    )
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.spec.parser import dump_spec_document
+
+    # 1. _mutate_frontmatter_invariants edge cases (is_capability with technical: {}, missing technical:, empty invariants: [])
+    inv_item = {"id": "INV-" + "CAP-100", "rule": "Rule 100", "test_binding": "tests/t.py::t"}
+    raw_cap_empty_tech = "---\ntype: product/capability\nid: CAP-1\ntechnical: {}\n---\n= Cap\n"
+    res1 = _mutate_frontmatter_invariants(raw_cap_empty_tech, "append", inv_item["id"], inv_item, is_capability=True)
+    assert "invariants:" in res1 and inv_item["id"] in res1
+
+    raw_cap_no_tech = "---\ntype: product/capability\nid: CAP-2\n---\n= Cap\n"
+    res2 = _mutate_frontmatter_invariants(raw_cap_no_tech, "append", inv_item["id"], inv_item, is_capability=True)
+    assert "technical:\n  invariants:\n" in res2 and inv_item["id"] in res2
+
+    raw_pol_no_inv = "---\ntype: product/policy\nid: POL-1\n---\n= Pol\n"
+    res3 = _mutate_frontmatter_invariants(raw_pol_no_inv, "append", inv_item["id"], inv_item, is_capability=False)
+    assert "invariants:\n" in res3 and inv_item["id"] in res3
+    assert _mutate_frontmatter_invariants(raw_pol_no_inv, "remove", inv_item["id"], None, is_capability=False) == raw_pol_no_inv
+
+    raw_empty_list = "---\ntype: product/policy\nid: POL-1\ninvariants: []\n---\n= Pol\n"
+    assert _mutate_frontmatter_invariants(raw_empty_list, "remove", inv_item["id"], None, is_capability=False) == raw_empty_list
+    res_append_empty = _mutate_frontmatter_invariants(raw_empty_list, "append", inv_item["id"], inv_item, is_capability=False)
+    assert inv_item["id"] in res_append_empty
+    res_replace = _mutate_frontmatter_invariants(
+        res_append_empty, "replace", inv_item["id"], {**inv_item, "rule": "Updated Rule"}, is_capability=False
+    )
+    assert "Updated Rule" in res_replace
+    res_removed = _mutate_frontmatter_invariants(res_replace, "remove", inv_item["id"], None, is_capability=False)
+    assert "invariants: []" in res_removed
+
+
+    # 2. _evaluate_declarative_postcondition invalid expect structures and mismatch diagnostics
+    diag: list[str] = []
+    assert _evaluate_declarative_postcondition({"expect": {"bad_top": 1}}, "CNT-1", {}, {}, {}, diagnostics=diag) is False
+    assert any("unsupported top-level keys" in d for d in diag)
+
+    diag.clear()
+    assert _evaluate_declarative_postcondition({"expect": {"body": "not_dict"}}, "CNT-1", {}, {}, {}, diagnostics=diag) is False
+    assert "expect.body must be a mapping" in diag
+
+    diag.clear()
+    assert _evaluate_declarative_postcondition({"expect": {"body": {"bad_body": 1}}}, "CNT-1", {}, {}, {}, diagnostics=diag) is False
+    assert any("unsupported keys" in d for d in diag)
+
+    diag.clear()
+    assert _evaluate_declarative_postcondition({"expect": {"frontmatter": "not_dict"}}, "CNT-1", {}, {}, {}, diagnostics=diag) is False
+    assert "expect.frontmatter must be a mapping" in diag
+
+    # 3. create_delta, set_delta_status, get_delta_status_summary, and find_references_to_spec
+    ws = tmp_path / "ws"
+    init_repository(ws)
+    eidos_dir = ws / "eidos"
+    cnt_path = create_spec(eidos_dir, "container", "CNT-API", title="API Service")
+    cap_path = create_spec(eidos_dir, "capability", "CAP-API-001", title="API Cap")
+    cap_doc = parse_spec_file(cap_path)
+    cap_doc.frontmatter["technical"] = {"containers": ["CNT-API"], "components": [], "invariants": []}
+    cap_path.write_text(dump_spec_document(cap_doc.frontmatter, cap_doc.body), encoding="utf-8")
+
+    refs = find_references_to_spec(eidos_dir, "CNT-API", cnt_path)
+    assert cap_path.resolve() in refs
+    assert find_spec_by_id_or_path(eidos_dir, "architecture/containers/cnt-api.adoc") == cnt_path.resolve()
+
+
+    dlt_file = create_delta(eidos_dir, "DLT-2026-050", title="Deprecate API Cap")
+    ok_bad, msg_bad, _, _ = set_delta_status(eidos_dir, "DLT-2026-050", "not_a_status")
+    assert ok_bad is False and "Invalid SpecDelta status" in msg_bad
+    ok_missing, _, _, _ = set_delta_status(eidos_dir, "DLT-NONEXISTENT", "approved")
+    assert ok_missing is False
+    ok_non_dlt, _, _, _ = set_delta_status(eidos_dir, str(cnt_path), "approved")
+    assert ok_non_dlt is False
+
+    # Mutate delta to have deprecate_capability on active capability -> verify fails -> set_delta_status('applied') blocked
+    dlt_doc = parse_spec_file(dlt_file)
+    dlt_doc.frontmatter["mutations"] = [
+        {"action": "deprecate_capability", "target_capability": "CAP-API-001"}
+    ]
+    dlt_file.write_text(dump_spec_document(dlt_doc.frontmatter, dlt_doc.body), encoding="utf-8")
+    v_ok, _, v_rep = verify_delta_mutations(eidos_dir, "DLT-2026-050")
+    assert v_ok is False and v_rep is not None and v_rep.mutations[0].status == "ACTIVE_NOT_DEPRECATED"
+    ok_app_blocked, msg_app_blocked, _, _ = set_delta_status(eidos_dir, "DLT-2026-050", "applied")
+    assert ok_app_blocked is False and "unverified mutations" in msg_app_blocked
+
+    # Execute deprecate_capability and transition via set_delta_status to in_review and applied
+    exec_ok, _, _ = execute_delta_mutations(eidos_dir, "DLT-2026-050")
+    assert exec_ok is True
+    ok_rev, _, _, _ = set_delta_status(eidos_dir, "DLT-2026-050", "in_review")
+    assert ok_rev is True
+    ok_app, _, _, _ = set_delta_status(eidos_dir, "DLT-2026-050", "applied")
+    assert ok_app is True
+    summary = get_delta_status_summary(eidos_dir)
+    assert summary["total"] >= 1
+    assert len(summary["by_status"]["applied"]) == 1
+
+    # 4. _strip_spec_comments with frontmatter comments and verify_delta_mutations failure branches
+    from eidos.core.lifecycle.delta_engine import _strip_spec_comments
+
+    stripped = _strip_spec_comments("---\n# fm comment\nid: CNT-1\n---\n////\nblock comment\n////\n// line comment\nReal body\n")
+    assert "# fm comment" not in stripped
+    assert "block comment" not in stripped
+    assert "Real body" in stripped
+
+    # Add an invariant to CNT-API so we can test patch_invariant & remove_invariant failure branches
+    cnt_doc = parse_spec_file(cnt_path)
+    inv_cnt_id = "INV-" + "CNT-API-001"
+    cnt_doc.frontmatter["invariants"] = [{"id": inv_cnt_id, "rule": "Orig Rule", "test_binding": "tests/t.py::t"}]
+    cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+
+    dlt2 = create_delta(eidos_dir, "DLT-2026-051", title="Failure Branches")
+    dlt2_doc = parse_spec_file(dlt2)
+    dlt2_doc.frontmatter["mutations"] = [
+        {"action": "unknown_action_xyz", "target_container": "CNT-API"},
+        {"action": "add_invariant", "target_container": "CNT-API", "target_invariant_id": "INV-" + "MISSING-999"},
+        {
+            "action": "add_invariant",
+            "target_container": "CNT-API",
+            "target_invariant_id": inv_cnt_id,
+            "expect": {"frontmatter": {"rule": "Wrong Rule"}},
+        },
+        {
+            "action": "patch_invariant",
+            "target_container": "CNT-API",
+            "target_invariant_id": inv_cnt_id,
+            "expect": {"frontmatter": {"rule": "Wrong Rule"}},
+        },
+        {"action": "remove_invariant", "target_container": "CNT-API", "target_invariant_id": inv_cnt_id},
+        {
+            "action": "add_container",
+            "target_container": "CNT-API",
+            "expect": {"frontmatter": {"runtime": "WrongRuntime", "tags": ["missing_tag"]}},
+        },
+    ]
+    dlt2.write_text(dump_spec_document(dlt2_doc.frontmatter, dlt2_doc.body), encoding="utf-8")
+    v2_ok, _, v2_rep = verify_delta_mutations(eidos_dir, "DLT-2026-051")
+    assert v2_ok is False and v2_rep is not None
+    statuses = [m.status for m in v2_rep.mutations]
+    assert "UNSUPPORTED_ACTION" in statuses
+    assert "MISSING" in statuses
+    assert "UNMODIFIED" in statuses
+    assert "STILL_PRESENT" in statuses

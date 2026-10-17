@@ -2,125 +2,102 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-038
-title: "Modularize Core and CLI God Modules into 1-to-1 C4 Component Modules"
+title: Modularize Core and CLI God Modules into 1-to-1 C4 Component Modules
 status: applied
 vcs:
   branch: refactor/modularize-core-and-cli
 intent:
   kind: enabler
-  motivation: "Decompose monolithic 'src/eidos/core/scaffolder.py' (2,039 lines) and 'src/eidos/cli/main.py' (2,636 lines) so each declared C4 Level 3 component maps 1-to-1 to a focused Python module, and declare the SpecDelta engine that currently hides inside 'scaffolder.py' as its own component. Pure code motion: no behavior, CLI surface, or JSON output changes."
+  motivation: 'Decompose monolithic ''src/eidos/core/scaffolder.py'' (2,039 lines) and ''src/eidos/cli/main.py'' (2,636 lines) so each declared C4 Level 3 component maps 1-to-1 to a focused Python module, and declare the SpecDelta engine that currently hides inside ''scaffolder.py'' as its own component. Pure code motion: no behavior, CLI surface, or JSON output changes.'
 mutations:
-  # --- Core container ---
-  - action: add_component
-    target_container: CNT-EIDOS-CORE
-    target_component: CMP-DELTA-ENGINE
-    details: "Declare 'CMP-DELTA-ENGINE' (DeltaEngine) in 'eidos/architecture/containers/core.adoc' with source_path 'src/eidos/core/lifecycle/delta_engine.py', owning SpecDelta listing, status summaries, by-status view sync, baseline snapshots, 'verify_delta_mutations', 'execute_delta_mutations', and 'apply_delta'. Update both the frontmatter and the AsciiDoc component table."
-  - action: modify_component
-    target_component: CMP-LIFECYCLE-SCAFFOLDER
-    details: "Narrow responsibility to spec scaffolding, reference-safety checks, and component promote/inline (drop 'manages flat SpecDelta lifecycles'). source_path becomes ['src/eidos/core/lifecycle/scaffolder.py', 'src/eidos/core/lifecycle/catalog.py']; 'catalog.py' hosts the shared low-level helpers ('find_spec_by_id_or_path', '_build_spec_catalog*', frontmatter render/split helpers, 'normalize_id') so 'delta_engine.py', 'design_engine.py', 'initializer.py', and 'audit.py' import from 'catalog.py' rather than 'scaffolder.py' (no import cycles). 'scaffolder.py' keeps permanent backwards-compatible re-exports of every previously public name."
-    expect:
-      source_path: "src/eidos/core/lifecycle/catalog.py"
-  - action: modify_component
-    target_component: CMP-DESIGN-ENGINE
-    details: "Move design system, W3C DTCG token, UI component, and screen scaffolding out of 'scaffolder.py' into 'src/eidos/core/lifecycle/design_engine.py'."
-    expect:
-      source_path: "src/eidos/core/lifecycle/design_engine.py"
-  - action: modify_component
-    target_component: CMP-REPO-INITIALIZER
-    details: "Move 'init_repository', baseline templates, and '.gitkeep'/'.gitignore' bootstrapping into 'src/eidos/core/lifecycle/initializer.py'."
-    expect:
-      source_path: "src/eidos/core/lifecycle/initializer.py"
-  # --- CLI container ---
-  - action: modify_component
-    target_component: CMP-CLI-APP
-    details: "'main.py' remains the root Typer dispatcher and the 'eidos = eidos.cli.main:app' entry point; it imports each command module and calls its 'register(app)' hook, then pins the root help order with an explicit 'ROOT_COMMAND_ORDER' so registration order across modules cannot change the help layout. Shared console, error-code translation, and help-panel constants move to 'src/eidos/cli/_shared.py' so command modules never import 'main.py'."
-    expect:
-      source_path: "src/eidos/cli/_shared.py"
-  - action: modify_component
-    target_component: CMP-CLI-SPEC-COMMANDS
-    details: "Extract the 'spec' sub-app and the spec-oriented root commands ('validate', 'lint', 'containers', 'components', and the 'create' / 'delete' / 'list' shortcuts) to 'src/eidos/cli/spec_commands.py'. 'version' and 'info' stay in 'main.py'."
-    expect:
-      source_path: "src/eidos/cli/spec_commands.py"
-  - action: modify_component
-    target_component: CMP-CLI-DELTA-COMMANDS
-    details: "Extract 'delta' sub-app and the 'changelog' shortcut to 'src/eidos/cli/delta_commands.py'."
-    expect:
-      source_path: "src/eidos/cli/delta_commands.py"
-  - action: modify_component
-    target_component: CMP-CLI-PLUGIN-COMMANDS
-    details: "Extract 'plugin' sub-app and the 'install' shortcut to 'src/eidos/cli/plugin_commands.py'."
-    expect:
-      source_path: "src/eidos/cli/plugin_commands.py"
-  - action: modify_component
-    target_component: CMP-CLI-DRIFT-COMMANDS
-    details: "Extract 'drift', 'reconcile', and 'sync' to 'src/eidos/cli/drift_commands.py'."
-    expect:
-      source_path: "src/eidos/cli/drift_commands.py"
-  - action: modify_component
-    target_component: CMP-CLI-INIT-COMMAND
-    details: "Extract 'init' to 'src/eidos/cli/init_command.py'."
-    expect:
-      source_path: "src/eidos/cli/init_command.py"
-  - action: modify_component
-    target_component: CMP-CLI-CONTEXT-COMMAND
-    details: "Extract 'context' to 'src/eidos/cli/context_command.py'."
-    expect:
-      source_path: "src/eidos/cli/context_command.py"
-  - action: modify_component
-    target_component: CMP-CLI-INDEX-COMMANDS
-    details: "Extract 'index' sub-app and the 'repo-map' / 'find-symbol' shortcuts to 'src/eidos/cli/index_commands.py'."
-    expect:
-      source_path: "src/eidos/cli/index_commands.py"
-  - action: modify_component
-    target_component: CMP-CLI-COMPONENT-COMMANDS
-    details: "Extract 'component' sub-app to 'src/eidos/cli/component_commands.py'."
-    expect:
-      source_path: "src/eidos/cli/component_commands.py"
-  - action: modify_component
-    target_component: CMP-CLI-PORTAL-COMMANDS
-    details: "Extract 'portal' sub-app and the 'serve' / 'build-site' shortcuts to 'src/eidos/cli/portal_commands.py'."
-    expect:
-      source_path: "src/eidos/cli/portal_commands.py"
-  - action: modify_component
-    target_component: CMP-CLI-DOCTOR-HOOKS
-    details: "Extract 'doctor' and the 'hook' sub-app to 'src/eidos/cli/doctor_hook_commands.py'."
-    expect:
-      source_path: "src/eidos/cli/doctor_hook_commands.py"
-affects:
-  containers:
-    - CNT-EIDOS-CORE
-    - CNT-EIDOS-CLI
-  contracts:
-    - CTR-EIDOS-CLI
-blast_radius:
-  impacted_containers:
-    - CNT-EIDOS-CORE
-    - CNT-EIDOS-CLI
-  impacted_components:
-    - CMP-LIFECYCLE-SCAFFOLDER
-    - CMP-DESIGN-ENGINE
-    - CMP-REPO-INITIALIZER
-    - CMP-DELTA-ENGINE
-    - CMP-DELTA-AUDITOR
-    - CMP-CLI-APP
-    - CMP-CLI-SPEC-COMMANDS
-    - CMP-CLI-DELTA-COMMANDS
-    - CMP-CLI-PLUGIN-COMMANDS
-    - CMP-CLI-DRIFT-COMMANDS
-    - CMP-CLI-INIT-COMMAND
-    - CMP-CLI-CONTEXT-COMMAND
-    - CMP-CLI-INDEX-COMMANDS
-    - CMP-CLI-COMPONENT-COMMANDS
-    - CMP-CLI-PORTAL-COMMANDS
-    - CMP-CLI-DOCTOR-HOOKS
-  invariants_to_enforce:
-    - INV-MUTATION-REVERSIBILITY
-    - INV-COMPONENT-CENTRALIZATION-MANDATE
-    - INV-COMPONENT-CONTAINER-AFFINITY
-    - INV-INTERFACE-BOUNDARY-GOVERNANCE
-    - INV-ENGINE-GENERICITY
-    - INV-HOOK-CLI-NATIVE
-    - INV-HOOK-FAIL-LOUD
+- action: add_component
+  target_container: CNT-EIDOS-CORE
+  target_component: CMP-DELTA-ENGINE
+  details: Declare 'CMP-DELTA-ENGINE' (DeltaEngine) in 'eidos/architecture/containers/core.adoc' with source_path 'src/eidos/core/lifecycle/delta_engine.py', owning SpecDelta listing, status summaries, by-status view sync, baseline snapshots, 'verify_delta_mutations', 'execute_delta_mutations', and 'apply_delta'. Update both the frontmatter and the AsciiDoc component table.
+- action: modify_component
+  target_component: CMP-LIFECYCLE-SCAFFOLDER
+  details: Narrow responsibility to spec scaffolding, reference-safety checks, and component promote/inline (drop 'manages flat SpecDelta lifecycles'). source_path becomes ['src/eidos/core/lifecycle/scaffolder.py', 'src/eidos/core/lifecycle/catalog.py']; 'catalog.py' hosts the shared low-level helpers ('find_spec_by_id_or_path', '_build_spec_catalog*', frontmatter render/split helpers, 'normalize_id') so 'delta_engine.py', 'design_engine.py', 'initializer.py', and 'audit.py' import from 'catalog.py' rather than 'scaffolder.py' (no import cycles). 'scaffolder.py' keeps permanent backwards-compatible re-exports of every previously public name.
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/lifecycle/catalog.py
+- action: modify_component
+  target_component: CMP-DESIGN-ENGINE
+  details: Move design system, W3C DTCG token, UI component, and screen scaffolding out of 'scaffolder.py' into 'src/eidos/core/lifecycle/design_engine.py'.
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/lifecycle/design_engine.py
+- action: modify_component
+  target_component: CMP-REPO-INITIALIZER
+  details: Move 'init_repository', baseline templates, and '.gitkeep'/'.gitignore' bootstrapping into 'src/eidos/core/lifecycle/initializer.py'.
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/lifecycle/initializer.py
+- action: modify_component
+  target_component: CMP-CLI-APP
+  details: '''main.py'' remains the root Typer dispatcher and the ''eidos = eidos.cli.main:app'' entry point; it imports each command module and calls its ''register(app)'' hook, then pins the root help order with an explicit ''ROOT_COMMAND_ORDER'' so registration order across modules cannot change the help layout. Shared console, error-code translation, and help-panel constants move to ''src/eidos/cli/_shared.py'' so command modules never import ''main.py''.'
+  expect:
+    frontmatter:
+      source_path: src/eidos/cli/_shared.py
+- action: modify_component
+  target_component: CMP-CLI-SPEC-COMMANDS
+  details: Extract the 'spec' sub-app and the spec-oriented root commands ('validate', 'lint', 'containers', 'components', and the 'create' / 'delete' / 'list' shortcuts) to 'src/eidos/cli/spec_commands.py'. 'version' and 'info' stay in 'main.py'.
+  expect:
+    frontmatter:
+      source_path: src/eidos/cli/spec_commands.py
+- action: modify_component
+  target_component: CMP-CLI-DELTA-COMMANDS
+  details: Extract 'delta' sub-app and the 'changelog' shortcut to 'src/eidos/cli/delta_commands.py'.
+  expect:
+    frontmatter:
+      source_path: src/eidos/cli/delta_commands.py
+- action: modify_component
+  target_component: CMP-CLI-PLUGIN-COMMANDS
+  details: Extract 'plugin' sub-app and the 'install' shortcut to 'src/eidos/cli/plugin_commands.py'.
+  expect:
+    frontmatter:
+      source_path: src/eidos/cli/plugin_commands.py
+- action: modify_component
+  target_component: CMP-CLI-DRIFT-COMMANDS
+  details: Extract 'drift', 'reconcile', and 'sync' to 'src/eidos/cli/drift_commands.py'.
+  expect:
+    frontmatter:
+      source_path: src/eidos/cli/drift_commands.py
+- action: modify_component
+  target_component: CMP-CLI-INIT-COMMAND
+  details: Extract 'init' to 'src/eidos/cli/init_command.py'.
+  expect:
+    frontmatter:
+      source_path: src/eidos/cli/init_command.py
+- action: modify_component
+  target_component: CMP-CLI-CONTEXT-COMMAND
+  details: Extract 'context' to 'src/eidos/cli/context_command.py'.
+  expect:
+    frontmatter:
+      source_path: src/eidos/cli/context_command.py
+- action: modify_component
+  target_component: CMP-CLI-INDEX-COMMANDS
+  details: Extract 'index' sub-app and the 'repo-map' / 'find-symbol' shortcuts to 'src/eidos/cli/index_commands.py'.
+  expect:
+    frontmatter:
+      source_path: src/eidos/cli/index_commands.py
+- action: modify_component
+  target_component: CMP-CLI-COMPONENT-COMMANDS
+  details: Extract 'component' sub-app to 'src/eidos/cli/component_commands.py'.
+  expect:
+    frontmatter:
+      source_path: src/eidos/cli/component_commands.py
+- action: modify_component
+  target_component: CMP-CLI-PORTAL-COMMANDS
+  details: Extract 'portal' sub-app and the 'serve' / 'build-site' shortcuts to 'src/eidos/cli/portal_commands.py'.
+  expect:
+    frontmatter:
+      source_path: src/eidos/cli/portal_commands.py
+- action: modify_component
+  target_component: CMP-CLI-DOCTOR-HOOKS
+  details: Extract 'doctor' and the 'hook' sub-app to 'src/eidos/cli/doctor_hook_commands.py'.
+  expect:
+    frontmatter:
+      source_path: src/eidos/cli/doctor_hook_commands.py
 ---
 = SpecDelta: Modularize Core and CLI God Modules into 1-to-1 C4 Component Modules
 :toc: left

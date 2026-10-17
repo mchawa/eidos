@@ -25,13 +25,6 @@ mutations:
 - action: add_container
   target_container: CNT-EIDOS-VCS
   details: "Create 'eidos/architecture/containers/vcs.adoc' ('CNT-EIDOS-VCS' owning 'src/eidos/vcs') and register 'src/eidos/plugin' + 'assets/plugin_reference' in 'CNT-EIDOS-PLUGIN' so Eidos dogfoods its own generic path ownership rules."
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-CORE
-  - CNT-EIDOS-INDEX
-  - CNT-EIDOS-PORTAL
-  - CNT-EIDOS-PLUGIN
-  - CNT-EIDOS-VCS
 ---
 = SpecDelta: 100% Generic Engine, Zero-Config Path Standardization, and Graph-Inferred Design Paths
 :toc: left

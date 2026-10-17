@@ -257,6 +257,133 @@ def _mutate_frontmatter_components(
     return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
 
 
+def _format_invariant_item(item: dict[str, Any], indent: str = "  ") -> str:
+    """Serialize a single invariant list item with the given leading indentation."""
+    dumped = yaml.safe_dump([item], sort_keys=False, allow_unicode=True, default_flow_style=False, width=4096)
+    return "".join((indent + line if line.strip() else line) for line in dumped.splitlines(keepends=True))
+
+
+def _mutate_frontmatter_invariants(
+    raw_content: str,
+    op: str,
+    target_id: str,
+    item_dict: dict[str, Any] | None = None,
+    is_capability: bool = False,
+) -> str:
+    """Mutate a single item in top-level 'invariants:' or 'technical.invariants:' while preserving YAML comments."""
+    parts = _split_raw_frontmatter(raw_content)
+    if parts is None:
+        return raw_content
+    raw_yaml, body = parts
+    lines = raw_yaml.splitlines(keepends=True)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+
+    inv_idx = next((i for i, ln in enumerate(lines) if re.match(r"^[ \t]*invariants\s*:", ln)), None)
+    if inv_idx is None:
+        if op == "append" and item_dict is not None:
+            if is_capability:
+                tech_idx = next((i for i, ln in enumerate(lines) if re.match(r"^technical\s*:", ln)), None)
+                if tech_idx is not None:
+                    tech_empty_m = re.match(r"^(technical\s*:\s*)\{\s*\}(\s*(?:#.*)?\n?)$", lines[tech_idx])
+                    if tech_empty_m:
+                        trailing = tech_empty_m.group(2)
+                        if not trailing.endswith("\n"):
+                            trailing += "\n"
+                        lines[tech_idx] = f"technical:{trailing}"
+                    lines.insert(tech_idx + 1, "  invariants:\n")
+                    lines.insert(tech_idx + 2, _format_invariant_item(item_dict, "    "))
+                else:
+                    lines.append("technical:\n")
+                    lines.append("  invariants:\n")
+                    lines.append(_format_invariant_item(item_dict, "    "))
+            else:
+                lines.append("invariants:\n")
+                lines.append(_format_invariant_item(item_dict, "  "))
+            return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
+        return raw_content
+
+    inv_header_indent_len = len(lines[inv_idx]) - len(lines[inv_idx].lstrip(" \t"))
+    inv_header_indent = " " * inv_header_indent_len
+    header_m = re.match(r"^([ \t]*invariants\s*:\s*)\[\s*\](\s*(?:#.*)?\n?)$", lines[inv_idx])
+    if header_m:
+        if op == "append" and item_dict is not None:
+            trailing = header_m.group(2)
+            if not trailing.endswith("\n"):
+                trailing += "\n"
+            lines[inv_idx] = f"{inv_header_indent}invariants:{trailing}"
+            lines.insert(inv_idx + 1, _format_invariant_item(item_dict, f"{inv_header_indent}  "))
+            return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
+        return raw_content
+
+    end_idx = len(lines)
+    for i in range(inv_idx + 1, len(lines)):
+        ln = lines[i]
+        stripped = ln.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        line_indent_len = len(ln) - len(ln.lstrip(" \t"))
+        if line_indent_len < inv_header_indent_len or (
+            line_indent_len == inv_header_indent_len and not stripped.startswith("-")
+        ):
+            end_idx = i
+            while end_idx > inv_idx + 1 and (
+                not lines[end_idx - 1].strip() or lines[end_idx - 1].startswith("#")
+            ):
+                end_idx -= 1
+            break
+
+    item_indents = [
+        len(m.group(1))
+        for i in range(inv_idx + 1, end_idx)
+        if (m := re.match(r"^(\s*)-\s+", lines[i]))
+    ]
+    base_indent_len = min(item_indents) if item_indents else (inv_header_indent_len + 2)
+    base_indent = " " * base_indent_len
+    item_starts = [
+        i
+        for i in range(inv_idx + 1, end_idx)
+        if (m := re.match(r"^(\s*)-\s+", lines[i])) and len(m.group(1)) == base_indent_len
+    ]
+
+    if op == "append" and item_dict is not None:
+        lines.insert(end_idx, _format_invariant_item(item_dict, base_indent))
+        return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
+
+    for idx_pos, start_line in enumerate(item_starts):
+        next_bound = item_starts[idx_pos + 1] if idx_pos + 1 < len(item_starts) else end_idx
+        stop_line = next_bound
+        while stop_line > start_line + 1 and (
+            not lines[stop_line - 1].strip() or lines[stop_line - 1].lstrip().startswith("#")
+        ):
+            stop_line -= 1
+        chunk_text = "".join(lines[start_line:stop_line])
+        try:
+            parsed_item = yaml.safe_load(chunk_text)
+        except yaml.YAMLError:
+            continue
+        if (
+            isinstance(parsed_item, list)
+            and len(parsed_item) == 1
+            and isinstance(parsed_item[0], dict)
+            and parsed_item[0].get("id") == target_id
+        ):
+            if op == "replace" and item_dict is not None:
+                lines[start_line:stop_line] = [_format_invariant_item(item_dict, base_indent)]
+            elif op == "remove":
+                del lines[start_line:stop_line]
+                if len(item_starts) == 1:
+                    lines[inv_idx] = re.sub(
+                        r"^([ \t]*invariants\s*:[ \t]*)",
+                        f"{inv_header_indent}invariants: []",
+                        lines[inv_idx],
+                        count=1,
+                    )
+            break
+
+    return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
+
+
 def _single_line(text: str) -> str:
     """Collapse whitespace/newlines so user input cannot break AsciiDoc headings."""
     return " ".join(str(text).split())
@@ -328,6 +455,19 @@ def find_references_to_spec(eidos_dir: Path, target_id: str, target_path: Path) 
     return referencing_files
 
 
+_SPEC_CATALOG_CACHE: dict[
+    Path,
+    tuple[
+        tuple[tuple[str, int, int], ...],
+        tuple[
+            dict[str, tuple[Path, str, dict[str, Any]]],
+            dict[str, str],
+            dict[str, tuple[Path, dict[str, Any]]],
+        ],
+    ],
+] = {}
+
+
 def _build_spec_catalog(
     eidos_dir: Path,
 ) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, str], set[str]]:
@@ -339,14 +479,38 @@ def _build_spec_catalog(
 def _build_spec_catalog_with_invariants(
     eidos_dir: Path,
 ) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, str], dict[str, tuple[Path, dict[str, Any]]]]:
-    """Build lookup indexes including owning file and dict for each invariant."""
+    """Build lookup indexes including owning file and dict for each invariant, with mtime/size caching."""
+    import copy
+
+    resolved_eidos = eidos_dir.resolve()
+    adoc_files: list[Path] = []
+    state_sig_items: list[tuple[str, int, int]] = []
+    if eidos_dir.exists():
+        for p in sorted(eidos_dir.rglob("*.adoc")):
+            if "deltas" in p.parts or "by-status" in p.parts:
+                continue
+            try:
+                st = p.stat()
+            except OSError:
+                continue
+            adoc_files.append(p)
+            state_sig_items.append((str(p), st.st_mtime_ns, st.st_size))
+
+    state_sig = tuple(state_sig_items)
+    cached = _SPEC_CATALOG_CACHE.get(resolved_eidos)
+    if cached is not None and cached[0] == state_sig:
+        c_specs, c_comps, c_invs = cached[1]
+        return (
+            {k: (v[0], v[1], copy.deepcopy(v[2])) for k, v in c_specs.items()},
+            dict(c_comps),
+            {k: (v[0], copy.deepcopy(v[1])) for k, v in c_invs.items()},
+        )
+
     specs_by_id: dict[str, tuple[Path, str, dict[str, Any]]] = {}
     container_components: dict[str, str] = {}  # comp_id -> container_id
     invariant_map: dict[str, tuple[Path, dict[str, Any]]] = {}
 
-    for p in eidos_dir.rglob("*.adoc"):
-        if "deltas" in p.parts or "by-status" in p.parts:
-            continue
+    for p in adoc_files:
         try:
             doc = parse_spec_file(p)
             if doc.doc_id:
@@ -372,4 +536,12 @@ def _build_spec_catalog_with_invariants(
         except OSError:
             continue
 
+    _SPEC_CATALOG_CACHE[resolved_eidos] = (
+        state_sig,
+        (
+            {k: (v[0], v[1], copy.deepcopy(v[2])) for k, v in specs_by_id.items()},
+            dict(container_components),
+            {k: (v[0], copy.deepcopy(v[1])) for k, v in invariant_map.items()},
+        ),
+    )
     return specs_by_id, container_components, invariant_map

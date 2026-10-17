@@ -2,7 +2,7 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-076
-title: "Synchronize Bundled Agent Skills (eidos, eidos-spec, eidos-plan, eidos-ops) with v1 JSON Schemas and Canonical Design Paths"
+title: Synchronize Bundled Agent Skills (eidos, eidos-spec, eidos-plan, eidos-ops) with v1 JSON Schemas and Canonical Design Paths
 status: applied
 vcs:
   branch: fix/bundled-skills-schema-and-path-parity
@@ -10,34 +10,15 @@ intent:
   kind: bug
   bug_classification: spec_violation
   severity: high
-  motivation: "Align all YAML frontmatter templates, property descriptions, enum values, and directory paths in the 4 bundled Agent Skills (assets/plugin_reference/skills/*/SKILL.md) with the v1 JSON Schemas and scaffolder conventions so AI agents following the skills author specifications that pass eidos validate."
+  motivation: Align all YAML frontmatter templates, property descriptions, enum values, and directory paths in the 4 bundled Agent Skills (assets/plugin_reference/skills/*/SKILL.md) with the v1 JSON Schemas and scaffolder conventions so AI agents following the skills author specifications that pass eidos validate.
 mutations:
-  - action: modify_component
-    target_component: CMP-PLUGIN-INSTALLER
-    details: "Update assets/plugin_reference/skills/eidos-spec/SKILL.md, eidos-plan/SKILL.md, eidos-ops/SKILL.md, and eidos/SKILL.md (and synchronize installed copies in .agents/plugins/eidos/skills/) so EXP-*, DOM-*, PER-*, SYS-*, CNT-*, CTR-*, DS-*, UIC-*, CLT-*, SCR-*, and FLOW-* templates and directory paths match assets/schemas/v1/** and eidos/design/**."
-    expect:
-      source_path: "src/eidos/plugin/installer.py"
-      responsibility: "4 cohesive workflow skills"
-affects:
-  containers:
-    - CNT-EIDOS-PLUGIN
-  components:
-    - CMP-PLUGIN-INSTALLER
-  capabilities:
-    - CAP-AGENT-001
-    - CAP-PROD-001
-  domains:
-    - DOM-AGENT-INTELLIGENCE
-    - DOM-SPEC-ENGINE
-blast_radius:
-  impacted_containers:
-    - CNT-EIDOS-PLUGIN
-  impacted_components:
-    - CMP-PLUGIN-INSTALLER
-  invariants_to_enforce:
-    - INV-PLUGIN-SCHEMA-CONFORMANCE
-    - INV-SPEC-VALIDATION
-    - INV-DOCS-SYNCHRONIZATION
+- action: modify_component
+  target_component: CMP-PLUGIN-INSTALLER
+  details: Update assets/plugin_reference/skills/eidos-spec/SKILL.md, eidos-plan/SKILL.md, eidos-ops/SKILL.md, and eidos/SKILL.md (and synchronize installed copies in .agents/plugins/eidos/skills/) so EXP-*, DOM-*, PER-*, SYS-*, CNT-*, CTR-*, DS-*, UIC-*, CLT-*, SCR-*, and FLOW-* templates and directory paths match assets/schemas/v1/** and eidos/design/**.
+  expect:
+    frontmatter:
+      source_path: src/eidos/plugin/installer.py
+      responsibility: 4 cohesive workflow skills
 ---
 = SpecDelta: Synchronize Bundled Agent Skills (eidos, eidos-spec, eidos-plan, eidos-ops) with v1 JSON Schemas and Canonical Design Paths
 :toc: left

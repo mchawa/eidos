@@ -11,7 +11,7 @@ Eidos enforces **Bidirectional Invariant-Test Traceability** using two complemen
 | Construct | Scope | Living Spec Location | Business vs. Technical |
 | :--- | :--- | :--- | :--- |
 | **`POL-*` (Policies)** | **System-wide** governance & architectural laws | Standalone documents in `eidos/policies/POL-*.adoc` (`type: product/policy`) | **Macro Governance**: Covers business compliance (GDPR, SOC2, ground truth) down to engineering rules (layering, test gates, zero-AI determinism). |
-| **`INV-*` (Invariants)** | **Feature & Component-level** falsifiable truth assertions | Inside Capability manifests (`CAP-*` under `technical.invariants`), Component manifests (`CMP-*` under `invariants`), and SpecDeltas (`DLT-*` under `blast_radius.invariants_to_enforce`) | **Executable Contract**: Translates core business rules and technical constraints into AST-verified code test bindings (`file::func` or `file::Class::method`). |
+| **`INV-*` (Invariants)** | **Feature & Component-level** falsifiable truth assertions | Inside Capability manifests (`CAP-*` under `technical.invariants`), Policy manifests (`POL-*` under `invariants`), and Container/Component manifests (`CNT-*` / `CMP-*` under `invariants`) | **Executable Contract**: Translates core business rules and technical constraints into AST-verified code test bindings (`file::func` or `file::Class::method`). |
 
 ---
 

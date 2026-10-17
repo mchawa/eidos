@@ -1009,4 +1009,73 @@ def test_portal_mermaid_diagram_generators_and_asset_fallbacks(tmp_path, monkeyp
     assert portal_assets._load_portal_html_template() == "<html>fallback</html>"
 
 
+def test_dlt_2026_085_portal_graph_derived_affects_and_blast_radius(tmp_path: Path) -> None:
+    """DLT-2026-085 (# eidos:fixture): Verify get_portal_data derives delta affects and blast_radius
+    (including invariants_to_enforce) dynamically from mutations[].target_* and the living spec graph."""
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.portal.generator import get_portal_data
+
+    repo = tmp_path / "portal_graph_ws"
+    init_repository(repo, name="portal-graph", title="Portal Graph System")
+    eidos_dir = repo / "eidos"
+
+    (eidos_dir / "architecture" / "containers" / "core.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-CORE\n"
+        "name: Core\n"
+        "container_type: library\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/core\n"
+        "invariants:\n"
+        "  - id: INV-CNT-001\n"
+        "    rule: Container invariant.\n"
+        "    test_binding: tests/test_core.py::test_cnt\n"
+        "components:\n"
+        "  - id: CMP-TARGET\n"
+        "    name: Target\n"
+        "    responsibility: Direct mutation target.\n"
+        "    source_path: src/core/target.py\n"
+        "    invariants:\n"
+        "      - id: INV-CMP-001\n"
+        "        rule: Target invariant.\n"
+        "        test_binding: tests/test_core.py::test_cmp\n"
+        "  - id: CMP-CALLER\n"
+        "    name: Caller\n"
+        "    responsibility: Calls CMP-TARGET.\n"
+        "    source_path: src/core/caller.py\n"
+        "    dependencies:\n"
+        "      internal:\n"
+        "        - CMP-TARGET\n"
+        "---\n"
+        "= Core\n",
+        encoding="utf-8",
+    )
+
+    (eidos_dir / "deltas" / "dlt-2026-099.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-099\n"
+        "title: Mutate Target Component\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: refactor\n"
+        "  motivation: Test graph-derived affects and blast_radius\n"
+        "mutations:\n"
+        "  - action: modify_component\n"
+        "    target_component: CMP-TARGET\n"
+        "---\n"
+        "= Mutate Target\n",
+        encoding="utf-8",
+    )
+
+    data = get_portal_data(eidos_dir)
+    dlt = next(d for d in data["deltas"]["proposed"] if d["id"] == "DLT-2026-099")
+    assert dlt["affects"]["components"] == ["CMP-TARGET"]
+    assert "CNT-CORE" in dlt["blast_radius"]["impacted_containers"]
+    assert "CMP-CALLER" in dlt["blast_radius"]["impacted_components"]
+    assert "INV-CMP-001" in dlt["blast_radius"]["invariants_to_enforce"]
+    assert "INV-CNT-001" in dlt["blast_radius"]["invariants_to_enforce"]
 

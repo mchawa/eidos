@@ -52,14 +52,7 @@ mutations:
     mutation diff views.
 
     '
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-PORTAL
-  invariants_to_enforce:
-  - INV-PORTAL-ZERO-NODE-DEP
-  - INV-PORTAL-INTERACTIVE-C4
 ---
-
 = SpecDelta: Modernize Living Web Portal with React 19, Tailwind CSS v4, and Material Design 3 (MD3)
 :toc: left
 

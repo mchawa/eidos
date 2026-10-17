@@ -2,58 +2,38 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-036
-title: "Structured Architectural Decisions and Trade-Off Records Embedded in Living Specifications"
+title: Structured Architectural Decisions and Trade-Off Records Embedded in Living Specifications
 status: applied
 vcs:
   branch: feat/living-spec-architectural-decisions
 intent:
   kind: feature
-  motivation: "Preserve architectural 'why', rejected alternatives, and trade-offs directly inside living specifications ('product/system', 'tech/architecture', 'tech/container', 'tech/component') via a structured 'decisions:' schema block without reintroducing standalone ADR graveyard files (POL-001)."
+  motivation: Preserve architectural 'why', rejected alternatives, and trade-offs directly inside living specifications ('product/system', 'tech/architecture', 'tech/container', 'tech/component') via a structured 'decisions:' schema block without reintroducing standalone ADR graveyard files (POL-001).
 mutations:
-  - action: modify_component
-    target_component: CMP-SPEC-VALIDATOR
-    details: "Add an optional structured 'decisions' array to 'assets/schemas/v1/product/system.schema.yaml', 'assets/schemas/v1/tech/architecture.schema.yaml', 'assets/schemas/v1/tech/container.schema.yaml' (top-level and inline 'components[]'), and 'assets/schemas/v1/tech/component.schema.yaml' capturing 'id' ('DEC-*'), 'title', 'decision', 'rationale', 'rejected_alternatives' ('option' and 'reason_rejected'), and optional 'graduated_from' ('EXP-*' or 'DLT-*' via x-eidos-ref), with global 'DEC-*' uniqueness and cross-reference validation in 'src/eidos/core/spec/validator.py'."
-    expect:
-      responsibility: "DEC-*"
-  - action: modify_component
-    target_component: CMP-TIERED-CONTEXT-COMPRESSOR
-    details: "Index embedded 'decisions' blocks in 'src/eidos/core/index/graph_index.py' into 'specs_fts' and include container/component architectural decisions in tiered context slices ('anchor': compact title + decision + rejected option names; 'guardrails' and 'deep': full rationale and rejected alternatives) so AI agents do not re-propose previously rejected designs while staying within CAP-AGENT-001 token budgets."
-    expect:
-      responsibility: "decisions"
-  - action: modify_component
-    target_component: CMP-CONTEXT-SLICER
-    details: "Render embedded container and component 'decisions' and 'rejected_alternatives' in 'ArchitecturalContextSlice.to_markdown()' in 'src/eidos/core/workspace/context.py'."
-    expect:
-      responsibility: "decisions"
-  - action: patch_policy
-    target_policy: POL-001-GIT-SOURCE-OF-TRUTH
-    details: "Clarify in 'eidos/policies/POL-001-git-as-single-source-of-truth.adoc' that while standalone chronological ADR files remain prohibited, enduring architectural trade-offs and rejected alternatives are recorded in-place within the 'decisions' frontmatter block of the owning system, architecture, container, or component living specification."
-    expect:
-      rule: "decisions"
-affects:
-  containers:
-    - CNT-EIDOS-CORE
-    - CNT-EIDOS-INDEX
-  policies:
-    - POL-001-GIT-SOURCE-OF-TRUTH
-  capabilities:
-    - CAP-PROD-001
-    - CAP-AGENT-001
-blast_radius:
-  impacted_containers:
-    - CNT-EIDOS-CORE
-    - CNT-EIDOS-INDEX
-  impacted_components:
-    - CMP-SPEC-VALIDATOR
-    - CMP-GRAPH-STORAGE
-    - CMP-FTS-QUERY-ENGINE
-    - CMP-TIERED-CONTEXT-COMPRESSOR
-    - CMP-CONTEXT-SLICER
-  invariants_to_enforce:
-    - INV-SPEC-VALIDATION
-    - INV-SPEC-GRAPH-INTEGRITY
-    - INV-AGENT-CONTEXT-SLICING
-    - INV-DOCS-SYNCHRONIZATION
+- action: modify_component
+  target_component: CMP-SPEC-VALIDATOR
+  details: Add an optional structured 'decisions' array to 'assets/schemas/v1/product/system.schema.yaml', 'assets/schemas/v1/tech/architecture.schema.yaml', 'assets/schemas/v1/tech/container.schema.yaml' (top-level and inline 'components[]'), and 'assets/schemas/v1/tech/component.schema.yaml' capturing 'id' ('DEC-*'), 'title', 'decision', 'rationale', 'rejected_alternatives' ('option' and 'reason_rejected'), and optional 'graduated_from' ('EXP-*' or 'DLT-*' via x-eidos-ref), with global 'DEC-*' uniqueness and cross-reference validation in 'src/eidos/core/spec/validator.py'.
+  expect:
+    frontmatter:
+      responsibility: DEC-*
+- action: modify_component
+  target_component: CMP-TIERED-CONTEXT-COMPRESSOR
+  details: 'Index embedded ''decisions'' blocks in ''src/eidos/core/index/graph_index.py'' into ''specs_fts'' and include container/component architectural decisions in tiered context slices (''anchor'': compact title + decision + rejected option names; ''guardrails'' and ''deep'': full rationale and rejected alternatives) so AI agents do not re-propose previously rejected designs while staying within CAP-AGENT-001 token budgets.'
+  expect:
+    frontmatter:
+      responsibility: decisions
+- action: modify_component
+  target_component: CMP-CONTEXT-SLICER
+  details: Render embedded container and component 'decisions' and 'rejected_alternatives' in 'ArchitecturalContextSlice.to_markdown()' in 'src/eidos/core/workspace/context.py'.
+  expect:
+    frontmatter:
+      responsibility: decisions
+- action: patch_policy
+  target_policy: POL-001-GIT-SOURCE-OF-TRUTH
+  details: Clarify in 'eidos/policies/POL-001-git-as-single-source-of-truth.adoc' that while standalone chronological ADR files remain prohibited, enduring architectural trade-offs and rejected alternatives are recorded in-place within the 'decisions' frontmatter block of the owning system, architecture, container, or component living specification.
+  expect:
+    frontmatter:
+      rule: decisions
 ---
 = SpecDelta: Structured Architectural Decisions and Trade-Off Records Embedded in Living Specifications
 :toc: left

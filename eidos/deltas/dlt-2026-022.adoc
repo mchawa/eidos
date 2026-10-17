@@ -31,12 +31,7 @@ mutations:
   target_contract: CTR-EIDOS-CLI
   details: Document 'eidos delta changelog' and 'eidos changelog' options, arguments,
     and exit codes.
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-CORE
-  - CNT-EIDOS-CLI
 ---
-
 = SpecDelta: Automated Living Architecture Changelog Generation Engine
 :toc: left
 

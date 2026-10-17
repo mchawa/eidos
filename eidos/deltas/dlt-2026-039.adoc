@@ -25,24 +25,6 @@ mutations:
   - action: add_invariant
     target_invariant_id: INV-DRIFT-DIFF-AWARE-COVERAGE
     details: "[CAP-VCS-001] Rule: 'Structural code additions (new source files or new public symbols) are only covered by 1-hop specification edits that change normalized, non-comment content; new files outside any declared source_path/owned_path additionally require an anchored spec edit.' test_binding: 'tests/test_drift.py::test_trivial_spec_edit_does_not_cover_structural_addition'."
-affects:
-  containers:
-    - CNT-EIDOS-VCS
-    - CNT-EIDOS-INDEX
-  contracts:
-    - CTR-EIDOS-CLI
-  capabilities:
-    - CAP-VCS-001
-blast_radius:
-  impacted_containers:
-    - CNT-EIDOS-VCS
-    - CNT-EIDOS-INDEX
-  impacted_components:
-    - CMP-DRIFT-DETECTOR
-    - CMP-AST-SYMBOL-INDEXER
-  invariants_to_enforce:
-    - INV-DRIFT-DETECTION-ACCURACY
-    - INV-DRIFT-DIFF-AWARE-COVERAGE
 ---
 = SpecDelta: Diff-Aware Specification Coverage for Structural Code Additions
 :toc: left

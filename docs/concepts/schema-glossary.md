@@ -499,7 +499,7 @@ steps:
 * **ID Convention**: `DLT-<YEAR>-<NUMBER>` (e.g., `DLT-2026-005`)
 * **Location**: `eidos/deltas/dlt-*.adoc`
 * **Required Properties**: `type`, `schema`, `id`, `title`, `status`, `intent`, `mutations`
-* **Intent**: Declarative mutation artifact for Planned Mode. Documents planned architectural changes (`intent.kind`: `feature`, `enabler`, or `bug`), 44 typed `mutations[].action` operations with optional `expect:` post-conditions, `affects`, `blast_radius`, and `tombstone` deletion audit exemptions. Reconciled in-place upon completion (`status: applied`).
+* **Intent**: Declarative mutation artifact for Planned Mode. Documents planned architectural changes (`intent.kind`: `feature`, `enabler`, or `bug`), 44 typed `mutations[].action` operations with `target_*` scope and optional `expect:` post-conditions, and `tombstone` deletion audit exemptions (while `affects` and `blast_radius` are derived automatically from the knowledge graph). Reconciled in-place upon completion (`status: applied`).
 
 ```yaml
 ---
@@ -511,16 +511,13 @@ status: applied # draft | proposed | planned | in_review | approved | applied | 
 intent:
   kind: feature # feature | enabler | bug
   motivation: "Enable automated verification of spec-to-code synchronization in local workflows and CI."
-affects:
-  containers:
-    - CNT-EIDOS-CLI
-    - CNT-EIDOS-VCS
 mutations:
   - action: modify_contract
     target_contract: "CTR-EIDOS-CLI"
     details: "Add eidos drift CLI command"
     expect:
-      contains: "eidos drift"
+      body:
+        contains: "eidos drift"
 ---
 ```
 

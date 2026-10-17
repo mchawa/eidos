@@ -1056,8 +1056,8 @@ def test_drift_hook_post_invocation_clean(tmp_path):
     assert len(data["injectSteps"]) == 0
 
 
-def test_stop_gate_block_once_and_allow_second_attempt(tmp_path):
-    """Verify Block-Once Stop Gate (INV-HOOK-BLOCK-ONCE, DLT-2026-024): blocks first Stop on drift, allows second Stop with identical fingerprint, and blocks again on new drift."""
+def test_stop_gate_block_once_and_allow_second_attempt(tmp_path, monkeypatch):
+    """Verify Block-Once Stop Gate (INV-HOOK-BLOCK-ONCE, DLT-2026-024, DLT-2026-084): blocks first Stop on drift, allows second Stop with identical fingerprint + systemMessage warning, and re-blocks on TTL expiry, session_id change, or new drift."""
     from eidos.plugin.hooks import handle_drift_stop
 
     eidos_dir = tmp_path / "eidos"
@@ -1078,19 +1078,42 @@ def test_stop_gate_block_once_and_allow_second_attempt(tmp_path):
     subprocess.run(["git", "add", "eidos"], cwd=tmp_path, capture_output=True, check=True)
     subprocess.run(["git", "commit", "-m", "init specs"], cwd=tmp_path, capture_output=True, check=True)
 
-    payload = {"executionNum": 1, "terminationReason": "model_stop", "workspacePaths": [str(tmp_path)]}
+    payload = {
+        "executionNum": 1,
+        "terminationReason": "model_stop",
+        "workspacePaths": [str(tmp_path)],
+        "session_id": "sess-alpha",
+    }
 
     # 1. First Stop attempt: blocked with decision="continue" and state persisted in eidos/.cache/stop-gate.json
     res1 = handle_drift_stop(payload, tmp_path)
     assert res1["decision"] == "continue"
-    assert (eidos_dir / ".cache" / "stop-gate.json").exists()
+    gate_file = eidos_dir / ".cache" / "stop-gate.json"
+    assert gate_file.exists()
+    gate_data = json.loads(gate_file.read_text(encoding="utf-8"))
+    assert isinstance(gate_data.get("fingerprint"), dict)
+    assert gate_data["fingerprint"]["session_id"] == "sess-alpha"
+    assert isinstance(gate_data["fingerprint"]["timestamp"], float)
 
-    # 2. Second Stop attempt with identical failure fingerprint: allowed with decision="allow"
-    res2 = handle_drift_stop(payload, tmp_path)
+    # 2. Different session_id with identical failure fingerprint: must re-block (not release across sessions)
+    res_other_session = handle_drift_stop({**payload, "session_id": "sess-beta"}, tmp_path)
+    assert res_other_session["decision"] == "continue"
+
+    # 3. Expired TTL with identical failure fingerprint and same session_id: must re-block
+    expired_gate = json.loads(gate_file.read_text(encoding="utf-8"))
+    expired_gate["fingerprint"]["timestamp"] = 1.0
+    gate_file.write_text(json.dumps(expired_gate), encoding="utf-8")
+    monkeypatch.setenv("EIDOS_STOP_GATE_TTL_SECONDS", "60")
+    res_expired = handle_drift_stop({**payload, "session_id": "sess-beta"}, tmp_path)
+    assert res_expired["decision"] == "continue"
+
+    # 4. Second Stop attempt within TTL and same session_id: allowed with decision="allow" + systemMessage warning
+    res2 = handle_drift_stop({**payload, "session_id": "sess-beta"}, tmp_path)
     assert res2["decision"] == "allow"
-    assert not (eidos_dir / ".cache" / "stop-gate.json").exists()
+    assert "[Eidos Stop Gate]" in res2.get("systemMessage", "")
+    assert not gate_file.exists()
 
-    # 3. New structural code file added -> fingerprint changes -> blocked once again
+    # 5. New structural code file added -> fingerprint changes -> blocked once again
     (src_dir / "second_feature.py").write_text("def second_feature():\n    return 2\n", encoding="utf-8")
     res3 = handle_drift_stop(payload, tmp_path)
     assert res3["decision"] == "continue"
@@ -2365,4 +2388,25 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     (leg2 / ".claude-plugin" / "plugin.json").write_text("{corrupt", encoding="utf-8")
     (leg2 / "rules.md").write_text("Custom non-matching rules\n", encoding="utf-8")
     assert _uninstall_from_manifest_or_legacy(leg2) is False
+
+    # 6g. plugin/hooks.py _check_and_record_stop_gate and _clear_stop_gate edge cases
+    from eidos.plugin.hooks import _check_and_record_stop_gate, _clear_stop_gate
+
+    sg_eidos = tmp_path / "sg_eidos"
+    (sg_eidos / ".cache").mkdir(parents=True)
+    gate_file = sg_eidos / ".cache" / "stop-gate.json"
+    os.environ["EIDOS_STOP_GATE_TTL_SECONDS"] = "not-a-float"
+    try:
+        gate_file.write_text(json.dumps({"lint": "fp1", "drift": {"hash": "fp2", "timestamp": 9999999999.0}}), encoding="utf-8")
+        # Legacy string entry "fp1" matches fingerprint "fp1", pops "lint", keeps "drift" in gate_file
+        assert _check_and_record_stop_gate(sg_eidos, "lint", "fp1") is False
+        assert "drift" in json.loads(gate_file.read_text(encoding="utf-8"))
+        # Explicit ttl_seconds and _clear_stop_gate with multiple keys vs last key
+        assert _check_and_record_stop_gate(sg_eidos, "lint", "fp_new", ttl_seconds=300.0) is True
+        _clear_stop_gate(sg_eidos, "lint")
+        assert gate_file.exists()
+        _clear_stop_gate(sg_eidos, "drift")
+        assert not gate_file.exists()
+    finally:
+        os.environ.pop("EIDOS_STOP_GATE_TTL_SECONDS", None)
 

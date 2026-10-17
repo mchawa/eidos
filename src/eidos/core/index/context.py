@@ -311,8 +311,17 @@ class TieredContextSlice(ArchitecturalContextSlice):
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent)
 
+    @staticmethod
+    def _estimate_text_tokens(text: str) -> int:
+        """Estimate BPE token count weighting structural syntax/punctuation at ~3.0 chars/token and prose at ~4.0 chars/token."""
+        if not text:
+            return 1
+        structural_chars = sum(1 for ch in text if ch in "{}[]:,\"'`|")
+        prose_chars = len(text) - structural_chars
+        return max(1, int(prose_chars / 4.0 + structural_chars / 3.0))
+
     def _estimate_tokens(self) -> int:
-        return max(1, len(self.to_markdown()) // 4)
+        return self._estimate_text_tokens(self.to_markdown())
 
     def _prune_matched_reasons(self) -> None:
         retained_ids = {
@@ -375,7 +384,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
             self.__dict__["_cached_sig"] = sig
             self.__dict__["_cached_exceeds"] = True
             return True
-        md_len = len(self.to_markdown())
+        md_text = self.to_markdown()
+        md_len = len(md_text)
+        md_tokens = self._estimate_text_tokens(md_text)
         self._prune_matched_reasons()
         d = self.to_dict()
         # Include 24-byte headroom for post-enforcement query_latency_ms and token_estimate float/int formatting
@@ -383,7 +394,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
         self.__dict__["_md_char_lb"] = md_len
         self.__dict__["_json_char_lb"] = json_len
         self.__dict__["_md_lb_sig"] = sig[1:]
-        exceeds = max(1, md_len // 4) > budget or (json_len // 4) > budget
+        exceeds = md_tokens > budget or max(1, md_len // 4) > budget or (json_len // 4) > budget
         self.__dict__["_cached_sig"] = sig
         self.__dict__["_cached_exceeds"] = exceeds
         return exceeds

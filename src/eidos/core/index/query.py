@@ -154,29 +154,33 @@ def compound_identifier_subtokens(text: str) -> str:
     return " ".join(seen)
 
 
-def build_fts_match_query(text: str) -> str:
-    """Translate a free-text prompt into a deterministic FTS5 ``OR`` prefix query with stop-word filtering.
+def build_fts_match_query(text: str, operator: str = "OR") -> str:
+    """Translate a free-text prompt into a deterministic FTS5 prefix query with stop-word filtering.
 
-    Each ``\\w+`` token contributes its identifier sub-tokens plus, for non-snake_case tokens, the whole lowercased
-    token (so ``ArchitecturalIndex`` still prefix-matches the atomic ``architecturalindex`` index token). snake_case
-    tokens are *not* passed through whole: FTS5 would re-tokenize them into an order-sensitive phrase query.
+    Supports ``operator="OR"`` (default) or ``operator="AND"``. Each ``\\w+`` token contributes its identifier
+    sub-tokens plus, for non-snake_case tokens in ``OR`` mode, the whole lowercased token.
     Common English stop words and single-character noise tokens are filtered out unless the entire query consists of
     stop words or single-character tokens.
     """
+    op_norm = operator.strip().upper()
+    if op_norm not in ("OR", "AND"):
+        op_norm = "OR"
     raw_terms: dict[str, None] = {}
     filtered_terms: dict[str, None] = {}
     for tok in re.findall(r"\w+", text or ""):
-        for part in split_identifier(tok):
+        parts = split_identifier(tok)
+        for part in parts:
             raw_terms.setdefault(part, None)
             if len(part) > 1 and part not in _FTS_STOP_WORDS:
                 filtered_terms.setdefault(part, None)
-        if "_" not in tok:
+        if "_" not in tok and (op_norm == "OR" or len(parts) <= 1):
             lowered = tok.lower()
             raw_terms.setdefault(lowered, None)
             if len(lowered) > 1 and lowered not in _FTS_STOP_WORDS:
                 filtered_terms.setdefault(lowered, None)
     active_terms = filtered_terms if filtered_terms else raw_terms
-    return " OR ".join(f'"{term}"*' for term in active_terms)
+    joiner = f" {op_norm} "
+    return joiner.join(f'"{term}"*' for term in active_terms)
 
 
 def execute_fts_query(
@@ -186,13 +190,14 @@ def execute_fts_query(
     include_types: tuple[str, ...] | list[str] | None = None,
     exclude_types: tuple[str, ...] | list[str] = (),
 ) -> list[dict[str, Any]]:
-    """Execute a column-weighted BM25 ranked full-text query using FTS5 with exact entity ID boosting."""
+    """Execute a column-weighted BM25 ranked full-text query using FTS5 with exact entity ID and multi-term AND boosting."""
     if not text or not text.strip():
         return []
 
-    fts_query = build_fts_match_query(text)
+    fts_query = build_fts_match_query(text, operator="OR")
     if not fts_query:
         return []
+    and_query = build_fts_match_query(text, operator="AND")
 
     explicit_ids = list(dict.fromkeys(m.upper() for m in _ENTITY_ID_TOKEN_RE.findall(text)))
 
@@ -220,18 +225,39 @@ def execute_fts_query(
 
     cursor = conn.cursor()
     try:
+        and_matched_ids: set[str] = set()
+        if and_query and and_query != fts_query:
+            cursor.execute(
+                f"""
+                SELECT e.id
+                FROM specs_fts f
+                JOIN entities e ON e.id = f.entity_id
+                WHERE specs_fts MATCH ?{type_sql};
+                """,
+                (and_query, *type_params),
+            )
+            and_matched_ids = {row["id"] for row in cursor.fetchall()}
+
+        and_boost_sql = ""
+        and_boost_params: list[str] = []
+        if and_matched_ids:
+            sorted_and_ids = sorted(and_matched_ids)
+            ph_and = ",".join("?" for _ in sorted_and_ids)
+            and_boost_sql = f"(CASE WHEN e.id IN ({ph_and}) THEN -50.0 ELSE 0.0 END) + "
+            and_boost_params.extend(sorted_and_ids)
+
         cursor.execute(
             f"""
             SELECT
                 e.id, e.type, e.title, e.domain, e.package_path, e.data_json,
-                {id_boost_sql}bm25(specs_fts, {weights_sql}) as rank
+                {id_boost_sql}{and_boost_sql}bm25(specs_fts, {weights_sql}) as rank
             FROM specs_fts f
             JOIN entities e ON e.id = f.entity_id
             WHERE specs_fts MATCH ?{type_sql}
             ORDER BY rank, e.id
             LIMIT ?;
             """,
-            (*id_boost_params, fts_query, *type_params, limit),
+            (*id_boost_params, *and_boost_params, fts_query, *type_params, limit),
         )
         results = []
         for row in cursor.fetchall():
@@ -256,7 +282,7 @@ def execute_k_hop_traversal(
     entity_id: str,
     max_depth: int = 2,
 ) -> list[dict[str, Any]]:
-    """Traverse graph up to k hops in both directions using recursive CTE."""
+    """Traverse graph up to k hops in both directions using recursive CTE while preventing organizational hub fan-out at hop >= 2."""
     cursor = conn.cursor()
     cursor.execute(
         """
@@ -269,7 +295,10 @@ def execute_k_hop_traversal(
                 gw.path || '->' || CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END
             FROM edges e
             JOIN graph_walk gw ON (e.source_id = gw.node_id OR e.target_id = gw.node_id)
+            JOIN entities cur_ent ON cur_ent.id = gw.node_id
             WHERE gw.depth < ?
+              AND (gw.depth = 0 OR cur_ent.type NOT IN ('product/domain', 'design/system', 'delta/mutation'))
+              AND CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END NOT LIKE 'DLT-%'
               AND ('->' || gw.path || '->') NOT LIKE '%->' || CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END || '->%'
         )
         SELECT gw.node_id, MIN(gw.depth) AS depth, ent.type, ent.title, ent.domain, ent.file_path, ent.data_json

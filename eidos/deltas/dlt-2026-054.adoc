@@ -2,7 +2,7 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-054
-title: "Portal Data Engine Synchronization, Full C4 Target Schema Coverage, and UI Navigation Polish"
+title: Portal Data Engine Synchronization, Full C4 Target Schema Coverage, and UI Navigation Polish
 status: applied
 vcs:
   branch: feat/portal-schema-sync
@@ -10,53 +10,34 @@ intent:
   kind: bug
   bug_classification: spec_violation
   severity: high
-  motivation: "Synchronize portal data generator with promoted components, embedded decisions, container-level invariants, full mutation target schemas, and polish UI navigation and AsciiDoc rendering."
+  motivation: Synchronize portal data generator with promoted components, embedded decisions, container-level invariants, full mutation target schemas, and polish UI navigation and AsciiDoc rendering.
 mutations:
-  - action: modify_component
-    target_component: CMP-PORTAL-GENERATOR
-    details: "Extract affects, complete blast_radius schema, container responsibility/summary from Architectural Boundary sections, promoted components whitebox hierarchy, embedded decisions, and component-level invariants."
-    expect:
-      source_path: "src/eidos/portal/generator.py"
-      responsibility: "Synthesizes living specifications"
-  - action: modify_component
-    target_component: CMP-PORTAL-ASSETS
-    details: "Deliver updated React 19 bundle supporting full mutation target resolution, mutation expect post-conditions, blast radius keys, container summary subtext, AsciiDoc inspector rendering, embedded decisions display, and CMD+K spotlight focus."
-    expect:
-      source_path: "src/eidos/portal/assets.py"
-      responsibility: "Delivers pre-compiled single-file React 19"
-  - action: extend_capability
-    target_capability: CAP-EXP-001
-    details: "Register portal-explorations screen under experience.screens and enforce full mutation target coverage across living web portal views."
-    expect:
-      contains: "portal-explorations"
-  - action: modify_architecture
-    target_architecture: ARCH-EIDOS-001
-    details: "Reconcile domain paths to spec-engine capabilities in Arc42 Section 6 Runtime View."
-    expect:
-      contains: "spec-engine/capabilities/spec-delta-mutations"
-affects:
-  containers:
-    - CNT-EIDOS-PORTAL
-  capabilities:
-    - CAP-EXP-001
-blast_radius:
-  impacted_containers:
-    - CNT-EIDOS-PORTAL
-  impacted_components:
-    - CMP-PORTAL-GENERATOR
-    - CMP-PORTAL-ASSETS
-  impacted_screens:
-    - eidos/design/clients/web-portal/screens/portal-architecture.adoc
-    - eidos/design/clients/web-portal/screens/portal-deltas.adoc
-    - eidos/design/clients/web-portal/screens/portal-business.adoc
-    - eidos/design/clients/web-portal/screens/portal-design.adoc
-    - eidos/design/clients/web-portal/screens/portal-catalog.adoc
-  invariants_to_enforce:
-    - INV-PORTAL-ZERO-NODE-DEP
-    - INV-PORTAL-AIR-GAPPED-BUNDLE
-    - INV-PORTAL-INTERACTIVE-C4
-    - INV-PORTAL-READING-ERGONOMICS
-    - INV-PORTAL-C4-CONTAINER-HIERARCHY
+- action: modify_component
+  target_component: CMP-PORTAL-GENERATOR
+  details: Extract affects, complete blast_radius schema, container responsibility/summary from Architectural Boundary sections, promoted components whitebox hierarchy, embedded decisions, and component-level invariants.
+  expect:
+    frontmatter:
+      source_path: src/eidos/portal/generator.py
+      responsibility: Synthesizes living specifications
+- action: modify_component
+  target_component: CMP-PORTAL-ASSETS
+  details: Deliver updated React 19 bundle supporting full mutation target resolution, mutation expect post-conditions, blast radius keys, container summary subtext, AsciiDoc inspector rendering, embedded decisions display, and CMD+K spotlight focus.
+  expect:
+    frontmatter:
+      source_path: src/eidos/portal/assets.py
+      responsibility: Delivers pre-compiled single-file React 19
+- action: extend_capability
+  target_capability: CAP-EXP-001
+  details: Register portal-explorations screen under experience.screens and enforce full mutation target coverage across living web portal views.
+  expect:
+    body:
+      contains: portal-explorations
+- action: modify_architecture
+  target_architecture: ARCH-EIDOS-001
+  details: Reconcile domain paths to spec-engine capabilities in Arc42 Section 6 Runtime View.
+  expect:
+    body:
+      contains: spec-engine/capabilities/spec-delta-mutations
 ---
 = SpecDelta: Portal Data Engine Synchronization, Full C4 Target Schema Coverage, and UI Navigation Polish
 :toc: left

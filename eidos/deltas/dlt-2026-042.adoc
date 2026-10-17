@@ -2,50 +2,33 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-042
-title: "Enforce Strict C4 Container (CNT-*) vs Component (CMP-*) Target Separation Across Schemas and Validator"
+title: Enforce Strict C4 Container (CNT-*) vs Component (CMP-*) Target Separation Across Schemas and Validator
 status: applied
 vcs:
   branch: refactor/strict-container-component-targets
 intent:
   kind: enabler
-  motivation: "Eliminate lingering C4 Level 2 Container (CNT-*, tech/container) and Level 3 Component (CMP-*, tech/component) conflation in v1 schemas, x-eidos-ref annotations, and SpecValidator reference checks so container fields exclusively target containers and component fields exclusively target components."
+  motivation: Eliminate lingering C4 Level 2 Container (CNT-*, tech/container) and Level 3 Component (CMP-*, tech/component) conflation in v1 schemas, x-eidos-ref annotations, and SpecValidator reference checks so container fields exclusively target containers and component fields exclusively target components.
 mutations:
-  - action: modify_component
-    target_component: CMP-SPEC-VALIDATOR
-    details: "Restrict component reference fields across 'assets/schemas/v1/product/capability.schema.yaml' ('technical.components'), 'assets/schemas/v1/delta/delta.schema.yaml' ('mutations[].target_component', 'affects.components', 'blast_radius.impacted_components'), 'assets/schemas/v1/tech/container.schema.yaml' ('dependencies.internal_components'), and 'assets/schemas/v1/product/domain.schema.yaml' ('technical_mapping.components') to 'tech/component' ('CMP-*') only; restrict container reference fields ('technical.containers', 'mutations[].target_container', 'affects.containers', 'blast_radius.impacted_containers', 'dependencies.internal_containers', 'technical_mapping.containers', and 'client.schema.yaml' 'container') to 'tech/container' ('CNT-*') only; and update 'SpecValidator._check_eidos_ref()' in 'src/eidos/core/spec/validator.py' to enforce 'x-eidos-ref.prefixes' and 'x-eidos-ref.target_types' against resolved catalog entities."
-    expect:
-      responsibility: "strict container vs. component target type enforcement"
-  - action: modify_component
-    target_component: CMP-DELTA-ENGINE
-    details: "Support first-class 'add_container', 'modify_container', and 'remove_container' actions targeting 'target_container: CNT-*' in 'src/eidos/core/lifecycle/delta_engine.py' while keeping 'add_component', 'modify_component', and 'remove_component' scoped to 'target_component: CMP-*' (with optional parent 'target_container: CNT-*'), and normalize historical SpecDeltas in 'eidos/deltas/' so container targets use 'target_container' / 'impacted_containers' and component targets use 'target_component' / 'impacted_components'."
-    expect:
-      responsibility: "modify_container"
-  - action: patch_invariant
-    target_invariant_id: INV-SPEC-GRAPH-INTEGRITY
-    target_capability: CAP-PROD-001
-    details: "Update 'INV-SPEC-GRAPH-INTEGRITY' in 'eidos/domains/spec-engine/capabilities/living-spec-engine.adoc' to require that cross-document entity references not only exist in the catalog, but strictly match the target entity prefix and type ('CNT-*' for C4 Level 2 containers vs. 'CMP-*' for C4 Level 3 components) declared by the schema's 'x-eidos-ref' annotation."
-    expect:
-      rule: "strictly match the target entity prefix and type"
-affects:
-  containers:
-    - CNT-EIDOS-CORE
-    - CNT-EIDOS-VCS
-  capabilities:
-    - CAP-PROD-001
-    - CAP-PROD-002
-blast_radius:
-  impacted_containers:
-    - CNT-EIDOS-CORE
-    - CNT-EIDOS-VCS
-  impacted_components:
-    - CMP-SPEC-VALIDATOR
-    - CMP-DELTA-ENGINE
-    - CMP-DELTA-AUDITOR
-    - CMP-DRIFT-DETECTOR
-  invariants_to_enforce:
-    - INV-SPEC-VALIDATION
-    - INV-SPEC-GRAPH-INTEGRITY
-    - INV-COMPONENT-CONTAINER-AFFINITY
+- action: modify_component
+  target_component: CMP-SPEC-VALIDATOR
+  details: Restrict component reference fields across 'assets/schemas/v1/product/capability.schema.yaml' ('technical.components'), 'assets/schemas/v1/delta/delta.schema.yaml' ('mutations[].target_component', 'affects.components', 'blast_radius.impacted_components'), 'assets/schemas/v1/tech/container.schema.yaml' ('dependencies.internal_components'), and 'assets/schemas/v1/product/domain.schema.yaml' ('technical_mapping.components') to 'tech/component' ('CMP-*') only; restrict container reference fields ('technical.containers', 'mutations[].target_container', 'affects.containers', 'blast_radius.impacted_containers', 'dependencies.internal_containers', 'technical_mapping.containers', and 'client.schema.yaml' 'container') to 'tech/container' ('CNT-*') only; and update 'SpecValidator._check_eidos_ref()' in 'src/eidos/core/spec/validator.py' to enforce 'x-eidos-ref.prefixes' and 'x-eidos-ref.target_types' against resolved catalog entities.
+  expect:
+    frontmatter:
+      responsibility: strict container vs. component target type enforcement
+- action: modify_component
+  target_component: CMP-DELTA-ENGINE
+  details: 'Support first-class ''add_container'', ''modify_container'', and ''remove_container'' actions targeting ''target_container: CNT-*'' in ''src/eidos/core/lifecycle/delta_engine.py'' while keeping ''add_component'', ''modify_component'', and ''remove_component'' scoped to ''target_component: CMP-*'' (with optional parent ''target_container: CNT-*''), and normalize historical SpecDeltas in ''eidos/deltas/'' so container targets use ''target_container'' / ''impacted_containers'' and component targets use ''target_component'' / ''impacted_components''.'
+  expect:
+    frontmatter:
+      responsibility: modify_container
+- action: patch_invariant
+  target_invariant_id: INV-SPEC-GRAPH-INTEGRITY
+  target_capability: CAP-PROD-001
+  details: Update 'INV-SPEC-GRAPH-INTEGRITY' in 'eidos/domains/spec-engine/capabilities/living-spec-engine.adoc' to require that cross-document entity references not only exist in the catalog, but strictly match the target entity prefix and type ('CNT-*' for C4 Level 2 containers vs. 'CMP-*' for C4 Level 3 components) declared by the schema's 'x-eidos-ref' annotation.
+  expect:
+    frontmatter:
+      rule: strictly match the target entity prefix and type
 ---
 = SpecDelta: Enforce Strict C4 Container (CNT-*) vs Component (CMP-*) Target Separation Across Schemas and Validator
 :toc: left

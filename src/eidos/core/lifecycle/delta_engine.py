@@ -12,9 +12,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from eidos.core.index.storage import open_cache_connection
 from eidos.core.lifecycle.catalog import (
     _build_spec_catalog_with_invariants,
     _mutate_frontmatter_components,
+    _mutate_frontmatter_invariants,
     _render_spec,
     _set_frontmatter_scalar,
     find_spec_by_id_or_path,
@@ -96,6 +98,7 @@ class MutationVerificationItem:
     verified: bool
     status: str  # "FOUND", "MISSING", "ABSENT_AS_EXPECTED", "STILL_PRESENT", "DEPRECATED", "ACTIVE_NOT_DEPRECATED"
     details: str = ""
+    failure_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -104,6 +107,7 @@ class MutationVerificationItem:
             "verified": self.verified,
             "status": self.status,
             "details": self.details,
+            "failure_reason": self.failure_reason,
         }
 
 
@@ -417,14 +421,8 @@ def _snapshot_delta_baselines(eidos_dir: Path, delta_id: str, overwrite: bool = 
             if overwrite
             else "INSERT OR IGNORE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)"
         )
-        with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS delta_baselines ("
-                "delta_id TEXT, target_id TEXT, baseline_sha256 TEXT, "
-                "PRIMARY KEY (delta_id, target_id))"
-            )
+        with contextlib.closing(open_cache_connection(db_path)) as conn, conn:
             conn.executemany(insert_sql, rows)
-            conn.commit()
     except (OSError, sqlite3.Error):
         return
 
@@ -492,7 +490,41 @@ def generate_collision_free_delta_id(
     if repo_root is not None:
         with contextlib.suppress(ValueError, OSError, subprocess.SubprocessError):
             rel_deltas = str(deltas_dir.resolve().relative_to(repo_root)).replace("\\", "/")
-            for ref in ("HEAD", "main", "origin/main", "master", "origin/master"):
+            seen_commits: set[str] = set()
+            refs_to_scan: list[str] = ["HEAD"]
+            ref_res = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo_root),
+                    "for-each-ref",
+                    "--format=%(refname:short) %(objectname)",
+                    "refs/heads",
+                    "refs/remotes",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            if ref_res.returncode == 0:
+                for ref_ln in ref_res.stdout.splitlines():
+                    parts = ref_ln.strip().split()
+                    if not parts:
+                        continue
+                    r_name = parts[0]
+                    commit_sha = parts[1] if len(parts) > 1 else r_name
+                    if r_name.endswith("/HEAD"):
+                        continue
+                    if commit_sha not in seen_commits:
+                        seen_commits.add(commit_sha)
+                        refs_to_scan.append(r_name)
+            else:
+                for fallback_ref in ("main", "origin/main", "master", "origin/master"):
+                    if fallback_ref not in refs_to_scan:
+                        refs_to_scan.append(fallback_ref)
+
+            for ref in refs_to_scan[:32]:
                 ls_res = subprocess.run(
                     ["git", "-C", str(repo_root), "ls-tree", "--name-only", ref, f"{rel_deltas}/"],
                     capture_output=True,
@@ -502,6 +534,30 @@ def generate_collision_free_delta_id(
                 )
                 if ls_res.returncode == 0:
                     for ln in ls_res.stdout.splitlines():
+                        name = Path(ln.strip()).stem
+                        if name:
+                            _record_candidate(name)
+            if len(refs_to_scan) > 32:
+                log_res = subprocess.run(
+                    [
+                        "git",
+                        "-C",
+                        str(repo_root),
+                        "log",
+                        "--all",
+                        "--diff-filter=A",
+                        "--name-only",
+                        "--pretty=format:",
+                        "--",
+                        rel_deltas,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                if log_res.returncode == 0:
+                    for ln in log_res.stdout.splitlines():
                         name = Path(ln.strip()).stem
                         if name:
                             _record_candidate(name)
@@ -518,12 +574,15 @@ def generate_collision_free_delta_id(
     else:
         base_id = normalize_id("delta", cleaned_raw)
 
-    if slug_suffix or (is_auto and base_id in existing_ids):
+    if slug_suffix or base_id in existing_ids:
         slug_tokens = [tok for tok in re.split(r"[^A-Za-z0-9]+", title.upper()) if len(tok) >= 2][:2]
         suffix = "-".join(slug_tokens) if slug_tokens else hashlib.sha256(
             f"{base_id}:{title}:{os.getpid()}".encode()
         ).hexdigest()[:6].upper()
-        candidate_id = f"{base_id}-{suffix}"
+        if base_id.endswith(f"-{suffix}") and base_id not in existing_ids:
+            candidate_id = base_id
+        else:
+            candidate_id = f"{base_id}-{suffix}"
         if candidate_id in existing_ids:
             short_hash = hashlib.sha256(f"{candidate_id}:{title}".encode()).hexdigest()[:4].upper()
             candidate_id = f"{candidate_id}-{short_hash}"
@@ -544,20 +603,15 @@ def create_delta(
     """Create a SpecDelta with automatic collision-free ID resolution and vcs.base_commit baseline capture."""
     from eidos.core.lifecycle.scaffolder import create_spec
 
-    resolved_id = generate_collision_free_delta_id(
-        eidos_dir,
-        raw_id=raw_id,
-        title=title,
-        slug_suffix=slug_suffix,
-    )
     return create_spec(
         eidos_dir=eidos_dir,
         doc_type_key="delta",
-        raw_id=resolved_id,
+        raw_id=raw_id,
         title=title,
         kind=kind,
         motivation=motivation,
         branch=branch,
+        slug_suffix=slug_suffix,
     )
 
 
@@ -747,15 +801,8 @@ def _check_or_record_baseline_sha(
 ) -> bool:
     """Compare current_sha against SQLite delta_baselines (with Git history fallback on cache miss)."""
     try:
-        cache_dir = eidos_dir / ".cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        db_path = cache_dir / "index.db"
-        with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS delta_baselines ("
-                "delta_id TEXT, target_id TEXT, baseline_sha256 TEXT, "
-                "PRIMARY KEY (delta_id, target_id))"
-            )
+        db_path = eidos_dir / ".cache" / "index.db"
+        with contextlib.closing(open_cache_connection(db_path)) as conn:
             row = conn.execute(
                 "SELECT baseline_sha256 FROM delta_baselines WHERE delta_id = ? AND target_id = ?",
                 (delta_id, target_key),
@@ -765,21 +812,21 @@ def _check_or_record_baseline_sha(
 
             git_sha = _resolve_git_baseline_sha(eidos_dir, delta_file, target_key, target_file)
             if git_sha is not None:
-                conn.execute(
-                    "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)",
-                    (delta_id, target_key, git_sha),
-                )
-                conn.commit()
+                with conn:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)",
+                        (delta_id, target_key, git_sha),
+                    )
                 return current_sha != git_sha
 
             if allow_applied_fallback:
                 return True
 
-            conn.execute(
-                "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)",
-                (delta_id, target_key, current_sha),
-            )
-            conn.commit()
+            with conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)",
+                    (delta_id, target_key, current_sha),
+                )
             return False
     except (OSError, sqlite3.Error):
         return allow_applied_fallback
@@ -971,6 +1018,112 @@ def _resolve_target_path_and_id(
     return target, None, False
 
 
+_PROSE_EXPECT_FIELDS: frozenset[str] = frozenset(
+    {
+        "responsibility",
+        "rule",
+        "test_binding",
+        "description",
+        "motivation",
+        "summary",
+        "title",
+        "name",
+        "details",
+        "jtbd",
+    }
+)
+
+
+def _strip_spec_comments(raw_text: str) -> str:
+    """Strip YAML frontmatter '#' comment lines and AsciiDoc '//' comment lines/blocks."""
+    lines = raw_text.splitlines()
+    out: list[str] = []
+    in_fm = False
+    fm_delims = 0
+    in_block_comment = False
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == "---" and fm_delims < 2 and (idx == 0 or in_fm):
+            fm_delims += 1
+            in_fm = fm_delims == 1
+            out.append(line)
+            continue
+        if in_fm:
+            if stripped.startswith("#"):
+                continue
+            out.append(line)
+            continue
+        if stripped.startswith("////"):
+            in_block_comment = not in_block_comment
+            continue
+        if in_block_comment or stripped.startswith("//"):
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def _lookup_existing_baseline_sha(
+    eidos_dir: Path,
+    delta_id: str,
+    delta_file: Path,
+    target_key: str,
+    target_file: Path | None,
+) -> str | None:
+    """Return recorded pre-delta baseline SHA from Git history (vcs.base_commit) or SQLite if available, without recording current_sha."""
+    git_sha = _resolve_git_baseline_sha(eidos_dir, delta_file, target_key, target_file)
+    if git_sha is not None:
+        return git_sha
+    try:
+        db_path = eidos_dir / ".cache" / "index.db"
+        if db_path.exists():
+            with contextlib.closing(open_cache_connection(db_path)) as conn:
+                row = conn.execute(
+                    "SELECT baseline_sha256 FROM delta_baselines WHERE delta_id = ? AND target_id = ?",
+                    (delta_id, target_key),
+                ).fetchone()
+                if row is not None:
+                    return str(row[0])
+    except (OSError, sqlite3.Error):
+        pass
+    return None
+
+
+def _normalize_expect_spec(
+    expect: dict[str, Any] | None,
+) -> tuple[list[str], list[str], dict[str, Any]]:
+    """Normalize structured (body/frontmatter) expect assertions into (contains, not_contains, frontmatter)."""
+    contains_items: list[str] = []
+    not_contains_items: list[str] = []
+    fm_expectations: dict[str, Any] = {}
+    if not isinstance(expect, dict) or not expect:
+        return contains_items, not_contains_items, fm_expectations
+
+    def _extend_str_list(dest: list[str], raw_val: Any) -> None:
+        if isinstance(raw_val, list):
+            for item in raw_val:
+                if item is not None:
+                    dest.append(str(item))
+        elif raw_val is not None:
+            dest.append(str(raw_val))
+
+    body_block = expect.get("body")
+    if isinstance(body_block, dict):
+        if "contains" in body_block:
+            _extend_str_list(contains_items, body_block["contains"])
+        if "not_contains" in body_block:
+            _extend_str_list(not_contains_items, body_block["not_contains"])
+
+    fm_block = expect.get("frontmatter")
+    if isinstance(fm_block, dict):
+        for fk, fv in fm_block.items():
+            if fk == "custom" and isinstance(fv, dict):
+                fm_expectations.update(fv)
+            else:
+                fm_expectations[fk] = fv
+
+    return contains_items, not_contains_items, fm_expectations
+
+
 def _evaluate_declarative_postcondition(
     m: dict[str, Any],
     target: str,
@@ -978,6 +1131,7 @@ def _evaluate_declarative_postcondition(
     container_components: dict[str, str],
     invariant_map: dict[str, tuple[Path, dict[str, Any]]],
     target_file: Path | None = None,
+    diagnostics: list[str] | None = None,
 ) -> bool | None:
     """Evaluate declarative expect block if present on a mutation.
 
@@ -985,6 +1139,34 @@ def _evaluate_declarative_postcondition(
     """
     expect = m.get("expect")
     if isinstance(expect, dict) and expect:
+        unsupported_top = [k for k in expect if k not in ("body", "frontmatter")]
+        if unsupported_top:
+            if diagnostics is not None:
+                diagnostics.append(
+                    f"expect contains unsupported top-level keys {unsupported_top} (expected 'body' and/or 'frontmatter')"
+                )
+            return False
+
+        body_block = expect.get("body")
+        if body_block is not None:
+            if not isinstance(body_block, dict):
+                if diagnostics is not None:
+                    diagnostics.append("expect.body must be a mapping")
+                return False
+            unsupported_body = [k for k in body_block if k not in ("contains", "not_contains")]
+            if unsupported_body:
+                if diagnostics is not None:
+                    diagnostics.append(
+                        f"expect.body contains unsupported keys {unsupported_body} (expected 'contains' and/or 'not_contains')"
+                    )
+                return False
+
+        fm_block = expect.get("frontmatter")
+        if fm_block is not None and not isinstance(fm_block, dict):
+            if diagnostics is not None:
+                diagnostics.append("expect.frontmatter must be a mapping")
+            return False
+
         target_dict: dict[str, Any] = {}
         raw_text = ""
         if target in invariant_map:
@@ -1012,19 +1194,51 @@ def _evaluate_declarative_postcondition(
             if isinstance(parsed_fm, dict):
                 target_dict = parsed_fm
 
-        for k, exp_v in expect.items():
-            if k == "contains":
-                if str(exp_v) not in raw_text:
-                    return False
-                continue
+        parsed_body = ""
+        if raw_text:
+            _, extracted_body, _ = extract_frontmatter(raw_text)
+            parsed_body = extracted_body if extracted_body else raw_text
+        uncommented_body = _strip_spec_comments(parsed_body) if parsed_body else ""
+        contains_items, not_contains_items, fm_expectations = _normalize_expect_spec(expect)
+
+        for needle in contains_items:
+            if needle not in uncommented_body:
+                if diagnostics is not None:
+                    diagnostics.append(f"body.contains missing '{needle}'")
+                return False
+
+        for forbidden in not_contains_items:
+            if forbidden and forbidden in uncommented_body:
+                if diagnostics is not None:
+                    diagnostics.append(f"body.not_contains matched forbidden '{forbidden}'")
+                return False
+
+        for k, exp_v in fm_expectations.items():
             actual = target_dict.get(k)
             if isinstance(exp_v, str) and isinstance(actual, str):
-                if exp_v not in actual and actual != exp_v:
+                if k in _PROSE_EXPECT_FIELDS:
+                    if exp_v not in actual and actual != exp_v:
+                        if diagnostics is not None:
+                            diagnostics.append(f"frontmatter.{k} expected '{exp_v}', got '{actual}'")
+                        return False
+                elif actual.strip() != exp_v.strip():
+                    if diagnostics is not None:
+                        diagnostics.append(f"frontmatter.{k} expected '{exp_v}', got '{actual}'")
+                    return False
+            elif isinstance(actual, list) and isinstance(exp_v, list):
+                missing_items = [item for item in exp_v if item not in actual]
+                if missing_items:
+                    if diagnostics is not None:
+                        diagnostics.append(f"frontmatter.{k} missing expected list items {missing_items} in {actual}")
                     return False
             elif isinstance(actual, list) and not isinstance(exp_v, list):
                 if exp_v not in actual:
+                    if diagnostics is not None:
+                        diagnostics.append(f"frontmatter.{k} missing '{exp_v}' in {actual}")
                     return False
             elif actual != exp_v:
+                if diagnostics is not None:
+                    diagnostics.append(f"frontmatter.{k} expected {exp_v!r}, got {actual!r}")
                 return False
         return True
 
@@ -1060,6 +1274,8 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
 
         verified = False
         status = "UNKNOWN"
+        failure_reason: str | None = None
+        diag: list[str] = []
 
         lookup_target, target_path_resolved, target_path_exists = _resolve_target_path_and_id(
             target, eidos_dir, specs_by_id
@@ -1068,6 +1284,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
         if action not in SUPPORTED_MUTATION_ACTIONS:
             verified = False
             status = "UNSUPPORTED_ACTION"
+            failure_reason = f"Unsupported mutation action '{action}'."
 
         # 1. Removal / Deprecation Actions
         elif action in (
@@ -1089,6 +1306,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
             else:
                 verified = False
                 status = "STILL_PRESENT"
+                failure_reason = f"Target '{lookup_target}' is still present in living specifications."
 
         elif action in ("deprecate_capability", "remove_capability", "deprecate_policy", "remove_policy"):
             if lookup_target not in specs_by_id and not target_path_exists:
@@ -1104,6 +1322,9 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                 else:
                     verified = False
                     status = "ACTIVE_NOT_DEPRECATED"
+                    failure_reason = (
+                        f"Target '{lookup_target}' has status '{doc_fm.get('status')}', expected deprecated/sunset/retired."
+                    )
 
         # 2. Invariant Actions
         elif action == "add_invariant":
@@ -1111,17 +1332,19 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                 m, specs_by_id, container_components
             ):
                 decl_ok = _evaluate_declarative_postcondition(
-                    m, lookup_target, specs_by_id, container_components, invariant_map
+                    m, lookup_target, specs_by_id, container_components, invariant_map, diagnostics=diag
                 )
                 if decl_ok is False:
                     verified = False
                     status = "UNMODIFIED"
+                    failure_reason = "; ".join(diag) if diag else "Declarative expect post-condition failed."
                 else:
                     verified = True
                     status = "FOUND"
             else:
                 verified = False
                 status = "MISSING"
+                failure_reason = f"Invariant '{lookup_target}' not found on parent specification."
 
         elif action == "patch_invariant":
             if lookup_target not in invariant_map or not _check_structural_subtarget_precondition(
@@ -1129,16 +1352,35 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
             ):
                 verified = False
                 status = "MISSING"
+                failure_reason = f"Invariant '{lookup_target}' not found on parent specification."
             else:
+                inv_file, inv_dict = invariant_map[lookup_target]
+                inv_sha = _digest_dict(inv_dict)
                 decl_ok = _evaluate_declarative_postcondition(
-                    m, lookup_target, specs_by_id, container_components, invariant_map
+                    m, lookup_target, specs_by_id, container_components, invariant_map, diagnostics=diag
                 )
                 if decl_ok is not None:
-                    verified = decl_ok
-                    status = ("FOUND" if delta_status == "applied" else "MODIFIED") if decl_ok else "UNMODIFIED"
+                    if not decl_ok:
+                        verified = False
+                        status = "UNMODIFIED"
+                        failure_reason = "; ".join(diag) if diag else "Declarative expect post-condition failed."
+                    elif delta_status == "applied":
+                        verified = True
+                        status = "FOUND"
+                    else:
+                        base_sha = _lookup_existing_baseline_sha(
+                            eidos_dir, doc.doc_id, file_path, lookup_target, inv_file
+                        )
+                        if base_sha is not None and inv_sha == base_sha:
+                            verified = False
+                            status = "UNMODIFIED"
+                            failure_reason = (
+                                f"Invariant '{lookup_target}' digest matches pre-delta baseline (no modification detected)."
+                            )
+                        else:
+                            verified = True
+                            status = "MODIFIED"
                 else:
-                    inv_file, inv_dict = invariant_map[lookup_target]
-                    inv_sha = _digest_dict(inv_dict)
                     mod_ok = _check_or_record_baseline_sha(
                         eidos_dir,
                         doc.doc_id,
@@ -1150,6 +1392,10 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                     )
                     verified = mod_ok
                     status = ("FOUND" if delta_status == "applied" else "MODIFIED") if mod_ok else "UNMODIFIED"
+                    if not mod_ok:
+                        failure_reason = (
+                            f"Invariant '{lookup_target}' digest matches pre-delta baseline (no modification detected)."
+                        )
 
         elif action == "remove_invariant":
             if lookup_target not in invariants:
@@ -1158,6 +1404,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
             else:
                 verified = False
                 status = "STILL_PRESENT"
+                failure_reason = f"Invariant '{lookup_target}' is still present."
 
         # 3. Modification / Extension / Patch Actions
         elif action in MODIFY_ACTION_EXPECTED_TYPES:
@@ -1182,23 +1429,49 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
             ):
                 verified = False
                 status = "MISSING"
+                failure_reason = f"Target specification '{lookup_target}' not found."
             else:
+                cur_sha: str | None = None
+                if lookup_target not in specs_by_id and lookup_target in container_components:
+                    cnt_id = container_components[lookup_target]
+                    if cnt_id in specs_by_id:
+                        comp_dict = _find_inline_component_dict(lookup_target, specs_by_id[cnt_id][2])
+                        if comp_dict is not None:
+                            cur_sha = _digest_dict(comp_dict)
+                if cur_sha is None:
+                    cur_sha = hashlib.sha256(target_file.read_bytes()).hexdigest()
+
                 decl_ok = _evaluate_declarative_postcondition(
-                    m, lookup_target, specs_by_id, container_components, invariant_map, target_file=target_file
+                    m,
+                    lookup_target,
+                    specs_by_id,
+                    container_components,
+                    invariant_map,
+                    target_file=target_file,
+                    diagnostics=diag,
                 )
                 if decl_ok is not None:
-                    verified = decl_ok
-                    status = ("FOUND" if delta_status == "applied" else "MODIFIED") if decl_ok else "UNMODIFIED"
+                    if not decl_ok:
+                        verified = False
+                        status = "UNMODIFIED"
+                        failure_reason = "; ".join(diag) if diag else "Declarative expect post-condition failed."
+                    elif delta_status == "applied":
+                        verified = True
+                        status = "FOUND"
+                    else:
+                        base_sha = _lookup_existing_baseline_sha(
+                            eidos_dir, doc.doc_id, file_path, lookup_target, target_file
+                        )
+                        if base_sha is not None and cur_sha == base_sha:
+                            verified = False
+                            status = "UNMODIFIED"
+                            failure_reason = (
+                                f"Target '{lookup_target}' digest matches pre-delta baseline (no modification detected)."
+                            )
+                        else:
+                            verified = True
+                            status = "MODIFIED"
                 else:
-                    cur_sha: str | None = None
-                    if lookup_target not in specs_by_id and lookup_target in container_components:
-                        cnt_id = container_components[lookup_target]
-                        if cnt_id in specs_by_id:
-                            comp_dict = _find_inline_component_dict(lookup_target, specs_by_id[cnt_id][2])
-                            if comp_dict is not None:
-                                cur_sha = _digest_dict(comp_dict)
-                    if cur_sha is None:
-                        cur_sha = hashlib.sha256(target_file.read_bytes()).hexdigest()
                     mod_ok = _check_or_record_baseline_sha(
                         eidos_dir,
                         doc.doc_id,
@@ -1210,6 +1483,10 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                     )
                     verified = mod_ok
                     status = ("FOUND" if delta_status == "applied" else "MODIFIED") if mod_ok else "UNMODIFIED"
+                    if not mod_ok:
+                        failure_reason = (
+                            f"Target '{lookup_target}' digest matches pre-delta baseline (no modification detected)."
+                        )
 
         # 4. Standard Addition Actions
         elif action in ADD_ACTIONS:
@@ -1224,16 +1501,19 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                     container_components,
                     invariant_map,
                     target_file=target_path_resolved,
+                    diagnostics=diag,
                 )
                 if decl_ok is False:
                     verified = False
                     status = "UNMODIFIED"
+                    failure_reason = "; ".join(diag) if diag else "Declarative expect post-condition failed."
                 else:
                     verified = True
                     status = "FOUND"
             else:
                 verified = False
                 status = "MISSING"
+                failure_reason = f"Target '{lookup_target}' not found."
 
         items.append(
             MutationVerificationItem(
@@ -1242,6 +1522,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                 verified=verified,
                 status=status,
                 details=details,
+                failure_reason=failure_reason,
             )
         )
 
@@ -1279,13 +1560,10 @@ def _apply_expect_or_details_to_spec(
         fm, body, err = extract_frontmatter(updated)
         if err or not isinstance(fm, dict):
             return False
+        contains_items, _not_contains_items, fm_expectations = _normalize_expect_spec(expect)
         fm_changed = False
-        for k, v in expect.items():
-            if k == "contains":
-                if str(v) not in updated:
-                    body = f"{body.rstrip()}\n\n{v}\n"
-                    updated = _render_spec(fm, body) if fm_changed else f"{updated.rstrip()}\n\n{v}\n"
-            elif isinstance(v, (str, int, float, bool)) and k in fm and not isinstance(fm.get(k), (dict, list)):
+        for k, v in fm_expectations.items():
+            if isinstance(v, (str, int, float, bool)) and k in fm and not isinstance(fm.get(k), (dict, list)):
                 val_str = json.dumps(v) if isinstance(v, str) else str(v).lower() if isinstance(v, bool) else str(v)
                 updated = _set_frontmatter_scalar(updated, k, val_str)
                 fm[k] = v
@@ -1294,13 +1572,12 @@ def _apply_expect_or_details_to_spec(
                 fm_changed = True
         if fm_changed:
             updated = _render_spec(fm, body)
+        for needle in contains_items:
+            if needle not in updated:
+                body = f"{body.rstrip()}\n\n{needle}\n"
+                updated = _render_spec(fm, body) if fm_changed else f"{updated.rstrip()}\n\n{needle}\n"
     elif details and not details.lstrip().startswith("//"):
-        fm, _body, err = extract_frontmatter(updated)
-        if not err and isinstance(fm, dict) and "rule" in fm and isinstance(fm.get("rule"), str):
-            updated = _set_frontmatter_scalar(updated, "rule", json.dumps(details))
-        elif not err and isinstance(fm, dict) and "responsibility" in fm and isinstance(fm.get("responsibility"), str):
-            updated = _set_frontmatter_scalar(updated, "responsibility", json.dumps(details))
-        elif details not in updated:
+        if details not in updated:
             updated = f"{updated.rstrip()}\n\n{details}\n"
     else:
         return False
@@ -1361,6 +1638,7 @@ def execute_delta_mutations(
             target, _resolved_target_path, _ = _resolve_target_path_and_id(raw_target, eidos_dir, specs_by_id)
             details = str(m.get("details", "")).strip()
             expect = m.get("expect") if isinstance(m.get("expect"), dict) else None
+            contains_items, _not_contains_items, fm_exp = _normalize_expect_spec(expect)
 
             if action not in SUPPORTED_MUTATION_ACTIONS:
                 return _abort(f"Unsupported mutation action '{action}' in SpecDelta '{doc.doc_id}'.")
@@ -1390,7 +1668,7 @@ def execute_delta_mutations(
                             domain = domains[0] if domains else "DOM-CORE"
                         kwargs["domain"] = domain
                     elif action == "add_policy":
-                        kwargs["rule"] = (expect or {}).get("rule") or details or f"Rule statement for {target_id}."
+                        kwargs["rule"] = fm_exp.get("rule") or details or f"Rule statement for {target_id}."
                     elif action in ("add_contract", "add_screen", "add_client", "add_flow"):
                         if m.get("target_container"):
                             kwargs["owning_container"] = m["target_container"]
@@ -1437,14 +1715,15 @@ def execute_delta_mutations(
                                 "responsibility": details or f"Component responsible for {target_id}.",
                                 "source_path": f"{pkg_base}/{comp_slug}.py",
                             }
-                            if expect:
-                                for ek, ev in expect.items():
-                                    if ek != "contains":
-                                        new_comp[ek] = ev
+                            for ek, ev in fm_exp.items():
+                                new_comp[ek] = ev
                             if not any(isinstance(c, dict) and c.get("id") == target_id for c in comps):
                                 updated_content = _mutate_frontmatter_components(
                                     cnt_content, "append", target_id, new_comp
                                 )
+                                for needle in contains_items:
+                                    if needle not in updated_content:
+                                        updated_content = f"{updated_content.rstrip()}\n\n{needle}\n"
                                 tx.record_before_write(cnt_file)
                                 cnt_file.write_text(updated_content, encoding="utf-8")
                                 container_components[target_id] = target_cnt or "CNT-CORE"
@@ -1485,13 +1764,13 @@ def execute_delta_mutations(
                         )
                     parent_file, parent_type, _ = specs_by_id[parent_id]
                     p_content = parent_file.read_text(encoding="utf-8")
-                    p_fm, p_body, p_err = extract_frontmatter(p_content)
+                    p_fm, _p_body, p_err = extract_frontmatter(p_content)
                     if p_err or not isinstance(p_fm, dict):
                         return _abort(f"Cannot execute 'add_invariant': failed to parse '{parent_file.name}'.")
                     new_inv = {
                         "id": inv_id,
-                        "rule": (expect or {}).get("rule") or details or f"Invariant rule for {inv_id}.",
-                        "test_binding": (expect or {}).get("test_binding")
+                        "rule": fm_exp.get("rule") or details or f"Invariant rule for {inv_id}.",
+                        "test_binding": fm_exp.get("test_binding")
                         or "tests/test_placeholder.py::test_placeholder",
                     }
                     if parent_type == "product/capability":
@@ -1501,8 +1780,18 @@ def execute_delta_mutations(
                         inv_list = p_fm.setdefault("invariants", [])
                     if not any(isinstance(i, dict) and i.get("id") == inv_id for i in inv_list):
                         inv_list.append(new_inv)
+                        updated_content = _mutate_frontmatter_invariants(
+                            p_content,
+                            "append",
+                            inv_id,
+                            new_inv,
+                            is_capability=(parent_type == "product/capability"),
+                        )
+                        for needle in contains_items:
+                            if needle not in updated_content:
+                                updated_content = f"{updated_content.rstrip()}\n\n{needle}\n"
                         tx.record_before_write(parent_file)
-                        parent_file.write_text(_render_spec(p_fm, p_body), encoding="utf-8")
+                        parent_file.write_text(updated_content, encoding="utf-8")
                         invariant_map[inv_id] = (parent_file, new_inv)
                         specs_by_id[parent_id] = (parent_file, parent_type, p_fm)
                         if parent_file not in mutated_files:
@@ -1581,21 +1870,12 @@ def execute_delta_mutations(
                     inv_file, _ = invariant_map[inv_id]
                     if inv_file.exists():
                         p_content = inv_file.read_text(encoding="utf-8")
-                        p_fm, p_body, p_err = extract_frontmatter(p_content)
+                        p_fm, _p_body, p_err = extract_frontmatter(p_content)
                         if p_err or not isinstance(p_fm, dict):
                             return _abort(f"Cannot execute 'remove_invariant': failed to parse '{inv_file.name}'.")
-                        if isinstance(p_fm.get("invariants"), list):
-                            p_fm["invariants"] = [
-                                i for i in p_fm["invariants"] if not (isinstance(i, dict) and i.get("id") == inv_id)
-                            ]
-                        if isinstance((p_fm.get("technical") or {}).get("invariants"), list):
-                            p_fm["technical"]["invariants"] = [
-                                i
-                                for i in p_fm["technical"]["invariants"]
-                                if not (isinstance(i, dict) and i.get("id") == inv_id)
-                            ]
+                        updated_content = _mutate_frontmatter_invariants(p_content, "remove", inv_id)
                         tx.record_before_write(inv_file)
-                        inv_file.write_text(_render_spec(p_fm, p_body), encoding="utf-8")
+                        inv_file.write_text(updated_content, encoding="utf-8")
                         del invariant_map[inv_id]
                         if inv_file not in mutated_files:
                             mutated_files.append(inv_file)
@@ -1636,7 +1916,7 @@ def execute_delta_mutations(
                             f"Cannot execute 'patch_invariant' on '{inv_id}': no 'expect' or 'details' provided."
                         )
                     p_content = inv_file.read_text(encoding="utf-8")
-                    p_fm, p_body, p_err = extract_frontmatter(p_content)
+                    p_fm, _p_body, p_err = extract_frontmatter(p_content)
                     if p_err or not isinstance(p_fm, dict):
                         return _abort(f"Cannot execute 'patch_invariant': failed to parse '{inv_file.name}'.")
                     inv_lists = [
@@ -1648,17 +1928,17 @@ def execute_delta_mutations(
                             for item in ilist:
                                 if isinstance(item, dict) and item.get("id") == inv_id:
                                     if expect:
-                                        for ek, ev in expect.items():
-                                            if ek == "contains":
-                                                if str(ev) not in p_body:
-                                                    p_body = f"{p_body.rstrip()}\n\n{ev}\n"
-                                            else:
-                                                item[ek] = ev
+                                        for ek, ev in fm_exp.items():
+                                            item[ek] = ev
                                     elif details:
                                         item["rule"] = details
-                                    inv_dict = item
+                                    inv_dict = dict(item)
+                    updated_content = _mutate_frontmatter_invariants(p_content, "replace", inv_id, inv_dict)
+                    for needle in contains_items:
+                        if needle not in updated_content:
+                            updated_content = f"{updated_content.rstrip()}\n\n{needle}\n"
                     tx.record_before_write(inv_file)
-                    inv_file.write_text(_render_spec(p_fm, p_body), encoding="utf-8")
+                    inv_file.write_text(updated_content, encoding="utf-8")
                     invariant_map[inv_id] = (inv_file, inv_dict)
                     if inv_file not in mutated_files:
                         mutated_files.append(inv_file)
@@ -1686,15 +1966,15 @@ def execute_delta_mutations(
                             )
                         updated_comp = dict(comp_dict)
                         if expect:
-                            for ek, ev in expect.items():
-                                if ek != "contains":
-                                    updated_comp[ek] = ev
+                            for ek, ev in fm_exp.items():
+                                updated_comp[ek] = ev
                         elif details:
                             updated_comp["responsibility"] = details
                         cnt_content = cnt_file.read_text(encoding="utf-8")
                         updated_content = _mutate_frontmatter_components(cnt_content, "replace", target, updated_comp)
-                        if expect and "contains" in expect and str(expect["contains"]) not in updated_content:
-                            updated_content = f"{updated_content.rstrip()}\n\n{expect['contains']}\n"
+                        for needle in contains_items:
+                            if needle not in updated_content:
+                                updated_content = f"{updated_content.rstrip()}\n\n{needle}\n"
                         tx.record_before_write(cnt_file)
                         cnt_file.write_text(updated_content, encoding="utf-8")
                         updated_doc = parse_spec_file(cnt_file)

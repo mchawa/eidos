@@ -94,8 +94,8 @@ def delta_list_cmd(
 @delta_app.command("create")
 def delta_create_cmd(
     delta_id: str = typer.Argument(
-        ...,
-        help="Unique delta identifier (e.g. DLT-2026-002).",
+        "auto",
+        help="Unique delta identifier (e.g. DLT-2026-002), or 'auto' (default) for automatic collision-free numbering.",
     ),
     title: str = typer.Option(
         ...,
@@ -121,6 +121,12 @@ def delta_create_cmd(
         "-b",
         help="Git branch name for vcs.branch.",
     ),
+    slug: bool = typer.Option(
+        False,
+        "--slug",
+        "-s",
+        help="Append a deterministic title-derived slug suffix to prevent branch collisions.",
+    ),
     path: Path = typer.Option(
         Path("eidos"),
         "--path",
@@ -138,6 +144,7 @@ def delta_create_cmd(
             kind=kind,
             motivation=motivation,
             branch=branch,
+            slug_suffix=slug,
         )
         rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
         console.print(f"[bold green]✓ Created SpecDelta:[/bold green] [bold]{dest_file.name}[/bold]")
@@ -196,12 +203,17 @@ def delta_verify_cmd(
     for m in report.mutations:
         status_label = f"[bold green]{m.status}[/bold green]" if m.verified else f"[bold red]{m.status}[/bold red]"
         ver_label = "[bold green]PASS[/bold green]" if m.verified else "[bold red]FAIL[/bold red]"
+        detail_label = (
+            f"[red]{m.failure_reason}[/red]"
+            if (not m.verified and m.failure_reason)
+            else (m.details[:50] + ("..." if len(m.details) > 50 else ""))
+        )
         table.add_row(
             m.action,
             m.target,
             status_label,
             ver_label,
-            m.details[:50] + ("..." if len(m.details) > 50 else ""),
+            detail_label,
         )
 
     console.print(table)

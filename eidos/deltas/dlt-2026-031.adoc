@@ -24,13 +24,6 @@ mutations:
   target_capability: CAP-VCS-001
   details: Enforce static 'file::func' AST test-binding verification and orphan invariant
     detection across all C4 Level 3 component invariants ('tech/component').
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-VCS
-  impacted_components:
-  - CMP-DRIFT-DETECTOR
-  invariants_to_enforce:
-  - INV-DRIFT-DETECTION-ACCURACY
 ---
 = SpecDelta: Enforce Static Invariant Verification Across C4 Level 3 Component Specifications
 :toc: left

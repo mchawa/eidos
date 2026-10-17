@@ -10,40 +10,25 @@ intent:
   severity: high
   motivation: Uphold INV-MUTATION-REVERSIBILITY by making 'eidos delta apply --execute' atomic with pre-commit schema validation and rollback, handling or explicitly rejecting all schema mutation actions, enforcing target type checks before file deletion, and recovering pre-delta baseline SHAs from Git history when the gitignored SQLite cache is absent.
 mutations:
-  - action: modify_container
-    target_container: "CNT-EIDOS-CORE"
-    details: "Harden CMP-DELTA-ENGINE in src/eidos/core/lifecycle/delta_engine.py to snapshot/stage mutations transactionally, validate all mutated specifications prior to writing status: applied, enforce entity type verification on remove_* actions, reject unsupported mutation actions explicitly, and recover baseline SHAs from Git history on SQLite cache misses."
-    expect:
-      contains: "CMP-DELTA-ENGINE"
-  - action: modify_capability
-    target_capability: "CAP-PROD-002"
-    details: "Strengthen CAP-PROD-002 and INV-MUTATION-REVERSIBILITY to require transactional rollback on failed verification/validation, strict target type checks on deletions, and Git history baseline SHA fallback."
-    expect:
-      contains: "INV-MUTATION-REVERSIBILITY"
-  - action: patch_invariant
-    target_capability: "CAP-PROD-002"
-    target_invariant_id: "INV-MUTATION-REVERSIBILITY"
-    details: "Require execute_delta_mutations and apply_delta to stage mutations, validate target and delta documents before committing status: applied, and roll back any disk changes on failure."
-    expect:
-      test_binding: "tests/test_delta_engine.py::test_delta_execute_and_verify_lifecycle"
-
-affects:
-  containers:
-    - "CNT-EIDOS-CORE"
-  components:
-    - "CMP-DELTA-ENGINE"
-  capabilities:
-    - "CAP-PROD-002"
-  domains:
-    - "DOM-SPEC-ENGINE"
-
-blast_radius:
-  impacted_containers:
-    - "CNT-EIDOS-CORE"
-  impacted_components:
-    - "CMP-DELTA-ENGINE"
-  invariants_to_enforce:
-    - "INV-MUTATION-REVERSIBILITY"
+- action: modify_container
+  target_container: CNT-EIDOS-CORE
+  details: 'Harden CMP-DELTA-ENGINE in src/eidos/core/lifecycle/delta_engine.py to snapshot/stage mutations transactionally, validate all mutated specifications prior to writing status: applied, enforce entity type verification on remove_* actions, reject unsupported mutation actions explicitly, and recover baseline SHAs from Git history on SQLite cache misses.'
+  expect:
+    body:
+      contains: CMP-DELTA-ENGINE
+- action: modify_capability
+  target_capability: CAP-PROD-002
+  details: Strengthen CAP-PROD-002 and INV-MUTATION-REVERSIBILITY to require transactional rollback on failed verification/validation, strict target type checks on deletions, and Git history baseline SHA fallback.
+  expect:
+    body:
+      contains: INV-MUTATION-REVERSIBILITY
+- action: patch_invariant
+  target_capability: CAP-PROD-002
+  target_invariant_id: INV-MUTATION-REVERSIBILITY
+  details: 'Require execute_delta_mutations and apply_delta to stage mutations, validate target and delta documents before committing status: applied, and roll back any disk changes on failure.'
+  expect:
+    frontmatter:
+      test_binding: tests/test_delta_engine.py::test_delta_execute_and_verify_lifecycle
 ---
 = SpecDelta: Transactional SpecDelta Execution, Complete Action Coverage, and Git-Backed Baseline SHAs
 :toc: left

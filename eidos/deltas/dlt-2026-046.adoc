@@ -10,40 +10,18 @@ intent:
   severity: high
   motivation: Prevent 'eidos plugin uninstall' from deleting user-owned directories (.codex/, .github/plugin/, or arbitrary --dest paths), honor the 'force' overwrite flag when installing into existing workspace files, refuse symlinked destinations, and pin the package version in 'uvx' fallback hook commands.
 mutations:
-  - action: modify_container
-    target_container: "CNT-EIDOS-PLUGIN"
-    details: "Update CMP-PLUGIN-INSTALLER and CMP-HOOK-MANAGER in src/eidos/plugin/installer.py to record an installation manifest (.eidos-manifest.json with file paths and SHA-256 digests), remove only manifest-tracked files on uninstall, enforce force=False by default on user-owned files, refuse symlinked targets, and pin eidos-ai==<version> in uvx fallback hook commands."
-    expect:
-      contains: "CMP-PLUGIN-INSTALLER"
-  - action: modify_capability
-    target_capability: "CAP-AGENT-001"
-    details: "Extend CAP-AGENT-001 to guarantee non-destructive manifest-tracked plugin installation/uninstallation and version-pinned hook execution."
-    expect:
-      contains: "eidos plugin"
-
-affects:
-  containers:
-    - "CNT-EIDOS-PLUGIN"
-    - "CNT-EIDOS-CLI"
-  components:
-    - "CMP-PLUGIN-INSTALLER"
-    - "CMP-HOOK-MANAGER"
-    - "CMP-CLI-PLUGIN-COMMANDS"
-  capabilities:
-    - "CAP-AGENT-001"
-  domains:
-    - "DOM-AGENT-INTELLIGENCE"
-
-blast_radius:
-  impacted_containers:
-    - "CNT-EIDOS-PLUGIN"
-    - "CNT-EIDOS-CLI"
-  impacted_components:
-    - "CMP-PLUGIN-INSTALLER"
-    - "CMP-HOOK-MANAGER"
-    - "CMP-CLI-PLUGIN-COMMANDS"
-  invariants_to_enforce:
-    - "INV-PLUGIN-SCHEMA-CONFORMANCE"
+- action: modify_container
+  target_container: CNT-EIDOS-PLUGIN
+  details: Update CMP-PLUGIN-INSTALLER and CMP-HOOK-MANAGER in src/eidos/plugin/installer.py to record an installation manifest (.eidos-manifest.json with file paths and SHA-256 digests), remove only manifest-tracked files on uninstall, enforce force=False by default on user-owned files, refuse symlinked targets, and pin eidos-ai==<version> in uvx fallback hook commands.
+  expect:
+    body:
+      contains: CMP-PLUGIN-INSTALLER
+- action: modify_capability
+  target_capability: CAP-AGENT-001
+  details: Extend CAP-AGENT-001 to guarantee non-destructive manifest-tracked plugin installation/uninstallation and version-pinned hook execution.
+  expect:
+    body:
+      contains: eidos plugin
 ---
 = SpecDelta: Manifest-Tracked Plugin Uninstall, Non-Destructive Force Semantics, and Version-Pinned Hook Runner
 :toc: left

@@ -22,6 +22,7 @@ _MANAGED_TABLES = (
     "indexed_files",
     "spec_validation_cache",
     "test_binding_cache",
+    "delta_baselines",
     "specs_fts",
     "metadata",
 )
@@ -30,6 +31,13 @@ _CACHE_SCHEMA_DDL = """
 CREATE TABLE IF NOT EXISTS metadata (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS delta_baselines (
+    delta_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    baseline_sha256 TEXT NOT NULL,
+    PRIMARY KEY (delta_id, target_id)
 );
 
 CREATE TABLE IF NOT EXISTS indexed_files (
@@ -151,7 +159,8 @@ def ensure_cache_schema(conn: sqlite3.Connection) -> None:
         if stored_version != SCHEMA_VERSION:
             with conn:
                 for table in _MANAGED_TABLES:
-                    conn.execute(f"DROP TABLE IF EXISTS {table};")
+                    if table != "delta_baselines":
+                        conn.execute(f"DROP TABLE IF EXISTS {table};")
     with conn:
         conn.executescript(_CACHE_SCHEMA_DDL)
         conn.execute(

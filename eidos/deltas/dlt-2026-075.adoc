@@ -2,7 +2,7 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-075
-title: "Accurate Non-Code Invariant/Delta/Validation Drift Diagnostics in Hooks & CLI and Push-Aware CI Drift Base Resolution"
+title: Accurate Non-Code Invariant/Delta/Validation Drift Diagnostics in Hooks & CLI and Push-Aware CI Drift Base Resolution
 status: applied
 vcs:
   branch: fix/drift-hook-diagnostics-and-ci-base
@@ -10,59 +10,34 @@ intent:
   kind: bug
   bug_classification: spec_violation
   severity: high
-  motivation: "Ensure handle_drift_stop, execute_drift_hook, generate_remediation_prompt, and eidos drift report accurate root causes when drift is triggered by broken invariant bindings, unverified SpecDelta mutations, or spec validation failures with 0 modified code files, and fix .github/workflows/ci.yml so push events to main diff against github.event.before instead of origin/main (HEAD...HEAD)."
+  motivation: Ensure handle_drift_stop, execute_drift_hook, generate_remediation_prompt, and eidos drift report accurate root causes when drift is triggered by broken invariant bindings, unverified SpecDelta mutations, or spec validation failures with 0 modified code files, and fix .github/workflows/ci.yml so push events to main diff against github.event.before instead of origin/main (HEAD...HEAD).
 mutations:
-  - action: modify_component
-    target_component: CMP-HOOK-RUNNER
-    details: "Update handle_drift_stop and execute_drift_hook in src/eidos/plugin/hooks.py to gate standalone eidos hook drift on report.validation_passed as well as report.drift_detected, include validation_errors in the Stop-gate fingerprint and message, and tailor the diagnostic summary to the actual failure cause (validation errors, broken invariant bindings, unverified SpecDelta mutations, or unmapped code changes) instead of claiming '0 code file(s) were modified without corresponding updates to eidos/ specifications'."
-    expect:
-      source_path: "src/eidos/plugin/hooks.py"
-      responsibility: "validation_passed"
-  - action: modify_component
-    target_component: CMP-DRIFT-DETECTOR
-    details: "Update generate_remediation_prompt in src/eidos/vcs/report.py to describe invariant test binding failures, SpecDelta verification failures, and validation errors accurately when report.code_files is empty."
-    expect:
+- action: modify_component
+  target_component: CMP-HOOK-RUNNER
+  details: Update handle_drift_stop and execute_drift_hook in src/eidos/plugin/hooks.py to gate standalone eidos hook drift on report.validation_passed as well as report.drift_detected, include validation_errors in the Stop-gate fingerprint and message, and tailor the diagnostic summary to the actual failure cause (validation errors, broken invariant bindings, unverified SpecDelta mutations, or unmapped code changes) instead of claiming '0 code file(s) were modified without corresponding updates to eidos/ specifications'.
+  expect:
+    frontmatter:
+      source_path: src/eidos/plugin/hooks.py
+      responsibility: validation_passed
+- action: modify_component
+  target_component: CMP-DRIFT-DETECTOR
+  details: Update generate_remediation_prompt in src/eidos/vcs/report.py to describe invariant test binding failures, SpecDelta verification failures, and validation errors accurately when report.code_files is empty.
+  expect:
+    frontmatter:
       source_path:
-        - "src/eidos/vcs/drift.py"
-        - "src/eidos/vcs/diff.py"
-        - "src/eidos/vcs/invariants.py"
-        - "src/eidos/vcs/structural.py"
-        - "src/eidos/vcs/report.py"
-      responsibility: "remediation"
-  - action: modify_component
-    target_component: CMP-CLI-DRIFT-COMMANDS
-    details: "Update drift in src/eidos/cli/drift_commands.py and .github/workflows/ci.yml so non-code drift prints a cause-appropriate status headline instead of 'Code modified without corresponding spec updates!', and CI push events diff against github.event.before when github.event_name == 'push'."
-    expect:
-      source_path: "src/eidos/cli/drift_commands.py"
-      responsibility: "non-code drift"
-affects:
-  containers:
-    - CNT-EIDOS-PLUGIN
-    - CNT-EIDOS-VCS
-    - CNT-EIDOS-CLI
-  components:
-    - CMP-HOOK-RUNNER
-    - CMP-DRIFT-DETECTOR
-    - CMP-CLI-DRIFT-COMMANDS
-  capabilities:
-    - CAP-AGENT-001
-    - CAP-VCS-001
-  domains:
-    - DOM-AGENT-INTELLIGENCE
-    - DOM-VCS-LIFECYCLE
-blast_radius:
-  impacted_containers:
-    - CNT-EIDOS-PLUGIN
-    - CNT-EIDOS-VCS
-    - CNT-EIDOS-CLI
-  impacted_components:
-    - CMP-HOOK-RUNNER
-    - CMP-DRIFT-DETECTOR
-    - CMP-CLI-DRIFT-COMMANDS
-  invariants_to_enforce:
-    - INV-AGENT-DRIFT-HOOK
-    - INV-HOOK-BLOCK-ONCE
-    - INV-DRIFT-DETECTION-ACCURACY
+      - src/eidos/vcs/drift.py
+      - src/eidos/vcs/diff.py
+      - src/eidos/vcs/invariants.py
+      - src/eidos/vcs/structural.py
+      - src/eidos/vcs/report.py
+      responsibility: remediation
+- action: modify_component
+  target_component: CMP-CLI-DRIFT-COMMANDS
+  details: Update drift in src/eidos/cli/drift_commands.py and .github/workflows/ci.yml so non-code drift prints a cause-appropriate status headline instead of 'Code modified without corresponding spec updates!', and CI push events diff against github.event.before when github.event_name == 'push'.
+  expect:
+    frontmatter:
+      source_path: src/eidos/cli/drift_commands.py
+      responsibility: non-code drift
 ---
 = SpecDelta: Accurate Non-Code Invariant/Delta/Validation Drift Diagnostics in Hooks & CLI and Push-Aware CI Drift Base Resolution
 :toc: left

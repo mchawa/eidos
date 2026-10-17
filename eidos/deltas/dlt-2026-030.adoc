@@ -42,15 +42,6 @@ mutations:
   details: Enforce strict 1-hop component isolation so editing system-level specs
     or unrelated design specs cannot mask structural code or design drift, and internal
     styling/logic tweaks do not trigger design drift.
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-VCS
-  - CNT-EIDOS-CORE
-  impacted_components:
-  - CMP-DRIFT-DETECTOR
-  - CMP-AST-SYMBOL-INDEXER
-  invariants_to_enforce:
-  - INV-DRIFT-DETECTION-ACCURACY
 ---
 = SpecDelta: Strict 1-Hop Drift Scoping: Remove Global System Spec Escape Hatch and Graph-Scope Design Drift
 :toc: left

@@ -2,7 +2,7 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-078
-title: "Knowledge Graph Container & Inline-Component Invariant Indexing, AST Symbol FTS5 Projection, and Anchored Graph Traversal"
+title: Knowledge Graph Container & Inline-Component Invariant Indexing, AST Symbol FTS5 Projection, and Anchored Graph Traversal
 status: applied
 vcs:
   branch: fix/index-container-invariants-fts-symbols-and-anchored-traversal
@@ -10,59 +10,36 @@ intent:
   kind: bug
   bug_classification: spec_violation
   severity: high
-  motivation: "Index top-level tech/container and inline CMP-* component invariants into SQLite entities, specs_fts, edges, and symbol_mappings; promote owning container/component entities when container/component invariants are directly matched in build_tiered_context_slice; project primary AST code_symbols into specs_fts.symbols for code-aware task/search retrieval; and anchor SQLite LIKE suffix and recursive CTE cycle checks while including source_path in check_index_dirty."
+  motivation: Index top-level tech/container and inline CMP-* component invariants into SQLite entities, specs_fts, edges, and symbol_mappings; promote owning container/component entities when container/component invariants are directly matched in build_tiered_context_slice; project primary AST code_symbols into specs_fts.symbols for code-aware task/search retrieval; and anchor SQLite LIKE suffix and recursive CTE cycle checks while including source_path in check_index_dirty.
 mutations:
-  - action: modify_component
-    target_component: CMP-INCREMENTAL-SYNC-ENGINE
-    details: "Update sync_index and rebuild_spec_edges in src/eidos/core/index/sync.py to index top-level tech/container invariants and inline components[].invariants into entities (type='invariant'), specs_fts, edges (asserts / bound_to), and symbol_mappings (test_binding); project persisted primary AST code_symbols (and tech/component interfaces.provides signatures) into specs_fts.symbols after code indexing; include 'source_path' in check_index_dirty symbol_mappings query; and anchor rel_path LIKE '%/' || edges.target_id with ORDER BY length(rel_path) ASC."
-    expect:
-      source_path: "src/eidos/core/index/sync.py"
-      responsibility: "specs_fts.symbols"
-  - action: modify_component
-    target_component: CMP-FTS-QUERY-ENGINE
-    details: "Ensure execute_fts_query in src/eidos/core/index/query.py ranks projected AST code_symbols in specs_fts.symbols and resolves container/component invariant parent metadata."
-    expect:
-      source_path: "src/eidos/core/index/query.py"
-      responsibility: "code_symbols"
-  - action: modify_component
-    target_component: CMP-GRAPH-TRAVERSAL-ENGINE
-    details: "Anchor the recursive CTE cycle-prevention check in execute_k_hop_traversal (src/eidos/core/index/query.py) with delimiter boundaries ('->' || gw.path || '->' NOT LIKE '%->' || next_id || '->%') so entity IDs that are prefixes of longer IDs are not falsely skipped."
-    expect:
-      source_path: "src/eidos/core/index/query.py"
-      responsibility: "delimiter-bounded"
-  - action: modify_component
-    target_component: CMP-TIERED-CONTEXT-COMPRESSOR
-    details: "Update build_tiered_context_slice in src/eidos/core/index/context.py so directly matched invariants (direct_inv_ids) declared on a container or component promote their owning container_id / component_id into matched_components, and round-robin invariant ordering covers component/container invariants."
-    expect:
-      source_path: "src/eidos/core/index/context.py"
-      responsibility: "container_id"
-affects:
-  containers:
-    - CNT-EIDOS-INDEX
-  components:
-    - CMP-INCREMENTAL-SYNC-ENGINE
-    - CMP-FTS-QUERY-ENGINE
-    - CMP-GRAPH-TRAVERSAL-ENGINE
-    - CMP-TIERED-CONTEXT-COMPRESSOR
-  capabilities:
-    - CAP-AGENT-001
-    - CAP-AGENT-002
-  domains:
-    - DOM-SPEC-ENGINE
-    - DOM-AGENT-INTELLIGENCE
-blast_radius:
-  impacted_containers:
-    - CNT-EIDOS-INDEX
-  impacted_components:
-    - CMP-INCREMENTAL-SYNC-ENGINE
-    - CMP-FTS-QUERY-ENGINE
-    - CMP-GRAPH-TRAVERSAL-ENGINE
-    - CMP-TIERED-CONTEXT-COMPRESSOR
-  invariants_to_enforce:
-    - INV-INDEX-ZERO-CONFIG-CACHE
-    - INV-INDEX-HYBRID-PRECISION
-    - INV-CONTEXT-TOKEN-COMPRESSION
-    - INV-AGENT-CONTEXT-SLICING
+- action: modify_component
+  target_component: CMP-INCREMENTAL-SYNC-ENGINE
+  details: Update sync_index and rebuild_spec_edges in src/eidos/core/index/sync.py to index top-level tech/container invariants and inline components[].invariants into entities (type='invariant'), specs_fts, edges (asserts / bound_to), and symbol_mappings (test_binding); project persisted primary AST code_symbols (and tech/component interfaces.provides signatures) into specs_fts.symbols after code indexing; include 'source_path' in check_index_dirty symbol_mappings query; and anchor rel_path LIKE '%/' || edges.target_id with ORDER BY length(rel_path) ASC.
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/index/sync.py
+      responsibility: specs_fts.symbols
+- action: modify_component
+  target_component: CMP-FTS-QUERY-ENGINE
+  details: Ensure execute_fts_query in src/eidos/core/index/query.py ranks projected AST code_symbols in specs_fts.symbols and resolves container/component invariant parent metadata.
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/index/query.py
+      responsibility: code_symbols
+- action: modify_component
+  target_component: CMP-GRAPH-TRAVERSAL-ENGINE
+  details: Anchor the recursive CTE cycle-prevention check in execute_k_hop_traversal (src/eidos/core/index/query.py) with delimiter boundaries ('->' || gw.path || '->' NOT LIKE '%->' || next_id || '->%') so entity IDs that are prefixes of longer IDs are not falsely skipped.
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/index/query.py
+      responsibility: delimiter-bounded
+- action: modify_component
+  target_component: CMP-TIERED-CONTEXT-COMPRESSOR
+  details: Update build_tiered_context_slice in src/eidos/core/index/context.py so directly matched invariants (direct_inv_ids) declared on a container or component promote their owning container_id / component_id into matched_components, and round-robin invariant ordering covers component/container invariants.
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/index/context.py
+      responsibility: container_id
 ---
 = SpecDelta: Knowledge Graph Container & Inline-Component Invariant Indexing, AST Symbol FTS5 Projection, and Anchored Graph Traversal
 :toc: left

@@ -50,15 +50,7 @@ mutations:
     tasks.
 
     '
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-CORE
-  - CNT-EIDOS-CLI
-  - CNT-EIDOS-PLUGIN
-  invariants_to_enforce:
-  - INV-DELTA-DELETION-AUDIT
 ---
-
 = SpecDelta: SpecDelta Deletion and Deprecation Audit Engine (eidos delta audit)
 :toc: left
 

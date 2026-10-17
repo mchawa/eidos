@@ -27,13 +27,6 @@ mutations:
   details: Verify that 'PreToolUse' and 'PostToolUse' lint hooks block malformed '.adoc'
     YAML frontmatter and broken schema references across Antigravity, Claude Code,
     and Cursor JSON stdin payloads.
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-PLUGIN
-  impacted_components:
-  - CMP-HOOK-RUNNER
-  invariants_to_enforce:
-  - INV-AGENT-LINT-HOOK
 ---
 = SpecDelta: Normalize PreToolUse and PostToolUse Hook Payloads Across AI Agent Harnesses
 :toc: left

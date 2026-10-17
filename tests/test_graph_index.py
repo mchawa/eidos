@@ -1869,3 +1869,81 @@ def test_index_spec_deletion_child_invariants_and_query_coverage(tmp_path):
             gi._INDEX_INSTANCE.close()
             gi._INDEX_INSTANCE = None
 
+
+def test_dlt_2026_083_fts_and_boost_hub_suppression_and_token_calibration(tmp_path):
+    """Verify DLT-2026-083: two-tier FTS5 AND coordination boost, hop >= 2 organizational hub suppression, and structural token estimation."""
+    from eidos.core.index.context import TieredContextSlice
+    from eidos.core.index.graph_index import ArchitecturalIndex
+    from eidos.core.index.query import build_fts_match_query
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+
+    # 1. build_fts_match_query operator="AND" vs "OR"
+    q_or = build_fts_match_query("drift Engine", operator="OR")
+    q_and = build_fts_match_query("drift Engine", operator="AND")
+    assert " OR " in q_or
+    assert " AND " in q_and
+
+    # 2. Hop >= 2 organizational hub suppression
+    init_repository(tmp_path)
+    eidos_dir = tmp_path / "eidos"
+    create_spec(eidos_dir, "domain", "DOM-SHARED", title="Shared Domain")
+    c1 = create_spec(eidos_dir, "capability", "CAP-ALPHA", title="Alpha Capability", domain="DOM-SHARED")
+    c2 = create_spec(eidos_dir, "capability", "CAP-BETA", title="Beta Capability", domain="DOM-SHARED")
+    assert c1.exists() and c2.exists()
+
+    idx = ArchitecturalIndex(db_path=tmp_path / ".eidos_cache" / "index.db", eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+        # 2-hop traversal from CAP-ALPHA reaches DOM-SHARED at hop 1,
+        # but must NOT fan out through DOM-SHARED to unrelated sibling CAP-BETA at hop 2!
+        neighbors = idx.get_k_hop_neighborhood("CAP-ALPHA", max_hops=2)
+        neighbor_ids = {n["id"] for n in neighbors}
+        assert "DOM-SHARED" in neighbor_ids
+        assert "CAP-BETA" not in neighbor_ids
+
+        # Direct 1-hop traversal starting from DOM-SHARED itself still returns its children
+        dom_neighbors = {n["id"] for n in idx.get_k_hop_neighborhood("DOM-SHARED", max_hops=1)}
+        assert "CAP-ALPHA" in dom_neighbors
+        assert "CAP-BETA" in dom_neighbors
+
+        # SpecDelta blast-radius traversal (DLT-2026-085): walks outward from DLT-* via 'affects' edges
+        # without polluting CAP-ALPHA's neighborhood with DLT-*
+        dlt_dir = eidos_dir / "deltas"
+        dlt_dir.mkdir(parents=True, exist_ok=True)
+        (dlt_dir / "dlt-2026-001.adoc").write_text(
+            "---\n"
+            "type: delta/mutation\n"
+            "schema: schemas/v1/delta/delta.schema.yaml\n"
+            "id: DLT-2026-001\n"
+            "title: Modify Alpha\n"
+            "status: proposed\n"
+            "intent:\n"
+            "  kind: feature\n"
+            "  motivation: Test delta blast radius\n"
+            "mutations:\n"
+            "  - action: modify_capability\n"
+            "    target_capability: CAP-ALPHA\n"
+            "---\n"
+            "= Delta\n",
+            encoding="utf-8",
+        )
+        idx.sync(force=True)
+        dlt_blast = {n["id"] for n in idx.get_blast_radius("DLT-2026-001")}
+        assert "DLT-2026-001" in dlt_blast
+        assert "CAP-ALPHA" in dlt_blast
+        assert "DOM-SHARED" in dlt_blast
+        cap_alpha_neighbors = {n["id"] for n in idx.get_k_hop_neighborhood("CAP-ALPHA", max_hops=2)}
+        assert "DLT-2026-001" not in cap_alpha_neighbors
+    finally:
+        idx.close()
+
+    # 3. Structural token estimation accounts for punctuation/JSON overhead
+    code_heavy = '{"key": ["val1", "val2"], "fn": "foo_bar(a, b, c);"}' * 10
+    prose_text = "This is simple plain English text without dense punctuation " * 10
+    est_code = TieredContextSlice._estimate_text_tokens(code_heavy)
+    est_prose = TieredContextSlice._estimate_text_tokens(prose_text)
+    assert est_code > len(code_heavy) // 4
+    assert est_prose >= len(prose_text) // 4
+
+

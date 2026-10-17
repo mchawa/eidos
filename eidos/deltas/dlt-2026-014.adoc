@@ -64,23 +64,7 @@ mutations:
     (CMP-*).
 
     '
-blast_radius:
-  impacted_personas:
-  - eidos/personas/software-architect.adoc
-  - eidos/personas/software-engineer.adoc
-  - eidos/personas/autonomous-agent.adoc
-  impacted_components:
-  - CMP-EIDOS-CORE
-  - CMP-EIDOS-CLI
-  - CMP-EIDOS-PORTAL
-  - CMP-EIDOS-INDEX
-  - CMP-EIDOS-MCP
-  invariants_to_enforce:
-  - INV-SPEC-VALIDATION
-  - INV-SPEC-GRAPH-INTEGRITY
-  - INV-PORTAL-INTERACTIVE-C4
 ---
-
 = SpecDelta: Formalize First-Principles C4 Architecture (L2 Containers & L3 Components)
 :toc: left
 :icons: font

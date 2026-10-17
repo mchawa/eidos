@@ -221,8 +221,8 @@ def spec_create_cmd(
         ),
     ),
     doc_id: str = typer.Argument(
-        ...,
-        help="Unique identifier (e.g. CAP-AUTH-001, POL-003, CTR-PAYMENT-API).",
+        "auto",
+        help="Unique identifier (e.g. CAP-AUTH-001, POL-003, CTR-PAYMENT-API, or 'auto' for SpecDeltas).",
     ),
     title: str = typer.Option(
         ...,
@@ -253,6 +253,12 @@ def spec_create_cmd(
         "--motivation",
         "-m",
         help="Motivation/problem statement for deltas.",
+    ),
+    slug: bool = typer.Option(
+        False,
+        "--slug",
+        "-s",
+        help="Append a deterministic title-derived slug suffix when creating a SpecDelta.",
     ),
     category: str = typer.Option(
         "governance",
@@ -345,6 +351,7 @@ def spec_create_cmd(
             design_system=design_system,
             implements_component=implements_component,
             platform=platform,
+            slug_suffix=slug,
         )
         rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
         console.print(

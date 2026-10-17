@@ -22,11 +22,6 @@ mutations:
 - action: extend_capability
   target_capability: CAP-VCS-001
   details: "Repair stale 'test_binding' paths across 'eidos/domains/' and tag bound test functions in 'tests/' so all 30 repository invariants pass strict static 'file::func' verification with zero orphans."
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-CORE
-  - CNT-EIDOS-VCS
-  - CNT-EIDOS-CLI
 ---
 = SpecDelta: Strict Static-Only Invariant-to-Test Function Verification
 :toc: left

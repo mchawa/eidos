@@ -75,18 +75,7 @@ mutations:
     sub-15ms across 50+ source files.
 
     '
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-INDEX
-  - CNT-EIDOS-CORE
-  - CNT-EIDOS-CLI
-  invariants_to_enforce:
-  - INV-INDEX-OPTIONAL-AST-FALLBACK
-  - INV-INDEX-POLYGLOT-SYMBOL-PRECISION
-  - INV-INDEX-AI-REPO-MAP-BUDGET
-  - POL-004-ZERO-AI-CALL-DEPENDENCY
 ---
-
 = SpecDelta: Polyglot AST Symbol Indexing, AI Code Graph, and Granular Invariant Traceability via ast-grep
 :toc: left
 :icons: font

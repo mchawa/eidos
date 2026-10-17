@@ -13,7 +13,7 @@ Eidos recognizes that software development cannot be burdened by ceremony for ev
 | Mode | When to Use | How It Works |
 | :--- | :--- | :--- |
 | **Direct Mode** *(Default for localized changes)* | Bug fixes, single-container refactors, adding an internal helper or non-breaking CLI flag, test/doc updates | Co-evolve code in `src/`, tests in `tests/`, and living specs in `eidos/` directly in the same commit. `eidos drift` verifies that touched components or their 1-hop knowledge graph neighborhood have substantive spec updates. |
-| **Planned Mode** *(SpecDelta Lifecycle)* | New C4 containers (`CNT-*`), breaking contract (`CTR-*`) changes, cross-domain features, new policies (`POL-*`), deprecations/removals | Author a formal SpecDelta (`DLT-*`) declaring `intent`, `mutations` (with `expect:` post-conditions), `affects`, and `blast_radius`. Implement code and spec changes, verify with `eidos delta verify`, audit removals with `eidos delta audit`, and reconcile via `eidos delta apply`. |
+| **Planned Mode** *(SpecDelta Lifecycle)* | New C4 containers (`CNT-*`), breaking contract (`CTR-*`) changes, cross-domain features, new policies (`POL-*`), deprecations/removals | Author a formal SpecDelta (`DLT-*`) declaring `intent` and `mutations` (with `expect.body` / `expect.frontmatter` post-conditions; scope and downstream blast radius are derived automatically from the knowledge graph). Implement code and spec changes, verify with `eidos delta verify`, audit removals with `eidos delta audit`, and reconcile via `eidos delta apply`. |
 
 ---
 
@@ -22,7 +22,7 @@ Eidos recognizes that software development cannot be burdened by ceremony for ev
 ```mermaid
 stateDiagram-v2
     [*] --> proposed: eidos delta create
-    proposed --> planned: Scope & blast_radius defined
+    proposed --> planned: Mutations & post-conditions defined
     planned --> in_review: Code, specs & tests implemented
     in_review --> approved: eidos delta verify & audit pass
     approved --> applied: eidos delta apply
@@ -57,25 +57,13 @@ mutations:
     target_container: "CNT-EIDOS-VCS"
     details: "Harden CMP-DRIFT-DETECTOR in src/eidos/vcs/drift.py to flag unowned structural code files and enforce substantive spec diffs."
     expect:
-      contains: "CMP-DRIFT-DETECTOR"
+      body:
+        contains:
+          - "CMP-DRIFT-DETECTOR"
   - action: add_invariant
     target_capability: "CAP-VCS-001"
     target_invariant_id: "INV-VCS-UNOWNED-CODE-DRIFT"
     details: "Require unowned structural code files to trigger drift unless claimed by a container/component."
-
-affects:
-  containers:
-    - "CNT-EIDOS-VCS"
-  capabilities:
-    - "CAP-VCS-001"
-
-blast_radius:
-  impacted_containers:
-    - "CNT-EIDOS-VCS"
-    - "CNT-EIDOS-CLI"
-  invariants_to_enforce:
-    - "INV-VCS-UNOWNED-CODE-DRIFT"
-    - "POL-003-CONTINUOUS-DOCUMENTATION-SYNC"
 
 tombstone:
   search_tokens:
@@ -85,6 +73,7 @@ tombstone:
       reason: "Negative regression test verifying legacy fallback is rejected."
 
 vcs:
+  base_commit: "a1b2c3d"
   branch: "fix/drift-unowned-code"
   pull_request: "#51"
 ---
@@ -108,7 +97,7 @@ Previously, modifying an unowned source file could pass drift checks if an unrel
    * **Technical Architecture**: `modify_architecture`, `add_container`, `modify_container`, `remove_container`, `add_component`, `modify_component`, `remove_component`, `add_contract`, `modify_contract`, `remove_contract`.
    * **Design & Experience**: `add_design_system`, `modify_design_system`, `remove_design_system`, `add_ui_component`, `modify_ui_component`, `remove_ui_component`, `add_screen`, `modify_screen`, `remove_screen`, `add_client`, `modify_client`, `remove_client`, `add_flow`, `modify_flow`, `remove_flow`.
 2. **Declarative Post-Conditions (`expect:`) & Verification (`eidos delta verify`)**:
-   Each mutation item can include an `expect:` block asserting frontmatter properties or substrings on the target spec after implementation. `eidos delta verify <ID>` deterministically verifies that `add_*`/`modify_*` targets exist, `remove_*` targets are deleted, and all `expect:` assertions pass.
+   Each mutation item can include a structured `expect:` block asserting `frontmatter:` properties (with list-subset matching) and/or `body:` substrings (`contains` / `not_contains`, evaluated after stripping AsciiDoc comments) on the target spec after implementation. `eidos delta verify <ID>` deterministically verifies that `add_*`/`modify_*` targets exist and were substantively updated relative to `vcs.base_commit`, `remove_*` targets are deleted, and all `expect:` assertions pass.
 3. **Transactional Execution (`eidos delta apply --execute`)**:
    When `--execute` is passed, `DeltaEngine` snapshots baseline files into SQLite (with Git history fallback), scaffolds missing specifications or applies frontmatter mutations without LLMs, runs `SpecValidator` across the catalog, and atomically rolls back all file writes if any validation check fails.
 4. **Reverse-Dependency Tombstone Auditing (`eidos delta audit`)**:

@@ -53,23 +53,7 @@ mutations:
     and agent skill invocation.
 
     '
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-MCP
-  - CNT-EIDOS-CLI
-  - CNT-EIDOS-PLUGIN
-  - CNT-EIDOS-CORE
-  impacted_personas:
-  - eidos/personas/autonomous-agent.adoc
-  - eidos/personas/software-architect.adoc
-  - eidos/personas/software-engineer.adoc
-  invariants_to_enforce:
-  - INV-AGENT-DRIVER-ISOLATION
-  - INV-AGENT-CONTEXT-SLICING
-  - INV-AGENT-GRAPH-INDEX-FRESHNESS
-  - INV-AGENT-LINT-HOOK
 ---
-
 = SpecDelta: Deprecate and Remove MCP Server in Favor of Direct CLI and Progressive Agent Skills
 :toc: left
 

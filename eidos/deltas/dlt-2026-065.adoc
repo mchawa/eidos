@@ -2,7 +2,7 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-065
-title: "Lossless C4 Component Promotion/Inlining and Word-Bounded Specification Reference & Scalar Mutations"
+title: Lossless C4 Component Promotion/Inlining and Word-Bounded Specification Reference & Scalar Mutations
 status: applied
 vcs:
   branch: fix/scaffolder-component-promotion-and-catalog-refs
@@ -10,34 +10,17 @@ intent:
   kind: bug
   bug_classification: spec_violation
   severity: high
-  motivation: "Eliminate YAML corruption and silent metadata loss in promote_component / inline_component, prevent substring false positives and symlink duplicates in find_references_to_spec, and safely escape YAML scalar writes in _set_frontmatter_scalar."
+  motivation: Eliminate YAML corruption and silent metadata loss in promote_component / inline_component, prevent substring false positives and symlink duplicates in find_references_to_spec, and safely escape YAML scalar writes in _set_frontmatter_scalar.
 mutations:
-  - action: modify_component
-    target_component: CMP-LIFECYCLE-SCAFFOLDER
-    details: "Update promote_component and inline_component in src/eidos/core/lifecycle/scaffolder.py to serialize source_path (both str and list[str]), responsibility, invariants, decisions (DEC-*), interfaces, and quality_attributes via yaml.safe_dump without raw f-string interpolation or data loss; update find_references_to_spec and _set_frontmatter_scalar in src/eidos/core/lifecycle/catalog.py to use word-bounded regex matching, skip symlinked deltas/by-status/ directories, and quote/escape YAML scalar values safely."
-    expect:
+- action: modify_component
+  target_component: CMP-LIFECYCLE-SCAFFOLDER
+  details: Update promote_component and inline_component in src/eidos/core/lifecycle/scaffolder.py to serialize source_path (both str and list[str]), responsibility, invariants, decisions (DEC-*), interfaces, and quality_attributes via yaml.safe_dump without raw f-string interpolation or data loss; update find_references_to_spec and _set_frontmatter_scalar in src/eidos/core/lifecycle/catalog.py to use word-bounded regex matching, skip symlinked deltas/by-status/ directories, and quote/escape YAML scalar values safely.
+  expect:
+    frontmatter:
       source_path:
-        - "src/eidos/core/lifecycle/scaffolder.py"
-        - "src/eidos/core/lifecycle/catalog.py"
-      responsibility: "lossless"
-affects:
-  containers:
-    - CNT-EIDOS-CORE
-  components:
-    - CMP-LIFECYCLE-SCAFFOLDER
-  capabilities:
-    - CAP-PROD-001
-  domains:
-    - DOM-SPEC-ENGINE
-blast_radius:
-  impacted_containers:
-    - CNT-EIDOS-CORE
-  impacted_components:
-    - CMP-LIFECYCLE-SCAFFOLDER
-  invariants_to_enforce:
-    - INV-COMPONENT-CENTRALIZATION-MANDATE
-    - INV-COMPONENT-CONTAINER-AFFINITY
-    - INV-SPEC-SAFE-YAML-SERIALIZATION
+      - src/eidos/core/lifecycle/scaffolder.py
+      - src/eidos/core/lifecycle/catalog.py
+      responsibility: lossless
 ---
 = SpecDelta: Lossless C4 Component Promotion/Inlining and Word-Bounded Specification Reference & Scalar Mutations
 :toc: left

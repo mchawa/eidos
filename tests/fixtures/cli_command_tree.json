@@ -609,9 +609,9 @@
         ],
         "secondary": [],
         "kind": "TyperArgument",
-        "required": true,
-        "default": "None",
-        "help": "Unique identifier (e.g. CAP-AUTH-001, POL-003, CTR-PAYMENT-API).",
+        "required": false,
+        "default": "auto",
+        "help": "Unique identifier (e.g. CAP-AUTH-001, POL-003, CTR-PAYMENT-API, or 'auto' for SpecDeltas).",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -690,6 +690,21 @@
         "panel": null,
         "envvar": "None",
         "type": "STRING"
+      },
+      {
+        "name": "slug",
+        "opts": [
+          "--slug",
+          "-s"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Append a deterministic title-derived slug suffix when creating a SpecDelta.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
       },
       {
         "name": "category",
@@ -1152,9 +1167,9 @@
         ],
         "secondary": [],
         "kind": "TyperArgument",
-        "required": true,
-        "default": "None",
-        "help": "Unique delta identifier (e.g. DLT-2026-002).",
+        "required": false,
+        "default": "auto",
+        "help": "Unique delta identifier (e.g. DLT-2026-002), or 'auto' (default) for automatic collision-free numbering.",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -1218,6 +1233,21 @@
         "panel": null,
         "envvar": "None",
         "type": "STRING"
+      },
+      {
+        "name": "slug",
+        "opts": [
+          "--slug",
+          "-s"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Append a deterministic title-derived slug suffix to prevent branch collisions.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
       },
       {
         "name": "path",

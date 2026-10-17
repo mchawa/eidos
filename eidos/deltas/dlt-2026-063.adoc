@@ -2,50 +2,28 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-063
-title: "Working-Tree Digest Short-Circuit in Agent Hooks and Mtime-Cached Portal HTTP Server"
+title: Working-Tree Digest Short-Circuit in Agent Hooks and Mtime-Cached Portal HTTP Server
 status: applied
 vcs:
   branch: perf/hooks-short-circuit-and-portal-server-cache
 intent:
   kind: enabler
-  motivation: "Short-circuit PostInvocation lint and drift hooks in <5ms when the working tree and HEAD SHA are unchanged since the last clean run, and cache portal HTTP API responses by specification directory dirty state so /api/data, /api/overview, and /api/validate do not re-parse all specifications on every HTTP request."
+  motivation: Short-circuit PostInvocation lint and drift hooks in <5ms when the working tree and HEAD SHA are unchanged since the last clean run, and cache portal HTTP API responses by specification directory dirty state so /api/data, /api/overview, and /api/validate do not re-parse all specifications on every HTTP request.
 mutations:
-  - action: modify_component
-    target_component: CMP-HOOK-RUNNER
-    details: "Cache a lightweight working-tree state digest (HEAD SHA + git status --porcelain output + modified file mtimes/sizes) in eidos/.cache/hook-state.json so handle_lint_post_invocation and handle_drift_post_invocation short-circuit in <5ms when no files have changed since the last clean check."
-    expect:
-      source_path: "src/eidos/plugin/hooks.py"
-      responsibility: "short-circuit"
-  - action: modify_component
-    target_component: CMP-PORTAL-SERVER
-    details: "Cache get_portal_data and SpecValidator.validate_directory results in EidosPortalHandler in src/eidos/portal/server.py keyed by eidos_dir file mtime snapshot so /api/data, /api/overview, and /api/validate do not re-parse all specifications on every HTTP request."
-    expect:
-      source_path: "src/eidos/portal/server.py"
-      responsibility: "mtime"
-affects:
-  containers:
-    - CNT-EIDOS-PLUGIN
-    - CNT-EIDOS-PORTAL
-  components:
-    - CMP-HOOK-RUNNER
-    - CMP-PORTAL-SERVER
-  capabilities:
-    - CAP-AGENT-001
-    - CAP-EXP-001
-  domains:
-    - DOM-AGENT-INTELLIGENCE
-    - DOM-EXPERIENCE-PORTAL
-blast_radius:
-  impacted_containers:
-    - CNT-EIDOS-PLUGIN
-    - CNT-EIDOS-PORTAL
-  impacted_components:
-    - CMP-HOOK-RUNNER
-    - CMP-PORTAL-SERVER
-  invariants_to_enforce:
-    - INV-AGENT-LINT-HOOK
-    - INV-AGENT-DRIFT-HOOK
-    - INV-LIVING-PORTAL-VISUALIZATION
+- action: modify_component
+  target_component: CMP-HOOK-RUNNER
+  details: Cache a lightweight working-tree state digest (HEAD SHA + git status --porcelain output + modified file mtimes/sizes) in eidos/.cache/hook-state.json so handle_lint_post_invocation and handle_drift_post_invocation short-circuit in <5ms when no files have changed since the last clean check.
+  expect:
+    frontmatter:
+      source_path: src/eidos/plugin/hooks.py
+      responsibility: short-circuit
+- action: modify_component
+  target_component: CMP-PORTAL-SERVER
+  details: Cache get_portal_data and SpecValidator.validate_directory results in EidosPortalHandler in src/eidos/portal/server.py keyed by eidos_dir file mtime snapshot so /api/data, /api/overview, and /api/validate do not re-parse all specifications on every HTTP request.
+  expect:
+    frontmatter:
+      source_path: src/eidos/portal/server.py
+      responsibility: mtime
 ---
 = SpecDelta: Working-Tree Digest Short-Circuit in Agent Hooks and Mtime-Cached Portal HTTP Server
 :toc: left

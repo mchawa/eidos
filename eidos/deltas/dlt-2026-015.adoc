@@ -54,23 +54,7 @@ mutations:
     details: >
       Implement 'eidos component' CLI sub-app with 'promote', 'inline', and 'list' commands
       operating on 'eidos/architecture/components/'.
-blast_radius:
-  impacted_personas:
-    - eidos/personas/software-architect.adoc
-    - eidos/personas/software-engineer.adoc
-    - eidos/personas/autonomous-agent.adoc
-  impacted_containers:
-    - CNT-EIDOS-CORE
-    - CNT-EIDOS-CLI
-    - CNT-EIDOS-INDEX
-  invariants_to_enforce:
-    - INV-SPEC-VALIDATION
-    - INV-SPEC-GRAPH-INTEGRITY
-    - INV-COMPONENT-CENTRALIZATION-MANDATE
-    - INV-COMPONENT-CONTAINER-AFFINITY
-    - INV-INTERFACE-BOUNDARY-GOVERNANCE
 ---
-
 = SpecDelta: Centralized Hybrid C4 Level 3 Component Manifests
 :toc: left
 :icons: font

@@ -84,6 +84,7 @@ class _StructuralAddition:
     reasons: list[str]
     symbol_names: list[str]
     is_new_file: bool
+    boundary_symbol_names: list[str] | None = None
 
 
 class _SymbolMapCache:
@@ -92,6 +93,7 @@ class _SymbolMapCache:
     def __init__(self, versions: dict[str, tuple[str | None, str | None]]) -> None:
         self._versions = versions
         self._maps: dict[tuple[str, int], dict[tuple[str, str, str], str]] = {}
+        self._boundary_maps: dict[tuple[str, int], dict[tuple[str, str, str], str]] = {}
 
     @staticmethod
     def supports(cf: str) -> bool:
@@ -111,11 +113,26 @@ class _SymbolMapCache:
             self._maps[key] = public_symbol_map(self.versions_of(cf)[side], cf)
         return self._maps[key]
 
+    def get_boundary(self, cf: str, side: int) -> dict[tuple[str, str, str], str]:
+        """Boundary-exported symbol map of ``cf`` at ``side`` (0 = old, 1 = new)."""
+        from eidos.core.index.ast_indexer import boundary_symbol_map
+
+        key = (cf, side)
+        if key not in self._boundary_maps:
+            self._boundary_maps[key] = boundary_symbol_map(self.versions_of(cf)[side], cf)
+        return self._boundary_maps[key]
+
     def diff(self, cf: str, old_from: str | None = None) -> Any:
         """Public symbol diff of ``cf`` (old side taken from ``old_from`` for moved files)."""
         from eidos.core.index.ast_indexer import diff_symbol_maps
 
-        return diff_symbol_maps(self.get(old_from or cf, 0), self.get(cf, 1))
+        src_old = old_from or cf
+        return diff_symbol_maps(
+            self.get(src_old, 0),
+            self.get(cf, 1),
+            old_boundary_map=self.get_boundary(src_old, 0),
+            new_boundary_map=self.get_boundary(cf, 1),
+        )
 
 
 def _normalize_ws(text: str) -> str:
@@ -175,6 +192,7 @@ def _structural_addition_for(
             reasons=[f"added file '{cf}'"],
             symbol_names=[diff.qualified_name(k) for k in diff.added],
             is_new_file=True,
+            boundary_symbol_names=[diff.qualified_name(k) for k in getattr(diff, "boundary_added", diff.added)],
         )
     diff = smap.diff(cf, old_from=moved_from) if moved_from else (symbol_diff or smap.diff(cf))
     if not diff.added:
@@ -184,6 +202,7 @@ def _structural_addition_for(
         reasons=[f"added {k[0]} '{diff.qualified_name(k)}'" for k in diff.added],
         symbol_names=[diff.qualified_name(k) for k in diff.added],
         is_new_file=False,
+        boundary_symbol_names=[diff.qualified_name(k) for k in getattr(diff, "boundary_added", diff.added)],
     )
 
 
@@ -346,7 +365,14 @@ class _SpecDiffInspector:
         old, _ = self.versions(spec)
         return any(match_path_pattern(cf, p) > 0 for p in _declared_source_patterns(_spec_frontmatter(old)))
 
-    def is_anchored(self, spec: str, cf: str, symbol_names: list[str]) -> bool:
+    def is_anchored(
+        self,
+        spec: str,
+        cf: str,
+        symbol_names: list[str],
+        *,
+        boundary_symbol_names: list[str] | None = None,
+    ) -> bool:
         """True when the spec edit changes ownership keys or its added content names the file or a new symbol."""
         old, new = self.versions(spec)
         if old is None:
@@ -361,7 +387,7 @@ class _SpecDiffInspector:
 
         added = list((Counter(_normalized_body_lines(new_body)) - Counter(_normalized_body_lines(old_body))).elements())
         added += [_canonical(v) for k, v in new_fm.items() if _canonical(v) != _canonical(old_fm.get(k))]
-        needles = {cf, Path(cf).name, *symbol_names}
+        needles = {cf, Path(cf).name, *symbol_names, *(boundary_symbol_names or ())}
         patterns = [
             re.compile(rf"(?<![A-Za-z0-9_]){re.escape(n)}(?![A-Za-z0-9_])")
             for n in sorted(needles)
@@ -497,11 +523,22 @@ def _spec_coverage_verdict(
             return False, "missing_anchor", relevant
         return True, None, []
 
-    if (
+    boundary_syms = (
         addition.symbol_names
+        if addition.boundary_symbol_names is None
+        else addition.boundary_symbol_names
+    )
+    if (
+        boundary_syms
         and not owner_changed
         and not any(
-            inspector.is_new_spec(s) or inspector.is_anchored(s, addition.file, addition.symbol_names)
+            inspector.is_new_spec(s)
+            or inspector.is_anchored(
+                s,
+                addition.file,
+                addition.symbol_names,
+                boundary_symbol_names=boundary_syms,
+            )
             for s in substantive
         )
     ):

@@ -400,8 +400,44 @@ def handle_lint_post_invocation(payload: dict[str, Any], workspace_root: Path) -
     return {"injectSteps": []}
 
 
-def _check_and_record_stop_gate(eidos_dir: Path, gate_key: str, fingerprint: str) -> bool:
-    """Return True if this fingerprint should block (first occurrence), or False if already blocked once."""
+_STOP_GATE_RELEASE_WARNING = (
+    "⚠️ [Eidos Stop Gate] Allowing termination on repeated failure fingerprint, "
+    "but unresolved drift/validation issues remain in 'eidos/'."
+)
+
+
+def _extract_session_id(payload: dict[str, Any] | None = None) -> str:
+    """Extract optional session or conversation ID from hook payload or environment."""
+    import os
+
+    if isinstance(payload, dict):
+        for key in ("session_id", "sessionId", "conversation_id", "conversationId"):
+            val = payload.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+    return os.environ.get("EIDOS_SESSION_ID", "").strip()
+
+
+def _check_and_record_stop_gate(
+    eidos_dir: Path,
+    gate_key: str,
+    fingerprint: str,
+    session_id: str = "",
+    ttl_seconds: float | None = None,
+) -> bool:
+    """Return True if this fingerprint should block (first occurrence or expired/new session), or False if already blocked once."""
+    import os
+    import time
+
+    now = time.time()
+    if ttl_seconds is None:
+        try:
+            eff_ttl = float(os.environ.get("EIDOS_STOP_GATE_TTL_SECONDS", "600"))
+        except ValueError:
+            eff_ttl = 600.0
+    else:
+        eff_ttl = float(ttl_seconds)
+
     cache_dir = eidos_dir / ".cache"
     gate_file = cache_dir / "stop-gate.json"
     state: dict[str, Any] = {}
@@ -411,9 +447,24 @@ def _check_and_record_stop_gate(eidos_dir: Path, gate_key: str, fingerprint: str
             if isinstance(loaded, dict):
                 state = loaded
 
-    prev_fp = state.get(gate_key)
-    if prev_fp == fingerprint:
-        # Already blocked once for this exact fingerprint; clear key and allow termination
+    prev_entry = state.get(gate_key)
+    prev_fp: str | None = None
+    expired = False
+    session_mismatch = False
+
+    if isinstance(prev_entry, dict):
+        prev_fp = str(prev_entry.get("hash", "")) if prev_entry.get("hash") else None
+        prev_ts = prev_entry.get("timestamp")
+        if isinstance(prev_ts, (int, float)) and (now - float(prev_ts)) > eff_ttl:
+            expired = True
+        prev_sid = str(prev_entry.get("session_id") or "").strip()
+        if session_id and prev_sid and session_id != prev_sid:
+            session_mismatch = True
+    elif isinstance(prev_entry, str):
+        prev_fp = prev_entry
+
+    if prev_fp == fingerprint and not expired and not session_mismatch:
+        # Already blocked once for this exact fingerprint within active TTL/session; clear key and allow termination
         state.pop(gate_key, None)
         with contextlib.suppress(OSError):
             if state:
@@ -423,7 +474,11 @@ def _check_and_record_stop_gate(eidos_dir: Path, gate_key: str, fingerprint: str
                 gate_file.unlink(missing_ok=True)
         return False
 
-    state[gate_key] = fingerprint
+    state[gate_key] = {
+        "hash": fingerprint,
+        "timestamp": now,
+        "session_id": session_id,
+    }
     with contextlib.suppress(OSError):
         cache_dir.mkdir(parents=True, exist_ok=True)
         gate_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
@@ -451,6 +506,7 @@ def handle_lint_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str,
     if not eidos_dir.exists():
         return {"decision": "allow"}
 
+    session_id = _extract_session_id(payload)
     try:
         validator = SpecValidator()
         report = validator.validate_directory(eidos_dir)
@@ -465,8 +521,8 @@ def handle_lint_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str,
 
             err_msg = "\n".join(errors[:10])
             fp = hashlib.sha256(err_msg.encode("utf-8")).hexdigest()
-            if not _check_and_record_stop_gate(eidos_dir, "lint_fingerprint", fp):
-                return {"decision": "allow"}
+            if not _check_and_record_stop_gate(eidos_dir, "lint_fingerprint", fp, session_id=session_id):
+                return {"decision": "allow", "systemMessage": _STOP_GATE_RELEASE_WARNING}
 
             reason = (
                 f"🛑 [Eidos Doc Linter] Cannot complete task: One or more specifications in 'eidos/' failed validation:\n"
@@ -480,11 +536,12 @@ def handle_lint_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str,
         err_text = f"Validator execution error: {exc}"
         print(f"[Eidos Doc Linter Error] {err_text}", file=sys.stderr)
         fp = hashlib.sha256(err_text.encode("utf-8")).hexdigest()
-        if _check_and_record_stop_gate(eidos_dir, "lint_fingerprint", fp):
+        if _check_and_record_stop_gate(eidos_dir, "lint_fingerprint", fp, session_id=session_id):
             return {
                 "decision": "continue",
                 "reason": f"🛑 [Eidos Doc Linter] Internal validation error: {exc}",
             }
+        return {"decision": "allow", "systemMessage": _STOP_GATE_RELEASE_WARNING}
 
     return {"decision": "allow"}
 
@@ -555,6 +612,7 @@ def handle_drift_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str
     if not eidos_dir.exists():
         return {"decision": "allow"}
 
+    session_id = _extract_session_id(payload)
     try:
         drift_res = detect_drift(repo_root=workspace_root, eidos_dir=eidos_dir, uncommitted=True)
         has_non_code_failure = (
@@ -583,8 +641,8 @@ def handle_drift_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str
                 sort_keys=True,
             )
             fp = hashlib.sha256(fp_payload.encode("utf-8")).hexdigest()
-            if not _check_and_record_stop_gate(eidos_dir, "fingerprint", fp):
-                return {"decision": "allow"}
+            if not _check_and_record_stop_gate(eidos_dir, "fingerprint", fp, session_id=session_id):
+                return {"decision": "allow", "systemMessage": _STOP_GATE_RELEASE_WARNING}
 
             remediation_lines = "\n".join(f"  {rem}" for rem in drift_res.remediation_suggestions)
             if drift_res.classification.code_files:
@@ -628,11 +686,12 @@ def handle_drift_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str
         err_text = f"Drift detection error: {exc}"
         print(f"[Eidos Drift Gate Error] {err_text}", file=sys.stderr)
         fp = hashlib.sha256(err_text.encode("utf-8")).hexdigest()
-        if _check_and_record_stop_gate(eidos_dir, "fingerprint", fp):
+        if _check_and_record_stop_gate(eidos_dir, "fingerprint", fp, session_id=session_id):
             return {
                 "decision": "continue",
                 "reason": f"🛑 [Eidos Drift Gate] Internal drift check error: {exc}",
             }
+        return {"decision": "allow", "systemMessage": _STOP_GATE_RELEASE_WARNING}
 
     return {"decision": "allow"}
 

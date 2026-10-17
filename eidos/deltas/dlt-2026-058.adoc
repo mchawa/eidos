@@ -2,70 +2,49 @@
 type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-058
-title: "FTS5 Stop-Word Filtering, Incremental Spec Edge Sync, and Progressive Context Budget Compression"
+title: FTS5 Stop-Word Filtering, Incremental Spec Edge Sync, and Progressive Context Budget Compression
 status: applied
 vcs:
   branch: perf/index-fts-incremental-edges-context
 intent:
   kind: enabler
-  motivation: "Eliminate FTS5 stop-word query dilution in build_fts_match_query, scope rebuild_spec_edges to incrementally update modified specification edges instead of wiping all edges globally, and progressively compress verbose prose fields before dropping invariants or policies in _enforce_token_budget."
+  motivation: Eliminate FTS5 stop-word query dilution in build_fts_match_query, scope rebuild_spec_edges to incrementally update modified specification edges instead of wiping all edges globally, and progressively compress verbose prose fields before dropping invariants or policies in _enforce_token_budget.
 mutations:
-  - action: modify_component
-    target_component: CMP-FTS-QUERY-ENGINE
-    details: "Filter common English stop words and single-character noise tokens in build_fts_match_query and apply two-phase retrieval (boosting exact entity IDs and phrase/AND matches before OR prefix fallback) so natural-language task prompts do not match the entire corpus."
-    expect:
-      source_path: "src/eidos/core/index/query.py"
-      responsibility: "stop-word"
-  - action: modify_component
-    target_component: CMP-INCREMENTAL-SYNC-ENGINE
-    details: "Scope rebuild_spec_edges in src/eidos/core/index/sync.py to incrementally delete and rebuild outgoing edges for modified doc_ids (and re-resolve pending targets) on single-spec edits instead of wiping all specification edges globally."
-    expect:
-      source_path: "src/eidos/core/index/sync.py"
-      responsibility: "rebuild_spec_edges"
-  - action: modify_component
-    target_component: CMP-TIERED-CONTEXT-COMPRESSOR
-    details: "Progressively compress verbose fields (description, rationale, details) to compact 1-line summaries before dropping invariants or policies in _enforce_token_budget, and track token deltas incrementally rather than re-serializing full Markdown and JSON on every loop iteration."
-    expect:
-      source_path: "src/eidos/core/index/context.py"
-      responsibility: "progressive"
-  - action: patch_invariant
-    target_invariant_id: INV-AGENT-TASK-RETRIEVAL-COVERAGE
-    details: "Update INV-AGENT-TASK-RETRIEVAL-COVERAGE in CAP-AGENT-001 to include stop-word filtering and high-specificity token boosting in FTS5 task queries."
-    expect:
-      rule: "stop-word"
-      test_binding: "tests/test_graph_index.py::test_task_retrieval_indexes_invariants_and_filters_types"
-  - action: patch_invariant
-    target_invariant_id: INV-CONTEXT-TOKEN-COMPRESSION
-    details: "Update INV-CONTEXT-TOKEN-COMPRESSION in CAP-AGENT-002 to require progressive field compression prior to entity eviction and incremental token accounting in _enforce_token_budget."
-    expect:
-      rule: "progressive"
-      test_binding: "tests/test_context.py::test_inv_context_token_compression"
-affects:
-  containers:
-    - CNT-EIDOS-INDEX
-  components:
-    - CMP-FTS-QUERY-ENGINE
-    - CMP-INCREMENTAL-SYNC-ENGINE
-    - CMP-TIERED-CONTEXT-COMPRESSOR
-  capabilities:
-    - CAP-PROD-001
-    - CAP-AGENT-001
-    - CAP-AGENT-002
-  domains:
-    - DOM-SPEC-ENGINE
-    - DOM-AGENT-INTELLIGENCE
-blast_radius:
-  impacted_containers:
-    - CNT-EIDOS-INDEX
-  impacted_components:
-    - CMP-FTS-QUERY-ENGINE
-    - CMP-INCREMENTAL-SYNC-ENGINE
-    - CMP-TIERED-CONTEXT-COMPRESSOR
-  invariants_to_enforce:
-    - INV-KNOWLEDGE-GRAPH-CATALOG
-    - INV-AGENT-GRAPH-INDEX-FRESHNESS
-    - INV-AGENT-TASK-RETRIEVAL-COVERAGE
-    - INV-CONTEXT-TOKEN-COMPRESSION
+- action: modify_component
+  target_component: CMP-FTS-QUERY-ENGINE
+  details: Filter common English stop words and single-character noise tokens in build_fts_match_query and apply two-phase retrieval (boosting exact entity IDs and phrase/AND matches before OR prefix fallback) so natural-language task prompts do not match the entire corpus.
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/index/query.py
+      responsibility: stop-word
+- action: modify_component
+  target_component: CMP-INCREMENTAL-SYNC-ENGINE
+  details: Scope rebuild_spec_edges in src/eidos/core/index/sync.py to incrementally delete and rebuild outgoing edges for modified doc_ids (and re-resolve pending targets) on single-spec edits instead of wiping all specification edges globally.
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/index/sync.py
+      responsibility: rebuild_spec_edges
+- action: modify_component
+  target_component: CMP-TIERED-CONTEXT-COMPRESSOR
+  details: Progressively compress verbose fields (description, rationale, details) to compact 1-line summaries before dropping invariants or policies in _enforce_token_budget, and track token deltas incrementally rather than re-serializing full Markdown and JSON on every loop iteration.
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/index/context.py
+      responsibility: progressive
+- action: patch_invariant
+  target_invariant_id: INV-AGENT-TASK-RETRIEVAL-COVERAGE
+  details: Update INV-AGENT-TASK-RETRIEVAL-COVERAGE in CAP-AGENT-001 to include stop-word filtering and high-specificity token boosting in FTS5 task queries.
+  expect:
+    frontmatter:
+      rule: stop-word
+      test_binding: tests/test_graph_index.py::test_task_retrieval_indexes_invariants_and_filters_types
+- action: patch_invariant
+  target_invariant_id: INV-CONTEXT-TOKEN-COMPRESSION
+  details: Update INV-CONTEXT-TOKEN-COMPRESSION in CAP-AGENT-002 to require progressive field compression prior to entity eviction and incremental token accounting in _enforce_token_budget.
+  expect:
+    frontmatter:
+      rule: progressive
+      test_binding: tests/test_context.py::test_inv_context_token_compression
 ---
 = SpecDelta: FTS5 Stop-Word Filtering, Incremental Spec Edge Sync, and Progressive Context Budget Compression
 :toc: left

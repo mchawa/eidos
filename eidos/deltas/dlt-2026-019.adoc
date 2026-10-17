@@ -60,23 +60,7 @@ mutations:
   details: Formulate and enforce invariant mandating minimum 15px/16px body prose,
     65ch-75ch maximum reading measure, hierarchical TOC outline navigation for multi-section
     specs, and non-blocking human-readable metadata headers.
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-PORTAL
-  impacted_design_systems:
-  - DS-CORE
-  impacted_screens:
-  - SCR-PORTAL-CATALOG
-  - SCR-PORTAL-BUSINESS
-  - SCR-PORTAL-DELTAS
-  - SCR-PORTAL-EXPLORATIONS
-  invariants_to_enforce:
-  - INV-PORTAL-ZERO-NODE-DEP
-  - INV-PORTAL-READING-ERGONOMICS
-  - INV-PORTAL-INTERACTIVE-C4
-  - INV-SPEC-VALIDATION
 ---
-
 = SpecDelta: Living Web Portal Reading-Friendly Design Revamp
 :toc: left
 

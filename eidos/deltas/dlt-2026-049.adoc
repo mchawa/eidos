@@ -10,49 +10,24 @@ intent:
   severity: medium
   motivation: Eliminate false-positive INV-COMPONENT-CENTRALIZATION-MANDATE failures when a repository resides under a parent directory named 'src', support custom '--path' specification directories in drift classification, and decouple Eidos-repo-specific CLI parity checks from generic foreign-repository validation.
 mutations:
-  - action: modify_container
-    target_container: "CNT-EIDOS-CORE"
-    details: "Update CMP-SPEC-VALIDATOR in src/eidos/core/spec/validator.py to evaluate component centralization paths relative to eidos_dir/repo_root instead of raw doc.file_path.parts, and gate Eidos-specific Typer CLI parity checks behind contract/project configuration."
-    expect:
-      contains: "CMP-SPEC-VALIDATOR"
-  - action: modify_container
-    target_container: "CNT-EIDOS-VCS"
-    details: "Update CMP-DRIFT-DETECTOR in src/eidos/vcs/drift.py to classify specification and delta files relative to the configured eidos_dir rather than hardcoding parts[0] == 'eidos'."
-    expect:
-      contains: "CMP-DRIFT-DETECTOR"
-  - action: modify_capability
-    target_capability: "CAP-PROD-001"
-    details: "Ensure CAP-PROD-001 and INV-FOREIGN-REPO-E2E guarantee clean validation and drift detection regardless of parent checkout path (e.g. ~/src/repo) or custom spec root directory (--path)."
-    expect:
-      contains: "INV-FOREIGN-REPO-E2E"
-
-affects:
-  containers:
-    - "CNT-EIDOS-CORE"
-    - "CNT-EIDOS-VCS"
-  components:
-    - "CMP-SPEC-VALIDATOR"
-    - "CMP-PROJECT-RESOLVER"
-    - "CMP-DRIFT-DETECTOR"
-  capabilities:
-    - "CAP-PROD-001"
-    - "CAP-VCS-001"
-  domains:
-    - "DOM-SPEC-ENGINE"
-    - "DOM-VCS-LIFECYCLE"
-
-blast_radius:
-  impacted_containers:
-    - "CNT-EIDOS-CORE"
-    - "CNT-EIDOS-VCS"
-  impacted_components:
-    - "CMP-SPEC-VALIDATOR"
-    - "CMP-PROJECT-RESOLVER"
-    - "CMP-DRIFT-DETECTOR"
-  invariants_to_enforce:
-    - "INV-FOREIGN-REPO-E2E"
-    - "INV-COMPONENT-CENTRALIZATION-MANDATE"
-    - "INV-DRIFT-DETECTION-ACCURACY"
+- action: modify_container
+  target_container: CNT-EIDOS-CORE
+  details: Update CMP-SPEC-VALIDATOR in src/eidos/core/spec/validator.py to evaluate component centralization paths relative to eidos_dir/repo_root instead of raw doc.file_path.parts, and gate Eidos-specific Typer CLI parity checks behind contract/project configuration.
+  expect:
+    body:
+      contains: CMP-SPEC-VALIDATOR
+- action: modify_container
+  target_container: CNT-EIDOS-VCS
+  details: Update CMP-DRIFT-DETECTOR in src/eidos/vcs/drift.py to classify specification and delta files relative to the configured eidos_dir rather than hardcoding parts[0] == 'eidos'.
+  expect:
+    body:
+      contains: CMP-DRIFT-DETECTOR
+- action: modify_capability
+  target_capability: CAP-PROD-001
+  details: Ensure CAP-PROD-001 and INV-FOREIGN-REPO-E2E guarantee clean validation and drift detection regardless of parent checkout path (e.g. ~/src/repo) or custom spec root directory (--path).
+  expect:
+    body:
+      contains: INV-FOREIGN-REPO-E2E
 ---
 = SpecDelta: Repo-Relative Path Normalization and Configurable Governance Checks Across Validator and Drift
 :toc: left

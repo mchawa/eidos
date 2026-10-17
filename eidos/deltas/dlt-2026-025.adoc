@@ -22,10 +22,6 @@ mutations:
     to 'eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc', remove phantom
     invariant 'INV-VCS-PARITY', and align 'DOM-VCS-LIFECYCLE' and 'SYS-EIDOS-001'
     external context with local Git-native drift detection.
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-VCS
-  - CNT-EIDOS-PORTAL
 ---
 = SpecDelta: Decommission Unimplemented GitHub and GitLab VCS Bridge
 :toc: left

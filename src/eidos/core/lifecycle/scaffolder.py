@@ -12,7 +12,9 @@ from eidos.core.lifecycle.catalog import (  # noqa: F401  (backwards-compatible 
     _build_spec_catalog,
     _build_spec_catalog_with_invariants,
     _format_component_item,
+    _format_invariant_item,
     _mutate_frontmatter_components,
+    _mutate_frontmatter_invariants,
     _render_spec,
     _set_frontmatter_scalar,
     _single_line,
@@ -71,6 +73,7 @@ def create_spec(
     implements_component: str | None = None,
     platform: str = "web",
     branch: str | None = None,
+    slug_suffix: bool = False,
 ) -> Path:
     """Scaffold a new living specification document with valid schema frontmatter.
 
@@ -116,8 +119,13 @@ def create_spec(
         supported = ", ".join(sorted(set(key_aliases.values())))
         raise ValueError(f"Unknown specification type '{doc_type_key}'. Supported types: {supported}")
 
-    if canonical_key == "delta" and raw_id.strip().lower() in ("", "auto", "auto-slug"):
-        doc_id = generate_collision_free_delta_id(eidos_dir, raw_id=raw_id, title=title)
+    if canonical_key == "delta":
+        doc_id = generate_collision_free_delta_id(
+            eidos_dir,
+            raw_id=raw_id,
+            title=title,
+            slug_suffix=slug_suffix,
+        )
     else:
         doc_id = normalize_id(canonical_key, raw_id)
     slug = doc_id.lower().replace("_", "-")

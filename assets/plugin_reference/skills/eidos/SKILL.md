@@ -114,7 +114,7 @@ Use Direct Mode when your change is localized and does not introduce breaking co
 Use Planned Mode when introducing new containers (`CNT-*`), breaking contract (`CTR-*`) changes, cross-domain features, or new policies (`POL-*`). Consult the **`eidos-plan`** skill for full details:
 
 1. **Scaffold SpecDelta**: `eidos delta create DLT-YYYY-NNN --title "..." --kind <feature|enabler|bug> --branch <branch>`
-2. **Author Declarative Mutations**: Populate `mutations:` (with optional `expect:` post-conditions), `affects:`, and `blast_radius:` in `eidos/deltas/dlt-yyyy-nnn.adoc`.
+2. **Author Declarative Mutations**: Populate `mutations:` (with `target_*` and optional `expect:` post-conditions) in `eidos/deltas/dlt-yyyy-nnn.adoc`.
 3. **Implement Code, Specs & Tests**: Apply the architectural and code changes across `src/`, `eidos/`, and `tests/`.
 4. **Verify & Apply**:
    ```bash
@@ -145,7 +145,7 @@ eidos drift --uncommitted --json
 1. **Git Diff Classification**: Classifies modified files into `code_files`, `spec_files`, `delta_files`, and `test_files`.
 2. **Ownership Mapping**: Maps every modified source file to its owning C4 container (`CNT-*`) via `package_path` and C4 component (`CMP-*`) via `source_path`.
 3. **Workflow Mode Evaluation**:
-   * **Planned Mode** (when an active `DLT-*` is touched or declared): Verifies that all touched containers/components are accounted for in the SpecDelta's `affects` / `blast_radius`.
+   * **Planned Mode** (when an active `DLT-*` is touched or declared): Verifies that all touched containers/components are accounted for in the SpecDelta's `mutations[].target_*` (and 1-hop graph ownership neighborhood).
    * **Direct Mode** (no active `DLT-*`): Verifies that modified code files are accompanied by corresponding living specification updates (or passes when only tests/non-architectural files are touched).
 4. **Specification Catalog Validation**: Runs `SpecValidator` across `eidos/` to ensure schema conformance, valid cross-references, and physical disk binding integrity.
 5. **Polyglot Invariant Test Verification**: Scans `tests/` across Python (`.py`), TypeScript/JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`), Go (`_test.go`), Rust (`.rs`), and Java/Kotlin (`.java`, `.kt`) to verify every `INV-*` `test_binding` (`file::func`) exists and references the `INV-*` ID, and detects orphan invariants.

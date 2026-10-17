@@ -57,7 +57,7 @@ technical:
       rule: "Every .adoc file with a YAML frontmatter across all 16 living specification types must extract frontmatter cleanly across YAML block scalars containing embedded horizontal rules ('---'), serialize safely via yaml.safe_dump, and validate against its referenced JSON/YAML schema."
       test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
     - id: INV-SPEC-GRAPH-INTEGRITY
-      rule: "All cross-document references and entity IDs (containers, components, contracts, policies, domains, deltas, decisions) must resolve to valid catalog entity IDs with zero collisions, strictly match the target entity prefix and type declared by x-eidos-ref, resolve declared container package_path, component source_path, contract specification_file, UI component test_bindings, and invariant test_binding (file::func) file and symbol references on disk, and enforce multi-protocol contract parity across CTR-* specifications."
+      rule: "All cross-document references and entity IDs (containers, components, contracts, policies, domains, deltas, decisions) must resolve to valid catalog entity IDs with zero collisions, strictly match the target entity prefix and type declared by x-eidos-ref, resolve declared container package_path, component source_path, contract specification_file, UI component test_bindings, and invariant test_binding (file::func) file and symbol references on disk, and enforce bidirectional multi-protocol contract parity across CTR-* specifications."
       test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
     - id: INV-KNOWLEDGE-GRAPH-CATALOG
       rule: "The core engine must maintain an embedded SQLite knowledge graph indexing all living specifications, schemas, relational edges, recursively indexed AST code symbols, and AST test-to-invariant assertion edges with sub-2ms dirty checking and query resolution."
@@ -94,7 +94,7 @@ Through an embedded SQLite Knowledge Graph (`eidos/.cache/index.db`), Eidos brid
 
 == Key Responsibilities
 * **Living Specification Parsing**: Robust extraction of YAML frontmatter combined with AsciiDoc technical specifications.
-* **Schema Validation & Integrity**: Schema resolution and Draft 2020-12 validation ensuring strict typing across all 16 specification schemas.
+* **Schema Validation & Bidirectional Contract Integrity**: Schema resolution, Draft 2020-12 validation across all 16 specification schemas, and bidirectional multi-protocol contract parity verification (`cli_args`, `python_protocol`, `rest_openapi`, `grpc_proto`, `graphql`) detecting both undocumented code operations and phantom contract entries removed from code.
 * **Embedded Knowledge Graph**: Relational indexing linking Personas, Domains, Capabilities, Invariants, Components, Contracts, and SpecDeltas into `eidos/.cache/index.db`.
 * **Zero-Drift Incremental Sync**: Mtime and SHA-256 dirty checking that keeps the SQLite graph continuously synchronized with the working tree in under 2ms.
 * **Sub-Millisecond Catalog Resolution**: Powering `eidos spec list`, `eidos spec show`, and CLI inspection commands with instant relational queries rather than linear disk scans.

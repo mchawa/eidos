@@ -8,45 +8,26 @@ intent:
   kind: bug
   bug_classification: spec_violation
   severity: high
-  motivation: "Fix the broken is_generated_or_vendored(effective_root, str(rel_f)) call in classify_changed_files (classify_git_changes) that splits a path string into single characters and spawns a git subprocess per file, and resolve the base Git reference once per drift run instead of re-spawning git rev-parse for every modified file."
+  motivation: Fix the broken is_generated_or_vendored(effective_root, str(rel_f)) call in classify_changed_files (classify_git_changes) that splits a path string into single characters and spawns a git subprocess per file, and resolve the base Git reference once per drift run instead of re-spawning git rev-parse for every modified file.
 mutations:
-  - action: modify_container
-    target_container: "CNT-EIDOS-VCS"
-    details: "Update CMP-DRIFT-DETECTOR in src/eidos/vcs/drift.py and src/eidos/vcs/diff.py to batch candidate code paths into a single is_generated_or_vendored(effective_root, candidate_rel_paths) call and resolve the target base Git SHA once per detect_drift invocation."
-    expect:
-      contains: "CMP-DRIFT-DETECTOR"
-  - action: modify_container
-    target_container: "CNT-EIDOS-CORE"
-    details: "Harden CMP-PROJECT-RESOLVER in src/eidos/core/workspace/project.py so is_generated_or_vendored rejects or normalizes scalar str inputs defensively and executes a single batched git check-attr subprocess."
-    expect:
-      contains: "CMP-PROJECT-RESOLVER"
-  - action: modify_capability
-    target_capability: "CAP-VCS-001"
-    details: "Ensure CAP-VCS-001 accurately filters linguist-generated and linguist-vendored files via a single batched git check-attr query."
-    expect:
-      contains: "eidos drift"
-
-affects:
-  containers:
-    - "CNT-EIDOS-VCS"
-    - "CNT-EIDOS-CORE"
-  components:
-    - "CMP-DRIFT-DETECTOR"
-    - "CMP-PROJECT-RESOLVER"
-  capabilities:
-    - "CAP-VCS-001"
-  domains:
-    - "DOM-VCS-LIFECYCLE"
-
-blast_radius:
-  impacted_containers:
-    - "CNT-EIDOS-VCS"
-    - "CNT-EIDOS-CORE"
-  impacted_components:
-    - "CMP-DRIFT-DETECTOR"
-    - "CMP-PROJECT-RESOLVER"
-  invariants_to_enforce:
-    - "INV-DRIFT-DETECTION-ACCURACY"
+- action: modify_container
+  target_container: CNT-EIDOS-VCS
+  details: Update CMP-DRIFT-DETECTOR in src/eidos/vcs/drift.py and src/eidos/vcs/diff.py to batch candidate code paths into a single is_generated_or_vendored(effective_root, candidate_rel_paths) call and resolve the target base Git SHA once per detect_drift invocation.
+  expect:
+    body:
+      contains: CMP-DRIFT-DETECTOR
+- action: modify_container
+  target_container: CNT-EIDOS-CORE
+  details: Harden CMP-PROJECT-RESOLVER in src/eidos/core/workspace/project.py so is_generated_or_vendored rejects or normalizes scalar str inputs defensively and executes a single batched git check-attr subprocess.
+  expect:
+    body:
+      contains: CMP-PROJECT-RESOLVER
+- action: modify_capability
+  target_capability: CAP-VCS-001
+  details: Ensure CAP-VCS-001 accurately filters linguist-generated and linguist-vendored files via a single batched git check-attr query.
+  expect:
+    body:
+      contains: eidos drift
 ---
 = SpecDelta: Fix Batched is_generated_or_vendored Invocation and Single-Pass Base Ref Resolution in Drift
 :toc: left

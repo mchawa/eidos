@@ -20,19 +20,7 @@ mutations:
   target_capability: CAP-VCS-001
   details: Verify that drift check interfaces exclusively expose DriftCheckResult
     with no reliance on legacy aliases.
-blast_radius:
-  impacted_personas:
-  - eidos/personas/software-architect.adoc
-  - eidos/personas/software-engineer.adoc
-  - eidos/personas/autonomous-agent.adoc
-  impacted_components:
-  - CMP-EIDOS-CORE
-  invariants_to_enforce:
-  - INV-DRIFT-DETECTION-ACCURACY
-  - INV-SPEC-VALIDATION
 ---
-
-
 = SpecDelta: Remove Deprecated PRCheckResult Backwards Compatibility Alias
 :toc: left
 

@@ -336,45 +336,65 @@ class AuditEngine:
 
         allowed_reasons = tombstone.get("allowed_reasons", []) if isinstance(tombstone, dict) else []
 
-        for root, dirs, files in os.walk(self.repo_root):
-            # Prune ignored directories
-            dirs[:] = [d for d in dirs if d not in self.IGNORE_DIRS]
+        candidate_files: list[tuple[Path, Path]] = []
+        used_git_tracked = False
+        if (self.repo_root / ".git").exists():
+            from eidos.vcs.diff import get_tracked_files
 
-            for fname in files:
-                if fname.startswith("."):
-                    continue
-                fpath = Path(root) / fname
-                suffixes_lower = {s.lower() for s in fpath.suffixes}
-                if fpath.suffix.lower() in self.IGNORE_EXTS or (suffixes_lower & self.IGNORE_EXTS):
-                    continue
+            tracked_rels = get_tracked_files(self.repo_root)
+            if tracked_rels:
+                used_git_tracked = True
+                for rel_str in tracked_rels:
+                    rel_p = Path(rel_str)
+                    if any(part in self.IGNORE_DIRS for part in rel_p.parts):
+                        continue
+                    if rel_p.name.startswith("."):
+                        continue
+                    fpath = self.repo_root / rel_p
+                    suffixes_lower = {s.lower() for s in fpath.suffixes}
+                    if fpath.suffix.lower() in self.IGNORE_EXTS or (suffixes_lower & self.IGNORE_EXTS):
+                        continue
+                    candidate_files.append((fpath, rel_p))
 
-                try:
-                    rel_p = fpath.relative_to(self.repo_root)
-                except ValueError:
-                    continue
+        if not used_git_tracked:
+            for root, dirs, files in os.walk(self.repo_root):
+                dirs[:] = [d for d in dirs if d not in self.IGNORE_DIRS]
+                for fname in files:
+                    if fname.startswith("."):
+                        continue
+                    fpath = Path(root) / fname
+                    suffixes_lower = {s.lower() for s in fpath.suffixes}
+                    if fpath.suffix.lower() in self.IGNORE_EXTS or (suffixes_lower & self.IGNORE_EXTS):
+                        continue
+                    try:
+                        rel_p = fpath.relative_to(self.repo_root)
+                    except ValueError:
+                        continue
+                    candidate_files.append((fpath, rel_p))
 
-                try:
-                    with open(fpath, encoding="utf-8", errors="ignore") as f:
-                        lines = f.readlines()
-                except OSError:
-                    continue
+        for fpath, rel_p in candidate_files:
+            try:
+                with open(fpath, encoding="utf-8", errors="ignore") as f:
+                    lines = f.readlines()
+            except OSError:
+                continue
 
-                for idx, line in enumerate(lines, 1):
-                    for term, term_re in compiled_terms:
-                        if term_re.search(line):
-                            finding = self._classify_occurrence(
-                                rel_path=rel_p,
-                                line_number=idx,
-                                line_text=line.strip(),
-                                matched_term=term,
-                                delta_rel=delta_rel,
-                                allowed_reasons=allowed_reasons,
-                                prev_line=lines[idx - 2].strip() if idx > 1 else "",
-                            )
-                            if finding.is_approved:
-                                approved.append(finding)
-                            else:
-                                unacknowledged.append(finding)
+            for idx, line in enumerate(lines, 1):
+                for term, term_re in compiled_terms:
+                    if term_re.search(line):
+                        finding = self._classify_occurrence(
+                            rel_path=rel_p,
+                            line_number=idx,
+                            line_text=line.strip(),
+                            matched_term=term,
+                            delta_rel=delta_rel,
+                            allowed_reasons=allowed_reasons,
+                            prev_line=lines[idx - 2].strip() if idx > 1 else "",
+                        )
+                        if finding.is_approved:
+                            approved.append(finding)
+                        else:
+                            unacknowledged.append(finding)
 
         return approved, unacknowledged
 

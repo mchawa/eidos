@@ -36,18 +36,6 @@ mutations:
   details: Verify that 'eidos spec create' produces schema-valid '.adoc' specifications
     for all 16 Eidos document types, including titles and motivations containing quotes,
     colons, and special YAML characters.
-blast_radius:
-  impacted_containers:
-  - CNT-EIDOS-CORE
-  - CNT-EIDOS-CLI
-  impacted_components:
-  - CMP-LIFECYCLE-SCAFFOLDER
-  - CMP-SPEC-VALIDATOR
-  - CMP-CLI-SPEC-COMMANDS
-  invariants_to_enforce:
-  - INV-SPEC-VALIDATION
-  - INV-COMPONENT-CENTRALIZATION-MANDATE
-  - INV-COMPONENT-CONTAINER-AFFINITY
 ---
 = SpecDelta: Fix Component Spec Scaffolding, Add Client/Flow Scaffolding, and Enforce Safe YAML Serialization
 :toc: left
