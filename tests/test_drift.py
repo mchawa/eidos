@@ -1711,8 +1711,10 @@ def test_test_binding_cache_warm_drift_and_invalidation(tmp_path, monkeypatch):
     after_del_map = {i.invariant_id: i.has_test_coverage for i in after_del_invs}
     assert after_del_map == {"INV-CACHE-BOUND": False, "INV-CACHE-FILE": True}
 
+    import contextlib
+
     db_path = eidos_dir / ".cache" / "index.db"
-    with sqlite3.connect(str(db_path)) as conn:
+    with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         cached_test_files = {r[0] for r in conn.execute("SELECT file_path FROM test_binding_cache;")}
     assert cached_test_files == {"tests/test_beta.py"}
 
@@ -2400,7 +2402,9 @@ def test_real_git_structural_and_design_drift_and_cache_mtime_hit(tmp_path):
         os.utime(test_file, ns=(bump_ns, bump_ns))
         cached = _load_or_update_test_binding_cache(repo, eidos_dir=eidos_dir)
         assert "tests/test_svc.py" in cached
-        with sqlite3.connect(db_path) as conn:
+        import contextlib
+
+        with contextlib.closing(sqlite3.connect(db_path)) as conn:
             cached_mtime = conn.execute(
                 "SELECT mtime_ns FROM test_binding_cache WHERE file_path = 'tests/test_svc.py';"
             ).fetchone()

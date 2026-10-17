@@ -333,7 +333,7 @@ class SpecValidator:
         if eidos_cache_root.exists():
             from eidos.core.index.graph_index import open_cache_connection
 
-            with contextlib.suppress(OSError, sqlite3.Error), open_cache_connection(db_path) as conn:
+            with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn, conn:
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS spec_validation_cache (
@@ -527,7 +527,7 @@ class SpecValidator:
         if eidos_cache_root.exists() and (to_upsert or deleted_keys):
             from eidos.core.index.graph_index import open_cache_connection
 
-            with contextlib.suppress(OSError, sqlite3.Error), open_cache_connection(db_path) as conn:
+            with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn, conn:
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS spec_validation_cache (

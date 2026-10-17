@@ -9,6 +9,8 @@ Implements EXP-2026-002 and DLT-2026-050:
 
 from __future__ import annotations
 
+import atexit
+import contextlib
 import json
 import sqlite3
 import time
@@ -119,8 +121,19 @@ class ArchitecturalIndex:
 
     def close(self) -> None:
         if self._conn:
-            self._conn.close()
+            with contextlib.suppress(sqlite3.Error):
+                self._conn.close()
             self._conn = None
+
+    def __del__(self) -> None:
+        with contextlib.suppress(Exception):
+            self.close()
+
+    def __enter__(self) -> ArchitecturalIndex:
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        self.close()
 
     # ------------------------------------------------------------------
     # Incremental Sync & Code Ownership Delegation (sync.py)
@@ -433,3 +446,13 @@ def get_architectural_index(
             _INDEX_INSTANCE.close()
         _INDEX_INSTANCE = ArchitecturalIndex(db_path=db_path, repo_root=target_root, eidos_dir=target_eidos)
     return _INDEX_INSTANCE
+
+
+def _close_singleton_index() -> None:
+    global _INDEX_INSTANCE
+    if _INDEX_INSTANCE is not None:
+        _INDEX_INSTANCE.close()
+        _INDEX_INSTANCE = None
+
+
+atexit.register(_close_singleton_index)

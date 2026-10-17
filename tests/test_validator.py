@@ -784,7 +784,9 @@ def test_spec_validation_cache_warm_hit_and_invalidation(tmp_path: Path, monkeyp
     after_delete_report = validator.validate_directory(eidos_dir)
     assert validated_docs == []
     assert any("worker.adoc" in br for br in after_delete_report.broken_references)
-    with sqlite3.connect(str(db_path)) as conn:
+    import contextlib
+
+    with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         cached_paths = {r[0] for r in conn.execute("SELECT file_path FROM spec_validation_cache;")}
     assert not any(p.endswith("worker.adoc") for p in cached_paths)
 
@@ -2074,7 +2076,9 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
     os.utime(pol_file, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))
     r2 = validator.validate_directory(eidos_dir)
     assert r2.is_clean
-    with sqlite3.connect(cache_db) as conn:
+    import contextlib
+
+    with contextlib.closing(sqlite3.connect(cache_db)) as conn:
         row = conn.execute("SELECT mtime_ns FROM spec_validation_cache WHERE file_path LIKE '%pol.adoc'").fetchone()
         assert row is not None and row[0] == pol_file.stat().st_mtime_ns
 

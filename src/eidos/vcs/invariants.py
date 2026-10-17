@@ -125,7 +125,7 @@ def _load_or_update_test_binding_cache(
     if effective_eidos.exists():
         from eidos.core.index.graph_index import open_cache_connection
 
-        with contextlib.suppress(OSError, sqlite3.Error), open_cache_connection(db_path) as conn:
+        with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn, conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS test_binding_cache (
@@ -255,7 +255,7 @@ def _load_or_update_test_binding_cache(
     if effective_eidos.exists() and (to_upsert or deleted_keys):
         from eidos.core.index.graph_index import open_cache_connection
 
-        with contextlib.suppress(OSError, sqlite3.Error), open_cache_connection(db_path) as conn:
+        with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn, conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS test_binding_cache (
@@ -524,7 +524,7 @@ def extract_invariants_and_verify(
     if db_path.exists():
         from eidos.core.index.graph_index import open_cache_connection
 
-        with contextlib.suppress(OSError, sqlite3.Error), open_cache_connection(db_path) as conn:
+        with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn:
             for file_path_col, mtime_col, doc_json_col in conn.execute(
                 "SELECT file_path, mtime_ns, doc_json FROM spec_validation_cache;"
             ):

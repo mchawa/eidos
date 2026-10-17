@@ -1236,8 +1236,10 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     validator.validate_directory(eidos_dir)
     extract_invariants_and_verify(eidos_dir, repo)
 
+    import contextlib
+
     db_path = eidos_dir / ".cache" / "index.db"
-    with sqlite3.connect(str(db_path)) as conn:
+    with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
         assert ver == SCHEMA_VERSION == "2.3.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
@@ -1322,7 +1324,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     # 6. Corruption recovery: corrupted SQLite bytes are unlinked and rebuilt cleanly
     corrupt_db = tmp_path / "corrupt.db"
     corrupt_db.write_bytes(b"NOT A VALID SQLITE DATABASE HEADER" * 10)
-    with open_cache_connection(corrupt_db) as recovered_conn:
+    with contextlib.closing(open_cache_connection(corrupt_db)) as recovered_conn:
         ver = recovered_conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
         assert ver == SCHEMA_VERSION
 
