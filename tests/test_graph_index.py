@@ -1929,7 +1929,7 @@ def test_dlt_2026_083_fts_and_boost_hub_suppression_and_token_calibration(tmp_pa
             encoding="utf-8",
         )
         idx.sync(force=True)
-        dlt_blast = {n["id"] for n in idx.get_blast_radius("DLT-2026-001")}
+        dlt_blast = {n["id"] for n in idx.get_k_hop_neighborhood("DLT-2026-001", max_hops=2)}
         assert "DLT-2026-001" in dlt_blast
         assert "CAP-ALPHA" in dlt_blast
         assert "DOM-SHARED" in dlt_blast
