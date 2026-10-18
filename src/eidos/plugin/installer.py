@@ -1229,14 +1229,16 @@ class TargetAdapter:
                 created.extend(_copy_plugin_tree(source_dir, plugin_dir, force=force, launcher=launcher))
             if self.pre_manifest_hook is not None:
                 created.extend(self.pre_manifest_hook(root, source_dir, plugin_dir, force, launcher))
-            manifest = _write_installation_manifest(plugin_dir, created)
-            created.append(manifest)
 
         if self.post_install_hook is not None:
             created.extend(self.post_install_hook(root, source_dir, force, launcher))
 
         if self.skills_subdir is not None:
             created.extend(_copy_skills_flat(source_dir, root / self.skills_subdir, force=force))
+
+        if plugin_dir is not None:
+            manifest = _write_installation_manifest(plugin_dir, created)
+            created.append(manifest)
 
         dest_rel = self.install_destination_subdir or self.plugin_subdir or ""
         destination = (root / dest_rel) if dest_rel else root

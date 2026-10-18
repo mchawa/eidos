@@ -226,46 +226,84 @@ class AuditEngine:
 
         from eidos.core.lifecycle.delta_engine import _extract_mutation_target, normalize_delta_mutation
 
-        for raw_m in mutations:
-            if not isinstance(raw_m, dict):
-                continue
-            m = normalize_delta_mutation(raw_m)
+        _child_prefixes_by_parent: dict[str, tuple[str, ...]] = {
+            "CNT-": ("CMP-", "INV-"),
+            "CMP-": ("INV-",),
+            "CAP-": ("INV-",),
+            "POL-": ("INV-",),
+            "DOM-": ("CAP-", "PER-", "INV-"),
+            "DS-": ("UIC-", "SCR-", "FLOW-"),
+            "CLT-": ("SCR-", "FLOW-", "UIC-"),
+        }
+        _replacement_clause_re = re.compile(
+            r"(?:\b(?:into|by|with|to|from|in|under|via|for|favor\s+of|see|replaces?|replaced|"
+            r"consolidated|merged|migrated|moved|superseded|succeeded|retained|kept|preserving)\b|->|=>)"
+            r"[^.;:\n()]{0,40}$",
+            re.IGNORECASE,
+        )
+
+        normalized_mutations = [
+            normalize_delta_mutation(raw_m) for raw_m in mutations if isinstance(raw_m, dict)
+        ]
+        non_removed_ids: set[str] = set()
+        for m in normalized_mutations:
+            op = str(m.get("operation", "")).strip().lower()
+            t_id = _extract_mutation_target(m)
+            p_id = str(m.get("parent") or "").strip()
+            if p_id:
+                non_removed_ids.add(p_id)
+            if op not in ("remove", "deprecate") and t_id and t_id != "unspecified_target":
+                non_removed_ids.add(t_id)
+
+        for m in normalized_mutations:
             operation = str(m.get("operation", "")).strip().lower()
             if operation in ("remove", "deprecate"):
                 primary_target = _extract_mutation_target(m)
-                if (
+                has_concrete_primary = bool(
                     primary_target
                     and primary_target != "unspecified_target"
                     and not primary_target.endswith(".adoc")
                     and "/" not in primary_target
-                ):
+                )
+                if has_concrete_primary:
                     targets.add(primary_target)
 
                 parent_val = str(m.get("parent") or "").strip()
                 parent_context_ids = {parent_val} if parent_val and parent_val != primary_target else set()
+                allowed_detail_prefixes: tuple[str, ...] = (
+                    "CNT-",
+                    "CMP-",
+                    "CTR-",
+                    "CAP-",
+                    "POL-",
+                    "DOM-",
+                    "PER-",
+                    "DS-",
+                    "SCR-",
+                    "UIC-",
+                    "CLT-",
+                    "FLOW-",
+                    "INV-",
+                )
+                if has_concrete_primary:
+                    primary_prefix = primary_target.split("-", 1)[0] + "-"
+                    allowed_detail_prefixes = _child_prefixes_by_parent.get(primary_prefix, ())
 
-                # Parse IDs mentioned in details (excluding parent context IDs)
                 details = str(m.get("details", ""))
-                for match in re.findall(r"\b([A-Z]{2,4}-[A-Z0-9_-]+)\b", details):
-                    if match not in parent_context_ids and any(
-                        match.startswith(p)
-                        for p in (
-                            "CNT-",
-                            "CMP-",
-                            "CTR-",
-                            "CAP-",
-                            "POL-",
-                            "DOM-",
-                            "PER-",
-                            "DS-",
-                            "SCR-",
-                            "UIC-",
-                            "CLT-",
-                            "FLOW-",
-                            "INV-",
-                        )
+                for m_obj in re.finditer(r"\b([A-Z]{2,4}-[A-Z0-9_-]+)\b", details):
+                    match = m_obj.group(1)
+                    if (
+                        match == primary_target
+                        or match in parent_context_ids
+                        or match in non_removed_ids
+                        or not allowed_detail_prefixes
+                        or not any(match.startswith(p) for p in allowed_detail_prefixes)
                     ):
-                        targets.add(match)
+                        continue
+                    preceding = details[max(0, m_obj.start() - 60) : m_obj.start()]
+                    if _replacement_clause_re.search(preceding):
+                        continue
+                    targets.add(match)
 
         tombstone = fm.get("tombstone", {})
         if isinstance(tombstone, dict):

@@ -54,6 +54,66 @@ class _CachedTestFile:
 _INV_OR_POL_TOKEN_RE = re.compile(r"\b(?:INV|POL)-[A-Za-z0-9_-]+\b")
 
 
+def _has_function_level_fixture(fslice: str, inv_pattern: re.Pattern[str]) -> bool:
+    """Return True if eidos:fixture appears in the function header, docstring, or leading standalone comment."""
+    if "eidos:fixture" not in fslice:
+        return False
+    lines = fslice.splitlines()
+    if not lines:
+        return False
+
+    idx = 0
+    # 1. Consume signature lines (up to ':' in Python or '{' in brace languages, or single first line)
+    while idx < len(lines):
+        line = lines[idx]
+        if "eidos:fixture" in line:
+            return True
+        idx += 1
+        stripped = line.strip()
+        comment_Free = stripped.split("#", 1)[0].split("//", 1)[0].rstrip()
+        if comment_Free.endswith(":") or comment_Free.endswith("{"):
+            break
+
+    # Skip blank lines after signature
+    while idx < len(lines) and not lines[idx].strip():
+        idx += 1
+
+    # 2. Consume optional Python docstring
+    if idx < len(lines):
+        stripped = lines[idx].lstrip()
+        for quote in ('"""', "'''", 'r"""', "r'''"):
+            if stripped.startswith(quote):
+                raw_quote = quote[-3:]
+                if "eidos:fixture" in lines[idx]:
+                    return True
+                rest_after_open = stripped[len(quote) :]
+                idx += 1
+                if raw_quote not in rest_after_open:
+                    while idx < len(lines):
+                        if "eidos:fixture" in lines[idx]:
+                            return True
+                        if raw_quote in lines[idx]:
+                            idx += 1
+                            break
+                        idx += 1
+                break
+
+    # 3. Consume leading standalone comment lines before the first statement
+    while idx < len(lines):
+        stripped = lines[idx].strip()
+        if not stripped:
+            idx += 1
+            continue
+        if stripped.startswith("#") or stripped.startswith("//"):
+            if "eidos:fixture" in stripped and not inv_pattern.search(stripped):
+                return True
+            idx += 1
+            continue
+        break
+
+    return False
+
+
 def _build_cached_test_file_entry(
     rel: str,
     tcontent: str,
@@ -70,7 +130,7 @@ def _build_cached_test_file_entry(
     for fname, fslice in raw_funcs.items():
         fn_tokens = list(dict.fromkeys(_INV_OR_POL_TOKEN_RE.findall(fslice)))
         fixture_invs: list[str] = []
-        if has_fixture and "eidos:fixture" not in fslice:
+        if has_fixture and not _has_function_level_fixture(fslice, INVARIANT_PATTERN):
             for line in fslice.splitlines():
                 if "eidos:fixture" in line:
                     continue
@@ -289,7 +349,7 @@ def _verify_single_invariant(
                 candidate_metas: list[dict[str, list[str]]] = []
                 if tb_func in entry.functions:
                     candidate_metas.append(entry.functions[tb_func])
-                else:
+                elif "::" not in tb_func:
                     suffix = f"::{parts[-1]}"
                     candidate_metas.extend(
                         meta for k, meta in entry.functions.items() if k == parts[-1] or k.endswith(suffix)
@@ -314,7 +374,7 @@ def _verify_single_invariant(
             candidate_bodies: list[str] = []
             if tb_func in funcs:
                 candidate_bodies.append(funcs[tb_func])
-            else:
+            elif "::" not in tb_func:
                 suffix = f"::{parts[-1]}"
                 candidate_bodies.extend(
                     body for k, body in funcs.items() if k == parts[-1] or k.endswith(suffix)
@@ -401,7 +461,7 @@ def detect_orphan_invariants(
             for fname, fslice in funcs.items():
                 if "::" not in fname and fname in qualified_suffixes:
                     continue
-                if "eidos:fixture" in fslice:
+                if _has_function_level_fixture(fslice, INVARIANT_PATTERN):
                     continue
                 for line in fslice.splitlines():
                     if "eidos:fixture" in line:

@@ -942,3 +942,38 @@ def test_polyglot_parameterized_and_subtest_extraction():
         assert f"{inv_p}RS-TESTCASE-001" in rs_bindings["MacroDrivenCase"].invariants
 
 
+def test_ts_js_arrow_functions_and_function_expressions_extraction():
+    """Verify Bug 15c: AstGrepIndexer and FallbackIndexer extract TS/JS arrow functions and function expressions."""
+    from eidos.core.index.ast_indexer import AstGrepIndexer, FallbackIndexer, diff_public_symbols
+
+    ts_code_v1 = (
+        "export const fetchUserProfile = async (userId: string): Promise<string> => {\n"
+        "  const nestedMapper = (x: string) => x.trim();\n"
+        "  return nestedMapper(userId);\n"
+        "};\n\n"
+        "export const computeCartTotal = function(prices: number[]): number {\n"
+        "  return prices.reduce((a, b) => a + b, 0);\n"
+        "};\n\n"
+        "const internalFormatter = (val: number) => `${val}`;\n"
+    )
+    ts_code_v2 = ts_code_v1.replace("userId: string", "userId: string, includeMeta: boolean = false")
+
+    for indexer in (AstGrepIndexer(), FallbackIndexer()):
+        syms = {s.name: s for s in indexer.extract_symbols("src/profile.ts", ts_code_v1)}
+        assert "fetchUserProfile" in syms
+        assert syms["fetchUserProfile"].kind == "function"
+        assert syms["fetchUserProfile"].is_public is True
+
+        assert "computeCartTotal" in syms
+        assert syms["computeCartTotal"].kind == "function"
+        assert syms["computeCartTotal"].is_public is True
+
+        assert "internalFormatter" in syms
+        assert syms["internalFormatter"].kind == "function"
+        assert syms["internalFormatter"].is_public is False
+
+        # Nested arrow callback inside fetchUserProfile must not be extracted as a top-level symbol
+        assert "nestedMapper" not in syms
+
+    diff = diff_public_symbols(ts_code_v1, ts_code_v2, "src/profile.ts")
+    assert ("function", "", "fetchUserProfile") in diff.changed

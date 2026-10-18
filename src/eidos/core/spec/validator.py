@@ -293,8 +293,8 @@ class SpecValidator:
 
         return None
 
-    def validate_document(self, doc: SpecDocument) -> list[str]:
-        """Validate a single parsed document against its schema."""
+    def validate_document(self, doc: SpecDocument, root_dir: Path | None = None) -> list[str]:
+        """Validate a single parsed document against its schema and document-local architectural invariants."""
         if not doc.frontmatter:
             return doc.errors
 
@@ -311,6 +311,7 @@ class SpecValidator:
             errors.append(f"{prefix}: {err.message}")
 
         doc.errors.extend(errors)
+        self._validate_architectural_invariants(doc, doc.frontmatter, report=None, root_dir=root_dir)
         return doc.errors
 
     def validate_directory(self, root_dir: Path) -> ValidationReport:
@@ -432,6 +433,8 @@ class SpecValidator:
                     return doc
             parse_errs = list(doc.errors)
             self.validate_document(doc)
+            if doc.frontmatter:
+                self._validate_architectural_invariants(doc, doc.frontmatter, report=None, root_dir=root_dir)
             schema_errs = list(doc.errors)
             doc_payload = {
                 "doc_id": doc.doc_id,
@@ -530,6 +533,77 @@ class SpecValidator:
             if isinstance(doc.doc_type, str) and doc.doc_type
         }
 
+        # Also register inline component IDs and embedded invariant IDs declared within documents in catalog_ids
+        # and enforce global uniqueness across the catalog.
+        comp_owners: dict[str, SpecDocument] = {}
+        comp_ref_owners: dict[str, SpecDocument] = {}
+        inv_owners: dict[str, SpecDocument] = {}
+        for doc in report.documents:
+            if doc.frontmatter:
+                if doc.doc_type == "tech/container":
+                    for comp in doc.model.components:
+                        if not comp.id:
+                            continue
+                        if comp.ref:
+                            if comp.id in comp_ref_owners or comp.id in comp_owners:
+                                prev_doc = comp_ref_owners.get(comp.id) or comp_owners.get(comp.id)
+                                prev_name = prev_doc.file_path.name if prev_doc else doc.file_path.name
+                                report.broken_references.append(
+                                    f"Duplicate entity ID '{comp.id}' found in {doc.file_path.name} (already defined in {prev_name})"
+                                )
+                            else:
+                                comp_ref_owners[comp.id] = doc
+                                catalog_ids.add(comp.id)
+                                entity_types.setdefault(comp.id, "tech/component")
+                        else:
+                            if comp.id in comp_owners or comp.id in comp_ref_owners or comp.id in report.entity_index:
+                                prev_doc = (
+                                    comp_owners.get(comp.id)
+                                    or comp_ref_owners.get(comp.id)
+                                    or report.entity_index.get(comp.id)
+                                )
+                                prev_name = prev_doc.file_path.name if prev_doc else doc.file_path.name
+                                report.broken_references.append(
+                                    f"Duplicate entity ID '{comp.id}' found in {doc.file_path.name} (already defined in {prev_name})"
+                                )
+                            else:
+                                comp_owners[comp.id] = doc
+                                catalog_ids.add(comp.id)
+                                entity_types.setdefault(comp.id, "tech/component")
+                for inv in doc.model.all_invariants():
+                    if not inv.id:
+                        continue
+                    if inv.id in inv_owners or inv.id in catalog_ids:
+                        prev_doc = inv_owners.get(inv.id) or report.entity_index.get(inv.id)
+                        prev_name = prev_doc.file_path.name if prev_doc else doc.file_path.name
+                        report.broken_references.append(
+                            f"Duplicate entity ID '{inv.id}' found in {doc.file_path.name} (already defined in {prev_name})"
+                        )
+                    else:
+                        inv_owners[inv.id] = doc
+                        catalog_ids.add(inv.id)
+                        entity_types.setdefault(inv.id, "invariant")
+
+        # Register embedded architectural decision IDs (DEC-*) and enforce global uniqueness across the catalog
+        decision_owners: dict[str, SpecDocument] = {}
+        for doc in report.documents:
+            if not doc.frontmatter:
+                continue
+            for dec in doc.model.all_decisions():
+                dec_id = dec.id
+                if not dec_id:
+                    continue
+                if dec_id in decision_owners or dec_id in catalog_ids:
+                    prev_doc = decision_owners.get(dec_id) or report.entity_index.get(dec_id)
+                    prev_name = prev_doc.file_path.name if prev_doc else doc.file_path.name
+                    report.broken_references.append(
+                        f"Duplicate entity ID '{dec_id}' found in {doc.file_path.name} (already defined in {prev_name})"
+                    )
+                else:
+                    decision_owners[dec_id] = doc
+                    catalog_ids.add(dec_id)
+                    entity_types[dec_id] = "tech/decision"
+
         # When validating a subdirectory of an existing spec_root (e.g. eidos/domains), seed
         # catalog_ids and entity_types from sibling specs in spec_root so cross-directory
         # references (such as SYS-* or CNT-*) do not falsely fail.
@@ -569,43 +643,7 @@ class SpecValidator:
                             catalog_ids.add(inv.id)
                             entity_types.setdefault(inv.id, "invariant")
 
-        # Also register inline component IDs and embedded invariant IDs declared within documents in catalog_ids
         for doc in report.documents:
-            if doc.frontmatter:
-                if doc.doc_type == "tech/container":
-                    for comp in doc.model.components:
-                        if comp.id:
-                            catalog_ids.add(comp.id)
-                            entity_types.setdefault(comp.id, "tech/component")
-                for inv in doc.model.all_invariants():
-                    if inv.id:
-                        catalog_ids.add(inv.id)
-                        entity_types.setdefault(inv.id, "invariant")
-
-        # Register embedded architectural decision IDs (DEC-*) and enforce global uniqueness across the catalog
-        decision_owners: dict[str, SpecDocument] = {}
-        for doc in report.documents:
-            if not doc.frontmatter:
-                continue
-            for dec in doc.model.all_decisions():
-                dec_id = dec.id
-                if not dec_id:
-                    continue
-                if dec_id in decision_owners or dec_id in catalog_ids:
-                    prev_doc = decision_owners.get(dec_id) or report.entity_index.get(dec_id)
-                    prev_name = prev_doc.file_path.name if prev_doc else doc.file_path.name
-                    report.broken_references.append(
-                        f"Duplicate entity ID '{dec_id}' found in {doc.file_path.name} (already defined in {prev_name})"
-                    )
-                else:
-                    decision_owners[dec_id] = doc
-                    catalog_ids.add(dec_id)
-                    entity_types[dec_id] = "tech/decision"
-
-        fast_pathed = fast_pathed_applied_deltas or set()
-        for doc in report.documents:
-            if str(doc.file_path.resolve()) in fast_pathed:
-                continue
             # 2. Check relative file paths ending in .adoc
             self._check_dict_references(doc.frontmatter, doc.file_path, root_dir, report)
 
@@ -806,10 +844,18 @@ class SpecValidator:
         self,
         doc: SpecDocument,
         fm: dict[str, Any],
-        report: ValidationReport,
+        report: ValidationReport | None = None,
         root_dir: Path | None = None,
     ) -> None:
         """Enforce structural boundary invariants across contracts, dedicated components, and composable SpecDeltas."""
+        def _record_err(msg: str) -> None:
+            if msg not in doc.errors:
+                doc.errors.append(msg)
+            if report is not None:
+                bucket = report.schema_errors.setdefault(str(doc.file_path), [])
+                if msg not in bucket:
+                    bucket.append(msg)
+
         dtype = doc.doc_type
         if dtype == "delta/mutation":
             for mut in fm.get("mutations") or []:
@@ -821,70 +867,59 @@ class SpecValidator:
                     continue
                 target_upper = target_val.upper()
                 if op_val == "deprecate" and not target_upper.startswith(("CAP-", "POL-")):
-                    err_msg = (
+                    _record_err(
                         f"Invalid composable mutation in {doc.file_path.name}: "
                         f"operation 'deprecate' is only supported for CAP-* and POL-* targets (got '{target_val}')."
                     )
-                    doc.errors.append(err_msg)
-                    report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
                 elif target_upper.startswith("ARCH-") and op_val != "modify":
-                    err_msg = (
+                    _record_err(
                         f"Invalid composable mutation in {doc.file_path.name}: "
                         f"ARCH-* targets only support operation 'modify' (got '{op_val}')."
                     )
-                    doc.errors.append(err_msg)
-                    report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
                 elif target_upper.startswith("INV-") and op_val == "add":
                     has_parent = bool(str(mut.get("parent") or "").strip())
                     if not has_parent:
-                        err_msg = (
+                        _record_err(
                             f"Invalid composable mutation in {doc.file_path.name}: "
                             f"adding invariant '{target_val}' requires a 'parent' specification ID."
                         )
-                        doc.errors.append(err_msg)
-                        report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
         elif dtype == "tech/contract":
             owning_ref = fm.get("owning_container") or fm.get("owning_component")
             if owning_ref and str(owning_ref).startswith("CMP-"):
-                err_msg = (
+                _record_err(
                     f"INV-INTERFACE-BOUNDARY-GOVERNANCE violation: Contract '{doc.doc_id}' specifies in-process component '{owning_ref}' as owner. "
                     f"Boundary Protocol Contracts (CTR-*) must be owned by a Container (CNT-*)."
                 )
-                doc.errors.append(err_msg)
-                report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
         elif dtype == "tech/component":
-            spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir, doc.file_path)
-            res_doc = doc.file_path.resolve()
-            try:
-                rel_to_spec = res_doc.relative_to(spec_root.resolve()).parts
-            except ValueError:
-                rel_to_spec = ()
+            if doc.file_path.suffix == ".adoc":
+                spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir, doc.file_path)
+                res_doc = doc.file_path.resolve()
+                try:
+                    rel_to_spec = res_doc.relative_to(spec_root.resolve()).parts
+                except ValueError:
+                    rel_to_spec = ()
 
-            try:
-                rel_to_repo = res_doc.relative_to(repo_root.resolve()).parts
-            except ValueError:
-                rel_to_repo = rel_to_spec
+                try:
+                    rel_to_repo = res_doc.relative_to(repo_root.resolve()).parts
+                except ValueError:
+                    rel_to_repo = rel_to_spec
 
-            is_centralized = (
-                len(rel_to_spec) >= 2
-                and rel_to_spec[0] == "architecture"
-                and rel_to_spec[1] == "components"
-            )
-            if not is_centralized or "src" in rel_to_repo:
-                err_msg = (
-                    f"INV-COMPONENT-CENTRALIZATION-MANDATE violation: Component manifest '{doc.doc_id}' must reside "
-                    f"centrally in 'eidos/architecture/components/'. Eidos specifications must never be placed inside source code directories."
+                is_centralized = (
+                    len(rel_to_spec) >= 2
+                    and rel_to_spec[0] == "architecture"
+                    and rel_to_spec[1] == "components"
                 )
-                doc.errors.append(err_msg)
-                report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
+                if not is_centralized or "src" in rel_to_repo:
+                    _record_err(
+                        f"INV-COMPONENT-CENTRALIZATION-MANDATE violation: Component manifest '{doc.doc_id}' must reside "
+                        f"centrally in 'eidos/architecture/components/'. Eidos specifications must never be placed inside source code directories."
+                    )
 
             if fm.get("contracts"):
-                err_msg = (
+                _record_err(
                     f"INV-INTERFACE-BOUNDARY-GOVERNANCE violation: Component '{doc.doc_id}' cannot declare boundary protocol contracts. "
                     f"Use 'interfaces.provides' for in-process APIs."
                 )
-                doc.errors.append(err_msg)
-                report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
 
     def _check_dict_references(self, val, source_file: Path, root_dir: Path, report: ValidationReport):
         """Recursively check string fields ending in .adoc to verify they exist."""
@@ -937,13 +972,16 @@ class SpecValidator:
         test_funcs = indexer.list_test_functions(test_file, content=source)
         symbols = indexer.extract_symbols(test_file, content=source)
 
-        unqualified_names: set[str] = set(test_funcs.keys()) | {sym.name for sym in symbols if sym.name}
+        unqualified_names: set[str] = {sym.name for sym in symbols if sym.name}
         qualified_names: set[str] = set()
         for k in test_funcs:
             if "::" in k or "/" in k:
                 qualified_names.add(k)
                 qualified_names.add(k.replace("/", "::"))
                 qualified_names.add(k.replace("::", "/"))
+                unqualified_names.add(k.replace("/", "::").rsplit("::", 1)[-1])
+            else:
+                unqualified_names.add(k)
         for sym in symbols:
             if sym.parent_symbol and sym.name:
                 qualified_names.add(f"{sym.parent_symbol}::{sym.name}")
@@ -956,7 +994,7 @@ class SpecValidator:
                     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         unqualified_names.add(node.name)
                     elif isinstance(node, ast.ClassDef):
-                        for item in ast.walk(node):
+                        for item in node.body:
                             if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
                                 qualified_names.add(f"{node.name}::{item.name}")
                                 qualified_names.add(f"{node.name}/{item.name}")
@@ -1022,15 +1060,81 @@ class SpecValidator:
                     for v in tb.values():
                         if isinstance(v, str) and v.strip():
                             candidate_test_files.append(v.split("::", 1)[0].strip())
+            for inv in model.all_invariants():
+                raw_bind = inv.effective_test_binding()
+                if isinstance(raw_bind, str):
+                    bind_val = raw_bind.strip()
+                    if (
+                        bind_val
+                        and bind_val.upper() not in ("N/A", "TBD", "NONE")
+                        and not bind_val.endswith(".adoc")
+                        and "::" in bind_val
+                    ):
+                        tf = bind_val.split("::", 1)[0].strip()
+                        if tf:
+                            candidate_test_files.append(tf)
 
-        has_source_tree = (
-            (repo_root != spec_root or repo_root != root_dir.resolve()) and (repo_root / "src").exists()
-        ) or any(self._resolve_source_path(repo_root, root_dir, p) is not None for p in candidate_paths)
+        _non_code_top_dirs = {
+            "eidos",
+            ".spec",
+            "tests",
+            "test",
+            "docs",
+            "doc",
+            "assets",
+            "schemas",
+        }
+        _code_manifest_files = {
+            "go.mod",
+            "cargo.toml",
+            "package.json",
+            "pyproject.toml",
+            "setup.py",
+            "pom.xml",
+            "build.gradle",
+            "build.gradle.kts",
+            "cmakelists.txt",
+            "mix.exs",
+            "gemfile",
+            "composer.json",
+        }
+        has_repo_code_footprint = False
+        if repo_root != spec_root or repo_root != root_dir.resolve():
+            if (repo_root / "src").exists():
+                has_repo_code_footprint = True
+            else:
+                with contextlib.suppress(OSError):
+                    for child in repo_root.iterdir():
+                        cname = child.name
+                        if cname.startswith("."):
+                            continue
+                        if child.is_dir() and cname.lower() not in _non_code_top_dirs:
+                            has_repo_code_footprint = True
+                            break
+                        if child.is_file() and (
+                            cname.lower() in _code_manifest_files
+                            or child.suffix.lower() in AST_DIFF_EXTS
+                        ):
+                            has_repo_code_footprint = True
+                            break
+
+        has_source_tree = has_repo_code_footprint or any(
+            self._resolve_source_path(repo_root, root_dir, p) is not None for p in candidate_paths
+        )
 
         has_test_tree = (
             (repo_root / "tests").exists()
             or (root_dir / "tests").exists()
+            or (repo_root / "test").exists()
+            or (root_dir / "test").exists()
             or any(self._resolve_source_path(repo_root, root_dir, tf) is not None for tf in candidate_test_files)
+            or (
+                has_source_tree
+                and any(
+                    tf and not tf.replace("\\", "/").startswith(("tests/", "test/"))
+                    for tf in candidate_test_files
+                )
+            )
         )
 
         if not has_source_tree and not has_test_tree:
@@ -1045,6 +1149,7 @@ class SpecValidator:
             "discarded",
             "sunset",
             "rejected",
+            "removed",
         }
         for doc in report.documents:
             fm = doc.frontmatter or {}

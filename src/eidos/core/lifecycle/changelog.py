@@ -39,7 +39,7 @@ class ReleaseSection:
             ]
         )
 
-    def to_markdown(self, repo_url: str = "https://github.com/mchawa/eidos") -> str:
+    def to_markdown(self, repo_url: str = "") -> str:
         """Render section as standard Keep a Changelog markdown."""
         lines: list[str] = []
         if self.tag.lower() == "unreleased":
@@ -69,6 +69,25 @@ class ReleaseSection:
         return "\n".join(lines).rstrip() + "\n"
 
 
+def _resolve_default_repo_url(root: Path) -> str:
+    """Resolve HTTPS repository URL from git remote origin if available."""
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        raw = subprocess.check_output(
+            ["git", "remote", "get-url", "origin"],
+            cwd=root,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        if raw.startswith("git@") and ":" in raw:
+            host_part, path_part = raw.split(":", 1)
+            host = host_part.split("@", 1)[-1]
+            raw = f"https://{host}/{path_part}"
+        if raw.endswith(".git"):
+            raw = raw[:-4]
+        return raw.rstrip("/")
+    return ""
+
+
 class ChangelogGenerator:
     """Compiles living SpecDeltas and Git release history into a verified CHANGELOG."""
 
@@ -76,11 +95,12 @@ class ChangelogGenerator:
         self,
         repo_root: Path | None = None,
         eidos_dir: Path | None = None,
-        repo_url: str = "https://github.com/mchawa/eidos",
+        repo_url: str | None = None,
     ) -> None:
         self.root = Path(repo_root).resolve() if repo_root else Path.cwd().resolve()
         self.eidos_dir = Path(eidos_dir).resolve() if eidos_dir else (self.root / "eidos").resolve()
-        self.repo_url = repo_url.rstrip("/")
+        resolved_url = repo_url if repo_url is not None else _resolve_default_repo_url(self.root)
+        self.repo_url = resolved_url.rstrip("/")
         self._tag_ancestors_cache: dict[str, set[str]] = {}
 
     def get_git_tags(self) -> list[dict[str, str]]:
@@ -106,7 +126,7 @@ class ChangelogGenerator:
             return []
 
     def _batch_resolve_delta_commits(self, deltas_dir: Path) -> dict[Path, str]:
-        """Resolve latest Git commit SHA for all delta files in a single git log invocation."""
+        """Resolve earliest Git commit SHA (introduction commit) for all delta files in a single git log invocation."""
         commits_by_path: dict[Path, str] = {}
         with contextlib.suppress(OSError, subprocess.SubprocessError, ValueError):
             rel_deltas = str(deltas_dir.resolve().relative_to(self.root)).replace("\\", "/")
@@ -125,8 +145,7 @@ class ChangelogGenerator:
                     current_sha = line[7:].strip()
                 elif current_sha:
                     full_p = (self.root / line).resolve()
-                    if full_p not in commits_by_path:
-                        commits_by_path[full_p] = current_sha
+                    commits_by_path[full_p] = current_sha
         return commits_by_path
 
     def _get_tag_ancestors(self, tag_name: str) -> set[str]:

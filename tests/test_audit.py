@@ -434,5 +434,51 @@ def test_dlt_2026_087_audit_composable_remove_and_deprecate_mutations(tmp_path):
     assert "CNT-KEEP-PARENT" not in res.targets_audited
 
 
+def test_audit_does_not_flag_replacement_entities_in_remove_details(tmp_path):
+    """Verify Bug 10: replacement/successor entity IDs mentioned in remove/deprecate details are not flagged as leaks."""
+    eidos_dir = tmp_path / "eidos"
+    deltas_dir = eidos_dir / "deltas"
+    src_dir = tmp_path / "src"
+    deltas_dir.mkdir(parents=True)
+    src_dir.mkdir(parents=True)
 
+    (deltas_dir / "dlt-2026-092.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-092\n"
+        "title: Consolidate Legacy Component\n"
+        "status: applied\n"
+        "intent:\n"
+        "  kind: refactor\n"
+        "  motivation: Consolidate components.\n"
+        "mutations:\n"
+        "  - operation: remove\n"
+        "    target: CMP-LEGACY-PARSER\n"
+        "    parent: CNT-CORE-ENGINE\n"
+        "    details: Remove CMP-LEGACY-PARSER; consolidated into CMP-UNIFIED-PARSER and replaced by CMP-FAST-LEXER -> CMP-AST-WALKER.\n"
+        "  - operation: modify\n"
+        "    target: CMP-UNIFIED-PARSER\n"
+        "    parent: CNT-CORE-ENGINE\n"
+        "    details: Absorb legacy parser duties.\n"
+        "---\n"
+        "= Consolidate Legacy Component\n",
+        encoding="utf-8",
+    )
 
+    # Code references the replacement entities, NOT the removed CMP-LEGACY-PARSER
+    (src_dir / "parser.py").write_text(
+        "# Owned by CMP-UNIFIED-PARSER, CMP-FAST-LEXER, and CMP-AST-WALKER inside CNT-CORE-ENGINE\n"
+        "def parse():\n"
+        "    return True\n",
+        encoding="utf-8",
+    )
+
+    engine = AuditEngine(repo_root=tmp_path, eidos_dir=eidos_dir)
+    res = engine.audit_delta("DLT-2026-092")
+    assert res.is_clean is True
+    assert "CMP-LEGACY-PARSER" in res.targets_audited
+    assert "CMP-UNIFIED-PARSER" not in res.targets_audited
+    assert "CMP-FAST-LEXER" not in res.targets_audited
+    assert "CMP-AST-WALKER" not in res.targets_audited
+    assert "CNT-CORE-ENGINE" not in res.targets_audited

@@ -655,8 +655,14 @@ def _resolve_git_baseline_sha(
             if target_key.startswith("INV-"):
                 hist_fm, _, _ = extract_frontmatter(raw_bytes.decode("utf-8", errors="replace"))
                 if isinstance(hist_fm, dict):
-                    invs = hist_fm.get("invariants", []) or ((hist_fm.get("technical", {}) or {}).get("invariants", []))
-                    for inv in invs or []:
+                    invs = list(hist_fm.get("invariants", []) or [])
+                    tech = hist_fm.get("technical")
+                    if isinstance(tech, dict) and isinstance(tech.get("invariants"), list):
+                        invs.extend(tech["invariants"])
+                    for comp in hist_fm.get("components", []) or hist_fm.get("c4_internal_components", []) or []:
+                        if isinstance(comp, dict) and isinstance(comp.get("invariants"), list):
+                            invs.extend(comp["invariants"])
+                    for inv in invs:
                         if isinstance(inv, dict) and inv.get("id") == target_key:
                             return _digest_dict(inv)
                 return None
@@ -675,7 +681,7 @@ def _check_or_record_baseline_sha(
     *,
     allow_applied_fallback: bool = False,
 ) -> bool:
-    """Compare current_sha against SQLite delta_baselines (with Git history fallback on cache miss)."""
+    """Compare current_sha against SQLite delta_baselines and Git history (vcs.base_commit) consistently."""
     try:
         db_path = eidos_dir / ".cache" / "index.db"
         with contextlib.closing(open_cache_connection(db_path)) as conn:
@@ -683,17 +689,21 @@ def _check_or_record_baseline_sha(
                 "SELECT baseline_sha256 FROM delta_baselines WHERE delta_id = ? AND target_id = ?",
                 (delta_id, target_key),
             ).fetchone()
-            if row is not None:
-                return current_sha != row[0]
+            if row is not None and current_sha != row[0]:
+                return True
 
             git_sha = _resolve_git_baseline_sha(eidos_dir, delta_file, target_key, target_file)
             if git_sha is not None:
-                with conn:
-                    conn.execute(
-                        "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)",
-                        (delta_id, target_key, git_sha),
-                    )
+                if row is None or current_sha != git_sha:
+                    with conn:
+                        conn.execute(
+                            "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)",
+                            (delta_id, target_key, git_sha),
+                        )
                 return current_sha != git_sha
+
+            if row is not None:
+                return current_sha != row[0]
 
             if allow_applied_fallback:
                 return True

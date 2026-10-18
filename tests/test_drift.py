@@ -2834,3 +2834,152 @@ def test_dlt_2026_085_planned_mode_scope_from_mutations_targets_and_diff_helpers
     assert set(get_tracked_files(git_ws, include_untracked=False)) == {"a.py", "b.py"}
     with pytest.raises(GitResolutionError):
         get_git_diff_files(git_ws, base_ref="bad_nonexistent_ref_xyz", head_ref="HEAD", merge_base="bad_nonexistent_ref_xyz")
+
+
+def test_origin_main_head_fallback_remediation_prompt_and_line_level_fixture(tmp_path):
+    """Verify Bugs 2, 13, 14: origin/main==HEAD advances to HEAD~1, generate_remediation_prompt includes validation/invariant
+    errors alongside code_files, and line-level # eidos:fixture skips only that line."""  # eidos:fixture
+    import subprocess
+
+    from eidos.core.spec.validator import ValidationReport
+    from eidos.vcs.diff import ChangedFilesClassification, _resolve_base_and_merge_base, get_git_diff_files
+    from eidos.vcs.drift import DriftCheckResult, InvariantTrace, detect_orphan_invariants, generate_remediation_prompt
+
+    # 1. Bug 2: When both origin/main and main point to HEAD, _resolve_base_and_merge_base advances to HEAD~1
+    repo = tmp_path / "origin_main_repo"
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Dev"], cwd=repo, check=True, capture_output=True)
+    (repo / "first.py").write_text("x = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "c1"], cwd=repo, check=True, capture_output=True)
+    (repo / "second.py").write_text("y = 2\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "c2"], cwd=repo, check=True, capture_output=True)
+    head_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "update-ref", "refs/remotes/origin/main", head_sha],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+    resolved_base, _resolved_mb, fell_back = _resolve_base_and_merge_base(repo, None, "HEAD")
+    assert fell_back is False
+    assert resolved_base == "HEAD~1"
+    assert get_git_diff_files(repo, uncommitted=False) == ["second.py"]
+
+    # 2. Bug 13: generate_remediation_prompt renders validation_errors, uncovered_invariants, and orphan_invariants even when code_files is non-empty
+    val_rep = ValidationReport(
+        schema_errors={"eidos/policies/bad.adoc": ["Missing required 'rule'"]},
+        broken_references=["CMP-GHOST referenced in CNT-CORE"],
+    )
+    drift_res = DriftCheckResult(
+        is_clean=False,
+        drift_detected=True,
+        workflow_mode="direct",
+        classification=ChangedFilesClassification(code_files=["src/app.py"]),
+        validation_report=val_rep,
+        touched_components=["CNT-CORE"],
+        invariants=[
+            InvariantTrace(
+                invariant_id="INV-UNCOVERED-001",
+                rule="Must be covered.",
+                spec_path="eidos/policies/pol.adoc",
+                spec_id="POL-001",
+                test_binding="tests/test_app.py::test_missing",
+                has_test_coverage=False,
+                matching_tests=[],
+            )
+        ],
+        orphan_invariants=[("INV-ORPHAN-999", "tests/test_app.py::test_orphan")],
+    )
+    prompt = generate_remediation_prompt(drift_res)
+    assert "Modified Source Code Files (causing drift):" in prompt
+    assert "src/app.py" in prompt
+    assert "Governance & Verification Failures:" in prompt
+    assert "Missing required 'rule'" in prompt
+    assert "CMP-GHOST referenced in CNT-CORE" in prompt
+    assert "Broken invariant binding: `INV-UNCOVERED-001`" in prompt
+    assert "Orphan invariant reference: `INV-ORPHAN-999`" in prompt
+
+    # 3. Bug 14: Line-level # eidos:fixture inside a test function suppresses only that line, not the whole function
+    fixture_ws = tmp_path / "line_fixture_ws"
+    (fixture_ws / "eidos").mkdir(parents=True)
+    (fixture_ws / "tests").mkdir(parents=True)
+    test_content = (
+        "def test_mixed_lines():\n"
+        "    synthetic = 'INV-LINE-IGNORED-001'  # " + "eidos:fixture\n"
+        "    real_orphan = 'INV-LINE-ORPHAN-002'\n"
+        "    assert synthetic and real_orphan\n"
+    )
+    (fixture_ws / "tests" / "test_line_fixture.py").write_text(test_content, encoding="utf-8")
+
+    # Both uncached (all_tests_content provided) and cached (all_tests_content=None) must match
+    uncached_orphans = detect_orphan_invariants(
+        fixture_ws, set(), all_tests_content={"tests/test_line_fixture.py": test_content}
+    )
+    cached_orphans = detect_orphan_invariants(fixture_ws, set(), eidos_dir=fixture_ws / "eidos")
+    assert uncached_orphans == [("INV-LINE-ORPHAN-002", "tests/test_line_fixture.py::test_mixed_lines")]
+    assert cached_orphans == [("INV-LINE-ORPHAN-002", "tests/test_line_fixture.py::test_mixed_lines")]
+
+
+def test_class_qualified_test_binding_rejects_wrong_class_fallback(tmp_path: Path) -> None:
+    """Verify B2: class-qualified test_binding (tests/test_cls.py::WrongClass::test_foo) is rejected when only
+    RightClass::test_foo exists, while RightClass::test_foo and unqualified test_foo both match."""  # eidos:fixture
+    from eidos.vcs.invariants import _verify_single_invariant, extract_invariants_and_verify
+
+    repo = tmp_path / "cls_binding_repo"
+    eidos_dir = repo / "eidos"
+    pol_dir = eidos_dir / "policies"
+    tests_dir = repo / "tests"
+    pol_dir.mkdir(parents=True)
+    tests_dir.mkdir(parents=True)
+
+    test_code = (
+        "class RightClass:\n"
+        "    def test_foo(self):\n"
+        "        # INV-CLS-RIGHT\n"
+        "        # INV-CLS-WRONG\n"
+        "        # INV-CLS-UNQUAL\n"
+        "        assert True\n"
+    )
+    (tests_dir / "test_cls.py").write_text(test_code, encoding="utf-8")
+
+    (pol_dir / "pol-cls.adoc").write_text(
+        "---\n"
+        "type: product/policy\n"
+        "schema: schemas/v1/product/policy.schema.yaml\n"
+        "id: POL-CLS-001\n"
+        "title: Class Binding Policy\n"
+        "category: quality\n"
+        "rule: Verify class-qualified test bindings.\n"
+        "invariants:\n"
+        "  - id: INV-CLS-RIGHT\n"
+        "    rule: Matches RightClass::test_foo\n"
+        "    test_binding: tests/test_cls.py::RightClass::test_foo\n"
+        "  - id: INV-CLS-WRONG\n"
+        "    rule: Must not match WrongClass::test_foo\n"
+        "    test_binding: tests/test_cls.py::WrongClass::test_foo\n"
+        "  - id: INV-CLS-UNQUAL\n"
+        "    rule: Unqualified test_foo matches RightClass::test_foo\n"
+        "    test_binding: tests/test_cls.py::test_foo\n"
+        "---\n= Class Binding Policy\n",
+        encoding="utf-8",
+    )
+
+    # 1. Cached path via extract_invariants_and_verify
+    traces = {t.invariant_id: t for t in extract_invariants_and_verify(eidos_dir, repo)}
+    assert traces["INV-CLS-RIGHT"].has_test_coverage is True
+    assert traces["INV-CLS-WRONG"].has_test_coverage is False
+    assert traces["INV-CLS-UNQUAL"].has_test_coverage is True
+
+    # 2. Uncached string path via _verify_single_invariant
+    raw_map: dict[str, object] = {"tests/test_cls.py": test_code}
+    assert _verify_single_invariant("INV-CLS-RIGHT", "tests/test_cls.py::RightClass::test_foo", repo, raw_map, {}) != []
+    assert _verify_single_invariant("INV-CLS-WRONG", "tests/test_cls.py::WrongClass::test_foo", repo, raw_map, {}) == []
+    assert _verify_single_invariant("INV-CLS-UNQUAL", "tests/test_cls.py::test_foo", repo, raw_map, {}) != []
+

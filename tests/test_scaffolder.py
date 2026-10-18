@@ -1289,3 +1289,86 @@ def test_design_scaffolder_hygiene_and_dynamic_system_fallback(tmp_path):
     assert "packages/ui/src" not in uic_path.read_text(encoding="utf-8")
 
 
+def test_multiline_scalar_update_and_delete_spec_applied_delta_and_promote_accepted(tmp_path):
+    """Verify Bug 11 & status alignment: _set_frontmatter_scalar replaces multiline block scalars cleanly,
+    delete_spec succeeds when entity is only referenced by an applied SpecDelta, and promote_component preserves status: accepted."""
+    from eidos.core.lifecycle.catalog import _set_frontmatter_scalar, find_references_to_spec
+    from eidos.core.lifecycle.scaffolder import promote_component
+    from eidos.core.spec.parser import extract_frontmatter
+    from eidos.core.spec.validator import SpecValidator
+
+    eidos_dir = tmp_path / "eidos"
+    (tmp_path / "src" / "acc").mkdir(parents=True)
+    (tmp_path / "src" / "acc" / "worker.py").write_text("def run(): pass\n", encoding="utf-8")
+
+    # 1. Bug 11a: _set_frontmatter_scalar on YAML multiline block scalars (| and >)
+    raw_multiline = (
+        "---\n"
+        "type: product/policy\n"
+        "id: POL-MULTI-001\n"
+        "title: |\n"
+        "  Multi-line Title Line One\n"
+        "  Multi-line Title Line Two\n"
+        "status: active\n"
+        "rule: >\n"
+        "  Folded rule first line\n"
+        "  and second line.\n"
+        "---\n"
+        "= Multi-line Policy\n"
+    )
+    updated_title = _set_frontmatter_scalar(raw_multiline, "title", "Single Line Replaced Title")
+    fm1, _, err1 = extract_frontmatter(updated_title)
+    assert err1 is None
+    assert fm1["title"] == "Single Line Replaced Title"
+    assert fm1["status"] == "active"
+
+    updated_rule = _set_frontmatter_scalar(updated_title, "rule", "Single line replaced rule.")
+    fm2, _, err2 = extract_frontmatter(updated_rule)
+    assert err2 is None
+    assert fm2["rule"] == "Single line replaced rule."
+
+    # 2. Bug 11b: find_references_to_spec ignores applied/rejected SpecDeltas so delete_spec succeeds
+    pol_path = create_spec(eidos_dir, "policy", "POL-OLD-TEMP", title="Temp Policy", rule="Temp rule.")
+    dlt_path = create_spec(
+        eidos_dir,
+        "delta",
+        "DLT-2026-950",
+        title="Historical Delta",
+        motivation="Previously touched POL-OLD-TEMP.",
+    )
+    # While delta is 'proposed', delete_spec without force=True is blocked
+    ok_blocked, msg_blocked, refs_blocked = delete_spec(eidos_dir, "POL-OLD-TEMP", force=False)
+    assert ok_blocked is False
+    assert "referenced by" in msg_blocked
+    assert len(refs_blocked) == 1
+    assert pol_path.exists()
+
+    # Once delta is closed ('applied'), delete_spec(force=False) succeeds cleanly
+    dlt_raw = dlt_path.read_text(encoding="utf-8")
+    dlt_path.write_text(_set_frontmatter_scalar(dlt_raw, "status", "applied"), encoding="utf-8")
+    assert find_references_to_spec(eidos_dir, "POL-OLD-TEMP", pol_path) == []
+    ok_del, _msg_del, _refs_del = delete_spec(eidos_dir, "POL-OLD-TEMP", force=False)
+    assert ok_del is True
+    assert not pol_path.exists()
+
+    # 3. Promote an inline component with status: accepted and verify schema validation passes
+    cnt_path = create_spec(eidos_dir, "container", "CNT-ACC", title="Accepted Container", package_path="src/acc")
+    cnt_doc = parse_spec_file(cnt_path)
+    cnt_doc.frontmatter["components"] = [
+        {
+            "id": "CMP-ACC-WORKER",
+            "name": "Accepted Worker",
+            "status": "accepted",
+            "source_path": "src/acc/worker.py",
+            "responsibility": "Executes accepted background jobs.",
+        }
+    ]
+    from eidos.core.spec.parser import dump_spec_document
+
+    cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+    promoted_path, _ = promote_component("CMP-ACC-WORKER", eidos_dir=eidos_dir, repo_root=tmp_path)
+    val = SpecValidator()
+    promoted_doc = parse_spec_file(promoted_path)
+    val.validate_document(promoted_doc)
+    assert not promoted_doc.errors, promoted_doc.errors
+    assert promoted_doc.frontmatter["status"] == "accepted"

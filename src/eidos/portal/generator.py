@@ -1131,7 +1131,7 @@ def _generate_c4_containers_mermaid(
 
     personas_list = personas or []
     if personas_list:
-        selected_personas = personas_list[:3]
+        selected_personas = personas_list
         for p in selected_personas:
             pid = p.get("id", "PER")
             node_id = pid.replace("-", "_")
@@ -1455,6 +1455,7 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
             f"    {fallback_id}[\"<div style='padding:10px 14px;min-width:300px;max-width:420px;white-space:normal;word-break:break-word;'><b>{html.escape(clean_name)}</b><br/><i>Core Container Logic</i></div>\"]:::module"
         )
     else:
+        mod_node_by_ref: dict[str, str] = {}
         for idx, mod in enumerate(internals):
             mid = mod.get("id")
             mname = mod.get("name", f"Module {idx + 1}").replace('"', "'")
@@ -1465,17 +1466,40 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
                 '"', "'"
             )
             mod_id = f"mod_{cid.replace('-', '_')}_{idx}"
+            if isinstance(mid, str) and mid.strip():
+                mod_node_by_ref[mid.strip()] = mod_id
+            if isinstance(mname, str) and mname.strip():
+                mod_node_by_ref[mname.strip()] = mod_id
             lines.append(
                 f"    {mod_id}[\"<div style='padding:10px 14px;text-align:left;min-width:300px;max-width:420px;white-space:normal;word-break:break-word;line-height:1.45;'>"
                 f"{title_text}<br/><small style='color:#93c5fd;font-family:monospace;font-size:10px;'>{html.escape(spath)}</small><br/>"
                 f"<span style='font-size:11px;color:#cbd5e1;'>{html.escape(resp)}</span></div>\"]:::module"
             )
 
-        # Sequential flow representation among modules
-        for idx in range(len(internals) - 1):
-            curr_id = f"mod_{cid.replace('-', '_')}_{idx}"
-            next_id = f"mod_{cid.replace('-', '_')}_{idx + 1}"
-            lines.append(f"    {curr_id} -.-> {next_id}")
+        # Render explicit intra-container component dependencies when declared
+        drawn_mod_edges: set[tuple[str, str]] = set()
+        for idx, mod in enumerate(internals):
+            src_mod_id = f"mod_{cid.replace('-', '_')}_{idx}"
+            raw_deps = mod.get("dependencies")
+            dep_targets: list[str] = []
+            if isinstance(raw_deps, dict):
+                for dkey in ("internal", "internal_components", "components"):
+                    dval = raw_deps.get(dkey)
+                    if isinstance(dval, list):
+                        dep_targets.extend(
+                            str(item.get("id") or item.get("target") or "") if isinstance(item, dict) else str(item)
+                            for item in dval
+                        )
+            elif isinstance(raw_deps, list):
+                dep_targets.extend(
+                    str(item.get("id") or item.get("target") or "") if isinstance(item, dict) else str(item)
+                    for item in raw_deps
+                )
+            for tgt_ref in dep_targets:
+                tgt_mod_id = mod_node_by_ref.get(tgt_ref.strip())
+                if tgt_mod_id and tgt_mod_id != src_mod_id and (src_mod_id, tgt_mod_id) not in drawn_mod_edges:
+                    drawn_mod_edges.add((src_mod_id, tgt_mod_id))
+                    lines.append(f"    {src_mod_id} -.-> {tgt_mod_id}")
 
     lines.append("  end")
 

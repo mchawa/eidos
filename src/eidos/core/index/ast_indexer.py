@@ -573,6 +573,11 @@ class AstGrepIndexer(BaseAstIndexer):
             }
         )
 
+        class_ranges = [
+            (cname, cnode.range().start.line, cnode.range().end.line)
+            for cname, cnode in class_nodes.items()
+        ]
+
         for fk in fn_kinds:
             for m in node.find_all(kind=fk):
                 # Skip nested local helper functions defined inside another function or method
@@ -592,13 +597,17 @@ class AstGrepIndexer(BaseAstIndexer):
                 rng = m.range()
                 dec_start, dec_list = self._extract_decorator_info(m, lang)
 
-                # Determine parent class if any
+                # Determine innermost parent class if any
                 parent_cls = None
-                for cname, cnode in class_nodes.items():
-                    crng = cnode.range()
-                    if crng.start.line <= rng.start.line and crng.end.line >= rng.end.line:
-                        parent_cls = cname
-                        break
+                best_span: int | None = None
+                m_start_ln = rng.start.line
+                m_end_ln = rng.end.line
+                for cname, c_start_ln, c_end_ln in class_ranges:
+                    if c_start_ln <= m_start_ln and c_end_ln >= m_end_ln:
+                        span = c_end_ln - c_start_ln
+                        if best_span is None or span <= best_span:
+                            best_span = span
+                            parent_cls = cname
                 if parent_cls is None and fk == "method_declaration":
                     recv = m.field("receiver")
                     if recv is not None:
@@ -657,6 +666,65 @@ class AstGrepIndexer(BaseAstIndexer):
                 sym.is_boundary_export = _evaluate_boundary_export(sym, py_dunder_all=py_dunder_all)
                 symbols.append(sym)
 
+        if lang in ("typescript", "tsx", "javascript", "jsx"):
+            seen_fn_names = {s.name for s in symbols if s.kind == "function" and not s.parent_symbol}
+            fn_like_kinds = all_fn_kinds | {
+                "arrow_function",
+                "function_expression",
+                "function",
+                "generator_function",
+            }
+            for vdecl in node.find_all(kind="variable_declarator"):
+                val_node = vdecl.field("value")
+                if val_node is None or val_node.kind() not in (
+                    "arrow_function",
+                    "function_expression",
+                    "function",
+                    "generator_function",
+                ):
+                    continue
+                anc = vdecl.parent()
+                nested_in_fn_or_cls = False
+                stmt_node = vdecl
+                is_exported_decl = False
+                while anc is not None:
+                    akind = anc.kind()
+                    if akind in fn_like_kinds or akind in ("class_declaration", "class_body"):
+                        nested_in_fn_or_cls = True
+                        break
+                    if akind in ("lexical_declaration", "variable_declaration"):
+                        stmt_node = anc
+                    elif akind == "export_statement":
+                        stmt_node = anc
+                        is_exported_decl = True
+                    anc = anc.parent()
+                if nested_in_fn_or_cls:
+                    continue
+                fname = self._node_name(vdecl)
+                if not fname or fname in seen_fn_names:
+                    continue
+                seen_fn_names.add(fname)
+                rng = stmt_node.range()
+                sig = _node_header_sig(stmt_node, rng)
+                if is_exported_decl and not sig.startswith("export "):
+                    sig = f"export {sig}"
+                sym = CodeSymbol(
+                    name=fname,
+                    kind="function",
+                    file_path=rel_path,
+                    line_start=rng.start.line + 1,
+                    line_end=rng.end.line + 1,
+                    parent_symbol=None,
+                    signature=sig,
+                )
+                sym.is_public = _evaluate_symbol_visibility(
+                    sym,
+                    py_dunder_all=py_dunder_all,
+                    ts_exports=ts_exports,
+                    class_is_public=class_is_public,
+                )
+                sym.is_boundary_export = _evaluate_boundary_export(sym, py_dunder_all=py_dunder_all)
+                symbols.append(sym)
         return symbols
 
     def list_test_functions(self, file_path: Path | str, content: str | None = None) -> dict[str, str]:
@@ -881,6 +949,10 @@ class FallbackIndexer(BaseAstIndexer):
     TS_FN_REGEX = re.compile(
         r"^[ \t]*(?:export\s+)?(?:async\s+)?function\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(", re.MULTILINE
     )
+    TS_ARROW_FN_REGEX = re.compile(
+        r"^(?:export\s+)?(?:const|let|var)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)\s*(?::[^=]+)?=>|[a-zA-Z_][a-zA-Z0-9_]*\s*=>|function\b)",
+        re.MULTILINE,
+    )
     TS_CLS_REGEX = re.compile(
         r"^[ \t]*(?:export\s+)?(?:class|interface|type)\s+([a-zA-Z_][a-zA-Z0-9_]*)", re.MULTILINE
     )
@@ -1037,7 +1109,11 @@ class FallbackIndexer(BaseAstIndexer):
         # 2. Regex extraction for broken Python and secondary languages (_FALLBACK_SIGNATURE_LANGS)
         clean_content = content if suffix == ".py" else self._strip_block_comments_preserving_lines(content)
         lines = clean_content.splitlines()
-        ts_exports = _extract_ts_exported_names(clean_content) if suffix in (".vue", ".svelte") else None
+        ts_exports = (
+            _extract_ts_exported_names(clean_content)
+            if suffix in (".vue", ".svelte", ".ts", ".tsx", ".js", ".jsx")
+            else None
+        )
         rb_visibility = "public"
         for idx, line in enumerate(lines, start=1):
             stripped_line = line.strip()
@@ -1070,7 +1146,7 @@ class FallbackIndexer(BaseAstIndexer):
                     )
                     sym.is_public = _evaluate_symbol_visibility(sym)
                     symbols.append(sym)
-            elif suffix in (".vue", ".svelte"):
+            elif suffix in (".vue", ".svelte", ".ts", ".tsx", ".js", ".jsx"):
                 for m in self.TS_CLS_REGEX.finditer(line):
                     sym = CodeSymbol(
                         name=m.group(1),
@@ -1082,17 +1158,18 @@ class FallbackIndexer(BaseAstIndexer):
                     )
                     sym.is_public = _evaluate_symbol_visibility(sym, ts_exports=ts_exports)
                     symbols.append(sym)
-                for m in self.TS_FN_REGEX.finditer(line):
-                    sym = CodeSymbol(
-                        name=m.group(1),
-                        kind="function",
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym, ts_exports=ts_exports)
-                    symbols.append(sym)
+                for fn_re in (self.TS_FN_REGEX, self.TS_ARROW_FN_REGEX):
+                    for m in fn_re.finditer(line):
+                        sym = CodeSymbol(
+                            name=m.group(1),
+                            kind="function",
+                            file_path=rel_path,
+                            line_start=dec_start,
+                            line_end=idx,
+                            signature=sig,
+                        )
+                        sym.is_public = _evaluate_symbol_visibility(sym, ts_exports=ts_exports)
+                        symbols.append(sym)
                 for m in _SVELTE_PROP_RE.finditer(line):
                     sym = CodeSymbol(
                         name=m.group(1),
@@ -1553,8 +1630,11 @@ def _extract_python_dunder_all(tree: ast.Module) -> set[str] | None:
     return names if found else None
 
 
+_DUNDER_ALL_ASSIGN_RE = re.compile(r"^[ \t]*__all__\s*(?::[^=\n]+)?=", re.MULTILINE)
+
+
 def _extract_python_dunder_all_from_source(content: str) -> set[str] | None:
-    if "__all__" not in content:
+    if "__all__" not in content or not _DUNDER_ALL_ASSIGN_RE.search(content):
         return None
     try:
         return _extract_python_dunder_all(ast.parse(content))

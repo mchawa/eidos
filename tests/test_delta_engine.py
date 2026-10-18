@@ -1336,3 +1336,93 @@ def test_dlt_2026_088_default_verify_apply(tmp_path):
     )
     assert res_cli_no_verify.exit_code == 0, res_cli_no_verify.output
     assert parse_spec_file(dlt_unverified).frontmatter["status"] == "applied"
+
+
+def test_inline_component_invariant_git_baseline_and_pre_create_precedence(tmp_path):
+    """Verify Bugs 6 & 7: _resolve_git_baseline_sha finds components[].invariants on cold cache,
+    and pre-create dirty edits verify consistently with and without expect."""  # eidos:fixture
+    import subprocess
+
+    ws = tmp_path / "git_inline_inv_ws"
+    init_repository(ws, name="inline-inv-test")
+    eidos_dir = ws / "eidos"
+
+    cnt_path = create_spec(eidos_dir, "container", "CNT-API-GW", title="API Gateway", package_path="src/gw")
+    cnt_doc = parse_spec_file(cnt_path)
+    cnt_doc.frontmatter["components"] = [
+        {
+            "id": "CMP-AUTH-FILTER",
+            "name": "Auth Filter",
+            "responsibility": "Validates JWT bearer tokens.",
+            "source_path": "src/gw/auth.py",
+            "invariants": [
+                {
+                    "id": "INV-INLINE-JWT-001",
+                    "rule": "Rejects expired JWT tokens.",
+                    "test_binding": "tests/test_auth.py::test_jwt",
+                }
+            ],
+        }
+    ]
+    cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+
+    pol_a = create_spec(eidos_dir, "policy", "POL-PRE-A", title="Pre Edit Policy A", rule="Original rule A.")
+    pol_b = create_spec(eidos_dir, "policy", "POL-PRE-B", title="Pre Edit Policy B", rule="Original rule B.")
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Dev"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "baseline specs"], cwd=ws, check=True, capture_output=True)
+
+    # Edit inline component invariant AND both policies BEFORE calling create_delta
+    cnt_doc2 = parse_spec_file(cnt_path)
+    cnt_doc2.frontmatter["components"][0]["invariants"][0]["rule"] = (
+        "Rejects expired or revoked JWT tokens with 401."
+    )
+    cnt_path.write_text(dump_spec_document(cnt_doc2.frontmatter, cnt_doc2.body), encoding="utf-8")
+
+    pol_a_doc = parse_spec_file(pol_a)
+    pol_a_doc.frontmatter["rule"] = "Updated rule A before delta create."
+    pol_a.write_text(dump_spec_document(pol_a_doc.frontmatter, pol_a_doc.body), encoding="utf-8")
+
+    pol_b_doc = parse_spec_file(pol_b)
+    pol_b_doc.frontmatter["rule"] = "Updated rule B before delta create."
+    pol_b.write_text(dump_spec_document(pol_b_doc.frontmatter, pol_b_doc.body), encoding="utf-8")
+
+    # Create delta AFTER specs were already dirtied in working tree (snapshots dirty state into SQLite)
+    dlt_path = create_delta(eidos_dir, "DLT-2026-091", title="Inline Inv & Pre-Create Precedence")
+    dlt_doc = parse_spec_file(dlt_path)
+    dlt_doc.frontmatter["mutations"] = [
+        {
+            "operation": "modify",
+            "target": "INV-INLINE-JWT-001",
+            "parent": "CMP-AUTH-FILTER",
+            "details": "Tighten inline invariant rule.",
+        },
+        {
+            "operation": "modify",
+            "target": "POL-PRE-A",
+            "details": "Update POL-PRE-A without expect block.",
+        },
+        {
+            "operation": "modify",
+            "target": "POL-PRE-B",
+            "details": "Update POL-PRE-B with expect block.",
+            "expect": {"frontmatter": {"rule": "Updated rule B before delta create."}},
+        },
+    ]
+    dlt_path.write_text(dump_spec_document(dlt_doc.frontmatter, dlt_doc.body), encoding="utf-8")
+
+    # 1. Warm SQLite cache (Bug 7: both expect and non-expect mutations pass against vcs.base_commit)
+    ok_warm, msg_warm, rep_warm = verify_delta_mutations(eidos_dir, "DLT-2026-091")
+    assert ok_warm is True, msg_warm
+    assert [m.status for m in rep_warm.mutations] == ["MODIFIED", "MODIFIED", "MODIFIED"]
+
+    # 2. Cold cache in CI (delete .cache/index.db -> Bug 6: inline component invariant resolves from Git vcs.base_commit)
+    db_file = eidos_dir / ".cache" / "index.db"
+    if db_file.exists():
+        db_file.unlink()
+    ok_cold, msg_cold, rep_cold = verify_delta_mutations(eidos_dir, "DLT-2026-091")
+    assert ok_cold is True, msg_cold
+    assert [m.status for m in rep_cold.mutations] == ["MODIFIED", "MODIFIED", "MODIFIED"]

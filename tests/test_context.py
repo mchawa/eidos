@@ -575,3 +575,24 @@ def test_progressive_compression_stages_and_inline_component_context(tmp_path):
     assert matches_owned_paths("src/core/app.py", ["src/core/**"])[0] is True
     assert matches_owned_paths("other/app.py", ["src/core/**"])[0] is False
 
+
+def test_file_slice_compacts_before_eviction_and_respects_all_tier_budgets() -> None:  # eidos:fixture
+    """Verify B1 (INV-AGENT-CONTEXT-SLICING): slicing a dogfooded file with verbose container/component prose
+    compresses prose before evicting 1-hop capabilities/invariants, prioritizes capabilities binding the matched
+    inline component (CAP-AGENT-002 -> CMP-AST-SYMBOL-INDEXER), and stays within anchor/guardrails/deep budgets
+    in both Markdown and JSON."""
+    for tier, budget in [("anchor", 300), ("guardrails", 1000), ("deep", 2500)]:
+        sl = get_context_slice(files=["src/eidos/core/index/ast_indexer.py"], tier=tier)
+        md = sl.to_markdown()
+        js = sl.to_json()
+        assert sl.token_estimate <= budget, f"{tier} token_estimate={sl.token_estimate} > {budget}"
+        assert len(md) // 4 <= budget, f"{tier} markdown tokens={len(md) // 4} > {budget}"
+        assert len(js) // 4 <= budget, f"{tier} json tokens={len(js) // 4} > {budget}"
+
+        if tier in ("guardrails", "deep"):
+            cap_ids = [c["id"] for c in sl.capabilities]
+            inv_ids = [i["id"] for i in sl.invariants]
+            assert "CAP-AGENT-002" in cap_ids
+            assert any("INDEX" in iid for iid in inv_ids)
+
+

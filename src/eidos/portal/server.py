@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from eidos.core.spec.validator import SpecValidator
-from eidos.portal.assets import PORTAL_FAVICON_SVG, PORTAL_HTML_TEMPLATE
+from eidos.portal.assets import get_portal_favicon_svg, get_portal_html_template
 from eidos.portal.generator import get_portal_data
 
 logger = logging.getLogger("eidos.portal")
@@ -86,9 +86,9 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
         path = parsed_url.path
 
         if path in ("/", "/index.html"):
-            self._send_html(PORTAL_HTML_TEMPLATE)
+            self._send_html(get_portal_html_template())
         elif path in ("/favicon.svg", "/favicon.ico"):
-            self._send_svg(PORTAL_FAVICON_SVG)
+            self._send_svg(get_portal_favicon_svg())
         elif path == "/api/data":
             data = self._get_cached_portal_data()
             self._send_json(data)

@@ -387,3 +387,63 @@ def test_dlt_2026_087_changelog_composable_operations(tmp_path):
     assert any("DLT-2026-104" in x for x in sec.removed)
 
 
+def test_changelog_preserves_historical_release_on_delta_reformat_and_resolves_remote_url(tmp_path):
+    """Verify Bug 12: formatting edits to old deltas after a tag do not move them to [Unreleased],
+    and repo_url dynamically resolves from git remote origin."""
+    import subprocess
+
+    repo = tmp_path / "changelog_git_ws"
+    eidos_dir = repo / "eidos"
+    deltas_dir = eidos_dir / "deltas"
+    deltas_dir.mkdir(parents=True)
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Dev"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "git@github.com:acme-org/acme-service.git"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+    dlt_file = deltas_dir / "dlt-2026-001.adoc"
+    dlt_file.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-001\n"
+        "title: Initial Release Feature\n"
+        "status: applied\n"
+        "intent:\n"
+        "  kind: feature\n"
+        "  motivation: Deliver v0.1.0 capability.\n"
+        "mutations:\n"
+        "  - operation: add\n"
+        "    target: CAP-V1-001\n"
+        "---\n"
+        "= Initial Release Feature\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "feat: apply DLT-2026-001"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "tag", "v0.1.0"], cwd=repo, check=True, capture_output=True)
+
+    # Later commit after v0.1.0 touches dlt-2026-001.adoc (e.g., formatting/comment cleanup)
+    dlt_file.write_text(
+        dlt_file.read_text(encoding="utf-8") + "\n// Formatting touch after v0.1.0 release\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "chore: format delta docs"], cwd=repo, check=True, capture_output=True)
+
+    gen = ChangelogGenerator(repo_root=repo, eidos_dir=eidos_dir)
+    assert gen.repo_url == "https://github.com/acme-org/acme-service"
+
+    tags = gen.get_git_tags()
+    deltas = gen.get_applied_deltas()
+    assert len(deltas) == 1
+    assert gen._resolve_delta_release(deltas[0]["commit"], tags) == "v0.1.0"
+
+    md = gen.generate_changelog(include_unreleased=True)
+    assert "## [0.1.0]" in md
+    assert "DLT-2026-001" in md.split("## [0.1.0]", 1)[1]

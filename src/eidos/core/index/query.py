@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from pathlib import Path
 from typing import Any
 
 from eidos.core.index.ast_indexer import CodeSymbol, get_ast_indexer
@@ -277,6 +278,23 @@ def execute_fts_query(
         return []
 
 
+def _resolve_inline_component_node(
+    node_id: str,
+    row_type: str,
+    row_title: str,
+    row_data_json: str,
+) -> tuple[str, dict[str, Any]]:
+    """Extract inline component title and dict when node_id is an inline CMP-* resolved via its parent container."""
+    data = json.loads(row_data_json) if row_data_json else {}
+    if row_type == "tech/component" and isinstance(data, dict) and data.get("id") != node_id:
+        for comp in (data.get("components") or data.get("c4_internal_components") or []):
+            if isinstance(comp, dict) and comp.get("id") == node_id:
+                c_copy = dict(comp)
+                c_copy.setdefault("container", data.get("id", ""))
+                return str(comp.get("name") or node_id), c_copy
+    return row_title, data
+
+
 def execute_k_hop_traversal(
     conn: sqlite3.Connection,
     entity_id: str,
@@ -286,7 +304,17 @@ def execute_k_hop_traversal(
     cursor = conn.cursor()
     cursor.execute(
         """
-        WITH RECURSIVE graph_walk(node_id, depth, path) AS (
+        WITH RECURSIVE
+        all_nodes(id, type, title, domain, file_path, data_json) AS (
+            SELECT id, type, title, domain, file_path, data_json FROM entities
+            UNION ALL
+            SELECT s.symbol, 'tech/component', s.symbol, e.domain, e.file_path, e.data_json
+            FROM symbol_mappings s
+            JOIN entities e ON e.id = s.entity_id
+            WHERE s.kind = 'component_id'
+              AND s.symbol NOT IN (SELECT id FROM entities)
+        ),
+        graph_walk(node_id, depth, path) AS (
             SELECT ?, 0, ?
             UNION
             SELECT
@@ -295,7 +323,7 @@ def execute_k_hop_traversal(
                 gw.path || '->' || CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END
             FROM edges e
             JOIN graph_walk gw ON (e.source_id = gw.node_id OR e.target_id = gw.node_id)
-            JOIN entities cur_ent ON cur_ent.id = gw.node_id
+            JOIN all_nodes cur_ent ON cur_ent.id = gw.node_id
             WHERE gw.depth < ?
               AND (gw.depth = 0 OR cur_ent.type NOT IN ('product/domain', 'design/system', 'delta/mutation'))
               AND CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END NOT LIKE 'DLT-%'
@@ -303,7 +331,7 @@ def execute_k_hop_traversal(
         )
         SELECT gw.node_id, MIN(gw.depth) AS depth, ent.type, ent.title, ent.domain, ent.file_path, ent.data_json
         FROM graph_walk gw
-        JOIN entities ent ON ent.id = gw.node_id
+        JOIN all_nodes ent ON ent.id = gw.node_id
         GROUP BY gw.node_id
         ORDER BY depth ASC, gw.node_id ASC;
         """,
@@ -312,15 +340,18 @@ def execute_k_hop_traversal(
 
     results = []
     for row in cursor.fetchall():
+        title, data = _resolve_inline_component_node(
+            row["node_id"], row["type"], row["title"], row["data_json"]
+        )
         results.append(
             {
                 "id": row["node_id"],
                 "depth": row["depth"],
                 "type": row["type"],
-                "title": row["title"],
+                "title": title,
                 "domain": row["domain"],
                 "file_path": row["file_path"],
-                "data": json.loads(row["data_json"]),
+                "data": data,
             }
         )
     return results
@@ -340,9 +371,18 @@ def execute_incoming_references(
         target = row["doc_id"]
     rows = conn.execute(
         """
+        WITH all_nodes(id, type, title, file_path) AS (
+            SELECT id, type, title, file_path FROM entities
+            UNION ALL
+            SELECT s.symbol, 'tech/component', s.symbol, e.file_path
+            FROM symbol_mappings s
+            JOIN entities e ON e.id = s.entity_id
+            WHERE s.kind = 'component_id'
+              AND s.symbol NOT IN (SELECT id FROM entities)
+        )
         SELECT e.source_id, e.rel_type, ent.type, ent.title, ent.file_path
         FROM edges e
-        JOIN entities ent ON ent.id = e.source_id
+        JOIN all_nodes ent ON ent.id = e.source_id
         WHERE e.target_id = ?
         ORDER BY ent.type, e.source_id;
         """,
@@ -360,6 +400,42 @@ def execute_incoming_references(
     ]
 
 
+_FILE_QUERY_EXTS = frozenset(
+    {
+        ".py",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".go",
+        ".rs",
+        ".java",
+        ".kt",
+        ".kts",
+        ".rb",
+        ".cs",
+        ".swift",
+        ".c",
+        ".h",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".hpp",
+        ".hxx",
+        ".adoc",
+        ".yaml",
+        ".yml",
+        ".json",
+        ".toml",
+        ".md",
+        ".sh",
+        ".sql",
+        ".html",
+        ".css",
+    }
+)
+
+
 def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[dict[str, Any]]:
     """Find entity IDs matching source path or symbol."""
     cursor = conn.cursor()
@@ -368,40 +444,74 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
     while clean.startswith("./"):
         clean = clean[2:]
 
-    esc_sym = "replace(replace(replace(s.symbol, '\\', '\\\\'), '%', '\\%'), '_', '\\_')"
-    cursor.execute(
-        f"""
-        SELECT s.symbol, s.entity_id, s.kind, e.type, e.title, e.file_path, e.data_json
-        FROM symbol_mappings s
-        JOIN entities e ON e.id = s.entity_id
-        WHERE s.symbol = ?
-           OR (? LIKE {esc_sym} || '/%' ESCAPE '\\' AND s.kind IN ('package_path', 'inferred_path'))
-           OR ((? LIKE '%/' || {esc_sym} ESCAPE '\\' OR ? LIKE '%.' || {esc_sym} ESCAPE '\\' OR ? LIKE '%::' || {esc_sym} ESCAPE '\\')
-               AND s.kind IN ('source_path', 'inferred_path', 'specification_file', 'component_ref', 'interface_method', 'class', 'function', 'method', 'interface', 'struct', 'enum'))
-           OR (? LIKE {esc_sym} || '%' ESCAPE '\\' AND s.kind = 'test_binding')
-        ORDER BY CASE WHEN s.symbol = ? THEN 0 ELSE 1 END, length(s.symbol) DESC, s.entity_id ASC
-        LIMIT 25;
-        """,
-        (clean, clean, clean, clean, clean, clean, clean),
+    is_file_query = "::" not in clean and (
+        "/" in clean or Path(clean).suffix.lower() in _FILE_QUERY_EXTS
     )
 
-    results = []
-    seen_entities: set[str] = set()
-    for row in cursor.fetchall():
-        seen_entities.add(row["entity_id"])
-        results.append(
-            {
-                "symbol": row["symbol"],
-                "entity_id": row["entity_id"],
-                "kind": row["kind"],
-                "type": row["type"],
-                "title": row["title"],
-                "file_path": row["file_path"],
-                "data": json.loads(row["data_json"]),
-            }
+    esc_sym = "replace(replace(replace(s.symbol, '\\', '\\\\'), '%', '\\%'), '_', '\\_')"
+    if is_file_query:
+        cursor.execute(
+            f"""
+            SELECT s.symbol, s.entity_id, s.kind, e.type, e.title, e.file_path, e.data_json
+            FROM symbol_mappings s
+            JOIN entities e ON e.id = s.entity_id
+            WHERE s.symbol = ?
+               OR (? LIKE {esc_sym} || '/%' ESCAPE '\\' AND s.kind IN ('package_path', 'inferred_path'))
+               OR (? LIKE '%/' || {esc_sym} ESCAPE '\\' AND s.kind IN ('source_path', 'inferred_path', 'specification_file', 'component_ref'))
+               OR (? LIKE {esc_sym} || '%' ESCAPE '\\' AND s.kind = 'test_binding')
+            ORDER BY CASE WHEN s.symbol = ? THEN 0 ELSE 1 END, length(s.symbol) DESC, s.entity_id ASC
+            LIMIT 25;
+            """,
+            (clean, clean, clean, clean, clean),
+        )
+    else:
+        cursor.execute(
+            f"""
+            SELECT s.symbol, s.entity_id, s.kind, e.type, e.title, e.file_path, e.data_json
+            FROM symbol_mappings s
+            JOIN entities e ON e.id = s.entity_id
+            WHERE s.symbol = ?
+               OR (? LIKE {esc_sym} || '/%' ESCAPE '\\' AND s.kind IN ('package_path', 'inferred_path'))
+               OR (? LIKE '%/' || {esc_sym} ESCAPE '\\' AND s.kind IN ('source_path', 'inferred_path', 'specification_file', 'component_ref'))
+               OR ((? LIKE '%.' || {esc_sym} ESCAPE '\\' OR ? LIKE '%::' || {esc_sym} ESCAPE '\\')
+                   AND s.kind IN ('interface_method', 'class', 'function', 'method', 'interface', 'struct', 'enum'))
+               OR (? LIKE {esc_sym} || '%' ESCAPE '\\' AND s.kind = 'test_binding')
+            ORDER BY CASE WHEN s.symbol = ? THEN 0 ELSE 1 END, length(s.symbol) DESC, s.entity_id ASC
+            LIMIT 25;
+            """,
+            (clean, clean, clean, clean, clean, clean, clean),
         )
 
-    # Also check owned_path and inferred_path glob patterns if query looks like a file path
+    raw_rows = cursor.fetchall()
+    pkg_prefix_lengths = [
+        len(str(r["symbol"]).rstrip("/"))
+        for r in raw_rows
+        if r["kind"] in ("package_path", "inferred_path") and r["symbol"] != clean
+    ]
+    max_pkg_prefix_len = max(pkg_prefix_lengths) if pkg_prefix_lengths else 0
+
+    exact_or_direct: list[dict[str, Any]] = []
+    pkg_prefix_items: list[tuple[int, dict[str, Any]]] = []
+    for row in raw_rows:
+        item = {
+            "symbol": row["symbol"],
+            "entity_id": row["entity_id"],
+            "kind": row["kind"],
+            "type": row["type"],
+            "title": row["title"],
+            "file_path": row["file_path"],
+            "data": json.loads(row["data_json"]),
+        }
+        if row["kind"] in ("package_path", "inferred_path") and row["symbol"] != clean:
+            sym_len = len(str(row["symbol"]).rstrip("/"))
+            if sym_len < max_pkg_prefix_len:
+                continue
+            pkg_score = match_path_pattern(clean, f"{str(row['symbol']).rstrip('/')}/**")
+            pkg_prefix_items.append((pkg_score, item))
+        else:
+            exact_or_direct.append(item)
+
+    glob_scored_matches: list[tuple[int, dict[str, Any]]] = []
     if "/" in clean or "." in clean:
         cursor.execute(
             """
@@ -411,13 +521,10 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
             WHERE s.kind IN ('owned_path', 'inferred_path');
             """
         )
-        scored_matches: list[tuple[int, dict[str, Any]]] = []
         for row in cursor.fetchall():
-            if row["entity_id"] in seen_entities:
-                continue
             score = match_path_pattern(clean, row["symbol"])
             if score > 0:
-                scored_matches.append(
+                glob_scored_matches.append(
                     (
                         score,
                         {
@@ -431,11 +538,34 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
                         },
                     )
                 )
-        scored_matches.sort(key=lambda item: (-item[0], item[1]["entity_id"]))
-        for _, item in scored_matches:
-            if item["entity_id"] not in seen_entities:
-                seen_entities.add(item["entity_id"])
-                results.append(item)
+
+    combined_pattern_matches = pkg_prefix_items + glob_scored_matches
+    if combined_pattern_matches:
+        max_pat_score = max(s for s, _ in combined_pattern_matches)
+        max_dir_score = max((s for s, _ in combined_pattern_matches if 500 <= s < 1000), default=0)
+        # Keep only matches at the highest pattern specificity tier when package_path/owned_path compete
+        combined_pattern_matches.sort(
+            key=lambda entry: (
+                -entry[0],
+                0 if entry[1]["type"] == "tech/component" else 1,
+                -len(str(entry[1]["symbol"])),
+                entry[1]["entity_id"],
+            )
+        )
+        filtered_pattern_items = [
+            item
+            for score, item in combined_pattern_matches
+            if (score >= max_dir_score if 500 <= score < 1000 else (score >= max_pat_score or item["kind"] != "package_path"))
+        ]
+    else:
+        filtered_pattern_items = []
+
+    results: list[dict[str, Any]] = []
+    seen_entities: set[str] = set()
+    for item in exact_or_direct + filtered_pattern_items:
+        if item["entity_id"] not in seen_entities:
+            seen_entities.add(item["entity_id"])
+            results.append(item)
 
     return results
 

@@ -2752,13 +2752,13 @@ def test_dlt_2026_085_mutations_target_ref_validation_and_schema_rejection(tmp_p
 def test_dlt_2026_086_fault_tolerant_frontmatter_model_and_cache_isolation(
     tmp_path: Path, validator: SpecValidator
 ) -> None:
-    """DLT-2026-086: FrontmatterModel gracefully coerces incomplete/malformed nested fields
+    """DLT-2026-086 (# eidos:fixture): FrontmatterModel gracefully coerces incomplete/malformed nested fields
     (null technical block, shorthand invariant strings, legacy c4_internal_components, non-dict decisions)
     without raising pydantic.ValidationError, and get_cached_spec_document isolates post-parse errors."""
     from eidos.core.index.storage import get_cached_spec_document
     from eidos.core.spec.models import FrontmatterModel
 
-    # 1. Fault-tolerant FrontmatterModel coercion on malformed/partial dicts (# eidos:fixture)
+    # 1. Fault-tolerant FrontmatterModel coercion on malformed/partial dicts
     fm = FrontmatterModel.model_validate(
         {
             "type": "tech/container",
@@ -2964,5 +2964,187 @@ def test_ast_backed_polyglot_test_symbol_exists_rejects_comments_and_strings(tmp
     assert SpecValidator._test_symbol_exists(rs_file, ["fake_commented_rust_test"]) is False
     assert SpecValidator._test_symbol_exists(rs_file, ["fake_string_rust_test"]) is False
     assert SpecValidator._test_symbol_exists(rs_file, ["real_tokio_async_test"]) is True
+
+
+def test_warm_cache_idempotence_duplicate_ids_and_non_src_repo_validation(
+    tmp_path: Path, validator: SpecValidator
+) -> None:
+    """Verify Bugs 1, 8, 9 & status enums: warm-cache idempotence, duplicate CMP/INV IDs, and non-src Go repo path validation."""  # eidos:fixture
+    # 1. Bug 1 & Bug 8: Warm-cache idempotence for architectural invariants, applied deltas, and duplicate CMP-*/INV-* IDs
+    ws1 = tmp_path / "ws_cache_and_dups"
+    eidos1 = ws1 / "eidos"
+    (eidos1 / "architecture" / "containers").mkdir(parents=True)
+    (eidos1 / "architecture" / "components").mkdir(parents=True)
+    (eidos1 / "architecture" / "contracts").mkdir(parents=True)
+    (eidos1 / "domains" / "core" / "capabilities").mkdir(parents=True)
+    (eidos1 / "policies").mkdir(parents=True)
+    (eidos1 / "deltas").mkdir(parents=True)
+
+    # Valid domain, capability (status: sunset), policy (status: removed), and promoted component (status: accepted)
+    (eidos1 / "domains" / "core" / "domain.adoc").write_text(
+        "---\ntype: product/domain\nschema: schemas/v1/product/domain.schema.yaml\nid: DOM-CORE\nname: Core\nstatus: active\n---\n= Core\n",
+        encoding="utf-8",
+    )
+    (eidos1 / "domains" / "core" / "capabilities" / "cap.adoc").write_text(
+        "---\ntype: product/capability\nschema: schemas/v1/product/capability.schema.yaml\nid: CAP-SUNSET-001\ntitle: Sunset Cap\ndomain: DOM-CORE\nstatus: sunset\nbusiness:\n  personas: []\n  jtbd: When sunsetting, I want valid status so validation passes.\ntechnical:\n  containers:\n    - CNT-A\n  invariants: []\n---\n= Sunset Cap\n",
+        encoding="utf-8",
+    )
+    (eidos1 / "policies" / "pol.adoc").write_text(
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-REMOVED-001\ntitle: Removed Pol\ncategory: security\nstatus: removed\nrule: Old rule.\nenforcement:\n  mechanism: pytest\n  severity: blocking\n---\n= Removed Pol\n",
+        encoding="utf-8",
+    )
+    (eidos1 / "architecture" / "components" / "accepted-comp.adoc").write_text(
+        "---\ntype: tech/component\nschema: schemas/v1/tech/component.schema.yaml\nid: CMP-ACCEPTED-001\nname: Accepted Comp\ncontainer: CNT-A\nstatus: accepted\nsource_path: src/a\nresponsibility: Accepted component.\n---\n= Accepted Comp\n",
+        encoding="utf-8",
+    )
+
+    # Two containers declaring duplicate inline CMP-DUP-001 and duplicate INV-DUP-001
+    (eidos1 / "architecture" / "containers" / "cnt-a.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-A\n"
+        "name: Container A\n"
+        "container_type: service\n"
+        "runtime: Python\n"
+        "components:\n"
+        "  - id: CMP-DUP-001\n"
+        "    name: Dup One\n"
+        "    responsibility: First duplicate.\n"
+        "invariants:\n"
+        "  - id: INV-DUP-001\n"
+        "    rule: First duplicate invariant.\n"
+        "    test_binding: tests/test_a.py::test_one\n"
+        "---\n= Container A\n",
+        encoding="utf-8",
+    )
+    (eidos1 / "architecture" / "containers" / "cnt-b.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-B\n"
+        "name: Container B\n"
+        "container_type: service\n"
+        "runtime: Python\n"
+        "components:\n"
+        "  - id: CMP-DUP-001\n"
+        "    name: Dup Two\n"
+        "    responsibility: Second duplicate.\n"
+        "invariants:\n"
+        "  - id: INV-DUP-001\n"
+        "    rule: Second duplicate invariant.\n"
+        "    test_binding: tests/test_b.py::test_two\n"
+        "---\n= Container B\n",
+        encoding="utf-8",
+    )
+
+    # Contract with forbidden CMP-* owning_container
+    (eidos1 / "architecture" / "contracts" / "bad-ctr.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-BAD-OWNER\n"
+        "title: Bad Owner Contract\n"
+        "owning_container: CMP-DUP-001\n"
+        "protocol: http\n"
+        "specification_file: src/api.py\n"
+        "---\n= Bad Owner Contract\n",
+        encoding="utf-8",
+    )
+
+    # Applied delta with architectural invariant error (deprecate on CNT-A) and broken reference (CMP-MISSING-999)
+    (eidos1 / "deltas" / "dlt-2026-901.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-901\n"
+        "title: Broken Applied Delta\n"
+        "status: applied\n"
+        "intent:\n"
+        "  kind: refactor\n"
+        "  motivation: Test warm cache idempotence.\n"
+        "mutations:\n"
+        "  - operation: deprecate\n"
+        "    target: CNT-A\n"
+        "  - operation: modify\n"
+        "    target: CMP-MISSING-999\n"
+        "    parent: CNT-A\n"
+        "---\n= Broken Applied Delta\n",
+        encoding="utf-8",
+    )
+
+    rep_cold = validator.validate_directory(eidos1)
+    rep_warm = validator.validate_directory(eidos1)
+    assert not rep_cold.is_clean
+    assert not rep_warm.is_clean
+    assert rep_cold.schema_errors == rep_warm.schema_errors
+    assert set(rep_cold.broken_references) == set(rep_warm.broken_references)
+
+    # Verify status enum alignment produced zero schema errors on capability, policy, and component
+    for clean_key in ("cap.adoc", "pol.adoc", "accepted-comp.adoc"):
+        assert not any(k.endswith(clean_key) for k in rep_cold.schema_errors), rep_cold.schema_errors
+
+    # Verify architectural invariant errors persisted across warm cache
+    all_schema_errs = "\n".join(e for errs in rep_warm.schema_errors.values() for e in errs)
+    assert "Boundary Protocol Contracts (CTR-*) must be owned by a Container (CNT-*)" in all_schema_errs
+    assert "operation 'deprecate' is only supported for CAP-* and POL-*" in all_schema_errs
+
+    # Verify duplicate CMP-* and INV-* IDs and invalid contract owner are flagged on warm cache
+    broken_joined = "\n".join(rep_warm.broken_references)
+    assert "Duplicate entity ID 'CMP-DUP-001'" in broken_joined
+    assert "Duplicate entity ID 'INV-DUP-001'" in broken_joined
+    assert "owning_container must start with CNT-" in broken_joined
+
+    # 2. Bug 9: Non-src/ non-tests/ Go repository where declared package_path and test_binding are broken
+    go_ws = tmp_path / "go_flat_repo"
+    go_eidos = go_ws / "eidos"
+    (go_eidos / "architecture" / "containers").mkdir(parents=True)
+    (go_ws / "pkg" / "server").mkdir(parents=True)
+    (go_ws / "go.mod").write_text("module example.com/app\n\ngo 1.22\n", encoding="utf-8")
+    (go_ws / "pkg" / "server" / "server.go").write_text("package server\n\nfunc Run() {}\n", encoding="utf-8")
+    (go_ws / "pkg" / "server" / "server_test.go").write_text(
+        'package server\n\nimport "testing"\n\nfunc TestExisting(t *testing.T) {}\n',
+        encoding="utf-8",
+    )
+    (go_eidos / "architecture" / "containers" / "go-svc.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-GO-SVC\n"
+        "name: Go Server\n"
+        "container_type: service\n"
+        "runtime: Go 1.22\n"
+        "package_path: pkg/nonexistent_dir\n"
+        "invariants:\n"
+        "  - id: INV-GO-BROKEN-BINDING\n"
+        "    rule: Must bind to an existing Go test.\n"
+        "    test_binding: pkg/server/server_test.go::TestDoesNotExist\n"
+        "---\n= Go Server\n",
+        encoding="utf-8",
+    )
+
+    rep_go = validator.validate_directory(go_eidos)
+    go_broken = "\n".join(rep_go.broken_references)
+    assert "pkg/nonexistent_dir" in go_broken
+    assert "TestDoesNotExist" in go_broken
+
+
+def test_validator_class_qualified_test_binding_and_nested_scope(tmp_path: Path) -> None:
+    """Verify B2: SpecValidator._test_symbol_exists scopes class methods to their immediate class body
+    while still allowing unqualified test_binding (file.py::test_foo) to match a class method."""
+    py_file = tmp_path / "test_scoped.py"
+    py_file.write_text(
+        "class OuterSuite:\n"
+        "    def test_outer_only(self):\n"
+        "        pass\n"
+        "    class InnerHelper:\n"
+        "        def test_inner_only(self):\n"
+        "            pass\n",
+        encoding="utf-8",
+    )
+
+    assert SpecValidator._test_symbol_exists(py_file, ["OuterSuite", "test_outer_only"]) is True
+    assert SpecValidator._test_symbol_exists(py_file, ["WrongSuite", "test_outer_only"]) is False
+    assert SpecValidator._test_symbol_exists(py_file, ["test_outer_only"]) is True
+    # InnerHelper's method must not be attributed directly to OuterSuite
+    assert SpecValidator._test_symbol_exists(py_file, ["OuterSuite", "test_inner_only"]) is False
+    assert SpecValidator._test_symbol_exists(py_file, ["InnerHelper", "test_inner_only"]) is True
+
 
 

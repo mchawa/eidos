@@ -2393,3 +2393,28 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     finally:
         os.environ.pop("EIDOS_STOP_GATE_TTL_SECONDS", None)
 
+
+def test_target_adapter_manifest_includes_post_install_hook_files(tmp_path):
+    """Verify Bug 16: TargetAdapter.install writes .eidos-manifest.json after post_install_hook and skills_subdir copies."""
+    from eidos.plugin.installer import MANIFEST_FILENAME, PluginInstallTarget, TargetAdapter, locate_plugin_bundle
+
+    def _custom_post_hook(root: Path, _source_dir: Path, _force: bool, _launcher: str) -> list[Path]:
+        extra_file = root / ".agents" / "plugins" / "eidos" / "post_hook_generated.json"
+        extra_file.parent.mkdir(parents=True, exist_ok=True)
+        extra_file.write_text('{"generated_by": "post_install_hook"}\n', encoding="utf-8")
+        return [extra_file]
+
+    adapter = TargetAdapter(
+        target=PluginInstallTarget.PROJECT,
+        name="custom-project",
+        plugin_subdir=".agents/plugins/eidos",
+        post_install_hook=_custom_post_hook,
+    )
+    res = adapter.install(tmp_path, locate_plugin_bundle(), force=True)
+    assert res.success is True
+
+    manifest_path = tmp_path / ".agents" / "plugins" / "eidos" / MANIFEST_FILENAME
+    assert manifest_path.exists()
+    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert "post_hook_generated.json" in manifest_data["files"]
+

@@ -128,7 +128,7 @@ def _resolve_base_ref(repo: Path, base_ref: str | None = None) -> str | None:
         )
         if check.returncode == 0:
             cand_sha = _stdout_str(check)
-            if candidate in ("main", "master") and head_sha and cand_sha == head_sha:
+            if candidate in ("origin/main", "main", "origin/master", "master") and head_sha and cand_sha == head_sha:
                 prev_check = subprocess.run(
                     ["git", "rev-parse", "--verify", "HEAD~1"],
                     cwd=repo,
@@ -216,7 +216,7 @@ def _resolve_base_and_merge_base(
         )
         if check.returncode == 0:
             cand_sha = _stdout_str(check)
-            if rem_cand in ("main", "master") and head_sha and cand_sha == head_sha:
+            if rem_cand in ("origin/main", "main", "origin/master", "master") and head_sha and cand_sha == head_sha:
                 prev_check = subprocess.run(
                     ["git", "rev-parse", "--verify", "HEAD~1"],
                     cwd=repo,

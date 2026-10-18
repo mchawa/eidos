@@ -34,7 +34,9 @@ properties:
       - planned
       - active
       - deprecated
+      - sunset
       - retired
+      - removed
     description: "Optional lifecycle state of the policy specification."
   category:
     type: string

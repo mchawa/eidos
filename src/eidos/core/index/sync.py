@@ -16,11 +16,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from eidos.core.index.ast_indexer import get_ast_indexer
+from eidos.core.index.ast_indexer import AstGrepIndexer, get_ast_indexer
 from eidos.core.index.storage import get_cached_spec_document
 from eidos.core.workspace.project import extract_entity_paths, match_path_pattern
 
-_CODE_EXTS = frozenset({".py", ".ts", ".tsx", ".go", ".rs", ".js", ".jsx", ".java", ".kt", ".kts"})
+_CODE_EXTS = frozenset(AstGrepIndexer.LANGUAGE_MAP.keys())
 
 _EXCLUDED_CODE_DIRS = frozenset(
     {
@@ -807,7 +807,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                 if not isinstance(comp_entry, dict):
                     continue
                 cid = comp_entry.get("id")
-                if comp_entry.get("ref") and cid:
+                if cid:
                     conn.execute(
                         "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);",
                         (doc_id, cid),
@@ -1015,6 +1015,11 @@ def _reconcile_invariant_coverage(
                             "INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);",
                             (iid, target_ref),
                         )
+                if tb_verified and tb_file:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
+                        (tb_file, iid),
+                    )
                 matching = list(dict.fromkeys([target_ref, *ast_matches])) if tb_verified else []
                 has_coverage = tb_verified
             else:
@@ -1028,6 +1033,11 @@ def _reconcile_invariant_coverage(
                             test_content_cache[tb_file] = ""
                     pat = re.compile(rf"\b{re.escape(iid)}\b")
                     tb_verified = bool(pat.search(test_content_cache[tb_file]))
+                if tb_verified and tb_file:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
+                        (tb_file, iid),
+                    )
                 matching = list(dict.fromkeys([tb_file, *ast_matches])) if tb_verified else []
                 has_coverage = tb_verified
         else:
@@ -1094,15 +1104,17 @@ def sync_index(
                 specs_deleted = True
                 index._delete_spec_fts_rows(conn, doc_id, d_rel)
                 conn.execute(
+                    "DELETE FROM edges WHERE source_id = ? OR target_id = ? "
+                    "OR source_id IN (SELECT id FROM entities WHERE file_path = ? AND type = 'invariant') "
+                    "OR target_id IN (SELECT id FROM entities WHERE file_path = ? AND type = 'invariant') "
+                    "OR source_id IN (SELECT symbol FROM symbol_mappings WHERE entity_id = ? AND kind = 'component_id') "
+                    "OR target_id IN (SELECT symbol FROM symbol_mappings WHERE entity_id = ? AND kind = 'component_id')",
+                    (doc_id, doc_id, d_rel, d_rel, doc_id, doc_id),
+                )
+                conn.execute(
                     "DELETE FROM symbol_mappings WHERE entity_id = ? OR entity_id IN "
                     "(SELECT id FROM entities WHERE file_path = ? AND type = 'invariant')",
                     (doc_id, d_rel),
-                )
-                conn.execute(
-                    "DELETE FROM edges WHERE source_id = ? OR target_id = ? "
-                    "OR source_id IN (SELECT id FROM entities WHERE file_path = ? AND type = 'invariant') "
-                    "OR target_id IN (SELECT id FROM entities WHERE file_path = ? AND type = 'invariant')",
-                    (doc_id, doc_id, d_rel, d_rel),
                 )
                 conn.execute(
                     "DELETE FROM entities WHERE id = ? OR (file_path = ? AND type = 'invariant')",
@@ -1270,16 +1282,21 @@ def sync_index(
                 ifaces = fm.get("interfaces", {})
                 if isinstance(ifaces, dict):
                     for prov in ifaces.get("provides", []):
-                        if isinstance(prov, dict) and prov.get("signature"):
-                            sig = prov["signature"]
+                        sig = (
+                            prov.get("signature", "")
+                            if isinstance(prov, dict)
+                            else (prov if isinstance(prov, str) else "")
+                        )
+                        if isinstance(sig, str) and sig.strip():
                             meth = sig.split("(")[0].strip()
-                            conn.execute(
-                                "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_method');",
-                                (meth, doc_id),
-                            )
+                            if meth:
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_method');",
+                                    (meth, doc_id),
+                                )
                             conn.execute(
                                 "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_signature');",
-                                (sig, doc_id),
+                                (sig.strip(), doc_id),
                             )
 
             if doc_type == "tech/container":
@@ -1432,8 +1449,13 @@ def sync_index(
             )
             if doc_type == "tech/component" and isinstance(fm.get("interfaces"), dict):
                 for sig in (fm["interfaces"].get("provides") or []) + (fm["interfaces"].get("consumes") or []):
-                    if isinstance(sig, str) and sig.strip():
-                        symbol_parts.append(sig.split("(")[0].strip())
+                    sig_str = (
+                        sig.get("signature", "")
+                        if isinstance(sig, dict)
+                        else (sig if isinstance(sig, str) else "")
+                    )
+                    if isinstance(sig_str, str) and sig_str.strip():
+                        symbol_parts.append(sig_str.split("(")[0].strip())
             symbols = " ".join(symbol_parts)
             decompounded = compound_identifier_subtokens(
                 f"{title or ''} {jtbd_or_rule or ''} {body_clean} {symbols}"
@@ -1551,7 +1573,60 @@ def sync_index(
             index._reconcile_code_ownership(conn, ast_idx, resolver, processed_code)
 
         if force or spec_updates or specs_deleted or processed_code or code_deleted:
-            _project_ast_code_symbols_into_fts(conn)
+            fts_target_ids: set[str] | None = None
+            if not (force or specs_deleted or code_deleted or any_doc_id_renamed):
+                fts_target_ids = set(updated_spec_doc_ids)
+                if processed_code:
+                    ph_code = ",".join("?" for _ in processed_code)
+                    for (owner_id,) in conn.execute(
+                        f"SELECT DISTINCT entity_id FROM code_symbols WHERE file_path IN ({ph_code});",
+                        tuple(processed_code),
+                    ).fetchall():
+                        if owner_id:
+                            fts_target_ids.add(owner_id)
+                if any(
+                    conn.execute(
+                        "SELECT 1 FROM entities WHERE id = ? AND type IN ('tech/container', 'tech/component');",
+                        (uid,),
+                    ).fetchone()
+                    for uid in updated_spec_doc_ids
+                ):
+                    for (cid,) in conn.execute(
+                        "SELECT id FROM entities WHERE type IN ('tech/container', 'tech/component');"
+                    ).fetchall():
+                        fts_target_ids.add(cid)
+            _project_ast_code_symbols_into_fts(conn, target_entity_ids=fts_target_ids)
+
+        if spec_updates:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind)
+                SELECT substr(source_id, 1, instr(source_id, '::') - 1), target_id, 'test_binding'
+                FROM edges
+                WHERE rel_type = 'asserts'
+                  AND instr(source_id, '::') > 0
+                  AND target_id IN (SELECT id FROM entities WHERE type = 'invariant');
+                """
+            )
+
+        needs_unindexed_test_scan = False
+        if spec_updates and not force:
+            for (inv_json, inv_id) in conn.execute(
+                "SELECT data_json, id FROM entities WHERE type = 'invariant';"
+            ).fetchall():
+                try:
+                    idata = json.loads(inv_json or "{}")
+                except (TypeError, ValueError):
+                    idata = {}
+                tb_str = str(idata.get("test_binding") or "").strip() if isinstance(idata, dict) else ""
+                if not tb_str:
+                    has_edge = conn.execute(
+                        "SELECT 1 FROM edges WHERE rel_type = 'asserts' AND target_id = ? AND instr(source_id, '::') > 0 LIMIT 1;",
+                        (inv_id,),
+                    ).fetchone()
+                    if not has_edge:
+                        needs_unindexed_test_scan = True
+                        break
 
         candidate_test_files: dict[str, Path] = {}
         for std_test_dir in ("tests", "test", *sorted(resolver.package_dirs())):
@@ -1589,7 +1664,7 @@ def sync_index(
                 (rel_t,),
             ).fetchone()
             stat = tp.stat()
-            if not cached_entry or abs(stat.st_mtime - cached_entry["mtime"]) > 1e-7 or force or spec_updates:
+            if not cached_entry or abs(stat.st_mtime - cached_entry["mtime"]) > 1e-7 or force or needs_unindexed_test_scan:
                 t_sha = hashlib.sha256(tp.read_bytes()).hexdigest()
                 conn.execute(
                     """
@@ -1613,6 +1688,7 @@ def sync_index(
                 LIMIT 1
             )
             WHERE target_id NOT IN (SELECT id FROM entities)
+              AND target_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id')
               AND rel_type != 'bound_to';
             """
         )
@@ -1620,6 +1696,7 @@ def sync_index(
             """
             DELETE FROM edges
             WHERE target_id NOT IN (SELECT id FROM entities)
+              AND target_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id')
               AND rel_type != 'bound_to';
             """
         )
@@ -1636,6 +1713,7 @@ def sync_index(
                 LIMIT 1
             )
             WHERE source_id NOT IN (SELECT id FROM entities)
+              AND source_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id')
               AND rel_type != 'asserts';
             """
         )
@@ -1643,6 +1721,7 @@ def sync_index(
             """
             DELETE FROM edges
             WHERE source_id NOT IN (SELECT id FROM entities)
+              AND source_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id')
               AND rel_type != 'asserts';
             """
         )
@@ -1654,28 +1733,62 @@ def sync_index(
     return stats
 
 
-def _project_ast_code_symbols_into_fts(conn: sqlite3.Connection) -> None:
+def _project_ast_code_symbols_into_fts(
+    conn: sqlite3.Connection,
+    target_entity_ids: set[str] | None = None,
+) -> None:
     """Deterministically project primary AST code_symbols (class, function, interface, struct, enum) into specs_fts.symbols."""
     from eidos.core.index.query import compound_identifier_subtokens
 
-    by_entity: dict[str, list[str]] = {}
-    for row in conn.execute(
-        """
-        SELECT DISTINCT entity_id, symbol FROM code_symbols
-        WHERE is_primary = 1 AND kind IN ('class', 'function', 'interface', 'struct', 'enum')
-        ORDER BY entity_id, symbol;
-        """
-    ).fetchall():
-        by_entity.setdefault(row[0], []).append(row[1])
+    if target_entity_ids is not None and not target_entity_ids:
+        return
 
-    spec_rows = conn.execute(
-        """
-        SELECT f.rowid, f.entity_id, f.title, f.jtbd_or_rule, f.body_text, f.symbols, e.type, e.data_json
-        FROM specs_fts f
-        JOIN entities e ON e.id = f.entity_id
-        WHERE e.type != 'invariant';
-        """
-    ).fetchall()
+    by_entity: dict[str, list[str]] = {}
+    if target_entity_ids is not None:
+        clean_targets = sorted(t for t in target_entity_ids if t)
+        if not clean_targets:
+            return
+        ph = ",".join("?" for _ in clean_targets)
+        for row in conn.execute(
+            f"""
+            SELECT DISTINCT entity_id, symbol FROM code_symbols
+            WHERE is_primary = 1
+              AND kind IN ('class', 'function', 'interface', 'struct', 'enum')
+              AND entity_id IN ({ph})
+            ORDER BY entity_id, symbol;
+            """,
+            tuple(clean_targets),
+        ).fetchall():
+            by_entity.setdefault(row[0], []).append(row[1])
+        spec_rows = conn.execute(
+            f"""
+            SELECT f.rowid, f.entity_id, f.title, f.jtbd_or_rule, f.body_text, f.symbols, e.type, e.data_json
+            FROM specs_fts f
+            JOIN entities e ON e.id = f.entity_id
+            WHERE e.type != 'invariant'
+              AND f.entity_id IN ({ph})
+              AND (e.type IN ('tech/container', 'tech/component') OR f.entity_id IN (SELECT DISTINCT entity_id FROM code_symbols));
+            """,
+            tuple(clean_targets),
+        ).fetchall()
+    else:
+        for row in conn.execute(
+            """
+            SELECT DISTINCT entity_id, symbol FROM code_symbols
+            WHERE is_primary = 1 AND kind IN ('class', 'function', 'interface', 'struct', 'enum')
+            ORDER BY entity_id, symbol;
+            """
+        ).fetchall():
+            by_entity.setdefault(row[0], []).append(row[1])
+        spec_rows = conn.execute(
+            """
+            SELECT f.rowid, f.entity_id, f.title, f.jtbd_or_rule, f.body_text, f.symbols, e.type, e.data_json
+            FROM specs_fts f
+            JOIN entities e ON e.id = f.entity_id
+            WHERE e.type != 'invariant'
+              AND (e.type IN ('tech/container', 'tech/component') OR f.entity_id IN (SELECT DISTINCT entity_id FROM code_symbols));
+            """
+        ).fetchall()
 
     for srow in spec_rows:
         rowid = srow[0]
@@ -1704,8 +1817,13 @@ def _project_ast_code_symbols_into_fts(conn: sqlite3.Connection) -> None:
         )
         if doc_type == "tech/component" and isinstance(fm.get("interfaces"), dict):
             for sig in (fm["interfaces"].get("provides") or []) + (fm["interfaces"].get("consumes") or []):
-                if isinstance(sig, str) and sig.strip():
-                    symbol_parts.append(sig.split("(")[0].strip())
+                sig_str = (
+                    sig.get("signature", "")
+                    if isinstance(sig, dict)
+                    else (sig if isinstance(sig, str) else "")
+                )
+                if isinstance(sig_str, str) and sig_str.strip():
+                    symbol_parts.append(sig_str.split("(")[0].strip())
         base_symbols = " ".join(symbol_parts)
         decompounded = compound_identifier_subtokens(
             f"{title} {jtbd_or_rule} {body_clean} {base_symbols}"

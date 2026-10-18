@@ -145,16 +145,42 @@ def _set_frontmatter_scalar(raw_content: str, key: str, value: str) -> str:
         return raw_content
     raw_yaml, body = parts
     safe_val = _format_yaml_scalar_value(value)
-    pattern = re.compile(rf"^({re.escape(key)}[ \t]*:[ \t]*)([^\r\n]*)$", re.MULTILINE)
-    if pattern.search(raw_yaml):
-        def _repl(m: re.Match[str]) -> str:
-            _old_val, trailing_comment = _split_yaml_inline_comment(m.group(2))
+    key_re = re.compile(rf"^({re.escape(key)}[ \t]*:[ \t]*)([^\r\n]*)$")
+    lines = raw_yaml.splitlines()
+    found = False
+    out_lines: list[str] = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        m = key_re.match(line) if not found else None
+        if m is not None:
+            found = True
+            old_val, trailing_comment = _split_yaml_inline_comment(m.group(2))
             prefix = m.group(1) if m.group(1).endswith((" ", "\t")) else f"{m.group(1)} "
-            return f"{prefix}{safe_val}{trailing_comment}"
+            out_lines.append(f"{prefix}{safe_val}{trailing_comment}")
+            i += 1
+            old_stripped = old_val.strip()
+            is_block_scalar = bool(re.match(r"^[|>][0-9+-]*$", old_stripped))
+            if is_block_scalar or not old_stripped or not old_stripped.startswith(("[", "{")):
+                trailing_blanks: list[str] = []
+                while i < n:
+                    nxt = lines[i]
+                    if not nxt.strip():
+                        trailing_blanks.append(nxt)
+                        i += 1
+                        continue
+                    if nxt.startswith((" ", "\t")) and not nxt.lstrip().startswith("- "):
+                        trailing_blanks.clear()
+                        i += 1
+                        continue
+                    break
+                out_lines.extend(trailing_blanks)
+            continue
+        out_lines.append(line)
+        i += 1
 
-        new_yaml = pattern.sub(_repl, raw_yaml, count=1)
-    else:
-        new_yaml = f"{raw_yaml.rstrip()}\n{key}: {safe_val}"
+    new_yaml = "\n".join(out_lines) if found else f"{raw_yaml.rstrip()}\n{key}: {safe_val}"
     return f"---\n{new_yaml}\n---\n{body}"
 
 
@@ -314,6 +340,7 @@ def find_references_to_spec(eidos_dir: Path, target_id: str, target_path: Path) 
     id_pattern = re.compile(rf"(?<![A-Za-z0-9_-]){re.escape(target_id)}(?![A-Za-z0-9_-])", re.IGNORECASE)
     path_pattern = re.compile(rf"(?<![A-Za-z0-9_./-]){re.escape(rel_path_str)}(?![A-Za-z0-9_./-])")
 
+    status_re = re.compile(r"^status[ \t]*:[ \t]*['\"]?(applied|rejected)['\"]?[ \t]*$", re.MULTILINE | re.IGNORECASE)
     for p in sorted(eidos_dir.rglob("*.adoc")):
         if p.is_symlink():
             continue
@@ -322,6 +349,8 @@ def find_references_to_spec(eidos_dir: Path, target_id: str, target_path: Path) 
             continue
         try:
             content = p.read_text(encoding="utf-8")
+            if "deltas" in p.parts and status_re.search(content):
+                continue
             if id_pattern.search(content) or path_pattern.search(content):
                 referencing_files.append(resolved_p)
                 seen_resolved.add(resolved_p)

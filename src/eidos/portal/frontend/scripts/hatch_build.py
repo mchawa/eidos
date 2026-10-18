@@ -7,12 +7,18 @@ and verifies packaged portal assets exist prior to building sdist or wheel distr
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
-from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+try:
+    from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+except ModuleNotFoundError:  # pragma: no cover - fallback when hatchling is absent outside PEP 517 build env
+
+    class BuildHookInterface:  # type: ignore[no-redef]
+        root: str = "."
 
 
 class PortalAssetsBuildHook(BuildHookInterface):
@@ -22,16 +28,28 @@ class PortalAssetsBuildHook(BuildHookInterface):
 
     def initialize(self, version: str, build_data: dict[str, Any]) -> None:
         root = Path(self.root)
-        frontend_dir = Path(__file__).resolve().parent.parent
+        candidate_frontend = root / "src" / "eidos" / "portal" / "frontend"
+        frontend_dir = candidate_frontend if candidate_frontend.is_dir() else Path(__file__).resolve().parent.parent
         dist_index = frontend_dir / "dist" / "index.html"
         build_script = frontend_dir / "scripts" / "build_assets.py"
         bundle_gz = root / "assets" / "portal" / "bundle.html.gz"
         favicon_svg = root / "assets" / "portal" / "favicon.svg"
 
-        if dist_index.is_file() and build_script.is_file():
+        should_sync_from_dist = dist_index.is_file() and build_script.is_file() and (
+            not bundle_gz.is_file()
+            or not favicon_svg.is_file()
+            or dist_index.stat().st_mtime >= bundle_gz.stat().st_mtime
+        )
+        if should_sync_from_dist:
             subprocess.run(
                 [sys.executable, str(build_script)],
                 cwd=str(root),
+                check=True,
+            )
+        elif (not bundle_gz.is_file() or not favicon_svg.is_file()) and shutil.which("pnpm"):
+            subprocess.run(
+                ["pnpm", "build:assets"],
+                cwd=str(frontend_dir),
                 check=True,
             )
 

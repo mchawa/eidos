@@ -79,12 +79,15 @@ def format_decisions_markdown(
     tier: str = "guardrails",
     *,
     compact: bool = False,
+    compact_prose: bool = False,
+    max_items: int | None = None,
 ) -> list[str]:
     """Render embedded architectural decisions (DEC-*) and rejected_alternatives according to the requested tier."""
     if not decisions:
         return []
+    limit_n = max_items if max_items is not None else (2 if (tier == "anchor" and compact_prose) else len(decisions))
     lines = ["- **Architectural Decisions (`DEC-*`):**"]
-    for dec in decisions:
+    for dec_idx, dec in enumerate(decisions[:limit_n]):
         if not isinstance(dec, dict):
             continue
         did = dec.get("id", "")
@@ -96,27 +99,36 @@ def format_decisions_markdown(
             if isinstance(a, dict) and a.get("option")
         ]
         if tier == "anchor" or compact:
-            short_dtext = _clip_text(dtext, 120)
-            short_alts = [_clip_text(a, 55) for a in alts[:2]]
+            short_dtext = _clip_text(dtext, 55 if compact_prose else 120)
+            max_anchor_alts = 1 if compact_prose else 2
+            short_alts = [_clip_text(a, 45 if compact_prose else 55) for a in alts[:max_anchor_alts]]
             rej_suffix = f" *(Rejected: {', '.join(short_alts)})*" if short_alts else ""
             lines.append(f"  - `{did}` (**{dtitle}**): {short_dtext}{rej_suffix}")
         elif tier == "guardrails":
-            grad = f" [Graduated from `{dec['graduated_from']}`]" if dec.get("graduated_from") else ""
-            lines.append(f"  - `{did}` (**{dtitle}**){grad}: {_clip_text(dtext, 180)}")
-            if dec.get("rationale"):
-                lines.append(f"    - *Rationale:* {_clip_text(str(dec['rationale']), 180)}")
-            for alt in (dec.get("rejected_alternatives") or [])[:2]:
-                if isinstance(alt, dict) and alt.get("option"):
-                    reason = _clip_text(str(alt.get("reason_rejected", "")), 140)
-                    lines.append(f"    - *Rejected Alternative:* **{alt['option']}** — {reason}")
+            grad = f" [Graduated from `{dec['graduated_from']}`]" if dec.get("graduated_from") and not (compact_prose and dec_idx > 0) else ""
+            d_lim = 100 if compact_prose else 180
+            r_lim = 100 if compact_prose else 180
+            alt_lim = 80 if compact_prose else 140
+            max_alts = 1 if compact_prose else 2
+            lines.append(f"  - `{did}` (**{dtitle}**){grad}: {_clip_text(dtext, d_lim)}")
+            if not (compact_prose and dec_idx > 0):
+                if dec.get("rationale"):
+                    lines.append(f"    - *Rationale:* {_clip_text(str(dec['rationale']), r_lim)}")
+                for alt in (dec.get("rejected_alternatives") or [])[:max_alts]:
+                    if isinstance(alt, dict) and alt.get("option"):
+                        reason = _clip_text(str(alt.get("reason_rejected", "")), alt_lim)
+                        lines.append(f"    - *Rejected Alternative:* **{alt['option']}** — {reason}")
         else:
             grad = f" [Graduated from `{dec['graduated_from']}`]" if dec.get("graduated_from") else ""
-            lines.append(f"  - `{did}` (**{dtitle}**){grad}: {dtext}")
+            d_out = _clip_text(dtext, 160) if compact_prose else dtext
+            lines.append(f"  - `{did}` (**{dtitle}**){grad}: {d_out}")
             if dec.get("rationale"):
-                lines.append(f"    - *Rationale:* {dec['rationale']}")
+                r_out = _clip_text(str(dec["rationale"]), 140) if compact_prose else str(dec["rationale"])
+                lines.append(f"    - *Rationale:* {r_out}")
             for alt in dec.get("rejected_alternatives") or []:
                 if isinstance(alt, dict) and alt.get("option"):
-                    reason = alt.get("reason_rejected", "")
+                    raw_reason = str(alt.get("reason_rejected", ""))
+                    reason = _clip_text(raw_reason, 100) if compact_prose else raw_reason
                     lines.append(f"    - *Rejected Alternative:* **{alt['option']}** — {reason}")
     return lines
 
@@ -149,6 +161,8 @@ class ArchitecturalContextSlice:
 
     def to_markdown(self) -> str:
         """Render a clean, token-efficient Markdown representation formatted for the requested tier."""
+        compact_prose = bool(getattr(self, "_compact_prose", False))
+        compact_decisions = bool(getattr(self, "_compact_decisions", False))
         lines = [
             f"# 🧭 Eidos Architectural Context Slice ({self.tier.upper()} Tier)",
             "",
@@ -185,7 +199,10 @@ class ArchitecturalContextSlice:
                 if comp.get("file_path"):
                     lines.append(f"- **Specification:** `{comp['file_path']}`")
                 if comp.get("responsibility"):
-                    lines.append(f"- **Responsibility:** {comp['responsibility']}")
+                    resp_txt = str(comp["responsibility"])
+                    if compact_prose:
+                        resp_txt = _clip_text(resp_txt.splitlines()[0], 120)
+                    lines.append(f"- **Responsibility:** {resp_txt}")
                 if self.tier in ("guardrails", "deep"):
                     ifaces = comp.get("interfaces", {})
                     if isinstance(ifaces, dict) and ifaces.get("provides"):
@@ -198,7 +215,10 @@ class ArchitecturalContextSlice:
                     if invs:
                         lines.append("- **Component Invariants (`INV-*`):**")
                         for inv in invs:
-                            lines.append(f"  - `{inv.get('id')}`: {inv.get('rule')}")
+                            irule = str(inv.get("rule", ""))
+                            if compact_prose:
+                                irule = _clip_text(irule, 120)
+                            lines.append(f"  - `{inv.get('id')}`: {irule}")
                 if self.tier == "deep":
                     qas = comp.get("quality_attributes", {})
                     if qas:
@@ -234,7 +254,10 @@ class ArchitecturalContextSlice:
                     if cinvs:
                         lines.append("- **Container Invariants (`INV-*`):**")
                         for inv in cinvs:
-                            lines.append(f"  - `{inv.get('id')}`: {inv.get('rule')}")
+                            irule = str(inv.get("rule", ""))
+                            if compact_prose:
+                                irule = _clip_text(irule, 120)
+                            lines.append(f"  - `{inv.get('id')}`: {irule}")
 
                 if self.tier == "deep" and not is_secondary:
                     modules = comp.get("components", []) or comp.get("c4_internal_components", [])
@@ -243,18 +266,38 @@ class ArchitecturalContextSlice:
                         for m in modules[:6]:
                             mid = f"`{m['id']}` " if m.get("id") else ""
                             mname = m.get("name", "")
-                            mresp = m.get("responsibility", "")
+                            mresp = str(m.get("responsibility", ""))
+                            if compact_prose and len(mresp) > 100:
+                                first_l = mresp.strip().splitlines()[0] if mresp.strip() else ""
+                                mresp = (
+                                    first_l.split(". ", 1)[0].rstrip(".") + "."
+                                    if ". " in first_l and len(first_l.split(". ", 1)[0]) < 100
+                                    else _clip_text(first_l, 100)
+                                )
                             lines.append(f"  - {mid}**{mname}**: {mresp}")
 
             if (
                 not is_secondary
-                and not getattr(self, "_compact_decisions", False)
+                and (not compact_decisions or (self.tier == "anchor" and idx_comp == 0))
                 and not (self.tier != "deep" and len(self.components) > 4)
             ):
                 decisions = collect_component_decisions(comp)
-                if decisions:
-                    compact_decs = self.tier == "guardrails" and idx_comp > 0
-                    lines.extend(format_decisions_markdown(decisions, tier=self.tier, compact=compact_decs))
+                if decisions and not (self.tier == "anchor" and compact_decisions and len(decisions) > 4):
+                    compact_decs = (
+                        (self.tier == "guardrails" and idx_comp > 0)
+                        or (compact_prose and idx_comp > 0)
+                        or compact_decisions
+                    )
+                    max_dec_items = 1 if (self.tier == "anchor" and compact_decisions) else None
+                    lines.extend(
+                        format_decisions_markdown(
+                            decisions,
+                            tier=self.tier,
+                            compact=compact_decs,
+                            compact_prose=compact_prose,
+                            max_items=max_dec_items,
+                        )
+                    )
 
             lines.append("")
 
@@ -284,7 +327,7 @@ class ArchitecturalContextSlice:
                 lines.append(f"### `{cid}`: {title}")
                 lines.append(f"- **Domain:** `{domain}`")
                 invs = cap.get("invariants", [])
-                if invs:
+                if invs and not compact_prose:
                     lines.append("- **Capability Invariants (`INV-*`):**")
                     for inv in invs:
                         lines.append(f"  - `{inv.get('id')}`: {inv.get('rule')}")
@@ -297,7 +340,9 @@ class ArchitecturalContextSlice:
                 lines.append("*No active invariants linked to this slice.*")
             for inv in self.invariants:
                 iid = inv.get("id", "")
-                rule = inv.get("rule", "")
+                rule = str(inv.get("rule", ""))
+                if compact_prose:
+                    rule = _clip_text(rule, 120)
                 tb = inv.get("test_binding", "None")
                 cov = "✓ Covered" if inv.get("has_test_coverage") else "⚠️ Uncovered"
                 lines.append(f"- **`{iid}`** [{cov}]: {rule}")
@@ -313,7 +358,9 @@ class ArchitecturalContextSlice:
             for pol in self.policies:
                 pid = pol.get("id", "")
                 title = pol.get("title", pid)
-                rule = pol.get("rule", "")
+                rule = str(pol.get("rule", ""))
+                if compact_prose:
+                    rule = _clip_text(rule, 120)
                 lines.append(f"- **`{pid}`** ({title})")
                 if rule and self.tier == "deep":
                     lines.append(f"  - *Rule:* {rule}")
@@ -389,15 +436,23 @@ class TieredContextSlice(ArchitecturalContextSlice):
         compact: bool = False,
     ) -> list[dict[str, Any]]:
         projected: list[dict[str, Any]] = []
-        for d in decisions:
+        if self.tier == "anchor" and self._compact_decisions:
+            max_decs = 1
+        elif self.tier == "anchor" and self._compact_prose:
+            max_decs = 2
+        else:
+            max_decs = len(decisions)
+        for dec_idx, d in enumerate(decisions[:max_decs]):
             if not isinstance(d, dict):
                 continue
             dtext = str(d.get("decision", "") or "")
             if self.tier == "anchor" or compact or self._compact_decisions:
-                short_dtext = self._compact_summary(dtext, 120)
+                short_dtext = self._compact_summary(dtext, 55 if self._compact_prose else 120)
+                opt_limit = 45 if self._compact_prose else 60
+                max_anchor_alts = 1 if self._compact_prose else 2
                 alts = [
-                    {"option": self._clip(str(a.get("option")).strip(), 60)}
-                    for a in (d.get("rejected_alternatives") or [])[:2]
+                    {"option": self._clip(str(a.get("option")).strip(), opt_limit)}
+                    for a in (d.get("rejected_alternatives") or [])[:max_anchor_alts]
                     if isinstance(a, dict) and a.get("option")
                 ]
                 entry: dict[str, Any] = {
@@ -412,28 +467,30 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 entry = {
                     "id": d.get("id", ""),
                     "title": d.get("title", ""),
-                    "decision": self._compact_summary(dtext, 140) if self._compact_prose else self._clip(dtext, 140),
+                    "decision": self._compact_summary(dtext, 90) if self._compact_prose else self._clip(dtext, 140),
                 }
-                if d.get("graduated_from"):
-                    entry["graduated_from"] = d["graduated_from"]
-                if d.get("rationale"):
-                    rat = str(d["rationale"])
-                    entry["rationale"] = (
-                        self._compact_summary(rat, 120) if self._compact_prose else self._clip(rat, 140)
-                    )
-                if d.get("rejected_alternatives"):
-                    entry["rejected_alternatives"] = [
-                        {
-                            "option": self._clip(str(a.get("option", "")), 80),
-                            "reason_rejected": (
-                                self._compact_summary(str(a.get("reason_rejected", "")), 80)
-                                if self._compact_prose
-                                else self._clip(str(a.get("reason_rejected", "")), 100)
-                            ),
-                        }
-                        for a in (d.get("rejected_alternatives") or [])[:2]
-                        if isinstance(a, dict) and a.get("option")
-                    ]
+                if not (self._compact_prose and dec_idx > 0):
+                    if d.get("graduated_from"):
+                        entry["graduated_from"] = d["graduated_from"]
+                    if d.get("rationale"):
+                        rat = str(d["rationale"])
+                        entry["rationale"] = (
+                            self._compact_summary(rat, 85) if self._compact_prose else self._clip(rat, 140)
+                        )
+                    if d.get("rejected_alternatives"):
+                        max_alts = 1 if self._compact_prose else 2
+                        entry["rejected_alternatives"] = [
+                            {
+                                "option": self._clip(str(a.get("option", "")), 65 if self._compact_prose else 80),
+                                "reason_rejected": (
+                                    self._compact_summary(str(a.get("reason_rejected", "")), 65)
+                                    if self._compact_prose
+                                    else self._clip(str(a.get("reason_rejected", "")), 100)
+                                ),
+                            }
+                            for a in (d.get("rejected_alternatives") or [])[:max_alts]
+                            if isinstance(a, dict) and a.get("option")
+                        ]
                 projected.append(entry)
             else:
                 entry = {
@@ -505,7 +562,14 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 out["interfaces"] = comp["interfaces"]
             if comp.get("invariants"):
                 out["invariants"] = [
-                    {"id": inv.get("id", ""), "rule": inv.get("rule", "")}
+                    {
+                        "id": inv.get("id", ""),
+                        "rule": (
+                            self._compact_summary(str(inv.get("rule", "")), 120)
+                            if self._compact_prose
+                            else inv.get("rule", "")
+                        ),
+                    }
                     for inv in comp.get("invariants", [])
                     if isinstance(inv, dict)
                 ]
@@ -531,13 +595,15 @@ class TieredContextSlice(ArchitecturalContextSlice):
 
         if (
             not is_secondary
-            and not self._compact_decisions
+            and (not self._compact_decisions or (self.tier == "anchor" and index_in_slice == 0))
             and not (self.tier != "deep" and len(self.components) > 4)
         ):
             decisions = collect_component_decisions(comp)
-            if decisions:
-                compact_decs = (self.tier == "guardrails" and index_in_slice > 0) or (
-                    self._compact_prose and index_in_slice > 0
+            if decisions and not (self.tier == "anchor" and self._compact_decisions and len(decisions) > 4):
+                compact_decs = (
+                    (self.tier == "guardrails" and index_in_slice > 0)
+                    or (self._compact_prose and index_in_slice > 0)
+                    or self._compact_decisions
                 )
                 out["decisions"] = self._project_decisions(decisions, compact=compact_decs)
 
@@ -563,7 +629,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             "domain": cap.get("domain", ""),
             "status": cap.get("status", "active"),
         }
-        if self.tier in ("guardrails", "deep") and cap.get("invariants"):
+        if self.tier in ("guardrails", "deep") and cap.get("invariants") and not self._compact_prose:
             out["invariants"] = [
                 {"id": inv.get("id", ""), "rule": inv.get("rule", "")}
                 for inv in cap.get("invariants", [])
@@ -572,15 +638,16 @@ class TieredContextSlice(ArchitecturalContextSlice):
         return out
 
     def _project_invariant(self, inv: dict[str, Any]) -> dict[str, Any]:
+        raw_rule = str(inv.get("rule", ""))
         out: dict[str, Any] = {
             "id": inv.get("id", ""),
-            "rule": inv.get("rule", ""),
+            "rule": self._compact_summary(raw_rule, 110) if self._compact_prose else raw_rule,
             "has_test_coverage": bool(inv.get("has_test_coverage")),
         }
         tb = inv.get("test_binding")
         if tb and tb != "None":
             out["test_binding"] = tb
-        if self.tier in ("guardrails", "deep") and inv.get("parent_entity"):
+        if self.tier in ("guardrails", "deep") and inv.get("parent_entity") and not self._compact_prose:
             out["parent_entity"] = inv["parent_entity"]
         return out
 
@@ -771,6 +838,13 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 self._pop_item(self.contracts)
             while len(self.components) > 1 and self._exceeds_budget(budget):
                 self._pop_item(self.components)
+            if self._exceeds_budget(budget):
+                self._compress_verbose_fields_in_place(primary_cids)
+            while len(self.contracts) > 0 and self._exceeds_budget(budget):
+                self._pop_item(self.contracts)
+            if self._exceeds_budget(budget) and not self._compact_decisions:
+                self._compact_decisions = True
+                self._invalidate_budget_cache()
             self._prune_matched_reasons()
             self._invalidate_budget_cache()
             self.token_estimate = self._estimate_tokens()
@@ -792,17 +866,19 @@ class TieredContextSlice(ArchitecturalContextSlice):
                     if not self._exceeds_budget(budget):
                         break
 
-        # Stage 1: Trim 1-hop expanded (non-direct) entities before touching any direct query matches.
+        # Stage 1a: Progressively compress verbose prose fields (description, rationale, details, responsibility)
+        # before evicting invariants, policies, or capabilities.
+        if self._exceeds_budget(budget):
+            self._compress_verbose_fields_in_place(primary_cids)
+
+        # Stage 1b: Trim 1-hop expanded (non-direct) entities before touching any direct query matches.
         _pop_non_direct(self.invariants, direct_invs, min_len=3)
         _pop_non_direct(self.components, primary_cids, min_len=1 if has_non_comp_direct else 4)
+        _pop_non_direct(self.capabilities, direct_caps, min_len=3)
+
         _pop_non_direct(self.invariants, direct_invs, min_len=1)
         _pop_non_direct(self.policies, direct_pols, min_len=1)
         _pop_non_direct(self.capabilities, direct_caps, min_len=1)
-
-        # Stage 1b: Progressively compress verbose prose fields (description, rationale, details, responsibility)
-        # before dropping invariants or policies.
-        if self._exceeds_budget(budget):
-            self._compress_verbose_fields_in_place(primary_cids)
 
         # If still over budget and direct invariant/capability/policy matches exist, compact decision prose
         # and trim lower-ranked tail components before evicting direct matches.
@@ -1121,7 +1197,52 @@ def build_tiered_context_slice(
             ctr_data["title"] = row["title"]
             matched_contracts.setdefault(row["id"], ctr_data)
 
-    # 7. Include domain capabilities for primary components' domains
+    # Identify any inline C4 Level 3 components whose source_path specifically matches the queried files
+    matched_inline_comp_ids: set[str] = set()
+    if clean_files and primary_cids:
+        from eidos.core.workspace.project import matches_owned_paths
+
+        for cid in primary_cids:
+            c_entry = matched_components.get(cid) or {}
+            for inline_c in (c_entry.get("components") or c_entry.get("c4_internal_components") or []):
+                if not isinstance(inline_c, dict) or not inline_c.get("id"):
+                    continue
+                raw_sp = inline_c.get("source_path")
+                sp_list = [raw_sp] if isinstance(raw_sp, str) else (raw_sp if isinstance(raw_sp, list) else [])
+                sp_clean = [str(s).strip() for s in sp_list if isinstance(s, str) and str(s).strip()]
+                if sp_clean and any(matches_owned_paths(f, sp_clean)[0] for f in clean_files):
+                    matched_inline_comp_ids.add(str(inline_c["id"]))
+
+    # 7. Include capabilities directly implementing/implemented by primary components (or their inline components),
+    # then fall back to domain capabilities when no direct capability edges exist or when domain capabilities match.
+    direct_edge_cap_ids: set[str] = set()
+    if primary_cids:
+        candidate_comp_targets: list[str] = list(primary_cids)
+        for cid in primary_cids:
+            c_entry = matched_components.get(cid) or {}
+            for inline_c in (c_entry.get("components") or c_entry.get("c4_internal_components") or []):
+                if isinstance(inline_c, dict) and inline_c.get("id"):
+                    ic_id = str(inline_c["id"])
+                    if ic_id not in candidate_comp_targets:
+                        candidate_comp_targets.append(ic_id)
+        ph = ",".join("?" for _ in candidate_comp_targets)
+        cursor.execute(
+            f"""
+            SELECT id, title, type, domain, data_json FROM entities
+            WHERE type = 'product/capability' AND (
+                id IN (SELECT source_id FROM edges WHERE target_id IN ({ph}) AND rel_type IN ('implemented_by', 'implements'))
+                OR id IN (SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type IN ('implements', 'implemented_by'))
+            );
+            """,
+            tuple(candidate_comp_targets + candidate_comp_targets),
+        )
+        for row in cursor.fetchall():
+            cap_data = json.loads(row["data_json"])
+            cap_data["id"] = row["id"]
+            cap_data["title"] = row["title"]
+            matched_capabilities.setdefault(row["id"], cap_data)
+            direct_edge_cap_ids.add(row["id"])
+
     domains = {
         c.get("domain_binding") or c.get("domain") for c in [matched_components[cid] for cid in primary_cids]
     }
@@ -1132,10 +1253,24 @@ def build_tiered_context_slice(
             f"SELECT id, title, type, domain, data_json FROM entities WHERE type = 'product/capability' AND domain IN ({ph});",
             tuple(domains),
         )
+        all_matched_comp_ids = set(matched_components.keys())
+        for c_entry in matched_components.values():
+            for inline_c in (c_entry.get("components") or c_entry.get("c4_internal_components") or []):
+                if isinstance(inline_c, dict) and inline_c.get("id"):
+                    all_matched_comp_ids.add(str(inline_c["id"]))
         for row in cursor.fetchall():
             cap_data = json.loads(row["data_json"])
             cap_data["id"] = row["id"]
             cap_data["title"] = row["title"]
+            if direct_edge_cap_ids and row["id"] not in direct_edge_cap_ids:
+                tech_block = cap_data.get("technical") if isinstance(cap_data.get("technical"), dict) else {}
+                bound_targets = {
+                    str(t)
+                    for t in (tech_block.get("containers") or []) + (tech_block.get("components") or [])
+                    if isinstance(t, str) and t.strip()
+                }
+                if bound_targets and not (bound_targets & all_matched_comp_ids):
+                    continue
             matched_capabilities.setdefault(row["id"], cap_data)
 
     # 7b. Include invariants declared directly on primary components
@@ -1229,6 +1364,37 @@ def build_tiered_context_slice(
     direct_cap_rank = {cid: idx for idx, cid in enumerate(direct_cap_ids)}
     direct_pol_rank = {pid: idx for idx, pid in enumerate(direct_pol_ids)}
 
+    file_and_inline_tokens: set[str] = set()
+    for f in clean_files:
+        file_and_inline_tokens.update(_tokenize_text(Path(f).stem.replace("_", " ").replace("-", " ")))
+    for ic_id in matched_inline_comp_ids:
+        file_and_inline_tokens.update(_tokenize_text(ic_id.removeprefix("CMP-").replace("_", " ").replace("-", " ")))
+
+    def _cap_binds_matched_inline_comp(cap_entry: dict[str, Any]) -> bool:
+        if not matched_inline_comp_ids:
+            return False
+        tech = cap_entry.get("technical") if isinstance(cap_entry.get("technical"), dict) else {}
+        comp_refs = {str(t).strip() for t in (tech.get("components") or []) if isinstance(t, str)}
+        return bool(comp_refs & matched_inline_comp_ids)
+
+    def _cap_relevance_tuple(cap_entry: dict[str, Any]) -> tuple[int, int, int, str]:
+        tech = cap_entry.get("technical") if isinstance(cap_entry.get("technical"), dict) else {}
+        cnt_refs = [str(t).strip() for t in (tech.get("containers") or []) if isinstance(t, str) and str(t).strip()]
+        primary_cnt_match = bool(cnt_refs and cnt_refs[0] in primary_set)
+        binds_inline = _cap_binds_matched_inline_comp(cap_entry)
+        in_domain = cap_entry.get("domain", "") in domains
+        overlap = 0
+        if file_and_inline_tokens:
+            cap_tokens = set(_tokenize_text(str(cap_entry.get("title", "")).replace("_", " ").replace("-", " ")))
+            overlap = len(file_and_inline_tokens & cap_tokens)
+        if (primary_cnt_match and overlap > 0) or (binds_inline and in_domain):
+            tier_score = 0
+        elif in_domain or binds_inline:
+            tier_score = 1
+        else:
+            tier_score = 2
+        return (tier_score, -overlap, 0 if in_domain else 1, str(cap_entry.get("id", "")))
+
     sorted_comps = sorted(
         matched_components.values(),
         key=lambda x: (
@@ -1250,7 +1416,7 @@ def build_tiered_context_slice(
         key=lambda x: (
             0 if x.get("id", "") in direct_cap_rank else 1,
             direct_cap_rank.get(x.get("id", ""), 999),
-            x.get("id", ""),
+            *_cap_relevance_tuple(x),
         ),
     )
     sorted_pols = sorted(

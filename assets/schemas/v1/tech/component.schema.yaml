@@ -43,9 +43,12 @@ properties:
       - draft
       - proposed
       - planned
+      - accepted
       - active
       - deprecated
+      - sunset
       - retired
+      - removed
     description: "Lifecycle status of the component."
   source_path:
     oneOf:

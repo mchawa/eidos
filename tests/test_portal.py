@@ -1076,3 +1076,113 @@ def test_dlt_2026_085_portal_graph_derived_affects_and_blast_radius(tmp_path: Pa
     assert "INV-CMP-001" in dlt["blast_radius"]["invariants_to_enforce"]
     assert "INV-CNT-001" in dlt["blast_radius"]["invariants_to_enforce"]
 
+
+def test_portal_lazy_assets_hatch_mtime_gate_all_personas_and_c4_component_edges(tmp_path: Path, monkeypatch) -> None:
+    """Verify B4 & B5:
+    - portal/assets.py lazily loads and caches PORTAL_HTML_TEMPLATE and PORTAL_FAVICON_SVG on demand
+    - hatch_build.py only invokes build_assets.py when dist/index.html is newer than bundle.html.gz
+    - _generate_c4_containers_mermaid renders all personas (>3) without truncating at [:3]
+    - _generate_c4_component_mermaid only connects intra-container components with declared dependencies
+    """
+    import importlib.util
+    import os
+    import subprocess
+
+    import eidos.portal.assets as portal_assets
+    from eidos.portal.generator import _generate_c4_component_mermaid, _generate_c4_containers_mermaid
+
+    # 1. Lazy asset loading in eidos.portal.assets
+    monkeypatch.setattr(portal_assets, "_CACHED_HTML_TEMPLATE", None)
+    monkeypatch.setattr(portal_assets, "_CACHED_FAVICON_SVG", None)
+    html = portal_assets.get_portal_html_template()
+    fav = portal_assets.get_portal_favicon_svg()
+    assert "<!DOCTYPE html>" in html
+    assert "<svg" in fav
+    assert portal_assets._CACHED_HTML_TEMPLATE is html
+    assert portal_assets._CACHED_FAVICON_SVG is fav
+
+    # 2. Hatch build hook mtime gating
+    hatch_script = Path("src/eidos/portal/frontend/scripts/hatch_build.py").resolve()
+    spec = importlib.util.spec_from_file_location("eidos_hatch_build_test", hatch_script)
+    assert spec is not None and spec.loader is not None
+    hatch_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(hatch_mod)
+
+    fake_root = tmp_path / "hatch_repo"
+    dist_dir = fake_root / "src" / "eidos" / "portal" / "frontend" / "dist"
+    scripts_dir = fake_root / "src" / "eidos" / "portal" / "frontend" / "scripts"
+    assets_dir = fake_root / "assets" / "portal"
+    dist_dir.mkdir(parents=True)
+    scripts_dir.mkdir(parents=True)
+    assets_dir.mkdir(parents=True)
+
+    dist_index = dist_dir / "index.html"
+    build_script = scripts_dir / "build_assets.py"
+    bundle_gz = assets_dir / "bundle.html.gz"
+    favicon_svg = assets_dir / "favicon.svg"
+
+    dist_index.write_text("<html>dist</html>", encoding="utf-8")
+    build_script.write_text("# build_assets stub\n", encoding="utf-8")
+    bundle_gz.write_bytes(b"gz")
+    favicon_svg.write_text("<svg/>", encoding="utf-8")
+
+    # Set bundle.html.gz mtime newer than dist/index.html -> subprocess.run must NOT be called
+    now = time.time()
+    os.utime(dist_index, (now - 100, now - 100))
+    os.utime(bundle_gz, (now, now))
+
+    run_calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: run_calls.append(list(cmd)))
+
+    hook = object.__new__(hatch_mod.PortalAssetsBuildHook)
+    hook.root = str(fake_root)
+    hook.initialize("standard", {})
+    assert run_calls == []
+
+    # Set dist/index.html mtime newer than bundle.html.gz -> build_assets.py is invoked
+    os.utime(dist_index, (now + 100, now + 100))
+    hook.initialize("standard", {})
+    assert len(run_calls) == 1 and str(build_script) in run_calls[0]
+
+    # 3. _generate_c4_containers_mermaid renders >3 personas without slicing [:3]
+    five_personas = [
+        {"id": f"PER-ROLE-{i}", "name": f"Persona {i}", "role": f"Role {i}", "archetype": "developer"}
+        for i in range(1, 6)
+    ]
+    c4_containers = _generate_c4_containers_mermaid(
+        [{"id": "CNT-CLI", "name": "CLI", "container_type": "cli", "runtime": "Python", "dependencies": {}}],
+        personas=five_personas,
+    )
+    for i in range(1, 6):
+        assert f"PER_ROLE_{i}" in c4_containers
+
+    # 4. _generate_c4_component_mermaid does NOT fabricate sequential mod_0 -.-> mod_1 edges when no dependencies exist,
+    #    and DOES emit edges when dependencies are declared
+    cnt_independent = {
+        "id": "CNT-IND",
+        "name": "Independent Container",
+        "internal_components": [
+            {"id": "CMP-ALPHA", "name": "Alpha", "responsibility": "First independent module."},
+            {"id": "CMP-BETA", "name": "Beta", "responsibility": "Second independent module."},
+        ],
+    }
+    diag_ind = _generate_c4_component_mermaid(cnt_independent, [cnt_independent])
+    assert "mod_CNT_IND_0 -.->" not in diag_ind
+
+    cnt_dependent = {
+        "id": "CNT-DEP",
+        "name": "Dependent Container",
+        "internal_components": [
+            {
+                "id": "CMP-CALLER",
+                "name": "Caller",
+                "responsibility": "Calls Callee.",
+                "dependencies": {"internal": ["CMP-CALLEE"]},
+            },
+            {"id": "CMP-CALLEE", "name": "Callee", "responsibility": "Handles call."},
+        ],
+    }
+    diag_dep = _generate_c4_component_mermaid(cnt_dependent, [cnt_dependent])
+    assert "mod_CNT_DEP_0 -.-> mod_CNT_DEP_1" in diag_dep
+
+

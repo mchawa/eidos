@@ -190,15 +190,26 @@ def generate_remediation_prompt(report: Any) -> str:
         for cf in code_files:
             lines.append(f"- `{cf}`")
         lines.append("")
-    else:
-        lines.append("Non-Code Drift / Governance Verification Failures (0 code files modified):")
-        if not getattr(report, "validation_passed", True):
-            for err in getattr(report, "validation_errors", []):
-                lines.append(f"- Validation error: {err}")
-        for uinv in getattr(report, "uncovered_invariants", []):
-            lines.append(f"- Broken invariant binding: `{uinv.invariant_id}` ({uinv.spec_path}) -> `{uinv.test_binding}`")
-        for oid, loc in getattr(report, "orphan_invariants", []):
-            lines.append(f"- Orphan invariant reference: `{oid}` in `{loc}`")
+
+    gov_failures: list[str] = []
+    if not getattr(report, "validation_passed", True):
+        for err in getattr(report, "validation_errors", []):
+            gov_failures.append(f"- Validation error: {err}")
+    for uinv in getattr(report, "uncovered_invariants", []):
+        gov_failures.append(
+            f"- Broken invariant binding: `{uinv.invariant_id}` ({uinv.spec_path}) -> `{uinv.test_binding}`"
+        )
+    for oid, loc in getattr(report, "orphan_invariants", []):
+        gov_failures.append(f"- Orphan invariant reference: `{oid}` in `{loc}`")
+
+    if gov_failures or not code_files:
+        header = (
+            "Governance & Verification Failures:"
+            if code_files
+            else "Non-Code Drift / Governance Verification Failures (0 code files modified):"
+        )
+        lines.append(header)
+        lines.extend(gov_failures)
         lines.append("")
 
     remediation = list(getattr(report, "remediation_suggestions", []))

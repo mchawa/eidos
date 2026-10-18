@@ -529,7 +529,7 @@ invariants:
         idx.sync(force=True)
         conn = idx._get_connection()
         rows = conn.execute(
-            "SELECT source_id FROM edges WHERE rel_type = 'asserts' AND target_id = 'INV-EDGE-RULE';"
+            "SELECT source_id FROM edges WHERE rel_type = 'asserts' AND target_id = 'INV-EDGE-RULE';"  # eidos:fixture
         ).fetchall()
         sources = {r[0] for r in rows}
         assert "tests/test_service.py::test_service_rule" in sources
@@ -2096,4 +2096,203 @@ def test_dlt_2026_088_single_pass_scandir_dirty_check(tmp_path: Path) -> None:
         assert Path("src/core_mod.py") in del4
     finally:
         idx.close()
+
+
+def test_context_implements_edges_inline_cmp_blast_radius_and_path_resolution(tmp_path):
+    """Verify Bugs 3, 4, 5, 15a, 15b: context implements edges across domains, inline CMP-* graph edges & blast-radius,
+    file path resolution specificity without .ext symbol collision, and .kt + dict interface indexing."""  # eidos:fixture
+    from eidos.core.index.context import build_tiered_context_slice
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+
+    init_repository(tmp_path, name="graph-bug-fixes")
+    eidos_dir = tmp_path / "eidos"
+
+    create_spec(eidos_dir, "domain", "DOM-ENGINE", title="Engine Domain")
+    create_spec(eidos_dir, "domain", "DOM-INTEL", title="Intelligence Domain")
+
+    # Container CNT-IDX bound to DOM-ENGINE, with inline component CMP-INLINE-IDX and dict-formatted interfaces (Bug 15b)
+    cnt_idx = create_spec(eidos_dir, "container", "CNT-IDX", title="Index Container", package_path="src/index")
+    cnt_idx_doc = parse_spec_file(cnt_idx)
+    cnt_idx_doc.frontmatter["domain_binding"] = "DOM-ENGINE"
+    cnt_idx_doc.frontmatter["interfaces"] = {
+        "provides": [{"signature": "POST /v1/index/query"}],
+        "consumes": [{"signature": "GET /v1/config"}],
+    }
+    cnt_idx_doc.frontmatter["components"] = [
+        {
+            "id": "CMP-INLINE-IDX",
+            "name": "Inline Indexer",
+            "responsibility": "Indexes AST symbols.",
+            "source_path": "src/index/worker.py",
+        }
+    ]
+    cnt_idx.write_text(dump_spec_document(cnt_idx_doc.frontmatter, cnt_idx_doc.body), encoding="utf-8")
+
+    # Broad container CNT-SRC-ROOT (package_path: src) and sibling container CNT-OTHER (package_path: src/other)
+    create_spec(eidos_dir, "container", "CNT-SRC-ROOT", title="Root Src Container", package_path="src")
+    create_spec(eidos_dir, "container", "CNT-OTHER", title="Other Container", package_path="src/other")
+
+    # Cross-domain capability CAP-INTEL-001 in DOM-INTEL implementing CNT-IDX and CMP-INLINE-IDX (Bug 3 & Bug 4)
+    cap_intel = create_spec(
+        eidos_dir, "capability", "CAP-INTEL-001", title="Agent Slicing", domain="DOM-INTEL"
+    )
+    cap_intel_doc = parse_spec_file(cap_intel)
+    cap_intel_doc.frontmatter["technical"] = {
+        "containers": ["CNT-IDX"],
+        "components": ["CMP-INLINE-IDX"],
+        "invariants": [
+            {
+                "id": "INV-INTEL-SLICE-001",
+                "rule": "Must slice cross-domain implementing capabilities.",
+                "test_binding": "tests/test_worker.py::test_slice",
+            }
+        ],
+    }
+    cap_intel.write_text(dump_spec_document(cap_intel_doc.frontmatter, cap_intel_doc.body), encoding="utf-8")
+
+    # Unrelated capability CAP-ENGINE-OTHER in DOM-ENGINE bound exclusively to CNT-OTHER
+    cap_other = create_spec(
+        eidos_dir, "capability", "CAP-ENGINE-OTHER", title="Other Engine Cap", domain="DOM-ENGINE"
+    )
+    cap_other_doc = parse_spec_file(cap_other)
+    cap_other_doc.frontmatter["technical"] = {"containers": ["CNT-OTHER"]}
+    cap_other.write_text(dump_spec_document(cap_other_doc.frontmatter, cap_other_doc.body), encoding="utf-8")
+
+    # Source files: Python worker, Python class 'Py' in src/other/models.py, and Kotlin file Auth.kt (Bug 5 & Bug 15a)
+    (tmp_path / "src" / "index").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "src" / "other").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "src" / "index" / "worker.py").write_text("def run_worker():\n    return 1\n", encoding="utf-8")
+    (tmp_path / "src" / "index" / "Auth.kt").write_text(
+        "class KotlinAuthGuard {\n    fun checkAccess(): Boolean = true\n}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "other" / "models.py").write_text("class Py:\n    pass\n", encoding="utf-8")
+
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+
+        # Bug 15a & 15b: Kotlin symbols indexed and dict interfaces stored as edges
+        kt_matches = idx.resolve_symbol_or_path("KotlinAuthGuard")
+        assert any(m["symbol"] == "KotlinAuthGuard" for m in kt_matches)
+
+        # Bug 4: Inline CMP-INLINE-IDX edges preserved after sync_index -> blast-radius / k-hop & incoming refs work
+        in_refs = idx.get_incoming_references("CMP-INLINE-IDX")
+        in_sources = {r["source_id"] for r in in_refs}
+        assert "CNT-IDX" in in_sources
+        assert "CAP-INTEL-001" in in_sources
+        khop = idx.get_k_hop_neighborhood("CMP-INLINE-IDX", max_hops=1)
+        khop_ids = {n["id"] for n in khop}
+        assert "CNT-IDX" in khop_ids
+        assert "CAP-INTEL-001" in khop_ids
+
+        # Bug 5: File path resolution returns longest package_path container (CNT-IDX),
+        # excludes shorter package_path container (CNT-SRC-ROOT), and does NOT match class 'Py' on '.py' suffix
+        resolved = idx.resolve_symbol_or_path("src/index/worker.py")
+        resolved_ids = [m["entity_id"] for m in resolved if m.get("entity_id")]
+        assert resolved_ids[0] == "CNT-IDX"
+        assert "CNT-SRC-ROOT" not in resolved_ids
+        assert not any(m.get("symbol") == "Py" for m in resolved)
+
+        # Bug 3: Tiered context slice includes cross-domain CAP-INTEL-001 & INV-INTEL-SLICE-001 via implements edge
+        # and excludes CAP-ENGINE-OTHER bound exclusively to CNT-OTHER
+        slice_res = build_tiered_context_slice(idx, files="src/index/worker.py", tier="standard")
+        cap_ids = {c["id"] for c in slice_res.capabilities}
+        inv_ids = {i["id"] for i in slice_res.invariants}
+        assert "CAP-INTEL-001" in cap_ids
+        assert "INV-INTEL-SLICE-001" in inv_ids
+        assert "CAP-ENGINE-OTHER" not in cap_ids
+    finally:
+        idx.close()
+
+
+def test_incremental_spec_sync_skips_unchanged_test_reparse_and_scopes_fts(tmp_path: Path, monkeypatch) -> None:
+    """Verify B3: incremental sync on a single .adoc edit restores test_binding symbol_mappings from existing
+    asserts edges without re-parsing unchanged test files, and scopes _project_ast_code_symbols_into_fts."""  # eidos:fixture
+    import json
+    import os
+
+    import eidos.core.index.sync as sync_mod
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+
+    init_repository(tmp_path, name="inc-perf-repo")
+    eidos_dir = tmp_path / "eidos"
+    create_spec(eidos_dir, "domain", "DOM-PERF", title="Perf Domain")
+    create_spec(eidos_dir, "container", "CNT-PERF", title="Perf Container", package_path="src/perf")
+    cap_path = create_spec(eidos_dir, "capability", "CAP-PERF-001", title="Perf Cap", domain="DOM-PERF")
+    cap_doc = parse_spec_file(cap_path)
+    cap_doc.frontmatter["technical"] = {
+        "containers": ["CNT-PERF"],
+        "invariants": [
+            {
+                "id": "INV-PERF-COV-001",
+                "rule": "Must preserve invariant test coverage across incremental spec edits.",
+                "test_binding": "tests/test_perf.py::test_perf_inv",
+            }
+        ],
+    }
+    cap_path.write_text(dump_spec_document(cap_doc.frontmatter, cap_doc.body), encoding="utf-8")
+
+    (tmp_path / "src" / "perf").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "src" / "perf" / "engine.py").write_text("def run_perf_engine():\n    return 42\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir(parents=True, exist_ok=True)
+    test_file = tmp_path / "tests" / "test_perf.py"
+    test_file.write_text(
+        "def test_perf_inv():\n    # INV-PERF-COV-001\n    assert True\n",
+        encoding="utf-8",
+    )
+
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+        conn = idx._get_connection()
+
+        # Spy on get_ast_indexer().extract_symbols to ensure unchanged test_perf.py is NOT re-parsed on a spec-only edit
+        from eidos.core.index.ast_indexer import get_ast_indexer
+
+        ast_idx = get_ast_indexer()
+        parsed_files: list[str] = []
+        orig_extract = ast_idx.extract_symbols
+
+        def _spy_extract(fpath: Path, content: str):
+            parsed_files.append(fpath.name)
+            return orig_extract(fpath, content)
+
+        monkeypatch.setattr(ast_idx, "extract_symbols", _spy_extract)
+
+        projected_targets: list[set[str] | None] = []
+        orig_project = sync_mod._project_ast_code_symbols_into_fts
+
+        def _spy_project(c, target_entity_ids=None):
+            projected_targets.append(set(target_entity_ids) if target_entity_ids is not None else None)
+            return orig_project(c, target_entity_ids=target_entity_ids)
+
+        monkeypatch.setattr(sync_mod, "_project_ast_code_symbols_into_fts", _spy_project)
+
+        # Edit only the capability spec prose and run incremental sync(force=False)
+        cap_path.write_text(cap_path.read_text(encoding="utf-8") + "\nAdditional capability notes.\n", encoding="utf-8")
+        st = cap_path.stat()
+        os.utime(cap_path, (st.st_atime, st.st_mtime + 10.0))
+
+        stats = idx.sync(force=False)
+        assert stats.updated_modified == 1
+        assert "test_perf.py" not in parsed_files
+        assert projected_targets and projected_targets[-1] is not None
+
+        # Verify INV-PERF-COV-001 still has has_test_coverage=True and test_binding symbol_mapping
+        inv_row = conn.execute("SELECT data_json FROM entities WHERE id = 'INV-PERF-COV-001';").fetchone()
+        assert inv_row is not None
+        inv_data = json.loads(inv_row["data_json"])
+        assert inv_data["has_test_coverage"] is True
+        tb_map = conn.execute(
+            "SELECT symbol FROM symbol_mappings WHERE entity_id = 'INV-PERF-COV-001' AND kind = 'test_binding';"
+        ).fetchone()
+        assert tb_map is not None and tb_map["symbol"] == "tests/test_perf.py"
+    finally:
+        idx.close()
+
 

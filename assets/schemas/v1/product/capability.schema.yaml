@@ -55,8 +55,10 @@ properties:
       - planned
       - active
       - deprecated
+      - sunset
       - retired
-    description: "Lifecycle state: draft, proposed, planned, active, deprecated, or retired."
+      - removed
+    description: "Lifecycle state: draft, proposed, planned, active, deprecated, sunset, retired, or removed."
     examples:
       - "draft"
       - "proposed"

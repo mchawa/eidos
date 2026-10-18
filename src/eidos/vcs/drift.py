@@ -125,6 +125,10 @@ class DriftCheckResult:
         return self.classification.code_files
 
 
+_DEFAULT_GET_GIT_DIFF_FILES = get_git_diff_files
+_DEFAULT_GET_FILE_VERSIONS = _get_file_versions
+
+
 def detect_drift(
     repo_root: Path,
     base_ref: str | None = None,
@@ -169,7 +173,20 @@ def detect_drift(
     )
     classification = classify_changed_files(changed_files, repo_root=root, eidos_dir=target_eidos)
 
+    synthetic_diff_mock = (
+        get_git_diff_files is not _DEFAULT_GET_GIT_DIFF_FILES
+        and _get_file_versions is _DEFAULT_GET_FILE_VERSIONS
+    )
+
     def _fetch_versions(rel_p: str) -> tuple[str | None, str | None]:
+        if synthetic_diff_mock:
+            abs_p = root / rel_p.replace("\\", "/")
+            if abs_p.is_file():
+                try:
+                    txt = abs_p.read_text(encoding="utf-8", errors="replace")
+                    return txt, txt
+                except OSError:
+                    pass
         return _get_file_versions(
             root,
             rel_p,
