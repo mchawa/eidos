@@ -319,7 +319,7 @@ AI agents execute Eidos CLI commands directly from terminal / subshell tools. Al
 | `eidos delta create` | `[id] --title <title> --kind <feature\|enabler\|bug> [--slug]` | Scaffolds a new collision-free SpecDelta mutation document (`DLT-*`) for Planned Mode. |
 | `eidos delta verify` | `<id>`, `--json` | Verifies that all declared mutations and closed-schema `expect:` post-conditions hold in the spec catalog. |
 | `eidos delta audit` | `<id>`, `--strict`, `--json` | Audits removed/deprecated entities for dangling references vs. approved tombstones. |
-| `eidos delta apply` | `<id>`, `--execute`, `--verify/--no-verify`, `--json` | Verifies declared mutations by default (`--verify`), reconciles a SpecDelta in-place (`status: applied`), and optionally executes `expect`-driven structural mutations. |
+| `eidos delta apply` | `<id>`, `--verify/--no-verify`, `--json` | Verifies declared mutations by default (`--verify`), validates the SpecDelta, and reconciles it in-place (`status: applied`). |
 | `eidos delta changelog` | `--stdout`, `--output <file>` | Compiles Keep a Changelog release notes from Git tags and applied SpecDeltas. |
 | `eidos init` | `[PATH]`, `--lite` | Bootstraps a repository with the full catalog or progressive 3-file Eidos Lite profile. |
 

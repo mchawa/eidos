@@ -225,12 +225,12 @@ class DeltaIntentModel(_DictCompatibleModel):
 
 
 class DeltaMutationModel(_DictCompatibleModel):
-    """Typed SpecDelta mutation entry."""
+    """Typed composable SpecDelta mutation entry."""
 
-    action: str = ""
-    operation: str | None = None
-    target: str | None = None
+    operation: str = ""
+    target: str = ""
     parent: str | None = None
+    title: str | None = None
     details: str | None = None
     expect: dict[str, Any] = Field(default_factory=dict)
 
@@ -240,8 +240,9 @@ class DeltaMutationModel(_DictCompatibleModel):
         if not isinstance(data, dict):
             return {}
         raw = dict(data)
-        raw["action"] = _coerce_req_str(raw.get("action"))
-        for opt_k in ("operation", "target", "parent", "details"):
+        raw["operation"] = _coerce_req_str(raw.get("operation"))
+        raw["target"] = _coerce_req_str(raw.get("target"))
+        for opt_k in ("parent", "title", "details"):
             raw[opt_k] = _coerce_opt_str(raw.get(opt_k))
         exp = raw.get("expect")
         raw["expect"] = dict(exp) if isinstance(exp, dict) else {}

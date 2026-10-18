@@ -5,7 +5,7 @@ import json
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
-from eidos.core.workspace.context import (
+from eidos.core.index.context import (
     ArchitecturalContextSlice,
     get_context_slice,
 )

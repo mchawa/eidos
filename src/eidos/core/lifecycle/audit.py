@@ -226,15 +226,12 @@ class AuditEngine:
 
         from eidos.core.lifecycle.delta_engine import _extract_mutation_target, normalize_delta_mutation
 
-        deletion_prefixes = ("remove_", "delete_", "deprecate_", "retire_")
-
         for raw_m in mutations:
             if not isinstance(raw_m, dict):
                 continue
             m = normalize_delta_mutation(raw_m)
-            action = str(m.get("action", "")).strip().lower()
             operation = str(m.get("operation", "")).strip().lower()
-            if operation in ("remove", "deprecate") or any(action.startswith(prefix) for prefix in deletion_prefixes):
+            if operation in ("remove", "deprecate"):
                 primary_target = _extract_mutation_target(m)
                 if (
                     primary_target
@@ -244,11 +241,8 @@ class AuditEngine:
                 ):
                     targets.add(primary_target)
 
-                parent_context_ids = {
-                    str(m[k]).strip()
-                    for k in ("parent", "target_container", "target_capability", "target_domain", "target_policy")
-                    if m.get(k) and isinstance(m.get(k), str) and str(m[k]).strip() != primary_target
-                }
+                parent_val = str(m.get("parent") or "").strip()
+                parent_context_ids = {parent_val} if parent_val and parent_val != primary_target else set()
 
                 # Parse IDs mentioned in details (excluding parent context IDs)
                 details = str(m.get("details", ""))
@@ -428,7 +422,7 @@ class AuditEngine:
 
         # 2. Historical Applied Deltas & Release Changelogs
         if (
-            (rel_str.startswith("eidos/deltas/") and ("by-status/applied/" in rel_str or self._is_delta_applied(rel_path)))
+            (rel_str.startswith("eidos/deltas/") and self._is_delta_applied(rel_path))
             or rel_str in ("CHANGELOG.md", "docs/changelog.md")
             or rel_str.endswith("CHANGELOG.md")
             or rel_str.endswith("changelog.md")

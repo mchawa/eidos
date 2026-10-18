@@ -1082,7 +1082,6 @@
       "audit",
       "apply",
       "status",
-      "sync-views",
       "delete",
       "changelog"
     ],
@@ -1156,7 +1155,7 @@
       "delta",
       "create"
     ],
-    "help": "Create a new SpecDelta in flat storage (eidos/deltas/<id>.adoc) and sync views.",
+    "help": "Create a new SpecDelta in flat storage (eidos/deltas/<id>.adoc).",
     "hidden": false,
     "panel": null,
     "params": [
@@ -1397,7 +1396,7 @@
       "delta",
       "apply"
     ],
-    "help": "Reconcile a SpecDelta in-place, updating status to 'applied' and syncing symlink views.",
+    "help": "Reconcile a SpecDelta in-place, updating status to 'applied'.",
     "hidden": false,
     "panel": null,
     "params": [
@@ -1429,21 +1428,6 @@
         "panel": null,
         "envvar": "None",
         "type": "<typer.models.TyperPath object>"
-      },
-      {
-        "name": "execute",
-        "opts": [
-          "--execute",
-          "-e"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "False",
-        "help": "Deterministically scaffold missing specs and apply structural mutations declared in the delta.",
-        "panel": null,
-        "envvar": "None",
-        "type": "BOOL"
       },
       {
         "name": "verify",
@@ -1544,33 +1528,6 @@
         "panel": null,
         "envvar": "None",
         "type": "BOOL"
-      }
-    ]
-  },
-  {
-    "order": [],
-    "path": [
-      "delta",
-      "sync-views"
-    ],
-    "help": "Regenerate gitignored symlinks in eidos/deltas/by-status/ categorized by lifecycle state.",
-    "hidden": false,
-    "panel": null,
-    "params": [
-      {
-        "name": "path",
-        "opts": [
-          "--path",
-          "-p"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "eidos",
-        "help": "Path to eidos directory.",
-        "panel": null,
-        "envvar": "None",
-        "type": "<typer.models.TyperPath object>"
       }
     ]
   },

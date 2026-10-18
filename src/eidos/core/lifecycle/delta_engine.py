@@ -1,5 +1,5 @@
-"""SpecDelta engine: listing, status summaries, by-status view sync, baseline snapshots, verification, execution,
-and application of semantic mutations (CMP-DELTA-ENGINE)."""
+"""SpecDelta engine: listing, status summaries, baseline snapshots, verification,
+and application of composable semantic mutations (CMP-DELTA-ENGINE)."""
 
 import contextlib
 import hashlib
@@ -15,9 +15,6 @@ from typing import Any
 from eidos.core.index.storage import get_cached_spec_document, open_cache_connection
 from eidos.core.lifecycle.catalog import (
     _build_spec_catalog_with_invariants,
-    _mutate_frontmatter_components,
-    _mutate_frontmatter_invariants,
-    _render_spec,
     _set_frontmatter_scalar,
     find_spec_by_id_or_path,
 )
@@ -25,68 +22,36 @@ from eidos.core.spec.models import SpecDocument
 from eidos.core.spec.parser import extract_frontmatter, parse_spec_file
 from eidos.core.spec.validator import SpecValidator
 
-ADD_STANDALONE_ACTIONS: dict[str, tuple[str, str, str, str]] = {
-    "add_domain": ("domain", "target_domain", "DOM-", "product/domain"),
-    "add_capability": ("capability", "new_capability_id", "CAP-", "product/capability"),
-    "add_persona": ("persona", "target_persona", "PER-", "product/persona"),
-    "add_policy": ("policy", "target_policy", "POL-", "product/policy"),
-    "add_container": ("container", "target_container", "CNT-", "tech/container"),
-    "add_contract": ("contract", "target_contract", "CTR-", "tech/contract"),
-    "add_design_system": ("design-system", "target_design_system", "DS-", "design/system"),
-    "add_ui_component": ("ui-component", "target_ui_component", "UIC-", "design/ui-component"),
-    "add_screen": ("screen", "target_screen", "SCR-", "design/screen"),
-    "add_client": ("client", "target_client", "CLT-", "design/client"),
-    "add_flow": ("flow", "target_flow", "FLOW-", "design/flow"),
+SUPPORTED_MUTATION_OPERATIONS: frozenset[str] = frozenset({"add", "modify", "remove", "deprecate"})
+
+PREFIX_TO_ENTITY_META: dict[str, tuple[str, str]] = {
+    "DOM-": ("domain", "product/domain"),
+    "CAP-": ("capability", "product/capability"),
+    "PER-": ("persona", "product/persona"),
+    "POL-": ("policy", "product/policy"),
+    "INV-": ("invariant", "invariant"),
+    "ARCH-": ("architecture", "tech/architecture"),
+    "CNT-": ("container", "tech/container"),
+    "CMP-": ("component", "tech/component"),
+    "CTR-": ("contract", "tech/contract"),
+    "DS-": ("design_system", "design/system"),
+    "UIC-": ("ui_component", "design/ui-component"),
+    "SCR-": ("screen", "design/screen"),
+    "CLT-": ("client", "design/client"),
+    "FLOW-": ("flow", "design/flow"),
 }
 
-ADD_ACTIONS: frozenset[str] = frozenset((*ADD_STANDALONE_ACTIONS.keys(), "add_component", "add_invariant"))
 
-REMOVE_ACTION_EXPECTED_TYPES: dict[str, str] = {
-    "remove_domain": "product/domain",
-    "remove_capability": "product/capability",
-    "remove_persona": "product/persona",
-    "remove_policy": "product/policy",
-    "remove_container": "tech/container",
-    "remove_component": "tech/component",
-    "remove_contract": "tech/contract",
-    "remove_design_system": "design/system",
-    "remove_ui_component": "design/ui-component",
-    "remove_screen": "design/screen",
-    "remove_client": "design/client",
-    "remove_flow": "design/flow",
-}
-
-DEPRECATE_ACTION_EXPECTED_TYPES: dict[str, str] = {
-    "deprecate_capability": "product/capability",
-    "deprecate_policy": "product/policy",
-}
-
-MODIFY_ACTION_EXPECTED_TYPES: dict[str, str] = {
-    "modify_domain": "product/domain",
-    "modify_capability": "product/capability",
-    "extend_capability": "product/capability",
-    "modify_persona": "product/persona",
-    "modify_policy": "product/policy",
-    "patch_policy": "product/policy",
-    "modify_architecture": "tech/architecture",
-    "modify_container": "tech/container",
-    "modify_component": "tech/component",
-    "modify_contract": "tech/contract",
-    "modify_design_system": "design/system",
-    "modify_ui_component": "design/ui-component",
-    "modify_screen": "design/screen",
-    "modify_client": "design/client",
-    "modify_flow": "design/flow",
-}
-
-SUPPORTED_MUTATION_ACTIONS: frozenset[str] = (
-    ADD_ACTIONS
-    | frozenset(REMOVE_ACTION_EXPECTED_TYPES.keys())
-    | frozenset(("remove_invariant",))
-    | frozenset(DEPRECATE_ACTION_EXPECTED_TYPES.keys())
-    | frozenset(MODIFY_ACTION_EXPECTED_TYPES.keys())
-    | frozenset(("patch_invariant",))
-)
+def resolve_entity_prefix_meta(entity_id_or_path: str) -> tuple[str, str, str] | None:
+    """Resolve an entity ID (e.g. 'CMP-DELTA-ENGINE') by prefix to (prefix, entity_kind, spec_doc_type)."""
+    cleaned = str(entity_id_or_path or "").strip().upper()
+    if "-" not in cleaned:
+        return None
+    prefix = f"{cleaned.split('-', 1)[0]}-"
+    meta = PREFIX_TO_ENTITY_META.get(prefix)
+    if meta is None:
+        return None
+    return prefix, meta[0], meta[1]
 
 
 @dataclass
@@ -134,12 +99,14 @@ class DeltaVerificationReport:
 
 
 def _ensure_eidos_gitignore(eidos_dir: Path) -> None:
-    """Ensure eidos/.gitignore is present and ignores generated symlink views and cache so host projects remain unpolluted."""
+    """Ensure eidos/.gitignore is present and ignores local SQLite cache so host projects remain unpolluted."""
     gitignore_path = eidos_dir / ".gitignore"
     default_content = (
-        "# Eidos living specification lifecycle views (generated symlinks) and local index cache\n"
-        "deltas/by-status/\n"
-        ".cache/\n"
+        "# Eidos local index cache\n"
+        ".cache/\n\n"
+        "# OS artifacts\n"
+        ".DS_Store\n"
+        "Thumbs.db\n"
     )
     if not gitignore_path.exists():
         with contextlib.suppress(OSError):
@@ -147,15 +114,9 @@ def _ensure_eidos_gitignore(eidos_dir: Path) -> None:
     else:
         with contextlib.suppress(OSError):
             content = gitignore_path.read_text(encoding="utf-8")
-            missing: list[str] = []
-            if "deltas/by-status" not in content and "by-status" not in content:
-                missing.append("deltas/by-status/")
             if ".cache" not in content:
-                missing.append(".cache/")
-            if missing:
-                extra = "\n".join(missing)
                 gitignore_path.write_text(
-                    f"{content.rstrip()}\n\n# Eidos generated views and cache\n{extra}\n",
+                    f"{content.rstrip()}\n\n# Eidos local index cache\n.cache/\n",
                     encoding="utf-8",
                 )
 
@@ -168,64 +129,6 @@ ACTIVE_DELTA_STATUSES: tuple[str, ...] = (
     "approved",
     "in_progress",
 )
-
-
-def sync_delta_views(eidos_dir: Path) -> dict[str, list[Path]]:
-    """Synchronize gitignored symlink views in eidos/deltas/by-status/ based on frontmatter status.
-
-    Categories: draft, proposed, planned, in_review, approved, applied, rejected, active (in-flight).
-    """
-    deltas_dir = eidos_dir / "deltas"
-    if not deltas_dir.exists():
-        return {}
-
-    # Ensure self-contained eidos/.gitignore
-    _ensure_eidos_gitignore(eidos_dir)
-
-    views_dir = deltas_dir / "by-status"
-    categories = ["draft", "proposed", "planned", "in_review", "approved", "applied", "rejected", "active"]
-
-    # Ensure target category directories exist
-    for cat in categories:
-        (views_dir / cat).mkdir(parents=True, exist_ok=True)
-
-    # Clean existing symlinks in by-status
-    for cat in categories:
-        cat_dir = views_dir / cat
-        for item in cat_dir.iterdir():
-            if item.is_symlink() or item.is_file():
-                with contextlib.suppress(OSError):
-                    item.unlink()
-
-    synced: dict[str, list[Path]] = {cat: [] for cat in categories}
-
-    for p in sorted(deltas_dir.rglob("*.adoc")):
-        if "by-status" in p.parts:
-            continue
-        doc, _, _ = get_cached_spec_document(p)
-        if doc is None or doc.doc_type != "delta/mutation":
-            continue
-
-        status = str(doc.frontmatter.get("status", "proposed")).lower().strip()
-        cat_name = status if status in categories else "proposed"
-        link_path = views_dir / cat_name / p.name
-        rel_target = os.path.relpath(p, views_dir / cat_name)
-        try:
-            link_path.symlink_to(rel_target)
-            synced[cat_name].append(p)
-        except OSError:
-            pass
-
-        if status in ACTIVE_DELTA_STATUSES:
-            active_link = views_dir / "active" / p.name
-            rel_active = os.path.relpath(p, views_dir / "active")
-            try:
-                active_link.symlink_to(rel_active)
-                synced["active"].append(p)
-            except OSError:
-                pass
-
-    return synced
 
 
 def get_delta_status_summary(eidos_dir: Path) -> dict[str, Any]:
@@ -252,7 +155,6 @@ def get_delta_status_summary(eidos_dir: Path) -> dict[str, Any]:
         "total": len(deltas),
         "active_count": active_count,
         "by_status": by_status,
-        "views_dir": eidos_dir / "deltas" / "by-status",
     }
 
 
@@ -266,8 +168,6 @@ def list_deltas(eidos_dir: Path, status_filter: str | None = None) -> list[dict[
     status_filter_clean = status_filter.lower().strip() if status_filter else None
 
     for p in sorted(deltas_dir.rglob("*.adoc")):
-        if "by-status" in p.parts:
-            continue
         doc, _, _ = get_cached_spec_document(p)
         if doc is None or doc.doc_type != "delta/mutation":
             continue
@@ -299,90 +199,12 @@ def list_deltas(eidos_dir: Path, status_filter: str | None = None) -> list[dict[
     return results
 
 
-PREFIX_TO_ENTITY_META: dict[str, tuple[str, str, str]] = {
-    "DOM-": ("domain", "product/domain", "target_domain"),
-    "CAP-": ("capability", "product/capability", "target_capability"),
-    "PER-": ("persona", "product/persona", "target_persona"),
-    "POL-": ("policy", "product/policy", "target_policy"),
-    "INV-": ("invariant", "invariant", "target_invariant_id"),
-    "ARCH-": ("architecture", "tech/architecture", "target_architecture"),
-    "CNT-": ("container", "tech/container", "target_container"),
-    "CMP-": ("component", "tech/component", "target_component"),
-    "CTR-": ("contract", "tech/contract", "target_contract"),
-    "DS-": ("design_system", "design/system", "target_design_system"),
-    "UIC-": ("ui_component", "design/ui-component", "target_ui_component"),
-    "SCR-": ("screen", "design/screen", "target_screen"),
-    "CLT-": ("client", "design/client", "target_client"),
-    "FLOW-": ("flow", "design/flow", "target_flow"),
-}
-
-
-def resolve_entity_prefix_meta(entity_id_or_path: str) -> tuple[str, str, str, str] | None:
-    """Resolve an entity ID (e.g. 'CMP-DELTA-ENGINE') by prefix to (prefix, entity_kind, spec_doc_type, legacy_target_key)."""
-    cleaned = str(entity_id_or_path or "").strip().upper()
-    if "-" not in cleaned:
-        return None
-    prefix = f"{cleaned.split('-', 1)[0]}-"
-    meta = PREFIX_TO_ENTITY_META.get(prefix)
-    if meta is None:
-        return None
-    return prefix, meta[0], meta[1], meta[2]
-
-
-_ACTION_PRIMARY_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("_invariant", ("target_invariant_id",)),
-    ("_capability", ("new_capability_id", "target_capability")),
-    ("_component", ("target_component",)),
-    ("_container", ("target_container",)),
-    ("_architecture", ("target_architecture",)),
-    ("_contract", ("target_contract",)),
-    ("_policy", ("target_policy",)),
-    ("_domain", ("target_domain",)),
-    ("_persona", ("target_persona",)),
-    ("_screen", ("target_screen",)),
-    ("_ui_component", ("target_ui_component",)),
-    ("_design_system", ("target_design_system",)),
-    ("_client", ("target_client",)),
-    ("_flow", ("target_flow",)),
-)
-
-
 def _extract_mutation_target(m: dict[str, Any]) -> str:
-    """Extract primary target identifier or path from a mutation dictionary."""
+    """Extract primary target identifier or path from a composable mutation dictionary."""
     direct_target = m.get("target")
     if direct_target and isinstance(direct_target, str) and direct_target.strip():
         return direct_target.strip()
 
-    action = str(m.get("action", "")).strip().lower()
-    for suffix, primary_keys in _ACTION_PRIMARY_KEYS:
-        if action.endswith(suffix):
-            for key in primary_keys:
-                val = m.get(key)
-                if val and isinstance(val, str) and val.strip():
-                    return val.strip()
-
-    for key in (
-        "new_capability_id",
-        "target_capability",
-        "target_component",
-        "target_container",
-        "target_architecture",
-        "target_policy",
-        "target_contract",
-        "target_domain",
-        "target_persona",
-        "target_screen",
-        "target_ui_component",
-        "target_invariant_id",
-        "target_design_system",
-        "target_client",
-        "target_flow",
-    ):
-        val = m.get(key)
-        if val and isinstance(val, str) and val.strip():
-            return val.strip()
-
-    # Fallback to regex in details
     details = m.get("details", "")
     if details:
         match = re.search(
@@ -399,76 +221,30 @@ def _extract_mutation_target(m: dict[str, Any]) -> str:
 
 
 def normalize_delta_mutation(m: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a SpecDelta mutation dictionary across composable (operation + target + parent) and legacy (action + target_*) forms."""
+    """Normalize a composable SpecDelta mutation dictionary (operation + target + parent)."""
     if not isinstance(m, dict):
         return {}
     norm: dict[str, Any] = dict(m)
     raw_op = str(norm.get("operation") or "").strip().lower()
     raw_target = str(norm.get("target") or "").strip()
     raw_parent = str(norm.get("parent") or "").strip()
-    raw_action = str(norm.get("action") or "").strip().lower()
 
-    primary_legacy_key: str | None = None
-    if raw_target:
-        t_meta = resolve_entity_prefix_meta(raw_target)
-        if t_meta is not None:
-            _prefix, entity_kind, _doc_type, legacy_key = t_meta
-            primary_legacy_key = legacy_key
-            norm["entity_type"] = entity_kind
-            if raw_op == "add" and entity_kind == "capability":
-                norm.setdefault("new_capability_id", raw_target)
-            else:
-                norm.setdefault(legacy_key, raw_target)
-            if not raw_action and raw_op:
-                if entity_kind == "invariant":
-                    raw_action = "patch_invariant" if raw_op == "modify" else f"{raw_op}_invariant"
-                else:
-                    raw_action = f"{raw_op}_{entity_kind}"
-                norm["action"] = raw_action
-        elif not raw_action and raw_op:
-            norm["action"] = raw_op
-
-    if raw_parent:
-        p_meta = resolve_entity_prefix_meta(raw_parent)
-        if p_meta is not None:
-            _p_prefix, _p_kind, _p_doc_type, p_legacy_key = p_meta
-            if p_legacy_key != primary_legacy_key:
-                norm.setdefault(p_legacy_key, raw_parent)
-
+    if raw_op:
+        norm["operation"] = raw_op
     if not raw_target:
         extracted = _extract_mutation_target(norm)
         if extracted and extracted != "unspecified_target":
             norm["target"] = extracted
             raw_target = extracted
-            t_meta = resolve_entity_prefix_meta(raw_target)
-            if t_meta is not None:
-                norm.setdefault("entity_type", t_meta[1])
-                primary_legacy_key = t_meta[3]
+    else:
+        norm["target"] = raw_target
+    if raw_parent:
+        norm["parent"] = raw_parent
 
-    if not raw_op and raw_action:
-        if raw_action.startswith("add_"):
-            norm["operation"] = "add"
-        elif raw_action.startswith(("modify_", "extend_", "patch_")):
-            norm["operation"] = "modify"
-        elif raw_action.startswith("remove_"):
-            norm["operation"] = "remove"
-        elif raw_action.startswith("deprecate_"):
-            norm["operation"] = "deprecate"
-
-    if not raw_parent:
-        for parent_key in (
-            "target_container",
-            "target_capability",
-            "target_policy",
-            "target_domain",
-            "target_design_system",
-            "target_client",
-            "target_component",
-        ):
-            pval = norm.get(parent_key)
-            if pval and isinstance(pval, str) and pval.strip() and pval.strip() != raw_target:
-                norm["parent"] = pval.strip()
-                break
+    if raw_target:
+        t_meta = resolve_entity_prefix_meta(raw_target)
+        if t_meta is not None:
+            norm["entity_type"] = t_meta[1]
 
     return norm
 
@@ -585,8 +361,6 @@ def generate_collision_free_delta_id(
 
     if deltas_dir.exists():
         for p in deltas_dir.rglob("*.adoc"):
-            if "by-status" in p.parts:
-                continue
             _record_candidate(p.stem)
 
     repo_root = _resolve_git_repo_root(eidos_dir)
@@ -734,7 +508,7 @@ def set_delta_status(
     delta_id_or_path: str,
     new_status: str,
 ) -> tuple[bool, str, Path | None, str | None]:
-    """Transition a SpecDelta's frontmatter status and synchronize by-status symlink views."""
+    """Transition a SpecDelta's frontmatter status."""
     norm_status = new_status.strip().lower()
     if norm_status not in VALID_DELTA_STATUSES:
         allowed = ", ".join(VALID_DELTA_STATUSES)
@@ -778,7 +552,6 @@ def set_delta_status(
         )
 
     file_path.write_text(new_content, encoding="utf-8")
-    sync_delta_views(eidos_dir)
     return (
         True,
         f"Updated SpecDelta '{doc.doc_id}' status from '{old_status}' to '{norm_status}'.",
@@ -969,102 +742,22 @@ def _parse_spec_content(path: Path, content: str) -> SpecDocument:
     return doc
 
 
-class _MutationTransaction:
-    """Copy-on-write transactional filesystem snapshot and rollback manager for SpecDelta execution and application."""
-
-    def __init__(self, eidos_dir: Path) -> None:
-        self.eidos_dir = eidos_dir.resolve()
-        self.original_files: dict[Path, bytes] = {}
-        self.original_dirs: set[Path] = set()
-        self._initial_files: set[Path] = set()
-        self.created_files: set[Path] = set()
-
-    def snapshot(self, target_files: list[Path] | None = None) -> None:
-        """Record initial directory/file inventory without reading all of eidos/ into RAM; optionally pre-snapshot target_files."""
-        self.original_files.clear()
-        self.original_dirs.clear()
-        self._initial_files.clear()
-        self.created_files.clear()
-        if not self.eidos_dir.exists():
-            return
-        self.original_dirs.add(self.eidos_dir)
-        for root, dirs, files in os.walk(self.eidos_dir):
-            dirs[:] = [d for d in dirs if d not in (".cache", "by-status")]
-            root_path = Path(root).resolve()
-            self.original_dirs.add(root_path)
-            for d in dirs:
-                self.original_dirs.add((root_path / d).resolve())
-            for fn in files:
-                fp = (root_path / fn).resolve()
-                if not fp.is_symlink():
-                    self._initial_files.add(fp)
-        for tf in target_files or ():
-            self.record_before_write(tf)
-
-    def record_before_write(self, path: Path) -> None:
-        """Copy-on-write snapshot of a single file immediately prior to mutation or deletion."""
-        fp = path.resolve()
-        if fp in self.original_files or fp in self.created_files:
-            return
-        if fp.exists() and not fp.is_symlink():
-            with contextlib.suppress(OSError):
-                self.original_files[fp] = fp.read_bytes()
-                self._initial_files.add(fp)
-        else:
-            self.created_files.add(fp)
-
-    def rollback(self) -> None:
-        if not self.eidos_dir.exists():
-            return
-        current_files: set[Path] = set()
-        current_dirs: list[Path] = []
-        for root, dirs, files in os.walk(self.eidos_dir):
-            dirs[:] = [d for d in dirs if d not in (".cache", "by-status")]
-            root_path = Path(root).resolve()
-            current_dirs.append(root_path)
-            for fn in files:
-                fp = (root_path / fn).resolve()
-                if not fp.is_symlink():
-                    current_files.add(fp)
-
-        for fp in (current_files - self._initial_files) | self.created_files:
-            with contextlib.suppress(OSError):
-                if fp.exists():
-                    fp.unlink()
-
-        for fp, raw_bytes in self.original_files.items():
-            with contextlib.suppress(OSError):
-                fp.parent.mkdir(parents=True, exist_ok=True)
-                if not fp.exists() or fp.read_bytes() != raw_bytes:
-                    fp.write_bytes(raw_bytes)
-
-        for dp in sorted(current_dirs, key=lambda p: len(p.parts), reverse=True):
-            if dp not in self.original_dirs and dp.exists():
-                with contextlib.suppress(OSError):
-                    if not any(dp.iterdir()):
-                        dp.rmdir()
-
-        sync_delta_views(self.eidos_dir)
-
-
 def _check_structural_subtarget_precondition(
     m: dict[str, Any],
     specs_by_id: dict[str, tuple[Path, str, dict[str, Any]]],
     container_components: dict[str, str],
 ) -> bool:
-    """Verify structural parent/sub-target membership when both parent and child target keys are specified.
+    """Verify structural parent/target membership when both parent and target are specified.
 
-    Returns False if a declared parent/sub-target relationship is missing, or True if satisfied (or not applicable).
+    Returns False if a declared parent/target relationship is missing, or True if satisfied (or not applicable).
     """
-    t_inv = m.get("target_invariant_id")
-    t_inv_owner = (
-        m.get("target_capability")
-        or m.get("target_policy")
-        or m.get("target_container")
-        or m.get("target_component")
-    )
-    if t_inv_owner and t_inv:
-        owner_spec_id = container_components.get(t_inv_owner, t_inv_owner)
+    target = str(m.get("target") or "").strip()
+    parent = str(m.get("parent") or "").strip()
+    if not parent or not target or parent == target:
+        return True
+
+    if target.startswith("INV-"):
+        owner_spec_id = container_components.get(parent, parent)
         if owner_spec_id not in specs_by_id:
             return False
         _, _, owner_fm = specs_by_id[owner_spec_id]
@@ -1075,41 +768,34 @@ def _check_structural_subtarget_precondition(
         )
         for comp in (owner_fm or {}).get("components", []) or []:
             if isinstance(comp, dict) and comp.get("invariants") and (
-                t_inv_owner == owner_spec_id or comp.get("id") == t_inv_owner
+                parent == owner_spec_id or comp.get("id") == parent
             ):
                 invs.extend(comp.get("invariants") or [])
         inv_ids = {i.get("id") if isinstance(i, dict) else str(i) for i in invs}
-        if t_inv not in inv_ids:
-            return False
+        return target in inv_ids
 
-    t_cnt = m.get("target_container")
-    t_cmp = m.get("target_component")
-    if t_cnt and t_cmp and t_cnt != t_cmp:
-        if t_cnt not in specs_by_id:
+    if target.startswith("CMP-") and parent.startswith("CNT-"):
+        if parent not in specs_by_id:
             return False
-        in_cnt = container_components.get(t_cmp) == t_cnt or (
-            t_cmp in specs_by_id and (specs_by_id[t_cmp][2] or {}).get("container") == t_cnt
+        return bool(
+            container_components.get(target) == parent
+            or (target in specs_by_id and (specs_by_id[target][2] or {}).get("container") == parent)
         )
-        if not in_cnt:
-            return False
 
-    owner_cnt = t_cnt or t_cmp
-    t_ctr = m.get("target_contract")
-    if owner_cnt and t_ctr and owner_cnt != t_ctr:
-        if owner_cnt not in specs_by_id:
+    if target.startswith("CTR-") and parent.startswith(("CNT-", "CMP-")):
+        if parent not in specs_by_id:
             return False
-        _, _, cnt_fm = specs_by_id[owner_cnt]
+        _, _, cnt_fm = specs_by_id[parent]
         contracts = (cnt_fm or {}).get("contracts", {}) or {}
         all_ctrs = (
             (contracts.get("provides") or []) + (contracts.get("consumes") or []) + (contracts.get("requires") or [])
         )
-        if t_ctr not in all_ctrs:
-            if t_ctr in specs_by_id:
-                ctr_fm = specs_by_id[t_ctr][2] or {}
-                if (ctr_fm.get("owning_container") or ctr_fm.get("owning_component")) != owner_cnt:
-                    return False
-            else:
-                return False
+        if target in all_ctrs:
+            return True
+        if target in specs_by_id:
+            ctr_fm = specs_by_id[target][2] or {}
+            return (ctr_fm.get("owning_container") or ctr_fm.get("owning_component")) == parent
+        return False
 
     return True
 
@@ -1364,7 +1050,7 @@ def _evaluate_declarative_postcondition(
 
 
 def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool, str, DeltaVerificationReport | None]:
-    """Verify that all semantic mutations declared in a SpecDelta are fulfilled in living specifications."""
+    """Verify that all composable semantic mutations declared in a SpecDelta are fulfilled in living specifications."""
     file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id_or_path)
     if not file_path:
         file_path = find_spec_by_id_or_path(eidos_dir, delta_id_or_path)
@@ -1387,7 +1073,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
     items: list[MutationVerificationItem] = []
     for raw_m in raw_mutations:
         m = normalize_delta_mutation(raw_m) if isinstance(raw_m, dict) else {}
-        action = str(m.get("action", "")).strip().lower()
+        op = str(m.get("operation", "")).strip().lower()
         target = _extract_mutation_target(m)
         details = str(m.get("details", "")).strip()
 
@@ -1399,35 +1085,35 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
         lookup_target, target_path_resolved, target_path_exists = _resolve_target_path_and_id(
             target, eidos_dir, specs_by_id
         )
+        t_meta = resolve_entity_prefix_meta(lookup_target) or resolve_entity_prefix_meta(target)
+        entity_kind = t_meta[1] if t_meta else None
 
-        if action not in SUPPORTED_MUTATION_ACTIONS:
+        if op not in SUPPORTED_MUTATION_OPERATIONS:
             verified = False
             status = "UNSUPPORTED_ACTION"
-            failure_reason = f"Unsupported mutation action '{action}'."
+            failure_reason = f"Unsupported mutation operation '{op}'."
 
-        # 1. Removal / Deprecation Actions
-        elif action in (
-            "remove_component",
-            "remove_container",
-            "remove_contract",
-            "remove_domain",
-            "remove_persona",
-            "remove_design_system",
-            "remove_screen",
-            "remove_ui_component",
-            "remove_client",
-            "remove_flow",
-        ):
-            still_present = lookup_target in specs_by_id or lookup_target in container_components or target_path_exists
-            if not still_present:
+        elif op == "deprecate" and entity_kind not in ("capability", "policy"):
+            verified = False
+            status = "UNSUPPORTED_ACTION"
+            failure_reason = f"Operation 'deprecate' is only supported for capability and policy targets (got '{target}')."
+
+        elif entity_kind == "architecture" and op != "modify":
+            verified = False
+            status = "UNSUPPORTED_ACTION"
+            failure_reason = f"Architecture target '{target}' only supports operation 'modify' (got '{op}')."
+
+        # 1. Removal / Deprecation Operations
+        elif op == "remove" and entity_kind == "invariant":
+            if lookup_target not in invariants:
                 verified = True
                 status = "ABSENT_AS_EXPECTED"
             else:
                 verified = False
                 status = "STILL_PRESENT"
-                failure_reason = f"Target '{lookup_target}' is still present in living specifications."
+                failure_reason = f"Invariant '{lookup_target}' is still present."
 
-        elif action in ("deprecate_capability", "remove_capability", "deprecate_policy", "remove_policy"):
+        elif op == "deprecate" or (op == "remove" and entity_kind in ("capability", "policy")):
             if lookup_target not in specs_by_id and not target_path_exists:
                 verified = True
                 status = "ABSENT_AS_EXPECTED"
@@ -1445,8 +1131,18 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                         f"Target '{lookup_target}' has status '{doc_fm.get('status')}', expected deprecated/sunset/retired."
                     )
 
-        # 2. Invariant Actions
-        elif action == "add_invariant":
+        elif op == "remove":
+            still_present = lookup_target in specs_by_id or lookup_target in container_components or target_path_exists
+            if not still_present:
+                verified = True
+                status = "ABSENT_AS_EXPECTED"
+            else:
+                verified = False
+                status = "STILL_PRESENT"
+                failure_reason = f"Target '{lookup_target}' is still present in living specifications."
+
+        # 2. Addition Operations
+        elif op == "add" and entity_kind == "invariant":
             if lookup_target in invariants and _check_structural_subtarget_precondition(
                 m, specs_by_id, container_components
             ):
@@ -1465,7 +1161,34 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                 status = "MISSING"
                 failure_reason = f"Invariant '{lookup_target}' not found on parent specification."
 
-        elif action == "patch_invariant":
+        elif op == "add":
+            found = (
+                lookup_target in specs_by_id or lookup_target in container_components or target_path_exists
+            ) and _check_structural_subtarget_precondition(m, specs_by_id, container_components)
+            if found:
+                decl_ok = _evaluate_declarative_postcondition(
+                    m,
+                    lookup_target,
+                    specs_by_id,
+                    container_components,
+                    invariant_map,
+                    target_file=target_path_resolved,
+                    diagnostics=diag,
+                )
+                if decl_ok is False:
+                    verified = False
+                    status = "UNMODIFIED"
+                    failure_reason = "; ".join(diag) if diag else "Declarative expect post-condition failed."
+                else:
+                    verified = True
+                    status = "FOUND"
+            else:
+                verified = False
+                status = "MISSING"
+                failure_reason = f"Target '{lookup_target}' not found."
+
+        # 3. Modification Operations
+        elif op == "modify" and entity_kind == "invariant":
             if lookup_target not in invariant_map or not _check_structural_subtarget_precondition(
                 m, specs_by_id, container_components
             ):
@@ -1516,17 +1239,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                             f"Invariant '{lookup_target}' digest matches pre-delta baseline (no modification detected)."
                         )
 
-        elif action == "remove_invariant":
-            if lookup_target not in invariants:
-                verified = True
-                status = "ABSENT_AS_EXPECTED"
-            else:
-                verified = False
-                status = "STILL_PRESENT"
-                failure_reason = f"Invariant '{lookup_target}' is still present."
-
-        # 3. Modification / Extension / Patch Actions
-        elif action in MODIFY_ACTION_EXPECTED_TYPES:
+        elif op == "modify":
             target_file: Path | None = None
             if lookup_target in specs_by_id:
                 target_file = specs_by_id[lookup_target][0]
@@ -1534,7 +1247,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                 target_file = specs_by_id[container_components[lookup_target]][0]
             elif target_path_resolved is not None:
                 target_file = target_path_resolved
-            elif action == "modify_architecture":
+            elif entity_kind == "architecture":
                 for arch_id, (p, d_type, _) in specs_by_id.items():
                     if d_type == "tech/architecture":
                         target_file = p
@@ -1607,36 +1320,9 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                             f"Target '{lookup_target}' digest matches pre-delta baseline (no modification detected)."
                         )
 
-        # 4. Standard Addition Actions
-        elif action in ADD_ACTIONS:
-            found = (
-                lookup_target in specs_by_id or lookup_target in container_components or target_path_exists
-            ) and _check_structural_subtarget_precondition(m, specs_by_id, container_components)
-            if found:
-                decl_ok = _evaluate_declarative_postcondition(
-                    m,
-                    lookup_target,
-                    specs_by_id,
-                    container_components,
-                    invariant_map,
-                    target_file=target_path_resolved,
-                    diagnostics=diag,
-                )
-                if decl_ok is False:
-                    verified = False
-                    status = "UNMODIFIED"
-                    failure_reason = "; ".join(diag) if diag else "Declarative expect post-condition failed."
-                else:
-                    verified = True
-                    status = "FOUND"
-            else:
-                verified = False
-                status = "MISSING"
-                failure_reason = f"Target '{lookup_target}' not found."
-
         items.append(
             MutationVerificationItem(
-                action=action,
+                action=op,
                 target=target,
                 verified=verified,
                 status=status,
@@ -1666,564 +1352,16 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
     return is_verified, msg, report
 
 
-_KNOWN_CODE_EXTENSIONS = {
-    ".py",
-    ".ts",
-    ".tsx",
-    ".js",
-    ".jsx",
-    ".go",
-    ".rs",
-    ".java",
-    ".kt",
-    ".cs",
-    ".rb",
-    ".php",
-    ".swift",
-    ".cpp",
-    ".c",
-}
-
-
-def _infer_container_code_extension(cnt_fm: dict[str, Any]) -> str:
-    """Infer the default source file extension for a container from existing components or runtime."""
-    comps = cnt_fm.get("components", [])
-    if isinstance(comps, list):
-        for comp in comps:
-            if isinstance(comp, dict):
-                sp = comp.get("source_path")
-                if isinstance(sp, str) and sp.strip():
-                    ext = Path(sp.strip()).suffix.lower()
-                    if ext in _KNOWN_CODE_EXTENSIONS:
-                        return ext
-
-    runtime = str(cnt_fm.get("runtime", "")).lower()
-    if "typescript" in runtime or "deno" in runtime or re.search(r"\bts\b", runtime):
-        return ".ts"
-    if "javascript" in runtime or "node" in runtime or re.search(r"\bjs\b", runtime):
-        return ".js"
-    if "golang" in runtime or re.search(r"\bgo\b", runtime):
-        return ".go"
-    if "rust" in runtime or "cargo" in runtime:
-        return ".rs"
-    if "kotlin" in runtime:
-        return ".kt"
-    if "java" in runtime or "jvm" in runtime or "spring" in runtime:
-        return ".java"
-    if "c#" in runtime or "csharp" in runtime or ".net" in runtime or "dotnet" in runtime:
-        return ".cs"
-    if "ruby" in runtime or "rails" in runtime:
-        return ".rb"
-    if "php" in runtime or "laravel" in runtime:
-        return ".php"
-    if "swift" in runtime:
-        return ".swift"
-    if "c++" in runtime or "cpp" in runtime:
-        return ".cpp"
-    if re.search(r"\bc(?:\d+)?\b", runtime):
-        return ".c"
-    return ".py"
-
-
-def _apply_expect_or_details_to_spec(
-    spec_file: Path,
-    expect: dict[str, Any] | None,
-    details: str = "",
-    tx: _MutationTransaction | None = None,
-) -> bool:
-    """Apply declarative expect fields (frontmatter and/or body.contains) to a specification file on disk."""
-    if not isinstance(expect, dict) or not expect:
-        return False
-    content = spec_file.read_text(encoding="utf-8")
-    updated = content
-    fm, body, err = extract_frontmatter(updated)
-    if err or not isinstance(fm, dict):
-        return False
-    contains_items, _not_contains_items, fm_expectations = _normalize_expect_spec(expect)
-    if not contains_items and not fm_expectations:
-        return False
-    fm_changed = False
-    for k, v in fm_expectations.items():
-        if isinstance(v, (str, int, float, bool)) and k in fm and not isinstance(fm.get(k), (dict, list)):
-            val_str = json.dumps(v) if isinstance(v, str) else str(v).lower() if isinstance(v, bool) else str(v)
-            updated = _set_frontmatter_scalar(updated, k, val_str)
-            fm[k] = v
-        else:
-            fm[k] = v
-            fm_changed = True
-    if fm_changed:
-        updated = _render_spec(fm, body)
-    for needle in contains_items:
-        if needle not in updated:
-            body = f"{body.rstrip()}\n\n{needle}\n"
-            updated = _render_spec(fm, body) if fm_changed else f"{updated.rstrip()}\n\n{needle}\n"
-
-    if updated != content:
-        if tx is not None:
-            tx.record_before_write(spec_file)
-        spec_file.write_text(updated, encoding="utf-8")
-    return True
-
-
-def execute_delta_mutations(
-    eidos_dir: Path,
-    delta_id_or_path: str,
-    _tx: _MutationTransaction | None = None,
-) -> tuple[bool, str, list[Path]]:
-    """Deterministically scaffold and execute mutations declared in a SpecDelta with copy-on-write transactional rollback."""
-    # Function-local import: create_spec (scaffolder) itself depends on this module's view/baseline helpers,
-    # so a module-level import would create an import cycle (DLT-2026-038).
-    from eidos.core.lifecycle.scaffolder import create_spec
-
-    file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id_or_path)
-    if not file_path:
-        file_path = find_spec_by_id_or_path(eidos_dir, delta_id_or_path)
-
-    if not file_path or not file_path.exists():
-        return False, f"SpecDelta '{delta_id_or_path}' not found.", []
-
-    doc = parse_spec_file(file_path)
-    if doc.doc_type != "delta/mutation":
-        return False, f"Document at '{file_path}' is not a SpecDelta (type: {doc.doc_type}).", []
-
-    raw_mutations = doc.frontmatter.get("mutations", [])
-    if not isinstance(raw_mutations, list):
-        raw_mutations = []
-
-    # Record pre-execution baselines if not already present so subsequent verification succeeds
-    _snapshot_delta_baselines(eidos_dir, doc.doc_id, overwrite=False)
-
-    tx = _tx if _tx is not None else _MutationTransaction(eidos_dir)
-    if _tx is None:
-        tx.snapshot(target_files=[file_path])
-
-    specs_by_id, container_components, invariant_map = _build_spec_catalog_with_invariants(eidos_dir)
-    mutated_files: list[Path] = []
-    deleted_files: set[Path] = set()
-
-    def _abort(reason: str) -> tuple[bool, str, list[Path]]:
-        tx.rollback()
-        return False, reason, []
-
-    try:
-        for raw_m in raw_mutations:
-            if not isinstance(raw_m, dict):
-                return _abort(f"Invalid mutation entry in '{doc.doc_id}': expected mapping.")
-            m = normalize_delta_mutation(raw_m)
-            action = str(m.get("action", "")).strip().lower()
-            raw_target = _extract_mutation_target(m)
-            target, _resolved_target_path, _ = _resolve_target_path_and_id(raw_target, eidos_dir, specs_by_id)
-            details = str(m.get("details", "")).strip()
-            expect = m.get("expect") if isinstance(m.get("expect"), dict) else None
-            contains_items, _not_contains_items, fm_exp = _normalize_expect_spec(expect)
-
-            if action not in SUPPORTED_MUTATION_ACTIONS:
-                return _abort(f"Unsupported mutation action '{action}' in SpecDelta '{doc.doc_id}'.")
-
-            # 1. Standalone Addition Actions (11 specification types)
-            if action in ADD_STANDALONE_ACTIONS:
-                doc_type_key, primary_field, prefix, catalog_type = ADD_STANDALONE_ACTIONS[action]
-                target_id = (
-                    (m.get("new_capability_id") or m.get("target_capability") or target)
-                    if action == "add_capability"
-                    else (m.get(primary_field) or target)
-                )
-                if not target_id or target_id.startswith("unspecified"):
-                    return _abort(f"Cannot execute '{action}': missing target identifier.")
-                if target_id not in specs_by_id:
-                    title = m.get("title") or target_id.replace(prefix, "").replace("-", " ").title()
-                    kwargs: dict[str, Any] = {
-                        "eidos_dir": eidos_dir,
-                        "doc_type_key": doc_type_key,
-                        "raw_id": target_id,
-                        "title": title,
-                    }
-                    if action == "add_capability":
-                        domain = m.get("target_domain")
-                        if not domain:
-                            domains = [did for did, (_, dt, _) in specs_by_id.items() if dt == "product/domain"]
-                            domain = domains[0] if domains else "DOM-CORE"
-                        kwargs["domain"] = domain
-                    elif action == "add_policy":
-                        kwargs["rule"] = fm_exp.get("rule") or details or f"Rule statement for {target_id}."
-                    elif action in ("add_contract", "add_screen", "add_client", "add_flow"):
-                        if m.get("target_container"):
-                            kwargs["owning_container"] = m["target_container"]
-                    created = create_spec(**kwargs)
-                    tx.created_files.add(created.resolve())
-                    if expect:
-                        _apply_expect_or_details_to_spec(created, expect, "")
-                    if created and created not in mutated_files:
-                        mutated_files.append(created)
-                    created_doc = parse_spec_file(created)
-                    specs_by_id[created_doc.doc_id] = (created, catalog_type, created_doc.frontmatter)
-
-            # 2. Add Component (inline on container or standalone)
-            elif action == "add_component":
-                target_id = m.get("target_component") or target
-                if not target_id or target_id.startswith("unspecified"):
-                    return _abort("Cannot execute 'add_component': missing component target.")
-                if target_id not in container_components and target_id not in specs_by_id:
-                    target_cnt = m.get("target_container")
-                    cnt_file: Path | None = None
-                    if target_cnt:
-                        if target_cnt not in specs_by_id or specs_by_id[target_cnt][1] != "tech/container":
-                            return _abort(
-                                f"Cannot execute 'add_component' for '{target_id}': target container '{target_cnt}' not found."
-                            )
-                        cnt_file = specs_by_id[target_cnt][0]
-                    else:
-                        for cid, (p, dt, _) in specs_by_id.items():
-                            if dt == "tech/container":
-                                cnt_file = p
-                                target_cnt = cid
-                                break
-                    if cnt_file and cnt_file.exists():
-                        cnt_content = cnt_file.read_text(encoding="utf-8")
-                        cnt_fm, _cnt_body, _ = extract_frontmatter(cnt_content)
-                        if cnt_fm is not None:
-                            comps = cnt_fm.setdefault("components", [])
-                            pkg_raw = cnt_fm.get("package_path", "src")
-                            pkg_base = str(pkg_raw[0] if isinstance(pkg_raw, list) and pkg_raw else pkg_raw).rstrip("/")
-                            comp_slug = target_id.replace("CMP-", "").lower().replace("-", "_")
-                            comp_ext = _infer_container_code_extension(cnt_fm)
-                            new_comp: dict[str, Any] = {
-                                "id": target_id,
-                                "name": m.get("title") or target_id.replace("CMP-", "").replace("-", " ").title(),
-                                "responsibility": details or f"Component responsible for {target_id}.",
-                                "source_path": f"{pkg_base}/{comp_slug}{comp_ext}",
-                            }
-                            for ek, ev in fm_exp.items():
-                                new_comp[ek] = ev
-                            if not any(isinstance(c, dict) and c.get("id") == target_id for c in comps):
-                                updated_content = _mutate_frontmatter_components(
-                                    cnt_content, "append", target_id, new_comp
-                                )
-                                for needle in contains_items:
-                                    if needle not in updated_content:
-                                        updated_content = f"{updated_content.rstrip()}\n\n{needle}\n"
-                                tx.record_before_write(cnt_file)
-                                cnt_file.write_text(updated_content, encoding="utf-8")
-                                container_components[target_id] = target_cnt or "CNT-CORE"
-                                updated_doc = parse_spec_file(cnt_file)
-                                if target_cnt:
-                                    specs_by_id[target_cnt] = (cnt_file, "tech/container", updated_doc.frontmatter)
-                                if cnt_file not in mutated_files:
-                                    mutated_files.append(cnt_file)
-                    else:
-                        title = m.get("title") or target_id.replace("CMP-", "").replace("-", " ").title()
-                        created = create_spec(
-                            eidos_dir=eidos_dir,
-                            doc_type_key="component",
-                            raw_id=target_id,
-                            title=title,
-                        )
-                        tx.created_files.add(created.resolve())
-                        if expect:
-                            _apply_expect_or_details_to_spec(created, expect, "")
-                        if created and created not in mutated_files:
-                            mutated_files.append(created)
-                        created_doc = parse_spec_file(created)
-                        specs_by_id[created_doc.doc_id] = (created, "tech/component", created_doc.frontmatter)
-
-            # 3. Add Invariant
-            elif action == "add_invariant":
-                inv_id = m.get("target_invariant_id") or target
-                if not inv_id or not inv_id.startswith("INV-"):
-                    return _abort(f"Cannot execute 'add_invariant': invalid invariant ID '{inv_id}'.")
-                if inv_id not in invariant_map:
-                    parent_id = (
-                        m.get("target_capability")
-                        or m.get("target_policy")
-                        or m.get("target_component")
-                        or m.get("target_container")
-                    )
-                    if not parent_id or parent_id not in specs_by_id:
-                        return _abort(
-                            f"Cannot execute 'add_invariant' for '{inv_id}': parent specification '{parent_id or 'unspecified'}' not found."
-                        )
-                    parent_file, parent_type, _ = specs_by_id[parent_id]
-                    p_content = parent_file.read_text(encoding="utf-8")
-                    p_fm, _p_body, p_err = extract_frontmatter(p_content)
-                    if p_err or not isinstance(p_fm, dict):
-                        return _abort(f"Cannot execute 'add_invariant': failed to parse '{parent_file.name}'.")
-                    new_inv = {
-                        "id": inv_id,
-                        "rule": fm_exp.get("rule") or details or f"Invariant rule for {inv_id}.",
-                        "test_binding": fm_exp.get("test_binding")
-                        or "tests/test_placeholder.py::test_placeholder",
-                    }
-                    if parent_type == "product/capability":
-                        tech = p_fm.setdefault("technical", {})
-                        inv_list = tech.setdefault("invariants", [])
-                    else:
-                        inv_list = p_fm.setdefault("invariants", [])
-                    if not any(isinstance(i, dict) and i.get("id") == inv_id for i in inv_list):
-                        inv_list.append(new_inv)
-                        updated_content = _mutate_frontmatter_invariants(
-                            p_content,
-                            "append",
-                            inv_id,
-                            new_inv,
-                            is_capability=(parent_type == "product/capability"),
-                        )
-                        for needle in contains_items:
-                            if needle not in updated_content:
-                                updated_content = f"{updated_content.rstrip()}\n\n{needle}\n"
-                        tx.record_before_write(parent_file)
-                        parent_file.write_text(updated_content, encoding="utf-8")
-                        invariant_map[inv_id] = (parent_file, new_inv)
-                        specs_by_id[parent_id] = (parent_file, parent_type, p_fm)
-                        if parent_file not in mutated_files:
-                            mutated_files.append(parent_file)
-
-            # 4. Type-Safe Removals
-            elif action == "remove_component":
-                target_id = m.get("target_component") or target
-                if target_id in container_components and target_id not in specs_by_id:
-                    cnt_id = container_components[target_id]
-                    if m.get("target_container") and m.get("target_container") != cnt_id:
-                        return _abort(
-                            f"Cannot execute 'remove_component': '{target_id}' belongs to '{cnt_id}', not '{m.get('target_container')}'."
-                        )
-                    if cnt_id in specs_by_id:
-                        cnt_file, cnt_type, _ = specs_by_id[cnt_id]
-                        if cnt_type != "tech/container":
-                            return _abort(
-                                f"Type mismatch for 'remove_component': parent '{cnt_id}' has type '{cnt_type}', expected 'tech/container'."
-                            )
-                        if cnt_file.exists():
-                            cnt_content = cnt_file.read_text(encoding="utf-8")
-                            cnt_fm, _cnt_body, _ = extract_frontmatter(cnt_content)
-                            if cnt_fm and "components" in cnt_fm:
-                                updated_content = _mutate_frontmatter_components(cnt_content, "remove", target_id)
-                                tx.record_before_write(cnt_file)
-                                cnt_file.write_text(updated_content, encoding="utf-8")
-                                del container_components[target_id]
-                                updated_doc = parse_spec_file(cnt_file)
-                                specs_by_id[cnt_id] = (cnt_file, cnt_type, updated_doc.frontmatter)
-                                if cnt_file not in mutated_files:
-                                    mutated_files.append(cnt_file)
-                elif target_id in specs_by_id:
-                    spec_file, actual_type, _ = specs_by_id[target_id]
-                    if actual_type != "tech/component":
-                        return _abort(
-                            f"Type mismatch for 'remove_component': target '{target_id}' has type '{actual_type}', expected 'tech/component'."
-                        )
-                    if spec_file.exists():
-                        tx.record_before_write(spec_file)
-                        spec_file.unlink()
-                        deleted_files.add(spec_file)
-                        del specs_by_id[target_id]
-                        if spec_file not in mutated_files:
-                            mutated_files.append(spec_file)
-
-            elif action in REMOVE_ACTION_EXPECTED_TYPES:
-                expected_type = REMOVE_ACTION_EXPECTED_TYPES[action]
-                target_id = target
-                if target_id in container_components and target_id not in specs_by_id:
-                    return _abort(
-                        f"Type mismatch for '{action}': target '{target_id}' is an inline 'tech/component', expected '{expected_type}'."
-                    )
-                if target_id in specs_by_id:
-                    spec_file, actual_type, _ = specs_by_id[target_id]
-                    if actual_type != expected_type:
-                        return _abort(
-                            f"Type mismatch for '{action}': target '{target_id}' has type '{actual_type}', expected '{expected_type}'."
-                        )
-                    if spec_file.exists():
-                        tx.record_before_write(spec_file)
-                        spec_file.unlink()
-                        deleted_files.add(spec_file)
-                        del specs_by_id[target_id]
-                        if spec_file not in mutated_files:
-                            mutated_files.append(spec_file)
-
-            elif action == "remove_invariant":
-                inv_id = m.get("target_invariant_id") or target
-                if inv_id in specs_by_id:
-                    _, actual_type, _ = specs_by_id[inv_id]
-                    return _abort(
-                        f"Type mismatch for 'remove_invariant': target '{inv_id}' has type '{actual_type}', expected 'invariant'."
-                    )
-                if inv_id in invariant_map:
-                    inv_file, _ = invariant_map[inv_id]
-                    if inv_file.exists():
-                        p_content = inv_file.read_text(encoding="utf-8")
-                        p_fm, _p_body, p_err = extract_frontmatter(p_content)
-                        if p_err or not isinstance(p_fm, dict):
-                            return _abort(f"Cannot execute 'remove_invariant': failed to parse '{inv_file.name}'.")
-                        updated_content = _mutate_frontmatter_invariants(p_content, "remove", inv_id)
-                        tx.record_before_write(inv_file)
-                        inv_file.write_text(updated_content, encoding="utf-8")
-                        del invariant_map[inv_id]
-                        if inv_file not in mutated_files:
-                            mutated_files.append(inv_file)
-
-            # 5. Deprecation Actions
-            elif action in DEPRECATE_ACTION_EXPECTED_TYPES:
-                expected_type = DEPRECATE_ACTION_EXPECTED_TYPES[action]
-                if target not in specs_by_id:
-                    return _abort(f"Cannot execute '{action}': target '{target}' not found.")
-                spec_file, actual_type, _ = specs_by_id[target]
-                if actual_type != expected_type:
-                    return _abort(
-                        f"Type mismatch for '{action}': target '{target}' has type '{actual_type}', expected '{expected_type}'."
-                    )
-                content = spec_file.read_text(encoding="utf-8")
-                updated_content = _set_frontmatter_scalar(content, "status", "deprecated")
-                tx.record_before_write(spec_file)
-                spec_file.write_text(updated_content, encoding="utf-8")
-                updated_doc = parse_spec_file(spec_file)
-                specs_by_id[target] = (spec_file, actual_type, updated_doc.frontmatter)
-                if spec_file not in mutated_files:
-                    mutated_files.append(spec_file)
-
-            # 6. Patch Invariant
-            elif action == "patch_invariant":
-                inv_id = m.get("target_invariant_id") or target
-                if inv_id not in invariant_map or not _check_structural_subtarget_precondition(
-                    m, specs_by_id, container_components
-                ):
-                    return _abort(f"Cannot execute 'patch_invariant': invariant '{inv_id}' not found.")
-                inv_file, inv_dict = invariant_map[inv_id]
-                decl_ok = _evaluate_declarative_postcondition(
-                    m, inv_id, specs_by_id, container_components, invariant_map
-                )
-                if decl_ok is not True:
-                    if not fm_exp:
-                        return _abort(
-                            f"Cannot execute 'patch_invariant' on '{inv_id}': 'expect.frontmatter' is required for deterministic execution."
-                        )
-                    p_content = inv_file.read_text(encoding="utf-8")
-                    p_fm, _p_body, p_err = extract_frontmatter(p_content)
-                    if p_err or not isinstance(p_fm, dict):
-                        return _abort(f"Cannot execute 'patch_invariant': failed to parse '{inv_file.name}'.")
-                    inv_lists = [
-                        p_fm.get("invariants"),
-                        (p_fm.get("technical") or {}).get("invariants"),
-                    ]
-                    for ilist in inv_lists:
-                        if isinstance(ilist, list):
-                            for item in ilist:
-                                if isinstance(item, dict) and item.get("id") == inv_id:
-                                    for ek, ev in fm_exp.items():
-                                        item[ek] = ev
-                                    inv_dict = dict(item)
-                    updated_content = _mutate_frontmatter_invariants(p_content, "replace", inv_id, inv_dict)
-                    for needle in contains_items:
-                        if needle not in updated_content:
-                            updated_content = f"{updated_content.rstrip()}\n\n{needle}\n"
-                    tx.record_before_write(inv_file)
-                    inv_file.write_text(updated_content, encoding="utf-8")
-                    invariant_map[inv_id] = (inv_file, inv_dict)
-                    if inv_file not in mutated_files:
-                        mutated_files.append(inv_file)
-
-            # 7. Modify / Extend / Patch Specification Actions
-            elif action in MODIFY_ACTION_EXPECTED_TYPES:
-                expected_type = MODIFY_ACTION_EXPECTED_TYPES[action]
-                if not _check_structural_subtarget_precondition(m, specs_by_id, container_components):
-                    return _abort(
-                        f"Cannot execute '{action}': structural sub-target precondition failed for '{target}'."
-                    )
-                if action == "modify_component" and target in container_components and target not in specs_by_id:
-                    cnt_id = container_components[target]
-                    cnt_file, cnt_type, cnt_fm = specs_by_id[cnt_id]
-                    comp_dict = _find_inline_component_dict(target, cnt_fm)
-                    if comp_dict is None:
-                        return _abort(f"Cannot execute 'modify_component': inline component '{target}' not found.")
-                    decl_ok = _evaluate_declarative_postcondition(
-                        m, target, specs_by_id, container_components, invariant_map, target_file=cnt_file
-                    )
-                    if decl_ok is not True:
-                        if not fm_exp:
-                            return _abort(
-                                f"Cannot execute 'modify_component' on '{target}': 'expect.frontmatter' is required for deterministic execution."
-                            )
-                        updated_comp = dict(comp_dict)
-                        for ek, ev in fm_exp.items():
-                            updated_comp[ek] = ev
-                        cnt_content = cnt_file.read_text(encoding="utf-8")
-                        updated_content = _mutate_frontmatter_components(cnt_content, "replace", target, updated_comp)
-                        for needle in contains_items:
-                            if needle not in updated_content:
-                                updated_content = f"{updated_content.rstrip()}\n\n{needle}\n"
-                        tx.record_before_write(cnt_file)
-                        cnt_file.write_text(updated_content, encoding="utf-8")
-                        updated_doc = parse_spec_file(cnt_file)
-                        specs_by_id[cnt_id] = (cnt_file, cnt_type, updated_doc.frontmatter)
-                        if cnt_file not in mutated_files:
-                            mutated_files.append(cnt_file)
-                else:
-                    target_file: Path | None = None
-                    actual_type: str | None = None
-                    if target in specs_by_id:
-                        target_file, actual_type, _ = specs_by_id[target]
-                    elif action == "modify_architecture":
-                        for _, (p, d_type, _) in specs_by_id.items():
-                            if d_type == "tech/architecture":
-                                target_file = p
-                                actual_type = d_type
-                                break
-                    if target_file is None or not target_file.exists():
-                        return _abort(f"Cannot execute '{action}': target '{target}' not found.")
-                    if actual_type and actual_type != expected_type:
-                        return _abort(
-                            f"Type mismatch for '{action}': target '{target}' has type '{actual_type}', expected '{expected_type}'."
-                        )
-                    decl_ok = _evaluate_declarative_postcondition(
-                        m, target, specs_by_id, container_components, invariant_map, target_file=target_file
-                    )
-                    if decl_ok is not True:
-                        if not _apply_expect_or_details_to_spec(target_file, expect, details, tx=tx):
-                            return _abort(
-                                f"Cannot execute '{action}' on '{target}': 'expect' (with frontmatter or body.contains) is required for deterministic execution."
-                            )
-                        updated_doc = parse_spec_file(target_file)
-                        if updated_doc.doc_id:
-                            specs_by_id[updated_doc.doc_id] = (
-                                target_file,
-                                updated_doc.doc_type,
-                                updated_doc.frontmatter,
-                            )
-                        if target_file not in mutated_files:
-                            mutated_files.append(target_file)
-
-        # Pre-commit validation: validate all created or modified baseline specifications
-        validator = SpecValidator()
-        for mf in mutated_files:
-            if mf in deleted_files or not mf.exists():
-                continue
-            mut_doc = parse_spec_file(mf)
-            errors = validator.validate_document(mut_doc)
-            if errors:
-                return _abort(
-                    f"Transactional rollback: mutated specification '{mf.name}' failed schema validation: {'; '.join(errors)}"
-                )
-
-    except Exception as exc:
-        return _abort(f"Transactional rollback due to error during mutation execution: {exc}")
-
-    return (
-        True,
-        f"Successfully executed mutations for '{doc.doc_id}' ({len(mutated_files)} files created/modified).",
-        mutated_files,
-    )
-
-
 def apply_delta(
     eidos_dir: Path,
     delta_id_or_path: str,
-    execute: bool = False,
     verify: bool = True,
-) -> tuple[bool, str, Path | None, list[Path]]:
-    """Transition a SpecDelta to applied status in-place with pre-commit schema validation and transactional rollback.
+) -> tuple[bool, str, Path | None]:
+    """Transition a SpecDelta to applied status in-place with pre-commit schema validation.
 
     Args:
         eidos_dir: Path to the eidos specifications root.
         delta_id_or_path: ID, filename, or Path of the delta to apply.
-        execute: If True, deterministically scaffold missing specs and apply structural mutations.
         verify: If True (default), verify that all mutations are fulfilled in living specs before applying.
     """
     file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id_or_path)
@@ -2231,44 +1369,30 @@ def apply_delta(
         file_path = find_spec_by_id_or_path(eidos_dir, delta_id_or_path)
 
     if not file_path or not file_path.exists():
-        return False, f"SpecDelta '{delta_id_or_path}' not found.", None, []
+        return False, f"SpecDelta '{delta_id_or_path}' not found.", None
 
     doc = parse_spec_file(file_path)
     if doc.doc_type != "delta/mutation":
-        return False, f"Document at '{file_path}' is not a SpecDelta (type: {doc.doc_type}).", None, []
-
-    tx = _MutationTransaction(eidos_dir)
-    tx.snapshot(target_files=[file_path])
-
-    mutated_files: list[Path] = []
-    if execute:
-        exec_ok, exec_msg, mutated_files = execute_delta_mutations(eidos_dir, delta_id_or_path, _tx=tx)
-        if not exec_ok:
-            tx.rollback()
-            return False, f"Failed executing delta mutations: {exec_msg}", file_path, []
+        return False, f"Document at '{file_path}' is not a SpecDelta (type: {doc.doc_type}).", None
 
     if verify:
         ver_ok, ver_msg, report = verify_delta_mutations(eidos_dir, delta_id_or_path)
         if not ver_ok:
-            tx.rollback()
             unfulfilled = [f"{m.action}:{m.target}" for m in (report.mutations if report else []) if not m.verified]
             return (
                 False,
                 f"Verification failed before apply: {ver_msg} Unfulfilled: {', '.join(unfulfilled)}",
                 file_path,
-                [],
             )
 
     current_status = str(doc.frontmatter.get("status", "proposed")).lower().strip()
     if current_status == "applied":
-        sync_delta_views(eidos_dir)
-        return True, f"SpecDelta '{doc.doc_id}' is already marked as applied.", file_path, mutated_files
+        return True, f"SpecDelta '{doc.doc_id}' is already marked as applied.", file_path
 
     content = file_path.read_text(encoding="utf-8")
     fm, _body, err = extract_frontmatter(content)
     if err or not fm:
-        tx.rollback()
-        return False, f"Failed to extract frontmatter: {err}", None, []
+        return False, f"Failed to extract frontmatter: {err}", None
 
     new_content = _set_frontmatter_scalar(content, "status", "applied")
 
@@ -2277,21 +1401,16 @@ def apply_delta(
     validator = SpecValidator()
     errors = validator.validate_document(doc_applied)
     if errors:
-        tx.rollback()
         return (
             False,
             f"Delta updated to applied but failed validation: {'; '.join(errors)}",
             file_path,
-            [],
         )
 
-    tx.record_before_write(file_path)
     file_path.write_text(new_content, encoding="utf-8")
-    sync_delta_views(eidos_dir)
 
     return (
         True,
         f"Successfully applied SpecDelta '{doc.doc_id}' in-place -> {file_path.name}.",
         file_path,
-        mutated_files,
     )

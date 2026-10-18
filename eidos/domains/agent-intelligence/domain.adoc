@@ -16,7 +16,7 @@ boundaries:
     - "Web portal HTML rendering (delegated to DOM-EXPERIENCE-PORTAL)."
 technical_mapping:
   components:
-    - "src/eidos/core/workspace/context.py"
+    - "src/eidos/core/index/context.py"
     - "src/eidos/cli/main.py"
     - ".agents/plugins/eidos"
   dependencies:

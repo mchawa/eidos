@@ -12,9 +12,7 @@ from eidos.core.lifecycle.catalog import (  # noqa: F401  (backwards-compatible 
     _build_spec_catalog,
     _build_spec_catalog_with_invariants,
     _format_component_item,
-    _format_invariant_item,
     _mutate_frontmatter_components,
-    _mutate_frontmatter_invariants,
     _render_spec,
     _set_frontmatter_scalar,
     _single_line,
@@ -34,11 +32,9 @@ from eidos.core.lifecycle.delta_engine import (  # noqa: F401  (backwards-compat
     _snapshot_delta_baselines,
     apply_delta,
     create_delta,
-    execute_delta_mutations,
     generate_collision_free_delta_id,
     get_delta_status_summary,
     list_deltas,
-    sync_delta_views,
     verify_delta_mutations,
 )
 from eidos.core.lifecycle.design_engine import DESIGN_SPEC_KEYS, build_design_spec
@@ -419,7 +415,6 @@ Document prototyping discoveries, trade-offs, and research findings.
         raise ValueError(f"Generated specification failed validation: {err_msg}")
 
     if canonical_key == "delta":
-        sync_delta_views(eidos_dir)
         _snapshot_delta_baselines(eidos_dir, doc_id)
 
     return dest_file
@@ -450,9 +445,6 @@ def delete_spec(eidos_dir: Path, target: str, force: bool = False) -> tuple[bool
     if parent != eidos_dir and parent.exists() and not any(parent.iterdir()):
         with contextlib.suppress(OSError):
             parent.rmdir()
-
-    if doc.doc_type == "delta/mutation":
-        sync_delta_views(eidos_dir)
 
     return True, f"Successfully deleted specification '{doc_id}' ({file_path.name}).", references
 

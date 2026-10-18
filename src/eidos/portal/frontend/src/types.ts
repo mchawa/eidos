@@ -187,22 +187,9 @@ export interface SpecInvariant {
 }
 
 export interface SpecMutation {
-  action: string;
-  target_component?: string;
-  target_capability?: string;
-  target_domain?: string;
-  target_screen?: string;
-  target_container?: string;
-  target_architecture?: string;
-  target_contract?: string;
-  target_policy?: string;
-  target_persona?: string;
-  target_invariant_id?: string;
-  target_design_system?: string;
-  target_ui_component?: string;
-  target_client?: string;
-  target_flow?: string;
-  new_capability_id?: string;
+  operation: string;
+  target: string;
+  parent?: string;
   title?: string;
   details?: string;
   expect?: Record<string, any>;

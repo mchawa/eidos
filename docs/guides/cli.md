@@ -318,7 +318,7 @@ Sub-commands:
 ---
 
 ### `eidos delta`
-Orchestrate SpecDeltas throughout their semantic mutation lifecycle using flat storage (`eidos/deltas/`) and gitignored symlink views (`eidos/deltas/by-status/`):
+Orchestrate SpecDeltas throughout their semantic mutation lifecycle using flat storage (`eidos/deltas/`):
 
 ```bash
 # List all SpecDeltas (optional --status filter and --json output)
@@ -352,9 +352,6 @@ eidos delta verify DLT-2026-055 --json
 # Apply a SpecDelta in-place (verifies all mutations by default and updates status to 'applied'):
 eidos delta apply DLT-2026-055
 
-# Deterministically scaffold missing specs and apply expect-driven frontmatter/body mutations without LLMs:
-eidos delta apply DLT-2026-055 --execute
-
 # Explicitly bypass pre-apply mutation verification when needed:
 eidos delta apply DLT-2026-055 --no-verify
 
@@ -369,9 +366,6 @@ eidos delta audit DLT-2026-016 --json
 
 # Safely delete an unapplied SpecDelta
 eidos delta delete DLT-2026-055
-
-# Rebuild symlink views partitioned by lifecycle state
-eidos delta sync-views
 
 # Compile an auditable, SpecDelta-backed changelog from Git release tags
 eidos delta changelog

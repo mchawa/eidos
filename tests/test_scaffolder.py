@@ -219,7 +219,7 @@ def test_spec_deletion_safety_with_references(tmp_path):
 
 
 def test_delta_lifecycle_apply(tmp_path):
-    """Verify SpecDelta transition in flat storage with in-place status update and symlink views (CTR-EIDOS-CLI, CAP-AGENT-001)."""
+    """Verify SpecDelta transition in flat storage with in-place status update (CTR-EIDOS-CLI, CAP-AGENT-001)."""
     dlt_file = create_spec(
         eidos_dir=tmp_path,
         doc_type_key="delta",
@@ -231,12 +231,8 @@ def test_delta_lifecycle_apply(tmp_path):
     assert dlt_file.name == "dlt-2026-100.adoc"
     assert dlt_file.parent == tmp_path / "deltas"
 
-    # Verify initial symlink in active/ and proposed/
-    assert (tmp_path / "deltas" / "by-status" / "active" / "dlt-2026-100.adoc").exists()
-    assert (tmp_path / "deltas" / "by-status" / "proposed" / "dlt-2026-100.adoc").exists()
-
     # Apply delta
-    success, _msg, applied_path, _mutated = apply_delta(tmp_path, "DLT-2026-100")
+    success, _msg, applied_path = apply_delta(tmp_path, "DLT-2026-100")
     assert success
     assert applied_path is not None
     assert applied_path.resolve() == dlt_file.resolve()
@@ -244,10 +240,6 @@ def test_delta_lifecycle_apply(tmp_path):
     # Verify content status is updated in-place
     doc = parse_spec_file(applied_path)
     assert doc.frontmatter.get("status") == "applied"
-
-    # Verify symlink moved to applied/ and removed from active/
-    assert (tmp_path / "deltas" / "by-status" / "applied" / "dlt-2026-100.adoc").exists()
-    assert not (tmp_path / "deltas" / "by-status" / "active" / "dlt-2026-100.adoc").exists()
 
     # Verify content status is updated and valid
     validator = SpecValidator()
@@ -338,17 +330,12 @@ def test_cli_delta_commands(tmp_path):
     assert "SpecDelta Lifecycle Status Dashboard" in res_status.stdout
     assert "DLT-2026-555" in res_status.stdout
 
-    # 4. Sync views
-    res_sync = runner.invoke(app, ["delta", "sync-views", "--path", str(tmp_path)])
-    assert res_sync.exit_code == 0
-    assert "Synchronized" in res_sync.stdout
-
-    # 5. Apply delta
+    # 4. Apply delta
     res_apply = runner.invoke(app, ["delta", "apply", "DLT-2026-555", "--path", str(tmp_path)])
     assert res_apply.exit_code == 0
     assert "Successfully applied" in res_apply.stdout
 
-    # 6. Delete applied delta
+    # 5. Delete applied delta
     res_delete = runner.invoke(app, ["delta", "delete", "DLT-2026-555", "--path", str(tmp_path)])
     assert res_delete.exit_code == 0
     assert "Successfully deleted" in res_delete.stdout
@@ -448,18 +435,12 @@ def test_all_skills_in_bundle():
 
 
 def test_self_contained_eidos_gitignore(tmp_path):
-    """Verify eidos/.gitignore is automatically created and isolates status views from project root."""
-    create_spec(
-        eidos_dir=tmp_path,
-        doc_type_key="delta",
-        raw_id="DLT-2026-999",
-        title="Gitignore Isolation",
-        motivation="Self-contained eidos/.gitignore",
-    )
-    gitignore = tmp_path / ".gitignore"
+    """Verify eidos/.gitignore is automatically created and isolates build/cache artifacts from project root."""
+    init_repository(project_dir=tmp_path)
+    gitignore = tmp_path / "eidos" / ".gitignore"
     assert gitignore.exists()
     content = gitignore.read_text(encoding="utf-8")
-    assert "deltas/by-status/" in content
+    assert ".DS_Store" in content
 
 
 def test_init_repository_programmatic(tmp_path):
@@ -995,8 +976,8 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
 
 
 def test_frontmatter_mutations_preserve_yaml_comments_and_formatting(tmp_path):
-    """Verify apply_delta, promote_component, inline_component, and execute_delta_mutations preserve YAML comments."""
-    from eidos.core.lifecycle.scaffolder import execute_delta_mutations, inline_component, promote_component
+    """Verify apply_delta, promote_component, and inline_component preserve YAML comments."""
+    from eidos.core.lifecycle.scaffolder import inline_component, promote_component
 
     eidos_dir = tmp_path / "eidos"
     cnts_dir = eidos_dir / "architecture" / "containers"
@@ -1046,7 +1027,7 @@ components:
     assert "# Internal C4 components list" in cnt_after_inline
     assert "# Parser component comment" in cnt_after_inline
 
-    # 3. Create a delta with comments and execute + apply it
+    # 3. Create a delta with comments and apply it
     dlt_file = deltas_dir / "dlt-2026-777.adoc"
     dlt_file.write_text(
         """---
@@ -1060,23 +1041,17 @@ intent:
   kind: feature
   motivation: "Keep comments intact."
 mutations:
-  - action: add_component
-    target_component: CMP-ADDED
-    details: "Added component."
+  - operation: add
+    target: CMP-PARSER
+    parent: CNT-CORE
+    details: "Parses specs."
 ---
 = Delta
 """,
         encoding="utf-8",
     )
 
-    ok_exec, _, _ = execute_delta_mutations(eidos_dir, "DLT-2026-777")
-    assert ok_exec
-    cnt_after_add = cnt_file.read_text(encoding="utf-8")
-    assert "# Top-level container comment" in cnt_after_add
-    assert "# Parser component comment" in cnt_after_add
-    assert "CMP-ADDED" in cnt_after_add
-
-    ok_apply, _, _, _ = apply_delta(eidos_dir, "DLT-2026-777")
+    ok_apply, _, _ = apply_delta(eidos_dir, "DLT-2026-777")
     assert ok_apply
     dlt_after_apply = dlt_file.read_text(encoding="utf-8")
     assert "# Delta header comment" in dlt_after_apply

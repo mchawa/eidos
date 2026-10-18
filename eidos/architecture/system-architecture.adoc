@@ -66,7 +66,7 @@ solution_strategy:
   - "Progressive Eidos Lite Profile: Optional 3-file onboarding skeleton (eidos init --lite) alongside the full multi-domain catalog."
   - "Pluggable Agent Execution: Declarative TargetAdapter registry supporting Antigravity (agy), Claude Code, Cursor, Aider, Cline, OpenCode, Codex, and Copilot."
   - "Living Architecture (Arc42 + C4): Real-time component manifests and topologies without dead ADR graveyards."
-  - "Flat SpecDelta Lifecycle: SpecDeltas stored flat under eidos/deltas/ with gitignored symlink views in by-status/ and in-place reconciliation."
+  - "Flat SpecDelta Lifecycle: SpecDeltas stored flat under eidos/deltas/ with composable (operation, target, parent) mutations and in-place reconciliation."
   - "Multi-Design System & Experience Trinity: Product capabilities link to screens, user flows, and W3C DTCG tokens across multiple client/brand systems."
   - "Portable Agent Plugins: Strict conformance to agent-plugins.org v1.0.0 packaging specialized skills."
   - "Token-Budgeted Context Slicing: Extracts compact, token-efficient architectural subgraphs (C4 Level 2/3 topology, contracts, capabilities, and invariants) for agent context windows."
@@ -78,7 +78,7 @@ cross_cutting_concepts:
   error_handling: "Structured CLI exit codes (0 = Success, 1 = Validation failure, 2 = Execution error) with Rich diagnostic output."
   telemetry_and_logging: "Local stdout/stderr streaming with optional structured JSON log output for CI pipelines."
   design_tokens: "W3C Design Tokens Community Group (DTCG) tokens.json standard compiling across web and native targets."
-  lifecycle_isolation: "Self-contained eidos/.gitignore isolating generated status symlink views and local cache from host project."
+  lifecycle_isolation: "Self-contained eidos/.gitignore isolating local SQLite cache from host project."
   data_storage: "Entirely Git filesystem backed with YAML frontmatter + AsciiDoc, accelerated by an ephemeral, zero-dependency SQLite knowledge graph cache (eidos/.cache/index.db) for sub-millisecond retrieval."
 
 deployment_view:
@@ -133,7 +133,7 @@ C4Context
 == 4. Solution Strategy
 * **Git as the OS**: All states (PRDs, ADR-free architectures, task graphs, test bindings) reside in Git.
 * **Progressive Onboarding (`eidos init --lite`)**: Supports a compact 3-file starter profile (`system.adoc`, `architecture/system-architecture.adoc`, and `POL-001`) that expands seamlessly as the project grows.
-* **SpecDelta Diff Engine**: Evolutionary changes are semantic mutations (`add`, `modify`, `remove`, `patch`) stored flat with gitignored symlink status views.
+* **SpecDelta Diff Engine**: Evolutionary changes are composable semantic mutations (`add`, `modify`, `remove`, `deprecate`) stored flat in `eidos/deltas/`.
 * **Multi-Design Systems & W3C Tokens**: Product capabilities bridge business JTBD with technical code packages and W3C tokenized multi-brand design systems.
 * **Interactive Hierarchical C4 Explorer**: Living Web Portal provides dynamic, clickable drill-down from C4 Level 1 System Context to Level 2 Container Topologies and Level 3 Component Whiteboxes with breadcrumbs and slide-over component inspection, packaged via deterministic gzipped assets (`assets/portal/bundle.html.gz`) and a Hatch custom build hook.
 * **Embedded SQLite Knowledge Graph & FTS5 Retrieval**: High-speed, zero-dependency caching layer (`eidos/.cache/index.db`) decomposed into focused internal modules (`storage.py`, `sync.py`, `query.py`, `context.py`, `ast_indexer.py`) with sub-2ms dirty checking.
@@ -208,6 +208,6 @@ Runtime execution choreographies are defined in:
 * **Interface Contracts**:
   - link:contracts/cli.adoc[`CTR-EIDOS-CLI` (Command-Line Interface Contract)]
 * **Design System Standard**: W3C Design Tokens Community Group (`tokens.json`) with multi-brand inheritance.
-* **Lifecycle Isolation**: Self-contained `eidos/.gitignore` isolating generated status symlink views (`deltas/by-status/`) and local cache (`eidos/.cache/`).
+* **Lifecycle Isolation**: Self-contained `eidos/.gitignore` isolating local cache (`eidos/.cache/`) and OS artifacts.
 * **Error Diagnostics**: Standardized exit codes and formatted terminal tables using Rich.
 * **Data Storage**: Entirely Git filesystem backed with YAML frontmatter + AsciiDoc living specifications, accelerated by an ephemeral, zero-dependency SQLite knowledge graph cache (`eidos/.cache/index.db`).

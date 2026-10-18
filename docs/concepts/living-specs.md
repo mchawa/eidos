@@ -41,7 +41,7 @@ eidos/
 │   ├── systems/<system>/         # Design systems (DS-*), W3C DTCG tokens & UI components (UIC-*)
 │   ├── clients/<client>/         # Client apps (CLT-*), client screens (SCR-*) & flows (FLOW-*)
 │   └── flows/                    # Omnichannel cross-client interaction flows (FLOW-*)
-└── deltas/                       # SpecDelta mutations (DLT-*) & gitignored by-status/ views
+└── deltas/                       # SpecDelta mutations (DLT-*)
 ```
 
 ---

@@ -75,7 +75,7 @@ def test_changelog_cli_file_generation(tmp_path):
 
 
 def test_changelog_deterministic_delta_classification():
-    """DLT-2026-043 / INV-DELTA-CHANGELOG-GENERATION: Verify _add_delta_to_section combines intent.kind and mutations[].action."""
+    """DLT-2026-043 / INV-DELTA-CHANGELOG-GENERATION: Verify _add_delta_to_section combines intent.kind and mutations[].operation."""
     from eidos.core.lifecycle.changelog import ReleaseSection
 
     gen = ChangelogGenerator()
@@ -88,7 +88,7 @@ def test_changelog_deterministic_delta_classification():
             "title": "New Feature",
             "summary": "Add capability.",
             "kind": "feature",
-            "mutations": [{"action": "add_capability"}, {"action": "modify_container"}],
+            "mutations": [{"operation": "add", "target": "CAP-NEW-001"}, {"operation": "modify", "target": "CNT-CORE"}],
         },
     )
     gen._add_delta_to_section(
@@ -98,7 +98,7 @@ def test_changelog_deterministic_delta_classification():
             "title": "Feature Enhancement",
             "summary": "Extend existing capability.",
             "kind": "feature",
-            "mutations": [{"action": "extend_capability"}, {"action": "modify_component"}],
+            "mutations": [{"operation": "modify", "target": "CAP-NEW-001"}, {"operation": "modify", "target": "CMP-CORE"}],
         },
     )
     gen._add_delta_to_section(
@@ -108,7 +108,7 @@ def test_changelog_deterministic_delta_classification():
             "title": "Architecture Enabler",
             "summary": "Refactor internal modules.",
             "kind": "enabler",
-            "mutations": [{"action": "add_component"}, {"action": "modify_component"}],
+            "mutations": [{"operation": "add", "target": "CMP-NEW"}, {"operation": "modify", "target": "CMP-CORE"}],
         },
     )
     gen._add_delta_to_section(
@@ -118,7 +118,7 @@ def test_changelog_deterministic_delta_classification():
             "title": "Remove Legacy Bridge",
             "summary": "Delete legacy container.",
             "kind": "enabler",
-            "mutations": [{"action": "remove_container"}, {"action": "remove_contract"}],
+            "mutations": [{"operation": "remove", "target": "CNT-OLD"}, {"operation": "remove", "target": "CTR-OLD"}],
         },
     )
     gen._add_delta_to_section(
@@ -128,7 +128,7 @@ def test_changelog_deterministic_delta_classification():
             "title": "Deprecate Old Policy",
             "summary": "Sunset policy.",
             "kind": "feature",
-            "mutations": [{"action": "deprecate_policy"}],
+            "mutations": [{"operation": "deprecate", "target": "POL-OLD"}],
         },
     )
     gen._add_delta_to_section(
@@ -138,7 +138,7 @@ def test_changelog_deterministic_delta_classification():
             "title": "Fix Parser Edge Case",
             "summary": "Fix crash.",
             "kind": "bug",
-            "mutations": [{"action": "modify_component"}],
+            "mutations": [{"operation": "modify", "target": "CMP-PARSER"}],
         },
     )
 
@@ -271,7 +271,8 @@ def test_changelog_hermetic_multi_tag_partitioning_draft_exclusion_and_docs_sync
             f"  kind: feature\n"
             f"  motivation: Deliver {title}.\n"
             f"mutations:\n"
-            f"  - action: add_capability\n"
+            f"  - operation: add\n"
+            f"    target: CAP-REL-001\n"
             f"---\n"
             f"= {title}\n",
             encoding="utf-8",

@@ -451,7 +451,7 @@ class AstGrepIndexer(BaseAstIndexer):
             root = SgRoot(content, lang)
             node = root.root()
         except (RuntimeError, ValueError):
-            return FallbackIndexer().extract_symbols(file_path, content)
+            return FallbackIndexer().extract_symbols(file_path, content) if lang == "python" else []
 
         symbols: list[CodeSymbol] = []
         rel_path = str(p)
@@ -675,7 +675,7 @@ class AstGrepIndexer(BaseAstIndexer):
             root = SgRoot(content, lang)
             node = root.root()
         except (RuntimeError, ValueError):
-            return FallbackIndexer().list_test_functions(file_path, content)
+            return FallbackIndexer().list_test_functions(file_path, content) if lang == "python" else {}
 
         lines = content.splitlines()
         result: dict[str, str] = {}
@@ -753,7 +753,7 @@ class AstGrepIndexer(BaseAstIndexer):
             root = SgRoot(content, lang)
             node = root.root()
         except (RuntimeError, ValueError):
-            return FallbackIndexer().extract_test_bindings(file_path, content)
+            return FallbackIndexer().extract_test_bindings(file_path, content) if lang == "python" else []
 
         lines = content.splitlines()
         by_name: dict[str, TestFunctionBinding] = {}
@@ -869,7 +869,11 @@ def _python_node_signature(node: ast.AST) -> str:
 
 
 class FallbackIndexer(BaseAstIndexer):
-    """Zero-dependency fallback indexer using Python standard library ast and lightweight regex."""
+    """Python stdlib ast and secondary-language regex indexer (delegating core polyglot languages to AstGrepIndexer)."""
+
+    _AST_GREP_CORE_EXTS: ClassVar[frozenset[str]] = frozenset(
+        {".ts", ".tsx", ".js", ".jsx", ".rs", ".go", ".java", ".kt", ".kts"}
+    )
 
     PYTHON_FN_REGEX = re.compile(r"^[ \t]*(?:async\s+)?def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(", re.MULTILINE)
     PYTHON_CLS_REGEX = re.compile(r"^[ \t]*class\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\(|:)", re.MULTILINE)
@@ -879,21 +883,6 @@ class FallbackIndexer(BaseAstIndexer):
     )
     TS_CLS_REGEX = re.compile(
         r"^[ \t]*(?:export\s+)?(?:class|interface|type)\s+([a-zA-Z_][a-zA-Z0-9_]*)", re.MULTILINE
-    )
-
-    GO_TYPE_REGEX = re.compile(r"^type\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+(struct|interface)\b", re.MULTILINE)
-    GO_FN_REGEX = re.compile(r"^func\s+(?:\([^)]+\)\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\s*\(", re.MULTILINE)
-    RUST_TYPE_REGEX = re.compile(
-        r"^[ \t]*(?:pub(?:\([^)]*\))?\s+)?(struct|enum|trait)\s+([a-zA-Z_][a-zA-Z0-9_]*)", re.MULTILINE
-    )
-    RUST_FN_REGEX = re.compile(r"^[ \t]*(?:pub\s+)?(?:async\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(", re.MULTILINE)
-    KT_CLS_REGEX = re.compile(
-        r"^[ \t]*(?:(?:public|private|protected|internal|open|abstract|final|sealed|data|value|inner)\s+)*(class|interface|object)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-        re.MULTILINE,
-    )
-    KT_FN_REGEX = re.compile(
-        r"^[ \t]*(?:(?:public|private|protected|internal|open|override|suspend|inline|operator|infix)\s+)*fun\s+(?:<[^>]+>\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\s*\(",
-        re.MULTILINE,
     )
     C_TYPE_REGEX = re.compile(
         r"^[ \t]*(?:typedef\s+)?(struct|class|enum)(?:\s+class)?\s+([a-zA-Z_][a-zA-Z0-9_]*)\b",
@@ -963,136 +952,12 @@ class FallbackIndexer(BaseAstIndexer):
         collected.reverse()
         return start_line, " ".join(collected)
 
-    @staticmethod
-    def _balanced_call_end_line(content: str, start_idx: int, total_lines: int) -> int:
-        """Find the 1-based ending line of a call expression starting at start_idx."""
-        depth = 0
-        in_q: str | None = None
-        esc = False
-        saw_open = False
-        for i in range(start_idx, len(content)):
-            ch = content[i]
-            if esc:
-                esc = False
-                continue
-            if ch == "\\":
-                esc = True
-                continue
-            if in_q is not None:
-                if ch == in_q:
-                    in_q = None
-                continue
-            if ch in ("'", '"', "`"):
-                in_q = ch
-                continue
-            if ch == "(":
-                depth += 1
-                saw_open = True
-            elif ch == ")":
-                depth -= 1
-                if saw_open and depth <= 0:
-                    rest = content[i + 1 :].lstrip()
-                    if rest.startswith("("):
-                        saw_open = False
-                        continue
-                    return content[: i + 1].count("\n") + 1
-        return total_lines
-
-    @classmethod
-    def _extract_extra_polyglot_tests(
-        cls,
-        content: str,
-        lines: list[str],
-        suffix: str,
-    ) -> list[tuple[list[str], int, int, str]]:
-        """Extract parameterized TS/JS (test.each/it.each/describe.each/Deno.test) and Go t.Run subtests."""
-        extras: list[tuple[list[str], int, int, str]] = []
-        total_lines = max(len(lines), 1)
-        clean_content = cls._strip_block_comments_preserving_lines(content)
-        clean_lines = clean_content.splitlines()
-
-        def _is_comment_line(line_1based: int) -> bool:
-            if 1 <= line_1based <= len(clean_lines):
-                return clean_lines[line_1based - 1].lstrip().startswith(("//", "#", "/*", "*"))
-            return False
-
-        if suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"):
-            patterns = [
-                re.compile(r"\b(?:it|test|describe)\s*\(\s*(['\"`])([^\r\n]+?)\1"),
-                re.compile(
-                    r"\b(?:it|test|describe)(?:\.[A-Za-z_]+)*\.each\s*(?:\([^)]*\)|`[^`]*`)\s*\(\s*(['\"`])([^\r\n]+?)\1",
-                    re.DOTALL,
-                ),
-                re.compile(
-                    r"\b(?:it|test|describe)\.(?:only|skip|concurrent|todo|serial|fails|fixme)(?:\.(?:only|skip|concurrent))?\s*\(\s*(['\"`])([^\r\n]+?)\1"
-                ),
-                re.compile(r"\bDeno\.test\s*\(\s*(['\"`])([^\r\n]+?)\1"),
-                re.compile(
-                    r"\bDeno\.test\s*\(\s*\{[^}]*?\bname\s*:\s*(['\"`])([^\r\n]+?)\1",
-                    re.DOTALL,
-                ),
-            ]
-            for pat in patterns:
-                for m in pat.finditer(clean_content):
-                    title = m.group(2).strip()
-                    if not title:
-                        continue
-                    s_line = clean_content[: m.start()].count("\n") + 1
-                    if _is_comment_line(s_line):
-                        continue
-                    e_line = cls._balanced_call_end_line(clean_content, m.start(), total_lines)
-                    prefix = _extract_preceding_context(lines, s_line)
-                    body = "\n".join(lines[s_line - 1 : e_line])
-                    full_chunk = f"{prefix}\n{body}" if prefix else body
-                    extras.append(([title], s_line, e_line, full_chunk))
-            for m_fn in re.finditer(
-                r"\bDeno\.test\s*\(\s*(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)",
-                clean_content,
-            ):
-                title = m_fn.group(1).strip()
-                if title:
-                    s_line = clean_content[: m_fn.start()].count("\n") + 1
-                    if _is_comment_line(s_line):
-                        continue
-                    e_line = cls._balanced_call_end_line(clean_content, m_fn.start(), total_lines)
-                    prefix = _extract_preceding_context(lines, s_line)
-                    body = "\n".join(lines[s_line - 1 : e_line])
-                    full_chunk = f"{prefix}\n{body}" if prefix else body
-                    extras.append(([title], s_line, e_line, full_chunk))
-        elif suffix == ".go":
-            go_fn_starts: list[tuple[int, str]] = []
-            for m_fn in re.finditer(r"^func\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", clean_content, re.MULTILINE):
-                go_fn_starts.append((clean_content[: m_fn.start()].count("\n") + 1, m_fn.group(1)))
-            for m_sub in re.finditer(
-                r"\b[A-Za-z_][A-Za-z0-9_]*\.Run\s*\(\s*(['\"`])([^\r\n]+?)\1",
-                clean_content,
-            ):
-                sub_name = m_sub.group(2).strip()
-                if not sub_name:
-                    continue
-                s_line = clean_content[: m_sub.start()].count("\n") + 1
-                if _is_comment_line(s_line):
-                    continue
-                e_line = cls._balanced_call_end_line(clean_content, m_sub.start(), total_lines)
-                enclosing_fn = None
-                for fn_line, fn_name in reversed(go_fn_starts):
-                    if fn_line <= s_line:
-                        enclosing_fn = fn_name
-                        break
-                prefix = _extract_preceding_context(lines, s_line)
-                body = "\n".join(lines[s_line - 1 : e_line])
-                full_chunk = f"{prefix}\n{body}" if prefix else body
-                keys = (
-                    [f"{enclosing_fn}/{sub_name}", f"{enclosing_fn}::{sub_name}", sub_name]
-                    if enclosing_fn
-                    else [sub_name]
-                )
-                extras.append((keys, s_line, e_line, full_chunk))
-
-        return extras
-
     def extract_symbols(self, file_path: Path | str, content: str | None = None) -> list[CodeSymbol]:
         p = Path(file_path)
+        suffix = p.suffix.lower()
+        if suffix in self._AST_GREP_CORE_EXTS and AST_GREP_AVAILABLE:
+            return AstGrepIndexer().extract_symbols(file_path, content)
+
         if content is None:
             try:
                 content = p.read_text(encoding="utf-8", errors="replace")
@@ -1103,7 +968,7 @@ class FallbackIndexer(BaseAstIndexer):
         symbols: list[CodeSymbol] = []
 
         # 1. Pure Python via stdlib ast
-        if p.suffix == ".py":
+        if suffix == ".py":
             try:
                 tree = ast.parse(content, filename=rel_path)
                 py_dunder_all = _extract_python_dunder_all(tree)
@@ -1167,18 +1032,12 @@ class FallbackIndexer(BaseAstIndexer):
                         symbols.append(fn_sym)
                 return symbols
             except (SyntaxError, ValueError):
-                # Fallback to regex if Python code has syntax errors
                 pass
 
-        # 2. Regex fallback for polyglot files (with block comments stripped to avoid false positives)
-        suffix = p.suffix.lower()
+        # 2. Regex extraction for broken Python and secondary languages (_FALLBACK_SIGNATURE_LANGS)
         clean_content = content if suffix == ".py" else self._strip_block_comments_preserving_lines(content)
         lines = clean_content.splitlines()
-        ts_exports = (
-            _extract_ts_exported_names(clean_content)
-            if suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte")
-            else None
-        )
+        ts_exports = _extract_ts_exported_names(clean_content) if suffix in (".vue", ".svelte") else None
         rb_visibility = "public"
         for idx, line in enumerate(lines, start=1):
             stripped_line = line.strip()
@@ -1211,7 +1070,7 @@ class FallbackIndexer(BaseAstIndexer):
                     )
                     sym.is_public = _evaluate_symbol_visibility(sym)
                     symbols.append(sym)
-            elif suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"):
+            elif suffix in (".vue", ".svelte"):
                 for m in self.TS_CLS_REGEX.finditer(line):
                     sym = CodeSymbol(
                         name=m.group(1),
@@ -1234,97 +1093,27 @@ class FallbackIndexer(BaseAstIndexer):
                     )
                     sym.is_public = _evaluate_symbol_visibility(sym, ts_exports=ts_exports)
                     symbols.append(sym)
-                if suffix in (".vue", ".svelte"):
-                    for m in _SVELTE_PROP_RE.finditer(line):
-                        sym = CodeSymbol(
-                            name=m.group(1),
-                            kind="interface",
-                            file_path=rel_path,
-                            line_start=dec_start,
-                            line_end=idx,
-                            signature=sig,
-                        )
-                        sym.is_public = True
-                        symbols.append(sym)
-                    if "defineProps" in line:
-                        sym = CodeSymbol(
-                            name="defineProps",
-                            kind="interface",
-                            file_path=rel_path,
-                            line_start=dec_start,
-                            line_end=idx,
-                            signature=sig,
-                        )
-                        sym.is_public = True
-                        symbols.append(sym)
-            elif suffix == ".go":
-                for m in self.GO_TYPE_REGEX.finditer(line):
+                for m in _SVELTE_PROP_RE.finditer(line):
                     sym = CodeSymbol(
                         name=m.group(1),
-                        kind="interface" if m.group(2) == "interface" else "struct",
+                        kind="interface",
                         file_path=rel_path,
                         line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    sym.is_public = True
                     symbols.append(sym)
-                for m in self.GO_FN_REGEX.finditer(line):
+                if "defineProps" in line:
                     sym = CodeSymbol(
-                        name=m.group(1),
-                        kind="function",
+                        name="defineProps",
+                        kind="interface",
                         file_path=rel_path,
                         line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
-                    symbols.append(sym)
-            elif suffix == ".rs":
-                for m in self.RUST_TYPE_REGEX.finditer(line):
-                    sym = CodeSymbol(
-                        name=m.group(2),
-                        kind="interface" if m.group(1) == "trait" else m.group(1),
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
-                    symbols.append(sym)
-                for m in self.RUST_FN_REGEX.finditer(line):
-                    sym = CodeSymbol(
-                        name=m.group(1),
-                        kind="function",
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
-                    symbols.append(sym)
-            elif suffix in (".kt", ".kts", ".java"):
-                for m in self.KT_CLS_REGEX.finditer(line):
-                    sym = CodeSymbol(
-                        name=m.group(2),
-                        kind="interface" if m.group(1) == "interface" else "class",
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
-                    symbols.append(sym)
-                for m in self.KT_FN_REGEX.finditer(line):
-                    sym = CodeSymbol(
-                        name=m.group(1),
-                        kind="function",
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
+                    sym.is_public = True
                     symbols.append(sym)
             elif suffix in (".c", ".cpp", ".h", ".hpp"):
                 type_matched = False
@@ -1465,6 +1254,10 @@ class FallbackIndexer(BaseAstIndexer):
 
     def list_test_functions(self, file_path: Path | str, content: str | None = None) -> dict[str, str]:
         p = Path(file_path)
+        suffix = p.suffix.lower()
+        if suffix in self._AST_GREP_CORE_EXTS and AST_GREP_AVAILABLE:
+            return AstGrepIndexer().list_test_functions(file_path, content)
+
         if content is None:
             try:
                 content = p.read_text(encoding="utf-8", errors="replace")
@@ -1474,7 +1267,7 @@ class FallbackIndexer(BaseAstIndexer):
         rel_path = str(p)
         result: dict[str, str] = {}
 
-        if p.suffix == ".py":
+        if suffix == ".py":
             try:
                 tree = ast.parse(content, filename=rel_path)
                 lines = content.splitlines()
@@ -1510,15 +1303,9 @@ class FallbackIndexer(BaseAstIndexer):
             except (SyntaxError, ValueError):
                 pass
 
-        suffix = p.suffix.lower()
-        is_ts_like = suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte")
-        test_fn_pattern = (
-            re.compile(r"\bfunction\s+([a-zA-Z0-9_]+)")
-            if is_ts_like
-            else re.compile(
-                r"(?:def\s+|function\s+|fn\s+|fun\s+|func\s+|void\s+)([a-zA-Z0-9_]+)"
-                r"|\b(?:it|test|describe)\s*\(\s*(['\"`])([^\r\n]+?)\2"
-            )
+        test_fn_pattern = re.compile(
+            r"(?:def\s+|function\s+|fn\s+|fun\s+|func\s+|void\s+)([a-zA-Z0-9_]+)"
+            r"|\b(?:it|test|describe)\s*\(\s*(['\"`])([^\r\n]+?)\2"
         )
         lines = content.splitlines()
         scan_lines = self._strip_block_comments_preserving_lines(content).splitlines()
@@ -1551,16 +1338,14 @@ class FallbackIndexer(BaseAstIndexer):
             full_chunk = f"{prefix}\n{chunk}" if prefix else chunk
             result[current_test] = f"{result[current_test]}\n{full_chunk}" if current_test in result else full_chunk
 
-        for keys, _s_line, _e_line, full_chunk in self._extract_extra_polyglot_tests(
-            content, lines, suffix
-        ):
-            for k in keys:
-                result[k] = f"{result[k]}\n{full_chunk}" if k in result else full_chunk
-
         return result
 
     def extract_test_bindings(self, file_path: Path | str, content: str | None = None) -> list[TestFunctionBinding]:
         p = Path(file_path)
+        suffix = p.suffix.lower()
+        if suffix in self._AST_GREP_CORE_EXTS and AST_GREP_AVAILABLE:
+            return AstGrepIndexer().extract_test_bindings(file_path, content)
+
         if content is None:
             try:
                 content = p.read_text(encoding="utf-8", errors="replace")
@@ -1587,7 +1372,7 @@ class FallbackIndexer(BaseAstIndexer):
                 )
 
         # Python via stdlib ast
-        if p.suffix == ".py":
+        if suffix == ".py":
             try:
                 tree = ast.parse(content, filename=rel_path)
                 lines = content.splitlines()
@@ -1621,16 +1406,10 @@ class FallbackIndexer(BaseAstIndexer):
             except (SyntaxError, ValueError):
                 pass
 
-        # Regex fallback for tests across languages
-        suffix = p.suffix.lower()
-        is_ts_like = suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte")
-        test_fn_pattern = (
-            re.compile(r"\bfunction\s+([a-zA-Z0-9_]+)")
-            if is_ts_like
-            else re.compile(
-                r"(?:def\s+|function\s+|fn\s+|fun\s+|func\s+|void\s+)([a-zA-Z0-9_]+)"
-                r"|\b(?:it|test|describe)\s*\(\s*(['\"`])([^\r\n]+?)\2"
-            )
+        # Regex fallback for broken Python and secondary languages
+        test_fn_pattern = re.compile(
+            r"(?:def\s+|function\s+|fn\s+|fun\s+|func\s+|void\s+)([a-zA-Z0-9_]+)"
+            r"|\b(?:it|test|describe)\s*\(\s*(['\"`])([^\r\n]+?)\2"
         )
         lines = content.splitlines()
         scan_lines = self._strip_block_comments_preserving_lines(content).splitlines()
@@ -1666,15 +1445,6 @@ class FallbackIndexer(BaseAstIndexer):
             pols = sorted(set(POLICY_PATTERN.findall(chunk)))
             if invs or pols:
                 _record_binding(current_test, current_start, len(lines), invs, pols)
-
-        for keys, s_line, e_line, full_chunk in self._extract_extra_polyglot_tests(
-            content, lines, suffix
-        ):
-            invs = sorted(set(INVARIANT_PATTERN.findall(full_chunk)))
-            pols = sorted(set(POLICY_PATTERN.findall(full_chunk)))
-            if invs or pols:
-                for k in keys:
-                    _record_binding(k, s_line, e_line, invs, pols)
 
         return list(by_name.values())
 

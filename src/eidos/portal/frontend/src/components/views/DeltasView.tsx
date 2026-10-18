@@ -58,25 +58,7 @@ export function formatAffectsCategory(category: string): string {
 
 export function getMutationTarget(m?: SpecMutation | null): string {
   if (!m) return "Target Specification";
-  return (
-    m.target_container ||
-    m.target_component ||
-    m.target_capability ||
-    m.target_domain ||
-    m.target_contract ||
-    m.target_policy ||
-    m.target_architecture ||
-    m.target_persona ||
-    m.target_invariant_id ||
-    m.target_design_system ||
-    m.target_screen ||
-    m.target_ui_component ||
-    m.target_client ||
-    m.target_flow ||
-    m.new_capability_id ||
-    m.title ||
-    "Target Specification"
-  );
+  return m.target || m.title || "Target Specification";
 }
 
 interface ColumnConfig {
@@ -464,7 +446,7 @@ export function DeltasView({
                   >
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-primary uppercase font-mono text-[10px] px-2 py-0.5 rounded-lg bg-primary/10 border border-primary/20">
-                        {m.action}
+                        {m.operation}
                       </span>
                       <span className="font-mono font-semibold text-foreground">
                         {getMutationTarget(m)}

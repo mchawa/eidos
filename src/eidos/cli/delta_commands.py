@@ -15,7 +15,6 @@ from eidos.core.lifecycle.delta_engine import (
     get_delta_status_summary,
     list_deltas,
     set_delta_status,
-    sync_delta_views,
     verify_delta_mutations,
 )
 from eidos.core.lifecycle.scaffolder import create_spec, delete_spec, find_spec_by_id_or_path
@@ -134,7 +133,7 @@ def delta_create_cmd(
         help="Path to eidos directory.",
     ),
 ):
-    """Create a new SpecDelta in flat storage (eidos/deltas/<id>.adoc) and sync views."""
+    """Create a new SpecDelta in flat storage (eidos/deltas/<id>.adoc)."""
     try:
         dest_file = create_spec(
             eidos_dir=path,
@@ -149,7 +148,7 @@ def delta_create_cmd(
         rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
         console.print(f"[bold green]✓ Created SpecDelta:[/bold green] [bold]{dest_file.name}[/bold]")
         console.print(f"  [dim]Location: {rel}[/dim]")
-        console.print("  [dim]Status: proposed (symlinked in eidos/deltas/by-status/active/ and proposed/)[/dim]")
+        console.print("  [dim]Status: proposed[/dim]")
         console.print(f"  [dim]Next step: Edit mutations in {rel} and update living specs.[/dim]")
     except Exception as e:
         console.print(f"[bold red]Failed to create SpecDelta:[/bold red] {e}")
@@ -364,12 +363,6 @@ def delta_apply_cmd(
         "-p",
         help="Path to eidos directory.",
     ),
-    execute: bool = typer.Option(
-        False,
-        "--execute",
-        "-e",
-        help="Deterministically scaffold missing specs and apply structural mutations declared in the delta.",
-    ),
     verify: bool = typer.Option(
         True,
         "--verify/--no-verify",
@@ -382,18 +375,14 @@ def delta_apply_cmd(
         help="Output raw JSON application result.",
     ),
 ):
-    """Reconcile a SpecDelta in-place, updating status to 'applied' and syncing symlink views."""
-    success, msg, applied_file, mutated_files = apply_delta(
-        path, target, execute=execute, verify=verify
-    )
+    """Reconcile a SpecDelta in-place, updating status to 'applied'."""
+    success, msg, applied_file = apply_delta(path, target, verify=verify)
     if json_output:
         payload = {
             "success": success,
             "message": msg,
             "target": target,
             "applied_file": str(applied_file) if applied_file else None,
-            "executed": execute,
-            "mutated_files": [str(p) for p in mutated_files],
         }
         typer.echo(json.dumps(payload, indent=2))
         if not success:
@@ -405,15 +394,9 @@ def delta_apply_cmd(
         raise typer.Exit(code=1)
 
     console.print(f"[bold green]✓[/bold green] {msg}")
-    if execute and mutated_files:
-        console.print(f"[bold cyan]Scaffolded/Mutated {len(mutated_files)} specification(s):[/bold cyan]")
-        for mf in mutated_files:
-            rel = mf.relative_to(path.parent) if mf.is_relative_to(path.parent) else mf
-            console.print(f"  • [green]{rel}[/green]")
     if applied_file:
         rel = applied_file.relative_to(path) if applied_file.is_relative_to(path) else applied_file
         console.print(f"  [dim]Updated in-place: {rel}[/dim]")
-        console.print(f"  [dim]Symlink moved to: eidos/deltas/by-status/applied/{applied_file.name}[/dim]")
 
 
 @delta_app.command("status")
@@ -490,7 +473,6 @@ def delta_status_cmd(
     total = summary["total"]
     active_count = summary["active_count"]
     by_status = summary["by_status"]
-    views_dir = summary["views_dir"]
 
     if json_output:
         serializable_by_status = {
@@ -514,7 +496,6 @@ def delta_status_cmd(
                     "total": total,
                     "active_count": active_count,
                     "by_status": serializable_by_status,
-                    "views_dir": str(views_dir),
                 },
                 indent=2,
             )
@@ -554,29 +535,6 @@ def delta_status_cmd(
         console.print(active_table)
     else:
         console.print("\n[dim]No in-flight SpecDeltas. Living specifications are up to date.[/dim]")
-
-    rel_views = views_dir.relative_to(path.parent) if views_dir.is_relative_to(path.parent) else views_dir
-    console.print(f"\n[dim]Gitignored symlink views: {rel_views} (use 'eidos delta sync-views' to refresh)[/dim]")
-
-
-@delta_app.command("sync-views")
-def delta_sync_views_cmd(
-    path: Path = typer.Option(
-        Path("eidos"),
-        "--path",
-        "-p",
-        help="Path to eidos directory.",
-    ),
-):
-    """Regenerate gitignored symlinks in eidos/deltas/by-status/ categorized by lifecycle state."""
-    synced = sync_delta_views(path)
-    total_symlinks = sum(len(v) for v in synced.values())
-    views_dir = path / "deltas" / "by-status"
-    rel_views = views_dir.relative_to(path.parent) if views_dir.is_relative_to(path.parent) else views_dir
-    console.print(f"[bold green]✓ Synchronized {total_symlinks} symlinks in {rel_views}[/bold green]")
-    for cat, items in synced.items():
-        if items:
-            console.print(f"  • [bold cyan]{cat}[/bold cyan]: {len(items)} deltas")
 
 
 @delta_app.command("delete")

@@ -646,8 +646,7 @@ def classify_changed_files(
         is_in_eidos = prefix_len > 0 and len(parts) >= prefix_len and parts[:prefix_len] == eidos_rel_parts
         sub_parts = parts[prefix_len:] if is_in_eidos else []
         is_eidos_ignored = f.name == ".gitkeep" or (
-            is_in_eidos
-            and (any(p.startswith(".") for p in sub_parts) or ("deltas" in sub_parts and "by-status" in sub_parts))
+            is_in_eidos and any(p.startswith(".") for p in sub_parts)
         )
         is_eidos_spec = is_in_eidos and f.suffix in {".adoc", ".json", ".yaml", ".yml"}
         is_test = is_polyglot_test_file(rel_f, repo_root=effective_root, package_paths=eff_pkg_paths)
@@ -671,10 +670,7 @@ def classify_changed_files(
     )
 
     for f_str, f, rel_f, parts, is_in_eidos, sub_parts, is_test in parsed_files:
-        if f.name == ".gitkeep" or (
-            is_in_eidos
-            and (any(p.startswith(".") for p in sub_parts) or ("deltas" in sub_parts and "by-status" in sub_parts))
-        ):
+        if f.name == ".gitkeep" or (is_in_eidos and any(p.startswith(".") for p in sub_parts)):
             classification.other_files.append(f_str)
             continue
 

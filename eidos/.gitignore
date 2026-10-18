@@ -1,3 +1,6 @@
-# Eidos living specification lifecycle views (generated symlinks) and local index cache
-deltas/by-status/
+# Eidos local index cache
 .cache/
+
+# OS artifacts
+.DS_Store
+Thumbs.db

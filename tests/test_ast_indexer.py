@@ -435,13 +435,15 @@ def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(monkeypatch, tmp
         java_b = engine.extract_test_bindings("src/AuthTest.java", java_test)
         assert any("INV-JAVA-AUTH-001" in b.invariants for b in java_b)
 
-    # 3. Simulated AST_GREP_AVAILABLE = False delegates cleanly to FallbackIndexer
+    # 3. Simulated AST_GREP_AVAILABLE = False delegates Python files cleanly to FallbackIndexer stdlib ast
+    py_code = "class VaultConfig:\n    pass\n\ndef test_vault_invariant():\n    # INV-RS-VAULT-001 and POL-001\n    assert True\n"
     monkeypatch.setattr(ast_mod, "AST_GREP_AVAILABLE", False)
     assert isinstance(ast_mod.get_ast_indexer(), FallbackIndexer)
-    delegated_syms = ast_idx.extract_symbols("src/lib.rs", rs_code)
+    delegated_syms = ast_idx.extract_symbols("src/lib.py", py_code)
     assert any(s.name == "VaultConfig" for s in delegated_syms)
-    delegated_bindings = ast_idx.extract_test_bindings("src/lib.rs", rs_code)
+    delegated_bindings = ast_idx.extract_test_bindings("src/lib.py", py_code)
     assert any("INV-RS-VAULT-001" in b.invariants for b in delegated_bindings)
+    monkeypatch.setattr(ast_mod, "AST_GREP_AVAILABLE", True)
 
     # 4. Broken Python syntax falls back to regex in FallbackIndexer without raising SyntaxError
     broken_py = "class PartialClass:\n    def ok_func(x):\n        return x\n    def broken(:\n"

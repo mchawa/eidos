@@ -80,16 +80,15 @@ Manages the living specification catalog and C4 Level 3 component topology: list
   - `component inline <component_id> [--path <path>] [--repo-root <path>]`: Demotes a dedicated C4 Level 3 component back into its parent container manifest as an inline definition and safely unlinks the dedicated specification file.
 
 === `eidos delta`
-Orchestrates SpecDeltas throughout their semantic mutation lifecycle using flat storage and gitignored symlink views.
+Orchestrates SpecDeltas throughout their semantic mutation lifecycle using flat storage (`eidos/deltas/`).
 * **Sub-commands**:
   - `list [--path <path>] [--status <status>] [--json]`: Lists SpecDeltas from flat `eidos/deltas/` with optional status filter (e.g. `--status active`) and `--json` output.
-  - `status [id] [new_status] [--path <path>] [--json]`: Displays lifecycle status dashboard (or transitions a specific SpecDelta's status when `id` and `new_status` are given), breakdown of in-flight vs. reconciled deltas, and symlink views.
-  - `sync-views [--path <path>]`: Regenerates gitignored symlinks in `eidos/deltas/by-status/` partitioned by lifecycle state.
-  - `create [id] --title <title> [--slug] [--kind <kind>] [--motivation <text>] [--branch <branch>]`: Scaffolds a new SpecDelta in flat storage `eidos/deltas/<id>.adoc` with status `proposed` (`id` defaults to `auto`, `--slug` / `-s` appends a title-derived slug suffix, `--kind`: `feature, enabler, bug`; defaults to `feature`) and syncs views.
+  - `status [id] [new_status] [--path <path>] [--json]`: Displays lifecycle status dashboard (or transitions a specific SpecDelta's status when `id` and `new_status` are given) and breakdown of in-flight vs. reconciled deltas.
+  - `create [id] --title <title> [--slug] [--kind <kind>] [--motivation <text>] [--branch <branch>]`: Scaffolds a new SpecDelta in flat storage `eidos/deltas/<id>.adoc` with status `proposed` (`id` defaults to `auto`, `--slug` / `-s` appends a title-derived slug suffix, `--kind`: `feature, enabler, bug`; defaults to `feature`).
   - `verify <id_or_path> [--path <path>] [--json]`: Verifies that all semantic mutations declared in a SpecDelta exist in the living specifications catalog.
   - `audit <id_or_path> [--path <path>] [--strict] [--json]`: Performs reverse-dependency blast-radius audit on entities removed or deprecated by the SpecDelta, classifying references into approved (historical, negative tests, cleanup routines, tombstones) vs. unacknowledged active leaks.
-  - `apply <id_or_path> [--execute] [--verify/--no-verify] [--json]`: Verifies declared mutations against the living specification catalog by default (`--verify`, or bypass via `--no-verify`), reconciles a delta in-place, updates frontmatter status to `applied`, and updates symlink views. If `--execute` is supplied, deterministically scaffolds missing specs and applies `expect`-driven structural mutations without LLMs.
-  - `delete <id_or_path> [--force]`: Deletes a SpecDelta file and cleans up symlink views.
+  - `apply <id_or_path> [--verify/--no-verify] [--json]`: Verifies declared mutations against the living specification catalog by default (`--verify`, or bypass via `--no-verify`), validates the updated SpecDelta, and updates frontmatter status to `applied`.
+  - `delete <id_or_path> [--force]`: Deletes a SpecDelta file.
   - `changelog [--output <path>] [--unreleased/--no-unreleased] [--docs/--no-docs] [--path <path>]`: Compiles an auditable, Keep a Changelog compliant release history partitioned by Git release tags and applied SpecDeltas (`DLT-*`).
 
 === `eidos drift [--base REF] [--head REF] [--uncommitted] [--markdown FILE] [--json]`

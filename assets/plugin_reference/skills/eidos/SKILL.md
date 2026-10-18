@@ -92,7 +92,7 @@ When introducing/removing containers or components, making breaking contract cha
    ```bash
    eidos delta create --title "..." --slug --kind <feature|enabler|bug> --branch <branch>
    ```
-2. **Declare Mutations**: Populate `mutations:` (with composable `operation`, `target`, optional `parent`, and structured `expect: { body, frontmatter }` post-conditions) in the created `eidos/deltas/dlt-*.adoc` file. Never add manual `affects:` or `blast_radius:` blocks.
+2. **Declare Mutations**: Populate `mutations:` (with composable `operation`, `target`, optional `parent` for `add` / `remove` of child entities, and structured `expect: { body, frontmatter }` post-conditions) in the created `eidos/deltas/dlt-*.adoc` file. Never add manual `affects:` or `blast_radius:` blocks.
 3. **Implement Code, Specs & Tests**: Apply changes across code, `eidos/`, and `tests/`.
 4. **Verify & Apply**:
    ```bash
@@ -114,7 +114,7 @@ eidos drift --uncommitted --json
 ```
 
 * **`eidos validate`** checks v1 JSON Schemas, `x-eidos-ref` cross-references, `package_path`/`specification_file` paths on disk, and **bidirectional multi-protocol contract parity** (`cli_args`, `openapi`, `protobuf`, `graphql`, `python_protocol`).
-* **`eidos drift`** runs `eidos validate` internally plus Git diff ownership mapping, workflow mode verification (Direct vs. Planned `mutations[].target` / `parent` / `target_*`), substantive spec diff checks, and polyglot `INV-*` `test_binding` verification.
+* **`eidos drift`** runs `eidos validate` internally plus Git diff ownership mapping, workflow mode verification (Direct vs. Planned `mutations[].target` / `parent`), substantive spec diff checks, and polyglot `INV-*` `test_binding` verification.
 * **If `is_clean: false` or `drift_detected: true`**: Follow the `remediation_suggestions` array in the JSON output and re-run until exit code is `0`.
 
 ### Stage 2: Mandatory Autonomous Adversarial Gap Review

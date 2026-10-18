@@ -61,7 +61,7 @@ def test_validate_eidos_specifications(validator):
 
 
 def test_delta_affects_validation_broken_references(tmp_path, validator):
-    """Verify SpecDelta mutations[].target_* entity ID references are validated and report broken references."""
+    """Verify SpecDelta mutations[].target entity ID references are validated and report broken references."""
     eidos_dir = tmp_path / "eidos"
     deltas_dir = eidos_dir / "deltas"
     comps_dir = eidos_dir / "architecture" / "components"
@@ -81,7 +81,7 @@ def test_delta_affects_validation_broken_references(tmp_path, validator):
         "= Core\n"
     )
 
-    # Delta with 1 valid existing component, 1 newly added component, and 3 broken references on modify_*
+    # Delta with 1 valid existing component, 1 newly added component, and 3 broken references on modify
     (deltas_dir / "dlt-test.adoc").write_text(
         "---\n"
         "type: delta/mutation\n"
@@ -92,16 +92,16 @@ def test_delta_affects_validation_broken_references(tmp_path, validator):
         "  kind: feature\n"
         "  motivation: Testing\n"
         "mutations:\n"
-        "  - action: add_component\n"
-        "    target_component: CMP-NEW-ADDED\n"
-        "  - action: modify_component\n"
-        "    target_component: CMP-TEST-CORE\n"
-        "  - action: modify_component\n"
-        "    target_component: CMP-NONEXISTENT\n"
-        "  - action: modify_contract\n"
-        "    target_contract: CTR-NONEXISTENT\n"
-        "  - action: modify_policy\n"
-        "    target_policy: POL-NONEXISTENT\n"
+        "  - operation: add\n"
+        "    target: CMP-NEW-ADDED\n"
+        "  - operation: modify\n"
+        "    target: CMP-TEST-CORE\n"
+        "  - operation: modify\n"
+        "    target: CMP-NONEXISTENT\n"
+        "  - operation: modify\n"
+        "    target: CTR-NONEXISTENT\n"
+        "  - operation: modify\n"
+        "    target: POL-NONEXISTENT\n"
         "---\n"
         "= Delta\n"
     )
@@ -867,7 +867,7 @@ def test_strict_container_vs_component_target_separation(tmp_path: Path, validat
         encoding="utf-8",
     )
 
-    # 2. Delta misusing target_component: CNT-CORE, target_container: CMP-PARSER, and target_architecture: ARCH-001
+    # 2. Delta misusing legacy action/target_component/target_container rejected by composable schema
     bad_delta = deltas_dir / "dlt-bad.adoc"
     bad_delta.write_text(
         "---\n"
@@ -882,17 +882,14 @@ def test_strict_container_vs_component_target_separation(tmp_path: Path, validat
         "mutations:\n"
         "  - action: modify_component\n"
         "    target_component: CNT-CORE\n"
-        "  - action: modify_container\n"
-        "    target_container: CMP-PARSER\n"
-        "  - action: modify_architecture\n"
-        "    target_architecture: ARCH-CORE-001\n"
+        "  - operation: modify\n"
+        "    target: ARCH-CORE-001\n"
         "---\n"
         "= Bad Delta\n",
         encoding="utf-8",
     )
     delta_errs = "\n".join(validator.validate_document(parse_spec_file(bad_delta)))
-    assert "target_component" in delta_errs and "CNT-CORE" in delta_errs
-    assert "target_container" in delta_errs and "CMP-PARSER" in delta_errs
+    assert "target_component" in delta_errs or "action" in delta_errs
     assert "ARCH-CORE-001" not in delta_errs
 
 
@@ -923,7 +920,7 @@ def test_strict_container_vs_component_target_separation(tmp_path: Path, validat
 
 
 def test_delta_schema_enum_taxonomies(tmp_path, validator):
-    """DLT-2026-043 / INV-SPEC-VALIDATION: Verify delta.schema.yaml enforces strict enums on intent.kind, bug_classification, severity, and mutations[].action."""
+    """DLT-2026-043 / INV-SPEC-VALIDATION: Verify delta.schema.yaml enforces strict enums on intent.kind, bug_classification, severity, and mutations[].operation."""
     from eidos.core.spec.parser import parse_spec_file
 
     delta_file = tmp_path / "dlt-enum.adoc"
@@ -942,8 +939,8 @@ def test_delta_schema_enum_taxonomies(tmp_path, validator):
         "  bug_classification: spec_gap\n"
         "  severity: high\n"
         "mutations:\n"
-        "  - action: modify_component\n"
-        "    target_component: CMP-DELTA-ENGINE\n"
+        "  - operation: modify\n"
+        "    target: CMP-DELTA-ENGINE\n"
         "---\n"
         "= Enum Delta\n",
         encoding="utf-8",
@@ -964,8 +961,8 @@ def test_delta_schema_enum_taxonomies(tmp_path, validator):
         "  bug_classification: unknown_bug_type\n"
         "  severity: blocker\n"
         "mutations:\n"
-        "  - action: custom_unknown_action\n"
-        "    target_component: CMP-DELTA-ENGINE\n"
+        "  - operation: custom_unknown_operation\n"
+        "    target: CMP-DELTA-ENGINE\n"
         "---\n"
         "= Invalid Enum Delta\n",
         encoding="utf-8",
@@ -974,7 +971,7 @@ def test_delta_schema_enum_taxonomies(tmp_path, validator):
     assert "feature_addition" in errs
     assert "unknown_bug_type" in errs
     assert "blocker" in errs
-    assert "custom_unknown_action" in errs
+    assert "custom_unknown_operation" in errs
 
 
 def test_typed_pydantic_frontmatter_models(tmp_path):
@@ -1351,7 +1348,7 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
         encoding="utf-8",
     )
 
-    # 6. Proposed SpecDelta with vcs.base_commit and a missing target_component reference on modify_component
+    # 6. Proposed SpecDelta with vcs.base_commit and a missing target reference on modify
     (deltas_dir / "dlt-test.adoc").write_text(
         "---\n"
         "type: delta/mutation\n"
@@ -1366,10 +1363,10 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
         "  kind: feature\n"
         "  motivation: Extend billing\n"
         "mutations:\n"
-        "  - action: modify_component\n"
-        "    target_component: CMP-BILLING-LEDGER\n"
-        "  - action: modify_component\n"
-        "    target_component: CMP-MISSING-GHOST\n"
+        "  - operation: modify\n"
+        "    target: CMP-BILLING-LEDGER\n"
+        "  - operation: modify\n"
+        "    target: CMP-MISSING-GHOST\n"
         "---\n"
         "= Delta\n",
         encoding="utf-8",
@@ -2411,8 +2408,8 @@ def test_delta_expect_closed_schema_rejects_unknown_keys(tmp_path):
         "  kind: bug\n"
         "  motivation: Test top-level unknown/flat key rejection.\n"
         "mutations:\n"
-        "  - action: modify_component\n"
-        "    target_component: CMP-CORE\n"
+        "  - operation: modify\n"
+        "    target: CMP-CORE\n"
         "    expect:\n"
         "      responsibility: flat_not_allowed\n"
         "---\n"
@@ -2434,8 +2431,8 @@ def test_delta_expect_closed_schema_rejects_unknown_keys(tmp_path):
         "  kind: bug\n"
         "  motivation: Test nested typo rejection.\n"
         "mutations:\n"
-        "  - action: modify_component\n"
-        "    target_component: CMP-CORE\n"
+        "  - operation: modify\n"
+        "    target: CMP-CORE\n"
         "    expect:\n"
         "      body:\n"
         "        contain: misspelled\n"
@@ -2649,7 +2646,7 @@ def test_dlt_2026_082_bidirectional_contract_parity_and_multi_framework_cli(tmp_
 
 def test_dlt_2026_085_mutations_target_ref_validation_and_schema_rejection(tmp_path: Path, validator: SpecValidator) -> None:
     """DLT-2026-085 (# eidos:fixture): Verify hand-authored affects/blast_radius are rejected by schema
-    and mutations[].target_* enforces prefix/type and action-aware catalog existence."""
+    and mutations[].target enforces prefix/type and operation-aware catalog existence."""
     from eidos.core.spec.parser import parse_spec_file
 
     eidos_dir = tmp_path / "eidos"
@@ -2691,8 +2688,8 @@ def test_dlt_2026_085_mutations_target_ref_validation_and_schema_rejection(tmp_p
         "  kind: refactor\n"
         "  motivation: Test legacy fields\n"
         "mutations:\n"
-        "  - action: modify_component\n"
-        "    target_component: CMP-EXISTING\n"
+        "  - operation: modify\n"
+        "    target: CMP-EXISTING\n"
         "affects:\n"
         "  components:\n"
         "    - CMP-EXISTING\n"
@@ -2707,7 +2704,7 @@ def test_dlt_2026_085_mutations_target_ref_validation_and_schema_rejection(tmp_p
     assert "affects" in legacy_errs and "blast_radius" in legacy_errs
     legacy_delta.unlink()
 
-    # 2. Action-aware catalog existence on mutations[].target_*
+    # 2. Operation-aware catalog existence on mutations[].target and parent
     (deltas_dir / "dlt-targets.adoc").write_text(
         "---\n"
         "type: delta/mutation\n"
@@ -2717,24 +2714,24 @@ def test_dlt_2026_085_mutations_target_ref_validation_and_schema_rejection(tmp_p
         "status: proposed\n"
         "intent:\n"
         "  kind: feature\n"
-        "  motivation: Test action-aware target validation\n"
+        "  motivation: Test operation-aware target validation\n"
         "mutations:\n"
-        "  - action: add_component\n"
-        "    target_component: CMP-NEW-ADDED\n"
-        "    target_container: CNT-CORE\n"
-        "  - action: add_capability\n"
-        "    new_capability_id: CAP-NEW-001\n"
-        "  - action: add_capability\n"
-        "    new_capability_id: CAP-NEW-BAD-DOM\n"
-        "    target_domain: DOM-MISSING-PARENT\n"
-        "  - action: add_invariant\n"
-        "    target_invariant_id: INV-NEW-001\n"
-        "    target_capability: CAP-NEW-001\n"
-        "  - action: add_invariant\n"
-        "    target_invariant_id: INV-ORPHAN-001\n"
-        "    target_capability: CAP-MISSING-PARENT\n"
-        "  - action: modify_component\n"
-        "    target_component: CMP-MISSING-MODIFIED\n"
+        "  - operation: add\n"
+        "    target: CMP-NEW-ADDED\n"
+        "    parent: CNT-CORE\n"
+        "  - operation: add\n"
+        "    target: CAP-NEW-001\n"
+        "  - operation: add\n"
+        "    target: CAP-NEW-BAD-DOM\n"
+        "    parent: DOM-MISSING-PARENT\n"
+        "  - operation: add\n"
+        "    target: INV-NEW-001\n"
+        "    parent: CAP-NEW-001\n"
+        "  - operation: add\n"
+        "    target: INV-ORPHAN-001\n"
+        "    parent: CAP-MISSING-PARENT\n"
+        "  - operation: modify\n"
+        "    target: CMP-MISSING-MODIFIED\n"
         "---\n"
         "= Target Validation\n",
         encoding="utf-8",

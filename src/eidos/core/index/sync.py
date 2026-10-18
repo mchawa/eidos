@@ -459,8 +459,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                         continue
                     try:
                         if entry.is_dir(follow_symlinks=False):
-                            if name != "by-status":
-                                _scan_eidos_dir(entry.path)
+                            _scan_eidos_dir(entry.path)
                             continue
                     except OSError:
                         continue
@@ -832,12 +831,9 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             for m in fm.get("mutations", []) or []:
                 if not isinstance(m, dict):
                     continue
-                for k, v in m.items():
-                    if (
-                        (k.startswith("target_") or k in ("target", "parent", "new_capability_id"))
-                        and isinstance(v, str)
-                        and v.strip()
-                    ):
+                for k in ("target", "parent"):
+                    v = m.get(k)
+                    if isinstance(v, str) and v.strip():
                         target_val = v.strip()
                         if target_val.endswith(".adoc") or "/" in target_val:
                             clean_p = target_val.replace("\\", "/")

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -53,15 +53,6 @@ _ADOC_VERBATIM_DELIM_RE = re.compile(r"^(-{4,}|\.{4,}|\+{4,})$")
 _FRONTMATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", re.DOTALL)
 _OWNERSHIP_KEYS = ("components", "source_path", "owned_path", "package_path")
 _MIN_ANCHOR_LEN = 3
-
-
-@dataclass
-class ReconcileSuggestion:
-    """Actionable recommendation mapping code changes to living specifications."""
-
-    code_file: str
-    candidate_specs: list[str] = field(default_factory=list)
-    reason: str = ""
 
 
 @dataclass

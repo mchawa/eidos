@@ -10,7 +10,6 @@ from eidos.cli.main import app
 from eidos.vcs.drift import (
     classify_changed_files,
     detect_drift,
-    reconcile_specs,
 )
 
 runner = CliRunner()
@@ -99,24 +98,6 @@ def test_pr_check_gate_pass_planned(monkeypatch):
     assert result.drift_detected is False
     assert result.workflow_mode == "planned"
     assert "Mode: **Planned (SpecDelta)**" in result.summary_markdown
-
-
-def test_reconcile_specs_catalog_and_prompt(monkeypatch):
-    """Verify reconcile_specs extracts catalog and generates structured AI prompt."""
-    monkeypatch.setattr(
-        "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
-            "src/eidos/cli/main.py",
-        ],
-    )
-
-    result = reconcile_specs(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
-    assert "src/eidos/cli/main.py" in result.changed_code_files
-    assert len(result.suggestions) == 1
-    assert "CNT-EIDOS-CLI" in result.suggestions[0].candidate_specs[0]
-    assert "Instructions for the AI Agent:" in result.ai_prompt
-    assert "Think deeply" in result.ai_prompt
-    assert len(result.catalog["capabilities"]) > 0
 
 
 def test_cli_drift_and_reconcile_commands(monkeypatch, tmp_path):
@@ -352,7 +333,6 @@ def test_no_circular_import():
 
         vcs = importlib.import_module("eidos.vcs")
         assert hasattr(vcs, "detect_drift")
-        assert hasattr(vcs, "reconcile_specs")
     finally:
         sys.modules.update(saved_modules)
 
@@ -1059,8 +1039,8 @@ package_path: src/core
     # Delta targets CMP-SCORE-ENGINE (contains 'core' as substring) and CNT-API (prefix of CNT-API-GATEWAY)
     (deltas_dir / "dlt-2026-099.adoc").write_text(
         """---
-type: vcs/spec-delta
-schema: schemas/v1/vcs/spec-delta.schema.yaml
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-099
 title: Unrelated Score Engine Delta
 status: in_progress
@@ -1068,13 +1048,9 @@ intent:
   kind: feature
   motivation: Modify score engine only.
 mutations:
-  - action: modify_component
-    target_component: CMP-SCORE-ENGINE
-    summary: Update score engine
-blast_radius:
-  components:
-    - CMP-SCORE-ENGINE
-    - CNT-API
+  - operation: modify
+    target: CMP-SCORE-ENGINE
+    details: Update score engine
 ---
 = Unrelated Delta
 """,
@@ -1136,8 +1112,8 @@ intent:
   kind: enabler
   motivation: Rejected change.
 mutations:
-  - action: modify_container
-    target_container: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-CORE
     details: Touch core
 ---
 = Rejected Delta
@@ -1154,8 +1130,8 @@ intent:
   kind: enabler
   motivation: Previously applied.
 mutations:
-  - action: modify_container
-    target_container: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-CORE
     details: Touch core
 ---
 = Old Applied
@@ -1422,8 +1398,8 @@ intent:
   kind: feature
   motivation: Add Foo
 mutations:
-  - action: modify_container
-    target_container: CNT-X
+  - operation: modify
+    target: CNT-X
     details: Add Foo
 ---
 = Delta
@@ -1804,8 +1780,8 @@ intent:
   kind: feature
   motivation: Unrelated
 mutations:
-  - action: modify_container
-    target_container: CNT-X
+  - operation: modify
+    target: CNT-X
     details: Modify X
 ---
 = Delta
@@ -2031,11 +2007,11 @@ Original capability prose.
 
 
 def test_dlt_2026_068_unquoted_git_paths_container_invariants_and_reconcile(tmp_path):
-    """Verify DLT-2026-068: unquoted git paths, top-level tech/container invariants, and reconcile_specs 1-hop neighborhood."""  # eidos:fixture
+    """Verify DLT-2026-068: unquoted git paths and top-level tech/container invariants."""  # eidos:fixture
     import subprocess
 
     from eidos.vcs.diff import get_git_diff_files, get_tracked_files
-    from eidos.vcs.drift import extract_invariants_and_verify, reconcile_specs
+    from eidos.vcs.drift import extract_invariants_and_verify
 
     def git(*args):
         subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
@@ -2122,10 +2098,6 @@ technical:
     assert invs["INV-CNT-TOP-LEVEL"].spec_id == "CNT-PKG"
     assert invs["INV-CMP-C4-INTERNAL"].has_test_coverage is True
     assert invs["INV-CMP-C4-INTERNAL"].spec_id == "CMP-C4-INTERNAL"
-
-    # 3. reconcile_specs resolves 1-hop neighbor spec paths via get_k_hop_neighborhood
-    reconcile_report = reconcile_specs(repo_root=tmp_path, eidos_dir=eidos_dir, uncommitted=True)
-    assert any("cap-pkg.adoc" in p for s in reconcile_report.suggestions for p in s.candidate_specs)
 
 
 def test_dlt_2026_074_design_subgraph_inheritance_and_cross_client_flows():
@@ -2747,7 +2719,7 @@ Original capability prose.
 
 def test_dlt_2026_085_planned_mode_scope_from_mutations_targets_and_diff_helpers(tmp_path: Path, monkeypatch) -> None:
     """DLT-2026-085 (# eidos:fixture): Verify detect_drift derives Planned Mode scope strictly from
-    mutations[].target_* (ignoring legacy affects/blast_radius) and cover vcs/diff.py helpers."""
+    mutations[].target (ignoring legacy affects/blast_radius) and cover vcs/diff.py helpers."""
     import subprocess
 
     from eidos.vcs.diff import (
@@ -2771,8 +2743,8 @@ def test_dlt_2026_085_planned_mode_scope_from_mutations_targets_and_diff_helpers
         "  kind: refactor\n"
         "  motivation: Test scope\n"
         "mutations:\n"
-        "  - action: modify_container\n"
-        "    target_container: CNT-OTHER\n"
+        "  - operation: modify\n"
+        "    target: CNT-OTHER\n"
         "affects:\n"
         "  containers:\n"
         "    - CNT-X\n"
@@ -2797,7 +2769,7 @@ def test_dlt_2026_085_planned_mode_scope_from_mutations_targets_and_diff_helpers
     assert res_unscoped.drift_detected is True
     assert any("src/pkg/svc.py" in s and "CNT-X" in s for s in res_unscoped.remediation_suggestions)
 
-    # When mutations[].target_container targets CNT-X, Planned Mode authorizes src/pkg/svc.py
+    # When mutations[].target targets CNT-X, Planned Mode authorizes src/pkg/svc.py
     dlt_scoped = (
         "---\n"
         "type: delta/mutation\n"
@@ -2808,8 +2780,8 @@ def test_dlt_2026_085_planned_mode_scope_from_mutations_targets_and_diff_helpers
         "  kind: refactor\n"
         "  motivation: Test scope\n"
         "mutations:\n"
-        "  - action: modify_container\n"
-        "    target_container: CNT-X\n"
+        "  - operation: modify\n"
+        "    target: CNT-X\n"
         "---\n"
         "= Scoped\n\nAdds `Foo` handler.\n"
     )

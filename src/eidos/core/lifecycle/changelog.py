@@ -295,7 +295,7 @@ class ChangelogGenerator:
         return header + body
 
     def _add_delta_to_section(self, section: ReleaseSection, delta: dict[str, Any]) -> None:
-        """Classify a SpecDelta into Added, Changed, Fixed, Deprecated, or Removed using intent.kind and mutations[].operation / action."""
+        """Classify a SpecDelta into Added, Changed, Fixed, Deprecated, or Removed using intent.kind and mutations[].operation."""
         from eidos.core.lifecycle.delta_engine import normalize_delta_mutation
 
         delta_id = delta["id"]
@@ -309,33 +309,18 @@ class ChangelogGenerator:
             for m in norm_mutations
             if m.get("operation")
         ]
-        actions = [
-            str(m.get("action", "")).strip().lower()
-            for m in norm_mutations
-            if m.get("action")
-        ]
 
         desc = f": {summary}" if summary and summary.lower() != title.lower() else ""
         item_text = f"**{title}** (`{delta_id}`){desc}"
 
         if kind in ("bug", "bugfix", "fix"):
             section.fixed.append(item_text)
-        elif (
-            (operations and all(op == "remove" for op in operations))
-            or (actions and all(a.startswith("remove_") for a in actions))
-            or kind == "removal"
-        ):
+        elif (operations and all(op == "remove" for op in operations)) or kind == "removal":
             section.removed.append(item_text)
-        elif (
-            (operations and all(op == "deprecate" for op in operations))
-            or (actions and all(a.startswith("deprecate_") for a in actions))
-            or kind == "deprecation"
-        ):
+        elif (operations and all(op == "deprecate" for op in operations)) or kind == "deprecation":
             section.deprecated.append(item_text)
         elif kind in ("feature", "feature_addition", "creation", "architecture"):
-            if (operations and all(op == "modify" for op in operations)) or (
-                actions and all(a.startswith(("modify_", "extend_", "patch_")) for a in actions)
-            ):
+            if operations and all(op == "modify" for op in operations):
                 section.changed.append(item_text)
             else:
                 section.added.append(item_text)

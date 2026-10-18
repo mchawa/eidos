@@ -1,18 +1,15 @@
-"""Git-native drift detection and spec reconciliation package."""
+"""Git-native drift detection and spec verification package."""
 
 from eidos.vcs.drift import (
     ChangedFilesClassification,
     DriftCheckResult,
     GitResolutionError,
     InvariantTrace,
-    ReconcileResult,
-    ReconcileSuggestion,
     check_pr_drift,
     classify_changed_files,
     detect_drift,
     get_living_specs_catalog,
     map_code_to_components,
-    reconcile_specs,
 )
 
 __all__ = [
@@ -20,12 +17,9 @@ __all__ = [
     "DriftCheckResult",
     "GitResolutionError",
     "InvariantTrace",
-    "ReconcileResult",
-    "ReconcileSuggestion",
     "check_pr_drift",
     "classify_changed_files",
     "detect_drift",
     "get_living_specs_catalog",
     "map_code_to_components",
-    "reconcile_specs",
 ]

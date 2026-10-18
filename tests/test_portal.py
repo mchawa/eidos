@@ -427,8 +427,8 @@ def test_portal_promoted_components_invariants_decisions_and_explorations(tmp_pa
     assert core_container.get("responsibility") or core_container.get("summary")
     internal_comps = core_container["internal_components"]
     assert all(ic.get("id") is not None for ic in internal_comps), "No bare {'ref': ...} stub with id=None should remain"
-    slicer_entries = [ic for ic in internal_comps if ic.get("id") == "CMP-CONTEXT-SLICER"]
-    assert len(slicer_entries) == 1
+    parser_entries = [ic for ic in internal_comps if ic.get("id") == "CMP-SPEC-PARSER"]
+    assert len(parser_entries) == 1
 
     # 2. Invariants extracted into data["invariants"]
     inv_ids = {inv["id"] for inv in data["invariants"]}
@@ -1061,8 +1061,8 @@ def test_dlt_2026_085_portal_graph_derived_affects_and_blast_radius(tmp_path: Pa
         "  kind: refactor\n"
         "  motivation: Test graph-derived affects and blast_radius\n"
         "mutations:\n"
-        "  - action: modify_component\n"
-        "    target_component: CMP-TARGET\n"
+        "  - operation: modify\n"
+        "    target: CMP-TARGET\n"
         "---\n"
         "= Mutate Target\n",
         encoding="utf-8",

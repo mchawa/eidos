@@ -1924,8 +1924,8 @@ def test_dlt_2026_083_fts_and_boost_hub_suppression_and_token_calibration(tmp_pa
             "  kind: feature\n"
             "  motivation: Test delta blast radius\n"
             "mutations:\n"
-            "  - action: modify_capability\n"
-            "    target_capability: CAP-ALPHA\n"
+            "  - operation: modify\n"
+            "    target: CAP-ALPHA\n"
             "---\n"
             "= Delta\n",
             encoding="utf-8",

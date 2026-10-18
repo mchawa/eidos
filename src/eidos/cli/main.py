@@ -44,7 +44,6 @@ from eidos.cli.delta_commands import (  # noqa: F401
     delta_delete_cmd,
     delta_list_cmd,
     delta_status_cmd,
-    delta_sync_views_cmd,
     delta_verify_cmd,
 )
 from eidos.cli.doctor_hook_commands import doctor_cmd, hook_app, hook_drift_cmd, hook_lint_cmd  # noqa: F401

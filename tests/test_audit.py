@@ -52,8 +52,8 @@ intent:
   kind: enabler
   motivation: "Testing leak detection"
 mutations:
-  - action: remove_container
-    target_container: CNT-MOCK-DELETED
+  - operation: remove
+    target: CNT-MOCK-DELETED
 ---
 = SpecDelta: Remove Test Container
 """
@@ -106,8 +106,8 @@ intent:
   kind: enabler
   motivation: "Testing tombstone exemptions"
 mutations:
-  - action: remove_container
-    target_container: CNT-DEPRECATED-DB
+  - operation: remove
+    target: CNT-DEPRECATED-DB
 tombstone:
   allowed_reasons:
     - path: "src/legacy/migration.py"
@@ -163,10 +163,10 @@ intent:
   kind: enabler
   motivation: "Test word bounds and multi-term line matching"
 mutations:
-  - action: remove_component
-    target_component: CMP-CLI
-  - action: remove_component
-    target_component: CMP-LEAKED
+  - operation: remove
+    target: CMP-CLI
+  - operation: remove
+    target: CMP-LEAKED
 tombstone:
   allowed_reasons:
     - path: "src/app.py"
@@ -279,8 +279,8 @@ def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
         "  kind: enabler\n"
         "  motivation: Retire CNT-OLD\n"
         "mutations:\n"
-        "  - action: remove_container\n"
-        "    target_container: CNT-OLD\n"
+        "  - operation: remove\n"
+        "    target: CNT-OLD\n"
         "---\n"
         "= Remove Old Container\n",
         encoding="utf-8",
@@ -375,8 +375,8 @@ def test_dlt_2026_083_audit_ignores_gitignored_files(tmp_path):
         "  kind: enabler\n"
         "  motivation: Test gitignore exclusion\n"
         "mutations:\n"
-        "  - action: remove_container\n"
-        "    target_container: CNT-OLD-LEGACY\n"
+        "  - operation: remove\n"
+        "    target: CNT-OLD-LEGACY\n"
         "---\n"
         "= SpecDelta\n",
         encoding="utf-8",

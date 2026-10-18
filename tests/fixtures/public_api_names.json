@@ -19,7 +19,6 @@
   "apply_delta",
   "create_spec",
   "delete_spec",
-  "execute_delta_mutations",
   "find_references_to_spec",
   "find_spec_by_id_or_path",
   "get_delta_status_summary",
@@ -29,7 +28,6 @@
   "list_specs",
   "normalize_id",
   "promote_component",
-  "sync_delta_views",
   "verify_delta_mutations"
  ],
  "eidos.cli.main": [
@@ -54,7 +52,6 @@
   "delta_delete_cmd",
   "delta_list_cmd",
   "delta_status_cmd",
-  "delta_sync_views_cmd",
   "delta_verify_cmd",
   "doctor_cmd",
   "drift_cmd",

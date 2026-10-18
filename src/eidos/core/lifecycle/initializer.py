@@ -4,7 +4,7 @@ import os
 import re
 from pathlib import Path
 
-from eidos.core.lifecycle.delta_engine import _ensure_eidos_gitignore, sync_delta_views
+from eidos.core.lifecycle.delta_engine import _ensure_eidos_gitignore
 from eidos.core.spec.parser import dump_spec_document
 from eidos.core.spec.validator import SpecValidator
 
@@ -61,7 +61,7 @@ def init_repository(
     # Ensure any additional empty leaf directories under eidos_dir are tracked by .gitkeep
     for current_dir, dirnames, filenames in os.walk(eidos_dir):
         p = Path(current_dir)
-        if "by-status" in p.parts or ".cache" in p.parts:
+        if ".cache" in p.parts:
             continue
         if not dirnames and not filenames:
             gitkeep = p / ".gitkeep"
@@ -69,7 +69,7 @@ def init_repository(
             if gitkeep not in created_files:
                 created_files.append(gitkeep)
 
-    # Ensure self-contained eidos/.gitignore and status symlink views
+    # Ensure self-contained eidos/.gitignore
     _ensure_eidos_gitignore(eidos_dir)
     gitignore_file = eidos_dir / ".gitignore"
     if gitignore_file.exists() and gitignore_file not in created_files:
@@ -104,8 +104,6 @@ def init_repository(
         sys_file.write_text("", encoding="utf-8")
     if sys_file not in created_files:
         created_files.append(sys_file)
-
-    sync_delta_views(eidos_dir)
 
     # Validate directory immediately
     validator = SpecValidator()

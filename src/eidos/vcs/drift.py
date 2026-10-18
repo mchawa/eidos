@@ -37,7 +37,6 @@ from eidos.vcs.invariants import (
 from eidos.vcs.report import build_drift_remediation_and_summary, generate_remediation_prompt
 from eidos.vcs.structural import (
     SYSTEM_LEVEL_SPEC_PATHS,
-    ReconcileSuggestion,
     _collect_1hop_spec_targets,
     _collect_design_subgraph,
     _is_system_level_spec,
@@ -60,8 +59,6 @@ __all__ = [
     "DriftCheckResult",
     "GitResolutionError",
     "InvariantTrace",
-    "ReconcileResult",
-    "ReconcileSuggestion",
     "_resolve_base_and_merge_base",
     "_resolve_base_ref",
     "_resolve_merge_base",
@@ -79,7 +76,6 @@ __all__ = [
     "is_generated_or_vendored",
     "is_polyglot_test_file",
     "map_code_to_components",
-    "reconcile_specs",
 ]
 
 
@@ -127,16 +123,6 @@ class DriftCheckResult:
     def code_files(self) -> list[str]:
         """Modified source code files in the evaluated diff."""
         return self.classification.code_files
-
-
-@dataclass
-class ReconcileResult:
-    """Result of analyzing code changes for living spec reconciliation."""
-
-    changed_code_files: list[str]
-    suggestions: list[ReconcileSuggestion]
-    ai_prompt: str
-    catalog: dict[str, list[dict]] = field(default_factory=dict)
 
 
 def detect_drift(
@@ -270,24 +256,7 @@ def detect_drift(
                         continue
             active_delta_files.append(df)
             for m in model.mutations:
-                for key in (
-                    "target",
-                    "parent",
-                    "target_component",
-                    "target_container",
-                    "target_architecture",
-                    "target_capability",
-                    "target_domain",
-                    "target_policy",
-                    "target_screen",
-                    "target_ui_component",
-                    "target_design_system",
-                    "target_client",
-                    "target_flow",
-                    "target_contract",
-                    "target_persona",
-                    "new_capability_id",
-                ):
+                for key in ("target", "parent"):
                     val = m.get(key)
                     if val:
                         declared_delta_targets.add(str(val).lower())
@@ -524,98 +493,3 @@ def detect_drift(
 # Backwards compatibility alias
 check_pr_drift = detect_drift
 
-
-def reconcile_specs(
-    repo_root: Path,
-    base_ref: str | None = None,
-    eidos_dir: Path | None = None,
-    uncommitted: bool = False,
-) -> ReconcileResult:
-    """Analyze changed code and synthesize recommendations / AI prompt to synchronize living specs."""
-    root = repo_root.resolve()
-    if eidos_dir is None:
-        target_eidos = (root / "eidos").resolve()
-    elif not eidos_dir.is_absolute():
-        target_eidos = (root / eidos_dir).resolve()
-    else:
-        target_eidos = eidos_dir.resolve()
-
-    try:
-        eidos_rel_prefix = str(target_eidos.relative_to(root)).replace("\\", "/").strip("/") or "eidos"
-    except ValueError:
-        eidos_rel_prefix = target_eidos.name or "eidos"
-
-    changed_files = get_git_diff_files(root, base_ref=base_ref, uncommitted=uncommitted)
-    classification = classify_changed_files(changed_files, repo_root=root, eidos_dir=target_eidos)
-    comp_mappings = map_code_to_components(target_eidos, classification.code_files, repo_root=root)
-    catalog = get_living_specs_catalog(target_eidos, repo_root=root)
-
-    suggestions: list[ReconcileSuggestion] = []
-    file_to_comps: dict[str, list[str]] = {}
-    for cf, cid, spath in comp_mappings:
-        file_to_comps.setdefault(cf, []).append(f"{cid} ({spath})")
-
-    idx = get_architectural_index(repo_root=root, eidos_dir=target_eidos) if target_eidos.exists() else None
-
-    for cf in classification.code_files:
-        base_candidates = file_to_comps.get(cf, [])
-        candidates = list(base_candidates)
-        if idx:
-            for entry in base_candidates:
-                cid = entry.split()[0]
-                neighbors = idx.get_k_hop_neighborhood(cid, max_depth=1)
-                for n in neighbors:
-                    ntype = n.get("type")
-                    nid = n.get("id")
-                    npath = n.get("file_path") or n.get("data", {}).get("file_path") or n.get("data", {}).get("path")
-                    if ntype in ("tech/contract", "product/capability") and npath:
-                        cand_str = f"{nid} ({npath})"
-                        if cand_str not in candidates:
-                            candidates.append(cand_str)
-        if not candidates:
-            candidates = [f"{eidos_rel_prefix}/architecture/system-architecture.adoc"]
-
-        suggestions.append(
-            ReconcileSuggestion(
-                code_file=cf,
-                candidate_specs=candidates,
-                reason="Code modified; corresponding architecture manifest, contract, or capability must reflect new behaviors.",
-            )
-        )
-
-    # Formulate AI prompt
-    prompt_lines = [
-        "# Eidos Living Specification Synchronization Task",
-        "",
-        "You are an AI software architect pair-programming within an Eidos-managed repository.",
-        "The following source code files were recently modified or added in the codebase:",
-        "",
-    ]
-    for s in suggestions:
-        prompt_lines.append(f"- Code File: `{s.code_file}`")
-        prompt_lines.append(f"  Candidate Specs: {', '.join(s.candidate_specs)}")
-
-    prompt_lines.extend(
-        [
-            "",
-            "## Current Living Specifications Catalog:",
-            f"- Capabilities ({len(catalog['capabilities'])}): "
-            + ", ".join(c["id"] for c in catalog["capabilities"][:10]),
-            f"- Components ({len(catalog['components'])}): " + ", ".join(c["id"] for c in catalog["components"]),
-            f"- Contracts ({len(catalog['contracts'])}): " + ", ".join(c["id"] for c in catalog["contracts"]),
-            f"- Policies ({len(catalog['policies'])}): " + ", ".join(c["id"] for c in catalog["policies"]),
-            "",
-            "## Instructions for the AI Agent:",
-            "1. Inspect the Git diff of the modified code files.",
-            "2. Think deeply about the architectural implications, touched contracts, capabilities, and invariant tests.",
-            f"3. Update the appropriate living specifications in '{eidos_rel_prefix}/' directly (or create a SpecDelta if this is a complex, breaking change).",
-            f"4. Verify that 'eidos validate {eidos_rel_prefix}' and 'eidos drift --uncommitted' pass cleanly.",
-        ]
-    )
-
-    return ReconcileResult(
-        changed_code_files=classification.code_files,
-        suggestions=suggestions,
-        ai_prompt="\n".join(prompt_lines),
-        catalog=catalog,
-    )

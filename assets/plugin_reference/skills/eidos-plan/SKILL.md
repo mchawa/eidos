@@ -75,12 +75,12 @@ eidos delta create \
 
 # 2. Edit the created eidos/deltas/dlt-*.adoc file to declare mutations and structured expect post-conditions
 
-# 3. Implement code changes, update living specs in eidos/ (or use 'eidos delta apply <ID> --execute' to scaffold/apply deterministically), and bind tests
+# 3. Implement code changes, update living specs in eidos/, and bind tests
 
 # 4. Verify all target entities, baseline modification evidence, and expect: post-conditions
 eidos delta verify DLT-2026-015 --json
 
-# 5. Reconcile and apply the SpecDelta (sets status: applied and syncs eidos/deltas/by-status/)
+# 5. Reconcile and apply the SpecDelta (verifies mutations and sets status: applied)
 eidos delta apply DLT-2026-015
 
 # 6. If removing/deprecating entities, audit for dangling references; optionally compile CHANGELOG.md
@@ -91,7 +91,7 @@ eidos delta changelog
 ### 2.2 SpecDelta Frontmatter & Schema Rules
 
 > **Critical Schema Rules (`delta.schema.yaml`)**:
-> 1. **Composable `operation` + `target` + `parent` is the Canonical Mutation Contract**: Declare each mutation with `operation: add | modify | remove | deprecate`, `target: <ENTITY-ID>`, and optional `parent: <PARENT-ENTITY-ID>` (e.g., owning container for an inline `CMP-*` or owning capability/policy/container for an `INV-*`). Legacy `action:` + `target_*:` entries remain supported via `anyOf` for historical compatibility. Never add `affects:` or `blast_radius:` blocks to SpecDelta YAML frontmatter (`additionalProperties: false` rejects them).
+> 1. **Composable `operation` + `target` (+ optional `parent` for `add`/`remove`) is the Sole Mutation Contract**: Declare each mutation with `operation: add | modify | remove | deprecate` and `target: <ENTITY-ID>`. Omit `parent` on `modify` mutations (the catalog already resolves existing entities by ID); only include `parent: <PARENT-ENTITY-ID>` when adding or removing child entities (`INV-*`, inline `CMP-*`, etc.). Never add `affects:` or `blast_radius:` blocks to SpecDelta YAML frontmatter (`additionalProperties: false` rejects them).
 > 2. **Closed `expect:` Schema**: `expect:` only permits `body:` (`contains`, `not_contains`) and `frontmatter:` (`responsibility`, `source_path`, `rule`, `test_binding`, `status`, `version`, `category`, `custom`). Flat top-level keys under `expect:` are rejected.
 
 ```yaml
@@ -138,28 +138,28 @@ mutations:
 = SpecDelta: Add Webhook Signature Verification Contract and Ingestor Component
 ```
 
-### 2.3 Composable `operation` + `target` Matrix (and Legacy `action` Equivalents)
+### 2.3 Composable `operation` + `target` Matrix
 
-| Entity Category (`target` Prefix) | Supported `operation` Values | Optional `parent` Scope | Legacy `action` / `target_*` Equivalent |
-| :--- | :--- | :--- | :--- |
-| **Architecture (`ARCH-*`)** | `modify` | — | `modify_architecture` (`target_architecture`) |
-| **Containers (`CNT-*`)** | `add`, `modify`, `remove` | — | `add_container`, `modify_container`, `remove_container` (`target_container`) |
-| **Components (`CMP-*`)** | `add`, `modify`, `remove` | `CNT-*` | `add_component`, `modify_component`, `remove_component` (`target_component`) |
-| **Contracts (`CTR-*`)** | `add`, `modify`, `remove` | `CNT-*` | `add_contract`, `modify_contract`, `remove_contract` (`target_contract`) |
-| **Domains (`DOM-*`)** | `add`, `modify`, `remove` | — | `add_domain`, `modify_domain`, `remove_domain` (`target_domain`) |
-| **Capabilities (`CAP-*`)** | `add`, `modify`, `deprecate`, `remove` | `DOM-*` (on `add`) | `add_capability`, `extend_capability`, `modify_capability`, `deprecate_capability`, `remove_capability` (`target_capability` / `new_capability_id`) |
-| **Invariants (`INV-*`)** | `add`, `modify`, `remove` | `CAP-*`, `POL-*`, `CNT-*`, or `CMP-*` (required on `add`) | `add_invariant`, `patch_invariant`, `remove_invariant` (`target_invariant_id`) |
-| **Personas (`PER-*`)** | `add`, `modify`, `remove` | — | `add_persona`, `modify_persona`, `remove_persona` (`target_persona`) |
-| **Policies (`POL-*`)** | `add`, `modify`, `deprecate`, `remove` | — | `add_policy`, `modify_policy`, `patch_policy`, `deprecate_policy`, `remove_policy` (`target_policy`) |
-| **Design Systems (`DS-*`)** | `add`, `modify`, `remove` | — | `add_design_system`, `modify_design_system`, `remove_design_system` (`target_design_system`) |
-| **UI Components (`UIC-*`)** | `add`, `modify`, `remove` | `DS-*` | `add_ui_component`, `modify_ui_component`, `remove_ui_component` (`target_ui_component`) |
-| **Clients (`CLT-*`)** | `add`, `modify`, `remove` | `CNT-*` | `add_client`, `modify_client`, `remove_client` (`target_client`) |
-| **Screens (`SCR-*`)** | `add`, `modify`, `remove` | `CLT-*` | `add_screen`, `modify_screen`, `remove_screen` (`target_screen`) |
-| **Flows (`FLOW-*`)** | `add`, `modify`, `remove` | `CLT-*` | `add_flow`, `modify_flow`, `remove_flow` (`target_flow`) |
+| Entity Category (`target` Prefix) | Supported `operation` Values | Optional `parent` Scope (`add` / `remove` only; omit on `modify`) |
+| :--- | :--- | :--- |
+| **Architecture (`ARCH-*`)** | `modify` | — |
+| **Containers (`CNT-*`)** | `add`, `modify`, `remove` | — |
+| **Components (`CMP-*`)** | `add`, `modify`, `remove` | `CNT-*` (on `add` / `remove` of inline components) |
+| **Contracts (`CTR-*`)** | `add`, `modify`, `remove` | `CNT-*` (on `add` / `remove`) |
+| **Domains (`DOM-*`)** | `add`, `modify`, `remove` | — |
+| **Capabilities (`CAP-*`)** | `add`, `modify`, `deprecate`, `remove` | `DOM-*` (on `add` / `remove`) |
+| **Invariants (`INV-*`)** | `add`, `modify`, `remove` | `CAP-*`, `POL-*`, `CNT-*`, or `CMP-*` (required on `add`, optional on `remove`) |
+| **Personas (`PER-*`)** | `add`, `modify`, `remove` | — |
+| **Policies (`POL-*`)** | `add`, `modify`, `deprecate`, `remove` | — |
+| **Design Systems (`DS-*`)** | `add`, `modify`, `remove` | — |
+| **UI Components (`UIC-*`)** | `add`, `modify`, `remove` | `DS-*` (on `add` / `remove`) |
+| **Clients (`CLT-*`)** | `add`, `modify`, `remove` | `CNT-*` (on `add` / `remove`) |
+| **Screens (`SCR-*`)** | `add`, `modify`, `remove` | `CLT-*` (on `add` / `remove`) |
+| **Flows (`FLOW-*`)** | `add`, `modify`, `remove` | `CLT-*` (on `add` / `remove`) |
 
 ### 2.4 Structured `expect:` Post-Conditions & `tombstone:` Audit Exemptions
 
-For `add` and `modify` (and legacy `add_*`, `modify_*`, `extend_*`, and `patch_*`) mutations, `eidos delta verify` checks both baseline digest modification and `expect:` assertions:
+For `add` and `modify` mutations, `eidos delta verify` checks both baseline digest modification and `expect:` assertions:
 * **`expect.frontmatter`**:
   * `version: "1.2.0"` — SemVer string match.
   * `status: "active"` — lifecycle status match.
@@ -189,10 +189,10 @@ eidos delta verify <DLT-ID> --json
 eidos delta audit <DLT-ID> --strict --json
 ```
 
-1. **Blast Radius & Boundary Integrity**: Do all modified code files map to containers/components authorized in `mutations[].target` / `parent` (or legacy `target_*`) and its 1-hop ownership neighborhood? Are downstream dependents from `eidos index blast-radius` protected from unintended breakage or circular imports?
+1. **Blast Radius & Boundary Integrity**: Do all modified code files map to containers/components authorized in `mutations[].target` / `parent` and its 1-hop ownership neighborhood? Are downstream dependents from `eidos index blast-radius` protected from unintended breakage or circular imports?
 2. **Interface Contract & SemVer Compatibility (`CTR-*`)**: Are added/removed CLI flags, endpoints, or RPCs bidirectionally synchronized in `CTR-*` specs with proper SemVer 2.0.0 bumps?
 3. **Governance Policies & Invariant Traceability (`POL-*`, `INV-*`)**: Does the change honor all active `POL-*` policies, and does every new/modified capability behavior have a genuine test bound via `test_binding: file::func`?
-4. **SpecDelta Verification Rigor**: Does every `modify` (and legacy `modify_*`, `extend_*`, and `patch_*`) mutation include structured `expect: { frontmatter, body }` post-conditions?
+4. **SpecDelta Verification Rigor**: Does every `modify` mutation include structured `expect: { frontmatter, body }` post-conditions?
 5. **Living Specification Purity & Decision Capture (`DEC-*`)**: Zero standalone ADRs; non-obvious trade-offs and `rejected_alternatives` recorded in `decisions:`; promoted `CMP-*` components obey `INV-COMPONENT-CENTRALIZATION-MANDATE` (`{id, ref}` without duplicated `source_path`/`invariants`/`decisions`).
 
 ### Review Report Template

@@ -448,6 +448,12 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             p_invs = [str(inv["id"]) for inv in pol.get("invariants", []) if isinstance(inv, dict) and inv.get("id")]
             entity_invariants[pid] = p_invs or [pid]
 
+    inv_to_owners: dict[str, list[str]] = {}
+    for owner_id, inv_ids in entity_invariants.items():
+        for inv_id in inv_ids:
+            if inv_id != owner_id:
+                _add_unique(inv_to_owners.setdefault(inv_id, []), owner_id)
+
     client_by_id: dict[str, dict[str, Any]] = {cl["id"]: cl for cl in clients if cl.get("id")}
     container_to_clients: dict[str, list[dict[str, Any]]] = {}
     for cl in clients:
@@ -455,7 +461,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         if isinstance(cnt_ref, str) and cnt_ref:
             container_to_clients.setdefault(cnt_ref, []).append(cl)
 
-    from eidos.core.lifecycle.delta_engine import normalize_delta_mutation
+    from eidos.core.lifecycle.delta_engine import normalize_delta_mutation, resolve_entity_prefix_meta
 
     raw_deltas = specs_by_type.get("delta/mutation", [])
     for d in raw_deltas:
@@ -487,33 +493,52 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             "invariants_to_enforce": [],
         }
 
-        target_key_to_cat = (
-            ("target_container", "containers"),
-            ("target_component", "components"),
-            ("target_contract", "contracts"),
-            ("target_capability", "capabilities"),
-            ("new_capability_id", "capabilities"),
-            ("target_domain", "domains"),
-            ("target_policy", "policies"),
-            ("target_persona", "personas"),
-            ("target_design_system", "design_systems"),
-            ("target_screen", "screens"),
-            ("target_ui_component", "ui_components"),
-            ("target_client", "clients"),
-            ("target_flow", "flows"),
-        )
+        kind_to_cat = {
+            "container": "containers",
+            "component": "components",
+            "contract": "contracts",
+            "capability": "capabilities",
+            "domain": "domains",
+            "policy": "policies",
+            "persona": "personas",
+            "design_system": "design_systems",
+            "screen": "screens",
+            "ui_component": "ui_components",
+            "client": "clients",
+            "flow": "flows",
+        }
         seed_entities: list[str] = []
         for m in muts:
             if not isinstance(m, dict):
                 continue
-            inv_t = m.get("target_invariant_id")
-            if isinstance(inv_t, str) and inv_t.strip():
-                _add_unique(br_lists["invariants_to_enforce"], inv_t.strip())
-            for tkey, cat in target_key_to_cat:
-                raw_t = m.get(tkey)
-                if not raw_t:
+            for ref_field in ("target", "parent"):
+                raw_t = m.get(ref_field)
+                if not raw_t or not isinstance(raw_t, str) or not raw_t.strip():
                     continue
-                resolved_id = _resolve_ref_id(raw_t)
+                resolved_id = _resolve_ref_id(raw_t.strip())
+                p_meta = resolve_entity_prefix_meta(resolved_id)
+                if p_meta is None:
+                    continue
+                entity_kind = p_meta[1]
+                if entity_kind == "invariant":
+                    if ref_field == "target":
+                        _add_unique(br_lists["invariants_to_enforce"], resolved_id)
+                        for owner_id in inv_to_owners.get(resolved_id, []):
+                            o_meta = resolve_entity_prefix_meta(owner_id)
+                            o_cat = kind_to_cat.get(o_meta[1]) if o_meta else None
+                            if o_cat:
+                                _add_unique(aff_lists[o_cat], owner_id)
+                                _add_unique(seed_entities, owner_id)
+                                if o_cat == "components" and owner_id in comp_to_container:
+                                    _add_unique(aff_lists["containers"], comp_to_container[owner_id])
+                                elif o_cat == "capabilities" and owner_id in cap_by_id:
+                                    dom_id = cap_by_id[owner_id].get("domain")
+                                    if isinstance(dom_id, str) and dom_id:
+                                        _add_unique(aff_lists["domains"], _resolve_ref_id(dom_id))
+                    continue
+                cat = kind_to_cat.get(entity_kind)
+                if not cat:
+                    continue
                 _add_unique(aff_lists[cat], resolved_id)
                 _add_unique(seed_entities, resolved_id)
                 if cat == "components" and resolved_id in comp_to_container:
