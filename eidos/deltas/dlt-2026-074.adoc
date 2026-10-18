@@ -12,15 +12,15 @@ intent:
   severity: high
   motivation: Remove hardcoded Eidos repository paths, external system nodes (EXT_GIT/EXT_IDE), and IDs ('systems/core', 'web-portal', 'DS-CORE', 'Eidos') from the Portal generator and frontend, complete get_portal_data and _collect_design_subgraph extraction across all schema types and relationships, fix SpecReader modal Sheet TOC scroll-spy, HomeView active delta metrics, and DesignView cross-client flows, and map src/eidos/portal/frontend/src in CNT-EIDOS-PORTAL.
 mutations:
-- action: modify_component
-  target_component: CMP-PORTAL-GENERATOR
+- operation: modify
+  target: CMP-PORTAL-GENERATOR
   details: 'Update get_portal_data, _generate_c4_context_mermaid, and _generate_c4_component_mermaid in src/eidos/portal/generator.py to replace hardcoded EXT_GIT/EXT_IDE nodes with dynamic c4_context.external_systems from system-architecture.adoc/system.adoc, handle type: arch/system alongside product/system, extract decisions (DEC-*) from product/domain, product/capability, and product/policy, extract nested invariants (INV-*) from product/policy, resolve tokens.json dynamically from tokens.manifest and parent design system directory, extract top-level extends_system alongside inheritance.extends, and normalize dict items in dependencies.internal_containers.'
   expect:
     frontmatter:
       source_path: src/eidos/portal/generator.py
       responsibility: external_systems
-- action: modify_component
-  target_component: CMP-PORTAL-ASSETS
+- operation: modify
+  target: CMP-PORTAL-ASSETS
   details: Update CatalogView.tsx, DesignView.tsx, ArchitectureView.tsx, SpecReader.tsx, and HomeView.tsx under src/eidos/portal/frontend/src/ and rebuild assets/portal/bundle.html.gz to eliminate hardcoded 'systems/core', 'web-portal', 'DS-CORE', and 'Eidos' strings, attach TOC scroll-spy to the active scroll container inside modal Sheets, display accurate in-flight vs applied SpecDelta counts on HomeView, render cross_client flows on DesignView, and include src/eidos/portal/frontend/src in CNT-EIDOS-PORTAL component source_path.
   expect:
     frontmatter:
@@ -30,8 +30,8 @@ mutations:
       - src/eidos/portal/frontend/scripts/hatch_build.py
       - src/eidos/portal/frontend/src
       responsibility: src/eidos/portal/frontend/src
-- action: modify_component
-  target_component: CMP-DRIFT-DETECTOR
+- operation: modify
+  target: CMP-DRIFT-DETECTOR
   details: Update _collect_design_subgraph in src/eidos/vcs/structural.py to traverse nested inheritance.extends on design/system specs, multi-client clients[] lists on cross_client design/flow specs, and supported_design_systems[] lists on design/screen specs.
   expect:
     frontmatter:
@@ -42,8 +42,8 @@ mutations:
       - src/eidos/vcs/structural.py
       - src/eidos/vcs/report.py
       responsibility: inheritance.extends
-- action: patch_invariant
-  target_invariant_id: INV-ENGINE-GENERICITY
+- operation: modify
+  target: INV-ENGINE-GENERICITY
   details: Update INV-ENGINE-GENERICITY in CAP-PROD-001 to explicitly forbid hardcoded Eidos external system nodes and repository-specific slugs in portal C4 diagrams and frontend views.
   expect:
     frontmatter:

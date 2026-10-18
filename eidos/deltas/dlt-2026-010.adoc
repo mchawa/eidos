@@ -10,86 +10,70 @@ intent:
     its true agent-agnostic ecosystem, multi-client experience, and Git-native lifecycle
     architecture.
 mutations:
-- action: add_persona
-  target_persona: PER-SOFTWARE-ARCHITECT
-  details: Author PER-SOFTWARE-ARCHITECT representing Systems Architects and Tech
-    Leads who govern C4 topology, contract boundaries, policies, and invariant-test
-    traceability.
-- action: add_persona
-  target_persona: PER-SOFTWARE-ENGINEER
-  details: Author PER-SOFTWARE-ENGINEER representing Full-Stack / Core Developers
-    operating in Direct Mode co-evolution with zero-friction drift detection.
-- action: add_persona
-  target_persona: PER-DESIGN-ENGINEER
-  details: Author PER-DESIGN-ENGINEER representing Design Technologists and Frontend
-    Leads managing W3C DTCG tokens, multi-client surfaces, and interaction flows.
-- action: modify_persona
-  target_persona: PER-PRODUCT-LEAD
-  details: Refine PER-PRODUCT-LEAD to focus on living product capabilities, JTBD outcomes,
-    hypothesis explorations, and Planned Mode SpecDeltas.
-- action: modify_persona
-  target_persona: PER-AUTONOMOUS-AGENT
-  details: Refine PER-AUTONOMOUS-AGENT to highlight MCP tool integration, targeted
-    context slicing, and deterministic verification gates.
-- action: add_domain
-  target_domain: DOM-SPEC-ENGINE
-  details: Introduce DOM-SPEC-ENGINE (Living Specification & Invariant Core) replacing
-    DOM-PRODUCT-CORE to govern living spec schemas, parsing, invariants, and SpecDeltas.
-- action: add_domain
-  target_domain: DOM-EXPERIENCE-PORTAL
-  details: Introduce DOM-EXPERIENCE-PORTAL governing Multi-Design Systems, W3C DTCG
-    tokens studio, Client Applications (CLT-*), Screen state machines (SCR-*), Flows
-    (FLOW-*), and the Living Web Portal.
-- action: modify_domain
-  target_domain: DOM-AGENT-INTELLIGENCE
-  details: Restructure DOM-AGENT-HARNESS into DOM-AGENT-INTELLIGENCE focusing on Model
-    Context Protocol (MCP), context slicing, and agent skills/rules.
-- action: modify_domain
-  target_domain: DOM-VCS-LIFECYCLE
-  details: Restructure DOM-VCS-SYNC into DOM-VCS-LIFECYCLE focusing on Git-native
-    co-evolution, Direct Mode reconciliation, and zero-drift verification.
-- action: add_capability
-  target_domain: DOM-EXPERIENCE-PORTAL
-  new_capability_id: CAP-EXP-001
-  details: Author CAP-EXP-001 (Interactive Living Web Portal & Visual Documentation
-    Engine) realizing real-time C4 diagrams, tokens studio, and flow visualizers.
-- action: add_capability
-  target_domain: DOM-EXPERIENCE-PORTAL
-  new_capability_id: CAP-EXP-002
-  details: Author CAP-EXP-002 (Multi-Design Systems, W3C Tokens & Client Surface Management)
-    governing multi-client targets, W3C DTCG tokens, and screen contracts.
-- action: modify_capability
-  target_capability: CAP-PROD-001
-  details: Rebind CAP-PROD-001 to DOM-SPEC-ENGINE and associate newly added personas
-    (PER-SOFTWARE-ARCHITECT, PER-SOFTWARE-ENGINEER).
-- action: modify_capability
-  target_capability: CAP-PROD-002
+- operation: add
+  target: PER-SOFTWARE-ARCHITECT
+  details: Author PER-SOFTWARE-ARCHITECT representing Systems Architects and Tech Leads who govern C4 topology, contract boundaries, policies, and invariant-test traceability.
+- operation: add
+  target: PER-SOFTWARE-ENGINEER
+  details: Author PER-SOFTWARE-ENGINEER representing Full-Stack / Core Developers operating in Direct Mode co-evolution with zero-friction drift detection.
+- operation: add
+  target: PER-DESIGN-ENGINEER
+  details: Author PER-DESIGN-ENGINEER representing Design Technologists and Frontend Leads managing W3C DTCG tokens, multi-client surfaces, and interaction flows.
+- operation: modify
+  target: PER-PRODUCT-LEAD
+  details: Refine PER-PRODUCT-LEAD to focus on living product capabilities, JTBD outcomes, hypothesis explorations, and Planned Mode SpecDeltas.
+- operation: modify
+  target: PER-AUTONOMOUS-AGENT
+  details: Refine PER-AUTONOMOUS-AGENT to highlight MCP tool integration, targeted context slicing, and deterministic verification gates.
+- operation: add
+  target: DOM-SPEC-ENGINE
+  details: Introduce DOM-SPEC-ENGINE (Living Specification & Invariant Core) replacing DOM-PRODUCT-CORE to govern living spec schemas, parsing, invariants, and SpecDeltas.
+- operation: add
+  target: DOM-EXPERIENCE-PORTAL
+  details: Introduce DOM-EXPERIENCE-PORTAL governing Multi-Design Systems, W3C DTCG tokens studio, Client Applications (CLT-*), Screen state machines (SCR-*), Flows (FLOW-*), and the Living Web Portal.
+- operation: modify
+  target: DOM-AGENT-INTELLIGENCE
+  details: Restructure DOM-AGENT-HARNESS into DOM-AGENT-INTELLIGENCE focusing on Model Context Protocol (MCP), context slicing, and agent skills/rules.
+- operation: modify
+  target: DOM-VCS-LIFECYCLE
+  details: Restructure DOM-VCS-SYNC into DOM-VCS-LIFECYCLE focusing on Git-native co-evolution, Direct Mode reconciliation, and zero-drift verification.
+- operation: add
+  target: CAP-EXP-001
+  parent: DOM-EXPERIENCE-PORTAL
+  details: Author CAP-EXP-001 (Interactive Living Web Portal & Visual Documentation Engine) realizing real-time C4 diagrams, tokens studio, and flow visualizers.
+- operation: add
+  target: CAP-EXP-002
+  parent: DOM-EXPERIENCE-PORTAL
+  details: Author CAP-EXP-002 (Multi-Design Systems, W3C Tokens & Client Surface Management) governing multi-client targets, W3C DTCG tokens, and screen contracts.
+- operation: modify
+  target: CAP-PROD-001
+  details: Rebind CAP-PROD-001 to DOM-SPEC-ENGINE and associate newly added personas (PER-SOFTWARE-ARCHITECT, PER-SOFTWARE-ENGINEER).
+- operation: modify
+  target: CAP-PROD-002
   details: Rebind CAP-PROD-002 to DOM-SPEC-ENGINE and update business personas.
-- action: modify_capability
-  target_capability: CAP-PROD-003
+- operation: modify
+  target: CAP-PROD-003
   details: Rebind CAP-PROD-003 to DOM-SPEC-ENGINE and update business personas.
-- action: modify_capability
-  target_capability: CAP-AGENT-001
-  details: Rebind CAP-AGENT-001 to DOM-AGENT-INTELLIGENCE with updated MCP and context
-    slicing scope.
-- action: modify_capability
-  target_capability: CAP-VCS-001
-  details: Rebind CAP-VCS-001 to DOM-VCS-LIFECYCLE focusing on Git-native drift detection
-    and reconciliation.
-- action: modify_component
-  target_component: CMP-EIDOS-PORTAL
+- operation: modify
+  target: CAP-AGENT-001
+  details: Rebind CAP-AGENT-001 to DOM-AGENT-INTELLIGENCE with updated MCP and context slicing scope.
+- operation: modify
+  target: CAP-VCS-001
+  details: Rebind CAP-VCS-001 to DOM-VCS-LIFECYCLE focusing on Git-native drift detection and reconciliation.
+- operation: modify
+  target: CMP-EIDOS-PORTAL
   details: Update domain_binding from DOM-PRODUCT-CORE to DOM-EXPERIENCE-PORTAL.
-- action: modify_component
-  target_component: CMP-EIDOS-MCP
+- operation: modify
+  target: CMP-EIDOS-MCP
   details: Update domain_binding from DOM-AGENT-HARNESS to DOM-AGENT-INTELLIGENCE.
-- action: modify_component
-  target_component: CMP-EIDOS-PLUGIN
+- operation: modify
+  target: CMP-EIDOS-PLUGIN
   details: Update domain_binding from DOM-AGENT-HARNESS to DOM-AGENT-INTELLIGENCE.
-- action: modify_component
-  target_component: CMP-EIDOS-CORE
+- operation: modify
+  target: CMP-EIDOS-CORE
   details: Update domain_binding from DOM-PRODUCT-CORE to DOM-SPEC-ENGINE.
-- action: modify_component
-  target_component: CMP-EIDOS-CLI
+- operation: modify
+  target: CMP-EIDOS-CLI
   details: Update domain_binding from DOM-PRODUCT-CORE to DOM-SPEC-ENGINE.
 ---
 = SpecDelta: Revamp Eidos Personas and Core Domains Architecture

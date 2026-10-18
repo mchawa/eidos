@@ -6,26 +6,22 @@ description: Orchestrate technical discovery spikes (EXP-*), the SpecDelta archi
 
 This skill governs **Planned Mode** workflows in Eidos:
 1. **Technical Explorations (`EXP-*`)**: Hypothesis-driven spikes when requirements or technical feasibility are uncertain.
-2. **SpecDelta Lifecycle (`DLT-*`)**: Formal architectural mutations across containers, components, contracts, capabilities, and policies.
+2. **SpecDelta Lifecycle (`DLT-*`)**: Formal architectural mutations across product, architecture, and design specifications.
 3. **Staff Architectural Review**: Rigorous 5-dimension audit of SpecDeltas, PR diffs, and blast radius.
 
 ---
 
 ## 1. Technical Spikes & Feasibility Discovery (`EXP-*`)
 
-When an engineering problem has high uncertainty (e.g., evaluating two storage engines, benchmarking a protocol, or prototyping an algorithm), start with an **Exploration** (`eidos/explorations/exp-yyyy-nnn.adoc`) before committing to a SpecDelta.
-
-### 1.1 Exploration Lifecycle States
+When an engineering problem has high uncertainty (e.g., evaluating storage engines, benchmarking a protocol, or prototyping an algorithm), start with an **Exploration** (`eidos/explorations/exp-yyyy-nnn.adoc`) before committing to a SpecDelta.
 
 ```text
 proposed ──► in_progress ──► adopted   (Graduates to a SpecDelta DLT-* via decision.resulting_delta_id)
                          └──► discarded (Preserved in Git so future agents never repeat failed approaches)
 ```
 
-### 1.2 Scaffolding & Authoring an Exploration
-
 ```bash
-eidos spec create exploration EXP-2026-001 --title "Evaluate Embedded DuckDB vs SQLite FTS5"
+eidos spec create exploration EXP-2026-001 --title "Evaluate Outbox Pattern vs Direct Webhook Dispatch"
 ```
 
 ```yaml
@@ -33,72 +29,70 @@ eidos spec create exploration EXP-2026-001 --title "Evaluate Embedded DuckDB vs 
 type: product/exploration
 schema: schemas/v1/product/exploration.schema.yaml
 id: EXP-2026-001
-title: "Evaluate Embedded DuckDB vs SQLite FTS5 for Local Search"
+title: "Evaluate Transactional Outbox vs Direct Webhook Dispatch"
 status: in_progress # draft | proposed | planned | in_progress | adopted | discarded
 
-hypothesis: "We believe Python's stdlib sqlite3 with FTS5 can execute hybrid lexical + graph queries in <5ms for 500 specs without external binary wheels."
+hypothesis: "A PostgreSQL transactional outbox with SKIP LOCKED polling can deliver 5,000 events/sec with p99 <50ms without introducing Kafka."
 
 questions_to_answer:
-  - "Can stdlib sqlite3 FTS5 execute hybrid BM25 + graph queries in <5ms for 500 specs?"
-  - "Does incremental dirty checking avoid full rebuilds on clean working trees?"
+  - "Does SKIP LOCKED batch polling sustain 5,000 events/sec without lock contention on the ledger table?"
+  - "What is the recovery time after a downstream webhook endpoint outage?"
 
 spikes_to_run:
-  - name: "sqlite-fts5-prototype"
-    target: "Benchmark cold index build and incremental dirty-check latency on 500 synthetic specs"
+  - name: "pg-outbox-benchmark"
+    target: "Benchmark 4 concurrent worker processes polling 100k queued billing events"
 
 exit_criteria:
   max_duration: "2 days"
-  benchmark: "Cold index build <150ms for 500 documents; incremental dirty check <5ms with zero C-extension wheels."
+  benchmark: "Sustained >=5,000 events/sec throughput and p99 <50ms dispatch latency with zero lost events on worker kill."
 
 decision:
   outcome: adopted # adopted | discarded | pivoted
-  resulting_delta_id: DLT-2026-011
-  learnings: "SQLite FTS5 achieved 1.8ms incremental dirty checks and 0.9ms BM25 queries using stdlib sqlite3."
+  resulting_delta_id: DLT-2026-015
+  learnings: "SKIP LOCKED batch size 250 achieved 6,400 events/sec at p99 18ms with zero duplicate deliveries."
 ---
-= Exploration: Evaluate Embedded DuckDB vs SQLite FTS5 for Local Search
+= Exploration: Evaluate Transactional Outbox vs Direct Webhook Dispatch
 ```
 
-### 1.3 Graduating or Archiving a Spike
-* **If `adopted`**: Scaffold a SpecDelta (`eidos delta create DLT-YYYY-NNN`), set `decision.outcome: adopted` and `decision.resulting_delta_id: DLT-YYYY-NNN` in the `EXP-*` frontmatter, and record the winning rationale + `rejected_alternatives` in the target container/component's `decisions:` block.
-* **If `discarded`**: Set `status: discarded` and `decision.outcome: discarded`, and document the empirical failure reasons in `decision.learnings:` so the institutional memory remains queryable via `eidos index search`.
+* **If `adopted`**: Scaffold a SpecDelta (`eidos delta create --slug --title "..."`), set `decision.outcome: adopted` and `decision.resulting_delta_id: <DLT-ID>`, and record the winning rationale + `rejected_alternatives` in the owning spec's `decisions:` block.
+* **If `discarded`**: Set `status: discarded` and `decision.outcome: discarded`, and record empirical failure reasons in `decision.learnings:` so future searches (`eidos index search`) surface the prior result.
 
 ---
 
 ## 2. SpecDelta Mutation Lifecycle (`DLT-*`)
 
-In **Planned Mode**, any change that introduces/removes a container (`CNT-*`) or component (`CMP-*`), alters a contract (`CTR-*`), adds/extends a capability (`CAP-*`), or modifies a policy (`POL-*`) is governed by a **SpecDelta** (`eidos/deltas/dlt-yyyy-nnn.adoc`).
+In **Planned Mode**, any change that adds/removes a container (`CNT-*`) or component (`CMP-*`), alters a contract (`CTR-*`), adds/extends a capability (`CAP-*`), or modifies a policy (`POL-*`) is governed by a **SpecDelta** (`eidos/deltas/dlt-yyyy-nnn.adoc`).
 
 ### 2.1 End-to-End SpecDelta Workflow
 
 ```bash
-# 1. Inspect existing deltas to pick the next sequential ID
-eidos delta list
-
-# 2. Scaffold a new SpecDelta (status: proposed)
-eidos delta create DLT-2026-015 \
+# 1. Scaffold a new SpecDelta (ID defaults to collision-free 'auto' across all local/remote Git refs; --slug appends a title slug)
+eidos delta create \
   --title "Add Webhook Signature Verification Contract" \
+  --slug \
   --kind feature \
   --branch feat/webhook-signatures
 
-# 3. Edit eidos/deltas/dlt-2026-015.adoc to declare mutations and expect post-conditions (scope and blast radius are derived from the graph)
+# 2. Edit the created eidos/deltas/dlt-*.adoc file to declare mutations and structured expect post-conditions
 
-# 4. Transition status during active review/implementation (optional)
-eidos delta status DLT-2026-015 in_review
+# 3. Implement code changes, update living specs in eidos/ (or use 'eidos delta apply <ID> --execute' to scaffold/apply deterministically), and bind tests
 
-# 5. Implement the code changes in src/, update living specs in eidos/, and bind tests in tests/
-
-# 6. Verify all target entities, modification evidence, and declarative expect: post-conditions
+# 4. Verify all target entities, baseline modification evidence, and expect: post-conditions
 eidos delta verify DLT-2026-015 --json
 
-# 7. Reconcile and apply the SpecDelta (verifies post-conditions, sets status: applied, refreshes eidos/deltas/by-status/)
+# 5. Reconcile and apply the SpecDelta (sets status: applied and syncs eidos/deltas/by-status/)
 eidos delta apply DLT-2026-015
 
-# 8. If removing/deprecating entities, audit for dangling references, and optionally regenerate CHANGELOG.md
-eidos delta audit DLT-2026-015 --strict
+# 6. If removing/deprecating entities, audit for dangling references; optionally compile CHANGELOG.md
+eidos delta audit DLT-2026-015 --strict --json
 eidos delta changelog
 ```
 
-### 2.2 SpecDelta Frontmatter & Declarative `expect:` Post-Conditions
+### 2.2 SpecDelta Frontmatter & Schema Rules
+
+> **Critical Schema Rules (`delta.schema.yaml`)**:
+> 1. **Composable `operation` + `target` + `parent` is the Canonical Mutation Contract**: Declare each mutation with `operation: add | modify | remove | deprecate`, `target: <ENTITY-ID>`, and optional `parent: <PARENT-ENTITY-ID>` (e.g., owning container for an inline `CMP-*` or owning capability/policy/container for an `INV-*`). Legacy `action:` + `target_*:` entries remain supported via `anyOf` for historical compatibility. Never add `affects:` or `blast_radius:` blocks to SpecDelta YAML frontmatter (`additionalProperties: false` rejects them).
+> 2. **Closed `expect:` Schema**: `expect:` only permits `body:` (`contains`, `not_contains`) and `frontmatter:` (`responsibility`, `source_path`, `rule`, `test_binding`, `status`, `version`, `category`, `custom`). Flat top-level keys under `expect:` are rejected.
 
 ```yaml
 ---
@@ -113,108 +107,95 @@ intent:
   kind: feature # feature | enabler | bug (for bug, pair with bug_classification: spec_violation | spec_gap and severity: low | medium | high | critical)
   motivation: "Prevent spoofed billing webhooks by enforcing HMAC-SHA256 timestamped signature verification at the ingestion boundary."
 mutations:
-  - action: add_component
-    target_component: CMP-WEBHOOK-VERIFIER
+  - operation: add
+    target: CMP-WEBHOOK-VERIFIER
+    parent: CNT-BILLING-API
     details: "Introduce WebhookSignatureVerifier in src/billing/verifier.py."
     expect:
       frontmatter:
         source_path: "src/billing/verifier.py"
         responsibility: "HMAC-SHA256 signature verification"
-  - action: modify_contract
-    target_contract: CTR-BILLING-API
+  - operation: modify
+    target: CTR-BILLING-API
     details: "Require X-Webhook-Signature and X-Webhook-Timestamp headers on POST /v1/usage/webhooks and bump contract version to 1.2.0."
     expect:
       frontmatter:
         version: "1.2.0"
-  - action: extend_capability
-    target_capability: CAP-BILL-001
+      body:
+        contains:
+          - "X-Webhook-Signature"
+  - operation: modify
+    target: CAP-BILL-001
     details: "Extend capability to cover HMAC webhook verification and bump capability version to 1.1.0."
     expect:
       frontmatter:
         version: "1.1.0"
-  - action: add_invariant
-    target_capability: CAP-BILL-001
-    target_invariant_id: INV-BILL-WEBHOOK-SIG
+  - operation: add
+    target: INV-BILL-WEBHOOK-SIG
+    parent: CAP-BILL-001
     details: "Add INV-BILL-WEBHOOK-SIG invariant bound to tests/billing/test_webhooks.py::test_webhook_hmac_signature."
 ---
 = SpecDelta: Add Webhook Signature Verification Contract and Ingestor Component
 ```
 
-### 2.3 Supported `mutations[].action` & Target Keys
+### 2.3 Composable `operation` + `target` Matrix (and Legacy `action` Equivalents)
 
-| `action` | Required Target Key(s) | Verification Semantics (`eidos delta verify`) |
-| :--- | :--- | :--- |
-| `add_container` | `target_container: CNT-*` | Verifies the container exists in `eidos/architecture/containers/` and matches any `expect:` assertions. |
-| `modify_container` | `target_container: CNT-*` | Verifies the container exists and satisfies `expect:` or shows digest modification evidence. |
-| `remove_container` | `target_container: CNT-*` | Verifies the container has been removed (`ABSENT_AS_EXPECTED`). |
-| `add_component` | `target_component: CMP-*` (optional `target_container: CNT-*`) | Verifies the component exists in `eidos/architecture/` and matches any `expect:` assertions. |
-| `modify_component` | `target_component: CMP-*` | Verifies the component exists and satisfies `expect:` or shows digest modification evidence. |
-| `remove_component` | `target_component: CMP-*` | Verifies the component has been removed (`ABSENT_AS_EXPECTED`). |
-| `modify_architecture` | `target_architecture: ARCH-*` | Verifies the system architecture overview exists and satisfies `expect:` or shows digest modification evidence. |
-| `add_contract` | `target_contract: CTR-*` | Verifies the contract specification exists in `eidos/architecture/contracts/`. |
-| `modify_contract` | `target_contract: CTR-*` | Verifies the contract exists and satisfies `expect:` (e.g. `frontmatter.version`) or digest change. |
-| `remove_contract` | `target_contract: CTR-*` | Verifies the contract specification has been removed. |
-| `add_capability` | `target_capability: CAP-*` | Verifies the capability specification exists in `eidos/domains/<domain>/capabilities/`. |
-| `extend_capability` | `target_capability: CAP-*` | Verifies the capability exists and satisfies `expect:` (`frontmatter.version`, `body.contains`) or digest change. |
-| `deprecate_capability` | `target_capability: CAP-*` | Verifies the capability's `status` is `deprecated` or removed. |
-| `add_invariant` | `target_invariant_id: INV-*` (+ `target_capability: CAP-*`) | Verifies the invariant ID exists in the target capability's `invariants`. |
-| `patch_invariant` | `target_invariant_id: INV-*` (+ `target_capability: CAP-*`) | Verifies the invariant exists on the capability and satisfies `expect:` (`frontmatter.rule`, `frontmatter.test_binding`) or digest change. |
-| `remove_invariant` | `target_invariant_id: INV-*` | Verifies the invariant has been removed from all specifications. |
-| `add_policy` / `patch_policy` | `target_policy: POL-*` | Verifies the policy exists in `eidos/policies/` and satisfies `expect:` (`frontmatter.rule`, `frontmatter.category`) or digest change. |
+| Entity Category (`target` Prefix) | Supported `operation` Values | Optional `parent` Scope | Legacy `action` / `target_*` Equivalent |
+| :--- | :--- | :--- | :--- |
+| **Architecture (`ARCH-*`)** | `modify` | — | `modify_architecture` (`target_architecture`) |
+| **Containers (`CNT-*`)** | `add`, `modify`, `remove` | — | `add_container`, `modify_container`, `remove_container` (`target_container`) |
+| **Components (`CMP-*`)** | `add`, `modify`, `remove` | `CNT-*` | `add_component`, `modify_component`, `remove_component` (`target_component`) |
+| **Contracts (`CTR-*`)** | `add`, `modify`, `remove` | `CNT-*` | `add_contract`, `modify_contract`, `remove_contract` (`target_contract`) |
+| **Domains (`DOM-*`)** | `add`, `modify`, `remove` | — | `add_domain`, `modify_domain`, `remove_domain` (`target_domain`) |
+| **Capabilities (`CAP-*`)** | `add`, `modify`, `deprecate`, `remove` | `DOM-*` (on `add`) | `add_capability`, `extend_capability`, `modify_capability`, `deprecate_capability`, `remove_capability` (`target_capability` / `new_capability_id`) |
+| **Invariants (`INV-*`)** | `add`, `modify`, `remove` | `CAP-*`, `POL-*`, `CNT-*`, or `CMP-*` (required on `add`) | `add_invariant`, `patch_invariant`, `remove_invariant` (`target_invariant_id`) |
+| **Personas (`PER-*`)** | `add`, `modify`, `remove` | — | `add_persona`, `modify_persona`, `remove_persona` (`target_persona`) |
+| **Policies (`POL-*`)** | `add`, `modify`, `deprecate`, `remove` | — | `add_policy`, `modify_policy`, `patch_policy`, `deprecate_policy`, `remove_policy` (`target_policy`) |
+| **Design Systems (`DS-*`)** | `add`, `modify`, `remove` | — | `add_design_system`, `modify_design_system`, `remove_design_system` (`target_design_system`) |
+| **UI Components (`UIC-*`)** | `add`, `modify`, `remove` | `DS-*` | `add_ui_component`, `modify_ui_component`, `remove_ui_component` (`target_ui_component`) |
+| **Clients (`CLT-*`)** | `add`, `modify`, `remove` | `CNT-*` | `add_client`, `modify_client`, `remove_client` (`target_client`) |
+| **Screens (`SCR-*`)** | `add`, `modify`, `remove` | `CLT-*` | `add_screen`, `modify_screen`, `remove_screen` (`target_screen`) |
+| **Flows (`FLOW-*`)** | `add`, `modify`, `remove` | `CLT-*` | `add_flow`, `modify_flow`, `remove_flow` (`target_flow`) |
 
-### 2.4 Declarative `expect:` Post-Condition Keys
-Adding `expect:` makes `eidos delta verify` branch-independent and self-verifying:
-* `frontmatter.version: "1.2.0"` — exact or substring match on target spec `version`.
-* `frontmatter.status: "active"` — exact match on target spec `status`.
-* `frontmatter.source_path: "src/..."` — exact or list membership match on component `source_path` / container `package_path`.
-* `frontmatter.responsibility: "substring"` — substring match against inline or standalone component `responsibility`.
-* `frontmatter.rule: "substring"` — substring match against policy or invariant `rule`.
-* `frontmatter.test_binding: "tests/...::test_..."` — exact or substring match on an invariant's `test_binding`.
-* `frontmatter.custom: { <key>: <expected_value> }` — checks equality, substring containment (for string values), or list membership (when the target field is a YAML list).
-* `body.contains: "substring"` (or list of strings) — verifies that the uncommented AsciiDoc specification body contains the given substring(s).
-* `body.not_contains: "substring"` (or list of strings) — verifies that the uncommented AsciiDoc specification body does NOT contain the given substring(s).
+### 2.4 Structured `expect:` Post-Conditions & `tombstone:` Audit Exemptions
+
+For `add` and `modify` (and legacy `add_*`, `modify_*`, `extend_*`, and `patch_*`) mutations, `eidos delta verify` checks both baseline digest modification and `expect:` assertions:
+* **`expect.frontmatter`**:
+  * `version: "1.2.0"` — SemVer string match.
+  * `status: "active"` — lifecycle status match.
+  * `source_path: "src/..."` (or list of paths) — exact or list-subset match on `source_path` / `package_path`.
+  * `responsibility: "substring"` — substring match on container/component `responsibility`.
+  * `rule: "substring"` — substring match on policy/invariant `rule`.
+  * `test_binding: "tests/...::test_..."` — invariant `test_binding` match (`file::func`, `N/A`, or `TBD`).
+  * `category: "security"` — policy `category` match.
+  * `custom: { <key>: <expected_value> }` — equality, substring, or list-subset match for any other frontmatter field.
+* **`expect.body`** (evaluated against comment-stripped AsciiDoc body):
+  * `contains: "substring"` (or list of strings) — all substrings must appear in the body.
+  * `not_contains: "substring"` (or list of strings) — none of the substrings may appear in the body.
+* **`tombstone:` (Optional top-level block for `remove` / `deprecate` audits)**:
+  When removing entities, declare `tombstone: { search_tokens: ["LegacySymbol"], allowed_reasons: [{ path: "CHANGELOG.md", reason: "Historical release note" }] }` if legitimate historical references need exemption during `eidos delta audit <ID> --strict`.
 
 ---
 
 ## 3. Staff Systems Architect 5-Dimension Review (`eidos-review`)
 
-When asked to review a SpecDelta (`DLT-*`), a branch/PR diff, or an architectural proposal, conduct a structured **5-Dimension Architectural Audit**:
+When asked to review a SpecDelta (`DLT-*`), branch/PR diff, or architectural proposal, run the deterministic diagnostics first and audit across 5 dimensions:
 
-### Pre-Review Automated Diagnostics
-Always run these deterministic checks first:
 ```bash
 eidos validate eidos --json
 eidos drift --uncommitted --json
 eidos index blast-radius <TARGET_ENTITY_ID> --depth 2 --json
-# If reviewing one or more SpecDeltas:
 eidos delta verify <DLT-ID> --json
-eidos delta audit <DLT-ID> --strict
+eidos delta audit <DLT-ID> --strict --json
 ```
 
-### The 5 Audit Dimensions
+1. **Blast Radius & Boundary Integrity**: Do all modified code files map to containers/components authorized in `mutations[].target` / `parent` (or legacy `target_*`) and its 1-hop ownership neighborhood? Are downstream dependents from `eidos index blast-radius` protected from unintended breakage or circular imports?
+2. **Interface Contract & SemVer Compatibility (`CTR-*`)**: Are added/removed CLI flags, endpoints, or RPCs bidirectionally synchronized in `CTR-*` specs with proper SemVer 2.0.0 bumps?
+3. **Governance Policies & Invariant Traceability (`POL-*`, `INV-*`)**: Does the change honor all active `POL-*` policies, and does every new/modified capability behavior have a genuine test bound via `test_binding: file::func`?
+4. **SpecDelta Verification Rigor**: Does every `modify` (and legacy `modify_*`, `extend_*`, and `patch_*`) mutation include structured `expect: { frontmatter, body }` post-conditions?
+5. **Living Specification Purity & Decision Capture (`DEC-*`)**: Zero standalone ADRs; non-obvious trade-offs and `rejected_alternatives` recorded in `decisions:`; promoted `CMP-*` components obey `INV-COMPONENT-CENTRALIZATION-MANDATE` (`{id, ref}` without duplicated `source_path`/`invariants`/`decisions`).
 
-1. **Dimension 1: Blast Radius & Boundary Integrity**
-   * Do all touched source files map cleanly to declared containers (`CNT-*`) and components (`CMP-*`)?
-   * Are there any undeclared cross-container imports, circular dependencies, or leaky abstractions?
-   * Does the SpecDelta's `blast_radius.impacted_containers` and `impacted_components` match the actual transitive neighborhood from `eidos index blast-radius`?
-2. **Dimension 2: Interface Contract & SemVer Compatibility (`CTR-*`)**
-   * If a CLI command, REST endpoint, event payload, or schema changed, was the corresponding `CTR-*` specification updated?
-   * Does the contract `version:` follow SemVer 2.0.0 (`MAJOR` bump for breaking changes, `MINOR` for backward-compatible additions, `PATCH` for clarifications)?
-3. **Dimension 3: Governance Policies & Invariant Traceability (`POL-*`, `INV-*`)**
-   * Does the change violate any active system policy in `eidos/policies/` (`POL-001` through `POL-004`, etc.)?
-   * Does every new or modified capability behavior have a corresponding `INV-*` invariant with a valid `test_binding: file::func`?
-   * Does the bound test actually assert the invariant rule rather than a trivial no-op?
-4. **Dimension 4: Workflow Mode & SpecDelta Completeness**
-   * Do every `modify_*`, `extend_*`, and `patch_*` mutation in `DLT-*` include verifiable `expect:` post-conditions so `eidos delta verify` can prove application deterministically?
-   * Are sequencing dependencies between multiple proposed SpecDeltas documented?
-5. **Dimension 5: Living Specification Conformance & Decision Capture**
-   * Are there any prohibited standalone ADR files?
-   * Are non-obvious design trade-offs and rejected alternatives captured in a `decisions:` (`DEC-*`) block on the owning specification?
-   * Do inline vs. promoted components obey `INV-COMPONENT-CENTRALIZATION-MANDATE` (no duplicated metadata alongside `ref:`)?
-
-### Structured Review Report Format
-
-Present your review findings using this concise template:
+### Review Report Template
 
 ```markdown
 ## Architectural Review: <Target DLT-ID or Branch>
@@ -226,7 +207,7 @@ Present your review findings using this concise template:
 - **Delta Verification (`eidos delta verify`)**: PASS / FAIL
 
 ### Findings by Severity
-- **[BLOCKER]**: Must be fixed before merging or applying (schema errors, broken invariants, missing `expect:` post-conditions, undeclared blast radius).
+- **[BLOCKER]**: Must be fixed before merging/applying (schema errors, broken invariants, missing `expect:` post-conditions, unauthorized blast radius).
 - **[WARNING]**: Architectural smell, missing `DEC-*` rationale, or incomplete SemVer bump.
 - **[NIT]**: Minor documentation clarity or naming improvement.
 ```

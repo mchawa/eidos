@@ -12,14 +12,12 @@ intent:
     eidos.vcs and drift modules, maintaining dead-code hygiene and streamlining the
     public VCS API surface.
 mutations:
-- action: modify_component
-  target_component: CMP-EIDOS-CORE
-  details: Remove legacy PRCheckResult = DriftCheckResult alias from src/eidos/vcs/drift.py
-    and remove PRCheckResult from imports and __all__ in src/eidos/vcs/__init__.py.
-- action: extend_capability
-  target_capability: CAP-VCS-001
-  details: Verify that drift check interfaces exclusively expose DriftCheckResult
-    with no reliance on legacy aliases.
+- operation: modify
+  target: CMP-EIDOS-CORE
+  details: Remove legacy PRCheckResult = DriftCheckResult alias from src/eidos/vcs/drift.py and remove PRCheckResult from imports and __all__ in src/eidos/vcs/__init__.py.
+- operation: modify
+  target: CAP-VCS-001
+  details: Verify that drift check interfaces exclusively expose DriftCheckResult with no reliance on legacy aliases.
 ---
 = SpecDelta: Remove Deprecated PRCheckResult Backwards Compatibility Alias
 :toc: left

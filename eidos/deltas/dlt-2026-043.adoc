@@ -10,62 +10,62 @@ intent:
   kind: enabler
   motivation: Replace open regex string patterns on SpecDelta categorical fields ('intent.kind', 'intent.bug_classification', 'intent.severity', and 'mutations[].action') in 'assets/schemas/v1/delta/delta.schema.yaml' with strict JSON Schema 'enum' taxonomies—separating strategic intent ('feature', 'enabler', 'bug') from structural mutation actions ('add_*', 'modify_*', 'extend_*', 'patch_*', 'deprecate_*', 'remove_*') and enforcing deterministic schema validation and Keep-a-Changelog classification.
 mutations:
-- action: modify_component
-  target_component: CMP-DELTA-ENGINE
-  target_container: CNT-EIDOS-CORE
+- operation: modify
+  target: CMP-DELTA-ENGINE
+  parent: CNT-EIDOS-CORE
   details: 'Replace open ''pattern: ^[a-z0-9_-]+$'' constraints in ''assets/schemas/v1/delta/delta.schema.yaml'' with strict ''enum'' lists for ''intent.kind'' ([feature, enabler, bug]), ''intent.bug_classification'' ([spec_violation, spec_gap]), ''intent.severity'' ([low, medium, high, critical]), and ''mutations[].action'' (all canonical Product, Architecture, and Design semantic operations), support all standalone ''remove_*'' actions in ''verify_delta_mutations()'' and ''execute_delta_mutations()'', and normalize historical SpecDeltas in ''eidos/deltas/dlt-2026-*.adoc'' to conform to the enum taxonomy.'
   expect:
     frontmatter:
       responsibility: enum
-- action: modify_component
-  target_component: CMP-DELTA-AUDITOR
-  target_container: CNT-EIDOS-CORE
+- operation: modify
+  target: CMP-DELTA-AUDITOR
+  parent: CNT-EIDOS-CORE
   details: Include 'PER-' and 'CLT-' entity prefixes in 'AuditEngine._extract_targets_and_tokens()' in 'src/eidos/core/lifecycle/audit.py' so 'remove_persona' and 'remove_client' mutations are audited across free-text details.
   expect:
     frontmatter:
       responsibility: PER-*
-- action: modify_component
-  target_component: CMP-CHANGELOG-GENERATOR
-  target_container: CNT-EIDOS-CORE
+- operation: modify
+  target: CMP-CHANGELOG-GENERATOR
+  parent: CNT-EIDOS-CORE
   details: Update 'ChangelogGenerator._add_delta_to_section()' in 'src/eidos/core/lifecycle/changelog.py' to classify SpecDeltas deterministically using the 'intent.kind' enum ('feature', 'enabler', 'bug') combined with 'mutations[].action' ('remove_*', 'deprecate_*') into Keep-a-Changelog sections ('Added', 'Changed', 'Deprecated', 'Removed', 'Fixed').
   expect:
     frontmatter:
       responsibility: intent.kind
-- action: modify_component
-  target_component: CMP-LIFECYCLE-SCAFFOLDER
-  target_container: CNT-EIDOS-CORE
+- operation: modify
+  target: CMP-LIFECYCLE-SCAFFOLDER
+  parent: CNT-EIDOS-CORE
   details: Update 'create_spec()' default 'kind' parameter in 'src/eidos/core/lifecycle/scaffolder.py' from 'feature_addition' to 'feature' so newly scaffolded SpecDeltas satisfy the 'intent.kind' enum out of the box.
   expect:
     frontmatter:
       responsibility: safe YAML serialization
-- action: modify_component
-  target_component: CMP-CLI-DELTA-COMMANDS
-  target_container: CNT-EIDOS-CLI
+- operation: modify
+  target: CMP-CLI-DELTA-COMMANDS
+  parent: CNT-EIDOS-CLI
   details: 'Update ''eidos delta create --kind'' default and help text in ''src/eidos/cli/delta_commands.py'' to ''feature'' (''Mutation kind: feature, enabler, bug.'').'
   expect:
     frontmatter:
       responsibility: feature, enabler, bug
-- action: modify_component
-  target_component: CMP-CLI-SPEC-COMMANDS
-  target_container: CNT-EIDOS-CLI
+- operation: modify
+  target: CMP-CLI-SPEC-COMMANDS
+  parent: CNT-EIDOS-CLI
   details: Update 'eidos spec create --kind' and 'eidos create --kind' defaults and help text in 'src/eidos/cli/spec_commands.py' from 'feature_addition' to 'feature' ('feature, enabler, bug').
   expect:
     frontmatter:
       responsibility: feature, enabler, bug
-- action: modify_container
-  target_container: CNT-EIDOS-PLUGIN
+- operation: modify
+  target: CNT-EIDOS-PLUGIN
   details: Update bundled and installed agent skills ('eidos/SKILL.md' and 'eidos-plan/SKILL.md') to use '--kind <feature|enabler|bug>' and canonical 'intent.kind' enum values.
   expect:
     body:
       contains: SpecDelta enum taxonomy guidance
-- action: modify_contract
-  target_contract: CTR-EIDOS-CLI
+- operation: modify
+  target: CTR-EIDOS-CLI
   details: Update 'eidos/architecture/contracts/cli.adoc' and 'tests/fixtures/cli_command_tree.json' to reflect the updated '--kind' option on 'eidos delta create', 'eidos spec create', and 'eidos create'.
   expect:
     body:
       contains: feature, enabler, bug
-- action: extend_capability
-  target_capability: CAP-PROD-002
+- operation: modify
+  target: CAP-PROD-002
   details: Update 'eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc' CLI interface contract to 'eidos delta create --kind [feature|enabler|bug]' and bump capability version to 1.4.0.
   expect:
     frontmatter:

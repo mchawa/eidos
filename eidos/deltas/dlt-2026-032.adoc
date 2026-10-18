@@ -17,25 +17,16 @@ intent:
   bug_classification: spec_violation
   severity: high
 mutations:
-- action: modify_container
-  target_container: CNT-EIDOS-CORE
-  details: 'Update ''create_spec()'' and ''VALID_SPEC_TYPES'' in ''src/eidos/core/scaffolder.py''
-    to route ''component'' / ''tech/component'' to ''eidos/architecture/components/<slug>.adoc''
-    with ''schema: schemas/v1/tech/component.schema.yaml'', support ''client'' / ''design/client''
-    (''CLT-*'') and ''flow'' / ''design/flow'' (''FLOW-*''), serialize all scaffolded
-    frontmatter dictionaries via ''yaml.safe_dump(..., sort_keys=False)'', and align
-    ''container.schema.yaml'' and ''validator.py'' comments with ''INV-COMPONENT-CENTRALIZATION-MANDATE''.'
-- action: modify_container
-  target_container: CNT-EIDOS-CLI
-  details: Add '--container' and '--client' CLI options to 'eidos spec create' in
-    'src/eidos/cli/main.py' so standalone components ('CMP-*'), client applications
-    ('CLT-*'), and interaction flows ('FLOW-*') can be scaffolded deterministically.
-- action: patch_invariant
-  target_invariant_id: INV-SPEC-VALIDATION
-  target_capability: CAP-PROD-001
-  details: Verify that 'eidos spec create' produces schema-valid '.adoc' specifications
-    for all 16 Eidos document types, including titles and motivations containing quotes,
-    colons, and special YAML characters.
+- operation: modify
+  target: CNT-EIDOS-CORE
+  details: 'Update ''create_spec()'' and ''VALID_SPEC_TYPES'' in ''src/eidos/core/scaffolder.py'' to route ''component'' / ''tech/component'' to ''eidos/architecture/components/<slug>.adoc'' with ''schema: schemas/v1/tech/component.schema.yaml'', support ''client'' / ''design/client'' (''CLT-*'') and ''flow'' / ''design/flow'' (''FLOW-*''), serialize all scaffolded frontmatter dictionaries via ''yaml.safe_dump(..., sort_keys=False)'', and align ''container.schema.yaml'' and ''validator.py'' comments with ''INV-COMPONENT-CENTRALIZATION-MANDATE''.'
+- operation: modify
+  target: CNT-EIDOS-CLI
+  details: Add '--container' and '--client' CLI options to 'eidos spec create' in 'src/eidos/cli/main.py' so standalone components ('CMP-*'), client applications ('CLT-*'), and interaction flows ('FLOW-*') can be scaffolded deterministically.
+- operation: modify
+  target: INV-SPEC-VALIDATION
+  parent: CAP-PROD-001
+  details: Verify that 'eidos spec create' produces schema-valid '.adoc' specifications for all 16 Eidos document types, including titles and motivations containing quotes, colons, and special YAML characters.
 ---
 = SpecDelta: Fix Component Spec Scaffolding, Add Client/Flow Scaffolding, and Enforce Safe YAML Serialization
 :toc: left

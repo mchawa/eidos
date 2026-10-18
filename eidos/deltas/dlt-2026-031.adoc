@@ -14,16 +14,12 @@ intent:
   bug_classification: spec_violation
   severity: high
 mutations:
-- action: modify_container
-  target_container: CNT-EIDOS-VCS
-  details: 'Extend ''extract_invariants_and_verify()'' and ''detect_orphan_invariants()''
-    in ''src/eidos/vcs/drift.py'' to scan ''eidos/architecture/components/'' (''type:
-    tech/component'') and inline component invariant definitions in ''eidos/architecture/containers/''
-    in addition to ''domains/'' and ''policies/''.'
-- action: extend_capability
-  target_capability: CAP-VCS-001
-  details: Enforce static 'file::func' AST test-binding verification and orphan invariant
-    detection across all C4 Level 3 component invariants ('tech/component').
+- operation: modify
+  target: CNT-EIDOS-VCS
+  details: 'Extend ''extract_invariants_and_verify()'' and ''detect_orphan_invariants()'' in ''src/eidos/vcs/drift.py'' to scan ''eidos/architecture/components/'' (''type: tech/component'') and inline component invariant definitions in ''eidos/architecture/containers/'' in addition to ''domains/'' and ''policies/''.'
+- operation: modify
+  target: CAP-VCS-001
+  details: Enforce static 'file::func' AST test-binding verification and orphan invariant detection across all C4 Level 3 component invariants ('tech/component').
 ---
 = SpecDelta: Enforce Static Invariant Verification Across C4 Level 3 Component Specifications
 :toc: left

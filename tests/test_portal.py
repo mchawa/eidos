@@ -557,9 +557,9 @@ def test_portal_promoted_components_invariants_decisions_and_explorations(tmp_pa
     assert syn_exp["decision"]["resulting_delta_id"] == "DLT-2026-030"
 
 
-def test_dlt_2026_063_hook_digest_short_circuit_and_portal_mtime_cache(tmp_path, monkeypatch):
-    """Verify DLT-2026-063: PostInvocation hook short-circuit via hook-state.json and EidosPortalHandler mtime response caching."""
-    from eidos.plugin.hooks import handle_lint_post_invocation
+def test_dlt_2026_063_hook_digest_short_circuit_and_portal_mtime_cache(tmp_path, monkeypatch, capsys):
+    """Verify PostInvocation hook no-op (DLT-2026-087) and EidosPortalHandler mtime response caching (DLT-2026-063)."""
+    from eidos.plugin.hooks import execute_lint_hook
     from eidos.portal.server import EidosPortalHandler
 
     eidos_dir = tmp_path / "eidos"
@@ -571,17 +571,14 @@ def test_dlt_2026_063_hook_digest_short_circuit_and_portal_mtime_cache(tmp_path,
         encoding="utf-8",
     )
 
-    # 1. First handle_lint_post_invocation records hook-state.json; second short-circuits without calling SpecValidator
-    res1 = handle_lint_post_invocation({"invocationNum": 1}, tmp_path)
-    assert res1 == {"injectSteps": []}
-    assert (eidos_dir / ".cache" / "hook-state.json").is_file()
-
+    # 1. PostInvocation is a clean allow no-op and never invokes SpecValidator
     def _boom(*args, **kwargs):
-        raise AssertionError("SpecValidator should not be called on unchanged working tree")
+        raise AssertionError("SpecValidator should not be called on PostInvocation")
 
     monkeypatch.setattr("eidos.plugin.hooks.SpecValidator", _boom)
-    res2 = handle_lint_post_invocation({"invocationNum": 2}, tmp_path)
-    assert res2 == {"injectSteps": []}
+    rc = execute_lint_hook(event="PostInvocation", repo_root=tmp_path, stdin_data='{"invocationNum": 1}')
+    assert rc == 0
+    assert json.loads(capsys.readouterr().out) == {"decision": "allow"}
 
     # 2. EidosPortalHandler caches _get_cached_portal_data until a spec file changes
     calls = {"count": 0}

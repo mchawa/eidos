@@ -10,15 +10,15 @@ intent:
   kind: feature
   motivation: Replace the hardcoded Python Typer-only CLI contract check in SpecValidator with a pluggable protocol verifier registry supporting cli_args, python_protocol, rest_openapi, json_schema, grpc_proto, and graphql so non-Typer CTR-* contracts cannot silently diverge from their specification_file.
 mutations:
-- action: modify_component
-  target_component: CMP-SPEC-VALIDATOR
+- operation: modify
+  target: CMP-SPEC-VALIDATOR
   details: Replace the hardcoded protocol == 'cli_args' Typer-only branch in _validate_source_and_contract_paths with a pluggable protocol verifier registry (_CONTRACT_PROTOCOL_VERIFIERS) supporting cli_args, python_protocol, rest_openapi, json_schema, grpc_proto, and graphql contracts.
   expect:
     frontmatter:
       source_path: src/eidos/core/spec/validator.py
       responsibility: protocol verifier
-- action: patch_invariant
-  target_invariant_id: INV-SPEC-GRAPH-INTEGRITY
+- operation: modify
+  target: INV-SPEC-GRAPH-INTEGRITY
   details: Expand INV-SPEC-GRAPH-INTEGRITY in CAP-PROD-001 to include multi-protocol contract parity verification between CTR-* specifications and their referenced specification_file.
   expect:
     frontmatter:

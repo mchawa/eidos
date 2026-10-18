@@ -12,15 +12,15 @@ intent:
   severity: high
   motivation: Filter ChangelogGenerator.get_applied_deltas strictly to status == 'applied' so proposed, draft, and rejected SpecDeltas do not leak into CHANGELOG.md, deduplicate Unreleased Git commits against unreleased_deltas, and replace the O(D * T) per-delta git log and git merge-base subprocess storm with batched Git queries.
 mutations:
-- action: modify_component
-  target_component: CMP-CHANGELOG-GENERATOR
+- operation: modify
+  target: CMP-CHANGELOG-GENERATOR
   details: Filter get_applied_deltas in src/eidos/core/lifecycle/changelog.py strictly to status == 'applied', pass existing_deltas=unreleased_deltas to _add_commit_to_section when populating the Unreleased section in generate_changelog, and batch Git commit and tag ancestry resolution into constant-count Git subprocess calls instead of spawning git log -1 per delta and git merge-base --is-ancestor per (delta, tag) pair.
   expect:
     frontmatter:
       source_path: src/eidos/core/lifecycle/changelog.py
       responsibility: applied SpecDeltas
-- action: patch_invariant
-  target_invariant_id: INV-DELTA-CHANGELOG-GENERATION
+- operation: modify
+  target: INV-DELTA-CHANGELOG-GENERATION
   details: Update INV-DELTA-CHANGELOG-GENERATION in CAP-PROD-002 to explicitly require excluding non-applied (proposed, draft, rejected) SpecDeltas, deduplicating Unreleased delta commits, and resolving release tags via batched Git ancestry queries.
   expect:
     frontmatter:

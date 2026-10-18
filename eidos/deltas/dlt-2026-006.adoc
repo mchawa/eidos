@@ -11,18 +11,15 @@ intent:
     capabilities including MCP stdio contract, multi-design systems, repository initialization,
     and plugin validation.
 mutations:
-- action: add_contract
-  target_component: CMP-EIDOS-ENGINE
-  details: Author CTR-EIDOS-MCP interface contract specification for JSON-RPC 2.0
-    stdio Model Context Protocol server.
-- action: modify_component
-  target_component: CMP-EIDOS-ENGINE
-  details: Update CMP-EIDOS-ENGINE contracts.provides to include CTR-EIDOS-MCP, and
-    document McpServer, DesignEngine, and PluginValidator internal building blocks.
-- action: modify_component
-  target_component: CMP-EIDOS-ENGINE
-  details: Synchronize ARCH-EIDOS-001 C4 Level 1 context with MCP client interaction,
-    multi-design systems, and W3C tokens.
+- operation: add
+  target: CMP-EIDOS-ENGINE
+  details: Author CTR-EIDOS-MCP interface contract specification for JSON-RPC 2.0 stdio Model Context Protocol server.
+- operation: modify
+  target: CMP-EIDOS-ENGINE
+  details: Update CMP-EIDOS-ENGINE contracts.provides to include CTR-EIDOS-MCP, and document McpServer, DesignEngine, and PluginValidator internal building blocks.
+- operation: modify
+  target: CMP-EIDOS-ENGINE
+  details: Synchronize ARCH-EIDOS-001 C4 Level 1 context with MCP client interaction, multi-design systems, and W3C tokens.
 ---
 
 = SpecDelta: Solution Architecture Synchronization with Multi-Design Systems, MCP Contract, and Lifecycle Scaffolding

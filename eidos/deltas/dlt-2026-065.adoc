@@ -12,8 +12,8 @@ intent:
   severity: high
   motivation: Eliminate YAML corruption and silent metadata loss in promote_component / inline_component, prevent substring false positives and symlink duplicates in find_references_to_spec, and safely escape YAML scalar writes in _set_frontmatter_scalar.
 mutations:
-- action: modify_component
-  target_component: CMP-LIFECYCLE-SCAFFOLDER
+- operation: modify
+  target: CMP-LIFECYCLE-SCAFFOLDER
   details: Update promote_component and inline_component in src/eidos/core/lifecycle/scaffolder.py to serialize source_path (both str and list[str]), responsibility, invariants, decisions (DEC-*), interfaces, and quality_attributes via yaml.safe_dump without raw f-string interpolation or data loss; update find_references_to_spec and _set_frontmatter_scalar in src/eidos/core/lifecycle/catalog.py to use word-bounded regex matching, skip symlinked deltas/by-status/ directories, and quote/escape YAML scalar values safely.
   expect:
     frontmatter:

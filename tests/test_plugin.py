@@ -718,6 +718,12 @@ def test_plugin_hooks_conformance():
     linter = hooks_data["eidos-doc-linter"]
     assert "PreToolUse" in linter
     assert "PostToolUse" in linter
+    assert "Stop" in linter
+    assert "PostInvocation" not in linter
+
+    drift_gate = hooks_data["eidos-drift-gate"]
+    assert set(drift_gate.keys()) == {"Stop"}
+    assert "PostInvocation" not in drift_gate
 
     # Verify tool matchers cover Antigravity, Claude Code, Cursor, and Cline
     for event in ("PreToolUse", "PostToolUse"):
@@ -810,7 +816,7 @@ def test_doc_lint_hook_stop_event(tmp_path):
 
 
 def test_doc_lint_hook_post_invocation(tmp_path):
-    """Verify post_invocation hook injects ephemeral warning message when living docs are invalid."""
+    """Verify post_invocation lint hook is a clean allow no-op for backwards compatibility (DLT-2026-087)."""
     eidos_dir = tmp_path / "eidos"
     eidos_dir.mkdir()
     bad_spec = eidos_dir / "invalid.adoc"
@@ -828,10 +834,7 @@ def test_doc_lint_hook_post_invocation(tmp_path):
     res = runner.invoke(app, ["hook", "lint", "--event", "PostInvocation"], input=inv_payload)
     assert res.exit_code == 0
     data = json.loads(res.stdout)
-    assert "injectSteps" in data
-    assert len(data["injectSteps"]) == 1
-    assert "ephemeralMessage" in data["injectSteps"][0]
-    assert "Living specification" in data["injectSteps"][0]["ephemeralMessage"]
+    assert data == {"decision": "allow"}
 
 
 def test_cli_lint_command():
@@ -872,7 +875,7 @@ def test_doc_lint_hook_stop_event_ignores_code_modifications(tmp_path):
 
 
 def test_doc_lint_hook_post_invocation_ignores_code_modifications(tmp_path):
-    """Verify post_invocation hook does not emit drift notices for code modifications (INV-AGENT-LINT-HOOK)."""
+    """Verify post_invocation hook is a no-op and does not emit drift notices for code modifications (INV-AGENT-LINT-HOOK)."""
     eidos_dir = tmp_path / "eidos"
     eidos_dir.mkdir()
     valid_spec = eidos_dir / "policy.adoc"
@@ -894,8 +897,7 @@ def test_doc_lint_hook_post_invocation_ignores_code_modifications(tmp_path):
     res = runner.invoke(app, ["hook", "lint", "--event", "PostInvocation"], input=inv_payload)
     assert res.exit_code == 0
     data = json.loads(res.stdout)
-    assert "injectSteps" in data
-    assert len(data["injectSteps"]) == 0
+    assert data == {"decision": "allow"}
 
 
 def test_doc_lint_hook_pre_tool_ignores_non_eidos_files(tmp_path):
@@ -1004,24 +1006,9 @@ def test_drift_hook_stop_event_synchronized(tmp_path):
 
 
 def test_drift_hook_post_invocation_drift_notice(tmp_path):
-    """Verify drift hook emits ephemeral notice during in-flight turns when drift is detected (INV-AGENT-DRIFT-HOOK)."""
+    """Verify drift hook treats legacy PostInvocation as a clean allow no-op without intermediate turn notices (DLT-2026-087)."""
     eidos_dir = tmp_path / "eidos"
     eidos_dir.mkdir()
-    valid_spec = eidos_dir / "policy.adoc"
-    valid_spec.write_text(
-        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nrule: Must execute safely\nenforcement:\n  mechanism: lint\n  severity: blocking\n---\n",
-        encoding="utf-8",
-    )
-
-    src_dir = tmp_path / "src"
-    src_dir.mkdir()
-    (src_dir / "feature.py").write_text("def do_feature(): pass\n", encoding="utf-8")
-
-    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
-    subprocess.run(["git", "config", "user.email", "agent@eidos.ai"], cwd=tmp_path, capture_output=True, check=True)
-    subprocess.run(["git", "config", "user.name", "Eidos Agent"], cwd=tmp_path, capture_output=True, check=True)
-    subprocess.run(["git", "add", "eidos"], cwd=tmp_path, capture_output=True, check=True)
-    subprocess.run(["git", "commit", "-m", "init specs"], cwd=tmp_path, capture_output=True, check=True)
 
     inv_payload = json.dumps(
         {
@@ -1032,14 +1019,11 @@ def test_drift_hook_post_invocation_drift_notice(tmp_path):
     res = runner.invoke(app, ["hook", "drift", "--event", "PostInvocation"], input=inv_payload)
     assert res.exit_code == 0
     data = json.loads(res.stdout)
-    assert "injectSteps" in data
-    assert len(data["injectSteps"]) == 1
-    assert "ephemeralMessage" in data["injectSteps"][0]
-    assert "Eidos Sync Notice" in data["injectSteps"][0]["ephemeralMessage"]
+    assert data == {"decision": "allow"}
 
 
 def test_drift_hook_post_invocation_clean(tmp_path):
-    """Verify drift hook emits no messages when code and specs are clean (INV-AGENT-DRIFT-HOOK)."""
+    """Verify drift hook returns clean allow decision on PostInvocation (DLT-2026-087)."""
     eidos_dir = tmp_path / "eidos"
     eidos_dir.mkdir()
 
@@ -1052,8 +1036,7 @@ def test_drift_hook_post_invocation_clean(tmp_path):
     res = runner.invoke(app, ["hook", "drift", "--event", "PostInvocation"], input=inv_payload)
     assert res.exit_code == 0
     data = json.loads(res.stdout)
-    assert "injectSteps" in data
-    assert len(data["injectSteps"]) == 0
+    assert data == {"decision": "allow"}
 
 
 def test_stop_gate_block_once_and_allow_second_attempt(tmp_path, monkeypatch):
@@ -1310,18 +1293,16 @@ def test_hooks_are_cli_native():
                 elif "command" in entry:
                     commands.append(entry["command"])
 
-    assert len(commands) >= 5
+    assert len(commands) >= 4
     for cmd in commands:
         assert cmd.startswith("eidos hook "), f"Expected native 'eidos hook' command, got: {cmd}"
         assert ".py" not in cmd and ".sh" not in cmd
 
 
 def test_hooks_fail_loud_on_internal_error(tmp_path, monkeypatch):
-    """Verify INV-HOOK-FAIL-LOUD: PostInvocation and Stop hooks emit structured error payloads when internal exceptions occur."""
+    """Verify INV-HOOK-FAIL-LOUD: Stop hooks emit structured error payloads when internal exceptions occur."""
     from eidos.plugin.hooks import (
-        handle_drift_post_invocation,
         handle_drift_stop,
-        handle_lint_post_invocation,
         handle_lint_stop,
     )
 
@@ -1333,14 +1314,6 @@ def test_hooks_fail_loud_on_internal_error(tmp_path, monkeypatch):
 
     monkeypatch.setattr("eidos.plugin.hooks.SpecValidator", _boom)
     monkeypatch.setattr("eidos.plugin.hooks.detect_drift", _boom)
-
-    lint_post = handle_lint_post_invocation({"invocationNum": 1}, tmp_path)
-    assert len(lint_post["injectSteps"]) == 1
-    assert "simulated internal engine failure" in lint_post["injectSteps"][0]["ephemeralMessage"]
-
-    drift_post = handle_drift_post_invocation({"invocationNum": 1}, tmp_path)
-    assert len(drift_post["injectSteps"]) == 1
-    assert "simulated internal engine failure" in drift_post["injectSteps"][0]["ephemeralMessage"]
 
     lint_stop = handle_lint_stop({"executionNum": 1}, tmp_path)
     assert lint_stop["decision"] == "continue"
@@ -1389,6 +1362,19 @@ def test_stop_hook_fingerprint_retriggers_when_drifted_file_content_changes(tmp_
     src_file.write_text("def v2():\n    return 2\n", encoding="utf-8")
     res3 = handle_drift_stop({}, tmp_path)
     assert res3["decision"] == "continue"
+
+    # Also verify handle_lint_stop re-triggers when a failing spec file is modified with the same error message
+    from eidos.plugin.hooks import handle_lint_stop
+
+    bad_spec = eidos_dir / "bad.adoc"
+    bad_spec.write_text("---\ntype: product/domain\nschema: schemas/v1/product/domain.schema.yaml\nid: INVALID\n---\n= V1\n", encoding="utf-8")
+    lint1 = handle_lint_stop({}, tmp_path)
+    assert lint1["decision"] == "continue"
+    lint2 = handle_lint_stop({}, tmp_path)
+    assert lint2["decision"] == "allow"
+    bad_spec.write_text("---\ntype: product/domain\nschema: schemas/v1/product/domain.schema.yaml\nid: INVALID\n---\n= V2\n", encoding="utf-8")
+    lint3 = handle_lint_stop({}, tmp_path)
+    assert lint3["decision"] == "continue"
 
 
 def test_plugin_install_and_update_prunes_retired_legacy_skills(tmp_path):
@@ -1987,10 +1973,8 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
 
     from eidos.cli.main import app
     from eidos.plugin.hooks import (
-        _clear_hook_state,
         _extract_tool_edit_request,
         _infer_event,
-        _record_hook_state_clean,
         execute_drift_hook,
         execute_lint_hook,
         handle_lint_post_tool_use,
@@ -2074,6 +2058,10 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
         json.dumps(
             {
                 "bad_hook": "not_a_dict",
+                "eidos-drift-gate": {
+                    "enabled": True,
+                    "PostInvocation": [{"type": "command", "command": "eidos hook drift --event PostInvocation"}],
+                },
                 "main_hook": {
                     "enabled": True,
                     "UnknownEvent": "not_a_list",
@@ -2097,6 +2085,7 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     assert any("frontmatter is not a dictionary" in e for e in rep_bad.errors)
     assert any("missing 'name' in frontmatter" in e for e in rep_bad.errors)
     assert any("non-existent script" in e for e in rep_bad.errors)
+    assert any("event 'PostInvocation' is not permitted" in e for e in rep_bad.errors)
 
     # Also test mcp.json with stdio command containing spaces and non-dict hooks.json
     (pdir / "mcp_config.json").unlink()
@@ -2119,7 +2108,7 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     assert res_ver.exit_code == 0
     assert "Invalid SemVer" in res_ver.output
 
-    # 4. plugin/hooks.py: is_eidos_doc, _extract_tool_edit_request on new file, _clear_hook_state, _infer_event, execute_lint_hook
+    # 4. plugin/hooks.py: is_eidos_doc, _extract_tool_edit_request on new file, _infer_event, execute_lint_hook
     assert is_eidos_doc("", tmp_path) is False
     assert is_eidos_doc("src/app.py", tmp_path) is False
     assert is_eidos_doc("./eidos/domains/d.adoc", tmp_path) is True
@@ -2144,13 +2133,7 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     assert extracted_chunk_new is not None
 
     assert handle_lint_post_tool_use({"stepIdx": 1}, tmp_path) == {}
-    eidos_cache_ws = tmp_path / "hook_state_ws" / "eidos"
-    _record_hook_state_clean(eidos_cache_ws, "k1", "d1")
-    _record_hook_state_clean(eidos_cache_ws, "k2", "d2")
-    _clear_hook_state(eidos_cache_ws, "k1")
-    assert (eidos_cache_ws / ".cache" / "hook-state.json").exists()
-    _clear_hook_state(eidos_cache_ws, "k2")
-    assert not (eidos_cache_ws / ".cache" / "hook-state.json").exists()
+    assert handle_lint_post_tool_use({}, tmp_path) == {"decision": "allow"}
 
     assert execute_lint_hook(path=tmp_path / "missing_eidos_dir", stdin_data="") == 1
     assert execute_drift_hook(path=tmp_path / "missing_eidos_dir", stdin_data="") == 1

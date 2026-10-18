@@ -12,20 +12,21 @@ intent:
   severity: medium
   motivation: 'The Living Web Portal loads Mermaid.js from cdn.jsdelivr.net and web fonts from fonts.googleapis.com, so C4 diagrams break in air-gapped environments, and its regex AsciiDoc renderer fails on standard blocks used by living specs (e.g. ''[quote]'' in ''eidos/system.adoc''). No invariant currently forbids remote subresources: INV-PORTAL-ZERO-NODE-DEP only covers the Node.js runtime.'
 mutations:
-- action: modify_component
-  target_component: CMP-PORTAL-ASSETS
+- operation: modify
+  target: CMP-PORTAL-ASSETS
   details: Remove the jsDelivr Mermaid <script> and Google Fonts <link> tags from 'src/eidos/portal/frontend/index.html'. Import 'mermaid' from npm (version pinned in 'package.json' / 'pnpm-lock.yaml'), embed the primary DS-CORE font families (Geist, Geist Mono; latin subset woff2 via @fontsource) so the 'Inter' / 'JetBrains Mono' / system fallbacks in 'tokens.json' remain valid, replace the regex 'AsciiDocRenderer.tsx' with '@asciidoctor/core' in 'secure' safe mode, and regenerate 'src/eidos/portal/assets.py' as a single-file bundle. Update responsibility to state 'zero remote subresources'.
   expect:
     frontmatter:
       responsibility: zero remote subresources
-- action: modify_ui_component
-  target_ui_component: UIC-PORTAL-READER
+- operation: modify
+  target: UIC-PORTAL-READER
   details: Document that the reader renders specification bodies through Asciidoctor.js (quote blocks, admonitions, callouts, definition lists, multi-line tables, and 'xref:' links resolved to in-portal spec navigation), with 'include::' explicitly unsupported in the browser (no living spec currently uses it).
   expect:
     body:
       contains: Asciidoctor
-- action: add_invariant
-  target_invariant_id: INV-PORTAL-AIR-GAPPED-BUNDLE
+- operation: add
+  target: INV-PORTAL-AIR-GAPPED-BUNDLE
+  parent: CAP-EXP-001
   details: 'Add to CAP-EXP-001 (''eidos/domains/experience-portal/capabilities/living-web-portal.adoc''), alongside (not replacing) INV-PORTAL-ZERO-NODE-DEP. Rule: the portal bundle served by ''eidos serve'' and emitted by ''eidos build-site'' must load zero scripts, stylesheets, fonts, or other subresources from remote origins; Mermaid.js, Asciidoctor.js, and web fonts are embedded. test_binding: ''tests/test_portal.py::test_portal_bundle_has_no_remote_subresources''.'
 ---
 = SpecDelta: Air-Gapped Portal Bundle with Embedded Mermaid, Fonts, and Asciidoctor.js Rendering

@@ -10,27 +10,27 @@ intent:
   kind: enabler
   motivation: Eliminate O(N) full-repository specification parsing and test-suite AST scanning on every 'PostInvocation' and 'Stop' agent lifecycle hook by caching per-file schema validation and test-function invariant bindings in 'eidos/.cache/index.db' keyed by mtime and SHA-256.
 mutations:
-- action: modify_component
-  target_component: CMP-GRAPH-STORAGE
+- operation: modify
+  target: CMP-GRAPH-STORAGE
   details: Add 'spec_validation_cache' and 'test_binding_cache' tables in 'src/eidos/core/index/graph_index.py' ('eidos/.cache/index.db') keyed by relative file path, 'mtime_ns', and 'sha256' digest (plus bundled schema digest), register both tables in '_MANAGED_TABLES', and bump 'ArchitecturalIndex.SCHEMA_VERSION' from '2.1.0' to '2.2.0' so drop-and-rebuild migration stays deterministic.
   expect:
     frontmatter:
       responsibility: spec_validation_cache
-- action: modify_component
-  target_component: CMP-SPEC-VALIDATOR
+- operation: modify
+  target: CMP-SPEC-VALIDATOR
   details: Update 'SpecValidator.validate_directory()' in 'src/eidos/core/spec/validator.py' to reuse cached 'SpecDocument' metadata and per-document schema validation results from 'spec_validation_cache' when 'mtime_ns' and 'schema_hash' match, while still executing 'components[].ref' discovery and full in-memory '_validate_cross_references()' across the hydrated catalog.
   expect:
     frontmatter:
       responsibility: cached per-document schema validation
-- action: modify_component
-  target_component: CMP-DRIFT-DETECTOR
+- operation: modify
+  target: CMP-DRIFT-DETECTOR
   details: Update 'extract_invariants_and_verify()', '_verify_single_invariant()', and 'detect_orphan_invariants()' in 'src/eidos/vcs/drift.py' to stat discovered polyglot test files and read cached test function definitions, '# eidos:fixture'-filtered tokens, and '# INV-*' / '# POL-*' bindings from 'test_binding_cache' in 'eidos/.cache/index.db', only reading and AST-parsing test files whose 'mtime_ns' or 'sha256' changed and pruning deleted test files.
   expect:
     frontmatter:
       responsibility: test_binding_cache
-- action: patch_invariant
-  target_invariant_id: INV-AGENT-GRAPH-INDEX-FRESHNESS
-  target_capability: CAP-AGENT-001
+- operation: modify
+  target: INV-AGENT-GRAPH-INDEX-FRESHNESS
+  parent: CAP-AGENT-001
   details: Enforce incremental mtime/SHA-256 invalidation for cached specification validation ('spec_validation_cache') and test invariant bindings ('test_binding_cache') so warm 'eidos drift' and 'eidos hook drift' executions avoid redundant disk and AST scans.
   expect:
     frontmatter:

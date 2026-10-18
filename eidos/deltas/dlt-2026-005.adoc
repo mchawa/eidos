@@ -9,18 +9,15 @@ intent:
   motivation: Enable multi-tenant/multi-brand design systems with W3C tokens, UI component
     contracts, screen specs, and bidirectional linking to product capabilities.
 mutations:
-- action: modify_contract
-  target_component: CMP-EIDOS-ENGINE
-  details: Update CTR-EIDOS-CLI to support design-system, ui-component, and screen
-    specification types in eidos spec create.
-- action: modify_component
-  target_component: CMP-EIDOS-ENGINE
-  details: Implement multi-design system scaffolding, W3C Design Tokens generation,
-    and MCP server design tooling.
-- action: modify_capability
-  target_capability: CAP-AGENT-001
-  details: Add eidos-design specialized agent skill to assets/plugin_reference and
-    .agents/plugins/eidos.
+- operation: modify
+  target: CMP-EIDOS-ENGINE
+  details: Update CTR-EIDOS-CLI to support design-system, ui-component, and screen specification types in eidos spec create.
+- operation: modify
+  target: CMP-EIDOS-ENGINE
+  details: Implement multi-design system scaffolding, W3C Design Tokens generation, and MCP server design tooling.
+- operation: modify
+  target: CAP-AGENT-001
+  details: Add eidos-design specialized agent skill to assets/plugin_reference and .agents/plugins/eidos.
 ---
 
 = SpecDelta: Multi-Design System Engine, W3C Tokens, and Product Capability Linkage

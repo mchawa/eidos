@@ -10,24 +10,21 @@ intent:
     for non-IDE stakeholders to visualize C4 architecture, living specs, multi-design
     systems, and SpecDelta Kanban boards.
 mutations:
-- action: add_component
-  target_component: CMP-EIDOS-PORTAL
-  details: Author CMP-EIDOS-PORTAL manifest for the living web portal and static documentation
-    generator under src/eidos/portal.
-- action: add_contract
-  target_component: CMP-EIDOS-PORTAL
-  details: Author CTR-EIDOS-PORTAL contract defining the HTTP REST and Web Portal
-    endpoints.
-- action: modify_architecture
-  target_architecture: ARCH-EIDOS-001
+- operation: add
+  target: CMP-EIDOS-PORTAL
+  details: Author CMP-EIDOS-PORTAL manifest for the living web portal and static documentation generator under src/eidos/portal.
+- operation: add
+  target: CMP-EIDOS-PORTAL
+  details: Author CTR-EIDOS-PORTAL contract defining the HTTP REST and Web Portal endpoints.
+- operation: modify
+  target: ARCH-EIDOS-001
   details: Update ARCH-EIDOS-001 c4_containers topology with CMP-EIDOS-PORTAL container.
-- action: modify_contract
-  target_component: CMP-EIDOS-CLI
+- operation: modify
+  target: CMP-EIDOS-CLI
   details: Expose 'eidos serve' and 'eidos build-site' CLI commands.
-- action: extend_capability
-  target_capability: CAP-PROD-001
-  details: Add invariant INV-LIVING-PORTAL-VISUALIZATION requiring real-time web visualization
-    of living architecture and SpecDeltas.
+- operation: modify
+  target: CAP-PROD-001
+  details: Add invariant INV-LIVING-PORTAL-VISUALIZATION requiring real-time web visualization of living architecture and SpecDeltas.
 ---
 
 = SpecDelta: Eidos Living Web Portal & Interactive Architecture Visualizer

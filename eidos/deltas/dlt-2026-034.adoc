@@ -10,27 +10,28 @@ intent:
   kind: feature
   motivation: "Persist AST symbol coordinates (file, lines, signature, parent) in the SQLite knowledge graph so 'find-symbol' can report where a symbol is defined and 'repo-map' no longer re-parses every source file, and index every declared container 'package_path' recursively with a deterministic, order-independent ownership precedence."
 mutations:
-  - action: modify_component
-    target_component: CMP-GRAPH-STORAGE
-    details: "Add an additive 'code_symbols' table (explicit column list, NOT NULL defaults, UNIQUE(file_path, entity_id, kind, parent_symbol, symbol, line_start), one row set per owning entity with an 'is_primary' flag) alongside the unchanged 'symbol_mappings' lookup table. Persist 'schema_version' in the 'metadata' table, bump 'ArchitecturalIndex.SCHEMA_VERSION' to 2.1.0, and drop-and-rebuild the derived 'eidos/.cache/index.db' when the stored version is missing or differs."
-  - action: modify_component
-    target_component: CMP-INCREMENTAL-SYNC-ENGINE
-    details: "Delete-then-insert 'code_symbols' rows per file on every (re)index; prune rows (and orphaned AST rows in 'symbol_mappings') on file deletion. Track all container package paths in 'is_dirty()' via existing kind='package_path' rows. Replace the non-recursive, 'not all_modules'-gated package glob with a global post-pass ownership resolution over all package directories."
-  - action: modify_component
-    target_component: CMP-AST-SYMBOL-INDEXER
-    details: "Rebuild 'get_repo_map()' input ('symbols_by_file') from 'code_symbols' rows instead of calling 'extract_symbols()' on disk; 'generate_repo_map()' output is unchanged for the same index state."
-  - action: modify_contract
-    target_contract: CTR-EIDOS-CLI
-    details: "Additive, backward-compatible change to 'eidos index find-symbol --json': each match gains a 'location' object ('file', 'line_start', 'line_end', 'signature', 'parent_symbol') or null for non-AST matches. The existing 'file_path' key keeps its current meaning (owning spec path)."
-  - action: modify_component
-    target_component: CMP-CLI-INDEX-COMMANDS
-    details: "Render a 'Location' ('file:line') column in the 'find-symbol' table output."
-  - action: patch_invariant
-    target_invariant_id: INV-KNOWLEDGE-GRAPH-CATALOG
-    details: "[CAP-PROD-001] Extend the rule to cover AST code symbols indexed recursively across all declared container package paths."
-  - action: add_invariant
-    target_invariant_id: INV-SYMBOL-LOCATION-FIDELITY
-    details: "[CAP-AGENT-001] Rule: 'The knowledge graph must persist source file and line coordinates for every indexed AST symbol, invalidate them on source edit or deletion, and serve find-symbol and repo-map queries without re-parsing source files when the index is warm.' test_binding: 'tests/test_graph_index.py::test_code_symbols_invalidated_on_edit_and_delete'."
+- operation: modify
+  target: CMP-GRAPH-STORAGE
+  details: Add an additive 'code_symbols' table (explicit column list, NOT NULL defaults, UNIQUE(file_path, entity_id, kind, parent_symbol, symbol, line_start), one row set per owning entity with an 'is_primary' flag) alongside the unchanged 'symbol_mappings' lookup table. Persist 'schema_version' in the 'metadata' table, bump 'ArchitecturalIndex.SCHEMA_VERSION' to 2.1.0, and drop-and-rebuild the derived 'eidos/.cache/index.db' when the stored version is missing or differs.
+- operation: modify
+  target: CMP-INCREMENTAL-SYNC-ENGINE
+  details: Delete-then-insert 'code_symbols' rows per file on every (re)index; prune rows (and orphaned AST rows in 'symbol_mappings') on file deletion. Track all container package paths in 'is_dirty()' via existing kind='package_path' rows. Replace the non-recursive, 'not all_modules'-gated package glob with a global post-pass ownership resolution over all package directories.
+- operation: modify
+  target: CMP-AST-SYMBOL-INDEXER
+  details: Rebuild 'get_repo_map()' input ('symbols_by_file') from 'code_symbols' rows instead of calling 'extract_symbols()' on disk; 'generate_repo_map()' output is unchanged for the same index state.
+- operation: modify
+  target: CTR-EIDOS-CLI
+  details: 'Additive, backward-compatible change to ''eidos index find-symbol --json'': each match gains a ''location'' object (''file'', ''line_start'', ''line_end'', ''signature'', ''parent_symbol'') or null for non-AST matches. The existing ''file_path'' key keeps its current meaning (owning spec path).'
+- operation: modify
+  target: CMP-CLI-INDEX-COMMANDS
+  details: Render a 'Location' ('file:line') column in the 'find-symbol' table output.
+- operation: modify
+  target: INV-KNOWLEDGE-GRAPH-CATALOG
+  details: '[CAP-PROD-001] Extend the rule to cover AST code symbols indexed recursively across all declared container package paths.'
+- operation: add
+  target: INV-SYMBOL-LOCATION-FIDELITY
+  parent: CAP-AGENT-001
+  details: '[CAP-AGENT-001] Rule: ''The knowledge graph must persist source file and line coordinates for every indexed AST symbol, invalidate them on source edit or deletion, and serve find-symbol and repo-map queries without re-parsing source files when the index is warm.'' test_binding: ''tests/test_graph_index.py::test_code_symbols_invalidated_on_edit_and_delete''.'
 ---
 = SpecDelta: Persistent AST Symbol Locations and Recursive Multi-Package Code Indexing
 :toc: left

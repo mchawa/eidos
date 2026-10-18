@@ -1451,11 +1451,13 @@
           "--verify",
           "-v"
         ],
-        "secondary": [],
+        "secondary": [
+          "--no-verify"
+        ],
         "kind": "TyperOption",
         "required": false,
-        "default": "False",
-        "help": "Verify all mutations are satisfied in the living spec catalog before applying.",
+        "default": "True",
+        "help": "Verify all mutations are satisfied in the living spec catalog before applying (enabled by default).",
         "panel": null,
         "envvar": "None",
         "type": "BOOL"
@@ -2609,7 +2611,7 @@
         "kind": "TyperOption",
         "required": false,
         "default": "Stop",
-        "help": "Hook lifecycle event (PreToolUse, PostToolUse, PostInvocation, Stop).",
+        "help": "Hook lifecycle event (PreToolUse, PostToolUse, Stop).",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -2651,7 +2653,7 @@
         "kind": "TyperOption",
         "required": false,
         "default": "Stop",
-        "help": "Hook lifecycle event (PostInvocation, Stop).",
+        "help": "Hook lifecycle event (Stop).",
         "panel": null,
         "envvar": "None",
         "type": "STRING"

@@ -332,3 +332,57 @@ def test_changelog_hermetic_multi_tag_partitioning_draft_exclusion_and_docs_sync
     assert "changelog.md" in (tmp_path / "zensical.toml").read_text(encoding="utf-8")
 
 
+def test_dlt_2026_087_changelog_composable_operations(tmp_path):
+    """Verify ChangelogGenerator classifies SpecDeltas with composable mutations[].operation into Added, Changed, Deprecated, and Removed."""
+    from eidos.core.lifecycle.changelog import ReleaseSection
+
+    gen = ChangelogGenerator(repo_root=tmp_path, eidos_dir=tmp_path / "eidos")
+    sec = ReleaseSection(tag="Unreleased", version_label="Unreleased", date="")
+
+    gen._add_delta_to_section(
+        sec,
+        {
+            "id": "DLT-2026-101",
+            "title": "Add Composable Feature",
+            "summary": "Added feature.",
+            "kind": "feature",
+            "mutations": [{"operation": "add", "target": "CAP-NEW-001"}],
+        },
+    )
+    gen._add_delta_to_section(
+        sec,
+        {
+            "id": "DLT-2026-102",
+            "title": "Modify Composable Feature",
+            "summary": "Modified feature.",
+            "kind": "feature",
+            "mutations": [{"operation": "modify", "target": "CAP-NEW-001"}],
+        },
+    )
+    gen._add_delta_to_section(
+        sec,
+        {
+            "id": "DLT-2026-103",
+            "title": "Deprecate Composable Feature",
+            "summary": "Deprecated feature.",
+            "kind": "feature",
+            "mutations": [{"operation": "deprecate", "target": "CAP-NEW-001"}],
+        },
+    )
+    gen._add_delta_to_section(
+        sec,
+        {
+            "id": "DLT-2026-104",
+            "title": "Remove Composable Feature",
+            "summary": "Removed feature.",
+            "kind": "feature",
+            "mutations": [{"operation": "remove", "target": "CAP-NEW-001"}],
+        },
+    )
+
+    assert any("DLT-2026-101" in x for x in sec.added)
+    assert any("DLT-2026-102" in x for x in sec.changed)
+    assert any("DLT-2026-103" in x for x in sec.deprecated)
+    assert any("DLT-2026-104" in x for x in sec.removed)
+
+

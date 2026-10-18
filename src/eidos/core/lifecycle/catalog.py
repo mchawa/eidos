@@ -7,9 +7,12 @@ from typing import Any
 
 import yaml
 
+from eidos.core.index.storage import (
+    get_cached_spec_document,
+    load_spec_validation_cache,
+)
 from eidos.core.spec.parser import (
     dump_spec_document,
-    parse_spec_file,
     split_frontmatter_and_body,
 )
 
@@ -415,8 +418,8 @@ def find_spec_by_id_or_path(eidos_dir: Path, target: str) -> Path | None:
         if p.stem.lower() == target_lower:
             return p.resolve()
         try:
-            doc = parse_spec_file(p)
-            if doc.doc_id and doc.doc_id.lower() == target_lower:
+            doc, _, _ = get_cached_spec_document(p)
+            if doc is not None and doc.doc_id and doc.doc_id.lower() == target_lower:
                 return p.resolve()
         except OSError:
             continue
@@ -455,19 +458,6 @@ def find_references_to_spec(eidos_dir: Path, target_id: str, target_path: Path) 
     return referencing_files
 
 
-_SPEC_CATALOG_CACHE: dict[
-    Path,
-    tuple[
-        tuple[tuple[str, int, int], ...],
-        tuple[
-            dict[str, tuple[Path, str, dict[str, Any]]],
-            dict[str, str],
-            dict[str, tuple[Path, dict[str, Any]]],
-        ],
-    ],
-] = {}
-
-
 def _build_spec_catalog(
     eidos_dir: Path,
 ) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, str], set[str]]:
@@ -479,32 +469,18 @@ def _build_spec_catalog(
 def _build_spec_catalog_with_invariants(
     eidos_dir: Path,
 ) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, str], dict[str, tuple[Path, dict[str, Any]]]]:
-    """Build lookup indexes including owning file and dict for each invariant, with mtime/size caching."""
-    import copy
-
-    resolved_eidos = eidos_dir.resolve()
+    """Build lookup indexes including owning file and dict for each invariant via shared SpecDocument cache and FrontmatterModel."""
     adoc_files: list[Path] = []
-    state_sig_items: list[tuple[str, int, int]] = []
     if eidos_dir.exists():
         for p in sorted(eidos_dir.rglob("*.adoc")):
             if "deltas" in p.parts or "by-status" in p.parts:
                 continue
-            try:
-                st = p.stat()
-            except OSError:
-                continue
             adoc_files.append(p)
-            state_sig_items.append((str(p), st.st_mtime_ns, st.st_size))
 
-    state_sig = tuple(state_sig_items)
-    cached = _SPEC_CATALOG_CACHE.get(resolved_eidos)
-    if cached is not None and cached[0] == state_sig:
-        c_specs, c_comps, c_invs = cached[1]
-        return (
-            {k: (v[0], v[1], copy.deepcopy(v[2])) for k, v in c_specs.items()},
-            dict(c_comps),
-            {k: (v[0], copy.deepcopy(v[1])) for k, v in c_invs.items()},
-        )
+    resolved_eidos = eidos_dir.resolve()
+    repo_root = resolved_eidos.parent if resolved_eidos.name == "eidos" else resolved_eidos
+    db_path = resolved_eidos / ".cache" / "index.db"
+    cached_rows = load_spec_validation_cache(db_path) if db_path.exists() else {}
 
     specs_by_id: dict[str, tuple[Path, str, dict[str, Any]]] = {}
     container_components: dict[str, str] = {}  # comp_id -> container_id
@@ -512,36 +488,36 @@ def _build_spec_catalog_with_invariants(
 
     for p in adoc_files:
         try:
-            doc = parse_spec_file(p)
-            if doc.doc_id:
-                specs_by_id[doc.doc_id] = (p, doc.doc_type, doc.frontmatter)
-                if doc.doc_type == "tech/container":
-                    comps = (
-                        doc.frontmatter.get("components", [])
-                        or doc.frontmatter.get("c4_internal_components", [])
-                    )
-                    if isinstance(comps, list):
-                        for comp in comps:
-                            if isinstance(comp, dict) and comp.get("id"):
-                                container_components[comp["id"]] = doc.doc_id
-                invs = doc.frontmatter.get("invariants", []) or (
-                    doc.frontmatter.get("technical", {}) or {}
-                ).get("invariants", [])
-                if isinstance(invs, list):
-                    for inv in invs:
-                        if isinstance(inv, dict) and inv.get("id"):
-                            invariant_map[inv["id"]] = (p, inv)
-                        elif isinstance(inv, str):
-                            invariant_map[inv] = (p, {"id": inv})
+            st = p.stat()
+            res_p = p.resolve()
+            rel_key: str | None = None
+            for base in (repo_root, resolved_eidos):
+                try:
+                    cand = str(res_p.relative_to(base)).replace("\\", "/")
+                    if cand in cached_rows:
+                        rel_key = cand
+                        break
+                except ValueError:
+                    continue
+            doc, _, _ = get_cached_spec_document(
+                p,
+                mtime_ns=st.st_mtime_ns,
+                st_size=st.st_size,
+                cached_row=cached_rows.get(rel_key) if rel_key else None,
+            )
+            if doc is not None:
+                model = doc.model
+                explicit_id = model.id
+                if explicit_id:
+                    specs_by_id[explicit_id] = (p, doc.doc_type, doc.frontmatter)
+                    if doc.doc_type == "tech/container":
+                        for comp in model.components:
+                            if comp.id:
+                                container_components[comp.id] = explicit_id
+                    for inv in model.all_invariants():
+                        if inv.id:
+                            invariant_map[inv.id] = (p, inv.model_dump(exclude_none=True))
         except OSError:
             continue
 
-    _SPEC_CATALOG_CACHE[resolved_eidos] = (
-        state_sig,
-        (
-            {k: (v[0], v[1], copy.deepcopy(v[2])) for k, v in specs_by_id.items()},
-            dict(container_components),
-            {k: (v[0], copy.deepcopy(v[1])) for k, v in invariant_map.items()},
-        ),
-    )
     return specs_by_id, container_components, invariant_map

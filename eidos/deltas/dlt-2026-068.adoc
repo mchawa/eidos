@@ -12,8 +12,8 @@ intent:
   severity: high
   motivation: Disable Git C-style octal path quoting in diff/status/ls-files queries, verify top-level container invariants in extract_invariants_and_verify, eliminate duplicate working-tree os.walk scans per drift run, skip unchanged applied deltas in detect_drift, and fix the broken max_hops TypeError in reconcile_specs.
 mutations:
-- action: modify_component
-  target_component: CMP-DRIFT-DETECTOR
+- operation: modify
+  target: CMP-DRIFT-DETECTOR
   details: 'Update get_git_diff_files and get_tracked_files in src/eidos/vcs/diff.py to pass -c core.quotePath=false; update extract_invariants_and_verify and _load_or_update_test_binding_cache in src/eidos/vcs/invariants.py to verify top-level tech/container invariants, skip generated/vendored directories, and share the loaded test cache with detect_orphan_invariants in src/eidos/vcs/drift.py; skip unchanged status: applied deltas in detect_drift; and fix reconcile_specs to call get_k_hop_neighborhood(cid, max_depth=1).'
   expect:
     frontmatter:

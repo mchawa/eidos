@@ -12,22 +12,22 @@ intent:
   severity: medium
   motivation: Honor the --name and --title parameters in init_repository when provided, remove the dead with_plugin parameter, and scope the 0-byte / whitespace-only empty-file exemption in both parse_spec_file and SpecValidator._load_or_validate strictly to the root system specification file so empty non-system specification files fail validation.
 mutations:
-- action: modify_component
-  target_component: CMP-REPO-INITIALIZER
+- operation: modify
+  target: CMP-REPO-INITIALIZER
   details: Update init_repository in src/eidos/core/lifecycle/initializer.py to scaffold arch/system frontmatter in eidos/system.adoc when name or title is explicitly provided, while keeping 0-byte system.adoc support for bare eidos init, and remove the dead with_plugin parameter.
   expect:
     frontmatter:
       source_path: src/eidos/core/lifecycle/initializer.py
       responsibility: Bootstraps repositories
-- action: modify_component
-  target_component: CMP-SPEC-PARSER
+- operation: modify
+  target: CMP-SPEC-PARSER
   details: Update parse_spec_file and extract_frontmatter in src/eidos/core/spec/parser.py so that 0-byte files only synthesize placeholder arch/system metadata when the filename is system.adoc, causing any other accidentally empty .adoc file to fail schema validation.
   expect:
     frontmatter:
       source_path: src/eidos/core/spec/parser.py
       responsibility: system.adoc
-- action: modify_component
-  target_component: CMP-SPEC-VALIDATOR
+- operation: modify
+  target: CMP-SPEC-VALIDATOR
   details: Update _load_or_validate in src/eidos/core/spec/validator.py to allow empty raw_content only on root system.adoc and report a missing frontmatter validation error on any other 0-byte or whitespace-only .adoc file.
   expect:
     frontmatter:

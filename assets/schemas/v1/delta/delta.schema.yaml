@@ -98,9 +98,79 @@ properties:
     items:
       type: object
       additionalProperties: false
-      required:
-        - action
+      anyOf:
+        - required:
+            - operation
+            - target
+        - required:
+            - action
       properties:
+        operation:
+          type: string
+          enum:
+            - add
+            - modify
+            - remove
+            - deprecate
+          description: "Canonical composable mutation verb (used with 'target' and optional 'parent')."
+        target:
+          type: string
+          pattern: "^((DOM|CAP|PER|POL|INV|ARCH|CNT|CMP|CTR|DS|UIC|SCR|CLT|FLOW)-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Primary target entity ID (or relative .adoc path) for composable mutations; entity type is resolved from the ID prefix."
+          x-eidos-ref:
+            target_types:
+              - product/domain
+              - product/capability
+              - product/persona
+              - product/policy
+              - invariant
+              - tech/architecture
+              - tech/container
+              - tech/component
+              - tech/contract
+              - design/system
+              - design/ui-component
+              - design/screen
+              - design/client
+              - design/flow
+            prefixes:
+              - DOM-
+              - CAP-
+              - PER-
+              - POL-
+              - INV-
+              - ARCH-
+              - CNT-
+              - CMP-
+              - CTR-
+              - DS-
+              - UIC-
+              - SCR-
+              - CLT-
+              - FLOW-
+            entity_label: target
+        parent:
+          type: string
+          pattern: "^((DOM|CAP|POL|CNT|CMP|DS|CLT)-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Optional parent/scoping entity ID for composable mutations (e.g. owning container for an inline CMP-* or owning capability/policy/container for an INV-*)."
+          x-eidos-ref:
+            target_types:
+              - product/domain
+              - product/capability
+              - product/policy
+              - tech/container
+              - tech/component
+              - design/system
+              - design/client
+            prefixes:
+              - DOM-
+              - CAP-
+              - POL-
+              - CNT-
+              - CMP-
+              - DS-
+              - CLT-
+            entity_label: parent
         action:
           type: string
           enum:

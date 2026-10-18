@@ -12,23 +12,24 @@ intent:
   severity: medium
   motivation: '''eidos delta verify'' still reports modify_*/extend_*/patch_* mutations as fulfilled without evidence of change: it falls back to filesystem mtimes when no local baseline exists, hashes inline component targets at container-file granularity, accepts structural sub-target membership (capability/invariant, container/component, container/contract) as proof of modification, and resolves composite mutations like patch_invariant to target_capability instead of the action''s primary target. CAP-PROD-002 has no invariant requiring modification evidence.'
 mutations:
-- action: modify_component
-  target_component: CMP-DELTA-ENGINE
-  details: 'In ''src/eidos/core/lifecycle/delta_engine.py'': (1) ''_extract_mutation_target'' resolves the action''s primary target key first (''*_invariant'' -> ''target_invariant_id'', ''*_component'' -> ''target_component'', ''*_container'' -> ''target_container'', ''*_architecture'' -> ''target_architecture'', ''*_contract'' -> ''target_contract'', ''*_policy'' -> ''target_policy'', ''*_screen'' -> ''target_screen'', ''*_ui_component'' -> ''target_ui_component'', ''*_design_system'' -> ''target_design_system'', ''*_client'' -> ''target_client'', ''*_flow'' -> ''target_flow'') and includes ''target_container'', ''target_architecture'', ''target_client'', and ''target_flow'' in the fallback lookup before regex scanning; (2) remove the ''st_mtime_ns'' fallback in ''_check_or_record_baseline_sha'' so that when no local baseline exists in ''delta_baselines'', it records the current digest as the baseline and reports UNMODIFIED; (3) hash inline ''CMP-*'' targets from their own component dict entry across both ''_snapshot_delta_baselines'' and ''verify_delta_mutations'' (keeping file digests for standalone ''tech/component'' files); (4) demote all three structural sub-target membership checks (capability/invariant, container/component, container/contract) to preconditions evaluated before ''expect:'' or digest comparison (''MISSING'' if absent, never sufficient alone to verify ''modify_*/extend_*/patch_*''), and evaluate ''expect:'' post-conditions before the ''delta_status == "applied"'' fallback so post-application regressions are caught. Append ''verification requires modification evidence'' to the component responsibility. The status vocabulary (MODIFIED / UNMODIFIED / MISSING / FOUND) and ''--json'' shape stay unchanged.'
+- operation: modify
+  target: CMP-DELTA-ENGINE
+  details: 'In ''src/eidos/core/lifecycle/delta_engine.py'': (1) ''_extract_mutation_target'' resolves the action''s primary target key first (''*_invariant'' -> ''target_invariant_id'', ''*_component'' -> ''target_component'', ''*_container'' -> ''target_container'', ''*_architecture'' -> ''target_architecture'', ''*_contract'' -> ''target_contract'', ''*_policy'' -> ''target_policy'', ''*_screen'' -> ''target_screen'', ''*_ui_component'' -> ''target_ui_component'', ''*_design_system'' -> ''target_design_system'', ''*_client'' -> ''target_client'', ''*_flow'' -> ''target_flow'') and includes ''target_container'', ''target_architecture'', ''target_client'', and ''target_flow'' in the fallback lookup before regex scanning; (2) remove the ''st_mtime_ns'' fallback in ''_check_or_record_baseline_sha'' so that when no local baseline exists in ''delta_baselines'', it records the current digest as the baseline and reports UNMODIFIED; (3) hash inline ''CMP-*'' targets from their own component dict
+    entry across both ''_snapshot_delta_baselines'' and ''verify_delta_mutations'' (keeping file digests for standalone ''tech/component'' files); (4) demote all three structural sub-target membership checks (capability/invariant, container/component, container/contract) to preconditions evaluated before ''expect:'' or digest comparison (''MISSING'' if absent, never sufficient alone to verify ''modify_*/extend_*/patch_*''), and evaluate ''expect:'' post-conditions before the ''delta_status == "applied"'' fallback so post-application regressions are caught. Append ''verification requires modification evidence'' to the component responsibility. The status vocabulary (MODIFIED / UNMODIFIED / MISSING / FOUND) and ''--json'' shape stay unchanged.'
   expect:
     frontmatter:
       responsibility: modification evidence
-- action: extend_capability
-  target_capability: CAP-PROD-002
+- operation: modify
+  target: CAP-PROD-002
   details: Add a 'Modification-Evidence Verification' key responsibility and list 'eidos delta verify <delta-id> [--json]' under 'technical.contracts.interfaces' in 'eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc', and bump the capability version 1.2.0 -> 1.3.0.
   expect:
     frontmatter:
       version: 1.3.0
     body:
       contains: Modification-Evidence Verification
-- action: add_invariant
-  target_capability: CAP-PROD-002
-  target_invariant_id: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+- operation: add
+  target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+  parent: CAP-PROD-002
   details: 'Add to CAP-PROD-002. Rule: ''eidos delta verify'' must report modify_*/extend_*/patch_* mutations as verified only on positive evidence of change to the targeted entity (a satisfied expect post-condition, or a content digest differing from the recorded SQLite delta baseline), never on entity existence or filesystem modification time alone. test_binding: ''tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence''.'
 ---
 = SpecDelta: Require Modification Evidence in SpecDelta Verification

@@ -371,10 +371,10 @@ def delta_apply_cmd(
         help="Deterministically scaffold missing specs and apply structural mutations declared in the delta.",
     ),
     verify: bool = typer.Option(
-        False,
-        "--verify",
+        True,
+        "--verify/--no-verify",
         "-v",
-        help="Verify all mutations are satisfied in the living spec catalog before applying.",
+        help="Verify all mutations are satisfied in the living spec catalog before applying (enabled by default).",
     ),
     json_output: bool = typer.Option(
         False,

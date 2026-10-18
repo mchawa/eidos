@@ -12,8 +12,8 @@ intent:
   severity: high
   motivation: Escape closing </script> sequences (and U+2028/U+2029 line separators) when embedding JSON portal state into index.html in build_static_portal so specifications containing literal </script> tags cannot break or inject markup into the static web portal.
 mutations:
-- action: modify_component
-  target_component: CMP-PORTAL-BUILDER
+- operation: modify
+  target: CMP-PORTAL-BUILDER
   details: Update build_static_portal in src/eidos/portal/builder.py to escape '</' as '<\/' (and U+2028/U+2029) when embedding json.dumps(data) inside the inline <script> tag of the compiled index.html.
   expect:
     frontmatter:

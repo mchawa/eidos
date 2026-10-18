@@ -21,36 +21,29 @@ intent:
 
     '
 mutations:
-- action: remove_container
-  target_container: CNT-EIDOS-MCP
-  details: 'Retire the stdio Model Context Protocol daemon and decommission ''src/eidos/mcp/''
-    (CMP-MCP-SERVER-LOOP, CMP-MCP-TOOL-CATALOG, CMP-MCP-TOOL-DISPATCHER).
+- operation: remove
+  target: CNT-EIDOS-MCP
+  details: 'Retire the stdio Model Context Protocol daemon and decommission ''src/eidos/mcp/'' (CMP-MCP-SERVER-LOOP, CMP-MCP-TOOL-CATALOG, CMP-MCP-TOOL-DISPATCHER).
 
     '
-- action: remove_contract
-  details: 'Deprecate and remove CTR-EIDOS-MCP (''eidos/architecture/contracts/mcp.adoc'')
-    and its associated JSON-RPC 2.0 stdio protocol specifications.
+- operation: remove
+  target: CTR-EIDOS-MCP
+  details: 'Deprecate and remove CTR-EIDOS-MCP (''eidos/architecture/contracts/mcp.adoc'') and its associated JSON-RPC 2.0 stdio protocol specifications.
 
     '
-- action: modify_container
-  target_container: CNT-EIDOS-CLI
-  details: 'Remove the ''eidos mcp'' command; ensure all inspection commands (validate,
-    drift, context, reconcile, index) expose deterministic ''--json'' output and exit
-    codes for automated consumption by AI coding assistants.
+- operation: modify
+  target: CNT-EIDOS-CLI
+  details: 'Remove the ''eidos mcp'' command; ensure all inspection commands (validate, drift, context, reconcile, index) expose deterministic ''--json'' output and exit codes for automated consumption by AI coding assistants.
 
     '
-- action: modify_container
-  target_container: CNT-EIDOS-PLUGIN
-  details: 'Update plugin installer to sunset generation of ''.mcp.json'' configuration
-    files across all targets (Claude, Cursor, Cline, Copilot, Codex, OpenCode), orienting
-    all plugins strictly around flat Agent Skills (SKILL.md) and CLI commands.
+- operation: modify
+  target: CNT-EIDOS-PLUGIN
+  details: 'Update plugin installer to sunset generation of ''.mcp.json'' configuration files across all targets (Claude, Cursor, Cline, Copilot, Codex, OpenCode), orienting all plugins strictly around flat Agent Skills (SKILL.md) and CLI commands.
 
     '
-- action: extend_capability
-  target_capability: CAP-AGENT-001
-  details: 'Refocus the agent intelligence capability from stdio MCP daemon management
-    to deterministic CLI-driven subprocess execution, progressive context slicing,
-    and agent skill invocation.
+- operation: modify
+  target: CAP-AGENT-001
+  details: 'Refocus the agent intelligence capability from stdio MCP daemon management to deterministic CLI-driven subprocess execution, progressive context slicing, and agent skill invocation.
 
     '
 ---

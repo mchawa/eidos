@@ -17,11 +17,11 @@ components:
     source_path: "docs/getting-started/quickstart.md"
   - id: CMP-DOCS-CORE-CONCEPTS
     name: "CoreConceptsGuides"
-    responsibility: "In-depth conceptual guides: How Eidos Works (7-container internal architecture & 4-stage execution pipeline), Living Specs, Architectural Index (with CNT-EIDOS-CORE and token_estimate Python API examples), SpecDeltas, Invariants, Explorations, Design Systems, and the v1 JSON Schema-validated 16-schema Glossary."
+    responsibility: "In-depth conceptual guides: How Eidos Works (7-container internal architecture, 4-stage execution pipeline, bidirectional contract parity, 10-table SQLite knowledge graph, two-tier FTS5 ranking with AST symbol projection, 14-language polyglot structural diffing, closed expect post-conditions, and stateful Block-Once Stop Gate), Living Specs, Architectural Index (with CNT-EIDOS-CORE and calibrated token_estimate Python API examples), SpecDeltas, Invariants, Explorations, Design Systems, and the v1 JSON Schema-validated 16-schema Glossary."
     source_path: "docs/concepts/how-eidos-works.md"
   - id: CMP-DOCS-USER-GUIDES
     name: "UserGuides"
-    responsibility: "Operational reference manuals: CLI command reference, Agent Plugin integration with 4 workflow skills, and Living Portal deployment."
+    responsibility: "Operational reference manuals: live-command-validated CLI command reference, Agent Plugin integration with 4 workflow skills and stateful Stop Gate diagnostics, and Living Portal deployment."
     source_path: "docs/guides/cli.md"
   - id: CMP-DOCS-CONFIG
     name: "SiteConfiguration"

@@ -16,38 +16,29 @@ intent:
 
     '
 mutations:
-- action: extend_capability
-  target_capability: CAP-PROD-002
-  details: 'Add INV-DELTA-DELETION-AUDIT requiring deltas with deletion or deprecation
-    mutations to undergo reverse-dependency blast-radius audit, and declare the ''eidos
-    delta audit'' interface.
+- operation: modify
+  target: CAP-PROD-002
+  details: 'Add INV-DELTA-DELETION-AUDIT requiring deltas with deletion or deprecation mutations to undergo reverse-dependency blast-radius audit, and declare the ''eidos delta audit'' interface.
 
     '
-- action: modify_container
-  target_container: CNT-EIDOS-CORE
-  details: 'Implement AuditEngine in ''src/eidos/core/audit.py'' supporting graph-level
-    foreign key checks via ArchitecturalIndex, semantic reference discovery across
-    the repository, automatic classification of historical ledgers, negative test
-    assertions, and cleanup routines, and tombstone policy matching.
+- operation: modify
+  target: CNT-EIDOS-CORE
+  details: 'Implement AuditEngine in ''src/eidos/core/audit.py'' supporting graph-level foreign key checks via ArchitecturalIndex, semantic reference discovery across the repository, automatic classification of historical ledgers, negative test assertions, and cleanup routines, and tombstone policy matching.
 
     '
-- action: modify_container
-  target_container: CNT-EIDOS-CLI
-  details: 'Expose the ''eidos delta audit <id_or_path> [--path <path>] [--strict]
-    [--json]'' CLI command with formatted Rich diagnostic dashboards and machine-readable
-    JSON schemas.
+- operation: modify
+  target: CNT-EIDOS-CLI
+  details: 'Expose the ''eidos delta audit <id_or_path> [--path <path>] [--strict] [--json]'' CLI command with formatted Rich diagnostic dashboards and machine-readable JSON schemas.
 
     '
-- action: modify_contract
-  details: 'Update CTR-EIDOS-CLI in ''eidos/architecture/contracts/cli.adoc'' to document
-    the ''eidos delta audit'' command, its options, and exit codes.
+- operation: modify
+  target: CTR-EIDOS-CLI
+  details: 'Update CTR-EIDOS-CLI in ''eidos/architecture/contracts/cli.adoc'' to document the ''eidos delta audit'' command, its options, and exit codes.
 
     '
-- action: modify_container
-  target_container: CNT-EIDOS-PLUGIN
-  details: 'Update the eidos-delta agent skill to incorporate ''eidos delta audit
-    <DLT-ID> --strict'' as a mandatory completion gate for deletion or refactoring
-    tasks.
+- operation: modify
+  target: CNT-EIDOS-PLUGIN
+  details: 'Update the eidos-delta agent skill to incorporate ''eidos delta audit <DLT-ID> --strict'' as a mandatory completion gate for deletion or refactoring tasks.
 
     '
 ---

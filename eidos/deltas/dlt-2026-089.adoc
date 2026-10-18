@@ -1,0 +1,95 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-089
+title: "Decorator-Aware AST Symbol Signatures and AST-Backed Polyglot Test-Binding Verification"
+status: applied
+vcs:
+  branch: feat/decorator-ast-signatures-and-polyglot-test-bindings
+  base_commit: db3f9fb09920f6845cb395588718bf618cc56772
+intent:
+  kind: enabler
+  motivation: "Eliminate the structural drift blind spot where decorator and attribute modifications (@app.command, @staticmethod, @property, @dataclass, #[derive], route/auth annotations) are omitted from CodeSymbol.line_start and CodeSymbol.signature in AstGrepIndexer and FallbackIndexer, while replacing the raw word-boundary regex fallback in SpecValidator._test_symbol_exists with AST-backed polyglot test symbol verification covering parameterized TS/JS (test.each/it.each/Deno.test), Go subtests (t.Run), and Rust attribute test macros (#[tokio::test], #[rstest], #[test_case])."
+mutations:
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+    parent: CNT-EIDOS-INDEX
+    details: "Update AstGrepIndexer.extract_symbols and FallbackIndexer.extract_symbols in src/eidos/core/index/ast_indexer.py to include enclosing decorated_definition / decorator_list / attribute lines in CodeSymbol.line_start and prefix normalized decorator/attribute annotations onto CodeSymbol.signature so decorator edits trigger structural AST symbol diffs, and expand list_test_functions and extract_test_bindings across both indexers to capture TS/JS test.each/it.each/describe.each and Deno.test, Go t.Run subtests, and Rust #[tokio::test]/#[rstest]/#[test_case]/#[async_std::test] test functions."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/ast_indexer.py"
+        responsibility: "decorator"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    parent: CNT-EIDOS-CORE
+    details: "Replace the raw re.search word-boundary fallback in SpecValidator._test_symbol_exists (src/eidos/core/spec/validator.py) with AST-backed polyglot test symbol resolution via get_ast_indexer().list_test_functions and extract_symbols (with comment-stripped fallback only for unsupported file extensions), preventing comment or string-literal false positives when validating invariant test_binding and UI component test_bindings."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/spec/validator.py"
+        responsibility: "list_test_functions"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Update CAP-PROD-001 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc (bumping version to 1.4.0) to specify AST-backed polyglot test_binding symbol resolution across parameterized TS/JS (test.each, Deno.test), Go t.Run subtests, and Rust attribute test macros."
+    expect:
+      frontmatter:
+        version: "1.4.0"
+        status: "active"
+      body:
+        contains:
+          - "Deno.test"
+  - operation: modify
+    target: CAP-VCS-001
+    details: "Update CAP-VCS-001 in eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc (bumping version to 1.5.0) to specify decorator-aware AST symbol line ranges and signatures across AstGrepIndexer and FallbackIndexer for structural drift detection."
+    expect:
+      frontmatter:
+        version: "1.5.0"
+        status: "active"
+      body:
+        contains:
+          - "decorator"
+---
+= SpecDelta: Decorator-Aware AST Symbol Signatures and AST-Backed Polyglot Test-Binding Verification
+:toc: left
+
+== Problem Statement
+
+A deep audit of the polyglot AST symbol indexer (`CNT-EIDOS-INDEX`), specification validator (`CNT-EIDOS-CORE`), and structural drift detector (`CNT-EIDOS-VCS`) uncovered two accuracy gaps in AST symbol and test-binding analysis (Review Points **4.1** and **3.2**):
+
+1. **Point 4.1 — `AstGrepIndexer` and `FallbackIndexer` Omit `@decorator` / Attribute Lines from `CodeSymbol.line_start` and `CodeSymbol.signature`**:
+   * In `AstGrepIndexer.extract_symbols` (`src/eidos/core/index/ast_indexer.py`, lines 284–340 and 366–443), `line_start` is computed from `m.range().start.line + 1` (the `def` or `class` keyword node) without checking whether `m.parent()` is a `decorated_definition` (unlike `list_test_functions` at lines 502–506, which explicitly checks `if parent and parent.kind() in ("decorated_definition",):`).
+   * Similarly, in `FallbackIndexer.extract_symbols` (`ast_indexer.py`, lines 641–653 and 747–791), `line_start` uses `node.lineno` rather than `min(d.lineno for d in node.decorator_list)`, and `_python_node_signature(node)` formats only `class Name(Bases)` or `def name(args) -> ret`, omitting `node.decorator_list`.
+   * Consequently, adding, removing, or modifying decorators on public classes, functions, or methods (such as `@app.command("...")`, `@staticmethod`, `@classmethod`, `@property`, `@dataclass`, route decorators, or auth/permission decorators) leaves `CodeSymbol.line_start` and `CodeSymbol.signature` unchanged, making decorator-only structural changes invisible to `diff_public_symbols` and `eidos drift`.
+
+2. **Point 3.2 — Raw Regex Fallback in `SpecValidator._test_symbol_exists` & Missing Parameterized / Subtest Constructs in Polyglot Test Indexing**:
+   * **Raw Word-Boundary Regex on Non-Python Test Files**: In `SpecValidator._test_symbol_exists` (`src/eidos/core/spec/validator.py`, lines 948–975), Python `.py` files are parsed with `ast.parse`, but every non-Python test file (`.ts`, `.tsx`, `.js`, `.go`, `.rs`, `.java`, `.kt`, etc.) falls through to `return bool(re.search(rf"\b{re.escape(leaf_sym)}\b", source))`. If a deleted test's name is mentioned inside a `//` or `/* ... */` comment or an unrelated string literal, `eidos validate` falsely reports the `test_binding` as valid!
+   * **Missing Polyglot Test Runner Constructs in `ast_indexer.py`**:
+     ** **TypeScript / JavaScript**: `AstGrepIndexer.list_test_functions` and `extract_test_bindings` (`ast_indexer.py`, lines 473–488 and 573–592) only match `call_expression` nodes where `fn_ident.text() in ("it", "test", "describe")`. They miss chained/member test calls used across Vitest, Jest, Playwright, and Deno: `test.each(...)('name', ...)`, `it.each(...)('name', ...)`, `describe.each(...)('name', ...)`, `test.concurrent('name', ...)`, and `Deno.test('name', ...)` / `Deno.test({ name: '...' }, ...)`.
+     ** **Go**: Only top-level `func TestXxx(t *testing.T)` declarations are indexed (`lines 489–490`); table-driven subtests invoked via `t.Run("subtest_name", func(t *testing.T) { ... })` cannot be targeted or resolved as `TestParent/subtest_name` or `subtest_name`.
+     ** **Rust**: `is_test` (`lines 512–518` and `617–624`) only checks `"#[test]" in full_text`, missing standard async and parameterized Rust test attributes such as `#[tokio::test]`, `#[rstest]`, `#[test_case(...)]`, and `#[async_std::test]`.
+
+== Proposed Specification Changes
+
+=== 1. Decorator-Inclusive `CodeSymbol.line_start` & `CodeSymbol.signature` (`CMP-AST-SYMBOL-INDEXER`, `CAP-VCS-001`)
+
+* **`AstGrepIndexer.extract_symbols` (`src/eidos/core/index/ast_indexer.py`)**:
+  ** When extracting class/struct/interface nodes and function/method nodes, inspect `m.parent()` for `decorated_definition` (and preceding `@decorator` / `#[...]` attribute siblings/lines). Set `line_start` to the first decorator line (`prng.start.line + 1`) and include normalized `@decorator` prefixes in `CodeSymbol.signature` (while preserving `export ` prefixing and `_evaluate_symbol_visibility` / `_evaluate_boundary_export` semantics).
+* **`FallbackIndexer.extract_symbols` (`src/eidos/core/index/ast_indexer.py`)**:
+  ** In Python `ast` extraction (`lines 641–653` and `746–792`), set `line_start = min((d.lineno for d in node.decorator_list), default=node.lineno)` and prefix `@<unparsed_decorator>` onto `_python_node_signature(node)` so `AstGrepIndexer` and `FallbackIndexer` produce consistent decorator-aware `line_start` coordinates and signatures.
+
+=== 2. Expanded Polyglot Test Extraction & AST-Backed `SpecValidator._test_symbol_exists` (`CMP-AST-SYMBOL-INDEXER`, `CMP-SPEC-VALIDATOR`, `CAP-PROD-001`)
+
+* **Expand Polyglot Test Extraction in `AstGrepIndexer` and `FallbackIndexer` (`src/eidos/core/index/ast_indexer.py`)**:
+  ** **TS/JS**: Recognize `test.each(...)("...")`, `it.each(...)("...")`, `describe.each(...)("...")`, `test.concurrent("...")`, `it.concurrent("...")`, and `Deno.test("...", ...)` / `Deno.test({ name: "..." }, ...)` in both `AstGrepIndexer` and `FallbackIndexer`.
+  ** **Go**: Extract `t.Run("<subtest>", ...)` subtest calls inside `Test*` functions, recording both the qualified `<TestFunc>/<subtest>` key and `<subtest>` key in `list_test_functions` and `extract_test_bindings`.
+  ** **Rust**: Recognize `#[tokio::test]`, `#[rstest]`, `#[test_case]`, and `#[async_std::test]` attributes (including module-qualified forms like `#[tokio::test(flavor = ...)]`) alongside `#[test]`.
+* **AST-Backed `SpecValidator._test_symbol_exists` (`src/eidos/core/spec/validator.py`)**:
+  ** Route `SpecValidator._test_symbol_exists(test_file, symbol_parts)` through `get_ast_indexer().list_test_functions(test_file, source)` and `get_ast_indexer().extract_symbols(test_file, source)` for all supported polyglot test files (checking qualified `::` / `/` keys as well as leaf symbol names), falling back to comment-stripped identifier matching only for file extensions not handled by the AST indexer.
+
+== Verification Criteria
+
+1. `uv run eidos validate eidos` passes with `0` errors across all specifications.
+2. `uv run eidos delta verify DLT-2026-089` reports all 4 mutations as `verified: true`.
+3. `uv run pytest` passes across all unit and integration suites, including new regression tests verifying:
+   * Modifying a Python/TS decorator on a public function/method/class changes `CodeSymbol.signature` and `CodeSymbol.line_start` in both `AstGrepIndexer` and `FallbackIndexer`, triggering a structural symbol diff in `diff_public_symbols`.
+   * `AstGrepIndexer` and `FallbackIndexer` extract `test.each` / `it.each` / `Deno.test` (TS/JS), `t.Run` subtests (Go), and `#[tokio::test]` / `#[rstest]` / `#[test_case]` (Rust).
+   * `SpecValidator._test_symbol_exists` rejects test symbols that appear only inside comments or unrelated string literals in non-Python test files while accepting valid AST-extracted test functions and subtests.

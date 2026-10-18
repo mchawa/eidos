@@ -9,32 +9,29 @@ intent:
   motivation: 'Decompose monolithic CMP-EIDOS-ENGINE into 4 distinct C4 containers:
     CMP-EIDOS-CORE, CMP-EIDOS-CLI, CMP-EIDOS-MCP, and CMP-EIDOS-PLUGIN.'
 mutations:
-- action: modify_component
-  target_component: CMP-EIDOS-ENGINE
-  details: 'Decompose monolithic CMP-EIDOS-ENGINE into 4 distinct C4 containers: CMP-EIDOS-CORE,
-    CMP-EIDOS-CLI, CMP-EIDOS-MCP, and CMP-EIDOS-PLUGIN.'
-- action: add_component
-  target_component: CMP-EIDOS-CORE
-  details: Author CMP-EIDOS-CORE manifest for living specification and design core
-    engine.
-- action: add_component
-  target_component: CMP-EIDOS-CLI
+- operation: modify
+  target: CMP-EIDOS-ENGINE
+  details: 'Decompose monolithic CMP-EIDOS-ENGINE into 4 distinct C4 containers: CMP-EIDOS-CORE, CMP-EIDOS-CLI, CMP-EIDOS-MCP, and CMP-EIDOS-PLUGIN.'
+- operation: add
+  target: CMP-EIDOS-CORE
+  details: Author CMP-EIDOS-CORE manifest for living specification and design core engine.
+- operation: add
+  target: CMP-EIDOS-CLI
   details: Author CMP-EIDOS-CLI manifest for command-line interface container.
-- action: add_component
-  target_component: CMP-EIDOS-MCP
-  details: Author CMP-EIDOS-MCP manifest for stdio JSON-RPC Model Context Protocol
-    daemon.
-- action: add_component
-  target_component: CMP-EIDOS-PLUGIN
+- operation: add
+  target: CMP-EIDOS-MCP
+  details: Author CMP-EIDOS-MCP manifest for stdio JSON-RPC Model Context Protocol daemon.
+- operation: add
+  target: CMP-EIDOS-PLUGIN
   details: Author CMP-EIDOS-PLUGIN manifest for agent plugin and extension manager.
-- action: modify_contract
-  target_component: CMP-EIDOS-CLI
+- operation: modify
+  target: CMP-EIDOS-CLI
   details: Update CTR-EIDOS-CLI owning_component to CMP-EIDOS-CLI.
-- action: modify_contract
-  target_component: CMP-EIDOS-MCP
+- operation: modify
+  target: CMP-EIDOS-MCP
   details: Update CTR-EIDOS-MCP owning_component to CMP-EIDOS-MCP.
-- action: modify_architecture
-  target_component: CMP-EIDOS-CORE
+- operation: modify
+  target: CMP-EIDOS-CORE
   details: Update ARCH-EIDOS-001 c4_containers topology with all 4 decomposed containers.
 ---
 

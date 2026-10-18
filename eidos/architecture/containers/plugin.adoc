@@ -25,12 +25,22 @@ components:
     source_path: "src/eidos/plugin/validator.py"
   - id: CMP-HOOK-MANAGER
     name: "HookManager"
-    responsibility: "Validates and orchestrates agent lifecycle hooks (hooks.json) with version-pinned uvx execution, documentation linters, and spec-to-code drift gates, supporting JSONC configuration files."
+    responsibility: "Validates and orchestrates agent lifecycle hooks (hooks.json) with version-pinned uvx execution, scoping eidos-doc-linter to PreToolUse, PostToolUse, and Stop and eidos-drift-gate exclusively to Stop, supporting JSONC configuration files."
     source_path: "src/eidos/plugin/validator.py"
   - id: CMP-HOOK-RUNNER
     name: "HookRunner"
-    responsibility: "Executes CLI-native PreToolUse/PostToolUse lint hooks with cross-harness payload normalization (Antigravity, Claude Code, Cursor, Cline, OpenCode, Codex; normalizing hyphenated/underscored event names and rejecting non-exempt .adoc specifications missing YAML frontmatter) and PostInvocation/Stop drift gates (handle_drift_stop, execute_drift_hook) with fast working-tree digest short-circuit caching in eidos/.cache/hook-state.json, gated on validation_passed, uncovered_invariants, orphan_invariants, and drift_detected with cause-specific non-code drift diagnostics, validation_errors fingerprinting, and TTL/session-scoped Block-Once fingerprint persistence in eidos/.cache/stop-gate.json with explicit systemMessage warning emission on second-attempt release."
+    responsibility: "Executes CLI-native PreToolUse/PostToolUse/Stop lint hooks with cross-harness payload normalization (Antigravity, Claude Code, Cursor, Cline, OpenCode, Codex; normalizing hyphenated/underscored event names and rejecting non-exempt .adoc specifications missing YAML frontmatter) and runs eidos-drift-gate strictly on Stop (handle_drift_stop, execute_drift_hook; returning a clean allow no-op on legacy PostInvocation payloads), gated on validation_passed, uncovered_invariants, orphan_invariants, and drift_detected with cause-specific non-code drift diagnostics, validation_errors fingerprinting, and TTL/session-scoped Block-Once fingerprint persistence in eidos/.cache/stop-gate.json with explicit systemMessage warning emission on second-attempt release."
     source_path: "src/eidos/plugin/hooks.py"
+
+decisions:
+  - id: DEC-PLUGIN-STOP-SCOPED-DRIFT-GATE
+    title: "Execute Full Spec-to-Code Drift Gate Strictly on Stop Instead of Per-Turn PostInvocation"
+    decision: "Scope eidos-drift-gate in hooks.json and hooks.py exclusively to the Stop lifecycle event with TTL/session-scoped Block-Once fingerprinting, while keeping PreToolUse and PostToolUse for fast single-file .adoc schema linting."
+    rationale: "Running full detect_drift after every intermediate agent turn (PostInvocation) during multi-step coding workflows adds per-turn latency, wastes context tokens, and injects distracting drift notices before the agent has finished editing code and tests."
+    rejected_alternatives:
+      - option: "Retain PostInvocation drift hook with working-tree digest short-circuiting in hook-state.json"
+        reason_rejected: "Even with clean-state digest caching, every code edit dirties the working tree and triggers full detect_drift and ephemeral prompt injection on every intermediate turn until specs are updated."
+    graduated_from: DLT-2026-087
 
 dependencies:
   internal_containers:

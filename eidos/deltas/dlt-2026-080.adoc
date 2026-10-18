@@ -11,52 +11,52 @@ intent:
   kind: enabler
   motivation: "Eliminate SpecDelta ID collisions across parallel feature branches and explicit CLI invocations, streamline delta creation ergonomics with optional IDs and --slug support, and prevent O(N) historical validation slowdowns as applied SpecDeltas accumulate in eidos/deltas/."
 mutations:
-  - action: modify_component
-    target_component: CMP-DELTA-ENGINE
-    details: "Update generate_collision_free_delta_id in src/eidos/core/lifecycle/delta_engine.py to scan all local and remote Git refs (refs/heads/* and refs/remotes/* via git for-each-ref / ls-tree) rather than only 5 hardcoded branch names, and enforce collision resolution even when an explicit DLT-YYYY-NNN ID is passed and collides with an existing local or Git-ref delta."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/core/lifecycle/delta_engine.py"
-        responsibility: "generate_collision_free_delta_id"
-  - action: modify_component
-    target_component: CMP-LIFECYCLE-SCAFFOLDER
-    details: "Update create_spec in src/eidos/core/lifecycle/scaffolder.py so canonical_key == 'delta' always routes through generate_collision_free_delta_id (passing slug_suffix) for both auto and explicit delta IDs."
-    expect:
-      frontmatter:
-        source_path:
-          - "src/eidos/core/lifecycle/scaffolder.py"
-          - "src/eidos/core/lifecycle/catalog.py"
-        responsibility: "generate_collision_free_delta_id"
-  - action: modify_component
-    target_component: CMP-CLI-DELTA-COMMANDS
-    details: "Update eidos delta create in src/eidos/cli/delta_commands.py to make the positional delta_id argument optional (defaulting to 'auto') and expose a --slug / -s option to append a deterministic title-derived slug suffix."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/cli/delta_commands.py"
-        responsibility: "--slug"
-  - action: modify_component
-    target_component: CMP-SPEC-VALIDATOR
-    details: "Optimize SpecValidator.validate_directory in src/eidos/core/spec/validator.py to fast-path immutable status: applied SpecDeltas when their spec_validation_cache entry is clean and the active schema digest is unchanged, avoiding redundant full cross-reference re-evaluation on every run unless full re-validation is requested."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/core/spec/validator.py"
-        responsibility: "spec_validation_cache"
-  - action: modify_contract
-    target_contract: CTR-EIDOS-CLI
-    details: "Document optional [DELTA_ID] (defaulting to 'auto') and --slug flag on eidos delta create in eidos/architecture/contracts/cli.adoc."
-    expect:
-      body:
-        contains:
-          - "--slug"
-  - action: extend_capability
-    target_capability: CAP-PROD-002
-    details: "Extend CAP-PROD-002 in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc to cover cross-ref collision-free delta ID generation across all local/remote Git refs and cached fast-path validation for historical applied SpecDeltas."
-    expect:
-      frontmatter:
-        status: active
-      body:
-        contains:
-          - "generate_collision_free_delta_id"
+- operation: modify
+  target: CMP-DELTA-ENGINE
+  details: Update generate_collision_free_delta_id in src/eidos/core/lifecycle/delta_engine.py to scan all local and remote Git refs (refs/heads/* and refs/remotes/* via git for-each-ref / ls-tree) rather than only 5 hardcoded branch names, and enforce collision resolution even when an explicit DLT-YYYY-NNN ID is passed and collides with an existing local or Git-ref delta.
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/lifecycle/delta_engine.py
+      responsibility: generate_collision_free_delta_id
+- operation: modify
+  target: CMP-LIFECYCLE-SCAFFOLDER
+  details: Update create_spec in src/eidos/core/lifecycle/scaffolder.py so canonical_key == 'delta' always routes through generate_collision_free_delta_id (passing slug_suffix) for both auto and explicit delta IDs.
+  expect:
+    frontmatter:
+      source_path:
+      - src/eidos/core/lifecycle/scaffolder.py
+      - src/eidos/core/lifecycle/catalog.py
+      responsibility: generate_collision_free_delta_id
+- operation: modify
+  target: CMP-CLI-DELTA-COMMANDS
+  details: Update eidos delta create in src/eidos/cli/delta_commands.py to make the positional delta_id argument optional (defaulting to 'auto') and expose a --slug / -s option to append a deterministic title-derived slug suffix.
+  expect:
+    frontmatter:
+      source_path: src/eidos/cli/delta_commands.py
+      responsibility: --slug
+- operation: modify
+  target: CMP-SPEC-VALIDATOR
+  details: 'Optimize SpecValidator.validate_directory in src/eidos/core/spec/validator.py to fast-path immutable status: applied SpecDeltas when their spec_validation_cache entry is clean and the active schema digest is unchanged, avoiding redundant full cross-reference re-evaluation on every run unless full re-validation is requested.'
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/spec/validator.py
+      responsibility: spec_validation_cache
+- operation: modify
+  target: CTR-EIDOS-CLI
+  details: Document optional [DELTA_ID] (defaulting to 'auto') and --slug flag on eidos delta create in eidos/architecture/contracts/cli.adoc.
+  expect:
+    body:
+      contains:
+      - --slug
+- operation: modify
+  target: CAP-PROD-002
+  details: Extend CAP-PROD-002 in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc to cover cross-ref collision-free delta ID generation across all local/remote Git refs and cached fast-path validation for historical applied SpecDeltas.
+  expect:
+    frontmatter:
+      status: active
+    body:
+      contains:
+      - generate_collision_free_delta_id
 ---
 = SpecDelta: Cross-Ref Collision-Safe SpecDelta ID Resolution, Optional ID/Slug CLI Ergonomics, and Applied Delta Fast-Path Validation
 :toc: left

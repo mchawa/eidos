@@ -1231,7 +1231,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    # 1. Validator and Drift caches stamp canonical SCHEMA_VERSION (2.3.0), so ArchitecturalIndex does not drop them
+    # 1. Validator and Drift caches stamp canonical SCHEMA_VERSION (2.4.0), so ArchitecturalIndex does not drop them
     validator = SpecValidator()
     validator.validate_directory(eidos_dir)
     extract_invariants_and_verify(eidos_dir, repo)
@@ -1241,7 +1241,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.3.0"
+        assert ver == SCHEMA_VERSION == "2.4.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -1948,4 +1948,152 @@ def test_dlt_2026_083_fts_and_boost_hub_suppression_and_token_calibration(tmp_pa
     assert est_code > len(code_heavy) // 4
     assert est_prose >= len(prose_text) // 4
 
+
+def test_dlt_2026_086_unified_cache_and_vcs_shim_removal(tmp_path: Path, monkeypatch) -> None:
+    """DLT-2026-086: Verify single-authority DDL in storage.py, shared get_cached_spec_document
+    defensive-copy reuse across SpecValidator, load_spec_catalog, and ArchitecturalIndex.sync,
+    and complete removal of _accepts_kwarg / sys.modules.get('eidos.vcs.drift') shims from src/eidos/vcs/."""
+    import inspect
+
+    from eidos.core.index import storage as storage_mod
+    from eidos.core.lifecycle import catalog as catalog_mod
+    from eidos.core.lifecycle.scaffolder import create_spec, init_repository
+    from eidos.core.spec import parser as parser_mod
+    from eidos.core.spec import validator as validator_mod
+    from eidos.vcs import diff as vcs_diff
+    from eidos.vcs import drift as vcs_drift
+    from eidos.vcs import invariants as vcs_invariants
+    from eidos.vcs import structural as vcs_structural
+
+    # 1. Zero inline CREATE TABLE statements in validator.py or invariants.py
+    assert "CREATE TABLE" not in inspect.getsource(validator_mod)
+    assert "CREATE TABLE" not in inspect.getsource(vcs_invariants)
+
+    # 2. _SPEC_CATALOG_CACHE is removed from catalog.py
+    assert not hasattr(catalog_mod, "_SPEC_CATALOG_CACHE")
+
+    # 3. Zero _accepts_kwarg or sys.modules.get("eidos.vcs.drift") shims in VCS modules
+    for mod in (vcs_diff, vcs_drift, vcs_invariants, vcs_structural):
+        src = inspect.getsource(mod)
+        assert "_accepts_kwarg" not in src
+        assert 'sys.modules.get("eidos.vcs.drift")' not in src
+        assert "sys.modules.get('eidos.vcs.drift')" not in src
+
+    # 4. Shared get_cached_spec_document avoids re-parsing across validate_directory, load_spec_catalog, and sync
+    init_repository(tmp_path)
+    eidos_dir = tmp_path / "eidos"
+    create_spec(eidos_dir, "domain", "DOM-CACHE-086", title="Cache 086 Domain")
+
+    parse_calls: list[str] = []
+    orig_parse = parser_mod._parse_spec_content
+
+    def _counting_parse(fp: Path, content: str):
+        parse_calls.append(fp.name)
+        return orig_parse(fp, content)
+
+    monkeypatch.setattr(parser_mod, "_parse_spec_content", _counting_parse)
+    storage_mod._PARSED_SPEC_MEM_CACHE.clear()
+
+    # Cold run through SpecValidator parses each file once and populates shared cache
+    validator = validator_mod.SpecValidator()
+    report = validator.validate_directory(eidos_dir)
+    assert report.is_clean
+    cold_count = len(parse_calls)
+    assert cold_count > 0
+
+    # Subsequent _build_spec_catalog and ArchitecturalIndex.sync reuse cached SpecDocument instances with 0 re-parses
+    parse_calls.clear()
+    specs_by_id, _, _ = catalog_mod._build_spec_catalog(eidos_dir)
+    assert "DOM-CACHE-086" in specs_by_id
+    assert parse_calls == []
+
+    # Mutating returned catalog frontmatter dict must not mutate cached SpecDocument frontmatter
+    specs_by_id["DOM-CACHE-086"][2]["name"] = "Mutated In Caller"
+    specs_again, _, _ = catalog_mod._build_spec_catalog(eidos_dir)
+    assert specs_again["DOM-CACHE-086"][2]["name"] == "Cache 086 Domain"
+
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=False)
+        assert parse_calls == []
+    finally:
+        idx.close()
+
+
+def test_dlt_2026_088_single_pass_scandir_dirty_check(tmp_path: Path) -> None:
+    """DLT-2026-088: Verify check_index_dirty detects added, modified, and deleted spec/code files
+    using single-pass os.scandir and properly checks tracked code files in sibling-prefix directories
+    outside top_code_dirs."""
+    import os
+
+    from eidos.core.index.graph_index import ArchitecturalIndex
+    from eidos.core.lifecycle.scaffolder import create_spec, init_repository
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+
+    init_repository(tmp_path)
+    eidos_dir = tmp_path / "eidos"
+    cnt_path = create_spec(eidos_dir, "container", "CNT-SCAN", title="Scan Container", package_path="src")
+    cnt_doc = parse_spec_file(cnt_path)
+    cnt_doc.frontmatter["components"] = [
+        {
+            "id": "CMP-SCAN-MOD",
+            "name": "ScanMod",
+            "responsibility": "Handles core scanning.",
+            "source_path": ["src/core_mod.py", "src_extra/outside_mod.py"],
+        }
+    ]
+    cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+
+    (tmp_path / "src").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "src_extra").mkdir(parents=True, exist_ok=True)
+    in_top_file = tmp_path / "src" / "core_mod.py"
+    outside_sibling_file = tmp_path / "src_extra" / "outside_mod.py"
+    in_top_file.write_text("def core_fn():\n    return 1\n", encoding="utf-8")
+    outside_sibling_file.write_text("def outside_fn():\n    return 1\n", encoding="utf-8")
+
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+        is_dirty0, mod0, del0 = idx.is_dirty()
+        assert is_dirty0 is False and mod0 == [] and del0 == []
+
+        # 1. Modify file inside top_code_dirs ('src/') -> detected via _scan_code_dir os.scandir pass
+        in_top_file.write_text("def core_fn():\n    return 2\n", encoding="utf-8")
+        os.utime(in_top_file, (in_top_file.stat().st_mtime + 5, in_top_file.stat().st_mtime + 5))
+        is_dirty1, mod1, _ = idx.is_dirty()
+        assert is_dirty1 is True
+        assert in_top_file.resolve() in {p.resolve() for p in mod1}
+
+        idx.sync(force=False)
+        assert idx.is_dirty()[0] is False
+
+        # 2. Modify tracked file in sibling-prefix directory ('src_extra/') outside top_code_dirs ('src/')
+        # Must NOT be skipped by a naive startswith('src') check!
+        outside_sibling_file.write_text("def outside_fn():\n    return 2\n", encoding="utf-8")
+        os.utime(
+            outside_sibling_file,
+            (outside_sibling_file.stat().st_mtime + 5, outside_sibling_file.stat().st_mtime + 5),
+        )
+        is_dirty2, mod2, _ = idx.is_dirty()
+        assert is_dirty2 is True
+        assert outside_sibling_file.resolve() in {p.resolve() for p in mod2}
+
+        idx.sync(force=False)
+        assert idx.is_dirty()[0] is False
+
+        # 3. Add a new untracked code file inside src/ -> detected as dirty
+        added_code = tmp_path / "src" / "new_helper.py"
+        added_code.write_text("def new_helper():\n    return True\n", encoding="utf-8")
+        is_dirty3, mod3, _ = idx.is_dirty()
+        assert is_dirty3 is True
+        assert added_code.resolve() in {p.resolve() for p in mod3}
+
+        # 4. Delete tracked code file -> detected in deleted list
+        added_code.unlink()
+        in_top_file.unlink()
+        is_dirty4, _mod4, del4 = idx.is_dirty()
+        assert is_dirty4 is True
+        assert Path("src/core_mod.py") in del4
+    finally:
+        idx.close()
 

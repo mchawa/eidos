@@ -11,30 +11,30 @@ intent:
   kind: enabler
   motivation: "Preserve the loop-preventing Block-Once Stop Gate contract (INV-HOOK-BLOCK-ONCE) while fixing stale cross-session fingerprints in stop-gate.json via TTL/session scoping and surfacing an explicit systemMessage warning when a second identical Stop attempt releases the gate."
 mutations:
-  - action: modify_component
-    target_component: CMP-HOOK-RUNNER
-    details: "Update _check_and_record_stop_gate, handle_lint_stop, and handle_drift_stop in src/eidos/plugin/hooks.py to retain strict Block-Once per failure fingerprint while recording metadata (fingerprint, timestamp, session_id) in eidos/.cache/stop-gate.json with TTL expiration (default 600s) and session scoping, and include an explicit systemMessage warning alongside decision: allow when a repeated identical fingerprint releases the Stop gate."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/plugin/hooks.py"
-        responsibility: "stop-gate.json"
-  - action: extend_capability
-    target_capability: CAP-AGENT-001
-    details: "Extend CAP-AGENT-001 and INV-HOOK-BLOCK-ONCE in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc to specify TTL/session expiry on recorded stop-gate fingerprints and explicit systemMessage warning emission on second-attempt release."
-    expect:
-      frontmatter:
-        status: active
-      body:
-        contains:
-          - "stop-gate.json"
-  - action: patch_invariant
-    target_capability: CAP-AGENT-001
-    target_invariant_id: INV-HOOK-BLOCK-ONCE
-    details: "Update INV-HOOK-BLOCK-ONCE rule to specify that Stop lifecycle hooks block completion once per active failure fingerprint (scoped by TTL and optional session ID in stop-gate.json) and allow subsequent termination attempts with the identical fingerprint while emitting a non-blocking systemMessage warning."
-    expect:
-      frontmatter:
-        rule: "block completion once"
-        test_binding: "tests/test_plugin.py::test_stop_gate_block_once_and_allow_second_attempt"
+- operation: modify
+  target: CMP-HOOK-RUNNER
+  details: 'Update _check_and_record_stop_gate, handle_lint_stop, and handle_drift_stop in src/eidos/plugin/hooks.py to retain strict Block-Once per failure fingerprint while recording metadata (fingerprint, timestamp, session_id) in eidos/.cache/stop-gate.json with TTL expiration (default 600s) and session scoping, and include an explicit systemMessage warning alongside decision: allow when a repeated identical fingerprint releases the Stop gate.'
+  expect:
+    frontmatter:
+      source_path: src/eidos/plugin/hooks.py
+      responsibility: stop-gate.json
+- operation: modify
+  target: CAP-AGENT-001
+  details: Extend CAP-AGENT-001 and INV-HOOK-BLOCK-ONCE in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc to specify TTL/session expiry on recorded stop-gate fingerprints and explicit systemMessage warning emission on second-attempt release.
+  expect:
+    frontmatter:
+      status: active
+    body:
+      contains:
+      - stop-gate.json
+- operation: modify
+  target: INV-HOOK-BLOCK-ONCE
+  parent: CAP-AGENT-001
+  details: Update INV-HOOK-BLOCK-ONCE rule to specify that Stop lifecycle hooks block completion once per active failure fingerprint (scoped by TTL and optional session ID in stop-gate.json) and allow subsequent termination attempts with the identical fingerprint while emitting a non-blocking systemMessage warning.
+  expect:
+    frontmatter:
+      rule: block completion once
+      test_binding: tests/test_plugin.py::test_stop_gate_block_once_and_allow_second_attempt
 ---
 = SpecDelta: Stateful Block-Once Stop Gate with TTL/Session Expiry and Explicit Bypass Warning Message
 :toc: left

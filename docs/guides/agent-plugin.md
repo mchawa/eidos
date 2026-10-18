@@ -304,21 +304,22 @@ AI agents execute Eidos CLI commands directly from terminal / subshell tools. Al
 | `eidos context` | `-f <file>`, `-c <id>`, `-t <task>`, `--tier <tier>`, `--format json` | Slices a compact architectural context subgraph (`anchor`, `guardrails`, `deep`). |
 | `eidos index repo-map` | `--max-tokens <n>`, `--format json` | Generates an AST-compressed structural repository map (~98% token reduction). |
 | `eidos index find-symbol` | `<query>`, `--limit <n>`, `--json` | Resolves classes, functions, and methods to exact file/line coordinates and owning specs. |
-| `eidos index search` | `"<query>"`, `--limit <n>` | Performs column-weighted BM25 full-text search across living spec titles, rules, and invariants. |
+| `eidos index search` | `"<query>"`, `--limit <n>`, `--json` | Performs two-tier column-weighted BM25 full-text search across living spec titles, rules, and invariants. |
 | `eidos index blast-radius` | `<symbol>`, `--depth 2`, `--json` | Computes transitive dependency and governance blast radius for a symbol or spec path. |
 | `eidos index status` | `--json` | Reports index health, cache size, AST telemetry, entity/edge counts, and auto-sync freshness. |
 | `eidos index sync` | `--force` | Incrementally synchronizes or force-rebuilds the architectural knowledge graph. |
-| `eidos drift` | `--uncommitted`, `--base <ref>`, `--json` | Inspects spec-to-code drift, substantive spec diffs, and polyglot `INV-*` test bindings. |
-| `eidos validate` | `[PATH]`, `--json` | Validates all living specifications against their bundled v1 JSON Schemas and `x-eidos-ref` links. |
+| `eidos drift` | `--uncommitted`, `--base <ref>`, `--json` | Inspects spec-to-code drift, boundary-aware spec anchoring, and polyglot `INV-*` test bindings. |
+| `eidos validate` | `[PATH]`, `--json` | Validates all living specifications against their bundled v1 JSON Schemas, `x-eidos-ref` links, and bidirectional contract parity. |
+| `eidos doctor` | `--path <path>`, `--json` | Runs workspace health diagnostics across CLI binary, living specs, index, and agent plugin hooks. |
 | `eidos info` | | Returns current engine version, loaded v1 schemas, and supported platforms. |
 | `eidos spec list` | `--type <type>`, `--status <status>`, `--json` | Lists living specifications (including inline C4 Level 3 components `CMP-*`). |
-| `eidos spec create` | `<type> <id> --title <title>` | Scaffolds a new specification document across all 16 schema types. |
+| `eidos spec create` | `<type> [id] --title <title> [--slug]` | Scaffolds a new specification document across all 16 schema types. |
 | `eidos spec delete` | `<id_or_path> [--force]` | Safely deletes a living specification with cross-reference safety checks. |
 | `eidos spec component` | `[promote\|inline] <id>` | Promotes inline C4 Level 3 components to `eidos/architecture/components/` or inlines them back. |
-| `eidos delta create` | `<id> --title <title> --kind <feature\|enabler\|bug>` | Scaffolds a new SpecDelta mutation document (`DLT-*`) for Planned Mode. |
-| `eidos delta verify` | `<id>`, `--json` | Verifies that all declared mutations and `expect:` post-conditions hold in the spec catalog. |
+| `eidos delta create` | `[id] --title <title> --kind <feature\|enabler\|bug> [--slug]` | Scaffolds a new collision-free SpecDelta mutation document (`DLT-*`) for Planned Mode. |
+| `eidos delta verify` | `<id>`, `--json` | Verifies that all declared mutations and closed-schema `expect:` post-conditions hold in the spec catalog. |
 | `eidos delta audit` | `<id>`, `--strict`, `--json` | Audits removed/deprecated entities for dangling references vs. approved tombstones. |
-| `eidos delta apply` | `<id>`, `--execute`, `--verify`, `--json` | Reconciles a SpecDelta in-place (`status: applied`) and optionally executes structural mutations. |
+| `eidos delta apply` | `<id>`, `--execute`, `--verify/--no-verify`, `--json` | Verifies declared mutations by default (`--verify`), reconciles a SpecDelta in-place (`status: applied`), and optionally executes `expect`-driven structural mutations. |
 | `eidos delta changelog` | `--stdout`, `--output <file>` | Compiles Keep a Changelog release notes from Git tags and applied SpecDeltas. |
 | `eidos init` | `[PATH]`, `--lite` | Bootstraps a repository with the full catalog or progressive 3-file Eidos Lite profile. |
 
@@ -441,10 +442,10 @@ In agent harnesses that support lifecycle hooks (Google Antigravity, Claude Code
 
 1. **`eidos-doc-linter` (`eidos hook lint`)**:
    * **PreToolUse Gate**: Intercepts file-creation and write tool calls before execution, blocking attempts to create prohibited standalone ADR files (`docs/adr/`, `ADR-*.md`).
-   * **PostToolUse / PostInvocation Gate**: Automatically validates modified `.adoc` files against their v1 JSON Schemas and reports schema errors back to the agent immediately.
+   * **PostToolUse / Stop Gate**: Automatically validates modified `.adoc` files against their v1 JSON Schemas on file edits (`PostToolUse`) and validates the living specification catalog at task completion (`Stop`), reporting schema errors back to the agent immediately.
 2. **`eidos-drift-gate` (`eidos hook drift`)**:
-   * **Block-Once Stop Gate**: When an agent attempts to end its turn (`Stop` event), `eidos hook drift --event stop` runs `eidos drift --uncommitted`. If unmanaged code drift or broken test bindings are detected, Eidos blocks completion and injects the exact `remediation_suggestions` into the agent's context so it can self-correct.
-   * **Loop Prevention (`eidos/.cache/stop-gate.json`)**: Eidos hashes the current drift state using SHA-256. If an agent is genuinely blocked by an external constraint and hits the exact same drift fingerprint twice in a row, the Block-Once mechanism allows the turn to stop cleanly so the agent can ask the human user for guidance.
+   * **Stateful Block-Once Stop Gate (`DLT-2026-084`, `DLT-2026-087`)**: Exclusively when an agent attempts to conclude its task (`Stop` event), `eidos hook drift --event stop` runs `eidos drift --uncommitted`. If unmanaged code drift or broken test bindings are detected, Eidos blocks completion once and injects the exact `remediation_suggestions` into the agent's context so it can self-correct.
+   * **TTL & Session-Scoped Loop Prevention (`eidos/.cache/stop-gate.json`)**: Eidos stores `{hash, timestamp, session_id}` for the current failure fingerprint (expiring after `EIDOS_STOP_GATE_TTL_SECONDS`, default `600s`). If an agent is genuinely blocked by an external constraint and hits the exact same drift fingerprint twice within the same active session, the Block-Once mechanism releases the gate with an explicit `systemMessage` warning so the agent can ask the human user for guidance.
 
 ---
 

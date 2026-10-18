@@ -2751,3 +2751,221 @@ def test_dlt_2026_085_mutations_target_ref_validation_and_schema_rejection(tmp_p
     assert "CAP-MISSING-PARENT" in broken
     assert "CMP-MISSING-MODIFIED" in broken
 
+
+def test_dlt_2026_086_fault_tolerant_frontmatter_model_and_cache_isolation(
+    tmp_path: Path, validator: SpecValidator
+) -> None:
+    """DLT-2026-086: FrontmatterModel gracefully coerces incomplete/malformed nested fields
+    (null technical block, shorthand invariant strings, legacy c4_internal_components, non-dict decisions)
+    without raising pydantic.ValidationError, and get_cached_spec_document isolates post-parse errors."""
+    from eidos.core.index.storage import get_cached_spec_document
+    from eidos.core.spec.models import FrontmatterModel
+
+    # 1. Fault-tolerant FrontmatterModel coercion on malformed/partial dicts (# eidos:fixture)
+    fm = FrontmatterModel.model_validate(
+        {
+            "type": "tech/container",
+            "id": ["CNT-LIST-ID"],
+            "name": 123,
+            "package_path": ["src/a", "src/b"],
+            "technical": None,
+            "invariants": [
+                "INV-SHORTHAND-001",
+                {"id": "INV-DICT-001", "rule": None, "verification": "tests/test_a.py::test_ok"},
+            ],
+            "c4_internal_components": [
+                {
+                    "id": "CMP-LEGACY-INLINE",
+                    "source_path": ["src/a/mod.py"],
+                    "invariants": [{"id": "INV-CMP-001", "rule": "Rule", "test_binding": "tests/test_a.py::test_cmp"}],
+                }
+            ],
+            "decisions": [
+                {"id": "DEC-PARTIAL-001", "rejected_alternatives": ["plain-string-alt", {"option": "OptB"}]},
+                "non-dict-decision-ignored",
+            ],
+        }
+    )
+    assert fm.id is None
+    assert fm.name == "123"
+    assert fm.package_paths() == ["src/a", "src/b"]
+    assert fm.components[0].source_paths() == ["src/a/mod.py"]
+    inv_ids = [inv.id for inv in fm.all_invariants()]
+    assert inv_ids == ["INV-SHORTHAND-001", "INV-DICT-001", "INV-CMP-001"]
+    assert fm.invariants[1].effective_test_binding() == "tests/test_a.py::test_ok"
+    assert len(fm.all_decisions()) == 1
+    assert fm.all_decisions()[0].rejected_alternatives[0].option == "plain-string-alt"
+
+    # 2. Cached SpecDocument defensive copy prevents cross-reference errors from mutating cached parse errors
+    spec_file = tmp_path / "sample.adoc"
+    spec_file.write_text(
+        "---\n"
+        "type: product/domain\n"
+        "schema: schemas/v1/product/domain.schema.yaml\n"
+        "id: DOM-ISOLATION\n"
+        "title: Isolation Domain\n"
+        "---\n"
+        "= Isolation Domain\n",
+        encoding="utf-8",
+    )
+    doc1, _, _ = get_cached_spec_document(spec_file)
+    assert doc1 is not None
+    assert doc1.errors == []
+    doc1.errors.append("Cross-ref error appended by caller")
+
+    doc2, _, _ = get_cached_spec_document(spec_file)
+    assert doc2 is not None
+    assert doc2.errors == []
+
+
+def test_dlt_2026_087_composable_delta_mutation_validation(tmp_path):
+    """Verify DLT-2026-087: SpecValidator validates composable mutations (operation + target + parent)."""  # eidos:fixture
+    eidos_dir = tmp_path / "eidos"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    dlt_dir = eidos_dir / "deltas"
+    cnt_dir.mkdir(parents=True)
+    dlt_dir.mkdir(parents=True)
+    src_dir = tmp_path / "src" / "core"
+    src_dir.mkdir(parents=True)
+    (src_dir / "engine.py").write_text("def run(): pass\n", encoding="utf-8")
+
+    (cnt_dir / "core.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-CORE\n"
+        "name: Core\n"
+        "container_type: library\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/core\n"
+        "components:\n"
+        "  - id: CMP-ENGINE\n"
+        "    name: Engine\n"
+        "    responsibility: Runs core engine\n"
+        "    source_path: src/core/engine.py\n"
+        "invariants:\n"
+        "  - id: INV-" + "CORE-001\n"
+        "    rule: Core must run\n"
+        "    test_binding: N/A\n"
+        "---\n"
+        "= Core\n",
+        encoding="utf-8",
+    )
+
+    # Valid composable SpecDelta
+    valid_dlt = dlt_dir / "dlt-2026-001.adoc"
+    valid_dlt.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-001\n"
+        "title: Valid Composable Delta\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: enabler\n"
+        "  motivation: Test composable schema.\n"
+        "mutations:\n"
+        "  - operation: modify\n"
+        "    target: CMP-ENGINE\n"
+        "    parent: CNT-CORE\n"
+        "  - operation: modify\n"
+        "    target: INV-" + "CORE-001\n"
+        "    parent: CNT-CORE\n"
+        "  - operation: add\n"
+        "    target: CMP-NEW-WORKER\n"
+        "    parent: CNT-CORE\n"
+        "---\n"
+        "= Valid Composable Delta\n",
+        encoding="utf-8",
+    )
+
+    validator = SpecValidator()
+    rep_ok = validator.validate_directory(eidos_dir)
+    assert rep_ok.is_clean, f"Expected clean report, got schema={rep_ok.schema_errors}, refs={rep_ok.broken_references}"
+
+    # Invalid composable SpecDelta: deprecate on CMP-*, add on ARCH-*, add INV-* without parent, and missing modify target
+    bad_dlt = dlt_dir / "dlt-2026-002.adoc"
+    bad_dlt.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-002\n"
+        "title: Invalid Composable Delta\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: enabler\n"
+        "  motivation: Test invalid composable rules.\n"
+        "mutations:\n"
+        "  - operation: deprecate\n"
+        "    target: CMP-ENGINE\n"
+        "  - operation: add\n"
+        "    target: ARCH-SYSTEM-001\n"
+        "  - operation: add\n"
+        "    target: INV-" + "ORPHAN-001\n"
+        "  - operation: modify\n"
+        "    target: CMP-NONEXISTENT\n"
+        "---\n"
+        "= Invalid Composable Delta\n",
+        encoding="utf-8",
+    )
+    rep_bad = validator.validate_directory(eidos_dir)
+    assert not rep_bad.is_clean
+    schema_errs = "\n".join(e for errs in rep_bad.schema_errors.values() for e in errs)
+    assert "operation 'deprecate' is only supported for CAP-* and POL-*" in schema_errs
+    assert "ARCH-* targets only support operation 'modify'" in schema_errs
+    assert "requires a 'parent' specification ID" in schema_errs
+    assert any("CMP-NONEXISTENT" in r for r in rep_bad.broken_references)
+
+
+def test_ast_backed_polyglot_test_symbol_exists_rejects_comments_and_strings(tmp_path: Path) -> None:
+    """Verify DLT-2026-089: SpecValidator._test_symbol_exists uses AST test/symbol extraction instead of raw regex."""
+    ts_file = tmp_path / "widget.test.ts"
+    ts_file.write_text(
+        "// function ghostCommentTest() {}\n"
+        "/* it('ghostBlockCommentTest', () => {}) */\n"
+        "const note = 'ghostStringLiteralTest should not match';\n"
+        "test.each([[1, 2]])('validates matrix %i', (a, b) => {});\n"
+        "Deno.test({ name: 'deno runtime check', fn() {} });\n"
+        "export function verifyRealHelper() {}\n",
+        encoding="utf-8",
+    )
+    assert SpecValidator._test_symbol_exists(ts_file, ["ghostCommentTest"]) is False
+    assert SpecValidator._test_symbol_exists(ts_file, ["ghostBlockCommentTest"]) is False
+    assert SpecValidator._test_symbol_exists(ts_file, ["ghostStringLiteralTest"]) is False
+    assert SpecValidator._test_symbol_exists(ts_file, ["validates matrix %i"]) is True
+    assert SpecValidator._test_symbol_exists(ts_file, ["deno runtime check"]) is True
+    assert SpecValidator._test_symbol_exists(ts_file, ["verifyRealHelper"]) is True
+
+    go_file = tmp_path / "store_test.go"
+    go_file.write_text(
+        "package store\n"
+        "import \"testing\"\n"
+        "// func TestDeletedInComment(t *testing.T) {}\n"
+        "func TestStore(t *testing.T) {\n"
+        "    msg := \"TestDeletedInString\"\n"
+        "    _ = msg\n"
+        "    t.Run(\"subtest_atomic_write\", func(t *testing.T) {})\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    assert SpecValidator._test_symbol_exists(go_file, ["TestDeletedInComment"]) is False
+    assert SpecValidator._test_symbol_exists(go_file, ["TestDeletedInString"]) is False
+    assert SpecValidator._test_symbol_exists(go_file, ["TestStore"]) is True
+    assert SpecValidator._test_symbol_exists(go_file, ["TestStore/subtest_atomic_write"]) is True
+    assert SpecValidator._test_symbol_exists(go_file, ["TestStore", "subtest_atomic_write"]) is True
+    assert SpecValidator._test_symbol_exists(go_file, ["WrongParent", "subtest_atomic_write"]) is False
+
+    rs_file = tmp_path / "engine_test.rs"
+    rs_file.write_text(
+        "// fn fake_commented_rust_test() {}\n"
+        "#[tokio::test]\n"
+        "async fn real_tokio_async_test() {\n"
+        "    let _s = \"fake_string_rust_test\";\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    assert SpecValidator._test_symbol_exists(rs_file, ["fake_commented_rust_test"]) is False
+    assert SpecValidator._test_symbol_exists(rs_file, ["fake_string_rust_test"]) is False
+    assert SpecValidator._test_symbol_exists(rs_file, ["real_tokio_async_test"]) is True
+
+

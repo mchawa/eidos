@@ -9,12 +9,11 @@ intent:
   motivation: Store SpecDeltas at permanent flat file paths under eidos/deltas/ and
     manage browseable lifecycle views via gitignored symlinks in eidos/deltas/by-status/.
 mutations:
-- action: modify_contract
-  target_component: CMP-EIDOS-ENGINE
-  details: Update CTR-EIDOS-CLI with flat delta lifecycle commands and status/sync-views
-    commands.
-- action: modify_component
-  target_component: CMP-EIDOS-ENGINE
+- operation: modify
+  target: CMP-EIDOS-ENGINE
+  details: Update CTR-EIDOS-CLI with flat delta lifecycle commands and status/sync-views commands.
+- operation: modify
+  target: CMP-EIDOS-ENGINE
   details: Update LifecycleScaffolder with sync_delta_views and get_delta_status_summary.
 ---
 

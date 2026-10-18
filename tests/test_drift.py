@@ -44,7 +44,7 @@ def test_drift_detection_code_without_specs(monkeypatch):
     # Mock get_git_diff_files to simulate un-synchronized code edits
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
             "src/eidos/cli/main.py",
         ],
     )
@@ -61,7 +61,7 @@ def test_pr_check_gate_pass_direct(monkeypatch):
     """Verify INV-DRIFT-DETECTION-ACCURACY: gate passes when code and living specs co-evolve together directly."""
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
             "src/eidos/cli/main.py",
             "eidos/architecture/containers/cli.adoc",
         ],
@@ -78,14 +78,14 @@ def test_pr_check_gate_pass_planned(monkeypatch):
     """Verify gate recognizes planned mode when SpecDelta is present in diff."""
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
             "src/eidos/core/spec/parser.py",
             "eidos/deltas/dlt-2026-010.adoc",
         ],
     )
     monkeypatch.setattr(
         "eidos.vcs.drift._get_file_versions",
-        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: (
             (None, (Path.cwd() / rel_path).read_text(encoding="utf-8"))
             if "dlt-2026-010" in rel_path
             else (
@@ -105,7 +105,7 @@ def test_reconcile_specs_catalog_and_prompt(monkeypatch):
     """Verify reconcile_specs extracts catalog and generates structured AI prompt."""
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
             "src/eidos/cli/main.py",
         ],
     )
@@ -123,7 +123,7 @@ def test_cli_drift_and_reconcile_commands(monkeypatch, tmp_path):
     """Verify CLI drift, reconcile, and sync commands."""
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
             "src/eidos/cli/main.py",
             "eidos/architecture/containers/cli.adoc",
         ],
@@ -469,7 +469,7 @@ def test_classify_changed_files_batches_is_generated_or_vendored(tmp_path, monke
         # Mark generated.py as vendored
         return {p for p in rel_paths if "generated.py" in p}
 
-    monkeypatch.setattr("eidos.vcs.drift.is_generated_or_vendored", mock_is_generated_or_vendored)
+    monkeypatch.setattr("eidos.vcs.diff.is_generated_or_vendored", mock_is_generated_or_vendored)
 
     files = [
         "src/app.py",
@@ -550,7 +550,7 @@ def test_resolve_base_ref_single_pass(tmp_path, monkeypatch):
         resolve_calls.append(b)
         return orig_resolve_base(r, b)
 
-    monkeypatch.setattr("eidos.vcs.drift._resolve_base_ref", spy_resolve_base)
+    monkeypatch.setattr("eidos.vcs.diff._resolve_base_ref", spy_resolve_base)
     drift_res = detect_drift(repo_root=repo, eidos_dir=repo / "eidos")
     assert len(resolve_calls) == 1
     assert drift_res.drift_detected is False
@@ -677,7 +677,7 @@ def test_design_system_drift_detection(monkeypatch):
     # 1. Frontend CSS changed without eidos/design updates -> drift detected
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
             "src/eidos/portal/frontend/src/theme/theme.css",
         ],
     )
@@ -688,7 +688,7 @@ def test_design_system_drift_detection(monkeypatch):
     # 2. Frontend CSS changed WITH tokens.json updated -> clean!
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
             "src/eidos/portal/frontend/src/theme/theme.css",
             "eidos/design/systems/core/tokens.json",
         ],
@@ -703,14 +703,14 @@ def test_uncovered_delta_drift_detection(monkeypatch):
     # dlt-2026-001 targets CLI, but portal frontend code was modified without portal/design spec updates
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
             "eidos/deltas/dlt-2026-001.adoc",
             "src/eidos/portal/frontend/src/theme/theme.css",
         ],
     )
     monkeypatch.setattr(
         "eidos.vcs.drift._get_file_versions",
-        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: (
             (None, (Path.cwd() / rel_path).read_text(encoding="utf-8"))
             if "dlt-2026-001" in rel_path
             else (_OLD_CSS, _TOKEN_CSS)
@@ -821,7 +821,7 @@ def test_structural_vs_body_only_drift_detection(monkeypatch):
 
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
             "src/eidos/cli/main.py",
         ],
     )
@@ -829,7 +829,7 @@ def test_structural_vs_body_only_drift_detection(monkeypatch):
     # 1. Body-only edit -> NO drift!
     monkeypatch.setattr(
         "eidos.vcs.drift._get_file_versions",
-        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: (
             old_code,
             body_only_new_code,
         ),
@@ -842,7 +842,7 @@ def test_structural_vs_body_only_drift_detection(monkeypatch):
     # 2. Signature change (structural) without spec update -> DRIFT detected!
     monkeypatch.setattr(
         "eidos.vcs.drift._get_file_versions",
-        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: (
             old_code,
             structural_new_code,
         ),
@@ -857,7 +857,7 @@ def test_scoped_1hop_neighborhood_drift_verification(monkeypatch):
     # 1. CLI code changed + unrelated Portal container spec changed -> DRIFT detected!
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
             "src/eidos/cli/main.py",
             "eidos/architecture/containers/portal.adoc",
         ],
@@ -869,7 +869,7 @@ def test_scoped_1hop_neighborhood_drift_verification(monkeypatch):
     # 2. CLI code changed + 1-hop neighbor contract (eidos/architecture/contracts/cli.adoc) changed -> CLEAN!
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
             "src/eidos/cli/main.py",
             "eidos/architecture/contracts/cli.adoc",
         ],
@@ -884,7 +884,7 @@ def test_system_spec_does_not_mask_component_drift(monkeypatch):
     for system_spec in ("eidos/system.adoc", "eidos/architecture/system-architecture.adoc"):
         monkeypatch.setattr(
             "eidos.vcs.drift.get_git_diff_files",
-            lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, _s=system_spec: [
+            lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None, _s=system_spec: [
                 "src/eidos/cli/main.py",
                 _s,
             ],
@@ -903,14 +903,14 @@ _TOKEN_CSS = ":root {\n  --md-sys-color-primary: #7c4dff;\n}\n.card {\n  padding
 def _mock_versions(monkeypatch, new_css):
     monkeypatch.setattr(
         "eidos.vcs.drift._get_file_versions",
-        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (_OLD_CSS, new_css),
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: (_OLD_CSS, new_css),
     )
 
 
 def _mock_diff(monkeypatch, files):
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: list(files),
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: list(files),
     )
 
 
@@ -1083,14 +1083,14 @@ blast_radius:
 
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
             "src/core/engine.py",
             "eidos/deltas/dlt-2026-099.adoc",
         ],
     )
     monkeypatch.setattr(
         "eidos.vcs.drift._get_file_versions",
-        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: (
             "def run_engine() -> int:\n    return 0\n",
             "def run_engine(x: int) -> int:\n    return x\n",
         ),
@@ -1165,7 +1165,7 @@ mutations:
 
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: [
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
             "src/core/engine.py",
             "eidos/deltas/dlt-2026-101.adoc",
             "eidos/deltas/dlt-2026-102.adoc",
@@ -1173,7 +1173,7 @@ mutations:
     )
     monkeypatch.setattr(
         "eidos.vcs.drift._get_file_versions",
-        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: (
             (applied_old, applied_new)
             if "dlt-2026-102" in rel_path
             else ("def run_engine() -> int:\n    return 0\n", "def run_engine(x: int) -> int:\n    return x\n")
@@ -1249,11 +1249,11 @@ def _diff_aware_env(tmp_path, monkeypatch, changed, versions, spec_text=_SPEC_BA
 
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
-        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False: list(changed),
+        lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: list(changed),
     )
     monkeypatch.setattr(
         "eidos.vcs.drift._get_file_versions",
-        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: versions.get(
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: versions.get(
             rel_path, (None, None)
         ),
     )
@@ -1918,7 +1918,7 @@ def test_trivial_tokens_json_edit_does_not_cover_design_token_drift(monkeypatch)
     _mock_diff(monkeypatch, [THEME, tokens_path])
     monkeypatch.setattr(
         "eidos.vcs.drift._get_file_versions",
-        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False: (
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: (
             (tokens_old, tokens_trivial) if rel_path == tokens_path else (_OLD_CSS, _TOKEN_CSS)
         ),
     )

@@ -16,7 +16,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from eidos.core.spec.parser import parse_spec_file
+from eidos.core.index.storage import (
+    get_cached_spec_document,
+    load_spec_validation_cache,
+    load_test_binding_cache,
+    save_test_binding_cache,
+)
 from eidos.vcs.diff import POLYGLOT_EXCLUDED_DIRS, is_polyglot_test_file
 
 
@@ -123,26 +128,7 @@ def _load_or_update_test_binding_cache(
 
     cached_rows: dict[str, sqlite3.Row] = {}
     if effective_eidos.exists():
-        from eidos.core.index.graph_index import open_cache_connection
-
-        with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn, conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS test_binding_cache (
-                    file_path TEXT PRIMARY KEY,
-                    mtime_ns INTEGER NOT NULL,
-                    sha256 TEXT NOT NULL,
-                    has_fixture INTEGER NOT NULL DEFAULT 0,
-                    functions_json TEXT NOT NULL,
-                    bindings_json TEXT NOT NULL,
-                    file_tokens_json TEXT NOT NULL
-                );
-                """
-            )
-            for row in conn.execute(
-                "SELECT file_path, mtime_ns, sha256, has_fixture, functions_json, bindings_json, file_tokens_json FROM test_binding_cache;"
-            ):
-                cached_rows[row["file_path"]] = row
+        cached_rows = load_test_binding_cache(db_path)
 
     discovered: list[tuple[str, Path, int]] = []
     used_git_tracked = False
@@ -253,36 +239,7 @@ def _load_or_update_test_binding_cache(
 
     deleted_keys = [k for k in cached_rows if k not in seen_rels]
     if effective_eidos.exists() and (to_upsert or deleted_keys):
-        from eidos.core.index.graph_index import open_cache_connection
-
-        with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn, conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS test_binding_cache (
-                    file_path TEXT PRIMARY KEY,
-                    mtime_ns INTEGER NOT NULL,
-                    sha256 TEXT NOT NULL,
-                    has_fixture INTEGER NOT NULL DEFAULT 0,
-                    functions_json TEXT NOT NULL,
-                    bindings_json TEXT NOT NULL,
-                    file_tokens_json TEXT NOT NULL
-                );
-                """
-            )
-            if deleted_keys:
-                conn.executemany(
-                    "DELETE FROM test_binding_cache WHERE file_path = ?;",
-                    [(k,) for k in deleted_keys],
-                )
-            if to_upsert:
-                conn.executemany(
-                    """
-                    INSERT OR REPLACE INTO test_binding_cache
-                    (file_path, mtime_ns, sha256, has_fixture, functions_json, bindings_json, file_tokens_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?);
-                    """,
-                    to_upsert,
-                )
+        save_test_binding_cache(db_path, to_upsert, deleted_keys)
 
     return result
 
@@ -500,15 +457,16 @@ def extract_invariants_and_verify(
         return str(path.relative_to(repo_root) if path.is_relative_to(repo_root) else path)
 
     def _record(inv: Any, spec_path: Path, spec_id: str) -> None:
-        if not isinstance(inv, dict) or not inv.get("id"):
+        iid = getattr(inv, "id", None) if not isinstance(inv, dict) else inv.get("id")
+        if not iid:
             return
-        iid = inv["id"]
-        tb = inv.get("test_binding")
+        tb = (inv.effective_test_binding() or None) if hasattr(inv, "effective_test_binding") else inv.get("test_binding")
+        rule = (getattr(inv, "rule", None) or "") if not isinstance(inv, dict) else inv.get("rule", "")
         matching = _verify_single_invariant(iid, tb, repo_root, cached_tests, inv_to_test_funcs)
         invariants.append(
             InvariantTrace(
                 invariant_id=iid,
-                rule=inv.get("rule", ""),
+                rule=rule,
                 spec_path=_spec_rel(spec_path),
                 spec_id=spec_id,
                 test_binding=tb,
@@ -519,16 +477,8 @@ def extract_invariants_and_verify(
 
     resolved_repo_root = repo_root.resolve()
     resolved_eidos_dir = eidos_dir.resolve()
-    spec_cache_rows: dict[str, tuple[int, str]] = {}
     db_path = resolved_eidos_dir / ".cache" / "index.db"
-    if db_path.exists():
-        from eidos.core.index.graph_index import open_cache_connection
-
-        with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn:
-            for file_path_col, mtime_col, doc_json_col in conn.execute(
-                "SELECT file_path, mtime_ns, doc_json FROM spec_validation_cache;"
-            ):
-                spec_cache_rows[file_path_col] = (int(mtime_col), str(doc_json_col))
+    cached_rows = load_spec_validation_cache(db_path) if db_path.exists() else {}
 
     scan_roots: list[tuple[str, tuple[str, ...]]] = [
         ("domains", ("product/capability",)),
@@ -540,47 +490,39 @@ def extract_invariants_and_verify(
         if not root_dir.exists():
             continue
         for spec_path in sorted(root_dir.rglob("*.adoc")):
-            doc_type: str | None = None
-            doc_id: str = "unknown"
-            fm: dict[str, Any] = {}
             res_spec = spec_path.resolve()
             rel_key: str | None = None
             for base in (resolved_repo_root, resolved_eidos_dir):
                 try:
-                    rel_key = str(res_spec.relative_to(base)).replace("\\", "/")
-                    break
+                    cand = str(res_spec.relative_to(base)).replace("\\", "/")
+                    if cand in cached_rows:
+                        rel_key = cand
+                        break
                 except ValueError:
                     continue
-            if rel_key and rel_key in spec_cache_rows:
-                with contextlib.suppress(OSError, ValueError, TypeError, KeyError):
-                    st_mtime_ns = spec_path.stat().st_mtime_ns
-                    cached_mtime_ns, doc_json_str = spec_cache_rows[rel_key]
-                    if cached_mtime_ns == st_mtime_ns:
-                        doc_data = json.loads(doc_json_str)
-                        doc_type = str(doc_data.get("doc_type") or "unknown")
-                        doc_id = str(doc_data.get("doc_id") or "unknown")
-                        fm = doc_data.get("frontmatter") or {}
-            if doc_type is None:
-                try:
-                    doc = parse_spec_file(spec_path)
-                except OSError:
-                    continue
-                doc_type = doc.doc_type
-                doc_id = doc.doc_id
-                fm = doc.frontmatter or {}
+            try:
+                doc, _, _ = get_cached_spec_document(
+                    spec_path,
+                    cached_row=cached_rows.get(rel_key) if rel_key else None,
+                )
+            except OSError:
+                continue
+            if doc is None:
+                continue
+            doc_type = doc.doc_type
+            doc_id = doc.doc_id
             if doc_type not in doc_types:
                 continue
-            tech = fm.get("technical") if isinstance(fm.get("technical"), dict) else {}
+            model = doc.model
             if doc_type == "product/capability":
-                inv_list = tech.get("invariants", []) or []
+                inv_list = model.technical.invariants
             elif doc_type == "tech/container":
-                for comp in fm.get("components", []) or fm.get("c4_internal_components", []) or []:
-                    if isinstance(comp, dict):
-                        for inv in comp.get("invariants", []) or []:
-                            _record(inv, spec_path, str(comp.get("id") or doc_id))
-                inv_list = fm.get("invariants", []) or tech.get("invariants", []) or []
+                for comp in model.components:
+                    for inv in comp.invariants:
+                        _record(inv, spec_path, str(comp.id or doc_id))
+                inv_list = model.invariants or model.technical.invariants
             else:
-                inv_list = fm.get("invariants", []) or tech.get("invariants", []) or []
+                inv_list = model.invariants or model.technical.invariants
             for inv in inv_list:
                 _record(inv, spec_path, doc_id)
 

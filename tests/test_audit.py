@@ -400,5 +400,39 @@ def test_dlt_2026_083_audit_ignores_gitignored_files(tmp_path):
     assert "custom_scratch_build/stale.py" not in files_scanned
 
 
+def test_dlt_2026_087_audit_composable_remove_and_deprecate_mutations(tmp_path):
+    """Verify AuditEngine extracts removed/deprecated targets and parent context from composable (operation + target + parent) mutations."""
+    eidos_dir = tmp_path / "eidos"
+    deltas_dir = eidos_dir / "deltas"
+    deltas_dir.mkdir(parents=True)
+
+    delta_file = deltas_dir / "dlt-2026-087-audit.adoc"
+    delta_file.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-087\n"
+        "title: Composable Removal Audit\n"
+        "status: applied\n"
+        "intent:\n"
+        "  kind: enabler\n"
+        "  motivation: Remove legacy component.\n"
+        "mutations:\n"
+        "  - operation: remove\n"
+        "    target: CMP-OLD-WORKER\n"
+        "    parent: CNT-KEEP-PARENT\n"
+        "    details: Remove CMP-OLD-WORKER from CNT-KEEP-PARENT.\n"
+        "---\n"
+        "= Composable Removal Audit\n",
+        encoding="utf-8",
+    )
+
+    engine = AuditEngine(repo_root=tmp_path, eidos_dir=eidos_dir)
+    res = engine.audit_delta("DLT-2026-087")
+    assert res.is_clean
+    assert "CMP-OLD-WORKER" in res.targets_audited
+    assert "CNT-KEEP-PARENT" not in res.targets_audited
+
+
 
 

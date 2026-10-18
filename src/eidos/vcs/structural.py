@@ -6,10 +6,8 @@ specification diffs, and evaluates 1-hop and design subgraph coverage.
 
 from __future__ import annotations
 
-import inspect
 import json
 import re
-import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -55,16 +53,6 @@ _ADOC_VERBATIM_DELIM_RE = re.compile(r"^(-{4,}|\.{4,}|\+{4,})$")
 _FRONTMATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", re.DOTALL)
 _OWNERSHIP_KEYS = ("components", "source_path", "owned_path", "package_path")
 _MIN_ANCHOR_LEN = 3
-
-
-def _accepts_kwarg(fn: Any, kwarg: str) -> bool:
-    try:
-        params = inspect.signature(fn).parameters
-    except (TypeError, ValueError):
-        return False
-    return kwarg in params or any(
-        p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
-    )
 
 
 @dataclass
@@ -287,38 +275,28 @@ class _SpecDiffInspector:
         head_ref: str,
         uncommitted: bool,
         merge_base: str | None = None,
+        versions_fn: Any = None,
     ) -> None:
         self._root = root
         self._base_ref = base_ref
         self._head_ref = head_ref
         self._uncommitted = uncommitted
         self.merge_base = merge_base
+        self._versions_fn = versions_fn
         self._versions: dict[str, tuple[str | None, str | None]] = {}
 
     def versions(self, spec: str) -> tuple[str | None, str | None]:
         if spec not in self._versions:
-            drift_mod = sys.modules.get("eidos.vcs.drift")
-            get_versions_fn = (
-                getattr(drift_mod, "_get_file_versions", _get_file_versions)
-                if drift_mod
-                else _get_file_versions
-            )
-            if _accepts_kwarg(get_versions_fn, "merge_base"):
-                self._versions[spec] = get_versions_fn(
+            if self._versions_fn is not None:
+                self._versions[spec] = self._versions_fn(spec)
+            else:
+                self._versions[spec] = _get_file_versions(
                     self._root,
                     spec,
                     base_ref=self._base_ref,
                     head_ref=self._head_ref,
                     uncommitted=self._uncommitted,
                     merge_base=self.merge_base,
-                )
-            else:
-                self._versions[spec] = get_versions_fn(
-                    self._root,
-                    spec,
-                    base_ref=self._base_ref,
-                    head_ref=self._head_ref,
-                    uncommitted=self._uncommitted,
                 )
         return self._versions[spec]
 

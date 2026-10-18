@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from eidos.core.index.storage import open_cache_connection
+from eidos.core.index.storage import get_cached_spec_document, open_cache_connection
 from eidos.core.lifecycle.catalog import (
     _build_spec_catalog_with_invariants,
     _mutate_frontmatter_components,
@@ -202,31 +202,28 @@ def sync_delta_views(eidos_dir: Path) -> dict[str, list[Path]]:
     for p in sorted(deltas_dir.rglob("*.adoc")):
         if "by-status" in p.parts:
             continue
-        try:
-            doc = parse_spec_file(p)
-            if doc.doc_type != "delta/mutation":
-                continue
+        doc, _, _ = get_cached_spec_document(p)
+        if doc is None or doc.doc_type != "delta/mutation":
+            continue
 
-            status = str(doc.frontmatter.get("status", "proposed")).lower().strip()
-            cat_name = status if status in categories else "proposed"
-            link_path = views_dir / cat_name / p.name
-            rel_target = os.path.relpath(p, views_dir / cat_name)
+        status = str(doc.frontmatter.get("status", "proposed")).lower().strip()
+        cat_name = status if status in categories else "proposed"
+        link_path = views_dir / cat_name / p.name
+        rel_target = os.path.relpath(p, views_dir / cat_name)
+        try:
+            link_path.symlink_to(rel_target)
+            synced[cat_name].append(p)
+        except OSError:
+            pass
+
+        if status in ACTIVE_DELTA_STATUSES:
+            active_link = views_dir / "active" / p.name
+            rel_active = os.path.relpath(p, views_dir / "active")
             try:
-                link_path.symlink_to(rel_target)
-                synced[cat_name].append(p)
+                active_link.symlink_to(rel_active)
+                synced["active"].append(p)
             except OSError:
                 pass
-
-            if status in ACTIVE_DELTA_STATUSES:
-                active_link = views_dir / "active" / p.name
-                rel_active = os.path.relpath(p, views_dir / "active")
-                try:
-                    active_link.symlink_to(rel_active)
-                    synced["active"].append(p)
-                except OSError:
-                    pass
-        except OSError:
-            continue
 
     return synced
 
@@ -271,38 +268,65 @@ def list_deltas(eidos_dir: Path, status_filter: str | None = None) -> list[dict[
     for p in sorted(deltas_dir.rglob("*.adoc")):
         if "by-status" in p.parts:
             continue
-        try:
-            doc = parse_spec_file(p)
-            if doc.doc_type != "delta/mutation":
-                continue
-
-            status = str(doc.frontmatter.get("status", "proposed")).lower().strip()
-            is_active = status in ACTIVE_DELTA_STATUSES
-
-            if status_filter_clean and (
-                (status_filter_clean == "active" and not is_active)
-                or (status_filter_clean != "active" and status != status_filter_clean)
-            ):
-                continue
-
-            intent = doc.frontmatter.get("intent", {})
-            kind = intent.get("kind", "feature") if isinstance(intent, dict) else "feature"
-
-            results.append(
-                {
-                    "id": doc.doc_id,
-                    "title": doc.title or "Untitled",
-                    "status": status,
-                    "kind": kind,
-                    "is_active": is_active,
-                    "path": p.resolve(),
-                    "relative_path": p.relative_to(eidos_dir) if p.is_relative_to(eidos_dir) else p,
-                }
-            )
-        except OSError:
+        doc, _, _ = get_cached_spec_document(p)
+        if doc is None or doc.doc_type != "delta/mutation":
             continue
 
+        status = str(doc.frontmatter.get("status", "proposed")).lower().strip()
+        is_active = status in ACTIVE_DELTA_STATUSES
+
+        if status_filter_clean and (
+            (status_filter_clean == "active" and not is_active)
+            or (status_filter_clean != "active" and status != status_filter_clean)
+        ):
+            continue
+
+        intent = doc.frontmatter.get("intent", {})
+        kind = intent.get("kind", "feature") if isinstance(intent, dict) else "feature"
+
+        results.append(
+            {
+                "id": doc.doc_id,
+                "title": doc.title or "Untitled",
+                "status": status,
+                "kind": kind,
+                "is_active": is_active,
+                "path": p.resolve(),
+                "relative_path": p.relative_to(eidos_dir) if p.is_relative_to(eidos_dir) else p,
+            }
+        )
+
     return results
+
+
+PREFIX_TO_ENTITY_META: dict[str, tuple[str, str, str]] = {
+    "DOM-": ("domain", "product/domain", "target_domain"),
+    "CAP-": ("capability", "product/capability", "target_capability"),
+    "PER-": ("persona", "product/persona", "target_persona"),
+    "POL-": ("policy", "product/policy", "target_policy"),
+    "INV-": ("invariant", "invariant", "target_invariant_id"),
+    "ARCH-": ("architecture", "tech/architecture", "target_architecture"),
+    "CNT-": ("container", "tech/container", "target_container"),
+    "CMP-": ("component", "tech/component", "target_component"),
+    "CTR-": ("contract", "tech/contract", "target_contract"),
+    "DS-": ("design_system", "design/system", "target_design_system"),
+    "UIC-": ("ui_component", "design/ui-component", "target_ui_component"),
+    "SCR-": ("screen", "design/screen", "target_screen"),
+    "CLT-": ("client", "design/client", "target_client"),
+    "FLOW-": ("flow", "design/flow", "target_flow"),
+}
+
+
+def resolve_entity_prefix_meta(entity_id_or_path: str) -> tuple[str, str, str, str] | None:
+    """Resolve an entity ID (e.g. 'CMP-DELTA-ENGINE') by prefix to (prefix, entity_kind, spec_doc_type, legacy_target_key)."""
+    cleaned = str(entity_id_or_path or "").strip().upper()
+    if "-" not in cleaned:
+        return None
+    prefix = f"{cleaned.split('-', 1)[0]}-"
+    meta = PREFIX_TO_ENTITY_META.get(prefix)
+    if meta is None:
+        return None
+    return prefix, meta[0], meta[1], meta[2]
 
 
 _ACTION_PRIMARY_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -325,6 +349,10 @@ _ACTION_PRIMARY_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 def _extract_mutation_target(m: dict[str, Any]) -> str:
     """Extract primary target identifier or path from a mutation dictionary."""
+    direct_target = m.get("target")
+    if direct_target and isinstance(direct_target, str) and direct_target.strip():
+        return direct_target.strip()
+
     action = str(m.get("action", "")).strip().lower()
     for suffix, primary_keys in _ACTION_PRIMARY_KEYS:
         if action.endswith(suffix):
@@ -368,6 +396,81 @@ def _extract_mutation_target(m: dict[str, Any]) -> str:
             return path_match.group(1)
 
     return "unspecified_target"
+
+
+def normalize_delta_mutation(m: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a SpecDelta mutation dictionary across composable (operation + target + parent) and legacy (action + target_*) forms."""
+    if not isinstance(m, dict):
+        return {}
+    norm: dict[str, Any] = dict(m)
+    raw_op = str(norm.get("operation") or "").strip().lower()
+    raw_target = str(norm.get("target") or "").strip()
+    raw_parent = str(norm.get("parent") or "").strip()
+    raw_action = str(norm.get("action") or "").strip().lower()
+
+    primary_legacy_key: str | None = None
+    if raw_target:
+        t_meta = resolve_entity_prefix_meta(raw_target)
+        if t_meta is not None:
+            _prefix, entity_kind, _doc_type, legacy_key = t_meta
+            primary_legacy_key = legacy_key
+            norm["entity_type"] = entity_kind
+            if raw_op == "add" and entity_kind == "capability":
+                norm.setdefault("new_capability_id", raw_target)
+            else:
+                norm.setdefault(legacy_key, raw_target)
+            if not raw_action and raw_op:
+                if entity_kind == "invariant":
+                    raw_action = "patch_invariant" if raw_op == "modify" else f"{raw_op}_invariant"
+                else:
+                    raw_action = f"{raw_op}_{entity_kind}"
+                norm["action"] = raw_action
+        elif not raw_action and raw_op:
+            norm["action"] = raw_op
+
+    if raw_parent:
+        p_meta = resolve_entity_prefix_meta(raw_parent)
+        if p_meta is not None:
+            _p_prefix, _p_kind, _p_doc_type, p_legacy_key = p_meta
+            if p_legacy_key != primary_legacy_key:
+                norm.setdefault(p_legacy_key, raw_parent)
+
+    if not raw_target:
+        extracted = _extract_mutation_target(norm)
+        if extracted and extracted != "unspecified_target":
+            norm["target"] = extracted
+            raw_target = extracted
+            t_meta = resolve_entity_prefix_meta(raw_target)
+            if t_meta is not None:
+                norm.setdefault("entity_type", t_meta[1])
+                primary_legacy_key = t_meta[3]
+
+    if not raw_op and raw_action:
+        if raw_action.startswith("add_"):
+            norm["operation"] = "add"
+        elif raw_action.startswith(("modify_", "extend_", "patch_")):
+            norm["operation"] = "modify"
+        elif raw_action.startswith("remove_"):
+            norm["operation"] = "remove"
+        elif raw_action.startswith("deprecate_"):
+            norm["operation"] = "deprecate"
+
+    if not raw_parent:
+        for parent_key in (
+            "target_container",
+            "target_capability",
+            "target_policy",
+            "target_domain",
+            "target_design_system",
+            "target_client",
+            "target_component",
+        ):
+            pval = norm.get(parent_key)
+            if pval and isinstance(pval, str) and pval.strip() and pval.strip() != raw_target:
+                norm["parent"] = pval.strip()
+                break
+
+    return norm
 
 
 def _find_inline_component_dict(
@@ -953,14 +1056,29 @@ def _check_structural_subtarget_precondition(
 
     Returns False if a declared parent/sub-target relationship is missing, or True if satisfied (or not applicable).
     """
-    t_cap = m.get("target_capability")
     t_inv = m.get("target_invariant_id")
-    if t_cap and t_inv:
-        if t_cap not in specs_by_id:
+    t_inv_owner = (
+        m.get("target_capability")
+        or m.get("target_policy")
+        or m.get("target_container")
+        or m.get("target_component")
+    )
+    if t_inv_owner and t_inv:
+        owner_spec_id = container_components.get(t_inv_owner, t_inv_owner)
+        if owner_spec_id not in specs_by_id:
             return False
-        _, _, cap_fm = specs_by_id[t_cap]
-        invs = (cap_fm or {}).get("invariants", []) or ((cap_fm or {}).get("technical", {}) or {}).get("invariants", [])
-        inv_ids = {i.get("id") if isinstance(i, dict) else str(i) for i in (invs or [])}
+        _, _, owner_fm = specs_by_id[owner_spec_id]
+        invs = list(
+            (owner_fm or {}).get("invariants", [])
+            or ((owner_fm or {}).get("technical", {}) or {}).get("invariants", [])
+            or []
+        )
+        for comp in (owner_fm or {}).get("components", []) or []:
+            if isinstance(comp, dict) and comp.get("invariants") and (
+                t_inv_owner == owner_spec_id or comp.get("id") == t_inv_owner
+            ):
+                invs.extend(comp.get("invariants") or [])
+        inv_ids = {i.get("id") if isinstance(i, dict) else str(i) for i in invs}
         if t_inv not in inv_ids:
             return False
 
@@ -1267,7 +1385,8 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
     invariants = set(invariant_map.keys())
 
     items: list[MutationVerificationItem] = []
-    for m in raw_mutations:
+    for raw_m in raw_mutations:
+        m = normalize_delta_mutation(raw_m) if isinstance(raw_m, dict) else {}
         action = str(m.get("action", "")).strip().lower()
         target = _extract_mutation_target(m)
         details = str(m.get("details", "")).strip()
@@ -1547,40 +1666,97 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
     return is_verified, msg, report
 
 
+_KNOWN_CODE_EXTENSIONS = {
+    ".py",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".go",
+    ".rs",
+    ".java",
+    ".kt",
+    ".cs",
+    ".rb",
+    ".php",
+    ".swift",
+    ".cpp",
+    ".c",
+}
+
+
+def _infer_container_code_extension(cnt_fm: dict[str, Any]) -> str:
+    """Infer the default source file extension for a container from existing components or runtime."""
+    comps = cnt_fm.get("components", [])
+    if isinstance(comps, list):
+        for comp in comps:
+            if isinstance(comp, dict):
+                sp = comp.get("source_path")
+                if isinstance(sp, str) and sp.strip():
+                    ext = Path(sp.strip()).suffix.lower()
+                    if ext in _KNOWN_CODE_EXTENSIONS:
+                        return ext
+
+    runtime = str(cnt_fm.get("runtime", "")).lower()
+    if "typescript" in runtime or "deno" in runtime or re.search(r"\bts\b", runtime):
+        return ".ts"
+    if "javascript" in runtime or "node" in runtime or re.search(r"\bjs\b", runtime):
+        return ".js"
+    if "golang" in runtime or re.search(r"\bgo\b", runtime):
+        return ".go"
+    if "rust" in runtime or "cargo" in runtime:
+        return ".rs"
+    if "kotlin" in runtime:
+        return ".kt"
+    if "java" in runtime or "jvm" in runtime or "spring" in runtime:
+        return ".java"
+    if "c#" in runtime or "csharp" in runtime or ".net" in runtime or "dotnet" in runtime:
+        return ".cs"
+    if "ruby" in runtime or "rails" in runtime:
+        return ".rb"
+    if "php" in runtime or "laravel" in runtime:
+        return ".php"
+    if "swift" in runtime:
+        return ".swift"
+    if "c++" in runtime or "cpp" in runtime:
+        return ".cpp"
+    if re.search(r"\bc(?:\d+)?\b", runtime):
+        return ".c"
+    return ".py"
+
+
 def _apply_expect_or_details_to_spec(
     spec_file: Path,
     expect: dict[str, Any] | None,
-    details: str,
+    details: str = "",
     tx: _MutationTransaction | None = None,
 ) -> bool:
-    """Apply declarative expect fields or substantive details to a specification file on disk (never comment-only)."""
+    """Apply declarative expect fields (frontmatter and/or body.contains) to a specification file on disk."""
+    if not isinstance(expect, dict) or not expect:
+        return False
     content = spec_file.read_text(encoding="utf-8")
     updated = content
-    if isinstance(expect, dict) and expect:
-        fm, body, err = extract_frontmatter(updated)
-        if err or not isinstance(fm, dict):
-            return False
-        contains_items, _not_contains_items, fm_expectations = _normalize_expect_spec(expect)
-        fm_changed = False
-        for k, v in fm_expectations.items():
-            if isinstance(v, (str, int, float, bool)) and k in fm and not isinstance(fm.get(k), (dict, list)):
-                val_str = json.dumps(v) if isinstance(v, str) else str(v).lower() if isinstance(v, bool) else str(v)
-                updated = _set_frontmatter_scalar(updated, k, val_str)
-                fm[k] = v
-            else:
-                fm[k] = v
-                fm_changed = True
-        if fm_changed:
-            updated = _render_spec(fm, body)
-        for needle in contains_items:
-            if needle not in updated:
-                body = f"{body.rstrip()}\n\n{needle}\n"
-                updated = _render_spec(fm, body) if fm_changed else f"{updated.rstrip()}\n\n{needle}\n"
-    elif details and not details.lstrip().startswith("//"):
-        if details not in updated:
-            updated = f"{updated.rstrip()}\n\n{details}\n"
-    else:
+    fm, body, err = extract_frontmatter(updated)
+    if err or not isinstance(fm, dict):
         return False
+    contains_items, _not_contains_items, fm_expectations = _normalize_expect_spec(expect)
+    if not contains_items and not fm_expectations:
+        return False
+    fm_changed = False
+    for k, v in fm_expectations.items():
+        if isinstance(v, (str, int, float, bool)) and k in fm and not isinstance(fm.get(k), (dict, list)):
+            val_str = json.dumps(v) if isinstance(v, str) else str(v).lower() if isinstance(v, bool) else str(v)
+            updated = _set_frontmatter_scalar(updated, k, val_str)
+            fm[k] = v
+        else:
+            fm[k] = v
+            fm_changed = True
+    if fm_changed:
+        updated = _render_spec(fm, body)
+    for needle in contains_items:
+        if needle not in updated:
+            body = f"{body.rstrip()}\n\n{needle}\n"
+            updated = _render_spec(fm, body) if fm_changed else f"{updated.rstrip()}\n\n{needle}\n"
 
     if updated != content:
         if tx is not None:
@@ -1630,9 +1806,10 @@ def execute_delta_mutations(
         return False, reason, []
 
     try:
-        for m in raw_mutations:
-            if not isinstance(m, dict):
+        for raw_m in raw_mutations:
+            if not isinstance(raw_m, dict):
                 return _abort(f"Invalid mutation entry in '{doc.doc_id}': expected mapping.")
+            m = normalize_delta_mutation(raw_m)
             action = str(m.get("action", "")).strip().lower()
             raw_target = _extract_mutation_target(m)
             target, _resolved_target_path, _ = _resolve_target_path_and_id(raw_target, eidos_dir, specs_by_id)
@@ -1709,11 +1886,12 @@ def execute_delta_mutations(
                             pkg_raw = cnt_fm.get("package_path", "src")
                             pkg_base = str(pkg_raw[0] if isinstance(pkg_raw, list) and pkg_raw else pkg_raw).rstrip("/")
                             comp_slug = target_id.replace("CMP-", "").lower().replace("-", "_")
+                            comp_ext = _infer_container_code_extension(cnt_fm)
                             new_comp: dict[str, Any] = {
                                 "id": target_id,
                                 "name": m.get("title") or target_id.replace("CMP-", "").replace("-", " ").title(),
                                 "responsibility": details or f"Component responsible for {target_id}.",
-                                "source_path": f"{pkg_base}/{comp_slug}.py",
+                                "source_path": f"{pkg_base}/{comp_slug}{comp_ext}",
                             }
                             for ek, ev in fm_exp.items():
                                 new_comp[ek] = ev
@@ -1741,6 +1919,8 @@ def execute_delta_mutations(
                             title=title,
                         )
                         tx.created_files.add(created.resolve())
+                        if expect:
+                            _apply_expect_or_details_to_spec(created, expect, "")
                         if created and created not in mutated_files:
                             mutated_files.append(created)
                         created_doc = parse_spec_file(created)
@@ -1911,9 +2091,9 @@ def execute_delta_mutations(
                     m, inv_id, specs_by_id, container_components, invariant_map
                 )
                 if decl_ok is not True:
-                    if not expect and not details:
+                    if not fm_exp:
                         return _abort(
-                            f"Cannot execute 'patch_invariant' on '{inv_id}': no 'expect' or 'details' provided."
+                            f"Cannot execute 'patch_invariant' on '{inv_id}': 'expect.frontmatter' is required for deterministic execution."
                         )
                     p_content = inv_file.read_text(encoding="utf-8")
                     p_fm, _p_body, p_err = extract_frontmatter(p_content)
@@ -1927,11 +2107,8 @@ def execute_delta_mutations(
                         if isinstance(ilist, list):
                             for item in ilist:
                                 if isinstance(item, dict) and item.get("id") == inv_id:
-                                    if expect:
-                                        for ek, ev in fm_exp.items():
-                                            item[ek] = ev
-                                    elif details:
-                                        item["rule"] = details
+                                    for ek, ev in fm_exp.items():
+                                        item[ek] = ev
                                     inv_dict = dict(item)
                     updated_content = _mutate_frontmatter_invariants(p_content, "replace", inv_id, inv_dict)
                     for needle in contains_items:
@@ -1960,16 +2137,13 @@ def execute_delta_mutations(
                         m, target, specs_by_id, container_components, invariant_map, target_file=cnt_file
                     )
                     if decl_ok is not True:
-                        if not expect and not details:
+                        if not fm_exp:
                             return _abort(
-                                f"Cannot execute 'modify_component' on '{target}': no 'expect' or 'details' provided."
+                                f"Cannot execute 'modify_component' on '{target}': 'expect.frontmatter' is required for deterministic execution."
                             )
                         updated_comp = dict(comp_dict)
-                        if expect:
-                            for ek, ev in fm_exp.items():
-                                updated_comp[ek] = ev
-                        elif details:
-                            updated_comp["responsibility"] = details
+                        for ek, ev in fm_exp.items():
+                            updated_comp[ek] = ev
                         cnt_content = cnt_file.read_text(encoding="utf-8")
                         updated_content = _mutate_frontmatter_components(cnt_content, "replace", target, updated_comp)
                         for needle in contains_items:
@@ -2004,7 +2178,7 @@ def execute_delta_mutations(
                     if decl_ok is not True:
                         if not _apply_expect_or_details_to_spec(target_file, expect, details, tx=tx):
                             return _abort(
-                                f"Cannot execute '{action}' on '{target}': no 'expect' or 'details' provided."
+                                f"Cannot execute '{action}' on '{target}': 'expect' (with frontmatter or body.contains) is required for deterministic execution."
                             )
                         updated_doc = parse_spec_file(target_file)
                         if updated_doc.doc_id:
@@ -2042,7 +2216,7 @@ def apply_delta(
     eidos_dir: Path,
     delta_id_or_path: str,
     execute: bool = False,
-    verify: bool = False,
+    verify: bool = True,
 ) -> tuple[bool, str, Path | None, list[Path]]:
     """Transition a SpecDelta to applied status in-place with pre-commit schema validation and transactional rollback.
 
@@ -2050,7 +2224,7 @@ def apply_delta(
         eidos_dir: Path to the eidos specifications root.
         delta_id_or_path: ID, filename, or Path of the delta to apply.
         execute: If True, deterministically scaffold missing specs and apply structural mutations.
-        verify: If True, verify that all mutations are fulfilled in living specs before applying.
+        verify: If True (default), verify that all mutations are fulfilled in living specs before applying.
     """
     file_path = find_spec_by_id_or_path(eidos_dir / "deltas", delta_id_or_path)
     if not file_path:

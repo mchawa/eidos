@@ -193,7 +193,7 @@ def test_bundled_skill_yaml_templates_conform_to_v1_schemas():
 
 
 def test_schema_glossary_yaml_examples_conform_to_v1_schemas():
-    """Verify YAML frontmatter examples in docs/concepts/schema-glossary.md validate against v1 JSON Schemas (DLT-2026-077)."""
+    """Verify YAML and AsciiDoc frontmatter examples across all docs/**/*.md validate against v1 JSON Schemas (DLT-2026-077)."""
     import re
 
     import yaml
@@ -203,34 +203,133 @@ def test_schema_glossary_yaml_examples_conform_to_v1_schemas():
     from eidos.core.spec.validator import SpecValidator
 
     repo_root = Path(__file__).parent.parent
-    glossary_md = repo_root / "docs/concepts/schema-glossary.md"
-    content = glossary_md.read_text(encoding="utf-8")
     validator = SpecValidator()
-    yaml_fence_re = re.compile(r"```yaml\n(.*?)```", re.DOTALL)
+    fence_re = re.compile(r"```(?:yaml|asciidoc|adoc)\n(.*?)```", re.DOTALL)
 
-    validated_count = 0
-    for match in yaml_fence_re.finditer(content):
-        block = match.group(1).strip()
-        if not block.startswith("---"):
-            continue
-        fm_raw, body = split_frontmatter_and_body(block + "\n")
-        assert fm_raw is not None, f"Failed to split frontmatter in schema-glossary.md:\n{block}"
-        fm = yaml.safe_load(fm_raw)
-        assert isinstance(fm, dict)
-        doc = SpecDocument(
-            file_path=glossary_md,
-            doc_type=fm.get("type", ""),
-            doc_id=fm.get("id", ""),
-            schema_ref=fm.get("schema"),
-            frontmatter=fm,
-            body=body,
-        )
-        errors = validator.validate_document(doc)
-        assert errors == [], (
-            f"Glossary example {fm.get('id')} ({fm.get('type')}) failed v1 schema validation: {errors}"
-        )
-        validated_count += 1
+    glossary_validated = 0
+    total_validated = 0
+    for md_file in sorted((repo_root / "docs").rglob("*.md")):
+        content = md_file.read_text(encoding="utf-8")
+        for match in fence_re.finditer(content):
+            block = match.group(1).strip()
+            if not block.startswith("---"):
+                continue
+            fm_raw, body = split_frontmatter_and_body(block + "\n")
+            if fm_raw is None:
+                continue
+            fm = yaml.safe_load(fm_raw)
+            if not isinstance(fm, dict) or "type" not in fm or "schema" not in fm:
+                continue
+            doc = SpecDocument(
+                file_path=md_file,
+                doc_type=fm.get("type", ""),
+                doc_id=fm.get("id", ""),
+                schema_ref=fm.get("schema"),
+                frontmatter=fm,
+                body=body,
+            )
+            errors = validator.validate_document(doc)
+            assert errors == [], (
+                f"Documentation example {fm.get('id')} ({fm.get('type')}) in {md_file.relative_to(repo_root)} "
+                f"failed v1 schema validation: {errors}"
+            )
+            total_validated += 1
+            if md_file.name == "schema-glossary.md":
+                glossary_validated += 1
 
-    assert validated_count >= 12, f"Expected at least 12 glossary YAML examples, validated {validated_count}"
+    assert glossary_validated >= 12, f"Expected at least 12 glossary YAML examples, validated {glossary_validated}"
+    assert total_validated >= 25, f"Expected at least 25 validated spec frontmatter examples across docs/, got {total_validated}"
+
+
+def test_documented_cli_flags_match_live_command_tree():
+    """Verify all 'eidos ...' CLI invocations across docs/, README.md, and bundled skills use valid subcommands and flags."""
+    import re
+
+    import typer
+
+    from eidos.cli.main import app
+
+    repo_root = Path(__file__).parent.parent
+    root_click = typer.main.get_command(app)
+
+    def collect_cmd_info(click_cmd, prefix=()):
+        mapping = {}
+        opts = set()
+        for param in getattr(click_cmd, "params", []):
+            for o in getattr(param, "opts", []) + getattr(param, "secondary_opts", []):
+                opts.add(o)
+        opts.add("--help")
+        mapping[prefix] = opts
+        for sub_name, sub_cmd in getattr(click_cmd, "commands", {}).items():
+            mapping.update(collect_cmd_info(sub_cmd, (*prefix, sub_name)))
+        return mapping
+
+    cmd_tree = collect_cmd_info(root_click)
+
+    md_files = [
+        *sorted((repo_root / "docs").rglob("*.md")),
+        repo_root / "README.md",
+        *sorted((repo_root / "assets/plugin_reference/skills").rglob("*.md")),
+    ]
+    fence_re = re.compile(r"```(?:bash|sh|shell|zsh)\n(.*?)```", re.DOTALL)
+
+    checked_invocations = 0
+    for md in md_files:
+        text = md.read_text(encoding="utf-8")
+        for m in fence_re.finditer(text):
+            block = m.group(1)
+            lines = []
+            buf = ""
+            for raw_line in block.splitlines():
+                stripped = raw_line.strip()
+                if stripped.startswith("#"):
+                    continue
+                if stripped.endswith("\\"):
+                    buf += stripped[:-1] + " "
+                else:
+                    buf += stripped
+                    if buf:
+                        lines.append(buf)
+                    buf = ""
+            if buf:
+                lines.append(buf)
+
+            for line in lines:
+                tokens = line.split()
+                if not tokens or tokens[0] != "eidos":
+                    continue
+                idx = 1
+                matched_prefix = ()
+                while idx < len(tokens):
+                    tok = tokens[idx]
+                    if tok.startswith("["):
+                        break
+                    cand = (*matched_prefix, tok)
+                    if cand in cmd_tree:
+                        matched_prefix = cand
+                        idx += 1
+                    else:
+                        break
+
+                assert matched_prefix or (
+                    idx < len(tokens) and (tokens[idx].startswith("-") or tokens[idx] == "[OPTIONS]")
+                ), f"Unknown command invocation in {md.relative_to(repo_root)}: {line}"
+
+                valid_opts = cmd_tree.get(matched_prefix, set())
+                for tok in tokens[idx:]:
+                    clean_tok = tok.strip("[]")
+                    if clean_tok in ("|", "&&", "||", ";", ">", ">>"):
+                        break
+                    if clean_tok.startswith("-"):
+                        flag_part = clean_tok.split("=")[0]
+                        for sub_flag in flag_part.split("|"):
+                            if sub_flag.startswith("-"):
+                                assert sub_flag in valid_opts, (
+                                    f"Invalid flag '{sub_flag}' on 'eidos {' '.join(matched_prefix)}' "
+                                    f"in {md.relative_to(repo_root)} (line: {line}). Valid: {sorted(valid_opts)}"
+                                )
+                checked_invocations += 1
+
+    assert checked_invocations >= 80, f"Expected at least 80 checked CLI invocations, checked {checked_invocations}"
 
 

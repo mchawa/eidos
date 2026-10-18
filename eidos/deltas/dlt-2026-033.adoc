@@ -13,20 +13,13 @@ intent:
     Code, Cursor, Cline, OpenCode, and OpenAI Codex instead of only matching Antigravity
     tool payload keys.
 mutations:
-- action: modify_container
-  target_container: CNT-EIDOS-PLUGIN
-  details: Update 'handle_lint_pre_tool_use()' and 'run_lint_hook()' in 'src/eidos/plugin/hooks.py'
-    with a harness-agnostic payload normalizer supporting Antigravity ('write_to_file',
-    'replace_file_content', 'multi_replace_file_content' -> 'TargetFile', 'CodeContent',
-    'ReplacementContent'), Claude Code ('Write', 'Edit', 'MultiEdit' -> 'file_path',
-    'content', 'old_string', 'new_string', 'edits'), and generic 'agent-plugins.org'
-    / Cursor / Cline tool inputs.
-- action: patch_invariant
-  target_invariant_id: INV-AGENT-LINT-HOOK
-  target_capability: CAP-AGENT-001
-  details: Verify that 'PreToolUse' and 'PostToolUse' lint hooks block malformed '.adoc'
-    YAML frontmatter and broken schema references across Antigravity, Claude Code,
-    and Cursor JSON stdin payloads.
+- operation: modify
+  target: CNT-EIDOS-PLUGIN
+  details: Update 'handle_lint_pre_tool_use()' and 'run_lint_hook()' in 'src/eidos/plugin/hooks.py' with a harness-agnostic payload normalizer supporting Antigravity ('write_to_file', 'replace_file_content', 'multi_replace_file_content' -> 'TargetFile', 'CodeContent', 'ReplacementContent'), Claude Code ('Write', 'Edit', 'MultiEdit' -> 'file_path', 'content', 'old_string', 'new_string', 'edits'), and generic 'agent-plugins.org' / Cursor / Cline tool inputs.
+- operation: modify
+  target: INV-AGENT-LINT-HOOK
+  parent: CAP-AGENT-001
+  details: Verify that 'PreToolUse' and 'PostToolUse' lint hooks block malformed '.adoc' YAML frontmatter and broken schema references across Antigravity, Claude Code, and Cursor JSON stdin payloads.
 ---
 = SpecDelta: Normalize PreToolUse and PostToolUse Hook Payloads Across AI Agent Harnesses
 :toc: left

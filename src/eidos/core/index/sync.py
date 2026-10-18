@@ -17,8 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from eidos.core.index.ast_indexer import get_ast_indexer
-from eidos.core.spec.parser import _parse_spec_content
-from eidos.core.workspace.context import collect_component_decisions
+from eidos.core.index.storage import get_cached_spec_document
 from eidos.core.workspace.project import extract_entity_paths, match_path_pattern
 
 _CODE_EXTS = frozenset({".py", ".ts", ".tsx", ".go", ".rs", ".js", ".jsx", ".java", ".kt", ".kts"})
@@ -451,23 +450,45 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                 db_files[rel_key] = (st_mtime, cached[1])
 
     # 1. Living specifications in eidos/ (.adoc)
-    for dirpath, dirnames, filenames in os.walk(str(index.eidos_dir)):
-        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d != "by-status"]
-        for fn in filenames:
-            if not fn.endswith(".adoc") or fn.startswith("_") or fn.lower() == "readme.adoc":
-                continue
-            full_path = os.path.join(dirpath, fn)
-            rel_p = _rel_path(full_path)
-            disk_files.add(rel_p)
-            try:
-                stat = os.stat(full_path)
-            except OSError:
-                continue
-            _check_file_str(full_path, rel_p, stat.st_mtime)
+    def _scan_eidos_dir(dir_path: str) -> None:
+        try:
+            with os.scandir(dir_path) as it:
+                for entry in it:
+                    name = entry.name
+                    if name.startswith("."):
+                        continue
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            if name != "by-status":
+                                _scan_eidos_dir(entry.path)
+                            continue
+                    except OSError:
+                        continue
+                    if not name.endswith(".adoc") or name.startswith("_") or name.lower() == "readme.adoc":
+                        continue
+                    full_path = entry.path
+                    rel_p = _rel_path(full_path)
+                    disk_files.add(rel_p)
+                    try:
+                        st = entry.stat()
+                    except OSError:
+                        continue
+                    _check_file_str(full_path, rel_p, st.st_mtime)
+        except OSError:
+            return
+
+    _scan_eidos_dir(str(index.eidos_dir))
 
     # 2. Tracked code and test files
     code_exts = _CODE_EXTS
+    excluded_dirs = _EXCLUDED_CODE_DIRS
     tracked_code_dirs: set[str] = set()
+    explicit_code_files: list[str] = []
+
+    for std_dir in ("src", "tests", "test"):
+        cand = os.path.normpath(os.path.join(root_str, std_dir))
+        if os.path.isdir(cand):
+            tracked_code_dirs.add(cand)
 
     package_paths: set[str] = set()
     cursor.execute("SELECT DISTINCT package_path FROM entities WHERE package_path != '';")
@@ -481,10 +502,34 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
             full_pp = os.path.normpath(os.path.join(root_str, pp))
             if os.path.isdir(full_pp):
                 tracked_code_dirs.add(full_pp)
-            elif os.path.isfile(full_pp):
-                _, ext = os.path.splitext(full_pp)
-                if ext in code_exts:
-                    rel_code = _rel_path(full_pp)
+            else:
+                explicit_code_files.append(full_pp)
+
+    # Deduplicate child directories whose parent directory is already in tracked_code_dirs
+    top_code_dirs: list[str] = []
+    for d in sorted(tracked_code_dirs):
+        if not any(d == parent or d.startswith(parent + os.sep) for parent in top_code_dirs):
+            top_code_dirs.append(d)
+
+    top_code_prefixes = tuple(d + os.sep for d in top_code_dirs if os.path.isdir(d))
+
+    def _is_covered_by_top_code_dirs(abs_path: str) -> bool:
+        _, ext = os.path.splitext(abs_path)
+        if ext not in code_exts:
+            return False
+        for pref in top_code_prefixes:
+            if abs_path.startswith(pref):
+                sub_parts = abs_path[len(pref) :].split(os.sep)[:-1]
+                if not any(part in excluded_dirs or part.startswith(".") for part in sub_parts):
+                    return True
+        return False
+
+    for full_pp in explicit_code_files:
+        if not _is_covered_by_top_code_dirs(full_pp) and os.path.isfile(full_pp):
+            _, ext = os.path.splitext(full_pp)
+            if ext in code_exts:
+                rel_code = _rel_path(full_pp)
+                if rel_code not in disk_files:
                     disk_files.add(rel_code)
                     try:
                         stat = os.stat(full_pp)
@@ -492,14 +537,11 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                         continue
                     _check_file_str(full_pp, rel_code, stat.st_mtime)
 
-    for std_dir in ("src", "tests", "test"):
-        cand = os.path.normpath(os.path.join(root_str, std_dir))
-        if os.path.isdir(cand):
-            tracked_code_dirs.add(cand)
-
     for rel_tracked in list(db_files.keys()):
         if not rel_tracked.endswith(".adoc") and rel_tracked not in disk_files:
             abs_tracked = os.path.normpath(os.path.join(root_str, rel_tracked))
+            if _is_covered_by_top_code_dirs(abs_tracked):
+                continue
             if os.path.isfile(abs_tracked):
                 disk_files.add(rel_tracked)
                 try:
@@ -508,33 +550,38 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                     continue
                 _check_file_str(abs_tracked, rel_tracked, stat.st_mtime)
 
-    # Deduplicate child directories whose parent directory is already in tracked_code_dirs
-    top_code_dirs: list[str] = []
-    for d in sorted(tracked_code_dirs):
-        if not any(d == parent or d.startswith(parent + os.sep) for parent in top_code_dirs):
-            top_code_dirs.append(d)
+    def _scan_code_dir(dir_path: str) -> None:
+        try:
+            with os.scandir(dir_path) as it:
+                for entry in it:
+                    name = entry.name
+                    if name.startswith(".") or name in excluded_dirs:
+                        continue
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            _scan_code_dir(entry.path)
+                            continue
+                    except OSError:
+                        continue
+                    _, ext = os.path.splitext(name)
+                    if ext not in code_exts:
+                        continue
+                    full_file = entry.path
+                    rel_code = _rel_path(full_file)
+                    if rel_code in disk_files:
+                        continue
+                    disk_files.add(rel_code)
+                    try:
+                        st = entry.stat()
+                    except OSError:
+                        continue
+                    _check_file_str(full_file, rel_code, st.st_mtime)
+        except OSError:
+            return
 
-    excluded_dirs = _EXCLUDED_CODE_DIRS
     for code_dir in top_code_dirs:
-        if not os.path.exists(code_dir):
-            continue
-        for dirpath, dirnames, filenames in os.walk(code_dir):
-            dirnames[:] = [d for d in dirnames if d not in excluded_dirs and not d.startswith(".")]
-            for fn in filenames:
-                _, ext = os.path.splitext(fn)
-                if ext not in code_exts:
-                    continue
-                full_file = os.path.join(dirpath, fn)
-                rel_code = _rel_path(full_file)
-                if rel_code in disk_files:
-                    continue
-                disk_files.add(rel_code)
-
-                try:
-                    stat = os.stat(full_file)
-                except OSError:
-                    continue
-                _check_file_str(full_file, rel_code, stat.st_mtime)
+        if os.path.isdir(code_dir):
+            _scan_code_dir(code_dir)
 
     if mtime_refreshes:
         with conn:
@@ -786,7 +833,11 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                 if not isinstance(m, dict):
                     continue
                 for k, v in m.items():
-                    if (k.startswith("target_") or k == "new_capability_id") and isinstance(v, str) and v.strip():
+                    if (
+                        (k.startswith("target_") or k in ("target", "parent", "new_capability_id"))
+                        and isinstance(v, str)
+                        and v.strip()
+                    ):
                         target_val = v.strip()
                         if target_val.endswith(".adoc") or "/" in target_val:
                             clean_p = target_val.replace("\\", "/")
@@ -1071,6 +1122,15 @@ def sync_index(
         code_updates = [p for p in to_update if p.suffix != ".adoc"]
 
         stats.total_specs_scanned = len(spec_updates)
+        cached_rows: dict[str, sqlite3.Row] = {}
+        if spec_updates:
+            try:
+                for row in conn.execute(
+                    "SELECT file_path, mtime_ns, sha256, doc_json FROM spec_validation_cache"
+                ):
+                    cached_rows[row["file_path"]] = row
+            except sqlite3.Error:
+                pass
         parsed_specs: list[tuple[Path, str, float, str, Any]] = []
         for p in spec_updates:
             try:
@@ -1079,12 +1139,18 @@ def sync_index(
                 rel_p = str(p).replace("\\", "/")
 
             try:
-                mtime = p.stat().st_mtime
-                raw_bytes = p.read_bytes()
-                doc = _parse_spec_content(p, raw_bytes.decode("utf-8", errors="replace"))
+                st = p.stat()
+                mtime = st.st_mtime
             except OSError:
                 continue
-            sha = hashlib.sha256(raw_bytes).hexdigest()
+            doc, sha, _ = get_cached_spec_document(
+                p,
+                mtime_ns=st.st_mtime_ns,
+                st_size=st.st_size,
+                cached_row=cached_rows.get(rel_p),
+            )
+            if doc is None or not sha:
+                continue
             parsed_specs.append((p, rel_p, mtime, sha, doc))
 
         updated_rel_paths: set[str] = set()
@@ -1135,6 +1201,7 @@ def sync_index(
         for p, rel_p, mtime, sha, doc in parsed_specs:
             doc_id = doc.doc_id or p.stem
             fm = doc.frontmatter or {}
+            model = doc.model
             doc_type = doc.doc_type or "unknown"
 
             if rel_p in updated_rel_paths:
@@ -1163,18 +1230,13 @@ def sync_index(
                 )
                 continue
 
-            title = doc.title or fm.get("title", doc_id)
-            status = fm.get("status", "active")
-            domain = fm.get("domain", fm.get("domain_binding", ""))
-            raw_pkg = fm.get("package_path", fm.get("source_path", ""))
-            pkg_list = (
-                [str(x).strip() for x in raw_pkg if str(x).strip()]
-                if isinstance(raw_pkg, list)
-                else ([str(raw_pkg).strip()] if str(raw_pkg).strip() else [])
-            )
+            title = doc.title or model.title or doc_id
+            status = model.status or "active"
+            domain = model.effective_domain()
+            pkg_list = model.effective_package_paths()
             package_path = pkg_list[0] if pkg_list else ""
-            runtime = fm.get("runtime", "")
-            container_type = fm.get("container_type", "")
+            runtime = model.runtime or ""
+            container_type = model.container_type or ""
 
             conn.execute(
                 """
@@ -1197,7 +1259,7 @@ def sync_index(
             )
 
             if doc_type == "tech/contract":
-                spec_file = fm.get("specification_file")
+                spec_file = model.specification_file
                 if spec_file:
                     conn.execute(
                         "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'specification_file');",
@@ -1208,14 +1270,6 @@ def sync_index(
                 )
 
             biz = fm.get("business", {})
-            tech = fm.get("technical", {})
-            invariants = []
-            if isinstance(tech, dict):
-                invariants = tech.get("invariants", []) or []
-
-            if doc_type == "product/policy":
-                invariants = fm.get("invariants", []) or []
-
             if doc_type == "tech/component":
                 ifaces = fm.get("interfaces", {})
                 if isinstance(ifaces, dict):
@@ -1231,31 +1285,21 @@ def sync_index(
                                 "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_signature');",
                                 (sig, doc_id),
                             )
-                invariants = fm.get("invariants", []) or []
 
             if doc_type == "tech/container":
-                invariants = list(fm.get("invariants", []) or [])
-                for comp_entry in fm.get("components", []) or fm.get("c4_internal_components", []):
-                    if not isinstance(comp_entry, dict):
-                        continue
-                    cid = comp_entry.get("id")
-                    if comp_entry.get("ref") and cid:
-                        ref_path = comp_entry["ref"]
+                for comp_entry in model.components:
+                    if comp_entry.ref and comp_entry.id:
                         conn.execute(
                             "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_ref');",
-                            (ref_path, cid),
+                            (comp_entry.ref, comp_entry.id),
                         )
-                    for c_inv in comp_entry.get("invariants", []) or []:
-                        if isinstance(c_inv, dict) and c_inv.get("id"):
-                            inv_copy = dict(c_inv)
-                            if cid:
-                                inv_copy["_inline_component_id"] = cid
-                            invariants.append(inv_copy)
 
-            for inv in invariants:
-                if not isinstance(inv, dict):
-                    continue
-                iid = inv.get("id")
+            invariants_to_index: list[tuple[Any, str | None]] = []
+            if doc_type in ("product/capability", "product/policy", "tech/component", "tech/container") or model.technical.invariants:
+                invariants_to_index = model.invariants_with_component()
+
+            for inv_model, inline_comp_id in invariants_to_index:
+                iid = inv_model.id
                 if iid:
                     inv_collision = conn.execute(
                         "SELECT file_path FROM entities WHERE id = ? AND file_path != ?;",
@@ -1270,10 +1314,9 @@ def sync_index(
                         if strict:
                             raise ValueError(inv_msg)
                         continue
-                    rule = inv.get("rule", "")
-                    test = inv.get("test_binding") or inv.get("verification") or ""
+                    rule = inv_model.rule or ""
+                    test = inv_model.effective_test_binding()
                     test_file = test.split("::")[0] if test else ""
-                    inline_comp_id = inv.get("_inline_component_id")
                     inv_data = {
                         "id": iid,
                         "rule": rule,
@@ -1284,7 +1327,7 @@ def sync_index(
                         "container_id": (
                             doc_id
                             if doc_type == "tech/container"
-                            else (fm.get("container") if doc_type == "tech/component" else None)
+                            else (model.container if doc_type == "tech/component" else None)
                         ),
                         "component_id": doc_id if doc_type == "tech/component" else inline_comp_id,
                         "has_test_coverage": False,
@@ -1334,27 +1377,18 @@ def sync_index(
                     "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'owned_path');", (owned_pat, doc_id)
                 )
 
-            all_modules = list(fm.get("components", []) or fm.get("c4_internal_components", []))
-            for module in all_modules:
-                mname = module.get("name")
-                raw_mpath = module.get("source_path")
-                mpath_list = (
-                    [str(x).strip() for x in raw_mpath if str(x).strip()]
-                    if isinstance(raw_mpath, list)
-                    else ([str(raw_mpath).strip()] if raw_mpath and str(raw_mpath).strip() else [])
-                )
-                mid = module.get("id")
-                if mname:
+            for module in model.components:
+                if module.name:
                     conn.execute(
-                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'module_name');", (mname, doc_id)
+                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'module_name');", (module.name, doc_id)
                     )
-                for mpath in mpath_list:
+                for mpath in module.source_paths():
                     conn.execute(
                         "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (mpath, doc_id)
                     )
-                if mid:
+                if module.id:
                     conn.execute(
-                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_id');", (mid, doc_id)
+                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_id');", (module.id, doc_id)
                     )
 
             for pkg_item in pkg_list:
@@ -1375,38 +1409,30 @@ def sync_index(
 
             jtbd_or_rule = biz.get("jtbd", fm.get("rule", "")) if isinstance(biz, dict) else fm.get("rule", "")
             body_clean = re.sub(r"[{}\[\]=:#*`]", " ", doc.body or "")
-            embedded_decisions = collect_component_decisions(fm)
             decision_ids: list[str] = []
             decision_texts: list[str] = []
-            for dec in embedded_decisions:
-                did = str(dec.get("id", "")).strip()
+            for dec in model.all_decisions():
+                did = str(dec.id or "").strip()
                 if did:
                     decision_ids.append(did)
-                grad_ref = str(dec.get("graduated_from", "")).strip()
+                grad_ref = str(dec.graduated_from or "").strip()
                 if grad_ref:
                     decision_ids.append(grad_ref)
-                for field_key in ("title", "decision", "rationale"):
-                    fval = str(dec.get(field_key, "")).strip()
-                    if fval:
-                        decision_texts.append(fval)
-                for alt in dec.get("rejected_alternatives") or []:
-                    if isinstance(alt, dict):
-                        for alt_key in ("option", "reason_rejected"):
-                            aval = str(alt.get(alt_key, "")).strip()
-                            if aval:
-                                decision_texts.append(aval)
+                for fval in (dec.title, dec.decision, dec.rationale):
+                    if fval and str(fval).strip():
+                        decision_texts.append(str(fval).strip())
+                for alt in dec.rejected_alternatives:
+                    for aval in (alt.option, alt.reason_rejected):
+                        if aval and str(aval).strip():
+                            decision_texts.append(str(aval).strip())
             if decision_texts:
                 body_clean = f"{body_clean} " + re.sub(r"[{}\[\]=:#*`]", " ", " ".join(decision_texts))
             keywords = " ".join([doc_id, doc_type, domain, container_type, package_path, *decision_ids])
             symbol_parts: list[str] = [
-                str(m.get("name", ""))
-                for m in (fm.get("components", []) or fm.get("c4_internal_components", []))
-                if isinstance(m, dict) and m.get("name")
+                str(m.name) for m in model.components if m.name
             ]
             symbol_parts.extend(
-                str(m.get("id", ""))
-                for m in (fm.get("components", []) or fm.get("c4_internal_components", []))
-                if isinstance(m, dict) and m.get("id")
+                str(m.id) for m in model.components if m.id
             )
             if doc_type == "tech/component" and isinstance(fm.get("interfaces"), dict):
                 for sig in (fm["interfaces"].get("provides") or []) + (fm["interfaces"].get("consumes") or []):

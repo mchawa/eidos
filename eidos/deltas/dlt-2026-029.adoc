@@ -14,19 +14,13 @@ intent:
   bug_classification: spec_violation
   severity: high
 mutations:
-- action: modify_container
-  target_container: CNT-EIDOS-INDEX
-  details: Update 'GraphIndex.sync()' in 'src/eidos/core/graph_index.py' to either
-    register AST test bindings ('file::func') as 'test_binding' rows in the 'entities'
-    table or exempt 'relation = "asserts"' edges from the post-sync 'DELETE FROM edges
-    WHERE source_id NOT IN (SELECT id FROM entities)' cleanup query so test-to-invariant
-    traceability persists in SQLite.
-- action: patch_invariant
-  target_invariant_id: INV-KNOWLEDGE-GRAPH-CATALOG
-  target_capability: CAP-PROD-001
-  details: Assert that 'GraphIndex.sync()' retains 'asserts' edges in 'eidos/.cache/index.db'
-    and that 'get_index_status()["test_invariant_assertions"]' reports the non-zero
-    count of verified test-to-invariant bindings.
+- operation: modify
+  target: CNT-EIDOS-INDEX
+  details: Update 'GraphIndex.sync()' in 'src/eidos/core/graph_index.py' to either register AST test bindings ('file::func') as 'test_binding' rows in the 'entities' table or exempt 'relation = "asserts"' edges from the post-sync 'DELETE FROM edges WHERE source_id NOT IN (SELECT id FROM entities)' cleanup query so test-to-invariant traceability persists in SQLite.
+- operation: modify
+  target: INV-KNOWLEDGE-GRAPH-CATALOG
+  parent: CAP-PROD-001
+  details: Assert that 'GraphIndex.sync()' retains 'asserts' edges in 'eidos/.cache/index.db' and that 'get_index_status()["test_invariant_assertions"]' reports the non-zero count of verified test-to-invariant bindings.
 ---
 = SpecDelta: Preserve Test-to-Invariant Assertion Edges in Knowledge Graph Sync
 :toc: left

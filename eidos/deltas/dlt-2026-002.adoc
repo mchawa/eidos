@@ -10,10 +10,9 @@ intent:
     out of the Python source package directory (src/eidos) into a dedicated top-level
     assets/ directory, resolving them dynamically and bundling via Hatchling force-include.
 mutations:
-- action: modify_component
-  target_component: CMP-EIDOS-ENGINE
-  details: Introduce eidos.core.assets locator and relocate schemas and plugin reference
-    to assets/.
+- operation: modify
+  target: CMP-EIDOS-ENGINE
+  details: Introduce eidos.core.assets locator and relocate schemas and plugin reference to assets/.
 ---
 
 

@@ -19,47 +19,31 @@ intent:
     metadata cards, and adds reader ergonomic controls (measure constraints, font
     scaling, clean syntax blocks).
 mutations:
-- action: modify_container
-  target_container: CNT-EIDOS-PORTAL
-  details: Upgrade the React 19 / Tailwind v4 frontend under 'src/eidos/portal/frontend'
-    and compile into 'src/eidos/portal/assets.py' with enhanced reading-first layouts,
-    responsive document reader stages, and dynamic heading outline generation while
-    preserving zero Node.js/npm runtime dependencies (INV-PORTAL-ZERO-NODE-DEP).
-- action: modify_design_system
-  target_design_system: DS-CORE
-  details: 'Extend ''eidos/design/systems/core/tokens.json'' with dedicated prose
-    typography tokens (font_size.prose_body: 16px/1.75, prose_lead: 18px, prose_h1:
-    30px, prose_h2: 22px, prose_h3: 18px, prose_code: 13.5px) and optimal reading
-    measure constraints (68ch-75ch / max-w-3xl).'
-- action: add_ui_component
-  target_ui_component: UIC-PORTAL-READER
-  details: Author living specification for the dedicated Living Specification Reader
-    component governing the reading stage, sticky in-document Table of Contents (TOC)
-    with scroll-spy, and ergonomic reader controls.
-- action: modify_ui_component
-  target_ui_component: UIC-PORTAL-SHELL
-  details: Update portal shell layout to support full-page specification reading mode,
-    responsive split-pane reading drawer without nested double scrollbars, and seamless
-    transitions between catalog navigation and deep reading.
-- action: modify_screen
-  target_screen: SCR-PORTAL-CATALOG
-  details: Revamp specification detail inspection from a cramped popup modal with
-    raw JSON dumps into a reading-friendly reader view featuring human-readable metadata
-    pills, sticky section TOC, and comfortable typography.
-- action: modify_screen
-  target_screen: SCR-PORTAL-BUSINESS
-  details: Upgrade Domain, Capability, Persona, and Policy rationale drawers to utilize
-    the enhanced prose renderer and clean metadata headers.
-- action: modify_screen
-  target_screen: SCR-PORTAL-DELTAS
-  details: Enhance SpecDelta detail drawer to present the strategic motivation, intent
-    diff, and AsciiDoc rationale body with high-legibility prose layout and mutation
-    badges.
-- action: add_invariant
-  target_invariant_id: INV-PORTAL-READING-ERGONOMICS
-  details: Formulate and enforce invariant mandating minimum 15px/16px body prose,
-    65ch-75ch maximum reading measure, hierarchical TOC outline navigation for multi-section
-    specs, and non-blocking human-readable metadata headers.
+- operation: modify
+  target: CNT-EIDOS-PORTAL
+  details: Upgrade the React 19 / Tailwind v4 frontend under 'src/eidos/portal/frontend' and compile into 'src/eidos/portal/assets.py' with enhanced reading-first layouts, responsive document reader stages, and dynamic heading outline generation while preserving zero Node.js/npm runtime dependencies (INV-PORTAL-ZERO-NODE-DEP).
+- operation: modify
+  target: DS-CORE
+  details: 'Extend ''eidos/design/systems/core/tokens.json'' with dedicated prose typography tokens (font_size.prose_body: 16px/1.75, prose_lead: 18px, prose_h1: 30px, prose_h2: 22px, prose_h3: 18px, prose_code: 13.5px) and optimal reading measure constraints (68ch-75ch / max-w-3xl).'
+- operation: add
+  target: UIC-PORTAL-READER
+  details: Author living specification for the dedicated Living Specification Reader component governing the reading stage, sticky in-document Table of Contents (TOC) with scroll-spy, and ergonomic reader controls.
+- operation: modify
+  target: UIC-PORTAL-SHELL
+  details: Update portal shell layout to support full-page specification reading mode, responsive split-pane reading drawer without nested double scrollbars, and seamless transitions between catalog navigation and deep reading.
+- operation: modify
+  target: SCR-PORTAL-CATALOG
+  details: Revamp specification detail inspection from a cramped popup modal with raw JSON dumps into a reading-friendly reader view featuring human-readable metadata pills, sticky section TOC, and comfortable typography.
+- operation: modify
+  target: SCR-PORTAL-BUSINESS
+  details: Upgrade Domain, Capability, Persona, and Policy rationale drawers to utilize the enhanced prose renderer and clean metadata headers.
+- operation: modify
+  target: SCR-PORTAL-DELTAS
+  details: Enhance SpecDelta detail drawer to present the strategic motivation, intent diff, and AsciiDoc rationale body with high-legibility prose layout and mutation badges.
+- operation: add
+  target: INV-PORTAL-READING-ERGONOMICS
+  parent: CAP-EXP-001
+  details: Formulate and enforce invariant mandating minimum 15px/16px body prose, 65ch-75ch maximum reading measure, hierarchical TOC outline navigation for multi-section specs, and non-blocking human-readable metadata headers.
 ---
 = SpecDelta: Living Web Portal Reading-Friendly Design Revamp
 :toc: left

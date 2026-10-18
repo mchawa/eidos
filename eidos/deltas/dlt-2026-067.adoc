@@ -12,22 +12,22 @@ intent:
   severity: high
   motivation: Eliminate unconditional SQLite write transactions on read-only cache opens, include db_path and connection cleanup in the get_architectural_index singleton, and automatically resolve repo_root via find_repo_root when custom --path directories are passed.
 mutations:
-- action: modify_component
-  target_component: CMP-GRAPH-STORAGE
+- operation: modify
+  target: CMP-GRAPH-STORAGE
   details: Update open_cache_connection in src/eidos/core/index/storage.py to avoid DDL/DML write transactions when schema version already matches; update ArchitecturalIndex and get_architectural_index in src/eidos/core/index/graph_index.py to key singleton replacement on db_path, close evicted SQLite connections, avoid transaction context managers on read-only SELECT queries, and default repo_root to find_repo_root(eidos_dir).
   expect:
     frontmatter:
       source_path: src/eidos/core/index/storage.py
       responsibility: open_cache_connection
-- action: modify_component
-  target_component: CMP-CLI-DELTA-COMMANDS
+- operation: modify
+  target: CMP-CLI-DELTA-COMMANDS
   details: Update delta_changelog_cmd in src/eidos/cli/delta_commands.py to resolve repo_root via find_repo_root(eidos_dir.resolve()) when a custom --path is provided.
   expect:
     frontmatter:
       source_path: src/eidos/cli/delta_commands.py
       responsibility: changelog
-- action: modify_component
-  target_component: CMP-PROJECT-RESOLVER
+- operation: modify
+  target: CMP-PROJECT-RESOLVER
   details: Update find_repo_root in src/eidos/core/workspace/project.py to recognize custom spec root directories (system.adoc, architecture/, domains/, policies/, deltas/, design/) when resolving the parent repository root.
   expect:
     frontmatter:

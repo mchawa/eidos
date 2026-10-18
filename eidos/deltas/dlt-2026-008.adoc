@@ -9,20 +9,16 @@ intent:
   motivation: Introduce lifecycle hooks in the AI agent plugin to enforce syntax and
     schema validation of living documentation on edit and task completion.
 mutations:
-- action: modify_component
-  target_component: CMP-EIDOS-PLUGIN
-  details: Integrate lifecycle hooks configuration (hooks.json) and script (scripts/lint_docs.py)
-    for living documentation syntax and schema validation into the plugin reference
-    bundle.
-- action: add_invariant
-  target_capability: CAP-AGENT-001
-  target_invariant_id: INV-AGENT-LINT-HOOK
-  details: Require the AI agent plugin to enforce living specification syntax, schema
-    validity, and cross-reference integrity before task completion.
-- action: modify_contract
-  target_component: CMP-EIDOS-CLI
-  details: Add 'eidos lint' CLI command as an alias to validate specifications and
-    report syntax/schema diagnostics.
+- operation: modify
+  target: CMP-EIDOS-PLUGIN
+  details: Integrate lifecycle hooks configuration (hooks.json) and script (scripts/lint_docs.py) for living documentation syntax and schema validation into the plugin reference bundle.
+- operation: add
+  target: INV-AGENT-LINT-HOOK
+  parent: CAP-AGENT-001
+  details: Require the AI agent plugin to enforce living specification syntax, schema validity, and cross-reference integrity before task completion.
+- operation: modify
+  target: CMP-EIDOS-CLI
+  details: Add 'eidos lint' CLI command as an alias to validate specifications and report syntax/schema diagnostics.
 ---
 
 = SpecDelta: AI Plugin Lifecycle Hooks for Automated Documentation Linting

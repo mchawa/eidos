@@ -11,46 +11,46 @@ intent:
   kind: enabler
   motivation: "Enforce strict JSON Schema validation for mutations[].expect in delta.schema.yaml by replacing untyped object and additionalProperties: true with a strictly closed schema (additionalProperties: false) separating structured body assertions (contains, not_contains) and typed frontmatter assertions (responsibility, source_path, rule, test_binding, status, version, category, custom), paired with comment-stripped body evaluation, list-subset matching, baseline-modification verification, and failure_reason diagnostics in DeltaEngine and DeltaCommands."
 mutations:
-  - action: modify_component
-    target_component: CMP-SPEC-VALIDATOR
-    details: "Update assets/schemas/v1/delta/delta.schema.yaml and eidos/architecture/containers/core.adoc (including DEC-CORE-STRUCTURED-EXPECT-SCHEMA) to replace untyped object and additionalProperties: true under mutations[].expect with a closed schema (additionalProperties: false) permitting only structured body assertions (contains, not_contains as string or array of strings) and typed frontmatter assertions (responsibility, source_path, rule, test_binding, status, version, category, and custom)."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/core/spec/validator.py"
-        responsibility: "closed mutations[].expect schema validation"
-  - action: modify_component
-    target_component: CMP-DELTA-ENGINE
-    details: "Enhance _normalize_expect_spec, _evaluate_declarative_postcondition, _lookup_existing_baseline_sha, verify_delta_mutations, execute_delta_mutations, and _apply_expect_or_details_to_spec in src/eidos/core/lifecycle/delta_engine.py to enforce structured body (contains, not_contains evaluated against uncommented AsciiDoc body text) and frontmatter (responsibility, source_path, rule, test_binding, status, version, category, custom) blocks, multi-string and negative assertions, list-to-list subset matching, Git/SQLite baseline digest verification alongside expect, and failure_reason diagnostic capture on MutationVerificationItem."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/core/lifecycle/delta_engine.py"
-        responsibility: "_normalize_expect_spec"
-  - action: modify_component
-    target_component: CMP-CLI-DELTA-COMMANDS
-    details: "Update delta_verify_cmd in src/eidos/cli/delta_commands.py and eidos/architecture/containers/cli.adoc to render MutationVerificationItem.failure_reason diagnostics in the CLI table when a mutation fails verification."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/cli/delta_commands.py"
-        responsibility: "failure_reason diagnostics"
-  - action: extend_capability
-    target_capability: CAP-PROD-002
-    details: "Bump CAP-PROD-002 to version 1.5.0 and update eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc to require structured (body/frontmatter) declarative expect post-conditions evaluated with comment stripping, list-subset matching, negative substring verification, and failure_reason diagnostics, backed by strict closed delta schema validation."
-    expect:
-      frontmatter:
-        status: active
-        version: "1.5.0"
-      body:
-        contains:
-          - "body.contains"
-          - "body.not_contains"
-  - action: patch_invariant
-    target_capability: CAP-PROD-002
-    target_invariant_id: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
-    details: "Update INV-DELTA-VERIFY-MODIFICATION-EVIDENCE rule to mandate that declarative expect post-conditions use structured body and frontmatter blocks (with comment stripping, multi-string contains, not_contains, and list-subset matching), verify baseline digest changes, and emit failure_reason diagnostics, backed by closed schema validation (additionalProperties: false) in delta.schema.yaml."
-    expect:
-      frontmatter:
-        rule: "structured body/frontmatter"
-        test_binding: "tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence"
+- operation: modify
+  target: CMP-SPEC-VALIDATOR
+  details: 'Update assets/schemas/v1/delta/delta.schema.yaml and eidos/architecture/containers/core.adoc (including DEC-CORE-STRUCTURED-EXPECT-SCHEMA) to replace untyped object and additionalProperties: true under mutations[].expect with a closed schema (additionalProperties: false) permitting only structured body assertions (contains, not_contains as string or array of strings) and typed frontmatter assertions (responsibility, source_path, rule, test_binding, status, version, category, and custom).'
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/spec/validator.py
+      responsibility: closed mutations[].expect schema validation
+- operation: modify
+  target: CMP-DELTA-ENGINE
+  details: Enhance _normalize_expect_spec, _evaluate_declarative_postcondition, _lookup_existing_baseline_sha, verify_delta_mutations, execute_delta_mutations, and _apply_expect_or_details_to_spec in src/eidos/core/lifecycle/delta_engine.py to enforce structured body (contains, not_contains evaluated against uncommented AsciiDoc body text) and frontmatter (responsibility, source_path, rule, test_binding, status, version, category, custom) blocks, multi-string and negative assertions, list-to-list subset matching, Git/SQLite baseline digest verification alongside expect, and failure_reason diagnostic capture on MutationVerificationItem.
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/lifecycle/delta_engine.py
+      responsibility: _normalize_expect_spec
+- operation: modify
+  target: CMP-CLI-DELTA-COMMANDS
+  details: Update delta_verify_cmd in src/eidos/cli/delta_commands.py and eidos/architecture/containers/cli.adoc to render MutationVerificationItem.failure_reason diagnostics in the CLI table when a mutation fails verification.
+  expect:
+    frontmatter:
+      source_path: src/eidos/cli/delta_commands.py
+      responsibility: failure_reason diagnostics
+- operation: modify
+  target: CAP-PROD-002
+  details: Bump CAP-PROD-002 to version 1.5.0 and update eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc to require structured (body/frontmatter) declarative expect post-conditions evaluated with comment stripping, list-subset matching, negative substring verification, and failure_reason diagnostics, backed by strict closed delta schema validation.
+  expect:
+    frontmatter:
+      status: active
+      version: 1.5.0
+    body:
+      contains:
+      - body.contains
+      - body.not_contains
+- operation: modify
+  target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+  parent: CAP-PROD-002
+  details: 'Update INV-DELTA-VERIFY-MODIFICATION-EVIDENCE rule to mandate that declarative expect post-conditions use structured body and frontmatter blocks (with comment stripping, multi-string contains, not_contains, and list-subset matching), verify baseline digest changes, and emit failure_reason diagnostics, backed by closed schema validation (additionalProperties: false) in delta.schema.yaml.'
+  expect:
+    frontmatter:
+      rule: structured body/frontmatter
+      test_binding: tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence
 ---
 = SpecDelta: Structured Mutation Post-Condition Assertions (body/frontmatter) and Closed Schema Validation for SpecDeltas
 :toc: left

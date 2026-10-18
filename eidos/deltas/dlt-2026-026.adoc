@@ -10,21 +10,21 @@ intent:
   kind: enabler
   motivation: "Make the Eidos runtime engine and bundled agent skills 100% repository-agnostic with zero configuration files by standardizing 'package_path' on containers, 'source_path' on components, inferring design client/system paths via the knowledge graph, and relocating the index cache to 'eidos/.cache/'."
 mutations:
-- action: modify_container
-  target_container: CNT-EIDOS-CORE
-  details: "Add 'src/eidos/core/project.py' for glob-aware path ownership matching and generated/vendored file filtering; update 'container.schema.yaml' ('package_path' as string or array of strings/globs), 'component.schema.yaml' (strictly 'source_path' as string or array of strings/globs, removing duplicate 'package_path'), and 'capability.schema.yaml' ('technical.containers' as primary required list and 'technical.components' as optional sub-list); fix YAML frontmatter splitting in 'src/eidos/core/parser.py'."
-- action: modify_container
-  target_container: CNT-EIDOS-INDEX
-  details: "Relocate the SQLite knowledge graph and stop-gate cache from '.eidos/cache/' to 'eidos/.cache/' (gitignored via 'eidos/.gitignore'), remove hardcoded Eidos path prefixes from 'src/eidos/core/graph_index.py', and automatically infer code paths for 'design/client' ('CLT-*') and 'design/system' ('DS-*') by traversing graph edges to bound 'CNT-*' containers and 'CMP-*' components."
-- action: modify_container
-  target_container: CNT-EIDOS-PORTAL
-  details: "Remove hardcoded 'SYS-EIDOS-001', 'POL-001/002/003', and 'CMP-EIDOS-PORTAL' references from 'src/eidos/portal/generator.py', deriving C4 diagrams and policy badges dynamically from the repository's parsed living specifications."
-- action: modify_container
-  target_container: CNT-EIDOS-PLUGIN
-  details: "Remove all author-specific filesystem paths ('file:///home/MTS/marwan.chawa/...') and Eidos-self examples from all 14 skills in 'assets/plugin_reference/skills/*/SKILL.md'."
-- action: add_container
-  target_container: CNT-EIDOS-VCS
-  details: "Create 'eidos/architecture/containers/vcs.adoc' ('CNT-EIDOS-VCS' owning 'src/eidos/vcs') and register 'src/eidos/plugin' + 'assets/plugin_reference' in 'CNT-EIDOS-PLUGIN' so Eidos dogfoods its own generic path ownership rules."
+- operation: modify
+  target: CNT-EIDOS-CORE
+  details: Add 'src/eidos/core/project.py' for glob-aware path ownership matching and generated/vendored file filtering; update 'container.schema.yaml' ('package_path' as string or array of strings/globs), 'component.schema.yaml' (strictly 'source_path' as string or array of strings/globs, removing duplicate 'package_path'), and 'capability.schema.yaml' ('technical.containers' as primary required list and 'technical.components' as optional sub-list); fix YAML frontmatter splitting in 'src/eidos/core/parser.py'.
+- operation: modify
+  target: CNT-EIDOS-INDEX
+  details: Relocate the SQLite knowledge graph and stop-gate cache from '.eidos/cache/' to 'eidos/.cache/' (gitignored via 'eidos/.gitignore'), remove hardcoded Eidos path prefixes from 'src/eidos/core/graph_index.py', and automatically infer code paths for 'design/client' ('CLT-*') and 'design/system' ('DS-*') by traversing graph edges to bound 'CNT-*' containers and 'CMP-*' components.
+- operation: modify
+  target: CNT-EIDOS-PORTAL
+  details: Remove hardcoded 'SYS-EIDOS-001', 'POL-001/002/003', and 'CMP-EIDOS-PORTAL' references from 'src/eidos/portal/generator.py', deriving C4 diagrams and policy badges dynamically from the repository's parsed living specifications.
+- operation: modify
+  target: CNT-EIDOS-PLUGIN
+  details: Remove all author-specific filesystem paths ('file:///home/MTS/marwan.chawa/...') and Eidos-self examples from all 14 skills in 'assets/plugin_reference/skills/*/SKILL.md'.
+- operation: add
+  target: CNT-EIDOS-VCS
+  details: Create 'eidos/architecture/containers/vcs.adoc' ('CNT-EIDOS-VCS' owning 'src/eidos/vcs') and register 'src/eidos/plugin' + 'assets/plugin_reference' in 'CNT-EIDOS-PLUGIN' so Eidos dogfoods its own generic path ownership rules.
 ---
 = SpecDelta: 100% Generic Engine, Zero-Config Path Standardization, and Graph-Inferred Design Paths
 :toc: left

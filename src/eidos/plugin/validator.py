@@ -211,16 +211,26 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
                 report.add_error("Invalid 'hooks.json': root must be a dictionary of hook configurations.")
             else:
                 valid_events = {"PreToolUse", "PostToolUse", "PreInvocation", "PostInvocation", "Stop", "enabled"}
+                hook_allowed_events = {
+                    "eidos-drift-gate": {"Stop"},
+                    "eidos-doc-linter": {"PreToolUse", "PostToolUse", "Stop"},
+                }
                 for hook_name, hook_spec in hooks_data.items():
                     if not isinstance(hook_spec, dict):
                         report.add_error(f"Hook '{hook_name}' in 'hooks.json' must be an object.")
                         continue
                     report.hooks.append(hook_name)
+                    allowed_for_hook = hook_allowed_events.get(hook_name)
                     for event_key, handlers in hook_spec.items():
                         if event_key == "enabled":
                             continue
                         if event_key not in valid_events:
                             report.add_warning(f"Hook '{hook_name}' defines unrecognized event '{event_key}'.")
+                        elif allowed_for_hook is not None and event_key not in allowed_for_hook:
+                            allowed_str = ", ".join(sorted(allowed_for_hook))
+                            report.add_error(
+                                f"Hook '{hook_name}' event '{event_key}' is not permitted; allowed events: {allowed_str}."
+                            )
                         if not isinstance(handlers, list):
                             report.add_error(
                                 f"Hook '{hook_name}' event '{event_key}' must be a list of handler configs."

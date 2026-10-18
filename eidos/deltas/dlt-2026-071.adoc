@@ -12,15 +12,15 @@ intent:
   severity: high
   motivation: Prevent PluginInstallTarget.PROJECT from implicitly mutating or deleting .cursor/ and .claude/, remove the retired broken reconcile.md Claude slash command, fix AIDER post_install_hook appending a boolean into InstallResult.created_files, report the actual matched manifest directory in check_plugin_version_status, and use line-anchored YAML frontmatter parsing in _validate_skill_md.
 mutations:
-- action: modify_component
-  target_component: CMP-PLUGIN-INSTALLER
+- operation: modify
+  target: CMP-PLUGIN-INSTALLER
   details: Update install_plugin and uninstall_plugin in src/eidos/plugin/installer.py so PluginInstallTarget.PROJECT scopes strictly to .agents/plugins/eidos; remove reconcile.md from _write_claude_commands and prune legacy .claude/plugins/eidos/commands/reconcile.md on install; return Path from _update_project_aider_conf so InstallResult.created_files contains only Path objects; and update check_plugin_version_status in src/eidos/plugin/version.py to return the actual matched fallback plugin directory.
   expect:
     frontmatter:
       source_path: src/eidos/plugin/installer.py
       responsibility: TargetAdapter
-- action: modify_component
-  target_component: CMP-PLUGIN-VALIDATOR
+- operation: modify
+  target: CMP-PLUGIN-VALIDATOR
   details: Update _validate_skill_md in src/eidos/plugin/validator.py to extract SKILL.md YAML frontmatter using line-anchored ^---\s*$ delimiters instead of naive content.split('---', 2).
   expect:
     frontmatter:

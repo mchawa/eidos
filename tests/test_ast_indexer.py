@@ -760,3 +760,183 @@ def test_dlt_2026_083_polyglot_fallback_and_block_comment_stripping(tmp_path):
     assert ("export", "", "UserDto") in ts_reexp
     rs_reexp = boundary_symbol_map("pub use crate::engine::VaultEngine;\n", "src/lib.rs")
     assert ("export", "", "VaultEngine") in rs_reexp
+
+
+def test_decorator_aware_symbol_signatures_and_line_start():
+    """Verify DLT-2026-089: AstGrepIndexer and FallbackIndexer include decorators/attributes in line_start and signature."""
+    from eidos.core.index.ast_indexer import AstGrepIndexer, FallbackIndexer, diff_public_symbols
+
+    py_v1 = (
+        "from dataclasses import dataclass\n\n"
+        "@dataclass(frozen=True)\n"
+        "class OrderPayload:\n"
+        "    order_id: str\n\n"
+        "    @property\n"
+        "    def normalized_id(self) -> str:\n"
+        "        return self.order_id.strip()\n\n"
+        "@app.command('create')\n"
+        "def run_order(name: str) -> int:\n"
+        "    return 0\n"
+    )
+    py_v2 = py_v1.replace("@app.command('create')", "@app.command('submit')")
+
+    ag = AstGrepIndexer()
+    fb = FallbackIndexer()
+    for indexer in (ag, fb):
+        syms = {(s.kind, s.parent_symbol or "", s.name): s for s in indexer.extract_symbols("src/orders.py", py_v1)}
+        cls_sym = syms[("class", "", "OrderPayload")]
+        assert cls_sym.line_start == 3
+        assert "@dataclass" in (cls_sym.signature or "")
+
+        meth_sym = syms[("method", "OrderPayload", "normalized_id")]
+        assert meth_sym.line_start == 7
+        assert "@property" in (meth_sym.signature or "")
+
+        fn_sym = syms[("function", "", "run_order")]
+        assert fn_sym.line_start == 11
+        assert "@app.command" in (fn_sym.signature or "")
+
+    # Modifying only a decorator argument triggers a structural symbol diff in diff_public_symbols
+    py_diff = diff_public_symbols(py_v1, py_v2, "src/orders.py")
+    assert ("function", "", "run_order") in py_diff.changed
+
+    # TypeScript @Component({ selector: 'app' }) with object literal in decorator does not truncate signature at '{'
+    ts_v1 = (
+        "@Component({ selector: 'app-header' })\n"
+        "export class HeaderComponent {\n"
+        "  @Input()\n"
+        "  renderHeader(): string { return 'ok'; }\n"
+        "}\n"
+    )
+    ts_v2 = ts_v1.replace("app-header", "app-navbar")
+    for indexer in (ag, fb):
+        ts_syms = {(s.kind, s.parent_symbol or "", s.name): s for s in indexer.extract_symbols("src/header.ts", ts_v1)}
+        hdr = ts_syms[("class", "", "HeaderComponent")]
+        assert hdr.line_start == 1
+        assert hdr.is_public is True
+        assert "@Component" in (hdr.signature or "")
+        assert "class HeaderComponent" in (hdr.signature or "")
+
+    ts_diff = diff_public_symbols(ts_v1, ts_v2, "src/header.ts")
+    assert ("class", "", "HeaderComponent") in ts_diff.changed
+
+    # Rust #[derive(...)] / #[must_use] attributes included in line_start and signature while preserving pub visibility
+    rs_v1 = (
+        "#[derive(Debug, Clone)]\n"
+        "pub struct TokenRecord {\n"
+        "    pub id: String,\n"
+        "}\n\n"
+        "#[must_use]\n"
+        "pub fn issue_token(id: &str) -> TokenRecord {\n"
+        "    TokenRecord { id: id.to_string() }\n"
+        "}\n"
+    )
+    rs_v2 = rs_v1.replace("#[derive(Debug, Clone)]", "#[derive(Debug, Clone, PartialEq)]")
+    for indexer in (ag, fb):
+        rs_syms = {(s.kind, s.parent_symbol or "", s.name): s for s in indexer.extract_symbols("src/token.rs", rs_v1)}
+        rec = rs_syms[("struct", "", "TokenRecord")]
+        assert rec.line_start == 1
+        assert rec.is_public is True
+        assert "#[derive" in (rec.signature or "")
+
+    rs_diff = diff_public_symbols(rs_v1, rs_v2, "src/token.rs")
+    assert ("struct", "", "TokenRecord") in rs_diff.changed
+
+
+def test_polyglot_parameterized_and_subtest_extraction():
+    """Verify DLT-2026-089: test.each/it.each/Deno.test (TS/JS), t.Run (Go), and #[tokio::test]/#[rstest]/#[test_case] (Rust)."""
+    from eidos.core.index.ast_indexer import AstGrepIndexer, FallbackIndexer
+
+    inv_p = "INV" + "-"
+    ts_tests = (
+        "// test('commented out fake test', () => {})\n"
+        "it('handles /api/v1: ok', () => {\n"
+        f"  // {inv_p}TS-STD-001\n"
+        "});\n\n"
+        "test.each([[1, 2], [3, 4]])('adds parameterized %i and %i', (a, b) => {\n"
+        f"  // {inv_p}TS-PARAM-001\n"
+        "  expect(a + b).toBeGreaterThan(0);\n"
+        "});\n\n"
+        "it.concurrent('runs concurrent check', async () => {\n"
+        f"  // {inv_p}TS-CONC-001\n"
+        "});\n\n"
+        "Deno.test({ name: 'deno object test', fn() {\n"
+        f"  // {inv_p}DENO-OBJ-001\n"
+        "} });\n\n"
+        "Deno.test('deno string test', () => {\n"
+        f"  // {inv_p}DENO-STR-001\n"
+        "});\n"
+    )
+
+    go_tests = (
+        "package auth\n\n"
+        "import \"testing\"\n\n"
+        "// func TestCommentedFake(t *testing.T) {}\n"
+        "func TestTokenFlow(t *testing.T) {\n"
+        "    t.Run(\"expired_token\", func(t *testing.T) {\n"
+        f"        // {inv_p}GO-SUB-001\n"
+        "    })\n"
+        "}\n"
+    )
+
+    rs_tests = (
+        "#[tokio::test]\n"
+        "async fn async_worker_dispatches_job() {\n"
+        f"    // {inv_p}RS-TOKIO-001\n"
+        "    assert!(true);\n"
+        "}\n\n"
+        "#[rstest]\n"
+        "#[case(1)]\n"
+        "fn parameterized_rust_case(#[case] input: u32) {\n"
+        f"    // {inv_p}RS-RSTEST-001\n"
+        "    assert!(input > 0);\n"
+        "}\n\n"
+        "#[test_case(10 => 20)]\n"
+        "fn MacroDrivenCase(v: u32) -> u32 {\n"
+        f"    // {inv_p}RS-TESTCASE-001\n"
+        "    v * 2\n"
+        "}\n"
+    )
+
+    for indexer in (AstGrepIndexer(), FallbackIndexer()):
+        # TS/JS
+        ts_fn_map = indexer.list_test_functions("tests/math.test.ts", ts_tests)
+        assert "handles /api/v1: ok" in ts_fn_map
+        assert "adds parameterized %i and %i" in ts_fn_map
+        assert "runs concurrent check" in ts_fn_map
+        assert "deno object test" in ts_fn_map
+        assert "deno string test" in ts_fn_map
+        assert "commented out fake test" not in ts_fn_map
+
+        ts_bindings = {b.test_name: b for b in indexer.extract_test_bindings("tests/math.test.ts", ts_tests)}
+        assert ts_bindings["handles /api/v1: ok"].invariants == [f"{inv_p}TS-STD-001"]
+        assert ts_bindings["adds parameterized %i and %i"].invariants == [f"{inv_p}TS-PARAM-001"]
+        assert ts_bindings["runs concurrent check"].invariants == [f"{inv_p}TS-CONC-001"]
+        assert ts_bindings["deno object test"].invariants == [f"{inv_p}DENO-OBJ-001"]
+        assert ts_bindings["deno string test"].invariants == [f"{inv_p}DENO-STR-001"]
+
+        # Go subtests
+        go_fn_map = indexer.list_test_functions("pkg/auth_test.go", go_tests)
+        assert "TestTokenFlow" in go_fn_map
+        assert "TestTokenFlow/expired_token" in go_fn_map
+        assert "TestTokenFlow::expired_token" in go_fn_map
+        assert "expired_token" in go_fn_map
+        assert "TestCommentedFake" not in go_fn_map
+
+        go_bindings = {b.test_name: b for b in indexer.extract_test_bindings("pkg/auth_test.go", go_tests)}
+        assert f"{inv_p}GO-SUB-001" in go_bindings["TestTokenFlow/expired_token"].invariants
+        assert f"{inv_p}GO-SUB-001" in go_bindings["TestTokenFlow::expired_token"].invariants
+        assert f"{inv_p}GO-SUB-001" in go_bindings["expired_token"].invariants
+
+        # Rust attribute macros
+        rs_fn_map = indexer.list_test_functions("src/worker_test.rs", rs_tests)
+        assert "async_worker_dispatches_job" in rs_fn_map
+        assert "parameterized_rust_case" in rs_fn_map
+        assert "MacroDrivenCase" in rs_fn_map
+
+        rs_bindings = {b.test_name: b for b in indexer.extract_test_bindings("src/worker_test.rs", rs_tests)}
+        assert f"{inv_p}RS-TOKIO-001" in rs_bindings["async_worker_dispatches_job"].invariants
+        assert f"{inv_p}RS-RSTEST-001" in rs_bindings["parameterized_rust_case"].invariants
+        assert f"{inv_p}RS-TESTCASE-001" in rs_bindings["MacroDrivenCase"].invariants
+
+

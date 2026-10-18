@@ -12,8 +12,8 @@ intent:
   severity: high
   motivation: Align all YAML frontmatter templates, property descriptions, enum values, and directory paths in the 4 bundled Agent Skills (assets/plugin_reference/skills/*/SKILL.md) with the v1 JSON Schemas and scaffolder conventions so AI agents following the skills author specifications that pass eidos validate.
 mutations:
-- action: modify_component
-  target_component: CMP-PLUGIN-INSTALLER
+- operation: modify
+  target: CMP-PLUGIN-INSTALLER
   details: Update assets/plugin_reference/skills/eidos-spec/SKILL.md, eidos-plan/SKILL.md, eidos-ops/SKILL.md, and eidos/SKILL.md (and synchronize installed copies in .agents/plugins/eidos/skills/) so EXP-*, DOM-*, PER-*, SYS-*, CNT-*, CTR-*, DS-*, UIC-*, CLT-*, SCR-*, and FLOW-* templates and directory paths match assets/schemas/v1/** and eidos/design/**.
   expect:
     frontmatter:

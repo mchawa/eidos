@@ -188,7 +188,7 @@ def hook_lint_cmd(
         "Stop",
         "--event",
         "-e",
-        help="Hook lifecycle event (PreToolUse, PostToolUse, PostInvocation, Stop).",
+        help="Hook lifecycle event (PreToolUse, PostToolUse, Stop).",
     ),
     path: Path | None = typer.Option(
         None,
@@ -209,7 +209,7 @@ def hook_drift_cmd(
         "Stop",
         "--event",
         "-e",
-        help="Hook lifecycle event (PostInvocation, Stop).",
+        help="Hook lifecycle event (Stop).",
     ),
     path: Path | None = typer.Option(
         None,

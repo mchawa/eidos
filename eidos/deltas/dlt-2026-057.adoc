@@ -10,22 +10,22 @@ intent:
   kind: enabler
   motivation: Make SpecDelta verification 100% deterministic across machines and CI without relying on gitignored SQLite .cache/index.db state by recording vcs.base_commit in DLT-* frontmatter, support collision-free branch/slug delta IDs to prevent parallel branch merge conflicts, and replace the full-directory eidos/ RAM snapshot in _MutationTransaction with copy-on-write snapshotting.
 mutations:
-- action: modify_component
-  target_component: CMP-DELTA-ENGINE
+- operation: modify
+  target: CMP-DELTA-ENGINE
   details: Persist vcs.base_commit (or target baseline blob SHAs) in DLT-* frontmatter on creation so _resolve_git_baseline_sha resolves baselines deterministically even when .cache/index.db is missing and the delta file is uncommitted; support collision-free slug/hash-qualified delta IDs in create_delta; and scope _MutationTransaction snapshots via copy-on-write to declared mutation target files rather than reading all of eidos/ into RAM.
   expect:
     frontmatter:
       source_path: src/eidos/core/lifecycle/delta_engine.py
       responsibility: copy-on-write
-- action: patch_invariant
-  target_invariant_id: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+- operation: modify
+  target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
   details: Update INV-DELTA-VERIFY-MODIFICATION-EVIDENCE in CAP-PROD-002 to guarantee deterministic baseline resolution via frontmatter vcs.base_commit when .cache/index.db is absent on uncommitted branches.
   expect:
     frontmatter:
       rule: base_commit
       test_binding: tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence
-- action: patch_invariant
-  target_invariant_id: INV-MUTATION-REVERSIBILITY
+- operation: modify
+  target: INV-MUTATION-REVERSIBILITY
   details: Update INV-MUTATION-REVERSIBILITY in CAP-PROD-002 to specify copy-on-write transactional snapshotting of targeted specifications.
   expect:
     frontmatter:

@@ -10,18 +10,15 @@ intent:
     and manage SpecDelta lifecycles, and expand the Agent Plugin with specialized
     skills.
 mutations:
-- action: modify_contract
-  target_component: CMP-EIDOS-ENGINE
-  details: Expand CTR-EIDOS-CLI with 'spec', 'delta', 'create', 'delete', 'list' command
-    suites.
-- action: add_component
-  target_component: CMP-EIDOS-ENGINE
-  details: Introduce eidos.core.scaffolder for template generation, reference safety
-    checks, and delta lifecycle management.
-- action: extend_capability
-  target_capability: CAP-AGENT-001
-  details: 'Add specialized agent skills: eidos-delta, eidos-architecture, and eidos-invariants
-    alongside eidos master skill.'
+- operation: modify
+  target: CMP-EIDOS-ENGINE
+  details: Expand CTR-EIDOS-CLI with 'spec', 'delta', 'create', 'delete', 'list' command suites.
+- operation: add
+  target: CMP-EIDOS-ENGINE
+  details: Introduce eidos.core.scaffolder for template generation, reference safety checks, and delta lifecycle management.
+- operation: modify
+  target: CAP-AGENT-001
+  details: 'Add specialized agent skills: eidos-delta, eidos-architecture, and eidos-invariants alongside eidos master skill.'
 ---
 
 = SpecDelta: CLI Spec Document Lifecycle Management and Plugin Multi-Skill Expansion

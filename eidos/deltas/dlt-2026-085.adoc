@@ -11,37 +11,37 @@ intent:
   kind: enabler
   motivation: "Eliminate 3-way entity duplication across mutations, affects, and blast_radius in SpecDelta frontmatter by making mutations[].target_* the single source of truth, removing manual affects and blast_radius blocks from delta.schema.yaml, restricting drift.py Planned Mode target authorization strictly to mutations[].target_*, and computing 0-hop affected entities and k-hop blast radius (including bound invariants) dynamically from the SQLite knowledge graph for the Portal and CLI."
 mutations:
-  - action: modify_component
-    target_component: CMP-SPEC-VALIDATOR
-    details: "Remove hand-authored affects and blast_radius properties from assets/schemas/v1/delta/delta.schema.yaml, attach x-eidos-ref prefix and target_types metadata directly to mutations[].target_* fields, and update SpecValidator in src/eidos/core/spec/validator.py to validate mutations[].target_* references (enforcing catalog existence on modify_*/extend_*/patch_*/deprecate_* actions and prefix/type integrity across all actions)."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/core/spec/validator.py"
-        responsibility: "mutations[].target_*"
-  - action: modify_component
-    target_component: CMP-DRIFT-DETECTOR
-    details: "Update detect_drift in src/eidos/vcs/drift.py to populate declared_delta_targets strictly from mutations[].target_* (paired with 1-hop graph ownership resolution in _collect_1hop_spec_targets), removing affects and blast_radius reads so downstream impact never whitelists unauthorized code modifications."
-    expect:
-      frontmatter:
-        source_path:
-          - "src/eidos/vcs/drift.py"
-        responsibility: "strictly from mutations[].target_*"
-  - action: modify_component
-    target_component: CMP-PORTAL-GENERATOR
-    details: "Update generate_portal_data in src/eidos/portal/generator.py to dynamically derive categorized 0-hop affects and k-hop blast_radius (impacted_containers, impacted_components, impacted_design_systems, impacted_screens, impacted_personas, and invariants_to_enforce) for each SpecDelta from mutations[].target_* and the SQLite knowledge graph."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/portal/generator.py"
-        responsibility: "dynamically computes delta affects and blast_radius"
-  - action: extend_capability
-    target_capability: CAP-PROD-002
-    details: "Update CAP-PROD-002 in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc to establish mutations[].target_* as the single source of truth for SpecDelta scope and document graph-derived affects and blast_radius computation."
-    expect:
-      frontmatter:
-        status: active
-      body:
-        contains:
-          - "mutations[].target_*"
+- operation: modify
+  target: CMP-SPEC-VALIDATOR
+  details: Remove hand-authored affects and blast_radius properties from assets/schemas/v1/delta/delta.schema.yaml, attach x-eidos-ref prefix and target_types metadata directly to mutations[].target_* fields, and update SpecValidator in src/eidos/core/spec/validator.py to validate mutations[].target_* references (enforcing catalog existence on modify_*/extend_*/patch_*/deprecate_* actions and prefix/type integrity across all actions).
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/spec/validator.py
+      responsibility: mutations[].target_*
+- operation: modify
+  target: CMP-DRIFT-DETECTOR
+  details: Update detect_drift in src/eidos/vcs/drift.py to populate declared_delta_targets strictly from mutations[].target_* (paired with 1-hop graph ownership resolution in _collect_1hop_spec_targets), removing affects and blast_radius reads so downstream impact never whitelists unauthorized code modifications.
+  expect:
+    frontmatter:
+      source_path:
+      - src/eidos/vcs/drift.py
+      responsibility: strictly from mutations[].target_*
+- operation: modify
+  target: CMP-PORTAL-GENERATOR
+  details: Update generate_portal_data in src/eidos/portal/generator.py to dynamically derive categorized 0-hop affects and k-hop blast_radius (impacted_containers, impacted_components, impacted_design_systems, impacted_screens, impacted_personas, and invariants_to_enforce) for each SpecDelta from mutations[].target_* and the SQLite knowledge graph.
+  expect:
+    frontmatter:
+      source_path: src/eidos/portal/generator.py
+      responsibility: dynamically computes delta affects and blast_radius
+- operation: modify
+  target: CAP-PROD-002
+  details: Update CAP-PROD-002 in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc to establish mutations[].target_* as the single source of truth for SpecDelta scope and document graph-derived affects and blast_radius computation.
+  expect:
+    frontmatter:
+      status: active
+    body:
+      contains:
+      - mutations[].target_*
 ---
 = SpecDelta: Eliminate Hand-Authored affects and blast_radius from SpecDelta Schema in Favor of Graph-Derived Scope and Impact
 :toc: left

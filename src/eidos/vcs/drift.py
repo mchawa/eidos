@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from eidos.core.index.graph_index import get_architectural_index
-from eidos.core.spec.parser import extract_frontmatter, parse_spec_file
+from eidos.core.index.storage import get_cached_spec_document
+from eidos.core.spec.parser import extract_frontmatter
 from eidos.core.spec.validator import SpecValidator, ValidationReport
 from eidos.core.workspace.project import is_generated_or_vendored
 from eidos.vcs.diff import (
@@ -37,7 +38,6 @@ from eidos.vcs.report import build_drift_remediation_and_summary, generate_remed
 from eidos.vcs.structural import (
     SYSTEM_LEVEL_SPEC_PATHS,
     ReconcileSuggestion,
-    _accepts_kwarg,
     _collect_1hop_spec_targets,
     _collect_design_subgraph,
     _is_system_level_spec,
@@ -174,43 +174,23 @@ def detect_drift(
         if fell_back:
             effective_uncommitted = True
 
-    versions_supports_mb = _accepts_kwarg(_get_file_versions, "merge_base")
-    if _accepts_kwarg(get_git_diff_files, "merge_base"):
-        changed_files = get_git_diff_files(
-            root,
-            base_ref=resolved_base_ref,
-            head_ref=head_ref,
-            uncommitted=effective_uncommitted,
-            merge_base=resolved_mb,
-        )
-    else:
-        changed_files = get_git_diff_files(
-            root,
-            base_ref=resolved_base_ref,
-            head_ref=head_ref,
-            uncommitted=effective_uncommitted,
-        )
-        if versions_supports_mb and base_ref is None:
-            effective_uncommitted = True
-            resolved_mb = None
+    changed_files = get_git_diff_files(
+        root,
+        base_ref=resolved_base_ref,
+        head_ref=head_ref,
+        uncommitted=effective_uncommitted,
+        merge_base=resolved_mb,
+    )
     classification = classify_changed_files(changed_files, repo_root=root, eidos_dir=target_eidos)
 
     def _fetch_versions(rel_p: str) -> tuple[str | None, str | None]:
-        if versions_supports_mb:
-            return _get_file_versions(
-                root,
-                rel_p,
-                base_ref=resolved_base_ref,
-                head_ref=head_ref,
-                uncommitted=effective_uncommitted,
-                merge_base=resolved_mb,
-            )
         return _get_file_versions(
             root,
             rel_p,
             base_ref=resolved_base_ref,
             head_ref=head_ref,
             uncommitted=effective_uncommitted,
+            merge_base=resolved_mb,
         )
 
     # 0. Filter code files into structural vs body-only edits (DLT-2026-028)
@@ -275,9 +255,11 @@ def detect_drift(
             delta_file = (root / df) if not Path(df).is_absolute() else Path(df)
             if not delta_file.exists():
                 continue
-            doc = parse_spec_file(delta_file)
-            fm = doc.frontmatter or {}
-            status = str(fm.get("status", "proposed")).strip().lower()
+            doc, _, _ = get_cached_spec_document(delta_file)
+            if doc is None:
+                continue
+            model = doc.model
+            status = str(model.status or "proposed").strip().lower()
             if status in ("rejected", "deprecated", "superseded", "archived"):
                 continue
             if status == "applied":
@@ -287,27 +269,28 @@ def detect_drift(
                     if isinstance(old_fm, dict) and str(old_fm.get("status", "")).strip().lower() == "applied":
                         continue
             active_delta_files.append(df)
-            for m in fm.get("mutations", []) or []:
-                if isinstance(m, dict):
-                    for key in (
-                        "target_component",
-                        "target_container",
-                        "target_architecture",
-                        "target_capability",
-                        "target_domain",
-                        "target_policy",
-                        "target_screen",
-                        "target_ui_component",
-                        "target_design_system",
-                        "target_client",
-                        "target_flow",
-                        "target_contract",
-                        "target_persona",
-                        "new_capability_id",
-                    ):
-                        val = m.get(key)
-                        if val:
-                            declared_delta_targets.add(str(val).lower())
+            for m in model.mutations:
+                for key in (
+                    "target",
+                    "parent",
+                    "target_component",
+                    "target_container",
+                    "target_architecture",
+                    "target_capability",
+                    "target_domain",
+                    "target_policy",
+                    "target_screen",
+                    "target_ui_component",
+                    "target_design_system",
+                    "target_client",
+                    "target_flow",
+                    "target_contract",
+                    "target_persona",
+                    "new_capability_id",
+                ):
+                    val = m.get(key)
+                    if val:
+                        declared_delta_targets.add(str(val).lower())
         except OSError:
             pass
 
@@ -349,7 +332,7 @@ def detect_drift(
 
     trivial_records: list[dict[str, Any]] = []
     spec_inspector = _SpecDiffInspector(
-        root, resolved_base_ref, head_ref, effective_uncommitted, merge_base=resolved_mb
+        root, resolved_base_ref, head_ref, effective_uncommitted, merge_base=resolved_mb, versions_fn=_fetch_versions
     )
     if code_changed:
         for cf, cid, spath in comp_mappings:

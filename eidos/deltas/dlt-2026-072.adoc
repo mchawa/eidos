@@ -12,15 +12,15 @@ intent:
   severity: critical
   motivation: Eliminate the basename collision between product/system.schema.yaml and design/system.schema.yaml in SpecValidator._load_bundled_schemas and eidos info, sort schema hashing deterministically, and detect functional app.command(...)(fn) and *_commands.register(app) root CLI commands in _verify_cli_contract_commands.
 mutations:
-- action: modify_component
-  target_component: CMP-SPEC-VALIDATOR
+- operation: modify
+  target: CMP-SPEC-VALIDATOR
   details: Update _load_bundled_schemas in src/eidos/core/spec/validator.py to sort schema paths deterministically and key _schema_cache by relative path without overwriting colliding basenames, and extend _verify_cli_contract_commands to discover functional app.command(...)(fn) calls and delegated *_commands.register(app) modules.
   expect:
     frontmatter:
       source_path: src/eidos/core/spec/validator.py
       responsibility: relative-keyed
-- action: modify_component
-  target_component: CMP-CLI-APP
+- operation: modify
+  target: CMP-CLI-APP
   details: Update info in src/eidos/cli/main.py to display all 16 distinct relative v1 schema paths from SpecValidator without duplicate basename filtering.
   expect:
     frontmatter:

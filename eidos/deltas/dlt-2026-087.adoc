@@ -1,0 +1,201 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-087
+title: "Composable SpecDelta Mutation Schema (operation + target) and Stop-Scoped Drift Hook Execution"
+status: applied
+vcs:
+  branch: feat/composable-delta-mutations-and-stop-scoped-drift-hook
+  base_commit: db3f9fb09920f6845cb395588718bf618cc56772
+intent:
+  kind: enabler
+  motivation: "Eliminate the combinatorial 44-value verb-noun mutations[].action enum and 15 type-specific target_*/new_capability_id keys in delta.schema.yaml by introducing an orthogonal composable mutation contract (operation: add | modify | remove | deprecate paired with prefix-aware target and optional parent resolution), while removing the noisy per-turn PostInvocation drift hook (handle_drift_post_invocation) so full detect_drift gating runs strictly at task completion (Stop) and PreToolUse/PostToolUse remain fast single-file AsciiDoc schema linting."
+mutations:
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    parent: CNT-EIDOS-CORE
+    details: "Refactor mutation normalization, verification, and execution in src/eidos/core/lifecycle/delta_engine.py (and record DEC-CORE-COMPOSABLE-DELTA-MUTATIONS in eidos/architecture/containers/core.adoc) to dispatch on orthogonal (operation, entity_type, target_id, parent_id) tuples derived from composable mutations[].operation ('add' | 'modify' | 'remove' | 'deprecate') and entity ID prefix (while normalizing legacy 44 verb-noun action and 15 target_*/new_capability_id aliases)."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/lifecycle/delta_engine.py"
+        responsibility: "composable"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    parent: CNT-EIDOS-CORE
+    details: "Update assets/schemas/v1/delta/delta.schema.yaml (replacing required: [action] with anyOf: [{required: [operation, target]}, {required: [action]}]) and SpecValidator in src/eidos/core/spec/validator.py to validate composable mutations[].operation ('add' | 'modify' | 'remove' | 'deprecate'), prefix-validated target IDs, and optional parent container/capability/policy/domain/client/design-system scope alongside backwards-compatible legacy action/target_* validation."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/spec/validator.py"
+        responsibility: "composable"
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+    parent: CNT-EIDOS-CORE
+    details: "Update DeltaMutationModel in src/eidos/core/spec/models.py to support composable operation, target, and parent fields alongside optional legacy action and target_* fields."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/spec/models.py"
+        responsibility: "composable"
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+    parent: CNT-EIDOS-CORE
+    details: "Update DeltaAuditor._extract_targets_and_tokens in src/eidos/core/lifecycle/audit.py to extract removed/deprecated target IDs and parent context IDs from normalized composable (operation, target, parent) mutations as well as legacy remove_*/deprecate_* actions."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/lifecycle/audit.py"
+        responsibility: "composable"
+  - operation: modify
+    target: CMP-CHANGELOG-GENERATOR
+    parent: CNT-EIDOS-CORE
+    details: "Update ChangelogGenerator._add_delta_to_section in src/eidos/core/lifecycle/changelog.py to classify SpecDeltas into Added, Changed, Fixed, Deprecated, or Removed using normalized composable mutations[].operation ('add' | 'modify' | 'remove' | 'deprecate') alongside legacy mutations[].action."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/lifecycle/changelog.py"
+        responsibility: "mutations[].operation"
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    parent: CNT-EIDOS-INDEX
+    details: "Update sync_index in src/eidos/core/index/sync.py to index 'affects' knowledge-graph edges for delta/mutation documents from composable mutations[].target and mutations[].parent fields alongside legacy target_* and new_capability_id keys."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/sync.py"
+        responsibility: "composable"
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    parent: CNT-EIDOS-VCS
+    details: "Update detect_drift in src/eidos/vcs/drift.py to populate Planned Mode declared_delta_targets from composable mutations[].target and mutations[].parent fields alongside legacy target_* and new_capability_id keys."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/vcs/drift.py"
+          - "src/eidos/vcs/diff.py"
+          - "src/eidos/vcs/invariants.py"
+          - "src/eidos/vcs/structural.py"
+          - "src/eidos/vcs/report.py"
+        responsibility: "composable"
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+    parent: CNT-EIDOS-PORTAL
+    details: "Update PortalGenerator in src/eidos/portal/generator.py to resolve SpecDelta affects and blast_radius categories from composable mutations[].target and mutations[].parent fields (and normalize mutation dicts for Kanban UI rendering) alongside legacy target_* keys."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/portal/generator.py"
+        responsibility: "composable"
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+    parent: CNT-EIDOS-PLUGIN
+    details: "Remove per-turn PostInvocation drift and lint execution (handle_drift_post_invocation, handle_lint_post_invocation, and hook-state.json PostInvocation short-circuiting) from src/eidos/plugin/hooks.py and assets/plugin_reference/hooks.json (and record DEC-PLUGIN-STOP-SCOPED-DRIFT-GATE in eidos/architecture/containers/plugin.adoc) so eidos-drift-gate runs strictly on the Stop lifecycle event (with TTL/session-scoped Block-Once fingerprinting), eliminating intermediate-turn detect_drift latency and prompt-injection noise while keeping PreToolUse/PostToolUse single-file .adoc linting."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/plugin/hooks.py"
+        responsibility: "strictly on Stop"
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+    parent: CNT-EIDOS-PLUGIN
+    details: "Update hook validation in src/eidos/plugin/validator.py and bundled hook definitions in assets/plugin_reference/hooks.json (plus eidos-plan/SKILL.md in assets/plugin_reference/skills/) to scope eidos-drift-gate exclusively to Stop and eidos-doc-linter to PreToolUse, PostToolUse, and Stop."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/plugin/validator.py"
+        responsibility: "Stop"
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+    parent: CNT-EIDOS-CLI
+    details: "Update the '--event' CLI option help descriptions on 'eidos hook lint' and 'eidos hook drift' in src/eidos/cli/doctor_hook_commands.py to reflect PreToolUse/PostToolUse/Stop for lint and Stop for drift."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/doctor_hook_commands.py"
+        responsibility: "Stop"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Update the 'eidos hook lint' and 'eidos hook drift' command specifications in eidos/architecture/contracts/cli.adoc to document PreToolUse/PostToolUse/Stop lint evaluation and Stop-scoped drift gate evaluation without per-turn PostInvocation hooks."
+    expect:
+      body:
+        contains:
+          - "Stop"
+        not_contains:
+          - "PostInvocation"
+  - operation: modify
+    target: CAP-PROD-002
+    details: "Update CAP-PROD-002 in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc (bumping version to 1.7.0) to specify the orthogonal composable mutation syntax (operation + target + optional parent) and entity-prefix dispatch."
+    expect:
+      frontmatter:
+        version: "1.7.0"
+        status: active
+      body:
+        contains:
+          - "operation"
+          - "composable"
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Update CAP-AGENT-001 and INV-HOOK-FAIL-LOUD in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc (bumping version to 1.5.0) to reflect that eidos-drift-gate executes exclusively on Stop while PreToolUse, PostToolUse, and Stop perform specification linting."
+    expect:
+      frontmatter:
+        version: "1.5.0"
+        status: active
+      body:
+        contains:
+          - "Stop"
+        not_contains:
+          - "PostInvocation"
+  - operation: modify
+    target: INV-HOOK-FAIL-LOUD
+    parent: CAP-AGENT-001
+    details: "Update INV-HOOK-FAIL-LOUD in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc to reflect Stop-scoped drift and validation gating without PostInvocation."
+    expect:
+      frontmatter:
+        rule: "Stop lifecycle hooks"
+        test_binding: "tests/test_plugin.py::test_hooks_fail_loud_on_internal_error"
+---
+= SpecDelta: Composable SpecDelta Mutation Schema (operation + target) and Stop-Scoped Drift Hook Execution
+:toc: left
+
+== Problem Statement
+
+An architectural and agent-UX review of Eidos identified two sources of schema bloat, token overhead, and multi-turn agent friction (Section 7, sub-points 7.1 and 7.2):
+
+1. **7.1 — Combinatorial SpecDelta Action & Target Taxonomy (`delta.schema.yaml`, `delta_engine.py`)**:
+   * `assets/schemas/v1/delta/delta.schema.yaml` defines **44 distinct verb-noun enum values** under `mutations[].action` (`add_domain`, `modify_domain`, `remove_domain`, `add_capability`, `extend_capability`, `modify_capability`, `deprecate_capability`, `remove_capability`, `add_flow`, `modify_flow`, `remove_flow`, etc.) and **15 separate type-specific target properties** (`target_domain`, `target_capability`, `new_capability_id`, `target_container`, `target_component`, `target_architecture`, `target_contract`, `target_policy`, `target_persona`, `target_invariant_id`, `target_design_system`, `target_screen`, `target_ui_component`, `target_client`, `target_flow`).
+   * Because every Eidos entity ID already carries a mandatory, unambiguous prefix (`DOM-*`, `CAP-*`, `CNT-*`, `CMP-*`, `ARCH-*`, `CTR-*`, `POL-*`, `PER-*`, `INV-*`, `DS-*`, `SCR-*`, `UIC-*`, `CLT-*`, `FLOW-*`), encoding the entity type in **three places** (`action: modify_screen`, `target_screen: SCR-HOME`, and the `SCR-` prefix itself) forces agents to memorize a 44-action matrix (`eidos-plan/SKILL.md`) and bloats `delta_engine.py`, `validator.py`, `models.py`, `audit.py`, `changelog.py`, `sync.py`, `drift.py`, and `generator.py` with repetitive action/target dispatch tables.
+
+2. **7.2 — Noisy Per-Turn `PostInvocation` Drift Hook (`hooks.json`, `hooks.py`)**:
+   * In `assets/plugin_reference/hooks.json` (lines 27–33 and 43–49) and `src/eidos/plugin/hooks.py` (`handle_drift_post_invocation` and `handle_lint_post_invocation`), Eidos runs `detect_drift(..., uncommitted=True)` and directory validation after **every single agent turn** (`PostInvocation`) and injects `[Eidos Sync Notice] Uncommitted code changes detected...` into the agent's context via `injectSteps`.
+   * During standard multi-step software engineering tasks (Turn 1: edit source code -> Turn 2: run pytest -> Turn 3: fix edge case -> Turn 4: update living specs), running a full repository `detect_drift` pass and injecting drift warnings after every intermediate turn wastes tokens, adds per-turn latency, and distracts the agent mid-implementation.
+   * Full spec-to-code drift gating belongs at task completion (**`Stop`**, which already implements TTL/session-scoped Block-Once fingerprinting in `eidos/.cache/stop-gate.json`), while intermediate turns only need fast single-file `.adoc` schema linting on `PreToolUse` / `PostToolUse`.
+
+== Proposed Specification Changes
+
+=== 1. Composable SpecDelta Mutation Schema (`CMP-DELTA-ENGINE`, `CMP-SPEC-VALIDATOR`, `CMP-DOMAIN-MODELS`, `CMP-DELTA-AUDITOR`, `CMP-CHANGELOG-GENERATOR`, `CMP-INCREMENTAL-SYNC-ENGINE`, `CMP-DRIFT-DETECTOR`, `CMP-PORTAL-GENERATOR`, `CAP-PROD-002`)
+
+* **Orthogonal `operation` + `target` + `parent` Schema in `delta.schema.yaml`**:
+  ** Support a composable mutation representation in `assets/schemas/v1/delta/delta.schema.yaml` using `anyOf: [{required: [operation, target]}, {required: [action]}]` so composable mutations and all historical `action`/`target_*` SpecDeltas validate cleanly:
+     ```yaml
+     mutations:
+       - operation: modify # add | modify | remove | deprecate
+         target: CMP-DELTA-ENGINE
+         parent: CNT-EIDOS-CORE # optional parent scope for inline CMP-*, CAP-*, SCR-*, UIC-*; required for INV-*
+         details: "..."
+         expect:
+           frontmatter:
+             responsibility: "..."
+     ```
+  ** In composable mode (`operation` + `target`), require `target` to match the canonical prefixed entity ID pattern `^(DOM|CAP|PER|POL|INV|ARCH|CNT|CMP|CTR|DS|UIC|SCR|CLT|FLOW)-[A-Z0-9_-]+$` (and optional `parent` to match `^(DOM|CAP|POL|CNT|CMP|DS|CLT)-[A-Z0-9_-]+$`), inferring the target entity type deterministically from the ID prefix (`CMP-` -> `tech/component`, `CAP-` -> `product/capability`, `INV-` -> `invariant`, etc.) in `SpecValidator` (`src/eidos/core/spec/validator.py`). For `INV-*` targets, require `parent` (or legacy `target_capability` / `target_policy` / `target_container` / `target_component`) to identify the owning specification.
+  ** Normalize both composable (`operation`, `target`, `parent`) and legacy verb-noun (`action`, `target_<type>`, `new_capability_id`) entries into canonical `(operation, entity_type, target_id, parent_id)` tuples inside a single shared normalizer in `delta_engine.py` (mapping `extend_capability` and `patch_policy`/`patch_invariant` to `operation == "modify"`), and consume it across `verify_delta_mutations`, `execute_delta_mutations`, `DeltaMutationModel` (`models.py`), `DeltaAuditor` (`audit.py`), `ChangelogGenerator` (`changelog.py`), `sync_index` (`sync.py`), `detect_drift` (`drift.py`), and `PortalGenerator` (`generator.py`).
+  ** Record `DEC-CORE-COMPOSABLE-DELTA-MUTATIONS` under `decisions:` in `eidos/architecture/containers/core.adoc` (`graduated_from: DLT-2026-087`) and update `assets/plugin_reference/skills/eidos-plan/SKILL.md` to teach the concise `operation` + `target` syntax.
+
+=== 2. Stop-Scoped Drift Gate Execution (`CMP-HOOK-RUNNER`, `CMP-HOOK-MANAGER`, `CMP-CLI-DOCTOR-HOOKS`, `CTR-EIDOS-CLI`, `CAP-AGENT-001`)
+
+* **Remove `PostInvocation` from `assets/plugin_reference/hooks.json` & `hooks.py`**:
+  ** Remove the `PostInvocation` hook bindings from `assets/plugin_reference/hooks.json` (and installed plugin targets via `eidos plugin update`), keeping:
+     *** `eidos-doc-linter` on `PreToolUse` (fast markdown/ADR path guard), `PostToolUse` (fast single-file `.adoc` frontmatter & schema lint on the edited file), and `Stop` (final specification validation gate).
+     *** `eidos-drift-gate` exclusively on `Stop` (`eidos hook drift --event Stop`), where full spec-to-code drift detection runs once when the agent attempts to conclude its task, protected by Block-Once fingerprinting in `eidos/.cache/stop-gate.json`.
+  ** Retire `handle_drift_post_invocation`, `handle_lint_post_invocation`, and the `PostInvocation`-only `hook-state.json` working-tree digest short-circuit helpers from `src/eidos/plugin/hooks.py` (making `--event PostInvocation` a clean no-op `{"decision": "allow"}` for backwards compatibility with any un-updated external hook configs).
+  ** Record `DEC-PLUGIN-STOP-SCOPED-DRIFT-GATE` under `decisions:` in `eidos/architecture/containers/plugin.adoc` (`graduated_from: DLT-2026-087`), and update `src/eidos/cli/doctor_hook_commands.py`, `CTR-EIDOS-CLI` (`eidos/architecture/contracts/cli.adoc`), `CAP-AGENT-001`, and `INV-HOOK-FAIL-LOUD` (`eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`).
+
+== Verification Plan
+
+* **Composable Mutation Schema & Engine Tests**:
+  ** Verify in `tests/test_validator.py`, `tests/test_delta_engine.py`, `tests/test_audit.py`, `tests/test_changelog.py`, `tests/test_graph_index.py`, `tests/test_drift.py`, and `tests/test_portal.py` that SpecDeltas authored with `operation: add | modify | remove | deprecate`, `target: <ENTITY-ID>`, and optional `parent: <PARENT-ID>` pass schema validation, `x-eidos-ref` prefix/existence checks, `eidos delta verify`, `eidos delta apply --execute`, `eidos delta audit`, `eidos index sync`, `eidos drift`, `eidos delta changelog`, and Portal data generation alongside legacy `action`/`target_*` deltas.
+* **Hook Lifecycle Tests**:
+  ** Verify in `tests/test_plugin.py` and `tests/test_portal.py` that `assets/plugin_reference/hooks.json` binds `eidos-drift-gate` strictly to `Stop` (zero `PostInvocation` bindings), `PreToolUse`/`PostToolUse` lint only touched `.adoc`/`.md` files, `Stop` enforces the Block-Once drift and validation gates and fails loud on internal errors (`INV-HOOK-FAIL-LOUD`), and `--event PostInvocation` returns a clean no-op allow decision.
+* **End-to-End Gate**:
+  ** Run `eidos validate eidos --json`, `eidos delta verify DLT-2026-087 --json`, and `eidos drift --uncommitted --json`.
+

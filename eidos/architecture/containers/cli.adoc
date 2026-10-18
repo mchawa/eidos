@@ -23,7 +23,7 @@ components:
     source_path: "src/eidos/cli/spec_commands.py"
   - id: CMP-CLI-DELTA-COMMANDS
     name: "DeltaCommands"
-    responsibility: "SpecDelta lifecycle commands (`eidos delta`): status dashboard and status transition (`eidos delta status [ID] [STATUS] --json`), listing (`eidos delta list --json`), authoring (`eidos delta create [ID]` defaulting to `'auto'` with `--slug` / `-s`, `--kind`: feature, enabler, bug, and `--branch` / `-b`), verification (rendering per-mutation failure_reason diagnostics when verification fails), deletion auditing, changelog generation (resolving repo_root via find_repo_root for custom --path directories), in-place application, and view synchronization."
+    responsibility: "SpecDelta lifecycle commands (`eidos delta`): status dashboard and status transition (`eidos delta status [ID] [STATUS] --json`), listing (`eidos delta list --json`), authoring (`eidos delta create [ID]` defaulting to `'auto'` with `--slug` / `-s`, `--kind`: feature, enabler, bug, and `--branch` / `-b`), verification (rendering per-mutation failure_reason diagnostics when verification fails), deletion auditing, changelog generation (resolving repo_root via find_repo_root for custom --path directories), default-verified in-place application (`eidos delta apply` with `--verify/--no-verify` defaulting to True and `--execute`), and view synchronization."
     source_path: "src/eidos/cli/delta_commands.py"
   - id: CMP-CLI-PLUGIN-COMMANDS
     name: "PluginCommands"
@@ -55,7 +55,7 @@ components:
     source_path: "src/eidos/cli/portal_commands.py"
   - id: CMP-CLI-DOCTOR-HOOKS
     name: "DoctorAndHookCommands"
-    responsibility: "Installation health diagnostics (`eidos doctor --path`) with custom specification directory resolution and virtualenv-aware CLI binary checks, plus CLI-native agent lifecycle hook dispatchers (`eidos hook lint`, `eidos hook drift`)."
+    responsibility: "Installation health diagnostics (`eidos doctor --path`) with custom specification directory resolution and virtualenv-aware CLI binary checks, plus CLI-native agent lifecycle hook dispatchers (`eidos hook lint` on PreToolUse/PostToolUse/Stop, `eidos hook drift` on Stop)."
     source_path: "src/eidos/cli/doctor_hook_commands.py"
 
 dependencies:

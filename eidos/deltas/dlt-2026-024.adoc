@@ -14,28 +14,18 @@ intent:
     hooks into native CLI subcommands ('eidos hook lint', 'eidos hook drift'), and
     enforcing a stateful Block-Once Stop gate.
 mutations:
-- action: modify_container
-  target_container: CNT-EIDOS-PLUGIN
-  details: Add 'src/eidos/plugin/hooks.py' implementing CLI-native agent lifecycle
-    hook execution ('run_lint_hook' and 'run_drift_hook') and a stateful Block-Once
-    Stop gate that persists a SHA-256 failure fingerprint in 'eidos/.cache/stop-gate.json'
-    to block the first turn completion on drift or validation errors while allowing
-    a subsequent Stop with the same fingerprint.
-- action: modify_container
-  target_container: CNT-EIDOS-CLI
-  details: Expose 'eidos hook lint', 'eidos hook drift', and 'eidos doctor' commands
-    in 'src/eidos/cli/main.py', keeping 'eidos' as the sole console script
-    entry point in 'pyproject.toml'.
-- action: modify_contract
-  target_contract: CTR-EIDOS-CLI
-  details: Document 'eidos hook lint', 'eidos hook drift', and 'eidos doctor' in 'eidos/architecture/contracts/cli.adoc'
-    and update installation guidance across documentation and skills to exclusively
-    use 'uv tool install eidos-ai', 'pipx install eidos-ai', and 'uvx --from eidos-ai eidos'.
-- action: extend_capability
-  target_capability: CAP-AGENT-001
-  details: Upgrade agent lifecycle hooks to execute through the globally installed
-    'eidos' CLI binary (with 'uvx --from eidos-ai eidos' fallback) and enforce the Block-Once Stop
-    gate.
+- operation: modify
+  target: CNT-EIDOS-PLUGIN
+  details: Add 'src/eidos/plugin/hooks.py' implementing CLI-native agent lifecycle hook execution ('run_lint_hook' and 'run_drift_hook') and a stateful Block-Once Stop gate that persists a SHA-256 failure fingerprint in 'eidos/.cache/stop-gate.json' to block the first turn completion on drift or validation errors while allowing a subsequent Stop with the same fingerprint.
+- operation: modify
+  target: CNT-EIDOS-CLI
+  details: Expose 'eidos hook lint', 'eidos hook drift', and 'eidos doctor' commands in 'src/eidos/cli/main.py', keeping 'eidos' as the sole console script entry point in 'pyproject.toml'.
+- operation: modify
+  target: CTR-EIDOS-CLI
+  details: Document 'eidos hook lint', 'eidos hook drift', and 'eidos doctor' in 'eidos/architecture/contracts/cli.adoc' and update installation guidance across documentation and skills to exclusively use 'uv tool install eidos-ai', 'pipx install eidos-ai', and 'uvx --from eidos-ai eidos'.
+- operation: modify
+  target: CAP-AGENT-001
+  details: Upgrade agent lifecycle hooks to execute through the globally installed 'eidos' CLI binary (with 'uvx --from eidos-ai eidos' fallback) and enforce the Block-Once Stop gate.
 ---
 = SpecDelta: Tool-Only Installation, CLI-Native Agent Hooks, and Block-Once Stop Gate
 :toc: left

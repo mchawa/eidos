@@ -10,28 +10,28 @@ intent:
   severity: high
   motivation: Eliminate spec-to-code drift bypasses where unowned source files pass whenever any unrelated spec or SpecDelta is touched, non-addition structural changes pass via trivial comment/whitespace spec edits, editing a shared policy (POL-*) satisfies 1-hop coverage across all linked containers, and production code under docs/ or test_* paths is misclassified.
 mutations:
-- action: modify_container
-  target_container: CNT-EIDOS-VCS
+- operation: modify
+  target: CNT-EIDOS-VCS
   details: Harden CMP-DRIFT-DETECTOR in src/eidos/vcs/drift.py to flag unowned structural code files in both Direct and Planned modes unless a container/component claims ownership or system.adoc is substantively updated, enforce inspector.is_substantive(s) on all spec coverage verdicts (including signature modifications, deletions, and design specs), exclude global POL-* edges from 1-hop component satisfaction neighborhoods, and anchor test/docs exemptions to repo-root test/docs directories rather than any path segment.
   expect:
     body:
       contains: CMP-DRIFT-DETECTOR
-- action: modify_capability
-  target_capability: CAP-VCS-001
+- operation: modify
+  target: CAP-VCS-001
   details: Extend CAP-VCS-001 invariants (INV-DRIFT-DETECTION-ACCURACY and INV-DRIFT-DIFF-AWARE-COVERAGE) to require substantive spec edits for all structural code and design changes, strict unmapped-file drift enforcement in Direct and Planned modes, and edge-typed 1-hop neighborhood scoping.
   expect:
     body:
       contains: INV-DRIFT-DIFF-AWARE-COVERAGE
-- action: patch_invariant
-  target_capability: CAP-VCS-001
-  target_invariant_id: INV-DRIFT-DETECTION-ACCURACY
+- operation: modify
+  target: INV-DRIFT-DETECTION-ACCURACY
+  parent: CAP-VCS-001
   details: Require unowned structural code files to trigger drift unless claimed by a container/component or covered by a substantive system-level specification update, and exclude global POL-* neighbors from 1-hop component drift satisfaction.
   expect:
     frontmatter:
       test_binding: tests/test_drift.py::test_drift_detection_code_without_specs
-- action: patch_invariant
-  target_capability: CAP-VCS-001
-  target_invariant_id: INV-DRIFT-DIFF-AWARE-COVERAGE
+- operation: modify
+  target: INV-DRIFT-DIFF-AWARE-COVERAGE
+  parent: CAP-VCS-001
   details: Require substantive (non-comment, non-whitespace) specification diffs across all structural code changes (additions, signature modifications, symbol deletions, and design token/contract edits).
   expect:
     frontmatter:

@@ -15,35 +15,21 @@ intent:
     systems or containers to explore their internal architecture, building blocks,
     source paths, or bound contracts.
 mutations:
-- action: modify_component
-  target_component: CMP-EIDOS-PORTAL
-  details: Extend PortalGenerator (src/eidos/portal/generator.py) to synthesize C4
-    Level 3 Component Whitebox Mermaid diagrams for each container manifest, and enhance
-    PortalAssets (src/eidos/portal/assets.py) with dynamic SVG click callbacks, interactive
-    hierarchical drill-down state machine (L1 -> L2 -> L3), breadcrumb bar, container
-    selector, and slide-over component inspector drawer.
-- action: modify_screen
-  target_screen: SCR-PORTAL-ARCHITECTURE
-  details: 'Update SCR-PORTAL-ARCHITECTURE slots and states to reflect the unified
-    dynamic C4 explorer: replace static stacked diagrams with a single hierarchical
-    viewport, drill-down level controls (Context, Containers, Components), and an
-    inspector panel slot.'
-- action: extend_capability
-  target_capability: CAP-EXP-001
-  details: Update capability specification to mandate dynamic, clickable C4 exploration
-    across all 3 levels (L1 System Context, L2 Containers, L3 Components) with interactive
-    breadcrumbs and building block inspection.
-- action: patch_invariant
-  target_invariant_id: INV-PORTAL-INTERACTIVE-C4
-  details: Enhance INV-PORTAL-INTERACTIVE-C4 rule to require dynamic clickable drill-down
-    from L1 Context to L2 Containers and L2 Containers to L3 Component Whiteboxes
-    with breadcrumbs and component inspector modal/drawer without external Node.js
-    dependencies.
-- action: modify_architecture
-  target_architecture: ARCH-EIDOS-001
-  details: Update Section 4 (Solution Strategy) and Section 5 (Building Block View)
-    of ARCH-EIDOS-001 to document the dynamic clickable C4 hierarchical zoom and Level
-    3 whitebox views.
+- operation: modify
+  target: CMP-EIDOS-PORTAL
+  details: Extend PortalGenerator (src/eidos/portal/generator.py) to synthesize C4 Level 3 Component Whitebox Mermaid diagrams for each container manifest, and enhance PortalAssets (src/eidos/portal/assets.py) with dynamic SVG click callbacks, interactive hierarchical drill-down state machine (L1 -> L2 -> L3), breadcrumb bar, container selector, and slide-over component inspector drawer.
+- operation: modify
+  target: SCR-PORTAL-ARCHITECTURE
+  details: 'Update SCR-PORTAL-ARCHITECTURE slots and states to reflect the unified dynamic C4 explorer: replace static stacked diagrams with a single hierarchical viewport, drill-down level controls (Context, Containers, Components), and an inspector panel slot.'
+- operation: modify
+  target: CAP-EXP-001
+  details: Update capability specification to mandate dynamic, clickable C4 exploration across all 3 levels (L1 System Context, L2 Containers, L3 Components) with interactive breadcrumbs and building block inspection.
+- operation: modify
+  target: INV-PORTAL-INTERACTIVE-C4
+  details: Enhance INV-PORTAL-INTERACTIVE-C4 rule to require dynamic clickable drill-down from L1 Context to L2 Containers and L2 Containers to L3 Component Whiteboxes with breadcrumbs and component inspector modal/drawer without external Node.js dependencies.
+- operation: modify
+  target: ARCH-EIDOS-001
+  details: Update Section 4 (Solution Strategy) and Section 5 (Building Block View) of ARCH-EIDOS-001 to document the dynamic clickable C4 hierarchical zoom and Level 3 whitebox views.
 ---
 = SpecDelta: Dynamic Clickable Hierarchical C4 Architecture Explorer (L1-L3)
 :toc: left

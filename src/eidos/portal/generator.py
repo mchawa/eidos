@@ -455,11 +455,14 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         if isinstance(cnt_ref, str) and cnt_ref:
             container_to_clients.setdefault(cnt_ref, []).append(cl)
 
+    from eidos.core.lifecycle.delta_engine import normalize_delta_mutation
+
     raw_deltas = specs_by_type.get("delta/mutation", [])
     for d in raw_deltas:
         fm = d["frontmatter"]
         status = str(fm.get("status", "proposed")).lower()
-        muts = fm.get("mutations", []) or []
+        raw_muts = fm.get("mutations", []) or []
+        muts = [normalize_delta_mutation(m) if isinstance(m, dict) else m for m in raw_muts]
 
         aff_lists: dict[str, list[str]] = {
             "containers": [],

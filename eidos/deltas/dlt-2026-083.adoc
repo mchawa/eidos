@@ -11,87 +11,87 @@ intent:
   kind: enabler
   motivation: "Resolve Issues #6, #7, #8, and #9 in a unified engine foundation upgrade: align polyglot AST/diff file extensions, unify delta_baselines into managed SQLite storage and replace full-repo os.walk scans with Git-tracked enumeration and cached catalog lookups, improve context slicing precision via edge-weighted traversal, two-tier FTS queries, and YAML/code-calibrated token estimation, and preserve YAML comments during invariant frontmatter mutations."
 mutations:
-  - action: modify_component
-    target_component: CMP-AST-SYMBOL-INDEXER
-    details: "Expand LANGUAGE_MAP and FallbackIndexer signature patterns in src/eidos/core/index/ast_indexer.py (and align _has_structural_ast_change in src/eidos/vcs/diff.py) to cover .c, .cpp, .h, .hpp, .cs, .rb, .php, .swift, .vue, and .svelte so comment-only or body-local edits in those languages do not trigger false-positive structural drift (Issue #6)."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/core/index/ast_indexer.py"
-        responsibility: "FallbackIndexer"
-  - action: modify_component
-    target_component: CMP-GRAPH-STORAGE
-    details: "Register delta_baselines in _MANAGED_TABLES and ensure_cache_schema in src/eidos/core/index/storage.py so SpecDelta baseline snapshots share WAL mode, busy_timeout, and schema version lifecycle management (Issue #7)."
-    expect:
-      frontmatter:
-        source_path:
-          - "src/eidos/core/index/storage.py"
-          - "src/eidos/core/index/graph_index.py"
-        responsibility: "delta_baselines"
-  - action: modify_component
-    target_component: CMP-DELTA-ENGINE
-    details: "Update _snapshot_delta_baselines and _check_or_record_baseline_sha in src/eidos/core/lifecycle/delta_engine.py to use open_cache_connection from storage.py instead of raw sqlite3.connect, and update add_invariant / modify_invariant / remove_invariant to use comment-preserving frontmatter mutation helpers instead of destructive yaml.safe_dump (Issues #7 & #9)."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/core/lifecycle/delta_engine.py"
-        responsibility: "open_cache_connection"
-  - action: modify_component
-    target_component: CMP-LIFECYCLE-SCAFFOLDER
-    details: "Add mtime-snapshot caching to _build_spec_catalog_with_invariants and implement comment-preserving YAML frontmatter list/block mutation helpers in src/eidos/core/lifecycle/catalog.py so invariant mutations preserve existing frontmatter comments and blank lines (Issues #7 & #9)."
-    expect:
-      frontmatter:
-        source_path:
-          - "src/eidos/core/lifecycle/scaffolder.py"
-          - "src/eidos/core/lifecycle/catalog.py"
-        responsibility: "_build_spec_catalog_with_invariants"
-  - action: modify_component
-    target_component: CMP-DELTA-AUDITOR
-    details: "Update _scan_and_classify_references in src/eidos/core/lifecycle/audit.py to enumerate repository files via get_tracked_files(self.repo_root) with os.walk fallback only for non-Git directories, avoiding slow crawls of gitignored build/data trees (Issue #7)."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/core/lifecycle/audit.py"
-        responsibility: "get_tracked_files"
-  - action: modify_component
-    target_component: CMP-DRIFT-DETECTOR
-    details: "Update _load_or_update_test_binding_cache in src/eidos/vcs/invariants.py to enumerate test files via get_tracked_files(repo_root) (with os.walk fallback for non-Git directories) and align _has_structural_ast_change in src/eidos/vcs/diff.py with expanded polyglot signature extraction (Issues #6 & #7)."
-    expect:
-      frontmatter:
-        source_path:
-          - "src/eidos/vcs/drift.py"
-          - "src/eidos/vcs/diff.py"
-          - "src/eidos/vcs/invariants.py"
-          - "src/eidos/vcs/structural.py"
-          - "src/eidos/vcs/report.py"
-        responsibility: "get_tracked_files"
-  - action: modify_component
-    target_component: CMP-FTS-QUERY-ENGINE
-    details: "Enhance build_fts_match_query and execute_fts_query in src/eidos/core/index/query.py to prioritize high-precision multi-term AND / proximity queries before falling back to OR expansion on multi-word task prompts (Issue #8)."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/core/index/query.py"
-        responsibility: "build_fts_match_query"
-  - action: modify_component
-    target_component: CMP-GRAPH-TRAVERSAL-ENGINE
-    details: "Enhance execute_k_hop_traversal in src/eidos/core/index/query.py to prevent hub explosion at depth >= 2 by weighting or scoping parent/hub membership edges (domain_member, belongs_to) vs direct architectural dependency edges (depends_on, provides, consumes, verifies) (Issue #8)."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/core/index/query.py"
-        responsibility: "execute_k_hop_traversal"
-  - action: modify_component
-    target_component: CMP-TIERED-CONTEXT-COMPRESSOR
-    details: "Calibrate _estimate_tokens in src/eidos/core/index/context.py to account for higher token density in structured YAML/JSON, file paths, and code signatures (~2.8-3.0 chars/token) vs natural-language prose (~4.0 chars/token) so context slices strictly respect token budgets (Issue #8)."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/core/index/context.py"
-        responsibility: "_estimate_tokens"
-  - action: extend_capability
-    target_capability: CAP-AGENT-001
-    details: "Update CAP-AGENT-001 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc to reflect calibrated token estimation, edge-scoped k-hop neighborhood traversal, two-tier FTS query precision, and managed delta_baselines table storage."
-    expect:
-      frontmatter:
-        status: active
-      body:
-        contains:
-          - "token"
+- operation: modify
+  target: CMP-AST-SYMBOL-INDEXER
+  details: 'Expand LANGUAGE_MAP and FallbackIndexer signature patterns in src/eidos/core/index/ast_indexer.py (and align _has_structural_ast_change in src/eidos/vcs/diff.py) to cover .c, .cpp, .h, .hpp, .cs, .rb, .php, .swift, .vue, and .svelte so comment-only or body-local edits in those languages do not trigger false-positive structural drift (Issue #6).'
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/index/ast_indexer.py
+      responsibility: FallbackIndexer
+- operation: modify
+  target: CMP-GRAPH-STORAGE
+  details: 'Register delta_baselines in _MANAGED_TABLES and ensure_cache_schema in src/eidos/core/index/storage.py so SpecDelta baseline snapshots share WAL mode, busy_timeout, and schema version lifecycle management (Issue #7).'
+  expect:
+    frontmatter:
+      source_path:
+      - src/eidos/core/index/storage.py
+      - src/eidos/core/index/graph_index.py
+      responsibility: delta_baselines
+- operation: modify
+  target: CMP-DELTA-ENGINE
+  details: 'Update _snapshot_delta_baselines and _check_or_record_baseline_sha in src/eidos/core/lifecycle/delta_engine.py to use open_cache_connection from storage.py instead of raw sqlite3.connect, and update add_invariant / modify_invariant / remove_invariant to use comment-preserving frontmatter mutation helpers instead of destructive yaml.safe_dump (Issues #7 & #9).'
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/lifecycle/delta_engine.py
+      responsibility: open_cache_connection
+- operation: modify
+  target: CMP-LIFECYCLE-SCAFFOLDER
+  details: 'Add mtime-snapshot caching to _build_spec_catalog_with_invariants and implement comment-preserving YAML frontmatter list/block mutation helpers in src/eidos/core/lifecycle/catalog.py so invariant mutations preserve existing frontmatter comments and blank lines (Issues #7 & #9).'
+  expect:
+    frontmatter:
+      source_path:
+      - src/eidos/core/lifecycle/scaffolder.py
+      - src/eidos/core/lifecycle/catalog.py
+      responsibility: _build_spec_catalog_with_invariants
+- operation: modify
+  target: CMP-DELTA-AUDITOR
+  details: 'Update _scan_and_classify_references in src/eidos/core/lifecycle/audit.py to enumerate repository files via get_tracked_files(self.repo_root) with os.walk fallback only for non-Git directories, avoiding slow crawls of gitignored build/data trees (Issue #7).'
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/lifecycle/audit.py
+      responsibility: get_tracked_files
+- operation: modify
+  target: CMP-DRIFT-DETECTOR
+  details: 'Update _load_or_update_test_binding_cache in src/eidos/vcs/invariants.py to enumerate test files via get_tracked_files(repo_root) (with os.walk fallback for non-Git directories) and align _has_structural_ast_change in src/eidos/vcs/diff.py with expanded polyglot signature extraction (Issues #6 & #7).'
+  expect:
+    frontmatter:
+      source_path:
+      - src/eidos/vcs/drift.py
+      - src/eidos/vcs/diff.py
+      - src/eidos/vcs/invariants.py
+      - src/eidos/vcs/structural.py
+      - src/eidos/vcs/report.py
+      responsibility: get_tracked_files
+- operation: modify
+  target: CMP-FTS-QUERY-ENGINE
+  details: 'Enhance build_fts_match_query and execute_fts_query in src/eidos/core/index/query.py to prioritize high-precision multi-term AND / proximity queries before falling back to OR expansion on multi-word task prompts (Issue #8).'
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/index/query.py
+      responsibility: build_fts_match_query
+- operation: modify
+  target: CMP-GRAPH-TRAVERSAL-ENGINE
+  details: 'Enhance execute_k_hop_traversal in src/eidos/core/index/query.py to prevent hub explosion at depth >= 2 by weighting or scoping parent/hub membership edges (domain_member, belongs_to) vs direct architectural dependency edges (depends_on, provides, consumes, verifies) (Issue #8).'
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/index/query.py
+      responsibility: execute_k_hop_traversal
+- operation: modify
+  target: CMP-TIERED-CONTEXT-COMPRESSOR
+  details: 'Calibrate _estimate_tokens in src/eidos/core/index/context.py to account for higher token density in structured YAML/JSON, file paths, and code signatures (~2.8-3.0 chars/token) vs natural-language prose (~4.0 chars/token) so context slices strictly respect token budgets (Issue #8).'
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/index/context.py
+      responsibility: _estimate_tokens
+- operation: modify
+  target: CAP-AGENT-001
+  details: Update CAP-AGENT-001 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc to reflect calibrated token estimation, edge-scoped k-hop neighborhood traversal, two-tier FTS query precision, and managed delta_baselines table storage.
+  expect:
+    frontmatter:
+      status: active
+    body:
+      contains:
+      - token
 ---
 = SpecDelta: Polyglot AST/Diff Parity, Unified SQLite Baselines & Git Enumeration, Weighted Context Slicing, and Lossless YAML Mutations
 :toc: left

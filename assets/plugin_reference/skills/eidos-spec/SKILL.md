@@ -4,52 +4,50 @@ description: Author, inspect, and maintain Eidos living specifications across Pr
 ---
 # Eidos Specification & Invariant Authoring (`eidos-spec`)
 
-This skill provides the complete authoring reference and schema templates for all **Living Specifications** in `eidos/`.
+This skill provides the authoring rules, CLI scaffolding commands, and v1 YAML frontmatter schemas for all **Living Specifications** in `eidos/`.
 
-> **Constitutional Rule (`POL-001`)**: Never create standalone Architecture Decision Records (ADRs). All architectural topology, product requirements, contracts, design systems, policies, and embedded design decisions (`decisions:`) live inside `eidos/` specifications.
+> **Constitutional Rule (`POL-001`)**: Never create standalone Architecture Decision Records (ADRs). All architectural state, product requirements, contracts, design systems, policies, and embedded design decisions (`decisions:`) live inside `eidos/` specifications.
 
 ---
 
-## 1. CLI Scaffolding & Inspection Commands
+## 1. CLI Scaffolding & Inspection (`eidos spec`)
 
-Always prefer scaffolding via `eidos spec create` to guarantee valid v1 YAML frontmatter and directory placement:
+Always scaffold new specifications with `eidos spec create` to guarantee valid v1 YAML frontmatter and canonical paths:
 
 ```bash
-# List existing specifications (with optional filtering)
-eidos spec list
-eidos spec list --type tech/container
-eidos spec list --type product/capability --status active
+# List and inspect specifications (includes inline CMP-* components)
+eidos spec list [--type <type>] [--status <status>] [--json]
+eidos spec show <ID_OR_PATH>
 
-# Scaffold new specifications
+# Scaffold by type: domain | capability | persona | policy | container | component |
+#                   contract | exploration | delta | design-system | ui-component | client | screen | flow
 eidos spec create domain DOM-BILLING --title "Subscription & Usage Billing"
 eidos spec create capability CAP-BILL-001 --title "Metered Usage Aggregation" --domain DOM-BILLING
-eidos spec create persona PER-FINANCE-ADMIN --title "Enterprise Finance Administrator"
-eidos spec create container CNT-BILLING-WORKER --title "Billing Aggregation Worker"
-eidos spec create component CMP-USAGE-LEDGER --title "Double-Entry Usage Ledger"
-eidos spec create contract CTR-BILLING-API --title "Billing REST API Contract"
-eidos spec create policy POL-005 --title "Idempotent Webhook Processing"
-eidos spec create design-system DS-ACME-CORE --title "Acme Core Design System"
-eidos spec create ui-component UIC-INVOICE-TABLE --title "Invoice Line-Item Table"
-eidos spec create client CLT-CUSTOMER-PORTAL --title "Customer Billing Portal"
-eidos spec create screen SCR-BILLING-DASHBOARD --title "Billing Overview Screen"
-eidos spec create flow FLOW-UPGRADE-PLAN --title "Subscription Plan Upgrade Flow"
+eidos spec create container CNT-BILLING-WORKER --title "Billing Aggregation Worker" --source-path src/billing
+eidos spec create component CMP-USAGE-LEDGER --title "Double-Entry Usage Ledger" --container CNT-BILLING-WORKER --source-path src/billing/ledger.py
+eidos spec create contract CTR-BILLING-API --title "Billing REST API" --owning-component CNT-BILLING-WORKER --protocol openapi --spec-file src/billing/openapi.yaml
+eidos spec create policy POL-005 --title "Idempotent Webhook Processing" --category architectural --rule "Deduplicate webhooks by event ID."
 
-# Inspect, promote, or inline C4 Level 3 components
-eidos spec list --type component
+# Promote an inline C4 Level 3 component to eidos/architecture/components/<slug>.adoc, or inline it back
 eidos spec component promote CMP-USAGE-LEDGER
 eidos spec component inline CMP-USAGE-LEDGER
 
-# Validate all specifications, cross-references, and declared filesystem bindings
+# Safely delete a specification after checking incoming cross-references
+eidos spec delete <ID_OR_PATH>
+
+# Validate all specifications, cross-references, disk bindings, and bidirectional contract parity
 eidos validate eidos --json
 ```
 
 ---
 
-## 2. Product Layer (`DOM-*`, `CAP-*`, `PER-*`)
+## 2. Product Layer (`SYS-*`, `DOM-*`, `CAP-*`, `PER-*`)
 
-### 2.1 Bounded Context Domains (`eidos/domains/<slug>/domain.adoc`)
+### 2.1 System Context (`eidos/system.adoc`)
+* **`type: product/system`** (`schema: schemas/v1/product/system.schema.yaml`, `id: SYS-*`).
+* **Required keys**: `type`, `schema`, `id`, `title`, `archetypes` (list), `business_identity: { vision, target_users, value_proposition }`, `technical_profile: { primary_languages }` (optional `runtimes_and_frameworks`, `deployment_targets`, `vcs_platforms`, `agent_support`), optional `status`, `decisions`.
 
-Defines a DDD Bounded Context (`DOM-[A-Z0-9_-]+`), its strategic classification (`core | supporting | generic`), and ubiquitous language glossary.
+### 2.2 Bounded Context Domains (`eidos/domains/<slug>/domain.adoc`)
 
 ```yaml
 ---
@@ -57,7 +55,7 @@ type: product/domain
 schema: schemas/v1/product/domain.schema.yaml
 id: DOM-BILLING
 name: "Subscription & Usage Billing"
-classification: core
+classification: core # core | supporting | generic
 
 boundaries:
   responsibilities:
@@ -69,21 +67,16 @@ boundaries:
 ubiquitous_language:
   - term: "Usage Event"
     definition: "An immutable, timestamped record of a billable customer action."
-  - term: "Billing Period"
-    definition: "A closed calendar interval over which usage events are aggregated into an invoice."
 
 owners:
   - "Revenue Platform Team"
 ---
 = Domain: Subscription & Usage Billing
-
-== Core Responsibilities
-Manages metered usage ingestion, tariff rating, and invoice lifecycle.
 ```
 
-### 2.2 Functional Capabilities (`eidos/domains/<slug>/capabilities/<cap>.adoc`)
+### 2.3 Functional Capabilities (`eidos/domains/<slug>/capabilities/<cap>.adoc`)
 
-Binds user value (`jtbd`, `personas`) to technical containers (`CNT-*`), interface contracts (`CTR-*`), and test-bound invariants (`INV-*`).
+Binds user value (`jtbd`, `personas`) to technical containers (`CNT-*`), contracts (`CTR-*`), optional UX (`experience: { clients, design_systems, screens, flows, ui_components }`), and test-bound invariants (`INV-*`).
 
 ```yaml
 ---
@@ -114,12 +107,9 @@ technical:
       test_binding: "tests/billing/test_ledger.py::test_duplicate_usage_event_idempotency"
 ---
 = Capability: Metered Usage Aggregation
-
-== Functional Overview
-Ingests high-throughput usage events and computes deterministic invoice totals.
 ```
 
-### 2.3 Actor Personas (`eidos/personas/<slug>.adoc`)
+### 2.4 Actor Personas (`eidos/personas/<slug>.adoc`)
 
 ```yaml
 ---
@@ -138,15 +128,13 @@ pain_points:
 
 ---
 
-## 3. Arc42 & C4 Architecture (`SYS-*`, `CNT-*`, `CMP-*`, `CTR-*`)
+## 3. Arc42 & C4 Architecture (`ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DEC-*`)
 
-### 3.1 C4 Level 1 & Arc42 Master Architecture
-* **`eidos/system.adoc`** (`type: product/system`, `id: SYS-*`): C4 Level 1 System Context, external actors, and upstream/downstream systems.
-* **`eidos/architecture/system-architecture.adoc`**: Master Arc42 Sections 1–12 narrative and C4 Level 2 Container Topology overview.
+### 3.1 Arc42 Master Architecture (`eidos/architecture/system-architecture.adoc`)
+* **`type: tech/architecture`** (`schema: schemas/v1/tech/architecture.schema.yaml`, `id: ARCH-*`).
+* **Required keys**: `type`, `schema`, `id`, `title`, `topology_style`, `c4_context: { actors, external_systems }`, `c4_containers` (list of `{ id: CNT-*, name, description }`), `solution_strategy` (list), `cross_cutting_concepts` (object), `deployment_view: { hosting_model, ci_cd_engine }`. Whenever you add or remove a `CNT-*` container, update `c4_containers` in `system-architecture.adoc`.
 
 ### 3.2 C4 Level 2 Containers (`eidos/architecture/containers/<name>.adoc`)
-
-Every deployable unit, service, CLI, library, or web app is modeled as a `CNT-*` container.
 
 ```yaml
 ---
@@ -156,7 +144,7 @@ id: CNT-BILLING-WORKER
 name: "Billing Aggregation Worker"
 container_type: "background_worker" # service | library | cli_app | frontend_spa | background_worker | ml_pipeline | daemon | database | driver
 runtime: "Python 3.12 / FastAPI"
-package_path: "src/billing"
+package_path: "src/billing" # String or list of repo-relative directory/file paths
 
 domain_binding: DOM-BILLING
 tier: service # presentation | service | core | persistence | extensibility
@@ -195,25 +183,33 @@ quality_attributes:
   concurrency_model: "async_event_loop"
   max_memory_mb: 512
 ---
-= Container: Billing Aggregation Worker (C4 Level 2 Container & Level 3 Components)
+= Container: Billing Aggregation Worker
 ```
 
 ### 3.3 C4 Level 3 Components: Inline vs. Promoted (`INV-COMPONENT-CENTRALIZATION-MANDATE`)
 
-Eidos supports a two-tier progressive disclosure model for C4 Level 3 components (`CMP-*`):
-1. **Inline Components (Default)**: Defined directly in the parent container's `components:` list with `id`, `name`, `responsibility`, and `source_path`. Ideal for straightforward modules.
-2. **Promoted Standalone Components (`eidos/architecture/components/<slug>.adoc`)**: When a component has complex internal design, multiple `source_path` entries, component-specific `invariants`, or dedicated `decisions:`, promote it to a standalone file:
-   ```bash
-   # Promote an inline component to eidos/architecture/components/<id>.adoc
-   # and automatically replace the inline entry with '{id: CMP-USAGE-LEDGER, ref: eidos/architecture/components/cmp-usage-ledger.adoc}'
-   eidos spec component promote CMP-USAGE-LEDGER
+1. **Inline Components (Default)**: Defined inside the parent container's `components:` list with `id`, `name`, `responsibility`, and `source_path`.
+2. **Promoted Standalone Components (`eidos/architecture/components/<slug>.adoc`)**: Promote complex subsystems via `eidos spec component promote <CMP-ID>`.
+   * **Single-Definition Invariant (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Once promoted, the parent container's `components:` entry MUST use `{id: CMP-*, ref: "eidos/architecture/components/..."}` (with optional cached `name`/`responsibility`)—never duplicate `source_path`, `invariants`, or `decisions` in both places.
 
-   # Fold a promoted component back inline into its parent container
-   eidos spec component inline CMP-USAGE-LEDGER
-   ```
-   **Single-Definition Invariant (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Once promoted, the parent container's `components:` entry MUST use `{id: CMP-*, ref: "eidos/architecture/components/..."}` (with optional cached `name`/`responsibility`)—never duplicate `source_path`, `invariants`, or `decisions` in both places.
+```yaml
+---
+type: tech/component
+schema: schemas/v1/tech/component.schema.yaml
+id: CMP-USAGE-LEDGER
+name: "Double-Entry Usage Ledger"
+container: CNT-BILLING-WORKER
+status: active
+source_path: "src/billing/ledger.py"
+domain_binding: DOM-BILLING
+responsibility: "Appends immutable credit/debit usage entries and computes point-in-time account balances."
+---
+= Component: Double-Entry Usage Ledger
+```
 
 ### 3.4 Interface Contracts (`eidos/architecture/contracts/<name>.adoc`)
+
+`eidos validate` enforces **bidirectional contract parity** against `specification_file` (`cli_args` across Typer/Click/argparse, `openapi`/`rest_openapi`, `protobuf`/`grpc_proto`, `graphql`, `python_protocol`): operations added in `specification_file` must be documented in the `CTR-*` body, and operations removed from code must be removed from the `CTR-*` body so phantom entries never linger.
 
 ```yaml
 ---
@@ -231,40 +227,24 @@ protocol: openapi # openapi | protobuf | graphql | asyncapi | json_schema | json
 = Contract: Billing Usage Ingestion REST Contract
 ```
 
-### 3.5 Recording Architectural Decisions (`decisions:` Frontmatter Block)
+### 3.5 Embedded Architectural Decisions (`decisions:` Frontmatter Block)
 
-Because standalone ADRs are forbidden (`POL-001`), record non-obvious architectural choices, trade-offs, and rejected alternatives directly in the `decisions:` array of the owning `product/system`, `tech/architecture`, `tech/container` (top-level or inline `components[]`), or `tech/component` specification:
-
-```yaml
-decisions:
-  - id: DEC-AUTH-001
-    title: "Ed25519 Asymmetric Signatures for Session Tokens"
-    decision: "Sign all issued session JWTs with Ed25519 private keys and distribute public verification keys via JWKS."
-    rationale: "Allows downstream microservices to verify token authenticity locally using only the public key."
-    rejected_alternatives:
-      - option: "HMAC-SHA256 Shared Secret"
-        reason_rejected: "Requires distributing the signing secret to every verifier service, expanding blast radius on compromise."
-    graduated_from: EXP-2026-001 # Optional link to EXP-* or DLT-*
-```
+Record non-obvious trade-offs and rejected alternatives in the `decisions:` array on `product/system`, `product/domain`, `product/capability`, `product/policy`, `tech/architecture`, `tech/container`, `tech/component`, or `tech/contract`:
+* **Required fields per entry**: `id` (`DEC-*`), `title`, `decision`, `rationale`, and `rejected_alternatives` (`[{ option, reason_rejected }]`), plus optional `graduated_from` (`EXP-*` or `DLT-*`).
 
 ---
 
 ## 4. Multi-Design Systems & Client UX (`DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`)
 
-For repositories with web, mobile, desktop, or rich TUI frontends, Eidos models design systems and client state machines under `eidos/design/`:
+For repositories with web, mobile, desktop, or TUI frontends, model UX specifications under `eidos/design/`:
 
-1. **Design System (`DS-*`, `type: design/system`)**: Lives at `eidos/design/systems/<slug>/system.adoc`. Declares `tokens: { spec_format: "w3c_design_tokens", manifest: "tokens.json" }` referencing a W3C Design Tokens Community Group (DTCG) file using `$value` and `$type` keys (`color`, `dimension`, `fontFamily`, `duration`, etc.), plus optional `inheritance` (`extends`, `override_mode`) and `theme_capabilities` (`color_modes`, `density_modes`).
-2. **UI Component Contract (`UIC-*`, `type: design/ui-component`)**: Lives at `eidos/design/systems/<slug>/components/<comp>.adoc`. Defines `design_system` (`DS-*`), `category`, visual/behavioral `variants` (`name`, `description`), interactive `states` (`default`, `hover`, `active`, `focus`, `disabled`, `loading`, `skeleton`, `error`), `accessibility` (`wcag_level`, `aria_role`, `keyboard_nav`), and `test_bindings` (`storybook`, `visual_regression`, `unit_test`).
-3. **Client Application (`CLT-*`, `type: design/client`)**: Lives at `eidos/design/clients/<app>/client.adoc`. Binds a frontend `platform` (`web`, `mobile-ios`, `mobile-android`, `desktop`, `tui`, or `multi-platform`) to a `design_system` (`DS-*`), C4 `container` (`CNT-*`), `capabilities` (`CAP-*`), owned `screens` (`SCR-*`), and `flows` (`FLOW-*`).
-4. **Screen Specification (`SCR-*`, `type: design/screen`)**: Lives at `eidos/design/clients/<app>/screens/<screen>.adoc` (or `eidos/design/screens/<screen>.adoc`). Defines `route`, owning `client` (`CLT-*`), `capabilities` (`CAP-*`), `supported_design_systems` (`DS-*`), layout `slots`, explicit `states` (`[{name, description}]` covering `loading`, `empty`, `active`, `error`, `partial`), and `user_flows` (`FLOW-*`).
-5. **Interaction Flow (`FLOW-*`, `type: design/flow`)**: Lives at `eidos/design/flows/<flow>.adoc` (or `eidos/design/clients/<app>/flows/<flow>.adoc`). Models user journeys with `flow_type` (`client_internal` or `cross_client`), `client` / `clients` (`CLT-*`), `capabilities` (`CAP-*`), and ordered `steps` (`[{step, title, screen, client, action, outcome}]`).
-
-### Frontend Co-Evolution Checklist
-Whenever you modify UI components, design tokens, routes, or user flows:
-* Added/changed design tokens? Update `tokens.json` in the `DS-*` directory.
-* Changed component variants, states, or ARIA behavior? Update `UIC-*`.
-* Added a new route or screen state? Create/update `SCR-*` and register it in `CLT-*`.
-* Altered a checkout/onboarding/wizard journey? Update `FLOW-*`.
+| Type & ID Prefix | Canonical Path | Required Keys | Key Optional Properties |
+| :--- | :--- | :--- | :--- |
+| **`design/system` (`DS-*`)** | `eidos/design/systems/<slug>/system.adoc` | `type`, `schema`, `id`, `title`, `status`, `tokens: { spec_format: "w3c_design_tokens", manifest: "tokens.json" }` | `brand_name`, `extends_system`, `inheritance: { extends, override_mode }`, `theme_capabilities: { color_modes, density_modes }` |
+| **`design/ui-component` (`UIC-*`)** | `eidos/design/systems/<slug>/components/<comp>.adoc` | `type`, `schema`, `id`, `title`, `design_system` (`DS-*`), `status` | `category`, `variants: [{name, description}]`, `states`, `accessibility: {wcag_level, aria_role, keyboard_nav}`, `test_bindings` |
+| **`design/client` (`CLT-*`)** | `eidos/design/clients/<app>/client.adoc` | `type`, `schema`, `id`, `title`, `status`, `platform` (`web`, `mobile-ios`, `mobile-android`, `desktop`, `tui`, `multi-platform`), `design_system` | `container` (`CNT-*`), `capabilities` (`CAP-*`), `screens` (`SCR-*`), `flows` (`FLOW-*`) |
+| **`design/screen` (`SCR-*`)** | `eidos/design/clients/<app>/screens/<screen>.adoc` | `type`, `schema`, `id`, `title`, `route`, `status` | `client` (`CLT-*`), `design_system`, `capabilities`, `supported_design_systems`, `slots`, `states: [{name, description}]`, `user_flows` |
+| **`design/flow` (`FLOW-*`)** | `eidos/design/flows/<flow>.adoc` | `type`, `schema`, `id`, `title`, `status`, `steps: [{step, title, screen, action, outcome}]` | `flow_type` (`client_internal`, `cross_client`), `client`, `clients`, `capabilities` |
 
 ---
 
@@ -289,23 +269,23 @@ enforcement:
 
 ### 5.2 Polyglot Invariant Test Bindings (`POL-002`)
 
-Every capability invariant (`INV-[A-Z0-9_-]+`) MUST have:
-1. A `test_binding` in the capability YAML frontmatter formatted as `<relative_test_file_path>::<test_function_or_Class::method_name>`.
-2. An explicit mention of the `INV-*` ID inside the bound test's docstring, comment, assertion message, or test name so `eidos drift` can verify bidirectional linkage.
+Every capability invariant (`INV-[A-Z0-9_-]+`) MUST declare:
+1. `test_binding: "<relative_test_file_path>::<test_function_or_Class::method>"` in YAML frontmatter.
+2. An explicit mention of the `INV-*` ID inside the bound test's docstring, comment, assertion message, or test title/display name.
 
 | Language | `test_binding` Format | How to Reference `INV-*` in Test Source |
 | :--- | :--- | :--- |
-| **Python (`pytest`)** | `tests/test_auth.py::test_token_expiry` (or `::TestAuth::test_token_expiry`) | Include `INV-AUTH-EXPIRY` in the function docstring (`"""Verify INV-AUTH-EXPIRY..."""`). |
-| **TypeScript / JS (`vitest`, `jest`)** | `tests/auth.test.ts::test_token_expiry` | Include `INV-AUTH-EXPIRY` in `describe`/`it`/`test` title or JSDoc comment above `function test_token_expiry`. |
+| **Python (`pytest`)** | `tests/test_auth.py::test_token_expiry` (or `::TestAuth::test_token_expiry`) | Include `INV-AUTH-EXPIRY` in docstring (`"""Verify INV-AUTH-EXPIRY..."""`) or comment. |
+| **TypeScript / JS (`vitest`, `jest`)** | `tests/auth.test.ts::test_token_expiry` | Include `INV-AUTH-EXPIRY` in `describe`/`it`/`test` title or comment above function. |
 | **Go (`go test`)** | `pkg/auth/auth_test.go::TestTokenExpiry` | Include `// INV-AUTH-EXPIRY` comment on or inside `func TestTokenExpiry(t *testing.T)`. |
-| **Rust (`cargo test`)** | `tests/auth_test.rs::test_token_expiry` | Include `// INV-AUTH-EXPIRY` doc/line comment on `#[test] fn test_token_expiry()`. |
-| **Java / Kotlin (`JUnit`)** | `src/test/java/AuthTest.java::testTokenExpiry` | Include `// INV-AUTH-EXPIRY` or `@DisplayName("INV-AUTH-EXPIRY: ...")` on `@Test void testTokenExpiry()`. |
+| **Rust (`cargo test`)** | `tests/auth_test.rs::test_token_expiry` | Include `// INV-AUTH-EXPIRY` comment on or inside `#[test] fn test_token_expiry()`. |
+| **Java / Kotlin (`JUnit`)** | `src/test/java/AuthTest.java::testTokenExpiry` | Include `// INV-AUTH-EXPIRY` or `@DisplayName("INV-AUTH-EXPIRY: ...")` on `@Test` method. |
+
+*(Note: Eidos structural AST and diff indexing also supports C/C++, C#, Ruby, PHP, Swift, Vue, and Svelte source files.)*
 
 ---
 
 ## 6. Cross-Reference Integrity Rules
 
-`eidos validate` enforces strict referential integrity across the entire specification graph:
 * **File Path References** (`personas`, `policies`, `components[].ref`): Must be valid repository-relative paths (`eidos/personas/...`, `eidos/policies/...`, `eidos/architecture/components/...`) pointing to existing `.adoc` files.
-* **Entity ID References** (`domain`, `domain_binding`, `owning_container`, `consumers`, `internal_containers`, `containers`, `provides`, `consumes`): Must match the exact `id:` declared in the target specification's YAML frontmatter.
-* **Safe Deletion**: Always use `eidos spec delete <ID_OR_PATH>` to check for incoming references before removing any specification file.
+* **Entity ID References** (`domain`, `domain_binding`, `container`, `owning_container`, `consumers`, `internal_containers`, `containers`, `provides`, `consumes`): Must match the exact `id:` declared in the target specification's YAML frontmatter.

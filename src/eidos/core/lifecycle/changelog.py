@@ -295,16 +295,24 @@ class ChangelogGenerator:
         return header + body
 
     def _add_delta_to_section(self, section: ReleaseSection, delta: dict[str, Any]) -> None:
-        """Classify a SpecDelta into Added, Changed, Fixed, Deprecated, or Removed using intent.kind and mutations[].action."""
+        """Classify a SpecDelta into Added, Changed, Fixed, Deprecated, or Removed using intent.kind and mutations[].operation / action."""
+        from eidos.core.lifecycle.delta_engine import normalize_delta_mutation
+
         delta_id = delta["id"]
         title = delta["title"]
         summary = delta["summary"]
         kind = str(delta.get("kind", "feature")).lower()
         raw_mutations = delta.get("mutations") or []
+        norm_mutations = [normalize_delta_mutation(m) for m in raw_mutations if isinstance(m, dict)]
+        operations = [
+            str(m.get("operation", "")).strip().lower()
+            for m in norm_mutations
+            if m.get("operation")
+        ]
         actions = [
             str(m.get("action", "")).strip().lower()
-            for m in raw_mutations
-            if isinstance(m, dict) and m.get("action")
+            for m in norm_mutations
+            if m.get("action")
         ]
 
         desc = f": {summary}" if summary and summary.lower() != title.lower() else ""
@@ -312,12 +320,22 @@ class ChangelogGenerator:
 
         if kind in ("bug", "bugfix", "fix"):
             section.fixed.append(item_text)
-        elif (actions and all(a.startswith("remove_") for a in actions)) or kind == "removal":
+        elif (
+            (operations and all(op == "remove" for op in operations))
+            or (actions and all(a.startswith("remove_") for a in actions))
+            or kind == "removal"
+        ):
             section.removed.append(item_text)
-        elif (actions and all(a.startswith("deprecate_") for a in actions)) or kind == "deprecation":
+        elif (
+            (operations and all(op == "deprecate" for op in operations))
+            or (actions and all(a.startswith("deprecate_") for a in actions))
+            or kind == "deprecation"
+        ):
             section.deprecated.append(item_text)
         elif kind in ("feature", "feature_addition", "creation", "architecture"):
-            if actions and all(a.startswith(("modify_", "extend_", "patch_")) for a in actions):
+            if (operations and all(op == "modify" for op in operations)) or (
+                actions and all(a.startswith(("modify_", "extend_", "patch_")) for a in actions)
+            ):
                 section.changed.append(item_text)
             else:
                 section.added.append(item_text)

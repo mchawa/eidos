@@ -12,8 +12,8 @@ from typing import Any, ClassVar
 import jsonschema
 import yaml
 
+from eidos.core.index.ast_indexer import AST_DIFF_EXTS, get_ast_indexer
 from eidos.core.spec.models import SpecDocument, ValidationReport
-from eidos.core.spec.parser import parse_spec_file
 from eidos.core.workspace.assets import get_v1_schemas_dir
 
 ENTITY_ID_PREFIXES = (
@@ -331,25 +331,18 @@ class SpecValidator:
 
         cached_rows: dict[str, sqlite3.Row] = {}
         if eidos_cache_root.exists():
-            from eidos.core.index.graph_index import open_cache_connection
+            from eidos.core.index.storage import (
+                get_cached_spec_document,
+                load_spec_validation_cache,
+                save_spec_validation_cache,
+            )
 
-            with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn, conn:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS spec_validation_cache (
-                        file_path TEXT PRIMARY KEY,
-                        mtime_ns INTEGER NOT NULL,
-                        sha256 TEXT NOT NULL,
-                        schema_hash TEXT NOT NULL,
-                        doc_json TEXT NOT NULL,
-                        schema_errors_json TEXT NOT NULL
-                    );
-                    """
-                )
-                for row in conn.execute(
-                    "SELECT file_path, mtime_ns, sha256, schema_hash, doc_json, schema_errors_json FROM spec_validation_cache;"
-                ):
-                    cached_rows[row["file_path"]] = row
+            cached_rows = load_spec_validation_cache(db_path)
+        else:
+            from eidos.core.index.storage import (
+                get_cached_spec_document,
+                save_spec_validation_cache,
+            )
 
         seen_rel_keys: set[str] = set()
         to_upsert: list[tuple[str, int, str, str, str, str]] = []
@@ -395,38 +388,30 @@ class SpecValidator:
 
             if row is not None and row["mtime_ns"] == mtime_ns and row["schema_hash"] == effective_schema_hash:
                 with contextlib.suppress(ValueError, TypeError, KeyError):
-                    doc_data = json.loads(row["doc_json"])
                     schema_errs = list(json.loads(row["schema_errors_json"]))
-                    cached_doc = SpecDocument(
-                        file_path=fp,
-                        frontmatter=doc_data.get("frontmatter") or {},
-                        body=doc_data.get("body") or "",
-                        doc_type=doc_data.get("doc_type") or "unknown",
-                        doc_id=doc_data.get("doc_id") or "unknown",
-                        schema_ref=doc_data.get("schema_ref"),
-                        title=doc_data.get("title"),
-                        errors=list(schema_errs),
+                    cached_doc, _, _ = get_cached_spec_document(
+                        fp, mtime_ns=mtime_ns, st_size=st.st_size, cached_row=row
                     )
-                    if (
-                        cached_doc.doc_type == "delta/mutation"
-                        and str((cached_doc.frontmatter or {}).get("status") or "").strip().lower() == "applied"
-                        and not schema_errs
-                    ):
-                        fast_pathed_applied_deltas.add(str(fp.resolve()))
-                    return cached_doc
+                    if cached_doc is not None:
+                        cached_doc.errors = list(schema_errs)
+                        if (
+                            cached_doc.doc_type == "delta/mutation"
+                            and (cached_doc.model.status or "").lower() == "applied"
+                            and not schema_errs
+                        ):
+                            fast_pathed_applied_deltas.add(str(fp.resolve()))
+                        return cached_doc
 
-            try:
-                raw_bytes = fp.read_bytes()
-            except OSError:
+            doc, sha256, mtime_ns = get_cached_spec_document(
+                fp, mtime_ns=mtime_ns, st_size=st.st_size, cached_row=row
+            )
+            if doc is None or not sha256:
                 return None
-            content = raw_bytes.decode("utf-8", errors="replace")
-            if not content.strip() and is_root_system:
+            if is_root_system and not doc.frontmatter and not doc.body.strip() and not doc.errors:
                 return None
-            sha256 = hashlib.sha256(raw_bytes).hexdigest()
 
             if row is not None and row["sha256"] == sha256 and row["schema_hash"] == effective_schema_hash:
                 with contextlib.suppress(ValueError, TypeError, KeyError):
-                    doc_data = json.loads(row["doc_json"])
                     schema_errs = list(json.loads(row["schema_errors_json"]))
                     to_upsert.append(
                         (
@@ -438,25 +423,15 @@ class SpecValidator:
                             row["schema_errors_json"],
                         )
                     )
-                    cached_doc = SpecDocument(
-                        file_path=fp,
-                        frontmatter=doc_data.get("frontmatter") or {},
-                        body=doc_data.get("body") or "",
-                        doc_type=doc_data.get("doc_type") or "unknown",
-                        doc_id=doc_data.get("doc_id") or "unknown",
-                        schema_ref=doc_data.get("schema_ref"),
-                        title=doc_data.get("title"),
-                        errors=list(schema_errs),
-                    )
+                    doc.errors = list(schema_errs)
                     if (
-                        cached_doc.doc_type == "delta/mutation"
-                        and str((cached_doc.frontmatter or {}).get("status") or "").strip().lower() == "applied"
+                        doc.doc_type == "delta/mutation"
+                        and (doc.model.status or "").lower() == "applied"
                         and not schema_errs
                     ):
                         fast_pathed_applied_deltas.add(str(fp.resolve()))
-                    return cached_doc
-
-            doc = parse_spec_file(fp)
+                    return doc
+            parse_errs = list(doc.errors)
             self.validate_document(doc)
             schema_errs = list(doc.errors)
             doc_payload = {
@@ -466,6 +441,7 @@ class SpecValidator:
                 "title": doc.title,
                 "frontmatter": doc.frontmatter,
                 "body": doc.body,
+                "parse_errors": parse_errs,
                 "errors": schema_errs,
             }
             to_upsert.append(
@@ -495,13 +471,10 @@ class SpecValidator:
 
         for doc in list(report.documents):
             if doc.doc_type == "tech/container" and doc.frontmatter:
-                comps_raw = doc.frontmatter.get("components")
-                if not isinstance(comps_raw, list):
-                    continue
                 # 1. Check explicit component refs in components array
-                for comp in comps_raw:
-                    if isinstance(comp, dict) and isinstance(comp.get("ref"), str) and comp["ref"].strip():
-                        ref_str = comp["ref"].strip()
+                for comp in doc.model.components:
+                    if comp.ref:
+                        ref_str = comp.ref
                         ref_file = (repo_root / ref_str).resolve()
                         if not ref_file.exists():
                             ref_file = (spec_root / ref_str).resolve()
@@ -525,36 +498,7 @@ class SpecValidator:
             [k for k in cached_rows if k not in seen_rel_keys] if resolved_root == eidos_cache_root else []
         )
         if eidos_cache_root.exists() and (to_upsert or deleted_keys):
-            from eidos.core.index.graph_index import open_cache_connection
-
-            with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn, conn:
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS spec_validation_cache (
-                        file_path TEXT PRIMARY KEY,
-                        mtime_ns INTEGER NOT NULL,
-                        sha256 TEXT NOT NULL,
-                        schema_hash TEXT NOT NULL,
-                        doc_json TEXT NOT NULL,
-                        schema_errors_json TEXT NOT NULL
-                    );
-                    """
-                )
-                if deleted_keys:
-                    conn.executemany(
-                        "DELETE FROM spec_validation_cache WHERE file_path = ?;",
-                        [(k,) for k in deleted_keys],
-                    )
-                if to_upsert:
-                    conn.executemany(
-                        """
-                        INSERT OR REPLACE INTO spec_validation_cache
-                        (file_path, mtime_ns, sha256, schema_hash, doc_json, schema_errors_json)
-                        VALUES (?, ?, ?, ?, ?, ?);
-                        """,
-                        to_upsert,
-                    )
-                conn.commit()
+            save_spec_validation_cache(db_path, to_upsert, deleted_keys)
 
         # Cross-reference validation
         self._validate_cross_references(report, root_dir, fast_pathed_applied_deltas=fast_pathed_applied_deltas)
@@ -597,6 +541,8 @@ class SpecValidator:
             and resolved_root.is_relative_to(spec_root)
             and ((spec_root / "system.adoc").is_file() or (spec_root / "architecture").is_dir())
         ):
+            from eidos.core.index.storage import get_cached_spec_document
+
             scanned_paths = {d.file_path.resolve() for d in report.documents}
             for ext_fp in sorted(spec_root.rglob("*.adoc")):
                 if (
@@ -608,44 +554,43 @@ class SpecValidator:
                 ):
                     continue
                 with contextlib.suppress(OSError):
-                    ext_doc = parse_spec_file(ext_fp)
+                    ext_doc, _, _ = get_cached_spec_document(ext_fp)
+                    if ext_doc is None:
+                        continue
                     if isinstance(ext_doc.doc_id, str) and ext_doc.doc_id:
                         catalog_ids.add(ext_doc.doc_id)
                         if isinstance(ext_doc.doc_type, str) and ext_doc.doc_type:
                             entity_types.setdefault(ext_doc.doc_id, ext_doc.doc_type)
-                    if ext_doc.doc_type == "tech/container" and isinstance(ext_doc.frontmatter, dict):
-                        for comp in ext_doc.frontmatter.get("components") or []:
-                            if isinstance(comp, dict) and comp.get("id"):
-                                cid = str(comp["id"]).strip()
-                                catalog_ids.add(cid)
-                                entity_types.setdefault(cid, "tech/component")
+                    if ext_doc.doc_type == "tech/container":
+                        for comp in ext_doc.model.components:
+                            if comp.id:
+                                catalog_ids.add(comp.id)
+                                entity_types.setdefault(comp.id, "tech/component")
+                    for inv in ext_doc.model.all_invariants():
+                        if inv.id:
+                            catalog_ids.add(inv.id)
+                            entity_types.setdefault(inv.id, "invariant")
 
-        # Also register inline component IDs declared directly within containers in catalog_ids
+        # Also register inline component IDs and embedded invariant IDs declared within documents in catalog_ids
         for doc in report.documents:
-            if doc.doc_type == "tech/container" and doc.frontmatter:
-                comps_raw = doc.frontmatter.get("components")
-                if isinstance(comps_raw, list):
-                    for comp in comps_raw:
-                        if isinstance(comp, dict) and comp.get("id"):
-                            cid = str(comp["id"]).strip()
-                            catalog_ids.add(cid)
-                            entity_types.setdefault(cid, "tech/component")
+            if doc.frontmatter:
+                if doc.doc_type == "tech/container":
+                    for comp in doc.model.components:
+                        if comp.id:
+                            catalog_ids.add(comp.id)
+                            entity_types.setdefault(comp.id, "tech/component")
+                for inv in doc.model.all_invariants():
+                    if inv.id:
+                        catalog_ids.add(inv.id)
+                        entity_types.setdefault(inv.id, "invariant")
 
         # Register embedded architectural decision IDs (DEC-*) and enforce global uniqueness across the catalog
         decision_owners: dict[str, SpecDocument] = {}
         for doc in report.documents:
             if not doc.frontmatter:
                 continue
-            doc_decisions: list[dict[str, Any]] = []
-            if isinstance(doc.frontmatter.get("decisions"), list):
-                doc_decisions.extend(d for d in doc.frontmatter["decisions"] if isinstance(d, dict))
-            if doc.doc_type == "tech/container":
-                comps_raw = doc.frontmatter.get("components")
-                for comp in comps_raw if isinstance(comps_raw, list) else []:
-                    if isinstance(comp, dict) and isinstance(comp.get("decisions"), list):
-                        doc_decisions.extend(d for d in comp["decisions"] if isinstance(d, dict))
-            for dec in doc_decisions:
-                dec_id = str(dec.get("id") or "").strip()
+            for dec in doc.model.all_decisions():
+                dec_id = dec.id
                 if not dec_id:
                     continue
                 if dec_id in decision_owners or dec_id in catalog_ids:
@@ -813,6 +758,9 @@ class SpecValidator:
                 for mut in fm.get("mutations") or []:
                     if not isinstance(mut, dict):
                         continue
+                    op = str(mut.get("operation") or "").strip().lower()
+                    if op in ("add", "remove") and mut.get("target"):
+                        exempt_targets.add(str(mut["target"]).strip())
                     act = str(mut.get("action") or "").strip().lower()
                     if act.startswith(("add_", "remove_")):
                         kind_suffix = act.split("_", 1)[1]
@@ -854,6 +802,18 @@ class SpecValidator:
                 f"Invalid entity reference type in {doc.file_path.name}: "
                 f"{label} '{val}' in {field_path} has type '{actual_type}', expected {expected_types}"
             )
+            return
+
+        if actual_type and field_path in ("mutations.target", "mutations.parent"):
+            from eidos.core.lifecycle.delta_engine import resolve_entity_prefix_meta
+
+            p_meta = resolve_entity_prefix_meta(val)
+            if p_meta is not None and actual_type != p_meta[2]:
+                label = ref_meta.get("entity_label") or "entity"
+                report.broken_references.append(
+                    f"Invalid entity reference type in {doc.file_path.name}: "
+                    f"{label} '{val}' in {field_path} has type '{actual_type}', expected {p_meta[2]}"
+                )
 
     def _validate_architectural_invariants(
         self,
@@ -862,9 +822,50 @@ class SpecValidator:
         report: ValidationReport,
         root_dir: Path | None = None,
     ) -> None:
-        """Enforce structural boundary invariants across contracts and dedicated components."""
+        """Enforce structural boundary invariants across contracts, dedicated components, and composable SpecDeltas."""
         dtype = doc.doc_type
-        if dtype == "tech/contract":
+        if dtype == "delta/mutation":
+            for mut in fm.get("mutations") or []:
+                if not isinstance(mut, dict):
+                    continue
+                op_val = str(mut.get("operation") or "").strip().lower()
+                target_val = str(mut.get("target") or "").strip()
+                if not op_val or not target_val:
+                    continue
+                target_upper = target_val.upper()
+                if op_val == "deprecate" and not target_upper.startswith(("CAP-", "POL-")):
+                    err_msg = (
+                        f"Invalid composable mutation in {doc.file_path.name}: "
+                        f"operation 'deprecate' is only supported for CAP-* and POL-* targets (got '{target_val}')."
+                    )
+                    doc.errors.append(err_msg)
+                    report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
+                elif target_upper.startswith("ARCH-") and op_val != "modify":
+                    err_msg = (
+                        f"Invalid composable mutation in {doc.file_path.name}: "
+                        f"ARCH-* targets only support operation 'modify' (got '{op_val}')."
+                    )
+                    doc.errors.append(err_msg)
+                    report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
+                elif target_upper.startswith("INV-") and op_val == "add":
+                    has_parent = any(
+                        mut.get(pk)
+                        for pk in (
+                            "parent",
+                            "target_capability",
+                            "target_policy",
+                            "target_container",
+                            "target_component",
+                        )
+                    )
+                    if not has_parent:
+                        err_msg = (
+                            f"Invalid composable mutation in {doc.file_path.name}: "
+                            f"adding invariant '{target_val}' requires a 'parent' specification ID."
+                        )
+                        doc.errors.append(err_msg)
+                        report.schema_errors.setdefault(str(doc.file_path), []).append(err_msg)
+        elif dtype == "tech/contract":
             owning_ref = fm.get("owning_container") or fm.get("owning_component")
             if owning_ref and str(owning_ref).startswith("CMP-"):
                 err_msg = (
@@ -943,34 +944,79 @@ class SpecValidator:
                 return cand
         return None
 
-    @staticmethod
-    def _test_symbol_exists(test_file: Path, symbol_parts: list[str]) -> bool:
-        """Return True if the target test function/method symbol exists inside test_file."""
+    _TEST_SYMBOL_CACHE: ClassVar[dict[tuple[str, int, str], tuple[set[str], set[str]]]] = {}
+
+    @classmethod
+    def _extract_cached_test_symbols(cls, test_file: Path, raw_bytes: bytes, source: str) -> tuple[set[str], set[str]]:
+        """Return cached (unqualified_names, qualified_names) for test_file via the polyglot AST indexer."""
+        digest = hashlib.sha256(raw_bytes).hexdigest()
+        cache_key = (str(test_file), len(raw_bytes), digest)
+        cached = cls._TEST_SYMBOL_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
+        indexer = get_ast_indexer()
+        test_funcs = indexer.list_test_functions(test_file, content=source)
+        symbols = indexer.extract_symbols(test_file, content=source)
+
+        unqualified_names: set[str] = set(test_funcs.keys()) | {sym.name for sym in symbols if sym.name}
+        qualified_names: set[str] = set()
+        for k in test_funcs:
+            if "::" in k or "/" in k:
+                qualified_names.add(k)
+                qualified_names.add(k.replace("/", "::"))
+                qualified_names.add(k.replace("::", "/"))
+        for sym in symbols:
+            if sym.parent_symbol and sym.name:
+                qualified_names.add(f"{sym.parent_symbol}::{sym.name}")
+                qualified_names.add(f"{sym.parent_symbol}/{sym.name}")
+
+        if test_file.suffix.lower() == ".py":
+            with contextlib.suppress(SyntaxError, ValueError):
+                tree = ast.parse(source)
+                for node in ast.walk(tree):
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        unqualified_names.add(node.name)
+                    elif isinstance(node, ast.ClassDef):
+                        for item in ast.walk(node):
+                            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                                qualified_names.add(f"{node.name}::{item.name}")
+                                qualified_names.add(f"{node.name}/{item.name}")
+
+        if len(cls._TEST_SYMBOL_CACHE) >= 512:
+            cls._TEST_SYMBOL_CACHE.clear()
+        cls._TEST_SYMBOL_CACHE[cache_key] = (unqualified_names, qualified_names)
+        return unqualified_names, qualified_names
+
+    @classmethod
+    def _test_symbol_exists(cls, test_file: Path, symbol_parts: list[str]) -> bool:
+        """Return True if the target test function/method/subtest symbol exists inside test_file."""
         if not symbol_parts:
             return True
         try:
-            source = test_file.read_text(encoding="utf-8", errors="replace")
+            raw_bytes = test_file.read_bytes()
+            source = raw_bytes.decode("utf-8", errors="replace")
         except OSError:
             return False
+
+        suffix = test_file.suffix.lower()
         leaf_sym = symbol_parts[-1]
-        if test_file.suffix == ".py":
-            try:
-                tree = ast.parse(source)
-                if len(symbol_parts) >= 2:
-                    cls_name = symbol_parts[0]
-                    for node in ast.walk(tree):
-                        if isinstance(node, ast.ClassDef) and node.name == cls_name:
-                            for item in ast.walk(node):
-                                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == leaf_sym:
-                                    return True
-                    return False
-                for node in ast.walk(tree):
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == leaf_sym:
-                        return True
-                return False
-            except SyntaxError:
-                pass
-        return bool(re.search(rf"\b{re.escape(leaf_sym)}\b", source))
+        if suffix in AST_DIFF_EXTS:
+            unqualified_names, qualified_names = cls._extract_cached_test_symbols(test_file, raw_bytes, source)
+            joined_colons = "::".join(symbol_parts)
+            joined_slashes = "/".join(symbol_parts)
+            if len(symbol_parts) >= 2:
+                return bool(
+                    joined_colons in qualified_names
+                    or joined_slashes in qualified_names
+                    or joined_colons in unqualified_names
+                    or joined_slashes in unqualified_names
+                )
+            return bool(leaf_sym in unqualified_names or leaf_sym in qualified_names)
+
+        stripped_source = re.sub(r"/\*.*?\*/", " ", source, flags=re.DOTALL)
+        stripped_source = re.sub(r"(?:^|\s)(?://|#)[^\r\n]*", " ", stripped_source)
+        return bool(re.search(rf"\b{re.escape(leaf_sym)}\b", stripped_source))
 
     def _validate_source_and_contract_paths(self, report: ValidationReport, root_dir: Path) -> None:
         """Verify container package_path, component source_path, contract specification_file, UI component test_bindings, and invariant test_binding references when source/test trees exist on disk."""
@@ -980,28 +1026,16 @@ class SpecValidator:
         candidate_test_files: list[str] = []
         for doc in report.documents:
             fm = doc.frontmatter or {}
+            model = doc.model
             if doc.doc_type == "tech/container":
-                pkg = fm.get("package_path")
-                if isinstance(pkg, str) and pkg.strip():
-                    candidate_paths.append(pkg.strip())
-                elif isinstance(pkg, list):
-                    candidate_paths.extend(str(x).strip() for x in pkg if isinstance(x, str) and str(x).strip())
-                comps_raw = fm.get("components")
-                for comp in comps_raw if isinstance(comps_raw, list) else ():
-                    if isinstance(comp, dict) and "ref" not in comp:
-                        sp = comp.get("source_path")
-                        if isinstance(sp, str) and sp.strip():
-                            candidate_paths.append(sp.strip())
-                        elif isinstance(sp, list):
-                            candidate_paths.extend(str(x).strip() for x in sp if isinstance(x, str) and str(x).strip())
+                candidate_paths.extend(model.package_paths())
+                for comp in model.components:
+                    if not comp.ref:
+                        candidate_paths.extend(comp.source_paths())
             elif doc.doc_type == "tech/component":
-                sp = fm.get("source_path")
-                if isinstance(sp, str) and sp.strip():
-                    candidate_paths.append(sp.strip())
-                elif isinstance(sp, list):
-                    candidate_paths.extend(str(x).strip() for x in sp if isinstance(x, str) and str(x).strip())
+                candidate_paths.extend(model.source_paths())
             elif doc.doc_type == "tech/contract":
-                sf = fm.get("specification_file")
+                sf = model.specification_file
                 if isinstance(sf, str) and sf.strip() and not sf.strip().endswith(".adoc"):
                     candidate_paths.append(sf.strip())
             elif doc.doc_type == "design/ui-component":
@@ -1036,40 +1070,32 @@ class SpecValidator:
         }
         for doc in report.documents:
             fm = doc.frontmatter or {}
-            status = str(fm.get("status", "active")).strip().lower()
+            model = doc.model
+            status = str(model.status or "active").strip().lower()
             if status in inactive_statuses:
                 continue
 
             if has_source_tree:
                 if doc.doc_type == "tech/container":
-                    pkg = fm.get("package_path")
-                    pkg_list = [pkg] if isinstance(pkg, str) else (pkg if isinstance(pkg, list) else [])
-                    for raw_p in pkg_list:
+                    for raw_p in model.package_paths():
                         if (
-                            isinstance(raw_p, str)
-                            and raw_p.strip()
-                            and raw_p.strip().upper() not in ("N/A", "TBD", "NONE")
+                            raw_p.strip().upper() not in ("N/A", "TBD", "NONE")
                             and self._resolve_source_path(repo_root, root_dir, raw_p) is None
                         ):
                             report.broken_references.append(
                                 f"Broken package_path in {doc.file_path.name}: "
                                 f"Container '{doc.doc_id}' references '{raw_p}' which does not exist on disk"
                             )
-                    comps_raw = fm.get("components")
-                    for comp in comps_raw if isinstance(comps_raw, list) else ():
-                        if not isinstance(comp, dict) or "ref" in comp:
+                    for comp in model.components:
+                        if comp.ref:
                             continue
-                        comp_status = str(comp.get("status", "active")).strip().lower()
+                        comp_status = str(comp.status or "active").strip().lower()
                         if comp_status in inactive_statuses:
                             continue
-                        comp_id = str(comp.get("id", "unknown"))
-                        sp = comp.get("source_path")
-                        sp_list = [sp] if isinstance(sp, str) else (sp if isinstance(sp, list) else [])
-                        for raw_sp in sp_list:
+                        comp_id = str(comp.id or "unknown")
+                        for raw_sp in comp.source_paths():
                             if (
-                                isinstance(raw_sp, str)
-                                and raw_sp.strip()
-                                and raw_sp.strip().upper() not in ("N/A", "TBD", "NONE")
+                                raw_sp.strip().upper() not in ("N/A", "TBD", "NONE")
                                 and self._resolve_source_path(repo_root, root_dir, raw_sp) is None
                             ):
                                 report.broken_references.append(
@@ -1077,13 +1103,9 @@ class SpecValidator:
                                     f"Component '{comp_id}' references '{raw_sp}' which does not exist on disk"
                                 )
                 elif doc.doc_type == "tech/component":
-                    sp = fm.get("source_path")
-                    sp_list = [sp] if isinstance(sp, str) else (sp if isinstance(sp, list) else [])
-                    for raw_sp in sp_list:
+                    for raw_sp in model.source_paths():
                         if (
-                            isinstance(raw_sp, str)
-                            and raw_sp.strip()
-                            and raw_sp.strip().upper() not in ("N/A", "TBD", "NONE")
+                            raw_sp.strip().upper() not in ("N/A", "TBD", "NONE")
                             and self._resolve_source_path(repo_root, root_dir, raw_sp) is None
                         ):
                             report.broken_references.append(
@@ -1091,7 +1113,7 @@ class SpecValidator:
                                 f"Component '{doc.doc_id}' references '{raw_sp}' which does not exist on disk"
                             )
                 elif doc.doc_type == "tech/contract":
-                    sf = fm.get("specification_file")
+                    sf = model.specification_file
                     if isinstance(sf, str) and sf.strip() and sf.strip().upper() not in ("N/A", "TBD", "NONE") and not sf.strip().endswith(".adoc"):
                         resolved_sf = self._resolve_source_path(repo_root, root_dir, sf)
                         if resolved_sf is None:
@@ -1100,7 +1122,7 @@ class SpecValidator:
                                 f"Contract '{doc.doc_id}' references '{sf}' which does not exist on disk"
                             )
                         else:
-                            protocol = str(fm.get("protocol", "")).strip().lower()
+                            protocol = str(model.protocol or "").strip().lower()
                             self._verify_contract_protocol(protocol, doc, resolved_sf, report)
 
             if has_test_tree:
@@ -1135,21 +1157,10 @@ class SpecValidator:
                                     f"UI Component '{doc.doc_id}' references symbol '{'::'.join(sym_parts)}' which does not exist in '{file_part}'"
                                 )
 
-                # Collect invariants from top-level, technical.invariants, and inline components
-                inv_entries: list[dict[str, Any]] = []
-                if isinstance(fm.get("invariants"), list):
-                    inv_entries.extend(i for i in fm["invariants"] if isinstance(i, dict))
-                tech_block = fm.get("technical")
-                if isinstance(tech_block, dict) and isinstance(tech_block.get("invariants"), list):
-                    inv_entries.extend(i for i in tech_block["invariants"] if isinstance(i, dict))
-                comps_raw = fm.get("components")
-                for comp in comps_raw if isinstance(comps_raw, list) else ():
-                    if isinstance(comp, dict) and isinstance(comp.get("invariants"), list):
-                        inv_entries.extend(i for i in comp["invariants"] if isinstance(i, dict))
-
-                for inv in inv_entries:
-                    inv_id = str(inv.get("id", "unknown"))
-                    raw_tb = inv.get("test_binding")
+                # Collect invariants from top-level, technical.invariants, and inline components via FrontmatterModel
+                for inv in model.all_invariants():
+                    inv_id = str(inv.id or "unknown")
+                    raw_tb = inv.test_binding
                     if (
                         not isinstance(raw_tb, str)
                         or not raw_tb.strip()

@@ -10,7 +10,6 @@ import contextlib
 import os
 import re
 import subprocess
-import sys
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -150,16 +149,8 @@ def _resolve_base_and_merge_base(
     head_ref: str = "HEAD",
 ) -> tuple[str | None, str | None, bool]:
     """Resolve (resolved_base, resolved_merge_base, fell_back_to_uncommitted) in a single pass."""
-    drift_mod = sys.modules.get("eidos.vcs.drift")
-    resolve_base_fn = (
-        getattr(drift_mod, "_resolve_base_ref", _resolve_base_ref) if drift_mod else _resolve_base_ref
-    )
-    resolve_mb_fn = (
-        getattr(drift_mod, "_resolve_merge_base", _resolve_merge_base) if drift_mod else _resolve_merge_base
-    )
-
     if base_ref is not None:
-        resolved_base = resolve_base_fn(repo, base_ref)
+        resolved_base = _resolve_base_ref(repo, base_ref)
         if not resolved_base:
             raise GitResolutionError(
                 f"Cannot resolve base Git reference '{base_ref}'. Ensure the reference exists and is fetched (e.g. git fetch origin <branch>)."
@@ -175,7 +166,7 @@ def _resolve_base_and_merge_base(
                 raise GitResolutionError(
                     f"Cannot resolve head Git reference '{head_ref}'. Ensure the reference exists and is fetched."
                 )
-        resolved_mb = resolve_mb_fn(repo, resolved_base, head_ref, fail_loudly=True)
+        resolved_mb = _resolve_merge_base(repo, resolved_base, head_ref, fail_loudly=True)
         return resolved_base, resolved_mb, False
 
     if head_ref != "HEAD":
@@ -190,7 +181,7 @@ def _resolve_base_and_merge_base(
                 f"Cannot resolve head Git reference '{head_ref}'. Ensure the reference exists and is fetched."
             )
 
-    candidate = resolve_base_fn(repo, None)
+    candidate = _resolve_base_ref(repo, None)
     if not candidate:
         if (repo / ".git" / "shallow").exists():
             raise GitResolutionError(
@@ -199,7 +190,7 @@ def _resolve_base_and_merge_base(
             )
         return None, None, True
 
-    mb = resolve_mb_fn(repo, candidate, head_ref, fail_loudly=False)
+    mb = _resolve_merge_base(repo, candidate, head_ref, fail_loudly=False)
     if mb:
         return candidate, mb, False
 
@@ -232,11 +223,11 @@ def _resolve_base_and_merge_base(
                     capture_output=True,
                     check=False,
                 )
-                if prev_check.returncode == 0 and resolve_mb_fn(
+                if prev_check.returncode == 0 and _resolve_merge_base(
                     repo, "HEAD~1", head_ref, fail_loudly=False
                 ):
                     continue
-            rem_mb = resolve_mb_fn(repo, rem_cand, head_ref, fail_loudly=False)
+            rem_mb = _resolve_merge_base(repo, rem_cand, head_ref, fail_loudly=False)
             if rem_mb:
                 return rem_cand, rem_mb, False
 
@@ -673,14 +664,8 @@ def classify_changed_files(
         ):
             candidate_code_paths.append(str(rel_f).replace("\\", "/"))
 
-    drift_mod = sys.modules.get("eidos.vcs.drift")
-    vendored_fn = (
-        getattr(drift_mod, "is_generated_or_vendored", is_generated_or_vendored)
-        if drift_mod
-        else is_generated_or_vendored
-    )
     vendored_paths = (
-        vendored_fn(effective_root, candidate_code_paths)
+        is_generated_or_vendored(effective_root, candidate_code_paths)
         if candidate_code_paths
         else set()
     )

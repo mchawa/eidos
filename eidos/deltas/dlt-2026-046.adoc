@@ -10,14 +10,14 @@ intent:
   severity: high
   motivation: Prevent 'eidos plugin uninstall' from deleting user-owned directories (.codex/, .github/plugin/, or arbitrary --dest paths), honor the 'force' overwrite flag when installing into existing workspace files, refuse symlinked destinations, and pin the package version in 'uvx' fallback hook commands.
 mutations:
-- action: modify_container
-  target_container: CNT-EIDOS-PLUGIN
+- operation: modify
+  target: CNT-EIDOS-PLUGIN
   details: Update CMP-PLUGIN-INSTALLER and CMP-HOOK-MANAGER in src/eidos/plugin/installer.py to record an installation manifest (.eidos-manifest.json with file paths and SHA-256 digests), remove only manifest-tracked files on uninstall, enforce force=False by default on user-owned files, refuse symlinked targets, and pin eidos-ai==<version> in uvx fallback hook commands.
   expect:
     body:
       contains: CMP-PLUGIN-INSTALLER
-- action: modify_capability
-  target_capability: CAP-AGENT-001
+- operation: modify
+  target: CAP-AGENT-001
   details: Extend CAP-AGENT-001 to guarantee non-destructive manifest-tracked plugin installation/uninstallation and version-pinned hook execution.
   expect:
     body:

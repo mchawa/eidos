@@ -10,20 +10,20 @@ intent:
   severity: high
   motivation: Prevent 'eidos drift --base <ref>' from silently falling back to '--uncommitted' (and passing on clean CI checkouts) when the base ref is missing or unresolvable, eliminate the fallback from 3-dot ('base...HEAD') to 2-dot ('base HEAD') diff when a branch has zero changes, and compare file contents against the exact merge-base commit.
 mutations:
-- action: modify_container
-  target_container: CNT-EIDOS-VCS
+- operation: modify
+  target: CNT-EIDOS-VCS
   details: Update CMP-DRIFT-DETECTOR in src/eidos/vcs/drift.py and src/eidos/vcs/diff.py and CMP-CLI-DRIFT-COMMANDS in src/eidos/cli/drift_commands.py to fail loudly when an explicit --base ref cannot be resolved, never fall back from a valid empty 3-dot diff (merge-base) to a 2-dot diff or --uncommitted, and read baseline file contents from the resolved merge-base SHA.
   expect:
     body:
       contains: CMP-DRIFT-DETECTOR
-- action: modify_container
-  target_container: CNT-EIDOS-CLI
+- operation: modify
+  target: CNT-EIDOS-CLI
   details: Update CMP-CLI-DRIFT-COMMANDS in src/eidos/cli/drift_commands.py to surface explicit Git base resolution errors and exit non-zero when --base is invalid or missing in shallow clones.
   expect:
     body:
       contains: CMP-CLI-DRIFT-COMMANDS
-- action: modify_capability
-  target_capability: CAP-VCS-001
+- operation: modify
+  target: CAP-VCS-001
   details: Update CAP-VCS-001 to guarantee deterministic merge-base comparison and fail-closed behavior when --base cannot be resolved in CI.
   expect:
     body:

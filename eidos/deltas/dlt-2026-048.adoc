@@ -10,20 +10,20 @@ intent:
   severity: medium
   motivation: Eliminate SQLite cache invalidation thrashing caused by validator.py and drift.py stamping schema_version 2.2.0 while graph_index.py expects 2.3.0, and prevent ghost entities and orphan edges when a specification ID is renamed in place.
 mutations:
-- action: modify_container
-  target_container: CNT-EIDOS-INDEX
+- operation: modify
+  target: CNT-EIDOS-INDEX
   details: Update CMP-GRAPH-STORAGE and CMP-INCREMENTAL-SYNC-ENGINE in src/eidos/core/index/graph_index.py to expose a single canonical SQLite schema version and DDL authority, evict stale entities/edges/mappings by the previous doc_id stored in indexed_files for rel_path during incremental sync, and reject duplicate entity ID collisions across spec files.
   expect:
     body:
       contains: CMP-GRAPH-STORAGE
-- action: modify_container
-  target_container: CNT-EIDOS-CORE
+- operation: modify
+  target: CNT-EIDOS-CORE
   details: Update CMP-SPEC-VALIDATOR in src/eidos/core/spec/validator.py to import and stamp the canonical SQLite SCHEMA_VERSION rather than hardcoded '2.2.0'.
   expect:
     body:
       contains: CMP-SPEC-VALIDATOR
-- action: modify_container
-  target_container: CNT-EIDOS-VCS
+- operation: modify
+  target: CNT-EIDOS-VCS
   details: Update CMP-DRIFT-DETECTOR in src/eidos/vcs/drift.py to import and stamp the canonical SQLite SCHEMA_VERSION rather than hardcoded '2.2.0'.
   expect:
     body:

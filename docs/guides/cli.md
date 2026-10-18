@@ -45,13 +45,12 @@ Verify Eidos tool installation, AST engine status, specification directory healt
 
 ```bash
 eidos doctor
-eidos doctor --fix
+eidos doctor --path eidos
 eidos doctor --json
 ```
 
 Options:
-* `--path, -p PATH`: Path to the specifications directory (default: `eidos`).
-* `--fix`: Automatically repair detected index or symlink view issues.
+* `--path, -p PATH`: Path to the project or specifications directory (default: current directory).
 * `--json`: Output diagnostic report in JSON format.
 
 ---
@@ -72,8 +71,8 @@ eidos init /path/to/repo --name my-system --title "My System"
 
 Options:
 * `PATH`: Target directory to initialize (default: current working directory `.`).
-* `--name TEXT`: Custom machine-readable system identifier.
-* `--title TEXT`: Human-readable display title.
+* `--name, -n TEXT`: Custom machine-readable system identifier.
+* `--title, -t TEXT`: Human-readable display title.
 * `--lite, -l`: Initialize with the progressive Eidos Lite specification profile (`system.adoc`, `architecture/system-architecture.adoc`, `containers/`, `capabilities/`).
 * `--force, -f`: Overwrite existing files if present.
 
@@ -82,7 +81,7 @@ Options:
 ## 2. Governance & Verification
 
 ### `eidos validate`
-Validate all AsciiDoc specification documents against their bundled v1 JSON/YAML schemas (including shared `$defs` for `DEC-*` and `INV-*`), check `x-eidos-ref` cross-document graph integrity, verify on-disk existence of declared container package paths and contract specification files, and enforce Typer CLI contract command parity.
+Validate all AsciiDoc specification documents against their bundled v1 JSON/YAML schemas (including shared `$defs` for `DEC-*` and `INV-*`, and closed `mutations[].expect` schemas), check `x-eidos-ref` cross-document graph integrity, verify on-disk existence of declared container package paths and contract specification files, and enforce bidirectional multi-protocol contract parity (`cli_args`, `openapi`, `protobuf`, `graphql`, `python_protocol`).
 
 ```bash
 eidos validate eidos
@@ -95,10 +94,10 @@ Options:
 
 Exit Codes:
 * `0`: All specifications conform to schema with zero broken cross-references or missing file bindings.
-* `1`: Schema validation errors, broken cross-references, missing declared files, or undocumented CLI commands detected.
+* `1`: Schema validation errors, broken cross-references, missing declared files, or undocumented/stale contract operations detected.
 
 > [!NOTE]
-> `eidos validate` is a static catalog linter. It does not inspect Git diffs or scan the test suite for polyglot invariant coverage, making it sub-second fast for local specification authoring and TDD.
+> `eidos validate` is a static catalog linter (with schema-digest-keyed fast-path caching for historical `status: applied` SpecDeltas). It does not inspect Git diffs or scan the test suite for polyglot invariant coverage, making it sub-second fast for local specification authoring and TDD.
 
 ---
 
@@ -180,7 +179,7 @@ Manage and query the embedded SQLite architectural knowledge graph and FTS5 lexi
 The index initializes automatically on first use and lazily resynchronizes before every query via sub-5ms `mtime_ns` and `SHA-256` dirty checking, guaranteeing zero drift.
 
 #### `eidos index status`
-Display database cache size, schema version (`2.3.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
+Display database cache size, schema version (`2.4.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
 
 ```bash
 # Display rich visual status and AST telemetry:
@@ -210,19 +209,21 @@ Options:
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
 #### `eidos index search`
-Perform column-weighted BM25 full-text search (with `camelCase`/`snake_case` identifier de-compounding) across specification titles, requirements, decisions, and invariants.
+Perform two-tier (`AND` conjunction before `OR` fallback) column-weighted BM25 full-text search (with `camelCase`/`snake_case` identifier de-compounding and AST symbol projection) across specification titles, requirements, decisions, and invariants.
 
 ```bash
 eidos index search "FTS5 hybrid search" --limit 5
+eidos index search "authentication" --json
 ```
 
 Options:
 * `QUERY`: Search query or keywords.
 * `-l, --limit INTEGER`: Maximum number of search results to return (default: `10`).
+* `--json`: Output search results as machine-readable JSON.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
 #### `eidos index blast-radius`
-Traverse the architectural knowledge graph using recursive Common Table Expressions (CTE) to calculate forward/reverse dependency blast radius before editing code or contracts.
+Traverse the architectural knowledge graph using delimiter-anchored, hub-scoped recursive Common Table Expressions (CTE) to calculate forward/reverse dependency blast radius before editing code or contracts.
 
 ```bash
 eidos index blast-radius CNT-EIDOS-CORE --depth 2
@@ -307,10 +308,10 @@ eidos spec component inline CMP-SPEC-VALIDATOR
 ```
 
 Sub-commands:
-* `list`: Lists all living specifications (including inline C4 Level 3 components) in tabular or JSON format, with optional `--type`, `--status`, and `--json` flags.
+* `list`: Lists all living specifications (including inline C4 Level 3 components) in tabular or JSON format, with optional `--type, -t`, `--status, -s`, `--path, -p`, and `--json` flags.
 * `show <id_or_path>`: Displays detailed frontmatter metadata and preview of a specification document.
-* `create <type> <id> --title <title>`: Scaffolds a new specification document across all 16 schema types with immediate validation.
-* `delete <id_or_path>`: Safely deletes a specification document with cross-reference safety checks.
+* `create <type> [id] --title <title>`: Scaffolds a new specification document across all 16 schema types with immediate validation (for `delta`, `id` defaults to `auto` and supports `--slug, -s`).
+* `delete <id_or_path>`: Safely deletes a specification document with cross-reference safety checks (`--force, -f` to override).
 * `component promote <component_id>`: Promotes an inline C4 Level 3 component (`CMP-*`) to a dedicated specification in `eidos/architecture/components/` and updates the parent container with `ref:`.
 * `component inline <component_id>`: Inlines a promoted C4 Level 3 component (`CMP-*`) back into its parent container manifest.
 
@@ -320,32 +321,42 @@ Sub-commands:
 Orchestrate SpecDeltas throughout their semantic mutation lifecycle using flat storage (`eidos/deltas/`) and gitignored symlink views (`eidos/deltas/by-status/`):
 
 ```bash
-# List all SpecDeltas
+# List all SpecDeltas (optional --status filter and --json output)
 eidos delta list
+eidos delta list --status proposed --json
 
-# Display delta lifecycle status dashboard
+# Display delta lifecycle status dashboard or transition a specific delta's status
 eidos delta status
+eidos delta status DLT-2026-055 in_review
+eidos delta status --json
 
-# Create a new SpecDelta (kind: feature | enabler | bug)
+# Create a new SpecDelta with collision-free auto ID and title-derived slug (kind: feature | enabler | bug)
+eidos delta create \
+  --title "Migrate to PostgreSQL 16" \
+  --kind enabler \
+  --motivation "Upgrade database runtime and connection pooling." \
+  --slug
+
+# Or specify an explicit SpecDelta ID (automatically resolved across all Git refs if colliding):
 eidos delta create DLT-2026-055 \
   --title "Migrate to PostgreSQL 16" \
   --kind enabler \
   --motivation "Upgrade database runtime and connection pooling."
 
-# Verify all mutations and expect: post-conditions declared in a SpecDelta:
+# Verify all mutations and closed-schema expect: post-conditions declared in a SpecDelta:
 eidos delta verify DLT-2026-055
 
-# Output machine-readable verification results:
+# Output machine-readable verification results (with failure_reason diagnostics):
 eidos delta verify DLT-2026-055 --json
 
-# Apply a SpecDelta in-place (updates status to 'applied'):
+# Apply a SpecDelta in-place (verifies all mutations by default and updates status to 'applied'):
 eidos delta apply DLT-2026-055
 
-# Deterministically scaffold missing specs declared in delta mutations without LLMs:
+# Deterministically scaffold missing specs and apply expect-driven frontmatter/body mutations without LLMs:
 eidos delta apply DLT-2026-055 --execute
 
-# Verify all mutations are satisfied before applying:
-eidos delta apply DLT-2026-055 --verify
+# Explicitly bypass pre-apply mutation verification when needed:
+eidos delta apply DLT-2026-055 --no-verify
 
 # Audit removed or deprecated entities for dangling references and active leaks:
 eidos delta audit DLT-2026-016
@@ -422,6 +433,9 @@ eidos plugin install open-code
 eidos plugin install codex
 eidos plugin install copilot
 
+# Configure hooks to use ephemeral uvx runner instead of global eidos binary:
+eidos plugin install --target all --launcher uvx
+
 # Inspect installed vs bundled plugin version
 eidos plugin version
 
@@ -439,22 +453,25 @@ eidos plugin uninstall --target all
 ```
 
 Sub-commands:
-* `install`: Installs the plugin into `.agents/plugins/eidos` and client harness locations via manifest-tracked `TargetAdapter` projections.
+* `install`: Installs the plugin into `.agents/plugins/eidos` and client harness locations via manifest-tracked `TargetAdapter` projections (`--target, -t`, `--project-dir, -p`, `--dest, -d`, `--force`, `--launcher [eidos|uvx]`).
 * `uninstall`: Safely cleans up Eidos plugin files, skills, and client configurations while preserving user-owned files.
 * `version`: Displays and compares bundled vs installed plugin version.
-* `update`: Updates project-scoped plugin to the latest bundled version.
+* `update`: Updates project-scoped plugin to the latest bundled version (`--target, -t`, `--project-dir, -p`, `--dest, -d`, `--launcher [eidos|uvx]`).
 * `validate`: Validates an Agent Plugin against canonical JSON schemas and SemVer 2.0.0 rules.
 * `info`: Displays plugin metadata, skills, hooks, and extensions.
 
 ---
 
 ### `eidos hook`
-CLI-native lifecycle hook handlers invoked by AI coding agent harnesses (`PreToolUse`, `PostToolUse`, `PostInvocation`, and Block-Once `Stop` gate):
+CLI-native lifecycle hook handlers invoked by AI coding agent harnesses (`PreToolUse`, `PostToolUse`, and stateful Block-Once `Stop` gate with 600s TTL and session scoping):
 
 ```bash
 eidos hook lint --event pre_tool
-eidos hook lint --event post_invocation
+eidos hook lint --event post_tool
 eidos hook lint --event stop
-eidos hook drift --event post_invocation
 eidos hook drift --event stop
 ```
+
+Options:
+* `--event, -e TEXT`: Hook lifecycle event (`PreToolUse` / `pre_tool`, `PostToolUse` / `post_tool`, `Stop` / `stop`).
+* `--path, -p PATH`: Repository root or `eidos` directory path.

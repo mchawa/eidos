@@ -224,15 +224,17 @@ class AuditEngine:
         targets: set[str] = set()
         search_tokens: set[str] = set()
 
+        from eidos.core.lifecycle.delta_engine import _extract_mutation_target, normalize_delta_mutation
+
         deletion_prefixes = ("remove_", "delete_", "deprecate_", "retire_")
 
-        for m in mutations:
-            if not isinstance(m, dict):
+        for raw_m in mutations:
+            if not isinstance(raw_m, dict):
                 continue
+            m = normalize_delta_mutation(raw_m)
             action = str(m.get("action", "")).strip().lower()
-            if any(action.startswith(prefix) for prefix in deletion_prefixes):
-                from eidos.core.lifecycle.delta_engine import _extract_mutation_target
-
+            operation = str(m.get("operation", "")).strip().lower()
+            if operation in ("remove", "deprecate") or any(action.startswith(prefix) for prefix in deletion_prefixes):
                 primary_target = _extract_mutation_target(m)
                 if (
                     primary_target
@@ -244,7 +246,7 @@ class AuditEngine:
 
                 parent_context_ids = {
                     str(m[k]).strip()
-                    for k in ("target_container", "target_capability", "target_domain")
+                    for k in ("parent", "target_container", "target_capability", "target_domain", "target_policy")
                     if m.get(k) and isinstance(m.get(k), str) and str(m[k]).strip() != primary_target
                 }
 

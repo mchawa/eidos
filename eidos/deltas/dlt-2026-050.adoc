@@ -8,38 +8,38 @@ intent:
   kind: enabler
   motivation: Improve long-term maintainability, repository hygiene, and onboarding ergonomics by decomposing 1,000-2,500 LOC god modules, replacing the committed 4.7 MB portal/assets.py literal with build-time bundling and CI frontend tests, deduplicating schemas/models and plugin reference trees, fixing CI ruff drift, and introducing a progressive Eidos Lite onboarding profile.
 mutations:
-- action: modify_architecture
-  target_architecture: ARCH-EIDOS-001
+- operation: modify
+  target: ARCH-EIDOS-001
   details: Document modular internal package boundaries across CNT-EIDOS-INDEX, CNT-EIDOS-VCS, CNT-EIDOS-PLUGIN, and CNT-EIDOS-PORTAL, plus the progressive Eidos Lite specification profile.
   expect:
     body:
       contains: CNT-EIDOS-INDEX
-- action: modify_container
-  target_container: CNT-EIDOS-INDEX
+- operation: modify
+  target: CNT-EIDOS-INDEX
   details: Decompose src/eidos/core/index/graph_index.py (2,587 LOC) into focused storage/schema, incremental sync, FTS/graph query, and context slicing submodules, and remove duplicate ContextSlice.to_markdown implementations.
   expect:
     body:
       contains: CMP-GRAPH-STORAGE
-- action: modify_container
-  target_container: CNT-EIDOS-VCS
+- operation: modify
+  target: CNT-EIDOS-VCS
   details: Decompose src/eidos/vcs/drift.py (2,085 LOC) into git diff/classification, AST structural comparison, invariant binding verification, and CLI report rendering modules.
   expect:
     body:
       contains: CMP-DRIFT-DETECTOR
-- action: modify_container
-  target_container: CNT-EIDOS-PLUGIN
+- operation: modify
+  target: CNT-EIDOS-PLUGIN
   details: Refactor src/eidos/plugin/installer.py (1,414 LOC) into a table-driven target adapter registry and eliminate duplicate tracked copies between .agents/plugins/eidos and assets/plugin_reference.
   expect:
     body:
       contains: CMP-PLUGIN-INSTALLER
-- action: modify_container
-  target_container: CNT-EIDOS-PORTAL
+- operation: modify
+  target: CNT-EIDOS-PORTAL
   details: Replace the committed 4.7 MB minified JS/HTML string literal in src/eidos/portal/assets.py with a 42-line loader reading gzip-compressed assets/portal/bundle.html.gz (marked linguist-generated), wire a Hatch custom build hook (src/eidos/portal/frontend/scripts/hatch_build.py), and run frontend vitest and build_assets.py --check bundle parity verification in CI.
   expect:
     body:
       contains: CMP-PORTAL-ASSETS
-- action: modify_container
-  target_container: CNT-EIDOS-CORE
+- operation: modify
+  target: CNT-EIDOS-CORE
   details: Adopt typed Pydantic frontmatter models in CMP-DOMAIN-MODELS, extract shared JSON Schema $defs (decision, invariant, test_bound_invariant) into assets/schemas/v1/common/defs.yaml, unify ContextSlice.to_markdown() in CMP-CONTEXT-SLICER, and support a progressive 'eidos init --lite' profile.
   expect:
     body:

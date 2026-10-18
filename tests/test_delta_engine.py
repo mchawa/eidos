@@ -708,14 +708,23 @@ def test_apply_expect_or_details_produces_substantive_non_comment_diff(tmp_path)
     cnt_path = create_spec(eidos_dir, "container", "CNT-SUB-SVC", title="Substantive Service")
     before = cnt_path.read_text(encoding="utf-8")
 
-    # 1. Comment-only details are rejected
+    # 1. Details-only (without expect) are rejected so raw prose is never appended to AsciiDoc bodies
     assert _apply_expect_or_details_to_spec(cnt_path, None, "// comment only") is False
+    assert _apply_expect_or_details_to_spec(cnt_path, None, "Added gRPC health check endpoint.") is False
     assert cnt_path.read_text(encoding="utf-8") == before
 
-    # 2. Substantive details are written as non-comment body content preserved by _normalized_body_lines
-    assert _apply_expect_or_details_to_spec(cnt_path, None, "Added gRPC health check endpoint.") is True
+    # 2. Explicit expect.body.contains is written as non-comment body content preserved by _normalized_body_lines
+    assert (
+        _apply_expect_or_details_to_spec(
+            cnt_path,
+            {"body": {"contains": "Added gRPC health check endpoint."}},
+            "Narrative details not appended.",
+        )
+        is True
+    )
     after = cnt_path.read_text(encoding="utf-8")
     assert "// Added gRPC health check endpoint." not in after
+    assert "Narrative details not appended." not in after
     _, old_body = _split_spec(before)
     _, new_body = _split_spec(after)
     assert _normalized_body_lines(old_body) != _normalized_body_lines(new_body)
@@ -889,8 +898,14 @@ def test_delta_engine_all_mutation_families_and_file_restoration_rollback(tmp_pa
         "  - action: modify_component\n"
         "    target_component: CMP-INLINE-WORKER\n"
         "    details: Updated inline worker responsibility for batching.\n"
+        "    expect:\n"
+        "      frontmatter:\n"
+        "        responsibility: Updated inline worker responsibility for batching.\n"
         "  - action: modify_architecture\n"
         "    details: Documented cross-cutting telemetry architecture.\n"
+        "    expect:\n"
+        "      body:\n"
+        "        contains: Documented cross-cutting telemetry architecture.\n"
         "  - action: deprecate_capability\n"
         "    target_capability: CAP-LEGACY-001\n"
         "  - action: remove_policy\n"
@@ -1355,7 +1370,10 @@ def test_delta_engine_git_baseline_and_remaining_mutations(tmp_path):
                 "action": "patch_invariant",
                 "target_invariant_id": "INV-BASE-001",
                 "details": "Patched rule via details",
-                "expect": {"body": {"contains": "Extra policy invariant note."}},
+                "expect": {
+                    "frontmatter": {"rule": "Patched rule via expect"},
+                    "body": {"contains": "Extra policy invariant note."},
+                },
             },
             {
                 "action": "remove_component",
@@ -1594,12 +1612,21 @@ def test_dlt_2026_079_structured_expect_assertions_and_diagnostics(tmp_path):
     assert rep_after.mutations[0].verified is True
     assert rep_after.mutations[0].failure_reason is None
 
-    # 5. _apply_expect_or_details_to_spec with details-only preserves frontmatter rule/responsibility
+    # 5. _apply_expect_or_details_to_spec with expect.body.contains preserves frontmatter rule/responsibility and rejects details-only
     pol_path = create_spec(eidos_dir, "policy", "POL-RATE", title="Rate Policy", rule="Original rule preserved.")
-    assert _apply_expect_or_details_to_spec(pol_path, None, "Appended operational note in body.") is True
+    assert _apply_expect_or_details_to_spec(pol_path, None, "Appended operational note in body.") is False
+    assert (
+        _apply_expect_or_details_to_spec(
+            pol_path,
+            {"body": {"contains": "Appended operational note in body."}},
+            "Narrative details ignored.",
+        )
+        is True
+    )
     pol_after = parse_spec_file(pol_path)
     assert pol_after.frontmatter["rule"] == "Original rule preserved."
     assert "Appended operational note in body." in pol_after.body
+    assert "Narrative details ignored." not in pol_after.body
 
 
 def test_dlt_2026_080_cross_ref_collision_resolution_and_cli_slug(tmp_path):
@@ -1872,3 +1899,225 @@ def test_catalog_and_delta_engine_edge_cases(tmp_path):
     assert "MISSING" in statuses
     assert "UNMODIFIED" in statuses
     assert "STILL_PRESENT" in statuses
+
+
+def test_dlt_2026_087_composable_mutation_normalize_execute_and_verify(tmp_path):
+    """Verify DLT-2026-087: composable (operation + target + parent) mutations normalize, execute, and verify cleanly."""  # eidos:fixture
+    from eidos.core.lifecycle.delta_engine import (
+        create_delta,
+        execute_delta_mutations,
+        normalize_delta_mutation,
+        verify_delta_mutations,
+    )
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.spec.parser import dump_spec_document
+
+    # 1. Unit test normalize_delta_mutation bidirectional mapping
+    norm_cmp = normalize_delta_mutation(
+        {"operation": "modify", "target": "CMP-AUTH", "parent": "CNT-API"}
+    )
+    assert norm_cmp["action"] == "modify_component"
+    assert norm_cmp["target_component"] == "CMP-AUTH"
+    assert norm_cmp["target_container"] == "CNT-API"
+
+    norm_inv = normalize_delta_mutation(
+        {"operation": "modify", "target": "INV-AUTH-001", "parent": "CAP-AUTH-001"}
+    )
+    assert norm_inv["action"] == "patch_invariant"
+    assert norm_inv["target_invariant_id"] == "INV-AUTH-001"
+    assert norm_inv["target_capability"] == "CAP-AUTH-001"
+
+    norm_add_cap = normalize_delta_mutation(
+        {"operation": "add", "target": "CAP-AUTH-002", "parent": "DOM-CORE"}
+    )
+    assert norm_add_cap["action"] == "add_capability"
+    assert norm_add_cap["new_capability_id"] == "CAP-AUTH-002"
+    assert norm_add_cap["target_domain"] == "DOM-CORE"
+
+    norm_legacy = normalize_delta_mutation(
+        {
+            "action": "patch_invariant",
+            "target_capability": "CAP-AUTH-001",
+            "target_invariant_id": "INV-AUTH-001",
+        }
+    )
+    assert norm_legacy["operation"] == "modify"
+    assert norm_legacy["target"] == "INV-AUTH-001"
+    assert norm_legacy["parent"] == "CAP-AUTH-001"
+
+    # 2. End-to-end execute + verify with composable mutations
+    ws = tmp_path / "composable_ws"
+    init_repository(ws)
+    eidos_dir = ws / "eidos"
+    create_spec(eidos_dir, "domain", "DOM-BILLING", title="Billing")
+    create_spec(eidos_dir, "container", "CNT-BILLING", title="Billing Service")
+
+    dlt_file = create_delta(eidos_dir, "DLT-2026-088", title="Composable Billing Lifecycle")
+    dlt_doc = parse_spec_file(dlt_file)
+    dlt_doc.frontmatter["mutations"] = [
+        {
+            "operation": "add",
+            "target": "CAP-BILLING-001",
+            "parent": "DOM-BILLING",
+            "title": "Invoice Generation",
+            "expect": {"frontmatter": {"version": "1.0.0", "status": "active"}},
+        },
+        {
+            "operation": "add",
+            "target": "CMP-INVOICE-ENGINE",
+            "parent": "CNT-BILLING",
+            "details": "Generates recurring invoices.",
+            "expect": {"frontmatter": {"responsibility": "Generates recurring invoices"}},
+        },
+        {
+            "operation": "add",
+            "target": "INV-" + "BILLING-001",
+            "parent": "CAP-BILLING-001",
+            "expect": {
+                "frontmatter": {
+                    "rule": "Invoices must be idempotent.",
+                    "test_binding": "N/A",
+                }
+            },
+        },
+    ]
+    dlt_file.write_text(dump_spec_document(dlt_doc.frontmatter, dlt_doc.body), encoding="utf-8")
+
+    exec_ok, exec_msg, _ = execute_delta_mutations(eidos_dir, "DLT-2026-088")
+    assert exec_ok is True, exec_msg
+
+    ver_ok, ver_msg, ver_rep = verify_delta_mutations(eidos_dir, "DLT-2026-088")
+    assert ver_ok is True, ver_msg
+    assert ver_rep is not None and ver_rep.verified_count == 3
+
+
+def test_dlt_2026_088_default_verify_apply_and_safe_runtime_aware_execute(tmp_path):
+    """Verify DLT-2026-088: apply_delta and 'eidos delta apply' enforce verify=True by default (unless --no-verify),
+    execute_delta_mutations requires explicit expect assertions on modify/patch without clobbering responsibility/rule or
+    appending details prose, and _infer_container_code_extension infers language-appropriate file extensions."""
+    from typer.testing import CliRunner
+
+    from eidos.cli.main import app
+    from eidos.core.lifecycle.delta_engine import (
+        _infer_container_code_extension,
+        apply_delta,
+        create_delta,
+        execute_delta_mutations,
+    )
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.spec.parser import dump_spec_document
+
+    # 1. Unit test _infer_container_code_extension across runtimes and existing components
+    assert _infer_container_code_extension({"runtime": "TypeScript / React"}) == ".ts"
+    assert _infer_container_code_extension({"runtime": "Node.js 20"}) == ".js"
+    assert _infer_container_code_extension({"runtime": "Go 1.22"}) == ".go"
+    assert _infer_container_code_extension({"runtime": "Rust / Cargo"}) == ".rs"
+    assert _infer_container_code_extension({"runtime": "Kotlin / JVM"}) == ".kt"
+    assert _infer_container_code_extension({"runtime": "Java 21 / Spring Boot"}) == ".java"
+    assert _infer_container_code_extension({"runtime": "C# / .NET 8"}) == ".cs"
+    assert _infer_container_code_extension({"runtime": "Ruby on Rails"}) == ".rb"
+    assert _infer_container_code_extension({"runtime": "PHP 8.3 / Laravel"}) == ".php"
+    assert _infer_container_code_extension({"runtime": "Swift 5.10"}) == ".swift"
+    assert _infer_container_code_extension({"runtime": "C++20"}) == ".cpp"
+    assert _infer_container_code_extension({"runtime": "C11"}) == ".c"
+    assert _infer_container_code_extension({"runtime": "Python 3.12"}) == ".py"
+    assert (
+        _infer_container_code_extension(
+            {
+                "runtime": "Custom Runtime",
+                "components": [{"id": "CMP-EXISTING", "source_path": "src/web/existing.tsx"}],
+            }
+        )
+        == ".tsx"
+    )
+
+    ws = tmp_path / "dlt_088_ws"
+    init_repository(ws)
+    eidos_dir = ws / "eidos"
+
+    cnt_ts = create_spec(eidos_dir, "container", "CNT-WEB-UI", title="Web UI", package_path="src/web")
+    cnt_ts_doc = parse_spec_file(cnt_ts)
+    cnt_ts_doc.frontmatter["runtime"] = "TypeScript 5 / Vite"
+    cnt_ts_doc.frontmatter["components"] = [
+        {
+            "id": "CMP-HEADER",
+            "name": "Header",
+            "responsibility": "Renders top navigation bar.",
+            "source_path": "src/web/header.ts",
+        }
+    ]
+    cnt_ts.write_text(dump_spec_document(cnt_ts_doc.frontmatter, cnt_ts_doc.body), encoding="utf-8")
+    (ws / "src" / "web").mkdir(parents=True, exist_ok=True)
+    (ws / "src" / "web" / "header.ts").write_text("export const Header = () => {};\n", encoding="utf-8")
+    (ws / "src" / "web" / "sidebar.ts").write_text("export const Sidebar = () => {};\n", encoding="utf-8")
+
+    # 2. apply_delta and CLI 'eidos delta apply' reject unverified delta by default (verify=True)
+    dlt_unverified = create_delta(eidos_dir, "DLT-2026-088", title="Unverified Apply Gate")
+    dlt_u_doc = parse_spec_file(dlt_unverified)
+    dlt_u_doc.frontmatter["mutations"] = [
+        {
+            "operation": "modify",
+            "target": "CMP-HEADER",
+            "parent": "CNT-WEB-UI",
+            "details": "Add theme toggle to header.",
+            "expect": {"frontmatter": {"responsibility": "Renders top navigation bar with theme toggle."}},
+        }
+    ]
+    dlt_unverified.write_text(dump_spec_document(dlt_u_doc.frontmatter, dlt_u_doc.body), encoding="utf-8")
+
+    ok_default, msg_default, _, _ = apply_delta(eidos_dir, "DLT-2026-088")
+    assert ok_default is False
+    assert "Verification failed before apply" in msg_default
+    assert parse_spec_file(dlt_unverified).frontmatter["status"] == "proposed"
+
+    runner = CliRunner()
+    res_cli_default = runner.invoke(app, ["delta", "apply", "DLT-2026-088", "--path", str(eidos_dir)])
+    assert res_cli_default.exit_code == 1
+    assert parse_spec_file(dlt_unverified).frontmatter["status"] == "proposed"
+
+    # Explicit --no-verify bypasses verification when requested
+    res_cli_no_verify = runner.invoke(
+        app, ["delta", "apply", "DLT-2026-088", "--no-verify", "--path", str(eidos_dir)]
+    )
+    assert res_cli_no_verify.exit_code == 0, res_cli_no_verify.output
+    assert parse_spec_file(dlt_unverified).frontmatter["status"] == "applied"
+
+    # 3. execute_delta_mutations rejects details-only modify_component without clobbering responsibility
+    dlt_details_only = create_delta(eidos_dir, "DLT-2026-089", title="Details Only Modify")
+    dlt_do_doc = parse_spec_file(dlt_details_only)
+    dlt_do_doc.frontmatter["mutations"] = [
+        {
+            "operation": "modify",
+            "target": "CMP-HEADER",
+            "parent": "CNT-WEB-UI",
+            "details": "Narrative details that must not overwrite responsibility.",
+        }
+    ]
+    dlt_details_only.write_text(dump_spec_document(dlt_do_doc.frontmatter, dlt_do_doc.body), encoding="utf-8")
+    exec_do_ok, exec_do_msg, _ = execute_delta_mutations(eidos_dir, "DLT-2026-089")
+    assert exec_do_ok is False
+    assert "expect.frontmatter" in exec_do_msg
+    assert (
+        parse_spec_file(cnt_ts).frontmatter["components"][0]["responsibility"]
+        == "Renders top navigation bar."
+    )
+
+    # 4. execute_delta_mutations scaffolds inline component with .ts extension from TypeScript container
+    dlt_ts_add = create_delta(eidos_dir, "DLT-2026-090", title="Add TS Sidebar")
+    dlt_ts_doc = parse_spec_file(dlt_ts_add)
+    dlt_ts_doc.frontmatter["mutations"] = [
+        {
+            "operation": "add",
+            "target": "CMP-SIDEBAR",
+            "parent": "CNT-WEB-UI",
+            "details": "Renders collapsible sidebar.",
+        }
+    ]
+    dlt_ts_add.write_text(dump_spec_document(dlt_ts_doc.frontmatter, dlt_ts_doc.body), encoding="utf-8")
+    ok_ts, msg_ts, _, _ = apply_delta(eidos_dir, "DLT-2026-090", execute=True)
+    assert ok_ts is True, msg_ts
+    comps_after = parse_spec_file(cnt_ts).frontmatter["components"]
+    sidebar_comp = next(c for c in comps_after if c["id"] == "CMP-SIDEBAR")
+    assert sidebar_comp["source_path"] == "src/web/sidebar.ts"
+
+

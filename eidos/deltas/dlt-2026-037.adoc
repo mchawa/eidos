@@ -10,20 +10,20 @@ intent:
   kind: enabler
   motivation: Reduce AI agent system-prompt skill index bloat and eliminate multi-hop skill file reads by consolidating the 14 fragmented Eidos skills into 4 cohesive workflow-aligned skills ('eidos', 'eidos-spec', 'eidos-plan', 'eidos-ops').
 mutations:
-- action: modify_component
-  target_component: CMP-PLUGIN-INSTALLER
+- operation: modify
+  target: CMP-PLUGIN-INSTALLER
   details: Consolidate the 14 skill directories in 'assets/plugin_reference/skills/' into 4 workflow skills ('eidos', 'eidos-spec', 'eidos-plan', 'eidos-ops'); update '_copy_plugin_tree()', '_copy_skills_flat()', and '_remove_skills_flat()' in 'src/eidos/plugin/installer.py' to prune the 13 retired legacy skill directories on install/update/uninstall; and update '_write_aider_conventions()', '_write_copilot_instructions()', and install status messages.
   expect:
     frontmatter:
       responsibility: 4 cohesive workflow skills
-- action: modify_component
-  target_component: CMP-DOCS-USER-GUIDES
+- operation: modify
+  target: CMP-DOCS-USER-GUIDES
   details: Update 'docs/guides/agent-plugin.md' and 'docs/concepts/architectural-index.md' (and 'CMP-DOCS-USER-GUIDES' in 'eidos/architecture/containers/docs.adoc') to document the 4 consolidated workflow skills ('eidos', 'eidos-spec', 'eidos-plan', 'eidos-ops').
   expect:
     frontmatter:
       responsibility: 4 workflow skills
-- action: extend_capability
-  target_capability: CAP-AGENT-001
+- operation: modify
+  target: CAP-AGENT-001
   details: Streamline progressive agent skill discovery across Antigravity, Claude Code, Cursor, Cline, OpenCode, Codex, Aider, and GitHub Copilot into 4 cohesive workflow skills and bump capability version 1.2.0 -> 1.3.0.
   expect:
     frontmatter:

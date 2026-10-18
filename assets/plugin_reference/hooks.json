@@ -24,13 +24,6 @@
         ]
       }
     ],
-    "PostInvocation": [
-      {
-        "type": "command",
-        "command": "eidos hook lint --event PostInvocation",
-        "timeout": 30
-      }
-    ],
     "Stop": [
       {
         "type": "command",
@@ -40,13 +33,6 @@
     ]
   },
   "eidos-drift-gate": {
-    "PostInvocation": [
-      {
-        "type": "command",
-        "command": "eidos hook drift --event PostInvocation",
-        "timeout": 30
-      }
-    ],
     "Stop": [
       {
         "type": "command",

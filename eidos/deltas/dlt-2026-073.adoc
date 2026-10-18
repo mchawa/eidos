@@ -12,8 +12,8 @@ intent:
   severity: high
   motivation: 'Align the bundled v1 JSON Schemas (container, policy, domain, capability, contract, and delta) with the living specification engine, knowledge graph indexer, drift detector, and SpecDelta lifecycle so valid invariants, embedded DEC-* decisions, contract SemVer versions/consumers, and design entity references are not rejected by additionalProperties: false.'
 mutations:
-- action: modify_component
-  target_component: CMP-SPEC-VALIDATOR
+- operation: modify
+  target: CMP-SPEC-VALIDATOR
   details: 'Update assets/schemas/v1/tech/container.schema.yaml and assets/schemas/v1/product/policy.schema.yaml to permit invariants ($ref: ''#/$defs/invariant''); update assets/schemas/v1/product/domain.schema.yaml, assets/schemas/v1/product/capability.schema.yaml, assets/schemas/v1/product/policy.schema.yaml, and assets/schemas/v1/tech/contract.schema.yaml to permit decisions ($ref: ''#/$defs/decision''); allow optional ubiquitous_language and owners on domain.schema.yaml and optional version and consumers (with x-eidos-ref) on contract.schema.yaml; and update assets/schemas/v1/delta/delta.schema.yaml to allow design_systems, clients, flows, screens, ui_components, and personas under affects and attach x-eidos-ref metadata to blast_radius.impacted_components and impacted_containers.'
   expect:
     frontmatter:

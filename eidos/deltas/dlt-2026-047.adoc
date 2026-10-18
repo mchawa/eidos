@@ -8,26 +8,26 @@ intent:
   kind: enabler
   motivation: Align context slicing, incremental graph synchronization, and polyglot AST indexing with their architectural guarantees by enforcing real token truncation across Markdown and JSON slices, updating stored mtime when SHA-256 matches on dirty checks, promoting ast-grep-py to a core dependency, and qualifying test methods by Class::method so duplicate method names across test classes never overwrite each other.
 mutations:
-- action: modify_container
-  target_container: CNT-EIDOS-INDEX
+- operation: modify
+  target: CNT-EIDOS-INDEX
   details: Update CMP-TIERED-CONTEXT-COMPRESSOR, CMP-INCREMENTAL-SYNC-ENGINE, and CMP-AST-SYMBOL-INDEXER in src/eidos/core/index/ to enforce rank-ordered token budgets in both Markdown and JSON formats, return empty slices on zero matches instead of alphabetical fallbacks, refresh stored mtime_ns when SHA-256 is unchanged, pass dirty check results directly into sync(), promote ast-grep-py to a core dependency, fix Go type_spec and Kotlin indexing, and qualify test functions by Class::method.
   expect:
     body:
       contains: CMP-AST-SYMBOL-INDEXER
-- action: modify_container
-  target_container: CNT-EIDOS-VCS
+- operation: modify
+  target: CNT-EIDOS-VCS
   details: Update CMP-DRIFT-DETECTOR in src/eidos/vcs/drift.py to resolve qualified Class::method test bindings (with fallback to bare method name) and unify invariant ID regexes across ast_indexer.py and drift.py.
   expect:
     body:
       contains: CMP-DRIFT-DETECTOR
-- action: patch_policy
-  target_policy: POL-002-INVARIANT-TEST-ENFORCEMENT
+- operation: modify
+  target: POL-002-INVARIANT-TEST-ENFORCEMENT
   details: Document explicitly in POL-002 that Eidos verifies invariant test bindings via static bidirectional reference/marker traceability (file::func or file::Class::func), delegating runtime assertion execution to the CI test runner.
   expect:
     body:
       contains: traceability
-- action: modify_capability
-  target_capability: CAP-AGENT-002
+- operation: modify
+  target: CAP-AGENT-002
   details: Ensure CAP-AGENT-002 context slicing enforces strict token truncation for both Markdown and JSON outputs and avoids injecting unrelated fallback entities when queries return zero matches.
   expect:
     body:

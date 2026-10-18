@@ -27,26 +27,76 @@ except ImportError:
 
 INVARIANT_PATTERN = re.compile(r"\b(INV-[A-Z0-9_-]+)\b")
 POLICY_PATTERN = re.compile(r"\b(POL-[A-Z0-9_-]+)\b")
+_RUST_TEST_ATTR_RE = re.compile(
+    r"#\[\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*(?:test|rstest|test_case)\b"
+)
+
+
+def _find_body_brace_outside_parens(text: str) -> int:
+    """Return index of first '{' at paren_depth == 0 (outside parentheses and quotes), or -1."""
+    if "{" not in text:
+        return -1
+    paren_depth = 0
+    in_quote: str | None = None
+    escaped = False
+    for idx, ch in enumerate(text):
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if in_quote is not None:
+            if ch == in_quote:
+                in_quote = None
+            continue
+        if ch in ("'", '"', "`"):
+            in_quote = ch
+            continue
+        if ch == "(":
+            paren_depth += 1
+        elif ch == ")" and paren_depth > 0:
+            paren_depth -= 1
+        elif ch == "{" and paren_depth == 0:
+            return idx
+    return -1
+
+
+_DECL_KEYWORD_RE = re.compile(
+    r"\b(?:class|interface|struct|enum|trait|type|function|func|fn|fun|def)\b"
+)
 
 
 def _extract_header_signature(node_text: str) -> str:
     """Extract normalized declaration header signature (before body block)."""
     first_lines: list[str] = []
     paren_depth = 0
-    for line in node_text.splitlines():
+    head_slice = node_text[:2048] if len(node_text) > 2048 else node_text
+    for line in head_slice.splitlines():
         stripped = line.strip()
-        if not stripped or stripped.startswith(("#", "//", "/*", "*")):
+        if not stripped or (
+            stripped.startswith(("#", "//", "/*", "*")) and not stripped.startswith("#[")
+        ):
             continue
         first_lines.append(stripped)
         paren_depth += stripped.count("(") - stripped.count(")")
-        if paren_depth <= 0 and (stripped.endswith(":") or stripped.endswith("{") or "{" in stripped):
+        is_pure_deco_line = (
+            (stripped.startswith("@") and not stripped.startswith("@interface"))
+            or stripped.startswith("#[")
+        ) and not _DECL_KEYWORD_RE.search(stripped)
+        if (
+            paren_depth <= 0
+            and not is_pure_deco_line
+            and (stripped.endswith(":") or _find_body_brace_outside_parens(stripped) != -1)
+        ):
             break
-        if len(first_lines) >= 6:
+        if len(first_lines) >= 10:
             break
     header = " ".join(first_lines)
-    # Strip trailing body start
-    if "{" in header:
-        header = header.split("{", 1)[0].strip()
+    # Strip trailing body start outside parentheses
+    brace_idx = _find_body_brace_outside_parens(header)
+    if brace_idx != -1:
+        header = header[:brace_idx].strip()
     elif header.endswith(":"):
         header = header[:-1].strip()
     return re.sub(r"\s+", " ", header)
@@ -242,6 +292,149 @@ class AstGrepIndexer(BaseAstIndexer):
             anc = anc.parent()
         return None
 
+    @staticmethod
+    def _extract_decorator_info(node: Any, lang: str = "") -> tuple[int, list[str]]:
+        """Return (effective_1based_start_line, normalized_decorator_strings) for a class or function node."""
+        rng = node.range()
+        start_line = rng.start.line + 1
+        decorators: list[str] = []
+
+        # 1. Check parent wrapper node first (Python decorated_definition, TS/JS export_statement)
+        parent = node.parent()
+        if parent is not None:
+            pkind = parent.kind()
+            if pkind == "decorated_definition":
+                start_line = min(start_line, parent.range().start.line + 1)
+                for ch in parent.children():
+                    if ch.kind() == "decorator":
+                        d_txt = re.sub(r"\s+", " ", ch.text().strip())
+                        if d_txt not in decorators:
+                            decorators.append(d_txt)
+                return start_line, decorators
+            if pkind == "export_statement":
+                exp_prev_decos: list[str] = []
+                eprev = parent.prev()
+                while eprev is not None:
+                    ekind = eprev.kind()
+                    if ekind in ("decorator", "attribute_item"):
+                        start_line = min(start_line, eprev.range().start.line + 1)
+                        exp_prev_decos.append(re.sub(r"\s+", " ", eprev.text().strip()))
+                        eprev = eprev.prev()
+                    elif ekind in ("comment", "line_comment", "block_comment"):
+                        eprev = eprev.prev()
+                    else:
+                        break
+                if exp_prev_decos:
+                    exp_prev_decos.reverse()
+                    for d_txt in exp_prev_decos:
+                        if d_txt not in decorators:
+                            decorators.append(d_txt)
+                for ch in parent.children():
+                    if ch.kind() == "decorator":
+                        start_line = min(start_line, ch.range().start.line + 1)
+                        d_txt = re.sub(r"\s+", " ", ch.text().strip())
+                        if d_txt not in decorators:
+                            decorators.append(d_txt)
+
+        if lang == "python":
+            return start_line, decorators
+
+        # 2. Check preceding sibling decorator / attribute_item nodes (e.g. Rust #[...], TS method @decorator)
+        sibling_decos: list[str] = []
+        prev = node.prev()
+        while prev is not None:
+            pkind = prev.kind()
+            if pkind in ("decorator", "attribute_item"):
+                start_line = min(start_line, prev.range().start.line + 1)
+                sibling_decos.append(re.sub(r"\s+", " ", prev.text().strip()))
+                prev = prev.prev()
+            elif pkind in ("comment", "line_comment", "block_comment"):
+                prev = prev.prev()
+            else:
+                break
+        if sibling_decos:
+            sibling_decos.reverse()
+            decorators.extend(sibling_decos)
+
+        return start_line, decorators
+
+    @staticmethod
+    def _extract_ts_test_call_title(c: Any) -> str | None:
+        """Extract test title from TS/JS it/test/describe (.each/.concurrent/.only/.skip) and Deno.test call_expression."""
+        fn_ident = c.field("function")
+        if fn_ident is None:
+            return None
+        fn_text = re.sub(r"\s+", " ", fn_ident.text().strip())
+        is_deno = fn_text == "Deno.test"
+        is_direct_or_member = (
+            fn_text in ("it", "test", "describe")
+            or is_deno
+            or bool(
+                re.match(
+                    r"^(?:it|test|describe)\.(?:only|skip|concurrent|todo|serial|fails|fixme)(?:\.(?:only|skip|concurrent))?$",
+                    fn_text,
+                )
+            )
+        )
+        is_parameterized_each = bool(
+            re.match(r"^(?:it|test|describe)(?:\.[A-Za-z_]+)*\.each\s*(?:\(|`)", fn_text)
+        )
+        if not (is_direct_or_member or is_parameterized_each):
+            return None
+
+        args = c.field("arguments")
+        if args is None:
+            return None
+        first_arg = next(
+            (ch for ch in args.children() if ch.text() not in ("(", ")", ",")),
+            None,
+        )
+        if first_arg is None:
+            return None
+        raw_arg = first_arg.text().strip()
+        if raw_arg.startswith(("'", '"', "`")) and len(raw_arg) >= 2:
+            title = raw_arg.strip("'\"`")
+            return title if title else None
+        if is_deno:
+            m_obj = re.search(r"""\bname\s*:\s*(['"`])(.*?)\1""", raw_arg)
+            if m_obj and m_obj.group(2):
+                return m_obj.group(2)
+            m_fn = re.search(r"\bfunction\s+([A-Za-z_$][A-Za-z0-9_$]*)", raw_arg)
+            if m_fn and m_fn.group(1):
+                return m_fn.group(1)
+        return None
+
+    @staticmethod
+    def _extract_go_subtests(fn_node: Any, lines: list[str]) -> list[tuple[str, int, int, str]]:
+        """Return (subtest_name, start_line_1based, end_line_1based, full_text) for t.Run/b.Run calls inside a Go test function."""
+        subtests: list[tuple[str, int, int, str]] = []
+        for sub_call in fn_node.find_all(kind="call_expression"):
+            sub_fn = sub_call.field("function")
+            if sub_fn is None or not re.match(r"^[A-Za-z_][A-Za-z0-9_]*\.Run$", sub_fn.text().strip()):
+                continue
+            args = sub_call.field("arguments")
+            if args is None:
+                continue
+            first_arg = next(
+                (ch for ch in args.children() if ch.text() not in ("(", ")", ",")),
+                None,
+            )
+            if first_arg is None:
+                continue
+            raw_arg = first_arg.text().strip()
+            if not (raw_arg.startswith(('"', "`", "'")) and len(raw_arg) >= 2):
+                continue
+            sub_name = raw_arg.strip('"\'`')
+            if not sub_name:
+                continue
+            srng = sub_call.range()
+            s_start = srng.start.line + 1
+            s_end = srng.end.line + 1
+            s_prefix = _extract_preceding_context(lines, s_start)
+            s_text = f"{s_prefix}\n{sub_call.text()}" if s_prefix else sub_call.text()
+            subtests.append((sub_name, s_start, s_end, s_text))
+        return subtests
+
     def extract_symbols(self, file_path: Path | str, content: str | None = None) -> list[CodeSymbol]:
         p = Path(file_path)
         lang = self._get_lang(p)
@@ -262,8 +455,20 @@ class AstGrepIndexer(BaseAstIndexer):
 
         symbols: list[CodeSymbol] = []
         rel_path = str(p)
+        content_lines = content.splitlines()
         py_dunder_all = _extract_python_dunder_all_from_source(content) if lang == "python" else None
         ts_exports = _extract_ts_exported_names(content) if lang in ("typescript", "tsx", "javascript", "jsx") else None
+
+        def _node_header_sig(ast_node: Any, rng_obj: Any) -> str:
+            s_ln = rng_obj.start.line
+            e_ln = rng_obj.end.line
+            if s_ln == e_ln and s_ln < len(content_lines):
+                return _extract_header_signature(ast_node.text())
+            slice_lines = content_lines[s_ln : min(e_ln + 1, s_ln + 12)]
+            if not slice_lines:
+                return _extract_header_signature(ast_node.text())
+            first = slice_lines[0][rng_obj.start.column :]
+            return _extract_header_signature("\n".join([first, *slice_lines[1:]]))
 
         # 1. Classes, Structs & Interfaces
         class_kinds = {
@@ -285,6 +490,8 @@ class AstGrepIndexer(BaseAstIndexer):
                 cname = self._node_name(m)
                 if cname:
                     rng = m.range()
+                    dec_start, dec_list = self._extract_decorator_info(m, lang)
+                    hdr_sig = _node_header_sig(m, rng)
                     if ck == "type_spec":
                         type_node = m.field("type")
                         type_kind = type_node.kind() if type_node is not None else ""
@@ -294,11 +501,11 @@ class AstGrepIndexer(BaseAstIndexer):
                             kind_label = "struct"
                         else:
                             kind_label = "class"
-                        sig = f"type {_extract_header_signature(m.text())}"
+                        sig = f"type {hdr_sig}"
                     elif lang == "kotlin":
                         is_iface = any(c.kind() == "interface" for c in m.children())
                         kind_label = "interface" if is_iface else "class"
-                        sig = _extract_header_signature(m.text())
+                        sig = hdr_sig
                     elif lang == "rust":
                         if ck == "struct_item":
                             kind_label = "struct"
@@ -308,10 +515,10 @@ class AstGrepIndexer(BaseAstIndexer):
                             kind_label = "interface"
                         else:
                             kind_label = "class"
-                        sig = _extract_header_signature(m.text())
+                        sig = hdr_sig
                     else:
                         kind_label = "interface" if ("interface" in ck or "type_alias" in ck) else "class"
-                        sig = _extract_header_signature(m.text())
+                        sig = hdr_sig
                     if lang in ("typescript", "tsx", "javascript", "jsx"):
                         parent = m.parent()
                         if (
@@ -320,11 +527,15 @@ class AstGrepIndexer(BaseAstIndexer):
                             and not sig.startswith("export ")
                         ):
                             sig = f"export {sig}"
+                    if dec_list:
+                        missing_decos = [d for d in dec_list if not sig.startswith(d)]
+                        if missing_decos:
+                            sig = f"{' '.join(missing_decos)} {sig}"
                     sym = CodeSymbol(
                         name=cname,
                         kind=kind_label,
                         file_path=rel_path,
-                        line_start=rng.start.line + 1,
+                        line_start=dec_start,
                         line_end=rng.end.line + 1,
                         signature=sig,
                     )
@@ -379,6 +590,7 @@ class AstGrepIndexer(BaseAstIndexer):
                 if not fname:
                     continue
                 rng = m.range()
+                dec_start, dec_list = self._extract_decorator_info(m, lang)
 
                 # Determine parent class if any
                 parent_cls = None
@@ -414,7 +626,7 @@ class AstGrepIndexer(BaseAstIndexer):
                         anc_impl = anc_impl.parent()
 
                 kind_label = "method" if parent_cls or "method" in fk else "function"
-                sig = _extract_header_signature(m.text())
+                sig = _node_header_sig(m, rng)
                 if lang in ("typescript", "tsx", "javascript", "jsx") and kind_label != "method":
                     parent = m.parent()
                     if (
@@ -423,11 +635,15 @@ class AstGrepIndexer(BaseAstIndexer):
                         and not sig.startswith("export ")
                     ):
                         sig = f"export {sig}"
+                if dec_list:
+                    missing_decos = [d for d in dec_list if not sig.startswith(d)]
+                    if missing_decos:
+                        sig = f"{' '.join(missing_decos)} {sig}"
                 sym = CodeSymbol(
                     name=fname,
                     kind=kind_label,
                     file_path=rel_path,
-                    line_start=rng.start.line + 1,
+                    line_start=dec_start,
                     line_end=rng.end.line + 1,
                     parent_symbol=parent_cls,
                     signature=sig,
@@ -446,7 +662,7 @@ class AstGrepIndexer(BaseAstIndexer):
     def list_test_functions(self, file_path: Path | str, content: str | None = None) -> dict[str, str]:
         p = Path(file_path)
         lang = self._get_lang(p)
-        if not lang or not AST_GREP_AVAILABLE:
+        if not lang or not AST_GREP_AVAILABLE or lang in self._FALLBACK_SIGNATURE_LANGS:
             return FallbackIndexer().list_test_functions(file_path, content)
 
         if content is None:
@@ -471,21 +687,13 @@ class AstGrepIndexer(BaseAstIndexer):
             fn_nodes = node.find_all(kind="function_declaration")
             calls = node.find_all(kind="call_expression")
             for c in calls:
-                fn_ident = c.field("function")
-                if fn_ident and fn_ident.text() in ("it", "test", "describe"):
-                    args = c.field("arguments")
-                    if args:
-                        arg_node = next(
-                            (ch for ch in args.children() if ch.text() not in ("(", ")", ",") and ch.text().strip("'\"`")),
-                            None,
-                        )
-                        if arg_node is not None:
-                            t_title = arg_node.text().strip("'\"`")
-                            rng = c.range()
-                            start_line = rng.start.line + 1
-                            prefix = _extract_preceding_context(lines, start_line)
-                            c_text = f"{prefix}\n{c.text()}" if prefix else c.text()
-                            result[t_title] = c_text
+                t_title = self._extract_ts_test_call_title(c)
+                if t_title:
+                    rng = c.range()
+                    start_line = rng.start.line + 1
+                    prefix = _extract_preceding_context(lines, start_line)
+                    c_text = f"{prefix}\n{c.text()}" if prefix else c.text()
+                    result[t_title] = f"{result[t_title]}\n{c_text}" if t_title in result else c_text
         elif lang in ("go", "kotlin"):
             fn_nodes = node.find_all(kind="function_declaration")
         elif lang == "rust":
@@ -497,13 +705,13 @@ class AstGrepIndexer(BaseAstIndexer):
             fname = self._node_name(fn)
             if not fname:
                 continue
-            rng = fn.range()
-            start_line = rng.start.line + 1
+            dec_start, dec_list = self._extract_decorator_info(fn, lang)
+            start_line = dec_start
             parent = fn.parent()
             if parent and parent.kind() in ("decorated_definition",):
-                prng = parent.range()
-                start_line = prng.start.line + 1
                 base_text = parent.text()
+            elif dec_list and lang == "rust":
+                base_text = f"{chr(10).join(dec_list)}\n{fn.text()}"
             else:
                 base_text = fn.text()
             prefix = _extract_preceding_context(lines, start_line)
@@ -513,7 +721,7 @@ class AstGrepIndexer(BaseAstIndexer):
                 fname.startswith("test")
                 or fname.endswith("_test")
                 or fname.startswith("Test")
-                or "#[test]" in full_text
+                or bool(_RUST_TEST_ATTR_RE.search(full_text))
                 or "@Test" in full_text
             )
             if is_test:
@@ -522,13 +730,17 @@ class AstGrepIndexer(BaseAstIndexer):
                     qual_key = f"{cls_name}::{fname}"
                     result[qual_key] = f"{result[qual_key]}\n{full_text}" if qual_key in result else full_text
                 result[fname] = f"{result[fname]}\n{full_text}" if fname in result else full_text
+                if lang == "go":
+                    for sub_name, _, _, sub_text in self._extract_go_subtests(fn, lines):
+                        for skey in (f"{fname}/{sub_name}", f"{fname}::{sub_name}", sub_name):
+                            result[skey] = f"{result[skey]}\n{sub_text}" if skey in result else sub_text
 
         return result
 
     def extract_test_bindings(self, file_path: Path | str, content: str | None = None) -> list[TestFunctionBinding]:
         p = Path(file_path)
         lang = self._get_lang(p)
-        if not lang or not AST_GREP_AVAILABLE:
+        if not lang or not AST_GREP_AVAILABLE or lang in self._FALLBACK_SIGNATURE_LANGS:
             return FallbackIndexer().extract_test_bindings(file_path, content)
 
         if content is None:
@@ -569,27 +781,19 @@ class AstGrepIndexer(BaseAstIndexer):
             fn_nodes = node.find_all(kind="function_definition")
         elif lang in ("typescript", "tsx", "javascript", "jsx"):
             fn_nodes = node.find_all(kind="function_declaration")
-            # Also capture it('...') or test('...') call expressions
+            # Also capture it/test/describe (.each/.concurrent/.only/.skip) and Deno.test call expressions
             calls = node.find_all(kind="call_expression")
             for c in calls:
-                fn_ident = c.field("function")
-                if fn_ident and fn_ident.text() in ("it", "test", "describe"):
-                    args = c.field("arguments")
-                    if args:
-                        arg_node = next(
-                            (ch for ch in args.children() if ch.text() not in ("(", ")", ",") and ch.text().strip("'\"`")),
-                            None,
-                        )
-                        if arg_node is not None:
-                            t_title = arg_node.text().strip("'\"`")
-                            rng = c.range()
-                            start_line = rng.start.line + 1
-                            prefix = _extract_preceding_context(lines, start_line)
-                            c_text = f"{prefix}\n{c.text()}" if prefix else c.text()
-                            invs = sorted(set(INVARIANT_PATTERN.findall(c_text)))
-                            pols = sorted(set(POLICY_PATTERN.findall(c_text)))
-                            if invs or pols:
-                                _record_binding(t_title, start_line, rng.end.line + 1, invs, pols)
+                t_title = self._extract_ts_test_call_title(c)
+                if t_title:
+                    rng = c.range()
+                    start_line = rng.start.line + 1
+                    prefix = _extract_preceding_context(lines, start_line)
+                    c_text = f"{prefix}\n{c.text()}" if prefix else c.text()
+                    invs = sorted(set(INVARIANT_PATTERN.findall(c_text)))
+                    pols = sorted(set(POLICY_PATTERN.findall(c_text)))
+                    if invs or pols:
+                        _record_binding(t_title, start_line, rng.end.line + 1, invs, pols)
         elif lang in ("go", "kotlin"):
             fn_nodes = node.find_all(kind="function_declaration")
         elif lang == "rust":
@@ -602,12 +806,13 @@ class AstGrepIndexer(BaseAstIndexer):
             if not fname:
                 continue
             rng = fn.range()
-            start_line = rng.start.line + 1
+            dec_start, dec_list = self._extract_decorator_info(fn, lang)
+            start_line = dec_start
             parent = fn.parent()
             if parent and parent.kind() in ("decorated_definition",):
-                prng = parent.range()
-                start_line = prng.start.line + 1
                 base_text = parent.text()
+            elif dec_list and lang == "rust":
+                base_text = f"{chr(10).join(dec_list)}\n{fn.text()}"
             else:
                 base_text = fn.text()
             prefix = _extract_preceding_context(lines, start_line)
@@ -619,7 +824,7 @@ class AstGrepIndexer(BaseAstIndexer):
                 or fname.endswith("_test")
                 or fname.startswith("Test")  # Go convention
                 or (fname.startswith("test") and lang in ("java", "kotlin"))
-                or "#[test]" in fn_text
+                or bool(_RUST_TEST_ATTR_RE.search(fn_text))
                 or "@Test" in fn_text
             )
             if not is_test:
@@ -635,20 +840,31 @@ class AstGrepIndexer(BaseAstIndexer):
                     _record_binding(f"{cls_name}::{fname}", start_line, end_line, invs, pols)
                 _record_binding(fname, start_line, end_line, invs, pols)
 
+            if lang == "go":
+                for sub_name, s_start, s_end, sub_text in self._extract_go_subtests(fn, lines):
+                    sub_invs = sorted(set(INVARIANT_PATTERN.findall(sub_text)))
+                    sub_pols = sorted(set(POLICY_PATTERN.findall(sub_text)))
+                    if sub_invs or sub_pols:
+                        _record_binding(f"{fname}/{sub_name}", s_start, s_end, sub_invs, sub_pols)
+                        _record_binding(f"{fname}::{sub_name}", s_start, s_end, sub_invs, sub_pols)
+                        _record_binding(sub_name, s_start, s_end, sub_invs, sub_pols)
+
         return list(by_name.values())
 
 
 def _python_node_signature(node: ast.AST) -> str:
-    """Build a deterministic signature string for a Python AST ClassDef or FunctionDef."""
+    """Build a deterministic signature string for a Python AST ClassDef or FunctionDef (including decorators)."""
+    decos = [f"@{ast.unparse(d)}" for d in (getattr(node, "decorator_list", None) or ())]
+    deco_prefix = f"{' '.join(decos)} " if decos else ""
     if isinstance(node, ast.ClassDef):
         bases = [ast.unparse(b) for b in node.bases]
         base_str = f"({', '.join(bases)})" if bases else ""
-        return f"class {node.name}{base_str}"
+        return f"{deco_prefix}class {node.name}{base_str}"
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
         prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
         args_str = ast.unparse(node.args)
         ret_str = f" -> {ast.unparse(node.returns)}" if node.returns else ""
-        return f"{prefix} {node.name}({args_str}){ret_str}"
+        return f"{deco_prefix}{prefix} {node.name}({args_str}){ret_str}"
     return ""
 
 
@@ -727,6 +943,154 @@ class FallbackIndexer(BaseAstIndexer):
             flags=re.DOTALL | re.MULTILINE,
         )
 
+    @staticmethod
+    def _leading_decorator_context(lines: list[str], idx_1based: int) -> tuple[int, str]:
+        """Collect contiguous @decorator or #[attribute] lines immediately preceding idx_1based."""
+        collected: list[str] = []
+        start_line = idx_1based
+        i = idx_1based - 2
+        while i >= 0:
+            s = lines[i].strip()
+            if (
+                (s.startswith("@") and not s.startswith(("@interface", "@theme", "@keyframes", "@font-face")))
+                or s.startswith("#[")
+            ):
+                collected.append(re.sub(r"\s+", " ", s))
+                start_line = i + 1
+                i -= 1
+            else:
+                break
+        collected.reverse()
+        return start_line, " ".join(collected)
+
+    @staticmethod
+    def _balanced_call_end_line(content: str, start_idx: int, total_lines: int) -> int:
+        """Find the 1-based ending line of a call expression starting at start_idx."""
+        depth = 0
+        in_q: str | None = None
+        esc = False
+        saw_open = False
+        for i in range(start_idx, len(content)):
+            ch = content[i]
+            if esc:
+                esc = False
+                continue
+            if ch == "\\":
+                esc = True
+                continue
+            if in_q is not None:
+                if ch == in_q:
+                    in_q = None
+                continue
+            if ch in ("'", '"', "`"):
+                in_q = ch
+                continue
+            if ch == "(":
+                depth += 1
+                saw_open = True
+            elif ch == ")":
+                depth -= 1
+                if saw_open and depth <= 0:
+                    rest = content[i + 1 :].lstrip()
+                    if rest.startswith("("):
+                        saw_open = False
+                        continue
+                    return content[: i + 1].count("\n") + 1
+        return total_lines
+
+    @classmethod
+    def _extract_extra_polyglot_tests(
+        cls,
+        content: str,
+        lines: list[str],
+        suffix: str,
+    ) -> list[tuple[list[str], int, int, str]]:
+        """Extract parameterized TS/JS (test.each/it.each/describe.each/Deno.test) and Go t.Run subtests."""
+        extras: list[tuple[list[str], int, int, str]] = []
+        total_lines = max(len(lines), 1)
+        clean_content = cls._strip_block_comments_preserving_lines(content)
+        clean_lines = clean_content.splitlines()
+
+        def _is_comment_line(line_1based: int) -> bool:
+            if 1 <= line_1based <= len(clean_lines):
+                return clean_lines[line_1based - 1].lstrip().startswith(("//", "#", "/*", "*"))
+            return False
+
+        if suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"):
+            patterns = [
+                re.compile(r"\b(?:it|test|describe)\s*\(\s*(['\"`])([^\r\n]+?)\1"),
+                re.compile(
+                    r"\b(?:it|test|describe)(?:\.[A-Za-z_]+)*\.each\s*(?:\([^)]*\)|`[^`]*`)\s*\(\s*(['\"`])([^\r\n]+?)\1",
+                    re.DOTALL,
+                ),
+                re.compile(
+                    r"\b(?:it|test|describe)\.(?:only|skip|concurrent|todo|serial|fails|fixme)(?:\.(?:only|skip|concurrent))?\s*\(\s*(['\"`])([^\r\n]+?)\1"
+                ),
+                re.compile(r"\bDeno\.test\s*\(\s*(['\"`])([^\r\n]+?)\1"),
+                re.compile(
+                    r"\bDeno\.test\s*\(\s*\{[^}]*?\bname\s*:\s*(['\"`])([^\r\n]+?)\1",
+                    re.DOTALL,
+                ),
+            ]
+            for pat in patterns:
+                for m in pat.finditer(clean_content):
+                    title = m.group(2).strip()
+                    if not title:
+                        continue
+                    s_line = clean_content[: m.start()].count("\n") + 1
+                    if _is_comment_line(s_line):
+                        continue
+                    e_line = cls._balanced_call_end_line(clean_content, m.start(), total_lines)
+                    prefix = _extract_preceding_context(lines, s_line)
+                    body = "\n".join(lines[s_line - 1 : e_line])
+                    full_chunk = f"{prefix}\n{body}" if prefix else body
+                    extras.append(([title], s_line, e_line, full_chunk))
+            for m_fn in re.finditer(
+                r"\bDeno\.test\s*\(\s*(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)",
+                clean_content,
+            ):
+                title = m_fn.group(1).strip()
+                if title:
+                    s_line = clean_content[: m_fn.start()].count("\n") + 1
+                    if _is_comment_line(s_line):
+                        continue
+                    e_line = cls._balanced_call_end_line(clean_content, m_fn.start(), total_lines)
+                    prefix = _extract_preceding_context(lines, s_line)
+                    body = "\n".join(lines[s_line - 1 : e_line])
+                    full_chunk = f"{prefix}\n{body}" if prefix else body
+                    extras.append(([title], s_line, e_line, full_chunk))
+        elif suffix == ".go":
+            go_fn_starts: list[tuple[int, str]] = []
+            for m_fn in re.finditer(r"^func\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", clean_content, re.MULTILINE):
+                go_fn_starts.append((clean_content[: m_fn.start()].count("\n") + 1, m_fn.group(1)))
+            for m_sub in re.finditer(
+                r"\b[A-Za-z_][A-Za-z0-9_]*\.Run\s*\(\s*(['\"`])([^\r\n]+?)\1",
+                clean_content,
+            ):
+                sub_name = m_sub.group(2).strip()
+                if not sub_name:
+                    continue
+                s_line = clean_content[: m_sub.start()].count("\n") + 1
+                if _is_comment_line(s_line):
+                    continue
+                e_line = cls._balanced_call_end_line(clean_content, m_sub.start(), total_lines)
+                enclosing_fn = None
+                for fn_line, fn_name in reversed(go_fn_starts):
+                    if fn_line <= s_line:
+                        enclosing_fn = fn_name
+                        break
+                prefix = _extract_preceding_context(lines, s_line)
+                body = "\n".join(lines[s_line - 1 : e_line])
+                full_chunk = f"{prefix}\n{body}" if prefix else body
+                keys = (
+                    [f"{enclosing_fn}/{sub_name}", f"{enclosing_fn}::{sub_name}", sub_name]
+                    if enclosing_fn
+                    else [sub_name]
+                )
+                extras.append((keys, s_line, e_line, full_chunk))
+
+        return extras
+
     def extract_symbols(self, file_path: Path | str, content: str | None = None) -> list[CodeSymbol]:
         p = Path(file_path)
         if content is None:
@@ -745,11 +1109,15 @@ class FallbackIndexer(BaseAstIndexer):
                 py_dunder_all = _extract_python_dunder_all(tree)
                 for node in ast.iter_child_nodes(tree):
                     if isinstance(node, ast.ClassDef):
+                        cls_start = min(
+                            (d.lineno for d in getattr(node, "decorator_list", ()) or ()),
+                            default=node.lineno,
+                        )
                         cls_sym = CodeSymbol(
                             name=node.name,
                             kind="class",
                             file_path=rel_path,
-                            line_start=node.lineno,
+                            line_start=cls_start,
                             line_end=getattr(node, "end_lineno", node.lineno),
                             docstring=ast.get_docstring(node),
                             signature=_python_node_signature(node),
@@ -759,11 +1127,15 @@ class FallbackIndexer(BaseAstIndexer):
                         symbols.append(cls_sym)
                         for item in node.body:
                             if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                                m_start = min(
+                                    (d.lineno for d in getattr(item, "decorator_list", ()) or ()),
+                                    default=item.lineno,
+                                )
                                 m_sym = CodeSymbol(
                                     name=item.name,
                                     kind="method",
                                     file_path=rel_path,
-                                    line_start=item.lineno,
+                                    line_start=m_start,
                                     line_end=getattr(item, "end_lineno", item.lineno),
                                     parent_symbol=node.name,
                                     docstring=ast.get_docstring(item),
@@ -777,11 +1149,15 @@ class FallbackIndexer(BaseAstIndexer):
                                 m_sym.is_boundary_export = _evaluate_boundary_export(m_sym, py_dunder_all=py_dunder_all)
                                 symbols.append(m_sym)
                     elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        fn_start = min(
+                            (d.lineno for d in getattr(node, "decorator_list", ()) or ()),
+                            default=node.lineno,
+                        )
                         fn_sym = CodeSymbol(
                             name=node.name,
                             kind="function",
                             file_path=rel_path,
-                            line_start=node.lineno,
+                            line_start=fn_start,
                             line_end=getattr(node, "end_lineno", node.lineno),
                             docstring=ast.get_docstring(node),
                             signature=_python_node_signature(node),
@@ -808,14 +1184,17 @@ class FallbackIndexer(BaseAstIndexer):
             stripped_line = line.strip()
             if not stripped_line or stripped_line.startswith(("//", "#", "*")):
                 continue
+            dec_start, dec_prefix = self._leading_decorator_context(lines, idx)
             sig = _extract_header_signature(line)
+            if dec_prefix and not sig.startswith(dec_prefix):
+                sig = f"{dec_prefix} {sig}"
             if suffix == ".py":
                 for m in self.PYTHON_CLS_REGEX.finditer(line):
                     sym = CodeSymbol(
                         name=m.group(1),
                         kind="class",
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -826,7 +1205,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(1),
                         kind="function",
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -838,7 +1217,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(1),
                         kind="interface" if "interface" in line else "class",
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -849,7 +1228,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(1),
                         kind="function",
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -861,7 +1240,7 @@ class FallbackIndexer(BaseAstIndexer):
                             name=m.group(1),
                             kind="interface",
                             file_path=rel_path,
-                            line_start=idx,
+                            line_start=dec_start,
                             line_end=idx,
                             signature=sig,
                         )
@@ -872,7 +1251,7 @@ class FallbackIndexer(BaseAstIndexer):
                             name="defineProps",
                             kind="interface",
                             file_path=rel_path,
-                            line_start=idx,
+                            line_start=dec_start,
                             line_end=idx,
                             signature=sig,
                         )
@@ -884,7 +1263,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(1),
                         kind="interface" if m.group(2) == "interface" else "struct",
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -895,7 +1274,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(1),
                         kind="function",
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -907,7 +1286,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(2),
                         kind="interface" if m.group(1) == "trait" else m.group(1),
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -918,7 +1297,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(1),
                         kind="function",
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -930,7 +1309,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(2),
                         kind="interface" if m.group(1) == "interface" else "class",
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -941,7 +1320,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(1),
                         kind="function",
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -955,7 +1334,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(2),
                         kind="struct" if m.group(1) == "struct" else ("enum" if m.group(1) == "enum" else "class"),
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -970,7 +1349,7 @@ class FallbackIndexer(BaseAstIndexer):
                             name=fname,
                             kind="function",
                             file_path=rel_path,
-                            line_start=idx,
+                            line_start=dec_start,
                             line_end=idx,
                             signature=sig,
                         )
@@ -985,7 +1364,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(2),
                         kind="interface" if kind_raw == "interface" else ("struct" if kind_raw == "struct" else ("enum" if kind_raw == "enum" else "class")),
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -1000,7 +1379,7 @@ class FallbackIndexer(BaseAstIndexer):
                             name=fname,
                             kind="function",
                             file_path=rel_path,
-                            line_start=idx,
+                            line_start=dec_start,
                             line_end=idx,
                             signature=sig,
                         )
@@ -1016,7 +1395,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(2),
                         kind="class",
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -1028,7 +1407,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(1),
                         kind="function",
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=rb_sig,
                     )
@@ -1040,7 +1419,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(2),
                         kind="interface" if m.group(1) in ("interface", "trait") else ("enum" if m.group(1) == "enum" else "class"),
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -1051,7 +1430,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(1),
                         kind="function",
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -1064,7 +1443,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(2),
                         kind="interface" if kind_raw == "protocol" else ("struct" if kind_raw == "struct" else ("enum" if kind_raw == "enum" else "class")),
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -1075,7 +1454,7 @@ class FallbackIndexer(BaseAstIndexer):
                         name=m.group(1),
                         kind="function",
                         file_path=rel_path,
-                        line_start=idx,
+                        line_start=dec_start,
                         line_end=idx,
                         signature=sig,
                     )
@@ -1131,16 +1510,26 @@ class FallbackIndexer(BaseAstIndexer):
             except (SyntaxError, ValueError):
                 pass
 
-        test_fn_pattern = re.compile(
-            r"(?:def\s+|function\s+|fn\s+|fun\s+|func\s+|void\s+|it\s*\(\s*['\"`]|test\s*\(\s*['\"`])([a-zA-Z0-9_\s-]+)"
+        suffix = p.suffix.lower()
+        is_ts_like = suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte")
+        test_fn_pattern = (
+            re.compile(r"\bfunction\s+([a-zA-Z0-9_]+)")
+            if is_ts_like
+            else re.compile(
+                r"(?:def\s+|function\s+|fn\s+|fun\s+|func\s+|void\s+)([a-zA-Z0-9_]+)"
+                r"|\b(?:it|test|describe)\s*\(\s*(['\"`])([^\r\n]+?)\2"
+            )
         )
         lines = content.splitlines()
+        scan_lines = self._strip_block_comments_preserving_lines(content).splitlines()
         current_test = None
         current_start = 1
         collected_lines: list[str] = []
 
         for idx, line in enumerate(lines, start=1):
-            m = test_fn_pattern.search(line)
+            scan_line = scan_lines[idx - 1] if idx - 1 < len(scan_lines) else line
+            stripped_scan = scan_line.lstrip()
+            m = None if stripped_scan.startswith(("//", "#", "/*", "*")) else test_fn_pattern.search(scan_line)
             if m:
                 if current_test:
                     prefix = _extract_preceding_context(lines, current_start)
@@ -1149,9 +1538,10 @@ class FallbackIndexer(BaseAstIndexer):
                     result[current_test] = (
                         f"{result[current_test]}\n{full_chunk}" if current_test in result else full_chunk
                     )
-                current_test = m.group(1).strip()
-                current_start = idx
-                collected_lines = [line]
+                current_test = (m.group(1) or m.group(3) or "").strip()
+                dec_start, _ = self._leading_decorator_context(lines, idx)
+                current_start = dec_start
+                collected_lines = lines[dec_start - 1 : idx]
             elif current_test:
                 collected_lines.append(line)
 
@@ -1160,6 +1550,12 @@ class FallbackIndexer(BaseAstIndexer):
             chunk = "\n".join(collected_lines)
             full_chunk = f"{prefix}\n{chunk}" if prefix else chunk
             result[current_test] = f"{result[current_test]}\n{full_chunk}" if current_test in result else full_chunk
+
+        for keys, _s_line, _e_line, full_chunk in self._extract_extra_polyglot_tests(
+            content, lines, suffix
+        ):
+            for k in keys:
+                result[k] = f"{result[k]}\n{full_chunk}" if k in result else full_chunk
 
         return result
 
@@ -1226,16 +1622,26 @@ class FallbackIndexer(BaseAstIndexer):
                 pass
 
         # Regex fallback for tests across languages
-        test_fn_pattern = re.compile(
-            r"(?:def\s+|function\s+|fn\s+|fun\s+|func\s+|void\s+|it\s*\(\s*['\"`]|test\s*\(\s*['\"`])([a-zA-Z0-9_\s-]+)"
+        suffix = p.suffix.lower()
+        is_ts_like = suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte")
+        test_fn_pattern = (
+            re.compile(r"\bfunction\s+([a-zA-Z0-9_]+)")
+            if is_ts_like
+            else re.compile(
+                r"(?:def\s+|function\s+|fn\s+|fun\s+|func\s+|void\s+)([a-zA-Z0-9_]+)"
+                r"|\b(?:it|test|describe)\s*\(\s*(['\"`])([^\r\n]+?)\2"
+            )
         )
         lines = content.splitlines()
+        scan_lines = self._strip_block_comments_preserving_lines(content).splitlines()
         current_test = None
         current_start = 1
         collected_lines: list[str] = []
 
         for idx, line in enumerate(lines, start=1):
-            m = test_fn_pattern.search(line)
+            scan_line = scan_lines[idx - 1] if idx - 1 < len(scan_lines) else line
+            stripped_scan = scan_line.lstrip()
+            m = None if stripped_scan.startswith(("//", "#", "/*", "*")) else test_fn_pattern.search(scan_line)
             if m:
                 if current_test:
                     prefix = _extract_preceding_context(lines, current_start)
@@ -1245,9 +1651,10 @@ class FallbackIndexer(BaseAstIndexer):
                     pols = sorted(set(POLICY_PATTERN.findall(chunk)))
                     if invs or pols:
                         _record_binding(current_test, current_start, idx - 1, invs, pols)
-                current_test = m.group(1).strip()
-                current_start = idx
-                collected_lines = [line]
+                current_test = (m.group(1) or m.group(3) or "").strip()
+                dec_start, _ = self._leading_decorator_context(lines, idx)
+                current_start = dec_start
+                collected_lines = lines[dec_start - 1 : idx]
             elif current_test:
                 collected_lines.append(line)
 
@@ -1260,6 +1667,15 @@ class FallbackIndexer(BaseAstIndexer):
             if invs or pols:
                 _record_binding(current_test, current_start, len(lines), invs, pols)
 
+        for keys, s_line, e_line, full_chunk in self._extract_extra_polyglot_tests(
+            content, lines, suffix
+        ):
+            invs = sorted(set(INVARIANT_PATTERN.findall(full_chunk)))
+            pols = sorted(set(POLICY_PATTERN.findall(full_chunk)))
+            if invs or pols:
+                for k in keys:
+                    _record_binding(k, s_line, e_line, invs, pols)
+
         return list(by_name.values())
 
 
@@ -1268,6 +1684,83 @@ _RUST_PUB_RE = re.compile(
 )
 _JAVA_KT_PRIVATE_RE = re.compile(r"(?:^|\s)(?:private|internal)\s+")
 _TS_PRIVATE_METHOD_RE = re.compile(r"^(?:private\s+|protected\s+|#)")
+
+
+def _strip_leading_decorators_from_signature(sig: str) -> str:
+    """Strip leading @decorator(...) / #[attribute] prefixes from a signature string before visibility analysis."""
+    if not sig or not sig.startswith(("@", "#[", "#![")):
+        return sig
+    s = sig
+    while s:
+        if s.startswith(("#[", "#![")):
+            depth = 0
+            in_q: str | None = None
+            esc = False
+            end_idx = -1
+            for i, ch in enumerate(s):
+                if esc:
+                    esc = False
+                    continue
+                if ch == "\\":
+                    esc = True
+                    continue
+                if in_q is not None:
+                    if ch == in_q:
+                        in_q = None
+                    continue
+                if ch in ("'", '"', "`"):
+                    in_q = ch
+                    continue
+                if ch == "[":
+                    depth += 1
+                elif ch == "]":
+                    depth -= 1
+                    if depth == 0:
+                        end_idx = i
+                        break
+            if end_idx == -1:
+                break
+            s = s[end_idx + 1 :].lstrip()
+            continue
+        if s.startswith("@"):
+            m = re.match(r"^@[A-Za-z_$][A-Za-z0-9_$.]*", s)
+            if not m:
+                break
+            rest = s[m.end() :].lstrip()
+            if rest.startswith("("):
+                depth = 0
+                in_q = None
+                esc = False
+                end_idx = -1
+                for i, ch in enumerate(rest):
+                    if esc:
+                        esc = False
+                        continue
+                    if ch == "\\":
+                        esc = True
+                        continue
+                    if in_q is not None:
+                        if ch == in_q:
+                            in_q = None
+                        continue
+                    if ch in ("'", '"', "`"):
+                        in_q = ch
+                        continue
+                    if ch == "(":
+                        depth += 1
+                    elif ch == ")":
+                        depth -= 1
+                        if depth == 0:
+                            end_idx = i
+                            break
+                if end_idx == -1:
+                    break
+                s = rest[end_idx + 1 :].lstrip()
+            else:
+                s = rest
+            continue
+        break
+    return s
 
 
 def _extract_python_dunder_all(tree: ast.Module) -> set[str] | None:
@@ -1291,6 +1784,8 @@ def _extract_python_dunder_all(tree: ast.Module) -> set[str] | None:
 
 
 def _extract_python_dunder_all_from_source(content: str) -> set[str] | None:
+    if "__all__" not in content:
+        return None
     try:
         return _extract_python_dunder_all(ast.parse(content))
     except (SyntaxError, ValueError):
@@ -1324,7 +1819,8 @@ def _evaluate_symbol_visibility(
 ) -> bool:
     """Evaluate language-native public boundary visibility for a CodeSymbol (DLT-2026-055)."""
     suffix = Path(sym.file_path).suffix.lower()
-    sig = (sym.signature or "").strip()
+    raw_sig = (sym.signature or "").strip()
+    sig = _strip_leading_decorators_from_signature(raw_sig)
 
     if suffix == ".go":
         if sym.parent_symbol and (not sym.parent_symbol or not sym.parent_symbol[0].isupper()):

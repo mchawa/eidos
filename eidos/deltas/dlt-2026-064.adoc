@@ -10,15 +10,15 @@ intent:
   kind: feature
   motivation: Extend SpecValidator to verify that design/system specifications reference an existing, valid JSON tokens.manifest adhering to W3C DTCG ($value / $type) structure and that inheritance.extends chains across DS-* specifications are acyclic.
 mutations:
-- action: modify_component
-  target_component: CMP-SPEC-VALIDATOR
+- operation: modify
+  target: CMP-SPEC-VALIDATOR
   details: Extend SpecValidator in src/eidos/core/spec/validator.py to verify that active design/system specifications have an existing tokens.manifest JSON file on disk, validate W3C DTCG leaf token objects ($value presence and valid $type), and detect circular inheritance.extends chains across DS-* documents.
   expect:
     frontmatter:
       source_path: src/eidos/core/spec/validator.py
       responsibility: W3C DTCG
-- action: patch_invariant
-  target_invariant_id: INV-W3C-DTCG-COMPLIANCE
+- operation: modify
+  target: INV-W3C-DTCG-COMPLIANCE
   details: Update INV-W3C-DTCG-COMPLIANCE in CAP-EXP-002 to enforce static SpecValidator verification of tokens.manifest existence, W3C DTCG $value/$type structure, and acyclic DS-* inheritance.
   expect:
     frontmatter:

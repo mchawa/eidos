@@ -5,7 +5,7 @@ id: CAP-AGENT-001
 title: "Universal Agent Adapter & Context Slicing Engine"
 domain: DOM-AGENT-INTELLIGENCE
 status: active
-version: "1.4.0"
+version: "1.5.0"
 
 business:
   personas:
@@ -44,7 +44,7 @@ technical:
       rule: "All lifecycle hooks in hooks.json must invoke the native eidos hook CLI entrypoint directly without shell or Python wrapper scripts."
       test_binding: "tests/test_plugin.py::test_hooks_are_cli_native"
     - id: INV-HOOK-FAIL-LOUD
-      rule: "Lifecycle hooks (PostInvocation and Stop) must report internal validation or drift execution errors via structured JSON output (injectSteps or decision: continue) rather than failing silently."
+      rule: "Stop lifecycle hooks (eidos hook lint --event Stop and eidos hook drift --event Stop) must report internal validation or drift execution errors via structured JSON output (decision: continue) rather than failing silently."
       test_binding: "tests/test_plugin.py::test_hooks_fail_loud_on_internal_error"
     - id: INV-HOOK-BLOCK-ONCE
       rule: "Stop lifecycle hooks (eidos hook lint --event Stop and eidos hook drift --event Stop) must block completion once per active failure fingerprint (scoped by TTL and optional session ID in stop-gate.json) and allow subsequent termination attempts with the identical fingerprint while emitting a non-blocking systemMessage warning."

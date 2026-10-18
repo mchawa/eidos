@@ -9,14 +9,14 @@ intent:
   motivation: Provide eidos init command, eidos_init_repo MCP tool, and eidos-init
     agent skill to bootstrap living specification workspaces.
 mutations:
-- action: modify_contract
-  target_component: CMP-EIDOS-ENGINE
+- operation: modify
+  target: CMP-EIDOS-ENGINE
   details: Add eidos init command specification to CTR-EIDOS-CLI.
-- action: modify_component
-  target_component: CMP-EIDOS-ENGINE
+- operation: modify
+  target: CMP-EIDOS-ENGINE
   details: Implement init_repository() scaffolder engine and eidos_init_repo MCP tool.
-- action: modify_component
-  target_component: CMP-EIDOS-ENGINE
+- operation: modify
+  target: CMP-EIDOS-ENGINE
   details: Add eidos-init specialized agent skill to assets/plugin_reference and .agents/plugins/eidos.
 ---
 

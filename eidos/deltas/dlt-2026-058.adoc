@@ -10,36 +10,36 @@ intent:
   kind: enabler
   motivation: Eliminate FTS5 stop-word query dilution in build_fts_match_query, scope rebuild_spec_edges to incrementally update modified specification edges instead of wiping all edges globally, and progressively compress verbose prose fields before dropping invariants or policies in _enforce_token_budget.
 mutations:
-- action: modify_component
-  target_component: CMP-FTS-QUERY-ENGINE
+- operation: modify
+  target: CMP-FTS-QUERY-ENGINE
   details: Filter common English stop words and single-character noise tokens in build_fts_match_query and apply two-phase retrieval (boosting exact entity IDs and phrase/AND matches before OR prefix fallback) so natural-language task prompts do not match the entire corpus.
   expect:
     frontmatter:
       source_path: src/eidos/core/index/query.py
       responsibility: stop-word
-- action: modify_component
-  target_component: CMP-INCREMENTAL-SYNC-ENGINE
+- operation: modify
+  target: CMP-INCREMENTAL-SYNC-ENGINE
   details: Scope rebuild_spec_edges in src/eidos/core/index/sync.py to incrementally delete and rebuild outgoing edges for modified doc_ids (and re-resolve pending targets) on single-spec edits instead of wiping all specification edges globally.
   expect:
     frontmatter:
       source_path: src/eidos/core/index/sync.py
       responsibility: rebuild_spec_edges
-- action: modify_component
-  target_component: CMP-TIERED-CONTEXT-COMPRESSOR
+- operation: modify
+  target: CMP-TIERED-CONTEXT-COMPRESSOR
   details: Progressively compress verbose fields (description, rationale, details) to compact 1-line summaries before dropping invariants or policies in _enforce_token_budget, and track token deltas incrementally rather than re-serializing full Markdown and JSON on every loop iteration.
   expect:
     frontmatter:
       source_path: src/eidos/core/index/context.py
       responsibility: progressive
-- action: patch_invariant
-  target_invariant_id: INV-AGENT-TASK-RETRIEVAL-COVERAGE
+- operation: modify
+  target: INV-AGENT-TASK-RETRIEVAL-COVERAGE
   details: Update INV-AGENT-TASK-RETRIEVAL-COVERAGE in CAP-AGENT-001 to include stop-word filtering and high-specificity token boosting in FTS5 task queries.
   expect:
     frontmatter:
       rule: stop-word
       test_binding: tests/test_graph_index.py::test_task_retrieval_indexes_invariants_and_filters_types
-- action: patch_invariant
-  target_invariant_id: INV-CONTEXT-TOKEN-COMPRESSION
+- operation: modify
+  target: INV-CONTEXT-TOKEN-COMPRESSION
   details: Update INV-CONTEXT-TOKEN-COMPRESSION in CAP-AGENT-002 to require progressive field compression prior to entity eviction and incremental token accounting in _enforce_token_budget.
   expect:
     frontmatter:

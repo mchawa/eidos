@@ -14,38 +14,21 @@ intent:
     kind, test-to-invariant assertion metrics, and machine-readable '--json' output
     for autonomous AI coding agents.
 mutations:
-- action: modify_container
-  target_container: CNT-EIDOS-INDEX
-  details: 'Upgrade ArchitecturalIndex in ''src/eidos/core/graph_index.py'' to: (1)
-    Extend is_dirty() with dual spec-and-code file tracking, monitoring filesystem
-    mtime across container package_paths, component source_paths, and tests to trigger
-    sub-5ms dirty detection when source code changes; (2) Ensure _ensure_synced()
-    incrementally refreshes AST symbol mappings whenever code is modified before executing
-    queries; (3) Enhance get_index_status() to return rich AST telemetry: active engine
-    (''ast-grep'' vs. ''python-ast''), symbol counts by kind (class, function, method,
-    test_binding), total test invariant assertion edges, and covered capability invariants.'
-- action: modify_container
-  target_container: CNT-EIDOS-CLI
-  details: Upgrade 'eidos index status' in 'src/eidos/cli/main.py' to surface AST
-    engine telemetry and invariant traceability in the header Panel, render an 'AST
-    Code Symbols & Traceability' breakdown table, and add a deterministic '--json'
-    flag for programmatic agent inspection.
-- action: modify_container
-  target_container: CNT-EIDOS-PLUGIN
-  details: Update agent post-invocation lifecycle hook in '.agents/plugins/eidos/scripts/check_drift.py'
-    and 'assets/plugin_reference/scripts/check_drift.py' to lazily ensure ArchitecturalIndex
-    synchronization on disk after agent tool actions.
-- action: modify_contract
-  target_contract: CTR-EIDOS-CLI
-  details: Document 'eidos index status [--path <path>] [--json]' in 'eidos/architecture/contracts/cli.adoc'
-    specifying the new '--json' flag, continuous code dirty detection, and AST telemetry
-    fields.
-- action: extend_capability
-  target_capability: CAP-AGENT-002
-  details: Introduce invariants INV-INDEX-STATUS-AST-TELEMETRY (enforcing deterministic
-    reporting of AST parser engine identity, symbol counts by kind, and test invariant
-    assertion metrics) and INV-INDEX-CODE-DIRTY-SYNC (enforcing sub-5ms code-aware
-    dirty checking and JIT synchronization when source or test files are modified).
+- operation: modify
+  target: CNT-EIDOS-INDEX
+  details: 'Upgrade ArchitecturalIndex in ''src/eidos/core/graph_index.py'' to: (1) Extend is_dirty() with dual spec-and-code file tracking, monitoring filesystem mtime across container package_paths, component source_paths, and tests to trigger sub-5ms dirty detection when source code changes; (2) Ensure _ensure_synced() incrementally refreshes AST symbol mappings whenever code is modified before executing queries; (3) Enhance get_index_status() to return rich AST telemetry: active engine (''ast-grep'' vs. ''python-ast''), symbol counts by kind (class, function, method, test_binding), total test invariant assertion edges, and covered capability invariants.'
+- operation: modify
+  target: CNT-EIDOS-CLI
+  details: Upgrade 'eidos index status' in 'src/eidos/cli/main.py' to surface AST engine telemetry and invariant traceability in the header Panel, render an 'AST Code Symbols & Traceability' breakdown table, and add a deterministic '--json' flag for programmatic agent inspection.
+- operation: modify
+  target: CNT-EIDOS-PLUGIN
+  details: Update agent post-invocation lifecycle hook in '.agents/plugins/eidos/scripts/check_drift.py' and 'assets/plugin_reference/scripts/check_drift.py' to lazily ensure ArchitecturalIndex synchronization on disk after agent tool actions.
+- operation: modify
+  target: CTR-EIDOS-CLI
+  details: Document 'eidos index status [--path <path>] [--json]' in 'eidos/architecture/contracts/cli.adoc' specifying the new '--json' flag, continuous code dirty detection, and AST telemetry fields.
+- operation: modify
+  target: CAP-AGENT-002
+  details: Introduce invariants INV-INDEX-STATUS-AST-TELEMETRY (enforcing deterministic reporting of AST parser engine identity, symbol counts by kind, and test invariant assertion metrics) and INV-INDEX-CODE-DIRTY-SYNC (enforcing sub-5ms code-aware dirty checking and JIT synchronization when source or test files are modified).
 ---
 = SpecDelta: Continuous Code-Aware AST Indexing and Status Telemetry
 :toc: left

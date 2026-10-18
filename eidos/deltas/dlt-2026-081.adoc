@@ -11,42 +11,42 @@ intent:
   kind: enabler
   motivation: "Prevent low-level module helper function names from leaking into high-level C4 Container and Capability specifications during Direct Mode drift checks by distinguishing true package/contract boundary exports from module-internal functions."
 mutations:
-  - action: modify_component
-    target_component: CMP-AST-SYMBOL-INDEXER
-    details: "Enhance AstSymbolIndexer in src/eidos/core/index/ast_indexer.py to distinguish module-level public symbols from package/boundary exported symbols (symbols re-exported in __init__.py / index.ts / mod.rs, declared in __all__, or part of a public class/interface signature) and expose boundary export metadata for drift inspection."
-    expect:
-      frontmatter:
-        source_path: "src/eidos/core/index/ast_indexer.py"
-        responsibility: "__all__"
-  - action: modify_component
-    target_component: CMP-DRIFT-DETECTOR
-    details: "Update _SpecDiffInspector.is_anchored and _spec_coverage_verdict in src/eidos/vcs/structural.py so Direct Mode requires explicit symbol-name anchoring in 1-hop neighbor specs only when package/contract boundary exports or unclaimed files are added, allowing substantive owning-container/component spec updates to cover module-internal helper functions without forcing helper identifier names into C4 prose."
-    expect:
-      frontmatter:
-        source_path:
-          - "src/eidos/vcs/drift.py"
-          - "src/eidos/vcs/diff.py"
-          - "src/eidos/vcs/invariants.py"
-          - "src/eidos/vcs/structural.py"
-          - "src/eidos/vcs/report.py"
-        responsibility: "is_anchored"
-  - action: extend_capability
-    target_capability: CAP-VCS-001
-    details: "Update CAP-VCS-001 and INV-DRIFT-DIFF-AWARE-COVERAGE in eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc to specify boundary-aware symbol anchoring in Direct Mode."
-    expect:
-      frontmatter:
-        status: active
-      body:
-        contains:
-          - "boundary"
-  - action: patch_invariant
-    target_capability: CAP-VCS-001
-    target_invariant_id: INV-DRIFT-DIFF-AWARE-COVERAGE
-    details: "Refine INV-DRIFT-DIFF-AWARE-COVERAGE so substantive owning specification diffs cover internal module symbol additions while strict symbol/file name anchoring is enforced for unclaimed files and package/contract boundary symbol additions."
-    expect:
-      frontmatter:
-        rule: "new public boundary symbols"
-        test_binding: "tests/test_drift.py::test_trivial_spec_edit_does_not_cover_structural_addition"
+- operation: modify
+  target: CMP-AST-SYMBOL-INDEXER
+  details: Enhance AstSymbolIndexer in src/eidos/core/index/ast_indexer.py to distinguish module-level public symbols from package/boundary exported symbols (symbols re-exported in __init__.py / index.ts / mod.rs, declared in __all__, or part of a public class/interface signature) and expose boundary export metadata for drift inspection.
+  expect:
+    frontmatter:
+      source_path: src/eidos/core/index/ast_indexer.py
+      responsibility: __all__
+- operation: modify
+  target: CMP-DRIFT-DETECTOR
+  details: Update _SpecDiffInspector.is_anchored and _spec_coverage_verdict in src/eidos/vcs/structural.py so Direct Mode requires explicit symbol-name anchoring in 1-hop neighbor specs only when package/contract boundary exports or unclaimed files are added, allowing substantive owning-container/component spec updates to cover module-internal helper functions without forcing helper identifier names into C4 prose.
+  expect:
+    frontmatter:
+      source_path:
+      - src/eidos/vcs/drift.py
+      - src/eidos/vcs/diff.py
+      - src/eidos/vcs/invariants.py
+      - src/eidos/vcs/structural.py
+      - src/eidos/vcs/report.py
+      responsibility: is_anchored
+- operation: modify
+  target: CAP-VCS-001
+  details: Update CAP-VCS-001 and INV-DRIFT-DIFF-AWARE-COVERAGE in eidos/domains/vcs-lifecycle/capabilities/drift-detection.adoc to specify boundary-aware symbol anchoring in Direct Mode.
+  expect:
+    frontmatter:
+      status: active
+    body:
+      contains:
+      - boundary
+- operation: modify
+  target: INV-DRIFT-DIFF-AWARE-COVERAGE
+  parent: CAP-VCS-001
+  details: Refine INV-DRIFT-DIFF-AWARE-COVERAGE so substantive owning specification diffs cover internal module symbol additions while strict symbol/file name anchoring is enforced for unclaimed files and package/contract boundary symbol additions.
+  expect:
+    frontmatter:
+      rule: new public boundary symbols
+      test_binding: tests/test_drift.py::test_trivial_spec_edit_does_not_cover_structural_addition
 ---
 = SpecDelta: Boundary-Aware Direct Mode Symbol Anchoring for Exported Package and Contract Symbols
 :toc: left

@@ -12,8 +12,8 @@ intent:
   severity: medium
   motivation: Allow eidos doctor to inspect custom specification directories via --path / -p and avoid failing with exit code 1 when invoked inside a virtualenv (uv run / python -m) where eidos is not on the global system PATH.
 mutations:
-- action: modify_component
-  target_component: CMP-CLI-DOCTOR-HOOKS
+- operation: modify
+  target: CMP-CLI-DOCTOR-HOOKS
   details: Update doctor_cmd in src/eidos/cli/doctor_hook_commands.py to accept --path / -p, resolve repo_root via find_repo_root, and recognize virtualenv / sys.executable invocation when shutil.which('eidos') is not on global PATH.
   expect:
     frontmatter:

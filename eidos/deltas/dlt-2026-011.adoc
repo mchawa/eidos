@@ -13,26 +13,21 @@ intent:
     Eidos context slicing from linear filesystem scanning to an embedded SQLite knowledge
     graph with FTS5 lexical retrieval and tiered token-budgeted compression.
 mutations:
-- action: modify_component
-  target_component: CMP-EIDOS-CORE
-  details: Integrate ArchitecturalIndex SQLite graph store, FTS5 virtual table, and
-    incremental dirty checking scanner in src/eidos/core/graph_index.py.
-- action: modify_component
-  target_component: CMP-EIDOS-CLI
-  details: Expose eidos index sub-app (status, sync, search, blast-radius) and --tier
-    budget flag on eidos context.
-- action: modify_component
-  target_component: CMP-EIDOS-MCP
-  details: Expose eidos_search_architecture, eidos_get_blast_radius, eidos_index_status,
-    eidos_sync_index tools and tier parameter on context tools.
-- action: extend_capability
-  target_capability: CAP-AGENT-001
-  details: Bind FTS5 hybrid retrieval and tiered context slicing (Anchor, Guardrails,
-    Deep) to CAP-AGENT-001.
-- action: add_invariant
-  target_capability: CAP-AGENT-001
-  details: Enforce sub-10ms context slice resolution and sub-5ms dirty checking with
-    zero external runtime dependencies.
+- operation: modify
+  target: CMP-EIDOS-CORE
+  details: Integrate ArchitecturalIndex SQLite graph store, FTS5 virtual table, and incremental dirty checking scanner in src/eidos/core/graph_index.py.
+- operation: modify
+  target: CMP-EIDOS-CLI
+  details: Expose eidos index sub-app (status, sync, search, blast-radius) and --tier budget flag on eidos context.
+- operation: modify
+  target: CMP-EIDOS-MCP
+  details: Expose eidos_search_architecture, eidos_get_blast_radius, eidos_index_status, eidos_sync_index tools and tier parameter on context tools.
+- operation: modify
+  target: CAP-AGENT-001
+  details: Bind FTS5 hybrid retrieval and tiered context slicing (Anchor, Guardrails, Deep) to CAP-AGENT-001.
+- operation: add
+  target: CAP-AGENT-001
+  details: Enforce sub-10ms context slice resolution and sub-5ms dirty checking with zero external runtime dependencies.
 ---
 = SpecDelta: Integrate Embedded Architectural Knowledge Graph & Hybrid Context Retrieval Index
 :toc: left

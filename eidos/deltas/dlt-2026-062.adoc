@@ -12,15 +12,15 @@ intent:
   severity: high
   motivation: Eliminate substring false positives and early single-term loop breaks in AuditEngine._scan_and_classify_references by evaluating all target terms per line with word-bounded regexes, skip compressed .gz bundles in SKIP_EXTENSIONS, classify polyglot test files via is_test_code_path instead of hardcoding 'tests/', and surface SQLite index errors in _check_graph_integrity instead of silently swallowing exceptions.
 mutations:
-- action: modify_component
-  target_component: CMP-DELTA-AUDITOR
+- operation: modify
+  target: CMP-DELTA-AUDITOR
   details: Use pre-compiled word-bounded regexes (rf'(?<![A-Za-z0-9_-]){re.escape(term)}(?![A-Za-z0-9_-])') in AuditEngine._scan_and_classify_references without breaking after the first matched term on a line, add '.gz' to SKIP_EXTENSIONS, classify negative tests across polyglot test paths via is_test_code_path instead of 'rel_str.startswith("tests/")', and fail loudly in _check_graph_integrity when the SQLite knowledge graph raises an error.
   expect:
     frontmatter:
       source_path: src/eidos/core/lifecycle/audit.py
       responsibility: word-bounded
-- action: patch_invariant
-  target_invariant_id: INV-DELTA-DELETION-AUDIT
+- operation: modify
+  target: INV-DELTA-DELETION-AUDIT
   details: Update INV-DELTA-DELETION-AUDIT in CAP-PROD-002 to require word-bounded multi-term token matching, polyglot negative-test classification, and fail-loud graph foreign-key verification.
   expect:
     frontmatter:

@@ -39,8 +39,14 @@ from eidos.core.index.query import (
 )
 from eidos.core.index.storage import (
     SCHEMA_VERSION,
+    clone_spec_document,
     ensure_cache_schema,
+    get_cached_spec_document,
+    load_spec_validation_cache,
+    load_test_binding_cache,
     open_cache_connection,
+    save_spec_validation_cache,
+    save_test_binding_cache,
 )
 from eidos.core.index.sync import (
     IndexSyncStats,
@@ -68,10 +74,16 @@ __all__ = [
     "IndexSyncStats",
     "TieredContextSlice",
     "build_fts_match_query",
+    "clone_spec_document",
     "compound_identifier_subtokens",
     "ensure_cache_schema",
     "get_architectural_index",
+    "get_cached_spec_document",
+    "load_spec_validation_cache",
+    "load_test_binding_cache",
     "open_cache_connection",
+    "save_spec_validation_cache",
+    "save_test_binding_cache",
     "split_identifier",
 ]
 

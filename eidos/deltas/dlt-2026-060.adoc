@@ -10,36 +10,36 @@ intent:
   kind: enabler
   motivation: Eliminate the three divergent YAML frontmatter delimiter regexes across parser.py, structural.py, and catalog.py in favor of a single block-scalar-safe parser anchored at file start, and expand Pydantic domain models in models.py so core engines operate on typed attributes rather than raw dictionary lookups.
 mutations:
-- action: modify_component
-  target_component: CMP-SPEC-PARSER
+- operation: modify
+  target: CMP-SPEC-PARSER
   details: Centralize YAML frontmatter extraction and serialization in src/eidos/core/spec/parser.py using a canonical delimiter scanner anchored at file start (\A---) that ignores indented '---' lines inside YAML block scalars, and expose a shared split_frontmatter_and_body / dump_spec_document helper.
   expect:
     frontmatter:
       source_path: src/eidos/core/spec/parser.py
       responsibility: split_frontmatter_and_body
-- action: modify_component
-  target_component: CMP-LIFECYCLE-SCAFFOLDER
+- operation: modify
+  target: CMP-LIFECYCLE-SCAFFOLDER
   details: Replace the duplicate _FRONTMATTER_RE regex in src/eidos/core/lifecycle/catalog.py with the canonical frontmatter splitter and serializer from CMP-SPEC-PARSER.
   expect:
     frontmatter:
       source_path: src/eidos/core/lifecycle/catalog.py
       responsibility: YAML frontmatter
-- action: modify_component
-  target_component: CMP-DRIFT-DETECTOR
+- operation: modify
+  target: CMP-DRIFT-DETECTOR
   details: Replace the duplicate _FRONTMATTER_RE regex in src/eidos/vcs/structural.py with the canonical frontmatter splitter from CMP-SPEC-PARSER.
   expect:
     frontmatter:
       source_path: src/eidos/vcs/structural.py
       responsibility: substantive
-- action: modify_component
-  target_component: CMP-DOMAIN-MODELS
+- operation: modify
+  target: CMP-DOMAIN-MODELS
   details: Expand FrontmatterModel in src/eidos/core/spec/models.py with typed Pydantic models and helper accessors for containers, components, capabilities, contracts, policies, and SpecDeltas so downstream engines can consume SpecDocument.as_model() without repetitive isinstance(..., dict) boilerplate.
   expect:
     frontmatter:
       source_path: src/eidos/core/spec/models.py
       responsibility: Pydantic
-- action: patch_invariant
-  target_invariant_id: INV-SPEC-VALIDATION
+- operation: modify
+  target: INV-SPEC-VALIDATION
   details: Update INV-SPEC-VALIDATION in CAP-PROD-001 to guarantee consistent frontmatter extraction across YAML block scalars containing embedded horizontal rules ('---').
   expect:
     frontmatter:

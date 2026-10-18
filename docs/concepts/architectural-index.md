@@ -14,9 +14,10 @@ The index enables sub-3ms architectural queries, intelligent full-text specifica
 │       Embedded SQLite Knowledge Graph (eidos/.cache)    │
 │  ├── entities (CNT, CMP, CTR, CAP, DOM, POL, INV, …)   │
 │  ├── edges (depends_on, provides, governs, asserts, …) │
-│  ├── indexed_files (mtime_ns, sha256, doc_id tracking) │
+│  ├── indexed_files (mtime, sha256, doc_id tracking)    │
 │  ├── symbol_mappings & code_symbols (AST coordinates)  │
-│  ├── spec_validation_cache & test_binding_cache        │
+│  ├── spec_validation_cache, test_binding_cache,        │
+│  │   delta_baselines & metadata                        │
 │  └── specs_fts (SQLite FTS5 virtual table with BM25)   │
 └───────────────┬────────────────────────┬───────────────┘
                 │                        │
@@ -37,7 +38,7 @@ The architectural index requires **zero external database daemons** and **zero t
 
 * Built on Python's standard library **`sqlite3`** in WAL (Write-Ahead Logging) mode, utilizing native SQLite 3.x FTS5 and recursive Common Table Expressions (CTEs).
 * Decomposed across 5 focused internal modules in `src/eidos/core/index/`: `storage.py` (`CMP-GRAPH-STORAGE`), `sync.py` (`CMP-INCREMENTAL-SYNC-ENGINE`), `query.py` (`CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE`), `context.py` (`CMP-TIERED-CONTEXT-COMPRESSOR`), and `ast_indexer.py` (`CMP-AST-SYMBOL-INDEXER`).
-* Stores all relational graph data, AST symbol coordinates, and validation/test caches inside a single self-contained file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.3.0"`).
+* Stores all relational graph data, AST symbol coordinates, and validation/test/delta caches inside a single self-contained file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.4.0"`).
 * Automatically performs drop-and-rebuild migration on schema version upgrades and self-heals on database corruption.
 * The `eidos/.cache/` directory is isolated via `eidos/.gitignore`, keeping Git repositories pristine.
 
@@ -50,12 +51,12 @@ You never need to remember to run a manual build command before querying.
 ### 1. Automatic On-Demand Bootstrapping
 The first time any command requiring architectural context is invoked (`eidos context`, `eidos index`, `eidos spec list`, or agent skills), Eidos automatically:
 1. Creates `eidos/.cache/` if it does not exist.
-2. Initializes the 8 SQLite tables (`entities`, `edges`, `indexed_files`, `symbol_mappings`, `code_symbols`, `spec_validation_cache`, `test_binding_cache`, `specs_fts`).
+2. Initializes the 10 SQLite tables (`entities`, `edges`, `indexed_files`, `symbol_mappings`, `code_symbols`, `spec_validation_cache`, `test_binding_cache`, `delta_baselines`, `specs_fts`, and `metadata`).
 3. Indexes all living specifications, AST code symbols, and test bindings in ~100ms.
 
 ### 2. Zero-Drift Freshness (`_ensure_synced`)
 Before answering any query, search, or context extraction request, the index runs a lazy two-tier freshness check (`check_index_dirty()`):
-* Compares nanosecond file modification timestamps (`mtime_ns`) against `indexed_files` across `eidos/`, `tests/`, and every container's declared `package_path`.
+* Compares nanosecond file modification timestamps (`mtime_ns`) against `indexed_files` across `eidos/`, `tests/`, and every container/component's declared `package_path` and `source_path`.
 * If `mtime_ns` changed, computes the file's `SHA-256` digest; if the content hash is unchanged, refreshes `mtime_ns` in-place without re-parsing.
 * Executes in **<5ms** on clean working trees.
 * If any `.adoc` spec, source file, or test file was edited, added, or deleted (or if a specification ID was renamed in-place), Eidos evicts stale entities by the previous `doc_id` stored in `indexed_files` and incrementally re-indexes only the modified files.
@@ -81,7 +82,7 @@ Output:
 ```text
 ╭───────────────── Eidos Architectural Knowledge Graph Index ──────────────────╮
 │        Database Path:  /path/to/project/eidos/.cache/index.db                │
-│       Schema Version:  2.3.0                                                 │
+│       Schema Version:  2.4.0                                                 │
 │           Cache Size:  1008.0 KB                                             │
 │               Status:  SYNCED (Clean) (4.20ms check)                         │
 │       Total Entities:  105                                                   │
@@ -176,19 +177,19 @@ Output:
 
 How lexical retrieval works (`INV-AGENT-TASK-RETRIEVAL-COVERAGE`):
 
-* **Every entity is searchable**: child invariants (`INV-*`) get their own `specs_fts` row (rule text, parent title, test binding), and embedded `DEC-*` decisions are indexed alongside their owning container or component.
-* **Identifier de-compounding**: `camelCase` / `snake_case` identifiers are split on both index and query sides — `ArchitecturalIndex` is indexed as `architectural index` too, and a prompt like `detect_drift` becomes `detect OR drift` instead of an order-sensitive phrase.
+* **Every entity & code symbol is searchable (`DLT-2026-078`)**: child invariants (`INV-*`) across capabilities (`CAP-*`), policies (`POL-*`), containers (`CNT-*`), and inline/promoted components (`CMP-*`) get their own `specs_fts` row (rule text, parent title, test binding), embedded `DEC-*` decisions are indexed alongside their owning container or component, and primary AST `code_symbols` (`class`, `function`, `interface`, `struct`, `enum`) plus component `interfaces.provides` signatures are projected directly into `specs_fts.symbols`.
+* **Identifier de-compounding & Two-Tier FTS Precision (`DLT-2026-083`)**: `camelCase` / `snake_case` identifiers are split on both index and query sides — `ArchitecturalIndex` is indexed as `architectural index` too, and multi-word queries prioritize high-precision multi-term `AND` conjunction matches before falling back to `OR` expansion.
 * **Column-weighted BM25**: Positional weights `(0, 4, 2, 1, 2, 2)` rank `title` (4) > `jtbd_or_rule` / `keywords` / `symbols` (2) > `body_text` (1), with `0` assigned to the `UNINDEXED` `entity_id` placeholder column.
-* **Slice-scoped candidates & Honest Empty Slices**: `eidos context --task` filters sliceable types (containers, components, contracts, capabilities, policies, invariants, domains, design systems) *inside SQL before `LIMIT`*, so historical SpecDeltas and explorations never consume top-k slots. Matched domains / design systems expand to their member containers and capabilities. If an explicit query matches zero entities, Eidos returns an honest empty slice rather than injecting unrelated alphabetical fallbacks.
+* **Slice-scoped candidates, Calibrated Token Budgets & Honest Empty Slices**: `eidos context --task` filters sliceable types (containers, components, contracts, capabilities, policies, invariants, domains, design systems) *inside SQL before `LIMIT`*, so historical SpecDeltas and explorations never consume top-k slots. Matched domains, design systems, and container/component invariants expand to their owning containers, components, and capabilities. Token budgets are enforced using structure-calibrated token estimation (`~3` chars/token for YAML/JSON/code/paths vs `~4` chars/token for prose). If an explicit query matches zero entities, Eidos returns an honest empty slice rather than injecting unrelated alphabetical fallbacks.
 
 ### Blast-Radius Impact Analysis
-Before modifying an interface, container, component, or domain, compute the transitive blast radius using recursive CTE graph traversals:
+Before modifying an interface, container, component, or domain, compute the transitive blast radius using delimiter-anchored, hub-scoped recursive CTE graph traversals:
 
 ```bash
 eidos index blast-radius CNT-EIDOS-CORE --depth 2
 ```
 
-This recursively traces all forward and reverse dependencies (`depends_on`, `provides`, `consumes`, `governs`), owning domains, and bound capabilities up to `N` hops away, alerting engineers and AI agents to downstream components that could be impacted.
+This recursively traces all forward and reverse dependencies (`depends_on`, `provides`, `consumes`, `governs`), owning domains, and bound capabilities up to `N` hops away (while preventing hop-2 sibling fan-out through organizational hub nodes like `DOM-*` and `DS-*`), alerting engineers and AI agents to downstream components that could be impacted.
 
 ---
 
@@ -196,10 +197,10 @@ This recursively traces all forward and reverse dependencies (`depends_on`, `pro
 
 In addition to living specifications (`eidos/*.adoc`), Eidos indexes source code and test suites across polyglot projects using structural Abstract Syntax Trees (AST):
 
-* **6-Language Native AST Engine**: Powered by core dependency `ast-grep-py` (`ast-grep`), pre-bundling Tree-sitter grammars for **Python (`.py`), TypeScript/JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`), Go (`.go`, including `type_spec` and receiver methods), Rust (`.rs`), Java (`.java`), and Kotlin (`.kt`, `.kts`)**.
+* **Native AST + Polyglot Signature Engine (`DLT-2026-083`)**: Powered by core dependency `ast-grep-py` (`ast-grep`), pre-bundling Tree-sitter grammars for **Python (`.py`), TypeScript/JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`), Go (`.go`, including `type_spec` and receiver methods), Rust (`.rs`), Java (`.java`), and Kotlin (`.kt`, `.kts`)**, plus structural declaration/signature extractors for **C/C++ (`.c`, `.cpp`, `.h`, `.hpp`), C# (`.cs`), Ruby (`.rb`), PHP (`.php`), Swift (`.swift`), Vue (`.vue`), and Svelte (`.svelte`)**.
 * **Deterministic Stdlib Fallback (`INV-INDEX-OPTIONAL-AST-FALLBACK`)**: On platforms where native `ast-grep-py` wheels are unavailable, Eidos seamlessly falls back to Python's standard library `ast` and regex extractors with zero runtime crashes (`POL-004`).
-* **Persisted Symbol Coordinates (`code_symbols`)**: Extracts classes, structs, enums, interfaces, functions, and methods with exact `line_start`, `line_end`, and signatures, mapping them directly to C4 Level 2 containers (`CNT-*`) and C4 Level 3 components (`CMP-*`) in `eidos/.cache/index.db`.
-* **Syntax-Aware Invariant Test Traceability (`POL-002`)**: Binds capability and component invariants (`INV-*`) to both bare test functions (`tests/test_file.py::test_func`) and class-qualified test methods (`tests/test_file.py::TestClass::test_method`) via `test_binding_cache`.
+* **Persisted Symbol Coordinates (`code_symbols`)**: Extracts classes, structs, enums, interfaces, functions, and methods with exact `line_start`, `line_end`, signatures, and boundary-export flags, mapping them directly to C4 Level 2 containers (`CNT-*`) and C4 Level 3 components (`CMP-*`) in `eidos/.cache/index.db`.
+* **Syntax-Aware Invariant Test Traceability (`POL-002`)**: Binds capability, policy, container, and component invariants (`INV-*`) to both bare test functions (`tests/test_file.py::test_func`) and class-qualified test methods (`tests/test_file.py::TestClass::test_method`) via `test_binding_cache`.
 
 ---
 
