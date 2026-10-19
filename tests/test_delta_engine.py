@@ -1156,7 +1156,7 @@ def test_dlt_2026_080_cross_ref_collision_resolution_and_cli_slug(tmp_path):
 
 
 def test_dlt_2026_083_baseline_retention_across_schema_rebuild(tmp_path):
-    """Verify ensure_cache_schema drops and rebuilds stateless cache tables on schema_version change."""
+    """Verify ensure_cache_schema drops retired/unmanaged tables and rebuilds stateless cache tables."""
     from eidos.core.index.storage import _MANAGED_TABLES, SCHEMA_VERSION
 
     init_repository(tmp_path)
@@ -1168,13 +1168,24 @@ def test_dlt_2026_083_baseline_retention_across_schema_rebuild(tmp_path):
     db_path = eidos_dir / ".cache" / "index.db"
     conn = open_cache_connection(db_path)
     try:
+        # 1. Retired table + outdated schema_version -> dropped and rebuilt
+        conn.execute("CREATE TABLE retired_legacy_table (k TEXT PRIMARY KEY, v TEXT);")
         conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '0.0-outdated');")
         conn.commit()
         ensure_cache_schema(conn)
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
         assert ver == SCHEMA_VERSION == "2.7.0"
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';").fetchall()}
+        assert "retired_legacy_table" not in tables
         assert set(_MANAGED_TABLES) <= tables
+
+        # 2. Retired table present when schema_version already matches SCHEMA_VERSION -> still dropped
+        conn.execute("CREATE TABLE retired_same_ver_table (k TEXT PRIMARY KEY, v TEXT);")
+        conn.commit()
+        ensure_cache_schema(conn)
+        tables_after = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';").fetchall()}
+        assert "retired_same_ver_table" not in tables_after
+        assert set(_MANAGED_TABLES) <= tables_after
     finally:
         conn.close()
 

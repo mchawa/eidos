@@ -149,18 +149,19 @@ def _unlink_cache_files(db_path: Path) -> None:
 def ensure_cache_schema(conn: sqlite3.Connection) -> None:
     """Ensure ``conn`` has the canonical ``SCHEMA_VERSION`` tables, dropping stale managed tables on version mismatch."""
     existing_tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")}
-    if existing_tables >= set(_MANAGED_TABLES) and "metadata" in existing_tables:
+    user_tables = {t for t in existing_tables if not t.startswith(("sqlite_", "specs_fts_"))}
+    if user_tables == set(_MANAGED_TABLES) and "metadata" in existing_tables:
         row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()
         if row and row[0] == SCHEMA_VERSION:
             return
-    if existing_tables & set(_MANAGED_TABLES):
+    if user_tables:
         stored_version = None
         if "metadata" in existing_tables:
             row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()
             stored_version = row[0] if row else None
-        if stored_version != SCHEMA_VERSION:
+        if stored_version != SCHEMA_VERSION or user_tables > set(_MANAGED_TABLES):
             with conn:
-                for table in _MANAGED_TABLES:
+                for table in (*_MANAGED_TABLES, *(user_tables - set(_MANAGED_TABLES))):
                     conn.execute(f"DROP TABLE IF EXISTS {table};")
     with conn:
         conn.executescript(_CACHE_SCHEMA_DDL)
