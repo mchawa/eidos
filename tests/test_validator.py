@@ -13,19 +13,19 @@ def validator():
 
 
 def test_bundled_schemas_loaded(validator):
-    """Verify that all 16 core v1 schemas are successfully preloaded (including path-qualified keys)."""
+    """Verify that all 16 core v1 schemas are preloaded under path-qualified keys."""
     expected_schemas = [
-        "system.schema.yaml",
-        "domain.schema.yaml",
-        "capability.schema.yaml",
-        "policy.schema.yaml",
-        "persona.schema.yaml",
-        "exploration.schema.yaml",
-        "delta.schema.yaml",
-        "architecture.schema.yaml",
-        "container.schema.yaml",
-        "component.schema.yaml",
-        "contract.schema.yaml",
+        "product/system.schema.yaml",
+        "product/domain.schema.yaml",
+        "product/capability.schema.yaml",
+        "product/policy.schema.yaml",
+        "product/persona.schema.yaml",
+        "product/exploration.schema.yaml",
+        "delta/delta.schema.yaml",
+        "tech/architecture.schema.yaml",
+        "tech/container.schema.yaml",
+        "tech/component.schema.yaml",
+        "tech/contract.schema.yaml",
         "design/system.schema.yaml",
         "design/ui-component.schema.yaml",
         "design/screen.schema.yaml",
@@ -461,7 +461,7 @@ def test_schema_driven_x_eidos_ref_annotations_present(validator):
     total_annotations = sum(
         count_refs(schema)
         for key, schema in validator._schema_cache.items()
-        if key.endswith(".schema.yaml") and "/" not in key
+        if key.endswith(".schema.yaml")
     )
     assert total_annotations >= 35, (
         f"Expected >= 35 x-eidos-ref annotations across v1 schemas, found {total_annotations}"
@@ -948,9 +948,7 @@ def test_typed_pydantic_frontmatter_models(tmp_path):
     assert len(model.decisions) == 1
     assert model.decisions[0].id == "DEC-TEST-001"
     assert model.decisions[0].rejected_alternatives[0].option == "PostgreSQL"
-    # Dict-like backwards compatibility
-    assert model["custom_key"] == "custom_value"
-    assert model.get("missing", "default") == "default"
+    assert model.custom_key == "custom_value"
 
 
 def test_custom_spec_root_under_parent_src_and_subdirectory_validation(
@@ -1381,7 +1379,6 @@ def test_unified_block_scalar_safe_frontmatter_parser_and_extended_models(tmp_pa
     model = doc.as_model()
     assert model.source_paths() == ["src/a", "src/b"]
     assert model.components[0].id == "CMP-INLINE-1"
-    assert model.components[0]["id"] == "CMP-INLINE-1"
     assert model.components[0].source_paths() == ["src/a/mod.py"]
     assert [i.id for i in model.all_invariants()] == ["INV-CNT-1", "INV-CMP-1"]
     assert [d.id for d in model.all_decisions()] == ["DEC-CNT-1", "DEC-CMP-1"]
@@ -1798,7 +1795,6 @@ def test_pluggable_contract_protocol_verifier_registry(tmp_path: Path, validator
 
 def test_deep_review_subsystem_1_models_workspace_and_validator_edge_cases(tmp_path):
     """Verify deep-review fixes across models, parser, workspace path matching, and validator."""
-    import pytest
 
     from eidos.core.spec.parser import _parse_spec_content
     from eidos.core.workspace.project import _normalize_rel_path, match_path_pattern
@@ -1821,10 +1817,7 @@ def test_deep_review_subsystem_1_models_workspace_and_validator_edge_cases(tmp_p
         "= Numeric Container\n",
     )
     assert doc.doc_id == "42"
-    assert doc.model["type"] == "tech/container"
-    assert "type" in doc.model
-    with pytest.raises(KeyError):
-        _ = doc.model["model_dump"]
+    assert doc.model.type == "tech/container"
     assert doc.model.components[0].status == "active"
     assert doc.model.components[0].domain == "DOM-CORE"
 
@@ -3069,22 +3062,18 @@ def test_group_b_regressions_b1_through_b8(tmp_path: Path, validator: SpecValida
         match_path_pattern,
     )
 
-    # --- B1: _DictCompatibleModel omitted fields & clone_spec_document _model isolation ---
+    # --- B1: clone_spec_document _model isolation ---
     doc_omitted = _parse_spec_content(
         tmp_path / "omitted.adoc",
         "---\ntype: product/domain\nid: DOM-B1\ntitle: Domain B1\n---\n= Domain B1\n",
     )
-    assert "status" not in doc_omitted.model
-    assert doc_omitted.model.get("status", "active") == "active"
-    with pytest.raises(KeyError):
-        _ = doc_omitted.model["status"]
+    assert doc_omitted.model.status is None
 
     cloned_doc = clone_spec_document(doc_omitted)
     assert cloned_doc._model is None
     cloned_doc.frontmatter["status"] = "deprecated"
     assert cloned_doc.model.status == "deprecated"
-    assert cloned_doc.model["status"] == "deprecated"
-    assert doc_omitted.model.get("status", "active") == "active"
+    assert doc_omitted.model.status is None
 
     # --- B4: is_root_system parent directory check ---
     # 1) Repo cloned under a path containing 'design' -> eidos/system.adoc is still root system
@@ -3395,25 +3384,21 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
     """Verify deep audit Group B fixes (B1 through B10)."""  # eidos:fixture
     import json
 
-    import pytest
-
     from eidos.core.spec.models import FrontmatterModel
     from eidos.core.spec.parser import parse_spec_file
     from eidos.core.spec.validator import SpecValidator, _resolve_spec_and_repo_roots
 
     validator = SpecValidator()
 
-    # --- B10: FrontmatterModel & _DictCompatibleModel ---
+    # --- B10: FrontmatterModel attribute defaults ---
     fm_min = FrontmatterModel.model_validate({"id": "POL-MIN", "type": "product/policy", "schema": None})
-    with pytest.raises(KeyError):
-        _ = fm_min["model_fields"]
-    assert fm_min.get("schema") is None
-    assert "id" in fm_min
-    assert "title" not in fm_min
-    assert "components" not in fm_min
-    assert "invariants" not in fm_min
-    assert "mutations" not in fm_min
-    assert "decisions" not in fm_min
+    assert fm_min.model_extra["schema"] is None
+    assert fm_min.id == "POL-MIN"
+    assert fm_min.title is None
+    assert fm_min.components == []
+    assert fm_min.invariants == []
+    assert fm_min.mutations == []
+    assert fm_min.decisions == []
 
     fm_c4 = FrontmatterModel.model_validate(
         {

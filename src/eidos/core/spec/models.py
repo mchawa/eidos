@@ -20,43 +20,13 @@ def _coerce_req_str(val: Any) -> str:
     return ""
 
 
-class _DictCompatibleModel(BaseModel):
-    """Base Pydantic model with backwards-compatible dict-style key lookup."""
+class _SpecBaseModel(BaseModel):
+    """Base Pydantic model for Eidos specification domain models."""
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
-    def __getitem__(self, key: str) -> Any:
-        if key in self.__class__.model_fields:
-            if key not in self.__pydantic_fields_set__:
-                raise KeyError(key)
-            return getattr(self, key)
-        for field_name, field_info in self.__class__.model_fields.items():
-            if field_info.alias == key:
-                if field_name not in self.__pydantic_fields_set__:
-                    raise KeyError(key)
-                return getattr(self, field_name)
-        if self.__pydantic_extra__ and key in self.__pydantic_extra__:
-            return self.__pydantic_extra__[key]
-        raise KeyError(key)
 
-    def get(self, key: str, default: Any = None) -> Any:
-        try:
-            return self[key]
-        except KeyError:
-            return default
-
-    def __contains__(self, key: object) -> bool:
-        if not isinstance(key, str):
-            return False
-        if key in self.__class__.model_fields:
-            return key in self.__pydantic_fields_set__ and getattr(self, key, None) is not None
-        for field_name, field_info in self.__class__.model_fields.items():
-            if field_info.alias == key:
-                return field_name in self.__pydantic_fields_set__ and getattr(self, field_name, None) is not None
-        return bool(self.__pydantic_extra__ and key in self.__pydantic_extra__)
-
-
-class RejectedAlternativeModel(_DictCompatibleModel):
+class RejectedAlternativeModel(_SpecBaseModel):
     """Typed architectural rejected alternative."""
 
     option: str = ""
@@ -75,7 +45,7 @@ class RejectedAlternativeModel(_DictCompatibleModel):
         return raw
 
 
-class DecisionModel(_DictCompatibleModel):
+class DecisionModel(_SpecBaseModel):
     """Typed architectural decision model (DEC-*)."""
 
     id: str = ""
@@ -102,7 +72,7 @@ class DecisionModel(_DictCompatibleModel):
         return raw
 
 
-class InvariantModel(_DictCompatibleModel):
+class InvariantModel(_SpecBaseModel):
     """Typed capability/policy/container/component invariant model (INV-*)."""
 
     id: str = ""
@@ -128,7 +98,7 @@ class InvariantModel(_DictCompatibleModel):
         return str(self.test_binding or "").strip()
 
 
-class InlineComponentModel(_DictCompatibleModel):
+class InlineComponentModel(_SpecBaseModel):
     """Typed inline C4 Level 3 component entry inside a container spec (CMP-*)."""
 
     id: str = ""
@@ -174,7 +144,7 @@ class InlineComponentModel(_DictCompatibleModel):
         return []
 
 
-class CapabilityTechnicalModel(_DictCompatibleModel):
+class CapabilityTechnicalModel(_SpecBaseModel):
     """Typed capability technical binding section."""
 
     containers: list[str] = Field(default_factory=list)
@@ -201,7 +171,7 @@ class CapabilityTechnicalModel(_DictCompatibleModel):
         return raw
 
 
-class DeltaIntentModel(_DictCompatibleModel):
+class DeltaIntentModel(_SpecBaseModel):
     """Typed SpecDelta intent metadata."""
 
     kind: str | None = None
@@ -221,7 +191,7 @@ class DeltaIntentModel(_DictCompatibleModel):
         return raw
 
 
-class DeltaMutationModel(_DictCompatibleModel):
+class DeltaMutationModel(_SpecBaseModel):
     """Typed composable SpecDelta mutation entry."""
 
     operation: str = ""
@@ -264,7 +234,7 @@ _FRONTMATTER_SCALAR_KEYS = (
 )
 
 
-class FrontmatterModel(_DictCompatibleModel):
+class FrontmatterModel(_SpecBaseModel):
     """Typed Pydantic frontmatter domain model for living specifications (CMP-DOMAIN-MODELS)."""
 
     id: str | None = None

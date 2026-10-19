@@ -618,14 +618,6 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                     if isinstance(dom_id, str) and dom_id:
                         _add_unique(aff_lists["domains"], _resolve_ref_id(dom_id))
 
-        # Preserve any explicit affects/blast_radius fields on legacy or synthetic fixtures
-        raw_aff = fm.get("affects")
-        if isinstance(raw_aff, dict):
-            for k, vals in raw_aff.items():
-                if isinstance(vals, list):
-                    for v in vals:
-                        _add_unique(aff_lists.setdefault(k, []), _resolve_ref_id(v))
-
         for cnt_id in aff_lists["containers"]:
             _add_unique(br_lists["impacted_containers"], cnt_id)
             for dep_cnt in cnt_dependents.get(cnt_id, []):

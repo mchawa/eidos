@@ -972,16 +972,18 @@ def test_shared_source_file_keeps_every_declaring_owner(tmp_path):
 
 def test_code_only_sync_skips_ownership_pass(tmp_path, monkeypatch):
     """INV-AGENT-GRAPH-INDEX-FRESHNESS: the package walk / ownership pass only runs when specifications change."""
+    import eidos.core.index.sync as sync_mod
+
     repo, src, spec = _make_symbol_repo(tmp_path, "gate")
     idx = ArchitecturalIndex(db_path=repo / "eidos" / ".cache" / "index.db", repo_root=repo, eidos_dir=repo / "eidos")
     calls: list[int] = []
-    original = ArchitecturalIndex._reconcile_code_ownership
+    original = sync_mod.reconcile_code_ownership
 
-    def spy(self, *args, **kwargs):
+    def spy(*args, **kwargs):
         calls.append(1)
-        return original(self, *args, **kwargs)
+        return original(*args, **kwargs)
 
-    monkeypatch.setattr(ArchitecturalIndex, "_reconcile_code_ownership", spy)
+    monkeypatch.setattr(sync_mod, "reconcile_code_ownership", spy)
     try:
         idx.sync(force=True)
         assert calls == [1]
@@ -1056,7 +1058,7 @@ def test_incremental_spec_sync_preserves_incoming_edges(tmp_path):
     idx = ArchitecturalIndex(db_path=repo / "eidos" / ".cache" / "index.db", repo_root=repo, eidos_dir=repo / "eidos")
     try:
         idx.sync(force=True)
-        before_neighbors = {n["id"] for n in idx.get_k_hop_neighborhood("CNT-SAMPLE", max_hops=1)}
+        before_neighbors = {n["id"] for n in idx.get_k_hop_neighborhood("CNT-SAMPLE", max_depth=1)}
         assert "CAP-SAMPLE-001" in before_neighbors
 
         # Modify only the container spec and run incremental sync(force=False)
@@ -1065,7 +1067,7 @@ def test_incremental_spec_sync_preserves_incoming_edges(tmp_path):
         stats = idx.sync(force=False)
         assert stats.updated_modified == 1
 
-        after_neighbors = {n["id"] for n in idx.get_k_hop_neighborhood("CNT-SAMPLE", max_hops=1)}
+        after_neighbors = {n["id"] for n in idx.get_k_hop_neighborhood("CNT-SAMPLE", max_depth=1)}
         assert "CAP-SAMPLE-001" in after_neighbors
     finally:
         idx.close()
@@ -1861,13 +1863,13 @@ def test_dlt_2026_083_fts_and_boost_hub_suppression_and_token_calibration(tmp_pa
         idx.sync(force=True)
         # 2-hop traversal from CAP-ALPHA reaches DOM-SHARED at hop 1,
         # but must NOT fan out through DOM-SHARED to unrelated sibling CAP-BETA at hop 2!
-        neighbors = idx.get_k_hop_neighborhood("CAP-ALPHA", max_hops=2)
+        neighbors = idx.get_k_hop_neighborhood("CAP-ALPHA", max_depth=2)
         neighbor_ids = {n["id"] for n in neighbors}
         assert "DOM-SHARED" in neighbor_ids
         assert "CAP-BETA" not in neighbor_ids
 
         # Direct 1-hop traversal starting from DOM-SHARED itself still returns its children
-        dom_neighbors = {n["id"] for n in idx.get_k_hop_neighborhood("DOM-SHARED", max_hops=1)}
+        dom_neighbors = {n["id"] for n in idx.get_k_hop_neighborhood("DOM-SHARED", max_depth=1)}
         assert "CAP-ALPHA" in dom_neighbors
         assert "CAP-BETA" in dom_neighbors
 
@@ -1892,11 +1894,11 @@ def test_dlt_2026_083_fts_and_boost_hub_suppression_and_token_calibration(tmp_pa
             encoding="utf-8",
         )
         idx.sync(force=True)
-        dlt_blast = {n["id"] for n in idx.get_k_hop_neighborhood("DLT-2026-001", max_hops=2)}
+        dlt_blast = {n["id"] for n in idx.get_k_hop_neighborhood("DLT-2026-001", max_depth=2)}
         assert "DLT-2026-001" in dlt_blast
         assert "CAP-ALPHA" in dlt_blast
         assert "DOM-SHARED" in dlt_blast
-        cap_alpha_neighbors = {n["id"] for n in idx.get_k_hop_neighborhood("CAP-ALPHA", max_hops=2)}
+        cap_alpha_neighbors = {n["id"] for n in idx.get_k_hop_neighborhood("CAP-ALPHA", max_depth=2)}
         assert "DLT-2026-001" not in cap_alpha_neighbors
     finally:
         idx.close()
@@ -2153,7 +2155,7 @@ def test_context_implements_edges_inline_cmp_blast_radius_and_path_resolution(tm
         in_sources = {r["source_id"] for r in in_refs}
         assert "CNT-IDX" in in_sources
         assert "CAP-INTEL-001" in in_sources
-        khop = idx.get_k_hop_neighborhood("CMP-INLINE-IDX", max_hops=1)
+        khop = idx.get_k_hop_neighborhood("CMP-INLINE-IDX", max_depth=1)
         khop_ids = {n["id"] for n in khop}
         assert "CNT-IDX" in khop_ids
         assert "CAP-INTEL-001" in khop_ids

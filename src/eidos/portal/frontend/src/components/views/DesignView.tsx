@@ -88,15 +88,6 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
     );
   }
 
-  // Compatibility methods for test assertions
-  const handleDesignClientSwitch = (clientId: string) => {
-    setSelectedClientId(clientId);
-  };
-
-  const initDesignClientSelect = () => {
-    return clients[0]?.id || "";
-  };
-
   const renderClientFlows = () => {
     return flows.filter(
       (f) => f.client === selectedClientId || (Array.isArray(f.clients) && f.clients.includes(selectedClientId))

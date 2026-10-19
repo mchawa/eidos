@@ -464,11 +464,6 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
     }
   }, [searchQuery, hierarchicalBranches]);
 
-  // Compatibility and helper functions
-  const buildTreeGridData = () => {
-    return data.specs;
-  };
-
   const toggleTreeGridRow = (nodeKey: string) => {
     setExpandedNodes((prev) => ({
       ...prev,

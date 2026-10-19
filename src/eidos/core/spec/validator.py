@@ -270,8 +270,6 @@ class SpecValidator:
                 rel_path = str(p.relative_to(schema_dir)).replace("\\", "/")
                 self._schema_cache[rel_path] = data
                 self._schema_cache[f"schemas/v1/{rel_path}"] = data
-                self._schema_cache[p.name] = data
-                self._schema_cache[f"schemas/v1/{p.name}"] = data
 
             _DYNAMIC_ENTITY_ID_PREFIXES.update(extracted_prefixes)
             self.entity_id_prefixes = tuple(sorted(extracted_prefixes))

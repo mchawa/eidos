@@ -80,12 +80,6 @@ export function NavigationRail({
     { key: "design", label: "Design Systems", icon: Palette, id: "tab-design" },
   ];
 
-  // Functions referenced for test suite compatibility
-  const toggleSidebarCollapse = onToggleCollapse;
-  const initSidebarState = () => {
-    return localStorage.getItem("eidos_sidebar_collapsed") === "true";
-  };
-
   return (
     <aside
       className={cn(

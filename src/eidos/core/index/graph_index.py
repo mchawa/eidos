@@ -50,17 +50,7 @@ from eidos.core.index.storage import (
 )
 from eidos.core.index.sync import (
     IndexSyncStats,
-    _CodeOwnershipResolver,
     check_index_dirty,
-    delete_spec_fts_rows,
-    index_source_file,
-    index_test_bindings,
-    is_test_code_path,
-    prune_stale_test_binding_edges,
-    rebuild_spec_edges,
-    reconcile_code_ownership,
-    restore_code_mappings,
-    store_code_symbols,
     sync_index,
 )
 from eidos.core.workspace.project import find_repo_root
@@ -151,43 +141,6 @@ class ArchitecturalIndex:
     # Incremental Sync & Code Ownership Delegation (sync.py)
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _is_test_code_path(rel_path: str) -> bool:
-        return is_test_code_path(rel_path)
-
-    def _store_code_symbols(
-        self,
-        conn: sqlite3.Connection,
-        rel_path: str,
-        owners: list[tuple[str, str]],
-        symbols: list[Any],
-    ) -> None:
-        store_code_symbols(conn, rel_path, owners, symbols)
-
-    def _restore_code_mappings(self, conn: sqlite3.Connection, entity_id: str) -> None:
-        restore_code_mappings(conn, entity_id)
-
-    def _index_source_file(
-        self,
-        conn: sqlite3.Connection,
-        ast_idx: Any,
-        path: Path,
-        rel_path: str,
-        mtime: float,
-        sha: str,
-        resolver: _CodeOwnershipResolver,
-    ) -> None:
-        index_source_file(conn, ast_idx, path, rel_path, mtime, sha, resolver)
-
-    def _reconcile_code_ownership(
-        self,
-        conn: sqlite3.Connection,
-        ast_idx: Any,
-        resolver: _CodeOwnershipResolver,
-        processed: set[str],
-    ) -> None:
-        reconcile_code_ownership(self, conn, ast_idx, resolver, processed)
-
     def is_dirty(self) -> tuple[bool, list[Path], list[Path]]:
         """Perform sub-5ms dirty checking comparing filesystem mtime with indexed state."""
         return check_index_dirty(self)
@@ -212,22 +165,6 @@ class ArchitecturalIndex:
         """Incrementally synchronize the index with specifications and code on disk."""
         return sync_index(self, force=force, dirty_state=dirty_state, strict=strict)
 
-    @staticmethod
-    def _rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | None = None) -> None:
-        rebuild_spec_edges(conn, updated_doc_ids=updated_doc_ids)
-
-    @staticmethod
-    def _index_test_bindings(conn: sqlite3.Connection, ast_idx: Any, test_path: Path, rel_test: str) -> None:
-        index_test_bindings(conn, ast_idx, test_path, rel_test)
-
-    @staticmethod
-    def _prune_stale_test_binding_edges(conn: sqlite3.Connection) -> None:
-        prune_stale_test_binding_edges(conn)
-
-    @staticmethod
-    def _delete_spec_fts_rows(conn: sqlite3.Connection, doc_id: str, rel_path: str) -> None:
-        delete_spec_fts_rows(conn, doc_id, rel_path)
-
     # ------------------------------------------------------------------
     # Query & Graph Traversal Delegation (query.py & context.py)
     # ------------------------------------------------------------------
@@ -251,12 +188,8 @@ class ArchitecturalIndex:
             exclude_types=exclude_types,
         )
 
-    def get_k_hop_neighborhood(
-        self, entity_id: str, max_depth: int = 2, max_hops: int | None = None
-    ) -> list[dict[str, Any]]:
+    def get_k_hop_neighborhood(self, entity_id: str, max_depth: int = 2) -> list[dict[str, Any]]:
         """Traverse graph up to k hops in both directions using recursive CTE."""
-        if max_hops is not None:
-            max_depth = max_hops
         self._ensure_synced()
         return execute_k_hop_traversal(self._get_connection(), entity_id=entity_id, max_depth=max_depth)
 

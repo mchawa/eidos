@@ -1,8 +1,7 @@
 """Eidos CLI root dispatcher (CMP-CLI-APP): builds the Typer app, mounts command modules, and fixes help ordering.
 
 Command implementations live in the sibling ``*_commands.py`` / ``*_command.py`` modules (one per C4 Level 3
-component). Canonical command functions are re-exported below so existing imports such as
-``from eidos.cli.main import app`` keep working.
+component).
 """
 
 import typer
@@ -17,62 +16,19 @@ from eidos.cli import (
     init_command,
     spec_commands,
 )
-
-# Backwards-compatible re-exports of canonical CLI symbols.
-from eidos.cli._shared import (  # noqa: F401
-    PANEL_GOVERNANCE,
+from eidos.cli._shared import (
     PANEL_KNOWLEDGE,
     PANEL_PLUGINS,
     PANEL_PORTAL,
     PANEL_SETUP,
     PANEL_SPECS,
     console,
-    has_eidos_markers,
-    resolve_cli_eidos_dir,
 )
-from eidos.cli.component_commands import component_app, component_inline_cmd, component_promote_cmd  # noqa: F401
-from eidos.cli.context_command import context_cmd  # noqa: F401
-from eidos.cli.delta_commands import (  # noqa: F401
-    delta_app,
-    delta_apply_cmd,
-    delta_audit_cmd,
-    delta_changelog_cmd,
-    delta_create_cmd,
-    delta_delete_cmd,
-    delta_list_cmd,
-    delta_status_cmd,
-    delta_verify_cmd,
-)
-from eidos.cli.doctor_hook_commands import doctor_cmd, hook_cmd  # noqa: F401
-from eidos.cli.drift_commands import drift_cmd  # noqa: F401
-from eidos.cli.index_commands import (  # noqa: F401
-    index_app,
-    index_blast_radius_cmd,
-    index_find_symbol_cmd,
-    index_repo_map_cmd,
-    index_search_cmd,
-    index_status_cmd,
-    index_sync_cmd,
-)
-from eidos.cli.init_command import init_cmd  # noqa: F401
-from eidos.cli.plugin_commands import (  # noqa: F401
-    plugin_app,
-    plugin_info,
-    plugin_install,
-    plugin_uninstall,
-    plugin_update,
-    plugin_validate,
-    plugin_version,
-)
-from eidos.cli.portal_commands import build_site_cmd, portal_app, serve_cmd  # noqa: F401
-from eidos.cli.spec_commands import (  # noqa: F401
-    spec_app,
-    spec_create_cmd,
-    spec_delete_cmd,
-    spec_list_cmd,
-    spec_show_cmd,
-    validate,
-)
+from eidos.cli.delta_commands import delta_app
+from eidos.cli.index_commands import index_app
+from eidos.cli.plugin_commands import plugin_app
+from eidos.cli.portal_commands import portal_app
+from eidos.cli.spec_commands import spec_app
 from eidos.core.spec.validator import SpecValidator
 
 app = typer.Typer(

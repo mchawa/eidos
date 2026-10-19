@@ -610,24 +610,6 @@ export function DeltasView({
                             </div>
                           </div>
                         )}
-
-                        {/* Fallback legacy blast_radius properties */}
-                        {selectedDelta.blast_radius.domains && selectedDelta.blast_radius.domains.length > 0 && (
-                          <div className="text-xs">
-                            <span className="text-muted-foreground">Affected Domains: </span>
-                            <span className="font-mono font-semibold text-foreground">
-                              {selectedDelta.blast_radius.domains.join(", ")}
-                            </span>
-                          </div>
-                        )}
-                        {selectedDelta.blast_radius.components && selectedDelta.blast_radius.components.length > 0 && !selectedDelta.blast_radius.impacted_components && (
-                          <div className="text-xs">
-                            <span className="text-muted-foreground">Affected Components: </span>
-                            <span className="font-mono font-semibold text-foreground">
-                              {selectedDelta.blast_radius.components.join(", ")}
-                            </span>
-                          </div>
-                        )}
                       </div>
                     )}
                 </div>

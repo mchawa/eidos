@@ -1071,32 +1071,6 @@ mutations:
     assert "status: applied # status inline comment" in dlt_after_apply
 
 
-def test_scaffolder_backward_compatible_reexports():
-    """DLT-2026-038: every previously public name in eidos.core.lifecycle.scaffolder / eidos.cli.main resolves to its new home."""
-    import importlib
-    import json
-
-    snapshot = json.loads((Path(__file__).parent / "fixtures" / "public_api_names.json").read_text(encoding="utf-8"))
-    assert set(snapshot) == {"eidos.core.lifecycle.scaffolder", "eidos.cli.main"}
-
-    for module_name, names in snapshot.items():
-        legacy = importlib.import_module(module_name)
-        package_prefix = module_name.rsplit(".", 1)[0] + "."
-        missing = [n for n in names if not hasattr(legacy, n)]
-        assert not missing, f"{module_name} lost public names: {missing}"
-        for name in names:
-            obj = getattr(legacy, name)
-            owner = getattr(obj, "__module__", None)
-            if isinstance(owner, str) and owner.startswith(package_prefix):
-                home = importlib.import_module(owner)
-                assert getattr(home, name) is obj, f"{module_name}.{name} is not the object defined in {owner}"
-
-    from eidos.core.lifecycle import catalog, scaffolder
-
-    assert scaffolder.find_spec_by_id_or_path is catalog.find_spec_by_id_or_path
-    assert scaffolder.VALID_SPEC_TYPES is catalog.VALID_SPEC_TYPES
-
-
 def test_core_and_cli_modules_import_without_cycles():
     """DLT-2026-038: modules import cleanly in a fresh interpreter, in any order, with an acyclic module-level graph."""
     import ast

@@ -482,10 +482,6 @@ def test_cli_install_new_agent_shortcuts(tmp_path):
     assert res.exit_code == 0
     assert (tmp_path / ".opencode" / "skills" / "eidos" / "SKILL.md").exists()
 
-    # Opencode (alias)
-    res = runner.invoke(app, ["plugin", "install", "opencode", "--project-dir", str(tmp_path)])
-    assert res.exit_code == 0
-
     # Codex
     res = runner.invoke(app, ["plugin", "install", "codex", "--project-dir", str(tmp_path)])
     assert res.exit_code == 0
@@ -942,30 +938,12 @@ def test_stop_hook_internal_error_emits_warning(tmp_path, monkeypatch):
     assert "simulated internal engine failure" in res["systemMessage"]
 
 
-def test_hook_cmd_legacy_pre_and_post_tool_use_compat():
-    """Verify eidos hook gracefully absorbs legacy PreToolUse and PostToolUse invocations from cached sessions."""
-    res_pre = runner.invoke(app, ["hook", "lint", "--event", "PreToolUse"])
-    assert res_pre.exit_code == 0
-    assert json.loads(res_pre.stdout) == {"decision": "allow"}
+def test_plugin_install_and_uninstall_preserves_custom_skills(tmp_path):
+    """Verify install_plugin and uninstall_plugin manage the 4 active Eidos skills while preserving unrelated user skills (DLT-2026-037)."""
+    from eidos.plugin.installer import ACTIVE_EIDOS_SKILLS
 
-    res_post = runner.invoke(app, ["hook", "lint", "--event", "PostToolUse"])
-    assert res_post.exit_code == 0
-    assert json.loads(res_post.stdout) == {}
-
-
-def test_plugin_install_and_update_prunes_retired_legacy_skills(tmp_path):
-    """Verify install_plugin and uninstall_plugin prune the 13 retired legacy skills while preserving unrelated user skills (DLT-2026-037)."""
-    from eidos.plugin.installer import ACTIVE_EIDOS_SKILLS, RETIRED_EIDOS_SKILLS
-
-    # Seed legacy retired skill directories in both plugin-tree and flat skill targets, plus a custom user skill
     tree_skills = tmp_path / ".agents" / "plugins" / "eidos" / "skills"
     flat_skills = tmp_path / ".cursor" / "skills"
-    for retired in ("eidos-architecture", "eidos-context", "eidos-delta", "eidos-drift", "eidos-review"):
-        (tree_skills / retired).mkdir(parents=True, exist_ok=True)
-        (tree_skills / retired / "SKILL.md").write_text("# Legacy\n", encoding="utf-8")
-        (flat_skills / retired).mkdir(parents=True, exist_ok=True)
-        (flat_skills / retired / "SKILL.md").write_text("# Legacy\n", encoding="utf-8")
-
     custom_user_skill = flat_skills / "custom-team-skill"
     custom_user_skill.mkdir(parents=True, exist_ok=True)
     (custom_user_skill / "SKILL.md").write_text("# Custom Team Skill\n", encoding="utf-8")
@@ -973,22 +951,14 @@ def test_plugin_install_and_update_prunes_retired_legacy_skills(tmp_path):
     # Run install_plugin across all targets (which powers both install and update)
     install_plugin(target=PluginInstallTarget.ALL, project_dir=tmp_path, force=True)
 
-    # All retired skills must be removed from both plugin tree and flat skills
-    for retired in RETIRED_EIDOS_SKILLS:
-        assert not (tree_skills / retired).exists(), f"Retired skill {retired} not pruned from plugin tree"
-        assert not (flat_skills / retired).exists(), f"Retired skill {retired} not pruned from flat skills"
-
     # Active 4 skills must exist, and custom user skill must be preserved
     for active in ACTIVE_EIDOS_SKILLS:
         assert (tree_skills / active / "SKILL.md").exists()
         assert (flat_skills / active / "SKILL.md").exists()
     assert (custom_user_skill / "SKILL.md").exists()
 
-    # Re-seed a retired skill and verify uninstall_plugin removes both active and retired Eidos skills while keeping custom skill
-    (flat_skills / "eidos-portal").mkdir(parents=True, exist_ok=True)
-    (flat_skills / "eidos-portal" / "SKILL.md").write_text("# Legacy Portal\n", encoding="utf-8")
+    # Verify uninstall_plugin removes active Eidos skills while keeping custom skill
     uninstall_plugin(target=PluginInstallTarget.CURSOR, project_dir=tmp_path)
-    assert not (flat_skills / "eidos-portal").exists()
     for active in ACTIVE_EIDOS_SKILLS:
         assert not (flat_skills / active).exists()
     assert (custom_user_skill / "SKILL.md").exists()
@@ -1103,39 +1073,6 @@ def test_plugin_uninstall_preserves_unmanifested_user_files(tmp_path):
     assert custom_dest.exists(), "Custom dest should NOT be removed when user files exist"
     assert user_dest_file.exists(), "User file in custom dest must be preserved"
     assert user_dest_file.read_text(encoding="utf-8") == "keep this safe\n"
-
-
-def test_plugin_uninstall_legacy_safe_cleanup_without_manifest(tmp_path):
-    """Verify legacy uninstall without .eidos-manifest.json safely removes only Eidos files and preserves user files (DLT-2026-046)."""
-    codex_dir = tmp_path / ".codex"
-    codex_dir.mkdir(parents=True, exist_ok=True)
-
-    # Legacy eidos files (without .eidos-manifest.json)
-    (codex_dir / "plugin.json").write_text(json.dumps({"name": "eidos", "version": "1.0.0"}), encoding="utf-8")
-    (codex_dir / "rules.md").write_text("# Eidos Old rules\n", encoding="utf-8")
-    legacy_skill = codex_dir / "skills" / "eidos" / "SKILL.md"
-    legacy_skill.parent.mkdir(parents=True, exist_ok=True)
-    legacy_skill.write_text("# Skill\n", encoding="utf-8")
-
-    # User file
-    user_file = codex_dir / "user_notes.txt"
-    user_file.write_text("my notes\n", encoding="utf-8")
-
-    uninst = uninstall_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path)
-    assert len(uninst) == 1
-    assert uninst[0].success
-    assert not (codex_dir / "plugin.json").exists()
-    assert not (codex_dir / "rules.md").exists()
-    assert not (codex_dir / "skills" / "eidos").exists()
-    assert user_file.exists(), "User file must be preserved in legacy uninstall"
-    assert codex_dir.exists(), "Parent dir must not be deleted if user files remain"
-
-    # Non-Eidos plugin.json and rules.md must also be preserved in legacy mode
-    (codex_dir / "plugin.json").write_text(json.dumps({"name": "custom-plugin", "version": "1.0.0"}), encoding="utf-8")
-    (codex_dir / "rules.md").write_text("# Custom User Rules\n", encoding="utf-8")
-    uninstall_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path)
-    assert (codex_dir / "plugin.json").exists()
-    assert (codex_dir / "rules.md").exists()
 
 
 def test_plugin_install_force_false_prevents_overwriting(tmp_path):
@@ -1367,12 +1304,9 @@ invariants:
 
 def test_dlt_2026_071_plugin_installer_and_validator_fixes(tmp_path):
     """Verify DLT-2026-071: no reconcile.md for Claude, Path-typed AIDER created_files, accurate fallback plugin_dir, and line-anchored SKILL.md frontmatter."""
-    # 1. Claude install prunes legacy reconcile.md and does not create reconcile.md
-    legacy_cmd = tmp_path / ".claude" / "plugins" / "eidos" / "commands" / "reconcile.md"
-    legacy_cmd.parent.mkdir(parents=True, exist_ok=True)
-    legacy_cmd.write_text("legacy reconcile\n", encoding="utf-8")
+    # 1. Claude install does not create reconcile.md and creates drift.md
     install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=tmp_path, force=True)
-    assert not legacy_cmd.exists()
+    assert not (tmp_path / ".claude" / "plugins" / "eidos" / "commands" / "reconcile.md").exists()
     assert (tmp_path / ".claude" / "plugins" / "eidos" / "commands" / "drift.md").exists()
 
     # 2. Aider created_files contains only Path instances (no bool)
@@ -1489,9 +1423,7 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
         _ensure_claude_plugin_manifest,
         _remove_copilot_instructions,
         _remove_project_aider_conf,
-        _remove_project_mcp_server,
-        _remove_project_opencode_json,
-        _uninstall_from_manifest_or_legacy,
+        _uninstall_from_manifest,
         _write_copilot_instructions,
         locate_plugin_bundle,
     )
@@ -1617,35 +1549,18 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     assert handle_stop_hook({}, tmp_path / "missing_eidos_dir") == {"decision": "allow"}
     assert execute_hook(path=tmp_path / "missing_eidos_dir", stdin_data="") == 0
 
-    # 5. plugin/installer.py helper edge cases: legacy cleanup without .eidos-manifest.json, _remove_project_mcp_server,
-    # _remove_project_opencode_json, _write_copilot_instructions / _remove_copilot_instructions
-    mcp_file = tmp_path / "mcp_test" / "mcp.json"
-    mcp_file.parent.mkdir(parents=True)
-    mcp_file.write_text(json.dumps({"mcpServers": {"eidos": {"command": "eidos"}}}), encoding="utf-8")
-    assert _remove_project_mcp_server(mcp_file, "eidos") is True
-    assert not mcp_file.exists()
-
-    oc_file = tmp_path / "oc_test" / "opencode.json"
-    oc_file.parent.mkdir(parents=True)
-    oc_file.write_text(json.dumps({"$schema": "https://opencode.ai", "mcp": {"eidos": {}}}), encoding="utf-8")
-    assert _remove_project_opencode_json(oc_file) is True
-    assert not oc_file.exists()
-
+    # 5. plugin/installer.py helper edge cases: _write_copilot_instructions / _remove_copilot_instructions,
+    # and _uninstall_from_manifest when .eidos-manifest.json is absent
     cop_file = tmp_path / "cop_test" / "copilot-instructions.md"
     _write_copilot_instructions(cop_file, force=True)
     _write_copilot_instructions(cop_file, force=True)  # updates existing block in-place
     assert _remove_copilot_instructions(cop_file) is True
     assert not cop_file.exists()
 
-    # Legacy cleanup when .eidos-manifest.json is removed (including legacy commands/validate.md)
-    legacy_dir = tmp_path / "legacy_plugin_dir"
-    _copy_plugin_tree(locate_plugin_bundle(), legacy_dir, force=True)
-    _ensure_claude_plugin_manifest(legacy_dir, force=True)
-    (legacy_dir / "commands").mkdir(exist_ok=True)
-    (legacy_dir / "commands" / "validate.md").write_text("# Validate\n", encoding="utf-8")
-    (legacy_dir / ".eidos-manifest.json").unlink(missing_ok=True)
-    assert _uninstall_from_manifest_or_legacy(legacy_dir) is True
-    assert not (legacy_dir / "commands").exists()
+    no_manifest_dir = tmp_path / "no_manifest_dir"
+    _copy_plugin_tree(locate_plugin_bundle(), no_manifest_dir, force=True)
+    (no_manifest_dir / ".eidos-manifest.json").unlink(missing_ok=True)
+    assert _uninstall_from_manifest(no_manifest_dir) is False
 
     # 6. Additional coverage for plugin/version.py, plugin/validator.py, cli/plugin_commands.py,
     #    plugin/hooks.py, and plugin/installer.py
@@ -1670,14 +1585,14 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
         ver_fb = get_bundled_plugin_version()
         assert isinstance(ver_fb, str) and len(ver_fb) > 0
 
-        # locate_plugin_bundle CWD fallback (plugins/eidos/plugin.json) and FileNotFoundError
+        # locate_plugin_bundle CWD fallback (assets/plugin_reference/plugin.json) and FileNotFoundError
         cwd_bundle_ws = tmp_path / "cwd_bundle_ws"
-        (cwd_bundle_ws / "plugins" / "eidos").mkdir(parents=True)
-        (cwd_bundle_ws / "plugins" / "eidos" / "plugin.json").write_text(
+        (cwd_bundle_ws / "assets" / "plugin_reference").mkdir(parents=True)
+        (cwd_bundle_ws / "assets" / "plugin_reference" / "plugin.json").write_text(
             json.dumps({"name": "eidos", "version": "0.1.0"}), encoding="utf-8"
         )
         os.chdir(cwd_bundle_ws)
-        assert locate_plugin_bundle() == (cwd_bundle_ws / "plugins" / "eidos").resolve()
+        assert locate_plugin_bundle() == (cwd_bundle_ws / "assets" / "plugin_reference").resolve()
 
         empty_cwd = tmp_path / "empty_cwd_ws"
         empty_cwd.mkdir(parents=True)
@@ -1761,33 +1676,7 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     subprocess.run(["git", "commit", "-m", "clean init"], cwd=hook_ws, check=True, capture_output=True)
     assert execute_hook(path=hook_ws, stdin_data="") == 0
 
-    # 6e. plugin/installer.py: _copy_plugin_tree legacy scripts & retired skills cleanup,
-    #     _remove_project_mcp_server / _remove_project_aider_conf / _remove_project_opencode_json / _ensure_claude_plugin_manifest branches
-    tree_cleanup_dir = tmp_path / "tree_cleanup_dir"
-    (tree_cleanup_dir / "scripts").mkdir(parents=True)
-    (tree_cleanup_dir / "scripts" / "old.sh").write_text("#!/bin/sh\n", encoding="utf-8")
-    (tree_cleanup_dir / "skills" / "eidos-drift").mkdir(parents=True)
-    (tree_cleanup_dir / ".eidos-manifest.json").write_text(
-        json.dumps({"files": {"scripts/old.sh": "abc"}}), encoding="utf-8"
-    )
-    _copy_plugin_tree(locate_plugin_bundle(), tree_cleanup_dir, force=False)
-    assert not (tree_cleanup_dir / "scripts").exists()
-    assert not (tree_cleanup_dir / "skills" / "eidos-drift").exists()
-
-    # _remove_project_mcp_server with invalid JSON, missing server, and remaining sibling server
-    mcp_f2 = tmp_path / "mcp_f2.json"
-    mcp_f2.write_text("{bad", encoding="utf-8")
-    assert _remove_project_mcp_server(mcp_f2, "eidos") is False
-    mcp_f2.write_text(json.dumps({"mcpServers": {"other": {"command": "other"}}}), encoding="utf-8")
-    assert _remove_project_mcp_server(mcp_f2, "eidos") is False
-    mcp_f2.write_text(
-        json.dumps({"mcpServers": {"eidos": {"command": "eidos"}, "other": {"command": "other"}}}),
-        encoding="utf-8",
-    )
-    assert _remove_project_mcp_server(mcp_f2, "eidos") is True
-    assert mcp_f2.exists() and "other" in json.loads(mcp_f2.read_text(encoding="utf-8"))["mcpServers"]
-
-    # _ensure_claude_plugin_manifest with non-eidos plugin.json, invalid plugin.json, and invalid .claude-plugin/plugin.json
+    # 6e. plugin/installer.py: _remove_project_aider_conf / _ensure_claude_plugin_manifest branches
     c_dir = tmp_path / "claude_manifest_edge"
     c_dir.mkdir()
     (c_dir / "plugin.json").write_text(json.dumps({"name": "not-eidos"}), encoding="utf-8")
@@ -1810,18 +1699,8 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     assert _remove_project_aider_conf(aider_f) is True
     assert aider_f.exists() and "model: sonnet" in aider_f.read_text(encoding="utf-8")
 
-    # _remove_project_opencode_json with invalid JSON, missing eidos key, and remaining sibling mcp key
-    oc_f2 = tmp_path / "opencode2.json"
-    oc_f2.write_text("{bad", encoding="utf-8")
-    assert _remove_project_opencode_json(oc_f2) is False
-    oc_f2.write_text(json.dumps({"mcp": {"other": {}}}), encoding="utf-8")
-    assert _remove_project_opencode_json(oc_f2) is False
-    oc_f2.write_text(json.dumps({"mcp": {"eidos": {}, "other": {}}}), encoding="utf-8")
-    assert _remove_project_opencode_json(oc_f2) is True
-    assert oc_f2.exists() and "other" in json.loads(oc_f2.read_text(encoding="utf-8"))["mcp"]
-
     # 6f. Newer installed version in `plugin version` & `plugin update`, execute_hook with drift,
-    #     corrupt manifest in _copy_plugin_tree, and non-Eidos rules.md / corrupt claude plugin.json in legacy uninstall
+    #     and corrupt manifest in _copy_plugin_tree
     (bad_ver_dir / "plugin.json").write_text('{"name": "eidos", "version": "99.0.0"}', encoding="utf-8")
     res_newer = cli_runner.invoke(app, ["plugin", "version", "--project-dir", str(bad_ver_ws)])
     assert res_newer.exit_code == 0 and "Newer" in res_newer.output
@@ -1841,16 +1720,11 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     (hook_ws / "src" / "drifted.py").write_text("def drifted(): return 1\n", encoding="utf-8")
     assert execute_hook(path=hook_ws / "eidos", stdin_data='{"cwd": "' + str(hook_ws) + '"}') == 0
 
-    (tree_cleanup_dir / "scripts").mkdir(parents=True, exist_ok=True)
+    tree_cleanup_dir = tmp_path / "tree_cleanup_dir"
+    tree_cleanup_dir.mkdir(parents=True, exist_ok=True)
     (tree_cleanup_dir / ".eidos-manifest.json").write_text("{corrupt", encoding="utf-8")
     _copy_plugin_tree(locate_plugin_bundle(), tree_cleanup_dir, force=True)
-    assert not (tree_cleanup_dir / "scripts").exists()
-
-    leg2 = tmp_path / "leg2"
-    (leg2 / ".claude-plugin").mkdir(parents=True)
-    (leg2 / ".claude-plugin" / "plugin.json").write_text("{corrupt", encoding="utf-8")
-    (leg2 / "rules.md").write_text("Custom non-matching rules\n", encoding="utf-8")
-    assert _uninstall_from_manifest_or_legacy(leg2) is False
+    assert (tree_cleanup_dir / "plugin.json").exists()
 
 
 def test_target_adapter_manifest_includes_post_install_hook_files(tmp_path):

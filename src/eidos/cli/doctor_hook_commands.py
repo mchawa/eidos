@@ -181,7 +181,6 @@ def doctor_cmd(
 
 
 def hook_cmd(
-    ctx: typer.Context,
     path: Path | None = typer.Option(
         None,
         "--path",
@@ -190,13 +189,6 @@ def hook_cmd(
     ),
 ):
     """Execute native Eidos stateless Stop lifecycle hook."""
-    extra = [a.lower() for a in getattr(ctx, "args", [])]
-    if any(ev in extra for ev in ("pretooluse", "pre_tool_use", "pre_tool")):
-        typer.echo('{"decision": "allow"}')
-        return
-    if any(ev in extra for ev in ("posttooluse", "post_tool_use", "post_tool")):
-        typer.echo("{}")
-        return
     code = execute_hook(repo_root=path)
     if code != 0:
         raise typer.Exit(code=code)
@@ -205,8 +197,4 @@ def hook_cmd(
 def register(app: typer.Typer) -> None:
     """Attach the root-level commands owned by this module to the root Typer app."""
     app.command("doctor", rich_help_panel=PANEL_SETUP)(doctor_cmd)
-    app.command(
-        "hook",
-        rich_help_panel=PANEL_PLUGINS,
-        context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
-    )(hook_cmd)
+    app.command("hook", rich_help_panel=PANEL_PLUGINS)(hook_cmd)

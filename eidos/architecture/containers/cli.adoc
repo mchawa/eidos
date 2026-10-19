@@ -13,7 +13,7 @@ tier: presentation
 components:
   - id: CMP-CLI-APP
     title: "CliApp"
-    responsibility: "Root command dispatcher (`--version` / `-V` callback and `eidos info` reporting across all 16 bundled v1 schemas), error code translation, shared CLI `eidos/` directory resolution (`resolve_cli_eidos_dir` and `has_eidos_markers` in `src/eidos/cli/_shared.py`), and formatted diagnostic table rendering."
+    responsibility: "Root command dispatcher (`--version` / `-V` callback and `eidos info` reporting across all 16 bundled v1 schemas), error code translation, shared CLI `eidos/` directory resolution (`resolve_cli_eidos_dir` and `has_eidos_markers` in `src/eidos/cli/_shared.py`), and formatted diagnostic table rendering without legacy command re-exports."
     source_path:
       - "src/eidos/cli/main.py"
       - "src/eidos/cli/_shared.py"
@@ -55,7 +55,7 @@ components:
     source_path: "src/eidos/cli/portal_commands.py"
   - id: CMP-CLI-DOCTOR-HOOKS
     title: "DoctorAndHookCommands"
-    responsibility: "Installation health diagnostics (`eidos doctor --path`, including `agent_plugin` health in `overall_ok`) with custom specification directory resolution and virtualenv-aware CLI binary checks, plus the stateless CLI-native agent lifecycle Stop hook command (`eidos hook [--path]`)."
+    responsibility: "Installation health diagnostics (`eidos doctor --path`, including `agent_plugin` health in `overall_ok`) with custom specification directory resolution and virtualenv-aware CLI binary checks, plus the stateless CLI-native agent lifecycle Stop hook command (`eidos hook [--path]`) without legacy PreToolUse/PostToolUse absorption."
     source_path: "src/eidos/cli/doctor_hook_commands.py"
 
 contracts:

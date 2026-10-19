@@ -410,7 +410,7 @@ def _collect_1hop_spec_targets(
     while queue:
         sid = queue.pop(0)
         if sid not in neighborhoods:
-            neighborhoods[sid] = idx.get_k_hop_neighborhood(sid, max_hops=1)
+            neighborhoods[sid] = idx.get_k_hop_neighborhood(sid, max_depth=1)
         neighbors = neighborhoods[sid]
         self_node = next((n for n in neighbors if n.get("id") == sid), None)
         self_type = (self_node or {}).get("type", "")
@@ -580,7 +580,7 @@ def _resolve_bound_design_ids(idx: Any, cf: str, owner_ids: set[str]) -> set[str
         if m.get("type") in ("design/client", "design/system") and m.get("entity_id"):
             bound.add(m["entity_id"])
     for oid in owner_ids:
-        for n in idx.get_k_hop_neighborhood(oid, max_hops=1):
+        for n in idx.get_k_hop_neighborhood(oid, max_depth=1):
             if n.get("type") in ("design/client", "design/system") and n.get("id"):
                 bound.add(n["id"])
     return bound

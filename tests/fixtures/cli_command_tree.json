@@ -1902,7 +1902,7 @@
         "help": "Installation target in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
         "panel": null,
         "envvar": "None",
-        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
+        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'codex', 'copilot', 'all'])"
       },
       {
         "name": "project_dir",
@@ -1988,7 +1988,7 @@
         "help": "Target to remove in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
         "panel": null,
         "envvar": "None",
-        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
+        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'codex', 'copilot', 'all'])"
       },
       {
         "name": "project_dir",
@@ -2086,7 +2086,7 @@
         "help": "Target to update in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
         "panel": null,
         "envvar": "None",
-        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
+        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'codex', 'copilot', 'all'])"
       },
       {
         "name": "project_dir",

@@ -199,7 +199,6 @@ export function ArchitectureView({
     }
   }, [level, selectedContainerId, data.diagrams]);
 
-  // Compatibility functions referenced by tests
   const setC4Level = (lvl: 1 | 2 | 3) => {
     setLevelState(lvl);
     setZoom(1);

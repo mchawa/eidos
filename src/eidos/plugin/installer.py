@@ -29,7 +29,6 @@ class PluginInstallTarget(enum.StrEnum):
     AIDER = "aider"  # Configures .aider.conf.yml and .aider.conventions.md
     CLINE = "cline"  # Configures .cline/plugins/eidos and .cline/skills
     OPEN_CODE = "open-code"  # Configures .opencode/plugins/eidos and .opencode/skills
-    OPENCODE = "opencode"  # Alias for open-code
     CODEX = "codex"  # Installs OpenAI Codex plugin bundle (.codex/)
     COPILOT = "copilot"  # Configures GitHub Copilot (.github/plugin, .github/skills, .github/copilot-instructions.md)
     ALL = "all"  # Installs all agent plugins and configurations
@@ -68,16 +67,6 @@ def locate_plugin_bundle() -> Path:
     if local_assets.exists() and (local_assets / "plugin.json").exists():
         return local_assets
 
-    # 3. Check legacy repo root plugins/eidos
-    repo_bundle = Path.cwd() / "plugins" / "eidos"
-    if repo_bundle.exists() and (repo_bundle / "plugin.json").exists():
-        return repo_bundle
-
-    # 4. Check embedded legacy package directory
-    pkg_bundle = Path(__file__).parent.parent / "plugin_bundle"
-    if pkg_bundle.exists() and (pkg_bundle / "plugin.json").exists():
-        return pkg_bundle
-
     raise FileNotFoundError("Could not locate Eidos plugin reference in assets or repository.")
 
 
@@ -87,24 +76,6 @@ ACTIVE_EIDOS_SKILLS: frozenset[str] = frozenset(
         "eidos-spec",
         "eidos-plan",
         "eidos-ops",
-    }
-)
-
-RETIRED_EIDOS_SKILLS: frozenset[str] = frozenset(
-    {
-        "eidos-architecture",
-        "eidos-context",
-        "eidos-delta",
-        "eidos-design",
-        "eidos-drift",
-        "eidos-explore",
-        "eidos-extract",
-        "eidos-init",
-        "eidos-invariants",
-        "eidos-portal",
-        "eidos-product",
-        "eidos-reconcile",
-        "eidos-review",
     }
 )
 
@@ -228,37 +199,10 @@ def _copy_plugin_tree(
     _check_not_symlink(target_dir)
 
     target_dir.mkdir(parents=True, exist_ok=True)
-    # Remove legacy scripts directory if no longer present in source bundle
-    legacy_scripts = target_dir / "scripts"
-    if legacy_scripts.exists() and not (source_dir / "scripts").exists():
-        scripts_tracked = False
-        manifest_path = target_dir / MANIFEST_FILENAME
-        if manifest_path.exists() and not manifest_path.is_symlink():
-            try:
-                with open(manifest_path, encoding="utf-8") as mf:
-                    mdata = json.load(mf)
-                mfiles = mdata.get("files", {})
-                if isinstance(mfiles, dict):
-                    scripts_tracked = any(
-                        k == "scripts" or k.startswith("scripts/") or k.startswith("scripts\\") for k in mfiles
-                    )
-            except (OSError, json.JSONDecodeError, ValueError):
-                scripts_tracked = False
-        if force or scripts_tracked:
-            with contextlib.suppress(OSError):
-                shutil.rmtree(legacy_scripts)
 
-    # Prune retired legacy Eidos skill directories (or duplicate skills when flat skills_subdir is used)
     target_skills_dir = target_dir / "skills"
-    if target_skills_dir.exists():
-        if not include_skills:
-            _remove_skills_flat(source_dir, target_skills_dir)
-        else:
-            for retired_name in RETIRED_EIDOS_SKILLS:
-                retired_dir = target_skills_dir / retired_name
-                if retired_dir.exists():
-                    with contextlib.suppress(OSError):
-                        shutil.rmtree(retired_dir)
+    if target_skills_dir.exists() and not include_skills:
+        _remove_skills_flat(source_dir, target_skills_dir)
 
     created = []
     for item in source_dir.rglob("*"):
@@ -269,8 +213,7 @@ def _copy_plugin_tree(
             # Never copy internal cache or assistant-specific directories into plugins
             if any(part in (".claude-plugin", ".eidos", ".cache", ".git") for part in rel.parts):
                 continue
-            # Never copy legacy MCP configuration files into target plugins
-            if rel.name in (".mcp.json", "mcp.json", "mcp_config.json", MANIFEST_FILENAME):
+            if rel.name == MANIFEST_FILENAME:
                 continue
             dest = target_dir / rel
             _check_not_symlink(dest, root=target_dir)
@@ -314,7 +257,7 @@ def _copy_plugin_tree(
 
 
 def _copy_skills_flat(source_dir: Path, target_skills_dir: Path, force: bool = False) -> list[Path]:
-    """Copy individual skills from source bundle into target_skills_dir/<skill-name>/ and prune retired Eidos skills."""
+    """Copy individual skills from source bundle into target_skills_dir/<skill-name>/."""
     _check_not_symlink(target_skills_dir)
 
     source_skills = source_dir / "skills" if (source_dir / "skills").exists() else source_dir
@@ -322,12 +265,6 @@ def _copy_skills_flat(source_dir: Path, target_skills_dir: Path, force: bool = F
         return []
 
     target_skills_dir.mkdir(parents=True, exist_ok=True)
-    # Prune retired legacy Eidos skill directories while preserving unrelated user skills
-    for retired_name in RETIRED_EIDOS_SKILLS:
-        retired_dir = target_skills_dir / retired_name
-        if retired_dir.exists():
-            with contextlib.suppress(OSError):
-                shutil.rmtree(retired_dir)
 
     created: list[Path] = []
 
@@ -352,11 +289,11 @@ def _copy_skills_flat(source_dir: Path, target_skills_dir: Path, force: bool = F
 
 
 def _remove_skills_flat(source_dir: Path | None, target_skills_dir: Path) -> bool:
-    """Remove known active and retired Eidos skills from target_skills_dir without removing unrelated user skills."""
+    """Remove known active Eidos skills from target_skills_dir without removing unrelated user skills."""
     if not target_skills_dir.exists():
         return False
 
-    known_skills = set(ACTIVE_EIDOS_SKILLS | RETIRED_EIDOS_SKILLS)
+    known_skills = set(ACTIVE_EIDOS_SKILLS)
     if source_dir:
         source_skills = source_dir / "skills" if (source_dir / "skills").exists() else source_dir
         if source_skills.exists():
@@ -375,36 +312,6 @@ def _remove_skills_flat(source_dir: Path | None, target_skills_dir: Path) -> boo
             target_skills_dir.rmdir()
 
     return removed_any
-
-
-def _remove_project_mcp_server(file_path: Path, server_name: str) -> bool:
-    """Safely remove a server entry from a project MCP configuration file."""
-    if not file_path.exists():
-        return False
-    try:
-        with open(file_path, encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, json.JSONDecodeError, ValueError):
-        return False
-
-    servers = data.get("mcpServers", {})
-    if server_name not in servers:
-        return False
-
-    del servers[server_name]
-    data["mcpServers"] = servers
-
-    if not servers and len(data) == 1:
-        # If mcpServers was the only key and is now empty, delete the file
-        file_path.unlink()
-        parent = file_path.parent
-        if parent.exists() and not any(parent.iterdir()):
-            with contextlib.suppress(OSError):
-                parent.rmdir()
-    else:
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-    return True
 
 
 def _ensure_claude_plugin_manifest(target_dir: Path, force: bool = False) -> list[Path] | None:
@@ -518,11 +425,6 @@ def _write_claude_commands(target_dir: Path, launcher: str = "eidos", force: boo
             "```\n"
         ),
     }
-
-    legacy_reconcile = commands_dir / "reconcile.md"
-    if legacy_reconcile.is_file() and not legacy_reconcile.is_symlink():
-        with contextlib.suppress(OSError):
-            legacy_reconcile.unlink()
 
     for filename, content in commands.items():
         cmd_file = commands_dir / filename
@@ -929,37 +831,6 @@ def _remove_project_copilot_settings(settings_file: Path) -> bool:
     return True
 
 
-def _remove_project_opencode_json(file_path: Path) -> bool:
-    """Safely remove Eidos MCP server from opencode.json."""
-    if not file_path.exists():
-        return False
-    try:
-        with open(file_path, encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, json.JSONDecodeError, ValueError):
-        return False
-
-    mcp = data.get("mcp", {})
-    if "eidos" not in mcp:
-        return False
-
-    del mcp["eidos"]
-    data["mcp"] = mcp
-
-    # If mcp is now empty and only $schema remains, remove file
-    remaining_keys = set(data.keys()) - {"$schema"}
-    if not mcp and not any(k for k in remaining_keys if k != "mcp"):
-        file_path.unlink()
-        parent = file_path.parent
-        if parent.exists() and not any(parent.iterdir()):
-            with contextlib.suppress(OSError):
-                parent.rmdir()
-    else:
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-    return True
-
-
 def _ensure_codex_plugin_manifest(target_dir: Path, force: bool = False) -> Path | None:
     """Ensure .codex/plugin.json exists in target plugin directory with OpenAI Codex metadata."""
     _check_not_symlink(target_dir)
@@ -1032,113 +903,38 @@ def _write_codex_rules(file_path: Path, force: bool = False) -> Path | None:
     return file_path
 
 
-def _uninstall_from_manifest_or_legacy(target_dir: Path) -> bool:
-    """Remove manifest-tracked files or fallback to safe legacy cleanup without wiping shared parent."""
+def _uninstall_from_manifest(target_dir: Path) -> bool:
+    """Remove manifest-tracked files without wiping shared parent."""
     if not target_dir.exists():
         return False
 
     manifest_file = target_dir / MANIFEST_FILENAME
+    if not manifest_file.exists():
+        return False
+
     removed_any = False
+    try:
+        with open(manifest_file, encoding="utf-8") as f:
+            data = json.load(f)
+        files_dict = data.get("files", {})
+    except (OSError, json.JSONDecodeError, ValueError):
+        files_dict = {}
 
-    if manifest_file.exists():
-        try:
-            with open(manifest_file, encoding="utf-8") as f:
-                data = json.load(f)
-            files_dict = data.get("files", {})
-        except (OSError, json.JSONDecodeError, ValueError):
-            files_dict = {}
-
-        for rel_path in sorted(files_dict.keys(), reverse=True):
-            f_path = target_dir / rel_path
-            if f_path.is_symlink() or f_path.is_file():
-                with contextlib.suppress(OSError):
-                    f_path.unlink()
-                    removed_any = True
-            elif f_path.is_dir():
-                with contextlib.suppress(OSError):
-                    f_path.rmdir()
-                    removed_any = True
-
-        if manifest_file.exists():
-            with contextlib.suppress(OSError):
-                manifest_file.unlink()
-                removed_any = True
-
-        _prune_empty_dirs(target_dir)
-
-        if target_dir.exists() and not any(target_dir.iterdir()):
-            with contextlib.suppress(OSError):
-                target_dir.rmdir()
-
-        return removed_any
-
-    # Legacy install fallback (no .eidos-manifest.json): safely remove known Eidos files/subdirs
-    known_eidos_files = {
-        "plugin.json",
-        "hooks.json",
-        "rules.md",
-        MANIFEST_FILENAME,
-    }
-    for item_name in known_eidos_files:
-        f_path = target_dir / item_name
+    for rel_path in sorted(files_dict.keys(), reverse=True):
+        f_path = target_dir / rel_path
         if f_path.is_symlink() or f_path.is_file():
-            if item_name == "plugin.json":
-                try:
-                    with open(f_path, encoding="utf-8") as pf:
-                        pdata = json.load(pf)
-                    if not isinstance(pdata, dict) or pdata.get("name") != "eidos":
-                        continue
-                except (OSError, json.JSONDecodeError, ValueError):
-                    continue
-            elif item_name == "rules.md":
-                try:
-                    rtext = f_path.read_text(encoding="utf-8")
-                    if "Eidos" not in rtext and "# Eidos" not in rtext:
-                        continue
-                except OSError:
-                    continue
             with contextlib.suppress(OSError):
                 f_path.unlink()
                 removed_any = True
-
-    # Check skills/
-    skills_dir = target_dir / "skills"
-    if skills_dir.exists() and skills_dir.is_dir() and _remove_skills_flat(None, skills_dir):
-        removed_any = True
-
-    # Check commands/
-    commands_dir = target_dir / "commands"
-    if commands_dir.exists() and commands_dir.is_dir():
-        for cmd_name in ("validate.md", "drift.md", "reconcile.md", "context.md"):
-            cf = commands_dir / cmd_name
-            if cf.exists():
-                with contextlib.suppress(OSError):
-                    cf.unlink()
-                    removed_any = True
-        if not any(commands_dir.iterdir()):
+        elif f_path.is_dir():
             with contextlib.suppress(OSError):
-                commands_dir.rmdir()
+                f_path.rmdir()
+                removed_any = True
 
-    # Check .claude-plugin/
-    claude_meta_dir = target_dir / ".claude-plugin"
-    if claude_meta_dir.exists() and claude_meta_dir.is_dir():
-        cf = claude_meta_dir / "plugin.json"
-        if cf.exists():
-            is_eidos_claude_manifest = False
-            try:
-                with open(cf, encoding="utf-8") as cpf:
-                    cpdata = json.load(cpf)
-                if isinstance(cpdata, dict) and cpdata.get("name") == "eidos":
-                    is_eidos_claude_manifest = True
-            except (OSError, json.JSONDecodeError, ValueError):
-                is_eidos_claude_manifest = False
-            if is_eidos_claude_manifest:
-                with contextlib.suppress(OSError):
-                    cf.unlink()
-                    removed_any = True
-        if not any(claude_meta_dir.iterdir()):
-            with contextlib.suppress(OSError):
-                claude_meta_dir.rmdir()
+    if manifest_file.exists():
+        with contextlib.suppress(OSError):
+            manifest_file.unlink()
+            removed_any = True
 
     _prune_empty_dirs(target_dir)
 
@@ -1147,9 +943,6 @@ def _uninstall_from_manifest_or_legacy(target_dir: Path) -> bool:
             target_dir.rmdir()
 
     return removed_any
-
-
-_legacy_safe_cleanup_codex_or_dest = _uninstall_from_manifest_or_legacy
 
 
 # ---------------------------------------------------------------------------
@@ -1227,9 +1020,7 @@ class TargetAdapter:
     uninstall_removed_message: str = ""
     uninstall_clean_message: str = ""
     copy_plugin_tree: bool = True
-    mcp_cleanup_paths: tuple[str, ...] = ()
     extra_cleanup_files: tuple[str, ...] = ()
-    legacy_cleanup_dirs: tuple[str, ...] = ()
     prune_dirs: tuple[str, ...] = ()
     pre_manifest_hook: Callable[[Path, Path, Path, bool, str], list[Path]] | None = None
     post_install_hook: Callable[[Path, Path, bool, str], list[Path]] | None = None
@@ -1280,14 +1071,8 @@ class TargetAdapter:
         was_removed = False
         plugin_dir = (root / self.plugin_subdir) if self.plugin_subdir else None
 
-        if plugin_dir is not None and plugin_dir.exists() and _uninstall_from_manifest_or_legacy(plugin_dir):
+        if plugin_dir is not None and plugin_dir.exists() and _uninstall_from_manifest(plugin_dir):
             was_removed = True
-
-        for legacy_rel in self.legacy_cleanup_dirs:
-            legacy_dir = root / legacy_rel
-            if legacy_dir.exists():
-                shutil.rmtree(legacy_dir)
-                was_removed = True
 
         for file_rel in self.extra_cleanup_files:
             f_path = root / file_rel
@@ -1297,10 +1082,6 @@ class TargetAdapter:
 
         if self.skills_subdir is not None and _remove_skills_flat(source_dir, root / self.skills_subdir):
             was_removed = True
-
-        for mcp_rel in self.mcp_cleanup_paths:
-            if _remove_project_mcp_server(root / mcp_rel, "eidos"):
-                was_removed = True
 
         if self.extra_uninstall_hook is not None and self.extra_uninstall_hook(root):
             was_removed = True
@@ -1332,20 +1113,6 @@ def _make_project_adapter(target: PluginInstallTarget, name: str) -> TargetAdapt
     )
 
 
-_OPENCODE_ADAPTER_SPEC = dict(
-    name="open-code",
-    plugin_subdir=".opencode/plugins/eidos",
-    skills_subdir=".opencode/skills",
-    uninstall_destination_subdir="opencode.json",
-    install_message="Configured plugin bundle in .opencode/plugins/eidos and 4 skills in .opencode/skills/.",
-    uninstall_removed_message="Removed opencode.json MCP, .opencode/plugins/eidos, and .opencode/skills/.",
-    uninstall_clean_message="No OpenCode configuration found (already removed).",
-    extra_cleanup_files=(".opencode/rules.md",),
-    prune_dirs=(".opencode/plugins", ".opencode"),
-    extra_uninstall_hook=lambda root: _remove_project_opencode_json(root / "opencode.json"),
-)
-
-
 TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
     PluginInstallTarget.PROJECT: _make_project_adapter(PluginInstallTarget.PROJECT, "project"),
     PluginInstallTarget.ANTIGRAVITY: _make_project_adapter(PluginInstallTarget.ANTIGRAVITY, "antigravity"),
@@ -1354,11 +1121,10 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         name="cursor",
         skills_subdir=".cursor/skills",
         install_destination_subdir=".cursor/rules/eidos.mdc",
-        uninstall_destination_subdir=".cursor/mcp.json",
+        uninstall_destination_subdir=".cursor/rules/eidos.mdc",
         install_message="Configured rules in .cursor/rules/eidos.mdc and 4 skills in .cursor/skills/.",
-        uninstall_removed_message="Removed .cursor/rules/eidos.mdc, .cursor/skills/, and updated .cursor/mcp.json.",
+        uninstall_removed_message="Removed .cursor/rules/eidos.mdc and .cursor/skills/.",
         uninstall_clean_message="No Cursor configuration found (already removed).",
-        mcp_cleanup_paths=(".cursor/mcp.json",),
         extra_cleanup_files=(".cursor/rules/eidos.mdc",),
         prune_dirs=(".cursor/rules", ".cursor"),
         post_install_hook=lambda root, _src, force, _l: [
@@ -1372,9 +1138,7 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         skills_subdir=".claude/skills",
         install_message="Installed Claude Code plugin at .claude/plugins/eidos, 4 skills in .claude/skills/, commands in .claude/plugins/eidos/commands/, and configured .claude/settings.json.",
         uninstall_removed_message="Removed Claude Code plugin from .claude/plugins/eidos, skills from .claude/skills/, and cleaned up .claude configuration.",
-        uninstall_clean_message="No Claude Code plugin or MCP config found (already removed).",
-        mcp_cleanup_paths=(".claude/mcp.json",),
-        legacy_cleanup_dirs=(".claude/skills/eidos",),
+        uninstall_clean_message="No Claude Code plugin found (already removed).",
         prune_dirs=(".claude/plugins", ".claude"),
         pre_manifest_hook=lambda root, _src, plugin_dir, force, launcher: _claude_pre_manifest_hook(
             root, plugin_dir, force, launcher
@@ -1406,15 +1170,21 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         skills_subdir=".cline/skills",
         uninstall_destination_subdir=".cline",
         install_message="Configured plugin bundle in .cline/plugins/eidos and 4 skills in .cline/skills/.",
-        uninstall_removed_message="Removed .cline MCP settings, plugin bundle in .cline/plugins/eidos, and .cline/skills/.",
+        uninstall_removed_message="Removed plugin bundle in .cline/plugins/eidos and .cline/skills/.",
         uninstall_clean_message="No Cline configurations found (already removed).",
-        mcp_cleanup_paths=(".cline/mcp.json", ".cline/cline_mcp_settings.json"),
-        extra_cleanup_files=(".clinerules",),
-        legacy_cleanup_dirs=(".cline/skills/eidos",),
         prune_dirs=(".cline/plugins", ".cline"),
     ),
-    PluginInstallTarget.OPEN_CODE: TargetAdapter(target=PluginInstallTarget.OPEN_CODE, **_OPENCODE_ADAPTER_SPEC),
-    PluginInstallTarget.OPENCODE: TargetAdapter(target=PluginInstallTarget.OPENCODE, **_OPENCODE_ADAPTER_SPEC),
+    PluginInstallTarget.OPEN_CODE: TargetAdapter(
+        target=PluginInstallTarget.OPEN_CODE,
+        name="open-code",
+        plugin_subdir=".opencode/plugins/eidos",
+        skills_subdir=".opencode/skills",
+        uninstall_destination_subdir=".opencode/plugins/eidos",
+        install_message="Configured plugin bundle in .opencode/plugins/eidos and 4 skills in .opencode/skills/.",
+        uninstall_removed_message="Removed .opencode/plugins/eidos and .opencode/skills/.",
+        uninstall_clean_message="No OpenCode configuration found (already removed).",
+        prune_dirs=(".opencode/plugins", ".opencode"),
+    ),
     PluginInstallTarget.CODEX: TargetAdapter(
         target=PluginInstallTarget.CODEX,
         name="codex",
@@ -1435,7 +1205,6 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         install_message="Installed GitHub Copilot plugin (.github/plugin/), 4 skills (.github/skills/), settings (.github/copilot/settings.json), and instructions.",
         uninstall_removed_message="Removed GitHub Copilot plugin (.github/plugin/), skills (.github/skills/), and configuration.",
         uninstall_clean_message="No GitHub Copilot configuration found (already removed).",
-        mcp_cleanup_paths=(".github/copilot/mcp.json", ".vscode/mcp.json"),
         prune_dirs=(".github/plugin", ".github/copilot"),
         pre_manifest_hook=lambda root, _src, plugin_dir, force, _l: _copilot_pre_manifest_hook(root, plugin_dir, force),
         post_install_hook=lambda root, _src, force, _l: _copilot_post_install_hook(root, force),
@@ -1515,7 +1284,7 @@ def uninstall_plugin(
                 target_path.unlink()
                 removed = True
             else:
-                removed = _uninstall_from_manifest_or_legacy(target_path)
+                removed = _uninstall_from_manifest(target_path)
             results.append(
                 UninstallResult(
                     target="custom",

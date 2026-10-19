@@ -293,7 +293,7 @@ def detect_drift(
             active_delta_files.append(df)
             for m in model.mutations:
                 for key in ("target", "parent"):
-                    val = m.get(key)
+                    val = getattr(m, key, None)
                     if not val:
                         continue
                     val_str = str(val).strip()
@@ -580,7 +580,3 @@ def detect_drift(
         remediation_suggestions=remediation,
         summary_markdown=summary_markdown,
     )
-
-
-# Backwards compatibility alias
-check_pr_drift = detect_drift

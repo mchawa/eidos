@@ -485,7 +485,7 @@ def reconcile_code_ownership(
             if not stored or stored == {entity_id for entity_id, _ in owners}:
                 continue
         stat = p_file.stat()
-        index._index_source_file(
+        index_source_file(
             conn,
             ast_idx,
             p_file,
@@ -1361,7 +1361,7 @@ def sync_index(
             row = conn.execute("SELECT doc_id, doc_type FROM indexed_files WHERE rel_path = ?", (d_rel,)).fetchone()
             if row and row["doc_type"] in ("code/source", "code/test"):
                 code_deleted = True
-                index._store_code_symbols(conn, d_rel, [], [])
+                store_code_symbols(conn, d_rel, [], [])
                 conn.execute("DELETE FROM symbol_mappings WHERE symbol = ?;", (d_rel,))
                 conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
             elif row and row["doc_id"]:
@@ -1372,7 +1372,7 @@ def sync_index(
                     (doc_id, d_rel),
                 ).fetchone()
                 if other_owner is None:
-                    index._delete_spec_fts_rows(conn, doc_id, d_rel)
+                    delete_spec_fts_rows(conn, doc_id, d_rel)
                     conn.execute(
                         "DELETE FROM edges WHERE source_id = ? OR target_id = ? "
                         "OR source_id IN (SELECT id FROM entities WHERE file_path = ? AND type = 'invariant') "
@@ -1471,7 +1471,7 @@ def sync_index(
                         (old_doc_id, rel_p),
                     ).fetchone()
                     if other_old_owner is None:
-                        index._delete_spec_fts_rows(conn, old_doc_id, rel_p)
+                        delete_spec_fts_rows(conn, old_doc_id, rel_p)
                         conn.execute(
                             "DELETE FROM symbol_mappings WHERE entity_id = ? OR entity_id IN "
                             "(SELECT id FROM entities WHERE file_path = ? AND type = 'invariant');",
@@ -1509,7 +1509,7 @@ def sync_index(
                         (new_doc_id, rel_p),
                     ).fetchone()
                     if other_new_owner is None:
-                        index._delete_spec_fts_rows(conn, new_doc_id, rel_p)
+                        delete_spec_fts_rows(conn, new_doc_id, rel_p)
                         conn.execute(
                             "DELETE FROM symbol_mappings WHERE entity_id = ? OR entity_id IN "
                             "(SELECT id FROM entities WHERE file_path = ? AND type = 'invariant');",
@@ -1689,7 +1689,7 @@ def sync_index(
                     continue
                 conn.execute("INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'source_path');", (pkg_item, doc_id))
 
-            index._restore_code_mappings(conn, doc_id)
+            restore_code_mappings(conn, doc_id)
 
             if isinstance(fm.get("contracts"), dict):
                 for iface in fm["contracts"].get("interfaces", []):
@@ -1752,7 +1752,7 @@ def sync_index(
                 if (not force and not specs_deleted and not any_doc_id_renamed and updated_spec_doc_ids)
                 else None
             )
-            index._rebuild_spec_edges(conn, updated_doc_ids=inc_ids)
+            rebuild_spec_edges(conn, updated_doc_ids=inc_ids)
 
         ast_idx = get_ast_indexer()
         resolver = _CodeOwnershipResolver(conn)
@@ -1768,7 +1768,7 @@ def sync_index(
             mtime = p.stat().st_mtime
             sha = hashlib.sha256(p.read_bytes()).hexdigest()
 
-            is_test = index._is_test_code_path(rel_p)
+            is_test = is_test_code_path(rel_p)
 
             existing = conn.execute("SELECT 1 FROM indexed_files WHERE rel_path = ?", (rel_p,)).fetchone()
             if existing:
@@ -1777,7 +1777,7 @@ def sync_index(
                 stats.indexed_new += 1
 
             if is_test:
-                index._index_test_bindings(conn, ast_idx, p, rel_p)
+                index_test_bindings(conn, ast_idx, p, rel_p)
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
@@ -1786,11 +1786,11 @@ def sync_index(
                     (rel_p, mtime, sha, time.time()),
                 )
             else:
-                index._index_source_file(conn, ast_idx, p, rel_p, mtime, sha, resolver)
+                index_source_file(conn, ast_idx, p, rel_p, mtime, sha, resolver)
                 processed_code.add(rel_p)
 
         if force or spec_updates or specs_deleted:
-            index._reconcile_code_ownership(conn, ast_idx, resolver, processed_code)
+            reconcile_code_ownership(index, conn, ast_idx, resolver, processed_code)
 
         if force or spec_updates or specs_deleted or processed_code or code_deleted:
             _derive_ast_import_edges(conn, resolver)
@@ -1923,7 +1923,7 @@ def sync_index(
                             rel_t = str(tp.relative_to(index.root)).replace("\\", "/")
                         except ValueError:
                             rel_t = str(tp).replace("\\", "/")
-                        if index._is_test_code_path(rel_t):
+                        if is_test_code_path(rel_t):
                             candidate_test_files.setdefault(rel_t, tp)
 
         for (tb_sym,) in conn.execute(
@@ -1959,7 +1959,7 @@ def sync_index(
                     """,
                     (rel_t, stat.st_mtime, t_sha, time.time()),
                 )
-                index._index_test_bindings(conn, ast_idx, tp, rel_t)
+                index_test_bindings(conn, ast_idx, tp, rel_t)
 
         conn.execute(
             """
@@ -2011,7 +2011,7 @@ def sync_index(
               AND rel_type != 'asserts';
             """
         )
-        index._prune_stale_test_binding_edges(conn)
+        prune_stale_test_binding_edges(conn)
         _reconcile_invariant_coverage(index, conn, ast_idx)
 
     stats.duration_ms = (time.perf_counter() - t0) * 1000
