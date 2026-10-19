@@ -1,4 +1,4 @@
-"""SpecDelta engine: listing, status summaries, baseline snapshots, verification,
+"""SpecDelta engine: listing, status summaries, Git-native baseline verification,
 and application of composable semantic mutations (CMP-DELTA-ENGINE)."""
 
 import contextlib
@@ -6,13 +6,12 @@ import hashlib
 import json
 import os
 import re
-import sqlite3
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from eidos.core.index.storage import get_cached_spec_document, open_cache_connection
+from eidos.core.index.storage import get_cached_spec_document
 from eidos.core.lifecycle.catalog import (
     _build_spec_catalog_with_invariants,
     _render_spec,
@@ -225,45 +224,6 @@ def _find_inline_component_dict(
 def _digest_dict(data: dict[str, Any]) -> str:
     """Compute a deterministic SHA-256 hex digest for a frontmatter sub-dictionary."""
     return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode("utf-8")).hexdigest()
-
-
-def _snapshot_delta_baselines(eidos_dir: Path, delta_id: str, overwrite: bool = True) -> None:
-    """Record current SHA-256 digests of all living specs into eidos/.cache/index.db for delta verification."""
-    try:
-        cache_dir = eidos_dir / ".cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        db_path = cache_dir / "index.db"
-        specs_by_id, container_components, invariant_map = _build_spec_catalog_with_invariants(eidos_dir)
-        rows: list[tuple[str, str, str]] = []
-        for spec_id, (spec_path, _, _) in specs_by_id.items():
-            if spec_path.exists():
-                sha = hashlib.sha256(spec_path.read_bytes()).hexdigest()
-                rows.append((delta_id, spec_id, sha))
-                rows.append((delta_id, str(spec_path.resolve()), sha))
-        for comp_id, cnt_id in container_components.items():
-            if comp_id in specs_by_id:
-                continue
-            if cnt_id in specs_by_id:
-                cnt_path, _, cnt_fm = specs_by_id[cnt_id]
-                comp_dict = _find_inline_component_dict(comp_id, cnt_fm)
-                if comp_dict is not None:
-                    rows.append((delta_id, comp_id, _digest_dict(comp_dict)))
-                elif cnt_path.exists():
-                    sha = hashlib.sha256(cnt_path.read_bytes()).hexdigest()
-                    rows.append((delta_id, comp_id, sha))
-        for inv_id, (inv_path, inv_dict) in invariant_map.items():
-            if inv_path.exists():
-                rows.append((delta_id, inv_id, _digest_dict(inv_dict)))
-
-        insert_sql = (
-            "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)"
-            if overwrite
-            else "INSERT OR IGNORE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)"
-        )
-        with contextlib.closing(open_cache_connection(db_path)) as conn, conn:
-            conn.executemany(insert_sql, rows)
-    except (OSError, sqlite3.Error):
-        return
 
 
 def _resolve_git_repo_root(eidos_dir: Path) -> Path | None:
@@ -512,7 +472,6 @@ def create_delta(
         err_msg = "; ".join(errors)
         raise ValueError(f"Generated SpecDelta failed validation: {err_msg}")
 
-    _snapshot_delta_baselines(eidos_dir, doc_id)
     return dest_file
 
 
@@ -620,8 +579,11 @@ def _resolve_git_baseline_sha(
     delta_file: Path,
     target_key: str,
     target_file: Path | None,
+    *,
+    rev_cache: dict[Path, list[str]] | None = None,
+    blob_cache: dict[tuple[str, str], tuple[bytes | None, dict[str, Any] | None]] | None = None,
 ) -> str | None:
-    """Recover the pre-delta baseline SHA-256 of target_key from vcs.base_commit or Git history when SQLite cache is absent."""
+    """Recover the pre-delta baseline SHA-256 of target_key from vcs.base_commit or Git history."""
     if target_file is None or not target_file.exists():
         return None
 
@@ -634,88 +596,113 @@ def _resolve_git_baseline_sha(
     except ValueError:
         return None
 
-    revs: list[str] = []
+    def _compute_fallback_revs() -> list[str]:
+        fb_revs: list[str] = []
 
-    def _add_rev(rev_candidate: str | None) -> None:
-        if rev_candidate and rev_candidate not in revs:
-            revs.append(rev_candidate)
+        def _add_fb(cand: str | None) -> None:
+            if cand and cand not in fb_revs:
+                fb_revs.append(cand)
 
-    # 1. Check vcs.base_commit recorded in the SpecDelta frontmatter (portable across machines/CI and uncommitted deltas)
-    if delta_file.exists():
-        with contextlib.suppress(OSError):
-            dlt_fm, _, _ = extract_frontmatter(delta_file.read_text(encoding="utf-8"))
-            if isinstance(dlt_fm, dict):
-                vcs_block = dlt_fm.get("vcs")
-                if isinstance(vcs_block, dict):
-                    base_commit = vcs_block.get("base_commit")
-                    if isinstance(base_commit, str) and base_commit.strip():
-                        _add_rev(base_commit.strip())
-
-    # 2. Check Git commit history where the SpecDelta file was added
-    with contextlib.suppress(ValueError, OSError, subprocess.SubprocessError):
-        rel_delta = str(delta_file.resolve().relative_to(repo_root)).replace("\\", "/")
-        log_res = subprocess.run(
-            ["git", "-C", str(repo_root), "log", "--diff-filter=A", "--format=%H", "--", rel_delta],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        commits = [ln.strip() for ln in log_res.stdout.splitlines() if ln.strip()]
-        if commits:
-            first_commit = commits[-1]
-            parent_check = subprocess.run(
-                ["git", "-C", str(repo_root), "rev-parse", "--verify", "--quiet", f"{first_commit}~1"],
+        with contextlib.suppress(ValueError, OSError, subprocess.SubprocessError):
+            rel_delta = str(delta_file.resolve().relative_to(repo_root)).replace("\\", "/")
+            log_res = subprocess.run(
+                ["git", "-C", str(repo_root), "log", "--diff-filter=A", "--format=%H", "--", rel_delta],
                 capture_output=True,
                 text=True,
                 timeout=5,
                 check=False,
             )
-            if parent_check.returncode == 0:
-                _add_rev(f"{first_commit}~1")
-            _add_rev(first_commit)
-
-    # 3. For uncommitted delta files without vcs.base_commit, try merge-base against main/origin/main then HEAD
-    if not revs:
-        with contextlib.suppress(OSError, subprocess.SubprocessError):
-            for base_branch in ("origin/main", "main", "origin/master", "master"):
-                mb_res = subprocess.run(
-                    ["git", "-C", str(repo_root), "merge-base", "HEAD", base_branch],
+            commits = [ln.strip() for ln in log_res.stdout.splitlines() if ln.strip()]
+            if commits:
+                first_commit = commits[-1]
+                parent_check = subprocess.run(
+                    ["git", "-C", str(repo_root), "rev-parse", "--verify", "--quiet", f"{first_commit}~1"],
                     capture_output=True,
                     text=True,
                     timeout=5,
                     check=False,
                 )
-                if mb_res.returncode == 0 and mb_res.stdout.strip():
-                    _add_rev(mb_res.stdout.strip())
-        _add_rev("HEAD")
+                if parent_check.returncode == 0:
+                    _add_fb(f"{first_commit}~1")
+                _add_fb(first_commit)
 
-    for rev in revs:
-        with contextlib.suppress(OSError, subprocess.SubprocessError):
-            show_res = subprocess.run(
-                ["git", "-C", str(repo_root), "show", f"{rev}:{rel_target}"],
-                capture_output=True,
-                timeout=5,
-                check=False,
-            )
-            if show_res.returncode != 0 or not show_res.stdout:
-                continue
-            raw_bytes = show_res.stdout
+        if not fb_revs:
+            with contextlib.suppress(OSError, subprocess.SubprocessError):
+                for base_branch in ("origin/main", "main", "origin/master", "master"):
+                    mb_res = subprocess.run(
+                        ["git", "-C", str(repo_root), "merge-base", "HEAD", base_branch],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                        check=False,
+                    )
+                    if mb_res.returncode == 0 and mb_res.stdout.strip():
+                        _add_fb(mb_res.stdout.strip())
+            _add_fb("HEAD")
+        return fb_revs
+
+    if rev_cache is not None and delta_file in rev_cache:
+        revs = list(rev_cache[delta_file])
+    else:
+        revs = []
+        if delta_file.exists():
+            with contextlib.suppress(OSError):
+                dlt_fm, _, _ = extract_frontmatter(delta_file.read_text(encoding="utf-8"))
+                if isinstance(dlt_fm, dict):
+                    vcs_block = dlt_fm.get("vcs")
+                    if isinstance(vcs_block, dict):
+                        base_commit = vcs_block.get("base_commit")
+                        if isinstance(base_commit, str) and base_commit.strip():
+                            revs.append(base_commit.strip())
+        if not revs:
+            revs = _compute_fallback_revs()
+        if rev_cache is not None:
+            rev_cache[delta_file] = list(revs)
+
+    tried_fallback = len(revs) > 1 or (revs and revs[0] == "HEAD")
+
+    def _digest_from_rev(rev: str) -> tuple[bool, str | None]:
+        """Return (blob_found, digest_or_none) for (rev, rel_target)."""
+        cache_key = (rev, rel_target)
+        raw_bytes: bytes | None = None
+        hist_fm: dict[str, Any] | None = None
+        if blob_cache is not None and cache_key in blob_cache:
+            raw_bytes, hist_fm = blob_cache[cache_key]
+        else:
+            with contextlib.suppress(OSError, subprocess.SubprocessError):
+                show_res = subprocess.run(
+                    ["git", "-C", str(repo_root), "show", f"{rev}:{rel_target}"],
+                    capture_output=True,
+                    timeout=5,
+                    check=False,
+                )
+                if show_res.returncode == 0 and show_res.stdout:
+                    raw_bytes = show_res.stdout
+            if blob_cache is not None:
+                blob_cache[cache_key] = (raw_bytes, None)
+
+        if raw_bytes is None:
+            return False, None
+
+        if target_key.startswith(("CMP-", "INV-")):
+            if hist_fm is None:
+                parsed_fm, _, _ = extract_frontmatter(raw_bytes.decode("utf-8", errors="replace"))
+                hist_fm = parsed_fm if isinstance(parsed_fm, dict) else {}
+                if blob_cache is not None:
+                    blob_cache[cache_key] = (raw_bytes, hist_fm)
             if target_key.startswith("CMP-"):
-                hist_fm, _, _ = extract_frontmatter(raw_bytes.decode("utf-8", errors="replace"))
-                if isinstance(hist_fm, dict):
+                if hist_fm:
                     if hist_fm.get("type") == "tech/component" or str(hist_fm.get("id", "")).upper() == target_key:
-                        return hashlib.sha256(raw_bytes).hexdigest()
+                        return True, hashlib.sha256(raw_bytes).hexdigest()
                     comp_dict = _find_inline_component_dict(target_key, hist_fm)
                     if comp_dict is not None:
-                        return _digest_dict(comp_dict)
+                        return True, _digest_dict(comp_dict)
                     if hist_fm.get("type") == "tech/container":
-                        return None
+                        return True, None
                 if target_file.stem.upper() != target_key and f"CMP-{target_file.stem.upper()}" != target_key:
-                    return None
+                    return True, None
             if target_key.startswith("INV-"):
-                hist_fm, _, _ = extract_frontmatter(raw_bytes.decode("utf-8", errors="replace"))
-                if isinstance(hist_fm, dict):
+                if hist_fm:
                     invs = list(hist_fm.get("invariants", []) or [])
                     tech = hist_fm.get("technical")
                     if isinstance(tech, dict) and isinstance(tech.get("invariants"), list):
@@ -725,58 +712,27 @@ def _resolve_git_baseline_sha(
                             invs.extend(comp["invariants"])
                     for inv in invs:
                         if isinstance(inv, dict) and inv.get("id") == target_key:
-                            return _digest_dict(inv)
-                return None
-            return hashlib.sha256(raw_bytes).hexdigest()
+                            return True, _digest_dict(inv)
+                return True, None
+        return True, hashlib.sha256(raw_bytes).hexdigest()
+
+    for rev in revs:
+        found, digest = _digest_from_rev(rev)
+        if found:
+            return digest
+
+    if not tried_fallback:
+        extra_revs = [r for r in _compute_fallback_revs() if r not in revs]
+        if extra_revs:
+            revs.extend(extra_revs)
+            if rev_cache is not None:
+                rev_cache[delta_file] = list(revs)
+            for rev in extra_revs:
+                found, digest = _digest_from_rev(rev)
+                if found:
+                    return digest
 
     return None
-
-
-def _check_or_record_baseline_sha(
-    eidos_dir: Path,
-    delta_id: str,
-    delta_file: Path,
-    target_key: str,
-    target_file: Path | None,
-    current_sha: str,
-    *,
-    allow_applied_fallback: bool = False,
-) -> bool:
-    """Compare current_sha against SQLite delta_baselines and Git history (vcs.base_commit) consistently."""
-    try:
-        db_path = eidos_dir / ".cache" / "index.db"
-        with contextlib.closing(open_cache_connection(db_path)) as conn:
-            row = conn.execute(
-                "SELECT baseline_sha256 FROM delta_baselines WHERE delta_id = ? AND target_id = ?",
-                (delta_id, target_key),
-            ).fetchone()
-            if row is not None and current_sha != row[0]:
-                return True
-
-            git_sha = _resolve_git_baseline_sha(eidos_dir, delta_file, target_key, target_file)
-            if git_sha is not None:
-                if row is None:
-                    with conn:
-                        conn.execute(
-                            "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)",
-                            (delta_id, target_key, git_sha),
-                        )
-                return current_sha != git_sha
-
-            if row is not None:
-                return current_sha != row[0]
-
-            if allow_applied_fallback:
-                return True
-
-            with conn:
-                conn.execute(
-                    "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)",
-                    (delta_id, target_key, current_sha),
-                )
-            return False
-    except (OSError, sqlite3.Error):
-        return allow_applied_fallback
 
 
 def _check_structural_subtarget_precondition(
@@ -907,32 +863,6 @@ def _strip_spec_comments(raw_text: str) -> str:
             continue
         out.append(line)
     return "\n".join(out)
-
-
-def _lookup_existing_baseline_sha(
-    eidos_dir: Path,
-    delta_id: str,
-    delta_file: Path,
-    target_key: str,
-    target_file: Path | None,
-) -> str | None:
-    """Return recorded pre-delta baseline SHA from Git history (vcs.base_commit) or SQLite if available, without recording current_sha."""
-    git_sha = _resolve_git_baseline_sha(eidos_dir, delta_file, target_key, target_file)
-    if git_sha is not None:
-        return git_sha
-    try:
-        db_path = eidos_dir / ".cache" / "index.db"
-        if db_path.exists():
-            with contextlib.closing(open_cache_connection(db_path)) as conn:
-                row = conn.execute(
-                    "SELECT baseline_sha256 FROM delta_baselines WHERE delta_id = ? AND target_id = ?",
-                    (delta_id, target_key),
-                ).fetchone()
-                if row is not None:
-                    return str(row[0])
-    except (OSError, sqlite3.Error):
-        pass
-    return None
 
 
 def _normalize_expect_spec(
@@ -1112,6 +1042,8 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
     delta_status = str(doc.frontmatter.get("status", "proposed")).strip().lower()
     specs_by_id, container_components, invariant_map = _build_spec_catalog_with_invariants(eidos_dir)
     invariants = set(invariant_map.keys())
+    rev_cache: dict[Path, list[str]] = {}
+    blob_cache: dict[tuple[str, str], tuple[bytes | None, dict[str, Any] | None]] = {}
 
     items: list[MutationVerificationItem] = []
     for raw_m in raw_mutations:
@@ -1262,8 +1194,13 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                         verified = True
                         status = "FOUND"
                     else:
-                        base_sha = _lookup_existing_baseline_sha(
-                            eidos_dir, doc.doc_id, file_path, lookup_target, inv_file
+                        base_sha = _resolve_git_baseline_sha(
+                            eidos_dir,
+                            file_path,
+                            lookup_target,
+                            inv_file,
+                            rev_cache=rev_cache,
+                            blob_cache=blob_cache,
                         )
                         if base_sha is not None and inv_sha == base_sha:
                             verified = False
@@ -1273,15 +1210,15 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                             verified = True
                             status = "MODIFIED"
                 else:
-                    mod_ok = _check_or_record_baseline_sha(
+                    base_sha = _resolve_git_baseline_sha(
                         eidos_dir,
-                        doc.doc_id,
                         file_path,
                         lookup_target,
                         inv_file,
-                        inv_sha,
-                        allow_applied_fallback=(delta_status == "applied"),
+                        rev_cache=rev_cache,
+                        blob_cache=blob_cache,
                     )
+                    mod_ok = (inv_sha != base_sha) if base_sha is not None else (delta_status == "applied")
                     verified = mod_ok
                     status = ("FOUND" if delta_status == "applied" else "MODIFIED") if mod_ok else "UNMODIFIED"
                     if not mod_ok:
@@ -1347,8 +1284,13 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                         verified = True
                         status = "FOUND"
                     else:
-                        base_sha = _lookup_existing_baseline_sha(
-                            eidos_dir, doc.doc_id, file_path, lookup_target, target_file
+                        base_sha = _resolve_git_baseline_sha(
+                            eidos_dir,
+                            file_path,
+                            lookup_target,
+                            target_file,
+                            rev_cache=rev_cache,
+                            blob_cache=blob_cache,
                         )
                         if base_sha is not None and cur_sha == base_sha:
                             verified = False
@@ -1358,15 +1300,15 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                             verified = True
                             status = "MODIFIED"
                 else:
-                    mod_ok = _check_or_record_baseline_sha(
+                    base_sha = _resolve_git_baseline_sha(
                         eidos_dir,
-                        doc.doc_id,
                         file_path,
                         lookup_target,
                         target_file,
-                        cur_sha,
-                        allow_applied_fallback=(delta_status == "applied"),
+                        rev_cache=rev_cache,
+                        blob_cache=blob_cache,
                     )
+                    mod_ok = (cur_sha != base_sha) if base_sha is not None else (delta_status == "applied")
                     verified = mod_ok
                     status = ("FOUND" if delta_status == "applied" else "MODIFIED") if mod_ok else "UNMODIFIED"
                     if not mod_ok:

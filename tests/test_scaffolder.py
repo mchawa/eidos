@@ -1585,7 +1585,6 @@ def test_a7_a8_a11_catalog_scaffolder_and_design_edge_cases(tmp_path: Path) -> N
 
 def test_deep_audit_group_a_a1_through_a8(tmp_path):
     """Verify deep audit Group A fixes (A1 through A8)."""  # eidos:fixture
-    import hashlib
 
     from eidos.core.lifecycle.audit import AuditEngine
     from eidos.core.lifecycle.catalog import _set_frontmatter_scalar, find_spec_by_id_or_path
@@ -1593,7 +1592,6 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     from eidos.core.lifecycle.delta_engine import (
         _check_structural_subtarget_precondition,
         _find_inline_component_dict,
-        _snapshot_delta_baselines,
     )
     from eidos.core.lifecycle.initializer import init_repository
     from eidos.core.lifecycle.scaffolder import create_spec, inline_component, promote_component
@@ -1677,7 +1675,7 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     )
     assert flow_path.parent == eidos_dir / "design" / "flows"
 
-    # --- A1: _find_inline_component_dict, _snapshot_delta_baselines, and _check_structural_subtarget_precondition ---
+    # --- A1: _find_inline_component_dict and _check_structural_subtarget_precondition ---
     cmp_promoted = create_spec(
         eidos_dir,
         "component",
@@ -1718,19 +1716,6 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     cmp_doc = parse_spec_file(cmp_promoted)
     assert _find_inline_component_dict("CMP-PROMOTED", cnt_doc.frontmatter) is None
     assert _find_inline_component_dict("CMP-INLINE-C4", cnt_doc.frontmatter) is not None
-
-    import contextlib
-
-    from eidos.core.index.storage import open_cache_connection
-
-    _snapshot_delta_baselines(eidos_dir, "DLT-2026-900", overwrite=True)
-    expected_sha = hashlib.sha256(cmp_promoted.read_bytes()).hexdigest()
-    with contextlib.closing(open_cache_connection(eidos_dir / ".cache" / "index.db")) as conn:
-        row = conn.execute(
-            "SELECT baseline_sha256 FROM delta_baselines WHERE delta_id = ? AND target_id = ?",
-            ("DLT-2026-900", "CMP-PROMOTED"),
-        ).fetchone()
-    assert row is not None and row[0] == expected_sha
 
     specs_by_id = {
         "CNT-API-GATEWAY": (cnt_path, cnt_doc.doc_type, cnt_doc.frontmatter),

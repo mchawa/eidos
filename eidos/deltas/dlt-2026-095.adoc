@@ -1,0 +1,65 @@
+---
+type: delta/mutation
+id: DLT-2026-095
+title: Remove Stateful delta_baselines Table and Memoize Git Baseline Resolution
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate the last stateful, non-derived SQLite table (delta_baselines) from eidos/.cache/index.db so the architectural knowledge graph cache is 100% stateless and rebuildable from Git, remove the full-catalog SHA-256 snapshot overhead from create_delta, and memoize Git revision/blob lookups in _resolve_git_baseline_sha during SpecDelta verification."
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    parent: CNT-EIDOS-INDEX
+    details: "Bump SCHEMA_VERSION to '2.7.0' in src/eidos/core/index/storage.py, remove 'delta_baselines' from _MANAGED_TABLES and _CACHE_SCHEMA_DDL, and remove the delta_baselines retention special-case from ensure_cache_schema (explicitly dropping any legacy delta_baselines table on version migration)."
+    expect:
+      frontmatter:
+        responsibility: "SCHEMA_VERSION' ('2.7.0')"
+      body:
+        contains:
+          - "SCHEMA_VERSION` `2.7.0`"
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    parent: CNT-EIDOS-CORE
+    details: "Remove _snapshot_delta_baselines, _check_or_record_baseline_sha, and SQLite delta_baselines fallback queries from src/eidos/core/lifecycle/delta_engine.py; streamline create_delta to skip full-catalog baseline snapshotting; and optimize _resolve_git_baseline_sha with per-verification memoization of resolved Git revisions and (rev, rel_target) blob contents while skipping git log --diff-filter=A when vcs.base_commit already resolves."
+    expect:
+      frontmatter:
+        responsibility: "Git-native baselines (`_resolve_git_baseline_sha` distinguishing dedicated `tech/component` files from inline container components with memoized Git revision and blob resolution)"
+  - operation: modify
+    target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+    parent: CAP-PROD-002
+    details: "Update INV-DELTA-VERIFY-MODIFICATION-EVIDENCE in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc to specify Git-history / vcs.base_commit baseline verification without SQLite delta_baselines."
+    expect:
+      frontmatter:
+        rule: "recorded Git-history / vcs.base_commit baseline via _resolve_git_baseline_sha"
+  - operation: modify
+    target: CAP-PROD-002
+    parent: DOM-SPEC-ENGINE
+    details: "Update CAP-PROD-002 prose in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc to reflect stateless Git-backed baseline verification without SQLite delta_baselines."
+    expect:
+      body:
+        contains:
+          - "recorded `vcs.base_commit` / Git-history baseline via `_resolve_git_baseline_sha`"
+        not_contains:
+          - "or SQLite baseline"
+vcs:
+  branch: main
+  base_commit: 5abae4dd60d56cd5c94552f8f6da96c126e1f086
+---
+= SpecDelta: Remove Stateful delta_baselines Table and Memoize Git Baseline Resolution
+:toc: left
+
+== Problem Statement
+1. **Stateful Exception in Derived Cache (`delta_baselines`)**: Every table in `eidos/.cache/index.db` (`src/eidos/core/index/storage.py`) is purely derived from the repository files on disk except `delta_baselines`, which forced `ensure_cache_schema` to maintain a special-case exemption (`if table != "delta_baselines"`) during schema version rebuilds and violated the principle that `.cache/index.db` is disposable local state (`POL-001`).
+2. **Redundant Full-Catalog I/O on `eidos delta create`**: `_snapshot_delta_baselines` walks the entire living specification catalog, reads and SHA-256 hashes every spec file on disk, and writes 200–400 rows into SQLite on every `create_delta` invocation, even though `create_delta` already records `vcs.base_commit` in the SpecDelta frontmatter.
+3. **Repeated Subprocess & Parse Overhead in `_resolve_git_baseline_sha`**: During `verify_delta_mutations`, `_resolve_git_baseline_sha` runs `git log --diff-filter=A` even when `vcs.base_commit` is already present in frontmatter, and spawns repeated `git show <rev>:<rel_target>` subprocesses when multiple inline `CMP-*` or `INV-*` mutations target the same container or capability specification.
+
+== Proposed Specification Changes
+* **`CMP-GRAPH-STORAGE` (`CNT-EIDOS-INDEX`)**:
+  - Bump `SCHEMA_VERSION` from `"2.6.0"` to `"2.7.0"`.
+  - Remove `"delta_baselines"` from `_MANAGED_TABLES` and `_CACHE_SCHEMA_DDL`.
+  - Remove the `if table != "delta_baselines"` retention special-case from `ensure_cache_schema` and drop any legacy `delta_baselines` table during version migration.
+* **`CMP-DELTA-ENGINE` (`CNT-EIDOS-CORE`)**:
+  - Remove `_snapshot_delta_baselines` (and its call in `create_delta`), `_check_or_record_baseline_sha`, and SQLite `delta_baselines` queries in `_lookup_existing_baseline_sha`.
+  - Optimize `_resolve_git_baseline_sha` to prioritize `vcs.base_commit` before invoking `git log --diff-filter=A` and memoize resolved candidate revisions and `(rev, rel_target)` Git blob contents across a verification pass.
+* **`CAP-PROD-002` & `INV-DELTA-VERIFY-MODIFICATION-EVIDENCE` (`DOM-SPEC-ENGINE`)**:
+  - Update the invariant rule and capability prose to reflect stateless Git-native baseline verification (`vcs.base_commit` / Git history via `_resolve_git_baseline_sha`) alongside declarative `expect` post-conditions.

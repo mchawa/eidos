@@ -114,12 +114,10 @@ def test_a2_declarative_postcondition_does_not_fallback_to_frontmatter_when_body
     assert ok_leak is False, f"Should not match raw YAML frontmatter when extracted_body is empty: {diag}"
 
 
-def test_a3_recorded_baseline_not_overwritten_by_git_head_when_unmodified(tmp_path: Path) -> None:
-    """A3: Pre-apply verification must not overwrite an existing recorded baseline SHA in delta_baselines with git_sha."""
+def test_a3_git_baseline_memoizes_revisions_and_blobs(tmp_path: Path) -> None:
+    """A3: _resolve_git_baseline_sha memoizes resolved revisions and blobs in rev_cache and blob_cache."""
     import hashlib
-
-    from eidos.core.index.storage import open_cache_connection
-    from eidos.core.lifecycle.delta_engine import _snapshot_delta_baselines
+    from typing import Any
 
     _init_git_repo(tmp_path)
     ok, msg, _ = init_repository(tmp_path, name="TestSys")
@@ -128,15 +126,10 @@ def test_a3_recorded_baseline_not_overwritten_by_git_head_when_unmodified(tmp_pa
 
     cnt_path = create_spec(eidos_dir, "container", "CNT-API", "API Container")
     head_content = cnt_path.read_text(encoding="utf-8")
+    head_sha = hashlib.sha256(cnt_path.read_bytes()).hexdigest()
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "chore: initial container"], cwd=tmp_path, check=True, capture_output=True)
 
-    # Modify CNT-API in working tree BEFORE creating the delta
-    dirty_content = head_content + "\n== Pre-existing Uncommitted Edit\n"
-    cnt_path.write_text(dirty_content, encoding="utf-8")
-    dirty_sha = hashlib.sha256(cnt_path.read_bytes()).hexdigest()
-
-    # Create the delta now and snapshot current baselines (records dirty_sha of cnt_path as baseline_sha in delta_baselines)
     dlt_path = create_delta(
         eidos_dir,
         raw_id="DLT-2026-002",
@@ -149,24 +142,30 @@ def test_a3_recorded_baseline_not_overwritten_by_git_head_when_unmodified(tmp_pa
         "mutations:\n  - operation: modify\n    target: CNT-API\n    details: Update CNT-API container specification.",
     )
     dlt_path.write_text(dlt_text, encoding="utf-8")
-    _snapshot_delta_baselines(eidos_dir, "DLT-2026-002", overwrite=True)
 
-    # Run verify_delta_mutations; delta_baselines must NOT have been overwritten with HEAD's sha
-    verify_delta_mutations(eidos_dir, dlt_path.name)
-    import contextlib
+    rev_cache: dict[Path, list[str]] = {}
+    blob_cache: dict[tuple[str, str], tuple[bytes | None, dict[str, Any] | None]] = {}
+    resolved_sha = _resolve_git_baseline_sha(
+        eidos_dir,
+        dlt_path,
+        "CNT-API",
+        cnt_path,
+        rev_cache=rev_cache,
+        blob_cache=blob_cache,
+    )
+    assert resolved_sha == head_sha
+    assert dlt_path in rev_cache
+    assert len(blob_cache) == 1
 
-    db_path = eidos_dir / ".cache" / "index.db"
-    with contextlib.closing(open_cache_connection(db_path)) as conn:
-        row = conn.execute(
-            "SELECT baseline_sha256 FROM delta_baselines WHERE delta_id = ? AND target_id = ?",
-            ("DLT-2026-002", "CNT-API"),
-        ).fetchone()
-    assert row is not None and row[0] == dirty_sha
+    # Unmodified CNT-API must report UNMODIFIED
+    ok_unmod, _, rep_unmod = verify_delta_mutations(eidos_dir, dlt_path.name)
+    assert not ok_unmod
+    assert rep_unmod is not None and rep_unmod.mutations[0].status == "UNMODIFIED"
 
-    # If the delta now modifies CNT-API back to head_content (different from dirty_sha), verification still succeeds
-    cnt_path.write_text(head_content, encoding="utf-8")
+    # Modifying CNT-API away from HEAD baseline verifies as MODIFIED
+    cnt_path.write_text(head_content + "\n== Updated API Section\n", encoding="utf-8")
     ok_ver, msg_ver, _ = verify_delta_mutations(eidos_dir, dlt_path.name)
-    assert ok_ver, f"Expected modification away from recorded dirty_sha baseline to verify: {msg_ver}"
+    assert ok_ver, f"Expected modification away from HEAD baseline to verify: {msg_ver}"
 
 
 def test_a4_generate_collision_free_delta_id_reads_frontmatter_and_loops_on_collision(

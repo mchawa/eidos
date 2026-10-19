@@ -459,9 +459,7 @@ def test_schema_driven_x_eidos_ref_annotations_present(validator):
         return 0
 
     total_annotations = sum(
-        count_refs(schema)
-        for key, schema in validator._schema_cache.items()
-        if key.endswith(".schema.yaml")
+        count_refs(schema) for key, schema in validator._schema_cache.items() if key.endswith(".schema.yaml")
     )
     assert total_annotations >= 35, (
         f"Expected >= 35 x-eidos-ref annotations across v1 schemas, found {total_annotations}"

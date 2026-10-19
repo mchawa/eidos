@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+from pathlib import Path
 
 import yaml
 from typer.testing import CliRunner
@@ -46,6 +47,15 @@ from eidos.core.workspace.assets import get_assets_path
 runner = CliRunner()
 
 
+def _commit_git_baseline(repo_dir: Path) -> None:
+    if not (repo_dir / ".git").exists():
+        subprocess.run(["git", "init", "-b", "main"], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@eidos.dev"], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "baseline"], cwd=repo_dir, check=True, capture_output=True)
+
+
 def test_delta_verify_all_satisfied(tmp_path):
     """Verify that verify_delta_mutations rejects unmodified modify targets and passes once modified."""
     init_repository(tmp_path, name="test-system")
@@ -59,6 +69,7 @@ def test_delta_verify_all_satisfied(tmp_path):
         pol_path.read_text(encoding="utf-8").replace("Normative rule for Password Policy.", "Min 8 chars."),
         encoding="utf-8",
     )
+    _commit_git_baseline(tmp_path)
 
     dlt_path = create_delta(
         eidos_dir,
@@ -140,6 +151,7 @@ def test_delta_verify_declarative_expect_and_patch_invariant(tmp_path):
         }
     ]
     cap_path.write_text(dump_spec_document(cap_doc.frontmatter, cap_doc.body), encoding="utf-8")
+    _commit_git_baseline(tmp_path)
 
     dlt_path = create_delta(eidos_dir, "DLT-2026-054", title="Declarative & Invariant Patch")
     mutations_yaml = """mutations:
@@ -354,6 +366,7 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
     ]
     cap_path.write_text(dump_spec_document(cap_doc.frontmatter, cap_doc.body), encoding="utf-8")
     _ = other_cap_path
+    _commit_git_baseline(tmp_path)
 
     dlt_path = create_delta(eidos_dir, "DLT-2026-060", title="Evidence Verification")
     mutations_yaml = """mutations:
@@ -1079,6 +1092,7 @@ def test_dlt_2026_079_structured_expect_assertions_and_diagnostics(tmp_path):
     )
     assert any("missing expected list items" in d for d in diag_subset)
 
+    _commit_git_baseline(tmp_path)
     dlt_path = create_delta(eidos_dir, "DLT-2026-079", title="Structured Expect Test")
     dlt_doc = parse_spec_file(dlt_path)
     dlt_doc.frontmatter["mutations"] = [
@@ -1142,7 +1156,9 @@ def test_dlt_2026_080_cross_ref_collision_resolution_and_cli_slug(tmp_path):
 
 
 def test_dlt_2026_083_baseline_retention_across_schema_rebuild(tmp_path):
-    """Verify delta_baselines survives ensure_cache_schema rebuild when schema_version changes."""
+    """Verify ensure_cache_schema drops and rebuilds stateless cache tables on schema_version change."""
+    from eidos.core.index.storage import _MANAGED_TABLES, SCHEMA_VERSION
+
     init_repository(tmp_path)
     eidos_dir = tmp_path / "eidos"
 
@@ -1152,13 +1168,13 @@ def test_dlt_2026_083_baseline_retention_across_schema_rebuild(tmp_path):
     db_path = eidos_dir / ".cache" / "index.db"
     conn = open_cache_connection(db_path)
     try:
-        rows_before = conn.execute("SELECT delta_id, target_id, baseline_sha256 FROM delta_baselines;").fetchall()
-        assert len(rows_before) >= 1
         conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '0.0-outdated');")
         conn.commit()
         ensure_cache_schema(conn)
-        rows_after = conn.execute("SELECT delta_id, target_id, baseline_sha256 FROM delta_baselines;").fetchall()
-        assert rows_after == rows_before
+        ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
+        assert ver == SCHEMA_VERSION == "2.7.0"
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';").fetchall()}
+        assert set(_MANAGED_TABLES) <= tables
     finally:
         conn.close()
 
