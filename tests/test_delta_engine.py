@@ -23,10 +23,8 @@ from eidos.core.lifecycle.changelog import ChangelogGenerator
 from eidos.core.lifecycle.delta_engine import (
     SUPPORTED_MUTATION_OPERATIONS,
     _check_structural_subtarget_precondition,
-    _ensure_eidos_gitignore,
     _evaluate_declarative_postcondition,
     _extract_mutation_target,
-    _parse_spec_content,
     _resolve_git_baseline_sha,
     _resolve_target_path_and_id,
     _strip_spec_comments,
@@ -40,9 +38,9 @@ from eidos.core.lifecycle.delta_engine import (
     set_delta_status,
     verify_delta_mutations,
 )
-from eidos.core.lifecycle.initializer import init_repository
+from eidos.core.lifecycle.initializer import _ensure_eidos_gitignore, init_repository
 from eidos.core.lifecycle.scaffolder import create_spec
-from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+from eidos.core.spec.parser import _parse_spec_content, dump_spec_document, parse_spec_file
 from eidos.core.workspace.assets import get_assets_path
 
 runner = CliRunner()
@@ -826,9 +824,9 @@ def test_delta_engine_all_mutation_families_and_helpers(tmp_path):
     _ensure_eidos_gitignore(eidos_dir)
     assert ".cache/" in gi_file.read_text(encoding="utf-8")
 
-    assert _extract_mutation_target({"operation": "modify", "details": "Update CNT-999-CORE spec"}) == "CNT-999-CORE"
+    assert _extract_mutation_target({"operation": "modify", "target": "CNT-999-CORE"}) == "CNT-999-CORE"
     assert (
-        _extract_mutation_target({"operation": "modify", "details": "Touch 'architecture/containers/svc.adoc'"})
+        _extract_mutation_target({"operation": "modify", "target": "architecture/containers/svc.adoc"})
         == "architecture/containers/svc.adoc"
     )
     assert _extract_mutation_target({"operation": "modify"}) == "unspecified_target"

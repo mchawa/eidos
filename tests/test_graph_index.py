@@ -1951,7 +1951,8 @@ def test_dlt_2026_086_unified_cache_and_vcs_shim_removal(tmp_path: Path, monkeyp
 
     from eidos.core.index import storage as storage_mod
     from eidos.core.lifecycle import catalog as catalog_mod
-    from eidos.core.lifecycle.scaffolder import create_spec, init_repository
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec import parser as parser_mod
     from eidos.core.spec import validator as validator_mod
     from eidos.vcs import diff as vcs_diff
@@ -2021,7 +2022,8 @@ def test_dlt_2026_088_single_pass_scandir_dirty_check(tmp_path: Path) -> None:
     import os
 
     from eidos.core.index.graph_index import ArchitecturalIndex
-    from eidos.core.lifecycle.scaffolder import create_spec, init_repository
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
     init_repository(tmp_path)

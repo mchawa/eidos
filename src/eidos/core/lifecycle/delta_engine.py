@@ -21,17 +21,18 @@ from eidos.core.lifecycle.catalog import (
     find_references_to_spec,
     find_spec_by_id_or_path,
 )
-from eidos.core.spec.models import SpecDocument
-from eidos.core.spec.parser import extract_frontmatter, parse_spec_file
+from eidos.core.spec.parser import _parse_spec_content, extract_frontmatter, parse_spec_file
 from eidos.core.spec.validator import SpecValidator
 
 SUPPORTED_MUTATION_OPERATIONS: frozenset[str] = frozenset({"add", "modify", "remove", "deprecate"})
 
 PREFIX_TO_ENTITY_META: dict[str, tuple[str, str]] = {
+    "SYS-": ("system", "product/system"),
     "DOM-": ("domain", "product/domain"),
     "CAP-": ("capability", "product/capability"),
     "PER-": ("persona", "product/persona"),
     "POL-": ("policy", "product/policy"),
+    "EXP-": ("exploration", "product/exploration"),
     "INV-": ("invariant", "invariant"),
     "ARCH-": ("architecture", "tech/architecture"),
     "CNT-": ("container", "tech/container"),
@@ -99,29 +100,6 @@ class DeltaVerificationReport:
             "is_verified": self.is_verified,
             "mutations": [m.to_dict() for m in self.mutations],
         }
-
-
-def _ensure_eidos_gitignore(eidos_dir: Path) -> None:
-    """Ensure eidos/.gitignore is present and ignores local SQLite cache so host projects remain unpolluted."""
-    gitignore_path = eidos_dir / ".gitignore"
-    default_content = (
-        "# Eidos local index cache\n"
-        ".cache/\n\n"
-        "# OS artifacts\n"
-        ".DS_Store\n"
-        "Thumbs.db\n"
-    )
-    if not gitignore_path.exists():
-        with contextlib.suppress(OSError):
-            gitignore_path.write_text(default_content, encoding="utf-8")
-    else:
-        with contextlib.suppress(OSError):
-            content = gitignore_path.read_text(encoding="utf-8")
-            if ".cache" not in content:
-                gitignore_path.write_text(
-                    f"{content.rstrip()}\n\n# Eidos local index cache\n.cache/\n",
-                    encoding="utf-8",
-                )
 
 
 ACTIVE_DELTA_STATUSES: tuple[str, ...] = (
@@ -202,19 +180,6 @@ def _extract_mutation_target(m: dict[str, Any]) -> str:
     direct_target = m.get("target")
     if direct_target and isinstance(direct_target, str) and direct_target.strip():
         return direct_target.strip()
-
-    details = m.get("details", "")
-    if details:
-        match = re.search(
-            r"\b(CNT|CMP|CAP|CTR|POL|DOM|SCR|UIC|DS|PER|INV|CLT|FLOW|ARCH|SYS)-[A-Z0-9_-]+\b",
-            details,
-        )
-        if match:
-            return match.group(0)
-        path_match = re.search(r"['\"]?([a-zA-Z0-9_\-\./]+\.adoc)['\"]?", details)
-        if path_match:
-            return path_match.group(1)
-
     return "unspecified_target"
 
 
@@ -229,12 +194,7 @@ def normalize_delta_mutation(m: dict[str, Any]) -> dict[str, Any]:
 
     if raw_op:
         norm["operation"] = raw_op
-    if not raw_target:
-        extracted = _extract_mutation_target(norm)
-        if extracted and extracted != "unspecified_target":
-            norm["target"] = extracted
-            raw_target = extracted
-    else:
+    if raw_target:
         norm["target"] = raw_target
     if raw_parent:
         norm["parent"] = raw_parent
@@ -823,40 +783,6 @@ def _check_or_record_baseline_sha(
             return False
     except (OSError, sqlite3.Error):
         return allow_applied_fallback
-
-
-def _parse_spec_content(path: Path, content: str) -> SpecDocument:
-    """Parse raw AsciiDoc content into a SpecDocument in memory without writing to disk."""
-    if not content.strip():
-        doc_type = "product/system" if path.name == "system.adoc" else "unknown"
-        return SpecDocument(
-            file_path=path,
-            frontmatter={},
-            body="",
-            doc_type=doc_type,
-            doc_id=path.stem,
-        )
-
-    frontmatter_dict, body, parse_error = extract_frontmatter(content)
-    doc_type = frontmatter_dict.get("type", "unknown") if frontmatter_dict else "unknown"
-    doc_id = frontmatter_dict.get("id", path.stem) if frontmatter_dict else path.stem
-    schema_ref = frontmatter_dict.get("schema") if frontmatter_dict else None
-    title = frontmatter_dict.get("title") if frontmatter_dict else None
-
-    doc = SpecDocument(
-        file_path=path,
-        frontmatter=frontmatter_dict or {},
-        body=body,
-        doc_type=doc_type,
-        doc_id=doc_id,
-        schema_ref=schema_ref,
-        title=title,
-    )
-    if parse_error:
-        doc.errors.append(f"Frontmatter parse error: {parse_error}")
-    elif not frontmatter_dict:
-        doc.errors.append("Missing YAML frontmatter block (delimited by '---')")
-    return doc
 
 
 def _check_structural_subtarget_precondition(

@@ -1,46 +1,21 @@
-"""Lifecycle management, scaffolding, and deletion for Eidos living specifications and SpecDeltas.
-
-The delta engine, design engine, repository initializer, and shared catalog helpers live in dedicated modules;
-every previously public name stays importable from here (DLT-2026-038)."""
+"""Lifecycle management, blueprint scaffolding, C4 component promotion/inlining,
+and deletion for Eidos living specifications (CMP-LIFECYCLE-SCAFFOLDER)."""
 
 import contextlib
 from pathlib import Path
 from typing import Any
 
-from eidos.core.lifecycle.catalog import (  # noqa: F401  (backwards-compatible re-exports)
+from eidos.core.lifecycle.catalog import (
     VALID_SPEC_TYPES,
     _build_spec_catalog,
-    _build_spec_catalog_with_invariants,
-    _format_component_item,
     _mutate_frontmatter_components,
     _render_spec,
-    _set_frontmatter_scalar,
     _single_line,
-    _split_raw_frontmatter,
     find_references_to_spec,
     find_spec_by_id_or_path,
     normalize_id,
 )
-from eidos.core.lifecycle.delta_engine import (  # noqa: F401  (backwards-compatible re-exports)
-    DeltaVerificationReport,
-    MutationVerificationItem,
-    _check_or_record_baseline_sha,
-    _ensure_eidos_gitignore,
-    _evaluate_declarative_postcondition,
-    _extract_mutation_target,
-    _resolve_git_branch,
-    _resolve_git_head_sha,
-    _snapshot_delta_baselines,
-    apply_delta,
-    create_delta,
-    delete_delta,
-    generate_collision_free_delta_id,
-    get_delta_status_summary,
-    list_deltas,
-    verify_delta_mutations,
-)
 from eidos.core.lifecycle.design_engine import DESIGN_SPEC_KEYS, build_design_spec
-from eidos.core.lifecycle.initializer import init_repository  # noqa: F401  (backwards-compatible re-export)
 from eidos.core.spec.parser import extract_frontmatter, parse_spec_file
 from eidos.core.spec.validator import SpecValidator
 

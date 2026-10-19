@@ -9,6 +9,7 @@ from rich.table import Table
 
 from eidos.cli._shared import console
 from eidos.core.lifecycle.audit import AuditEngine
+from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
 from eidos.core.lifecycle.changelog import ChangelogGenerator
 from eidos.core.lifecycle.delta_engine import (
     apply_delta,
@@ -19,7 +20,6 @@ from eidos.core.lifecycle.delta_engine import (
     set_delta_status,
     verify_delta_mutations,
 )
-from eidos.core.lifecycle.scaffolder import find_spec_by_id_or_path
 from eidos.core.spec.parser import parse_spec_file
 
 delta_app = typer.Typer(

@@ -1,12 +1,35 @@
 """Repository initializer: bootstraps living specification skeletons, baseline governance, and gitignore."""
 
+import contextlib
 import os
 import re
 from pathlib import Path
 
-from eidos.core.lifecycle.delta_engine import _ensure_eidos_gitignore
 from eidos.core.spec.parser import dump_spec_document
 from eidos.core.spec.validator import SpecValidator
+
+
+def _ensure_eidos_gitignore(eidos_dir: Path) -> None:
+    """Ensure eidos/.gitignore is present and ignores local SQLite cache so host projects remain unpolluted."""
+    gitignore_path = eidos_dir / ".gitignore"
+    default_content = (
+        "# Eidos local index cache\n"
+        ".cache/\n\n"
+        "# OS artifacts\n"
+        ".DS_Store\n"
+        "Thumbs.db\n"
+    )
+    if not gitignore_path.exists():
+        with contextlib.suppress(OSError):
+            gitignore_path.write_text(default_content, encoding="utf-8")
+    else:
+        with contextlib.suppress(OSError):
+            content = gitignore_path.read_text(encoding="utf-8")
+            if ".cache" not in content:
+                gitignore_path.write_text(
+                    f"{content.rstrip()}\n\n# Eidos local index cache\n.cache/\n",
+                    encoding="utf-8",
+                )
 
 
 def init_repository(

@@ -10,15 +10,15 @@ import typer
 from rich.table import Table
 
 import eidos
-from eidos.cli._shared import PANEL_SETUP, console
+from eidos.cli._shared import PANEL_PLUGINS, PANEL_SETUP, console
 from eidos.core.index.graph_index import get_architectural_index
 from eidos.core.spec.validator import SpecValidator
 from eidos.core.workspace.project import find_repo_root
-from eidos.cli._shared import PANEL_PLUGINS
 from eidos.plugin.hooks import execute_hook
 from eidos.plugin.version import (
     check_plugin_version_status,
 )
+
 
 def doctor_cmd(
     path: Path | None = typer.Option(

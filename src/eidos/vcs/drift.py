@@ -338,11 +338,12 @@ def detect_drift(
                                             declared_delta_targets.add(t_doc.doc_id.strip().lower())
                                             found_target_doc = True
                                         break
-                        if not found_target_doc and validation_report is not None:
-                            for vdoc in validation_report.documents:
-                                vfp = str(vdoc.file_path).replace("\\", "/").lower()
-                                if (vfp == norm_p.lower() or vfp.endswith("/" + norm_p.lower())) and vdoc.doc_id:
-                                    declared_delta_targets.add(vdoc.doc_id.strip().lower())
+                        if not found_target_doc and idx is not None:
+                            for ent in idx.get_entities():
+                                efp = str(ent.get("file_path", "")).replace("\\", "/").lower()
+                                eid = str(ent.get("id", "")).strip().lower()
+                                if eid and (efp == norm_p.lower() or efp.endswith("/" + norm_p.lower())):
+                                    declared_delta_targets.add(eid)
                                     break
         except OSError:
             pass

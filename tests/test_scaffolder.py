@@ -1,18 +1,17 @@
 """Tests verifying specification scaffolding, reference checking, and delta lifecycle management (CTR-EIDOS-CLI, POL-002)."""
 
-import pytest
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
-from eidos.core.lifecycle.delta_engine import create_delta
+from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
+from eidos.core.lifecycle.delta_engine import apply_delta, create_delta
+from eidos.core.lifecycle.initializer import init_repository
 from eidos.core.lifecycle.scaffolder import (
-    apply_delta,
     create_spec,
     delete_spec,
-    find_spec_by_id_or_path,
-    init_repository,
     list_specs,
 )
 from eidos.core.spec.parser import parse_spec_file
@@ -463,7 +462,7 @@ def test_self_contained_eidos_gitignore(tmp_path):
 
 def test_init_repository_programmatic(tmp_path):
     """Verify init_repository scaffolds an empty living specification skeleton tracked by .gitkeep without installing plugins (CTR-EIDOS-CLI)."""
-    from eidos.core.lifecycle.scaffolder import init_repository
+    from eidos.core.lifecycle.initializer import init_repository
     from eidos.core.spec.validator import SpecValidator
 
     success, _msg, _files = init_repository(
@@ -599,7 +598,7 @@ def test_cli_version_command_and_options():
 
 def test_cli_index_update_alias(tmp_path):
     """Verify 'eidos index sync' works and 'eidos index update' alias is removed (CTR-EIDOS-CLI)."""
-    from eidos.core.lifecycle.scaffolder import init_repository
+    from eidos.core.lifecycle.initializer import init_repository
 
     init_repository(project_dir=tmp_path)
     res_sync = runner.invoke(app, ["index", "sync", "--path", str(tmp_path / "eidos")])
@@ -1088,12 +1087,10 @@ def test_scaffolder_backward_compatible_reexports():
                 home = importlib.import_module(owner)
                 assert getattr(home, name) is obj, f"{module_name}.{name} is not the object defined in {owner}"
 
-    from eidos.core.lifecycle import catalog, delta_engine, initializer, scaffolder
+    from eidos.core.lifecycle import catalog, scaffolder
 
     assert scaffolder.find_spec_by_id_or_path is catalog.find_spec_by_id_or_path
     assert scaffolder.VALID_SPEC_TYPES is catalog.VALID_SPEC_TYPES
-    assert scaffolder.verify_delta_mutations is delta_engine.verify_delta_mutations
-    assert scaffolder.init_repository is initializer.init_repository
 
 
 def test_core_and_cli_modules_import_without_cycles():
