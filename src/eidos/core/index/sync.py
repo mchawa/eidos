@@ -282,30 +282,54 @@ def store_code_symbols(
 
 def restore_code_mappings(conn: sqlite3.Connection, entity_id: str) -> None:
     """Re-create ``symbol_mappings`` rows for an entity from persisted code state (no source re-parsing)."""
+    ent_row = conn.execute("SELECT data_json FROM entities WHERE id = ?;", (entity_id,)).fetchone()
+    patterns: list[str] = []
+    if ent_row and ent_row["data_json"]:
+        try:
+            fm = json.loads(ent_row["data_json"])
+            if isinstance(fm, dict):
+                patterns = extract_entity_paths(fm)
+        except (TypeError, ValueError):
+            patterns = []
+
+    cand_files = [
+        r[0]
+        for r in conn.execute(
+            """
+            SELECT DISTINCT file_path FROM code_symbols WHERE entity_id = ?
+            UNION
+            SELECT rel_path FROM indexed_files WHERE doc_type = 'code/source' AND doc_id = ?;
+            """,
+            (entity_id, entity_id),
+        ).fetchall()
+        if r[0]
+    ]
+    valid_files = [
+        fp for fp in cand_files if any(match_path_pattern(fp, pat) > 0 for pat in patterns)
+    ]
+    if not valid_files:
+        return
+    ph = ",".join("?" for _ in valid_files)
+    for fp in valid_files:
+        conn.execute(
+            "INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind) VALUES (?, ?, 'source_path');",
+            (fp, entity_id),
+        )
     conn.execute(
-        """
+        f"""
         INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind)
-        SELECT DISTINCT file_path, entity_id, 'source_path' FROM code_symbols WHERE entity_id = ?
-        UNION
-        SELECT rel_path, doc_id, 'source_path' FROM indexed_files
-        WHERE doc_type = 'code/source' AND doc_id = ?;
+        SELECT symbol, entity_id, kind FROM code_symbols
+        WHERE entity_id = ? AND file_path IN ({ph});
         """,
-        (entity_id, entity_id),
+        (entity_id, *valid_files),
     )
     conn.execute(
-        """
-        INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind)
-        SELECT symbol, entity_id, kind FROM code_symbols WHERE entity_id = ?;
-        """,
-        (entity_id,),
-    )
-    conn.execute(
-        """
+        f"""
         INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind)
         SELECT parent_symbol || '.' || symbol, entity_id, 'method' FROM code_symbols
-        WHERE entity_id = ? AND parent_symbol != '';
+        WHERE entity_id = ? AND parent_symbol != '' AND file_path IN ({ph});
         """,
-        (entity_id,),
+        (entity_id, *valid_files),
     )
 
 
@@ -607,15 +631,26 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
         child_rows = conn.execute(
             f"""
             SELECT target_id FROM edges
-            WHERE source_id IN ({ph}) AND rel_type IN ('asserts', 'contains_component', 'implemented_by', 'styled_by')
+            WHERE source_id IN ({ph})
+              AND rel_type IN (
+                  'asserts', 'contains_component', 'implemented_by', 'implements_client',
+                  'styled_by', 'styles_client', 'styles_container', 'extends', 'extended_by'
+              )
             UNION
             SELECT source_id FROM edges
-            WHERE target_id IN ({ph}) AND rel_type IN ('implements_client', 'styles_client')
+            WHERE target_id IN ({ph})
+              AND rel_type IN (
+                  'implemented_by', 'implements_client',
+                  'styled_by', 'styles_client', 'styles_container', 'extends', 'extended_by'
+              )
+            UNION
+            SELECT symbol FROM symbol_mappings
+            WHERE entity_id IN ({ph}) AND kind = 'component_id'
             UNION
             SELECT id FROM entities
             WHERE type = 'invariant' AND file_path IN (SELECT file_path FROM entities WHERE id IN ({ph}));
             """,
-            (*clean_ids, *clean_ids, *clean_ids),
+            (*clean_ids, *clean_ids, *clean_ids, *clean_ids),
         ).fetchall()
         evict_ids = sorted(set(clean_ids) | {r[0] for r in child_rows if r[0]})
         evict_ph = ",".join("?" for _ in evict_ids)
@@ -636,13 +671,13 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             r[0] for r in conn.execute("SELECT id FROM entities WHERE type != 'invariant';").fetchall()
         })
 
-        # Also include any existing entity whose frontmatter JSON mentions one of clean_ids (or its file stem),
-        # so previously dangling references to a newly created target spec are linked on incremental sync.
-        like_clauses = " OR ".join("instr(data_json, ?) > 0" for _ in clean_ids)
+        # Also include any existing entity whose frontmatter JSON mentions one of evict_ids,
+        # so previously dangling references to a newly created target spec or inline component are linked on incremental sync.
+        like_clauses = " OR ".join("instr(data_json, ?) > 0" for _ in evict_ids)
         if like_clauses:
             ref_rows = conn.execute(
                 f"SELECT id FROM entities WHERE type != 'invariant' AND ({like_clauses});",
-                tuple(clean_ids),
+                tuple(evict_ids),
             ).fetchall()
             scope_set.update(r[0] for r in ref_rows if r[0])
 
@@ -771,7 +806,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                 conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'governs', NULL);", (pol_ref, doc_id))
 
         tech = fm.get("technical", {})
-        invariants = []
+        invariants = list(fm.get("invariants", []) or [])
         if isinstance(tech, dict):
             tech_targets = list(tech.get("containers", []) or []) + list(tech.get("components", []) or [])
             for comp_ref in tech_targets:
@@ -779,10 +814,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                 conn.execute(
                     "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implemented_by', NULL);", (comp_ref, doc_id)
                 )
-            invariants = tech.get("invariants", []) or []
-
-        if doc_type == "product/policy":
-            invariants = fm.get("invariants", []) or []
+            invariants.extend(tech.get("invariants", []) or [])
 
         if doc_type == "tech/component":
             cnt_id = fm.get("container")
@@ -794,16 +826,19 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             ifaces = fm.get("interfaces", {})
             if isinstance(ifaces, dict):
                 for consumed in ifaces.get("consumes", []):
-                    if isinstance(consumed, str):
+                    if isinstance(consumed, str) and consumed.strip():
                         conn.execute(
                             "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api', NULL);",
                             (doc_id, consumed.strip()),
                         )
-            invariants = fm.get("invariants", []) or []
+                    elif isinstance(consumed, dict) and isinstance(consumed.get("signature"), str) and consumed["signature"].strip():
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api', NULL);",
+                            (doc_id, consumed["signature"].strip()),
+                        )
 
         if doc_type == "tech/container":
-            invariants = list(fm.get("invariants", []) or [])
-            for comp_entry in fm.get("components", []) or fm.get("c4_internal_components", []):
+            for comp_entry in (fm.get("components") or []) + (fm.get("c4_internal_components") or []):
                 if not isinstance(comp_entry, dict):
                     continue
                 cid = comp_entry.get("id")
@@ -813,6 +848,12 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                         (doc_id, cid),
                     )
                     conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (cid, doc_id))
+                    c_contracts = comp_entry.get("contracts")
+                    if isinstance(c_contracts, dict):
+                        for prov in c_contracts.get("provides", []) or []:
+                            conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides', NULL);", (cid, prov))
+                        for req in c_contracts.get("requires") or c_contracts.get("consumes") or []:
+                            conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes', NULL);", (cid, req))
                 for c_inv in comp_entry.get("invariants", []) or []:
                     if isinstance(c_inv, dict) and c_inv.get("id"):
                         invariants.append(c_inv)
@@ -1480,59 +1521,29 @@ def sync_index(
             )
 
         if spec_updates or specs_deleted:
+            conn.execute("DELETE FROM symbol_mappings WHERE kind = 'component_ref';")
+            for (cnt_json,) in conn.execute(
+                "SELECT data_json FROM entities WHERE type = 'tech/container';"
+            ).fetchall():
+                try:
+                    cnt_fm = json.loads(cnt_json or "{}")
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(cnt_fm, dict):
+                    for comp_entry in (cnt_fm.get("components") or []) + (
+                        cnt_fm.get("c4_internal_components") or []
+                    ):
+                        if isinstance(comp_entry, dict) and comp_entry.get("ref") and comp_entry.get("id"):
+                            conn.execute(
+                                "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_ref');",
+                                (str(comp_entry["ref"]).strip(), str(comp_entry["id"]).strip()),
+                            )
             inc_ids = (
                 updated_spec_doc_ids
                 if (not force and not specs_deleted and not any_doc_id_renamed and updated_spec_doc_ids)
                 else None
             )
             index._rebuild_spec_edges(conn, updated_doc_ids=inc_ids)
-            conn.execute("DELETE FROM symbol_mappings WHERE kind = 'inferred_path';")
-            client_cnt_rows = conn.execute(
-                "SELECT source_id, target_id FROM edges WHERE rel_type = 'implemented_by' AND source_id LIKE 'CLT-%';"
-            ).fetchall()
-            for clt_id, cnt_id in client_cnt_rows:
-                cnt_paths = [
-                    r[0]
-                    for r in conn.execute(
-                        """
-                        SELECT DISTINCT symbol FROM symbol_mappings
-                        WHERE kind IN ('owned_path', 'package_path', 'source_path')
-                          AND (entity_id = ? OR entity_id IN (
-                              SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'contains_component'
-                          ));
-                        """,
-                        (cnt_id, cnt_id),
-                    ).fetchall()
-                ]
-                if not cnt_paths:
-                    continue
-                for pat in cnt_paths:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'inferred_path');",
-                        (pat, clt_id),
-                    )
-                ds_rows = conn.execute(
-                    """
-                    WITH RECURSIVE ds_tree(ds_id) AS (
-                        SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'styled_by'
-                        UNION
-                        SELECT e.target_id FROM edges e JOIN ds_tree d ON e.source_id = d.ds_id
-                        WHERE e.rel_type IN ('extends', 'extended_by')
-                    )
-                    SELECT DISTINCT ds_id FROM ds_tree;
-                    """,
-                    (clt_id,),
-                ).fetchall()
-                for (ds_id,) in ds_rows:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);", (cnt_id, ds_id))
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_container', NULL);", (ds_id, cnt_id)
-                    )
-                    for pat in cnt_paths:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'inferred_path');",
-                            (pat, ds_id),
-                        )
 
         ast_idx = get_ast_indexer()
         resolver = _CodeOwnershipResolver(conn)
@@ -1571,6 +1582,64 @@ def sync_index(
 
         if force or spec_updates or specs_deleted:
             index._reconcile_code_ownership(conn, ast_idx, resolver, processed_code)
+
+        if force or spec_updates or specs_deleted or processed_code or code_deleted:
+            conn.execute("DELETE FROM symbol_mappings WHERE kind = 'inferred_path';")
+            conn.execute(
+                """
+                DELETE FROM edges
+                WHERE rel_type = 'styles_container'
+                   OR (
+                       rel_type = 'styled_by'
+                       AND source_id NOT LIKE 'CLT-%'
+                       AND source_id NOT IN (SELECT id FROM entities WHERE type = 'design/client')
+                   );
+                """
+            )
+            client_cnt_rows = conn.execute(
+                "SELECT source_id, target_id FROM edges WHERE rel_type = 'implemented_by' AND source_id LIKE 'CLT-%';"
+            ).fetchall()
+            for clt_id, cnt_id in client_cnt_rows:
+                cnt_paths = [
+                    r[0]
+                    for r in conn.execute(
+                        """
+                        SELECT DISTINCT symbol FROM symbol_mappings
+                        WHERE kind IN ('owned_path', 'package_path', 'source_path')
+                          AND (entity_id = ? OR entity_id IN (
+                              SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'contains_component'
+                          ));
+                        """,
+                        (cnt_id, cnt_id),
+                    ).fetchall()
+                ]
+                for pat in cnt_paths:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'inferred_path');",
+                        (pat, clt_id),
+                    )
+                ds_rows = conn.execute(
+                    """
+                    WITH RECURSIVE ds_tree(ds_id) AS (
+                        SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'styled_by'
+                        UNION
+                        SELECT e.target_id FROM edges e JOIN ds_tree d ON e.source_id = d.ds_id
+                        WHERE e.rel_type IN ('extends', 'extended_by')
+                    )
+                    SELECT DISTINCT ds_id FROM ds_tree;
+                    """,
+                    (clt_id,),
+                ).fetchall()
+                for (ds_id,) in ds_rows:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);", (cnt_id, ds_id))
+                    conn.execute(
+                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_container', NULL);", (ds_id, cnt_id)
+                    )
+                    for pat in cnt_paths:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'inferred_path');",
+                            (pat, ds_id),
+                        )
 
         if force or spec_updates or specs_deleted or processed_code or code_deleted:
             fts_target_ids: set[str] | None = None
@@ -1697,7 +1766,7 @@ def sync_index(
             DELETE FROM edges
             WHERE target_id NOT IN (SELECT id FROM entities)
               AND target_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id')
-              AND rel_type != 'bound_to';
+              AND rel_type NOT IN ('bound_to', 'consumes_api');
             """
         )
         conn.execute(

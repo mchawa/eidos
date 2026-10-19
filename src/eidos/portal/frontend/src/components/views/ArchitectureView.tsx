@@ -593,10 +593,16 @@ export function ArchitectureView({
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {data.components.map((comp) => {
+            const getDepIds = (list?: Array<string | { container?: string; id?: string }>) =>
+              (list || [])
+                .map((item) => (typeof item === "string" ? item : item?.container || item?.id || ""))
+                .filter(Boolean);
             const inboundDeps = data.components.filter((c) =>
-              c.dependencies?.internal_containers?.includes(comp.id)
+              getDepIds(c.dependencies?.internal_containers as Array<string | { container?: string; id?: string }>).includes(comp.id)
             );
-            const outboundDeps = comp.dependencies?.internal_containers || [];
+            const outboundDeps = getDepIds(
+              comp.dependencies?.internal_containers as Array<string | { container?: string; id?: string }>
+            );
             return (
               <Card
                 key={comp.id}
@@ -877,11 +883,17 @@ export function ArchitectureView({
                   {inspectedComponent.dependencies?.internal_containers &&
                   inspectedComponent.dependencies.internal_containers.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5 pt-1">
-                      {inspectedComponent.dependencies.internal_containers.map((depId) => {
+                      {(inspectedComponent.dependencies.internal_containers as Array<
+                        string | { container?: string; id?: string; relationship?: string }
+                      >).map((rawDep, idx) => {
+                        const depId =
+                          typeof rawDep === "string"
+                            ? rawDep
+                            : rawDep?.container || rawDep?.id || "";
                         const targetComp = data.components.find((c) => c.id === depId);
                         return (
                           <button
-                            key={depId}
+                            key={`${depId}-${idx}`}
                             onClick={() => {
                               if (targetComp) openC4Inspector(targetComp);
                             }}
@@ -903,39 +915,45 @@ export function ArchitectureView({
 
                 {/* Incoming Dependents */}
                 <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <p className="font-semibold text-foreground">Downstream Dependents</p>
-                    <span className="text-[10px] font-mono text-muted-foreground">
-                      {
-                        data.components.filter((c) =>
-                          c.dependencies?.internal_containers?.includes(inspectedComponent.id)
-                        ).length
-                      }{" "}
-                      consumers
-                    </span>
-                  </div>
                   {(() => {
                     const dependents = data.components.filter((c) =>
-                      c.dependencies?.internal_containers?.includes(inspectedComponent.id)
+                      (
+                        (c.dependencies?.internal_containers || []) as Array<
+                          string | { container?: string; id?: string }
+                        >
+                      ).some((item) =>
+                        (typeof item === "string" ? item : item?.container || item?.id || "") ===
+                        inspectedComponent.id
+                      )
                     );
-                    return dependents.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {dependents.map((dep) => (
-                          <button
-                            key={dep.id}
-                            onClick={() => openC4Inspector(dep)}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] bg-muted hover:bg-muted/80 text-foreground transition-colors cursor-pointer"
-                            title={dep.name}
-                          >
-                            <span>{dep.id}</span>
-                            <ChevronRight className="h-3 w-3" />
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-muted-foreground text-[11px] italic">
-                        No internal containers depend on this unit
-                      </p>
+                    return (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <p className="font-semibold text-foreground">Downstream Dependents</p>
+                          <span className="text-[10px] font-mono text-muted-foreground">
+                            {dependents.length} consumers
+                          </span>
+                        </div>
+                        {dependents.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {dependents.map((dep) => (
+                              <button
+                                key={dep.id}
+                                onClick={() => openC4Inspector(dep)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] bg-muted hover:bg-muted/80 text-foreground transition-colors cursor-pointer"
+                                title={dep.name}
+                              >
+                                <span>{dep.id}</span>
+                                <ChevronRight className="h-3 w-3" />
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-muted-foreground text-[11px] italic">
+                            No internal containers depend on this unit
+                          </p>
+                        )}
+                      </>
                     );
                   })()}
                 </div>
@@ -946,14 +964,24 @@ export function ArchitectureView({
                     <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1.5 text-xs">
                       <p className="font-semibold text-foreground">External Platform Services</p>
                       <div className="flex flex-wrap gap-1.5 pt-1">
-                        {inspectedComponent.dependencies.external_services.map((ext, idx) => (
-                          <span
-                            key={idx}
-                            className="px-2 py-0.5 rounded-md font-mono text-[10px] bg-muted text-muted-foreground border border-border/40"
-                          >
-                            {ext}
-                          </span>
-                        ))}
+                        {(inspectedComponent.dependencies.external_services as Array<
+                          string | { name?: string; service?: string; relationship?: string }
+                        >).map((ext, idx) => {
+                          const extLabel =
+                            typeof ext === "string"
+                              ? ext
+                              : ext?.relationship
+                                ? `${ext?.name || ext?.service || ""} (${ext.relationship})`
+                                : ext?.name || ext?.service || "";
+                          return (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 rounded-md font-mono text-[10px] bg-muted text-muted-foreground border border-border/40"
+                            >
+                              {extLabel}
+                            </span>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -1024,7 +1052,10 @@ export function ArchitectureView({
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => drillDownToContainer(inspectedComponent.id)}
+                  onClick={() => {
+                    closeC4Inspector();
+                    drillDownToContainer(inspectedComponent.id);
+                  }}
                   className="w-full"
                 >
                   View Whitebox Architecture Diagram

@@ -200,6 +200,12 @@ def is_generated_or_vendored(repo_root: Path, rel_paths: list[str] | str | Path)
     return skipped
 
 
+def _has_excluded_dir_part(rel_path: str) -> bool:
+    """Return True if any directory component of rel_path is in STANDARD_EXCLUDED_DIRS."""
+    parts = rel_path.replace("\\", "/").split("/")
+    return any(part in STANDARD_EXCLUDED_DIRS for part in parts[:-1])
+
+
 def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[str]:
     """List repository files respecting .gitignore and .gitattributes generated/vendored attributes."""
     root = repo_root.resolve()
@@ -215,7 +221,7 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
             )
             if tracked.returncode == 0:
                 for item in tracked.stdout.split("\0"):
-                    if item and (root / item).is_file():
+                    if item and not _has_excluded_dir_part(item) and (root / item).is_file():
                         files.add(item)
 
                 if include_untracked:
@@ -228,7 +234,7 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
                     )
                     if untracked.returncode == 0:
                         for item in untracked.stdout.split("\0"):
-                            if item and (root / item).is_file():
+                            if item and not _has_excluded_dir_part(item) and (root / item).is_file():
                                 files.add(item)
 
                 if not files:
@@ -255,31 +261,38 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
     return sorted(collected)
 
 
+_PLACEHOLDER_PATHS = frozenset({"N/A", "TBD", "NONE"})
+
+
 def _append_path_values(target: list[str], raw_val: Any) -> None:
     if isinstance(raw_val, str) and raw_val.strip():
         clean = raw_val.strip().replace("\\", "/")
-        if clean not in target:
+        if clean.upper() not in _PLACEHOLDER_PATHS and clean not in target:
             target.append(clean)
     elif isinstance(raw_val, list):
         for item in raw_val:
             if isinstance(item, str) and item.strip():
                 clean = item.strip().replace("\\", "/")
-                if clean not in target:
+                if clean.upper() not in _PLACEHOLDER_PATHS and clean not in target:
                     target.append(clean)
 
 
 def extract_entity_paths(entity_data: dict[str, Any]) -> list[str]:
-    """Extract all declared ownership path patterns from package_path, source_path, or specification_file."""
+    """Extract all declared ownership path patterns from package_path, source_path, owned_path, or specification_file."""
     patterns: list[str] = []
 
-    for key in ("package_path", "source_path", "specification_file"):
+    for key in ("package_path", "source_path", "owned_path", "specification_file"):
         _append_path_values(patterns, entity_data.get(key))
 
-    # Also inspect inline C4 Level 3 component source_paths
-    for comp in entity_data.get("components", []) or entity_data.get("c4_internal_components", []) or []:
+    # Also inspect inline C4 Level 3 component source_paths / package_paths / owned_paths
+    for comp in [
+        *(entity_data.get("components") or []),
+        *(entity_data.get("c4_internal_components") or []),
+    ]:
         if isinstance(comp, dict):
             _append_path_values(patterns, comp.get("source_path"))
             _append_path_values(patterns, comp.get("package_path"))
+            _append_path_values(patterns, comp.get("owned_path"))
 
     return patterns
 
@@ -347,9 +360,8 @@ def match_path_pattern(rel_file: str, pattern: str) -> int:
 
     Higher scores indicate more specific ownership matches:
     - Exact file path match: 2000 + len(pattern)
-    - Glob match with directory prefix: 1000 + len(literal_chars)
-    - Directory prefix or 'dir/**' match: 500 + len(prefix)
-    - Wildcard-only glob match (e.g. '**/*.css'): 100 + len(literal_chars)
+    - Directory prefix or glob with leading directory prefix: 500 + len(leading_dir_prefix) + len(tail_literals)
+    - Wildcard-only or root-level glob match (e.g. '**/*.css', '*.py'): 100 + len(tail_literals)
     """
     import re
 
@@ -369,11 +381,21 @@ def match_path_pattern(rel_file: str, pattern: str) -> int:
             return 500 + len(prefix)
         return 0
 
-    # 3. Glob pattern matching
-    literal_chars = "".join(ch for ch in norm_pat if ch not in "*?[]/")
-    has_leading_dir = not norm_pat.startswith("*")
+    # 3. Glob pattern matching: compute literal directory prefix before the first wildcard segment
+    parts = [p for p in norm_pat.split("/") if p]
+    leading_parts: list[str] = []
+    for idx, seg in enumerate(parts):
+        if any(ch in seg for ch in ("*", "?", "[")):
+            break
+        # A single segment with no '/' has no directory prefix (it's a filename)
+        if idx < len(parts) - 1:
+            leading_parts.append(seg)
+    leading_dir_prefix = "/".join(leading_parts)
+    has_leading_dir = bool(leading_dir_prefix) and "/" in norm_pat
+    tail_segments = parts[len(leading_parts) :]
+    tail_literals = "".join(ch for seg in tail_segments for ch in seg if ch not in "*?[]/")
 
-    # Handle 'dir/**' recursive directory prefix (equivalent specificity family to directory prefix)
+    # Handle 'dir/**' recursive directory prefix
     if norm_pat.endswith("/**") and not any(ch in norm_pat[:-3] for ch in ("*", "?", "[")):
         base_dir = norm_pat[:-3].rstrip("/")
         if norm_file == base_dir or norm_file.startswith(base_dir + "/"):
@@ -387,8 +409,9 @@ def match_path_pattern(rel_file: str, pattern: str) -> int:
         matched = fnmatch.fnmatchcase(norm_file, norm_pat)
 
     if matched:
-        base_score = 1000 if has_leading_dir else 100
-        return base_score + len(literal_chars)
+        if has_leading_dir:
+            return 500 + len(leading_dir_prefix) + len(tail_literals)
+        return 100 + len(tail_literals)
 
     return 0
 

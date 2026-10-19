@@ -382,6 +382,7 @@ def _collect_1hop_spec_targets(
         return allowed_paths, allowed_ids
 
     seed_ids: set[str] = {cid}
+    resolved_data_by_id: dict[str, dict[str, Any]] = {}
     for m in idx.resolve_symbol_or_path(cf):
         if m.get("type") not in ("tech/container", "tech/component"):
             continue
@@ -390,11 +391,63 @@ def _collect_1hop_spec_targets(
         if eid:
             seed_ids.add(eid)
             allowed_ids.add(eid.lower())
+            if isinstance(m.get("data"), dict):
+                resolved_data_by_id.setdefault(eid, m["data"])
         if fp:
             allowed_paths.add(str(fp).replace("\\", "/").lower())
 
+    neighborhoods: dict[str, list[dict[str, Any]]] = {}
+    queue = list(seed_ids)
+    while queue:
+        sid = queue.pop(0)
+        if sid not in neighborhoods:
+            neighborhoods[sid] = idx.get_k_hop_neighborhood(sid, max_hops=1)
+        neighbors = neighborhoods[sid]
+        self_node = next((n for n in neighbors if n.get("id") == sid), None)
+        self_type = (self_node or {}).get("type", "")
+        self_data = (self_node or {}).get("data") or resolved_data_by_id.get(sid) or {}
+
+        if self_type == "tech/container" or (not self_type and sid.startswith("CNT-")):
+            for inline_comp in (self_data.get("components") or []) + (
+                self_data.get("c4_internal_components") or []
+            ):
+                if not isinstance(inline_comp, dict) or not inline_comp.get("id"):
+                    continue
+                ic_id = str(inline_comp["id"]).strip()
+                ic_pats: list[str] = []
+                for pkey in ("source_path", "owned_path", "package_path"):
+                    raw_p = inline_comp.get(pkey)
+                    if isinstance(raw_p, str) and raw_p.strip():
+                        ic_pats.append(raw_p.strip())
+                    elif isinstance(raw_p, list):
+                        ic_pats.extend(str(x).strip() for x in raw_p if isinstance(x, str) and str(x).strip())
+                if any(match_path_pattern(cf, pat) > 0 for pat in ic_pats) and ic_id not in seed_ids:
+                    seed_ids.add(ic_id)
+                    allowed_ids.add(ic_id.lower())
+                    queue.append(ic_id)
+
+        elif self_type == "tech/component" or (not self_type and sid.startswith("CMP-")):
+            parent_cnt = str(self_data.get("container") or "").strip()
+            if parent_cnt and parent_cnt not in seed_ids:
+                seed_ids.add(parent_cnt)
+                allowed_ids.add(parent_cnt.lower())
+                queue.append(parent_cnt)
+            for nb in neighbors:
+                if nb.get("type") != "tech/container":
+                    continue
+                nb_id = str(nb.get("id") or "").strip()
+                nb_data = nb.get("data", {}) or {}
+                is_parent = (nb_id and nb_id == parent_cnt) or any(
+                    isinstance(c, dict) and str(c.get("id") or "").strip() == sid
+                    for c in (nb_data.get("components") or []) + (nb_data.get("c4_internal_components") or [])
+                )
+                if is_parent and nb_id and nb_id not in seed_ids:
+                    seed_ids.add(nb_id)
+                    allowed_ids.add(nb_id.lower())
+                    queue.append(nb_id)
+
     for sid in seed_ids:
-        for n in idx.get_k_hop_neighborhood(sid, max_hops=1):
+        for n in neighborhoods.get(sid, ()):
             nid = n.get("id", "")
             ntype = n.get("type", "")
             ndata = n.get("data", {}) or {}
@@ -407,7 +460,9 @@ def _collect_1hop_spec_targets(
             if nid:
                 allowed_ids.add(nid.lower())
             if ntype == "tech/container" and nid in seed_ids:
-                for inline_comp in ndata.get("components", []) or []:
+                for inline_comp in (ndata.get("components") or []) + (
+                    ndata.get("c4_internal_components") or []
+                ):
                     if isinstance(inline_comp, dict) and inline_comp.get("id"):
                         allowed_ids.add(str(inline_comp["id"]).strip().lower())
             nfp = n.get("file_path")

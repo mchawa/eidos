@@ -218,7 +218,11 @@ def _rewrite_hook_command_for_target_root(target: Path, version: str | None = No
 
 
 def _copy_plugin_tree(
-    source_dir: Path, target_dir: Path, force: bool = False, launcher: str = "eidos"
+    source_dir: Path,
+    target_dir: Path,
+    force: bool = False,
+    launcher: str = "eidos",
+    include_skills: bool = True,
 ) -> list[Path]:
     """Copy all plugin files to target destination within the project."""
     _check_not_symlink(target_dir)
@@ -245,19 +249,24 @@ def _copy_plugin_tree(
             with contextlib.suppress(OSError):
                 shutil.rmtree(legacy_scripts)
 
-    # Prune retired legacy Eidos skill directories inside the plugin tree
+    # Prune retired legacy Eidos skill directories (or duplicate skills when flat skills_subdir is used)
     target_skills_dir = target_dir / "skills"
     if target_skills_dir.exists():
-        for retired_name in RETIRED_EIDOS_SKILLS:
-            retired_dir = target_skills_dir / retired_name
-            if retired_dir.exists():
-                with contextlib.suppress(OSError):
-                    shutil.rmtree(retired_dir)
+        if not include_skills:
+            _remove_skills_flat(source_dir, target_skills_dir)
+        else:
+            for retired_name in RETIRED_EIDOS_SKILLS:
+                retired_dir = target_skills_dir / retired_name
+                if retired_dir.exists():
+                    with contextlib.suppress(OSError):
+                        shutil.rmtree(retired_dir)
 
     created = []
     for item in source_dir.rglob("*"):
         if item.is_file():
             rel = item.relative_to(source_dir)
+            if not include_skills and rel.parts and rel.parts[0] == "skills":
+                continue
             # Never copy internal cache or assistant-specific directories into plugins
             if any(part in (".claude-plugin", ".eidos", ".cache", ".git") for part in rel.parts):
                 continue
@@ -267,6 +276,8 @@ def _copy_plugin_tree(
             dest = target_dir / rel
             _check_not_symlink(dest, root=target_dir)
             if dest.exists() and not force:
+                if _compute_sha256(dest) == _compute_sha256(item) or dest.name in ("plugin.json", "hooks.json"):
+                    created.append(dest)
                 continue
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(item, dest)
@@ -323,6 +334,8 @@ def _copy_skills_flat(source_dir: Path, target_skills_dir: Path, force: bool = F
                     dest_file = dest_skill_dir / rel
                     _check_not_symlink(dest_file, root=target_skills_dir)
                     if dest_file.exists() and not force:
+                        if _compute_sha256(dest_file) == _compute_sha256(file_path):
+                            created.append(dest_file)
                         continue
                     dest_file.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(file_path, dest_file)
@@ -720,7 +733,7 @@ COPILOT_END_MARKER = "<!-- EIDOS_COPILOT_END -->"
 def _write_copilot_instructions(file_path: Path, force: bool = False) -> Path:
     """Safely write or update Eidos instructions in .github/copilot-instructions.md."""
     _check_not_symlink(file_path)
-    if file_path.exists() and not force and COPILOT_START_MARKER not in file_path.read_text(encoding="utf-8"):
+    if file_path.exists() and not force and COPILOT_START_MARKER in file_path.read_text(encoding="utf-8"):
         return file_path
     file_path.parent.mkdir(parents=True, exist_ok=True)
     eidos_block = (
@@ -1226,7 +1239,15 @@ class TargetAdapter:
         if plugin_dir is not None:
             _check_not_symlink(plugin_dir, root=root)
             if self.copy_plugin_tree:
-                created.extend(_copy_plugin_tree(source_dir, plugin_dir, force=force, launcher=launcher))
+                created.extend(
+                    _copy_plugin_tree(
+                        source_dir,
+                        plugin_dir,
+                        force=force,
+                        launcher=launcher,
+                        include_skills=(self.skills_subdir is None),
+                    )
+                )
             if self.pre_manifest_hook is not None:
                 created.extend(self.pre_manifest_hook(root, source_dir, plugin_dir, force, launcher))
 

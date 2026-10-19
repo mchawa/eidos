@@ -447,3 +447,104 @@ def test_changelog_preserves_historical_release_on_delta_reformat_and_resolves_r
     md = gen.generate_changelog(include_unreleased=True)
     assert "## [0.1.0]" in md
     assert "DLT-2026-001" in md.split("## [0.1.0]", 1)[1]
+
+
+def test_a10_changelog_applied_commit_casing_and_custom_output_file(tmp_path):
+    """A10: delta committed as proposed in v0.1.0 and applied later maps to Unreleased/later tag;
+    conventional commits preserve casing and support !:; custom output_file does not create a broken docs symlink."""
+    import subprocess
+
+    repo = tmp_path / "a10_repo"
+    eidos_dir = repo / "eidos"
+    nested_deltas = eidos_dir / "deltas" / "2026"
+    nested_deltas.mkdir(parents=True)
+
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Dev"], cwd=repo, check=True, capture_output=True)
+
+    # 1. Commit uppercase/nested delta as `proposed` in tag v0.1.0
+    dlt_file = nested_deltas / "DLT-2026-700.adoc"
+    dlt_file.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-700\n"
+        "title: Deferred Applied Feature\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: feature\n"
+        "  motivation: Initially proposed in v0.1.0.\n"
+        "mutations: []\n"
+        "---\n"
+        "= Deferred Applied Feature\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "chore: propose DLT-2026-700"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "tag", "v0.1.0"], cwd=repo, check=True, capture_output=True)
+
+    # 2. Transition DLT-2026-700 to `applied` in a post-v0.1.0 commit, plus breaking/cased commits
+    dlt_file.write_text(
+        dlt_file.read_text(encoding="utf-8").replace("status: proposed", "status: applied"),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "feat(api)!: support OAuth2 in CMP-AUTH"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "featuring something without colon"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+    gen = ChangelogGenerator(repo_root=repo, eidos_dir=eidos_dir)
+    md = gen.generate_changelog(include_unreleased=True)
+    unreleased_block = md.split("## [0.1.0]", 1)[0]
+    assert "DLT-2026-700" in unreleased_block
+    assert "Support OAuth2 in CMP-AUTH" in unreleased_block
+    assert "featuring something" not in md.lower()
+
+    # 3. Also verify a delta committed as `proposed` at HEAD and only marked `applied` in the uncommitted working tree maps to Unreleased
+    dlt_uncommitted = nested_deltas / "dlt-2026-701.adoc"
+    dlt_uncommitted.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-701\n"
+        "title: Working Tree Applied Feature\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: feature\n"
+        "  motivation: Proposed in v0.2.0, applied in working tree.\n"
+        "mutations: []\n"
+        "---\n"
+        "= Working Tree Applied Feature\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "chore: propose DLT-2026-701"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "tag", "v0.2.0"], cwd=repo, check=True, capture_output=True)
+
+    # Mark applied in working tree without committing
+    dlt_uncommitted.write_text(
+        dlt_uncommitted.read_text(encoding="utf-8").replace("status: proposed", "status: applied"),
+        encoding="utf-8",
+    )
+    gen2 = ChangelogGenerator(repo_root=repo, eidos_dir=eidos_dir)
+    md2 = gen2.generate_changelog(include_unreleased=True)
+    unreleased_block2 = md2.split("## [0.2.0]", 1)[0]
+    assert "DLT-2026-701" in unreleased_block2
+
+    # 4. Custom output_file writes docs/changelog.md directly rather than creating a broken symlink to ../CHANGELOG.md
+    custom_out = tmp_path / "custom_out" / "RELEASE_NOTES.md"
+    custom_out.parent.mkdir(parents=True)
+    res = gen2.update_changelog_files(output_file=custom_out, update_docs=True)
+    assert res["symlink_created"] is False
+    docs_file = repo / "docs" / "changelog.md"
+    assert docs_file.exists() and not docs_file.is_symlink()
+    assert docs_file.read_text(encoding="utf-8") == custom_out.read_text(encoding="utf-8")
+

@@ -362,6 +362,10 @@ def generate_collision_free_delta_id(
     if deltas_dir.exists():
         for p in deltas_dir.rglob("*.adoc"):
             _record_candidate(p.stem)
+            with contextlib.suppress(OSError):
+                fm_cand, _, _ = extract_frontmatter(p.read_text(encoding="utf-8"))
+                if isinstance(fm_cand, dict) and isinstance(fm_cand.get("id"), str):
+                    _record_candidate(fm_cand["id"])
 
     repo_root = _resolve_git_repo_root(eidos_dir)
     if repo_root is not None:
@@ -460,9 +464,13 @@ def generate_collision_free_delta_id(
             candidate_id = base_id
         else:
             candidate_id = f"{base_id}-{suffix}"
-        if candidate_id in existing_ids:
-            short_hash = hashlib.sha256(f"{candidate_id}:{title}".encode()).hexdigest()[:4].upper()
-            candidate_id = f"{candidate_id}-{short_hash}"
+        base_candidate = candidate_id
+        attempt = 0
+        while candidate_id in existing_ids:
+            hash_input = f"{base_candidate}:{title}" if attempt == 0 else f"{base_candidate}:{title}:{attempt}"
+            short_hash = hashlib.sha256(hash_input.encode()).hexdigest()[:4].upper()
+            candidate_id = f"{base_candidate}-{short_hash}"
+            attempt += 1
         return candidate_id
 
     return base_id
@@ -646,12 +654,18 @@ def _resolve_git_baseline_sha(
             if show_res.returncode != 0 or not show_res.stdout:
                 continue
             raw_bytes = show_res.stdout
-            if target_key.startswith("CMP-") and target_file.stem.upper() != target_key:
+            if target_key.startswith("CMP-"):
                 hist_fm, _, _ = extract_frontmatter(raw_bytes.decode("utf-8", errors="replace"))
-                comp_dict = _find_inline_component_dict(target_key, hist_fm)
-                if comp_dict is not None:
-                    return _digest_dict(comp_dict)
-                return None
+                if isinstance(hist_fm, dict):
+                    if hist_fm.get("type") == "tech/component" or str(hist_fm.get("id", "")).upper() == target_key:
+                        return hashlib.sha256(raw_bytes).hexdigest()
+                    comp_dict = _find_inline_component_dict(target_key, hist_fm)
+                    if comp_dict is not None:
+                        return _digest_dict(comp_dict)
+                    if hist_fm.get("type") == "tech/container":
+                        return None
+                if target_file.stem.upper() != target_key and f"CMP-{target_file.stem.upper()}" != target_key:
+                    return None
             if target_key.startswith("INV-"):
                 hist_fm, _, _ = extract_frontmatter(raw_bytes.decode("utf-8", errors="replace"))
                 if isinstance(hist_fm, dict):
@@ -694,7 +708,7 @@ def _check_or_record_baseline_sha(
 
             git_sha = _resolve_git_baseline_sha(eidos_dir, delta_file, target_key, target_file)
             if git_sha is not None:
-                if row is None or current_sha != git_sha:
+                if row is None:
                     with conn:
                         conn.execute(
                             "INSERT OR REPLACE INTO delta_baselines (delta_id, target_id, baseline_sha256) VALUES (?, ?, ?)",
@@ -1010,8 +1024,8 @@ def _evaluate_declarative_postcondition(
 
         parsed_body = ""
         if raw_text:
-            _, extracted_body, _ = extract_frontmatter(raw_text)
-            parsed_body = extracted_body if extracted_body else raw_text
+            fm_dict, extracted_body, fm_err = extract_frontmatter(raw_text)
+            parsed_body = extracted_body if (fm_dict is not None and fm_err is None) else raw_text
         uncommented_body = _strip_spec_comments(parsed_body) if parsed_body else ""
         contains_items, not_contains_items, fm_expectations = _normalize_expect_spec(expect)
 

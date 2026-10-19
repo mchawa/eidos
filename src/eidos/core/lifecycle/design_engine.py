@@ -76,7 +76,37 @@ Tokens are defined in W3C DTCG format at `tokens.json`.
 
     elif canonical_key == "ui-component":
         clean_comp = slug.removeprefix("uic-")
-        sys_slug = (design_system or "ds-core").lower().removeprefix("ds-")
+        raw_ds = (design_system or "DS-CORE").strip()
+        if "/" in raw_ds or "\\" in raw_ds or raw_ds.lower().endswith(".adoc"):
+            ds_path = Path(raw_ds.replace("\\", "/"))
+            candidate_ds_files = [
+                eidos_dir / ds_path,
+                eidos_dir.parent / ds_path,
+                ds_path,
+            ]
+            parsed_ds_id = ""
+            for cdf in candidate_ds_files:
+                if cdf.exists() and cdf.is_file():
+                    try:
+                        from eidos.core.spec.parser import parse_spec_file
+
+                        doc = parse_spec_file(cdf)
+                        doc_ds_id = str(doc.frontmatter.get("id") or "").strip()
+                        if doc_ds_id:
+                            parsed_ds_id = doc_ds_id
+                            break
+                    except Exception:
+                        pass
+            if ds_path.name.lower() == "system.adoc" and ds_path.parent.name:
+                sys_slug = ds_path.parent.name.lower().removeprefix("ds-")
+            elif parsed_ds_id:
+                sys_slug = parsed_ds_id.lower().removeprefix("ds-")
+            else:
+                sys_slug = ds_path.stem.lower().removeprefix("ds-")
+            resolved_ds_id = parsed_ds_id or f"DS-{sys_slug.upper()}"
+        else:
+            sys_slug = raw_ds.lower().removeprefix("ds-")
+            resolved_ds_id = raw_ds
         dest_dir = eidos_dir / "design" / "systems" / sys_slug / "components"
         dest_file = dest_dir / f"{clean_comp}.adoc"
         fm = {
@@ -84,7 +114,7 @@ Tokens are defined in W3C DTCG format at `tokens.json`.
             "schema": "schemas/v1/design/ui-component.schema.yaml",
             "id": doc_id,
             "title": title,
-            "design_system": design_system,
+            "design_system": resolved_ds_id,
         }
         if implements_component:
             fm["implements"] = implements_component

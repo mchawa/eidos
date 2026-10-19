@@ -137,6 +137,10 @@ def create_spec(
         ids = sorted(i for i, (_, dt, _) in _catalog().items() if dt == dtype)
         return ids[0] if ids else fallback
 
+    tokens_existed = False
+    if canonical_key == "design-system":
+        tokens_existed = (eidos_dir / "design" / "systems" / slug.removeprefix("ds-") / "tokens.json").exists()
+
     # Determine destination directory and content
     if canonical_key == "delta":
         dest_dir = eidos_dir / "deltas"
@@ -411,6 +415,14 @@ Document prototyping discoveries, trade-offs, and research findings.
     if errors:
         # Roll back newly created file
         dest_file.unlink()
+        if canonical_key == "design-system" and not tokens_existed:
+            tokens_f = dest_dir / "tokens.json"
+            if tokens_f.exists():
+                with contextlib.suppress(OSError):
+                    tokens_f.unlink()
+            if dest_dir.exists() and not any(dest_dir.iterdir()):
+                with contextlib.suppress(OSError):
+                    dest_dir.rmdir()
         err_msg = "; ".join(errors)
         raise ValueError(f"Generated specification failed validation: {err_msg}")
 
@@ -460,8 +472,9 @@ def list_specs(
 
     from eidos.core.index.graph_index import get_architectural_index
 
+    eidos_resolved = eidos_dir.resolve()
     idx = get_architectural_index(eidos_dir=eidos_dir)
-    entities = idx.get_entities(status=status_filter)
+    all_entities = idx.get_entities()
     results = []
 
     type_filter_clean = type_filter.strip().lower() if type_filter else None
@@ -475,18 +488,30 @@ def list_specs(
             return doc_type.lower() == canonical_type
         return type_filter_clean in doc_type.lower() or type_filter_clean in eid.lower()
 
-    seen_ids: set[str] = {str(ent.get("id", "")) for ent in entities if ent.get("id")}
+    seen_ids: set[str] = {str(ent.get("id", "")) for ent in all_entities if ent.get("id")}
 
-    for ent in entities:
+    for ent in all_entities:
         doc_type = ent.get("type", "")
         eid = ent.get("id", "")
         if doc_type == "invariant":
             continue
 
-        status = ent.get("status", "active")
-        file_p = Path(ent.get("file_path", ""))
-        rel_p = file_p.relative_to(eidos_dir) if file_p.is_relative_to(eidos_dir) else file_p
-        resolved_p = file_p.resolve() if file_p.exists() else file_p
+        status = ent.get("status") or "active"
+        raw_fp = Path(ent.get("file_path", ""))
+        if raw_fp.is_absolute():
+            cand_p = raw_fp
+        elif (idx.root / raw_fp).exists():
+            cand_p = idx.root / raw_fp
+        elif (eidos_resolved / raw_fp).exists():
+            cand_p = eidos_resolved / raw_fp
+        else:
+            cand_p = idx.root / raw_fp
+        resolved_p = cand_p.resolve() if cand_p.exists() else cand_p
+        rel_p = (
+            resolved_p.relative_to(eidos_resolved)
+            if resolved_p.is_relative_to(eidos_resolved)
+            else raw_fp
+        )
 
         if _matches_type(doc_type, eid) and (not status_filter_clean or str(status).lower() == status_filter_clean):
             results.append(
@@ -509,7 +534,7 @@ def list_specs(
                 if not cid or cid in seen_ids:
                     continue
                 comp_type = "tech/component"
-                comp_status = comp.get("status", status)
+                comp_status = comp.get("status") or status
                 if not _matches_type(comp_type, cid):
                     continue
                 if status_filter_clean and str(comp_status).lower() != status_filter_clean:
@@ -709,6 +734,9 @@ def inline_component(
         "responsibility": responsibility,
         "source_path": source_path,
     }
+    comp_status = comp_fm.get("status")
+    if isinstance(comp_status, str) and comp_status.strip() and comp_status.strip() != "active":
+        inline_entry["status"] = comp_status.strip()
     if isinstance(comp_fm.get("domain_binding"), str) and comp_fm["domain_binding"]:
         inline_entry["domain_binding"] = comp_fm["domain_binding"]
     if isinstance(comp_fm.get("invariants"), list) and comp_fm["invariants"]:

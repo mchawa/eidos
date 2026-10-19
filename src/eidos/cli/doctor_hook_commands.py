@@ -130,7 +130,12 @@ def doctor_cmd(
             "bundled_version": plugin_status.get("bundled_version"),
         },
     }
-    overall_ok = cli_ok and git_ok and (not specs_exist or (specs_valid and index_ok))
+    overall_ok = (
+        cli_ok
+        and git_ok
+        and (not specs_exist or (specs_valid and index_ok))
+        and checks["agent_plugin"]["ok"]
+    )
 
     if json_output:
         typer.echo(json.dumps({"healthy": overall_ok, "checks": checks}, indent=2))
@@ -184,6 +189,7 @@ def doctor_cmd(
 
 @hook_app.command("lint")
 def hook_lint_cmd(
+    ctx: typer.Context,
     event: str = typer.Option(
         "Stop",
         "--event",
@@ -198,13 +204,19 @@ def hook_lint_cmd(
     ),
 ):
     """Execute native Eidos specification lint & ADR guard lifecycle hook."""
-    code = execute_lint_hook(event=event, repo_root=path)
+    eff_event = (
+        None
+        if getattr(ctx.get_parameter_source("event"), "name", None) == "DEFAULT"
+        else event
+    )
+    code = execute_lint_hook(event=eff_event, repo_root=path)
     if code != 0:
         raise typer.Exit(code=code)
 
 
 @hook_app.command("drift")
 def hook_drift_cmd(
+    ctx: typer.Context,
     event: str = typer.Option(
         "Stop",
         "--event",
@@ -219,7 +231,12 @@ def hook_drift_cmd(
     ),
 ):
     """Execute native Eidos spec-to-code drift lifecycle hook with Block-Once Stop gate."""
-    code = execute_drift_hook(event=event, repo_root=path)
+    eff_event = (
+        None
+        if getattr(ctx.get_parameter_source("event"), "name", None) == "DEFAULT"
+        else event
+    )
+    code = execute_drift_hook(event=eff_event, repo_root=path)
     if code != 0:
         raise typer.Exit(code=code)
 

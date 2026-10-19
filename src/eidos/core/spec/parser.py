@@ -72,10 +72,32 @@ def parse_spec_file(path: Path) -> SpecDocument:
     return _parse_spec_content(path, path.read_text(encoding="utf-8"))
 
 
+_NON_ROOT_SPEC_SUBDIRS = (
+    "systems",
+    "design",
+    "domains",
+    "architecture",
+    "containers",
+    "components",
+    "contracts",
+    "policies",
+    "personas",
+    "deltas",
+    "explorations",
+    "clients",
+    "screens",
+    "flows",
+    "capabilities",
+)
+
+
 def _parse_spec_content(path: Path, content: str) -> SpecDocument:
     """Parse an .adoc specification from pre-read content."""
     if not content.strip():
-        is_root_system = path.name == "system.adoc" and "design" not in path.parts
+        is_root_system = (
+            path.name == "system.adoc"
+            and path.parent.name.lower() not in _NON_ROOT_SPEC_SUBDIRS
+        )
         if is_root_system:
             return SpecDocument(
                 file_path=path,

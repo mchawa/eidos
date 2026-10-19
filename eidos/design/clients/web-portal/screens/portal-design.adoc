@@ -39,7 +39,7 @@ states:
 The Design Systems View (`SCR-PORTAL-DESIGN`) connects business capabilities with the visual user experience:
 * **Client Applications & Multi-Experience (CLT-*)**: Interactive client switcher (`designClientSelect`), client container bindings, and scoped screen topologies.
 * **Empty State Resilience**: Gracefully handles repositories with zero configured design systems by displaying an informational banner and clean onboarding card instead of empty token swatches.
-* **Interaction Flows (FLOW-*)**: Client-internal journeys (`FLOW-PORTAL-EXPLORATION`) and cross-client omnichannel flows (`FLOW-CLI-SERVE-AND-BROWSE`) with dynamic Mermaid diagrams.
+* **Interaction Flows (FLOW-*)**: Client-internal journeys (`FLOW-PORTAL-EXPLORATION`) and multi-client (`clients.length > 1`) or `cross_client` omnichannel flows (`FLOW-CLI-SERVE-AND-BROWSE`) with dynamic Mermaid diagrams.
 * **Multi-Design Systems Catalog (DS-*)**: Registered design systems, base inheritance, and client brand overrides.
 * **W3C DTCG Tokens Studio**: Visual swatches for brand palettes, neutral surfaces, functional feedback colors, spacing scales, and typography.
 * **UI Component Contracts (UIC-*)**: Visual component manifests with variants, supported interaction states, and accessibility invariants (WCAG, ARIA, keyboard navigation).

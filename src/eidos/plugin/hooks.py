@@ -42,16 +42,12 @@ def is_eidos_doc(target_file_str: str, workspace_root: Path | None = None) -> bo
         return False
 
     ws_root = (workspace_root or find_workspace_root()).resolve()
-    with contextlib.suppress(ValueError, RuntimeError):
+    try:
         resolved = target_path.resolve() if target_path.is_absolute() else (ws_root / target_path).resolve()
         rel = resolved.relative_to(ws_root)
-        if rel.parts and rel.parts[0] == "eidos":
-            return True
-
-    parts = target_path.parts
-    if parts and parts[0] == ".":
-        parts = parts[1:]
-    return bool(parts and parts[0] == "eidos")
+    except (OSError, ValueError, RuntimeError):
+        return False
+    return bool(rel.parts and rel.parts[0] == "eidos")
 
 
 def _extract_tool_edit_request(
@@ -202,6 +198,7 @@ def _validate_doc_content(target_path: Path, content_to_check: str) -> dict[str,
             }
         schema_rel = data.get("schema")
         if isinstance(schema_rel, str) and schema_rel.strip():
+            from eidos.core.spec.models import SpecDocument
             from eidos.core.workspace.assets import get_v1_schemas_dir
 
             rel_clean = schema_rel.strip().removeprefix("schemas/v1/").removeprefix("schemas/").lstrip("/")
@@ -211,15 +208,31 @@ def _validate_doc_content(target_path: Path, content_to_check: str) -> dict[str,
                     "decision": "deny",
                     "reason": f"[Eidos Doc Linter] Broken schema reference '{schema_rel}' in '{target_path.name}': schema file not found.",
                 }
+            doc = SpecDocument(
+                file_path=target_path,
+                doc_id=str(data.get("id", "")),
+                doc_type=str(data.get("type", "")),
+                schema_ref=schema_rel.strip(),
+                title=str(data.get("title") or data.get("name") or ""),
+                frontmatter=data,
+                body="",
+            )
+            schema_errs = SpecValidator().validate_document(doc)
+            if schema_errs:
+                return {
+                    "decision": "deny",
+                    "reason": f"[Eidos Doc Linter] Schema validation failed in '{target_path.name}': {'; '.join(schema_errs[:3])}",
+                }
 
     return {"decision": "allow"}
 
 
 def handle_lint_pre_tool_use(payload: dict[str, Any], workspace_root: Path | None = None) -> dict[str, Any]:
     """Validate YAML frontmatter or JSON syntax before file modification tools execute on eidos/."""
-    target_file_str, content_to_check = _extract_tool_edit_request(payload, workspace_root)
+    ws_root = (workspace_root or find_workspace_root(payload)).resolve()
+    target_file_str, content_to_check = _extract_tool_edit_request(payload, ws_root)
 
-    if not target_file_str or not is_eidos_doc(target_file_str, workspace_root):
+    if not target_file_str or not is_eidos_doc(target_file_str, ws_root):
         return {"decision": "allow"}
 
     target_path = Path(target_file_str)
@@ -282,6 +295,7 @@ def _check_and_record_stop_gate(
     fingerprint: str,
     session_id: str = "",
     ttl_seconds: float | None = None,
+    items: list[str] | None = None,
 ) -> bool:
     """Return True if this fingerprint should block (first occurrence or expired/new session), or False if already blocked once."""
     import os
@@ -307,11 +321,15 @@ def _check_and_record_stop_gate(
 
     prev_entry = state.get(gate_key)
     prev_fp: str | None = None
+    prev_items: set[str] = set()
     expired = False
     session_mismatch = False
 
     if isinstance(prev_entry, dict):
         prev_fp = str(prev_entry.get("hash", "")) if prev_entry.get("hash") else None
+        raw_items = prev_entry.get("items")
+        if isinstance(raw_items, list):
+            prev_items = {str(x) for x in raw_items if x}
         prev_ts = prev_entry.get("timestamp")
         if isinstance(prev_ts, (int, float)) and (now - float(prev_ts)) > eff_ttl:
             expired = True
@@ -321,8 +339,13 @@ def _check_and_record_stop_gate(
     elif isinstance(prev_entry, str):
         prev_fp = prev_entry
 
-    if prev_fp == fingerprint and not expired and not session_mismatch:
-        # Already blocked once for this exact fingerprint within active TTL/session; clear key and allow termination
+    cur_items = {str(x) for x in (items or []) if x}
+    is_already_blocked = prev_fp == fingerprint or bool(
+        cur_items and prev_items and cur_items.issubset(prev_items)
+    )
+
+    if is_already_blocked and not expired and not session_mismatch:
+        # Already blocked once for this exact fingerprint (or strict subset of errors) within active TTL/session
         state.pop(gate_key, None)
         with contextlib.suppress(OSError):
             if state:
@@ -332,11 +355,14 @@ def _check_and_record_stop_gate(
                 gate_file.unlink(missing_ok=True)
         return False
 
-    state[gate_key] = {
+    entry_data: dict[str, Any] = {
         "hash": fingerprint,
         "timestamp": now,
         "session_id": session_id,
     }
+    if cur_items:
+        entry_data["items"] = sorted(cur_items)
+    state[gate_key] = entry_data
     with contextlib.suppress(OSError):
         cache_dir.mkdir(parents=True, exist_ok=True)
         gate_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
@@ -356,6 +382,81 @@ def _clear_stop_gate(eidos_dir: Path, gate_key: str) -> None:
                 gate_file.write_text(json.dumps(loaded, indent=2), encoding="utf-8")
             else:
                 gate_file.unlink(missing_ok=True)
+
+
+def _compute_adoc_snapshot(eidos_dir: Path) -> tuple[int, int, int]:
+    """Compute a fast (file_count, max_mtime_ns, total_size) snapshot of .adoc files in eidos_dir."""
+    count = 0
+    max_mtime = 0
+    total_size = 0
+    for p in eidos_dir.rglob("*.adoc"):
+        if ".cache" in p.parts or p.is_symlink():
+            continue
+        try:
+            st = p.stat()
+            count += 1
+            if st.st_mtime_ns > max_mtime:
+                max_mtime = st.st_mtime_ns
+            total_size += st.st_size
+        except OSError:
+            continue
+    return (count, max_mtime, total_size)
+
+
+def _save_stop_validation_snapshot(eidos_dir: Path, report: Any) -> None:
+    """Persist the Stop validation report in SQLite metadata table so handle_drift_stop skips duplicate validation."""
+    import sqlite3
+    import time
+
+    db_path = eidos_dir / ".cache" / "index.db"
+    if not db_path.is_file():
+        return
+    snap = _compute_adoc_snapshot(eidos_dir)
+    payload = json.dumps(
+        {
+            "timestamp": time.time(),
+            "snapshot": list(snap),
+            "schema_errors": {str(k): list(v) for k, v in report.schema_errors.items()},
+            "broken_references": list(report.broken_references),
+        }
+    )
+    with contextlib.suppress(sqlite3.Error, OSError), sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('last_stop_validation', ?)",
+            (payload,),
+        )
+
+
+def _load_stop_validation_snapshot(eidos_dir: Path, max_age_seconds: float = 5.0) -> Any | None:
+    """Load a recent Stop validation report if the .adoc file snapshot is unchanged."""
+    import sqlite3
+    import time
+
+    from eidos.core.spec.models import ValidationReport
+
+    db_path = eidos_dir / ".cache" / "index.db"
+    if not db_path.is_file():
+        return None
+    with (
+        contextlib.suppress(sqlite3.Error, OSError, json.JSONDecodeError, ValueError, KeyError, TypeError),
+        sqlite3.connect(str(db_path)) as conn,
+    ):
+        row = conn.execute(
+            "SELECT value FROM metadata WHERE key = 'last_stop_validation'"
+        ).fetchone()
+        if not row or not row[0]:
+            return None
+        data = json.loads(row[0])
+        ts = float(data["timestamp"])
+        if (time.time() - ts) > max_age_seconds:
+            return None
+        if tuple(data["snapshot"]) != _compute_adoc_snapshot(eidos_dir):
+            return None
+        return ValidationReport(
+            schema_errors={str(k): list(v) for k, v in (data.get("schema_errors") or {}).items()},
+            broken_references=list(data.get("broken_references") or []),
+        )
+    return None
 
 
 def _hash_files(workspace_root: Path, rel_paths: list[str]) -> dict[str, str]:
@@ -380,30 +481,45 @@ def handle_lint_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str,
     try:
         validator = SpecValidator()
         report = validator.validate_directory(eidos_dir)
+        _save_stop_validation_snapshot(eidos_dir, report)
         if not report.is_clean:
             errors: list[str] = []
-            for f, errs in sorted(report.schema_errors.items(), key=lambda x: str(x[0])):
-                fname = Path(f).name
-                for e in errs[:3]:
-                    errors.append(f"  - {fname}: {e}")
-            for r in report.broken_references[:3]:
-                errors.append(f"  - Broken reference: {r}")
-
-            err_msg = "\n".join(errors[:10])
+            all_errors: list[str] = []
             tracked_specs = [str(f) for f in report.schema_errors]
             if report.broken_references:
                 tracked_specs.extend(
                     str(p) for p in sorted(eidos_dir.rglob("*.adoc")) if ".cache" not in p.parts
                 )
+            file_hashes = _hash_files(workspace_root, tracked_specs)
+            error_items: list[str] = []
+            for f, errs in sorted(report.schema_errors.items(), key=lambda x: str(x[0])):
+                fname = Path(f).name
+                fhash = file_hashes.get(str(f), "")
+                for idx_e, e in enumerate(errs):
+                    line = f"  - {fname}: {e}"
+                    all_errors.append(line)
+                    error_items.append(f"schema:{f}:{fhash}:{e}")
+                    if idx_e < 3:
+                        errors.append(line)
+            for idx_r, r in enumerate(report.broken_references):
+                line = f"  - Broken reference: {r}"
+                all_errors.append(line)
+                error_items.append(f"ref:{r}")
+                if idx_r < 3:
+                    errors.append(line)
+
+            err_msg = "\n".join(errors[:10])
             fp_payload = json.dumps(
                 {
-                    "errors": errors[:10],
-                    "file_hashes": _hash_files(workspace_root, tracked_specs),
+                    "errors": all_errors,
+                    "file_hashes": file_hashes,
                 },
                 sort_keys=True,
             )
             fp = hashlib.sha256(fp_payload.encode("utf-8")).hexdigest()
-            if not _check_and_record_stop_gate(eidos_dir, "lint_fingerprint", fp, session_id=session_id):
+            if not _check_and_record_stop_gate(
+                eidos_dir, "lint_fingerprint", fp, session_id=session_id, items=error_items
+            ):
                 return {"decision": "allow", "systemMessage": _STOP_GATE_RELEASE_WARNING}
 
             reason = (
@@ -436,7 +552,19 @@ def handle_drift_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str
 
     session_id = _extract_session_id(payload)
     try:
-        drift_res = detect_drift(repo_root=workspace_root, eidos_dir=eidos_dir, uncommitted=True)
+        cached_val = _load_stop_validation_snapshot(eidos_dir)
+        drift_kwargs: dict[str, Any] = {
+            "repo_root": workspace_root,
+            "eidos_dir": eidos_dir,
+            "uncommitted": True,
+        }
+        if cached_val is not None:
+            drift_kwargs["validation_report"] = cached_val
+        try:
+            drift_res = detect_drift(**drift_kwargs)
+        except TypeError:
+            drift_kwargs.pop("validation_report", None)
+            drift_res = detect_drift(**drift_kwargs)
         has_non_code_failure = (
             not drift_res.validation_passed
             or bool(drift_res.uncovered_invariants)
@@ -449,12 +577,19 @@ def handle_drift_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str
                 + list(drift_res.classification.delta_files)
                 + list(drift_res.classification.test_files)
             )
+            file_hashes = _hash_files(workspace_root, all_tracked)
+            drift_items: list[str] = [
+                *(f"code:{cf}:{file_hashes.get(cf, '')}" for cf in drift_res.classification.code_files),
+                *(f"val:{ve}" for ve in drift_res.validation_errors),
+                *(f"uncov:{inv.invariant_id}" for inv in drift_res.uncovered_invariants),
+                *(f"orphan:{oid}:{loc}" for oid, loc in drift_res.orphan_invariants),
+            ]
             fp_payload = json.dumps(
                 {
                     "code_files": sorted(drift_res.classification.code_files),
                     "spec_files": sorted(drift_res.classification.spec_files),
                     "delta_files": sorted(drift_res.classification.delta_files),
-                    "file_hashes": _hash_files(workspace_root, all_tracked),
+                    "file_hashes": file_hashes,
                     "remediation": drift_res.remediation_suggestions,
                     "validation_errors": drift_res.validation_errors,
                     "uncovered_invariants": [inv.invariant_id for inv in drift_res.uncovered_invariants],
@@ -463,7 +598,9 @@ def handle_drift_stop(payload: dict[str, Any], workspace_root: Path) -> dict[str
                 sort_keys=True,
             )
             fp = hashlib.sha256(fp_payload.encode("utf-8")).hexdigest()
-            if not _check_and_record_stop_gate(eidos_dir, "fingerprint", fp, session_id=session_id):
+            if not _check_and_record_stop_gate(
+                eidos_dir, "fingerprint", fp, session_id=session_id, items=drift_items
+            ):
                 return {"decision": "allow", "systemMessage": _STOP_GATE_RELEASE_WARNING}
 
             remediation_lines = "\n".join(f"  {rem}" for rem in drift_res.remediation_suggestions)
@@ -582,7 +719,7 @@ def execute_lint_hook(
 
     resolved_event = _infer_event(event, payload, default_event="stop")
     ws_root = target_path.resolve() if target_path else find_workspace_root(payload)
-    if ws_root.name == "eidos" and (ws_root / "system.adoc").exists():
+    if ws_root.name == "eidos" and ((ws_root / "system.adoc").exists() or not (ws_root / "eidos").exists()):
         ws_root = ws_root.parent
 
     if resolved_event == "pre_tool":
@@ -621,7 +758,7 @@ def execute_drift_hook(
 
     if not payload and not event:
         ws_root = (target_path or Path.cwd()).resolve()
-        if ws_root.name == "eidos" and (ws_root / "system.adoc").exists():
+        if ws_root.name == "eidos" and ((ws_root / "system.adoc").exists() or not (ws_root / "eidos").exists()):
             ws_root = ws_root.parent
         eidos_dir = ws_root / "eidos"
         if not eidos_dir.exists():
@@ -645,7 +782,7 @@ def execute_drift_hook(
 
     resolved_event = _infer_event(event, payload, default_event="stop")
     ws_root = target_path.resolve() if target_path else find_workspace_root(payload)
-    if ws_root.name == "eidos" and (ws_root / "system.adoc").exists():
+    if ws_root.name == "eidos" and ((ws_root / "system.adoc").exists() or not (ws_root / "eidos").exists()):
         ws_root = ws_root.parent
 
     res = handle_drift_stop(payload, ws_root) if resolved_event == "stop" else {"decision": "allow"}

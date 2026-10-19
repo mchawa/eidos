@@ -110,7 +110,7 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
         f.client === "all" ||
         f.client === "omnichannel" ||
         f.flow_type === "cross_client" ||
-        (Array.isArray(f.clients) && f.clients.length > 0)
+        (Array.isArray(f.clients) && f.clients.length > 1)
     );
   };
 

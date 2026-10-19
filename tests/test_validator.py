@@ -751,9 +751,9 @@ def test_spec_validation_cache_warm_hit_and_invalidation(tmp_path: Path, monkeyp
     validated_docs: list[str] = []
     orig_validate_doc = SpecValidator.validate_document
 
-    def _spy_validate_doc(self, doc):
+    def _spy_validate_doc(self, doc, *args, **kwargs):
         validated_docs.append(doc.file_path.name)
-        return orig_validate_doc(self, doc)
+        return orig_validate_doc(self, doc, *args, **kwargs)
 
     monkeypatch.setattr(SpecValidator, "validate_document", _spy_validate_doc)
     warm_report = validator.validate_directory(eidos_dir)
@@ -3145,6 +3145,428 @@ def test_validator_class_qualified_test_binding_and_nested_scope(tmp_path: Path)
     # InnerHelper's method must not be attributed directly to OuterSuite
     assert SpecValidator._test_symbol_exists(py_file, ["OuterSuite", "test_inner_only"]) is False
     assert SpecValidator._test_symbol_exists(py_file, ["InnerHelper", "test_inner_only"]) is True
+
+
+def test_adoc_path_reference_target_types_validation(tmp_path: Path, validator: SpecValidator) -> None:
+    """Verify Group 1 (#5): .adoc path references in x-eidos-ref fields enforce target_types."""
+    eidos_dir = tmp_path / "eidos"
+    (eidos_dir / "domains" / "core" / "capabilities").mkdir(parents=True)
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "personas").mkdir(parents=True)
+    (tmp_path / "src").mkdir(parents=True)
+
+    # Create a product/domain spec and reference its .adoc path inside business.personas (which requires product/persona)
+    dom_path = eidos_dir / "domains" / "core" / "domain.adoc"
+    dom_path.write_text(
+        "---\n"
+        "type: product/domain\n"
+        "schema: schemas/v1/product/domain.schema.yaml\n"
+        "id: DOM-CORE\n"
+        "name: Core\n"
+        "classification: core\n"
+        "boundaries:\n"
+        "  responsibilities:\n"
+        "    - Core logic\n"
+        "---\n= Core\n",
+        encoding="utf-8",
+    )
+    cnt_path = eidos_dir / "architecture" / "containers" / "core.adoc"
+    cnt_path.write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-CORE\n"
+        "name: Core\n"
+        "container_type: library\n"
+        "runtime: Python\n"
+        "package_path: src\n"
+        "---\n= Core\n",
+        encoding="utf-8",
+    )
+    cap_path = eidos_dir / "domains" / "core" / "capabilities" / "cap.adoc"
+    cap_path.write_text(
+        "---\n"
+        "type: product/capability\n"
+        "schema: schemas/v1/product/capability.schema.yaml\n"
+        "id: CAP-CORE-001\n"
+        "title: Cap\n"
+        "domain: DOM-CORE\n"
+        "status: active\n"
+        "version: '1.0.0'\n"
+        "business:\n"
+        "  personas:\n"
+        "    - eidos/domains/core/domain.adoc\n"
+        "  jtbd: Test wrong .adoc target type\n"
+        "technical:\n"
+        "  containers:\n"
+        "    - CNT-CORE\n"
+        "---\n= Cap\n",
+        encoding="utf-8",
+    )
+
+    rep = validator.validate_directory(eidos_dir)
+    broken_str = "\n".join(rep.broken_references)
+    assert "Invalid entity reference type in cap.adoc" in broken_str
+    assert "eidos/domains/core/domain.adoc" in broken_str
+    assert "product/persona" in broken_str
+
+
+# eidos:fixture
+def test_group_b_regressions_b1_through_b8(tmp_path: Path, validator: SpecValidator) -> None:
+    """Regression suite for Group B bugs (B1 through B8)."""  # eidos:fixture
+    import subprocess
+
+    from eidos.core.index.storage import clone_spec_document, get_cached_spec_document
+    from eidos.core.spec.parser import _parse_spec_content, parse_spec_file
+    from eidos.core.workspace.project import (
+        extract_entity_paths,
+        get_tracked_files,
+        match_path_pattern,
+    )
+
+    # --- B1: _DictCompatibleModel omitted fields & clone_spec_document _model isolation ---
+    doc_omitted = _parse_spec_content(
+        tmp_path / "omitted.adoc",
+        "---\n"
+        "type: product/domain\n"
+        "schema: schemas/v1/product/domain.schema.yaml\n"
+        "id: DOM-B1\n"
+        "name: Domain B1\n"
+        "---\n= Domain B1\n",
+    )
+    assert "status" not in doc_omitted.model
+    assert doc_omitted.model.get("status", "active") == "active"
+    with pytest.raises(KeyError):
+        _ = doc_omitted.model["status"]
+
+    cloned_doc = clone_spec_document(doc_omitted)
+    assert cloned_doc._model is None
+    cloned_doc.frontmatter["status"] = "deprecated"
+    assert cloned_doc.model.status == "deprecated"
+    assert cloned_doc.model["status"] == "deprecated"
+    assert doc_omitted.model.get("status", "active") == "active"
+
+    # --- B4: is_root_system parent directory check ---
+    # 1) Repo cloned under a path containing 'design' -> eidos/system.adoc is still root system
+    design_clone_sys = tmp_path / "design" / "my_repo" / "eidos" / "system.adoc"
+    design_clone_sys.parent.mkdir(parents=True, exist_ok=True)
+    design_clone_sys.write_text("", encoding="utf-8")
+    parsed_root_sys = parse_spec_file(design_clone_sys)
+    assert parsed_root_sys.doc_id == "SYS-UNINITIALIZED"
+    assert parsed_root_sys.errors == []
+    cached_root_sys, _, _ = get_cached_spec_document(design_clone_sys)
+    assert cached_root_sys is not None and cached_root_sys.doc_id == "SYS-UNINITIALIZED"
+
+    # 2) Empty system.adoc inside eidos/domains/ is NOT root system
+    dom_sys = tmp_path / "design" / "my_repo" / "eidos" / "domains" / "system.adoc"
+    dom_sys.parent.mkdir(parents=True, exist_ok=True)
+    dom_sys.write_text("", encoding="utf-8")
+    parsed_dom_sys = parse_spec_file(dom_sys)
+    assert parsed_dom_sys.doc_type == "unknown"
+    assert parsed_dom_sys.errors != []
+    cached_dom_sys, _, _ = get_cached_spec_document(dom_sys)
+    assert cached_dom_sys is not None and cached_dom_sys.doc_type == "unknown" and cached_dom_sys.errors != []
+
+    # --- B6: resolve_schema disambiguates schemas/v1/system.schema.yaml for design/system & deduplicates validate_document ---
+    ds_ambig = _parse_spec_content(
+        tmp_path / "ds_ambig.adoc",
+        "---\n"
+        "type: design/system\n"
+        "schema: schemas/v1/system.schema.yaml\n"
+        "id: DS-AMBIG\n"
+        "title: Ambiguous Schema Design System\n"
+        "status: active\n"
+        "tokens:\n"
+        "  spec_format: w3c_design_tokens\n"
+        "  manifest: tokens.json\n"
+        "---\n= DS\n",
+    )
+    resolved_ds_schema = validator.resolve_schema(ds_ambig)
+    assert resolved_ds_schema is not None
+    assert resolved_ds_schema.get("properties", {}).get("type", {}).get("const") == "design/system"
+    assert validator.validate_document(ds_ambig) == []
+
+    # Calling validate_document twice on an invalid doc does not duplicate errors
+    bad_doc = _parse_spec_content(
+        tmp_path / "bad_dup.adoc",
+        "---\n"
+        "type: product/domain\n"
+        "schema: schemas/v1/product/domain.schema.yaml\n"
+        "id: INVALID-ID\n"
+        "---\n= Bad\n",
+    )
+    errs_first = list(validator.validate_document(bad_doc))
+    errs_second = list(validator.validate_document(bad_doc))
+    assert errs_first == errs_second
+
+    # --- B2, B3, B5, B7: End-to-end directory validation ---
+    ws = tmp_path / "ws_group_b"
+    eidos_dir = ws / "eidos"
+    cnts_dir = eidos_dir / "architecture" / "containers"
+    ctrs_dir = eidos_dir / "architecture" / "contracts"
+    pols_dir = eidos_dir / "policies"
+    deltas_dir = eidos_dir / "deltas"
+    uic_dir = eidos_dir / "design" / "systems" / "main" / "components"
+    src_dir = ws / "src" / "app"
+    tests_dir = ws / "tests"
+    for d in (cnts_dir, ctrs_dir, pols_dir, deltas_dir, uic_dir, src_dir, tests_dir):
+        d.mkdir(parents=True, exist_ok=True)
+
+    (tests_dir / "test_app.py").write_text("def test_valid():\n    assert True\n", encoding="utf-8")
+    (src_dir / "__init__.py").write_text("", encoding="utf-8")
+
+    (cnts_dir / "app.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-APP\n"
+        "name: App\n"
+        "container_type: service\n"
+        "runtime: Python 3.12\n"
+        "package_path: src/app\n"
+        "---\n= App\n",
+        encoding="utf-8",
+    )
+
+    # B2: JSON Schema with required: true (boolean instead of list)
+    (src_dir / "bool_req.schema.json").write_text(
+        '{"type": "object", "required": true, "properties": {"order_id": {"type": "string"}}}',
+        encoding="utf-8",
+    )
+    (ctrs_dir / "js_bool.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-JS-BOOL\n"
+        "title: JSON Schema Bool Required\n"
+        "protocol: json_schema\n"
+        "owning_container: CNT-APP\n"
+        "specification_file: src/app/bool_req.schema.json\n"
+        "---\n= JSON Schema\n\nDocuments `order_id`.\n",
+        encoding="utf-8",
+    )
+
+    # B3: Legacy verification binding + trailing '::' with empty symbol
+    (pols_dir / "pol_b3.adoc").write_text(
+        "---\n"
+        "type: product/policy\n"
+        "schema: schemas/v1/product/policy.schema.yaml\n"
+        "id: POL-B3\n"
+        "title: Policy B3\n"
+        "category: quality\n"
+        "rule: Test B3 bindings.\n"
+        "invariants:\n"
+        "  - id: INV-B3-TRAILING\n"  # eidos:fixture
+        "    rule: Trailing colons.\n"
+        "    test_binding: \"tests/test_app.py::\"\n"
+        "  - id: INV-B3-VERIF\n"  # eidos:fixture
+        "    rule: Legacy verification missing symbol.\n"
+        "    verification: \"tests/test_app.py::test_nonexistent_verif\"\n"
+        "---\n= Policy B3\n",
+        encoding="utf-8",
+    )
+
+    # B5: Delta with non-existent .adoc paths in tombstone, expect, and remove/add mutations
+    (deltas_dir / "dlt_b5.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-888\n"
+        "title: Delta B5\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: refactor\n"
+        "  motivation: Test B5 dict reference exemptions.\n"
+        "tombstone:\n"
+        "  removed_files:\n"
+        "    - eidos/domains/deleted_legacy.adoc\n"
+        "mutations:\n"
+        "  - operation: remove\n"
+        "    target: CMP-OLD\n"
+        "    details: Removes eidos/architecture/components/removed_comp.adoc\n"
+        "    expect:\n"
+        "      frontmatter:\n"
+        "        ref: eidos/architecture/components/removed_comp.adoc\n"
+        "---\n= Delta B5\n",
+        encoding="utf-8",
+    )
+
+    # B7: Python Protocol with duplicate method across classes, prose backticks `O(1)` / `len(x)`, and // comments
+    (src_dir / "proto_b7.py").write_text(
+        "from typing import Protocol\n\n"
+        "class ReaderA(Protocol):\n"
+        "    def read_chunk(self, size: int) -> bytes: ...\n"
+        "    def missing_once(self) -> None: ...\n\n"
+        "class ReaderB(Protocol):\n"
+        "    def read_chunk(self, size: int) -> bytes: ...\n"
+        "    def missing_once(self) -> None: ...\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "proto_b7.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-PROTO-B7\n"
+        "title: Protocol B7\n"
+        "protocol: python_protocol\n"
+        "owning_container: CNT-APP\n"
+        "specification_file: src/app/proto_b7.py\n"
+        "---\n= Protocol B7\n\n"
+        "Provides `ReaderA` and `ReaderB` with `read_chunk(size: int)` in `O(1)` time for `len(x)` bytes.\n"
+        "// `def commented_out_phantom(self)`\n"
+        "Also documents `def undocumented_proto_fn(self)`.\n",
+        encoding="utf-8",
+    )
+
+    # B7: GraphQL with prose backticks `O(1)` and `helper(x)` vs real operation
+    (src_dir / "schema_b7.graphql").write_text(
+        "type Query {\n  getItem(id: ID!): Item\n}\n"
+        "type Mutation {\n  getItem(id: ID!): Item\n}\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "gql_b7.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-GQL-B7\n"
+        "title: GraphQL B7\n"
+        "protocol: graphql\n"
+        "owning_container: CNT-APP\n"
+        "specification_file: src/app/schema_b7.graphql\n"
+        "---\n= GraphQL B7\n\n"
+        "Runs `getItem(id: ID!)` in `O(1)` complexity using `helper(x)`.\n",
+        encoding="utf-8",
+    )
+
+    # B7: Typer CLI with constructor name=..., unnamed mounted sub-app, and async def command
+    (src_dir / "typer_b7.py").write_text(
+        "import typer\n"
+        "app = typer.Typer()\n"
+        "users_app = typer.Typer(name='users')\n"
+        "flat_app = typer.Typer()\n"
+        "app.add_typer(users_app)\n"
+        "app.add_typer(flat_app)\n\n"
+        "@users_app.command()\n"
+        "async def list_users():\n"
+        "    pass\n\n"
+        "@flat_app.command()\n"
+        "async def ping():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "typer_b7.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-TYPER-B7\n"
+        "title: Typer B7\n"
+        "protocol: cli_args\n"
+        "owning_container: CNT-APP\n"
+        "specification_file: src/app/typer_b7.py\n"
+        "---\n= Typer B7\n\n"
+        "=== `ping`\nPings server.\n\n"
+        "=== `users`\n"
+        "* **Sub-commands**:\n"
+        "  - `list-users`: Lists users.\n",
+        encoding="utf-8",
+    )
+
+    # B7: Click CLI with @<group>.group() and <group>.add_command(...)
+    (src_dir / "click_b7.py").write_text(
+        "import click\n\n"
+        "@click.group()\n"
+        "def cli():\n"
+        "    pass\n\n"
+        "@cli.group()\n"
+        "def cache():\n"
+        "    pass\n\n"
+        "@cache.command()\n"
+        "def clear_cache():\n"
+        "    pass\n\n"
+        "@click.command()\n"
+        "def doctor_check():\n"
+        "    pass\n\n"
+        "cli.add_command(doctor_check, name='doctor')\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "click_b7.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-CLICK-B7\n"
+        "title: Click B7\n"
+        "protocol: cli_args\n"
+        "owning_container: CNT-APP\n"
+        "specification_file: src/app/click_b7.py\n"
+        "---\n= Click B7\n\n"
+        "=== `cache`\n"
+        "* **Sub-commands**:\n"
+        "  - `clear-cache`: Clears cache.\n\n"
+        "=== `doctor`\nRuns doctor.\n",
+        encoding="utf-8",
+    )
+
+    rep_b = validator.validate_directory(eidos_dir)
+    broken_b = rep_b.broken_references
+    broken_b_text = "\n".join(broken_b)
+
+    # B2: no crash, and order_id is documented
+    assert "bool_req.schema.json" not in broken_b_text
+    # B3: trailing '::' and legacy verification caught
+    assert "Malformed test_binding 'tests/test_app.py::' (empty symbol after '::')" in broken_b_text
+    assert "test_nonexistent_verif" in broken_b_text
+    # B5: deleted_legacy.adoc and removed_comp.adoc are NOT flagged
+    assert "deleted_legacy.adoc" not in broken_b_text
+    assert "removed_comp.adoc" not in broken_b_text
+    # B7: Python protocol deduplicated missing_once (exactly 1 error), caught undocumented_proto_fn, ignored O(1)/len(x)/commented_out_phantom
+    assert sum(1 for r in broken_b if "missing_once" in r) == 1
+    assert "undocumented_proto_fn" in broken_b_text
+    assert "commented_out_phantom" not in broken_b_text
+    assert "'O'" not in broken_b_text and "'len'" not in broken_b_text and "'helper'" not in broken_b_text
+    # B7: GraphQL, Typer, and Click contracts are completely clean
+    assert "CTR-GQL-B7" not in broken_b_text
+    assert "CTR-TYPER-B7" not in broken_b_text
+    assert "CTR-CLICK-B7" not in broken_b_text
+
+    # --- B8: match_path_pattern, get_tracked_files, and extract_entity_paths ---
+    target_file = "src/eidos/core/spec/validator.py"
+    score_specific_dir = match_path_pattern(target_file, "src/eidos/core/spec")
+    score_broad_glob_all = match_path_pattern(target_file, "src/**/*")
+    score_broad_glob_py = match_path_pattern(target_file, "src/**/*.py")
+    assert score_specific_dir > score_broad_glob_py > score_broad_glob_all > 0
+    assert 0 < match_path_pattern("setup.py", "*.py") < 500
+    assert 0 < match_path_pattern("app.py", "a*.py") < 500
+
+    extracted_paths = extract_entity_paths(
+        {
+            "package_path": ["src/core", "N/A"],
+            "source_path": "TBD",
+            "owned_path": ["src/owned", "NONE"],
+            "specification_file": "N/A",
+            "components": [
+                {
+                    "source_path": "src/core/comp.py",
+                    "owned_path": ["src/core/owned_comp.py", "TBD"],
+                }
+            ],
+        }
+    )
+    assert extracted_paths == [
+        "src/core",
+        "src/owned",
+        "src/core/comp.py",
+        "src/core/owned_comp.py",
+    ]
+
+    git_b8 = tmp_path / "git_b8"
+    (git_b8 / "src").mkdir(parents=True)
+    (git_b8 / "eidos" / ".cache").mkdir(parents=True)
+    (git_b8 / "src" / "main.py").write_text("x = 1\n", encoding="utf-8")
+    (git_b8 / "eidos" / ".cache" / "index.db").write_text("sqlite", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=git_b8, check=True)
+    tracked_b8 = get_tracked_files(git_b8, include_untracked=True)
+    assert tracked_b8 == ["src/main.py"]
+
 
 
 

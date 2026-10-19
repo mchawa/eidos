@@ -27,10 +27,16 @@ class _DictCompatibleModel(BaseModel):
 
     def __getitem__(self, key: str) -> Any:
         if key in self.__class__.model_fields:
-            return getattr(self, key)
+            val = getattr(self, key)
+            if val is None and key not in self.__pydantic_fields_set__:
+                raise KeyError(key)
+            return val
         for field_name, field_info in self.__class__.model_fields.items():
             if field_info.alias == key:
-                return getattr(self, field_name)
+                val = getattr(self, field_name)
+                if val is None and field_name not in self.__pydantic_fields_set__:
+                    raise KeyError(key)
+                return val
         if self.__pydantic_extra__ and key in self.__pydantic_extra__:
             return self.__pydantic_extra__[key]
         if hasattr(self, key):
@@ -41,9 +47,16 @@ class _DictCompatibleModel(BaseModel):
 
     def get(self, key: str, default: Any = None) -> Any:
         try:
-            return self[key]
+            val = self[key]
         except KeyError:
             return default
+        if (
+            val is None
+            and key not in self.__pydantic_fields_set__
+            and not (self.__pydantic_extra__ and key in self.__pydantic_extra__)
+        ):
+            return default
+        return val
 
     def __contains__(self, key: object) -> bool:
         if not isinstance(key, str):
@@ -93,7 +106,8 @@ class DecisionModel(_DictCompatibleModel):
         raw = dict(data)
         for req_k in ("id", "title", "decision", "rationale"):
             raw[req_k] = _coerce_req_str(raw.get(req_k))
-        raw["graduated_from"] = _coerce_opt_str(raw.get("graduated_from"))
+        if "graduated_from" in raw:
+            raw["graduated_from"] = _coerce_opt_str(raw.get("graduated_from"))
         alts = raw.get("rejected_alternatives")
         raw["rejected_alternatives"] = (
             [a for a in alts if isinstance(a, (dict, str, RejectedAlternativeModel))]
@@ -121,8 +135,10 @@ class InvariantModel(_DictCompatibleModel):
         raw = dict(data)
         raw["id"] = _coerce_req_str(raw.get("id"))
         raw["rule"] = _coerce_req_str(raw.get("rule"))
-        raw["test_binding"] = _coerce_opt_str(raw.get("test_binding"))
-        raw["verification"] = _coerce_opt_str(raw.get("verification"))
+        if "test_binding" in raw:
+            raw["test_binding"] = _coerce_opt_str(raw.get("test_binding"))
+        if "verification" in raw:
+            raw["verification"] = _coerce_opt_str(raw.get("verification"))
         return raw
 
     def effective_test_binding(self) -> str:
@@ -151,14 +167,16 @@ class InlineComponentModel(_DictCompatibleModel):
         raw = dict(data)
         raw["id"] = _coerce_req_str(raw.get("id"))
         for opt_k in ("name", "ref", "status", "domain_binding", "responsibility"):
-            raw[opt_k] = _coerce_opt_str(raw.get(opt_k))
-        sp = raw.get("source_path")
-        if isinstance(sp, list):
-            raw["source_path"] = [str(p).strip() for p in sp if _coerce_opt_str(p)]
-        elif _coerce_opt_str(sp) is not None:
-            raw["source_path"] = _coerce_opt_str(sp)
-        else:
-            raw["source_path"] = None
+            if opt_k in raw:
+                raw[opt_k] = _coerce_opt_str(raw.get(opt_k))
+        if "source_path" in raw:
+            sp = raw.get("source_path")
+            if isinstance(sp, list):
+                raw["source_path"] = [str(p).strip() for p in sp if _coerce_opt_str(p)]
+            elif _coerce_opt_str(sp) is not None:
+                raw["source_path"] = _coerce_opt_str(sp)
+            else:
+                raw["source_path"] = None
         decs = raw.get("decisions")
         raw["decisions"] = (
             [d for d in decs if isinstance(d, (dict, DecisionModel))] if isinstance(decs, list) else []
@@ -220,7 +238,8 @@ class DeltaIntentModel(_DictCompatibleModel):
             return {}
         raw = dict(data)
         for opt_k in ("kind", "motivation", "bug_classification", "severity"):
-            raw[opt_k] = _coerce_opt_str(raw.get(opt_k))
+            if opt_k in raw:
+                raw[opt_k] = _coerce_opt_str(raw.get(opt_k))
         return raw
 
 
@@ -243,7 +262,8 @@ class DeltaMutationModel(_DictCompatibleModel):
         raw["operation"] = _coerce_req_str(raw.get("operation"))
         raw["target"] = _coerce_req_str(raw.get("target"))
         for opt_k in ("parent", "title", "details"):
-            raw[opt_k] = _coerce_opt_str(raw.get(opt_k))
+            if opt_k in raw:
+                raw[opt_k] = _coerce_opt_str(raw.get(opt_k))
         exp = raw.get("expect")
         raw["expect"] = dict(exp) if isinstance(exp, dict) else {}
         return raw
@@ -309,13 +329,14 @@ class FrontmatterModel(_DictCompatibleModel):
             if scalar_key in raw:
                 raw[scalar_key] = _coerce_opt_str(raw.get(scalar_key))
         for path_key in ("package_path", "source_path"):
-            pval = raw.get(path_key)
-            if isinstance(pval, list):
-                raw[path_key] = [str(p).strip() for p in pval if _coerce_opt_str(p)]
-            elif _coerce_opt_str(pval) is not None:
-                raw[path_key] = _coerce_opt_str(pval)
-            else:
-                raw[path_key] = None
+            if path_key in raw:
+                pval = raw.get(path_key)
+                if isinstance(pval, list):
+                    raw[path_key] = [str(p).strip() for p in pval if _coerce_opt_str(p)]
+                elif _coerce_opt_str(pval) is not None:
+                    raw[path_key] = _coerce_opt_str(pval)
+                else:
+                    raw[path_key] = None
         comps_raw = raw.get("components")
         if not comps_raw and isinstance(raw.get("c4_internal_components"), list):
             comps_raw = raw.get("c4_internal_components")
@@ -326,8 +347,9 @@ class FrontmatterModel(_DictCompatibleModel):
         )
         tech_raw = raw.get("technical")
         raw["technical"] = tech_raw if isinstance(tech_raw, (dict, CapabilityTechnicalModel)) else {}
-        intent_raw = raw.get("intent")
-        raw["intent"] = intent_raw if isinstance(intent_raw, (dict, DeltaIntentModel)) else None
+        if "intent" in raw:
+            intent_raw = raw.get("intent")
+            raw["intent"] = intent_raw if isinstance(intent_raw, (dict, DeltaIntentModel)) else None
         muts_raw = raw.get("mutations")
         raw["mutations"] = (
             [m for m in muts_raw if isinstance(m, (dict, DeltaMutationModel))]

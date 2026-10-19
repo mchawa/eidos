@@ -100,7 +100,7 @@ def init_repository(
         }
         sys_body = f"= System: {sys_title}\n:toc: left\n\n== Strategic Vision\n{sys_fm['business_identity']['vision']}\n"
         sys_file.write_text(dump_spec_document(sys_fm, sys_body), encoding="utf-8")
-    elif not sys_file.exists() or force:
+    elif not sys_file.exists():
         sys_file.write_text("", encoding="utf-8")
     if sys_file not in created_files:
         created_files.append(sys_file)

@@ -2983,3 +2983,493 @@ def test_class_qualified_test_binding_rejects_wrong_class_fallback(tmp_path: Pat
     assert _verify_single_invariant("INV-CLS-WRONG", "tests/test_cls.py::WrongClass::test_foo", repo, raw_map, {}) == []
     assert _verify_single_invariant("INV-CLS-UNQUAL", "tests/test_cls.py::test_foo", repo, raw_map, {}) != []
 
+
+def test_group_c1_inline_component_1hop_and_promoted_component_parent_container(tmp_path: Path, monkeypatch) -> None:
+    """Verify C1: 1-hop neighborhood includes capabilities/contracts bound to matching inline CMP-* and parent CNT-* of promoted CMP-*."""  # eidos:fixture
+    cnt_rel = "eidos/architecture/containers/api.adoc"
+    cnt_spec = """---
+type: tech/container
+schema: schemas/v1/tech/container.schema.yaml
+id: CNT-API
+name: API Container
+package_path: src/api
+components:
+  - id: CMP-INLINE-PAY
+    name: Inline Payments
+    source_path: src/api/pay.py
+  - id: CMP-PROMOTED-AUTH
+    name: Promoted Auth
+    ref: eidos/architecture/components/auth.adoc
+---
+= API Container
+
+Original container prose.
+"""
+    cap_inline_rel = "eidos/domains/core/capabilities/cap-pay.adoc"
+    cap_inline_old = """---
+type: product/capability
+schema: schemas/v1/product/capability.schema.yaml
+id: CAP-PAY
+title: Payment Capability
+domain: DOM-CORE
+status: active
+business:
+  jtbd: Process payments
+technical:
+  components:
+    - CMP-INLINE-PAY
+---
+= Payment Capability
+
+Original payment prose.
+"""
+    cap_inline_new = cap_inline_old + "\nUpdated payment retry handling in pay.py.\n"
+
+    # 1. File owned by inline CMP-INLINE-PAY covered by 1-hop CAP-PAY bound to CMP-INLINE-PAY -> clean!
+    ws1 = tmp_path / "c1_inline"
+    env1 = _diff_aware_env(
+        ws1,
+        monkeypatch,
+        changed=["src/api/pay.py", cap_inline_rel],
+        versions={
+            "src/api/pay.py": ("def pay(a: int) -> int:\n    return a\n", "def pay(a: int, b: int) -> int:\n    return a + b\n"),
+            cap_inline_rel: (cap_inline_old, cap_inline_new),
+        },
+        spec_text=cnt_spec,
+        extra_files={
+            cnt_rel: cnt_spec,
+            cap_inline_rel: cap_inline_new,
+            "src/api/pay.py": "def pay(a: int, b: int) -> int:\n    return a + b\n",
+        },
+    )
+    res1 = detect_drift(repo_root=ws1, eidos_dir=env1)
+    assert res1.drift_detected is False
+
+    # 2. File owned by promoted CMP-PROMOTED-AUTH (owned_path: src/api/auth/**) covered by parent CNT-API or CAP bound to CNT-API -> clean!
+    cmp_auth_rel = "eidos/architecture/components/auth.adoc"
+    cmp_auth_spec = """---
+type: tech/component
+schema: schemas/v1/tech/component.schema.yaml
+id: CMP-PROMOTED-AUTH
+name: Promoted Auth
+container: CNT-API
+owned_path: src/api/auth/**
+responsibility: Authentication
+---
+= Promoted Auth
+"""
+    cap_cnt_rel = "eidos/domains/core/capabilities/cap-api.adoc"
+    cap_cnt_old = """---
+type: product/capability
+schema: schemas/v1/product/capability.schema.yaml
+id: CAP-API
+title: API Capability
+domain: DOM-CORE
+status: active
+business:
+  jtbd: Serve API
+technical:
+  containers:
+    - CNT-API
+---
+= API Capability
+
+Original API capability prose.
+"""
+    cap_cnt_new = cap_cnt_old + "\nUpdated login token validation in login.py.\n"
+
+    ws2 = tmp_path / "c1_promoted_parent"
+    env2 = _diff_aware_env(
+        ws2,
+        monkeypatch,
+        changed=["src/api/auth/login.py", cap_cnt_rel],
+        versions={
+            "src/api/auth/login.py": (
+                "def login(u: str) -> bool:\n    return True\n",
+                "def login(u: str, mfa: str) -> bool:\n    return True\n",
+            ),
+            cap_cnt_rel: (cap_cnt_old, cap_cnt_new),
+        },
+        spec_text=cnt_spec,
+        extra_files={
+            cnt_rel: cnt_spec,
+            cmp_auth_rel: cmp_auth_spec,
+            cap_cnt_rel: cap_cnt_new,
+            "src/api/auth/login.py": "def login(u: str, mfa: str) -> bool:\n    return True\n",
+        },
+    )
+    res2 = detect_drift(repo_root=ws2, eidos_dir=env2)
+    assert res2.drift_detected is False
+
+
+def test_group_c2_fixture_docstrings_decorators_class_top_level_orphans_and_combined_invariants(tmp_path: Path) -> None:
+    """Verify C2: docstring/block-comment eidos:fixture with dict decorators, top-level + class same-name orphan retention, and combined invariants."""  # eidos:fixture
+    from eidos.vcs.invariants import detect_orphan_invariants, extract_invariants_and_verify
+
+    repo = tmp_path / "c2_repo"
+    eidos_dir = repo / "eidos"
+    dom_dir = eidos_dir / "domains" / "core"
+    cap_dir = dom_dir / "capabilities"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    tests_dir = repo / "tests"
+    for d in (dom_dir, cap_dir, cnt_dir, tests_dir):
+        d.mkdir(parents=True, exist_ok=True)
+
+    # 1. File with docstring-only eidos:fixture and a @decorator({"k": 1}) containing ':' and '{'
+    test_doc_fix = (
+        "import pytest\n\n"
+        "@pytest.mark.parametrize(\n"
+        "    'cfg',\n"
+        "    [{'mode': 'strict'}],\n"
+        ")\n"
+        "def test_decorated_fixture(cfg: dict) -> None:\n"
+        "    \"\"\"Synthetic test fixture (eidos:fixture).\"\"\"\n"
+        "    fake = 'INV-DOCSTRING-IGNORED-001'\n"
+        "    assert fake and cfg\n\n"
+        "def test_real_orphan() -> None:\n"
+        "    x = 'INV-DOCSTRING-REAL-ORPHAN-002'\n"
+        "    assert x\n"
+    )
+    (tests_dir / "test_doc_fixture.py").write_text(test_doc_fix, encoding="utf-8")
+
+    # 2. File with both top-level test_same() and class TestSuite.test_same()
+    test_collision = (
+        "def test_same():\n"
+        "    # INV-TOP-LEVEL-ORPHAN\n"
+        "    assert True\n\n"
+        "class TestSuite:\n"
+        "    def test_same(self):\n"
+        "        # INV-CLASS-LEVEL-ORPHAN\n"
+        "        assert True\n"
+    )
+    (tests_dir / "test_collision.py").write_text(test_collision, encoding="utf-8")
+
+    # Check both cached and uncached orphan detection
+    cached_orphans = detect_orphan_invariants(repo, set(), eidos_dir=eidos_dir)
+    uncached_orphans = detect_orphan_invariants(
+        repo,
+        set(),
+        all_tests_content={
+            "tests/test_doc_fixture.py": test_doc_fix,
+            "tests/test_collision.py": test_collision,
+        },
+    )
+    for orphan_list in (cached_orphans, uncached_orphans):
+        orphan_ids = {oid for oid, _ in orphan_list}
+        assert "INV-DOCSTRING-IGNORED-001" not in orphan_ids
+        assert "INV-DOCSTRING-REAL-ORPHAN-002" in orphan_ids
+        assert ("INV-TOP-LEVEL-ORPHAN", "tests/test_collision.py::test_same") in orphan_list
+        assert ("INV-CLASS-LEVEL-ORPHAN", "tests/test_collision.py::TestSuite::test_same") in orphan_list
+        assert ("INV-CLASS-LEVEL-ORPHAN", "tests/test_collision.py::test_same") not in orphan_list
+
+    # 3. Domain and Container with BOTH top-level invariants and technical.invariants
+    (dom_dir / "domain.adoc").write_text(
+        """---
+type: product/domain
+id: DOM-CORE
+name: Core Domain
+invariants:
+  - id: INV-DOM-TOP
+    rule: Domain top invariant
+    test_binding: tests/test_invs.py::test_all_invs
+technical:
+  invariants:
+    - id: INV-DOM-TECH
+      rule: Domain technical invariant
+      test_binding: tests/test_invs.py::test_all_invs
+---
+= Core Domain
+""",
+        encoding="utf-8",
+    )
+    (cnt_dir / "cnt.adoc").write_text(
+        """---
+type: tech/container
+id: CNT-BOTH
+name: Both Container
+package_path: src
+invariants:
+  - id: INV-CNT-TOP
+    rule: Container top invariant
+    test_binding: tests/test_invs.py::test_all_invs
+technical:
+  invariants:
+    - id: INV-CNT-TECH
+      rule: Container technical invariant
+      test_binding: tests/test_invs.py::test_all_invs
+---
+= Both Container
+""",
+        encoding="utf-8",
+    )
+    (cap_dir / "cap.adoc").write_text(
+        """---
+type: product/capability
+id: CAP-BOTH
+title: Both Capability
+domain: DOM-CORE
+invariants:
+  - id: INV-CAP-TOP
+    rule: Capability top invariant
+    test_binding: tests/test_invs.py::test_all_invs
+technical:
+  invariants:
+    - id: INV-CAP-TECH
+      rule: Capability technical invariant
+      test_binding: tests/test_invs.py::test_all_invs
+---
+= Both Capability
+""",
+        encoding="utf-8",
+    )
+    (tests_dir / "test_invs.py").write_text(
+        "def test_all_invs():\n"
+        "    # INV-DOM-TOP INV-DOM-TECH INV-CNT-TOP INV-CNT-TECH INV-CAP-TOP INV-CAP-TECH\n"
+        "    assert True\n",
+        encoding="utf-8",
+    )
+
+    traces = {t.invariant_id: t for t in extract_invariants_and_verify(eidos_dir, repo)}
+    for expected_id in ("INV-DOM-TOP", "INV-DOM-TECH", "INV-CNT-TOP", "INV-CNT-TECH", "INV-CAP-TOP", "INV-CAP-TECH"):
+        assert expected_id in traces
+        assert traces[expected_id].has_test_coverage is True
+
+
+def test_group_c3_mode_only_noop_diff_and_delta_file_path_targets(tmp_path: Path, monkeypatch) -> None:
+    """Verify C3: identical old/new content in real/versioned diff is not treated as structural/design drift, and file-path delta targets resolve."""  # eidos:fixture
+    # 1. Identical old_c == new_c (e.g. git chmod mode-only change) on .py and .css -> zero drift!
+    ws_noop = tmp_path / "c3_noop"
+    env_noop = _diff_aware_env(
+        ws_noop,
+        monkeypatch,
+        changed=["src/pkg/svc.py", "src/pkg/theme.css"],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, _CODE_OLD),
+            "src/pkg/theme.css": (":root { --c: #000; }\n", ":root { --c: #000; }\n"),
+        },
+        extra_files={"src/pkg/theme.css": ":root { --c: #000; }\n"},
+    )
+    res_noop = detect_drift(repo_root=ws_noop, eidos_dir=env_noop)
+    assert res_noop.drift_detected is False
+    assert "src/pkg/svc.py" in res_noop.body_only_code_files
+    assert res_noop.uncovered_design_files == []
+
+    # 2. Active SpecDelta whose mutation target is a .adoc path (eidos/architecture/containers/x.adoc)
+    #    and only exists in head_ref (_fetch_versions) satisfies Planned Mode!
+    dlt_rel = "eidos/deltas/dlt-2026-090-path.adoc"
+    dlt_content = """---
+type: delta/mutation
+id: DLT-2026-090
+title: Path Target Delta
+status: proposed
+intent:
+  kind: feature
+  motivation: Support path target in mutations
+mutations:
+  - operation: modify
+    target: eidos/architecture/containers/x.adoc
+---
+= Path Target Delta
+"""
+    ws_dlt = tmp_path / "c3_delta_path"
+    env_dlt = _diff_aware_env(
+        ws_dlt,
+        monkeypatch,
+        changed=["src/pkg/svc.py", dlt_rel],
+        versions={
+            "src/pkg/svc.py": (_CODE_OLD, _CODE_WITH_CLASS),
+            dlt_rel: (None, dlt_content),
+        },
+    )
+    res_dlt = detect_drift(repo_root=ws_dlt, eidos_dir=env_dlt, uncommitted=False)
+    assert res_dlt.workflow_mode == "planned"
+    assert res_dlt.drift_detected is False
+
+
+def test_group_c4_incremental_sync_design_eviction_ownership_component_ref_and_consumes_api(tmp_path: Path) -> None:
+    """Verify C4: incremental sync evicts stale styles_container/inferred_path/component_ref and preserves consumes_api edges."""  # eidos:fixture
+    import os
+    import time
+
+    from eidos.core.index.graph_index import ArchitecturalIndex
+
+    repo = tmp_path / "c4_repo"
+    eidos_dir = repo / "eidos"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    cmp_dir = eidos_dir / "architecture" / "components"
+    ds_dir = eidos_dir / "design" / "systems"
+    clt_dir = eidos_dir / "design" / "clients"
+    old_pkg = repo / "src" / "old_pkg"
+    new_pkg = repo / "src" / "new_pkg"
+    for d in (cnt_dir, cmp_dir, ds_dir / "base", ds_dir / "brand", clt_dir, old_pkg, new_pkg):
+        d.mkdir(parents=True, exist_ok=True)
+
+    (old_pkg / "old_mod.py").write_text("def old_fn():\n    return 1\n", encoding="utf-8")
+    (new_pkg / "new_mod.py").write_text("def new_fn():\n    return 2\n", encoding="utf-8")
+    (new_pkg / "web_mod.py").write_text("def web_fn():\n    return 3\n", encoding="utf-8")
+
+    cnt_file = cnt_dir / "web.adoc"
+    cnt_file.write_text(
+        """---
+type: tech/container
+id: CNT-WEB
+name: Web Container
+package_path: src/old_pkg
+components:
+  - id: CMP-WORKER
+    name: Worker
+    ref: eidos/architecture/components/worker.adoc
+---
+= Web Container
+""",
+        encoding="utf-8",
+    )
+    cmp_file = cmp_dir / "worker.adoc"
+    cmp_file.write_text(
+        """---
+type: tech/component
+id: CMP-WORKER
+name: Worker
+container: CNT-WEB
+source_path: src/new_pkg/new_mod.py
+interfaces:
+  consumes:
+    - AuthService.verify_token(token)
+---
+= Worker
+""",
+        encoding="utf-8",
+    )
+    ds_base = ds_dir / "base" / "system.adoc"
+    ds_base.write_text(
+        """---
+type: design/system
+id: DS-BASE
+title: Base Design System
+status: active
+---
+= Base Design System
+""",
+        encoding="utf-8",
+    )
+    ds_brand = ds_dir / "brand" / "system.adoc"
+    ds_brand.write_text(
+        """---
+type: design/system
+id: DS-BRAND
+title: Brand Design System
+status: active
+inheritance:
+  extends: DS-BASE
+---
+= Brand Design System
+""",
+        encoding="utf-8",
+    )
+    clt_file = clt_dir / "web.adoc"
+    clt_file.write_text(
+        """---
+type: design/client
+id: CLT-WEB
+title: Web Client
+platform: web-spa
+container: CNT-WEB
+design_system: DS-BRAND
+---
+= Web Client
+""",
+        encoding="utf-8",
+    )
+
+    idx = ArchitecturalIndex(repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+        conn = idx._get_connection()
+
+        # 1. consumes_api edge is preserved (not deleted by target_id cleanup)
+        consumes_edges = conn.execute(
+            "SELECT source_id, target_id FROM edges WHERE rel_type = 'consumes_api';"
+        ).fetchall()
+        assert ("CMP-WORKER", "AuthService.verify_token(token)") in [(r[0], r[1]) for r in consumes_edges]
+
+        # 2. Initially DS-BASE styles CNT-WEB indirectly via DS-BRAND inheritance, and component_ref exists
+        styles_cnt = {
+            r[0]
+            for r in conn.execute(
+                "SELECT source_id FROM edges WHERE rel_type = 'styles_container' AND target_id = 'CNT-WEB';"
+            ).fetchall()
+        }
+        assert styles_cnt == {"DS-BRAND", "DS-BASE"}
+        comp_refs = conn.execute(
+            "SELECT symbol, entity_id FROM symbol_mappings WHERE kind = 'component_ref';"
+        ).fetchall()
+        assert ("eidos/architecture/components/worker.adoc", "CMP-WORKER") in [(r[0], r[1]) for r in comp_refs]
+
+        # 3. Incrementally update DS-BRAND (drop extends: DS-BASE) and CNT-WEB (change package_path to src/new_pkg and remove component_ref)
+        ds_brand.write_text(
+            """---
+type: design/system
+id: DS-BRAND
+title: Brand Design System
+status: active
+---
+= Brand Design System
+""",
+            encoding="utf-8",
+        )
+        cnt_file.write_text(
+            """---
+type: tech/container
+id: CNT-WEB
+name: Web Container
+package_path: src/new_pkg
+---
+= Web Container
+""",
+            encoding="utf-8",
+        )
+        bump = time.time() + 10.0
+        os.utime(ds_brand, (bump, bump))
+        os.utime(cnt_file, (bump, bump))
+
+        idx.sync(force=False)
+
+        # DS-BASE must no longer have a stale styles_container or styled_by edge to CNT-WEB
+        styles_cnt_after = {
+            r[0]
+            for r in conn.execute(
+                "SELECT source_id FROM edges WHERE rel_type = 'styles_container' AND target_id = 'CNT-WEB';"
+            ).fetchall()
+        }
+        assert styles_cnt_after == {"DS-BRAND"}
+
+        # Stale component_ref row must be cleaned up
+        comp_refs_after = conn.execute(
+            "SELECT symbol, entity_id FROM symbol_mappings WHERE kind = 'component_ref';"
+        ).fetchall()
+        assert comp_refs_after == []
+
+        # Stale src/old_pkg must not remain in source_path or inferred_path; src/new_pkg must be present
+        cnt_sources = {
+            r[0]
+            for r in conn.execute(
+                "SELECT symbol FROM symbol_mappings WHERE entity_id = 'CNT-WEB' AND kind IN ('package_path', 'source_path');"
+            ).fetchall()
+        }
+        assert "src/old_pkg" not in cnt_sources
+        assert "src/old_pkg/old_mod.py" not in cnt_sources
+        assert "src/new_pkg" in cnt_sources
+        assert "src/new_pkg/web_mod.py" in cnt_sources
+
+        inferred = {
+            r[0]
+            for r in conn.execute(
+                "SELECT symbol FROM symbol_mappings WHERE entity_id = 'CLT-WEB' AND kind = 'inferred_path';"
+            ).fetchall()
+        }
+        assert "src/old_pkg" not in inferred
+        assert "src/old_pkg/old_mod.py" not in inferred
+        assert "src/new_pkg" in inferred
+        assert "src/new_pkg/new_mod.py" in inferred
+    finally:
+        idx.close()

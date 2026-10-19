@@ -93,7 +93,9 @@ properties:
                 - accepted
                 - active
                 - deprecated
+                - sunset
                 - retired
+                - removed
               description: "Optional lifecycle state of this inline component."
             domain_binding:
               type: string

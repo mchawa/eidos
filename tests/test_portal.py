@@ -1185,4 +1185,280 @@ def test_portal_lazy_assets_hatch_mtime_gate_all_personas_and_c4_component_edges
     diag_dep = _generate_c4_component_mermaid(cnt_dependent, [cnt_dependent])
     assert "mod_CNT_DEP_0 -.-> mod_CNT_DEP_1" in diag_dep
 
+    # 5. Promoted tech/component specs preserve interfaces, domain_binding, and quality_attributes in get_portal_data
+    from eidos.portal.generator import get_portal_data
+
+    p_eidos = tmp_path / "portal_promoted" / "eidos"
+    (p_eidos / "architecture" / "containers").mkdir(parents=True)
+    (p_eidos / "architecture" / "components").mkdir(parents=True)
+    (p_eidos / "architecture" / "containers" / "app.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-APP\n"
+        "name: App\n"
+        "container_type: service\n"
+        "runtime: Python\n"
+        "package_path: src\n"
+        "components:\n"
+        "  - id: CMP-PROM-A\n"
+        "    ref: eidos/architecture/components/prom-a.adoc\n"
+        "  - id: CMP-PROM-B\n"
+        "    ref: eidos/architecture/components/prom-b.adoc\n"
+        "---\n= App\n",
+        encoding="utf-8",
+    )
+    (p_eidos / "architecture" / "components" / "prom-a.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "schema: schemas/v1/tech/component.schema.yaml\n"
+        "id: CMP-PROM-A\n"
+        "name: Promoted A\n"
+        "container: CNT-APP\n"
+        "status: active\n"
+        "domain_binding: DOM-CORE\n"
+        "source_path: src/a.py\n"
+        "responsibility: Calls Promoted B.\n"
+        "interfaces:\n"
+        "  provides: []\n"
+        "  consumes:\n"
+        "    - CMP-PROM-B\n"
+        "quality_attributes:\n"
+        "  stateless: false\n"
+        "  reentrant: true\n"
+        "---\n= Promoted A\n",
+        encoding="utf-8",
+    )
+    (p_eidos / "architecture" / "components" / "prom-b.adoc").write_text(
+        "---\n"
+        "type: tech/component\n"
+        "schema: schemas/v1/tech/component.schema.yaml\n"
+        "id: CMP-PROM-B\n"
+        "name: Promoted B\n"
+        "container: CNT-APP\n"
+        "status: active\n"
+        "source_path: src/b.py\n"
+        "responsibility: Called by A.\n"
+        "interfaces:\n"
+        "  provides:\n"
+        "    - signature: run_b() -> None\n"
+        "  consumes: []\n"
+        "---\n= Promoted B\n",
+        encoding="utf-8",
+    )
+    pdata = get_portal_data(p_eidos)
+    app_cnt = next(c for c in pdata["components"] if c["id"] == "CNT-APP")
+    prom_a = next(ic for ic in app_cnt["internal_components"] if ic["id"] == "CMP-PROM-A")
+    assert prom_a["domain_binding"] == "DOM-CORE"
+    assert prom_a["interfaces"]["consumes"] == ["CMP-PROM-B"]
+    assert prom_a["quality_attributes"] == {"stateless": False, "reentrant": True}
+    assert "mod_CNT_APP_0 -.-> mod_CNT_APP_1" in pdata["diagrams"]["c4_components"]["CNT-APP"]
+
+
+def test_group_d4_portal_regressions(tmp_path):  # eidos:fixture
+    """Regression suite for Group D4: dependency normalization, non-dict & duplicate invariants,
+    Mermaid HTML escaping, EidosPortalHandler static_dir & POST /api/validate guards, and frontend views."""  # eidos:fixture
+    import threading
+    import urllib.error
+    import urllib.request
+    from http.server import HTTPServer
+    from pathlib import Path
+
+    from eidos.portal.generator import get_portal_data
+    from eidos.portal.server import EidosPortalHandler
+
+    eidos_dir = tmp_path / "eidos"
+    (eidos_dir / "policies").mkdir(parents=True)
+    (eidos_dir / "domains" / "core" / "capabilities").mkdir(parents=True)
+    (eidos_dir / "architecture" / "containers").mkdir(parents=True)
+    (eidos_dir / "personas").mkdir(parents=True)
+
+    (eidos_dir / "system.adoc").write_text(
+        """---
+type: product/system
+id: SYS-XSS
+title: System <script> & Title
+---
+= System
+""",
+        encoding="utf-8",
+    )
+    (eidos_dir / "personas" / "per-dev.adoc").write_text(
+        """---
+type: product/persona
+id: PER-DEV
+name: Dev <Admin> & Lead
+role: Platform <Engineer>
+archetype: human_lead
+---
+= Dev
+""",
+        encoding="utf-8",
+    )
+    (eidos_dir / "policies" / "pol-dup.adoc").write_text(
+        """---
+type: product/policy
+id: POL-DUP
+title: Dup Policy
+category: security
+rule: Enforce auth
+invariants:
+  - id: INV-SHARED-001
+    rule: Shared invariant rule
+    test_binding: tests/test_portal.py::test_group_d4_portal_regressions
+---
+= Dup Policy
+""",
+        encoding="utf-8",
+    )
+    (eidos_dir / "domains" / "core" / "capabilities" / "cap-1.adoc").write_text(
+        """---
+type: product/capability
+id: CAP-001
+title: Core Cap
+domain: DOM-CORE
+technical:
+  invariants:
+    - "INV-RAW-STRING-ENTRY"
+    - id: INV-SHARED-001
+      rule: Duplicate invariant from capability
+    - id: INV-CAP-UNIQUE-001
+      rule: Unique capability invariant
+---
+= Core Cap
+""",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "cnt-web.adoc").write_text(
+        """---
+type: tech/container
+id: CNT-WEB
+name: Web <App> & Gateway
+container_type: web_app
+runtime: Node <20> & TS
+package_path: src/web
+dependencies:
+  internal_containers:
+    - container: CNT-CORE
+      relationship: Calls gRPC API
+  external_services:
+    - name: Stripe
+      relationship: HTTPS Webhook
+invariants:
+  - "INV-RAW-CONTAINER-STRING"
+  - id: INV-SHARED-001
+    rule: Duplicate invariant on container
+components:
+  - id: CMP-WEB-AUTH
+    name: Auth Filter
+    invariants:
+      - "INV-RAW-COMP-STRING"
+      - id: INV-SHARED-001
+        rule: Duplicate invariant on component
+---
+= Web
+""",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "containers" / "cnt-core.adoc").write_text(
+        """---
+type: tech/container
+id: CNT-CORE
+name: Core Engine
+container_type: service
+runtime: Python 3.12
+package_path: src/core
+---
+= Core
+""",
+        encoding="utf-8",
+    )
+
+    pdata = get_portal_data(eidos_dir)
+
+    # 1. Object dependencies normalized to strings for frontend while Mermaid preserves custom relationship labels
+    web_comp = next(c for c in pdata["components"] if c["id"] == "CNT-WEB")
+    assert web_comp["dependencies"]["internal_containers"] == ["CNT-CORE"]
+    assert web_comp["dependencies"]["external_services"] == ["Stripe (HTTPS Webhook)"]
+    assert "Calls gRPC API" in pdata["diagrams"]["c4_containers"]
+    assert "HTTPS Webhook" in pdata["diagrams"]["c4_containers"]
+
+    # 2. Non-dict invariant strings ignored without crash and INV-SHARED-001 deduplicated once
+    inv_ids = [i["id"] for i in pdata["invariants"]]
+    assert inv_ids.count("INV-SHARED-001") == 1
+    assert "INV-CAP-UNIQUE-001" in inv_ids
+
+    # 3. Mermaid diagrams HTML-escape user-provided strings
+    assert "<script>" not in pdata["diagrams"]["c4_context"]
+    assert "&lt;script&gt;" in pdata["diagrams"]["c4_context"]
+    assert "&lt;Admin&gt;" in pdata["diagrams"]["c4_context"]
+    assert "&lt;Engineer&gt;" in pdata["diagrams"]["c4_containers"]
+    assert "&lt;20&gt;" in pdata["diagrams"]["c4_containers"]
+    assert "&lt;App&gt;" in pdata["diagrams"]["c4_components"]["CNT-WEB"]
+
+    # 4. EidosPortalHandler static_dir path traversal protection and POST /api/validate resolved path comparison
+    static_dir = tmp_path / "static_root"
+    static_dir.mkdir()
+    (static_dir / "hello.txt").write_text("hello", encoding="utf-8")
+    (tmp_path / "secret.txt").write_text("top-secret", encoding="utf-8")
+
+    EidosPortalHandler.eidos_dir = eidos_dir
+    EidosPortalHandler.static_dir = static_dir
+    httpd = HTTPServer(("127.0.0.1", 0), EidosPortalHandler)
+    port = httpd.server_address[1]
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        # Allowed static file
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/hello.txt", timeout=5) as resp:
+            assert resp.status == 200
+            assert resp.read().decode("utf-8") == "hello"
+
+        # Traversal outside static_dir -> 403 Forbidden
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/..%2Fsecret.txt", timeout=5)
+            raise AssertionError("Expected 403 Forbidden on static_dir traversal")
+        except urllib.error.HTTPError as err:
+            assert err.code == 403
+
+        # POST /api/validate with empty body or matching eidos dir -> 200 OK
+        req_ok = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/validate",
+            data=b'{"dir": "eidos"}',
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_ok, timeout=5) as resp:
+            assert resp.status == 200
+
+        # POST /api/validate targeting another directory -> 403 Forbidden
+        req_bad = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/validate",
+            data=b'{"dir": "../static_root"}',
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(req_bad, timeout=5)
+            raise AssertionError("Expected 403 Forbidden on mismatched POST /api/validate dir")
+        except urllib.error.HTTPError as err:
+            assert err.code == 403
+    finally:
+        EidosPortalHandler.static_dir = None
+        httpd.shutdown()
+        httpd.server_close()
+
+    # 5. Verify frontend source fixes in ArchitectureView.tsx and DesignView.tsx
+    repo_root = Path(__file__).resolve().parent.parent
+    arch_tsx = (
+        repo_root / "src" / "eidos" / "portal" / "frontend" / "src" / "components" / "views" / "ArchitectureView.tsx"
+    ).read_text(encoding="utf-8")
+    design_tsx = (
+        repo_root / "src" / "eidos" / "portal" / "frontend" / "src" / "components" / "views" / "DesignView.tsx"
+    ).read_text(encoding="utf-8")
+    assert "closeC4Inspector();\n                    drillDownToContainer(inspectedComponent.id);" in arch_tsx
+    assert "Array.isArray(f.clients) && f.clients.length > 1" in design_tsx
+
+
+
 

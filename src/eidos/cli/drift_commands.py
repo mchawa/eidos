@@ -55,12 +55,23 @@ def drift_cmd(
     if path is not None:
         resolved_path = path.resolve()
         repo_root = find_repo_root(resolved_path) if resolved_path.exists() else Path.cwd()
-        if repo_root == resolved_path:
-            repo_root = resolved_path.parent if resolved_path.is_dir() else Path.cwd()
-        eidos_dir = resolved_path
+        if (resolved_path / "eidos").is_dir() and (
+            (resolved_path / ".git").exists() or not (resolved_path / "system.adoc").exists()
+        ):
+            repo_root = resolved_path
+            eidos_dir = resolved_path / "eidos"
+        elif resolved_path == repo_root:
+            repo_root = (
+                find_repo_root(resolved_path.parent)
+                if (resolved_path.parent / ".git").exists()
+                else (resolved_path.parent if resolved_path.is_dir() else Path.cwd())
+            )
+            eidos_dir = resolved_path
+        else:
+            eidos_dir = resolved_path
     else:
-        repo_root = Path.cwd()
-        eidos_dir = Path("eidos")
+        repo_root = find_repo_root()
+        eidos_dir = Path("eidos") if Path("eidos").exists() else (repo_root / "eidos")
 
     try:
         result = detect_drift(

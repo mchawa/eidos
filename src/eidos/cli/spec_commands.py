@@ -13,6 +13,7 @@ from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
 from eidos.core.lifecycle.scaffolder import create_spec, delete_spec, list_specs
 from eidos.core.spec.parser import parse_spec_file
 from eidos.core.spec.validator import SpecValidator
+from eidos.core.workspace.project import find_repo_root
 
 spec_app = typer.Typer(
     name="spec",
@@ -20,6 +21,14 @@ spec_app = typer.Typer(
     add_completion=False,
 )
 spec_app.add_typer(component_app, name="component")
+
+
+def _has_eidos_markers(cand: Path) -> bool:
+    return cand.is_dir() and (
+        (cand / "system.adoc").exists()
+        or any((cand / sub).is_dir() for sub in ("architecture", "domains", "policies", "design", "deltas"))
+        or any(cand.glob("*.adoc"))
+    )
 
 
 def validate(
@@ -37,7 +46,13 @@ def validate(
     if target_path is None:
         target_path = Path("eidos")
         if not target_path.exists():
-            target_path = Path(".")
+            repo_eidos = find_repo_root() / "eidos"
+            if repo_eidos.exists():
+                target_path = repo_eidos
+            elif _has_eidos_markers(Path(".")):
+                target_path = Path(".")
+    elif (target_path / "eidos").is_dir() and not _has_eidos_markers(target_path):
+        target_path = target_path / "eidos"
 
     if not target_path.exists():
         if json_output:
@@ -354,8 +369,10 @@ def spec_create_cmd(
             slug_suffix=slug,
         )
         rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
+        parsed_doc = parse_spec_file(dest_file)
+        display_id = parsed_doc.doc_id or (doc_id if doc_id.lower() != "auto" else dest_file.stem.upper())
         console.print(
-            f"[bold green]✓ Created and validated specification ({doc_id}):[/bold green] [bold]{dest_file.name}[/bold]"
+            f"[bold green]✓ Created and validated specification ({display_id}):[/bold green] [bold]{dest_file.name}[/bold]"
         )
         console.print(f"  [dim]Location: {rel}[/dim]")
     except Exception as e:

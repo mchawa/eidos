@@ -482,3 +482,100 @@ def test_audit_does_not_flag_replacement_entities_in_remove_details(tmp_path):
     assert "CMP-FAST-LEXER" not in res.targets_audited
     assert "CMP-AST-WALKER" not in res.targets_audited
     assert "CNT-CORE-ENGINE" not in res.targets_audited
+
+
+def test_a9_audit_path_targets_explorations_rejected_deltas_and_tombstone_patterns(tmp_path):
+    """A9: path-based remove targets, explorations & rejected deltas as historical ledgers, and safe tombstone pattern matching."""
+    import eidos.core.index.graph_index as gi
+
+    eidos_dir = tmp_path / "eidos"
+    cmp_dir = eidos_dir / "architecture" / "components"
+    deltas_dir = eidos_dir / "deltas"
+    exp_dir = eidos_dir / "explorations"
+    src_dir = tmp_path / "src"
+    for d in (cmp_dir, deltas_dir, exp_dir, src_dir):
+        d.mkdir(parents=True)
+
+    # 1. Exploration spike and rejected delta mentioning removed CMP-OLD-AUTH must be approved as historical_ledger
+    (exp_dir / "exp-001.adoc").write_text(
+        "---\n"
+        "type: product/exploration\n"
+        "schema: schemas/v1/product/exploration.schema.yaml\n"
+        "id: EXP-001\n"
+        "title: Spike Old Auth\n"
+        "status: concluded\n"
+        "---\n"
+        "= Spike mentioning CMP-OLD-AUTH\n",
+        encoding="utf-8",
+    )
+    (deltas_dir / "dlt-2026-010.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-010\n"
+        "title: Rejected Old Auth Delta\n"
+        "status: rejected\n"
+        "intent:\n"
+        "  kind: feature\n"
+        "  motivation: Mention CMP-OLD-AUTH.\n"
+        "mutations: []\n"
+        "---\n"
+        "= Rejected Delta mentioning CMP-OLD-AUTH\n",
+        encoding="utf-8",
+    )
+
+    # 2. Delta under audit uses a path target (`eidos/architecture/components/old-auth.adoc`)
+    #    and has tombstone patterns with multi-word context and invalid regex syntax (`foo[bar`)
+    (deltas_dir / "dlt-2026-099.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-099\n"
+        "title: Remove Old Auth via Path\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: removal\n"
+        "  motivation: Retire CMP-OLD-AUTH.\n"
+        "mutations:\n"
+        "  - operation: remove\n"
+        "    target: eidos/architecture/components/old-auth.adoc\n"
+        "tombstone:\n"
+        "  search_tokens:\n"
+        "    - old_auth_helper\n"
+        "  allowed_reasons:\n"
+        "    - path: src/compat.py\n"
+        "      pattern: \"deprecated CMP-OLD-AUTH shim\"\n"
+        "      reason: Compat shim line\n"
+        "    - path: src/brackets.py\n"
+        "      pattern: \"legacy[CMP-OLD-AUTH\"\n"
+        "      reason: Unclosed bracket literal pattern\n"
+        "---\n"
+        "= Remove Old Auth\n",
+        encoding="utf-8",
+    )
+
+    (src_dir / "compat.py").write_text(
+        "# deprecated CMP-OLD-AUTH shim calling old_auth_helper\n",
+        encoding="utf-8",
+    )
+    (src_dir / "brackets.py").write_text(
+        "# legacy[CMP-OLD-AUTH marker\n",
+        encoding="utf-8",
+    )
+
+    try:
+        engine = AuditEngine(repo_root=tmp_path, eidos_dir=eidos_dir)
+        res = engine.audit_delta("DLT-2026-099")
+        assert "CMP-OLD-AUTH" in res.targets_audited
+        assert "architecture/components/old-auth.adoc" in res.search_tokens
+        assert res.is_clean is True, f"Unacknowledged: {res.unacknowledged_findings}, Graph: {res.graph_violations}"
+        approved_files = {f.file_path: f.classification for f in res.approved_findings}
+        assert approved_files.get("eidos/explorations/exp-001.adoc") == "historical_ledger"
+        assert approved_files.get("eidos/deltas/dlt-2026-010.adoc") == "historical_ledger"
+        assert approved_files.get("src/compat.py") == "tombstone_exempt"
+        assert approved_files.get("src/brackets.py") == "tombstone_exempt"
+    finally:
+        if gi._INDEX_INSTANCE is not None:
+            gi._INDEX_INSTANCE.close()
+            gi._INDEX_INSTANCE = None
+

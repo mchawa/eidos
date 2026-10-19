@@ -267,6 +267,61 @@ class AuditEngine:
                 )
                 if has_concrete_primary:
                     targets.add(primary_target)
+                elif primary_target and primary_target != "unspecified_target":
+                    clean_p = primary_target.replace("\\", "/").lstrip("./")
+                    if clean_p.startswith("eidos/"):
+                        clean_p = clean_p[len("eidos/") :]
+                    search_tokens.add(clean_p)
+                    candidate_files = [
+                        self.eidos_dir / clean_p,
+                        self.repo_root / primary_target,
+                        self.eidos_dir / primary_target,
+                    ]
+                    resolved_id = ""
+                    for cf in candidate_files:
+                        if cf.exists() and cf.is_file():
+                            try:
+                                doc = parse_spec_file(cf)
+                                doc_id = str(doc.frontmatter.get("id") or "").strip()
+                                if doc_id:
+                                    resolved_id = doc_id
+                                    break
+                            except Exception:
+                                pass
+                    if not resolved_id:
+                        from eidos.core.lifecycle.delta_engine import resolve_entity_prefix_meta
+
+                        stem_upper = Path(clean_p).stem.upper()
+                        if resolve_entity_prefix_meta(stem_upper) is not None:
+                            resolved_id = stem_upper
+                        elif "architecture/components/" in clean_p:
+                            resolved_id = (
+                                stem_upper if stem_upper.startswith("CMP-") else f"CMP-{stem_upper}"
+                            )
+                        elif "architecture/containers/" in clean_p:
+                            resolved_id = (
+                                stem_upper if stem_upper.startswith("CNT-") else f"CNT-{stem_upper}"
+                            )
+                        elif "architecture/contracts/" in clean_p:
+                            resolved_id = (
+                                stem_upper if stem_upper.startswith("CTR-") else f"CTR-{stem_upper}"
+                            )
+                        elif "policies/" in clean_p:
+                            resolved_id = (
+                                stem_upper if stem_upper.startswith("POL-") else f"POL-{stem_upper}"
+                            )
+                        elif "personas/" in clean_p:
+                            resolved_id = (
+                                stem_upper if stem_upper.startswith("PER-") else f"PER-{stem_upper}"
+                            )
+                        elif "/capabilities/" in clean_p:
+                            resolved_id = (
+                                stem_upper if stem_upper.startswith("CAP-") else f"CAP-{stem_upper}"
+                            )
+                    if resolved_id:
+                        targets.add(resolved_id)
+                        primary_target = resolved_id
+                        has_concrete_primary = True
 
                 parent_val = str(m.get("parent") or "").strip()
                 parent_context_ids = {parent_val} if parent_val and parent_val != primary_target else set()
@@ -319,12 +374,18 @@ class AuditEngine:
         """Check SQLite knowledge graph for any active incoming edges pointing to deleted targets."""
         violations: list[GraphViolation] = []
         index = get_architectural_index(repo_root=self.repo_root, eidos_dir=self.eidos_dir)
+        index.sync()
         for target in targets:
             refs = index.get_incoming_references(target)
             for r in refs:
                 src = r.get("source_id", "")
-                if src == delta_id or src.startswith("DLT-"):
-                    # Deltas are audit records; only living specs are graph violations
+                if (
+                    src == delta_id
+                    or src.startswith(("DLT-", "EXP-"))
+                    or r.get("type") == "product/exploration"
+                    or src in targets
+                ):
+                    # Deltas, explorations, and co-removed targets are not living spec violations
                     continue
                 violations.append(
                     GraphViolation(
@@ -458,9 +519,10 @@ class AuditEngine:
                 risk_level="low",
             )
 
-        # 2. Historical Applied Deltas & Release Changelogs
+        # 2. Historical Applied/Rejected Deltas, Explorations & Release Changelogs
         if (
             (rel_str.startswith("eidos/deltas/") and self._is_delta_applied(rel_path))
+            or rel_str.startswith("eidos/explorations/")
             or rel_str in ("CHANGELOG.md", "docs/changelog.md")
             or rel_str.endswith("CHANGELOG.md")
             or rel_str.endswith("changelog.md")
@@ -472,7 +534,7 @@ class AuditEngine:
                 line_snippet=line_text[:80],
                 classification="historical_ledger",
                 is_approved=True,
-                reason="Historical applied SpecDelta or changelog release ledger (immutable record)",
+                reason="Historical applied/rejected SpecDelta, exploration spike, or changelog release ledger (immutable record)",
                 risk_level="low",
             )
 
@@ -484,18 +546,37 @@ class AuditEngine:
                 pat = entry.get("pattern")
                 if allowed_p and allowed_p in rel_str:
                     pat_str = str(pat) if pat else ""
-                    pat_matches = (
-                        True
-                        if not pat_str
-                        else (
-                            bool(re.search(pat_str, matched_term))
-                            if re.search(
+                    if not pat_str:
+                        pat_matches = True
+                    else:
+                        ids_in_pat = {
+                            m.upper()
+                            for m in re.findall(
                                 r"\b(?:CNT|CMP|CTR|CAP|POL|DOM|PER|DS|SCR|UIC|CLT|FLOW|INV)-[A-Z0-9_-]+\b",
                                 pat_str,
+                                re.IGNORECASE,
                             )
-                            else bool(re.search(pat_str, line_text))
+                        }
+                        term_is_id = bool(
+                            re.match(
+                                r"^(?:CNT|CMP|CTR|CAP|POL|DOM|PER|DS|SCR|UIC|CLT|FLOW|INV)-[A-Z0-9_-]+$",
+                                matched_term,
+                                re.IGNORECASE,
+                            )
                         )
-                    )
+                        if ids_in_pat and term_is_id and matched_term.upper() not in ids_in_pat:
+                            pat_matches = False
+                        else:
+                            try:
+                                pat_matches = bool(
+                                    re.search(pat_str, matched_term, re.IGNORECASE)
+                                    or re.search(pat_str, line_text, re.IGNORECASE)
+                                )
+                            except re.error:
+                                pat_matches = (
+                                    pat_str.lower() in matched_term.lower()
+                                    or pat_str.lower() in line_text.lower()
+                                )
                     if pat_matches:
                         return AuditFinding(
                             file_path=rel_str,
@@ -681,10 +762,10 @@ class AuditEngine:
         )
 
     def _is_delta_applied(self, delta_path: Path) -> bool:
-        """Check if a SpecDelta file has status: applied in frontmatter."""
+        """Check if a SpecDelta file has status: applied or rejected in frontmatter."""
         try:
             full_p = self.repo_root / delta_path
             doc = parse_spec_file(full_p)
-            return str(doc.frontmatter.get("status", "")).strip().lower() == "applied"
-        except OSError:
+            return str(doc.frontmatter.get("status", "")).strip().lower() in ("applied", "rejected")
+        except Exception:
             return False

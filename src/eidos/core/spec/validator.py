@@ -274,10 +274,15 @@ class SpecValidator:
         schema_ref_str = doc.schema_ref if isinstance(doc.schema_ref, str) else None
         doc_type_str = doc.doc_type if isinstance(doc.doc_type, str) else None
 
-        # 1. Check explicit relative schema reference (containing a directory component)
+        # 1. Check explicit relative schema reference (containing a directory component),
+        # unless it is an ambiguous root system.schema.yaml reference without product/ or design/.
         if schema_ref_str:
             norm_ref = schema_ref_str.replace(".spec/", "").strip().replace("\\", "/")
-            if "/" in norm_ref and norm_ref in self._schema_cache:
+            if (
+                "/" in norm_ref
+                and norm_ref not in ("system.schema.yaml", "schemas/v1/system.schema.yaml")
+                and norm_ref in self._schema_cache
+            ):
                 return self._schema_cache[norm_ref]
 
         # 2. Check document type mapping (disambiguates colliding basenames like system.schema.yaml)
@@ -300,7 +305,9 @@ class SpecValidator:
 
         schema = self.resolve_schema(doc)
         if not schema:
-            doc.errors.append(f"No schema found for document type '{doc.doc_type}'")
+            no_schema_msg = f"No schema found for document type '{doc.doc_type}'"
+            if no_schema_msg not in doc.errors:
+                doc.errors.append(no_schema_msg)
             return doc.errors
 
         validator = jsonschema.Draft202012Validator(schema)
@@ -310,7 +317,9 @@ class SpecValidator:
             prefix = f"Property '{loc}'" if loc else "Root frontmatter"
             errors.append(f"{prefix}: {err.message}")
 
-        doc.errors.extend(errors)
+        for err_msg in errors:
+            if err_msg not in doc.errors:
+                doc.errors.append(err_msg)
         self._validate_architectural_invariants(doc, doc.frontmatter, report=None, root_dir=root_dir)
         return doc.errors
 
@@ -358,6 +367,8 @@ class SpecValidator:
                     continue
             return str(res_fp).replace("\\", "/")
 
+        from eidos.core.spec.parser import _NON_ROOT_SPEC_SUBDIRS
+
         def _load_or_validate(fp: Path) -> SpecDocument | None:
             try:
                 rel_fp_parts = fp.resolve().relative_to(spec_root).parts
@@ -377,7 +388,11 @@ class SpecValidator:
                 st = fp.stat()
             except OSError:
                 return None
-            is_root_system = fp.name == "system.adoc" and rel_fp_parts == ("system.adoc",)
+            is_root_system = (
+                fp.name == "system.adoc"
+                and rel_fp_parts == ("system.adoc",)
+                and fp.parent.name.lower() not in _NON_ROOT_SPEC_SUBDIRS
+            )
             if st.st_size == 0 and is_root_system:
                 return None
 
@@ -432,9 +447,7 @@ class SpecValidator:
                         fast_pathed_applied_deltas.add(str(fp.resolve()))
                     return doc
             parse_errs = list(doc.errors)
-            self.validate_document(doc)
-            if doc.frontmatter:
-                self._validate_architectural_invariants(doc, doc.frontmatter, report=None, root_dir=root_dir)
+            self.validate_document(doc, root_dir=root_dir)
             schema_errs = list(doc.errors)
             doc_payload = {
                 "doc_id": doc.doc_id,
@@ -645,7 +658,9 @@ class SpecValidator:
 
         for doc in report.documents:
             # 2. Check relative file paths ending in .adoc
-            self._check_dict_references(doc.frontmatter, doc.file_path, root_dir, report)
+            self._check_dict_references(
+                doc.frontmatter, doc.file_path, root_dir, report, doc_type=doc.doc_type
+            )
 
             # 3. Check semantic entity ID cross-references
             self._validate_semantic_references(doc, catalog_ids, report, root_dir, entity_types)
@@ -668,7 +683,9 @@ class SpecValidator:
         fm = doc.frontmatter or {}
         schema = self.resolve_schema(doc)
         if schema:
-            self._validate_schema_references(schema, fm, "", doc, catalog_ids, report, entity_types)
+            self._validate_schema_references(
+                schema, fm, "", doc, catalog_ids, report, entity_types, root_dir=root_dir
+            )
         self._validate_architectural_invariants(doc, fm, report, root_dir=root_dir)
 
     def _validate_schema_references(
@@ -680,6 +697,7 @@ class SpecValidator:
         catalog_ids: set[str],
         report: ValidationReport,
         entity_types: dict[str, str] | None = None,
+        root_dir: Path | None = None,
     ) -> None:
         """Recursively walk schema and frontmatter to enforce x-eidos-ref reference rules."""
         if value is None or not isinstance(schema_node, dict):
@@ -693,18 +711,22 @@ class SpecValidator:
                 resolved_def = (root_schema.get("$defs") or {}).get(def_name)
                 if isinstance(resolved_def, dict):
                     self._validate_schema_references(
-                        resolved_def, value, field_path, doc, catalog_ids, report, entity_types
+                        resolved_def, value, field_path, doc, catalog_ids, report, entity_types, root_dir=root_dir
                     )
             return
 
         ref_meta = schema_node.get("x-eidos-ref")
         if isinstance(ref_meta, dict):
             if isinstance(value, str):
-                self._check_eidos_ref(ref_meta, value, field_path, doc, catalog_ids, report, entity_types)
+                self._check_eidos_ref(
+                    ref_meta, value, field_path, doc, catalog_ids, report, entity_types, root_dir=root_dir
+                )
             elif isinstance(value, list):
                 for item in value:
                     if isinstance(item, str):
-                        self._check_eidos_ref(ref_meta, item, field_path, doc, catalog_ids, report, entity_types)
+                        self._check_eidos_ref(
+                            ref_meta, item, field_path, doc, catalog_ids, report, entity_types, root_dir=root_dir
+                        )
 
         if isinstance(value, dict):
             props = schema_node.get("properties")
@@ -713,7 +735,14 @@ class SpecValidator:
                     if prop_key in props:
                         sub_path = f"{field_path}.{prop_key}" if field_path else prop_key
                         self._validate_schema_references(
-                            props[prop_key], prop_val, sub_path, doc, catalog_ids, report, entity_types
+                            props[prop_key],
+                            prop_val,
+                            sub_path,
+                            doc,
+                            catalog_ids,
+                            report,
+                            entity_types,
+                            root_dir=root_dir,
                         )
             for combiner in ("oneOf", "anyOf", "allOf"):
                 for branch in schema_node.get(combiner, []) or []:
@@ -729,18 +758,28 @@ class SpecValidator:
                                     catalog_ids,
                                     report,
                                     entity_types,
+                                    root_dir=root_dir,
                                 )
         elif isinstance(value, list):
             items_schema = schema_node.get("items")
             if isinstance(items_schema, dict):
                 for item in value:
-                    self._validate_schema_references(items_schema, item, field_path, doc, catalog_ids, report, entity_types)
+                    self._validate_schema_references(
+                        items_schema, item, field_path, doc, catalog_ids, report, entity_types, root_dir=root_dir
+                    )
                     if not isinstance(item, dict):
                         for combiner in ("oneOf", "anyOf", "allOf"):
                             for branch in items_schema.get(combiner, []) or []:
                                 if isinstance(branch, dict):
                                     self._validate_schema_references(
-                                        branch, item, field_path, doc, catalog_ids, report, entity_types
+                                        branch,
+                                        item,
+                                        field_path,
+                                        doc,
+                                        catalog_ids,
+                                        report,
+                                        entity_types,
+                                        root_dir=root_dir,
                                     )
 
     def _check_eidos_ref(
@@ -752,10 +791,35 @@ class SpecValidator:
         catalog_ids: set[str],
         report: ValidationReport,
         entity_types: dict[str, str] | None = None,
+        root_dir: Path | None = None,
     ) -> None:
         """Check a single string reference against x-eidos-ref metadata."""
         val = raw_val.strip()
-        if not val or val.endswith(".adoc"):
+        if not val:
+            return
+        if val.endswith(".adoc"):
+            target_types = tuple(str(t) for t in (ref_meta.get("target_types") or ()))
+            if target_types and root_dir is not None:
+                from eidos.core.index.storage import get_cached_spec_document
+
+                spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir, doc.file_path)
+                for cand in (
+                    repo_root / val,
+                    spec_root / val,
+                    root_dir / val,
+                    doc.file_path.parent / val,
+                ):
+                    if cand.is_file():
+                        ref_doc, _, _ = get_cached_spec_document(cand)
+                        actual_type = ref_doc.doc_type if ref_doc is not None else None
+                        if actual_type and actual_type not in target_types:
+                            label = ref_meta.get("entity_label") or "entity"
+                            expected_types = ", ".join(target_types)
+                            report.broken_references.append(
+                                f"Invalid entity reference type in {doc.file_path.name}: "
+                                f"{label} '{val}' in {field_path} has type '{actual_type}', expected {expected_types}"
+                            )
+                        break
             return
 
         prefixes = tuple(str(p).upper() for p in (ref_meta.get("prefixes") or ()))
@@ -921,14 +985,41 @@ class SpecValidator:
                     f"Use 'interfaces.provides' for in-process APIs."
                 )
 
-    def _check_dict_references(self, val, source_file: Path, root_dir: Path, report: ValidationReport):
+    def _check_dict_references(
+        self,
+        val,
+        source_file: Path,
+        root_dir: Path,
+        report: ValidationReport,
+        doc_type: str | None = None,
+    ):
         """Recursively check string fields ending in .adoc to verify they exist."""
+        if doc_type is None and isinstance(val, dict) and str(val.get("type") or "").strip() == "delta/mutation":
+            doc_type = "delta/mutation"
+        is_delta = doc_type == "delta/mutation"
         if isinstance(val, dict):
-            for v in val.values():
-                self._check_dict_references(v, source_file, root_dir, report)
+            delta_status = str(val.get("status") or "").strip().lower() if is_delta else ""
+            for k, v in val.items():
+                if is_delta:
+                    if k in ("tombstone", "expect"):
+                        continue
+                    if k == "mutations":
+                        if delta_status in ("applied", "rejected"):
+                            continue
+                        if isinstance(v, list):
+                            for mut in v:
+                                if isinstance(mut, dict):
+                                    op = str(mut.get("operation") or "").strip().lower()
+                                    if op in ("add", "remove", "deprecate"):
+                                        continue
+                                self._check_dict_references(
+                                    mut, source_file, root_dir, report, doc_type=doc_type
+                                )
+                        continue
+                self._check_dict_references(v, source_file, root_dir, report, doc_type=doc_type)
         elif isinstance(val, list):
             for item in val:
-                self._check_dict_references(item, source_file, root_dir, report)
+                self._check_dict_references(item, source_file, root_dir, report, doc_type=doc_type)
         elif isinstance(val, str) and val.endswith(".adoc"):
             spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir, source_file)
             ref_path_from_repo = repo_root / val
@@ -1226,6 +1317,15 @@ class SpecValidator:
                                     f"UI Component '{doc.doc_id}' has invalid test binding '{tb_val}'"
                                 )
                                 continue
+                            if "::" in tb_val and (
+                                not tb_val.split("::")[0].strip()
+                                or not [p.strip() for p in tb_val.split("::")[1:] if p.strip()]
+                            ):
+                                report.broken_references.append(
+                                    f"Broken test_bindings.{tb_key} in {doc.file_path.name}: "
+                                    f"UI Component '{doc.doc_id}' has Malformed test_binding '{tb_val}' (empty symbol after '::')"
+                                )
+                                continue
                             file_part = parts[0]
                             sym_parts = parts[1:]
                             resolved_tf = self._resolve_source_path(repo_root, root_dir, file_part)
@@ -1243,7 +1343,7 @@ class SpecValidator:
                 # Collect invariants from top-level, technical.invariants, and inline components via FrontmatterModel
                 for inv in model.all_invariants():
                     inv_id = str(inv.id or "unknown")
-                    raw_tb = inv.test_binding
+                    raw_tb = inv.effective_test_binding()
                     if (
                         not isinstance(raw_tb, str)
                         or not raw_tb.strip()
@@ -1255,6 +1355,15 @@ class SpecValidator:
                         report.broken_references.append(
                             f"Broken test_binding in {doc.file_path.name}: "
                             f"Invariant '{inv_id}' has invalid test_binding '{raw_tb}'"
+                        )
+                        continue
+                    if "::" in raw_tb and (
+                        not raw_tb.split("::")[0].strip()
+                        or not [p.strip() for p in raw_tb.split("::")[1:] if p.strip()]
+                    ):
+                        report.broken_references.append(
+                            f"Broken test_binding in {doc.file_path.name}: "
+                            f"Invariant '{inv_id}' has Malformed test_binding '{raw_tb}' (empty symbol after '::')"
                         )
                         continue
                     file_part = parts[0]
@@ -1562,26 +1671,86 @@ class SpecValidator:
             return None
 
         if typer_module_aliases or typer_class_aliases:
-            def _collect_typer_vars(scope_node: ast.AST) -> set[str]:
+            def _extract_typer_ctor_name(call_node: ast.AST | None) -> str | None:
+                if not isinstance(call_node, ast.Call):
+                    return None
+                for kw in call_node.keywords:
+                    if (
+                        kw.arg == "name"
+                        and isinstance(kw.value, ast.Constant)
+                        and isinstance(kw.value.value, str)
+                        and kw.value.value.strip()
+                    ):
+                        return kw.value.value.strip()
+                if (
+                    call_node.args
+                    and isinstance(call_node.args[0], ast.Constant)
+                    and isinstance(call_node.args[0].value, str)
+                    and call_node.args[0].value.strip()
+                ):
+                    return call_node.args[0].value.strip()
+                return None
+
+            def _collect_typer_vars(scope_node: ast.AST) -> tuple[set[str], dict[str, str]]:
                 vars_found: set[str] = set()
+                ctor_names: dict[str, str] = {}
                 for n in ast.walk(scope_node):
                     if isinstance(n, ast.Assign) and _is_typer_ctor(n.value):
+                        c_name = _extract_typer_ctor_name(n.value)
                         for target in n.targets:
                             if isinstance(target, ast.Name):
                                 vars_found.add(target.id)
+                                if c_name:
+                                    ctor_names[target.id] = c_name
                     elif (
                         isinstance(n, ast.AnnAssign)
                         and _is_typer_ctor(n.value)
                         and isinstance(n.target, ast.Name)
                     ):
                         vars_found.add(n.target.id)
-                return vars_found
+                        c_name = _extract_typer_ctor_name(n.value)
+                        if c_name:
+                            ctor_names[n.target.id] = c_name
+                return vars_found, ctor_names
 
-            typer_app_vars = _collect_typer_vars(tree)
+            typer_app_vars, root_ctor_names = _collect_typer_vars(tree)
             if not typer_app_vars:
                 return
 
-            mounted_sub_apps: dict[str, str] = {}  # var_name -> group_name
+            def _resolve_sub_typer_name(
+                call_node: ast.Call,
+                sub_var: str | None,
+                ctor_names_map: dict[str, str],
+                imp_map: dict[str, tuple[str, str]],
+            ) -> str | None:
+                sub_name = next(
+                    (
+                        kw.value.value
+                        for kw in call_node.keywords
+                        if kw.arg == "name"
+                        and isinstance(kw.value, ast.Constant)
+                        and isinstance(kw.value.value, str)
+                    ),
+                    None,
+                )
+                if (
+                    not sub_name
+                    and len(call_node.args) >= 2
+                    and isinstance(call_node.args[1], ast.Constant)
+                    and isinstance(call_node.args[1].value, str)
+                ):
+                    sub_name = call_node.args[1].value
+                if not sub_name and sub_var:
+                    sub_name = ctor_names_map.get(sub_var)
+                    if not sub_name and sub_var in imp_map:
+                        sib_mod, orig_var = imp_map[sub_var]
+                        sib_ast = _get_sibling_tree(sib_mod)
+                        if sib_ast is not None:
+                            _, sib_ctors = _collect_typer_vars(sib_ast)
+                            sub_name = sib_ctors.get(orig_var)
+                return sub_name
+
+            mounted_sub_apps: dict[str, str | None] = {}  # var_name -> group_name (or None if unnamed)
             for node in ast.walk(tree):
                 if (
                     isinstance(node, ast.Call)
@@ -1593,24 +1762,10 @@ class SpecValidator:
                     and isinstance(node.args[0], ast.Name)
                 ):
                     sub_var = node.args[0].id
-                    sub_name = next(
-                        (
-                            kw.value.value
-                            for kw in node.keywords
-                            if kw.arg == "name"
-                            and isinstance(kw.value, ast.Constant)
-                            and isinstance(kw.value.value, str)
-                        ),
-                        None,
+                    sub_name = _resolve_sub_typer_name(
+                        node, sub_var, root_ctor_names, imported_symbol_modules
                     )
-                    if (
-                        not sub_name
-                        and len(node.args) >= 2
-                        and isinstance(node.args[1], ast.Constant)
-                        and isinstance(node.args[1].value, str)
-                    ):
-                        sub_name = node.args[1].value
-                    mounted_sub_apps[sub_var] = sub_name or sub_var
+                    mounted_sub_apps[sub_var] = sub_name
 
             root_app_vars = typer_app_vars - set(mounted_sub_apps) or typer_app_vars
 
@@ -1624,6 +1779,7 @@ class SpecValidator:
                 sub_found: dict[str, set[str]] = {}
                 search_root = full_module_node or scope_node
                 imp_map = local_imports if local_imports is not None else imported_symbol_modules
+                _, scope_ctor_names = _collect_typer_vars(search_root)
                 for node in ast.walk(scope_node):
                     if (
                         isinstance(node, ast.Call)
@@ -1632,50 +1788,50 @@ class SpecValidator:
                         and node.func.value.id in target_vars
                         and node.func.attr == "add_typer"
                     ):
-                        sub_name = next(
-                            (
-                                kw.value.value
-                                for kw in node.keywords
-                                if kw.arg == "name"
-                                and isinstance(kw.value, ast.Constant)
-                                and isinstance(kw.value.value, str)
-                            ),
-                            None,
+                        child_var = (
+                            node.args[0].id
+                            if node.args and isinstance(node.args[0], ast.Name)
+                            else None
                         )
-                        if (
-                            not sub_name
-                            and len(node.args) >= 2
-                            and isinstance(node.args[1], ast.Constant)
-                            and isinstance(node.args[1].value, str)
-                        ):
-                            sub_name = node.args[1].value
+                        sub_name = _resolve_sub_typer_name(
+                            node, child_var, scope_ctor_names, imp_map
+                        )
+                        child_cmds: set[str] = set()
+                        grandchild_map: dict[str, set[str]] = {}
+                        if child_var:
+                            c_cmds, gc_map = _collect_commands_from_ast(
+                                search_root, {child_var}, search_root, imp_map
+                            )
+                            child_cmds.update(c_cmds)
+                            for gk, gv in gc_map.items():
+                                grandchild_map.setdefault(gk, set()).update(gv)
+                            if child_var in imp_map:
+                                sib_mod, orig_var = imp_map[child_var]
+                                sib_ast = _get_sibling_tree(sib_mod)
+                                if sib_ast is not None:
+                                    sib_imp: dict[str, tuple[str, str]] = {}
+                                    for sn in ast.walk(sib_ast):
+                                        if isinstance(sn, ast.ImportFrom) and sn.module:
+                                            sm_leaf = sn.module.rsplit(".", 1)[-1]
+                                            for sal in sn.names:
+                                                sib_imp[sal.asname or sal.name] = (sm_leaf, sal.name)
+                                    ext_cmds, ext_gc = _collect_commands_from_ast(
+                                        sib_ast, {orig_var}, sib_ast, sib_imp
+                                    )
+                                    child_cmds.update(ext_cmds)
+                                    for gk, gv in ext_gc.items():
+                                        grandchild_map.setdefault(gk, set()).update(gv)
                         if sub_name:
                             found.add(sub_name)
-                            if node.args and isinstance(node.args[0], ast.Name):
-                                child_var = node.args[0].id
-                                child_cmds, grandchild_map = _collect_commands_from_ast(
-                                    search_root, {child_var}, search_root, imp_map
-                                )
-                                grp_set = sub_found.setdefault(sub_name, set())
-                                grp_set.update(child_cmds)
-                                for gc_set in grandchild_map.values():
-                                    grp_set.update(gc_set)
-                                if child_var in imp_map:
-                                    sib_mod, orig_var = imp_map[child_var]
-                                    sib_ast = _get_sibling_tree(sib_mod)
-                                    if sib_ast is not None:
-                                        sib_imp: dict[str, tuple[str, str]] = {}
-                                        for sn in ast.walk(sib_ast):
-                                            if isinstance(sn, ast.ImportFrom) and sn.module:
-                                                sm_leaf = sn.module.rsplit(".", 1)[-1]
-                                                for sal in sn.names:
-                                                    sib_imp[sal.asname or sal.name] = (sm_leaf, sal.name)
-                                        ext_cmds, ext_gc = _collect_commands_from_ast(
-                                            sib_ast, {orig_var}, sib_ast, sib_imp
-                                        )
-                                        grp_set.update(ext_cmds)
-                                        for gc_set in ext_gc.values():
-                                            grp_set.update(gc_set)
+                            grp_set = sub_found.setdefault(sub_name, set())
+                            grp_set.update(child_cmds)
+                            for gc_set in grandchild_map.values():
+                                grp_set.update(gc_set)
+                        else:
+                            # Unnamed add_typer(sub_app) mounts sub_app's commands at the parent level
+                            found.update(child_cmds)
+                            for gk, gv in grandchild_map.items():
+                                sub_found.setdefault(gk, set()).update(gv)
                     elif (
                         isinstance(node, ast.Call)
                         and isinstance(node.func, ast.Call)
@@ -1692,7 +1848,7 @@ class SpecValidator:
                         cmd_name = _extract_command_name_from_call(node.func, fn_arg_name)
                         if cmd_name:
                             found.add(cmd_name)
-                    elif isinstance(node, ast.FunctionDef):
+                    elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         for dec in node.decorator_list:
                             if (
                                 isinstance(dec, ast.Call)
@@ -1736,7 +1892,7 @@ class SpecValidator:
                                     sib_imp_map[sal.asname or sal.name] = (sm_leaf, sal.name)
                         for sib_node in sib_tree.body:
                             if (
-                                isinstance(sib_node, ast.FunctionDef)
+                                isinstance(sib_node, (ast.FunctionDef, ast.AsyncFunctionDef))
                                 and sib_node.name == "register"
                                 and sib_node.args.args
                             ):
@@ -1766,44 +1922,167 @@ class SpecValidator:
                                             for gc_s in extra_sub.values():
                                                 grp_s.update(gc_s)
 
-        # Click CLI extraction (@click.group / @click.command / @<group>.command / <group>.add_command)
+        # Click CLI extraction (@click.group / @click.command / @<group>.group / @<group>.command / <group>.add_command)
         if not commands and (click_module_aliases or click_group_decorators or click_cmd_decorators):
-            click_groups: set[str] = set()
+            root_click_groups: set[str] = set()
+            sub_click_groups: dict[str, str] = {}  # func_name -> group_command_name
+            standalone_click_funcs: dict[str, str] = {}  # func_name -> default_command_name
+
             for node in ast.walk(tree):
-                if isinstance(node, ast.FunctionDef):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     for dec in node.decorator_list:
                         dec_call = dec if isinstance(dec, ast.Call) else None
                         dec_target = dec_call.func if dec_call else dec
-                        is_clk_grp = (
+                        is_root_grp = (
                             isinstance(dec_target, ast.Attribute)
                             and isinstance(dec_target.value, ast.Name)
                             and dec_target.value.id in click_module_aliases
                             and dec_target.attr == "group"
                         ) or (isinstance(dec_target, ast.Name) and dec_target.id in click_group_decorators)
-                        if is_clk_grp:
-                            click_groups.add(node.name)
+                        if is_root_grp:
+                            root_click_groups.add(node.name)
+                            grp_cmd = (
+                                _extract_command_name_from_call(dec_call, node.name)
+                                if dec_call
+                                else node.name.replace("_", "-")
+                            )
+                            if grp_cmd:
+                                standalone_click_funcs[node.name] = grp_cmd
+
+            # Iteratively discover nested @<group>.group() definitions
+            changed = True
+            while changed:
+                changed = False
+                known_groups = root_click_groups | set(sub_click_groups)
+                for node in ast.walk(tree):
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name not in known_groups:
+                        for dec in node.decorator_list:
+                            dec_call = dec if isinstance(dec, ast.Call) else None
+                            dec_target = dec_call.func if dec_call else dec
+                            if (
+                                isinstance(dec_target, ast.Attribute)
+                                and isinstance(dec_target.value, ast.Name)
+                                and dec_target.value.id in known_groups
+                                and dec_target.attr == "group"
+                            ):
+                                grp_cmd = (
+                                    _extract_command_name_from_call(dec_call, node.name)
+                                    if dec_call
+                                    else node.name.replace("_", "-")
+                                )
+                                if grp_cmd:
+                                    sub_click_groups[node.name] = grp_cmd
+                                    commands.add(grp_cmd)
+                                    parent_grp = dec_target.value.id
+                                    if parent_grp in sub_click_groups:
+                                        subcommands_by_group.setdefault(
+                                            sub_click_groups[parent_grp], set()
+                                        ).add(grp_cmd)
+                                    changed = True
+
+            all_click_groups = root_click_groups | set(sub_click_groups)
+
+            # Collect @click.command / @<group>.command functions
+            decorated_Group_cmds: set[str] = set()
             for node in ast.walk(tree):
-                if isinstance(node, ast.FunctionDef):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     for dec in node.decorator_list:
                         dec_call = dec if isinstance(dec, ast.Call) else None
                         dec_target = dec_call.func if dec_call else dec
-                        is_clk_cmd = (
+                        is_Group_cmd = (
                             isinstance(dec_target, ast.Attribute)
                             and isinstance(dec_target.value, ast.Name)
-                            and (
-                                dec_target.value.id in click_module_aliases
-                                or dec_target.value.id in click_groups
+                            and dec_target.value.id in all_click_groups
+                            and dec_target.attr == "command"
+                        )
+                        is_standalone_cmd = (
+                            (
+                                isinstance(dec_target, ast.Attribute)
+                                and isinstance(dec_target.value, ast.Name)
+                                and dec_target.value.id in click_module_aliases
+                                and dec_target.attr == "command"
                             )
-                            and dec_target.attr in ("command", "group")
-                        ) or (isinstance(dec_target, ast.Name) and dec_target.id in click_cmd_decorators)
-                        if is_clk_cmd and node.name not in click_groups:
+                            or (isinstance(dec_target, ast.Name) and dec_target.id in click_cmd_decorators)
+                        )
+                        if is_Group_cmd or (is_standalone_cmd and node.name not in all_click_groups):
                             cmd_name = (
                                 _extract_command_name_from_call(dec_call, node.name)
                                 if dec_call
                                 else node.name.replace("_", "-")
                             )
                             if cmd_name:
-                                commands.add(cmd_name)
+                                standalone_click_funcs[node.name] = cmd_name
+                                if is_Group_cmd:
+                                    decorated_Group_cmds.add(node.name)
+                                    commands.add(cmd_name)
+                                    parent_grp = dec_target.value.id  # type: ignore[union-attr]
+                                    if parent_grp in sub_click_groups:
+                                        subcommands_by_group.setdefault(
+                                            sub_click_groups[parent_grp], set()
+                                        ).add(cmd_name)
+
+            # Inspect <group>.add_command(cmd_obj, name=...) calls
+            mounted_via_add_cmd: set[str] = set()
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id in all_click_groups
+                    and node.func.attr == "add_command"
+                    and node.args
+                ):
+                    parent_grp = node.func.value.id
+                    explicit_name = next(
+                        (
+                            kw.value.value
+                            for kw in node.keywords
+                            if kw.arg == "name"
+                            and isinstance(kw.value, ast.Constant)
+                            and isinstance(kw.value.value, str)
+                        ),
+                        None,
+                    )
+                    if (
+                        not explicit_name
+                        and len(node.args) >= 2
+                        and isinstance(node.args[1], ast.Constant)
+                        and isinstance(node.args[1].value, str)
+                    ):
+                        explicit_name = node.args[1].value
+                    first_arg = node.args[0]
+                    if isinstance(first_arg, ast.Name):
+                        target_var = first_arg.id
+                        mounted_via_add_cmd.add(target_var)
+                        resolved_name = (
+                            explicit_name
+                            or standalone_click_funcs.get(target_var)
+                            or target_var.replace("_", "-")
+                        )
+                        if resolved_name:
+                            commands.add(resolved_name)
+                            if target_var in root_click_groups:
+                                root_click_groups.discard(target_var)
+                                sub_click_groups[target_var] = resolved_name
+                            if parent_grp in sub_click_groups:
+                                subcommands_by_group.setdefault(
+                                    sub_click_groups[parent_grp], set()
+                                ).add(resolved_name)
+                    elif explicit_name:
+                        commands.add(explicit_name)
+                        if parent_grp in sub_click_groups:
+                            subcommands_by_group.setdefault(
+                                sub_click_groups[parent_grp], set()
+                            ).add(explicit_name)
+
+            # Include standalone @click.command functions when not mounted via add_command
+            for fn_name, cmd_name in standalone_click_funcs.items():
+                if (
+                    fn_name not in all_click_groups
+                    and fn_name not in decorated_Group_cmds
+                    and fn_name not in mounted_via_add_cmd
+                ):
+                    commands.add(cmd_name)
 
         # argparse CLI extraction (subparsers.add_parser("cmd"))
         if not commands and has_argparse:
@@ -1821,16 +2100,16 @@ class SpecValidator:
         if not commands:
             return
 
+        clean_body = self._strip_asciidoc_comments(body)
+
         # 1. Forward verification (Code -> Spec): every discovered top-level CLI command must be documented
         for cmd_name in sorted(commands):
-            if not re.search(rf"(?:`|\b){re.escape(cmd_name)}\b", body):
+            if not re.search(rf"(?:`|\b){re.escape(cmd_name)}\b", clean_body):
                 report.broken_references.append(
                     f"Contract drift in {doc.file_path.name}: CLI command '{cmd_name}' defined in '{cli_file.name}' is not documented in contract '{doc.doc_id}'"
                 )
 
         # 2. Reverse verification (Spec -> Code) & Subcommand verification (DLT-2026-082)
-        clean_body = re.sub(r"^/{4,}\n.*?\n/{4,}\s*$", "", body, flags=re.MULTILINE | re.DOTALL)
-        clean_body = re.sub(r"^\s*//[^\r\n]*$", "", clean_body, flags=re.MULTILINE)
         heading_matches = list(re.finditer(r"^===\s+`([^`]+)`(?:\s*/\s*`([^`]+)`)?", clean_body, re.MULTILINE))
         for idx, hm in enumerate(heading_matches):
             sec_start = hm.end()
@@ -1882,6 +2161,12 @@ class SpecValidator:
                             f"Contract drift in {doc.file_path.name}: documented CLI subcommand '{resolved_cmd} {doc_sub}' in contract '{doc.doc_id}' does not exist in '{cli_file.name}'"
                         )
 
+    @staticmethod
+    def _strip_asciidoc_comments(body: str) -> str:
+        """Strip AsciiDoc block comments (//// ... ////) and single-line comments (// ...) from contract body."""
+        cleaned = re.sub(r"^/{4,}\r?\n.*?\r?\n/{4,}[ \t]*$", "", body, flags=re.MULTILINE | re.DOTALL)
+        return re.sub(r"^[ \t]*//[^\r\n]*$", "", cleaned, flags=re.MULTILINE)
+
     def _verify_python_protocol_contract(
         self, doc: SpecDocument, spec_file: Path, report: ValidationReport
     ) -> None:
@@ -1914,7 +2199,8 @@ class SpecValidator:
                         if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and not item.name.startswith("_"):
                             protocol_symbols.append(item.name)
 
-        body = doc.body or ""
+        protocol_symbols = list(dict.fromkeys(protocol_symbols))
+        body = self._strip_asciidoc_comments(doc.body or "")
         for sym in protocol_symbols:
             if not re.search(rf"(?:`|\b){re.escape(sym)}\b", body):
                 report.broken_references.append(
@@ -1923,9 +2209,14 @@ class SpecValidator:
 
         if protocol_symbols:
             proto_set = set(protocol_symbols)
-            for m in re.finditer(r"`(?:async\s+)?(?:def\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\([^`]*\)`", body):
-                doc_sym = m.group(1)
-                if doc_sym not in proto_set:
+            seen_doc_syms: set[str] = set()
+            for m in re.finditer(
+                r"`(?:(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^`]*\)|([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*(?:self\b|[A-Za-z_][A-Za-z0-9_]*\s*:\s*[A-Za-z_])[^`]*\))`",
+                body,
+            ):
+                doc_sym = m.group(1) or m.group(2)
+                if doc_sym and doc_sym not in proto_set and doc_sym not in seen_doc_syms:
+                    seen_doc_syms.add(doc_sym)
                     report.broken_references.append(
                         f"Contract drift in {doc.file_path.name}: documented Python protocol symbol '{doc_sym}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
                     )
@@ -1949,7 +2240,7 @@ class SpecValidator:
         paths = data.get("paths")
         if not isinstance(paths, dict):
             return
-        body = doc.body or ""
+        body = self._strip_asciidoc_comments(doc.body or "")
         defined_routes = {str(k) for k in paths}
         for route in sorted(defined_routes):
             if not re.search(rf"{re.escape(route)}(?=$|[\s`\"'|),;\]>])", body):
@@ -1957,6 +2248,7 @@ class SpecValidator:
                     f"Contract drift in {doc.file_path.name}: OpenAPI path '{route}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
                 )
 
+        seen_doc_routes: set[str] = set()
         for m in re.finditer(
             r"`(?:(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+)?(/[A-Za-z0-9_{}][A-Za-z0-9._~/{}-]*)`",
             body,
@@ -1964,7 +2256,8 @@ class SpecValidator:
             doc_route = m.group(1)
             if "..." in doc_route or "*" in doc_route:
                 continue
-            if doc_route not in defined_routes:
+            if doc_route not in defined_routes and doc_route not in seen_doc_routes:
+                seen_doc_routes.add(doc_route)
                 report.broken_references.append(
                     f"Contract drift in {doc.file_path.name}: documented OpenAPI path '{doc_route}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
                 )
@@ -1988,8 +2281,10 @@ class SpecValidator:
         props = data.get("properties")
         if not isinstance(props, dict) or not props:
             return
-        required_props = [str(p) for p in (data.get("required") or props.keys()) if str(p) in props]
-        body = doc.body or ""
+        raw_req = data.get("required")
+        req_source = raw_req if isinstance(raw_req, list) else props.keys()
+        required_props = list(dict.fromkeys(str(p) for p in req_source if str(p) in props))
+        body = self._strip_asciidoc_comments(doc.body or "")
         for prop_name in required_props:
             if not re.search(rf"(?:`|\b){re.escape(prop_name)}\b", body):
                 report.broken_references.append(
@@ -2008,17 +2303,20 @@ class SpecValidator:
         stripped_text = re.sub(r"//[^\r\n]*", "", stripped_text)
         services = re.findall(r"\bservice\s+([A-Za-z_][A-Za-z0-9_]*)\b", stripped_text)
         rpcs = re.findall(r"\brpc\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", stripped_text)
-        defined_syms = {*services, *rpcs}
-        body = doc.body or ""
-        for sym in [*services, *rpcs]:
+        ordered_syms = list(dict.fromkeys([*services, *rpcs]))
+        defined_syms = set(ordered_syms)
+        body = self._strip_asciidoc_comments(doc.body or "")
+        for sym in ordered_syms:
             if not re.search(rf"(?:`|\b){re.escape(sym)}\b", body):
                 report.broken_references.append(
                     f"Contract drift in {doc.file_path.name}: gRPC symbol '{sym}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
                 )
 
+        seen_doc_syms: set[str] = set()
         for m in re.finditer(r"(?:`|\b)(?:rpc|service)\s+([A-Za-z_][A-Za-z0-9_]*)\b", body):
             doc_sym = m.group(1)
-            if doc_sym not in defined_syms:
+            if doc_sym not in defined_syms and doc_sym not in seen_doc_syms:
+                seen_doc_syms.add(doc_sym)
                 report.broken_references.append(
                     f"Contract drift in {doc.file_path.name}: documented gRPC symbol '{doc_sym}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
                 )
@@ -2046,7 +2344,8 @@ class SpecValidator:
                 paren_depth += cleaned.count("(") - cleaned.count(")")
                 if paren_depth < 0:
                     paren_depth = 0
-        body = doc.body or ""
+        operations = list(dict.fromkeys(operations))
+        body = self._strip_asciidoc_comments(doc.body or "")
         defined_ops = set(operations)
         for op in operations:
             if not re.search(rf"(?:`|\b){re.escape(op)}\b", body):
@@ -2055,9 +2354,14 @@ class SpecValidator:
                 )
 
         gql_keywords = {"type", "query", "mutation", "subscription", "input", "enum", "scalar", "interface", "union"}
-        for m in re.finditer(r"`([A-Za-z_][A-Za-z0-9_]*)\s*\([^`]*\)`", body):
-            doc_op = m.group(1)
-            if doc_op.lower() not in gql_keywords and doc_op not in defined_ops:
+        seen_doc_ops: set[str] = set()
+        for m in re.finditer(
+            r"`(?:(?:query|mutation|subscription)\s+([A-Za-z_][A-Za-z0-9_]*)\b[^`]*|([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*[A-Za-z_][A-Za-z0-9_]*\s*:\s*[A-Za-z_\[][^`]*\)(?:\s*:\s*[A-Za-z_\[][^`]*)?|([A-Za-z_][A-Za-z0-9_]*)\s*\([^`]*\)\s*:\s*[A-Za-z_\[][^`]*)`",
+            body,
+        ):
+            doc_op = m.group(1) or m.group(2) or m.group(3)
+            if doc_op and doc_op.lower() not in gql_keywords and doc_op not in defined_ops and doc_op not in seen_doc_ops:
+                seen_doc_ops.add(doc_op)
                 report.broken_references.append(
                     f"Contract drift in {doc.file_path.name}: documented GraphQL operation '{doc_op}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
                 )

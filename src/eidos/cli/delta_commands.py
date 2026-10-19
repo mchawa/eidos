@@ -509,6 +509,8 @@ def delta_status_cmd(
     summary_table.add_column("Count", style="bold white", justify="right")
     summary_table.add_column("Description", style="dim")
 
+    summary_table.add_row("Draft", str(len(by_status.get("draft", []))), "Initial work-in-progress deltas")
+    summary_table.add_row("Planned", str(len(by_status.get("planned", []))), "Planned mutations scheduled for work")
     summary_table.add_row("Proposed", str(len(by_status.get("proposed", []))), "Draft mutations awaiting review")
     summary_table.add_row("In Review", str(len(by_status.get("in_review", []))), "Under review by team or agents")
     summary_table.add_row(
@@ -522,7 +524,13 @@ def delta_status_cmd(
 
     console.print(summary_table)
 
-    active_deltas = by_status.get("proposed", []) + by_status.get("in_review", []) + by_status.get("approved", [])
+    active_deltas = (
+        by_status.get("draft", [])
+        + by_status.get("planned", [])
+        + by_status.get("proposed", [])
+        + by_status.get("in_review", [])
+        + by_status.get("approved", [])
+    )
     if active_deltas:
         console.print("\n[bold yellow]In-Flight SpecDeltas:[/bold yellow]")
         active_table = Table(show_header=True)

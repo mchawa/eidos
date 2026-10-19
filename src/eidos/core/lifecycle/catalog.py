@@ -13,22 +13,34 @@ from eidos.core.index.storage import (
 )
 from eidos.core.spec.parser import (
     dump_spec_document,
+    extract_frontmatter,
     split_frontmatter_and_body,
 )
 
 VALID_SPEC_TYPES = {
+    "system": "product/system",
+    "product/system": "product/system",
+    "architecture": "tech/architecture",
+    "tech/architecture": "tech/architecture",
     "delta": "delta/mutation",
     "mutation": "delta/mutation",
+    "delta/mutation": "delta/mutation",
     "capability": "product/capability",
+    "product/capability": "product/capability",
     "domain": "product/domain",
+    "product/domain": "product/domain",
     "policy": "product/policy",
+    "product/policy": "product/policy",
     "contract": "tech/contract",
+    "tech/contract": "tech/contract",
     "container": "tech/container",
     "tech/container": "tech/container",
     "component": "tech/component",
     "tech/component": "tech/component",
     "persona": "product/persona",
+    "product/persona": "product/persona",
     "exploration": "product/exploration",
+    "product/exploration": "product/exploration",
     "design-system": "design/system",
     "design_system": "design/system",
     "design/system": "design/system",
@@ -92,12 +104,22 @@ def _split_raw_frontmatter(raw_content: str) -> tuple[str, str] | None:
     return raw_yaml, body
 
 
+_YAML_KEYWORD_SCALARS: frozenset[str] = frozenset(
+    {"true", "false", "null", "~", "yes", "no", "on", "off", "y", "n", ".inf", "-.inf", "+.inf", ".nan"}
+)
+
+
 def _format_yaml_scalar_value(value: str) -> str:
     """Safely format a scalar string for in-place single-line YAML insertion without corrupting frontmatter."""
     import json
 
     val = str(value)
-    if len(val) >= 2 and ((val[0] == '"' and val[-1] == '"') or (val[0] == "'" and val[-1] == "'")):
+    if (
+        len(val) >= 2
+        and "\n" not in val
+        and "\r" not in val
+        and ((val[0] == '"' and val[-1] == '"') or (val[0] == "'" and val[-1] == "'"))
+    ):
         try:
             loaded = yaml.safe_load(val)
             if isinstance(loaded, (str, int, float, bool)):
@@ -107,8 +129,20 @@ def _format_yaml_scalar_value(value: str) -> str:
     needs_quoting = (
         not val
         or val != val.strip()
-        or any(ch in val for ch in (":", "#", "\n", "\r", '"', "'", "{", "}", "[", "]", "&", "*", "!", "|", ">", "%", "@", "`"))
+        or val.lower() in _YAML_KEYWORD_SCALARS
+        or val.startswith(("- ", "? "))
+        or any(
+            ch in val
+            for ch in (":", "#", "\n", "\r", '"', "'", "{", "}", "[", "]", "&", "*", "!", "|", ">", "%", "@", "`", ",")
+        )
     )
+    if not needs_quoting:
+        try:
+            parsed_scalar = yaml.safe_load(val)
+            if not isinstance(parsed_scalar, str) or parsed_scalar != val:
+                needs_quoting = True
+        except yaml.YAMLError:
+            needs_quoting = True
     if needs_quoting:
         return json.dumps(val, ensure_ascii=False)
     return val
@@ -156,13 +190,13 @@ def _set_frontmatter_scalar(raw_content: str, key: str, value: str) -> str:
         m = key_re.match(line) if not found else None
         if m is not None:
             found = True
+            key_indent = len(line) - len(line.lstrip(" \t"))
             old_val, trailing_comment = _split_yaml_inline_comment(m.group(2))
             prefix = m.group(1) if m.group(1).endswith((" ", "\t")) else f"{m.group(1)} "
             out_lines.append(f"{prefix}{safe_val}{trailing_comment}")
             i += 1
             old_stripped = old_val.strip()
-            is_block_scalar = bool(re.match(r"^[|>][0-9+-]*$", old_stripped))
-            if is_block_scalar or not old_stripped or not old_stripped.startswith(("[", "{")):
+            if old_stripped[:1] in ("|", ">"):
                 trailing_blanks: list[str] = []
                 while i < n:
                     nxt = lines[i]
@@ -170,7 +204,8 @@ def _set_frontmatter_scalar(raw_content: str, key: str, value: str) -> str:
                         trailing_blanks.append(nxt)
                         i += 1
                         continue
-                    if nxt.startswith((" ", "\t")) and not nxt.lstrip().startswith("- "):
+                    nxt_indent = len(nxt) - len(nxt.lstrip(" \t"))
+                    if nxt_indent > key_indent:
                         trailing_blanks.clear()
                         i += 1
                         continue
@@ -201,6 +236,31 @@ def _mutate_frontmatter_components(
     if parts is None:
         return raw_content
     raw_yaml, body = parts
+
+    def _fallback_mutate_parsed() -> str:
+        try:
+            parsed_fm = yaml.safe_load(raw_yaml)
+        except yaml.YAMLError:
+            return raw_content
+        if not isinstance(parsed_fm, dict):
+            return raw_content
+        comps = parsed_fm.get("components")
+        if not isinstance(comps, list):
+            comps = []
+            parsed_fm["components"] = comps
+        if op == "append" and item_dict is not None:
+            comps.append(item_dict)
+        elif op in ("replace", "replace_with_ref", "replace_inline") and item_dict is not None:
+            for idx_c, c in enumerate(comps):
+                if isinstance(c, dict) and c.get("id") == target_id:
+                    comps[idx_c] = item_dict
+                    break
+        elif op == "remove":
+            parsed_fm["components"] = [
+                c for c in comps if not (isinstance(c, dict) and c.get("id") == target_id)
+            ]
+        return dump_spec_document(parsed_fm, body)
+
     lines = raw_yaml.splitlines(keepends=True)
     if lines and not lines[-1].endswith("\n"):
         lines[-1] += "\n"
@@ -223,6 +283,12 @@ def _mutate_frontmatter_components(
             lines.insert(comp_idx + 1, _format_component_item(item_dict, "  "))
             return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
         return raw_content
+
+    header_after_colon, header_comment = _split_yaml_inline_comment(
+        lines[comp_idx].split(":", 1)[1].rstrip("\r\n")
+    )
+    if header_after_colon.strip().startswith("["):
+        return _fallback_mutate_parsed()
 
     end_idx = len(lines)
     for i in range(comp_idx + 1, len(lines)):
@@ -251,10 +317,14 @@ def _mutate_frontmatter_components(
         if (m := re.match(r"^(\s*)-\s+", lines[i])) and len(m.group(1)) == base_indent_len
     ]
 
+    if not item_starts and op in ("replace", "replace_with_ref", "replace_inline", "remove"):
+        return _fallback_mutate_parsed()
+
     if op == "append" and item_dict is not None:
         lines.insert(end_idx, _format_component_item(item_dict, base_indent))
         return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
 
+    mutated = False
     for idx_pos, start_line in enumerate(item_starts):
         next_bound = item_starts[idx_pos + 1] if idx_pos + 1 < len(item_starts) else end_idx
         stop_line = next_bound
@@ -273,15 +343,19 @@ def _mutate_frontmatter_components(
             and isinstance(parsed_item[0], dict)
             and parsed_item[0].get("id") == target_id
         ):
-                if op == "replace" and item_dict is not None:
-                    lines[start_line:stop_line] = [_format_component_item(item_dict, base_indent)]
-                elif op == "remove":
+            mutated = True
+            if op in ("replace", "replace_with_ref", "replace_inline") and item_dict is not None:
+                lines[start_line:stop_line] = [_format_component_item(item_dict, base_indent)]
+            elif op == "remove":
+                if len(item_starts) == 1:
+                    del lines[comp_idx + 1 : end_idx]
+                    lines[comp_idx] = f"components: []{header_comment}\n"
+                else:
                     del lines[start_line:stop_line]
-                    if len(item_starts) == 1:
-                        lines[comp_idx] = re.sub(
-                            r"^components\s*:[ \t]*", "components: []", lines[comp_idx], count=1
-                        )
-                break
+            break
+
+    if not mutated and op in ("replace", "replace_with_ref", "replace_inline", "remove"):
+        return _fallback_mutate_parsed()
 
     return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
 
@@ -294,20 +368,34 @@ def _single_line(text: str) -> str:
 def find_spec_by_id_or_path(eidos_dir: Path, target: str) -> Path | None:
     """Resolve a document ID, relative path, or filename to an existing spec path."""
     target_clean = target.strip()
+    if not target_clean:
+        return None
+    eidos_resolved = eidos_dir.resolve()
 
-    # 1. Exact path or relative path
+    # 1. Exact path or relative path (must be a .adoc file inside eidos_dir)
     direct_path = Path(target_clean)
-    if direct_path.exists() and direct_path.is_file():
-        return direct_path.resolve()
+    if direct_path.suffix.lower() == ".adoc" and direct_path.exists() and direct_path.is_file():
+        resolved_direct = direct_path.resolve()
+        if resolved_direct.is_relative_to(eidos_resolved):
+            return resolved_direct
 
-    rel_path = eidos_dir / target_clean
-    if rel_path.exists() and rel_path.is_file():
-        return rel_path.resolve()
+    candidates = [target_clean]
+    if eidos_resolved.name and target_clean.replace("\\", "/").startswith(f"{eidos_resolved.name}/"):
+        candidates.append(target_clean.replace("\\", "/").removeprefix(f"{eidos_resolved.name}/"))
 
-    if not target_clean.endswith(".adoc"):
-        rel_adoc = eidos_dir / f"{target_clean}.adoc"
-        if rel_adoc.exists() and rel_adoc.is_file():
-            return rel_adoc.resolve()
+    for cand_str in candidates:
+        rel_path = eidos_dir / cand_str
+        if rel_path.suffix.lower() == ".adoc" and rel_path.exists() and rel_path.is_file():
+            resolved_rel = rel_path.resolve()
+            if resolved_rel.is_relative_to(eidos_resolved):
+                return resolved_rel
+
+        if not cand_str.endswith(".adoc"):
+            rel_adoc = eidos_dir / f"{cand_str}.adoc"
+            if rel_adoc.exists() and rel_adoc.is_file():
+                resolved_adoc = rel_adoc.resolve()
+                if resolved_adoc.is_relative_to(eidos_resolved):
+                    return resolved_adoc
 
     # 2. Search by ID across all .adoc files in eidos_dir
     target_lower = target_clean.lower()
@@ -338,9 +426,13 @@ def find_references_to_spec(eidos_dir: Path, target_id: str, target_path: Path) 
         else target_path.name
     )
     id_pattern = re.compile(rf"(?<![A-Za-z0-9_-]){re.escape(target_id)}(?![A-Za-z0-9_-])", re.IGNORECASE)
-    path_pattern = re.compile(rf"(?<![A-Za-z0-9_./-]){re.escape(rel_path_str)}(?![A-Za-z0-9_./-])")
+    eidos_prefix = rf"(?:{re.escape(eidos_resolved.name)}/|eidos/)?" if eidos_resolved.name else r"(?:eidos/)?"
+    path_pattern = re.compile(rf"(?<![A-Za-z0-9_./-]){eidos_prefix}{re.escape(rel_path_str)}(?![A-Za-z0-9_./-])")
 
-    status_re = re.compile(r"^status[ \t]*:[ \t]*['\"]?(applied|rejected)['\"]?[ \t]*$", re.MULTILINE | re.IGNORECASE)
+    status_re = re.compile(
+        r"^status[ \t]*:[ \t]*['\"]?(applied|rejected)['\"]?[ \t]*(?:#.*)?$",
+        re.MULTILINE | re.IGNORECASE,
+    )
     for p in sorted(eidos_dir.rglob("*.adoc")):
         if p.is_symlink():
             continue
@@ -349,8 +441,15 @@ def find_references_to_spec(eidos_dir: Path, target_id: str, target_path: Path) 
             continue
         try:
             content = p.read_text(encoding="utf-8")
-            if "deltas" in p.parts and status_re.search(content):
-                continue
+            if "deltas" in p.parts:
+                fm_dict, _, _ = extract_frontmatter(content)
+                if isinstance(fm_dict, dict):
+                    if str(fm_dict.get("status", "")).strip().lower() in ("applied", "rejected"):
+                        continue
+                else:
+                    raw_yaml, _ = split_frontmatter_and_body(content)
+                    if raw_yaml and status_re.search(raw_yaml):
+                        continue
             if id_pattern.search(content) or path_pattern.search(content):
                 referencing_files.append(resolved_p)
                 seen_resolved.add(resolved_p)

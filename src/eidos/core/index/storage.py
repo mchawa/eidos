@@ -223,7 +223,7 @@ def clone_spec_document(doc: SpecDocument, file_path: Path | None = None) -> Spe
         schema_ref=doc.schema_ref,
         title=doc.title,
         errors=list(doc.errors),
-        _model=doc._model,
+        _model=None,
     )
     return cloned
 
@@ -262,7 +262,7 @@ def get_cached_spec_document(
     cached_row: sqlite3.Row | dict[str, Any] | None = None,
 ) -> tuple[SpecDocument | None, str, int]:
     """Return ``(SpecDocument, sha256, mtime_ns)`` using unified in-memory and SQLite spec_validation_cache state."""
-    from eidos.core.spec.parser import SpecDocument, _parse_spec_content
+    from eidos.core.spec.parser import _NON_ROOT_SPEC_SUBDIRS, SpecDocument, _parse_spec_content
 
     try:
         res_fp = file_path.resolve()
@@ -286,7 +286,10 @@ def get_cached_spec_document(
 
     if st_size == 0 and not raw_bytes:
         empty_sha = hashlib.sha256(b"").hexdigest()
-        is_root_system = file_path.name == "system.adoc" and "design" not in file_path.parts
+        is_root_system = (
+            file_path.name == "system.adoc"
+            and file_path.parent.name.lower() not in _NON_ROOT_SPEC_SUBDIRS
+        )
         empty_doc = (
             SpecDocument(
                 file_path=file_path,

@@ -15,11 +15,11 @@ tier: presentation
 components:
   - id: CMP-PORTAL-SERVER
     name: "PortalServer"
-    responsibility: "Hosts lightweight local multi-threaded HTTP server exposing web UI and JSON endpoints (lazily loading HTML/SVG assets via get_portal_html_template and get_portal_favicon_svg) with thread-safe (_cache_lock) eidos_dir file mtime snapshot response caching on EidosPortalHandler."
+    responsibility: "Hosts lightweight local multi-threaded HTTP server exposing web UI and JSON endpoints (lazily loading HTML/SVG assets via get_portal_html_template and get_portal_favicon_svg, validating static paths via is_relative_to and resolving custom eidos_dir targets in /api/validate and /api/drift) with thread-safe (_cache_lock) eidos_dir file mtime snapshot response caching on EidosPortalHandler."
     source_path: "src/eidos/portal/server.py"
   - id: CMP-PORTAL-GENERATOR
     name: "PortalGenerator"
-    responsibility: "Synthesizes living specifications (including arch/system, all declared personas without truncation, nested policy invariants, product DEC-* decisions with both source_entity and source_id, and tokens.manifest / inheritance.extends design systems) into unified portal data model with project-agnostic C4 Level 1 external_systems context diagrams, hierarchical C4 Level 2 container topologies, C4 Level 3 component whitebox diagrams connecting only declared intra-container component dependencies, normalized inter-container dependency connections, auto-generated Mermaid diagrams, and dynamically computes delta affects and blast_radius from normalized composable (operation + target + parent) mutations and the living specification graph."
+    responsibility: "Synthesizes living specifications (including arch/system, all declared personas without truncation, deduplicated policy/capability/container/component invariants, product DEC-* decisions with both source_entity and source_id, promoted tech/component interfaces/domain_binding/quality_attributes, normalized string/object container dependencies, and tokens.manifest / inheritance.extends design systems) into unified portal data model with HTML-escaped project-agnostic C4 Level 1 external_systems context diagrams, hierarchical C4 Level 2 container topologies, C4 Level 3 component whitebox diagrams connecting only declared intra-container component dependencies (both inline and promoted), normalized inter-container dependency connections, auto-generated Mermaid diagrams, and dynamically computes delta affects and blast_radius from normalized composable (operation + target + parent) mutations and the living specification graph."
     source_path: "src/eidos/portal/generator.py"
   - id: CMP-PORTAL-BUILDER
     name: "StaticSiteBuilder"
@@ -27,7 +27,7 @@ components:
     source_path: "src/eidos/portal/builder.py"
   - id: CMP-PORTAL-ASSETS
     name: "PortalAssets"
-    responsibility: "Delivers pre-compiled single-file React 19, Tailwind v4, Asciidoctor.js, and Mermaid v11 SPA assets (compiled from src/eidos/portal/frontend/src with composable operation/target/parent SpecDelta views) with zero remote subresources by lazily loading and caching on first access (get_portal_html_template, get_portal_favicon_svg, and PEP 562 __getattr__ for PORTAL_HTML_TEMPLATE and PORTAL_FAVICON_SVG) from deterministic gzip-compressed assets (assets/portal/bundle.html.gz and assets/portal/favicon.svg) rather than a 4.7 MB raw Python string literal, mtime-gated during wheel/sdist builds via a Hatch custom build hook (hatch_build.py) and verified in CI via build_assets.py --check."
+    responsibility: "Delivers pre-compiled single-file React 19, Tailwind v4, Asciidoctor.js, and Mermaid v11 SPA assets (compiled from src/eidos/portal/frontend/src with composable operation/target/parent SpecDelta views, object-safe C4 dependency rendering, automatic C4 inspector closure on whitebox drill-down, and multi-client omnichannel flow filtering) with zero remote subresources by lazily loading and caching on first access (get_portal_html_template, get_portal_favicon_svg, and PEP 562 __getattr__ for PORTAL_HTML_TEMPLATE and PORTAL_FAVICON_SVG) from deterministic gzip-compressed assets (assets/portal/bundle.html.gz and assets/portal/favicon.svg) rather than a 4.7 MB raw Python string literal, mtime-gated during wheel/sdist builds via a Hatch custom build hook (hatch_build.py) and verified in CI via build_assets.py --check."
     source_path:
       - "src/eidos/portal/assets.py"
       - "src/eidos/portal/frontend/scripts/build_assets.py"

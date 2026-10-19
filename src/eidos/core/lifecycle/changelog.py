@@ -126,12 +126,20 @@ class ChangelogGenerator:
             return []
 
     def _batch_resolve_delta_commits(self, deltas_dir: Path) -> dict[Path, str]:
-        """Resolve earliest Git commit SHA (introduction commit) for all delta files in a single git log invocation."""
+        """Resolve earliest Git commit SHA where status: applied was set for delta files."""
         commits_by_path: dict[Path, str] = {}
         with contextlib.suppress(OSError, subprocess.SubprocessError, ValueError):
             rel_deltas = str(deltas_dir.resolve().relative_to(self.root)).replace("\\", "/")
             output = subprocess.check_output(
-                ["git", "log", "--name-only", "--format=COMMIT:%H", "--", rel_deltas],
+                [
+                    "git",
+                    "log",
+                    "-G^status[ \t]*:[ \t]*['\"]?applied",
+                    "--name-only",
+                    "--format=COMMIT:%H",
+                    "--",
+                    rel_deltas,
+                ],
                 cwd=self.root,
                 text=True,
                 stderr=subprocess.DEVNULL,
@@ -146,6 +154,21 @@ class ChangelogGenerator:
                 elif current_sha:
                     full_p = (self.root / line).resolve()
                     commits_by_path[full_p] = current_sha
+
+            diff_out = subprocess.check_output(
+                ["git", "diff", "HEAD", "--unified=0", "--", rel_deltas],
+                cwd=self.root,
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+            diff_file: Path | None = None
+            status_applied_re = re.compile(r"^\+status[ \t]*:[ \t]*['\"]?applied\b", re.IGNORECASE)
+            for raw_line in diff_out.splitlines():
+                if raw_line.startswith("+++ b/"):
+                    rel_f = raw_line[6:].strip()
+                    diff_file = (self.root / rel_f).resolve()
+                elif diff_file is not None and status_applied_re.search(raw_line):
+                    commits_by_path.pop(diff_file, None)
         return commits_by_path
 
     def _get_tag_ancestors(self, tag_name: str) -> set[str]:
@@ -172,10 +195,10 @@ class ChangelogGenerator:
         delta_files = sorted(
             [
                 p
-                for p in deltas_dir.glob("dlt-*.adoc")
+                for p in deltas_dir.rglob("*.adoc")
                 if p.is_file() and not p.is_symlink()
             ],
-            key=lambda p: p.name,
+            key=lambda p: (str(p.relative_to(deltas_dir)).lower(), p.name),
         )
         batched_commits = self._batch_resolve_delta_commits(deltas_dir)
 
@@ -183,6 +206,10 @@ class ChangelogGenerator:
         for df in delta_files:
             try:
                 doc = parse_spec_file(df)
+                if doc.doc_type != "delta/mutation" and not (
+                    doc.doc_type == "unknown" and df.name.lower().startswith("dlt-")
+                ):
+                    continue
                 fm = doc.frontmatter
                 status = str(fm.get("status", "proposed")).strip().lower()
                 if status != "applied":
@@ -217,7 +244,7 @@ class ChangelogGenerator:
                         "commit": commit,
                     }
                 )
-            except OSError:
+            except Exception:
                 continue
 
         return results
@@ -367,19 +394,21 @@ class ChangelogGenerator:
                     return
 
         # Format and categorize by conventional commit prefix
-        if clean.startswith("feat"):
-            desc = re.sub(r"^feat(\([^)]+\))?:\s*", "", clean).capitalize()
-            # Avoid duplicate bullet points
+        m = re.match(r"^(feat|fix|refactor)(?:\([^)]+\))?!?:\s*(.+)$", clean)
+        if not m:
+            return
+        prefix, raw_desc = m.group(1), m.group(2).strip()
+        if not raw_desc:
+            return
+        desc = raw_desc[0].upper() + raw_desc[1:]
+        if prefix == "feat":
             if not any(desc.lower() in a.lower() for a in section.added):
                 section.added.append(desc)
-        elif clean.startswith("fix"):
-            desc = re.sub(r"^fix(\([^)]+\))?:\s*", "", clean).capitalize()
+        elif prefix == "fix":
             if not any(desc.lower() in f.lower() for f in section.fixed):
                 section.fixed.append(desc)
-        elif clean.startswith("refactor"):
-            desc = re.sub(r"^refactor(\([^)]+\))?:\s*", "", clean).capitalize()
-            if not any(desc.lower() in c.lower() for c in section.changed):
-                section.changed.append(desc)
+        elif prefix == "refactor" and not any(desc.lower() in c.lower() for c in section.changed):
+            section.changed.append(desc)
 
     def update_changelog_files(
         self,
@@ -390,7 +419,8 @@ class ChangelogGenerator:
         """Generate and write CHANGELOG.md, update docs/changelog.md, and register in zensical.toml."""
         content = self.generate_changelog(include_unreleased=include_unreleased)
 
-        target_file = (output_file or (self.root / "CHANGELOG.md")).resolve()
+        default_target = (self.root / "CHANGELOG.md").resolve()
+        target_file = (output_file or default_target).resolve()
         target_file.write_text(content, encoding="utf-8")
 
         docs_changelog = self.root / "docs" / "changelog.md"
@@ -398,15 +428,17 @@ class ChangelogGenerator:
 
         if update_docs:
             docs_changelog.parent.mkdir(parents=True, exist_ok=True)
-            # Create relative symlink if supported
             if docs_changelog.is_symlink() or docs_changelog.exists():
                 with contextlib.suppress(OSError):
                     docs_changelog.unlink()
-            try:
-                os.symlink("../CHANGELOG.md", docs_changelog)
-                symlink_created = True
-            except OSError:
-                # Fallback to direct content copy
+            if target_file == default_target:
+                try:
+                    os.symlink("../CHANGELOG.md", docs_changelog)
+                    symlink_created = True
+                except OSError:
+                    # Fallback to direct content copy
+                    docs_changelog.write_text(content, encoding="utf-8")
+            else:
                 docs_changelog.write_text(content, encoding="utf-8")
 
             # Ensure zensical.toml includes Changelog in nav

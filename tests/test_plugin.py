@@ -187,7 +187,7 @@ def test_plugin_install_to_claude_plugin(tmp_path):
     assert not (claude_plugin_dir / "mcp.json").exists()
     assert (claude_plugin_dir / "commands" / "validate.md").exists()
     assert (claude_plugin_dir / "commands" / "drift.md").exists()
-    assert (claude_plugin_dir / "skills" / "eidos" / "SKILL.md").exists()
+    assert not (claude_plugin_dir / "skills").exists()
     # Direct flat skills in .claude/skills/
     assert (tmp_path / ".claude" / "skills" / "eidos" / "SKILL.md").exists()
     assert (tmp_path / ".claude" / "skills" / "eidos-spec" / "SKILL.md").exists()
@@ -780,7 +780,19 @@ def test_doc_lint_hook_pre_tool_use():
                 "name": "write_to_file",
                 "args": {
                     "TargetFile": "eidos/policies/test.adoc",
-                    "CodeContent": "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-999\ntitle: Sample Policy\n---\n",
+                    "CodeContent": (
+                        "---\n"
+                        "type: product/policy\n"
+                        "schema: schemas/v1/product/policy.schema.yaml\n"
+                        "id: POL-999\n"
+                        "title: Sample Policy\n"
+                        "category: governance\n"
+                        "rule: Sample rule\n"
+                        "enforcement:\n"
+                        "  mechanism: cli\n"
+                        "  severity: blocking\n"
+                        "---\n"
+                    ),
                 },
             }
         }
@@ -1172,6 +1184,11 @@ def test_doc_lint_hook_cross_harness_payloads(tmp_path):
         "schema: schemas/v1/product/policy.schema.yaml\n"
         "id: POL-001\n"
         "title: Valid Policy\n"
+        "category: governance\n"
+        "rule: Must validate\n"
+        "enforcement:\n"
+        "  mechanism: cli\n"
+        "  severity: blocking\n"
         "---\n"
         "= Policy\n",
         encoding="utf-8",
@@ -2417,4 +2434,238 @@ def test_target_adapter_manifest_includes_post_install_hook_files(tmp_path):
     assert manifest_path.exists()
     manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert "post_hook_generated.json" in manifest_data["files"]
+
+
+def test_hook_schema_validation_stop_partial_progress_and_non_duplicate_skills(tmp_path):
+    """Verify Group 1 (#1-#3):
+    - PreToolUse/PostToolUse _validate_doc_content validates .adoc frontmatters against JSON Schema
+    - Stop gate does not re-block when an agent fixes a subset of errors (partial progress) without modifying remaining failing files
+    - handle_lint_stop caches its validation snapshot so handle_drift_stop does not re-run validate_directory from scratch
+    - Targets with both plugin_subdir and skills_subdir (CLAUDE, CLINE, OPEN_CODE, COPILOT) do not duplicate skills inside plugin_subdir/skills
+    """
+    from eidos.plugin.hooks import (
+        _load_stop_validation_snapshot,
+        _validate_doc_content,
+        handle_drift_stop,
+        handle_lint_stop,
+    )
+
+    # 1. _validate_doc_content rejects unknown frontmatter properties (additionalProperties: false) in PreToolUse/PostToolUse
+    bad_schema_doc = (
+        "---\n"
+        "type: product/policy\n"
+        "schema: schemas/v1/product/policy.schema.yaml\n"
+        "id: POL-001\n"
+        "title: Policy\n"
+        "category: governance\n"
+        "rule: Rule\n"
+        "enforcement:\n"
+        "  mechanism: cli\n"
+        "  severity: blocking\n"
+        "unknown_illegal_field: 123\n"
+        "---\n"
+    )
+    res_schema = _validate_doc_content(tmp_path / "eidos" / "policies" / "pol.adoc", bad_schema_doc)
+    assert res_schema["decision"] == "deny"
+    assert "Schema validation failed" in res_schema["reason"]
+
+    # 2. Partial progress on Stop gate: 2 broken specs on Stop #1 -> fix 1 spec -> Stop #2 releases on remaining untouched spec
+    eidos_dir = tmp_path / "eidos"
+    dom_dir = eidos_dir / "domains"
+    dom_dir.mkdir(parents=True)
+    bad1 = dom_dir / "bad1.adoc"
+    bad2 = dom_dir / "bad2.adoc"
+    bad1.write_text("---\ntype: product/domain\nid: BAD-1\n---\n= Bad 1\n", encoding="utf-8")
+    bad2.write_text("---\ntype: product/domain\nid: BAD-2\n---\n= Bad 2\n", encoding="utf-8")
+
+    stop1 = handle_lint_stop({"session_id": "s1"}, tmp_path)
+    assert stop1["decision"] == "continue"
+
+    # Fix bad1.adoc completely by deleting it; bad2.adoc remains untouched
+    bad1.unlink()
+    stop2 = handle_lint_stop({"session_id": "s1"}, tmp_path)
+    assert stop2["decision"] == "allow"
+    assert "[Eidos Stop Gate]" in stop2.get("systemMessage", "")
+
+    # 3. Stop validation snapshot is saved by handle_lint_stop and loaded by handle_drift_stop
+    bad2.unlink()
+    good_dom = dom_dir / "good.adoc"
+    good_dom.write_text(
+        "---\n"
+        "type: product/domain\n"
+        "schema: schemas/v1/product/domain.schema.yaml\n"
+        "id: DOM-GOOD\n"
+        "name: Good Domain\n"
+        "classification: core\n"
+        "boundaries:\n"
+        "  responsibilities:\n"
+        "    - Core domain responsibility\n"
+        "---\n= Good Domain\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@eidos.ai"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
+
+    clean_lint = handle_lint_stop({"session_id": "s2"}, tmp_path)
+    assert clean_lint["decision"] == "allow"
+    snap_report = _load_stop_validation_snapshot(eidos_dir)
+    assert snap_report is not None and snap_report.is_clean
+    clean_drift = handle_drift_stop({"session_id": "s2"}, tmp_path)
+    assert clean_drift["decision"] == "allow"
+
+    # 4. Targets with flat skills_subdir do not copy duplicate skills into plugin_subdir/skills
+    inst_root = tmp_path / "no_dup_skills"
+    inst_root.mkdir()
+    install_plugin(target=PluginInstallTarget.ALL, project_dir=inst_root, force=True)
+    for p_sub, s_sub in (
+        (".claude/plugins/eidos", ".claude/skills"),
+        (".cline/plugins/eidos", ".cline/skills"),
+        (".opencode/plugins/eidos", ".opencode/skills"),
+        (".github/plugin", ".github/skills"),
+    ):
+        assert not (inst_root / p_sub / "skills").exists(), f"Unexpected duplicate skills in {p_sub}/skills"
+        assert (inst_root / s_sub / "eidos" / "SKILL.md").exists(), f"Missing flat skill in {s_sub}"
+
+
+def test_group_d1_d2_d3_regressions(tmp_path, monkeypatch):  # eidos:fixture
+    """Regression suite for Group D1 (doctor/hook CLI), D2 (CLI path & output bugs), and D3 (installer & hooks)."""  # eidos:fixture
+    # --- D1.1: eidos doctor exits 1 when agent_plugin check is not ok (e.g. outdated) ---
+    monkeypatch.setattr(
+        "eidos.cli.doctor_hook_commands.check_plugin_version_status",
+        lambda project_dir=None: {
+            "status": "outdated",
+            "installed_version": "0.0.1",
+            "bundled_version": "0.8.2",
+        },
+    )
+    res_doc = runner.invoke(app, ["doctor", "--json"])
+    assert res_doc.exit_code == 1
+    doc_payload = json.loads(res_doc.stdout)
+    assert doc_payload["healthy"] is False
+    assert doc_payload["checks"]["agent_plugin"]["ok"] is False
+
+    # --- D1.2: eidos hook lint & eidos hook drift without --event run standalone CLI mode and exit 1 on failure ---
+    broken_ws = tmp_path / "broken_hook_ws"
+    broken_eidos = broken_ws / "eidos" / "domains"
+    broken_eidos.mkdir(parents=True)
+    (broken_eidos / "invalid.adoc").write_text(
+        "---\ntype: product/domain\nid: BAD\n---\n= Invalid\n",
+        encoding="utf-8",
+    )
+    res_hook_lint = runner.invoke(app, ["hook", "lint", "--path", str(broken_ws)])
+    assert res_hook_lint.exit_code == 1
+
+    res_hook_drift = runner.invoke(app, ["hook", "drift", "--path", str(broken_ws / "nonexistent")])
+    assert res_hook_drift.exit_code == 1
+
+    # Explicit --event Stop still runs JSON hook protocol (exit code 0)
+    res_hook_event = runner.invoke(app, ["hook", "lint", "--event", "Stop", "--path", str(broken_ws)])
+    assert res_hook_event.exit_code == 0
+    assert json.loads(res_hook_event.stdout)["decision"] == "continue"
+
+    # --- D2.1 & D2.2: drift --path . and subdirectory auto-discovery for validate, drift, and context ---
+    repo_ws = tmp_path / "sub_ws"
+    repo_ws.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo_ws, check=True)
+    subprocess.run(["git", "config", "user.email", "t@eidos.ai"], cwd=repo_ws, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo_ws, check=True)
+    assert runner.invoke(app, ["init", str(repo_ws / "eidos"), "--name", "Sub Test"]).exit_code == 0
+    sub_dir = repo_ws / "src" / "pkg"
+    sub_dir.mkdir(parents=True)
+    (sub_dir / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo_ws, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=repo_ws, check=True)
+
+    # Running drift -u --path <repo_root> resolves repo_root/eidos properly
+    res_drift_dot = runner.invoke(app, ["drift", "-u", "--path", str(repo_ws), "--json"])
+    assert res_drift_dot.exit_code == 0
+    assert json.loads(res_drift_dot.stdout)["is_clean"] is True
+
+    # Running validate, drift, and context from a subdirectory without --path discovers repo_root/eidos
+    monkeypatch.chdir(sub_dir)
+    assert runner.invoke(app, ["validate", "--json"]).exit_code == 0
+    assert runner.invoke(app, ["drift", "-u", "--json"]).exit_code == 0
+    assert runner.invoke(app, ["context", "--format", "json"]).exit_code == 0
+
+    # --- D2.3: validate and context in an uninitialized directory exit 1 and do not create .cache/index.db ---
+    uninit_dir = tmp_path / "uninitialized_plain_dir"
+    uninit_dir.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=uninit_dir, check=True)
+    monkeypatch.chdir(uninit_dir)
+    assert runner.invoke(app, ["validate"]).exit_code == 1
+    assert runner.invoke(app, ["context"]).exit_code == 1
+    assert not (uninit_dir / ".cache").exists()
+
+    # --- D2.4 & D2.5: spec create auto prints resolved ID; delta status shows Draft and Planned in-flight deltas ---
+    eidos_dir = repo_ws / "eidos"
+    res_auto = runner.invoke(
+        app,
+        ["spec", "create", "domain", "auto", "--title", "Payments Core", "--path", str(eidos_dir)],
+    )
+    assert res_auto.exit_code == 0
+    assert "(DOM-AUTO)" in res_auto.stdout
+    assert "(auto)" not in res_auto.stdout
+
+    assert (
+        runner.invoke(
+            app, ["delta", "create", "DLT-2026-801", "--title", "Draft Work", "--path", str(eidos_dir)]
+        ).exit_code
+        == 0
+    )
+    assert (
+        runner.invoke(
+            app, ["delta", "create", "DLT-2026-802", "--title", "Planned Work", "--path", str(eidos_dir)]
+        ).exit_code
+        == 0
+    )
+    assert runner.invoke(app, ["delta", "status", "DLT-2026-801", "draft", "--path", str(eidos_dir)]).exit_code == 0
+    assert runner.invoke(app, ["delta", "status", "DLT-2026-802", "planned", "--path", str(eidos_dir)]).exit_code == 0
+
+    res_dash = runner.invoke(app, ["delta", "status", "--path", str(eidos_dir)])
+    assert res_dash.exit_code == 0
+    assert "Draft" in res_dash.stdout
+    assert "Planned" in res_dash.stdout
+    assert "DLT-2026-801" in res_dash.stdout
+    assert "DLT-2026-802" in res_dash.stdout
+
+    # --- D3.1: _write_copilot_instructions appends Eidos block to existing user copilot-instructions.md when force=False ---
+    copilot_ws = tmp_path / "copilot_ws"
+    (copilot_ws / ".github").mkdir(parents=True)
+    copilot_file = copilot_ws / ".github" / "copilot-instructions.md"
+    copilot_file.write_text("# Team Custom Instructions\nAlways write tests.\n", encoding="utf-8")
+    install_plugin(target=PluginInstallTarget.COPILOT, project_dir=copilot_ws, force=False)
+    merged_copilot = copilot_file.read_text(encoding="utf-8")
+    assert "# Team Custom Instructions" in merged_copilot
+    assert "<!-- EIDOS_COPILOT_START -->" in merged_copilot
+
+    # --- D3.2: Re-running install_plugin(force=False) preserves manifest entries so uninstall removes plugin files ---
+    reinstall_ws = tmp_path / "reinstall_ws"
+    reinstall_ws.mkdir()
+    install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=reinstall_ws, force=False)
+    install_plugin(target=PluginInstallTarget.CLAUDE, project_dir=reinstall_ws, force=False)
+    uninstall_plugin(target=PluginInstallTarget.CLAUDE, project_dir=reinstall_ws)
+    assert not (reinstall_ws / ".claude" / "skills" / "eidos" / "SKILL.md").exists()
+    assert not (reinstall_ws / ".claude" / "plugins" / "eidos" / "plugin.json").exists()
+
+    # --- D3.3: is_eidos_doc blocks path traversal and handle_lint_pre_tool_use honours payload["cwd"] ---
+    from eidos.plugin.hooks import handle_lint_pre_tool_use, is_eidos_doc
+
+    assert is_eidos_doc("eidos/../../outside.json", repo_ws) is False
+    assert is_eidos_doc("eidos/domains/auto/domain.adoc", repo_ws) is True
+
+    bad_adoc_payload = {
+        "cwd": str(repo_ws),
+        "tool_name": "Write",
+        "tool_input": {
+            "file_path": "eidos/domains/bad_pre.adoc",
+            "content": "---\ntype: product/domain\nid: BAD\n---\n= Bad\n",
+        },
+    }
+    monkeypatch.chdir(uninit_dir)
+    pre_res = handle_lint_pre_tool_use(bad_adoc_payload, workspace_root=None)
+    assert pre_res.get("decision") == "deny"
+
 

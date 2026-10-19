@@ -491,16 +491,16 @@ def test_init_repository_programmatic(tmp_path):
     assert not success2
     assert "already exist" in msg2
 
-    # Re-init with force (without name/title) resets system.adoc to 0 bytes
+    # Re-init with force (without name/title) preserves existing authored system.adoc
     success3, _, _ = init_repository(project_dir=tmp_path, force=True)
     assert success3
-    assert (eidos_dir / "system.adoc").read_text(encoding="utf-8") == ""
+    assert "SYS-TEST-PROJECT" in (eidos_dir / "system.adoc").read_text(encoding="utf-8")
 
-    # Validate directory (empty skeleton should be clean)
+    # Validate directory
     validator = SpecValidator()
     report = validator.validate_directory(eidos_dir)
     assert report.is_clean
-    assert report.total_docs == 0
+    assert report.total_docs == 1
 
 
 def test_init_repository_cli(tmp_path):
@@ -1293,7 +1293,7 @@ def test_multiline_scalar_update_and_delete_spec_applied_delta_and_promote_accep
     """Verify Bug 11 & status alignment: _set_frontmatter_scalar replaces multiline block scalars cleanly,
     delete_spec succeeds when entity is only referenced by an applied SpecDelta, and promote_component preserves status: accepted."""
     from eidos.core.lifecycle.catalog import _set_frontmatter_scalar, find_references_to_spec
-    from eidos.core.lifecycle.scaffolder import promote_component
+    from eidos.core.lifecycle.scaffolder import inline_component, promote_component
     from eidos.core.spec.parser import extract_frontmatter
     from eidos.core.spec.validator import SpecValidator
 
@@ -1372,3 +1372,212 @@ def test_multiline_scalar_update_and_delete_spec_applied_delta_and_promote_accep
     val.validate_document(promoted_doc)
     assert not promoted_doc.errors, promoted_doc.errors
     assert promoted_doc.frontmatter["status"] == "accepted"
+
+    # 4. Inline CMP-ACC-WORKER back into CNT-ACC and verify status: accepted is preserved
+    inline_component("CMP-ACC-WORKER", eidos_dir=eidos_dir, repo_root=tmp_path)
+    cnt_inlined_doc = parse_spec_file(cnt_path)
+    val.validate_document(cnt_inlined_doc)
+    assert not cnt_inlined_doc.errors, cnt_inlined_doc.errors
+    assert cnt_inlined_doc.frontmatter["components"][0]["status"] == "accepted"
+
+
+def test_a5_a6_frontmatter_scalar_and_components_surgical_edge_cases() -> None:
+    """A5 & A6: _set_frontmatter_scalar block-scalar/list-item/special-string handling and _mutate_frontmatter_components flow/comment handling."""
+    from eidos.core.lifecycle.catalog import _mutate_frontmatter_components, _set_frontmatter_scalar
+    from eidos.core.spec.parser import extract_frontmatter
+
+    # A5a: Block scalar containing indented bullet lines `- item` must consume all lines of the block scalar
+    raw_block_bullets = (
+        "---\n"
+        "type: product/policy\n"
+        "id: POL-BULLET\n"
+        "rule: |\n"
+        "  Summary of rules:\n"
+        "  - First bullet line\n"
+        "  - Second bullet line\n"
+        "status: active\n"
+        "---\n"
+        "= Policy\n"
+    )
+    replaced_bullets = _set_frontmatter_scalar(raw_block_bullets, "rule", "New concise rule.")
+    fm_b, _, err_b = extract_frontmatter(replaced_bullets)
+    assert err_b is None, err_b
+    assert fm_b["rule"] == "New concise rule."
+    assert fm_b["status"] == "active"
+
+    # A5b: Empty scalar `title:` followed by a mapping block must NOT eat the mapping block
+    raw_empty_scalar = (
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-099\n"
+        "title:\n"
+        "intent:\n"
+        "  kind: feature\n"
+        "  motivation: Keep nested mapping intact.\n"
+        "status: proposed\n"
+        "---\n"
+    )
+    replaced_empty = _set_frontmatter_scalar(raw_empty_scalar, "title", "true")
+    fm_e, _, err_e = extract_frontmatter(replaced_empty)
+    assert err_e is None, err_e
+    assert fm_e["title"] == "true"
+    assert isinstance(fm_e["title"], str)
+    assert fm_e["intent"]["motivation"] == "Keep nested mapping intact."
+
+    # A5c: Multiline string scalar is JSON-escaped on a single line so YAML remains valid
+    replaced_nl = _set_frontmatter_scalar(replaced_empty, "title", "Line 1\nLine 2")
+    fm_nl, _, err_nl = extract_frontmatter(replaced_nl)
+    assert err_nl is None, err_nl
+    assert fm_nl["title"] == "Line 1\nLine 2"
+
+    # A6a: Removing the last block component with interior comments produces valid `components: []`
+    raw_cnt_comments = (
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-TEST\n"
+        "components: # inline header comment\n"
+        "  # interior comment before item\n"
+        "  - id: CMP-ONLY\n"
+        "    name: Only Component\n"
+        "status: active\n"
+        "---\n"
+        "= Container\n"
+    )
+    after_remove = _mutate_frontmatter_components(raw_cnt_comments, "remove", "CMP-ONLY")
+    assert after_remove is not None
+    fm_rem, _, err_rem = extract_frontmatter(after_remove)
+    assert err_rem is None, f"Invalid YAML after removing last component: {err_rem}\n{after_remove}"
+    assert fm_rem["components"] == []
+    assert "# inline header comment" in after_remove
+
+    # A6b: Flow-style non-empty components list `components: [{id: CMP-FLOW, name: Flow}]`
+    raw_flow = (
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-FLOW\n"
+        "components: [{id: CMP-FLOW, name: Flow}]\n"
+        "status: active\n"
+        "---\n"
+        "= Flow Container\n"
+    )
+    after_flow_replace = _mutate_frontmatter_components(
+        raw_flow,
+        "replace",
+        "CMP-FLOW",
+        {"id": "CMP-NEW", "name": "New Comp"},
+    )
+    assert after_flow_replace is not None
+    fm_flow, _, err_flow = extract_frontmatter(after_flow_replace)
+    assert err_flow is None, err_flow
+    assert [c["id"] for c in fm_flow["components"]] == ["CMP-NEW"]
+
+
+def test_a7_a8_a11_catalog_scaffolder_and_design_edge_cases(tmp_path: Path) -> None:
+    """A7, A8, A11: path boundary & reference detection, list_specs filters/types, and design_system path / rollback."""
+    import pytest
+
+    from eidos.core.lifecycle.catalog import find_references_to_spec, find_spec_by_id_or_path
+    from eidos.core.lifecycle.scaffolder import list_specs
+
+    eidos_dir = tmp_path / "eidos"
+    init_repository(tmp_path, name="TestSys")
+
+    # A7a: find_spec_by_id_or_path rejects non-.adoc files (like tokens.json) and paths escaping eidos_dir
+    ds_file = create_spec(eidos_dir, "design-system", "DS-CORE", "Core Design")
+    tokens_file = ds_file.parent / "tokens.json"
+    assert tokens_file.exists()
+    assert find_spec_by_id_or_path(eidos_dir, str(tokens_file)) is None
+    assert find_spec_by_id_or_path(eidos_dir, "design/systems/core/tokens.json") is None
+
+    outside_adoc = tmp_path / "outside.adoc"
+    outside_adoc.write_text("---\ntype: product/policy\nid: POL-OUT\n---\n", encoding="utf-8")
+    assert find_spec_by_id_or_path(eidos_dir, "../outside.adoc") is None
+    assert find_spec_by_id_or_path(eidos_dir, str(outside_adoc)) is None
+
+    # A7b: find_references_to_spec detects `eidos/<rel_path>` references and proposed deltas with custom filenames
+    pol_target = create_spec(eidos_dir, "policy", "POL-TARGET", "Target Policy")
+    pol_referrer = create_spec(
+        eidos_dir,
+        "policy",
+        "POL-REFERRER",
+        "Referrer Policy",
+        rule="See eidos/policies/pol-target.adoc for details.",
+    )
+    custom_delta = eidos_dir / "deltas" / "custom-audit-name.adoc"
+    custom_delta.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-500\n"
+        "title: Custom Named Proposed Delta\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: modification\n"
+        "  motivation: Modify POL-TARGET.\n"
+        "mutations:\n"
+        "  - operation: modify\n"
+        "    target: POL-TARGET\n"
+        "    details: Update POL-TARGET.\n"
+        "---\n"
+        "= Custom Delta\n",
+        encoding="utf-8",
+    )
+    refs = find_references_to_spec(eidos_dir, "POL-TARGET", pol_target)
+    assert pol_referrer.resolve() in refs
+    assert custom_delta.resolve() in refs
+
+    # Once custom-named delta is marked applied, it is no longer an active reference
+    custom_delta.write_text(
+        custom_delta.read_text(encoding="utf-8").replace("status: proposed", "status: applied"),
+        encoding="utf-8",
+    )
+    refs_after = find_references_to_spec(eidos_dir, "POL-TARGET", pol_target)
+    assert custom_delta.resolve() not in refs_after
+
+    # A8: list_specs supports --type system, --status active (including default-status containers and inline components on draft containers)
+    cnt_path = create_spec(eidos_dir, "container", "CNT-API", "API Container")
+    cnt_raw = cnt_path.read_text(encoding="utf-8")
+    # Make container draft, with an active inline component, while another container omits status (defaults to active)
+    cnt_path.write_text(
+        cnt_raw.replace(
+            "components: []",
+            "status: draft\ncomponents:\n  - id: CMP-INLINE-ACT\n    name: Active Inline\n    status: active\n    responsibility: Inline work",
+        ),
+        encoding="utf-8",
+    )
+    create_spec(eidos_dir, "container", "CNT-DEFAULT-ACT", "Default Active Container")
+
+    sys_specs = list_specs(eidos_dir, type_filter="system")
+    assert any(s["id"] == "SYS-TESTSYS" for s in sys_specs)
+
+    active_specs = list_specs(eidos_dir, status_filter="active")
+    active_ids = {s["id"] for s in active_specs}
+    assert "CNT-DEFAULT-ACT" in active_ids
+    assert "CMP-INLINE-ACT" in active_ids
+    for s in active_specs:
+        assert not str(s["relative_path"]).startswith("eidos/")
+
+    # A11a: create_spec for ui-component with a file path as design_system resolves the system slug and ID cleanly
+    uic_from_path = create_spec(
+        eidos_dir,
+        "ui-component",
+        "UIC-PATH-BTN",
+        "Path Button",
+        design_system="design/systems/core/system.adoc",
+    )
+    assert uic_from_path == eidos_dir / "design" / "systems" / "core" / "components" / "path-btn.adoc"
+    assert parse_spec_file(uic_from_path).frontmatter["design_system"] == "DS-CORE"
+
+    # A11b: Failed design-system validation rolls back newly created tokens.json and empty directories
+    with pytest.raises(ValueError):
+        create_spec(
+            eidos_dir,
+            "design-system",
+            "DS-BAD",
+            "Bad System",
+            extends_system="not-a-valid-ds-id",
+        )
+    assert not (eidos_dir / "design" / "systems" / "bad" / "tokens.json").exists()
+    assert not (eidos_dir / "design" / "systems" / "bad").exists()
+
+

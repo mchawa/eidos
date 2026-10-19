@@ -44,6 +44,7 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
     """HTTP Request Handler dispatching Portal UI and JSON API endpoints."""
 
     eidos_dir: Path = Path("eidos")
+    static_dir: Path | None = None
     _cache_lock: threading.Lock = threading.Lock()
     _cache_key: tuple[str, int, int, int] | None = None
     _cached_portal_data: dict[str, Any] | None = None
@@ -83,7 +84,7 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed_url = urllib.parse.urlparse(self.path)
-        path = parsed_url.path
+        path = urllib.parse.unquote(parsed_url.path)
 
         if path in ("/", "/index.html"):
             self._send_html(get_portal_html_template())
@@ -100,8 +101,55 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
             self._send_json(res)
         elif path in ("/health", "/api/health"):
             self._send_json({"status": "ok", "system": "eidos-portal"})
+        elif self.static_dir is not None:
+            static_root = self.static_dir.resolve()
+            rel_path = path.lstrip("/")
+            full_path = (static_root / rel_path).resolve()
+            if not full_path.resolve().is_relative_to(static_root):
+                self.send_error(HTTPStatus.FORBIDDEN, "Access denied.")
+                return
+            if full_path.is_file():
+                payload = full_path.read_bytes()
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            self.send_error(HTTPStatus.NOT_FOUND, f"Path '{path}' not found.")
         else:
             self.send_error(HTTPStatus.NOT_FOUND, f"Path '{path}' not found.")
+
+    def do_POST(self) -> None:
+        parsed_url = urllib.parse.urlparse(self.path)
+        path = urllib.parse.unquote(parsed_url.path)
+
+        if path != "/api/validate":
+            self.send_error(HTTPStatus.NOT_FOUND, f"Path '{path}' not found.")
+            return
+
+        content_length = int(self.headers.get("Content-Length", "0") or 0)
+        payload: dict[str, Any] = {}
+        if content_length > 0:
+            raw_body = self.rfile.read(content_length)
+            try:
+                parsed = json.loads(raw_body.decode("utf-8"))
+                if isinstance(parsed, dict):
+                    payload = parsed
+            except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON payload.")
+                return
+
+        resolved_eidos = self.eidos_dir.resolve()
+        target_dir_str = str(payload.get("dir") or resolved_eidos.name)
+        raw_target = Path(target_dir_str)
+        target_dir = raw_target.resolve() if raw_target.is_absolute() else (resolved_eidos.parent / raw_target).resolve()
+        if target_dir != resolved_eidos:
+            self.send_error(HTTPStatus.FORBIDDEN, "Validation is restricted to the active eidos directory.")
+            return
+
+        res = self._get_cached_validation()
+        self._send_json(res)
 
     def _send_html(self, html_content: str) -> None:
         payload = html_content.encode("utf-8")

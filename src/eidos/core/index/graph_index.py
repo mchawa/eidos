@@ -415,7 +415,8 @@ class ArchitecturalIndex:
             data["type"] = r["type"]
             data["domain"] = r["domain"]
             data["file_path"] = r["file_path"]
-            if status and data.get("status") != status:
+            ent_status = str(data.get("status") or "active").strip()
+            if status and ent_status.lower() != status.strip().lower():
                 continue
             entities.append(data)
         return entities

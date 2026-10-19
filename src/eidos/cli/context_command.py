@@ -1,11 +1,21 @@
 """Token-budgeted architectural context slicing command (`eidos context`)."""
 
+import json
 from pathlib import Path
 
 import typer
 
-from eidos.cli._shared import PANEL_KNOWLEDGE
+from eidos.cli._shared import PANEL_KNOWLEDGE, console
 from eidos.core.index.graph_index import get_architectural_index
+from eidos.core.workspace.project import find_repo_root
+
+
+def _has_eidos_markers(cand: Path) -> bool:
+    return cand.is_dir() and (
+        (cand / "system.adoc").exists()
+        or any((cand / sub).is_dir() for sub in ("architecture", "domains", "policies", "design", "deltas"))
+        or any(cand.glob("*.adoc"))
+    )
 
 
 def context_cmd(
@@ -46,11 +56,33 @@ def context_cmd(
     ),
 ):
     """Extract a compact architectural subgraph slice (C4 components, contracts, capabilities, invariants, policies)."""
-    eidos_dir = path or Path("eidos")
-    if not eidos_dir.exists():
-        eidos_dir = Path(".")
+    if path is None:
+        eidos_dir = Path("eidos")
+        if not eidos_dir.exists():
+            repo_eidos = find_repo_root() / "eidos"
+            if repo_eidos.exists():
+                eidos_dir = repo_eidos
+            elif _has_eidos_markers(Path(".")):
+                eidos_dir = Path(".")
+    elif (path / "eidos").is_dir() and not _has_eidos_markers(path):
+        eidos_dir = path / "eidos"
+    else:
+        eidos_dir = path
 
-    idx = get_architectural_index(eidos_dir=eidos_dir)
+    if not eidos_dir.exists():
+        if format.lower() == "json":
+            typer.echo(json.dumps({"error": f"Directory '{eidos_dir}' not found."}))
+        else:
+            console.print(f"[bold red]Error:[/bold red] Directory '{eidos_dir}' not found.")
+        raise typer.Exit(code=1)
+
+    resolved_eidos = eidos_dir.resolve()
+    repo_root = (
+        resolved_eidos.parent
+        if resolved_eidos.name == "eidos"
+        else find_repo_root(resolved_eidos)
+    )
+    idx = get_architectural_index(repo_root=repo_root, eidos_dir=eidos_dir)
     slice_result = idx.get_tiered_context_slice(
         files=files,
         component=component,

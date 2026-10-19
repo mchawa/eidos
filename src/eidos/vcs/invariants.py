@@ -63,15 +63,32 @@ def _has_function_level_fixture(fslice: str, inv_pattern: re.Pattern[str]) -> bo
         return False
 
     idx = 0
-    # 1. Consume signature lines (up to ':' in Python or '{' in brace languages, or single first line)
+    seen_fn_decl = False
+    decorator_depth = 0
+    sig_paren_depth = 0
+    # 1. Consume decorator and signature lines (up to ':' in Python or '{' in brace languages)
     while idx < len(lines):
         line = lines[idx]
         if "eidos:fixture" in line:
             return True
         idx += 1
         stripped = line.strip()
-        comment_Free = stripped.split("#", 1)[0].split("//", 1)[0].rstrip()
-        if comment_Free.endswith(":") or comment_Free.endswith("{"):
+        if not stripped:
+            continue
+        comment_free = stripped.split("#", 1)[0].split("//", 1)[0].rstrip()
+        if not seen_fn_decl:
+            if decorator_depth > 0 or stripped.startswith("@") or stripped.startswith("#["):
+                decorator_depth += sum(1 for c in comment_free if c in "([{") - sum(
+                    1 for c in comment_free if c in ")]}"
+                )
+                if decorator_depth < 0:
+                    decorator_depth = 0
+                continue
+            seen_fn_decl = True
+        sig_paren_depth += comment_free.count("(") - comment_free.count(")")
+        if sig_paren_depth < 0:
+            sig_paren_depth = 0
+        if sig_paren_depth == 0 and (comment_free.endswith(":") or comment_free.endswith("{")):
             break
 
     # Skip blank lines after signature
@@ -104,7 +121,7 @@ def _has_function_level_fixture(fslice: str, inv_pattern: re.Pattern[str]) -> bo
         if not stripped:
             idx += 1
             continue
-        if stripped.startswith("#") or stripped.startswith("//"):
+        if stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("/*"):
             if "eidos:fixture" in stripped and not inv_pattern.search(stripped):
                 return True
             idx += 1
@@ -124,7 +141,7 @@ def _build_cached_test_file_entry(
     """Extract test functions, fixture-filtered INV tokens, AST bindings, and file-level tokens for caching."""
     from eidos.core.index.ast_indexer import INVARIANT_PATTERN
 
-    has_fixture = "# eidos:fixture" in tcontent or "// eidos:fixture" in tcontent
+    has_fixture = "eidos:fixture" in tcontent
     raw_funcs = ast_idx.list_test_functions(rel, tcontent)
     functions: dict[str, dict[str, list[str]]] = {}
     for fname, fslice in raw_funcs.items():
@@ -421,13 +438,16 @@ def detect_orphan_invariants(
             cached_tests = _load_or_update_test_binding_cache(repo_root, eidos_dir=eidos_dir)
         for tpath, entry in sorted(cached_tests.items()):
             if entry.has_fixture:
-                qualified_suffixes = {
-                    fname.split("::", 1)[1] for fname in entry.functions if "::" in fname
-                }
+                qualified_invs_by_suffix: dict[str, set[str]] = {}
                 for fname, func_meta in entry.functions.items():
-                    if "::" not in fname and fname in qualified_suffixes:
-                        continue
+                    if "::" in fname:
+                        sfx = fname.rsplit("::", 1)[-1]
+                        qualified_invs_by_suffix.setdefault(sfx, set()).update(func_meta.get("fixture_invs", []))
+                for fname, func_meta in entry.functions.items():
+                    accounted = qualified_invs_by_suffix.get(fname, set()) if "::" not in fname else set()
                     for inv_id in func_meta.get("fixture_invs", []):
+                        if inv_id in accounted:
+                            continue
                         if inv_id not in known_invariant_ids:
                             key = (inv_id, f"{tpath}::{fname}")
                             if key not in seen:
@@ -435,16 +455,21 @@ def detect_orphan_invariants(
                                 orphans.append(key)
                 continue
 
-            qualified_binding_suffixes = {
-                b["identifier"].rsplit("::", 1)[-1]
-                for b in entry.bindings
-                if b["identifier"].count("::") >= 2
-            }
+            qualified_binding_invs: dict[str, set[str]] = {}
+            for b in entry.bindings:
+                if b["identifier"].count("::") >= 2:
+                    sfx = b["identifier"].rsplit("::", 1)[-1]
+                    qualified_binding_invs.setdefault(sfx, set()).update(b.get("invariants", []))
             for binding in entry.bindings:
                 ident = binding["identifier"]
-                if ident.count("::") == 1 and ident.rsplit("::", 1)[-1] in qualified_binding_suffixes:
-                    continue
+                accounted = (
+                    qualified_binding_invs.get(ident.rsplit("::", 1)[-1], set())
+                    if ident.count("::") == 1
+                    else set()
+                )
                 for inv_id in binding.get("invariants", []):
+                    if inv_id in accounted:
+                        continue
                     if inv_id not in known_invariant_ids:
                         key = (inv_id, ident)
                         if key not in seen:
@@ -455,36 +480,53 @@ def detect_orphan_invariants(
     ast_idx = get_ast_indexer()
 
     for tpath, tcontent in sorted(all_tests_content.items()):
-        if "# eidos:fixture" in tcontent or "// eidos:fixture" in tcontent:
+        if "eidos:fixture" in tcontent:
             funcs = ast_idx.list_test_functions(tpath, tcontent)
-            qualified_suffixes = {fname.split("::", 1)[1] for fname in funcs if "::" in fname}
+            func_fixture_invs: dict[str, list[str]] = {}
             for fname, fslice in funcs.items():
-                if "::" not in fname and fname in qualified_suffixes:
-                    continue
                 if _has_function_level_fixture(fslice, INVARIANT_PATTERN):
+                    func_fixture_invs[fname] = []
                     continue
+                invs_in_fn: list[str] = []
                 for line in fslice.splitlines():
                     if "eidos:fixture" in line:
                         continue
                     for inv_id in INVARIANT_PATTERN.findall(line):
-                        if inv_id not in known_invariant_ids:
-                            key = (inv_id, f"{tpath}::{fname}")
-                            if key not in seen:
-                                seen.add(key)
-                                orphans.append(key)
+                        if inv_id not in invs_in_fn:
+                            invs_in_fn.append(inv_id)
+                func_fixture_invs[fname] = invs_in_fn
+            qualified_invs_by_suffix = {}
+            for fname, inv_list in func_fixture_invs.items():
+                if "::" in fname:
+                    sfx = fname.rsplit("::", 1)[-1]
+                    qualified_invs_by_suffix.setdefault(sfx, set()).update(inv_list)
+            for fname, inv_list in func_fixture_invs.items():
+                accounted = qualified_invs_by_suffix.get(fname, set()) if "::" not in fname else set()
+                for inv_id in inv_list:
+                    if inv_id in accounted:
+                        continue
+                    if inv_id not in known_invariant_ids:
+                        key = (inv_id, f"{tpath}::{fname}")
+                        if key not in seen:
+                            seen.add(key)
+                            orphans.append(key)
             continue
 
         extracted_bindings = ast_idx.extract_test_bindings(tpath, tcontent)
-        qualified_binding_suffixes = {
-            b.identifier.rsplit("::", 1)[-1] for b in extracted_bindings if b.identifier.count("::") >= 2
-        }
+        qualified_binding_invs = {}
+        for b in extracted_bindings:
+            if b.identifier.count("::") >= 2:
+                sfx = b.identifier.rsplit("::", 1)[-1]
+                qualified_binding_invs.setdefault(sfx, set()).update(b.invariants)
         for binding in extracted_bindings:
-            if (
-                binding.identifier.count("::") == 1
-                and binding.identifier.rsplit("::", 1)[-1] in qualified_binding_suffixes
-            ):
-                continue
+            accounted = (
+                qualified_binding_invs.get(binding.identifier.rsplit("::", 1)[-1], set())
+                if binding.identifier.count("::") == 1
+                else set()
+            )
             for inv_id in binding.invariants:
+                if inv_id in accounted:
+                    continue
                 if inv_id not in known_invariant_ids:
                     key = (inv_id, binding.identifier)
                     if key not in seen:
@@ -541,7 +583,7 @@ def extract_invariants_and_verify(
     cached_rows = load_spec_validation_cache(db_path) if db_path.exists() else {}
 
     scan_roots: list[tuple[str, tuple[str, ...]]] = [
-        ("domains", ("product/capability",)),
+        ("domains", ("product/capability", "product/domain")),
         ("policies", ("product/policy",)),
         ("architecture", ("tech/component", "tech/container")),
     ]
@@ -574,16 +616,18 @@ def extract_invariants_and_verify(
             if doc_type not in doc_types:
                 continue
             model = doc.model
-            if doc_type == "product/capability":
-                inv_list = model.technical.invariants
-            elif doc_type == "tech/container":
+            if doc_type == "tech/container":
                 for comp in model.components:
                     for inv in comp.invariants:
                         _record(inv, spec_path, str(comp.id or doc_id))
-                inv_list = model.invariants or model.technical.invariants
-            else:
-                inv_list = model.invariants or model.technical.invariants
+            inv_list = [*model.invariants, *model.technical.invariants]
+            seen_doc_invs: set[str] = set()
             for inv in inv_list:
+                iid = getattr(inv, "id", None) if not isinstance(inv, dict) else inv.get("id")
+                if iid and iid in seen_doc_invs:
+                    continue
+                if iid:
+                    seen_doc_invs.add(iid)
                 _record(inv, spec_path, doc_id)
 
     return invariants

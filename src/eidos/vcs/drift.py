@@ -135,6 +135,7 @@ def detect_drift(
     head_ref: str = "HEAD",
     eidos_dir: Path | None = None,
     uncommitted: bool = False,
+    validation_report: ValidationReport | None = None,
 ) -> DriftCheckResult:
     """Run drift detection: evaluate spec-code synchronization, schema validation, and invariant check."""
     from eidos.core.index.ast_indexer import STYLE_EXTS, classify_design_changes, has_structural_changes
@@ -208,7 +209,7 @@ def detect_drift(
     moved_from = _pair_moved_files(versions, smap)
     for cf in classification.code_files:
         old_c, new_c = versions[cf]
-        synthetic = old_c is not None and new_c is not None and old_c == new_c
+        synthetic = synthetic_diff_mock and old_c is not None and new_c is not None and old_c == new_c
         symbol_diff = None
         if old_c is not None and new_c is not None:
             if synthetic:
@@ -251,22 +252,44 @@ def detect_drift(
     idx = get_architectural_index(repo_root=root, eidos_dir=target_eidos) if target_eidos.exists() else None
 
     # 2. Extract declared targets from active deltas (excluding rejected or pre-existing applied deltas)
+    from eidos.core.spec.models import FrontmatterModel
+
     declared_delta_targets: set[str] = set()
+    declared_delta_paths: set[str] = set()
     active_delta_files: list[str] = []
     for df in classification.delta_files:
         try:
             delta_file = (root / df) if not Path(df).is_absolute() else Path(df)
-            if not delta_file.exists():
+            model = None
+            old_dc: str | None = None
+            new_dc: str | None = None
+            fetched_versions = False
+            if not effective_uncommitted or not delta_file.exists():
+                old_dc, new_dc = _fetch_versions(df)
+                fetched_versions = True
+                if old_dc is not None and new_dc is None:
+                    continue
+                if not effective_uncommitted and new_dc is not None:
+                    fm_head, _, _ = extract_frontmatter(new_dc)
+                    if isinstance(fm_head, dict):
+                        model = FrontmatterModel.model_validate(fm_head)
+            if model is None:
+                if delta_file.exists():
+                    doc, _, _ = get_cached_spec_document(delta_file)
+                    if doc is not None:
+                        model = doc.model
+                elif new_dc is not None:
+                    fm_head, _, _ = extract_frontmatter(new_dc)
+                    if isinstance(fm_head, dict):
+                        model = FrontmatterModel.model_validate(fm_head)
+            if model is None:
                 continue
-            doc, _, _ = get_cached_spec_document(delta_file)
-            if doc is None:
-                continue
-            model = doc.model
             status = str(model.status or "proposed").strip().lower()
             if status in ("rejected", "deprecated", "superseded", "archived"):
                 continue
             if status == "applied":
-                old_dc, _new_dc = _fetch_versions(df)
+                if not fetched_versions:
+                    old_dc, _ = _fetch_versions(df)
                 if old_dc is not None:
                     old_fm, _, _ = extract_frontmatter(old_dc)
                     if isinstance(old_fm, dict) and str(old_fm.get("status", "")).strip().lower() == "applied":
@@ -275,8 +298,31 @@ def detect_drift(
             for m in model.mutations:
                 for key in ("target", "parent"):
                     val = m.get(key)
-                    if val:
-                        declared_delta_targets.add(str(val).lower())
+                    if not val:
+                        continue
+                    val_str = str(val).strip()
+                    if not val_str:
+                        continue
+                    declared_delta_targets.add(val_str.lower())
+                    if val_str.lower().endswith((".adoc", ".json", ".yaml", ".yml")) or "/" in val_str or "\\" in val_str:
+                        norm_p = val_str.replace("\\", "/").strip("/")
+                        declared_delta_paths.add(norm_p.lower())
+                        pref_low = eidos_rel_prefix.lower().strip("/")
+                        if pref_low and not norm_p.lower().startswith(f"{pref_low}/"):
+                            declared_delta_paths.add(f"{pref_low}/{norm_p.lower()}")
+                        for cand_p in (root / norm_p, target_eidos / norm_p):
+                            if cand_p.is_file() and cand_p.suffix.lower() == ".adoc":
+                                t_doc, _, _ = get_cached_spec_document(cand_p)
+                                if t_doc is not None and t_doc.doc_id:
+                                    declared_delta_targets.add(t_doc.doc_id.strip().lower())
+                                break
+                        else:
+                            if validation_report is not None:
+                                for vdoc in validation_report.documents:
+                                    vfp = str(vdoc.file_path).replace("\\", "/").lower()
+                                    if (vfp == norm_p.lower() or vfp.endswith("/" + norm_p.lower())) and vdoc.doc_id:
+                                        declared_delta_targets.add(vdoc.doc_id.strip().lower())
+                                        break
         except OSError:
             pass
 
@@ -329,7 +375,11 @@ def detect_drift(
                 _, d_paths, d_ids = _design_subgraph_for(cf)
                 allowed_paths |= d_paths
                 allowed_ids |= {i.lower() for i in d_ids}
-            if has_deltas and (declared_delta_targets & allowed_ids):
+            if has_deltas and (
+                (declared_delta_targets & allowed_ids)
+                or (declared_delta_paths & allowed_paths)
+                or any(_path_in(dp, allowed_paths) for dp in declared_delta_paths)
+            ):
                 continue  # Planned Mode: an active SpecDelta declares the owner (DLT-2026-039: unchanged)
             covered_by_spec, rejected_rule, rejected_specs = _spec_coverage_verdict(
                 classification.spec_files,
@@ -417,7 +467,11 @@ def detect_drift(
         ]
         covered = any(spec_inspector.is_substantive(s) for s in matching_design_specs)
         if not covered and has_deltas:
-            covered = bool(declared_delta_targets & satisfying_ids)
+            covered = bool(
+                (declared_delta_targets & satisfying_ids)
+                or (declared_delta_paths & satisfying_paths)
+                or any(_path_in(dp, satisfying_paths) for dp in declared_delta_paths)
+            )
         if not covered:
             uncovered_design.append((cf, cat, reasons, sorted(bound)))
             if matching_design_specs and not any(r["file"] == cf for r in trivial_records):
@@ -440,8 +494,9 @@ def detect_drift(
     drift_detected = base_direct_drift or design_drift or uncovered_delta_drift or unmapped_drift
 
     # 4. Specification Schema & Link Integrity Validation
-    validator = SpecValidator()
-    validation_report = validator.validate_directory(target_eidos)
+    if validation_report is None:
+        validator = SpecValidator()
+        validation_report = validator.validate_directory(target_eidos)
 
     # 5. Invariant Traceability & Orphan Invariant Detection (DLT-2026-027, DLT-2026-068)
     cached_tests = _load_or_update_test_binding_cache(root, eidos_dir=target_eidos)

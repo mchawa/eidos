@@ -19,11 +19,11 @@ components:
       - "src/eidos/cli/_shared.py"
   - id: CMP-CLI-SPEC-COMMANDS
     name: "SpecCommands"
-    responsibility: "Root specification validation (`eidos validate`) and `eidos spec` subcommands for catalog listing (`eidos spec list --json`, including inline `CMP-*` components), showing, creating (across all 16 schemas including component, client with `--platform`, contract with `--spec-file`, flow, and delta with `--kind`: feature, enabler, bug), deleting living specifications, and mounting the `eidos spec component` subgroup."
+    responsibility: "Root specification validation (`eidos validate`, resolving `eidos/` via `find_repo_root` before checking directory existence) and `eidos spec` subcommands for catalog listing (`eidos spec list --json`, including inline `CMP-*` components), showing, creating (across all 16 schemas including component, client with `--platform`, contract with `--spec-file`, flow, and delta with `--kind`: feature, enabler, bug, displaying the generated `DLT-*` ID when `--id auto` is used), deleting living specifications, and mounting the `eidos spec component` subgroup."
     source_path: "src/eidos/cli/spec_commands.py"
   - id: CMP-CLI-DELTA-COMMANDS
     name: "DeltaCommands"
-    responsibility: "SpecDelta lifecycle commands (`eidos delta`): status dashboard and status transition (`eidos delta status [ID] [STATUS] --json`), listing (`eidos delta list --json`), authoring (`eidos delta create [ID]` defaulting to `'auto'` with `--slug` / `-s`, `--kind`: feature, enabler, bug, and `--branch` / `-b`), verification (rendering per-mutation failure_reason diagnostics when verification fails), deletion auditing, changelog generation (resolving repo_root via find_repo_root for custom --path directories), and default-verified in-place application (`eidos delta apply` with `--verify/--no-verify` defaulting to True)."
+    responsibility: "SpecDelta lifecycle commands (`eidos delta`): status dashboard and status transition (`eidos delta status [ID] [STATUS] --json`, rendering `draft` and `planned` rows and including them in `active_deltas`), listing (`eidos delta list --json`), authoring (`eidos delta create [ID]` defaulting to `'auto'` with `--slug` / `-s`, `--kind`: feature, enabler, bug, and `--branch` / `-b`), verification (rendering per-mutation failure_reason diagnostics when verification fails), deletion auditing, changelog generation (resolving repo_root via find_repo_root for custom --path directories), and default-verified in-place application (`eidos delta apply` with `--verify/--no-verify` defaulting to True)."
     source_path: "src/eidos/cli/delta_commands.py"
   - id: CMP-CLI-PLUGIN-COMMANDS
     name: "PluginCommands"
@@ -31,7 +31,7 @@ components:
     source_path: "src/eidos/cli/plugin_commands.py"
   - id: CMP-CLI-DRIFT-COMMANDS
     name: "DriftCommands"
-    responsibility: "Spec-to-code and non-code drift detection (`eidos drift`) across uncommitted working trees and Git commit ranges, resolving custom --path specification roots via find_repo_root, emitting complete machine-readable JSON diagnostics (including unmapped_code_files, validation_errors, uncovered_invariants, and orphan_invariants without stdout banner corruption when combined with --markdown), distinguishing code vs. non-code drift and invariant traceability failures in terminal reports, surfacing explicit Git base resolution errors, and exiting non-zero when --base is invalid or missing in shallow clones."
+    responsibility: "Spec-to-code and non-code drift detection (`eidos drift`) across uncommitted working trees and Git commit ranges, resolving both default and custom `--path` (including `--path .` repo roots and subdirectory invocations) via `find_repo_root`, emitting complete machine-readable JSON diagnostics (including unmapped_code_files, validation_errors, uncovered_invariants, and orphan_invariants without stdout banner corruption when combined with --markdown), distinguishing code vs. non-code drift and invariant traceability failures in terminal reports, surfacing explicit Git base resolution errors, and exiting non-zero when --base is invalid or missing in shallow clones."
     source_path: "src/eidos/cli/drift_commands.py"
   - id: CMP-CLI-INIT-COMMAND
     name: "InitCommand"
@@ -39,7 +39,7 @@ components:
     source_path: "src/eidos/cli/init_command.py"
   - id: CMP-CLI-CONTEXT-COMMAND
     name: "ContextCommand"
-    responsibility: "Extracts compact, token-efficient architectural subgraph slices for AI agents."
+    responsibility: "Extracts compact, token-efficient architectural subgraph slices for AI agents, resolving `eidos/` via `find_repo_root` when invoked from subdirectories."
     source_path: "src/eidos/cli/context_command.py"
   - id: CMP-CLI-INDEX-COMMANDS
     name: "IndexCommands"
@@ -55,7 +55,7 @@ components:
     source_path: "src/eidos/cli/portal_commands.py"
   - id: CMP-CLI-DOCTOR-HOOKS
     name: "DoctorAndHookCommands"
-    responsibility: "Installation health diagnostics (`eidos doctor --path`) with custom specification directory resolution and virtualenv-aware CLI binary checks, plus CLI-native agent lifecycle hook dispatchers (`eidos hook lint` on PreToolUse/PostToolUse/Stop, `eidos hook drift` on Stop)."
+    responsibility: "Installation health diagnostics (`eidos doctor --path`, including `agent_plugin` health in `overall_ok`) with custom specification directory resolution and virtualenv-aware CLI binary checks, plus CLI-native agent lifecycle hook dispatchers (`eidos hook lint` and `eidos hook drift` with `event` defaulting to `None` so standalone CLI invocation without stdin payload runs direct validation/drift and exits non-zero on failure)."
     source_path: "src/eidos/cli/doctor_hook_commands.py"
 
 dependencies:
