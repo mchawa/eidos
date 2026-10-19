@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-085
 title: "Eliminate Hand-Authored affects and blast_radius from SpecDelta Schema in Favor of Graph-Derived Scope and Impact"
 status: applied

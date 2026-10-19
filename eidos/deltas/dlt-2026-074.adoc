@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-074
 title: Project-Agnostic Living Web Portal Views & C4 Context Diagram, Complete Portal & Design Subgraph Extraction, Modal TOC Scroll-Spy, and Frontend SPA Component Mapping
 status: applied

@@ -103,11 +103,7 @@ class ChangelogGenerator:
             edir_res = Path(eidos_dir).resolve()
             self.root = (
                 edir_res.parent
-                if (
-                    edir_res.name == "eidos"
-                    or (edir_res / "deltas").exists()
-                    or (edir_res / "system.adoc").exists()
-                )
+                if (edir_res.name == "eidos" or (edir_res / "deltas").exists() or (edir_res / "system.adoc").exists())
                 else Path.cwd().resolve()
             )
         else:
@@ -207,11 +203,7 @@ class ChangelogGenerator:
             return []
 
         delta_files = sorted(
-            [
-                p
-                for p in deltas_dir.rglob("*.adoc")
-                if p.is_file() and not p.is_symlink()
-            ],
+            [p for p in deltas_dir.rglob("*.adoc") if p.is_file() and not p.is_symlink()],
             key=lambda p: (str(p.relative_to(deltas_dir)).lower(), p.name),
         )
         batched_commits = self._batch_resolve_delta_commits(deltas_dir)
@@ -364,11 +356,7 @@ class ChangelogGenerator:
         kind = str(delta.get("kind") or "feature").lower()
         raw_mutations = delta.get("mutations") or []
         norm_mutations = [normalize_delta_mutation(m) for m in raw_mutations if isinstance(m, dict)]
-        operations = [
-            str(m.get("operation", "")).strip().lower()
-            for m in norm_mutations
-            if m.get("operation")
-        ]
+        operations = [str(m.get("operation", "")).strip().lower() for m in norm_mutations if m.get("operation")]
 
         desc = f": {summary}" if summary and summary.lower() != title.lower() else ""
         item_text = f"**{title}** (`{delta_id}`){desc}"
@@ -483,4 +471,3 @@ class ChangelogGenerator:
             cfg_file.write_text(new_text, encoding="utf-8")
             return True
         return False
-

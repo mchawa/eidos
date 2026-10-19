@@ -5,7 +5,6 @@ type: object
 additionalProperties: false
 required:
   - type
-  - schema
   - id
   - title
   - status
@@ -16,9 +15,6 @@ properties:
     type: string
     const: "delta/mutation"
     description: "The fixed document type identifier. Must always be 'delta/mutation'."
-  schema:
-    type: string
-    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^DLT-[A-Z0-9_-]+$"
@@ -96,10 +92,11 @@ properties:
           description: "Canonical composable mutation verb (used with 'target' and optional 'parent')."
         target:
           type: string
-          pattern: "^((DOM|CAP|PER|POL|INV|ARCH|CNT|CMP|CTR|DS|UIC|SCR|CLT|FLOW)-[A-Z0-9_-]+|.*\\.adoc)$"
+          pattern: "^((SYS|DOM|CAP|PER|POL|INV|ARCH|CNT|CMP|CTR|DS|UIC|SCR|CLT|FLOW)-[A-Z0-9_-]+|.*\\.adoc)$"
           description: "Primary target entity ID (or relative .adoc path) for composable mutations; entity type is resolved from the ID prefix."
           x-eidos-ref:
             target_types:
+              - product/system
               - product/domain
               - product/capability
               - product/persona
@@ -115,6 +112,7 @@ properties:
               - design/client
               - design/flow
             prefixes:
+              - SYS-
               - DOM-
               - CAP-
               - PER-
@@ -132,24 +130,28 @@ properties:
             entity_label: target
         parent:
           type: string
-          pattern: "^((DOM|CAP|POL|CNT|CMP|DS|CLT)-[A-Z0-9_-]+|.*\\.adoc)$"
-          description: "Optional parent/scoping entity ID for composable mutations (e.g. owning container for an inline CMP-* or owning capability/policy/container for an INV-*)."
+          pattern: "^((SYS|DOM|CAP|POL|CNT|CMP|DS|UIC|CLT)-[A-Z0-9_-]+|.*\\.adoc)$"
+          description: "Optional parent/scoping entity ID for composable mutations (e.g. owning container for an inline CMP-* or owning capability/policy/container/ui-component for an INV-*)."
           x-eidos-ref:
             target_types:
+              - product/system
               - product/domain
               - product/capability
               - product/policy
               - tech/container
               - tech/component
               - design/system
+              - design/ui-component
               - design/client
             prefixes:
+              - SYS-
               - DOM-
               - CAP-
               - POL-
               - CNT-
               - CMP-
               - DS-
+              - UIC-
               - CLT-
             entity_label: parent
         title:
@@ -184,7 +186,7 @@ properties:
                   description: "Forbidden substring or list of substrings that must NOT appear in the specification body."
             frontmatter:
               type: object
-              additionalProperties: false
+              additionalProperties: true
               description: "Typed declarative post-condition assertions evaluated against specification YAML frontmatter fields."
               properties:
                 responsibility:
@@ -215,10 +217,6 @@ properties:
                     - "warning"
                     - "advisory"
                   description: "Expected policy enforcement severity."
-                custom:
-                  type: object
-                  additionalProperties: true
-                  description: "Optional dictionary of additional frontmatter key-value post-conditions."
   tombstone:
     type: object
     description: "Optional tombstone policy and search-token exemptions for deletion/deprecation audits (eidos delta audit)."
@@ -267,12 +265,6 @@ properties:
         type: string
         pattern: "^[0-9a-fA-F]{7,40}$"
         description: "Git commit SHA snapshot at the time this delta was created, anchoring baseline diff checks."
-      pr_url:
-        type: string
-        description: "Pull Request or Merge Request URL."
-      applied_at_commit:
-        type: string
-        description: "Git commit SHA when this delta was merged and applied to the baseline."
   decisions:
     type: array
     description: "In-place architectural decisions, trade-offs, and rejected alternatives established by this SpecDelta (POL-001)."

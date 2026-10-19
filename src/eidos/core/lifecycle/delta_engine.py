@@ -23,6 +23,7 @@ from eidos.core.lifecycle.catalog import (
 )
 from eidos.core.spec.parser import _parse_spec_content, extract_frontmatter, parse_spec_file
 from eidos.core.spec.validator import SpecValidator
+from eidos.core.workspace.assets import render_spec_template
 
 SUPPORTED_MUTATION_OPERATIONS: frozenset[str] = frozenset({"add", "modify", "remove", "deprecate"})
 
@@ -436,9 +437,11 @@ def generate_collision_free_delta_id(
 
     if slug_suffix or base_id in existing_ids:
         slug_tokens = [tok for tok in re.split(r"[^A-Za-z0-9]+", title.upper()) if len(tok) >= 2][:2]
-        suffix = "-".join(slug_tokens) if slug_tokens else hashlib.sha256(
-            f"{base_id}:{title}:{os.getpid()}".encode()
-        ).hexdigest()[:6].upper()
+        suffix = (
+            "-".join(slug_tokens)
+            if slug_tokens
+            else hashlib.sha256(f"{base_id}:{title}:{os.getpid()}".encode()).hexdigest()[:6].upper()
+        )
         if base_id.endswith(f"-{suffix}") and base_id not in existing_ids:
             candidate_id = base_id
         else:
@@ -477,7 +480,6 @@ def create_delta(
 
     fm: dict[str, Any] = {
         "type": "delta/mutation",
-        "schema": "schemas/v1/delta/delta.schema.yaml",
         "id": doc_id,
         "title": title,
         "status": "proposed",
@@ -494,15 +496,7 @@ def create_delta(
     if vcs_dict:
         fm["vcs"] = vcs_dict
 
-    body = f"""= SpecDelta: {heading}
-:toc: left
-
-== Problem Statement
-{motivation}
-
-== Proposed Specification Changes
-Describe the exact behavioral diffs, mutations, and invariant updates here.
-"""
+    body = render_spec_template("delta/mutation", heading=heading, motivation=motivation)
     content = _render_spec(fm, body)
     if dest_file.exists():
         raise FileExistsError(f"SpecDelta document already exists at: {dest_file}")
@@ -809,8 +803,10 @@ def _check_structural_subtarget_precondition(
             invs.extend((owner_fm or {}).get("invariants") or [])
             invs.extend(((owner_fm or {}).get("technical") or {}).get("invariants") or [])
         for comp in list((owner_fm or {}).get("components") or []):
-            if isinstance(comp, dict) and comp.get("invariants") and (
-                parent == owner_spec_id or comp.get("id") == parent
+            if (
+                isinstance(comp, dict)
+                and comp.get("invariants")
+                and (parent == owner_spec_id or comp.get("id") == parent)
             ):
                 invs.extend(comp.get("invariants") or [])
         inv_ids = {i.get("id") if isinstance(i, dict) else str(i) for i in invs}
@@ -834,12 +830,11 @@ def _check_structural_subtarget_precondition(
         elif parent in container_components and container_components[parent] in specs_by_id:
             inline_comp = _find_inline_component_dict(parent, specs_by_id[container_components[parent]][2])
             if inline_comp is not None:
-                for blk_key in ("interfaces", "contracts"):
-                    ifaces = inline_comp.get(blk_key) or {}
-                    if isinstance(ifaces, dict):
-                        all_ifaces = (ifaces.get("provides") or []) + (ifaces.get("consumes") or [])
-                        if target in all_ifaces:
-                            return True
+                ifaces = inline_comp.get("contracts") or {}
+                if isinstance(ifaces, dict):
+                    all_ifaces = (ifaces.get("provides") or []) + (ifaces.get("consumes") or [])
+                    if target in all_ifaces:
+                        return True
         else:
             return False
         if target in specs_by_id:
@@ -882,7 +877,6 @@ _PROSE_EXPECT_FIELDS: frozenset[str] = frozenset(
         "summary",
         "title",
         "details",
-        "jtbd",
     }
 )
 
@@ -1142,15 +1136,10 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
             status = "UNSUPPORTED_ACTION"
             failure_reason = f"Unsupported mutation operation '{op}'."
 
-        elif op == "deprecate" and entity_kind not in ("capability", "policy"):
+        elif op == "deprecate" and entity_kind == "invariant":
             verified = False
             status = "UNSUPPORTED_ACTION"
-            failure_reason = f"Operation 'deprecate' is only supported for capability and policy targets (got '{target}')."
-
-        elif entity_kind == "architecture" and op != "modify":
-            verified = False
-            status = "UNSUPPORTED_ACTION"
-            failure_reason = f"Architecture target '{target}' only supports operation 'modify' (got '{op}')."
+            failure_reason = f"Operation 'deprecate' is not supported for invariant targets (got '{target}')."
 
         # 1. Removal / Deprecation Operations
         elif op == "remove" and entity_kind == "invariant":
@@ -1163,11 +1152,25 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                 failure_reason = f"Invariant '{lookup_target}' is still present."
 
         elif op == "deprecate" or (op == "remove" and entity_kind in ("capability", "policy")):
-            if lookup_target not in specs_by_id and not target_path_exists:
+            if (
+                lookup_target not in specs_by_id
+                and lookup_target not in container_components
+                and not target_path_exists
+            ):
                 verified = True
                 status = "ABSENT_AS_EXPECTED"
             else:
                 doc_fm = specs_by_id[lookup_target][2] if lookup_target in specs_by_id else {}
+                if (
+                    not doc_fm
+                    and lookup_target in container_components
+                    and container_components[lookup_target] in specs_by_id
+                ):
+                    comp_dict = _find_inline_component_dict(
+                        lookup_target, specs_by_id[container_components[lookup_target]][2]
+                    )
+                    if comp_dict is not None:
+                        doc_fm = comp_dict
                 if not doc_fm and target_path_resolved and target_path_resolved.exists():
                     doc_fm = parse_spec_file(target_path_resolved).frontmatter or {}
                 if str(doc_fm.get("status", "")).lower() in ("deprecated", "retired"):
@@ -1265,9 +1268,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                         if base_sha is not None and inv_sha == base_sha:
                             verified = False
                             status = "UNMODIFIED"
-                            failure_reason = (
-                                f"Invariant '{lookup_target}' digest matches pre-delta baseline (no modification detected)."
-                            )
+                            failure_reason = f"Invariant '{lookup_target}' digest matches pre-delta baseline (no modification detected)."
                         else:
                             verified = True
                             status = "MODIFIED"
@@ -1301,6 +1302,12 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                     if d_type == "tech/architecture":
                         target_file = p
                         lookup_target = arch_id
+                        break
+            elif entity_kind == "system":
+                for sys_id, (p, d_type, _) in specs_by_id.items():
+                    if d_type == "product/system":
+                        target_file = p
+                        lookup_target = sys_id
                         break
 
             if (
@@ -1346,9 +1353,7 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                         if base_sha is not None and cur_sha == base_sha:
                             verified = False
                             status = "UNMODIFIED"
-                            failure_reason = (
-                                f"Target '{lookup_target}' digest matches pre-delta baseline (no modification detected)."
-                            )
+                            failure_reason = f"Target '{lookup_target}' digest matches pre-delta baseline (no modification detected)."
                         else:
                             verified = True
                             status = "MODIFIED"

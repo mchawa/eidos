@@ -1,0 +1,5 @@
+= Screen: {heading}
+:toc: left
+
+== View Layout & State Machine
+This specification defines the route, layout slots, and state transitions for {heading}.

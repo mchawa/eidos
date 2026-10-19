@@ -1,6 +1,5 @@
 ---
 type: product/capability
-schema: schemas/v1/product/capability.schema.yaml
 id: CAP-AGENT-001
 title: "Universal Agent Adapter & Context Slicing Engine"
 domain: DOM-AGENT-INTELLIGENCE
@@ -13,7 +12,6 @@ business:
     - eidos/personas/software-engineer.adoc
     - eidos/personas/product-lead.adoc
     - eidos/personas/autonomous-agent.adoc
-  jtbd: "Enable the team to use any state-of-the-art coding agent (Antigravity agy, Claude Code, Cursor, Cline, Codex, Aider) interchangeably without rewriting project workflows."
   policies:
     - eidos/policies/POL-002-invariant-test-enforcement.adoc
     - eidos/policies/POL-004-zero-ai-call-dependency.adoc
@@ -50,6 +48,9 @@ technical:
 ---
 = Capability: Universal Agent Adapter & Context Slicing Layer
 :toc: left
+
+== Job To Be Done (JTBD)
+Enable the team to use any state-of-the-art coding agent (Antigravity agy, Claude Code, Cursor, Cline, Codex, Aider) interchangeably without rewriting project workflows.
 
 == Intent
 Avoids vendor lock-in and eliminates context window bloat. External AI coding assistants—including Google Antigravity `agy`, Claude Code, Cursor, Cline, OpenAI Codex, GitHub Copilot, and Aider—query the deterministic Eidos CLI to retrieve token-budgeted, graph-indexed architectural slices (`eidos context --json`) and verify invariant compliance before committing changes.

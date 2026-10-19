@@ -20,7 +20,6 @@ Verifies:
    - 100% centralized spec containment under eidos/
 """
 
-
 import pytest
 
 from eidos.core.index.graph_index import ArchitecturalIndex
@@ -46,7 +45,10 @@ def repo_env(tmp_path):
     src_core = repo_root / "src" / "sample" / "core"
     src_core.mkdir(parents=True)
     (src_core / "parser.py").write_text("class SpecParser:\n    pass\n", encoding="utf-8")
-    (src_core / "validator.py").write_text("class SpecValidator:\n    pass\n", encoding="utf-8")
+    (src_core / "validator.py").write_text(
+        "from sample.core.parser import SpecParser\n\nclass SpecValidator:\n    pass\n",
+        encoding="utf-8",
+    )
 
     # Tests directory
     tests_dir = repo_root / "tests"
@@ -57,7 +59,6 @@ def repo_env(tmp_path):
     (containers_dir / "core.adoc").write_text(
         "---\n"
         "type: tech/container\n"
-        "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-SAMPLE-CORE\n"
         "title: Sample Core Engine\n"
         "container_type: library\n"
@@ -80,28 +81,19 @@ def repo_env(tmp_path):
     (components_dir / "validator.adoc").write_text(
         "---\n"
         "type: tech/component\n"
-        "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-CORE-VALIDATOR\n"
         "title: Specification Validator\n"
         "container: CNT-SAMPLE-CORE\n"
         "status: active\n"
         "source_path: src/sample/core/validator.py\n"
         "responsibility: Validates living specifications against schemas.\n"
-        "interfaces:\n"
-        "  provides:\n"
-        '    - signature: "validate_document(doc: SpecDocument) -> list[str]"\n'
-        "      description: Validates a single document.\n"
-        "  consumes:\n"
-        "    - CMP-CORE-PARSER\n"
-        "quality_attributes:\n"
-        "  stateless: true\n"
-        "  reentrant: true\n"
         "invariants:\n"
         "  - id: INV-VALIDATOR-CONFORMANCE\n"  # eidos:fixture
         "    rule: All documents must conform to Draft 2020-12 schemas.\n"
         "    test_binding: tests/test_core.py::test_parser\n"
         "---\n"
-        "= Component: Specification Validator\n",
+        "= Component: Specification Validator\n\n"
+        "Validates living specifications against Draft 2020-12 JSON schemas and cross-reference rules.\n",
         encoding="utf-8",
     )
 
@@ -109,7 +101,6 @@ def repo_env(tmp_path):
     (contracts_dir / "api.adoc").write_text(
         "---\n"
         "type: tech/contract\n"
-        "schema: schemas/v1/tech/contract.schema.yaml\n"
         "id: CTR-SAMPLE-API\n"
         "title: Core API Contract\n"
         "protocol: cli_args\n"
@@ -144,7 +135,6 @@ def test_spike_1_centralization_mandate_enforcement(repo_env):
     illegal_comp.write_text(
         "---\n"
         "type: tech/component\n"
-        "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-ILLEGAL-CODE-POLLUTION\n"
         "title: Illegal Code Pollution\n"
         "container: CNT-SAMPLE-CORE\n"
@@ -169,7 +159,6 @@ def test_spike_1_centralization_mandate_enforcement(repo_env):
     wrong_subdir_comp.write_text(
         "---\n"
         "type: tech/component\n"
-        "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-MISPLACED-SUBDIR\n"
         "title: Misplaced Subdir Component\n"
         "container: CNT-SAMPLE-CORE\n"
@@ -193,7 +182,6 @@ def test_spike_1_container_affinity_enforcement(repo_env):
     (comp_dir / "orphan.adoc").write_text(
         "---\n"
         "type: tech/component\n"
-        "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-ORPHAN\n"
         "title: Orphan Component\n"
         "container: CNT-NONEXISTENT\n"
@@ -207,7 +195,6 @@ def test_spike_1_container_affinity_enforcement(repo_env):
     (comp_dir / "wrong_parent_type.adoc").write_text(
         "---\n"
         "type: tech/component\n"
-        "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-WRONG-PARENT\n"
         "title: Wrong Parent Type\n"
         "container: CTR-SAMPLE-API\n"
@@ -238,7 +225,6 @@ def test_spike_1_interface_boundary_governance_enforcement(repo_env):
     (contracts_dir / "bad_owner.adoc").write_text(
         "---\n"
         "type: tech/contract\n"
-        "schema: schemas/v1/tech/contract.schema.yaml\n"
         "id: CTR-BAD-OWNER\n"
         "title: Bad Owner Contract\n"
         "protocol: cli_args\n"
@@ -300,36 +286,18 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
     """Spike 3: Verify promote_component and inline_component lifecycle CLI prototype."""
     repo_root, eidos_dir = repo_env
 
-    # Enrich inline CMP-CORE-PARSER with domain, interfaces, and non-default quality_attributes
+    # Enrich inline CMP-CORE-PARSER with domain and decisions
     domains_dir = eidos_dir / "domains"
     domains_dir.mkdir(parents=True, exist_ok=True)
     (domains_dir / "core.adoc").write_text(
-        "---\n"
-        "type: product/domain\n"
-        "schema: schemas/v1/product/domain.schema.yaml\n"
-        "id: DOM-SAMPLE\n"
-        "title: Sample Domain\n"
-        "classification: core\n"
-        "boundaries:\n"
-        "  responsibilities:\n"
-        "    - Core parsing\n"
-        "---\n"
-        "= Sample Domain\n",
+        "---\ntype: product/domain\nid: DOM-SAMPLE\ntitle: Sample Domain\nclassification: core\n---\n= Sample Domain\n",
         encoding="utf-8",
     )
     cnt_file = eidos_dir / "architecture" / "containers" / "core.adoc"
     cnt_file.write_text(
         cnt_file.read_text(encoding="utf-8").replace(
             "    source_path: src/sample/core/parser.py\n",
-            "    source_path: src/sample/core/parser.py\n"
-            "    domain: DOM-SAMPLE\n"
-            "    interfaces:\n"
-            "      provides:\n"
-            "        - signature: \"parse_spec_file(path: Path) -> SpecDocument\"\n"
-            "          description: Parses spec.\n"
-            "    quality_attributes:\n"
-            "      stateless: false\n"
-            "      reentrant: true\n",
+            "    source_path: src/sample/core/parser.py\n    domain: DOM-SAMPLE\n",
         ),
         encoding="utf-8",
     )
@@ -360,13 +328,11 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
     comps = c_doc.frontmatter.get("components") or []
     assert not any(c.get("id") == "CMP-CORE-PARSER" for c in comps)
 
-    # Verify promoted spec is valid tech/component and preserved domain, interfaces, quality_attributes
+    # Verify promoted spec is valid tech/component and preserved domain
     promoted_doc = parse_spec_file(promoted_spec)
     assert promoted_doc.doc_type == "tech/component"
     assert promoted_doc.frontmatter["container"] == "CNT-SAMPLE-CORE"
     assert promoted_doc.frontmatter["domain"] == "DOM-SAMPLE"
-    assert promoted_doc.frontmatter["quality_attributes"] == {"stateless": False, "reentrant": True}
-    assert promoted_doc.frontmatter["interfaces"]["provides"][0]["signature"].startswith("parse_spec_file")
     assert promoted_doc.is_valid
 
     # Validate entire eidos directory
@@ -387,8 +353,6 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
     assert "ref" not in parser_inlined
     assert "source_path" in parser_inlined
     assert parser_inlined.get("domain") == "DOM-SAMPLE"
-    assert parser_inlined.get("quality_attributes") == {"stateless": False, "reentrant": True}
-    assert parser_inlined.get("interfaces", {}).get("provides")
 
     report_after_inline = validator.validate_directory(eidos_dir)
     assert report_after_inline.is_clean
@@ -426,7 +390,6 @@ def test_spike_4_exit_criteria_token_budget_benchmark(repo_env):
         (comp_dir / f"extra_{i}.adoc").write_text(
             "---\n"
             "type: tech/component\n"
-            "schema: schemas/v1/tech/component.schema.yaml\n"
             f"id: CMP-EXTRA-{i}\n"
             f"title: Extra Component {i}\n"
             "container: CNT-SAMPLE-CORE\n"
@@ -475,7 +438,6 @@ def test_centralization_mandate_parent_path_named_src(tmp_path):
     valid_comp.write_text(
         "---\n"
         "type: tech/component\n"
-        "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-SRC-PATH-VALID\n"
         "title: Valid Component Under Src Parent\n"
         "container: CNT-SAMPLE-CORE\n"
@@ -491,4 +453,3 @@ def test_centralization_mandate_parent_path_named_src(tmp_path):
     report = validator.validate_directory(eidos_dir)
     errors = report.schema_errors.get(str(valid_comp), [])
     assert not any("INV-COMPONENT-CENTRALIZATION-MANDATE" in err for err in errors)
-

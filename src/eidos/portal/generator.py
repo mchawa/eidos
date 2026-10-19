@@ -90,6 +90,25 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             }
         )
 
+    # Query AST-derived component/container dependencies from the architectural knowledge graph
+    ast_consumes_by_comp: dict[str, list[str]] = {}
+    ast_depends_by_cnt: dict[str, list[str]] = {}
+    try:
+        from eidos.core.index.graph_index import get_architectural_index
+
+        arch_idx = get_architectural_index(eidos_dir=eidos_path, repo_root=eidos_path.parent)
+        arch_idx._ensure_synced()
+        conn = arch_idx._get_connection()
+        for r in conn.execute(
+            "SELECT source_id, target_id, rel_type FROM edges WHERE rel_type IN ('consumes_api', 'depends_on');"
+        ).fetchall():
+            if r["rel_type"] == "consumes_api":
+                _add_unique(ast_consumes_by_comp.setdefault(str(r["source_id"]), []), str(r["target_id"]))
+            elif r["rel_type"] == "depends_on":
+                _add_unique(ast_depends_by_cnt.setdefault(str(r["source_id"]), []), str(r["target_id"]))
+    except Exception:
+        pass
+
     # Components & Containers (C4 Level 2 Containers and Level 3 Promoted Components)
     raw_containers = specs_by_type.get("tech/container", [])
     raw_promoted_components = specs_by_type.get("tech/component", [])
@@ -107,8 +126,8 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             "file_path": pc.get("path", ""),
             "spec_path": pc.get("path", ""),
             "domain": p_fm.get("domain", ""),
-            "interfaces": p_fm.get("interfaces", {}),
-            "quality_attributes": p_fm.get("quality_attributes", {}),
+            "dependencies": list(ast_consumes_by_comp.get(pc["id"], [])),
+            "consumes_components": list(ast_consumes_by_comp.get(pc["id"], [])),
             "invariants": p_fm.get("invariants", []),
             "decisions": p_fm.get("decisions", []),
             "status": p_fm.get("status", "active"),
@@ -144,6 +163,8 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             ic_id = ic_copy.get("id")
             if ic_id:
                 ic_copy["title"] = ic_copy.get("title", ic_id)
+                ic_copy["dependencies"] = list(ast_consumes_by_comp.get(ic_id, []))
+                ic_copy["consumes_components"] = list(ast_consumes_by_comp.get(ic_id, []))
                 internal_components.append(ic_copy)
                 existing_ids.add(ic_id)
 
@@ -164,7 +185,6 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             "internal_components": internal_components,
             "dependencies": {"internal_containers": [], "external_services": []},
             "contracts": fm.get("contracts", {}),
-            "quality_attributes": fm.get("quality_attributes", {}),
             "invariants": fm.get("invariants", []),
             "decisions": fm.get("decisions", []),
             "tier": fm.get("tier"),
@@ -175,7 +195,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         comp_dict["tier_name"] = tier_name
         components.append(comp_dict)
 
-    # Derive inter-container dependencies from contracts (consumes -> provides/container) and component interfaces
+    # Derive inter-container dependencies from contracts (consumes -> provides/container) and AST import edges
     contract_to_provider: dict[str, str] = {}
     for ct in contracts:
         if ct.get("id") and ct.get("container") and str(ct["container"]).startswith("CNT-"):
@@ -204,21 +224,15 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 prov_cnt = contract_to_provider.get(c_id)
                 if prov_cnt and prov_cnt != cnt_id:
                     _add_unique(derived_int_cnts, prov_cnt)
+        for dep_cnt_id in ast_depends_by_cnt.get(cnt_id, []):
+            if dep_cnt_id.startswith("CNT-") and dep_cnt_id != cnt_id:
+                _add_unique(derived_int_cnts, dep_cnt_id)
         for ic in cnt.get("internal_components", []):
-            ifaces = ic.get("interfaces")
-            if isinstance(ifaces, dict) and isinstance(ifaces.get("consumes"), list):
-                for raw_target in ifaces["consumes"]:
-                    t_id = _resolve_ref_id(
-                        raw_target.get("id") or raw_target.get("target") or raw_target.get("component") or ""
-                        if isinstance(raw_target, dict)
-                        else str(raw_target).split("(", 1)[0].strip()
-                    )
-                    if t_id.startswith("CNT-") and t_id != cnt_id:
-                        _add_unique(derived_int_cnts, t_id)
-                    elif t_id in comp_to_container and comp_to_container[t_id] != cnt_id:
-                        _add_unique(derived_int_cnts, comp_to_container[t_id])
-                    elif t_id in contract_to_provider and contract_to_provider[t_id] != cnt_id:
-                        _add_unique(derived_int_cnts, contract_to_provider[t_id])
+            for t_id in ic.get("consumes_components", []) or []:
+                if t_id.startswith("CNT-") and t_id != cnt_id:
+                    _add_unique(derived_int_cnts, t_id)
+                elif t_id in comp_to_container and comp_to_container[t_id] != cnt_id:
+                    _add_unique(derived_int_cnts, comp_to_container[t_id])
         cnt["dependencies"] = {
             "internal_containers": derived_int_cnts,
             "external_services": [],
@@ -235,8 +249,6 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             m = re.search(r"== Domain Vision\s*\n+([^=\n][^\n]+)", s.get("body", ""))
             if m:
                 d["mission"] = m.group(1).strip()
-            elif d.get("boundaries", {}).get("responsibilities"):
-                d["mission"] = d["boundaries"]["responsibilities"][0]
             else:
                 d["mission"] = f"Bounded strategic context {d.get('title', d.get('id', ''))}."
         domains.append(d)
@@ -247,7 +259,13 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         c["body"] = s.get("body", "")
         c["path"] = s.get("path", "")
         c["title"] = c.get("title") or s.get("title") or c.get("id", "Capability")
-        c["summary"] = c.get("summary") or c.get("business", {}).get("jtbd") or ""
+        if not c.get("summary"):
+            m_jtbd = re.search(
+                r"^==\s+Job To Be Done[^\n]*\n+([^=\n][^\n]+)",
+                s.get("body", ""),
+                re.MULTILINE,
+            )
+            c["summary"] = m_jtbd.group(1).strip() if m_jtbd else ""
         c["invariants"] = c.get("technical", {}).get("invariants", [])
         capabilities.append(c)
 
@@ -407,6 +425,27 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     clients = design_data.get("clients", [])
     flows = design_data.get("flows", [])
 
+    for uic in ui_components:
+        uic_id = uic.get("id", "UIC")
+        for inv in uic.get("invariants", []) or []:
+            if not isinstance(inv, dict):
+                continue
+            iid = inv.get("id")
+            if iid and iid in seen_inv_ids:
+                continue
+            if iid:
+                seen_inv_ids.add(iid)
+            invariants.append(
+                {
+                    "id": iid,
+                    "title": iid,
+                    "rule": inv.get("rule", "UI component invariant."),
+                    "category": "design",
+                    "source_type": f"ui_component ({uic_id})",
+                    "test_binding": inv.get("test_binding", "N/A"),
+                }
+            )
+
     # 4. SpecDeltas & Kanban status columns (dynamically computes delta affects and blast_radius from mutations[].target_* and graph)
     deltas_by_status: dict[str, list[dict[str, Any]]] = {
         "proposed": [],
@@ -419,6 +458,12 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     comp_dependents: dict[str, list[str]] = {}
     cnt_dependents: dict[str, list[str]] = {}
     entity_invariants: dict[str, list[str]] = {}
+    for uic in ui_components:
+        uic_id = uic.get("id")
+        if uic_id:
+            uic_invs = [str(inv["id"]) for inv in uic.get("invariants", []) if isinstance(inv, dict) and inv.get("id")]
+            if uic_invs:
+                entity_invariants[uic_id] = uic_invs
     for cnt in components:
         cnt_id = cnt["id"]
         cnt_invs = [str(inv["id"]) for inv in cnt.get("invariants", []) if isinstance(inv, dict) and inv.get("id")]
@@ -433,20 +478,13 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         for ic in cnt.get("internal_components", []):
             ic_id = ic.get("id")
             if ic_id:
-                ic_invs = [str(inv["id"]) for inv in ic.get("invariants", []) if isinstance(inv, dict) and inv.get("id")]
+                ic_invs = [
+                    str(inv["id"]) for inv in ic.get("invariants", []) if isinstance(inv, dict) and inv.get("id")
+                ]
                 if ic_invs:
                     entity_invariants[ic_id] = ic_invs
-                ic_ifaces = ic.get("interfaces")
-                ic_int_deps: list[Any] = []
-                if isinstance(ic_ifaces, dict) and isinstance(ic_ifaces.get("consumes"), list):
-                    ic_int_deps.extend(ic_ifaces["consumes"])
-                for dep_ref in ic_int_deps:
-                    raw_ref = (
-                        str(dep_ref.get("id") or dep_ref.get("target") or dep_ref.get("component") or "")
-                        if isinstance(dep_ref, dict)
-                        else str(dep_ref).split("(", 1)[0].strip()
-                    )
-                    dep_id = _resolve_ref_id(raw_ref)
+                for dep_ref in ic.get("consumes_components", []) or []:
+                    dep_id = _resolve_ref_id(dep_ref)
                     if dep_id:
                         _add_unique(comp_dependents.setdefault(dep_id, []), ic_id)
 
@@ -649,7 +687,6 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             for inv_id in entity_invariants.get(seed_id, []):
                 _add_unique(br_lists["invariants_to_enforce"], inv_id)
 
-
         raw_br = fm.get("blast_radius")
         if isinstance(raw_br, dict):
             for k, vals in raw_br.items():
@@ -686,6 +723,16 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         raw_dec = fm.get("decision")
         decision_dict: dict[str, Any] = dict(raw_dec) if isinstance(raw_dec, dict) else {}
 
+        hypothesis = fm.get("hypothesis", "")
+        if not hypothesis:
+            m_hyp = re.search(
+                r"(?:\*Hypothesis:\*|^==+\s+[^\n]*Hypothesis[^\n]*)\s*\n+([^=\n][^\n]+)",
+                exp.get("body", ""),
+                re.MULTILINE,
+            )
+            if m_hyp:
+                hypothesis = " ".join(m_hyp.group(1).split())
+
         findings = fm.get("findings") or decision_dict.get("learnings") or ""
         if not findings:
             m_find = re.search(
@@ -712,12 +759,6 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         else:
             resulting_deltas = []
 
-        legacy_delta_id = decision_dict.get("resulting_delta_id") or fm.get("resulting_delta_id")
-        if legacy_delta_id and str(legacy_delta_id) not in resulting_deltas:
-            resulting_deltas.insert(0, str(legacy_delta_id))
-
-        primary_delta_id = legacy_delta_id or (resulting_deltas[0] if resulting_deltas else None)
-
         if outcome:
             decision_dict["outcome"] = outcome
         if findings:
@@ -725,8 +766,6 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             decision_dict["findings"] = findings
         if recommendation:
             decision_dict["recommendation"] = recommendation
-        if primary_delta_id:
-            decision_dict["resulting_delta_id"] = primary_delta_id
         if resulting_deltas:
             decision_dict["resulting_deltas"] = resulting_deltas
 
@@ -735,9 +774,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 "id": exp["id"],
                 "title": exp["title"],
                 "status": fm.get("status", "proposed"),
-                "hypothesis": fm.get("hypothesis", ""),
-                "questions_to_answer": fm.get("questions_to_answer", []),
-                "spikes_to_run": fm.get("spikes_to_run", []),
+                "hypothesis": hypothesis,
                 "exit_criteria": fm.get("exit_criteria", {}),
                 "findings": findings,
                 "recommendation": recommendation,
@@ -754,9 +791,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         or (sys_doc.get("frontmatter", {}).get("c4_context", {}).get("external_systems", []) if sys_doc else [])
         or []
     )
-    c4_context_mermaid = _generate_c4_context_mermaid(
-        personas, system_id, system_title, external_systems=ext_systems
-    )
+    c4_context_mermaid = _generate_c4_context_mermaid(personas, system_id, system_title, external_systems=ext_systems)
     c4_containers_mermaid = _generate_c4_containers_mermaid(
         components,
         system_id=system_id,
@@ -825,6 +860,7 @@ def _extract_design_systems(
     resolve_ref: Any = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Scan and parse multi-design systems, W3C tokens.json, UI components, clients, flows, and screens."""
+
     def _res(val: Any) -> str:
         if resolve_ref is not None:
             return str(resolve_ref(val))
@@ -979,8 +1015,7 @@ def _extract_design_systems(
                 "status": fm.get("status", "active"),
                 "variants": fm.get("variants", []),
                 "states": fm.get("states", []),
-                "accessibility": fm.get("accessibility", {}),
-                "test_bindings": fm.get("test_bindings", {}),
+                "invariants": fm.get("invariants", []),
                 "body": uic["body"],
             }
         )
@@ -1036,18 +1071,14 @@ def _generate_c4_context_mermaid(
     for idx, ext in enumerate(external_systems or []):
         if isinstance(ext, dict):
             raw_ext_id = str(ext.get("id") or "").strip()
-            ext_node_id = (
-                re.sub(r"[^A-Za-z0-9_]", "_", raw_ext_id) if raw_ext_id else f"EXT_{idx + 1}"
-            )
-            ext_name = html.escape(str(ext.get("title") or ext.get("name") or ext.get("id") or f"External System {idx + 1}")).replace(
-                '"', "'"
-            )
+            ext_node_id = re.sub(r"[^A-Za-z0-9_]", "_", raw_ext_id) if raw_ext_id else f"EXT_{idx + 1}"
+            ext_name = html.escape(
+                str(ext.get("title") or ext.get("name") or ext.get("id") or f"External System {idx + 1}")
+            ).replace('"', "'")
             ext_role = html.escape(
                 str(ext.get("description") or ext.get("role") or ext.get("relationship") or "External Integration")
             ).replace('"', "'")
-            ext_proto = html.escape(str(ext.get("protocol") or ext.get("type") or "External System")).replace(
-                '"', "'"
-            )
+            ext_proto = html.escape(str(ext.get("protocol") or ext.get("type") or "External System")).replace('"', "'")
         else:
             ext_node_id = f"EXT_{idx + 1}"
             ext_name = html.escape(str(ext)).replace('"', "'")
@@ -1288,7 +1319,9 @@ def _generate_c4_containers_mermaid(
         lines.append("")
 
     # 3. System Boundary & Tiered Subgraphs (Generically grouped and ordered)
-    lines.append(f'  subgraph SYS_BOUNDARY ["📦 System Boundary: {clean_sys_title} ({html.escape(str(system_id or "SYS-001"))})"]')
+    lines.append(
+        f'  subgraph SYS_BOUNDARY ["📦 System Boundary: {clean_sys_title} ({html.escape(str(system_id or "SYS-001"))})"]'
+    )
 
     containers_by_tier: dict[str, list[dict[str, Any]]] = {}
     for c in components:
@@ -1335,9 +1368,7 @@ def _generate_c4_containers_mermaid(
         c_node = c["id"].replace("-", "_")
         deps = c.get("dependencies", {})
         ext_list = (
-            (deps.get("external_service_links") or deps.get("external_services", []))
-            if isinstance(deps, dict)
-            else []
+            (deps.get("external_service_links") or deps.get("external_services", [])) if isinstance(deps, dict) else []
         )
 
         for ext in ext_list:
@@ -1546,13 +1577,13 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
         for idx, mod in enumerate(internals):
             mid = mod.get("id")
             mtitle = str(mod.get("title") or f"Module {idx + 1}").replace('"', "'")
-            title_text = f"<b>{html.escape(str(mid))}: {html.escape(mtitle)}</b>" if mid else f"<b>{html.escape(mtitle)}</b>"
+            title_text = (
+                f"<b>{html.escape(str(mid))}: {html.escape(mtitle)}</b>" if mid else f"<b>{html.escape(mtitle)}</b>"
+            )
             resp = str(mod.get("responsibility") or "").replace('"', "'")
             raw_spath = mod.get("source_path") or ""
             spath = (
-                ", ".join(str(p) for p in raw_spath if p is not None)
-                if isinstance(raw_spath, list)
-                else str(raw_spath)
+                ", ".join(str(p) for p in raw_spath if p is not None) if isinstance(raw_spath, list) else str(raw_spath)
             ).replace('"', "'")
             mod_id = f"mod_{cid.replace('-', '_')}_{idx}"
             if isinstance(mid, str) and mid.strip():
@@ -1565,19 +1596,13 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
                 f"<span style='font-size:11px;color:#cbd5e1;'>{html.escape(resp)}</span></div>\"]:::module"
             )
 
-        # Render explicit intra-container component dependencies when declared via interfaces.consumes
+        # Render intra-container component dependencies derived via AST imports
         drawn_mod_edges: set[tuple[str, str]] = set()
         for idx, mod in enumerate(internals):
             src_mod_id = f"mod_{cid.replace('-', '_')}_{idx}"
-            dep_targets: list[str] = []
-            raw_ifaces = mod.get("interfaces")
-            if isinstance(raw_ifaces, dict):
-                consumes = raw_ifaces.get("consumes")
-                if isinstance(consumes, list):
-                    dep_targets.extend(
-                        str(item.get("id") or item.get("target") or "") if isinstance(item, dict) else str(item)
-                        for item in consumes
-                    )
+            dep_targets = [
+                str(item) for item in (mod.get("consumes_components") or mod.get("dependencies") or []) if item
+            ]
             for tgt_ref in dep_targets:
                 tgt_mod_id = mod_node_by_ref.get(tgt_ref.strip())
                 if tgt_mod_id and tgt_mod_id != src_mod_id and (src_mod_id, tgt_mod_id) not in drawn_mod_edges:
@@ -1593,10 +1618,14 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
     )
     for raw_dep in int_deps:
         dep_id = (
-            str(raw_dep.get("id") or raw_dep.get("container") or raw_dep.get("target") or "")
-            if isinstance(raw_dep, dict)
-            else str(raw_dep)
-        ).split("(", 1)[0].strip()
+            (
+                str(raw_dep.get("id") or raw_dep.get("container") or raw_dep.get("target") or "")
+                if isinstance(raw_dep, dict)
+                else str(raw_dep)
+            )
+            .split("(", 1)[0]
+            .strip()
+        )
         if dep_id and dep_id != cid:
             peer_node = f"peer_{re.sub(r'[^a-zA-Z0-9_]', '_', dep_id)}"
             lines.append(
@@ -1610,10 +1639,14 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
     provides = (contracts.get("provides") or []) if isinstance(contracts, dict) else []
     for raw_ctr in provides:
         ctr_id = (
-            str(raw_ctr.get("id") or raw_ctr.get("contract") or raw_ctr.get("target") or "")
-            if isinstance(raw_ctr, dict)
-            else str(raw_ctr)
-        ).split("(", 1)[0].strip()
+            (
+                str(raw_ctr.get("id") or raw_ctr.get("contract") or raw_ctr.get("target") or "")
+                if isinstance(raw_ctr, dict)
+                else str(raw_ctr)
+            )
+            .split("(", 1)[0]
+            .strip()
+        )
         if not ctr_id:
             continue
         ctr_node = f"ctr_{re.sub(r'[^a-zA-Z0-9_]', '_', ctr_id)}"

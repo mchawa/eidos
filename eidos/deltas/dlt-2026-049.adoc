@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-049
 title: Repo-Relative Path Normalization and Configurable Governance Checks Across Validator and Drift
 status: applied

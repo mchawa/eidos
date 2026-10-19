@@ -67,7 +67,9 @@ def init_cmd(
     console.print(f"\n[bold green]✓[/bold green] {msg}")
     console.print("[dim]Next steps:[/dim]")
     console.print("  • Author your system vision in [cyan]eidos/system.adoc[/cyan].")
-    console.print("  • Create specifications using [cyan]eidos spec create <type> <id> --title <title>[/cyan] or AI agent skills.")
+    console.print(
+        "  • Create specifications using [cyan]eidos spec create <type> <id> --title <title>[/cyan] or AI agent skills."
+    )
     console.print("  • Run [cyan]eidos validate eidos[/cyan] to verify specification compliance.")
     console.print("  • Run [cyan]eidos index sync[/cyan] to initialize the architectural knowledge graph index.")
     console.print("  • (Optional) Install agent plugins using [cyan]eidos plugin install[/cyan].")

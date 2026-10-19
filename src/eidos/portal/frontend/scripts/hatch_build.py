@@ -35,10 +35,14 @@ class PortalAssetsBuildHook(BuildHookInterface):
         bundle_gz = root / "assets" / "portal" / "bundle.html.gz"
         favicon_svg = root / "assets" / "portal" / "favicon.svg"
 
-        should_sync_from_dist = dist_index.is_file() and build_script.is_file() and (
-            not bundle_gz.is_file()
-            or not favicon_svg.is_file()
-            or dist_index.stat().st_mtime >= bundle_gz.stat().st_mtime
+        should_sync_from_dist = (
+            dist_index.is_file()
+            and build_script.is_file()
+            and (
+                not bundle_gz.is_file()
+                or not favicon_svg.is_file()
+                or dist_index.stat().st_mtime >= bundle_gz.stat().st_mtime
+            )
         )
         if should_sync_from_dist:
             subprocess.run(
@@ -58,4 +62,3 @@ class PortalAssetsBuildHook(BuildHookInterface):
                 f"Portal bundle assets missing in {root / 'assets' / 'portal'}. "
                 f"Run 'pnpm build:assets' in {frontend_dir} first."
             )
-

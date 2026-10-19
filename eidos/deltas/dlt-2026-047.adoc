@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-047
 title: Enforced Token-Budget Context Slicing, Mtime Refresh on Sync, and Qualified Polyglot AST Indexing
 status: applied

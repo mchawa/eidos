@@ -5,23 +5,14 @@ type: object
 additionalProperties: false
 required:
   - type
-  - schema
   - id
   - title
-  - topology_style
   - c4_context
-  - c4_containers
-  - solution_strategy
-  - cross_cutting_concepts
-  - deployment_view
 properties:
   type:
     type: string
     const: "tech/architecture"
     description: "The fixed document type identifier. Must always be 'tech/architecture'."
-  schema:
-    type: string
-    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^ARCH-[A-Z0-9_-]+$"
@@ -31,9 +22,6 @@ properties:
     description: "Human-readable title of the system architecture specification."
   status:
     $ref: "#/$defs/lifecycle_status"
-  topology_style:
-    type: string
-    description: "The foundational architectural pattern (e.g. monorepo_orchestrator, microservices, modular_monolith, distributed_mesh, embedded_firmware)."
   c4_context:
     type: object
     description: "Arc42 Section 3 / C4 Level 1: System Context. Identifies human/agent actors and external systems."
@@ -65,88 +53,6 @@ properties:
             protocol:
               type: string
               description: "Communication protocol (e.g. 'Git CLI', 'OAuth2', 'Kafka Topic')."
-  c4_containers:
-    type: array
-    description: "Arc42 Section 5.1 / C4 Level 2: Container Topology. The high-level deployable units, services, monorepo packages, or applications comprising the system."
-    items:
-      anyOf:
-        - $ref: "#/$defs/container_ref"
-        - type: object
-          additionalProperties: false
-          required:
-            - container
-          properties:
-            container:
-              $ref: "#/$defs/container_ref"
-            title:
-              type: string
-              description: "Display title of the container/package (optional)."
-            container_type:
-              type: string
-              description: "Type of container: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon, database (optional)."
-            runtime:
-              type: string
-              description: "Execution runtime and primary framework (optional)."
-            source_path:
-              $ref: "#/$defs/code_paths"
-  solution_strategy:
-    type: array
-    description: "Arc42 Section 4: Solution Strategy. Fundamental architectural decisions and paradigms shaping the system."
-    items:
-      type: string
-      description: "A foundational architectural strategy (e.g. 'GitOps State Machine: Git is the single source of truth')."
-  cross_cutting_concepts:
-    type: object
-    description: >
-      Arc42 Section 8: Cross-cutting Concepts. Open, flexible catalog of system-wide conventions,
-      patterns, and mechanisms. Architects declare only the concepts that apply to their specific system.
-    additionalProperties:
-      anyOf:
-        - type: string
-        - type: object
-    properties:
-      authentication_and_authz:
-        type: string
-        description: "Global authentication and authorization strategy (optional)."
-      error_handling:
-        type: string
-        description: "Universal error schemas, diagnostic formats, and exception rules (optional)."
-      telemetry_and_logging:
-        type: string
-        description: "Structured logging, distributed tracing, and metrics standards (optional)."
-      concurrency_and_threading:
-        type: string
-        description: "Concurrency model and thread-safety rules (optional)."
-      persistence_and_caching:
-        type: string
-        description: "Shared persistence mechanisms and caching strategies (optional)."
-      security_and_sandboxing:
-        type: string
-        description: "Process isolation, memory safety, and security guardrails (optional)."
-  deployment_view:
-    type: object
-    description: "Arc42 Section 7: Deployment View. Target infrastructure, environments, and CI/CD pipelines."
-    additionalProperties: false
-    required:
-      - hosting_model
-      - ci_cd_engine
-    properties:
-      hosting_model:
-        type: string
-        description: "Target infrastructure topology (e.g. Local Workstation + Cloud CI Runners, Kubernetes Cluster, AWS Serverless)."
-      ci_cd_engine:
-        type: string
-        description: "Automation pipelines for build, test, and release (e.g. GitHub Actions, GitLab CI)."
-      distribution_channels:
-        type: array
-        description: "Package registries, binary distribution channels, or deployment targets (optional)."
-        items:
-          type: string
-      environments:
-        type: array
-        description: "Deployment environments (optional)."
-        items:
-          type: string
   decisions:
     type: array
     description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on the global architecture specification without standalone ADR files (POL-001)."

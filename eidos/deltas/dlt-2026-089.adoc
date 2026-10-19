@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-089
 title: "Decorator-Aware AST Symbol Signatures and AST-Backed Polyglot Test-Binding Verification"
 status: applied

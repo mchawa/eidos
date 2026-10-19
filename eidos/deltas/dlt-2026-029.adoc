@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-029
 title: Preserve Test-to-Invariant Assertion Edges in Knowledge Graph Sync
 status: applied

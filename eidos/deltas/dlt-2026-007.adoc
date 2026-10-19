@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-007
 title: Architectural Decomposition of Monolithic Engine into C4 Level 2 Containers
 status: applied

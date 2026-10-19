@@ -1,6 +1,5 @@
 ---
 type: design/ui-component
-schema: schemas/v1/design/ui-component.schema.yaml
 id: UIC-PORTAL-SHELL
 title: "Portal Layout Shell"
 design_system: "DS-CORE"
@@ -17,14 +16,6 @@ states:
   - default
   - mobile_drawer_open
   - mobile_drawer_closed
-
-accessibility:
-  wcag_level: "AA"
-  aria_role: "application"
-  keyboard_nav: "Tab navigates sequentially between sidebar navigation items and main content landmark."
-
-test_bindings:
-  unit_test: "tests/test_portal.py::test_static_portal_builder"
 ---
 = UI Component: Portal Layout Shell
 :toc: left
@@ -36,4 +27,9 @@ The Portal Layout Shell (`UIC-PORTAL-SHELL`) establishes the two-pane applicatio
 
 == 2. Responsive Behavior
 On desktop monitors (>1024px), the sidebar remains pinned at `260px` width. On tablets and mobile screens (<768px), the sidebar collapses into an off-canvas drawer toggled via the hamburger trigger.
+
+== 3. Accessibility & Verification
+* **WCAG Conformance**: Level AA (`aria-role: application`).
+* **Keyboard Navigation**: Tab navigates sequentially between sidebar navigation items and main content landmark.
+* **Automated Verification**: Exercised by `tests/test_portal.py::test_static_portal_builder`.
 

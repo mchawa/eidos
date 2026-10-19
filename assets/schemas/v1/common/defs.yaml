@@ -110,6 +110,28 @@ $defs:
           type: string
     description: "Relative file path(s), directory path(s), or glob pattern(s) from repository root to the implementation source code."
 
+  system_ref:
+    type: string
+    pattern: "^(SYS-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "System ID (SYS-*) or relative path to a product/system specification."
+    x-eidos-ref:
+      target_types:
+        - product/system
+      prefixes:
+        - SYS-
+      entity_label: system
+
+  delta_ref:
+    type: string
+    pattern: "^(DLT-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "SpecDelta ID (DLT-*) or relative path to a delta/mutation specification."
+    x-eidos-ref:
+      target_types:
+        - delta/mutation
+      prefixes:
+        - DLT-
+      entity_label: delta
+
   domain_ref:
     type: string
     pattern: "^(DOM-[A-Z0-9_-]+|.*\\.adoc)$"
@@ -242,56 +264,6 @@ $defs:
         - FLOW-
       entity_label: flow
 
-  quality_attributes:
-    type: object
-    description: "Operational quality attributes, performance ceilings, and concurrency traits."
-    additionalProperties: false
-    properties:
-      stateless:
-        type: boolean
-        description: "Whether instances retain no internal mutable state between invocations."
-      idempotent:
-        type: boolean
-        description: "Whether mutations or operations are idempotent."
-      reentrant:
-        type: boolean
-        description: "Whether the unit is thread-safe and reentrant."
-      concurrency_model:
-        type: string
-        description: "Concurrency paradigm (e.g. 'synchronous', 'async_event_loop', 'thread_safe', 'actor')."
-      max_memory_mb:
-        type: number
-        description: "Maximum allowable memory allocation ceiling in MB."
-      max_validation_latency_ms:
-        type: number
-        description: "Maximum latency ceiling in milliseconds."
-
-  in_process_interfaces:
-    type: object
-    description: "In-process language protocols and APIs (traits, interfaces, ABCs, function signatures). NOT boundary protocol contracts (CTR-*)."
-    additionalProperties: false
-    properties:
-      provides:
-        type: array
-        description: "List of exported in-process method/function signatures and API capabilities."
-        items:
-          type: object
-          additionalProperties: false
-          required:
-            - signature
-          properties:
-            signature:
-              type: string
-              description: "Language-level method or function signature (e.g. 'validate_document(doc: SpecDocument) -> list[str]')."
-            description:
-              type: string
-              description: "Purpose and operational semantics of this in-process method."
-      consumes:
-        type: array
-        description: "List of peer components (CMP-*) consumed by this component."
-        items:
-          $ref: "#/$defs/component_ref"
-
   contracts_block:
     type: object
     description: "Exposed and consumed boundary interface contracts (CTR-*)."
@@ -328,15 +300,9 @@ $defs:
 
   external_design_references:
     type: object
-    description: "Upstream design tools, team libraries, frames, or component documentation portals."
-    additionalProperties: false
-    properties:
-      figma_url:
-        type: string
-        description: "Direct URL to Figma team library, component node, or screen frame."
-      storybook_url:
-        type: string
-        description: "URL to deployed Storybook or interactive component documentation."
+    description: "Open map of upstream design tools, team libraries, frames, or documentation URLs."
+    additionalProperties:
+      type: string
 
   inline_component:
     type: object
@@ -344,7 +310,6 @@ $defs:
     required:
       - id
       - title
-      - responsibility
     properties:
       id:
         type: string
@@ -362,10 +327,6 @@ $defs:
         description: "What this component does and what domain logic, computation, or operational duties it encapsulates."
       source_path:
         $ref: "#/$defs/code_paths"
-      interfaces:
-        $ref: "#/$defs/in_process_interfaces"
-      quality_attributes:
-        $ref: "#/$defs/quality_attributes"
       invariants:
         type: array
         description: "Component-specific operational or architectural invariants."

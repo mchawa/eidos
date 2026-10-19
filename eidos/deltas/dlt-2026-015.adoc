@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-015
 title: "Centralized Hybrid C4 Level 3 Component Manifests"
 status: applied

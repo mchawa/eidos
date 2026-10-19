@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-062
 title: Word-Bounded Multi-Term Reference Matching, Polyglot Test Classification, Archive Exclusion, and Fail-Loud Graph Checks in DeltaAuditor
 status: applied

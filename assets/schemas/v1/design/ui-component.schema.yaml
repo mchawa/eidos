@@ -5,7 +5,6 @@ type: object
 additionalProperties: false
 required:
   - type
-  - schema
   - id
   - title
   - design_system
@@ -15,9 +14,6 @@ properties:
     type: string
     const: "design/ui-component"
     description: "The fixed document type identifier. Must always be 'design/ui-component'."
-  schema:
-    type: string
-    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^UIC-[A-Z0-9_-]+$"
@@ -45,37 +41,11 @@ properties:
     description: "Supported interactive states: default, hover, active, focus, disabled, loading, skeleton, error."
     items:
       $ref: "#/$defs/state_entry"
-  accessibility:
-    type: object
-    description: "Non-negotiable accessibility (a11y) invariants and WCAG compliance contracts."
-    additionalProperties: false
-    properties:
-      wcag_level:
-        type: string
-        description: "Target WCAG standard: 'AA', 'AAA', or 'A'."
-        examples:
-          - "AA"
-          - "AAA"
-      aria_role:
-        type: string
-        description: "Standard WAI-ARIA role (e.g. 'button', 'dialog', 'navigation', 'alert')."
-      keyboard_nav:
-        type: string
-        description: "Required keyboard interaction behavior (e.g. 'Enter/Space activates, Tab traverses, Escape closes')."
-  test_bindings:
-    type: object
-    description: "Automated verification test bindings: Storybook stories, visual regression tests, and unit specs."
-    additionalProperties: false
-    properties:
-      storybook:
-        type: string
-        description: "Relative path to Storybook story file (e.g. 'packages/ui/src/Button.stories.tsx')."
-      visual_regression:
-        type: string
-        description: "Relative path to Playwright or visual snapshot test file."
-      unit_test:
-        type: string
-        description: "Relative path to component test file."
+  invariants:
+    type: array
+    description: "Test-bound UI component invariants (INV-*) verifying visual, behavioral, and accessibility rules."
+    items:
+      $ref: "#/$defs/invariant"
   external_references:
     $ref: "#/$defs/external_design_references"
   decisions:

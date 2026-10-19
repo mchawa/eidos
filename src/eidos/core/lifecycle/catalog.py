@@ -265,9 +265,7 @@ def _mutate_frontmatter_components(
                     comps[idx_c] = item_dict
                     break
         elif op == "remove":
-            parsed_fm["components"] = [
-                c for c in comps if not (isinstance(c, dict) and c.get("id") == target_id)
-            ]
+            parsed_fm["components"] = [c for c in comps if not (isinstance(c, dict) and c.get("id") == target_id)]
         return dump_spec_document(parsed_fm, body)
 
     lines = raw_yaml.splitlines(keepends=True)
@@ -296,9 +294,7 @@ def _mutate_frontmatter_components(
             return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
         return raw_content
 
-    header_after_colon, header_comment = _split_yaml_inline_comment(
-        lines[comp_idx].split(":", 1)[1].rstrip("\r\n")
-    )
+    header_after_colon, header_comment = _split_yaml_inline_comment(lines[comp_idx].split(":", 1)[1].rstrip("\r\n"))
     if header_after_colon.strip().startswith("["):
         return _fallback_mutate_parsed()
 
@@ -310,17 +306,11 @@ def _mutate_frontmatter_components(
             continue
         if not ln[0].isspace() and not stripped.startswith("-"):
             end_idx = i
-            while end_idx > comp_idx + 1 and (
-                not lines[end_idx - 1].strip() or lines[end_idx - 1].startswith("#")
-            ):
+            while end_idx > comp_idx + 1 and (not lines[end_idx - 1].strip() or lines[end_idx - 1].startswith("#")):
                 end_idx -= 1
             break
 
-    item_indents = [
-        len(m.group(1))
-        for i in range(comp_idx + 1, end_idx)
-        if (m := re.match(r"^(\s*)-\s+", lines[i]))
-    ]
+    item_indents = [len(m.group(1)) for i in range(comp_idx + 1, end_idx) if (m := re.match(r"^(\s*)-\s+", lines[i]))]
     base_indent_len = min(item_indents) if item_indents else 2
     base_indent = " " * base_indent_len
     item_starts = [

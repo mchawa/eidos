@@ -1,6 +1,5 @@
 ---
 type: product/capability
-schema: schemas/v1/product/capability.schema.yaml
 id: CAP-AGENT-002
 title: "Polyglot AST Code Graph & Structural Repo Map Intelligence"
 domain: DOM-AGENT-INTELLIGENCE
@@ -12,7 +11,6 @@ business:
     - eidos/personas/autonomous-agent.adoc
     - eidos/personas/software-architect.adoc
     - eidos/personas/software-engineer.adoc
-  jtbd: "Empower AI coding agents and human engineers with token-budgeted structural repo maps, sub-millisecond symbol discovery, and syntax-aware invariant test traceability without relying on cloud vector databases or remote AI dependencies."
   policies:
     - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
     - eidos/policies/POL-002-invariant-test-enforcement.adoc
@@ -51,6 +49,9 @@ technical:
 = Capability: Polyglot AST Code Graph & Structural Repo Map Intelligence
 :toc: left
 :icons: font
+
+== Job To Be Done (JTBD)
+Empower AI coding agents and human engineers with token-budgeted structural repo maps, sub-millisecond symbol discovery, and syntax-aware invariant test traceability without relying on cloud vector databases or remote AI dependencies.
 
 == 1. Intent & Purpose
 

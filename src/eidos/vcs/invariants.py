@@ -344,7 +344,9 @@ def _verify_single_invariant(
     ast_idx: Any = None,
 ) -> list[str]:
     """Strictly verify static invariant coverage against test_binding (file::func or file) or test suite."""
-    uses_cached_entries = any(isinstance(v, _CachedTestFile) for v in all_tests_content.values()) or not all_tests_content
+    uses_cached_entries = (
+        any(isinstance(v, _CachedTestFile) for v in all_tests_content.values()) or not all_tests_content
+    )
     pattern: re.Pattern[str] | None = None
 
     if tb:
@@ -409,9 +411,7 @@ def _verify_single_invariant(
                 candidate_bodies.append(funcs[tb_func])
             elif "::" not in tb_func:
                 suffix = f"::{parts[-1]}"
-                candidate_bodies.extend(
-                    body for k, body in funcs.items() if k == parts[-1] or k.endswith(suffix)
-                )
+                candidate_bodies.extend(body for k, body in funcs.items() if k == parts[-1] or k.endswith(suffix))
             if not candidate_bodies:
                 return []
             if not any(pattern.search(body) for body in candidate_bodies):
@@ -479,9 +479,7 @@ def detect_orphan_invariants(
             for binding in entry.bindings:
                 ident = binding["identifier"]
                 accounted = (
-                    qualified_binding_invs.get(ident.rsplit("::", 1)[-1], set())
-                    if ident.count("::") == 1
-                    else set()
+                    qualified_binding_invs.get(ident.rsplit("::", 1)[-1], set()) if ident.count("::") == 1 else set()
                 )
                 for inv_id in binding.get("invariants", []):
                     if inv_id in accounted:
@@ -578,7 +576,11 @@ def extract_invariants_and_verify(
         iid = getattr(inv, "id", None) if not isinstance(inv, dict) else inv.get("id")
         if not iid:
             return
-        tb = (inv.effective_test_binding() or None) if hasattr(inv, "effective_test_binding") else inv.get("test_binding")
+        tb = (
+            (inv.effective_test_binding() or None)
+            if hasattr(inv, "effective_test_binding")
+            else inv.get("test_binding")
+        )
         rule = (getattr(inv, "rule", None) or "") if not isinstance(inv, dict) else inv.get("rule", "")
         matching = _verify_single_invariant(iid, tb, repo_root, cached_tests, inv_to_test_funcs)
         invariants.append(
@@ -608,11 +610,7 @@ def extract_invariants_and_verify(
         if not root_dir.exists():
             continue
         for spec_path in sorted(root_dir.rglob("*.adoc")):
-            if (
-                spec_path.name.lower() == "readme.adoc"
-                or spec_path.name.startswith("_")
-                or spec_path.is_symlink()
-            ):
+            if spec_path.name.lower() == "readme.adoc" or spec_path.name.startswith("_") or spec_path.is_symlink():
                 continue
             res_spec = spec_path.resolve()
             rel_key: str | None = None
@@ -665,11 +663,7 @@ def get_living_specs_catalog(eidos_dir: Path, repo_root: Path | None = None) -> 
     }
 
     effective_root = (repo_root or Path.cwd()).resolve()
-    resolved_eidos = (
-        (effective_root / eidos_dir).resolve()
-        if not eidos_dir.is_absolute()
-        else eidos_dir.resolve()
-    )
+    resolved_eidos = (effective_root / eidos_dir).resolve() if not eidos_dir.is_absolute() else eidos_dir.resolve()
     if not resolved_eidos.exists():
         return catalog
 

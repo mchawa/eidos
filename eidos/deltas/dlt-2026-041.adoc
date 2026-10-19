@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-041
 title: Air-Gapped Portal Bundle with Embedded Mermaid, Fonts, and Asciidoctor.js Rendering
 status: applied

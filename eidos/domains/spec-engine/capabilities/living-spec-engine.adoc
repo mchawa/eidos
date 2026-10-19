@@ -1,6 +1,5 @@
 ---
 type: product/capability
-schema: schemas/v1/product/capability.schema.yaml
 id: CAP-PROD-001
 title: "Living Baseline Specification Engine"
 domain: DOM-SPEC-ENGINE
@@ -13,7 +12,6 @@ business:
     - eidos/personas/software-engineer.adoc
     - eidos/personas/product-lead.adoc
     - eidos/personas/autonomous-agent.adoc
-  jtbd: "Maintain an accurate, non-drifting representation of what the software product currently does across both business and technical dimensions."
   policies:
     - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
     - eidos/policies/POL-003-continuous-documentation-sync.adoc
@@ -56,13 +54,13 @@ technical:
     - "CTR-EIDOS-CLI"
   invariants:
     - id: INV-SPEC-VALIDATION
-      rule: "Every .adoc file with a YAML frontmatter across all 16 living specification types must extract frontmatter cleanly across YAML block scalars containing embedded horizontal rules ('---'), serialize safely via yaml.safe_dump, and validate against its referenced JSON/YAML schema."
+      rule: "Every .adoc file with a YAML frontmatter across all 16 living specification types must extract frontmatter cleanly across YAML block scalars containing embedded horizontal rules ('---'), serialize safely via yaml.safe_dump, and validate against its type-derived JSON/YAML schema."
       test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
     - id: INV-SPEC-GRAPH-INTEGRITY
-      rule: "All cross-document references and entity IDs (containers, components, contracts, policies, domains, deltas, decisions) must resolve to valid catalog entity IDs with zero collisions, strictly match the target entity prefix and type declared by x-eidos-ref, resolve declared container and component source_path, contract specification_file, UI component test_bindings, and invariant test_binding (file::func) file and AST-backed polyglot test symbol references on disk (including parameterized TS/JS test.each/it.each/describe.each and Deno.test, Go t.Run subtests, and Rust #[tokio::test]/#[rstest]/#[test_case]/#[async_std::test] attributes while rejecting comment or string-literal false positives), and enforce bidirectional multi-protocol contract parity across CTR-* specifications."
+      rule: "All cross-document references and entity IDs (containers, components, contracts, policies, domains, deltas, decisions) must resolve to valid catalog entity IDs with zero collisions, strictly match the target entity prefix and type declared by x-eidos-ref, resolve declared container and component source_path, optional contract specification_file, UI component invariants[].test_binding, and invariant test_binding (file::func) file and AST-backed polyglot test symbol references on disk (including parameterized TS/JS test.each/it.each/describe.each and Deno.test, Go t.Run subtests, and Rust #[tokio::test]/#[rstest]/#[test_case]/#[async_std::test] attributes while rejecting comment or string-literal false positives), and enforce bidirectional multi-protocol contract parity across CTR-* specifications."
       test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
     - id: INV-KNOWLEDGE-GRAPH-CATALOG
-      rule: "The core engine must maintain an embedded SQLite knowledge graph indexing all living specifications, schemas, relational edges, recursively indexed AST code symbols, and AST test-to-invariant assertion edges with sub-2ms dirty checking and query resolution."
+      rule: "The core engine must maintain an embedded SQLite knowledge graph indexing all living specifications, schemas, relational edges, recursively indexed AST code symbols, AST-derived component and container dependency edges, and AST test-to-invariant assertion edges with sub-2ms dirty checking and query resolution."
       test_binding: "tests/test_graph_index.py::test_spike_a_schema_initialization_and_sync"
     - id: INV-LIVING-PORTAL-VISUALIZATION
       rule: "The system must generate an interactive web portal and static site visualizing C4 architecture, domains, and SpecDeltas without external Node.js dependencies."
@@ -77,7 +75,7 @@ technical:
       rule: "Every dedicated CMP-* specification must declare a container: CNT-* property binding to an existing Level 2 container."
       test_binding: "tests/test_colocated_components.py::test_spike_1_container_affinity_enforcement"
     - id: INV-INTERFACE-BOUNDARY-GOVERNANCE
-      rule: "Boundary Protocol Contracts (CTR-*) must be owned by Containers (CNT-*), while in-process Components (CMP-*) declare local language-level APIs via interfaces.provides."
+      rule: "Boundary Protocol Contracts (CTR-*) must be owned by Containers (CNT-*), never by in-process Components (CMP-*)."
       test_binding: "tests/test_colocated_components.py::test_spike_1_interface_boundary_governance_enforcement"
     - id: INV-ENGINE-GENERICITY
       rule: "The Eidos runtime (src/eidos/), portal frontend views (src/eidos/portal/frontend/src/), and bundled Agent Skills (assets/plugin_reference/skills/) must remain 100% project-agnostic with zero hardcoded Eidos-self entity IDs or repository paths."
@@ -89,6 +87,9 @@ technical:
 = Capability: Living Baseline Specification Engine
 :toc: left
 
+== Job To Be Done (JTBD)
+Maintain an accurate, non-drifting representation of what the software product currently does across both business and technical dimensions.
+
 == Intent
 Traditional product requirements documents (PRDs) quickly become obsolete. This capability ensures that the `eidos/` directory is treated as living code: every document has an explicit type and JSON/YAML schema, is validated continuously, and forms an in-memory knowledge graph that AI agents and developer tools can query to understand the system state.
 
@@ -97,7 +98,7 @@ Through an embedded SQLite Knowledge Graph (`eidos/.cache/index.db`), Eidos brid
 == Key Responsibilities
 * **Living Specification Parsing, Blueprint Scaffolding & Typed `FrontmatterModel`**: Robust extraction of YAML frontmatter combined with AsciiDoc technical specifications, minimal 4-parameter blueprint scaffolding (`eidos spec create <TYPE> <ID> --title <TITLE> [--path <PATH>]`) across all 15 declarative specification & discovery blueprint types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`), and Pydantic `FrontmatterModel` (`SpecDocument.model`) normalization across parser, validator, catalog, and indexing pipelines.
 * **Schema Validation, Shared `$defs` (`assets/schemas/v1/common/defs.yaml`), AST-Backed Polyglot `test_binding` Verification & Bidirectional Contract Integrity**: Schema resolution, Draft 2020-12 validation across all 16 specification schemas and shared `$defs` in `assets/schemas/v1/common/defs.yaml`, AST-backed polyglot `test_binding` symbol resolution via `get_ast_indexer().list_test_functions` and `extract_symbols` (supporting parameterized TS/JS `test.each`/`it.each`/`describe.each` and `Deno.test`, Go `t.Run` subtests, and Rust `#[tokio::test]`/`#[rstest]`/`#[test_case]`/`#[async_std::test]` attributes while rejecting comment or string-literal false positives), and bidirectional multi-protocol contract parity verification (`cli_args`, `python_protocol`, `rest_openapi`, `grpc_proto`, `graphql`) detecting both undocumented code operations and phantom contract entries removed from code.
-* **Unified SQLite & In-Memory Cache (`storage.py`)**: Centralized `SCHEMA_VERSION` (`2.5.0`) schema management (`ensure_cache_schema`, `open_cache_connection`) and shared `get_cached_spec_document` / `load_spec_validation_cache` / `load_test_binding_cache` helpers eliminating duplicate inline DDL and redundant multi-pass YAML parsing.
+* **Unified SQLite & In-Memory Cache (`storage.py`)**: Centralized `SCHEMA_VERSION` (`2.6.0`) schema management (`ensure_cache_schema`, `open_cache_connection`) and shared `get_cached_spec_document` / `load_spec_validation_cache` / `load_test_binding_cache` helpers eliminating duplicate inline DDL and redundant multi-pass YAML parsing.
 * **Embedded Knowledge Graph**: Relational indexing linking Personas, Domains, Capabilities, Invariants, Components, Contracts, and SpecDeltas into `eidos/.cache/index.db`.
 * **Zero-Drift Incremental Sync**: Single-pass recursive `os.scandir` mtime and SHA-256 dirty checking (`check_index_dirty`) with pre-filtered `top_code_dirs` boundary checks that keeps the SQLite graph continuously synchronized with the working tree in under 2ms.
 * **Sub-Millisecond Catalog Resolution**: Powering `eidos spec list`, `eidos spec show`, and CLI inspection commands with instant relational queries rather than linear disk scans.

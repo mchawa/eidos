@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-026
 title: "100% Generic Engine, Zero-Config Path Standardization, and Graph-Inferred Design Paths"
 status: applied

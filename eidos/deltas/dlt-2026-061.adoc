@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-061
 title: Filter Unapplied Deltas, Deduplicate Unreleased Commits, and Batch Git Tag Ancestry Queries in ChangelogGenerator
 status: applied

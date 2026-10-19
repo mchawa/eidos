@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-002
 title: Relocate Schemas and Plugin Reference to Assets Directory
 status: applied

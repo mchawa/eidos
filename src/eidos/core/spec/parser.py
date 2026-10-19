@@ -136,7 +136,11 @@ def _parse_spec_content(path: Path, content: str) -> SpecDocument:
     fm_model = doc.model
     doc.doc_type = fm_model.type or "unknown"
     doc.doc_id = fm_model.id or path.stem
-    doc.schema_ref = fm_model.schema_
+    doc.schema_ref = (
+        f"schemas/v1/{doc.doc_type}.schema.yaml"
+        if doc.doc_type != "delta/mutation" and "/" in doc.doc_type
+        else ("schemas/v1/delta/delta.schema.yaml" if doc.doc_type == "delta/mutation" else None)
+    )
     doc.title = fm_model.title
 
     if parse_error:
@@ -164,4 +168,3 @@ def extract_frontmatter(content: str) -> tuple[dict | None, str, str | None]:
         return data, body, None
     except yaml.YAMLError as exc:
         return None, body, str(exc)
-

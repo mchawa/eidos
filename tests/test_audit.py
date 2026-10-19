@@ -44,7 +44,6 @@ def test_delta_audit_detects_unacknowledged_leaks(tmp_path):
 
     delta_content = """---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-999
 title: "Remove Test Container"
 status: proposed
@@ -98,7 +97,6 @@ def test_delta_audit_tombstone_exemption(tmp_path):
 
     delta_content = """---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-998
 title: "Decommission with Tombstone"
 status: proposed
@@ -155,7 +153,6 @@ def test_delta_audit_word_bounded_multi_term_polyglot_and_fail_loud(tmp_path, mo
 
     delta_content = """---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-997
 title: "Remove Dual Components"
 status: proposed
@@ -200,9 +197,7 @@ tombstone:
     assert "src/bundle.html.gz" not in flagged_files
     # In src/app.py, CMP-CLI is tombstone_exempt while CMP-LEAKED on the same line is unacknowledged!
     app_unack = {f.matched_term for f in res.unacknowledged_findings if f.file_path == "src/app.py"}
-    app_approved = {
-        (f.matched_term, f.classification) for f in res.approved_findings if f.file_path == "src/app.py"
-    }
+    app_approved = {(f.matched_term, f.classification) for f in res.approved_findings if f.file_path == "src/app.py"}
     assert app_unack == {"CMP-LEAKED"}
     assert app_approved == {("CMP-CLI", "tombstone_exempt")}
     # Both CMP-CLI and CMP-LEAKED on the same line in src/other.py were evaluated as unacknowledged
@@ -241,7 +236,6 @@ def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
     (cnt_dir / "cnt-keep.adoc").write_text(
         "---\n"
         "type: tech/container\n"
-        "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-KEEP\n"
         "title: Keep Service\n"
         "container_type: service\n"
@@ -258,7 +252,6 @@ def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
     (cnt_dir / "cnt-old.adoc").write_text(
         "---\n"
         "type: tech/container\n"
-        "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-OLD\n"
         "title: Old Service\n"
         "container_type: service\n"
@@ -274,7 +267,6 @@ def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
     (deltas_dir / "dlt-2026-996.adoc").write_text(
         "---\n"
         "type: delta/mutation\n"
-        "schema: schemas/v1/delta/delta.schema.yaml\n"
         "id: DLT-2026-996\n"
         "title: Remove Old Container\n"
         "status: proposed\n"
@@ -292,7 +284,6 @@ def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
     (deltas_dir / "dlt-2026-001.adoc").write_text(
         "---\n"
         "type: delta/mutation\n"
-        "schema: schemas/v1/delta/delta.schema.yaml\n"
         "id: DLT-2026-001\n"
         "title: Earlier Delta\n"
         "status: applied\n"
@@ -325,9 +316,7 @@ def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
         res = engine.audit_delta("DLT-2026-996")
         assert res.is_clean is False
         assert res.status == "LEAKS_DETECTED"
-        assert any(
-            v.source_id == "CNT-KEEP" and v.target_id == "CNT-OLD" for v in res.graph_violations
-        )
+        assert any(v.source_id == "CNT-KEEP" and v.target_id == "CNT-OLD" for v in res.graph_violations)
         approved_by_class = {f.classification for f in res.approved_findings}
         assert "tombstone_exempt" in approved_by_class
         assert "historical_ledger" in approved_by_class
@@ -338,15 +327,11 @@ def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
         assert "active_spec_leak" in unack_by_class
 
         # CLI --strict exits with code 1 when leaks/violations are detected
-        res_strict = runner.invoke(
-            app, ["delta", "audit", "DLT-2026-996", "--path", str(eidos_dir), "--strict"]
-        )
+        res_strict = runner.invoke(app, ["delta", "audit", "DLT-2026-996", "--path", str(eidos_dir), "--strict"])
         assert res_strict.exit_code == 1
 
         # CLI on missing delta exits with code 1 and outputs JSON error payload
-        res_missing = runner.invoke(
-            app, ["delta", "audit", "DLT-2026-404", "--path", str(eidos_dir), "--json"]
-        )
+        res_missing = runner.invoke(app, ["delta", "audit", "DLT-2026-404", "--path", str(eidos_dir), "--json"])
         assert res_missing.exit_code == 1
         missing_payload = json.loads(res_missing.stdout)
         assert missing_payload["status"] == "ERROR"
@@ -370,7 +355,6 @@ def test_dlt_2026_083_audit_ignores_gitignored_files(tmp_path):
     (deltas_dir / "dlt-2026-001.adoc").write_text(
         "---\n"
         "type: delta/mutation\n"
-        "schema: schemas/v1/delta/delta.schema.yaml\n"
         "id: DLT-2026-001\n"
         "title: Remove Old Container\n"
         "status: proposed\n"
@@ -413,7 +397,6 @@ def test_dlt_2026_087_audit_composable_remove_and_deprecate_mutations(tmp_path):
     delta_file.write_text(
         "---\n"
         "type: delta/mutation\n"
-        "schema: schemas/v1/delta/delta.schema.yaml\n"
         "id: DLT-2026-087\n"
         "title: Composable Removal Audit\n"
         "status: applied\n"
@@ -448,7 +431,6 @@ def test_audit_does_not_flag_replacement_entities_in_remove_details(tmp_path):
     (deltas_dir / "dlt-2026-092.adoc").write_text(
         "---\n"
         "type: delta/mutation\n"
-        "schema: schemas/v1/delta/delta.schema.yaml\n"
         "id: DLT-2026-092\n"
         "title: Consolidate Legacy Component\n"
         "status: applied\n"
@@ -503,7 +485,6 @@ def test_a9_audit_path_targets_explorations_rejected_deltas_and_tombstone_patter
     (exp_dir / "exp-001.adoc").write_text(
         "---\n"
         "type: product/exploration\n"
-        "schema: schemas/v1/product/exploration.schema.yaml\n"
         "id: EXP-001\n"
         "title: Spike Old Auth\n"
         "status: concluded\n"
@@ -514,7 +495,6 @@ def test_a9_audit_path_targets_explorations_rejected_deltas_and_tombstone_patter
     (deltas_dir / "dlt-2026-010.adoc").write_text(
         "---\n"
         "type: delta/mutation\n"
-        "schema: schemas/v1/delta/delta.schema.yaml\n"
         "id: DLT-2026-010\n"
         "title: Rejected Old Auth Delta\n"
         "status: rejected\n"
@@ -532,7 +512,6 @@ def test_a9_audit_path_targets_explorations_rejected_deltas_and_tombstone_patter
     (deltas_dir / "dlt-2026-099.adoc").write_text(
         "---\n"
         "type: delta/mutation\n"
-        "schema: schemas/v1/delta/delta.schema.yaml\n"
         "id: DLT-2026-099\n"
         "title: Remove Old Auth via Path\n"
         "status: proposed\n"
@@ -547,10 +526,10 @@ def test_a9_audit_path_targets_explorations_rejected_deltas_and_tombstone_patter
         "    - old_auth_helper\n"
         "  allowed_reasons:\n"
         "    - path: src/compat.py\n"
-        "      pattern: \"deprecated CMP-OLD-AUTH shim\"\n"
+        '      pattern: "deprecated CMP-OLD-AUTH shim"\n'
         "      reason: Compat shim line\n"
         "    - path: src/brackets.py\n"
-        "      pattern: \"legacy[CMP-OLD-AUTH\"\n"
+        '      pattern: "legacy[CMP-OLD-AUTH"\n'
         "      reason: Unclosed bracket literal pattern\n"
         "---\n"
         "= Remove Old Auth\n",
@@ -581,4 +560,3 @@ def test_a9_audit_path_targets_explorations_rejected_deltas_and_tombstone_patter
         if gi._INDEX_INSTANCE is not None:
             gi._INDEX_INSTANCE.close()
             gi._INDEX_INSTANCE = None
-

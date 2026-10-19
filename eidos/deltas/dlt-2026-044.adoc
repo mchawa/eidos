@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-044
 title: Remove CLI Shortcuts and Duplicate Aliases, Nest Component Under Spec
 status: applied

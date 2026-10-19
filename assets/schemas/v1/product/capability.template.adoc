@@ -1,0 +1,5 @@
+= Capability: {heading}
+:toc: left
+
+== Intent & Job-to-be-Done
+Describe the business intent, user outcome, and job-to-be-done realized by this capability.

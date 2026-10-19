@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-017
 title: SpecDelta Deletion and Deprecation Audit Engine (eidos delta audit)
 status: applied

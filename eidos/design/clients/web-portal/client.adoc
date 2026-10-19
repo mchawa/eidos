@@ -1,6 +1,5 @@
 ---
 type: design/client
-schema: schemas/v1/design/client.schema.yaml
 id: CLT-WEB-PORTAL
 title: "Web Living Documentation Portal"
 status: active

@@ -34,6 +34,7 @@ def test_spike_a_vite_singlefile_bundler(repo_root):
         raw_content = dist_html.read_bytes()
     else:
         from eidos.portal.assets import PORTAL_HTML_TEMPLATE
+
         assert PORTAL_HTML_TEMPLATE, "PORTAL_HTML_TEMPLATE must exist in eidos.portal.assets"
         raw_content = PORTAL_HTML_TEMPLATE.encode("utf-8")
     raw_size_kb = len(raw_content) / 1024
@@ -177,5 +178,7 @@ def test_spike_d_runtime_zero_node_invariant(repo_root, tmp_path):
     # Exit Criteria: Cold boot live preview response < 50ms (headroom when instrumented with coverage)
     is_instrumented = "coverage" in sys.modules or sys.gettrace() is not None
     max_delivery_ms = 150.0 if is_instrumented else 50.0
-    assert delivery_latency_ms < max_delivery_ms, f"Delivery latency {delivery_latency_ms:.2f}ms exceeds {max_delivery_ms}ms"
+    assert delivery_latency_ms < max_delivery_ms, (
+        f"Delivery latency {delivery_latency_ms:.2f}ms exceeds {max_delivery_ms}ms"
+    )
     assert len(html) > 1000

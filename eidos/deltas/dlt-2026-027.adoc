@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-027
 title: "Strict Static-Only Invariant-to-Test Function Verification"
 status: applied

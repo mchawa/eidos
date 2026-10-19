@@ -18,14 +18,18 @@ component_app = typer.Typer(
 
 @component_app.command("promote")
 def component_promote_cmd(
-    component_id: Annotated[str, typer.Argument(help="Identifier of the inline component to promote (e.g. CMP-CORE-VALIDATOR).")],
+    component_id: Annotated[
+        str, typer.Argument(help="Identifier of the inline component to promote (e.g. CMP-CORE-VALIDATOR).")
+    ],
     eidos_dir: Annotated[Path | None, typer.Option("--path", "-p", help="Path to eidos directory.")] = None,
 ):
     """Promote an inline C4 Level 3 component to a dedicated specification in eidos/architecture/components/."""
     try:
         comp_path, container_path = promote_component(component_id=component_id, eidos_dir=eidos_dir)
         console.print(f"[bold green]✓ Created dedicated component manifest:[/bold green] {comp_path}")
-        console.print(f"[bold green]✓ Updated container:[/bold green] {container_path} [dim](referenced via 'ref')[/dim]")
+        console.print(
+            f"[bold green]✓ Updated container:[/bold green] {container_path} [dim](referenced via 'ref')[/dim]"
+        )
 
         # Sync index
         idx = get_architectural_index(eidos_dir=eidos_dir)
@@ -38,7 +42,9 @@ def component_promote_cmd(
 
 @component_app.command("inline")
 def component_inline_cmd(
-    component_id: Annotated[str, typer.Argument(help="Identifier of the dedicated component to inline back into its container.")],
+    component_id: Annotated[
+        str, typer.Argument(help="Identifier of the dedicated component to inline back into its container.")
+    ],
     eidos_dir: Annotated[Path | None, typer.Option("--path", "-p", help="Path to eidos directory.")] = None,
 ):
     """Demote / inline a dedicated C4 Level 3 component back into its container manifest."""
@@ -54,5 +60,3 @@ def component_inline_cmd(
     except Exception as e:
         console.print(f"[bold red]Error inlining component:[/bold red] {e}")
         raise typer.Exit(code=1) from e
-
-

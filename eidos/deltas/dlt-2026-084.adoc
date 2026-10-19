@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-084
 title: "Stateful Block-Once Stop Gate with TTL/Session Expiry and Explicit Bypass Warning Message"
 status: applied

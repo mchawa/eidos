@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-059
 title: Validate Component source_path, UI Component test_bindings, and Invariant test_binding File & Symbol References in SpecValidator
 status: applied

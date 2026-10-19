@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-005
 title: Multi-Design System Engine, W3C Tokens, and Product Capability Linkage
 status: applied

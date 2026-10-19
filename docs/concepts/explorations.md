@@ -29,8 +29,8 @@ graph TD
 | :--- | :--- | :--- |
 | **`proposed`** | A technical question, hypothesis, and exit criteria are queued for research. | Engineer or agent checks out prototype branch. |
 | **`in_progress`** | Experimental code and benchmarks are actively being executed in a spike branch. | Record empirical metrics (p99 latency, memory, ops/sec). |
-| **`adopted`** | The hypothesis is verified; the spike proved feasible and met all exit criteria. | Graduate to a production **SpecDelta (`DLT-*`)** and link via `decision.resulting_delta_id` and `DEC-*` `graduated_from`. |
-| **`discarded`** | The hypothesis failed or the approach was deemed infeasible. | Document failure reasons under `decision.learnings` and archive in Git. |
+| **`adopted`** | The hypothesis is verified; the spike proved feasible and met all exit criteria. | Graduate to production **SpecDelta(s) (`DLT-*`)** and link via `decision.resulting_deltas` and `DEC-*` `graduated_from`. |
+| **`discarded`** | The hypothesis failed or the approach was deemed infeasible. | Document failure reasons in the AsciiDoc body and archive in Git. |
 
 ---
 
@@ -41,41 +41,36 @@ Exploration documents live in `eidos/explorations/exp-<year>-<num>.adoc` (or `EX
 ```asciidoc
 ---
 type: product/exploration
-schema: schemas/v1/product/exploration.schema.yaml
 id: EXP-2026-001
 title: "Evaluate SQLite in WAL Mode for Edge Node Caching"
 status: adopted # proposed | in_progress | adopted | discarded
 
-hypothesis: "Adopting SQLite with WAL mode and memory-mapped I/O will reduce cache read latency by 60% compared to local Redis, while eliminating external daemon dependencies."
-
-questions_to_answer:
-  - "Does SQLite in WAL mode handle 50 concurrent readers without database locking errors?"
-  - "What is the memory footprint under a 500MB working set size?"
-  - "How clean is cross-platform compilation across Alpine Linux and macOS ARM64?"
-
-spikes_to_run:
-  - name: "spike-concurrency-benchmark"
-    target: "Simulate 50 concurrent reader threads executing 100k read operations against a 500MB database."
-  - name: "spike-container-build"
-    target: "Verify automated static linking inside minimal Docker scratch image."
-
-exit_criteria:
-  max_duration: "3_days"
-  benchmark: "P99 read latency < 5ms under 50 concurrent readers with zero locking exceptions."
-
 decision:
   outcome: adopted # adopted | discarded | pivoted
-  resulting_delta_id: DLT-2026-010
-  learnings: "SQLite WAL mode achieved 1.4ms p99 read latency across 50 threads with 42MB RSS memory."
+  resulting_deltas:
+    - DLT-2026-010
 ---
 = Exploration: Evaluate SQLite in WAL Mode for Edge Node Caching
 :toc: left
 
-== Problem Statement
-Our current edge daemon requires Redis running as a sidecar, increasing memory overhead on constrained edge gateways. We need a reliable embedded solution.
+== Problem Statement & Hypothesis
+Our current edge daemon requires Redis running as a sidecar, increasing memory overhead on constrained edge gateways. We hypothesize that adopting SQLite with WAL mode and memory-mapped I/O will reduce cache read latency by 60% compared to local Redis, while eliminating external daemon dependencies.
+
+== Exit Criteria
+* **Max Duration**: 3 days
+* **Benchmark**: P99 read latency < 5ms under 50 concurrent readers with zero locking exceptions.
+
+== Questions to Answer
+* Does SQLite in WAL mode handle 50 concurrent readers without database locking errors?
+* What is the memory footprint under a 500MB working set size?
+* How clean is cross-platform compilation across Alpine Linux and macOS ARM64?
+
+== Spikes & Prototypes
+* *spike-concurrency-benchmark*: Simulate 50 concurrent reader threads executing 100k read operations against a 500MB database.
+* *spike-container-build*: Verify automated static linking inside minimal Docker scratch image.
 
 == Investigation Log & Findings
-*(Record benchmark numbers, profiling traces, and findings here as the spike progresses).*
+SQLite WAL mode achieved 1.4ms p99 read latency across 50 threads with 42MB RSS memory.
 
 == Final Decision & Rationale
 *(Record outcome and justification when concluding the exploration).*
@@ -121,8 +116,8 @@ Document concrete, verifiable numbers directly in the AsciiDoc body:
    status: adopted
    decision:
      outcome: adopted
-     resulting_delta_id: DLT-2026-010
-     learnings: "Proven sub-2ms p99 read latency in WAL mode with zero locking contention."
+     resulting_deltas:
+       - DLT-2026-010
    ```
 2. Scaffold a formal SpecDelta to plan the production integration:
    ```bash
@@ -133,12 +128,11 @@ Document concrete, verifiable numbers directly in the AsciiDoc body:
 3. Record the enduring architectural trade-off in the target container's `decisions:` block with `graduated_from: EXP-2026-001`, and implement clean, production-ready code under the SpecDelta checklist.
 
 #### Path B: Hypothesis Disproven -> Archive Institutional Knowledge
-1. Update frontmatter `status: discarded` and populate `decision.learnings`:
+1. Update frontmatter `status: discarded` and populate `decision.outcome`:
    ```yaml
    status: discarded
    decision:
      outcome: discarded
-     learnings: "SQLite write-lock contention caused 80% latency degradation under 50 concurrent writers."
    ```
 2. Document the exact reasons for failure in the `Final Decision & Rationale` section.
 3. Merge the exploration document to `main`. **The failure is preserved as permanent architectural knowledge**, preventing future team members and AI agents from repeating the experiment.

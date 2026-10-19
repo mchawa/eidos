@@ -1,0 +1,8 @@
+= Exploration: {heading}
+:toc: left
+
+== Hypothesis & Questions
+State the core hypothesis, open questions, and exit criteria for this discovery spike.
+
+== Investigation & Findings
+Document prototyping discoveries, trade-offs, and research findings.

@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-094
 title: "Consolidate Agent Lifecycle Hooks into a Single Stateless Stop Hook"
 status: applied

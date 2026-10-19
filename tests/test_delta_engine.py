@@ -56,9 +56,7 @@ def test_delta_verify_all_satisfied(tmp_path):
     cnt_path = create_spec(eidos_dir, "container", "CNT-AUTH-SVC", title="Auth Service")
     pol_path = create_spec(eidos_dir, "policy", "POL-AUTH-PASS", title="Password Policy")
     pol_path.write_text(
-        pol_path.read_text(encoding="utf-8").replace(
-            "Normative rule for Password Policy.", "Min 8 chars."
-        ),
+        pol_path.read_text(encoding="utf-8").replace("Normative rule for Password Policy.", "Min 8 chars."),
         encoding="utf-8",
     )
 
@@ -129,9 +127,7 @@ def test_delta_verify_declarative_expect_and_patch_invariant(tmp_path):
     cap_path = create_spec(eidos_dir, "capability", "CAP-AUTH-001", title="Auth Cap")
     pol_path = create_spec(eidos_dir, "policy", "POL-AUTH-001", title="Password Policy")
     pol_path.write_text(
-        pol_path.read_text(encoding="utf-8").replace(
-            "Normative rule for Password Policy.", "Min 8 chars."
-        ),
+        pol_path.read_text(encoding="utf-8").replace("Normative rule for Password Policy.", "Min 8 chars."),
         encoding="utf-8",
     )
 
@@ -328,9 +324,7 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
     ctr_path = create_spec(eidos_dir, "contract", "CTR-CORE-API", title="Core API")
     pol_path = create_spec(eidos_dir, "policy", "POL-CORE-001", title="Core Policy")
     pol_path.write_text(
-        pol_path.read_text(encoding="utf-8").replace(
-            "Normative rule for Core Policy.", "Initial policy rule."
-        ),
+        pol_path.read_text(encoding="utf-8").replace("Normative rule for Core Policy.", "Initial policy rule."),
         encoding="utf-8",
     )
 
@@ -519,16 +513,12 @@ def test_delta_schema_operation_coverage_and_git_baseline_fallback(tmp_path):
     create_spec(eidos_dir, "domain", "DOM-GIT", title="Git Domain")
     pol_path = create_spec(eidos_dir, "policy", "POL-GIT-001", title="Git Policy")
     pol_path.write_text(
-        pol_path.read_text(encoding="utf-8").replace(
-            "Normative rule for Git Policy.", "Initial git rule."
-        ),
+        pol_path.read_text(encoding="utf-8").replace("Normative rule for Git Policy.", "Initial git rule."),
         encoding="utf-8",
     )
     cnt_path = create_spec(eidos_dir, "container", "CNT-GIT-SVC", title="Git Service")
     cnt_doc = parse_spec_file(cnt_path)
-    cnt_doc.frontmatter["components"] = [
-        {"id": "CMP-GIT-COMP", "name": "GitComp", "responsibility": "Initial comp."}
-    ]
+    cnt_doc.frontmatter["components"] = [{"id": "CMP-GIT-COMP", "name": "GitComp", "responsibility": "Initial comp."}]
     cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
 
     cap_path = create_spec(eidos_dir, "capability", "CAP-GIT-001", title="Git Cap")
@@ -592,9 +582,7 @@ def test_delta_vcs_base_commit_and_collision_free_ids(tmp_path):
     create_spec(eidos_dir, "domain", "DOM-COW", title="COW Domain")
     pol_path = create_spec(eidos_dir, "policy", "POL-COW-001", title="COW Policy")
     pol_path.write_text(
-        pol_path.read_text(encoding="utf-8").replace(
-            "Normative rule for COW Policy.", "Initial cow rule."
-        ),
+        pol_path.read_text(encoding="utf-8").replace("Normative rule for COW Policy.", "Initial cow rule."),
         encoding="utf-8",
     )
 
@@ -627,7 +615,9 @@ def test_delta_vcs_base_commit_and_collision_free_ids(tmp_path):
         encoding="utf-8",
     )
     subprocess.run(["git", "add", str(pol_path)], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "Modify policy before committing delta"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Modify policy before committing delta"], cwd=tmp_path, check=True, capture_output=True
+    )
     shutil.rmtree(eidos_dir / ".cache", ignore_errors=True)
 
     ok_uncommitted, _, rep_uncommitted = verify_delta_mutations(eidos_dir, dlt_doc.doc_id)
@@ -645,7 +635,6 @@ def test_deep_review_subsystem_3_scaffolder_catalog_delta_and_changelog_edge_cas
     (eidos_dir / "architecture" / "components" / "cmp-aaa.adoc").write_text(
         "---\n"
         "type: tech/component\n"
-        "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-AAA\n"
         "title: Alpha Component\n"
         "responsibility: Sorts before containers.\n"
@@ -658,13 +647,7 @@ def test_deep_review_subsystem_3_scaffolder_catalog_delta_and_changelog_edge_cas
     ctr_doc = parse_spec_file(ctr_path)
     assert ctr_doc.frontmatter.get("container") == "CNT-ZZZ"
 
-    sample_fm = (
-        "---\n"
-        'title: "Channel #general & #alerts"\n'
-        "status:\n"
-        "---\n"
-        "= Sample\n"
-    )
+    sample_fm = '---\ntitle: "Channel #general & #alerts"\nstatus:\n---\n= Sample\n'
     updated_fm = _set_frontmatter_scalar(sample_fm, "title", '"Updated #channel"')
     updated_fm = _set_frontmatter_scalar(updated_fm, "status", "approved")
     assert 'title: "Updated #channel"' in updated_fm
@@ -693,7 +676,12 @@ def test_deep_review_subsystem_3_scaffolder_catalog_delta_and_changelog_edge_cas
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "feat(core): add tagless changelog support"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "feat(core): add tagless changelog support"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
 
     changelog_md = ChangelogGenerator(repo_root=tmp_path, eidos_dir=eidos_dir).generate_changelog()
     assert "add tagless changelog support" in changelog_md.lower()
@@ -708,22 +696,11 @@ def test_delta_engine_all_mutation_families_and_helpers(tmp_path):
     arch_file.write_text(
         "---\n"
         "type: tech/architecture\n"
-        "schema: schemas/v1/tech/architecture.schema.yaml\n"
         "id: ARCH-TEST-001\n"
         "title: Test Technical Architecture\n"
-        "topology_style: modular_monolith\n"
         "c4_context:\n"
         "  actors:\n"
         "    - PER-DEV\n"
-        "c4_containers:\n"
-        "  - CNT-APP\n"
-        "solution_strategy:\n"
-        "  - Deterministic verification\n"
-        "cross_cutting_concepts:\n"
-        "  telemetry_and_logging: Structured JSON\n"
-        "deployment_view:\n"
-        "  hosting_model: Local CLI\n"
-        "  ci_cd_engine: GitHub Actions\n"
         "---\n"
         "= Test Technical Architecture\n",
         encoding="utf-8",
@@ -761,7 +738,6 @@ def test_delta_engine_all_mutation_families_and_helpers(tmp_path):
     dlt1.write_text(
         "---\n"
         "type: delta/mutation\n"
-        "schema: schemas/v1/delta/delta.schema.yaml\n"
         "id: DLT-2026-910\n"
         "title: Mutation Families Wave 1\n"
         "status: approved\n"
@@ -811,7 +787,9 @@ def test_delta_engine_all_mutation_families_and_helpers(tmp_path):
         arch_file.read_text(encoding="utf-8") + "\nDocumented cross-cutting telemetry architecture.\n",
         encoding="utf-8",
     )
-    cap_path.write_text(_set_frontmatter_scalar(cap_path.read_text(encoding="utf-8"), "status", "deprecated"), encoding="utf-8")
+    cap_path.write_text(
+        _set_frontmatter_scalar(cap_path.read_text(encoding="utf-8"), "status", "deprecated"), encoding="utf-8"
+    )
     pol_del_path.unlink()
 
     ver_ok1, ver_msg1, ver_rep1 = verify_delta_mutations(eidos_dir, "DLT-2026-910")
@@ -933,9 +911,7 @@ def test_delta_engine_git_baseline_and_catalog_helpers(tmp_path):
 
     pol_file = create_spec(eidos_dir, "policy", "POL-BASE", "Base Policy")
     doc_pol = parse_spec_file(pol_file)
-    doc_pol.frontmatter["invariants"] = [
-        {"id": "INV-BASE-001", "rule": "Rule 1", "test_binding": "N/A"}
-    ]
+    doc_pol.frontmatter["invariants"] = [{"id": "INV-BASE-001", "rule": "Rule 1", "test_binding": "N/A"}]
     pol_file.write_text(dump_spec_document(doc_pol.frontmatter, doc_pol.body), encoding="utf-8")
 
     str_inv_pol = eidos_dir / "policies" / "pol-str-inv.adoc"
@@ -1142,14 +1118,14 @@ def test_dlt_2026_080_cross_ref_collision_resolution_and_cli_slug(tmp_path):
     d1 = create_delta(eidos_dir, "DLT-2026-001", title="Parallel Branch Feature")
     assert d1.name == "dlt-2026-001.adoc"
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "Add DLT-2026-001 on parallel branch"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Add DLT-2026-001 on parallel branch"], cwd=tmp_path, check=True, capture_output=True
+    )
 
     subprocess.run(["git", "checkout", "main"], cwd=tmp_path, check=True, capture_output=True)
     assert not (eidos_dir / "deltas" / "dlt-2026-001.adoc").exists()
 
-    resolved_explicit = generate_collision_free_delta_id(
-        eidos_dir, raw_id="DLT-2026-001", title="Main Branch Feature"
-    )
+    resolved_explicit = generate_collision_free_delta_id(eidos_dir, raw_id="DLT-2026-001", title="Main Branch Feature")
     assert resolved_explicit == "DLT-2026-001-MAIN-BRANCH"
 
     d2 = create_delta(eidos_dir, "DLT-2026-001", title="Main Branch Feature")
@@ -1176,18 +1152,12 @@ def test_dlt_2026_083_baseline_retention_across_schema_rebuild(tmp_path):
     db_path = eidos_dir / ".cache" / "index.db"
     conn = open_cache_connection(db_path)
     try:
-        rows_before = conn.execute(
-            "SELECT delta_id, target_id, baseline_sha256 FROM delta_baselines;"
-        ).fetchall()
+        rows_before = conn.execute("SELECT delta_id, target_id, baseline_sha256 FROM delta_baselines;").fetchall()
         assert len(rows_before) >= 1
-        conn.execute(
-            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '0.0-outdated');"
-        )
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '0.0-outdated');")
         conn.commit()
         ensure_cache_schema(conn)
-        rows_after = conn.execute(
-            "SELECT delta_id, target_id, baseline_sha256 FROM delta_baselines;"
-        ).fetchall()
+        rows_after = conn.execute("SELECT delta_id, target_id, baseline_sha256 FROM delta_baselines;").fetchall()
         assert rows_after == rows_before
     finally:
         conn.close()
@@ -1196,19 +1166,34 @@ def test_dlt_2026_083_baseline_retention_across_schema_rebuild(tmp_path):
 def test_catalog_and_delta_engine_edge_cases(tmp_path):
     """Cover status and postcondition branches in delta_engine.py."""
     diag: list[str] = []
-    assert _evaluate_declarative_postcondition({"expect": {"bad_top": 1}}, "CNT-1", {}, {}, {}, diagnostics=diag) is False
+    assert (
+        _evaluate_declarative_postcondition({"expect": {"bad_top": 1}}, "CNT-1", {}, {}, {}, diagnostics=diag) is False
+    )
     assert any("unsupported top-level keys" in d for d in diag)
 
     diag.clear()
-    assert _evaluate_declarative_postcondition({"expect": {"body": "not_dict"}}, "CNT-1", {}, {}, {}, diagnostics=diag) is False
+    assert (
+        _evaluate_declarative_postcondition({"expect": {"body": "not_dict"}}, "CNT-1", {}, {}, {}, diagnostics=diag)
+        is False
+    )
     assert "expect.body must be a mapping" in diag
 
     diag.clear()
-    assert _evaluate_declarative_postcondition({"expect": {"body": {"bad_body": 1}}}, "CNT-1", {}, {}, {}, diagnostics=diag) is False
+    assert (
+        _evaluate_declarative_postcondition(
+            {"expect": {"body": {"bad_body": 1}}}, "CNT-1", {}, {}, {}, diagnostics=diag
+        )
+        is False
+    )
     assert any("unsupported keys" in d for d in diag)
 
     diag.clear()
-    assert _evaluate_declarative_postcondition({"expect": {"frontmatter": "not_dict"}}, "CNT-1", {}, {}, {}, diagnostics=diag) is False
+    assert (
+        _evaluate_declarative_postcondition(
+            {"expect": {"frontmatter": "not_dict"}}, "CNT-1", {}, {}, {}, diagnostics=diag
+        )
+        is False
+    )
     assert "expect.frontmatter must be a mapping" in diag
 
     ws = tmp_path / "ws"
@@ -1233,16 +1218,16 @@ def test_catalog_and_delta_engine_edge_cases(tmp_path):
     assert ok_non_dlt is False
 
     dlt_doc = parse_spec_file(dlt_file)
-    dlt_doc.frontmatter["mutations"] = [
-        {"operation": "deprecate", "target": "CAP-API-001"}
-    ]
+    dlt_doc.frontmatter["mutations"] = [{"operation": "deprecate", "target": "CAP-API-001"}]
     dlt_file.write_text(dump_spec_document(dlt_doc.frontmatter, dlt_doc.body), encoding="utf-8")
     v_ok, _, v_rep = verify_delta_mutations(eidos_dir, "DLT-2026-050")
     assert v_ok is False and v_rep is not None and v_rep.mutations[0].status == "ACTIVE_NOT_DEPRECATED"
     ok_app_blocked, msg_app_blocked, _, _ = set_delta_status(eidos_dir, "DLT-2026-050", "applied")
     assert ok_app_blocked is False and "unverified mutations" in msg_app_blocked
 
-    cap_path.write_text(_set_frontmatter_scalar(cap_path.read_text(encoding="utf-8"), "status", "deprecated"), encoding="utf-8")
+    cap_path.write_text(
+        _set_frontmatter_scalar(cap_path.read_text(encoding="utf-8"), "status", "deprecated"), encoding="utf-8"
+    )
     ok_rev, _, _, _ = set_delta_status(eidos_dir, "DLT-2026-050", "in_review")
     assert ok_rev is True
     ok_app, _, _, _ = set_delta_status(eidos_dir, "DLT-2026-050", "applied")
@@ -1251,7 +1236,9 @@ def test_catalog_and_delta_engine_edge_cases(tmp_path):
     assert summary["total"] >= 1
     assert len(summary["by_status"]["applied"]) == 1
 
-    stripped = _strip_spec_comments("---\n# fm comment\nid: CNT-1\n---\n////\nblock comment\n////\n// line comment\nReal body\n")
+    stripped = _strip_spec_comments(
+        "---\n# fm comment\nid: CNT-1\n---\n////\nblock comment\n////\n// line comment\nReal body\n"
+    )
     assert "# fm comment" not in stripped
     assert "block comment" not in stripped
     assert "Real body" in stripped
@@ -1298,9 +1285,7 @@ def test_catalog_and_delta_engine_edge_cases(tmp_path):
 def test_dlt_2026_087_composable_mutation_normalize_and_verify(tmp_path):
     """Verify composable (operation + target + parent) mutations normalize and verify cleanly."""
     # eidos:fixture
-    norm_cmp = normalize_delta_mutation(
-        {"operation": "modify", "target": "CMP-AUTH", "parent": "CNT-API"}
-    )
+    norm_cmp = normalize_delta_mutation({"operation": "modify", "target": "CMP-AUTH", "parent": "CNT-API"})
     assert norm_cmp["operation"] == "modify"
     assert norm_cmp["target"] == "CMP-AUTH"
     assert norm_cmp["parent"] == "CNT-API"
@@ -1352,9 +1337,7 @@ def test_dlt_2026_088_default_verify_apply(tmp_path):
     assert res_cli_default.exit_code == 1
     assert parse_spec_file(dlt_unverified).frontmatter["status"] == "proposed"
 
-    res_cli_no_verify = runner.invoke(
-        app, ["delta", "apply", "DLT-2026-088", "--no-verify", "--path", str(eidos_dir)]
-    )
+    res_cli_no_verify = runner.invoke(app, ["delta", "apply", "DLT-2026-088", "--no-verify", "--path", str(eidos_dir)])
     assert res_cli_no_verify.exit_code == 0, res_cli_no_verify.output
     assert parse_spec_file(dlt_unverified).frontmatter["status"] == "applied"
 
@@ -1398,9 +1381,7 @@ def test_inline_component_invariant_git_baseline_and_pre_create_precedence(tmp_p
 
     # Edit inline component invariant AND both policies BEFORE calling create_delta
     cnt_doc2 = parse_spec_file(cnt_path)
-    cnt_doc2.frontmatter["components"][0]["invariants"][0]["rule"] = (
-        "Rejects expired or revoked JWT tokens with 401."
-    )
+    cnt_doc2.frontmatter["components"][0]["invariants"][0]["rule"] = "Rejects expired or revoked JWT tokens with 401."
     cnt_path.write_text(dump_spec_document(cnt_doc2.frontmatter, cnt_doc2.body), encoding="utf-8")
 
     pol_a_doc = parse_spec_file(pol_a)

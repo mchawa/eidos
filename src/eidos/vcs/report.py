@@ -218,4 +218,3 @@ def generate_remediation_prompt(report: Any) -> str:
         for rem in remediation:
             lines.append(f"- {rem}")
     return "\n".join(lines)
-

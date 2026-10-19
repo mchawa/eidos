@@ -1,0 +1,8 @@
+= Component: {heading}
+:toc: left
+
+== Responsibility
+{responsibility}
+
+== Public Surface
+Document exported language-level APIs (functions, classes, traits) provided to peer components.

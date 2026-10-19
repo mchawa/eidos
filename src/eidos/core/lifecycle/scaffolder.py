@@ -18,6 +18,7 @@ from eidos.core.lifecycle.catalog import (
 from eidos.core.lifecycle.design_engine import DESIGN_SPEC_KEYS, build_design_spec
 from eidos.core.spec.parser import extract_frontmatter, parse_spec_file
 from eidos.core.spec.validator import SpecValidator
+from eidos.core.workspace.assets import render_spec_template
 
 
 def create_spec(
@@ -97,26 +98,12 @@ def create_spec(
         dest_file = dest_dir / "system.adoc"
         fm = {
             "type": "product/system",
-            "schema": "schemas/v1/product/system.schema.yaml",
             "id": doc_id,
             "title": title,
             "status": "draft",
             "archetypes": ["service"],
-            "business_identity": {
-                "vision": f"Core vision and purpose of {heading}.",
-                "target_users": ["Primary users"],
-                "value_proposition": f"Distinct value delivered by {heading}.",
-            },
-            "technical_profile": {
-                "primary_languages": ["TBD"],
-            },
         }
-        body = f"""= System: {heading}
-:toc: left
-
-== System Vision & Scope
-Describe the strategic vision, target users, and architectural boundaries of this system.
-"""
+        body = render_spec_template("product/system", heading=heading)
 
     elif canonical_key == "architecture":
         dest_dir = eidos_dir / "architecture"
@@ -124,28 +111,14 @@ Describe the strategic vision, target users, and architectural boundaries of thi
         actor_ref = _first_of_type("product/persona", "PER-USER")
         fm = {
             "type": "tech/architecture",
-            "schema": "schemas/v1/tech/architecture.schema.yaml",
             "id": doc_id,
             "title": title,
             "status": "draft",
-            "topology_style": "modular_monolith",
             "c4_context": {
                 "actors": [actor_ref],
             },
-            "c4_containers": [],
-            "solution_strategy": [f"Foundational architectural strategy for {heading}."],
-            "cross_cutting_concepts": {},
-            "deployment_view": {
-                "hosting_model": "TBD",
-                "ci_cd_engine": "TBD",
-            },
         }
-        body = f"""= Architecture: {heading}
-:toc: left
-
-== System Context & Topology
-Describe the C4 system context, container topology, solution strategy, and deployment view.
-"""
+        body = render_spec_template("tech/architecture", heading=heading)
 
     elif canonical_key == "capability":
         specs_by_id = _catalog()
@@ -168,25 +141,18 @@ Describe the C4 system context, container topology, solution strategy, and deplo
         dest_file = dest_dir / f"{slug}.adoc"
         fm = {
             "type": "product/capability",
-            "schema": "schemas/v1/product/capability.schema.yaml",
             "id": doc_id,
             "title": title,
             "domain": resolved_domain,
             "status": "draft",
             "business": {
                 "personas": [persona_ref],
-                "jtbd": f"Realize {heading}.",
             },
             "technical": {
                 "containers": [cnt_ref],
             },
         }
-        body = f"""= Capability: {heading}
-:toc: left
-
-== Intent
-Describe the business intent and user outcome realized by this capability.
-"""
+        body = render_spec_template("product/capability", heading=heading)
 
     elif canonical_key == "domain":
         dom_slug = slug.removeprefix("dom-")
@@ -194,19 +160,12 @@ Describe the business intent and user outcome realized by this capability.
         dest_file = dest_dir / "domain.adoc"
         fm = {
             "type": "product/domain",
-            "schema": "schemas/v1/product/domain.schema.yaml",
             "id": doc_id,
             "title": title,
             "status": "draft",
             "classification": "core",
-            "boundaries": {"responsibilities": [f"Primary core responsibility of {heading}."]},
         }
-        body = f"""= Domain: {heading}
-:toc: left
-
-== Strategic Mission
-Describe the bounded context, scope, and strategic objectives of this domain.
-"""
+        body = render_spec_template("product/domain", heading=heading)
 
     elif canonical_key == "policy":
         dest_dir = eidos_dir / "policies"
@@ -214,7 +173,6 @@ Describe the bounded context, scope, and strategic objectives of this domain.
         inv_id = f"INV-{doc_id}"
         fm = {
             "type": "product/policy",
-            "schema": "schemas/v1/product/policy.schema.yaml",
             "id": doc_id,
             "title": title,
             "status": "draft",
@@ -226,40 +184,27 @@ Describe the bounded context, scope, and strategic objectives of this domain.
                 }
             ],
         }
-        body = f"""= Policy: {heading}
-:toc: left
-
-== Rationale & Context
-Explain why this non-negotiable architectural or product guardrail exists.
-"""
+        body = render_spec_template("product/policy", heading=heading)
 
     elif canonical_key == "contract":
         dest_dir = eidos_dir / "architecture" / "contracts"
         dest_file = dest_dir / f"{slug}.adoc"
-        cnt_owner = _first_of_type("tech/container", "CNT-CORE")
+        cnt_owner = _first_of_type("tech/contract_cnt", _first_of_type("tech/container", "CNT-CORE"))
         fm = {
             "type": "tech/contract",
-            "schema": "schemas/v1/tech/contract.schema.yaml",
             "id": doc_id,
             "title": title,
             "status": "draft",
             "protocol": "cli_args",
             "container": cnt_owner,
-            "specification_file": "src/main.py",
         }
-        body = f"""= Contract: {heading}
-:toc: left
-
-== Protocol & Interface Specification
-Document the endpoints, command line arguments, payloads, or schemas for this contract.
-"""
+        body = render_spec_template("tech/contract", heading=heading)
 
     elif canonical_key == "container":
         dest_dir = eidos_dir / "architecture" / "containers"
         dest_file = dest_dir / f"{slug}.adoc"
         fm = {
             "type": "tech/container",
-            "schema": "schemas/v1/tech/container.schema.yaml",
             "id": doc_id,
             "title": title,
             "status": "draft",
@@ -267,79 +212,51 @@ Document the endpoints, command line arguments, payloads, or schemas for this co
             "runtime": "Application Runtime",
             "source_path": "src",
         }
-        body = f"""= Container: {heading}
-:toc: left
-
-== Architectural Boundary
-Describe the container boundary, deployment unit, and responsibilities.
-
-== Building Block View (C4 Level 3 Components)
-Internal components and modular building blocks contained within this deployable.
-"""
+        body = render_spec_template("tech/container", heading=heading)
 
     elif canonical_key == "component":
         # INV-COMPONENT-CENTRALIZATION-MANDATE: dedicated components live in eidos/architecture/components/
         dest_dir = eidos_dir / "architecture" / "components"
         dest_file = dest_dir / f"{slug.removeprefix('cmp-')}.adoc"
         parent_cnt = _first_of_type("tech/container", "CNT-CORE")
+        responsibility = f"Responsibility of {heading}."
         fm = {
             "type": "tech/component",
-            "schema": "schemas/v1/tech/component.schema.yaml",
             "id": doc_id,
             "title": title,
             "container": parent_cnt,
             "status": "draft",
-            "responsibility": f"Responsibility of {heading}.",
+            "responsibility": responsibility,
             "source_path": "src",
         }
-        body = f"""= Component: {heading}
-:toc: left
-
-== Responsibility
-Describe the in-process logic this C4 Level 3 component encapsulates within `{parent_cnt}`.
-
-== In-Process Interfaces
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
-"""
+        body = render_spec_template(
+            "tech/component",
+            heading=heading,
+            responsibility=f"Describe the in-process logic this C4 Level 3 component encapsulates within `{parent_cnt}`.",
+        )
 
     elif canonical_key == "persona":
         dest_dir = eidos_dir / "personas"
         dest_file = dest_dir / f"{slug}.adoc"
         fm = {
             "type": "product/persona",
-            "schema": "schemas/v1/product/persona.schema.yaml",
             "id": doc_id,
             "title": title,
             "status": "draft",
             "role_type": "end_user",
-            "goals": [f"Primary objective of {heading}."],
-            "pain_points": ["Key friction or inefficiency faced in current workflows."],
         }
-        body = f"""= Persona: {heading}
-:toc: left
-
-== Profile & Motivations
-Detailed contextual background, user psychology, and job-to-be-done for this actor.
-"""
+        body = render_spec_template("product/persona", heading=heading)
 
     elif canonical_key == "exploration":
         dest_dir = eidos_dir / "explorations"
         dest_file = dest_dir / f"{slug}.adoc"
         fm = {
             "type": "product/exploration",
-            "schema": "schemas/v1/product/exploration.schema.yaml",
             "id": doc_id,
             "title": title,
             "status": "proposed",
-            "hypothesis": f"Investigating feasibility and performance characteristics of {heading}.",
-            "exit_criteria": {"max_duration": "1_week"},
         }
-        body = f"""= Exploration: {heading}
-:toc: left
-
-== Investigation & Hypotheses
-Document prototyping discoveries, trade-offs, and research findings.
-"""
+        body = render_spec_template("product/exploration", heading=heading)
 
     elif canonical_key in DESIGN_SPEC_KEYS:
         resolved_design_system = _first_of_type("design/system", "DS-CORE")
@@ -428,9 +345,7 @@ def list_specs(
     """List all living specifications (including inline C4 Level 3 components, excluding SpecDeltas) under eidos_dir."""
     type_filter_clean = type_filter.strip().lower().replace("_", "/") if type_filter else None
     if type_filter_clean in ("delta", "mutation", "delta/mutation"):
-        raise ValueError(
-            "SpecDeltas (DLT-*) are managed via 'eidos delta'. Use 'eidos delta list' instead."
-        )
+        raise ValueError("SpecDeltas (DLT-*) are managed via 'eidos delta'. Use 'eidos delta list' instead.")
 
     if not eidos_dir.exists():
         return []
@@ -472,11 +387,7 @@ def list_specs(
         else:
             cand_p = idx.root / raw_fp
         resolved_p = cand_p.resolve() if cand_p.exists() else cand_p
-        rel_p = (
-            resolved_p.relative_to(eidos_resolved)
-            if resolved_p.is_relative_to(eidos_resolved)
-            else raw_fp
-        )
+        rel_p = resolved_p.relative_to(eidos_resolved) if resolved_p.is_relative_to(eidos_resolved) else raw_fp
 
         if _matches_type(doc_type, eid) and (not status_filter_clean or str(status).lower() == status_filter_clean):
             results.append(
@@ -589,16 +500,15 @@ def promote_component(
     responsibility = target_comp_data.get("responsibility") or "In-process module logic and domain services."
     promoted_fm: dict[str, Any] = {
         "type": "tech/component",
-        "schema": "schemas/v1/tech/component.schema.yaml",
         "id": norm_id,
         "title": comp_title,
         "container": container_id,
         "status": target_comp_data.get("status") or "active",
         "source_path": source_path_val,
         "responsibility": responsibility,
-        "interfaces": target_comp_data.get("interfaces") or {"provides": [], "consumes": []},
-        "quality_attributes": target_comp_data.get("quality_attributes") or {"stateless": True, "reentrant": True},
-        "invariants": target_comp_data.get("invariants") if isinstance(target_comp_data.get("invariants"), list) else [],
+        "invariants": target_comp_data.get("invariants")
+        if isinstance(target_comp_data.get("invariants"), list)
+        else [],
     }
     if isinstance(target_comp_data.get("domain"), str) and target_comp_data["domain"]:
         promoted_fm["domain"] = target_comp_data["domain"]
@@ -606,15 +516,7 @@ def promote_component(
         promoted_fm["decisions"] = target_comp_data["decisions"]
 
     heading_name = _single_line(comp_title)
-    component_body = f"""= Component: {heading_name}
-:toc: left
-
-== 1. Internal Architecture & Subsystem Design
-{responsibility}
-
-== 2. In-Process APIs & Interfaces
-Language-level function signatures, traits, and public interfaces provided to the owning container.
-"""
+    component_body = render_spec_template("tech/component", heading=heading_name, responsibility=responsibility)
     component_content = _render_spec(promoted_fm, component_body)
     comp_file_path.write_text(component_content, encoding="utf-8")
 
@@ -705,7 +607,7 @@ def inline_component(
         )
 
     comp_title = comp_fm.get("title") or norm_id
-    responsibility = comp_fm.get("responsibility") or "In-process module logic."
+    responsibility = comp_fm.get("responsibility")
     if isinstance(responsibility, str):
         responsibility = responsibility.strip()
     source_path = comp_fm.get("source_path") or ""
@@ -713,9 +615,10 @@ def inline_component(
     inline_entry: dict[str, Any] = {
         "id": norm_id,
         "title": comp_title,
-        "responsibility": responsibility,
         "source_path": source_path,
     }
+    if responsibility:
+        inline_entry["responsibility"] = responsibility
     comp_status = comp_fm.get("status")
     if isinstance(comp_status, str) and comp_status.strip() and comp_status.strip() != "active":
         inline_entry["status"] = comp_status.strip()
@@ -725,12 +628,6 @@ def inline_component(
         inline_entry["invariants"] = comp_fm["invariants"]
     if isinstance(comp_fm.get("decisions"), list) and comp_fm["decisions"]:
         inline_entry["decisions"] = comp_fm["decisions"]
-    interfaces = comp_fm.get("interfaces")
-    if isinstance(interfaces, dict) and (interfaces.get("provides") or interfaces.get("consumes")):
-        inline_entry["interfaces"] = interfaces
-    qa = comp_fm.get("quality_attributes")
-    if isinstance(qa, dict) and qa and qa != {"stateless": True, "reentrant": True}:
-        inline_entry["quality_attributes"] = qa
 
     # Append inline component back into container frontmatter while preserving YAML comments and formatting
     raw_text = target_container_path.read_text(encoding="utf-8")

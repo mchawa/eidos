@@ -1,24 +1,25 @@
 ---
 type: product/domain
-schema: schemas/v1/product/domain.schema.yaml
 id: DOM-AGENT-INTELLIGENCE
 title: "Agent Intelligence & Context Slicing Ecosystem"
 status: active
 classification: core
-boundaries:
-  responsibilities:
-    - "Provide deterministic CLI tools (eidos context, eidos validate, eidos drift) with structured JSON outputs."
-    - "Extract targeted, token-efficient, blast-radius-aware architectural context slices for AI coding agents."
-    - "Provide agent-agnostic ecosystem configurations, system prompts, skills, rules, and slash command integrations."
-    - "Enforce invariant verification and drift detection feedback loops for autonomous coding workflows."
-  out_of_scope:
-    - "Executing external LLM processes or sandboxed containers directly (delegated to user CLI or agent platform)."
-    - "Living specification AST parsing and graph validation (delegated to DOM-SPEC-ENGINE)."
-    - "Web portal HTML rendering (delegated to DOM-EXPERIENCE-PORTAL)."
 ---
 = Domain: Agent Intelligence & Context Slicing Ecosystem
 :toc: left
 
 == Domain Vision
 This domain establishes Eidos as an open, agent-agnostic intelligence and context layer. Rather than locking users into a proprietary LLM harness, it empowers any AI assistant (Antigravity agy, Claude Code, Cursor, Copilot, SWE-agent) with high-density, noise-free context slices, architectural guardrails, and deterministic verification protocols.
+
+== Boundaries & Scope
+
+* **Responsibilities**:
+  - Provide deterministic CLI tools (`eidos context`, `eidos validate`, `eidos drift`) with structured JSON outputs.
+  - Extract targeted, token-efficient, blast-radius-aware architectural context slices for AI coding agents.
+  - Provide agent-agnostic ecosystem configurations, system prompts, skills, rules, and slash command integrations.
+  - Enforce invariant verification and drift detection feedback loops for autonomous coding workflows.
+* **Out of Scope**:
+  - Executing external LLM processes or sandboxed containers directly (delegated to user CLI or agent platform).
+  - Living specification AST parsing and graph validation (delegated to `DOM-SPEC-ENGINE`).
+  - Web portal HTML rendering (delegated to `DOM-EXPERIENCE-PORTAL`).
 

@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-048
 title: Unified SQLite Cache Schema Versioning and Path-Keyed Entity Eviction on Spec ID Rename
 status: applied

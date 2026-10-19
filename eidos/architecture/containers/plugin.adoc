@@ -1,6 +1,5 @@
 ---
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: CNT-EIDOS-PLUGIN
 title: "Eidos Agent Plugin & Extension Manager"
 status: active
@@ -16,7 +15,7 @@ tier: extensibility
 components:
   - id: CMP-PLUGIN-INSTALLER
     title: "PluginInstaller"
-    responsibility: "Installs, updates, and safely uninstalls portable agent plugins and 4 cohesive workflow skills (synchronized with v1 JSON Schema-validated YAML frontmatter templates, 4-parameter blueprint `eidos spec create`, `eidos context --json`, composable `operation`/`target`/`parent` SpecDelta workflows, and canonical `eidos/design/**` paths across `eidos`, `eidos-spec`, `eidos-plan`, and `eidos-ops`) via a declarative `TargetAdapter` registry (`TargetAdapter.install` and `TargetAdapter.uninstall` driving bundle copying via `_copy_plugin_tree` with `include_skills=(self.skills_subdir is None)` to avoid duplicating skills inside `plugin_subdir/skills` when flat skill projection is active, skill projection, instruction blocks including non-destructive append into existing `.github/copilot-instructions.md` when `COPILOT_START_MARKER` is absent, hook/JSONC merges, and manifest cleanup, with `PluginInstallTarget.PROJECT` scoped strictly to `.agents/plugins/eidos`, `Path`-typed `InstallResult.created_files` for Aider, and accurate fallback `plugin_dir` resolution in `check_plugin_version_status`) and manifest tracking (`.eidos-manifest.json` written after `post_install_hook` and flat skill projection, tracking pre-existing bundle files on `force=False` so uninstall remains complete) with SHA-256 digests, preserving existing manifest entries and user-owned files (`.codex/rules.md`, non-Eidos `plugin.json`, `scripts/`) on `force=False`, enforcing ancestor-aware symlink protection (`_check_not_symlink`), upgrading version-pinned `uvx` hook commands, and pruning retired legacy skill directories and retired Claude commands (`reconcile.md`) across `agent-plugins.org` v1.0.0, Claude Code, OpenAI Codex, OpenCode, Aider, Cline, Cursor, and GitHub Copilot."
+    responsibility: "Installs, updates, and safely uninstalls portable agent plugins and 4 cohesive workflow skills (synchronized with streamlined v1 JSON Schema-validated YAML frontmatter templates deriving schema from type, 4-parameter blueprint `eidos spec create`, `eidos context --json`, composable `operation`/`target`/`parent` SpecDelta workflows, and canonical `eidos/design/**` paths across `eidos`, `eidos-spec`, `eidos-plan`, and `eidos-ops`) via a declarative `TargetAdapter` registry (`TargetAdapter.install` and `TargetAdapter.uninstall` driving bundle copying via `_copy_plugin_tree` with `include_skills=(self.skills_subdir is None)` to avoid duplicating skills inside `plugin_subdir/skills` when flat skill projection is active, skill projection, instruction blocks including non-destructive append into existing `.github/copilot-instructions.md` when `COPILOT_START_MARKER` is absent, hook/JSONC merges, and manifest cleanup, with `PluginInstallTarget.PROJECT` scoped strictly to `.agents/plugins/eidos`, `Path`-typed `InstallResult.created_files` for Aider, and accurate fallback `plugin_dir` resolution in `check_plugin_version_status`) and manifest tracking (`.eidos-manifest.json` written after `post_install_hook` and flat skill projection, tracking pre-existing bundle files on `force=False` so uninstall remains complete) with SHA-256 digests, preserving existing manifest entries and user-owned files (`.codex/rules.md`, non-Eidos `plugin.json`, `scripts/`) on `force=False`, enforcing ancestor-aware symlink protection (`_check_not_symlink`), upgrading version-pinned `uvx` hook commands, and pruning retired legacy skill directories and retired Claude commands (`reconcile.md`) across `agent-plugins.org` v1.0.0, Claude Code, OpenAI Codex, OpenCode, Aider, Cline, Cursor, and GitHub Copilot."
     source_path:
       - "src/eidos/plugin/installer.py"
       - "src/eidos/plugin/version.py"
@@ -32,10 +31,6 @@ components:
     title: "HookRunner"
     responsibility: "Executes the stateless CLI-native Stop hook (handle_stop_hook, execute_hook via 'eidos hook') that runs detect_drift(uncommitted=True) once on Stop and returns {'decision': 'allow'} when clean or {'decision': 'allow', 'systemMessage': '...'} when specification validation errors, uncovered/orphan invariants, or code-to-spec drift are detected."
     source_path: "src/eidos/plugin/hooks.py"
-    interfaces:
-      consumes:
-        - "CMP-DRIFT-DETECTOR"
-        - "CMP-SPEC-VALIDATOR"
 
 decisions:
   - id: DEC-PLUGIN-STOP-SCOPED-DRIFT-GATE
@@ -62,12 +57,6 @@ decisions:
 contracts:
   provides: []
   consumes: []
-
-quality_attributes:
-  stateless: true
-  idempotent: true
-  concurrency_model: "synchronous_installer"
-  max_memory_mb: 128
 ---
 = Container: Eidos Agent Plugin & Extension Manager (C4 Level 2 Container & Level 3 Components)
 :toc: left

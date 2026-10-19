@@ -1,6 +1,5 @@
 ---
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: CNT-EIDOS-VCS
 title: "Eidos Git Drift & Lifecycle Engine"
 status: active
@@ -21,20 +20,10 @@ components:
       - "src/eidos/vcs/invariants.py"
       - "src/eidos/vcs/structural.py"
       - "src/eidos/vcs/report.py"
-    interfaces:
-      consumes:
-        - "CMP-SPEC-VALIDATOR"
-        - "CMP-GRAPH-TRAVERSAL-ENGINE"
 
 contracts:
   provides: []
   consumes: []
-
-quality_attributes:
-  stateless: true
-  idempotent: true
-  concurrency_model: "synchronous_library"
-  max_memory_mb: 128
 ---
 = Container: Eidos Git Drift & Lifecycle Engine (C4 Level 2 Container & Level 3 Components)
 :toc: left

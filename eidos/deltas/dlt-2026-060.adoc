@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-060
 title: Unify YAML Frontmatter Delimiter Parsing and Adopt Typed Pydantic Domain Models Across Core Engines
 status: applied

@@ -74,4 +74,3 @@ def build_site_cmd(
     console.print(f"[bold green]✓ Successfully generated static portal at:[/bold green] {generated_dir.resolve()}")
     console.print(f"  Entrypoint: {generated_dir / 'index.html'}")
     console.print(f"  Data payload: {generated_dir / 'data.json'}")
-

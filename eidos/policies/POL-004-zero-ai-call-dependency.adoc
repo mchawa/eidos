@@ -1,6 +1,5 @@
 ---
 type: product/policy
-schema: schemas/v1/product/policy.schema.yaml
 id: POL-004-ZERO-AI-CALL-DEPENDENCY
 title: "Zero AI-Call Dependency (Deterministic Governance Substrate)"
 status: active

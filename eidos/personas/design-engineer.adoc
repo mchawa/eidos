@@ -1,28 +1,30 @@
 ---
 type: product/persona
-schema: schemas/v1/product/persona.schema.yaml
 id: PER-DESIGN-ENGINEER
 title: "Design Technologist"
 status: active
 role_type: design_engineer
-goals:
-  - "Maintain single-source-of-truth W3C DTCG design tokens without manual Figma token duplication."
-  - "Govern multi-client application surfaces (CLT-*) and canonical UI component manifests (UIC-*)."
-  - "Formally specify screen state machines (SCR-*) and multi-step interaction flows (FLOW-*)."
-  - "Ensure visual consistency, WCAG accessibility invariants, and seamless color mode support across all client targets."
-pain_points:
-  - "Design tokens drifting between Figma styles, CSS variables, Tailwind configurations, and mobile app code."
-  - "Undocumented UI component states (hover, focus, disabled, loading) causing visual defects in production."
-  - "Disconnect between user journey flows designed in Miro/FigJam and actual frontend route implementations."
-interaction_modes:
-  - "Editing W3C tokens.json and design system specifications (DS-*)"
-  - "Authoring UI component manifests (UIC-*) and screen state machines (SCR-*)"
-  - "Exploring interaction flows and tokens studio in the Living Web Portal"
-  - "Binding UI components to visual tests in Storybook, Playwright, or Vitest"
 ---
 = Persona: Design Technologist
 :toc: left
 
 == Profile
 The Design Technologist bridges product design, visual systems, and frontend engineering. In Eidos, they manage multi-design systems, W3C DTCG tokens, client applications, screen state machines, and interaction flows directly in living specifications, ensuring flawless translation from design intent to user experience.
+
+== Goals
+* Maintain single-source-of-truth W3C DTCG design tokens without manual Figma token duplication.
+* Govern multi-client application surfaces (`CLT-*`) and canonical UI component manifests (`UIC-*`).
+* Formally specify screen state machines (`SCR-*`) and multi-step interaction flows (`FLOW-*`).
+* Ensure visual consistency, WCAG accessibility invariants, and seamless color mode support across all client targets.
+
+== Pain Points
+* Design tokens drifting between Figma styles, CSS variables, Tailwind configurations, and mobile app code.
+* Undocumented UI component states (hover, focus, disabled, loading) causing visual defects in production.
+* Disconnect between user journey flows designed in Miro/FigJam and actual frontend route implementations.
+
+== Interaction Modes
+* Editing W3C `tokens.json` and design system specifications (`DS-*`)
+* Authoring UI component manifests (`UIC-*`) and screen state machines (`SCR-*`)
+* Exploring interaction flows and tokens studio in the Living Web Portal
+* Binding UI components to visual tests in Storybook, Playwright, or Vitest
 

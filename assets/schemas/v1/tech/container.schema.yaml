@@ -5,7 +5,6 @@ type: object
 additionalProperties: false
 required:
   - type
-  - schema
   - id
   - title
   - container_type
@@ -16,9 +15,6 @@ properties:
     type: string
     const: "tech/container"
     description: "The fixed document type identifier. Must always be 'tech/container'."
-  schema:
-    type: string
-    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^CNT-[A-Z0-9_-]+$"
@@ -49,8 +45,6 @@ properties:
       unevaluatedProperties: false
   contracts:
     $ref: "#/$defs/contracts_block"
-  quality_attributes:
-    $ref: "#/$defs/quality_attributes"
   invariants:
     type: array
     description: "Test-bound architectural invariants enforced by this C4 Level 2 container."

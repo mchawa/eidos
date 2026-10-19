@@ -1,6 +1,5 @@
 ---
 type: product/policy
-schema: schemas/v1/product/policy.schema.yaml
 id: POL-001-GIT-SOURCE-OF-TRUTH
 title: "Git Repository as the Single Source of Truth"
 status: active

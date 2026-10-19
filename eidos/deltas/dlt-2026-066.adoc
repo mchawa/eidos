@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-066
 title: Parameterized Repository Initialization (--name, --title) and Scoped Empty Root System Specification Parser & Validator Exemption
 status: applied

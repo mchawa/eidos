@@ -5,20 +5,14 @@ type: object
 additionalProperties: false
 required:
   - type
-  - schema
   - id
   - title
   - archetypes
-  - business_identity
-  - technical_profile
 properties:
   type:
     type: string
     const: "product/system"
     description: "The fixed document type identifier. Must always be 'product/system'."
-  schema:
-    type: string
-    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^SYS-[A-Z0-9_-]+$"
@@ -38,59 +32,6 @@ properties:
       type: string
       pattern: "^[a-z0-9_-]+$"
       description: "A machine-readable slug identifying an architectural archetype or delivery surface."
-  business_identity:
-    type: object
-    description: "High-level strategic business intent, target market, and value proposition."
-    additionalProperties: false
-    required:
-      - vision
-      - target_users
-      - value_proposition
-    properties:
-      vision:
-        type: string
-        description: "The long-term aspirational goal and purpose of the product."
-      target_users:
-        type: array
-        description: "List of primary user classes, customer segments, or autonomous actors served."
-        items:
-          type: string
-          description: "A specific user role or market demographic."
-      value_proposition:
-        type: string
-        description: "The core distinct value delivered to users that sets this system apart from alternatives."
-  technical_profile:
-    type: object
-    description: "Foundational technical characteristics, VCS environments, runtimes, and AI agent compatibility."
-    additionalProperties: false
-    required:
-      - primary_languages
-    properties:
-      primary_languages:
-        type: array
-        description: "Primary programming, modeling, and specification languages used in the codebase (e.g. Python, Rust, C++, AsciiDoc)."
-        items:
-          type: string
-      runtimes_and_frameworks:
-        type: array
-        description: "Execution runtimes, ML frameworks, or virtualization environments (e.g. PyTorch, CUDA, Node.js, JVM, Docker, FreeRTOS)."
-        items:
-          type: string
-      deployment_targets:
-        type: array
-        description: "Hardware, cloud, or edge execution targets (e.g. GPU Cluster, Kubernetes, Bare Metal MCU, WebAssembly, iOS/Android)."
-        items:
-          type: string
-      vcs_platforms:
-        type: array
-        description: "Source control platforms supported for workflows, issues, and pipelines (e.g. GitHub, GitLab)."
-        items:
-          type: string
-      agent_support:
-        type: array
-        description: "List of coding agents and LLM harnesses supported natively (e.g. Antigravity (agy), Claude Code, OpenAI Codex)."
-        items:
-          type: string
   decisions:
     type: array
     description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on the root system specification without standalone ADR files (POL-001)."

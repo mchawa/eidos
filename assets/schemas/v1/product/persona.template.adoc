@@ -1,0 +1,8 @@
+= Persona: {heading}
+:toc: left
+
+== Profile & Motivations
+Detailed contextual background, user psychology, and job-to-be-done for this actor.
+
+== Goals & Pain Points
+Document the primary objectives, workflows, and friction points experienced by this persona.

@@ -148,9 +148,7 @@ def main(argv: list[str] | None = None) -> int:
     compressed = compress_bundle_deterministic(html)
     bundle_gz_path.write_bytes(compressed)
     favicon_out_path.write_text(favicon, encoding="utf-8")
-    print(
-        f"wrote {bundle_gz_path} ({len(compressed) / 1024 / 1024:.2f} MiB gzip / {size / 1024 / 1024:.2f} MiB raw)"
-    )
+    print(f"wrote {bundle_gz_path} ({len(compressed) / 1024 / 1024:.2f} MiB gzip / {size / 1024 / 1024:.2f} MiB raw)")
     return 0
 
 

@@ -1,6 +1,5 @@
 ---
 type: product/capability
-schema: schemas/v1/product/capability.schema.yaml
 id: CAP-PROD-002
 title: "SpecDelta Semantic Mutation Engine"
 domain: DOM-SPEC-ENGINE
@@ -13,7 +12,6 @@ business:
     - eidos/personas/software-engineer.adoc
     - eidos/personas/product-lead.adoc
     - eidos/personas/autonomous-agent.adoc
-  jtbd: "Define, review, and apply explicit composable mutations (add, modify, remove, deprecate) to features and invariants without leaving stale documentation."
   policies:
     - eidos/policies/POL-002-invariant-test-enforcement.adoc
 
@@ -39,10 +37,12 @@ technical:
     - id: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
       rule: "'eidos delta verify' must report modify mutations as verified only on positive evidence of change to the targeted entity (a satisfied structured body/frontmatter declarative expect post-condition evaluated with comment stripping, multi-string/negative body checks, list-subset matching, and failure_reason diagnostics alongside a content digest differing from the recorded Git-history / vcs.base_commit or SQLite delta baseline), never on entity existence or filesystem modification time alone."
       test_binding: "tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence"
-
 ---
 = Capability: SpecDelta Semantic Mutation Engine
 :toc: left
+
+== Job To Be Done (JTBD)
+Define, review, and apply explicit composable mutations (`add`, `modify`, `remove`, `deprecate`) to features and invariants without leaving stale documentation.
 
 == Intent
 Replaces traditional essay-style RFCs with declarative, machine-verifiable mutations. When a feature is added, changed, or removed, a `SpecDelta` specifies the precise composable mutations and impacted invariants. Upon PR merge, the mutations are verified against the living specification catalog and the SpecDelta is transitioned to `status: applied`.

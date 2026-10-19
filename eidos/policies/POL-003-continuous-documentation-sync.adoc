@@ -1,6 +1,5 @@
 ---
 type: product/policy
-schema: schemas/v1/product/policy.schema.yaml
 id: POL-003-CONTINUOUS-DOCUMENTATION-SYNC
 title: "Continuous Documentation Synchronization Policy"
 status: active

@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-091
 title: "Harmonize and Canonicalize All v1 Specification Schemas Without Legacy Aliases"
 status: applied

@@ -1,27 +1,29 @@
 ---
 type: product/persona
-schema: schemas/v1/product/persona.schema.yaml
 id: PER-PRODUCT-LEAD
 title: "Product Lead"
 status: active
 role_type: product_manager
-goals:
-  - "Define and evolve product capabilities (CAP-*) and Jobs-to-be-Done (JTBD) anchored directly in Git."
-  - "Govern strategic changes through declarative Planned Mode SpecDeltas (DLT-*) with automated blast-radius analysis."
-  - "Conduct hypothesis-driven discovery and technical feasibility spikes through Explorations (EXP-*)."
-  - "Maintain a clear, transparent view of active baseline features vs. in-flight deltas using the Living Web Portal."
-pain_points:
-  - "Product requirement documents in Notion, Confluence, and Google Docs drifting immediately out of sync with production code."
-  - "Engineers and autonomous AI agents missing subtle business edge cases or violating domain policies."
-  - "Opaque roadmap progress with no machine-validated linkage between user stories and merged pull requests."
-interaction_modes:
-  - "Authoring capabilities (CAP-*) and hypothesis explorations (EXP-*)"
-  - "Scaffolding and reviewing Planned Mode SpecDeltas (DLT-*)"
-  - "Tracking feature lifecycle and Kanban boards on the Living Web Portal"
-  - "Reviewing specification diffs and SpecDelta mutations in Git pull requests"
 ---
 = Persona: Product Lead
 :toc: left
 
 == Profile
 The Product Lead is responsible for product strategy, customer outcomes, capability definitions, and feature scoping. In Eidos, they express business needs as living capabilities and Jobs-to-be-Done, collaborating seamlessly with architects, engineers, and autonomous AI agents through machine-validated Git workflows.
+
+== Goals
+* Define and evolve product capabilities (`CAP-*`) and Jobs-to-be-Done (JTBD) anchored directly in Git.
+* Govern strategic changes through declarative Planned Mode SpecDeltas (`DLT-*`) with automated blast-radius analysis.
+* Conduct hypothesis-driven discovery and technical feasibility spikes through Explorations (`EXP-*`).
+* Maintain a clear, transparent view of active baseline features vs. in-flight deltas using the Living Web Portal.
+
+== Pain Points
+* Product requirement documents in Notion, Confluence, and Google Docs drifting immediately out of sync with production code.
+* Engineers and autonomous AI agents missing subtle business edge cases or violating domain policies.
+* Opaque roadmap progress with no machine-validated linkage between user stories and merged pull requests.
+
+== Interaction Modes
+* Authoring capabilities (`CAP-*`) and hypothesis explorations (`EXP-*`)
+* Scaffolding and reviewing Planned Mode SpecDeltas (`DLT-*`)
+* Tracking feature lifecycle and Kanban boards on the Living Web Portal
+* Reviewing specification diffs and SpecDelta mutations in Git pull requests

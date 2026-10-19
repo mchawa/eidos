@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-024
 title: Tool-Only Installation, CLI-Native Agent Hooks, and Block-Once Stop Gate
 status: applied

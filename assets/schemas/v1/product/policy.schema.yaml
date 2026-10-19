@@ -5,7 +5,6 @@ type: object
 additionalProperties: false
 required:
   - type
-  - schema
   - id
   - title
   - category
@@ -15,9 +14,6 @@ properties:
     type: string
     const: "product/policy"
     description: "The fixed document type identifier. Must always be 'product/policy'."
-  schema:
-    type: string
-    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^POL-[A-Z0-9_-]+$"

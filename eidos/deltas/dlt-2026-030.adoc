@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-030
 title: 'Strict 1-Hop Drift Scoping: Remove Global System Spec Escape Hatch and Graph-Scope
   Design Drift'

@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-035
 title: Incremental SQLite Caching for Specification Validation and Static Invariant Verification
 status: applied

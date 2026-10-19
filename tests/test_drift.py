@@ -651,7 +651,6 @@ def test_merge_base_file_content_comparison(tmp_path):
     assert new_c == "v2_feature\n"
 
 
-
 def test_design_system_drift_detection(monkeypatch):
     """Verify frontend code or styling modifications require eidos/design/ living spec updates."""
     # 1. Frontend CSS changed without eidos/design updates -> drift detected
@@ -883,7 +882,10 @@ _TOKEN_CSS = ":root {\n  --md-sys-color-primary: #7c4dff;\n}\n.card {\n  padding
 def _mock_versions(monkeypatch, new_css):
     monkeypatch.setattr(
         "eidos.vcs.drift._get_file_versions",
-        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: (_OLD_CSS, new_css),
+        lambda repo_root, rel_path, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: (
+            _OLD_CSS,
+            new_css,
+        ),
     )
 
 
@@ -1027,7 +1029,6 @@ def test_exact_delta_target_matching_rejects_substring_and_slug_collisions(tmp_p
     (cnts_dir / "core.adoc").write_text(
         """---
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: CNT-EIDOS-CORE
 title: Core Engine
 source_path: src/core
@@ -1040,7 +1041,6 @@ source_path: src/core
     (deltas_dir / "dlt-2026-099.adoc").write_text(
         """---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-099
 title: Unrelated Score Engine Delta
 status: in_review
@@ -1092,7 +1092,6 @@ def test_rejected_and_preexisting_applied_deltas_do_not_activate_planned_mode(tm
     (cnts_dir / "core.adoc").write_text(
         """---
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: CNT-EIDOS-CORE
 title: Core Engine
 source_path: src/core
@@ -1104,7 +1103,6 @@ components: []
     )
     rejected_delta = """---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-101
 title: Rejected Core Delta
 status: rejected
@@ -1122,7 +1120,6 @@ mutations:
 
     applied_old = """---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-102
 title: Old Applied Delta
 status: applied
@@ -1174,7 +1171,6 @@ def test_path_in_requires_separator_boundary_and_no_slug_fallback(tmp_path):
     (cnts_dir / "core.adoc").write_text(
         """---
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: CNT-EIDOS-CORE
 title: Core Engine
 source_path: src/core
@@ -1189,8 +1185,6 @@ components: []
     assert mappings == []
 
 
-
-
 # ---------------------------------------------------------------------------
 # DLT-2026-039: diff-aware specification coverage for structural additions
 # ---------------------------------------------------------------------------
@@ -1198,7 +1192,6 @@ components: []
 _SPEC_REL = "eidos/architecture/containers/x.adoc"
 _SPEC_BASE = """---
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: CNT-X
 title: X
 container_type: service
@@ -1398,7 +1391,6 @@ def test_delta_declared_target_bypasses_diff_check(tmp_path, monkeypatch):
     delta_rel = "eidos/deltas/dlt-2026-900.adoc"
     delta = """---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-900
 title: Declares CNT-X
 status: proposed
@@ -1542,7 +1534,10 @@ def test_moved_file_is_not_a_structural_addition(tmp_path, monkeypatch):
     assert pure.drift_detected is False
 
     # Under DLT-2026-051, even pure moves require substantive spec edits (comment-only edits fail)
-    assert run("identical_trivial", _CODE_WITH_CLASS, spec_text=trivial_spec).trivially_covered_files[0]["rule"] == "trivial_spec_diff"
+    assert (
+        run("identical_trivial", _CODE_WITH_CLASS, spec_text=trivial_spec).trivially_covered_files[0]["rule"]
+        == "trivial_spec_diff"
+    )
 
     # A move that also adds a public symbol: with a trivial spec, both the deletion and addition are flagged
     grown = run("grown", _CODE_WITH_CLASS + "\n\ndef extra():\n    return 2\n", spec_text=trivial_spec)
@@ -1598,7 +1593,6 @@ def test_test_binding_cache_warm_drift_and_invalidation(tmp_path, monkeypatch):
     cap_file.write_text(
         "---\n"
         "type: product/capability\n"
-        "schema: schemas/v1/product/capability.schema.yaml\n"
         "id: CAP-CACHE-001\n"
         "title: Cache Capability\n"
         "domain: DOM-CORE\n"
@@ -1621,9 +1615,7 @@ def test_test_binding_cache_warm_drift_and_invalidation(tmp_path, monkeypatch):
 
     test_alpha = tests_dir / "test_alpha.py"
     test_alpha.write_text(
-        "def test_bound_fn():\n"
-        "    # INV-CACHE-BOUND\n"
-        "    assert True\n",
+        "def test_bound_fn():\n    # INV-CACHE-BOUND\n    assert True\n",
         encoding="utf-8",
     )
 
@@ -1759,7 +1751,9 @@ def test_multiple_test_classes_with_same_method_name_do_not_overwrite(tmp_path):
 
     # Also verify uncached all_tests_content path and underscore-containing orphan invariant detection
     raw_content = {"tests/test_classes.py": (tests_dir / "test_classes.py").read_text(encoding="utf-8")}
-    orphans = detect_orphan_invariants(tmp_path, {"INV-CLASS-FIRST", "INV-CLASS-QUALIFIED"}, all_tests_content=raw_content)
+    orphans = detect_orphan_invariants(
+        tmp_path, {"INV-CLASS-FIRST", "INV-CLASS-QUALIFIED"}, all_tests_content=raw_content
+    )
     assert orphans == [("INV-CLASS-WRONG-SUITE", "tests/test_classes.py::TestSecondSuite::test_shared_name")]
 
 
@@ -1783,7 +1777,6 @@ def test_unowned_code_triggers_drift_in_direct_and_planned_modes(tmp_path, monke
     delta_rel = "eidos/deltas/dlt-2026-900.adoc"
     delta = """---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-900
 title: Unrelated Delta
 status: proposed
@@ -1890,10 +1883,7 @@ def test_trivial_system_spec_edit_does_not_clear_unmapped_code_drift(tmp_path, m
     res = detect_drift(repo_root=tmp_path, eidos_dir=env)
     assert res.drift_detected is True
     assert unowned_tool in res.unmapped_code_files
-    assert any(
-        r["file"] == unowned_tool and r["rule"] == "trivial_spec_diff"
-        for r in res.trivially_covered_files
-    )
+    assert any(r["file"] == unowned_tool and r["rule"] == "trivial_spec_diff" for r in res.trivially_covered_files)
 
 
 def test_trivial_tokens_json_edit_does_not_cover_design_token_drift(monkeypatch):
@@ -1912,10 +1902,7 @@ def test_trivial_tokens_json_edit_does_not_cover_design_token_drift(monkeypatch)
     res = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
     assert res.drift_detected is True
     assert THEME in res.uncovered_design_files
-    assert any(
-        r["file"] == THEME and r["rule"] == "trivial_spec_diff"
-        for r in res.trivially_covered_files
-    )
+    assert any(r["file"] == THEME and r["rule"] == "trivial_spec_diff" for r in res.trivially_covered_files)
 
 
 def test_src_test_helpers_and_package_path_test_classification(tmp_path, monkeypatch):
@@ -1923,7 +1910,9 @@ def test_src_test_helpers_and_package_path_test_classification(tmp_path, monkeyp
     from eidos.vcs.drift import classify_changed_files, is_polyglot_test_file
 
     assert is_polyglot_test_file("src/app/test_helpers.py", repo_root=tmp_path) is False
-    assert is_polyglot_test_file("backend/app/test_helpers.py", repo_root=tmp_path, package_paths=["backend/app"]) is False
+    assert (
+        is_polyglot_test_file("backend/app/test_helpers.py", repo_root=tmp_path, package_paths=["backend/app"]) is False
+    )
     assert is_polyglot_test_file("src/pkg/tests/test_unit.py", repo_root=tmp_path) is True
 
     # Calling with relative path when CWD is <repo>/tests must not prepend tests/
@@ -1969,7 +1958,6 @@ def test_1hop_neighbor_requires_symbol_anchor_for_public_api_addition(tmp_path, 
     cap_rel = "eidos/domains/core/capabilities/cap-x.adoc"
     cap_base = """---
 type: product/capability
-schema: schemas/v1/product/capability.schema.yaml
 id: CAP-X-001
 title: X Capability
 domain: DOM-X
@@ -2062,7 +2050,6 @@ def test_dlt_2026_068_unquoted_git_paths_container_invariants_and_reconcile(tmp_
     (cnts_dir / "pkg.adoc").write_text(
         """---
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: CNT-PKG
 title: Pkg Container
 container_type: library
@@ -2089,7 +2076,6 @@ components:
     (caps_dir / "cap-pkg.adoc").write_text(
         """---
 type: product/capability
-schema: schemas/v1/product/capability.schema.yaml
 id: CAP-PKG-001
 title: Pkg Capability
 domain: DOM-CORE
@@ -2260,7 +2246,6 @@ def test_real_git_structural_and_design_drift_and_cache_mtime_hit(tmp_path):
     cnt_file.write_text(
         "---\n"
         "type: tech/container\n"
-        "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-SVC\n"
         "title: Order Service\n"
         "container_type: service\n"
@@ -2279,7 +2264,6 @@ def test_real_git_structural_and_design_drift_and_cache_mtime_hit(tmp_path):
     (ds_dir / "system.adoc").write_text(
         "---\n"
         "type: design/system\n"
-        "schema: schemas/v1/design/system.schema.yaml\n"
         "id: DS-CORE\n"
         "title: Core Tokens\n"
         "status: active\n"
@@ -2293,7 +2277,6 @@ def test_real_git_structural_and_design_drift_and_cache_mtime_hit(tmp_path):
     (clt_dir / "client.adoc").write_text(
         "---\n"
         "type: design/client\n"
-        "schema: schemas/v1/design/client.schema.yaml\n"
         "id: CLT-WEB\n"
         "title: Web Client\n"
         "platform: web-spa\n"
@@ -2306,7 +2289,6 @@ def test_real_git_structural_and_design_drift_and_cache_mtime_hit(tmp_path):
     (pol_dir / "pol.adoc").write_text(
         "---\n"
         "type: product/policy\n"
-        "schema: schemas/v1/product/policy.schema.yaml\n"
         "id: POL-SVC-001\n"
         "title: Service Policy\n"
         "category: quality\n"
@@ -2371,7 +2353,12 @@ def test_real_git_structural_and_design_drift_and_cache_mtime_hit(tmp_path):
 
         # 5. Commit on main so HEAD == main, then run detect_drift(uncommitted=False) to exercise HEAD~1 fallback
         subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "feat: add process_order and update tokens"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "feat: add process_order and update tokens"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
         rep_committed = detect_drift(repo_root=repo, eidos_dir=eidos_dir, uncommitted=False)
         assert rep_committed.drift_detected is False
         assert "src/svc/handler.py" in rep_committed.classification.code_files
@@ -2452,12 +2439,14 @@ def test_drift_report_helpers_and_cli_rich_output(tmp_path):
     for d in (cnt_dir, svc_dir, tests_dir):
         d.mkdir(parents=True)
     (cnt_dir / "cnt.adoc").write_text(
-        "---\ntype: tech/container\nschema: schemas/v1/tech/container.schema.yaml\nid: CNT-CLI\ntitle: CLI\ncontainer_type: service\nruntime: Python\nsource_path: src/svc\n---\n= CLI\n",
+        "---\ntype: tech/container\nid: CNT-CLI\ntitle: CLI\ncontainer_type: service\nruntime: Python\nsource_path: src/svc\n---\n= CLI\n",
         encoding="utf-8",
     )
     code_f = svc_dir / "mod.py"
     code_f.write_text("def a():\n    return 1\n", encoding="utf-8")
-    (tests_dir / "test_mod.py").write_text("def test_orphan():\n    # INV-ORPHAN-999\n    assert True\n", encoding="utf-8")
+    (tests_dir / "test_mod.py").write_text(
+        "def test_orphan():\n    # INV-ORPHAN-999\n    assert True\n", encoding="utf-8"
+    )
     subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=repo, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.name", "Dev"], cwd=repo, check=True, capture_output=True)
@@ -2533,7 +2522,6 @@ def test_drift_report_helpers_and_cli_rich_output(tmp_path):
     pol_p.write_text(
         "---\n"
         "type: product/policy\n"
-        "schema: schemas/v1/product/policy.schema.yaml\n"
         "id: POL-INV-1\n"
         "title: Inv Pol\n"
         "category: quality\n"
@@ -2609,7 +2597,7 @@ def test_drift_report_helpers_and_cli_rich_output(tmp_path):
         all_tests_content={
             "tests/test_mixed.py": (
                 "def test_fixture_fn():\n"
-                "    \"\"\"Fixture docstring.\"\"\"  # eidos:fixture\n"
+                '    """Fixture docstring."""  # eidos:fixture\n'
                 "    x = 'INV-SYNTHETIC-111'\n"
                 "\n"
                 "def test_real_orphan_fn():\n"
@@ -2656,7 +2644,6 @@ def test_dlt_2026_081_boundary_aware_symbol_anchoring(tmp_path, monkeypatch):
     cap_rel = "eidos/domains/core/capabilities/cap-x.adoc"
     cap_base = """---
 type: product/capability
-schema: schemas/v1/product/capability.schema.yaml
 id: CAP-X
 title: X Capability
 domain: DOM-CORE
@@ -2813,10 +2800,6 @@ def test_dlt_2026_085_planned_mode_scope_from_mutations_targets_and_diff_helpers
     assert res_scoped.drift_detected is False
     assert not any("src/pkg/svc.py" in s for s in res_scoped.remediation_suggestions)
 
-
-
-
-
     # 2. Cover vcs/diff.py helpers: _has_structural_ast_change, collect_polyglot_test_files (non-git + missing), get_git_diff_files
     assert _has_structural_ast_change("def a(): return 1\n", "def a(x): return x\n", "src/a.py") is True
     assert _has_structural_ast_change("def a(): return 1\n", "def a(): return 2\n", "src/a.py") is False
@@ -2837,7 +2820,9 @@ def test_dlt_2026_085_planned_mode_scope_from_mutations_targets_and_diff_helpers
     (git_ws / "a.py").write_text("x = 1\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=git_ws, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "c1"], cwd=git_ws, check=True, capture_output=True)
-    c1_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=git_ws, check=True, capture_output=True, text=True).stdout.strip()
+    c1_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=git_ws, check=True, capture_output=True, text=True
+    ).stdout.strip()
     (git_ws / "b.py").write_text("y = 2\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=git_ws, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "c2"], cwd=git_ws, check=True, capture_output=True)
@@ -2846,7 +2831,9 @@ def test_dlt_2026_085_planned_mode_scope_from_mutations_targets_and_diff_helpers
     assert get_git_diff_files(git_ws, base_ref=c1_sha, head_ref="HEAD", merge_base="") == ["b.py"]
     assert set(get_tracked_files(git_ws, include_untracked=False)) == {"a.py", "b.py"}
     with pytest.raises(GitResolutionError):
-        get_git_diff_files(git_ws, base_ref="bad_nonexistent_ref_xyz", head_ref="HEAD", merge_base="bad_nonexistent_ref_xyz")
+        get_git_diff_files(
+            git_ws, base_ref="bad_nonexistent_ref_xyz", head_ref="HEAD", merge_base="bad_nonexistent_ref_xyz"
+        )
 
 
 def test_origin_main_head_fallback_remediation_prompt_and_line_level_fixture(tmp_path):
@@ -2965,7 +2952,6 @@ def test_class_qualified_test_binding_rejects_wrong_class_fallback(tmp_path: Pat
     (pol_dir / "pol-cls.adoc").write_text(
         "---\n"
         "type: product/policy\n"
-        "schema: schemas/v1/product/policy.schema.yaml\n"
         "id: POL-CLS-001\n"
         "title: Class Binding Policy\n"
         "category: quality\n"
@@ -3002,7 +2988,6 @@ def test_group_c1_inline_component_1hop_and_promoted_component_parent_container(
     cnt_rel = "eidos/architecture/containers/api.adoc"
     cnt_spec = """---
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: CNT-API
 title: API Container
 source_path: src/api
@@ -3018,7 +3003,6 @@ Original container prose.
     cap_inline_rel = "eidos/domains/core/capabilities/cap-pay.adoc"
     cap_inline_old = """---
 type: product/capability
-schema: schemas/v1/product/capability.schema.yaml
 id: CAP-PAY
 title: Payment Capability
 domain: DOM-CORE
@@ -3042,7 +3026,10 @@ Original payment prose.
         monkeypatch,
         changed=["src/api/pay.py", cap_inline_rel],
         versions={
-            "src/api/pay.py": ("def pay(a: int) -> int:\n    return a\n", "def pay(a: int, b: int) -> int:\n    return a + b\n"),
+            "src/api/pay.py": (
+                "def pay(a: int) -> int:\n    return a\n",
+                "def pay(a: int, b: int) -> int:\n    return a + b\n",
+            ),
             cap_inline_rel: (cap_inline_old, cap_inline_new),
         },
         spec_text=cnt_spec,
@@ -3059,7 +3046,6 @@ Original payment prose.
     cmp_auth_rel = "eidos/architecture/components/auth.adoc"
     cmp_auth_spec = """---
 type: tech/component
-schema: schemas/v1/tech/component.schema.yaml
 id: CMP-PROMOTED-AUTH
 title: Promoted Auth
 container: CNT-API
@@ -3071,7 +3057,6 @@ responsibility: Authentication
     cap_cnt_rel = "eidos/domains/core/capabilities/cap-api.adoc"
     cap_cnt_old = """---
 type: product/capability
-schema: schemas/v1/product/capability.schema.yaml
 id: CAP-API
 title: API Capability
 domain: DOM-CORE
@@ -3133,7 +3118,7 @@ def test_group_c2_fixture_docstrings_decorators_class_top_level_orphans_and_comb
         "    [{'mode': 'strict'}],\n"
         ")\n"
         "def test_decorated_fixture(cfg: dict) -> None:\n"
-        "    \"\"\"Synthetic test fixture (eidos:fixture).\"\"\"\n"
+        '    """Synthetic test fixture (eidos:fixture)."""\n'
         "    fake = 'INV-DOCSTRING-IGNORED-001'\n"
         "    assert fake and cfg\n\n"
         "def test_real_orphan() -> None:\n"
@@ -3315,7 +3300,10 @@ def test_group_c4_incremental_sync_design_eviction_ownership_component_ref_and_c
         d.mkdir(parents=True, exist_ok=True)
 
     (old_pkg / "old_mod.py").write_text("def old_fn():\n    return 1\n", encoding="utf-8")
-    (new_pkg / "new_mod.py").write_text("def new_fn():\n    return 2\n", encoding="utf-8")
+    (new_pkg / "new_mod.py").write_text(
+        "from old_pkg.old_mod import old_fn\n\ndef new_fn():\n    return old_fn()\n",
+        encoding="utf-8",
+    )
     (new_pkg / "web_mod.py").write_text("def web_fn():\n    return 3\n", encoding="utf-8")
 
     cnt_file = cnt_dir / "web.adoc"
@@ -3325,6 +3313,11 @@ type: tech/container
 id: CNT-WEB
 title: Web Container
 source_path: src/old_pkg
+components:
+  - id: CMP-OLD
+    title: Old Module
+    responsibility: Legacy module.
+    source_path: src/old_pkg/old_mod.py
 ---
 = Web Container
 """,
@@ -3338,9 +3331,6 @@ id: CMP-WORKER
 title: Worker
 container: CNT-WEB
 source_path: src/new_pkg/new_mod.py
-interfaces:
-  consumes:
-    - AuthService.verify_token(token)
 ---
 = Worker
 """,
@@ -3391,11 +3381,11 @@ design_system: DS-BRAND
         idx.sync(force=True)
         conn = idx._get_connection()
 
-        # 1. consumes_api edge is preserved (not deleted by target_id cleanup)
+        # 1. AST-derived consumes_api edge between intra-container components is recorded
         consumes_edges = conn.execute(
             "SELECT source_id, target_id FROM edges WHERE rel_type = 'consumes_api';"
         ).fetchall()
-        assert ("CMP-WORKER", "AuthService.verify_token(token)") in [(r[0], r[1]) for r in consumes_edges]
+        assert ("CMP-WORKER", "CMP-OLD") in [(r[0], r[1]) for r in consumes_edges]
 
         # 2. Initially DS-BASE styles CNT-WEB indirectly via DS-BRAND inheritance
         styles_cnt = {
@@ -3493,7 +3483,7 @@ def test_deep_audit_group_c_c1_through_c10(tmp_path: Path) -> None:
         "    /* multi-line",
         "       eidos:fixture",
         "    */",
-        "    let x = \"INV-RUST-001\";",
+        '    let x = "INV-RUST-001";',
         "}",
     ]
     assert _has_function_level_fixture("\n".join(rust_lines), _INV_OR_POL_TOKEN_RE) is True
@@ -3502,7 +3492,7 @@ def test_deep_audit_group_c_c1_through_c10(tmp_path: Path) -> None:
         "# Leading comment before decorator",
         "@pytest.mark.parametrize('x', [1])",
         "def test_py_fixture(x):",
-        "    \"\"\"Docstring with eidos:fixture.\"\"\"",
+        '    """Docstring with eidos:fixture."""',
         "    pass",
     ]
     assert _has_function_level_fixture("\n".join(py_comment_dec_lines), _INV_OR_POL_TOKEN_RE) is True
@@ -3610,11 +3600,7 @@ def test_deep_audit_group_c_c1_through_c10(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     cnt_dup.write_text(
-        "---\n"
-        "type: tech/container\n"
-        "id: CNT-BILL\n"
-        "title: Duplicate Billing\n"
-        "---\n= Duplicate Billing\n",
+        "---\ntype: tech/container\nid: CNT-BILL\ntitle: Duplicate Billing\n---\n= Duplicate Billing\n",
         encoding="utf-8",
     )
 
@@ -3645,9 +3631,7 @@ def test_deep_audit_group_c_c1_through_c10(tmp_path: Path) -> None:
         # C3: INV-DOM-BILL-001 indexed in entities table with source_id == DOM-BILLING and has_test_coverage
         import json
 
-        inv_ent = conn.execute(
-            "SELECT type, data_json FROM entities WHERE id = 'INV-DOM-BILL-001';"
-        ).fetchone()
+        inv_ent = conn.execute("SELECT type, data_json FROM entities WHERE id = 'INV-DOM-BILL-001';").fetchone()
         assert inv_ent is not None and inv_ent[0] == "invariant"
         inv_meta = json.loads(inv_ent[1])
         assert inv_meta["source_id"] == "DOM-BILLING" and inv_meta["has_test_coverage"] is True
@@ -3685,4 +3669,3 @@ def test_deep_audit_group_c_c1_through_c10(tmp_path: Path) -> None:
         assert "CMP-BILL-MOD" in {r[0] for r in mapped}
     finally:
         idx.close()
-

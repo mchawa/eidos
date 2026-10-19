@@ -43,9 +43,6 @@ export function getExplorationDeltas(exp: SpecExploration): string[] {
       if (d && !deltas.includes(d)) deltas.push(d);
     });
   }
-  if (exp.decision?.resulting_delta_id && !deltas.includes(exp.decision.resulting_delta_id)) {
-    deltas.push(exp.decision.resulting_delta_id);
-  }
   return deltas;
 }
 
@@ -336,21 +333,7 @@ export function ExplorationsView({
                     </p>
                   )}
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-muted-foreground">
-                    <div className="flex items-center gap-3">
-                      {exp.questions_to_answer && exp.questions_to_answer.length > 0 && (
-                        <span className="flex items-center gap-1">
-                          <FileQuestion className="h-3 w-3 text-primary" />
-                          {exp.questions_to_answer.length} question(s)
-                        </span>
-                      )}
-                      {exp.spikes_to_run && exp.spikes_to_run.length > 0 && (
-                        <span className="flex items-center gap-1">
-                          <FlaskConical className="h-3 w-3 text-purple-400" />
-                          {exp.spikes_to_run.length} spike(s)
-                        </span>
-                      )}
-                    </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2 text-[11px] font-mono text-muted-foreground">
                     <span className="flex items-center gap-1 text-primary font-sans font-medium group-hover:translate-x-0.5 transition-transform text-xs">
                       Inspect Investigation <ArrowRight className="h-3.5 w-3.5" />
                     </span>
@@ -460,55 +443,6 @@ export function ExplorationsView({
                         {recommendation}
                       </p>
                     )}
-                  </div>
-                </div>
-              )}
-
-              {/* Questions to Answer */}
-              {selectedExp.questions_to_answer && selectedExp.questions_to_answer.length > 0 && (
-                <div className="space-y-2.5">
-                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                    <FileQuestion className="h-4 w-4 text-primary" />
-                    Questions to Answer ({selectedExp.questions_to_answer.length})
-                  </h4>
-                  <div className="space-y-2">
-                    {selectedExp.questions_to_answer.map((q, idx) => (
-                      <div
-                        key={idx}
-                        className="p-3 rounded-2xl border border-border/60 bg-muted/20 text-xs flex items-start gap-2.5"
-                      >
-                        <span className="h-5 w-5 rounded-full bg-primary/10 text-primary font-mono text-[10px] flex items-center justify-center shrink-0 font-bold">
-                          {idx + 1}
-                        </span>
-                        <p className="text-foreground leading-relaxed">{q}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Spikes to Run */}
-              {selectedExp.spikes_to_run && selectedExp.spikes_to_run.length > 0 && (
-                <div className="space-y-2.5">
-                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                    <FlaskConical className="h-4 w-4 text-purple-400" />
-                    Empirical Spikes to Run ({selectedExp.spikes_to_run.length})
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {selectedExp.spikes_to_run.map((spike, idx) => (
-                      <div
-                        key={idx}
-                        className="p-3.5 rounded-2xl border border-border/70 bg-card text-xs space-y-1.5"
-                      >
-                        <div className="font-mono font-bold text-primary flex items-center gap-1.5 text-[11px]">
-                          <span className="h-2 w-2 rounded-full bg-primary" />
-                          {spike.name}
-                        </div>
-                        <p className="text-muted-foreground text-[11px] leading-relaxed">
-                          {spike.target}
-                        </p>
-                      </div>
-                    ))}
                   </div>
                 </div>
               )}

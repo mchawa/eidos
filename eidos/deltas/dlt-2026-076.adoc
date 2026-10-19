@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-076
 title: Synchronize Bundled Agent Skills (eidos, eidos-spec, eidos-plan, eidos-ops) with v1 JSON Schemas and Canonical Design Paths
 status: applied

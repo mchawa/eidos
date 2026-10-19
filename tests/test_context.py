@@ -331,18 +331,18 @@ def test_inv_context_token_compression():
     assert anchor_dict["invariants"] == []
     assert anchor_dict["policies"] == []
     anchor_comp = anchor_dict["components"][0]
-    assert "quality_attributes" not in anchor_comp
+    assert "components" not in anchor_comp
     assert "schema" not in anchor_comp
     if anchor_comp.get("decisions"):
         assert "rationale" not in anchor_comp["decisions"][0]
 
     guard_comp = guard_dict["components"][0]
-    assert "quality_attributes" not in guard_comp
+    assert "components" not in guard_comp
     if guard_comp.get("decisions"):
         assert "rationale" in guard_comp["decisions"][0]
 
     deep_comp = deep_dict["components"][0]
-    assert "quality_attributes" in deep_comp and "components" in deep_comp
+    assert "components" in deep_comp
 
     # 3. Unmatched explicit queries (files, component, task) return an honest empty slice
     for kwargs in (
@@ -389,14 +389,16 @@ def test_inv_context_token_compression():
             {
                 "id": "CNT-PRIMARY",
                 "name": "Primary",
-                "responsibility": "Sentence one of primary responsibility. " + ("Extra prose detail for primary. " * 45),
+                "responsibility": "Sentence one of primary responsibility. "
+                + ("Extra prose detail for primary. " * 45),
                 "description": "Sentence one of verbose description. " + ("Extra prose detail for primary. " * 45),
                 "decisions": [
                     {
                         "id": "DEC-SYN-1",
                         "title": "Synthetic Decision",
                         "decision": "Use progressive field compression. " + ("Detailed decision clause. " * 20),
-                        "rationale": "Preserves invariants under token budget pressure. " + ("Detailed rationale clause. " * 20),
+                        "rationale": "Preserves invariants under token budget pressure. "
+                        + ("Detailed rationale clause. " * 20),
                     }
                 ],
             },
@@ -407,8 +409,7 @@ def test_inv_context_token_compression():
             },
         ],
         invariants=[
-            {"id": f"RULE-SYN-{i}", "rule": f"Rule {i} must hold under budget pressure." * 4}
-            for i in range(3)
+            {"id": f"RULE-SYN-{i}", "rule": f"Rule {i} must hold under budget pressure." * 4} for i in range(3)
         ],
     )
     synthetic_sl._enforce_token_budget(
@@ -439,7 +440,9 @@ def test_progressive_compression_stages_and_inline_component_context(tmp_path):
                 "id": "CNT-PRIMARY",
                 "name": "Primary",
                 "responsibility": "Primary container responsibility.",
-                "components": [{"id": f"CMP-SUB-{i}", "name": f"Sub {i}", "responsibility": "Sub " * 25} for i in range(6)],
+                "components": [
+                    {"id": f"CMP-SUB-{i}", "name": f"Sub {i}", "responsibility": "Sub " * 25} for i in range(6)
+                ],
             },
             {
                 "id": "CNT-HOP1",
@@ -450,11 +453,8 @@ def test_progressive_compression_stages_and_inline_component_context(tmp_path):
         capabilities=[{"id": f"CAP-H-{i}", "title": f"Capability {i} " * 15} for i in range(10)],
         policies=[{"id": f"POL-H-{i}", "title": f"Policy {i}", "rule": "Policy rule " * 20} for i in range(8)],
         contracts=[{"id": f"CTR-H-{i}", "title": f"Contract {i}", "protocol": "cli"} for i in range(8)],
-        invariants=[
-            {"id": f"RULE-DIRECT-{i}", "rule": f"Direct invariant rule {i} " * 15} for i in range(15)
-        ] + [
-            {"id": f"RULE-INDIRECT-{i}", "rule": f"Indirect invariant rule {i} " * 15} for i in range(10)
-        ],
+        invariants=[{"id": f"RULE-DIRECT-{i}", "rule": f"Direct invariant rule {i} " * 15} for i in range(15)]
+        + [{"id": f"RULE-INDIRECT-{i}", "rule": f"Indirect invariant rule {i} " * 15} for i in range(10)],
     )
     heavy_sl._enforce_token_budget(
         primary_cids={"CNT-PRIMARY"},
@@ -592,5 +592,3 @@ def test_file_slice_compacts_before_eviction_and_respects_all_tier_budgets() -> 
             inv_ids = [i["id"] for i in sl.invariants]
             assert "CAP-AGENT-002" in cap_ids
             assert any("INDEX" in iid for iid in inv_ids)
-
-

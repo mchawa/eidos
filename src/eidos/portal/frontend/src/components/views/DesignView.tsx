@@ -629,9 +629,9 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
                         <Badge variant="outline" className="text-[10px] uppercase font-mono">
                           {comp.category || comp.component_type || "component"}
                         </Badge>
-                        {comp.accessibility?.wcag_level && (
+                        {comp.invariants && comp.invariants.length > 0 && (
                           <Badge variant="secondary" className="text-[10px] font-mono">
-                            WCAG {comp.accessibility.wcag_level}
+                            {comp.invariants.length} INV
                           </Badge>
                         )}
                       </div>
@@ -704,24 +704,16 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
                         </div>
                       </div>
                     )}
-
-                    {/* Accessibility & Keyboard Navigation */}
-                    {comp.accessibility?.keyboard_nav && (
-                      <div className="text-[10px] text-muted-foreground pt-1.5 border-t border-border/50">
-                        <span className="font-semibold text-foreground">Keyboard: </span>
-                        {comp.accessibility.keyboard_nav}
-                      </div>
-                    )}
                   </div>
 
-                  {/* Test Traceability Footer */}
+                  {/* Invariant Traceability Footer */}
                   <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[10px]">
-                    {comp.test_bindings?.unit_test ? (
+                    {comp.invariants?.[0]?.test_binding ? (
                       <span
                         className="font-mono text-emerald-500 truncate max-w-[190px]"
-                        title={comp.test_bindings.unit_test}
+                        title={comp.invariants[0].test_binding}
                       >
-                        ✓ {comp.test_bindings.unit_test.split("::").pop()}
+                        ✓ {comp.invariants[0].test_binding.split("::").pop()}
                       </span>
                     ) : (
                       <span className="text-muted-foreground font-mono">

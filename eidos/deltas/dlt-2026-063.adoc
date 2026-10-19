@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-063
 title: Working-Tree Digest Short-Circuit in Agent Hooks and Mtime-Cached Portal HTTP Server
 status: applied

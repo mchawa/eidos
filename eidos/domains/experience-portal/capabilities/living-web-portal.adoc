@@ -1,6 +1,5 @@
 ---
 type: product/capability
-schema: schemas/v1/product/capability.schema.yaml
 id: CAP-EXP-001
 title: "Interactive Living Web Portal & Visual Documentation Engine"
 domain: DOM-EXPERIENCE-PORTAL
@@ -14,7 +13,6 @@ business:
     - eidos/personas/design-engineer.adoc
     - eidos/personas/product-lead.adoc
     - eidos/personas/autonomous-agent.adoc
-  jtbd: "Explore, search, and visually inspect living C4 architecture models, multi-client screens, and SpecDelta lifecycles without opening an IDE or compiling external frontend bundles."
   policies:
     - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
     - eidos/policies/POL-003-continuous-documentation-sync.adoc
@@ -67,6 +65,9 @@ technical:
 ---
 = Capability: Interactive Living Web Portal & Visual Documentation Engine
 :toc: left
+
+== Job To Be Done (JTBD)
+Explore, search, and visually inspect living C4 architecture models, multi-client screens, and SpecDelta lifecycles without opening an IDE or compiling external frontend bundles.
 
 == Intent
 Technical specifications and architecture models are often trapped in raw text files or separate wikis. This capability provides a local, zero-dependency embedded HTTP server (`eidos portal serve`) and static site builder (`eidos portal build`) that turns living AsciiDoc files into an interactive single-page application.

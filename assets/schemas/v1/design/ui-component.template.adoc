@@ -1,0 +1,5 @@
+= UI Component: {heading}
+:toc: left
+
+== Component Contract
+Describes variants, interactive states, accessibility requirements, and invariants for {heading}.

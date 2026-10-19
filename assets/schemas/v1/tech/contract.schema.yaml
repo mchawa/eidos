@@ -5,20 +5,15 @@ type: object
 additionalProperties: false
 required:
   - type
-  - schema
   - id
   - title
   - protocol
   - container
-  - specification_file
 properties:
   type:
     type: string
     const: "tech/contract"
     description: "The fixed document type identifier. Must always be 'tech/contract'."
-  schema:
-    type: string
-    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^CTR-[A-Z0-9_-]+$"

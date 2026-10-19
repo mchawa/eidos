@@ -1,0 +1,6 @@
+= Design System: {heading}
+:toc: left
+
+== Foundations & W3C Tokens
+This specification defines visual primitives, brand tokens, and inheritance rules for {heading}.
+Tokens are defined in W3C DTCG format at `tokens.json`.

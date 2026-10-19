@@ -1,23 +1,24 @@
 ---
 type: product/domain
-schema: schemas/v1/product/domain.schema.yaml
 id: DOM-VCS-LIFECYCLE
 title: "Git-Native Lifecycle & Drift Governance"
 status: active
 classification: core
-boundaries:
-  responsibilities:
-    - "Inspect Git diffs and detect structural spec-to-code drift across working tree, branches, and commits (eidos drift)."
-    - "Enable frictionless Direct Mode co-evolution and 1-hop neighborhood specification synchronization."
-    - "Enforce Git as the Single Source of Truth policy (POL-001) in CI/CD pipeline verification gates."
-  out_of_scope:
-    - "Parsing and validating specification AST schemas (delegated to DOM-SPEC-ENGINE)."
-    - "Agent plugin packaging and skills maintenance (delegated to DOM-AGENT-INTELLIGENCE)."
-    - "Serving web portal dashboards (delegated to DOM-EXPERIENCE-PORTAL)."
 ---
 = Domain: Git-Native Lifecycle & Drift Governance
 :toc: left
 
 == Domain Vision
 This domain anchors Eidos in GitOps reality. It ensures that code and living specifications evolve continuously without divergence. By replacing manual paperwork with automated Git diff inspection and deterministic drift detection, it guarantees that every deployed commit remains 100% faithful to its documented architecture and invariants.
+
+== Boundaries & Scope
+
+* **Responsibilities**:
+  - Inspect Git diffs and detect structural spec-to-code drift across working tree, branches, and commits (`eidos drift`).
+  - Enable frictionless Direct Mode co-evolution and 1-hop neighborhood specification synchronization.
+  - Enforce Git as the Single Source of Truth policy (`POL-001`) in CI/CD pipeline verification gates.
+* **Out of Scope**:
+  - Parsing and validating specification AST schemas (delegated to `DOM-SPEC-ENGINE`).
+  - Agent plugin packaging and skills maintenance (delegated to `DOM-AGENT-INTELLIGENCE`).
+  - Serving web portal dashboards (delegated to `DOM-EXPERIENCE-PORTAL`).
 

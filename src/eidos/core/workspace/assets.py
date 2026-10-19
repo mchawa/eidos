@@ -55,3 +55,56 @@ def get_agent_plugins_schemas_dir() -> Path:
 def get_plugin_reference_dir() -> Path:
     """Return the directory containing the canonical Eidos Agent Plugin reference."""
     return get_assets_path("plugin_reference")
+
+
+_TEMPLATE_PATHS_BY_TYPE: dict[str, str] = {
+    "product/system": "product/system.template.adoc",
+    "system": "product/system.template.adoc",
+    "tech/architecture": "tech/architecture.template.adoc",
+    "architecture": "tech/architecture.template.adoc",
+    "product/domain": "product/domain.template.adoc",
+    "domain": "product/domain.template.adoc",
+    "product/capability": "product/capability.template.adoc",
+    "capability": "product/capability.template.adoc",
+    "product/persona": "product/persona.template.adoc",
+    "persona": "product/persona.template.adoc",
+    "product/policy": "product/policy.template.adoc",
+    "policy": "product/policy.template.adoc",
+    "product/exploration": "product/exploration.template.adoc",
+    "exploration": "product/exploration.template.adoc",
+    "tech/container": "tech/container.template.adoc",
+    "container": "tech/container.template.adoc",
+    "tech/component": "tech/component.template.adoc",
+    "component": "tech/component.template.adoc",
+    "tech/contract": "tech/contract.template.adoc",
+    "contract": "tech/contract.template.adoc",
+    "design/system": "design/system.template.adoc",
+    "design-system": "design/system.template.adoc",
+    "design/ui-component": "design/ui-component.template.adoc",
+    "ui-component": "design/ui-component.template.adoc",
+    "design/screen": "design/screen.template.adoc",
+    "screen": "design/screen.template.adoc",
+    "design/client": "design/client.template.adoc",
+    "client": "design/client.template.adoc",
+    "design/flow": "design/flow.template.adoc",
+    "flow": "design/flow.template.adoc",
+    "delta/mutation": "delta/delta.template.adoc",
+    "delta": "delta/delta.template.adoc",
+}
+
+
+def get_spec_template_path(doc_type: str) -> Path:
+    """Resolve the AsciiDoc prose template path beside the corresponding v1 schema."""
+    key = doc_type.strip().lower()
+    rel = _TEMPLATE_PATHS_BY_TYPE.get(key)
+    if not rel:
+        raise ValueError(f"No specification template registered for type '{doc_type}'.")
+    return get_v1_schemas_dir() / rel
+
+
+def render_spec_template(doc_type: str, **context: object) -> str:
+    """Load and render the AsciiDoc prose template for doc_type with the given placeholder context."""
+    template_text = get_spec_template_path(doc_type).read_text(encoding="utf-8")
+    for k, v in context.items():
+        template_text = template_text.replace(f"{{{k}}}", str(v))
+    return template_text

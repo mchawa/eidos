@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-011
 title: Integrate Embedded Architectural Knowledge Graph & Hybrid Context Retrieval
   Index

@@ -167,5 +167,3 @@ app.registered_commands.sort(key=lambda c: ROOT_COMMAND_ORDER.index(_command_nam
 
 if __name__ == "__main__":
     app()
-
-

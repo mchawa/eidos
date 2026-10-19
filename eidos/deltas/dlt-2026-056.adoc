@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-056
 title: Pluggable Contract Protocol Verifier Registry for Multi-Protocol CTR-* Specifications
 status: applied

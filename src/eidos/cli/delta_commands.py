@@ -281,9 +281,7 @@ def delta_audit_cmd(
 
     # Unacknowledged active leaks table
     if result.unacknowledged_findings:
-        console.print(
-            f"\n[bold red]Unacknowledged Active Leaks ({len(result.unacknowledged_findings)}):[/bold red]"
-        )
+        console.print(f"\n[bold red]Unacknowledged Active Leaks ({len(result.unacknowledged_findings)}):[/bold red]")
         u_table = Table(show_header=True, header_style="bold red")
         u_table.add_column("Location", style="cyan")
         u_table.add_column("Term", style="yellow")
@@ -509,11 +507,7 @@ def delta_status_cmd(
 
     console.print(summary_table)
 
-    active_deltas = (
-        by_status.get("proposed", [])
-        + by_status.get("in_review", [])
-        + by_status.get("approved", [])
-    )
+    active_deltas = by_status.get("proposed", []) + by_status.get("in_review", []) + by_status.get("approved", [])
     if active_deltas:
         console.print("\n[bold yellow]In-Flight SpecDeltas:[/bold yellow]")
         active_table = Table(show_header=True)
@@ -603,7 +597,9 @@ def delta_changelog_cmd(
         include_unreleased=unreleased,
     )
 
-    console.print(f"[bold green]✓ Changelog generated:[/bold green] {res['output_file']} ({res['bytes_written']} bytes)")
+    console.print(
+        f"[bold green]✓ Changelog generated:[/bold green] {res['output_file']} ({res['bytes_written']} bytes)"
+    )
     if res.get("docs_file"):
         link_mode = "symlinked" if res.get("symlink_created") else "mirrored"
         console.print(f"  [dim]Documentation {link_mode}: {res['docs_file']}[/dim]")

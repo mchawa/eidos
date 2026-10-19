@@ -40,7 +40,6 @@ A SpecDelta document (`eidos/deltas/dlt-2026-051.adoc`) combines strongly-typed 
 ```asciidoc
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-051
 title: "Close Spec-to-Code Drift Detection Bypasses for Unowned Code and 1-Hop Neighborhoods"
 status: applied # proposed | in_review | approved | applied | rejected

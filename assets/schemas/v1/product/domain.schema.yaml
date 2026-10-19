@@ -5,19 +5,14 @@ type: object
 additionalProperties: false
 required:
   - type
-  - schema
   - id
   - title
   - classification
-  - boundaries
 properties:
   type:
     type: string
     const: "product/domain"
     description: "The fixed document type identifier. Must always be 'product/domain'."
-  schema:
-    type: string
-    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^DOM-[A-Z0-9_-]+$"
@@ -38,35 +33,6 @@ properties:
       - "supporting"
       - "generic"
       - "platform"
-  boundaries:
-    type: object
-    description: "Functional boundaries defining what this domain owns."
-    additionalProperties: false
-    required:
-      - responsibilities
-    properties:
-      responsibilities:
-        type: array
-        description: "Explicit list of business and technical capabilities owned exclusively by this domain."
-        items:
-          type: string
-          description: "A specific area of responsibility."
-      out_of_scope:
-        type: array
-        description: "Explicit list of concerns that this domain does NOT handle and delegates elsewhere (optional)."
-        items:
-          type: string
-          description: "A specific excluded responsibility."
-  ubiquitous_language:
-    oneOf:
-      - type: object
-        additionalProperties:
-          type: string
-      - type: array
-        items:
-          type: object
-          additionalProperties: true
-    description: "Canonical Domain-Driven Design glossary terms and definitions scoped to this bounded context (optional)."
   owners:
     type: array
     description: "Teams, roles, or individuals accountable for this bounded context (optional)."

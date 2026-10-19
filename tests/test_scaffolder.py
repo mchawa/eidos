@@ -138,7 +138,7 @@ def test_scaffold_all_spec_types(tmp_path):
     assert exp_file.parent == tmp_path / "explorations"
     exp_doc = parse_spec_file(exp_file)
     assert exp_doc.doc_type == "product/exploration"
-    assert "hypothesis" in exp_doc.frontmatter
+    assert "Hypothesis" in exp_doc.body
     assert_valid_spec(validator, exp_file)
 
     # 9. Component, 10. Design System, 11. UI Component, 12. Screen, 13. Client, 14. Flow
@@ -781,9 +781,7 @@ def test_create_component_client_flow_and_safe_yaml(tmp_path):
     create_spec(tmp_path, "container", "CNT-APP", "App Container")
     tricky = 'Quote: "Test" #hash\nsecond line'
 
-    cmp_file = create_spec(
-        tmp_path, "component", "CMP-TEST-001", tricky
-    )
+    cmp_file = create_spec(tmp_path, "component", "CMP-TEST-001", tricky)
     assert cmp_file == tmp_path / "architecture" / "components" / "test-001.adoc"
     doc = parse_spec_file(cmp_file)
     assert doc.doc_type == "tech/component"
@@ -811,9 +809,7 @@ def test_create_component_client_flow_and_safe_yaml(tmp_path):
     assert_valid_spec(SpecValidator(), cross_flow)
 
     # SpecDelta with quotes/colons/newlines in title remains valid YAML
-    dlt_file = create_delta(
-        tmp_path, "DLT-2026-900", 'Fix "quoted": title'
-    )
+    dlt_file = create_delta(tmp_path, "DLT-2026-900", 'Fix "quoted": title')
     fm_text = dlt_file.read_text(encoding="utf-8").split("---")[1]
     fm = yaml.safe_load(fm_text)
     assert fm["title"] == 'Fix "quoted": title'
@@ -826,8 +822,14 @@ def test_cli_spec_create_component_with_container(tmp_path):
     res = runner.invoke(
         app,
         [
-            "spec", "create", "component", "CMP-CLI-TEST", "--title", "CLI Test",
-            "--path", str(tmp_path),
+            "spec",
+            "create",
+            "component",
+            "CMP-CLI-TEST",
+            "--title",
+            "CLI Test",
+            "--path",
+            str(tmp_path),
         ],
     )
     assert res.exit_code == 0, res.stdout
@@ -890,13 +892,13 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
     eidos_dir = repo / "eidos"
     # Verify init_repository's generated system.adoc and baseline specs validate cleanly BEFORE any edits
     initial_report = SpecValidator().validate_directory(eidos_dir)
-    assert initial_report.is_clean, f"Initial eidos init specs failed validation: {initial_report.schema_errors} {initial_report.broken_references}"
+    assert initial_report.is_clean, (
+        f"Initial eidos init specs failed validation: {initial_report.schema_errors} {initial_report.broken_references}"
+    )
 
     create_spec(eidos_dir, "domain", "DOM-PAYMENTS", "Payments Domain")
     create_spec(eidos_dir, "persona", "PER-USER", "Merchant User")
-    cnt_file = create_spec(
-        eidos_dir, "container", "CNT-CHECKOUT", "Checkout Service"
-    )
+    cnt_file = create_spec(eidos_dir, "container", "CNT-CHECKOUT", "Checkout Service")
     cnt_file.write_text(
         cnt_file.read_text(encoding="utf-8").replace("source_path: src", "source_path: services/checkout"),
         encoding="utf-8",
@@ -923,7 +925,9 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
     # Add source and test file in foreign repo and bind CAP-PAY-001 invariant to it
     svc_dir = repo / "services" / "checkout"
     svc_dir.mkdir(parents=True)
-    (svc_dir / "ledger.ts").write_text("export function recordEntry(amount: number): boolean {\n  return amount > 0;\n}\n", encoding="utf-8")
+    (svc_dir / "ledger.ts").write_text(
+        "export function recordEntry(amount: number): boolean {\n  return amount > 0;\n}\n", encoding="utf-8"
+    )
     tests_dir = repo / "tests"
     tests_dir.mkdir(parents=True, exist_ok=True)
     (tests_dir / "test_ledger.py").write_text(
@@ -950,9 +954,13 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
     try:
         # 1. Validate specs (both eidos_dir and eidos_dir/architecture under parent src/ path)
         val_report = SpecValidator().validate_directory(eidos_dir)
-        assert val_report.is_clean, f"Validation errors: {val_report.schema_errors}, broken refs: {val_report.broken_references}"
+        assert val_report.is_clean, (
+            f"Validation errors: {val_report.schema_errors}, broken refs: {val_report.broken_references}"
+        )
         sub_report = SpecValidator().validate_directory(eidos_dir / "architecture")
-        assert sub_report.is_clean, f"Subdir validation errors: {sub_report.schema_errors}, broken refs: {sub_report.broken_references}"
+        assert sub_report.is_clean, (
+            f"Subdir validation errors: {sub_report.schema_errors}, broken refs: {sub_report.broken_references}"
+        )
 
         # 2. Index sync & Context slice
         res_sync = runner.invoke(app, ["index", "sync", "--path", str(eidos_dir)])
@@ -998,7 +1006,6 @@ def test_frontmatter_mutations_preserve_yaml_comments_and_formatting(tmp_path):
         """---
 # Top-level container comment
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: CNT-CORE # inline id comment
 title: "Core Container"
 container_type: library
@@ -1040,7 +1047,6 @@ components:
         """---
 # Delta header comment
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-777
 title: "Comment Preservation Delta"
 status: proposed # status inline comment
@@ -1063,8 +1069,6 @@ mutations:
     dlt_after_apply = dlt_file.read_text(encoding="utf-8")
     assert "# Delta header comment" in dlt_after_apply
     assert "status: applied # status inline comment" in dlt_after_apply
-
-
 
 
 def test_scaffolder_backward_compatible_reexports():
@@ -1131,7 +1135,7 @@ def test_core_and_cli_modules_import_without_cycles():
     env_code = "import importlib, sys\nfor n in sys.argv[1:]:\n    importlib.import_module(n)\n"
     pythonpath = str(src_root)
     names = sorted(modules)
-    for order in ([[n] for n in names] + [list(reversed(names))]):
+    for order in [[n] for n in names] + [list(reversed(names))]:
         proc = subprocess.run(
             [sys.executable, "-c", env_code, *order],
             capture_output=True,
@@ -1191,7 +1195,6 @@ def test_lossless_component_promote_inline_and_word_bounded_references(tmp_path)
     cnt_file.write_text(
         """---
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: CNT-CORE
 title: "Core Container"
 container_type: library
@@ -1257,9 +1260,7 @@ components:
     # Also verify symlinked deltas/by-status/ do not produce duplicate references
     dlt_ref = create_delta(eidos_dir, "DLT-2026-888", title="Ref Delta")
     dlt_ref.write_text(
-        dlt_ref.read_text(encoding="utf-8").replace(
-            "Proposed feature mutation for Ref Delta.", "Touches CNT-CORE."
-        ),
+        dlt_ref.read_text(encoding="utf-8").replace("Proposed feature mutation for Ref Delta.", "Touches CNT-CORE."),
         encoding="utf-8",
     )
     refs_with_delta = find_references_to_spec(eidos_dir, "CNT-CORE", cnt_file)
@@ -1536,7 +1537,6 @@ def test_a7_a8_a11_catalog_scaffolder_and_design_edge_cases(tmp_path: Path) -> N
     custom_delta.write_text(
         "---\n"
         "type: delta/mutation\n"
-        "schema: schemas/v1/delta/delta.schema.yaml\n"
         "id: DLT-2026-500\n"
         "title: Custom Named Proposed Delta\n"
         "status: proposed\n"
@@ -1713,7 +1713,6 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     cnt_path.write_text(
         "---\n"
         "type: tech/container\n"
-        "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-API-GATEWAY\n"
         "title: API Gateway\n"
         "container_type: service\n"
@@ -1826,10 +1825,7 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     assert not promoted_sub.exists()
     inlined_doc = parse_spec_file(custom_cnt)
     all_inlined = list(inlined_doc.frontmatter.get("components") or [])
-    assert any(
-        isinstance(c, dict) and c.get("id") == "CMP-SUB"
-        for c in all_inlined
-    )
+    assert any(isinstance(c, dict) and c.get("id") == "CMP-SUB" for c in all_inlined)
 
     # --- A6: ChangelogGenerator with eidos_dir only and null frontmatter values ---
     null_dlt = eidos_dir / "deltas" / "dlt-2026-901-nulls.adoc"
@@ -1877,7 +1873,6 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     dlt_del_paths.write_text(
         "---\n"
         "type: delta/mutation\n"
-        "schema: schemas/v1/delta/delta.schema.yaml\n"
         "id: DLT-2026-902\n"
         "title: Remove Legacy Domain and Exploration\n"
         "status: proposed\n"
@@ -1897,6 +1892,3 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     matched_tokens = {f.matched_term for f in audit_res.unacknowledged_findings}
     assert "DOM-LEGACY" in matched_tokens
     assert "EXP-OLD" in matched_tokens
-
-
-

@@ -1,36 +1,28 @@
 ---
 type: product/exploration
-schema: schemas/v1/product/exploration.schema.yaml
 id: EXP-2026-003
 title: "Web Living Portal Modernization: shadcn/ui, Tailwind CSS & Material Design 3 (MD3) Design System Integration"
 status: adopted
 decision:
   outcome: adopted
-  resulting_delta_id: "DLT-2026-018"
-  learnings: "Vite with vite-plugin-singlefile packages the React 19, Tailwind CSS v4, and Material Design 3 Living Portal into a 95.89 KB gzipped (336.74 KB uncompressed) self-contained HTML bundle with zero external network requests. Cold-boot preview delivery is 1.19 ms, and runtime execution strictly adheres to Python standard library http.server without Node.js or npm runtime dependencies (INV-PORTAL-ZERO-NODE-DEP)."
-hypothesis: "Rebuilding the Eidos Living Web Portal UI layer (CLT-WEB-PORTAL / CMP-EIDOS-PORTAL) with a modern component architecture combining shadcn/ui accessible primitives, Tailwind CSS v4, and Material Design 3 (MD3) tonal elevation systems—while shipping pre-compiled, self-contained single-file bundles within Python package assets—will dramatically elevate visual polish, keyboard accessibility, and design token fidelity without violating INV-PORTAL-ZERO-NODE-DEP or introducing external runtime dependencies for CLI users."
-questions_to_answer:
-  - "How can we adopt a modern React / Vite / Tailwind / shadcn/ui frontend stack while strictly preserving Eidos's zero-Node.js runtime invariant (INV-PORTAL-ZERO-NODE-DEP) for end-users running 'eidos serve' or 'eidos build-site'?"
-  - "How should the Material Design 3 (MD3) design system (dynamic tonal palettes: Primary, Secondary, Tertiary, Surface, Surface Container Low/High, State Layers, MD3 Shape tokens) be synthesized with shadcn/ui (Radix Primitives) and Tailwind CSS utility styling?"
-  - "Can the existing W3C DTCG design tokens in eidos/design/systems/core/tokens.json automatically map into MD3 color roles and CSS variables used by Tailwind CSS and shadcn/ui components?"
-  - "Can Vite + vite-plugin-singlefile or inline asset bundling generate a fully self-contained offline SPA (site/portal/index.html with injected window.__EIDOS_DATA__) under 1.2MB (including Mermaid.js for dynamic C4 rendering) with zero CORS issues when opened directly from the local file system?"
-  - "How will key portal surfaces be transformed: Collapsible navigation rail (UIC-PORTAL-SIDEBAR), C4 Architecture Viewer with dynamic pan/zoom, interactive SpecDelta Kanban board with stage badges, and a global CMD+K Command Palette for instant specification search?"
-  - "What build-time developer workflow (e.g. pnpm build hooked into Python wheel packaging / GitHub Actions CI) is required to ensure contributors can iterate with hot-module replacement (HMR) during portal frontend development?"
-spikes_to_run:
-  - name: "spike-vite-singlefile-bundler"
-    target: "Prototype a Vite + React + Tailwind CSS v4 + vite-plugin-singlefile build pipeline producing a self-contained zero-runtime-dependency distribution embedded in src/eidos/portal/assets.py or static assets."
-  - name: "spike-md3-shadcn-theme-bridge"
-    target: "Map W3C DTCG tokens (tokens.json) to MD3 tonal surfaces and color roles, and apply them to standard shadcn/ui primitives (Button, Card, Badge, Dialog, Command, Sheet, Tabs, Tooltip)."
-  - name: "spike-c4-mermaid-kanban-react"
-    target: "Port the interactive C4 Mermaid diagram viewer (with interactive zoom/pan controls) and the SpecDelta mutation Kanban board to React/shadcn with MD3 elevated cards."
-  - name: "spike-python-wheel-packaging"
-    target: "Verify that the compiled frontend bundle can be packaged into Python wheel distributions, validating that clean virtual environments without Node.js can install and run 'eidos serve' and 'eidos build-site'."
-exit_criteria:
-  max_duration: "1_week"
-  benchmark: "Lighthouse Performance >= 95, Accessibility = 100; single-file static bundle <= 1.2MB compressed; cold-boot live preview < 50ms; zero Node.js/npm runtime requirement for CLI users."
+  resulting_deltas:
+    - "DLT-2026-018"
 ---
 = Exploration: Web Living Portal Modernization: shadcn/ui, Tailwind CSS & Material Design 3 (MD3) Design System Integration
 :toc: left
+
+== Core Hypothesis
+Rebuilding the Eidos Living Web Portal UI layer (`CLT-WEB-PORTAL` / `CNT-EIDOS-PORTAL`) with a modern component architecture combining shadcn/ui accessible primitives, Tailwind CSS v4, and Material Design 3 (MD3) tonal elevation systems—while shipping pre-compiled, self-contained single-file bundles within Python package assets—will dramatically elevate visual polish, keyboard accessibility, and design token fidelity without violating `INV-PORTAL-ZERO-NODE-DEP` or introducing external runtime dependencies for CLI users.
+
+== Questions & Spikes
+* **Spikes**:
+  - `spike-vite-singlefile-bundler`: Prototype a Vite + React + Tailwind CSS v4 + vite-plugin-singlefile build pipeline producing a self-contained zero-runtime-dependency distribution.
+  - `spike-md3-shadcn-theme-bridge`: Map W3C DTCG tokens (`tokens.json`) to MD3 tonal surfaces and color roles.
+  - `spike-c4-mermaid-kanban-react`: Port the interactive C4 Mermaid diagram viewer and the SpecDelta mutation Kanban board to React/shadcn with MD3 elevated cards.
+  - `spike-python-wheel-packaging`: Verify that the compiled frontend bundle can be packaged into Python wheel distributions.
+
+== Findings & Learnings
+Vite with `vite-plugin-singlefile` packages the React 19, Tailwind CSS v4, and Material Design 3 Living Portal into a self-contained HTML bundle with zero external network requests. Cold-boot preview delivery is 1.19 ms, and runtime execution strictly adheres to Python standard library `http.server` without Node.js or npm runtime dependencies (`INV-PORTAL-ZERO-NODE-DEP`).
 
 == 1. Problem Statement & Motivation
 

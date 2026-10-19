@@ -7,18 +7,13 @@ from pathlib import Path
 
 from eidos.core.spec.parser import dump_spec_document
 from eidos.core.spec.validator import SpecValidator
+from eidos.core.workspace.assets import render_spec_template
 
 
 def _ensure_eidos_gitignore(eidos_dir: Path) -> None:
     """Ensure eidos/.gitignore is present and ignores local SQLite cache so host projects remain unpolluted."""
     gitignore_path = eidos_dir / ".gitignore"
-    default_content = (
-        "# Eidos local index cache\n"
-        ".cache/\n\n"
-        "# OS artifacts\n"
-        ".DS_Store\n"
-        "Thumbs.db\n"
-    )
+    default_content = "# Eidos local index cache\n.cache/\n\n# OS artifacts\n.DS_Store\nThumbs.db\n"
     if not gitignore_path.exists():
         with contextlib.suppress(OSError):
             gitignore_path.write_text(default_content, encoding="utf-8")
@@ -109,21 +104,12 @@ def init_repository(
         sys_title = clean_title or clean_name or sys_id
         sys_fm = {
             "type": "product/system",
-            "schema": "schemas/v1/product/system.schema.yaml",
             "id": sys_id,
             "title": sys_title,
             "status": "draft",
             "archetypes": ["service"],
-            "business_identity": {
-                "vision": f"System vision for {sys_title}.",
-                "target_users": ["Developers"],
-                "value_proposition": f"Core capabilities delivered by {sys_title}.",
-            },
-            "technical_profile": {
-                "primary_languages": ["AsciiDoc"],
-            },
         }
-        sys_body = f"= System: {sys_title}\n:toc: left\n\n== Strategic Vision\n{sys_fm['business_identity']['vision']}\n"
+        sys_body = render_spec_template("product/system", heading=sys_title)
         sys_file.write_text(dump_spec_document(sys_fm, sys_body), encoding="utf-8")
     elif not sys_file.exists():
         sys_file.write_text("", encoding="utf-8")

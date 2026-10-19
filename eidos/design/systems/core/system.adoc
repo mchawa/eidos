@@ -1,6 +1,5 @@
 ---
 type: design/system
-schema: schemas/v1/design/system.schema.yaml
 id: DS-CORE
 title: "Eidos Core Design System"
 status: active

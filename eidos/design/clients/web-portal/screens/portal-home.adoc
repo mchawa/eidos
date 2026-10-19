@@ -1,6 +1,5 @@
 ---
 type: design/screen
-schema: schemas/v1/design/screen.schema.yaml
 id: SCR-PORTAL-HOME
 title: "Portal Executive Dashboard & Home View"
 route: "/"

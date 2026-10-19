@@ -70,7 +70,9 @@ def test_a1_git_baseline_resolves_dedicated_component_without_cmp_prefix(tmp_pat
     )
 
     ok_ver, msg_ver, report = verify_delta_mutations(eidos_dir, dlt_path.name)
-    assert ok_ver, f"Expected git baseline fallback to verify modified auth.adoc for CMP-AUTH, got: {msg_ver} ({report})"
+    assert ok_ver, (
+        f"Expected git baseline fallback to verify modified auth.adoc for CMP-AUTH, got: {msg_ver} ({report})"
+    )
 
 
 def test_a2_declarative_postcondition_does_not_fallback_to_frontmatter_when_body_empty(
@@ -81,7 +83,6 @@ def test_a2_declarative_postcondition_does_not_fallback_to_frontmatter_when_body
     spec_file.write_text(
         "---\n"
         "type: tech/component\n"
-        "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-EMPTY\n"
         "title: Empty Body Component\n"
         "container: CNT-API\n"
@@ -181,7 +182,6 @@ def test_a4_generate_collision_free_delta_id_reads_frontmatter_and_loops_on_coll
     custom_file.write_text(
         "---\n"
         "type: delta/mutation\n"
-        "schema: schemas/v1/delta/delta.schema.yaml\n"
         f"id: DLT-{year}-007-CUSTOM\n"
         "title: Custom Named Delta\n"
         "status: proposed\n"

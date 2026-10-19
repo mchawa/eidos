@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-058
 title: FTS5 Stop-Word Filtering, Incremental Spec Edge Sync, and Progressive Context Budget Compression
 status: applied

@@ -25,7 +25,7 @@ graph TD
     subgraph Technical Layer
         CLT -->|client.container| CMP["CMP-* (Backend / UI Package)"]
         CAP -->|technical.components| CMP
-        UIC -->|test_bindings| TEST["Storybook / Playwright / Vitest"]
+        UIC -->|invariants| TEST["Storybook / Playwright / Vitest"]
     end
 ```
 
@@ -71,7 +71,6 @@ A base design system defines the complete foundational tokens and components. A 
 ```asciidoc
 ---
 type: design/system
-schema: schemas/v1/design/system.schema.yaml
 id: DS-ACME
 title: "Acme Enterprise Theme"
 status: active
@@ -147,14 +146,13 @@ All design tokens strictly adhere to the official **W3C Design Tokens Community 
 
 ## 4. UI Component Manifests (`UIC-*`)
 
-UI Component manifests (`type: design/ui-component`) define the contract for a reusable visual component, including supported variants, interactive states, accessibility invariants, and automated test bindings.
+UI Component manifests (`type: design/ui-component`) define the contract for a reusable visual component, including supported variants, interactive states, accessibility criteria, and test-bound invariants (`invariants`).
 
 ### Component Manifest Example (`eidos/design/systems/core/components/button.adoc`):
 
 ```asciidoc
 ---
 type: design/ui-component
-schema: schemas/v1/design/ui-component.schema.yaml
 id: UIC-CORE-BUTTON
 title: "Action Button"
 design_system: "DS-CORE"
@@ -177,14 +175,10 @@ states:
   - disabled
   - loading
 
-accessibility:
-  wcag_level: "AA"
-  aria_role: "button"
-  keyboard_nav: "Enter and Space trigger action; Tab traverses focus."
-
-test_bindings:
-  storybook: "packages/ui/src/Button.stories.tsx"
-  unit_test: "packages/ui/src/Button.test.tsx"
+invariants:
+  - id: INV-UIC-BUTTON-A11Y
+    rule: "Action Button must support Enter and Space keyboard activation and disabled aria state."
+    test_binding: "packages/ui/src/Button.test.tsx::test_button_keyboard_activation"
 ---
 = UI Component: Action Button
 :toc: left
@@ -192,6 +186,11 @@ test_bindings:
 == States & Interaction Matrix
 * **Loading State**: Displays inline spinner and disables pointer events.
 * **Focus State**: Uses 2px solid brand focus ring with 2px offset.
+
+== Accessibility & Keyboard Navigation
+* **WCAG Level**: AA
+* **ARIA Role**: `button`
+* **Keyboard Navigation**: Enter and Space trigger action; Tab traverses focus.
 ```
 
 ---
@@ -205,7 +204,6 @@ Screens (`type: design/screen`) define pure reusable view layouts: the URL route
 ```asciidoc
 ---
 type: design/screen
-schema: schemas/v1/design/screen.schema.yaml
 id: SCR-CHECKOUT
 title: "Order Checkout Screen"
 route: "/checkout"
@@ -244,7 +242,6 @@ Client manifests (`type: design/client`) bind frontend client targets (web SPA, 
 ```asciidoc
 ---
 type: design/client
-schema: schemas/v1/design/client.schema.yaml
 id: CLT-WEB-PORTAL
 title: "Living Web Portal Client"
 status: active
@@ -279,7 +276,6 @@ Interaction flows (`type: design/flow`) define multi-step user journeys across s
 ```asciidoc
 ---
 type: design/flow
-schema: schemas/v1/design/flow.schema.yaml
 id: FLOW-PORTAL-EXPLORATION
 title: "Specification Discovery & Inspection Flow"
 status: active

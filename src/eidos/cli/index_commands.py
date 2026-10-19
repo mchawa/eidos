@@ -48,9 +48,7 @@ def index_status_cmd(
     grid.add_row("Schema Version:", f"[green]{status['schema_version']}[/green]")
     grid.add_row("Cache Size:", f"[yellow]{status['db_size_bytes'] / 1024:.1f} KB[/yellow]")
     dirty_label = (
-        "[bold red]DIRTY (Needs sync)[/bold red]"
-        if status["is_dirty"]
-        else "[bold green]SYNCED (Clean)[/bold green]"
+        "[bold red]DIRTY (Needs sync)[/bold red]" if status["is_dirty"] else "[bold green]SYNCED (Clean)[/bold green]"
     )
     grid.add_row("Status:", f"{dirty_label} [dim]({status['dirty_check_latency_ms']:.2f}ms check)[/dim]")
     grid.add_row("Total Entities:", f"[bold white]{status['total_entities']}[/bold white]")
@@ -263,7 +261,9 @@ def index_repo_map_cmd(
     repo_map = idx.get_repo_map(max_tokens=max_tokens)
 
     if json_output:
-        console.print_json(data={"repo_map": repo_map, "max_tokens": max_tokens, "estimated_tokens": len(repo_map) // 4})
+        console.print_json(
+            data={"repo_map": repo_map, "max_tokens": max_tokens, "estimated_tokens": len(repo_map) // 4}
+        )
     else:
         console.print(repo_map)
 
@@ -318,5 +318,3 @@ def index_find_symbol_cmd(
         table.add_row(m["symbol"], m["kind"], m["entity_id"], location, m.get("file_path", "") or "—")
 
     console.print(table)
-
-

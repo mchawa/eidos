@@ -98,7 +98,10 @@ def test_changelog_deterministic_delta_classification():
             "title": "Feature Enhancement",
             "summary": "Extend existing capability.",
             "kind": "feature",
-            "mutations": [{"operation": "modify", "target": "CAP-NEW-001"}, {"operation": "modify", "target": "CMP-CORE"}],
+            "mutations": [
+                {"operation": "modify", "target": "CAP-NEW-001"},
+                {"operation": "modify", "target": "CMP-CORE"},
+            ],
         },
     )
     gen._add_delta_to_section(
@@ -161,7 +164,6 @@ def test_changelog_excludes_unapplied_deltas_and_deduplicates_unreleased(tmp_pat
     (deltas_dir / "dlt-2026-001.adoc").write_text(
         """---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-001
 title: "Applied Feature Alpha"
 status: applied
@@ -177,7 +179,6 @@ mutations: []
     (deltas_dir / "dlt-2026-002.adoc").write_text(
         """---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-002
 title: "Proposed Feature Beta"
 status: proposed
@@ -193,7 +194,6 @@ mutations: []
     (deltas_dir / "dlt-2026-003.adoc").write_text(
         """---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-003
 title: "Rejected Feature Gamma"
 status: rejected
@@ -285,21 +285,41 @@ def test_changelog_hermetic_multi_tag_partitioning_draft_exclusion_and_docs_sync
     # Tag v0.1.0 with DLT-2026-010
     _write_delta("DLT-2026-010", "Release 0.1 Capability", "applied")
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "feat: Release 0.1 Capability (DLT-2026-010)"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "feat: Release 0.1 Capability (DLT-2026-010)"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
     subprocess.run(["git", "tag", "v0.1.0"], cwd=tmp_path, check=True, capture_output=True)
 
     # Tag v0.2.0 with DLT-2026-020 + chore(release) commit (which should be filtered out)
     _write_delta("DLT-2026-020", "Release 0.2 Capability", "applied")
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "feat: Release 0.2 Capability (DLT-2026-020)"], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "--allow-empty", "-m", "chore(release): v0.2.0"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "feat: Release 0.2 Capability (DLT-2026-020)"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "chore(release): v0.2.0"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
     subprocess.run(["git", "tag", "v0.2.0"], cwd=tmp_path, check=True, capture_output=True)
 
     # Unreleased DLT-2026-030 (applied) + DLT-2026-031 (draft, must be excluded)
     _write_delta("DLT-2026-030", "Unreleased Capability", "applied")
     _write_delta("DLT-2026-031", "Draft Secret Capability", "draft")
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "feat: Unreleased Capability (DLT-2026-030)"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "feat: Unreleased Capability (DLT-2026-030)"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
 
     gen = ChangelogGenerator(repo_root=tmp_path, eidos_dir=eidos_dir)
     applied_ids = {d["id"] for d in gen.get_applied_deltas()}
@@ -547,4 +567,3 @@ def test_a10_changelog_applied_commit_casing_and_custom_output_file(tmp_path):
     docs_file = repo / "docs" / "changelog.md"
     assert docs_file.exists() and not docs_file.is_symlink()
     assert docs_file.read_text(encoding="utf-8") == custom_out.read_text(encoding="utf-8")
-

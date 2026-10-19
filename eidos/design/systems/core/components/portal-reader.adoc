@@ -1,6 +1,5 @@
 ---
 type: design/ui-component
-schema: schemas/v1/design/ui-component.schema.yaml
 id: UIC-PORTAL-READER
 title: "Portal Living Specification Reader"
 design_system: "DS-CORE"
@@ -16,14 +15,6 @@ variants:
 states:
   - default
   - section_active
-
-accessibility:
-  wcag_level: "AA"
-  aria_role: "article"
-  keyboard_nav: "Tab and Shift+Tab traverse section anchors and interactive code blocks; Enter navigates via sticky Table of Contents."
-
-test_bindings:
-  unit_test: "tests/test_portal.py::test_portal_reading_ergonomics"
 ---
 = UI Component: Portal Living Specification Reader
 :toc: left
@@ -64,4 +55,9 @@ Specification bodies are rendered through Asciidoctor.js (`@asciidoctor/core`, `
 * `include::` is explicitly unsupported in the browser (no filesystem) and is left as inert text in secure mode; no living spec currently uses it.
 
 Passthrough HTML emitted by Asciidoctor is sanitized (no scripts, iframes, styles, or event handlers), and heading ids and the sticky outline come from the same Asciidoctor parse, so `Table of Contents` anchors always match rendered headings. Mermaid, Asciidoctor.js, and the Geist fonts are embedded in the portal bundle (INV-PORTAL-AIR-GAPPED-BUNDLE).
+
+== 5. Accessibility & Verification
+* **WCAG Conformance**: Level AA (`aria-role: article`).
+* **Keyboard Navigation**: Tab and Shift+Tab traverse section anchors and interactive code blocks; Enter navigates via sticky Table of Contents.
+* **Automated Verification**: Exercised by `tests/test_portal.py::test_portal_reading_ergonomics`.
 

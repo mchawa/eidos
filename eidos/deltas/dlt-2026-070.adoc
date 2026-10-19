@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-070
 title: eidos doctor Custom --path Support and Virtualenv-Aware CLI Invocation Check
 status: applied

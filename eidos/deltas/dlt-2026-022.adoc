@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-022
 title: Automated Living Architecture Changelog Generation Engine
 status: applied

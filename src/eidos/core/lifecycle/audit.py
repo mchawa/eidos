@@ -258,9 +258,7 @@ class AuditEngine:
             re.IGNORECASE,
         )
 
-        normalized_mutations = [
-            normalize_delta_mutation(raw_m) for raw_m in mutations if isinstance(raw_m, dict)
-        ]
+        normalized_mutations = [normalize_delta_mutation(raw_m) for raw_m in mutations if isinstance(raw_m, dict)]
         non_removed_ids: set[str] = set()
         for m in normalized_mutations:
             op = str(m.get("operation", "")).strip().lower()
@@ -313,54 +311,34 @@ class AuditEngine:
                         if resolve_entity_prefix_meta(stem_upper) is not None:
                             resolved_id = stem_upper
                         elif "architecture/components/" in clean_p:
-                            resolved_id = (
-                                stem_upper if stem_upper.startswith("CMP-") else f"CMP-{stem_upper}"
-                            )
+                            resolved_id = stem_upper if stem_upper.startswith("CMP-") else f"CMP-{stem_upper}"
                         elif "architecture/containers/" in clean_p:
-                            resolved_id = (
-                                stem_upper if stem_upper.startswith("CNT-") else f"CNT-{stem_upper}"
-                            )
+                            resolved_id = stem_upper if stem_upper.startswith("CNT-") else f"CNT-{stem_upper}"
                         elif "architecture/contracts/" in clean_p:
-                            resolved_id = (
-                                stem_upper if stem_upper.startswith("CTR-") else f"CTR-{stem_upper}"
-                            )
+                            resolved_id = stem_upper if stem_upper.startswith("CTR-") else f"CTR-{stem_upper}"
                         elif "policies/" in clean_p:
-                            resolved_id = (
-                                stem_upper if stem_upper.startswith("POL-") else f"POL-{stem_upper}"
-                            )
+                            resolved_id = stem_upper if stem_upper.startswith("POL-") else f"POL-{stem_upper}"
                         elif "personas/" in clean_p:
-                            resolved_id = (
-                                stem_upper if stem_upper.startswith("PER-") else f"PER-{stem_upper}"
-                            )
+                            resolved_id = stem_upper if stem_upper.startswith("PER-") else f"PER-{stem_upper}"
                         elif "/capabilities/" in clean_p:
-                            resolved_id = (
-                                stem_upper if stem_upper.startswith("CAP-") else f"CAP-{stem_upper}"
-                            )
+                            resolved_id = stem_upper if stem_upper.startswith("CAP-") else f"CAP-{stem_upper}"
                         elif "domains/" in clean_p:
                             dom_token = parent_upper if stem_upper == "DOMAIN" and parent_upper else stem_upper
                             resolved_id = dom_token if dom_token.startswith("DOM-") else f"DOM-{dom_token}"
                         elif "design/systems/" in clean_p and "/components/" in clean_p:
-                            resolved_id = (
-                                stem_upper if stem_upper.startswith("UIC-") else f"UIC-{stem_upper}"
-                            )
+                            resolved_id = stem_upper if stem_upper.startswith("UIC-") else f"UIC-{stem_upper}"
                         elif "design/systems/" in clean_p:
                             ds_token = parent_upper if stem_upper == "SYSTEM" and parent_upper else stem_upper
                             resolved_id = ds_token if ds_token.startswith("DS-") else f"DS-{ds_token}"
                         elif "/screens/" in clean_p or clean_p.startswith("design/screens/"):
-                            resolved_id = (
-                                stem_upper if stem_upper.startswith("SCR-") else f"SCR-{stem_upper}"
-                            )
+                            resolved_id = stem_upper if stem_upper.startswith("SCR-") else f"SCR-{stem_upper}"
                         elif "/flows/" in clean_p or clean_p.startswith("design/flows/"):
-                            resolved_id = (
-                                stem_upper if stem_upper.startswith("FLOW-") else f"FLOW-{stem_upper}"
-                            )
+                            resolved_id = stem_upper if stem_upper.startswith("FLOW-") else f"FLOW-{stem_upper}"
                         elif "design/clients/" in clean_p:
                             clt_token = parent_upper if stem_upper == "CLIENT" and parent_upper else stem_upper
                             resolved_id = clt_token if clt_token.startswith("CLT-") else f"CLT-{clt_token}"
                         elif "explorations/" in clean_p:
-                            resolved_id = (
-                                stem_upper if stem_upper.startswith("EXP-") else f"EXP-{stem_upper}"
-                            )
+                            resolved_id = stem_upper if stem_upper.startswith("EXP-") else f"EXP-{stem_upper}"
                     if resolved_id:
                         targets.add(resolved_id)
                         primary_target = resolved_id
@@ -581,7 +559,6 @@ class AuditEngine:
                 risk_level="low",
             )
 
-
         # 3. Explicit Tombstone declarations in SpecDelta
         for entry in allowed_reasons:
             if isinstance(entry, dict):
@@ -617,8 +594,7 @@ class AuditEngine:
                                 )
                             except re.error:
                                 pat_matches = (
-                                    pat_str.lower() in matched_term.lower()
-                                    or pat_str.lower() in line_text.lower()
+                                    pat_str.lower() in matched_term.lower() or pat_str.lower() in line_text.lower()
                                 )
                     if pat_matches:
                         return AuditFinding(
@@ -648,7 +624,10 @@ class AuditEngine:
         # 5. Tests in polyglot test suites
         if rel_str.startswith("tests/") or is_test_code_path(rel_str):
             # Check if this is audit/test tooling or inspecting the audit results
-            if any(term in line_text for term in ("targets_audited", "audit_delta", "AuditEngine", "DeltaAuditResult")) or rel_path.name == "test_audit.py":
+            if (
+                any(term in line_text for term in ("targets_audited", "audit_delta", "AuditEngine", "DeltaAuditResult"))
+                or rel_path.name == "test_audit.py"
+            ):
                 return AuditFinding(
                     file_path=rel_str,
                     line_number=line_number,

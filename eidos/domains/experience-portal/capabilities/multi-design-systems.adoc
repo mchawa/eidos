@@ -1,6 +1,5 @@
 ---
 type: product/capability
-schema: schemas/v1/product/capability.schema.yaml
 id: CAP-EXP-002
 title: "Multi-Design Systems, W3C Tokens & Client Surface Management"
 domain: DOM-EXPERIENCE-PORTAL
@@ -13,7 +12,6 @@ business:
     - eidos/personas/software-engineer.adoc
     - eidos/personas/product-lead.adoc
     - eidos/personas/autonomous-agent.adoc
-  jtbd: "Govern brand tokens, multi-client application targets, UI component contracts, and interaction flows as first-class living specifications synchronized with code."
   policies:
     - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
     - eidos/policies/POL-003-continuous-documentation-sync.adoc
@@ -44,6 +42,9 @@ technical:
 ---
 = Capability: Multi-Design Systems, W3C Tokens & Client Surface Management
 :toc: left
+
+== Job To Be Done (JTBD)
+Govern brand tokens, multi-client application targets, UI component contracts, and interaction flows as first-class living specifications synchronized with code.
 
 == Intent
 Visual design systems, component state machines, and client runtimes frequently suffer from token drift and undocumented edge cases. This capability elevates frontend design into a first-class living specification pillar, enabling multi-client applications (`CLT-*`), canonical UI component contracts (`UIC-*`), screen state machines (`SCR-*`), and interaction flows (`FLOW-*`) directly inside Git.

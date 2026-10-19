@@ -1,6 +1,5 @@
 ---
 type: tech/contract
-schema: schemas/v1/tech/contract.schema.yaml
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
 status: active

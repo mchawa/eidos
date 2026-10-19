@@ -24,7 +24,6 @@ Policies define non-negotiable system invariants, compliance rules, structural g
 ```asciidoc
 ---
 type: product/policy
-schema: schemas/v1/product/policy.schema.yaml
 id: POL-002-INVARIANT-TEST-ENFORCEMENT
 title: "Mandatory Invariant Test Binding"
 status: active

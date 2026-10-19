@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-075
 title: Accurate Non-Code Invariant/Delta/Validation Drift Diagnostics in Hooks & CLI and Push-Aware CI Drift Base Resolution
 status: applied

@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-072
 title: Collision-Free Schema Cache Keying, 16-Schema eidos info, and Functional Typer Root CLI Contract Parity
 status: applied

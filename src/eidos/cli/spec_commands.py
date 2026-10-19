@@ -310,4 +310,3 @@ def spec_delete_cmd(
 def register(app: typer.Typer) -> None:
     """Attach the root-level commands owned by this module to the root Typer app."""
     app.command("validate", rich_help_panel=PANEL_GOVERNANCE)(validate)
-

@@ -1,0 +1,8 @@
+= Domain: {heading}
+:toc: left
+
+== Strategic Mission & Boundaries
+Describe the bounded context, core responsibilities, and explicit out-of-scope boundaries of this domain.
+
+== Ubiquitous Language
+Define the canonical domain terminology and core concepts within this bounded context.

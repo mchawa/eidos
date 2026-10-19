@@ -86,9 +86,7 @@ def _query_merge_base(repo: Path, base_ref: str, head_ref: str = "HEAD") -> str 
     return None
 
 
-def _resolve_merge_base(
-    repo: Path, base_ref: str, head_ref: str = "HEAD", fail_loudly: bool = False
-) -> str | None:
+def _resolve_merge_base(repo: Path, base_ref: str, head_ref: str = "HEAD", fail_loudly: bool = False) -> str | None:
     """Resolve the merge-base commit SHA between base_ref and head_ref (DLT-2026-053)."""
     sha = _query_merge_base(repo, base_ref, head_ref)
     if sha:
@@ -139,9 +137,7 @@ def _resolve_base_ref(repo: Path, base_ref: str | None = None) -> str | None:
                     capture_output=True,
                     check=False,
                 )
-                if prev_check.returncode == 0 and _resolve_merge_base(
-                    repo, "HEAD~1", "HEAD", fail_loudly=False
-                ):
+                if prev_check.returncode == 0 and _resolve_merge_base(repo, "HEAD~1", "HEAD", fail_loudly=False):
                     continue
             return candidate
     return None
@@ -206,11 +202,7 @@ def _resolve_base_and_merge_base(
         check=False,
     )
     head_sha = _stdout_str(head_check) if head_check.returncode == 0 else ""
-    start_idx = (
-        _CANDIDATE_BASE_REFS.index(candidate) + 1
-        if candidate in _CANDIDATE_BASE_REFS
-        else 0
-    )
+    start_idx = _CANDIDATE_BASE_REFS.index(candidate) + 1 if candidate in _CANDIDATE_BASE_REFS else 0
     for rem_cand in _CANDIDATE_BASE_REFS[start_idx:]:
         check = subprocess.run(
             ["git", "rev-parse", "--verify", rem_cand],
@@ -227,9 +219,7 @@ def _resolve_base_and_merge_base(
                     capture_output=True,
                     check=False,
                 )
-                if prev_check.returncode == 0 and _resolve_merge_base(
-                    repo, "HEAD~1", head_ref, fail_loudly=False
-                ):
+                if prev_check.returncode == 0 and _resolve_merge_base(repo, "HEAD~1", head_ref, fail_loudly=False):
                     continue
             rem_mb = _resolve_merge_base(repo, rem_cand, head_ref, fail_loudly=False)
             if rem_mb:
@@ -326,9 +316,7 @@ def get_git_diff_files(
             return sorted(lines)
 
         if base_ref:
-            raise GitResolutionError(
-                f"Failed to execute git diff against '{diff_base}': {res.stderr.strip()}"
-            )
+            raise GitResolutionError(f"Failed to execute git diff against '{diff_base}': {res.stderr.strip()}")
     except OSError as err:
         if base_ref:
             raise GitResolutionError(f"Failed to execute git diff: {err}") from err
@@ -512,8 +500,7 @@ def is_polyglot_test_file(
 
     if is_under_src:
         return bool(
-            nested_test_segment
-            and p.suffix in {".py", ".ts", ".js", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt"}
+            nested_test_segment and p.suffix in {".py", ".ts", ".js", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt"}
         )
 
     if p.suffix == ".py" and (name.startswith("test_") or name.endswith("_test.py")):
@@ -628,11 +615,7 @@ def classify_changed_files(
 
     effective_root = (repo_root or Path.cwd()).resolve()
     if eidos_dir is not None:
-        resolved_eidos = (
-            (effective_root / eidos_dir).resolve()
-            if not eidos_dir.is_absolute()
-            else eidos_dir.resolve()
-        )
+        resolved_eidos = (effective_root / eidos_dir).resolve() if not eidos_dir.is_absolute() else eidos_dir.resolve()
         try:
             eff_eidos = resolved_eidos.relative_to(effective_root)
             eidos_rel_parts = [p.lower() for p in eff_eidos.parts if p not in ("", ".")]
@@ -644,9 +627,7 @@ def classify_changed_files(
     prefix_len = len(eidos_rel_parts)
 
     eff_pkg_paths = (
-        list(package_paths)
-        if package_paths is not None
-        else _discover_container_package_paths(resolved_eidos)
+        list(package_paths) if package_paths is not None else _discover_container_package_paths(resolved_eidos)
     )
 
     candidate_code_paths: list[str] = []
@@ -663,9 +644,7 @@ def classify_changed_files(
         parts = [p.lower() for p in rel_f.parts]
         is_in_eidos = prefix_len > 0 and len(parts) >= prefix_len and parts[:prefix_len] == eidos_rel_parts
         sub_parts = parts[prefix_len:] if is_in_eidos else []
-        is_eidos_ignored = f.name == ".gitkeep" or (
-            is_in_eidos and any(p.startswith(".") for p in sub_parts)
-        )
+        is_eidos_ignored = f.name == ".gitkeep" or (is_in_eidos and any(p.startswith(".") for p in sub_parts))
         is_eidos_spec = is_in_eidos and f.suffix in {".adoc", ".json", ".yaml", ".yml"}
         is_test = is_polyglot_test_file(rel_f, repo_root=effective_root, package_paths=eff_pkg_paths)
         is_doc = f.suffix in {".md", ".rst"} or (bool(parts and parts[0] == "docs"))
@@ -681,11 +660,7 @@ def classify_changed_files(
         ):
             candidate_code_paths.append(str(rel_f).replace("\\", "/"))
 
-    vendored_paths = (
-        is_generated_or_vendored(effective_root, candidate_code_paths)
-        if candidate_code_paths
-        else set()
-    )
+    vendored_paths = is_generated_or_vendored(effective_root, candidate_code_paths) if candidate_code_paths else set()
 
     for f_str, f, rel_f, parts, is_in_eidos, sub_parts, is_test in parsed_files:
         if f.name == ".gitkeep" or (is_in_eidos and any(p.startswith(".") for p in sub_parts)):

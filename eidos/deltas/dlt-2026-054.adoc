@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-054
 title: Portal Data Engine Synchronization, Full C4 Target Schema Coverage, and UI Navigation Polish
 status: applied

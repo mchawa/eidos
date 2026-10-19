@@ -27,9 +27,7 @@ except ImportError:
 
 INVARIANT_PATTERN = re.compile(r"\b(INV-[A-Z0-9_-]+)\b")
 POLICY_PATTERN = re.compile(r"\b(POL-[A-Z0-9_-]+)\b")
-_RUST_TEST_ATTR_RE = re.compile(
-    r"#\[\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*(?:test|rstest|test_case)\b"
-)
+_RUST_TEST_ATTR_RE = re.compile(r"#\[\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*(?:test|rstest|test_case)\b")
 
 
 def _find_body_brace_outside_parens(text: str) -> int:
@@ -62,9 +60,7 @@ def _find_body_brace_outside_parens(text: str) -> int:
     return -1
 
 
-_DECL_KEYWORD_RE = re.compile(
-    r"\b(?:class|interface|struct|enum|trait|type|function|func|fn|fun|def)\b"
-)
+_DECL_KEYWORD_RE = re.compile(r"\b(?:class|interface|struct|enum|trait|type|function|func|fn|fun|def)\b")
 
 
 def _extract_header_signature(node_text: str) -> str:
@@ -74,15 +70,12 @@ def _extract_header_signature(node_text: str) -> str:
     head_slice = node_text[:2048] if len(node_text) > 2048 else node_text
     for line in head_slice.splitlines():
         stripped = line.strip()
-        if not stripped or (
-            stripped.startswith(("#", "//", "/*", "*")) and not stripped.startswith("#[")
-        ):
+        if not stripped or (stripped.startswith(("#", "//", "/*", "*")) and not stripped.startswith("#[")):
             continue
         first_lines.append(stripped)
         paren_depth += stripped.count("(") - stripped.count(")")
         is_pure_deco_line = (
-            (stripped.startswith("@") and not stripped.startswith("@interface"))
-            or stripped.startswith("#[")
+            (stripped.startswith("@") and not stripped.startswith("@interface")) or stripped.startswith("#[")
         ) and not _DECL_KEYWORD_RE.search(stripped)
         if (
             paren_depth <= 0
@@ -108,11 +101,8 @@ def _extract_preceding_context(lines: list[str], start_line_1based: int) -> str:
     idx = start_line_1based - 2  # line before start_line_1based (0-indexed)
     while idx >= 0:
         stripped = lines[idx].strip()
-        if (
-            stripped.startswith(("#", "//", "/*", "*", "*/", "@", "#["))
-            or (stripped == ""
-            and collected
-            and collected[-1].startswith(("@", "#[")))
+        if stripped.startswith(("#", "//", "/*", "*", "*/", "@", "#[")) or (
+            stripped == "" and collected and collected[-1].startswith(("@", "#["))
         ):
             collected.append(stripped)
             idx -= 1
@@ -195,6 +185,96 @@ class BaseAstIndexer(ABC):
     def list_test_functions(self, file_path: Path | str, content: str | None = None) -> dict[str, str]:
         """Return mapping of test function/case name -> full source slice (including decorators/comments)."""
         pass
+
+    def extract_imports(self, file_path: Path | str, content: str | None = None) -> list[str]:
+        """Extract imported module/package specifiers from a source file across supported languages."""
+        p = Path(file_path)
+        suffix = p.suffix.lower()
+        if content is None:
+            try:
+                content = p.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return []
+
+        imports: list[str] = []
+        seen: set[str] = set()
+
+        def _add(spec: str) -> None:
+            clean = spec.strip()
+            if clean and clean not in seen:
+                seen.add(clean)
+                imports.append(clean)
+
+        if suffix == ".py":
+            try:
+                tree = ast.parse(content, filename=str(p))
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        for alias in node.names:
+                            if alias.name:
+                                _add(alias.name)
+                    elif isinstance(node, ast.ImportFrom):
+                        prefix = "." * (node.level or 0)
+                        mod = f"{prefix}{node.module or ''}"
+                        if mod:
+                            _add(mod)
+                        for alias in node.names:
+                            if alias.name and alias.name != "*":
+                                if node.module:
+                                    _add(f"{prefix}{node.module}.{alias.name}")
+                                elif prefix:
+                                    _add(f"{prefix}{alias.name}")
+                return imports
+            except (SyntaxError, ValueError):
+                for m in re.finditer(r"^\s*import\s+([A-Za-z0-9_.,\s]+)", content, re.MULTILINE):
+                    for part in m.group(1).split(","):
+                        tok = part.strip().split()[0] if part.strip() else ""
+                        if tok:
+                            _add(tok)
+                for m in re.finditer(r"^\s*from\s+(\.*[A-Za-z0-9_.]*)\s+import\s+([^\r\n#]+)", content, re.MULTILINE):
+                    mod = m.group(1).strip()
+                    if mod:
+                        _add(mod)
+                    for part in m.group(2).strip("() ").split(","):
+                        tok = part.strip().split()[0] if part.strip() else ""
+                        if tok and tok != "*":
+                            _add(f"{mod}.{tok}" if not mod.endswith(".") else f"{mod}{tok}")
+                return imports
+
+        if suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"):
+            for m in re.finditer(
+                r"""(?:import|export)\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]|require\s*\(\s*['"]([^'"]+)['"]\s*\)|import\s*\(\s*['"]([^'"]+)['"]\s*\)""",
+                content,
+            ):
+                spec = m.group(1) or m.group(2) or m.group(3)
+                if spec:
+                    _add(spec)
+            return imports
+
+        if suffix == ".go":
+            for m in re.finditer(r'^\s*import\s+(?:[A-Za-z0-9_.]+\s+)?"([^"]+)"', content, re.MULTILINE):
+                _add(m.group(1))
+            for block in re.finditer(r"\bimport\s*\((.*?)\)", content, re.DOTALL):
+                for m in re.finditer(r'"([^"]+)"', block.group(1)):
+                    _add(m.group(1))
+            return imports
+
+        if suffix == ".rs":
+            for m in re.finditer(r"\buse\s+([A-Za-z0-9_:]+)", content):
+                _add(m.group(1))
+            return imports
+
+        if suffix in (".java", ".kt", ".kts"):
+            for m in re.finditer(r"^\s*import\s+(?:static\s+)?([A-Za-z0-9_.*]+)", content, re.MULTILINE):
+                _add(m.group(1))
+            return imports
+
+        if suffix in (".c", ".cpp", ".h", ".hpp"):
+            for m in re.finditer(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', content, re.MULTILINE):
+                _add(m.group(1))
+            return imports
+
+        return imports
 
     def generate_repo_map(self, symbols_by_file: dict[str, list[CodeSymbol]], max_tokens: int = 1500) -> str:
         """Generate a token-budgeted structural repo map outline for AI coding agents."""
@@ -376,9 +456,7 @@ class AstGrepIndexer(BaseAstIndexer):
                 )
             )
         )
-        is_parameterized_each = bool(
-            re.match(r"^(?:it|test|describe)(?:\.[A-Za-z_]+)*\.each\s*(?:\(|`)", fn_text)
-        )
+        is_parameterized_each = bool(re.match(r"^(?:it|test|describe)(?:\.[A-Za-z_]+)*\.each\s*(?:\(|`)", fn_text))
         if not (is_direct_or_member or is_parameterized_each):
             return None
 
@@ -424,7 +502,7 @@ class AstGrepIndexer(BaseAstIndexer):
             raw_arg = first_arg.text().strip()
             if not (raw_arg.startswith(('"', "`", "'")) and len(raw_arg) >= 2):
                 continue
-            sub_name = raw_arg.strip('"\'`')
+            sub_name = raw_arg.strip("\"'`")
             if not sub_name:
                 continue
             srng = sub_call.range()
@@ -521,11 +599,7 @@ class AstGrepIndexer(BaseAstIndexer):
                         sig = hdr_sig
                     if lang in ("typescript", "tsx", "javascript", "jsx"):
                         parent = m.parent()
-                        if (
-                            parent is not None
-                            and parent.kind() == "export_statement"
-                            and not sig.startswith("export ")
-                        ):
+                        if parent is not None and parent.kind() == "export_statement" and not sig.startswith("export "):
                             sig = f"export {sig}"
                     if dec_list:
                         missing_decos = [d for d in dec_list if not sig.startswith(d)]
@@ -574,8 +648,7 @@ class AstGrepIndexer(BaseAstIndexer):
         )
 
         class_ranges = [
-            (cname, cnode.range().start.line, cnode.range().end.line)
-            for cname, cnode in class_nodes.items()
+            (cname, cnode.range().start.line, cnode.range().end.line) for cname, cnode in class_nodes.items()
         ]
 
         for fk in fn_kinds:
@@ -638,11 +711,7 @@ class AstGrepIndexer(BaseAstIndexer):
                 sig = _node_header_sig(m, rng)
                 if lang in ("typescript", "tsx", "javascript", "jsx") and kind_label != "method":
                     parent = m.parent()
-                    if (
-                        parent is not None
-                        and parent.kind() == "export_statement"
-                        and not sig.startswith("export ")
-                    ):
+                    if parent is not None and parent.kind() == "export_statement" and not sig.startswith("export "):
                         sig = f"export {sig}"
                 if dec_list:
                     missing_decos = [d for d in dec_list if not sig.startswith(d)]
@@ -953,9 +1022,7 @@ class FallbackIndexer(BaseAstIndexer):
         r"^(?:export\s+)?(?:const|let|var)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)\s*(?::[^=]+)?=>|[a-zA-Z_][a-zA-Z0-9_]*\s*=>|function\b)",
         re.MULTILINE,
     )
-    TS_CLS_REGEX = re.compile(
-        r"^[ \t]*(?:export\s+)?(?:class|interface|type)\s+([a-zA-Z_][a-zA-Z0-9_]*)", re.MULTILINE
-    )
+    TS_CLS_REGEX = re.compile(r"^[ \t]*(?:export\s+)?(?:class|interface|type)\s+([a-zA-Z_][a-zA-Z0-9_]*)", re.MULTILINE)
     C_TYPE_REGEX = re.compile(
         r"^[ \t]*(?:typedef\s+)?(struct|class|enum)(?:\s+class)?\s+([a-zA-Z_][a-zA-Z0-9_]*)\b",
         re.MULTILINE,
@@ -1013,9 +1080,8 @@ class FallbackIndexer(BaseAstIndexer):
         while i >= 0:
             s = lines[i].strip()
             if (
-                (s.startswith("@") and not s.startswith(("@interface", "@theme", "@keyframes", "@font-face")))
-                or s.startswith("#[")
-            ):
+                s.startswith("@") and not s.startswith(("@interface", "@theme", "@keyframes", "@font-face"))
+            ) or s.startswith("#["):
                 collected.append(re.sub(r"\s+", " ", s))
                 start_line = i + 1
                 i -= 1
@@ -1228,7 +1294,9 @@ class FallbackIndexer(BaseAstIndexer):
                     kind_raw = m.group(1)
                     sym = CodeSymbol(
                         name=m.group(2),
-                        kind="interface" if kind_raw == "interface" else ("struct" if kind_raw == "struct" else ("enum" if kind_raw == "enum" else "class")),
+                        kind="interface"
+                        if kind_raw == "interface"
+                        else ("struct" if kind_raw == "struct" else ("enum" if kind_raw == "enum" else "class")),
                         file_path=rel_path,
                         line_start=dec_start,
                         line_end=idx,
@@ -1283,7 +1351,9 @@ class FallbackIndexer(BaseAstIndexer):
                 for m in self.PHP_CLS_REGEX.finditer(line):
                     sym = CodeSymbol(
                         name=m.group(2),
-                        kind="interface" if m.group(1) in ("interface", "trait") else ("enum" if m.group(1) == "enum" else "class"),
+                        kind="interface"
+                        if m.group(1) in ("interface", "trait")
+                        else ("enum" if m.group(1) == "enum" else "class"),
                         file_path=rel_path,
                         line_start=dec_start,
                         line_end=idx,
@@ -1307,7 +1377,9 @@ class FallbackIndexer(BaseAstIndexer):
                     kind_raw = m.group(1)
                     sym = CodeSymbol(
                         name=m.group(2),
-                        kind="interface" if kind_raw == "protocol" else ("struct" if kind_raw == "struct" else ("enum" if kind_raw == "enum" else "class")),
+                        kind="interface"
+                        if kind_raw == "protocol"
+                        else ("struct" if kind_raw == "struct" else ("enum" if kind_raw == "enum" else "class")),
                         file_path=rel_path,
                         line_start=dec_start,
                         line_end=idx,
@@ -1620,7 +1692,11 @@ def _extract_python_dunder_all(tree: ast.Module) -> set[str] | None:
             if any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
                 value = node.value
                 found = True
-        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)) and isinstance(node.target, ast.Name) and node.target.id == "__all__":
+        elif (
+            isinstance(node, (ast.AnnAssign, ast.AugAssign))
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "__all__"
+        ):
             value = node.value
             found = True
         if isinstance(value, (ast.List, ast.Tuple, ast.Set)):
@@ -2149,4 +2225,3 @@ def get_ast_indexer(force_fallback: bool = False) -> BaseAstIndexer:
     if AST_GREP_AVAILABLE and not force_fallback:
         return AstGrepIndexer()
     return FallbackIndexer()
-

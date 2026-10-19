@@ -124,12 +124,7 @@ def doctor_cmd(
             "bundled_version": plugin_status.get("bundled_version"),
         },
     }
-    overall_ok = (
-        cli_ok
-        and git_ok
-        and (not specs_exist or (specs_valid and index_ok))
-        and checks["agent_plugin"]["ok"]
-    )
+    overall_ok = cli_ok and git_ok and (not specs_exist or (specs_valid and index_ok)) and checks["agent_plugin"]["ok"]
 
     if json_output:
         typer.echo(json.dumps({"healthy": overall_ok, "checks": checks}, indent=2))
@@ -170,7 +165,11 @@ def doctor_cmd(
         "Agent Plugin Status",
         "[bold green]PASS[/bold green]"
         if plugin_up_to_date
-        else ("[dim]NOT INSTALLED[/dim]" if not plugin_installed else f"[bold yellow]{plugin_status.get('status', '').upper()}[/bold yellow]"),
+        else (
+            "[dim]NOT INSTALLED[/dim]"
+            if not plugin_installed
+            else f"[bold yellow]{plugin_status.get('status', '').upper()}[/bold yellow]"
+        ),
         f"Installed: v{plugin_status.get('installed_version')} / Bundled: v{plugin_status.get('bundled_version')}"
         if plugin_installed
         else "Optional: Run 'eidos plugin install' to enable agent skills & hooks",
@@ -193,7 +192,7 @@ def hook_cmd(
     """Execute native Eidos stateless Stop lifecycle hook."""
     extra = [a.lower() for a in getattr(ctx, "args", [])]
     if any(ev in extra for ev in ("pretooluse", "pre_tool_use", "pre_tool")):
-        typer.echo("{\"decision\": \"allow\"}")
+        typer.echo('{"decision": "allow"}')
         return
     if any(ev in extra for ev in ("posttooluse", "post_tool_use", "post_tool")):
         typer.echo("{}")

@@ -97,9 +97,7 @@ class DecisionModel(_DictCompatibleModel):
             raw["graduated_from"] = _coerce_opt_str(raw.get("graduated_from"))
         alts = raw.get("rejected_alternatives")
         raw["rejected_alternatives"] = (
-            [a for a in alts if isinstance(a, (dict, str, RejectedAlternativeModel))]
-            if isinstance(alts, list)
-            else []
+            [a for a in alts if isinstance(a, (dict, str, RejectedAlternativeModel))] if isinstance(alts, list) else []
         )
         return raw
 
@@ -161,9 +159,7 @@ class InlineComponentModel(_DictCompatibleModel):
             else:
                 raw["source_path"] = None
         decs = raw.get("decisions")
-        raw["decisions"] = (
-            [d for d in decs if isinstance(d, (dict, DecisionModel))] if isinstance(decs, list) else []
-        )
+        raw["decisions"] = [d for d in decs if isinstance(d, (dict, DecisionModel))] if isinstance(decs, list) else []
         invs = raw.get("invariants")
         raw["invariants"] = (
             [i for i in invs if isinstance(i, (dict, str, InvariantModel))] if isinstance(invs, list) else []
@@ -193,17 +189,11 @@ class CapabilityTechnicalModel(_DictCompatibleModel):
             return {}
         raw = dict(data)
         cnts = raw.get("containers")
-        raw["containers"] = (
-            [str(c).strip() for c in cnts if _coerce_opt_str(c)] if isinstance(cnts, list) else []
-        )
+        raw["containers"] = [str(c).strip() for c in cnts if _coerce_opt_str(c)] if isinstance(cnts, list) else []
         cmps = raw.get("components")
-        raw["components"] = (
-            [str(c).strip() for c in cmps if _coerce_opt_str(c)] if isinstance(cmps, list) else []
-        )
+        raw["components"] = [str(c).strip() for c in cmps if _coerce_opt_str(c)] if isinstance(cmps, list) else []
         ctrs = raw.get("contracts")
-        raw["contracts"] = (
-            [str(c).strip() for c in ctrs if _coerce_opt_str(c)] if isinstance(ctrs, list) else []
-        )
+        raw["contracts"] = [str(c).strip() for c in ctrs if _coerce_opt_str(c)] if isinstance(ctrs, list) else []
         invs = raw.get("invariants")
         raw["invariants"] = (
             [i for i in invs if isinstance(i, (dict, str, InvariantModel))] if isinstance(invs, list) else []
@@ -271,7 +261,6 @@ _FRONTMATTER_SCALAR_KEYS = (
     "specification_file",
     "category",
     "severity",
-    "schema",
 )
 
 
@@ -291,7 +280,6 @@ class FrontmatterModel(_DictCompatibleModel):
     specification_file: str | None = None
     category: str | None = None
     severity: str | None = None
-    schema_: str | None = Field(default=None, alias="schema")
     source_path: list[str] | str | None = None
     components: list[InlineComponentModel] = Field(default_factory=list)
     technical: CapabilityTechnicalModel = Field(default_factory=CapabilityTechnicalModel)
@@ -320,31 +308,23 @@ class FrontmatterModel(_DictCompatibleModel):
         if "components" in raw:
             comps_a = raw.get("components")
             raw["components"] = (
-                [c for c in comps_a if isinstance(c, (dict, InlineComponentModel))]
-                if isinstance(comps_a, list)
-                else []
+                [c for c in comps_a if isinstance(c, (dict, InlineComponentModel))] if isinstance(comps_a, list) else []
             )
         if "technical" in raw:
             tech_raw = raw.get("technical")
-            raw["technical"] = (
-                tech_raw if isinstance(tech_raw, (dict, CapabilityTechnicalModel)) else {}
-            )
+            raw["technical"] = tech_raw if isinstance(tech_raw, (dict, CapabilityTechnicalModel)) else {}
         if "intent" in raw:
             intent_raw = raw.get("intent")
             raw["intent"] = intent_raw if isinstance(intent_raw, (dict, DeltaIntentModel)) else None
         if "mutations" in raw:
             muts_raw = raw.get("mutations")
             raw["mutations"] = (
-                [m for m in muts_raw if isinstance(m, (dict, DeltaMutationModel))]
-                if isinstance(muts_raw, list)
-                else []
+                [m for m in muts_raw if isinstance(m, (dict, DeltaMutationModel))] if isinstance(muts_raw, list) else []
             )
         if "decisions" in raw:
             decs_raw = raw.get("decisions")
             raw["decisions"] = (
-                [d for d in decs_raw if isinstance(d, (dict, DecisionModel))]
-                if isinstance(decs_raw, list)
-                else []
+                [d for d in decs_raw if isinstance(d, (dict, DecisionModel))] if isinstance(decs_raw, list) else []
             )
         if "invariants" in raw:
             invs_raw = raw.get("invariants")

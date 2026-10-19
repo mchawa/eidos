@@ -1,53 +1,29 @@
 ---
 type: product/exploration
-schema: schemas/v1/product/exploration.schema.yaml
 id: EXP-2026-006
 title: "Model-Free Semantic Similarity & Hybrid Retrieval for Context Slicing and Drift Reconciliation"
 status: adopted
-hypothesis: >
-  On top of the fixed lexical and structural baseline shipped under DEC-INDEX-FTS-RETRIEVAL-HYGIENE and commit 5bfc2a9
-  (child INV-* FTS rows, identifier de-compounding, positional column weights, slice-scoped candidate types, BM25
-  rank-order preservation, two-stage token-budget eviction, and invariant parent capability_id/policy_id promotion),
-  adding corpus PPMI query expansion, 256-dimensional signed subword feature hashing, 1-hop degree-normalized graph
-  spreading activation, and zlib Normalized Compression Distance (NCD) via Reciprocal Rank Fusion (RRF) will improve
-  raw Recall@8 on a fresh held-out set (HOLD_V2, >= 30 vocabulary-mismatched prompts) by >= 10 percentage points over
-  the fixed lexical baseline, and reach >= 70% Top-3 accuracy matching unbound test functions to living invariants
-  (INV-*), in < 3ms per query with zero AI models, zero external runtime dependencies, full POL-004 determinism, and
-  incremental-sync compatibility.
-questions_to_answer:
-  - "Why does current FTS5 lexical matching in ArchitecturalIndex.query_fts (src/eidos/core/index/query.py) underperform on compound code identifiers (snake_case, camelCase), invariant discovery, and vocabulary-mismatched prompts? (ANSWERED, section 3.4: caused by FTS coverage and slice-truncation bugs, not vocabulary mismatch)"
-  - "Can signed feature hashing over de-compounded tokens and character 3-to-4-grams plus corpus PPMI query expansion bridge synonym and morphological gaps within a <3ms query budget and <64KB SQLite storage overhead, measurably beating exact sparse TF-IDF and the fixed lexical baseline? (ANSWERED: unnecessary—fixing FTS coverage and rank-ordered slice truncation already reaches 94.4% DEV / 92.9% HOLD slice recall)"
-  - "Does 1-hop, degree-normalized Knowledge Graph spreading activation over typed edges (depends_on, provides, realizes, asserts) recover architecturally coupled entities that share zero lexical overlap with the task prompt, without lowering precision@8? (ANSWERED: deterministic 1-hop domain/design-system expansion plus invariant parent promotion achieves this without statistical spreading activation)"
-  - "Can hybrid subword cosine similarity combined with stdlib zlib Normalized Compression Distance (NCD) accurately recommend candidate INV-* bindings for unbound tests and detect near-duplicate specifications during eidos drift and eidos validate, with reproducible scores across zlib builds? (DEFERRED: zlib header overhead on short invariant rules and cross-build variance make NCD unsuitable without a dedicated follow-up spike)"
-  - "How are corpus-global statistics (IDF, PPMI) kept fresh under incremental sync without paying a full recompute on every spec edit? (ANSWERED: avoided entirely by keeping the index purely document-local)"
-spikes_to_run:
-  - name: "spike-fts-audit-and-ppmi-expansion"
-    target: "(DONE) Audit current specs_fts indexing gaps (missing INV-* child rows, unsplit compound AST symbols, unfiltered DLT-* historical deltas)."
-  - name: "spike-baseline-fix-ablation"
-    target: "(DONE) Fix the audited FTS coverage and context-slice rank-order/budget-eviction bugs in Direct Mode and measure each fix in isolation on DEV (6 prompts) and HOLD (12 prompts)."
-  - name: "spike-subword-hash-and-graph-rrf"
-    target: "(REJECTED BY ABLATION) 256-dim signed feature-hashed subword TF-IDF vectors and PPMI expansion rendered unnecessary once the fixed lexical + structural baseline reached 94.4% DEV / 92.9% HOLD."
-  - name: "spike-drift-reconcile-ncd-matcher"
-    target: "(DEFERRED) Hybrid Subword Cosine + zlib NCD similarity for blinded test-function-to-invariant recommendation."
-exit_criteria:
-  max_duration: "3_days"
-  benchmark: "Task context slice recall >= 90.0% within the 1,000-token guardrails budget in < 4.0ms per query with zero new external dependencies, zero incremental-sync staleness, and 100% deterministic execution (POL-004)."
 decision:
   outcome: adopted
-  resulting_delta_id: DLT-2026-047
-  learnings: >
-    Ablating the retrieval pipeline proved that baseline misses were caused by six concrete FTS coverage and slice
-    truncation defects (unindexed child INV-* rows, historical DLT-* slot starvation, unsplit compound identifiers,
-    dropped DOM-*/DS-* matches, alphabetical set iteration on direct_inv_ids, and 1-hop budget crowding) rather than
-    vocabulary mismatch. Fixing these in CNT-EIDOS-INDEX (DEC-INDEX-FTS-RETRIEVAL-HYGIENE, DLT-2026-047, and commit
-    5bfc2a9) lifted raw FTS Recall@8 from 55.6%/32.1% to 94.4%/78.6% (<=1.0ms) and end-to-end 1,000-token guardrails
-    slice recall to 94.4% (17/18 DEV) and 92.9% (26/28 HOLD) in 3.3-3.8ms (mean 7.5-8.6 entities), while rejecting the
-    proposed 4-layer statistical/vector engine (PPMI, 256-dim feature hashing, zlib NCD) to preserve zero-staleness
-    incremental sync.
+  resulting_deltas:
+    - "DLT-2026-047"
 ---
 = Exploration: Model-Free Semantic Similarity & Hybrid Retrieval for Context Slicing and Drift Reconciliation
 :toc: left
 :icons: font
+
+== Core Hypothesis
+Fixing lexical FTS5 coverage (`INV-*` rows, identifier de-compounding, positional column weights, slice-scoped candidate types, BM25 rank-order preservation, and two-stage token-budget eviction) and evaluating corpus PPMI / signed subword feature hashing / 1-hop spreading activation will achieve >= 90% task context slice recall within the 1,000-token `guardrails` budget in < 4.0ms per query with zero AI models and zero external runtime dependencies.
+
+== Questions & Spikes
+* **Spikes**:
+  - `spike-fts-audit-and-ppmi-expansion`: Audit `specs_fts` indexing gaps (missing `INV-*` child rows, unsplit compound AST symbols, unfiltered `DLT-*` historical deltas).
+  - `spike-baseline-fix-ablation`: Fix audited FTS coverage and context-slice rank-order/budget-eviction bugs in Direct Mode and measure each fix in isolation on DEV and HOLD sets.
+  - `spike-subword-hash-and-graph-rrf`: Evaluate 256-dim signed feature-hashed subword TF-IDF vectors and PPMI expansion against the fixed lexical + structural baseline.
+  - `spike-drift-reconcile-ncd-matcher`: Evaluate hybrid subword cosine + `zlib` NCD similarity for test-to-invariant recommendation.
+
+== Findings & Learnings
+Ablating the retrieval pipeline proved that baseline misses were caused by six concrete FTS coverage and slice truncation defects rather than vocabulary mismatch. Fixing these in `CNT-EIDOS-INDEX` (`DEC-INDEX-FTS-RETRIEVAL-HYGIENE`, `DLT-2026-047`, and commit `5bfc2a9`) lifted raw FTS Recall@8 to 94.4%/78.6% (<=1.0ms) and end-to-end 1,000-token `guardrails` slice recall to 94.4% (`17/18` DEV) and 92.9% (`26/28` HOLD) in 3.3-3.8ms, while rejecting the 4-layer statistical/vector engine to preserve zero-staleness incremental sync.
 
 [IMPORTANT]
 ====

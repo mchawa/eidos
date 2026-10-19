@@ -1,0 +1,5 @@
+= Flow: {heading}
+:toc: left
+
+== User Journey
+Describe the ordered steps, screen transitions, and outcomes of this interaction flow.

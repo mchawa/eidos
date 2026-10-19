@@ -105,9 +105,7 @@ def drift_cmd(
             "total_specs": result.validation_report.total_docs,
             "validation_errors": result.validation_errors,
             "uncovered_invariants": [inv.invariant_id for inv in result.uncovered_invariants],
-            "orphan_invariants": [
-                {"invariant_id": oid, "location": loc} for oid, loc in result.orphan_invariants
-            ],
+            "orphan_invariants": [{"invariant_id": oid, "location": loc} for oid, loc in result.orphan_invariants],
             "remediation_suggestions": result.remediation_suggestions,
             "trivially_covered_files": result.trivially_covered_files,
         }
@@ -197,4 +195,3 @@ def drift_cmd(
 def register(app: typer.Typer) -> None:
     """Attach the root-level commands owned by this module to the root Typer app."""
     app.command("drift", rich_help_panel=PANEL_GOVERNANCE)(drift_cmd)
-

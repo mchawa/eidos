@@ -5,7 +5,6 @@ type: object
 additionalProperties: false
 required:
   - type
-  - schema
   - id
   - title
   - route
@@ -15,9 +14,6 @@ properties:
     type: string
     const: "design/screen"
     description: "The fixed document type identifier. Must always be 'design/screen'."
-  schema:
-    type: string
-    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^SCR-[A-Z0-9_-]+$"

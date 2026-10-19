@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from eidos.core.spec.models import SpecDocument
 
 # Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-091).
-SCHEMA_VERSION = "2.5.0"
+SCHEMA_VERSION = "2.6.0"
 
 # In-process parsed SpecDocument cache keyed by resolved Path -> (mtime_ns, st_size, sha256, SpecDocument)
 _PARSED_SPEC_MEM_CACHE: dict[Path, tuple[int, int, str, SpecDocument]] = {}
@@ -201,9 +201,7 @@ def open_cache_connection(db_path: Path) -> sqlite3.Connection:
                 with contextlib.suppress(sqlite3.Error):
                     conn.close()
             err_msg = str(exc).lower()
-            is_transient_lock = isinstance(exc, sqlite3.OperationalError) and (
-                "locked" in err_msg or "busy" in err_msg
-            )
+            is_transient_lock = isinstance(exc, sqlite3.OperationalError) and ("locked" in err_msg or "busy" in err_msg)
             if attempt == 0 and not is_transient_lock:
                 _unlink_cache_files(db_path)
                 continue
@@ -286,10 +284,7 @@ def get_cached_spec_document(
 
     if st_size == 0 and not raw_bytes:
         empty_sha = hashlib.sha256(b"").hexdigest()
-        is_root_system = (
-            file_path.name == "system.adoc"
-            and file_path.parent.name.lower() not in _NON_ROOT_SPEC_SUBDIRS
-        )
+        is_root_system = file_path.name == "system.adoc" and file_path.parent.name.lower() not in _NON_ROOT_SPEC_SUBDIRS
         empty_doc = (
             SpecDocument(
                 file_path=file_path,
@@ -405,4 +400,3 @@ def save_test_binding_cache(
                 """,
                 to_upsert,
             )
-

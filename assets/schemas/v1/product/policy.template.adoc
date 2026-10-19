@@ -1,0 +1,5 @@
+= Policy: {heading}
+:toc: left
+
+== Rationale & Context
+Explain why this non-negotiable architectural or product guardrail exists.

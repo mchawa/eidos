@@ -1,6 +1,5 @@
 ---
 type: design/flow
-schema: schemas/v1/design/flow.schema.yaml
 id: FLOW-PORTAL-EXPLORATION
 title: "Specification Discovery & Inspection Flow"
 status: active

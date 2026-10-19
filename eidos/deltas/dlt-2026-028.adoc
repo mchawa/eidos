@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-028
 title: Scoped 1-Hop Graph Neighborhood and AST Structural Drift Detection
 status: applied

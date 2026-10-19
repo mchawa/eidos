@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-067
 title: Read-Only SQLite Cache Connections, db_path-Aware Index Singleton, and Automatic repo_root Resolution
 status: applied

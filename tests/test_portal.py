@@ -353,8 +353,6 @@ def test_c4_level2_container_hierarchy_and_connections():
     assert "CLI Subshell / JSON" in c4_context
 
 
-
-
 def test_portal_bundle_has_no_remote_subresources():
     """INV-PORTAL-AIR-GAPPED-BUNDLE: the served/built portal loads no scripts, stylesheets, fonts or other remote subresources."""
     # 1. Structural check: no real element of the document points at a remote origin.
@@ -371,7 +369,9 @@ def test_portal_bundle_has_no_remote_subresources():
 
     # 3. Mermaid, Asciidoctor.js and the Geist fonts are embedded, not linked.
     assert _external_asset_elements(PORTAL_HTML_TEMPLATE) == []
-    assert "font/woff2" in PORTAL_HTML_TEMPLATE or "data:font" in PORTAL_HTML_TEMPLATE or "base64" in PORTAL_HTML_TEMPLATE
+    assert (
+        "font/woff2" in PORTAL_HTML_TEMPLATE or "data:font" in PORTAL_HTML_TEMPLATE or "base64" in PORTAL_HTML_TEMPLATE
+    )
     assert "@font-face" in PORTAL_HTML_TEMPLATE
     assert "Geist Mono" in PORTAL_HTML_TEMPLATE
     assert "asciidoctor" in PORTAL_HTML_TEMPLATE.lower()
@@ -425,7 +425,9 @@ def test_portal_promoted_components_invariants_decisions_and_explorations(tmp_pa
     core_container = next(c for c in data["components"] if c["id"] == "CNT-EIDOS-CORE")
     assert core_container.get("responsibility") or core_container.get("summary")
     internal_comps = core_container["internal_components"]
-    assert all(ic.get("id") is not None for ic in internal_comps), "No bare {'ref': ...} stub with id=None should remain"
+    assert all(ic.get("id") is not None for ic in internal_comps), (
+        "No bare {'ref': ...} stub with id=None should remain"
+    )
     parser_entries = [ic for ic in internal_comps if ic.get("id") == "CMP-SPEC-PARSER"]
     assert len(parser_entries) == 1
 
@@ -458,12 +460,11 @@ def test_portal_promoted_components_invariants_decisions_and_explorations(tmp_pa
     assert exp_002 is not None
     assert exp_002["resulting_deltas"] == ["DLT-2026-011"]
     assert exp_002["decision"]["resulting_deltas"] == ["DLT-2026-011"]
-    assert exp_002["decision"]["resulting_delta_id"] == "DLT-2026-011"
 
     exp_006 = next((e for e in data["explorations"] if e["id"] == "EXP-2026-006"), None)
     assert exp_006 is not None
-    assert len(exp_006["findings"]) >= 3
-    assert len(exp_006["decision"]["learnings"]) >= 3
+    assert exp_006["status"] == "adopted"
+    assert exp_006["resulting_deltas"] == ["DLT-2026-047"]
 
     # 6. Synthetic fixture: verify container-level invariants, bottom-up promoted component attachment, and top-level resulting_deltas/findings
     eidos_dir = tmp_path / "eidos"
@@ -513,7 +514,6 @@ def test_portal_promoted_components_invariants_decisions_and_explorations(tmp_pa
         "type: product/exploration\n"
         "title: Synthetic Spike\n"
         "status: in_progress\n"
-        "hypothesis: Hypothesis text.\n"
         "findings:\n"
         "  - Finding A\n"
         "  - Finding B\n"
@@ -551,7 +551,6 @@ def test_portal_promoted_components_invariants_decisions_and_explorations(tmp_pa
     assert syn_exp["decision"]["outcome"] == "Proceed with Delta."
     assert syn_exp["resulting_deltas"] == ["DLT-2026-030", "DLT-2026-031", "DLT-2026-032"]
     assert syn_exp["decision"]["resulting_deltas"] == ["DLT-2026-030", "DLT-2026-031", "DLT-2026-032"]
-    assert syn_exp["decision"]["resulting_delta_id"] == "DLT-2026-030"
 
 
 def test_dlt_2026_063_hook_digest_short_circuit_and_portal_mtime_cache(tmp_path, monkeypatch, capsys):
@@ -564,7 +563,7 @@ def test_dlt_2026_063_hook_digest_short_circuit_and_portal_mtime_cache(tmp_path,
     pol_dir.mkdir(parents=True)
     pol_file = pol_dir / "cnt-001.adoc"
     pol_file.write_text(
-        "---\ntype: tech/container\nschema: schemas/v1/tech/container.schema.yaml\nid: CNT-APP\ntitle: App\ncontainer_type: service\nruntime: python\nstatus: active\nsource_path: src\n---\n= App\n",
+        "---\ntype: tech/container\nid: CNT-APP\ntitle: App\ncontainer_type: service\nruntime: python\nstatus: active\nsource_path: src\n---\n= App\n",
         encoding="utf-8",
     )
 
@@ -604,7 +603,7 @@ def test_dlt_2026_069_static_portal_builder_escapes_script_tags(tmp_path):
     pol_dir = eidos_dir / "policies"
     pol_dir.mkdir(parents=True)
     (pol_dir / "pol-xss.adoc").write_text(
-        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-XSS\ntitle: Script Escape\ncategory: security\nrule: Escape </script>\nenforcement:\n  mechanism: test\n  severity: blocking\n---\n= Script Escape\n\nBody with <script>alert(1)</script> and \u2028\u2029.\n",
+        "---\ntype: product/policy\nid: POL-XSS\ntitle: Script Escape\ncategory: security\nrule: Escape </script>\nenforcement:\n  mechanism: test\n  severity: blocking\n---\n= Script Escape\n\nBody with <script>alert(1)</script> and \u2028\u2029.\n",
         encoding="utf-8",
     )
 
@@ -992,7 +991,9 @@ def test_portal_mermaid_diagram_generators_and_asset_fallbacks(tmp_path, monkeyp
             {"id": "PER-OPS", "title": "Ops", "role": "SRE", "archetype": "operator"},
         ],
     )
-    assert "In-Process Rust API" in c4_cnts and "In-Process Go API" in c4_cnts and "In-Process TypeScript API" in c4_cnts
+    assert (
+        "In-Process Rust API" in c4_cnts and "In-Process Go API" in c4_cnts and "In-Process TypeScript API" in c4_cnts
+    )
 
     c4_empty_cmp = _generate_c4_component_mermaid(
         {"id": "CNT-EMPTY", "title": "Empty", "internal_components": []},
@@ -1025,10 +1026,17 @@ def test_dlt_2026_085_portal_graph_derived_affects_and_blast_radius(tmp_path: Pa
     init_repository(repo, name="portal-graph", title="Portal Graph System")
     eidos_dir = repo / "eidos"
 
+    src_core = repo / "src" / "core"
+    src_core.mkdir(parents=True, exist_ok=True)
+    (src_core / "target.py").write_text("def target_fn():\n    return 1\n", encoding="utf-8")
+    (src_core / "caller.py").write_text(
+        "from core.target import target_fn\n\ndef caller_fn():\n    return target_fn()\n",
+        encoding="utf-8",
+    )
+
     (eidos_dir / "architecture" / "containers" / "core.adoc").write_text(
         "---\n"
         "type: tech/container\n"
-        "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-CORE\n"
         "title: Core\n"
         "container_type: library\n"
@@ -1051,9 +1059,6 @@ def test_dlt_2026_085_portal_graph_derived_affects_and_blast_radius(tmp_path: Pa
         "    title: Caller\n"
         "    responsibility: Calls CMP-TARGET.\n"
         "    source_path: src/core/caller.py\n"
-        "    interfaces:\n"
-        "      consumes:\n"
-        "        - CMP-TARGET\n"
         "---\n"
         "= Core\n",
         encoding="utf-8",
@@ -1062,7 +1067,6 @@ def test_dlt_2026_085_portal_graph_derived_affects_and_blast_radius(tmp_path: Pa
     (eidos_dir / "deltas" / "dlt-2026-099.adoc").write_text(
         "---\n"
         "type: delta/mutation\n"
-        "schema: schemas/v1/delta/delta.schema.yaml\n"
         "id: DLT-2026-099\n"
         "title: Mutate Target Component\n"
         "status: proposed\n"
@@ -1091,7 +1095,7 @@ def test_portal_lazy_assets_hatch_mtime_gate_all_personas_and_c4_component_edges
     - portal/assets.py lazily loads and caches PORTAL_HTML_TEMPLATE and PORTAL_FAVICON_SVG on demand
     - hatch_build.py only invokes build_assets.py when dist/index.html is newer than bundle.html.gz
     - _generate_c4_containers_mermaid renders all personas (>3) without truncating at [:3]
-    - _generate_c4_component_mermaid only connects intra-container components with declared interfaces.consumes
+    - _generate_c4_component_mermaid only connects intra-container components with AST-derived dependencies
     """
     import importlib.util
     import os
@@ -1166,7 +1170,7 @@ def test_portal_lazy_assets_hatch_mtime_gate_all_personas_and_c4_component_edges
         assert f"PER_ROLE_{i}" in c4_containers
 
     # 4. _generate_c4_component_mermaid does NOT fabricate sequential mod_0 -.-> mod_1 edges when no dependencies exist,
-    #    and DOES emit edges when interfaces.consumes are declared
+    #    and DOES emit edges when AST-derived dependencies are present
     cnt_independent = {
         "id": "CNT-IND",
         "title": "Independent Container",
@@ -1186,7 +1190,7 @@ def test_portal_lazy_assets_hatch_mtime_gate_all_personas_and_c4_component_edges
                 "id": "CMP-CALLER",
                 "title": "Caller",
                 "responsibility": "Calls Callee.",
-                "interfaces": {"consumes": ["CMP-CALLEE"]},
+                "dependencies": ["CMP-CALLEE"],
             },
             {"id": "CMP-CALLEE", "title": "Callee", "responsibility": "Handles call."},
         ],
@@ -1194,16 +1198,20 @@ def test_portal_lazy_assets_hatch_mtime_gate_all_personas_and_c4_component_edges
     diag_dep = _generate_c4_component_mermaid(cnt_dependent, [cnt_dependent])
     assert "mod_CNT_DEP_0 -.-> mod_CNT_DEP_1" in diag_dep
 
-    # 5. Promoted tech/component specs preserve interfaces, domain, and quality_attributes in get_portal_data
+    # 5. Promoted tech/component specs preserve domain and AST-derived dependencies in get_portal_data
     from eidos.portal.generator import get_portal_data
 
-    p_eidos = tmp_path / "portal_promoted" / "eidos"
+    p_root = tmp_path / "portal_promoted"
+    p_eidos = p_root / "eidos"
+    p_src = p_root / "src"
     (p_eidos / "architecture" / "containers").mkdir(parents=True)
     (p_eidos / "architecture" / "components").mkdir(parents=True)
+    p_src.mkdir(parents=True)
+    (p_src / "b.py").write_text("def run_b() -> None:\n    pass\n", encoding="utf-8")
+    (p_src / "a.py").write_text("from b import run_b\n\ndef run_a() -> None:\n    run_b()\n", encoding="utf-8")
     (p_eidos / "architecture" / "containers" / "app.adoc").write_text(
         "---\n"
         "type: tech/container\n"
-        "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-APP\n"
         "title: App\n"
         "container_type: service\n"
@@ -1215,7 +1223,6 @@ def test_portal_lazy_assets_hatch_mtime_gate_all_personas_and_c4_component_edges
     (p_eidos / "architecture" / "components" / "prom-a.adoc").write_text(
         "---\n"
         "type: tech/component\n"
-        "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-PROM-A\n"
         "title: Promoted A\n"
         "container: CNT-APP\n"
@@ -1223,30 +1230,18 @@ def test_portal_lazy_assets_hatch_mtime_gate_all_personas_and_c4_component_edges
         "domain: DOM-CORE\n"
         "source_path: src/a.py\n"
         "responsibility: Calls Promoted B.\n"
-        "interfaces:\n"
-        "  provides: []\n"
-        "  consumes:\n"
-        "    - CMP-PROM-B\n"
-        "quality_attributes:\n"
-        "  stateless: false\n"
-        "  reentrant: true\n"
         "---\n= Promoted A\n",
         encoding="utf-8",
     )
     (p_eidos / "architecture" / "components" / "prom-b.adoc").write_text(
         "---\n"
         "type: tech/component\n"
-        "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-PROM-B\n"
         "title: Promoted B\n"
         "container: CNT-APP\n"
         "status: active\n"
         "source_path: src/b.py\n"
         "responsibility: Called by A.\n"
-        "interfaces:\n"
-        "  provides:\n"
-        "    - signature: run_b() -> None\n"
-        "  consumes: []\n"
         "---\n= Promoted B\n",
         encoding="utf-8",
     )
@@ -1254,8 +1249,7 @@ def test_portal_lazy_assets_hatch_mtime_gate_all_personas_and_c4_component_edges
     app_cnt = next(c for c in pdata["components"] if c["id"] == "CNT-APP")
     prom_a = next(ic for ic in app_cnt["internal_components"] if ic["id"] == "CMP-PROM-A")
     assert prom_a["domain"] == "DOM-CORE"
-    assert prom_a["interfaces"]["consumes"] == ["CMP-PROM-B"]
-    assert prom_a["quality_attributes"] == {"stateless": False, "reentrant": True}
+    assert prom_a["dependencies"] == ["CMP-PROM-B"]
     assert "mod_CNT_APP_0 -.-> mod_CNT_APP_1" in pdata["diagrams"]["c4_components"]["CNT-APP"]
 
 
@@ -1494,9 +1488,15 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     eidos_dir = tmp_path / "eidos"
 
     # D1: get_portal_data populates cnt_dependents and comp_dependents for delta blast_radius
+    src_d1 = tmp_path / "src"
+    src_d1.mkdir(parents=True, exist_ok=True)
+    (src_d1 / "beta.py").write_text("def beta_fn():\n    return 1\n", encoding="utf-8")
+    (src_d1 / "alpha.py").write_text(
+        "from beta import beta_fn\n\ndef alpha_fn():\n    return beta_fn()\n", encoding="utf-8"
+    )
     cnt_a = eidos_dir / "architecture" / "containers" / "cnt-alpha.adoc"
     cnt_a.write_text(
-        '---\n'
+        "---\n"
         'id: "CNT-ALPHA"\n'
         'title: "Alpha Container"\n'
         'type: "tech/container"\n'
@@ -1505,20 +1505,18 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
         'container_type: "service"\n'
         'runtime: "python3.12"\n'
         'responsibility: "Alpha service."\n'
-        'components:\n'
+        "components:\n"
         '  - id: "CMP-ALPHA-MOD"\n'
         '    title: "Alpha Mod"\n'
         '    responsibility: "Alpha module."\n'
-        '    interfaces:\n'
-        '      consumes:\n'
-        '        - "CMP-BETA-MOD"\n'
-        '---\n'
-        '= Alpha Container\n\nBody.\n',
+        '    source_path: "src/alpha.py"\n'
+        "---\n"
+        "= Alpha Container\n\nBody.\n",
         encoding="utf-8",
     )
     cnt_b = eidos_dir / "architecture" / "containers" / "cnt-beta.adoc"
     cnt_b.write_text(
-        '---\n'
+        "---\n"
         'id: "CNT-BETA"\n'
         'title: "Beta Container"\n'
         'type: "tech/container"\n'
@@ -1527,31 +1525,32 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
         'container_type: "service"\n'
         'runtime: "python3.12"\n'
         'responsibility: "Beta service."\n'
-        'components:\n'
+        "components:\n"
         '  - id: "CMP-BETA-MOD"\n'
         '    title: "Beta Mod"\n'
         '    responsibility: "Beta module."\n'
-        '---\n'
-        '= Beta Container\n\nBody.\n',
+        '    source_path: "src/beta.py"\n'
+        "---\n"
+        "= Beta Container\n\nBody.\n",
         encoding="utf-8",
     )
     dlt_file = eidos_dir / "deltas" / "dlt-2026-900-beta.adoc"
     dlt_file.write_text(
-        '---\n'
+        "---\n"
         'id: "DLT-2026-900"\n'
         'title: "Mutate Beta"\n'
         'type: "delta/mutation"\n'
         'status: "proposed"\n'
-        'intent:\n'
+        "intent:\n"
         '  kind: "feature"\n'
         '  motivation: "Test blast radius dependents."\n'
-        'mutations:\n'
+        "mutations:\n"
         '  - operation: "modify"\n'
         '    target: "CMP-BETA-MOD"\n'
         '    parent: "CNT-BETA"\n'
         '    details: "Update beta mod."\n'
-        '---\n'
-        '= Mutate Beta\n\nBody.\n',
+        "---\n"
+        "= Mutate Beta\n\nBody.\n",
         encoding="utf-8",
     )
     portal_data = get_portal_data(eidos_dir)
@@ -1653,7 +1652,9 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
             "name": None,
             "container_type": None,
             "runtime": None,
-            "internal_components": [{"id": "CMP-1", "name": None, "responsibility": None, "source_path": [None, "a.py"]}],
+            "internal_components": [
+                {"id": "CMP-1", "name": None, "responsibility": None, "source_path": [None, "a.py"]}
+            ],
             "contracts": {"provides": [{"id": "CTR-API-1 (REST)"}]},
         },
         [],

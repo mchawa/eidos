@@ -135,9 +135,7 @@ def test_cli_command_tree_unchanged():
 
     import typer
 
-    snapshot = json.loads(
-        (Path(__file__).parent / "fixtures" / "cli_command_tree.json").read_text(encoding="utf-8")
-    )
+    snapshot = json.loads((Path(__file__).parent / "fixtures" / "cli_command_tree.json").read_text(encoding="utf-8"))
     current = _walk_command_tree(typer.main.get_command(app), [])
     normalized = json.loads(re.sub(r" at 0x[0-9a-f]+", "", json.dumps(current)))
     assert normalized == snapshot
@@ -248,9 +246,7 @@ def test_cli_contract_json_and_create_flags(tmp_path):
         assert any(r["id"] == "CTR-OPENAPI" for r in search_data["results"])
 
         # 6. 1-arg delta status lookup (--json)
-        res_single_status = runner.invoke(
-            app, ["delta", "status", "DLT-2026-901", "--path", str(eidos_dir), "--json"]
-        )
+        res_single_status = runner.invoke(app, ["delta", "status", "DLT-2026-901", "--path", str(eidos_dir), "--json"])
         assert res_single_status.exit_code == 0
         single_status_data = json.loads(res_single_status.stdout)
         assert single_status_data["id"] == "DLT-2026-901"
@@ -267,12 +263,7 @@ def test_cli_error_exit_codes_and_negative_json_contracts(tmp_path):
     (eidos_dir / "domains").mkdir(parents=True)
     # Create an invalid spec (missing required title/owner)
     (eidos_dir / "domains" / "bad.adoc").write_text(
-        "---\n"
-        "type: product/domain\n"
-        "schema: schemas/v1/product/domain.schema.yaml\n"
-        "id: INVALID-ID\n"
-        "---\n"
-        "= Bad Domain\n",
+        "---\ntype: product/domain\nid: INVALID-ID\n---\n= Bad Domain\n",
         encoding="utf-8",
     )
 
@@ -300,15 +291,11 @@ def test_cli_error_exit_codes_and_negative_json_contracts(tmp_path):
     assert res_dlt_status_err.exit_code == 1
     assert json.loads(res_dlt_status_err.stdout)["success"] is False
 
-    res_dlt_ver_err = runner.invoke(
-        app, ["delta", "verify", "DLT-2026-404", "--path", str(eidos_dir), "--json"]
-    )
+    res_dlt_ver_err = runner.invoke(app, ["delta", "verify", "DLT-2026-404", "--path", str(eidos_dir), "--json"])
     assert res_dlt_ver_err.exit_code == 1
     assert json.loads(res_dlt_ver_err.stdout)["is_verified"] is False
 
-    res_dlt_app_err = runner.invoke(
-        app, ["delta", "apply", "DLT-2026-404", "--path", str(eidos_dir), "--json"]
-    )
+    res_dlt_app_err = runner.invoke(app, ["delta", "apply", "DLT-2026-404", "--path", str(eidos_dir), "--json"])
     assert res_dlt_app_err.exit_code == 1
     assert json.loads(res_dlt_app_err.stdout)["success"] is False
 
@@ -333,7 +320,6 @@ def test_cli_error_exit_codes_and_negative_json_contracts(tmp_path):
     (eidos_dir / "domains" / "bad.adoc").write_text(
         "---\n"
         "type: product/capability\n"
-        "schema: schemas/v1/product/capability.schema.yaml\n"
         "id: CAP-BROKEN-001\n"
         "title: Broken Cap\n"
         "domain: DOM-NONEXISTENT\n"
@@ -400,6 +386,3 @@ def test_cli_error_exit_codes_and_negative_json_contracts(tmp_path):
     # drift non-JSON error and --warn-only on invalid git ref
     assert runner.invoke(app, ["drift", "--base", "nonexistent-ref-999"]).exit_code == 1
     assert runner.invoke(app, ["drift", "--base", "nonexistent-ref-999", "--warn-only"]).exit_code == 0
-
-
-

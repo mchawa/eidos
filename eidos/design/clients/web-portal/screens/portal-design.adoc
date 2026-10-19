@@ -1,6 +1,5 @@
 ---
 type: design/screen
-schema: schemas/v1/design/screen.schema.yaml
 id: SCR-PORTAL-DESIGN
 title: "Design Systems & Experience View"
 route: "/design"

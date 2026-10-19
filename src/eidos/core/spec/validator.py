@@ -98,15 +98,9 @@ def _extract_prefixes_from_schema(schema: dict[str, Any]) -> set[str]:
     return found
 
 
-def _resolve_spec_and_repo_roots(
-    root_dir: Path | None, doc_path: Path | None = None
-) -> tuple[Path, Path]:
+def _resolve_spec_and_repo_roots(root_dir: Path | None, doc_path: Path | None = None) -> tuple[Path, Path]:
     """Resolve (spec_root, repo_root) for standard ('eidos/', '.spec/'), custom ('specs/'), or subdirectory paths."""
-    base = (
-        root_dir
-        if root_dir is not None
-        else (doc_path.parent if doc_path is not None else Path.cwd())
-    ).resolve()
+    base = (root_dir if root_dir is not None else (doc_path.parent if doc_path is not None else Path.cwd())).resolve()
 
     # 1. If base itself is a repo root containing a standard child spec directory ('eidos', '.spec', 'specs')
     for child_name in ("eidos", ".spec", "specs"):
@@ -243,9 +237,7 @@ class SpecValidator:
             for k in sorted(self._schema_cache)
             if k.startswith("schemas/v1/") and "/" in k.removeprefix("schemas/v1/")
         }
-        return hashlib.sha256(
-            json.dumps(canonical, sort_keys=True, default=str).encode("utf-8")
-        ).hexdigest()
+        return hashlib.sha256(json.dumps(canonical, sort_keys=True, default=str).encode("utf-8")).hexdigest()
 
     def _load_bundled_schemas(self):
         """Preload standard schemas recursively from the assets directory or package data."""
@@ -263,9 +255,7 @@ class SpecValidator:
                 if isinstance(defs_item, dict):
                     extracted_prefixes.update(_extract_prefixes_from_schema(defs_item))
 
-            all_schema_paths = sorted(
-                p for ext in ("*.schema.yaml", "*.schema.json") for p in schema_dir.rglob(ext)
-            )
+            all_schema_paths = sorted(p for ext in ("*.schema.yaml", "*.schema.json") for p in schema_dir.rglob(ext))
 
             for p in all_schema_paths:
                 content = p.read_text(encoding="utf-8")
@@ -291,32 +281,11 @@ class SpecValidator:
             raise RuntimeError(f"Failed to load bundled Eidos schemas: {exc}") from exc
 
     def resolve_schema(self, doc: SpecDocument) -> dict | None:
-        """Resolve the JSON schema for a document based on its type or explicit schema attribute."""
-        schema_ref_str = doc.schema_ref if isinstance(doc.schema_ref, str) else None
+        """Resolve the JSON schema for a document deterministically from its type."""
         doc_type_str = doc.doc_type if isinstance(doc.doc_type, str) else None
-
-        # 1. Check explicit relative schema reference (containing a directory component),
-        # unless it is an ambiguous root system.schema.yaml reference without product/ or design/.
-        if schema_ref_str:
-            norm_ref = schema_ref_str.replace(".spec/", "").strip().replace("\\", "/")
-            if (
-                "/" in norm_ref
-                and norm_ref not in ("system.schema.yaml", "schemas/v1/system.schema.yaml")
-                and norm_ref in self._schema_cache
-            ):
-                return self._schema_cache[norm_ref]
-
-        # 2. Check document type mapping (disambiguates colliding basenames like system.schema.yaml)
         if doc_type_str and doc_type_str in TYPE_TO_SCHEMA_NAME:
             schema_name = TYPE_TO_SCHEMA_NAME[doc_type_str]
             return self._schema_cache.get(schema_name)
-
-        # 3. Fallback to basename lookup for custom/unmapped types
-        if schema_ref_str:
-            basename = Path(schema_ref_str.replace(".spec/", "").strip()).name
-            if basename in self._schema_cache:
-                return self._schema_cache[basename]
-
         return None
 
     def validate_document(self, doc: SpecDocument, root_dir: Path | None = None) -> list[str]:
@@ -399,11 +368,7 @@ class SpecValidator:
                 except ValueError:
                     rel_fp_parts = (fp.name,)
             # Skip README, partial include files, symlinks, and empty files
-            if (
-                fp.name.lower() == "readme.adoc"
-                or fp.name.startswith("_")
-                or fp.is_symlink()
-            ):
+            if fp.name.lower() == "readme.adoc" or fp.name.startswith("_") or fp.is_symlink():
                 return None
             try:
                 st = fp.stat()
@@ -447,9 +412,7 @@ class SpecValidator:
                             fast_pathed_applied_deltas.add(str(fp.resolve()))
                         return cached_doc
 
-            doc, sha256, mtime_ns = get_cached_spec_document(
-                fp, mtime_ns=mtime_ns, st_size=st.st_size, cached_row=row
-            )
+            doc, sha256, mtime_ns = get_cached_spec_document(fp, mtime_ns=mtime_ns, st_size=st.st_size, cached_row=row)
             if doc is None or not sha256:
                 return None
             if is_root_system and not doc.frontmatter and not doc.body.strip() and not doc.errors:
@@ -509,9 +472,7 @@ class SpecValidator:
             if not doc.is_valid:
                 report.schema_errors[str(file_path)] = list(doc.errors)
 
-        deleted_keys = (
-            [k for k in cached_rows if k not in seen_rel_keys] if resolved_root == eidos_cache_root else []
-        )
+        deleted_keys = [k for k in cached_rows if k not in seen_rel_keys] if resolved_root == eidos_cache_root else []
         if eidos_cache_root.exists() and (to_upsert or deleted_keys):
             save_spec_validation_cache(db_path, to_upsert, deleted_keys)
 
@@ -641,9 +602,7 @@ class SpecValidator:
 
         for doc in report.documents:
             # 2. Check relative file paths ending in .adoc
-            self._check_dict_references(
-                doc.frontmatter, doc.file_path, root_dir, report, doc_type=doc.doc_type
-            )
+            self._check_dict_references(doc.frontmatter, doc.file_path, root_dir, report, doc_type=doc.doc_type)
 
             # 3. Check semantic entity ID cross-references
             self._validate_semantic_references(doc, catalog_ids, report, root_dir, entity_types)
@@ -666,9 +625,7 @@ class SpecValidator:
         fm = doc.frontmatter or {}
         schema = self.resolve_schema(doc)
         if schema:
-            self._validate_schema_references(
-                schema, fm, "", doc, catalog_ids, report, entity_types, root_dir=root_dir
-            )
+            self._validate_schema_references(schema, fm, "", doc, catalog_ids, report, entity_types, root_dir=root_dir)
         self._validate_architectural_invariants(doc, fm, report, root_dir=root_dir)
 
     def _validate_schema_references(
@@ -778,9 +735,7 @@ class SpecValidator:
                     )
             for combiner in ("oneOf", "anyOf", "allOf"):
                 for branch in schema_node.get(combiner, []) or []:
-                    if isinstance(branch, dict) and (
-                        "$ref" in branch or "items" in branch or "x-eidos-ref" in branch
-                    ):
+                    if isinstance(branch, dict) and ("$ref" in branch or "items" in branch or "x-eidos-ref" in branch):
                         self._validate_schema_references(
                             branch,
                             value,
@@ -926,6 +881,7 @@ class SpecValidator:
         root_dir: Path | None = None,
     ) -> None:
         """Enforce structural boundary invariants across contracts, dedicated components, and composable SpecDeltas."""
+
         def _record_err(msg: str) -> None:
             if msg not in doc.errors:
                 doc.errors.append(msg)
@@ -950,6 +906,7 @@ class SpecValidator:
                     stem_upper = Path(target_val).stem.upper()
                     if stem_upper.startswith(
                         (
+                            "SYS-",
                             "CAP-",
                             "POL-",
                             "ARCH-",
@@ -968,6 +925,8 @@ class SpecValidator:
                         )
                     ):
                         effective_target_upper = stem_upper
+                    elif stem_upper == "SYSTEM":
+                        effective_target_upper = "SYS-SYSTEM"
                     elif "capabilities" in norm_parts:
                         effective_target_upper = f"CAP-{stem_upper}"
                     elif "policies" in norm_parts:
@@ -985,15 +944,10 @@ class SpecValidator:
                         effective_target_upper = f"ARCH-{stem_upper}"
                     elif "domains" in norm_parts:
                         effective_target_upper = f"DOM-{stem_upper}"
-                if op_val == "deprecate" and not effective_target_upper.startswith(("CAP-", "POL-")):
+                if op_val == "deprecate" and effective_target_upper.startswith("INV-"):
                     _record_err(
                         f"Invalid composable mutation in {doc.file_path.name}: "
-                        f"operation 'deprecate' is only supported for CAP-* and POL-* targets (got '{target_val}')."
-                    )
-                elif effective_target_upper.startswith("ARCH-") and op_val != "modify":
-                    _record_err(
-                        f"Invalid composable mutation in {doc.file_path.name}: "
-                        f"ARCH-* targets only support operation 'modify' (got '{op_val}')."
+                        f"operation 'deprecate' is not supported for INV-* targets (got '{target_val}')."
                     )
                 elif effective_target_upper.startswith("INV-") and op_val == "add":
                     has_parent = bool(str(mut.get("parent") or "").strip())
@@ -1010,8 +964,7 @@ class SpecValidator:
                     ref_upper.endswith(".ADOC")
                     and (
                         Path(owning_ref).stem.upper().startswith("CMP-")
-                        or "components"
-                        in [p.lower() for p in Path(owning_ref.replace("\\", "/")).parts]
+                        or "components" in [p.lower() for p in Path(owning_ref.replace("\\", "/")).parts]
                     )
                 )
                 if is_cmp_ref:
@@ -1034,9 +987,7 @@ class SpecValidator:
                     rel_to_repo = rel_to_spec
 
                 is_centralized = (
-                    len(rel_to_spec) >= 2
-                    and rel_to_spec[0] == "architecture"
-                    and rel_to_spec[1] == "components"
+                    len(rel_to_spec) >= 2 and rel_to_spec[0] == "architecture" and rel_to_spec[1] == "components"
                 )
                 if not is_centralized or "src" in rel_to_repo:
                     _record_err(
@@ -1047,7 +998,7 @@ class SpecValidator:
             if fm.get("contracts"):
                 _record_err(
                     f"INV-INTERFACE-BOUNDARY-GOVERNANCE violation: Component '{doc.doc_id}' cannot declare boundary protocol contracts. "
-                    f"Use 'interfaces.provides' for in-process APIs."
+                    f"Boundary contracts (CTR-*) must be declared on a Container (CNT-*)."
                 )
 
     def _check_dict_references(
@@ -1084,9 +1035,7 @@ class SpecValidator:
                                             mv, source_file, root_dir, report, doc_type=doc_type
                                         )
                                 else:
-                                    self._check_dict_references(
-                                        mut, source_file, root_dir, report, doc_type=doc_type
-                                    )
+                                    self._check_dict_references(mut, source_file, root_dir, report, doc_type=doc_type)
                         continue
                 self._check_dict_references(v, source_file, root_dir, report, doc_type=doc_type)
         elif isinstance(val, list):
@@ -1198,13 +1147,12 @@ class SpecValidator:
         return bool(re.search(rf"\b{re.escape(leaf_sym)}\b", stripped_source))
 
     def _validate_source_and_contract_paths(self, report: ValidationReport, root_dir: Path) -> None:
-        """Verify container and component source_path, contract specification_file, UI component test_bindings, and invariant test_binding references when source/test trees exist on disk."""
+        """Verify container and component source_path, contract specification_file, and invariant test_binding references when source/test trees exist on disk."""
         spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir)
 
         candidate_paths: list[str] = []
         candidate_test_files: list[str] = []
         for doc in report.documents:
-            fm = doc.frontmatter or {}
             model = doc.model
             if doc.doc_type == "tech/container":
                 candidate_paths.extend(model.source_paths())
@@ -1216,12 +1164,6 @@ class SpecValidator:
                 sf = model.specification_file
                 if isinstance(sf, str) and sf.strip() and not sf.strip().endswith(".adoc"):
                     candidate_paths.append(sf.strip())
-            elif doc.doc_type == "design/ui-component":
-                tb = fm.get("test_bindings")
-                if isinstance(tb, dict):
-                    for v in tb.values():
-                        if isinstance(v, str) and v.strip():
-                            candidate_test_files.append(v.split("::", 1)[0].strip())
             for inv in model.all_invariants():
                 raw_bind = inv.effective_test_binding()
                 if isinstance(raw_bind, str):
@@ -1274,8 +1216,7 @@ class SpecValidator:
                             has_repo_code_footprint = True
                             break
                         if child.is_file() and (
-                            cname.lower() in _code_manifest_files
-                            or child.suffix.lower() in AST_DIFF_EXTS
+                            cname.lower() in _code_manifest_files or child.suffix.lower() in AST_DIFF_EXTS
                         ):
                             has_repo_code_footprint = True
                             break
@@ -1292,10 +1233,7 @@ class SpecValidator:
             or any(self._resolve_source_path(repo_root, root_dir, tf) is not None for tf in candidate_test_files)
             or (
                 has_source_tree
-                and any(
-                    tf and not tf.replace("\\", "/").startswith(("tests/", "test/"))
-                    for tf in candidate_test_files
-                )
+                and any(tf and not tf.replace("\\", "/").startswith(("tests/", "test/")) for tf in candidate_test_files)
             )
         )
 
@@ -1312,7 +1250,6 @@ class SpecValidator:
             "rejected",
         }
         for doc in report.documents:
-            fm = doc.frontmatter or {}
             model = doc.model
             status = str(model.status or "active").strip().lower()
             if status in inactive_statuses:
@@ -1355,7 +1292,12 @@ class SpecValidator:
                             )
                 elif doc.doc_type == "tech/contract":
                     sf = model.specification_file
-                    if isinstance(sf, str) and sf.strip() and sf.strip().upper() not in ("N/A", "TBD", "NONE") and not sf.strip().endswith(".adoc"):
+                    if (
+                        isinstance(sf, str)
+                        and sf.strip()
+                        and sf.strip().upper() not in ("N/A", "TBD", "NONE")
+                        and not sf.strip().endswith(".adoc")
+                    ):
                         resolved_sf = self._resolve_source_path(repo_root, root_dir, sf)
                         if resolved_sf is None:
                             report.broken_references.append(
@@ -1367,43 +1309,6 @@ class SpecValidator:
                             self._verify_contract_protocol(protocol, doc, resolved_sf, report)
 
             if has_test_tree:
-                if doc.doc_type == "design/ui-component":
-                    tb_map = fm.get("test_bindings")
-                    if isinstance(tb_map, dict):
-                        for tb_key, tb_val in tb_map.items():
-                            if (
-                                not isinstance(tb_val, str)
-                                or not tb_val.strip()
-                                or tb_val.strip().upper() in ("N/A", "TBD", "NONE")
-                            ):
-                                continue
-                            parts = [p.strip() for p in tb_val.split("::") if p.strip()]
-                            if not parts:
-                                report.broken_references.append(
-                                    f"Broken test_bindings.{tb_key} in {doc.file_path.name}: "
-                                    f"UI Component '{doc.doc_id}' has invalid test binding '{tb_val}'"
-                                )
-                                continue
-                            if "::" in tb_val and any(not p.strip() for p in tb_val.split("::")):
-                                report.broken_references.append(
-                                    f"Broken test_bindings.{tb_key} in {doc.file_path.name}: "
-                                    f"UI Component '{doc.doc_id}' has Malformed test_binding '{tb_val}' (empty symbol after '::')"
-                                )
-                                continue
-                            file_part = parts[0]
-                            sym_parts = parts[1:]
-                            resolved_tf = self._resolve_source_path(repo_root, root_dir, file_part)
-                            if resolved_tf is None:
-                                report.broken_references.append(
-                                    f"Broken test_bindings.{tb_key} in {doc.file_path.name}: "
-                                    f"UI Component '{doc.doc_id}' references '{file_part}' which does not exist on disk"
-                                )
-                            elif sym_parts and not self._test_symbol_exists(resolved_tf, sym_parts):
-                                report.broken_references.append(
-                                    f"Broken test_bindings.{tb_key} in {doc.file_path.name}: "
-                                    f"UI Component '{doc.doc_id}' references symbol '{'::'.join(sym_parts)}' which does not exist in '{file_part}'"
-                                )
-
                 # Collect invariants from top-level, technical.invariants, and active inline components via FrontmatterModel
                 invariants_to_check = list(model.invariants)
                 if model.technical and model.technical.invariants:
@@ -1566,9 +1471,7 @@ class SpecValidator:
                             )
                         return
 
-                    child_dicts = {
-                        k: v for k, v in node.items() if not str(k).startswith("$") and isinstance(v, dict)
-                    }
+                    child_dicts = {k: v for k, v in node.items() if not str(k).startswith("$") and isinstance(v, dict)}
                     non_meta_scalars = [
                         k for k, v in node.items() if not str(k).startswith("$") and not isinstance(v, dict)
                     ]
@@ -1617,9 +1520,7 @@ class SpecValidator:
                 nxt = extends_map.get(curr)
                 curr = nxt[0] if nxt else None
 
-    def _verify_cli_contract_commands(
-        self, doc: SpecDocument, cli_file: Path, report: ValidationReport
-    ) -> None:
+    def _verify_cli_contract_commands(self, doc: SpecDocument, cli_file: Path, report: ValidationReport) -> None:
         """Verify bidirectional CLI command parity across Typer (including sub-apps), Click, and argparse entrypoints (DLT-2026-082)."""
         try:
             source = cli_file.read_text(encoding="utf-8")
@@ -1676,9 +1577,7 @@ class SpecValidator:
                 return func.id in typer_class_aliases
             return False
 
-        def _extract_command_name_from_call(
-            cmd_call: ast.Call, fallback_func_name: str | None
-        ) -> str | None:
+        def _extract_command_name_from_call(cmd_call: ast.Call, fallback_func_name: str | None) -> str | None:
             hidden = any(
                 kw.arg == "hidden" and isinstance(kw.value, ast.Constant) and kw.value.value is True
                 for kw in cmd_call.keywords
@@ -1689,9 +1588,7 @@ class SpecValidator:
                 (
                     kw.value.value
                     for kw in cmd_call.keywords
-                    if kw.arg == "name"
-                    and isinstance(kw.value, ast.Constant)
-                    and isinstance(kw.value.value, str)
+                    if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str)
                 ),
                 None,
             )
@@ -1740,6 +1637,7 @@ class SpecValidator:
             return None
 
         if typer_module_aliases or typer_class_aliases:
+
             def _extract_typer_ctor_name(call_node: ast.AST | None) -> str | None:
                 if not isinstance(call_node, ast.Call):
                     return None
@@ -1771,11 +1669,7 @@ class SpecValidator:
                                 vars_found.add(target.id)
                                 if c_name:
                                     ctor_names[target.id] = c_name
-                    elif (
-                        isinstance(n, ast.AnnAssign)
-                        and _is_typer_ctor(n.value)
-                        and isinstance(n.target, ast.Name)
-                    ):
+                    elif isinstance(n, ast.AnnAssign) and _is_typer_ctor(n.value) and isinstance(n.target, ast.Name):
                         vars_found.add(n.target.id)
                         c_name = _extract_typer_ctor_name(n.value)
                         if c_name:
@@ -1796,9 +1690,7 @@ class SpecValidator:
                     (
                         kw.value.value
                         for kw in call_node.keywords
-                        if kw.arg == "name"
-                        and isinstance(kw.value, ast.Constant)
-                        and isinstance(kw.value.value, str)
+                        if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str)
                     ),
                     None,
                 )
@@ -1831,14 +1723,11 @@ class SpecValidator:
                     and isinstance(node.args[0], ast.Name)
                 ):
                     sub_var = node.args[0].id
-                    sub_name = _resolve_sub_typer_name(
-                        node, sub_var, root_ctor_names, imported_symbol_modules
-                    )
+                    sub_name = _resolve_sub_typer_name(node, sub_var, root_ctor_names, imported_symbol_modules)
                     mounted_sub_apps[sub_var] = sub_name
 
-            root_app_vars = (
-                typer_app_vars - set(mounted_sub_apps)
-                or ({"app"} if "app" in typer_app_vars else typer_app_vars)
+            root_app_vars = typer_app_vars - set(mounted_sub_apps) or (
+                {"app"} if "app" in typer_app_vars else typer_app_vars
             )
 
             def _collect_commands_from_ast(
@@ -1864,14 +1753,8 @@ class SpecValidator:
                         and node.func.value.id in target_vars
                         and node.func.attr == "add_typer"
                     ):
-                        child_var = (
-                            node.args[0].id
-                            if node.args and isinstance(node.args[0], ast.Name)
-                            else None
-                        )
-                        sub_name = _resolve_sub_typer_name(
-                            node, child_var, scope_ctor_names, imp_map
-                        )
+                        child_var = node.args[0].id if node.args and isinstance(node.args[0], ast.Name) else None
+                        sub_name = _resolve_sub_typer_name(node, child_var, scope_ctor_names, imp_map)
                         child_cmds: set[str] = set()
                         grandchild_map: dict[str, set[str]] = {}
                         if child_var:
@@ -1925,11 +1808,7 @@ class SpecValidator:
                         and node.func.func.value.id in target_vars
                         and node.func.func.attr == "command"
                     ):
-                        fn_arg_name = (
-                            node.args[0].id
-                            if node.args and isinstance(node.args[0], ast.Name)
-                            else None
-                        )
+                        fn_arg_name = node.args[0].id if node.args and isinstance(node.args[0], ast.Name) else None
                         cmd_name = _extract_command_name_from_call(node.func, fn_arg_name)
                         if cmd_name:
                             found.add(cmd_name)
@@ -2059,9 +1938,9 @@ class SpecValidator:
                                     sub_click_groups[node.name] = grp_cmd
                                     parent_grp = dec_target.value.id
                                     if parent_grp in sub_click_groups:
-                                        subcommands_by_group.setdefault(
-                                            sub_click_groups[parent_grp], set()
-                                        ).add(grp_cmd)
+                                        subcommands_by_group.setdefault(sub_click_groups[parent_grp], set()).add(
+                                            grp_cmd
+                                        )
                                     else:
                                         commands.add(grp_cmd)
                                     changed = True
@@ -2095,16 +1974,12 @@ class SpecValidator:
                         ):
                             explicit_name = node.args[1].value
                         grp_cmd = (
-                            explicit_name
-                            or standalone_click_funcs.get(target_var)
-                            or target_var.replace("_", "-")
+                            explicit_name or standalone_click_funcs.get(target_var) or target_var.replace("_", "-")
                         )
                         root_click_groups.discard(target_var)
                         sub_click_groups[target_var] = grp_cmd
                         if parent_grp in sub_click_groups:
-                            subcommands_by_group.setdefault(
-                                sub_click_groups[parent_grp], set()
-                            ).add(grp_cmd)
+                            subcommands_by_group.setdefault(sub_click_groups[parent_grp], set()).add(grp_cmd)
                         else:
                             commands.add(grp_cmd)
                         changed = True
@@ -2125,14 +2000,11 @@ class SpecValidator:
                             and dec_target.attr == "command"
                         )
                         is_standalone_cmd = (
-                            (
-                                isinstance(dec_target, ast.Attribute)
-                                and isinstance(dec_target.value, ast.Name)
-                                and dec_target.value.id in click_module_aliases
-                                and dec_target.attr == "command"
-                            )
-                            or (isinstance(dec_target, ast.Name) and dec_target.id in click_cmd_decorators)
-                        )
+                            isinstance(dec_target, ast.Attribute)
+                            and isinstance(dec_target.value, ast.Name)
+                            and dec_target.value.id in click_module_aliases
+                            and dec_target.attr == "command"
+                        ) or (isinstance(dec_target, ast.Name) and dec_target.id in click_cmd_decorators)
                         if is_Group_cmd or (is_standalone_cmd and node.name not in all_click_groups):
                             cmd_name = (
                                 _extract_command_name_from_call(dec_call, node.name)
@@ -2145,9 +2017,9 @@ class SpecValidator:
                                     decorated_Group_cmds.add(node.name)
                                     parent_grp = dec_target.value.id  # type: ignore[union-attr]
                                     if parent_grp in sub_click_groups:
-                                        subcommands_by_group.setdefault(
-                                            sub_click_groups[parent_grp], set()
-                                        ).add(cmd_name)
+                                        subcommands_by_group.setdefault(sub_click_groups[parent_grp], set()).add(
+                                            cmd_name
+                                        )
                                     else:
                                         commands.add(cmd_name)
 
@@ -2185,25 +2057,19 @@ class SpecValidator:
                         target_var = first_arg.id
                         mounted_via_add_cmd.add(target_var)
                         resolved_name = (
-                            explicit_name
-                            or standalone_click_funcs.get(target_var)
-                            or target_var.replace("_", "-")
+                            explicit_name or standalone_click_funcs.get(target_var) or target_var.replace("_", "-")
                         )
                         if resolved_name:
                             if target_var in root_click_groups:
                                 root_click_groups.discard(target_var)
                                 sub_click_groups[target_var] = resolved_name
                             if parent_grp in sub_click_groups:
-                                subcommands_by_group.setdefault(
-                                    sub_click_groups[parent_grp], set()
-                                ).add(resolved_name)
+                                subcommands_by_group.setdefault(sub_click_groups[parent_grp], set()).add(resolved_name)
                             else:
                                 commands.add(resolved_name)
                     elif explicit_name:
                         if parent_grp in sub_click_groups:
-                            subcommands_by_group.setdefault(
-                                sub_click_groups[parent_grp], set()
-                            ).add(explicit_name)
+                            subcommands_by_group.setdefault(sub_click_groups[parent_grp], set()).add(explicit_name)
                         else:
                             commands.add(explicit_name)
 
@@ -2293,8 +2159,7 @@ class SpecValidator:
                     bullet_tokens = [
                         t
                         for t in bullet_m.group(1).strip().split()
-                        if not t.startswith(("-", "[", "<", "{"))
-                        and not any(ch in t for ch in ("*", "|", ".", "/"))
+                        if not t.startswith(("-", "[", "<", "{")) and not any(ch in t for ch in ("*", "|", ".", "/"))
                     ]
                     if not bullet_tokens:
                         continue
@@ -2324,9 +2189,7 @@ class SpecValidator:
         )
         return re.sub(r"^[ \t]*//[^\r\n]*$", "", cleaned, flags=re.MULTILINE)
 
-    def _verify_python_protocol_contract(
-        self, doc: SpecDocument, spec_file: Path, report: ValidationReport
-    ) -> None:
+    def _verify_python_protocol_contract(self, doc: SpecDocument, spec_file: Path, report: ValidationReport) -> None:
         """Verify bidirectional parity between Python Protocol / ABC classes/methods in specification_file and the contract (DLT-2026-082)."""
         if spec_file.suffix != ".py":
             return
@@ -2378,9 +2241,7 @@ class SpecValidator:
                         f"Contract drift in {doc.file_path.name}: documented Python protocol symbol '{doc_sym}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
                     )
 
-    def _verify_rest_openapi_contract(
-        self, doc: SpecDocument, spec_file: Path, report: ValidationReport
-    ) -> None:
+    def _verify_rest_openapi_contract(self, doc: SpecDocument, spec_file: Path, report: ValidationReport) -> None:
         """Verify bidirectional parity between OpenAPI specification_file paths and documented routes in the contract (DLT-2026-082)."""
         try:
             data = yaml.safe_load(spec_file.read_text(encoding="utf-8"))
@@ -2419,9 +2280,7 @@ class SpecValidator:
                     f"Contract drift in {doc.file_path.name}: documented OpenAPI path '{doc_route}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
                 )
 
-    def _verify_json_schema_contract(
-        self, doc: SpecDocument, spec_file: Path, report: ValidationReport
-    ) -> None:
+    def _verify_json_schema_contract(self, doc: SpecDocument, spec_file: Path, report: ValidationReport) -> None:
         """Verify that JSON Schema specification_file is valid YAML/JSON and its required properties are documented in the contract."""
         try:
             data = yaml.safe_load(spec_file.read_text(encoding="utf-8"))
@@ -2448,9 +2307,7 @@ class SpecValidator:
                     f"Contract drift in {doc.file_path.name}: JSON Schema property '{prop_name}' defined in '{spec_file.name}' is not documented in contract '{doc.doc_id}'"
                 )
 
-    def _verify_grpc_proto_contract(
-        self, doc: SpecDocument, spec_file: Path, report: ValidationReport
-    ) -> None:
+    def _verify_grpc_proto_contract(self, doc: SpecDocument, spec_file: Path, report: ValidationReport) -> None:
         """Verify bidirectional parity between gRPC service/rpc declarations in .proto specification_file and the contract (DLT-2026-082)."""
         try:
             text = spec_file.read_text(encoding="utf-8")
@@ -2478,9 +2335,7 @@ class SpecValidator:
                     f"Contract drift in {doc.file_path.name}: documented gRPC symbol '{doc_sym}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
                 )
 
-    def _verify_graphql_contract(
-        self, doc: SpecDocument, spec_file: Path, report: ValidationReport
-    ) -> None:
+    def _verify_graphql_contract(self, doc: SpecDocument, spec_file: Path, report: ValidationReport) -> None:
         """Verify bidirectional parity between root Query/Mutation/Subscription fields in GraphQL specification_file and the contract (DLT-2026-082)."""
         try:
             text = spec_file.read_text(encoding="utf-8")
@@ -2517,7 +2372,12 @@ class SpecValidator:
             body,
         ):
             doc_op = m.group(1) or m.group(2) or m.group(3)
-            if doc_op and doc_op.lower() not in gql_keywords and doc_op not in defined_ops and doc_op not in seen_doc_ops:
+            if (
+                doc_op
+                and doc_op.lower() not in gql_keywords
+                and doc_op not in defined_ops
+                and doc_op not in seen_doc_ops
+            ):
                 seen_doc_ops.add(doc_op)
                 report.broken_references.append(
                     f"Contract drift in {doc.file_path.name}: documented GraphQL operation '{doc_op}' in contract '{doc.doc_id}' does not exist in '{spec_file.name}'"
@@ -2546,5 +2406,3 @@ class SpecValidator:
         verifier = getattr(self, method_name, None)
         if callable(verifier):
             verifier(doc, spec_file, report)
-
-

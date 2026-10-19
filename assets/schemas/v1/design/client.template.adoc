@@ -1,0 +1,5 @@
+= Client: {heading}
+:toc: left
+
+== Client Identity & Platform Archetype
+Describe the runtime platform, bound design system, and implementing container of this client surface.

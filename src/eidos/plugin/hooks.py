@@ -39,9 +39,7 @@ def handle_stop_hook(payload: dict[str, Any], workspace_root: Path) -> dict[str,
     try:
         drift_res = detect_drift(repo_root=workspace_root, eidos_dir=eidos_dir, uncommitted=True)
         has_non_code_failure = (
-            not drift_res.validation_passed
-            or bool(drift_res.uncovered_invariants)
-            or bool(drift_res.orphan_invariants)
+            not drift_res.validation_passed or bool(drift_res.uncovered_invariants) or bool(drift_res.orphan_invariants)
         )
         if drift_res.drift_detected or has_non_code_failure:
             cause_parts: list[str] = []

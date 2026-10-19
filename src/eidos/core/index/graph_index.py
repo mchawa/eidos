@@ -328,8 +328,7 @@ class ArchitecturalIndex:
             symbol_counts[row[0]] = row[1]
 
         test_assert_filter = (
-            "rel_type = 'asserts' AND instr(source_id, '::') > 0 "
-            "AND source_id NOT IN (SELECT id FROM entities)"
+            "rel_type = 'asserts' AND instr(source_id, '::') > 0 AND source_id NOT IN (SELECT id FROM entities)"
         )
         test_invariant_assertions = cursor.execute(
             f"SELECT COUNT(*) FROM edges WHERE {test_assert_filter};"

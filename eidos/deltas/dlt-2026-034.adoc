@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-034
 title: "Persistent AST Symbol Locations and Recursive Multi-Package Code Indexing"
 status: applied

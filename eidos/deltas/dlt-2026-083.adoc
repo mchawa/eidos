@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-083
 title: "Polyglot AST/Diff Parity, Unified SQLite Baselines & Git Enumeration, Weighted Context Slicing, and Lossless YAML Mutations"
 status: applied

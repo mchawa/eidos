@@ -52,17 +52,17 @@ def test_pyproject_contains_zero_ai_dependencies():
     runtime_deps = data.get("project", {}).get("dependencies", [])
     for dep in runtime_deps:
         pkg_name = _extract_pep508_pkg_name(dep)
-        assert (
-            pkg_name not in FORBIDDEN_AI_PACKAGES
-        ), f"Violation of POL-004: runtime dependency '{dep}' is an AI/LLM SDK."
+        assert pkg_name not in FORBIDDEN_AI_PACKAGES, (
+            f"Violation of POL-004: runtime dependency '{dep}' is an AI/LLM SDK."
+        )
 
     optional_deps = data.get("project", {}).get("optional-dependencies", {})
     for group, deps in optional_deps.items():
         for dep in deps:
             pkg_name = _extract_pep508_pkg_name(dep)
-            assert (
-                pkg_name not in FORBIDDEN_AI_PACKAGES
-            ), f"Violation of POL-004: optional dependency '{dep}' in group '{group}' is an AI/LLM SDK."
+            assert pkg_name not in FORBIDDEN_AI_PACKAGES, (
+                f"Violation of POL-004: optional dependency '{dep}' in group '{group}' is an AI/LLM SDK."
+            )
 
 
 def test_src_contains_zero_agent_runner_stubs():

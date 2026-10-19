@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-046
 title: Manifest-Tracked Plugin Uninstall, Non-Destructive Force Semantics, and Version-Pinned Hook Runner
 status: applied

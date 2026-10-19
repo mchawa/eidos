@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-023
 title: Continuous Code-Aware AST Indexing and Status Telemetry
 status: applied

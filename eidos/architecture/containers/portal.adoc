@@ -1,6 +1,5 @@
 ---
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: CNT-EIDOS-PORTAL
 title: "Eidos Living Web Portal & Static Site Generator"
 status: active
@@ -20,19 +19,15 @@ components:
     source_path: "src/eidos/portal/server.py"
   - id: CMP-PORTAL-GENERATOR
     title: "PortalGenerator"
-    responsibility: "Synthesizes living specifications (including arch/system, all declared personas without truncation, deduplicated policy/capability/container/component invariants, product DEC-* decisions with both source_entity and source_id, promoted tech/component interfaces/domain/quality_attributes, contract-derived container dependencies, and tokens.manifest / extends design systems) into unified portal data model with HTML-escaped project-agnostic C4 Level 1 external_systems context diagrams, hierarchical C4 Level 2 container topologies, C4 Level 3 component whitebox diagrams connecting only declared intra-container component dependencies (both inline and promoted), contract-derived inter-container dependency connections, auto-generated Mermaid diagrams, and dynamically computes delta affects and blast_radius from normalized composable (operation + target + parent) mutations and the living specification graph."
+    responsibility: "Synthesizes living specifications (including arch/system, all declared personas without truncation, deduplicated policy/capability/container/component/UI-component invariants, product DEC-* decisions with both source_entity and source_id, promoted tech/component domain and AST-derived component consumes_api and container depends_on edges from get_architectural_index, exploration decision.resulting_deltas, AsciiDoc section extraction for domain boundaries/capability JTBD/exploration spikes, and tokens.manifest / extends design systems) into unified portal data model with HTML-escaped project-agnostic C4 Level 1 external_systems context diagrams, hierarchical C4 Level 2 container topologies, C4 Level 3 component whitebox diagrams connecting intra-container component dependencies (both inline and promoted), contract- and AST-derived inter-container dependency connections, auto-generated Mermaid diagrams, and dynamically computes delta affects and blast_radius from normalized composable (operation + target + parent) mutations and the living specification graph."
     source_path: "src/eidos/portal/generator.py"
-    interfaces:
-      consumes:
-        - "CMP-SPEC-PARSER"
-        - "CMP-GRAPH-STORAGE"
   - id: CMP-PORTAL-BUILDER
     title: "StaticSiteBuilder"
     responsibility: "Compiles self-contained static documentation portals for GitHub Pages and GitLab Pages (via get_portal_html_template and get_portal_favicon_svg) and escapes inline </script> and U+2028/U+2029 sequences when embedding window.__EIDOS_DATA__ into index.html."
     source_path: "src/eidos/portal/builder.py"
   - id: CMP-PORTAL-ASSETS
     title: "PortalAssets"
-    responsibility: "Delivers pre-compiled single-file React 19, Tailwind v4, Asciidoctor.js, and Mermaid v11 SPA assets (compiled from src/eidos/portal/frontend/src with composable operation/target/parent SpecDelta views, object-safe C4 dependency rendering, automatic C4 inspector closure on whitebox drill-down, and multi-client omnichannel flow filtering) with zero remote subresources by lazily loading and caching on first access (get_portal_html_template, get_portal_favicon_svg, and PEP 562 __getattr__ for PORTAL_HTML_TEMPLATE and PORTAL_FAVICON_SVG) from deterministic gzip-compressed assets (assets/portal/bundle.html.gz and assets/portal/favicon.svg) rather than a 4.7 MB raw Python string literal, mtime-gated during wheel/sdist builds via a Hatch custom build hook (hatch_build.py) and verified in CI via build_assets.py --check."
+    responsibility: "Delivers pre-compiled single-file React 19, Tailwind v4, Asciidoctor.js, and Mermaid v11 SPA assets (compiled from src/eidos/portal/frontend/src with composable operation/target/parent SpecDelta views, streamlined v1 exploration resulting_deltas and UI component invariants views, object-safe C4 dependency rendering, automatic C4 inspector closure on whitebox drill-down, and multi-client omnichannel flow filtering) with zero remote subresources by lazily loading and caching on first access (get_portal_html_template, get_portal_favicon_svg, and PEP 562 __getattr__ for PORTAL_HTML_TEMPLATE and PORTAL_FAVICON_SVG) from deterministic gzip-compressed assets (assets/portal/bundle.html.gz and assets/portal/favicon.svg) rather than a 4.7 MB raw Python string literal, mtime-gated during wheel/sdist builds via a Hatch custom build hook (hatch_build.py) and verified in CI via build_assets.py --check."
     source_path:
       - "src/eidos/portal/assets.py"
       - "src/eidos/portal/frontend/scripts/build_assets.py"
@@ -43,12 +38,6 @@ contracts:
   provides:
     - "CTR-EIDOS-PORTAL"
   consumes: []
-
-quality_attributes:
-  stateless: true
-  idempotent: true
-  concurrency_model: "threaded_http_server"
-  max_memory_mb: 256
 ---
 = Container: Eidos Living Web Portal (C4 Level 2 Container & Level 3 Components)
 :toc: left

@@ -7,15 +7,11 @@ allOf:
 unevaluatedProperties: false
 required:
   - type
-  - schema
   - container
 properties:
   type:
     type: string
     const: "tech/component"
     description: "The fixed document type identifier. Must always be 'tech/component'."
-  schema:
-    type: string
-    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   container:
     $ref: "#/$defs/container_ref"

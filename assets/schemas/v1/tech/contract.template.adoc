@@ -1,0 +1,5 @@
+= Contract: {heading}
+:toc: left
+
+== Protocol & Interface Specification
+Document the endpoints, command line arguments, payloads, or schemas for this contract.

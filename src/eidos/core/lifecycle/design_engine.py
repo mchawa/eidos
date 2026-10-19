@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from eidos.core.workspace.assets import render_spec_template
+
 DESIGN_SPEC_KEYS = ("design-system", "ui-component", "screen", "client", "flow")
 
 
@@ -91,19 +93,12 @@ def build_design_spec(
 
         fm = {
             "type": "design/system",
-            "schema": "schemas/v1/design/system.schema.yaml",
             "id": doc_id,
             "title": title,
             "status": "draft",
             "tokens": {"spec_format": "w3c_design_tokens", "manifest": "tokens.json"},
         }
-        body = f"""= Design System: {heading}
-:toc: left
-
-== Foundations & W3C Tokens
-This specification defines visual primitives, brand tokens, and inheritance rules for {heading}.
-Tokens are defined in W3C DTCG format at `tokens.json`.
-"""
+        body = render_spec_template("design/system", heading=heading)
 
     elif canonical_key == "ui-component":
         clean_comp = slug.removeprefix("uic-")
@@ -113,18 +108,12 @@ Tokens are defined in W3C DTCG format at `tokens.json`.
         dest_file = dest_dir / f"{clean_comp}.adoc"
         fm = {
             "type": "design/ui-component",
-            "schema": "schemas/v1/design/ui-component.schema.yaml",
             "id": doc_id,
             "title": title,
             "design_system": resolved_ds_id,
             "status": "draft",
         }
-        body = f"""= UI Component: {heading}
-:toc: left
-
-== Component Contract
-Describes variants, interactive states, accessibility contracts, and visual test bindings for {heading}.
-"""
+        body = render_spec_template("design/ui-component", heading=heading)
 
     elif canonical_key == "screen":
         clean_screen = slug.removeprefix("scr-")
@@ -132,18 +121,12 @@ Describes variants, interactive states, accessibility contracts, and visual test
         dest_file = dest_dir / f"{clean_screen}.adoc"
         fm = {
             "type": "design/screen",
-            "schema": "schemas/v1/design/screen.schema.yaml",
             "id": doc_id,
             "title": title,
             "route": f"/{clean_screen}",
             "status": "draft",
         }
-        body = f"""= Screen: {heading}
-:toc: left
-
-== View Layout & State Machine
-This specification defines the route, layout slots, and state transitions for {heading}.
-"""
+        body = render_spec_template("design/screen", heading=heading)
 
     elif canonical_key == "client":
         client_slug = slug.removeprefix("clt-")
@@ -154,19 +137,13 @@ This specification defines the route, layout slots, and state transitions for {h
         dest_file = dest_dir / "client.adoc"
         fm = {
             "type": "design/client",
-            "schema": "schemas/v1/design/client.schema.yaml",
             "id": doc_id,
             "title": title,
             "status": "draft",
             "platform": "web",
             "design_system": resolved_ds_id,
         }
-        body = f"""= Client: {heading}
-:toc: left
-
-== Client Identity & Platform Archetype
-Describe the runtime platform, bound design system, and implementing container of this client surface.
-"""
+        body = render_spec_template("design/client", heading=heading)
 
     elif canonical_key == "flow":
         flow_slug = slug.removeprefix("flow-")
@@ -174,21 +151,14 @@ Describe the runtime platform, bound design system, and implementing container o
         dest_file = dest_dir / f"{flow_slug}.adoc"
         fm = {
             "type": "design/flow",
-            "schema": "schemas/v1/design/flow.schema.yaml",
             "id": doc_id,
             "title": title,
             "status": "draft",
             "steps": [{"step": 1, "title": "Entry point"}],
         }
-        body = f"""= Flow: {heading}
-:toc: left
-
-== User Journey
-Describe the ordered steps, screen transitions, and outcomes of this interaction flow.
-"""
+        body = render_spec_template("design/flow", heading=heading)
 
     else:
         raise ValueError(f"Unsupported design specification key '{canonical_key}'")
 
     return dest_dir, dest_file, fm, body
-

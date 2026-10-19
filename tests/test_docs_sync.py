@@ -27,7 +27,9 @@ def test_documentation_and_schemas_in_sync():
 
         doc_type = schema_data.get("properties", {}).get("type", {}).get("const")
         assert doc_type, f"Schema {sf} missing properties.type.const"
-        assert f"`{doc_type}`" in glossary_text, f"Missing documentation for schema type '{doc_type}' in {glossary_path}"
+        assert f"`{doc_type}`" in glossary_text, (
+            f"Missing documentation for schema type '{doc_type}' in {glossary_path}"
+        )
 
         id_pattern = schema_data.get("properties", {}).get("id", {}).get("pattern", "")
         # Extract prefix from pattern (e.g. ^CAP-[A-Z0-9_-]+$ -> CAP-)
@@ -75,9 +77,9 @@ def test_documentation_and_schemas_in_sync():
         for sub_name, sub_cmd in getattr(top_cmd, "commands", {}).items():
             if getattr(sub_cmd, "hidden", False):
                 continue
-            assert (
-                f"eidos {top_name} {sub_name}" in cli_doc_text or f"`{sub_name}`" in cli_doc_text
-            ), f"Live CLI subcommand 'eidos {top_name} {sub_name}' missing from {cli_doc_path}"
+            assert f"eidos {top_name} {sub_name}" in cli_doc_text or f"`{sub_name}`" in cli_doc_text, (
+                f"Live CLI subcommand 'eidos {top_name} {sub_name}' missing from {cli_doc_path}"
+            )
 
     # 3. Verify all C4 containers are registered in system-architecture.adoc
     sys_arch_path = repo_root / "eidos/architecture/system-architecture.adoc"
@@ -217,7 +219,7 @@ def test_schema_glossary_yaml_examples_conform_to_v1_schemas():
             if fm_raw is None:
                 continue
             fm = yaml.safe_load(fm_raw)
-            if not isinstance(fm, dict) or "type" not in fm or "schema" not in fm:
+            if not isinstance(fm, dict) or "type" not in fm or "id" not in fm:
                 continue
             doc = SpecDocument(
                 file_path=md_file,
@@ -237,7 +239,9 @@ def test_schema_glossary_yaml_examples_conform_to_v1_schemas():
                 glossary_validated += 1
 
     assert glossary_validated >= 12, f"Expected at least 12 glossary YAML examples, validated {glossary_validated}"
-    assert total_validated >= 25, f"Expected at least 25 validated spec frontmatter examples across docs/, got {total_validated}"
+    assert total_validated >= 25, (
+        f"Expected at least 25 validated spec frontmatter examples across docs/, got {total_validated}"
+    )
 
 
 def test_documented_cli_flags_match_live_command_tree():
@@ -330,5 +334,3 @@ def test_documented_cli_flags_match_live_command_tree():
                 checked_invocations += 1
 
     assert checked_invocations >= 80, f"Expected at least 80 checked CLI invocations, checked {checked_invocations}"
-
-

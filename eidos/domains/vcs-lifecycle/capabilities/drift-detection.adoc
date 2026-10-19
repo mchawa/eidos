@@ -1,6 +1,5 @@
 ---
 type: product/capability
-schema: schemas/v1/product/capability.schema.yaml
 id: CAP-VCS-001
 title: "Git-Native Spec-to-Code Drift Detection"
 domain: DOM-VCS-LIFECYCLE
@@ -13,7 +12,6 @@ business:
     - eidos/personas/software-engineer.adoc
     - eidos/personas/product-lead.adoc
     - eidos/personas/autonomous-agent.adoc
-  jtbd: "Detect and reconcile structural code-to-spec drift continuously across local working trees and Git commit ranges without manual documentation maintenance."
   policies:
     - eidos/policies/POL-001-git-as-single-source-of-truth.adoc
 
@@ -36,6 +34,9 @@ technical:
 ---
 = Capability: Git-Native Spec-to-Code Drift Detection
 :toc: left
+
+== Job To Be Done (JTBD)
+Detect and reconcile structural code-to-spec drift continuously across local working trees and Git commit ranges without manual documentation maintenance.
 
 == Intent
 Ensures that source code and living specifications never diverge via a deterministic drift detection and reconciliation gate. Through local Git diff analysis, decorator-aware AST structural symbol comparison, embedded knowledge graph lookups, and automated CI/CD gating, Eidos continuously verifies that structural code modifications are paired with living specification updates, preserving system documentation integrity with zero manual overhead.

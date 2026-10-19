@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-043
 title: Enforce Strict Enum Taxonomies in SpecDelta Schema (intent.kind, bug_classification, severity, and mutations[].action)
 status: applied

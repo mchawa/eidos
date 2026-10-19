@@ -16,7 +16,7 @@ This skill governs **Planned Mode** workflows in Eidos:
 When an engineering problem has high uncertainty (e.g., evaluating storage engines, benchmarking a protocol, or prototyping an algorithm), start with an **Exploration** (`eidos/explorations/exp-yyyy-nnn.adoc`) before committing to a SpecDelta.
 
 ```text
-proposed ──► in_progress ──► adopted   (Graduates to a SpecDelta DLT-* via decision.resulting_delta_id)
+proposed ──► in_progress ──► adopted   (Graduates to SpecDelta(s) DLT-* via decision.resulting_deltas)
                          └──► discarded (Preserved in Git so future agents never repeat failed approaches)
 ```
 
@@ -27,35 +27,34 @@ eidos spec create exploration EXP-2026-001 --title "Evaluate Outbox Pattern vs D
 ```yaml
 ---
 type: product/exploration
-schema: schemas/v1/product/exploration.schema.yaml
 id: EXP-2026-001
 title: "Evaluate Transactional Outbox vs Direct Webhook Dispatch"
 status: in_progress # proposed | in_progress | adopted | discarded
 
-hypothesis: "A PostgreSQL transactional outbox with SKIP LOCKED polling can deliver 5,000 events/sec with p99 <50ms without introducing Kafka."
-
-questions_to_answer:
-  - "Does SKIP LOCKED batch polling sustain 5,000 events/sec without lock contention on the ledger table?"
-  - "What is the recovery time after a downstream webhook endpoint outage?"
-
-spikes_to_run:
-  - name: "pg-outbox-benchmark"
-    target: "Benchmark 4 concurrent worker processes polling 100k queued billing events"
-
-exit_criteria:
-  max_duration: "2 days"
-  benchmark: "Sustained >=5,000 events/sec throughput and p99 <50ms dispatch latency with zero lost events on worker kill."
-
 decision:
   outcome: adopted # adopted | discarded | pivoted
-  resulting_delta_id: DLT-2026-015
-  learnings: "SKIP LOCKED batch size 250 achieved 6,400 events/sec at p99 18ms with zero duplicate deliveries."
+  resulting_deltas:
+    - DLT-2026-015
 ---
 = Exploration: Evaluate Transactional Outbox vs Direct Webhook Dispatch
+
+== 1. Hypothesis & Exit Criteria
+* *Hypothesis*: A PostgreSQL transactional outbox with `SKIP LOCKED` polling can deliver 5,000 events/sec with p99 <50ms without introducing Kafka.
+* *Exit Criteria*: Max duration 2 days; sustained >=5,000 events/sec throughput and p99 <50ms dispatch latency with zero lost events on worker kill.
+
+== 2. Questions to Answer
+* Does `SKIP LOCKED` batch polling sustain 5,000 events/sec without lock contention on the ledger table?
+* What is the recovery time after a downstream webhook endpoint outage?
+
+== 3. Spikes & Prototypes
+* *pg-outbox-benchmark*: Benchmark 4 concurrent worker processes polling 100k queued billing events.
+
+== 4. Outcome & Learnings
+* `SKIP LOCKED` batch size 250 achieved 6,400 events/sec at p99 18ms with zero duplicate deliveries.
 ```
 
-* **If `adopted`**: Scaffold a SpecDelta (`eidos delta create --slug --title "..."`), set `decision.outcome: adopted` and `decision.resulting_delta_id: <DLT-ID>`, and record the winning rationale + `rejected_alternatives` in the owning spec's `decisions:` block.
-* **If `discarded`**: Set `status: discarded` and `decision.outcome: discarded`, and record empirical failure reasons in `decision.learnings:` so future searches (`eidos index search`) surface the prior result.
+* **If `adopted`**: Scaffold a SpecDelta (`eidos delta create --slug --title "..."`), set `decision.outcome: adopted` and `decision.resulting_deltas: [<DLT-ID>]`, and record the winning rationale + `rejected_alternatives` in the owning spec's `decisions:` block.
+* **If `discarded`**: Set `status: discarded` and `decision.outcome: discarded`, and record empirical failure reasons in the AsciiDoc body so future searches (`eidos index search`) surface the prior result.
 
 ---
 
@@ -96,7 +95,6 @@ eidos delta changelog
 ```yaml
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-015
 title: "Add Webhook Signature Verification Contract and Ingestor Component"
 status: proposed # proposed | in_review | approved | applied | rejected

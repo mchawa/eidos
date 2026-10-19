@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-031
 title: Enforce Static Invariant Verification Across C4 Level 3 Component Specifications
 status: applied

@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-010
 title: Revamp Eidos Personas and Core Domains Architecture
 status: applied

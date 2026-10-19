@@ -39,4 +39,3 @@ def resolve_cli_eidos_dir(target_path: Path | None = None) -> Path:
     if (target_path / "eidos").is_dir() and not has_eidos_markers(target_path):
         return target_path / "eidos"
     return target_path
-

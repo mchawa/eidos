@@ -22,12 +22,7 @@ def build_static_portal(eidos_dir: Path, output_dir: Path) -> Path:
         json.dump(data, f, indent=2)
 
     # 3. Inject data into index.html for zero-fetch offline loading (escape closing </script> and line separators)
-    safe_json = (
-        json.dumps(data)
-        .replace("</", "<\\/")
-        .replace("\u2028", "\\u2028")
-        .replace("\u2029", "\\u2029")
-    )
+    safe_json = json.dumps(data).replace("</", "<\\/").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
     injected_data_script = f"<script>window.__EIDOS_DATA__ = {safe_json};</script>\n</head>"
     static_html = get_portal_html_template().replace("</head>", injected_data_script, 1)
 

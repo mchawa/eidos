@@ -1,0 +1,8 @@
+= SpecDelta: {heading}
+:toc: left
+
+== Problem Statement
+{motivation}
+
+== Proposed Specification Changes
+Describe the exact behavioral diffs, mutations, and invariant updates here.

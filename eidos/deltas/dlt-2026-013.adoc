@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-013
 title: Remove Deprecated PRCheckResult Backwards Compatibility Alias
 status: applied

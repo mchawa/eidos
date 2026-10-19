@@ -1,6 +1,5 @@
 ---
 type: design/ui-component
-schema: schemas/v1/design/ui-component.schema.yaml
 id: UIC-PORTAL-METRIC-CARD
 title: "Dashboard Metric Card"
 design_system: "DS-CORE"
@@ -17,14 +16,6 @@ states:
   - default
   - hover
   - active
-
-accessibility:
-  wcag_level: "AA"
-  aria_role: "region"
-  keyboard_nav: "When clickable, Enter or Space activates navigation to the linked view."
-
-test_bindings:
-  unit_test: "tests/test_portal.py::test_portal_data_generation"
 ---
 = UI Component: Dashboard Metric Card
 :toc: left
@@ -35,4 +26,9 @@ Each card features:
 * Numeric metric value with high visual weight.
 * Categorical uppercase subtitle label.
 * Subtle colored accent border on hover.
+
+== 2. Accessibility & Verification
+* **WCAG Conformance**: Level AA (`aria-role: region`).
+* **Keyboard Navigation**: When clickable, Enter or Space activates navigation to the linked view.
+* **Automated Verification**: Exercised by `tests/test_portal.py::test_portal_data_generation`.
 

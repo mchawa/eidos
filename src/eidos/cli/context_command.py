@@ -58,11 +58,7 @@ def context_cmd(
         raise typer.Exit(code=1)
 
     resolved_eidos = eidos_dir.resolve()
-    repo_root = (
-        resolved_eidos.parent
-        if resolved_eidos.name == "eidos"
-        else find_repo_root(resolved_eidos)
-    )
+    repo_root = resolved_eidos.parent if resolved_eidos.name == "eidos" else find_repo_root(resolved_eidos)
     idx = get_architectural_index(repo_root=repo_root, eidos_dir=eidos_dir)
     slice_result = idx.get_tiered_context_slice(
         files=files,
@@ -80,4 +76,3 @@ def context_cmd(
 def register(app: typer.Typer) -> None:
     """Attach the root-level commands owned by this module to the root Typer app."""
     app.command("context", rich_help_panel=PANEL_KNOWLEDGE)(context_cmd)
-

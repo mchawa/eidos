@@ -203,7 +203,9 @@ def test_plugin_install_to_claude_plugin(tmp_path):
     with open(settings_file, encoding="utf-8") as f:
         settings = json.load(f)
     assert settings["enabledPlugins"].get("eidos@plugins-dir") is True
-    assert any(p.get("path") in (".claude/plugins/eidos", "./.claude/plugins/eidos") for p in settings.get("plugins", []))
+    assert any(
+        p.get("path") in (".claude/plugins/eidos", "./.claude/plugins/eidos") for p in settings.get("plugins", [])
+    )
 
     # Verify project-level .claude/mcp.json is NOT created
     claude_mcp = tmp_path / ".claude" / "mcp.json"
@@ -694,7 +696,9 @@ def test_assets_and_installed_plugin_parity():
         pytest.skip(".agents/plugins/eidos not installed in this environment")
 
     ref_files = {p.relative_to(ref_plugin) for p in ref_plugin.rglob("*") if p.is_file() and ".eidos" not in p.parts}
-    inst_files = {p.relative_to(installed_plugin) for p in installed_plugin.rglob("*") if p.is_file() and ".eidos" not in p.parts}
+    inst_files = {
+        p.relative_to(installed_plugin) for p in installed_plugin.rglob("*") if p.is_file() and ".eidos" not in p.parts
+    }
     assert ref_files == inst_files, f"File mismatch: {ref_files ^ inst_files}"
 
     for rel in sorted(ref_files):
@@ -736,7 +740,7 @@ def test_drift_hook_stop_event_drift_detected(tmp_path):
     eidos_dir.mkdir()
     valid_spec = eidos_dir / "policy.adoc"
     valid_spec.write_text(
-        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nseverity: blocking\ninvariants:\n  - id: INV-POL-100\n    rule: Must execute safely\n---\n",  # eidos:fixture
+        "---\ntype: product/policy\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nseverity: blocking\ninvariants:\n  - id: INV-POL-100\n    rule: Must execute safely\n---\n",  # eidos:fixture
         encoding="utf-8",
     )
 
@@ -767,7 +771,7 @@ def test_drift_hook_stop_event_drift_detected(tmp_path):
 
     # Also verify invalid spec produces a validation warning in systemMessage
     (eidos_dir / "invalid.adoc").write_text(
-        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: BAD-POLICY\n---\n",
+        "---\ntype: product/policy\nid: BAD-POLICY\n---\n",
         encoding="utf-8",
     )
     res_invalid = runner.invoke(app, ["hook"], input=stop_payload)
@@ -783,7 +787,7 @@ def test_drift_hook_stop_event_synchronized(tmp_path):
     eidos_dir.mkdir()
     valid_spec = eidos_dir / "container.adoc"
     valid_spec.write_text(
-        "---\ntype: tech/container\nschema: schemas/v1/tech/container.schema.yaml\nid: CNT-APP\ntitle: App\ncontainer_type: service\nruntime: python\nstatus: active\nsource_path: src\n---\n= App\n\nProvides `feature.py` (`do_feature`).\n",
+        "---\ntype: tech/container\nid: CNT-APP\ntitle: App\ncontainer_type: service\nruntime: python\nstatus: active\nsource_path: src\n---\n= App\n\nProvides `feature.py` (`do_feature`).\n",
         encoding="utf-8",
     )
 
@@ -816,7 +820,7 @@ def test_stateless_stop_hook_no_cache_or_block_loop(tmp_path):
     eidos_dir.mkdir()
     valid_spec = eidos_dir / "policy.adoc"
     valid_spec.write_text(
-        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nseverity: blocking\ninvariants:\n  - id: INV-POL-100\n    rule: Must execute safely\n---\n",  # eidos:fixture
+        "---\ntype: product/policy\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nseverity: blocking\ninvariants:\n  - id: INV-POL-100\n    rule: Must execute safely\n---\n",  # eidos:fixture
         encoding="utf-8",
     )
 
@@ -878,19 +882,10 @@ def test_cli_doctor_command(tmp_path, monkeypatch):
     (custom_specs / "system.adoc").write_text(
         """---
 type: product/system
-schema: schemas/v1/product/system.schema.yaml
 id: SYS-CUSTOM-001
 title: Custom System
 archetypes:
   - cli_tool
-business_identity:
-  vision: Vision
-  target_users:
-    - Developers
-  value_proposition: Value
-technical_profile:
-  primary_languages:
-    - Python
 ---
 = Custom System
 """,
@@ -1153,18 +1148,24 @@ def test_plugin_install_force_false_prevents_overwriting(tmp_path):
 
     # Install without force (default force=False)
     install_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path, force=False)
-    assert rules_file.read_text(encoding="utf-8") == "# Custom User Rules\n", "rules.md should NOT be overwritten when force=False"
+    assert rules_file.read_text(encoding="utf-8") == "# Custom User Rules\n", (
+        "rules.md should NOT be overwritten when force=False"
+    )
 
     # Install with force=True
     install_plugin(target=PluginInstallTarget.CODEX, project_dir=tmp_path, force=True)
-    assert "Eidos Architectural Governance" in rules_file.read_text(encoding="utf-8"), "rules.md SHOULD be overwritten when force=True"
+    assert "Eidos Architectural Governance" in rules_file.read_text(encoding="utf-8"), (
+        "rules.md SHOULD be overwritten when force=True"
+    )
 
     # 2. Pre-existing .aider.conventions.md
     conv_file = tmp_path / ".aider.conventions.md"
     conv_file.write_text("# Custom User Aider Conventions\n", encoding="utf-8")
 
     install_plugin(target=PluginInstallTarget.AIDER, project_dir=tmp_path, force=False)
-    assert conv_file.read_text(encoding="utf-8") == "# Custom User Aider Conventions\n", ".aider.conventions.md should NOT be overwritten when force=False"
+    assert conv_file.read_text(encoding="utf-8") == "# Custom User Aider Conventions\n", (
+        ".aider.conventions.md should NOT be overwritten when force=False"
+    )
 
     install_plugin(target=PluginInstallTarget.AIDER, project_dir=tmp_path, force=True)
     assert "Eidos Living Specifications & Architectural Conventions" in conv_file.read_text(encoding="utf-8")
@@ -1282,15 +1283,9 @@ def test_plugin_uvx_hook_command_version_pinning(tmp_path):
         json.dumps(
             {
                 "hooks": {
-                    "PreToolUse": [
-                        {"command": "eidos hook lint --event PreToolUse"}
-                    ],
-                    "PostToolUse": [
-                        {"command": "uvx --from eidos-ai eidos hook lint --event PostToolUse"}
-                    ],
-                    "Stop": [
-                        {"command": "uvx --from eidos-ai==0.1.0 eidos hook drift"}
-                    ],
+                    "PreToolUse": [{"command": "eidos hook lint --event PreToolUse"}],
+                    "PostToolUse": [{"command": "uvx --from eidos-ai eidos hook lint --event PostToolUse"}],
+                    "Stop": [{"command": "uvx --from eidos-ai==0.1.0 eidos hook drift"}],
                 }
             },
             indent=2,
@@ -1329,7 +1324,6 @@ def test_dlt_2026_075_non_code_drift_diagnostics_in_hooks_report_and_cli(tmp_pat
     (pol_dir / "pol-001.adoc").write_text(
         """---
 type: product/policy
-schema: schemas/v1/product/policy.schema.yaml
 id: POL-001
 title: Sample Policy
 category: governance
@@ -1445,7 +1439,9 @@ def test_plugin_stop_hook_validation_uninstall_and_semver(tmp_path):
     (ws / ".claude").mkdir(parents=True)
     (ws / ".vscode").mkdir(parents=True)
     (ws / ".claude" / "settings.json").write_text(
-        json.dumps({"theme": "dark", "hooks": {"CustomHook": [{"hooks": [{"type": "command", "command": "echo hi"}]}]}}),
+        json.dumps(
+            {"theme": "dark", "hooks": {"CustomHook": [{"hooks": [{"type": "command", "command": "echo hi"}]}]}}
+        ),
         encoding="utf-8",
     )
     (ws / ".vscode" / "settings.json").write_text(
@@ -1665,6 +1661,7 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     orig_inst_get_ref = inst_mod.get_plugin_reference_dir
     orig_cwd = os.getcwd()
     try:
+
         def _raise_oserror():
             raise OSError("no asset ref")
 
@@ -1735,6 +1732,7 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
 
     orig_pcmd_locate = pcmd_mod.locate_plugin_bundle
     try:
+
         def _missing_bundle():
             raise FileNotFoundError("no bundle")
 
@@ -1900,16 +1898,7 @@ def test_hook_schema_validation_and_non_duplicate_skills(tmp_path):
     bad2.unlink()
     good_dom = dom_dir / "good.adoc"
     good_dom.write_text(
-        "---\n"
-        "type: product/domain\n"
-        "schema: schemas/v1/product/domain.schema.yaml\n"
-        "id: DOM-GOOD\n"
-        "title: Good Domain\n"
-        "classification: core\n"
-        "boundaries:\n"
-        "  responsibilities:\n"
-        "    - Core domain responsibility\n"
-        "---\n= Good Domain\n",
+        "---\ntype: product/domain\nid: DOM-GOOD\ntitle: Good Domain\nclassification: core\n---\n= Good Domain\n",
         encoding="utf-8",
     )
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
@@ -2059,5 +2048,3 @@ def test_group_d1_d2_d3_regressions(tmp_path, monkeypatch):  # eidos:fixture
 
     monkeypatch.chdir(uninit_dir)
     assert find_workspace_root({"cwd": str(repo_ws)}) == repo_ws.resolve()
-
-

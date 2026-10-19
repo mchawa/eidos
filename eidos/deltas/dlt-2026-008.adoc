@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-008
 title: AI Plugin Lifecycle Hooks for Automated Documentation Linting
 status: applied

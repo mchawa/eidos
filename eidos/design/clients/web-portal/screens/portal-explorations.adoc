@@ -1,6 +1,5 @@
 ---
 type: design/screen
-schema: schemas/v1/design/screen.schema.yaml
 id: SCR-PORTAL-EXPLORATIONS
 title: "Technical Explorations & Architectural Spikes View"
 route: "/explorations"

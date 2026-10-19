@@ -153,7 +153,9 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
         resolved_eidos = self.eidos_dir.resolve()
         target_dir_str = str(payload.get("dir") or resolved_eidos.name)
         raw_target = Path(target_dir_str)
-        target_dir = raw_target.resolve() if raw_target.is_absolute() else (resolved_eidos.parent / raw_target).resolve()
+        target_dir = (
+            raw_target.resolve() if raw_target.is_absolute() else (resolved_eidos.parent / raw_target).resolve()
+        )
         if target_dir != resolved_eidos:
             self.send_error(HTTPStatus.FORBIDDEN, "Validation is restricted to the active eidos directory.")
             return

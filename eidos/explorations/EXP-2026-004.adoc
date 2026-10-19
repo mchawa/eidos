@@ -1,42 +1,28 @@
 ---
 type: product/exploration
-schema: schemas/v1/product/exploration.schema.yaml
 id: EXP-2026-004
 title: "Dedicated Component Manifests vs Inline Container Components (Centralized Hybrid C4 L3 Architecture)"
 status: adopted
-hypothesis: >
-  Maintaining C4 Level 3 Components (CMP-*) inline within Level 2 Container (CNT-*)
-  manifests provides optimal context-token efficiency and low maintenance overhead for
-  80% of system modules. When a component crosses a threshold of architectural complexity,
-  independent team ownership, or stateful invariants, it receives a dedicated specification
-  residing centrally in 'eidos/architecture/components/<component>.adoc' (linking to code via
-  'package_path' and referenced via 'ref:' in the parent container manifest). Eidos specifications
-  must NEVER touch or reside within source code directories ('src/', 'packages/'), preserving 100%
-  cleanliness and purity of implementation code while enabling granular whitebox governance.
-questions_to_answer:
-  - "How does a centralized component directory ('eidos/architecture/components/') balance rich subsystem specifications with keeping source directories 100% pure code?"
-  - "How do we strictly enforce the division of interface ownership between Containers (Boundary Contracts: CTR-*) and Components (In-Process APIs)?"
-  - "How should the container manifest reference centralized component specs ('ref: architecture/components/<component>.adoc') without path resolution ambiguity?"
-  - "What schema ('tech/component') governs dedicated component manifests, and how does the validator enforce container affinity and the centralization mandate?"
-  - "What automated CLI commands make promoting and inlining centralized components frictionless (e.g. 'eidos component promote CMP-*')?"
-spikes_to_run:
-  - name: "centralized-component-indexing"
-    target: "Verify SQLite indexer correctly scans and links centralized .adoc files inside 'eidos/architecture/components/' with parent CNT-* manifests."
-  - name: "interface-ownership-validation"
-    target: "Implement validator checks ensuring boundary protocol contracts (CTR-*) are strictly owned by containers, not components."
-  - name: "token-budget-benchmark"
-    target: "Benchmark context slice token consumption comparing inline components vs dedicated component manifests."
-exit_criteria:
-  max_duration: "1_week"
-  benchmark: "Token retrieval efficiency >= 40% improvement, zero broken graph references across multi-tier topologies, zero .adoc files in source code directories, and 100% centralization mandate enforcement."
 decision:
   outcome: adopted
-  resulting_delta_id: "DLT-2026-015"
-  learnings: "Centralizing dedicated C4 Level 3 component manifests (CMP-*) under 'eidos/architecture/components/' achieves 87-94% context token savings, guarantees that source code directories ('src/', 'packages/') remain 100% pure code without spec clutter, and cleanly organizes macro-architecture (containers) and micro-architecture (components) under eidos/architecture/. Hybrid polymorphic referencing in container manifests enables seamless graduation from inline to dedicated without breaking architectural graphs."
+  resulting_deltas:
+    - "DLT-2026-015"
 ---
 = Exploration: Dedicated Component Manifests vs Inline Container Components (Centralized Hybrid C4 L3 Architecture)
 :toc: left
 :icons: font
+
+== Core Hypothesis
+Maintaining C4 Level 3 Components (`CMP-*`) inline within Level 2 Container (`CNT-*`) manifests provides optimal context-token efficiency and low maintenance overhead for 80% of system modules. When a component crosses a threshold of architectural complexity, independent team ownership, or stateful invariants, it receives a dedicated specification residing centrally in `eidos/architecture/components/<component>.adoc` (linking to code via `source_path` and bound via `container:` in the component manifest). Eidos specifications must NEVER touch or reside within source code directories (`src/`, `packages/`), preserving 100% cleanliness and purity of implementation code while enabling granular whitebox governance.
+
+== Questions & Spikes
+* **Spikes**:
+  - `centralized-component-indexing`: Verify SQLite indexer correctly scans and links centralized `.adoc` files inside `eidos/architecture/components/` with parent `CNT-*` manifests.
+  - `interface-ownership-validation`: Implement validator checks ensuring boundary protocol contracts (`CTR-*`) are strictly owned by containers, not components.
+  - `token-budget-benchmark`: Benchmark context slice token consumption comparing inline components vs dedicated component manifests.
+
+== Findings & Learnings
+Centralizing dedicated C4 Level 3 component manifests (`CMP-*`) under `eidos/architecture/components/` achieves 87-94% context token savings, guarantees that source code directories (`src/`, `packages/`) remain 100% pure code without spec clutter, and cleanly organizes macro-architecture (containers) and micro-architecture (components) under `eidos/architecture/`.
 
 == 1. Context & Motivation
 
@@ -51,12 +37,11 @@ In the original baseline implementation, all C4 Level 3 components were declared
 [source,yaml]
 ----
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: CNT-EIDOS-CORE
-name: "Eidos Core Engine"
+title: "Eidos Core Engine"
 container_type: library
 runtime: "Python 3.12+"
-package_path: "src/eidos/core"
+source_path: "src/eidos/core"
 
 components:
   - id: CMP-CORE-PARSER

@@ -84,16 +84,10 @@ def find_repo_root(start_dir: Path | None = None) -> Path:
         if (parent / ".git").exists():
             return parent
         eidos_cand = parent / "eidos"
-        if (
-            eidos_cand.is_dir()
-            and not _is_inside_plugin_or_assets(eidos_cand)
-            and _has_eidos_markers(eidos_cand)
-        ):
+        if eidos_cand.is_dir() and not _is_inside_plugin_or_assets(eidos_cand) and _has_eidos_markers(eidos_cand):
             return parent
 
-    if not _is_inside_plugin_or_assets(cwd) and (
-        cwd.name == "eidos" or _has_eidos_markers(cwd)
-    ):
+    if not _is_inside_plugin_or_assets(cwd) and (cwd.name == "eidos" or _has_eidos_markers(cwd)):
         return cwd.parent
 
     try:
@@ -122,9 +116,7 @@ def load_project(
         root = Path(repo_root).resolve()
     elif eidos_dir is not None:
         ed = Path(eidos_dir).resolve()
-        if (ed / "system.adoc").exists() or (
-            ed.name == "eidos" and not _is_inside_plugin_or_assets(ed)
-        ):
+        if (ed / "system.adoc").exists() or (ed.name == "eidos" and not _is_inside_plugin_or_assets(ed)):
             root = ed.parent
         else:
             root = find_repo_root(ed)

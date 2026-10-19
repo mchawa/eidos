@@ -45,30 +45,18 @@ eidos validate eidos --json
 ## 2. Product Layer (`SYS-*`, `DOM-*`, `CAP-*`, `PER-*`)
 
 ### 2.1 System Context (`eidos/system.adoc`)
-* **`type: product/system`** (`schema: schemas/v1/product/system.schema.yaml`, `id: SYS-*`).
-* **Required keys**: `type`, `schema`, `id`, `title`, `archetypes` (list), `business_identity: { vision, target_users, value_proposition }`, `technical_profile: { primary_languages }` (optional `runtimes_and_frameworks`, `deployment_targets`, `vcs_platforms`, `agent_support`), optional `status`, `decisions`.
+* **`type: product/system`** (`id: SYS-*`).
+* **Required keys**: `type`, `id`, `title`, `archetypes` (list); optional `status`, `decisions`. Business vision, target users, value proposition, and technical profile are authored in the AsciiDoc prose body.
 
 ### 2.2 Bounded Context Domains (`eidos/domains/<slug>/domain.adoc`)
 
 ```yaml
 ---
 type: product/domain
-schema: schemas/v1/product/domain.schema.yaml
 id: DOM-BILLING
 title: "Subscription & Usage Billing"
 status: active
 classification: core # core | supporting | generic
-
-boundaries:
-  responsibilities:
-    - "Metered usage event ingestion and deduplication"
-    - "Tariff rating and monthly invoice lifecycle"
-  out_of_scope:
-    - "Payment gateway card tokenization"
-
-ubiquitous_language:
-  - term: "Usage Event"
-    definition: "An immutable, timestamped record of a billable customer action."
 
 owners:
   - "Revenue Platform Team"
@@ -78,12 +66,11 @@ owners:
 
 ### 2.3 Functional Capabilities (`eidos/domains/<slug>/capabilities/<cap>.adoc`)
 
-Binds user value (`jtbd`, `personas`) to technical containers (`CNT-*`), components (`CMP-*`), contracts (`CTR-*`), optional UX (`experience: { clients, design_systems, screens, flows, ui_components }`), and test-bound invariants (`INV-*`).
+Binds user value (`personas`, `policies`) to technical containers (`CNT-*`), components (`CMP-*`), contracts (`CTR-*`), optional UX (`experience: { clients, design_systems, screens, flows, ui_components }`), and test-bound invariants (`INV-*`).
 
 ```yaml
 ---
 type: product/capability
-schema: schemas/v1/product/capability.schema.yaml
 id: CAP-BILL-001
 title: "Metered Usage Aggregation"
 domain: DOM-BILLING
@@ -93,7 +80,6 @@ version: "1.0.0"
 business:
   personas:
     - eidos/personas/finance-admin.adoc
-  jtbd: "When a billing cycle closes, I want customer usage events aggregated accurately without double-counting, so I can issue auditable invoices."
   policies:
     - eidos/policies/POL-001-git-source-of-truth.adoc
 
@@ -117,15 +103,10 @@ technical:
 ```yaml
 ---
 type: product/persona
-schema: schemas/v1/product/persona.schema.yaml
 id: PER-FINANCE-ADMIN
 title: "Enterprise Finance Administrator"
 status: active
 role_type: "admin" # end_user | admin | human_engineer | autonomous_agent
-goals:
-  - "Reconcile monthly usage invoices against raw telemetry logs"
-pain_points:
-  - "Opaque line-item adjustments without audit trails"
 ---
 = Persona: Enterprise Finance Administrator
 ```
@@ -135,15 +116,14 @@ pain_points:
 ## 3. Arc42 & C4 Architecture (`ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DEC-*`)
 
 ### 3.1 Arc42 Master Architecture (`eidos/architecture/system-architecture.adoc`)
-* **`type: tech/architecture`** (`schema: schemas/v1/tech/architecture.schema.yaml`, `id: ARCH-*`).
-* **Required keys**: `type`, `schema`, `id`, `title`, `topology_style`, `c4_context: { actors, external_systems }`, `c4_containers` (list of `{ container: CNT-*, title, container_type, runtime, source_path }`), `solution_strategy` (list), `cross_cutting_concepts` (object), `deployment_view: { hosting_model, ci_cd_engine }`. Whenever you add or remove a `CNT-*` container, update `c4_containers` in `system-architecture.adoc`.
+* **`type: tech/architecture`** (`id: ARCH-*`).
+* **Required keys**: `type`, `id`, `title`, `c4_context: { actors, external_systems }`; optional `status`, `decisions`. Solution strategy, C4 Level 2 container narrative, cross-cutting concepts, deployment view, and quality requirements are authored in the AsciiDoc prose body (C4 Level 2 container topology is derived automatically from `CNT-*` specs).
 
 ### 3.2 C4 Level 2 Containers (`eidos/architecture/containers/<name>.adoc`)
 
 ```yaml
 ---
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: CNT-BILLING-WORKER
 title: "Billing Aggregation Worker"
 status: active
@@ -173,26 +153,19 @@ decisions:
     rejected_alternatives:
       - option: "Distributed Redis Redlock"
         reason_rejected: "Adds operational infrastructure complexity for a low-contention periodic batch operation."
-
-quality_attributes:
-  stateless: true
-  idempotent: true
-  concurrency_model: "async_event_loop"
-  max_memory_mb: 512
 ---
 = Container: Billing Aggregation Worker
 ```
 
 ### 3.3 C4 Level 3 Components: Inline vs. Standalone (`INV-COMPONENT-CENTRALIZATION-MANDATE`)
 
-1. **Inline Components (Default)**: Defined inside the parent container's `components:` list (`#/$defs/inline_component`) with `id`, `title`, `responsibility`, and `source_path`.
+1. **Inline Components (Default)**: Defined inside the parent container's `components:` list (`#/$defs/inline_component`) with `id`, `title`, `responsibility`, and `source_path` (intra-container `CMP-*` -> `CMP-*` dependencies are derived automatically via AST import analysis).
 2. **Promoted Standalone Components (`eidos/architecture/components/<slug>.adoc`)**: Promote complex subsystems via `eidos spec component promote <CMP-ID>`.
    * **Single-Definition Invariant (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Standalone components reside in `eidos/architecture/components/` and link bottom-up via `container: CNT-*`. They are NOT duplicated in the parent container's `components:` array.
 
 ```yaml
 ---
 type: tech/component
-schema: schemas/v1/tech/component.schema.yaml
 id: CMP-USAGE-LEDGER
 title: "Double-Entry Usage Ledger"
 container: CNT-BILLING-WORKER
@@ -211,7 +184,6 @@ responsibility: "Appends immutable credit/debit usage entries and computes point
 ```yaml
 ---
 type: tech/contract
-schema: schemas/v1/tech/contract.schema.yaml
 id: CTR-BILLING-API
 title: "Billing Usage Ingestion REST Contract"
 status: active
@@ -236,11 +208,11 @@ For repositories with web, mobile, desktop, or TUI frontends, model UX specifica
 
 | Type & ID Prefix | Canonical Path | Required Keys | Key Optional Properties |
 | :--- | :--- | :--- | :--- |
-| **`design/system` (`DS-*`)** | `eidos/design/systems/<slug>/system.adoc` | `type`, `schema`, `id`, `title`, `status`, `tokens: { spec_format: "w3c_design_tokens", manifest: "tokens.json" }` | `brand_name`, `extends` (`DS-*`), `override_mode`, `theme_capabilities: { color_modes, density_modes }`, `external_references`, `decisions` |
-| **`design/ui-component` (`UIC-*`)** | `eidos/design/systems/<slug>/components/<comp>.adoc` | `type`, `schema`, `id`, `title`, `design_system` (`DS-*`), `status` | `category`, `implements` (`UIC-*`), `variants: [{name, description}]`, `states`, `accessibility: {wcag_level, aria_role, keyboard_nav}`, `test_bindings`, `external_references`, `decisions` |
-| **`design/client` (`CLT-*`)** | `eidos/design/clients/<app>/client.adoc` | `type`, `schema`, `id`, `title`, `status`, `platform` (`web`, `mobile-ios`, `mobile-android`, `desktop`, `tui`, `multi-platform`), `design_system` | `container` (`CNT-*`), `screens` (`SCR-*`), `flows` (`FLOW-*`), `decisions` |
-| **`design/screen` (`SCR-*`)** | `eidos/design/clients/<app>/screens/<screen>.adoc` | `type`, `schema`, `id`, `title`, `route`, `status` | `slots`, `states: [{name, description}]`, `external_references`, `decisions` |
-| **`design/flow` (`FLOW-*`)** | `eidos/design/flows/<flow>.adoc` | `type`, `schema`, `id`, `title`, `status`, `steps: [{step, title, screen, client, action, outcome}]` | `flow_type` (`client_internal`, `cross_client`), `decisions` |
+| **`design/system` (`DS-*`)** | `eidos/design/systems/<slug>/system.adoc` | `type`, `id`, `title`, `status`, `tokens: { spec_format: "w3c_design_tokens", manifest: "tokens.json" }` | `brand_name`, `extends` (`DS-*`), `override_mode`, `theme_capabilities: { color_modes, density_modes }`, `external_references`, `decisions` |
+| **`design/ui-component` (`UIC-*`)** | `eidos/design/systems/<slug>/components/<comp>.adoc` | `type`, `id`, `title`, `design_system` (`DS-*`), `status` | `category`, `implements` (`UIC-*`), `variants: [{name, description}]`, `states`, `invariants`, `external_references`, `decisions` |
+| **`design/client` (`CLT-*`)** | `eidos/design/clients/<app>/client.adoc` | `type`, `id`, `title`, `status`, `platform` (`web`, `mobile-ios`, `mobile-android`, `desktop`, `tui`, `multi-platform`), `design_system` | `container` (`CNT-*`), `screens` (`SCR-*`), `flows` (`FLOW-*`), `decisions` |
+| **`design/screen` (`SCR-*`)** | `eidos/design/clients/<app>/screens/<screen>.adoc` | `type`, `id`, `title`, `route`, `status` | `slots`, `states: [{name, description}]`, `external_references`, `decisions` |
+| **`design/flow` (`FLOW-*`)** | `eidos/design/flows/<flow>.adoc` | `type`, `id`, `title`, `status`, `steps: [{step, title, screen, client, action, outcome}]` | `flow_type` (`client_internal`, `cross_client`), `decisions` |
 
 ---
 
@@ -251,7 +223,6 @@ For repositories with web, mobile, desktop, or TUI frontends, model UX specifica
 ```yaml
 ---
 type: product/policy
-schema: schemas/v1/product/policy.schema.yaml
 id: POL-005-WEBHOOK-IDEMPOTENCY
 title: "Idempotent External Webhook Processing"
 status: active

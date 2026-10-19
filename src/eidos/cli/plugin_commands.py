@@ -342,5 +342,3 @@ def plugin_info(
     grid.add_row("Extensions:", ", ".join(report.extensions) or "None")
 
     console.print(Panel(grid, title="[bold blue]Eidos Agent Plugin Manifest[/bold blue]", expand=False))
-
-

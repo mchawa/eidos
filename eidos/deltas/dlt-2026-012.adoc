@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-012
 title: Dynamic Clickable Hierarchical C4 Architecture Explorer (L1-L3)
 status: applied

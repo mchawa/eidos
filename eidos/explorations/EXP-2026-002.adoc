@@ -1,32 +1,33 @@
 ---
 type: product/exploration
-schema: schemas/v1/product/exploration.schema.yaml
 id: EXP-2026-002
 title: "Embedded Architectural Knowledge Graph & Hybrid Context Retrieval Index"
 status: adopted
-hypothesis: "Building an embedded SQLite-backed architectural knowledge graph with FTS5 lexical search and reverse code-symbol mapping will reduce AI agent context slicing latency by >80% on multi-component repositories while ensuring zero drift, token-budgeted context tiers, and zero external runtime dependencies."
-questions_to_answer:
-  - "Can embedded SQLite (FTS5 + recursive CTE graph queries) deliver sub-10ms context slice resolution across 100+ living specifications and source files?"
-  - "How should incremental index invalidation (content-hashing & git mtimes) be designed to guarantee zero spec-to-index drift with negligible I/O overhead (<5ms)?"
-  - "What is the token-compression efficacy of a tiered context model (Summary Anchor vs. Guardrails vs. Deep Spec on-demand) compared to raw file loading?"
-  - "Can reverse code-to-spec mapping resolve AST symbols (classes, functions, test bindings) without requiring heavy language-server or external daemon dependencies?"
-spikes_to_run:
-  - name: "spike-sqlite-graph-fts"
-    target: "Prototype an embedded SQLite schema with FTS5 full-text search and recursive CTEs for k-hop dependency and blast-radius expansion."
-  - name: "spike-incremental-hasher"
-    target: "Benchmark SHA-256 and mtime dirty-checking on specifications and source files to verify <5ms cache hit latency and automatic invalidation."
-  - name: "spike-tiered-agent-context"
-    target: "Measure token count reduction and agent reasoning accuracy across sample engineering prompts comparing ad-hoc scanning against indexed context slices."
-exit_criteria:
-  max_duration: "5_days"
-  benchmark: "Context slice extraction latency < 10ms for 100+ specs; token count reduction >= 60% compared to full file loading; zero external dependencies (standard library sqlite3)."
 decision:
   outcome: adopted
-  resulting_delta_id: "DLT-2026-011"
-  learnings: "Embedded SQLite FTS5 + recursive CTE graph queries reduced context slice resolution latency to ~1.2ms (8x faster than the 10ms exit criterion). Incremental dirty-checking takes ~3.3ms (<5ms target). Tiered context models achieved 97.9% token compression compared to full catalog loading, completely relying on Python standard library sqlite3 with zero external dependencies."
+  resulting_deltas:
+    - "DLT-2026-011"
 ---
 = Exploration: Embedded Architectural Knowledge Graph & Hybrid Context Retrieval Index
 :toc: left
+
+== Core Hypothesis
+Building an embedded SQLite-backed architectural knowledge graph with FTS5 lexical search and reverse code-symbol mapping will reduce AI agent context slicing latency by >80% on multi-component repositories while ensuring zero drift, token-budgeted context tiers, and zero external runtime dependencies.
+
+== Questions & Spikes
+* **Questions**:
+  - Can embedded SQLite (FTS5 + recursive CTE graph queries) deliver sub-10ms context slice resolution across 100+ living specifications and source files?
+  - How should incremental index invalidation (content-hashing & git mtimes) be designed to guarantee zero spec-to-index drift with negligible I/O overhead (<5ms)?
+  - What is the token-compression efficacy of a tiered context model (Summary Anchor vs. Guardrails vs. Deep Spec on-demand) compared to raw file loading?
+  - Can reverse code-to-spec mapping resolve AST symbols (classes, functions, test bindings) without requiring heavy language-server or external daemon dependencies?
+* **Spikes**:
+  - `spike-sqlite-graph-fts`: Prototype an embedded SQLite schema with FTS5 full-text search and recursive CTEs for k-hop dependency and blast-radius expansion.
+  - `spike-incremental-hasher`: Benchmark SHA-256 and mtime dirty-checking on specifications and source files to verify <5ms cache hit latency and automatic invalidation.
+  - `spike-tiered-agent-context`: Measure token count reduction and agent reasoning accuracy across sample engineering prompts comparing ad-hoc scanning against indexed context slices.
+* **Exit Criteria**: Max duration `5_days`; context slice extraction latency < 10ms for 100+ specs; token count reduction >= 60% compared to full file loading; zero external dependencies (`sqlite3`).
+
+== Findings & Learnings
+Embedded SQLite FTS5 + recursive CTE graph queries reduced context slice resolution latency to ~1.2ms (8x faster than the 10ms exit criterion). Incremental dirty-checking takes ~3.3ms (<5ms target). Tiered context models achieved 97.9% token compression compared to full catalog loading, completely relying on Python standard library `sqlite3` with zero external dependencies.
 
 == 1. Problem Statement & Motivation
 

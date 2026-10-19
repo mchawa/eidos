@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-036
 title: Structured Architectural Decisions and Trade-Off Records Embedded in Living Specifications
 status: applied

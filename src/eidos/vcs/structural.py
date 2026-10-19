@@ -417,7 +417,7 @@ def _collect_1hop_spec_targets(
         self_data = (self_node or {}).get("data") or resolved_data_by_id.get(sid) or {}
 
         if self_type == "tech/container" or (not self_type and sid.startswith("CNT-")):
-            for inline_comp in (self_data.get("components") or []):
+            for inline_comp in self_data.get("components") or []:
                 if not isinstance(inline_comp, dict) or not inline_comp.get("id"):
                     continue
                 ic_id = str(inline_comp["id"]).strip()
@@ -467,7 +467,7 @@ def _collect_1hop_spec_targets(
             if nid:
                 allowed_ids.add(nid.lower())
             if ntype == "tech/container" and nid in seed_ids:
-                for inline_comp in (ndata.get("components") or []):
+                for inline_comp in ndata.get("components") or []:
                     if isinstance(inline_comp, dict) and inline_comp.get("id"):
                         allowed_ids.add(str(inline_comp["id"]).strip().lower())
             nfp = n.get("file_path")
@@ -552,11 +552,7 @@ def _spec_coverage_verdict(
             return False, "missing_anchor", relevant
         return True, None, []
 
-    boundary_syms = (
-        addition.symbol_names
-        if addition.boundary_symbol_names is None
-        else addition.boundary_symbol_names
-    )
+    boundary_syms = addition.symbol_names if addition.boundary_symbol_names is None else addition.boundary_symbol_names
     if (
         boundary_syms
         and not owner_changed
@@ -668,4 +664,3 @@ def _collect_design_subgraph(
             if fp_low:
                 paths.add(fp_low)
     return paths, sub_ids
-

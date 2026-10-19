@@ -279,7 +279,9 @@ def test_classify_design_changes_categories():
         classify_design_changes("export const c = '#111';", "export const c = '#222';", "md3-tokens.ts")[0] == "token"
     )
     assert (
-        classify_design_changes("export let size = 'md';", "export let size = 'lg';\nexport let icon = '';", "Btn.svelte")[0]
+        classify_design_changes(
+            "export let size = 'md';", "export let size = 'lg';\nexport let icon = '';", "Btn.svelte"
+        )[0]
         == "ui_contract"
     )
     assert (
@@ -405,18 +407,8 @@ def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(monkeypatch, tmp
     assert fb_rs_syms["Unlocker"].kind == "interface"
 
     # 2. Polyglot extract_test_bindings across TS, Go, Rust, and Java
-    ts_test = (
-        "it('enforces token budget', () => {\n"
-        "  // INV-TS-BUDGET-001\n"
-        "  expect(true).toBe(true);\n"
-        "});\n"
-    )
-    go_test = (
-        "package app\n\n"
-        "func TestStoreSync(t *testing.T) {\n"
-        "    // INV-GO-SYNC-001\n"
-        "}\n"
-    )
+    ts_test = "it('enforces token budget', () => {\n  // INV-TS-BUDGET-001\n  expect(true).toBe(true);\n});\n"
+    go_test = "package app\n\nfunc TestStoreSync(t *testing.T) {\n    // INV-GO-SYNC-001\n}\n"
     java_test = (
         "public class AuthTest {\n"
         "    @Test\n"
@@ -478,11 +470,7 @@ def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(monkeypatch, tmp
     assert {s.name for s in fb_go_syms} >= {"Reader", "itemStore", "OpenStore", "internalHelper"}
 
     kt_src = (
-        "interface AuthPort {}\n"
-        "class AuthAdapter {\n"
-        "    fun verifyToken() {}\n"
-        "    private fun secretHelper() {}\n"
-        "}\n"
+        "interface AuthPort {}\nclass AuthAdapter {\n    fun verifyToken() {}\n    private fun secretHelper() {}\n}\n"
     )
     fb_kt_syms = fb_idx.extract_symbols("src/Auth.kt", kt_src)
     assert {s.name for s in fb_kt_syms} >= {"AuthPort", "AuthAdapter", "verifyToken"}
@@ -677,7 +665,7 @@ def test_dlt_2026_083_polyglot_fallback_and_block_comment_stripping(tmp_path):
 
     vue_file = tmp_path / "UserCard.vue"
     vue_file.write_text(
-        "<script setup lang=\"ts\">\n"
+        '<script setup lang="ts">\n'
         "export interface UserCardProps {\n"
         "  userId: string;\n"
         "}\n"
@@ -697,10 +685,7 @@ def test_dlt_2026_083_polyglot_fallback_and_block_comment_stripping(tmp_path):
 
     svelte_file = tmp_path / "Counter.svelte"
     svelte_file.write_text(
-        "<script lang=\"ts\">\n"
-        "export let initialCount = 0;\n"
-        "function increment() { initialCount += 1; }\n"
-        "</script>\n",
+        '<script lang="ts">\nexport let initialCount = 0;\nfunction increment() { initialCount += 1; }\n</script>\n',
         encoding="utf-8",
     )
     svelte_syms = {s.name: s for s in indexer.extract_symbols(svelte_file)}
@@ -872,10 +857,10 @@ def test_polyglot_parameterized_and_subtest_extraction():
 
     go_tests = (
         "package auth\n\n"
-        "import \"testing\"\n\n"
+        'import "testing"\n\n'
         "// func TestCommentedFake(t *testing.T) {}\n"
         "func TestTokenFlow(t *testing.T) {\n"
-        "    t.Run(\"expired_token\", func(t *testing.T) {\n"
+        '    t.Run("expired_token", func(t *testing.T) {\n'
         f"        // {inv_p}GO-SUB-001\n"
         "    })\n"
         "}\n"

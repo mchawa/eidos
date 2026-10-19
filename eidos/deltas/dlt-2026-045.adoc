@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-045
 title: Transactional SpecDelta Execution, Complete Action Coverage, and Git-Backed Baseline SHAs
 status: applied

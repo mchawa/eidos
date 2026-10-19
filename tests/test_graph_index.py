@@ -118,7 +118,6 @@ def test_spike_b_zero_drift_on_mutation(tmp_path):
     test_spec.write_text(
         """---
 type: tech/component
-schema: schemas/v1/tech/component.schema.yaml
 id: CMP-TEST-SPIKE
 title: "Test Spike Service"
 container: "CNT-TEST-SPIKE"
@@ -143,7 +142,6 @@ responsibility: "Test service"
     test_spec.write_text(
         """---
 type: tech/component
-schema: schemas/v1/tech/component.schema.yaml
 id: CMP-TEST-SPIKE
 title: "Mutated Spike Service"
 container: "CNT-TEST-SPIKE"
@@ -244,7 +242,7 @@ def test_repo_root_discovery_and_no_nested_eidos(tmp_path, monkeypatch):
     specs_dir = repo / "eidos"
     specs_dir.mkdir()
     (specs_dir / "system.adoc").write_text(
-        "---\ntype: product/system\nschema: schemas/v1/system.schema.yaml\nid: SYS-MOCK\ntitle: Mock System\n---\n= Mock System\n",
+        "---\ntype: product/system\nid: SYS-MOCK\ntitle: Mock System\n---\n= Mock System\n",
         encoding="utf-8",
     )
     subfolder = repo / ".agents" / "plugins" / "eidos" / "scripts"
@@ -318,7 +316,6 @@ def test_code_aware_dirty_checking_and_sync(tmp_path):
     spec_file.write_text(
         """---
 type: tech/component
-schema: schemas/v1/tech/component.schema.yaml
 id: CMP-SAMPLE-SERVICE
 title: Sample Service
 container: CNT-SAMPLE
@@ -400,7 +397,6 @@ def test_design_client_and_system_path_inference(tmp_path):
     (cnt_dir / "web.adoc").write_text(
         """---
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: CNT-WEB-APP
 title: "Web Application"
 container_type: web_app
@@ -423,7 +419,6 @@ components:
     (cnt_dir / "button-cmp.adoc").write_text(
         """---
 type: tech/component
-schema: schemas/v1/tech/component.schema.yaml
 id: CMP-WEB-BUTTON
 title: "Button Component"
 container: CNT-WEB-APP
@@ -439,7 +434,6 @@ source_path: "packages/ui-kit/src/Button.tsx"
     (clt_dir / "web-client.adoc").write_text(
         """---
 type: design/client
-schema: schemas/v1/design/client.schema.yaml
 id: CLT-WEB-CLIENT
 title: "Customer Web Client"
 platform: web
@@ -456,7 +450,6 @@ design_system: DS-BRAND
     (ds_dir / "system.adoc").write_text(
         """---
 type: design/system
-schema: schemas/v1/design/system.schema.yaml
 id: DS-BRAND
 title: "Brand Design System"
 status: active
@@ -505,7 +498,6 @@ def test_test_assertion_edges_persist_after_sync(tmp_path):
     (comps_dir / "service.adoc").write_text(
         """---
 type: tech/component
-schema: schemas/v1/tech/component.schema.yaml
 id: CMP-EDGE-SERVICE
 title: Edge Service
 container: CNT-EDGE
@@ -585,7 +577,6 @@ def _write_container(
     path.write_text(
         f"""---
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: {cnt_id}
 title: "{cnt_id}"
 container_type: "library"
@@ -1218,7 +1209,6 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     spec_a.write_text(
         "---\n"
         "type: tech/container\n"
-        "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-OLD-NAME\n"
         "title: Old Container\n"
         "container_type: library\n"
@@ -1239,7 +1229,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.5.0"
+        assert ver == SCHEMA_VERSION == "2.6.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -1301,7 +1291,6 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
         spec_b.write_text(
             "---\n"
             "type: tech/container\n"
-            "schema: schemas/v1/tech/container.schema.yaml\n"
             "id: CNT-NEW-NAME\n"
             "title: Colliding Container\n"
             "container_type: library\n"
@@ -1355,7 +1344,6 @@ def test_sync_invariant_coverage_verifies_function_and_polyglot_tests(tmp_path):
     cap_spec.write_text(
         """---
 type: product/capability
-schema: schemas/v1/product/capability.schema.yaml
 id: CAP-AUTH-SYNC
 title: Auth Sync Capability
 domain: DOM-CORE
@@ -1465,10 +1453,7 @@ def test_readonly_warm_cache_open_db_path_singleton_and_custom_repo_root(tmp_pat
 
     ensure_cache_schema(conn_warm)
     conn_warm.close()
-    assert not any(
-        s.lstrip().upper().startswith(("CREATE ", "INSERT ", "DROP ", "BEGIN"))
-        for s in executed_sql
-    )
+    assert not any(s.lstrip().upper().startswith(("CREATE ", "INSERT ", "DROP ", "BEGIN")) for s in executed_sql)
 
     # 2. get_architectural_index replaces and closes old singleton when db_path changes
     custom_repo = tmp_path / "custom_project"
@@ -1503,9 +1488,7 @@ def test_container_inline_component_invariants_ast_fts_projection_and_anchored_t
     src_dir.mkdir(parents=True)
 
     (src_dir / "engine.py").write_text(
-        "class QuantumReconciliationEngine:\n"
-        "    def settle_atomic_batch(self) -> bool:\n"
-        "        return True\n",
+        "class QuantumReconciliationEngine:\n    def settle_atomic_batch(self) -> bool:\n        return True\n",
         encoding="utf-8",
     )
 
@@ -1513,7 +1496,6 @@ def test_container_inline_component_invariants_ast_fts_projection_and_anchored_t
     (cnts_dir / "ledger2.adoc").write_text(
         "---\n"
         "type: tech/container\n"
-        "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-LEDGER-2\n"
         "title: Secondary Ledger\n"
         "container_type: service\n"
@@ -1529,7 +1511,6 @@ def test_container_inline_component_invariants_ast_fts_projection_and_anchored_t
     (cnts_dir / "ledger.adoc").write_text(
         "---\n"
         "type: tech/container\n"
-        "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-LEDGER\n"
         "title: Primary Ledger\n"
         "container_type: service\n"
@@ -1557,10 +1538,7 @@ def test_container_inline_component_invariants_ast_fts_projection_and_anchored_t
         conn = idx._get_connection()
 
         # 1. Both top-level container invariant and inline component invariant are in entities and specs_fts
-        inv_ids = {
-            r[0]
-            for r in conn.execute("SELECT id FROM entities WHERE type = 'invariant';").fetchall()
-        }
+        inv_ids = {r[0] for r in conn.execute("SELECT id FROM entities WHERE type = 'invariant';").fetchall()}
         assert "INV-CNT-LEDGER-TOP" in inv_ids
         assert "INV-CMP-SETTLER-INLINE" in inv_ids
 
@@ -1648,7 +1626,6 @@ def test_deep_review_subsystem_2_incremental_edges_fts_and_transient_sqlite_erro
     cnt_file.write_text(
         "---\n"
         "type: tech/container\n"
-        "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-SVC\n"
         "title: Worker Service\n"
         "container_type: service\n"
@@ -1661,7 +1638,6 @@ def test_deep_review_subsystem_2_incremental_edges_fts_and_transient_sqlite_erro
     (cmps_dir / "cmp-promoted.adoc").write_text(
         "---\n"
         "type: tech/component\n"
-        "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-PROMOTED\n"
         "title: PromotedWorker\n"
         "container: CNT-SVC\n"
@@ -1721,7 +1697,6 @@ def test_index_spec_deletion_child_invariants_and_query_coverage(tmp_path):
     pol_file.write_text(
         "---\n"
         "type: product/policy\n"
-        "schema: schemas/v1/product/policy.schema.yaml\n"
         "id: POL-CLEANUP-001\n"
         "title: Cleanup Policy\n"
         "category: quality\n"
@@ -1737,7 +1712,6 @@ def test_index_spec_deletion_child_invariants_and_query_coverage(tmp_path):
     (cnt_dir / "api.adoc").write_text(
         "---\n"
         "type: tech/container\n"
-        "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-API\n"
         "title: API Server\n"
         "container_type: service\n"
@@ -1750,7 +1724,6 @@ def test_index_spec_deletion_child_invariants_and_query_coverage(tmp_path):
     (cnt_dir / "web.adoc").write_text(
         "---\n"
         "type: tech/container\n"
-        "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-WEB\n"
         "title: Web App\n"
         "container_type: web_app\n"
@@ -1763,11 +1736,12 @@ def test_index_spec_deletion_child_invariants_and_query_coverage(tmp_path):
         "= Web App\n",
         encoding="utf-8",
     )
-    (ds_dir / "tokens.json").write_text('{"color": {"brand": {"$value": "#123456", "$type": "color"}}}', encoding="utf-8")
+    (ds_dir / "tokens.json").write_text(
+        '{"color": {"brand": {"$value": "#123456", "$type": "color"}}}', encoding="utf-8"
+    )
     (ds_dir / "system.adoc").write_text(
         "---\n"
         "type: design/system\n"
-        "schema: schemas/v1/design/system.schema.yaml\n"
         "id: DS-BRAND-CORE\n"
         "title: Brand Core Design System\n"
         "status: active\n"
@@ -1783,7 +1757,6 @@ def test_index_spec_deletion_child_invariants_and_query_coverage(tmp_path):
     (clt_dir / "client.adoc").write_text(
         "---\n"
         "type: design/client\n"
-        "schema: schemas/v1/design/client.schema.yaml\n"
         "id: CLT-WEB\n"
         "title: Web Client\n"
         "platform: web-spa\n"
@@ -1817,16 +1790,12 @@ def test_index_spec_deletion_child_invariants_and_query_coverage(tmp_path):
 
         # 4. Verify child invariant test_binding row exists in symbol_mappings, then delete pol.adoc and verify cleanup
         conn = idx._get_connection()
-        tb_before = conn.execute(
-            "SELECT * FROM symbol_mappings WHERE entity_id = 'INV-CLEANUP-001';"
-        ).fetchall()
+        tb_before = conn.execute("SELECT * FROM symbol_mappings WHERE entity_id = 'INV-CLEANUP-001';").fetchall()
         assert len(tb_before) >= 1
 
         pol_file.unlink()
         idx.sync(force=False)
-        tb_after = conn.execute(
-            "SELECT * FROM symbol_mappings WHERE entity_id = 'INV-CLEANUP-001';"
-        ).fetchall()
+        tb_after = conn.execute("SELECT * FROM symbol_mappings WHERE entity_id = 'INV-CLEANUP-001';").fetchall()
         assert tb_after == []
         inv_after = conn.execute("SELECT * FROM entities WHERE id = 'INV-CLEANUP-001';").fetchall()
         assert inv_after == []
@@ -1835,7 +1804,6 @@ def test_index_spec_deletion_child_invariants_and_query_coverage(tmp_path):
         (cnt_dir / "dup.adoc").write_text(
             "---\n"
             "type: tech/container\n"
-            "schema: schemas/v1/tech/container.schema.yaml\n"
             "id: CNT-WEB\n"
             "title: Duplicate Web\n"
             "container_type: web_app\n"
@@ -1910,7 +1878,6 @@ def test_dlt_2026_083_fts_and_boost_hub_suppression_and_token_calibration(tmp_pa
         (dlt_dir / "dlt-2026-001.adoc").write_text(
             "---\n"
             "type: delta/mutation\n"
-            "schema: schemas/v1/delta/delta.schema.yaml\n"
             "id: DLT-2026-001\n"
             "title: Modify Alpha\n"
             "status: proposed\n"
@@ -2140,9 +2107,7 @@ def test_context_implements_edges_inline_cmp_blast_radius_and_path_resolution(tm
     cnt_other.write_text(dump_spec_document(cnt_other_doc.frontmatter, cnt_other_doc.body), encoding="utf-8")
 
     # Cross-domain capability CAP-INTEL-001 in DOM-INTEL implementing CNT-IDX and CMP-INLINE-IDX (Bug 3 & Bug 4)
-    cap_intel = create_spec(
-        eidos_dir, "capability", "CAP-INTEL-001", title="Agent Slicing"
-    )
+    cap_intel = create_spec(eidos_dir, "capability", "CAP-INTEL-001", title="Agent Slicing")
     cap_intel_doc = parse_spec_file(cap_intel)
     cap_intel_doc.frontmatter["domain"] = "DOM-INTEL"
     cap_intel_doc.frontmatter["technical"] = {
@@ -2159,9 +2124,7 @@ def test_context_implements_edges_inline_cmp_blast_radius_and_path_resolution(tm
     cap_intel.write_text(dump_spec_document(cap_intel_doc.frontmatter, cap_intel_doc.body), encoding="utf-8")
 
     # Unrelated capability CAP-ENGINE-OTHER in DOM-ENGINE bound exclusively to CNT-OTHER
-    cap_other = create_spec(
-        eidos_dir, "capability", "CAP-ENGINE-OTHER", title="Other Engine Cap"
-    )
+    cap_other = create_spec(eidos_dir, "capability", "CAP-ENGINE-OTHER", title="Other Engine Cap")
     cap_other_doc = parse_spec_file(cap_other)
     cap_other_doc.frontmatter["domain"] = "DOM-ENGINE"
     cap_other_doc.frontmatter["technical"] = {"containers": ["CNT-OTHER"]}
@@ -2304,5 +2267,3 @@ def test_incremental_spec_sync_skips_unchanged_test_reparse_and_scopes_fts(tmp_p
         assert tb_map is not None and tb_map["symbol"] == "tests/test_perf.py"
     finally:
         idx.close()
-
-

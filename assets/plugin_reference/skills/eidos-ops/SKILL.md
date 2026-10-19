@@ -45,7 +45,7 @@ eidos doctor --json
 When introducing Eidos into an **existing codebase**, never invent speculative architecture. Systematically extract the **actual as-built architecture** across these 8 phases:
 
 1. **Initialize & Inspect Topology**: Run `eidos init` if `eidos/` does not exist. Inspect build manifests (`pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`, `pom.xml`, `docker-compose.yml`, CI workflows) and top-level source directories.
-2. **Author C4 Level 1 & Arc42 Master Architecture**: Populate `eidos/system.adoc` (`SYS-*`) and `eidos/architecture/system-architecture.adoc` (`ARCH-*`, registering all containers in `c4_containers`).
+2. **Author C4 Level 1 & Arc42 Master Architecture**: Populate `eidos/system.adoc` (`SYS-*`) and `eidos/architecture/system-architecture.adoc` (`ARCH-*`, registering C4 Level 1 actors and external systems in `c4_context`).
 3. **Extract C4 Level 2 Containers (`CNT-*`) & Level 3 Components (`CMP-*`)**:
    * Create a container in `eidos/architecture/containers/<slug>.adoc` for each deployable service, CLI binary, web app, worker, or library package.
    * Set `source_path` to the exact repo-relative source path(s) so `eidos drift` and `eidos context` map every source file accurately.

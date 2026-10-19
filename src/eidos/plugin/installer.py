@@ -240,8 +240,7 @@ def _copy_plugin_tree(
                 mfiles = mdata.get("files", {})
                 if isinstance(mfiles, dict):
                     scripts_tracked = any(
-                        k == "scripts" or k.startswith("scripts/") or k.startswith("scripts\\")
-                        for k in mfiles
+                        k == "scripts" or k.startswith("scripts/") or k.startswith("scripts\\") for k in mfiles
                     )
             except (OSError, json.JSONDecodeError, ValueError):
                 scripts_tracked = False
@@ -721,7 +720,7 @@ def _write_aider_conventions(file_path: Path, force: bool = False) -> Path:
         "- **Bidirectional Invariant-Test Traceability**: Enforce system policies (`POL-*`) and capability invariants (`INV-*`) across tests.\n"
         "- **Specification Validation**: Run `eidos validate eidos` to ensure schema conformance and cross-reference integrity.\n"
         "- **Zero Spec-to-Code Drift**: Run `eidos drift --uncommitted` to verify code changes are synchronized with living specifications before task completion.\n"
-        "- **Architectural Context**: Use `eidos context --file <path>` or `eidos context --task \"<prompt>\"` for token-efficient architectural context.\n\n"
+        '- **Architectural Context**: Use `eidos context --file <path>` or `eidos context --task "<prompt>"` for token-efficient architectural context.\n\n'
         "## Installed Eidos Skills\n"
         "When performing targeted architectural tasks, load the relevant skill using `/read .aider/skills/<skill>/SKILL.md`:\n"
         "- Master Orchestration, Context, Drift & Reconcile: `/read .aider/skills/eidos/SKILL.md`\n"
@@ -754,7 +753,7 @@ def _write_copilot_instructions(file_path: Path, force: bool = False) -> Path:
         "- **Bidirectional Invariant-Test Traceability**: Enforce system policies (`POL-*`) and capability invariants (`INV-*`) across tests.\n"
         "- **Specification Validation**: Run `eidos validate eidos` to ensure schema conformance and cross-reference integrity.\n"
         "- **Zero Spec-to-Code Drift**: Run `eidos drift --uncommitted` to verify code changes are synchronized with living specifications before task completion.\n"
-        "- **Architectural Context**: Use `eidos context --file <path>` or `eidos context --task \"<prompt>\"` for token-efficient architectural context.\n"
+        '- **Architectural Context**: Use `eidos context --file <path>` or `eidos context --task "<prompt>"` for token-efficient architectural context.\n'
         "- **Agent Skills**: Consult the 4 installed Eidos skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) in `.github/skills/` for specialized architectural workflows.\n"
         f"{COPILOT_END_MARKER}\n"
     )
@@ -840,9 +839,7 @@ def _ensure_copilot_plugin_manifest(target_dir: Path, force: bool = False) -> Pa
                 if not force:
                     return None
             else:
-                merged_ext = dict(
-                    existing.get("extensions") if isinstance(existing.get("extensions"), dict) else {}
-                )
+                merged_ext = dict(existing.get("extensions") if isinstance(existing.get("extensions"), dict) else {})
                 merged_ext["com.github.copilot"] = {
                     "type": "agent_plugin",
                     "skills": "skills",
@@ -874,8 +871,7 @@ def _update_project_copilot_settings(settings_file: Path) -> bool:
         data["plugins"] = []
 
     has_plugin_entry = any(
-        isinstance(p, dict) and p.get("path") in (".github/plugin", "./.github/plugin")
-        for p in data["plugins"]
+        isinstance(p, dict) and p.get("path") in (".github/plugin", "./.github/plugin") for p in data["plugins"]
     )
     if not has_plugin_entry:
         data["plugins"].append({"path": ".github/plugin"})
@@ -1284,11 +1280,7 @@ class TargetAdapter:
         was_removed = False
         plugin_dir = (root / self.plugin_subdir) if self.plugin_subdir else None
 
-        if (
-            plugin_dir is not None
-            and plugin_dir.exists()
-            and _uninstall_from_manifest_or_legacy(plugin_dir)
-        ):
+        if plugin_dir is not None and plugin_dir.exists() and _uninstall_from_manifest_or_legacy(plugin_dir):
             was_removed = True
 
         for legacy_rel in self.legacy_cleanup_dirs:
@@ -1369,7 +1361,9 @@ TARGET_ADAPTERS: dict[PluginInstallTarget, TargetAdapter] = {
         mcp_cleanup_paths=(".cursor/mcp.json",),
         extra_cleanup_files=(".cursor/rules/eidos.mdc",),
         prune_dirs=(".cursor/rules", ".cursor"),
-        post_install_hook=lambda root, _src, force, _l: [_write_cursor_rules(root / ".cursor" / "rules" / "eidos.mdc", force=force)],
+        post_install_hook=lambda root, _src, force, _l: [
+            _write_cursor_rules(root / ".cursor" / "rules" / "eidos.mdc", force=force)
+        ],
     ),
     PluginInstallTarget.CLAUDE: TargetAdapter(
         target=PluginInstallTarget.CLAUDE,
@@ -1527,7 +1521,9 @@ def uninstall_plugin(
                     target="custom",
                     destination=target_path,
                     success=True,
-                    message=f"Removed custom plugin path: {target_path}" if removed else f"No plugin files found at: {target_path}",
+                    message=f"Removed custom plugin path: {target_path}"
+                    if removed
+                    else f"No plugin files found at: {target_path}",
                     removed=removed,
                 )
             )

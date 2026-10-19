@@ -158,9 +158,7 @@ def detect_drift(
     resolved_mb: str | None = None
     effective_uncommitted = uncommitted
     if not uncommitted:
-        resolved_base_ref, resolved_mb, fell_back = _resolve_base_and_merge_base(
-            root, base_ref, head_ref
-        )
+        resolved_base_ref, resolved_mb, fell_back = _resolve_base_and_merge_base(root, base_ref, head_ref)
         if fell_back:
             effective_uncommitted = True
 
@@ -174,8 +172,7 @@ def detect_drift(
     classification = classify_changed_files(changed_files, repo_root=root, eidos_dir=target_eidos)
 
     synthetic_diff_mock = (
-        get_git_diff_files is not _DEFAULT_GET_GIT_DIFF_FILES
-        and _get_file_versions is _DEFAULT_GET_FILE_VERSIONS
+        get_git_diff_files is not _DEFAULT_GET_GIT_DIFF_FILES and _get_file_versions is _DEFAULT_GET_FILE_VERSIONS
     )
 
     def _fetch_versions(rel_p: str) -> tuple[str | None, str | None]:
@@ -303,7 +300,11 @@ def detect_drift(
                     if not val_str:
                         continue
                     declared_delta_targets.add(val_str.lower())
-                    if val_str.lower().endswith((".adoc", ".json", ".yaml", ".yml")) or "/" in val_str or "\\" in val_str:
+                    if (
+                        val_str.lower().endswith((".adoc", ".json", ".yaml", ".yml"))
+                        or "/" in val_str
+                        or "\\" in val_str
+                    ):
                         norm_p = val_str.replace("\\", "/").strip("/")
                         declared_delta_paths.add(norm_p.lower())
                         pref_low = eidos_rel_prefix.lower().strip("/")
@@ -420,7 +421,9 @@ def detect_drift(
             )
             if rejected_rule and not any(r["file"] == cf for r in trivial_records):
                 addition = structural_additions.get(cf)
-                additions_list = list(addition.reasons) if addition is not None else ["modified signature or public symbols"]
+                additions_list = (
+                    list(addition.reasons) if addition is not None else ["modified signature or public symbols"]
+                )
                 trivial_records.append(
                     {
                         "file": cf,
@@ -438,12 +441,8 @@ def detect_drift(
     mapped_files = {c for c, _, _ in comp_mappings}
     unmapped_code_files = [cf for cf in structural_code_files if cf not in mapped_files]
 
-    changed_sys_specs = [
-        s for s in classification.spec_files if _is_system_level_spec(s, system_spec_paths)
-    ]
-    system_spec_substantively_updated = any(
-        spec_inspector.is_substantive(s) for s in changed_sys_specs
-    )
+    changed_sys_specs = [s for s in classification.spec_files if _is_system_level_spec(s, system_spec_paths)]
+    system_spec_substantively_updated = any(spec_inspector.is_substantive(s) for s in changed_sys_specs)
     arch_or_system_substantively_updated = system_spec_substantively_updated or any(
         (
             "/architecture/containers/" in f"/{s.replace(chr(92), '/').lower().strip('/')}"
@@ -462,11 +461,7 @@ def detect_drift(
             uncovered_unmapped_code.append(ucf)
             if changed_sys_specs and not any(r["file"] == ucf for r in trivial_records):
                 addition = structural_additions.get(ucf)
-                additions_list = (
-                    list(addition.reasons)
-                    if addition is not None
-                    else ["modified unmapped code file"]
-                )
+                additions_list = list(addition.reasons) if addition is not None else ["modified unmapped code file"]
                 trivial_records.append(
                     {
                         "file": ucf,
@@ -490,9 +485,7 @@ def detect_drift(
         if cat == "ui_contract":
             satisfying_paths |= owner_specs_by_file.get(cf, set())
             satisfying_ids |= {o.lower() for o in owners_by_file.get(cf, set())}
-        matching_design_specs = [
-            s for s in classification.spec_files if _path_in(s, satisfying_paths)
-        ]
+        matching_design_specs = [s for s in classification.spec_files if _path_in(s, satisfying_paths)]
         covered = any(spec_inspector.is_substantive(s) for s in matching_design_specs)
         if not covered and has_deltas:
             covered = bool(
@@ -591,4 +584,3 @@ def detect_drift(
 
 # Backwards compatibility alias
 check_pr_drift = detect_drift
-

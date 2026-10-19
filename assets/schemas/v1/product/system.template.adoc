@@ -1,0 +1,8 @@
+= System: {heading}
+:toc: left
+
+== System Vision & Scope
+Describe the strategic vision, target users, and value proposition of this system.
+
+== Technical Profile
+Document the primary languages, frameworks, and architectural traits of this system.

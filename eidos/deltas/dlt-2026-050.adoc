@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-050
 title: Core Module Decomposition, Build-Time Portal Asset Bundling, CI Pinning, and Progressive Eidos Lite Profile
 status: applied

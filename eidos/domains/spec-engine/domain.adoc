@@ -1,25 +1,26 @@
 ---
 type: product/domain
-schema: schemas/v1/product/domain.schema.yaml
 id: DOM-SPEC-ENGINE
 title: "Living Specification & Invariant Core Engine"
 status: active
 classification: core
-boundaries:
-  responsibilities:
-    - "Parse, validate, and index all living AsciiDoc specification frontmatters against strict JSON/YAML schemas."
-    - "Resolve specification entity cross-references and detect broken dependency links across the graph."
-    - "Enforce bidirectional invariant-to-test traceability and continuous policy compliance (POL-002)."
-    - "Manage the SpecDelta mutation lifecycle (DLT-*: propose, review, verify, apply) for planned architectural changes."
-    - "Support hypothesis-driven exploratory spikes and technical discoveries (EXP-*)."
-  out_of_scope:
-    - "Rendering web UI visualizations and design tokens studio (delegated to DOM-EXPERIENCE-PORTAL)."
-    - "Agent plugin packaging, skills, and intelligence adapters (delegated to DOM-AGENT-INTELLIGENCE)."
-    - "Git diff analysis, drift detection, and PR merge gating (delegated to DOM-VCS-LIFECYCLE)."
 ---
 = Domain: Living Specification & Invariant Core Engine
 :toc: left
 
 == Domain Vision
 This domain represents the authoritative intellectual core of Eidos. It is responsible for parsing, schema-validating, graph-indexing, and mutating living specifications. It guarantees that every product requirement, architectural boundary, interface contract, and policy invariant remains machine-verifiable, test-bound, and structurally integral across the lifecycle of the software.
+
+== Boundaries & Scope
+
+* **Responsibilities**:
+  - Parse, validate, and index all living AsciiDoc specification frontmatters against strict JSON/YAML schemas.
+  - Resolve specification entity cross-references and detect broken dependency links across the graph.
+  - Enforce bidirectional invariant-to-test traceability and continuous policy compliance (`POL-002`).
+  - Manage the SpecDelta mutation lifecycle (`DLT-*`: propose, review, verify, apply) for planned architectural changes.
+  - Support hypothesis-driven exploratory spikes and technical discoveries (`EXP-*`).
+* **Out of Scope**:
+  - Rendering web UI visualizations and design tokens studio (delegated to `DOM-EXPERIENCE-PORTAL`).
+  - Agent plugin packaging, skills, and intelligence adapters (delegated to `DOM-AGENT-INTELLIGENCE`).
+  - Git diff analysis, drift detection, and PR merge gating (delegated to `DOM-VCS-LIFECYCLE`).
 

@@ -5,7 +5,6 @@ type: object
 additionalProperties: false
 required:
   - type
-  - schema
   - id
   - title
   - status
@@ -15,9 +14,6 @@ properties:
     type: string
     const: "design/system"
     description: "The fixed document type identifier. Must always be 'design/system'."
-  schema:
-    type: string
-    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^DS-[A-Z0-9_-]+$"

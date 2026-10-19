@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-004
 title: Repository Initialization Engine and eidos-init Agent Skill
 status: applied

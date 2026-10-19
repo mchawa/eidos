@@ -5,21 +5,16 @@ type: object
 additionalProperties: false
 required:
   - type
-  - schema
   - id
   - title
   - domain
   - status
-  - business
   - technical
 properties:
   type:
     type: string
     const: "product/capability"
     description: "The fixed document type identifier. Must always be 'product/capability'."
-  schema:
-    type: string
-    description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
   id:
     type: string
     pattern: "^CAP-[A-Z0-9_-]+$"
@@ -36,26 +31,14 @@ properties:
     description: "Semantic version of this capability specification (e.g. 1.0.0)."
   business:
     type: object
-    description: "Business lens: personas served, jobs-to-be-done, monetization tiers, and applicable policies."
+    description: "Business lens: personas served and applicable policies."
     additionalProperties: false
-    required:
-      - personas
-      - jtbd
     properties:
       personas:
         type: array
         description: "List of persona IDs or document paths that benefit from or use this capability."
         items:
           $ref: "#/$defs/persona_ref"
-      jtbd:
-        type: string
-        description: "Core Job-To-Be-Done statement ('When [situation], I want to [action], so that [outcome]')."
-      pricing_tiers:
-        type: array
-        description: "Product pricing or subscription tiers where this capability is accessible (e.g. free, pro, enterprise)."
-        items:
-          type: string
-          description: "Tier name."
       policies:
         type: array
         description: "List of system policy IDs or document paths that govern or constrain this capability."

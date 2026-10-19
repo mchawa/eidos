@@ -36,9 +36,7 @@ TASK_SLICE_ENTITY_TYPES: tuple[str, ...] = (
 
 _CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 _IDENTIFIER_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
-_ENTITY_ID_TOKEN_RE = re.compile(
-    r"\b(?:CNT|CMP|CAP|INV|CTR|POL|DOM|DEC|DS|UIC|CLT|SCR|FLOW|DLT|EXP)-[A-Za-z0-9-]+\b"
-)
+_ENTITY_ID_TOKEN_RE = re.compile(r"\b(?:CNT|CMP|CAP|INV|CTR|POL|DOM|DEC|DS|UIC|CLT|SCR|FLOW|DLT|EXP)-[A-Za-z0-9-]+\b")
 
 _FTS_STOP_WORDS: frozenset[str] = frozenset(
     {
@@ -341,9 +339,7 @@ def execute_k_hop_traversal(
 
     results = []
     for row in cursor.fetchall():
-        title, data = _resolve_inline_component_node(
-            row["node_id"], row["type"], row["title"], row["data_json"]
-        )
+        title, data = _resolve_inline_component_node(row["node_id"], row["type"], row["title"], row["data_json"])
         results.append(
             {
                 "id": row["node_id"],
@@ -445,9 +441,7 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
     while clean.startswith("./"):
         clean = clean[2:]
 
-    is_file_query = "::" not in clean and (
-        "/" in clean or Path(clean).suffix.lower() in _FILE_QUERY_EXTS
-    )
+    is_file_query = "::" not in clean and ("/" in clean or Path(clean).suffix.lower() in _FILE_QUERY_EXTS)
 
     esc_sym = "replace(replace(replace(s.symbol, '\\', '\\\\'), '%', '\\%'), '_', '\\_')"
     if is_file_query:
@@ -556,7 +550,11 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
         filtered_pattern_items = [
             item
             for score, item in combined_pattern_matches
-            if (score >= max_dir_score if 500 <= score < 1000 else (score >= max_pat_score or item["kind"] != "package_path"))
+            if (
+                score >= max_dir_score
+                if 500 <= score < 1000
+                else (score >= max_pat_score or item["kind"] != "package_path")
+            )
         ]
     else:
         filtered_pattern_items = []

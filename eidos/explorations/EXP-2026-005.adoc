@@ -1,44 +1,28 @@
 ---
 type: product/exploration
-schema: schemas/v1/product/exploration.schema.yaml
 id: EXP-2026-005
 title: "Polyglot AST Symbol Extraction & Granular Invariant Traceability via Tree-sitter"
 status: adopted
-hypothesis: >
-  Integrating Tree-sitter into the Eidos Architectural Knowledge Graph indexer will unlock
-  sub-5ms polyglot AST symbol mapping (classes, functions, interface signatures) and pinpoint
-  exact test-function invariant traceability (INV-*), replacing coarse file-level heuristics
-  and substring scanning with zero AI-dependency overhead.
-questions_to_answer:
-  - "Can Tree-sitter parse 1,000+ line polyglot files in <5ms to satisfy Eidos's incremental dirty-check freshness budget?"
-  - "How effectively can Tree-sitter AST queries link individual test functions (def test_*, it(...)) to capability invariants (INV-*) compared to naive string containment (iid in content)?"
-  - "Can Tree-sitter AST diffing differentiate between architectural contract mutations (interfaces.provides) and internal private refactorings during drift detection?"
-  - "How should Tree-sitter be packaged to preserve zero-dependency minimalism and prevent compilation failures on systems without C compilers?"
-spikes_to_run:
-  - name: "spike-polyglot-ast-benchmark"
-    target: "Benchmark Tree-sitter parsing latency and query extraction across Python and TypeScript codebases."
-  - name: "spike-test-function-traceability"
-    target: "Query AST test functions and docstring/assertion nodes to bind tests directly to INV-* and POL-* rules."
-  - name: "spike-zero-ai-and-fallback"
-    target: "Test optional dependency packaging and fallback to stdlib ast when tree-sitter binaries are unavailable."
-exit_criteria:
-  max_duration: "3_days"
-  benchmark: "AST parse + query latency < 10ms for 1000+ line files; 100% precision in test-function-to-invariant mapping; zero violation of POL-004."
 decision:
   outcome: adopted
-  resulting_delta_id: "DLT-2026-021"
-  learnings: >
-    Tree-sitter and ast-grep both achieved sub-10ms parsing on 1,300-line Python files and sub-1ms on
-    TypeScript/TSX, outperforming Python stdlib ast (12.92ms). Test function queries accurately
-    resolved exact test cases (e.g. test_pyproject_contains_zero_ai_dependencies -> POL-004) without
-    false positives. Comparative analysis confirmed ast-grep (ast-grep-py) as the superior architectural
-    choice for Eidos because it bundles multi-language grammars into a single 5MB wheel (avoiding the need
-    for separate language-specific wheels) and offers a cleaner Pythonic query API. Ast-grep will graduate
-    to DLT-2026-021 as an optional extra ('eidos-ai[ast]') with graceful stdlib ast and regex fallback.
+  resulting_deltas:
+    - "DLT-2026-021"
 ---
 = Exploration: Polyglot AST Symbol Extraction & Granular Invariant Traceability via Tree-sitter
 :toc: left
 :icons: font
+
+== Core Hypothesis
+Integrating Tree-sitter / `ast-grep` into the Eidos Architectural Knowledge Graph indexer will unlock sub-5ms polyglot AST symbol mapping (classes, functions, interface signatures) and pinpoint exact test-function invariant traceability (`INV-*`), replacing coarse file-level heuristics and substring scanning with zero AI-dependency overhead.
+
+== Questions & Spikes
+* **Spikes**:
+  - `spike-polyglot-ast-benchmark`: Benchmark Tree-sitter / `ast-grep` parsing latency and query extraction across Python and TypeScript codebases.
+  - `spike-test-function-traceability`: Query AST test functions and docstring/assertion nodes to bind tests directly to `INV-*` and `POL-*` rules.
+  - `spike-zero-ai-and-fallback`: Test optional dependency packaging and fallback to stdlib `ast` when native AST binaries are unavailable.
+
+== Findings & Learnings
+Tree-sitter and `ast-grep` both achieved sub-10ms parsing on 1,300-line Python files and sub-1ms on TypeScript/TSX, outperforming Python stdlib `ast` (12.92ms). Test function queries accurately resolved exact test cases without false positives. Comparative analysis confirmed `ast-grep` (`ast-grep-py`) as the superior architectural choice for Eidos because it bundles multi-language grammars into a single 5MB wheel and offers a cleaner Pythonic query API.
 
 == 1. Problem Statement & Motivation
 

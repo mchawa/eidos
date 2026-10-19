@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-025
 title: Decommission Unimplemented GitHub and GitLab VCS Bridge
 status: applied

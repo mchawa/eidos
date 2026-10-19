@@ -61,6 +61,7 @@ export interface SpecComponent {
     is_promoted?: boolean;
     status?: string;
     description?: string;
+    consumes_components?: string[];
     invariants?: Array<{
       id: string;
       rule: string;
@@ -77,7 +78,6 @@ export interface SpecComponent {
     provides?: string[];
     consumes?: string[];
   };
-  quality_attributes?: Record<string, any>;
   decisions?: SpecDecision[];
   invariants?: Array<{
     id: string;
@@ -102,10 +102,6 @@ export interface SpecDomain {
   mission: string;
   classification?: string;
   capabilities?: string[];
-  boundaries?: {
-    responsibilities?: string[];
-    out_of_scope?: string[];
-  };
   body?: string;
   path?: string;
 }
@@ -119,7 +115,6 @@ export interface SpecCapability {
   version?: string;
   business?: {
     personas?: string[];
-    jtbd?: string;
     policies?: string[];
   };
   technical?: {
@@ -226,12 +221,6 @@ export interface SpecUIVariant {
   description?: string;
 }
 
-export interface SpecUIAccessibility {
-  wcag_level?: string;
-  aria_role?: string;
-  keyboard_nav?: string;
-}
-
 export interface SpecUIComponent {
   id: string;
   title?: string;
@@ -241,8 +230,11 @@ export interface SpecUIComponent {
   status?: string;
   variants?: SpecUIVariant[];
   states?: string[];
-  accessibility?: SpecUIAccessibility;
-  test_bindings?: Record<string, string>;
+  invariants?: Array<{
+    id: string;
+    rule: string;
+    test_binding?: string;
+  }>;
   tokens_used?: string[];
   description?: string;
   body?: string;
@@ -351,8 +343,6 @@ export interface SpecExploration {
   title: string;
   status: "proposed" | "in_progress" | "adopted" | "discarded" | string;
   hypothesis: string;
-  questions_to_answer?: string[];
-  spikes_to_run?: Array<{ name: string; target: string }>;
   exit_criteria?:
     | {
         max_duration?: string;
@@ -364,7 +354,6 @@ export interface SpecExploration {
   resulting_deltas?: string[];
   decision?: {
     outcome?: string;
-    resulting_delta_id?: string;
     resulting_deltas?: string[];
     learnings?: string;
     findings?: string;

@@ -108,7 +108,6 @@ Here is an example of a Container manifest (`eidos/architecture/containers/core.
 ```asciidoc
 ---
 type: tech/container
-schema: schemas/v1/tech/container.schema.yaml
 id: CNT-EIDOS-CORE
 title: Eidos Core Engine
 status: active
@@ -133,9 +132,8 @@ and AST graph generation for all Eidos operations.
 ```
 
 ### Key Elements:
-* **`type`**: Canonical specification type matching the Eidos schema taxonomy.
+* **`type`**: Canonical specification type matching the Eidos schema taxonomy (from which the JSON Schema path in `assets/schemas/v1/` is derived automatically).
 * **`id`**: Globally unique document identifier (`SYS-*`, `DOM-*`, `CAP-*`, `POL-*`, `PER-*`, `EXP-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DS-*`, `UIC-*`, `SCR-*`, `CLT-*`, `FLOW-*`, `DLT-*`).
-* **`schema`**: Reference to the canonical schema file ensuring automated validation and `x-eidos-ref` link checking.
 * **Frontmatter Metadata**: Strongly-typed architectural properties (contracts, invariants, decisions, tokens).
 * **Body text**: Rich AsciiDoc documentation that evolves continuously with the code.
 

@@ -1,36 +1,22 @@
 ---
 type: product/exploration
-schema: schemas/v1/product/exploration.schema.yaml
 id: EXP-2026-007
 title: "Evaluating a Minimalist Model Context Protocol (MCP) Bridge for Guaranteed Agent Tool Invocation"
 status: proposed
-hypothesis: >
-  Reintroducing a minimalist, zero-state Model Context Protocol (MCP) transport wrapper exposing strictly
-  three high-impact tools (eidos_context, eidos_drift, eidos_validate) with a total prompt footprint
-  < 400 tokens will increase autonomous agent compliance for context slicing and drift verification
-  from < 30% to >= 90% across coding sessions, while avoiding the 2,500-token prompt bloat and dual-surface
-  maintenance defects that caused the original 17-tool MCP daemon decommissioning under DLT-2026-016.
-questions_to_answer:
-  - "Why do autonomous AI agents in modern IDEs (Antigravity, Cursor, Claude Code) frequently skip executing Eidos CLI commands despite the presence of Agent Skills (SKILL.md)?"
-  - "Can a curated 3-tool MCP schema (eidos_context, eidos_drift, eidos_validate) remain strictly under 400 tokens of prompt overhead, compared to the 2,500-3,500 tokens of the legacy 17-tool server?"
-  - "How can the MCP server be implemented as a purely stateless stdio JSON-RPC wrapper delegating directly to core CLI handlers, eliminating dual maintenance and preventing stdio desynchronization?"
-  - "What is the agent compliance delta across three configurations: (A) Passive Agent Skills only, (B) Active Workspace Rules (AGENTS.md), and (C) First-Class MCP Tool Palette?"
-  - "How can the Eidos plugin manager (agent-plugins.org v1.0.0) optionally scaffold MCP configurations for environments that support it without regressing CLI-first environments?"
-spikes_to_run:
-  - name: "spike-agent-compliance-baseline"
-    target: "Measure autonomous agent invocation rates of eidos context and eidos drift across 20 synthetic coding tasks under Skill-only vs Workspace-Rule vs MCP configurations."
-  - name: "spike-minimalist-mcp-schema-audit"
-    target: "Draft and measure token budgets for a 3-tool MCP specification (eidos_context, eidos_drift, eidos_validate) ensuring strict schema compactness under 400 tokens."
-  - name: "spike-stateless-stdio-prototype"
-    target: "Prototype a thin, zero-daemon stdio JSON-RPC 2.0 handler (eidos mcp serve) directly invoking core CLI controller functions with sub-50ms cold start."
-exit_criteria:
-  max_duration: "3_days"
-  benchmark: "Agent compliance on drift verification >= 90%; MCP schema prompt overhead <= 400 tokens; stdio cold start < 50ms; 100% adherence to POL-004 (zero runtime AI calls)."
 ---
 = Exploration: Evaluating a Minimalist Model Context Protocol (MCP) Bridge for Guaranteed Agent Tool Invocation
 :toc: left
 :icons: font
 :sectnums:
+
+== Core Hypothesis
+Reintroducing a minimalist, zero-state Model Context Protocol (MCP) transport wrapper exposing strictly three high-impact tools (`eidos_context`, `eidos_drift`, `eidos_validate`) with a total prompt footprint < 400 tokens will increase autonomous agent compliance for context slicing and drift verification from < 30% to >= 90% across coding sessions, while avoiding the 2,500-token prompt bloat and dual-surface maintenance defects that caused the original 17-tool MCP daemon decommissioning under `DLT-2026-016`.
+
+== Questions & Spikes
+* **Spikes**:
+  - `spike-agent-compliance-baseline`: Measure autonomous agent invocation rates of `eidos context` and `eidos drift` across 20 synthetic coding tasks under Skill-only vs Workspace-Rule vs MCP configurations.
+  - `spike-minimalist-mcp-schema-audit`: Draft and measure token budgets for a 3-tool MCP specification (`eidos_context`, `eidos_drift`, `eidos_validate`) ensuring strict schema compactness under 400 tokens.
+  - `spike-stateless-stdio-prototype`: Prototype a thin, zero-daemon stdio JSON-RPC 2.0 handler (`eidos mcp serve`) directly invoking core CLI controller functions with sub-50ms cold start.
 
 == 1. Problem Statement & Operational Observations
 

@@ -105,7 +105,11 @@ def format_decisions_markdown(
             rej_suffix = f" *(Rejected: {', '.join(short_alts)})*" if short_alts else ""
             lines.append(f"  - `{did}` (**{dtitle}**): {short_dtext}{rej_suffix}")
         elif tier == "guardrails":
-            grad = f" [Graduated from `{dec['graduated_from']}`]" if dec.get("graduated_from") and not (compact_prose and dec_idx > 0) else ""
+            grad = (
+                f" [Graduated from `{dec['graduated_from']}`]"
+                if dec.get("graduated_from") and not (compact_prose and dec_idx > 0)
+                else ""
+            )
             d_lim = 100 if compact_prose else 180
             r_lim = 100 if compact_prose else 180
             alt_lim = 80 if compact_prose else 140
@@ -116,7 +120,8 @@ def format_decisions_markdown(
                     lines.append(f"    - *Rationale:* {_clip_text(str(dec['rationale']), r_lim)}")
                 for alt in (dec.get("rejected_alternatives") or [])[:max_alts]:
                     if isinstance(alt, dict) and alt.get("option"):
-                        reason = _clip_text(str(alt.get("reason_rejected", "")), alt_lim)
+                        raw_r = str(alt.get("reason") or alt.get("reason_rejected") or "")
+                        reason = _clip_text(raw_r, alt_lim)
                         lines.append(f"    - *Rejected Alternative:* **{alt['option']}** — {reason}")
         else:
             grad = f" [Graduated from `{dec['graduated_from']}`]" if dec.get("graduated_from") else ""
@@ -127,7 +132,7 @@ def format_decisions_markdown(
                 lines.append(f"    - *Rationale:* {r_out}")
             for alt in dec.get("rejected_alternatives") or []:
                 if isinstance(alt, dict) and alt.get("option"):
-                    raw_reason = str(alt.get("reason_rejected", ""))
+                    raw_reason = str(alt.get("reason") or alt.get("reason_rejected") or "")
                     reason = _clip_text(raw_reason, 100) if compact_prose else raw_reason
                     lines.append(f"    - *Rejected Alternative:* **{alt['option']}** — {reason}")
     return lines
@@ -199,19 +204,14 @@ class ArchitecturalContextSlice:
                 lines.append(f"- **Owning Container:** `{parent_cnt}` | **Source Path:** `{pkg}`")
                 if comp.get("file_path"):
                     lines.append(f"- **Specification:** `{comp['file_path']}`")
+                if self.tier == "deep" and comp.get("status"):
+                    lines.append(f"- **Lifecycle Status:** `{comp['status']}`")
                 if comp.get("responsibility"):
                     resp_txt = str(comp["responsibility"])
                     if compact_prose:
                         resp_txt = _clip_text(resp_txt.splitlines()[0], 120)
                     lines.append(f"- **Responsibility:** {resp_txt}")
                 if self.tier in ("guardrails", "deep"):
-                    ifaces = comp.get("interfaces", {})
-                    if isinstance(ifaces, dict) and ifaces.get("provides"):
-                        lines.append("- **In-Process APIs (`interfaces.provides`):**")
-                        for p in ifaces["provides"]:
-                            sig = p.get("signature", "")
-                            desc = f": {p.get('description', '')}" if p.get("description") else ""
-                            lines.append(f"  - `{sig}`{desc}")
                     invs = comp.get("invariants", [])
                     if invs:
                         lines.append("- **Component Invariants (`INV-*`):**")
@@ -220,11 +220,6 @@ class ArchitecturalContextSlice:
                             if compact_prose:
                                 irule = _clip_text(irule, 120)
                             lines.append(f"  - `{inv.get('id')}`: {irule}")
-                if self.tier == "deep":
-                    qas = comp.get("quality_attributes", {})
-                    if qas:
-                        qa_str = ", ".join(f"{k}: {v}" for k, v in qas.items())
-                        lines.append(f"- **Quality Attributes:** {qa_str}")
             else:
                 lines.append(f"### `{cid}` ({title})")
                 lines.append(f"- **Container:** `{ctype}` | **Runtime:** `{runtime}` | **Source Path:** `{pkg}`")
@@ -530,7 +525,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
         for base_key in base_keys:
             if comp.get(base_key):
                 val = comp[base_key]
-                if base_key == "responsibility" and (self._compact_prose or (self._compact_decisions and index_in_slice > 0)):
+                if base_key == "responsibility" and (
+                    self._compact_prose or (self._compact_decisions and index_in_slice > 0)
+                ):
                     out[base_key] = self._compact_summary(str(val), 120)
                 else:
                     out[base_key] = val
@@ -540,8 +537,6 @@ class TieredContextSlice(ArchitecturalContextSlice):
         if self.tier in ("guardrails", "deep") and not compact_comp and not (is_secondary and len(self.components) > 3):
             if comp.get("contracts"):
                 out["contracts"] = comp["contracts"]
-            if comp.get("interfaces"):
-                out["interfaces"] = comp["interfaces"]
             if comp.get("invariants"):
                 out["invariants"] = [
                     {
@@ -557,8 +552,6 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 ]
 
         if self.tier == "deep" and not is_secondary:
-            if comp.get("quality_attributes"):
-                out["quality_attributes"] = comp["quality_attributes"]
             modules = comp.get("components", [])
             if modules:
                 out["components"] = [
@@ -713,9 +706,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             if e.get("id")
         }
         self.matched_reasons = {
-            k: v
-            for k, v in self.matched_reasons.items()
-            if k in retained_ids or k.startswith(("DOM-", "DS-"))
+            k: v for k, v in self.matched_reasons.items() if k in retained_ids or k.startswith(("DOM-", "DS-"))
         }
 
     def _state_signature(self, budget: int) -> tuple[Any, ...]:
@@ -1121,11 +1112,7 @@ def build_tiered_context_slice(
 
     has_explicit_query = bool(clean_files or (component and component.strip()) or (task and task.strip()))
     any_matched = bool(
-        matched_components
-        or matched_capabilities
-        or matched_contracts
-        or matched_invariants
-        or matched_policies
+        matched_components or matched_capabilities or matched_contracts or matched_invariants or matched_policies
     )
 
     # 4. Full catalog overview ONLY when no query filters were provided at all.
@@ -1196,7 +1183,7 @@ def build_tiered_context_slice(
 
         for cid in primary_cids:
             c_entry = matched_components.get(cid) or {}
-            for inline_c in (c_entry.get("components") or []):
+            for inline_c in c_entry.get("components") or []:
                 if not isinstance(inline_c, dict) or not inline_c.get("id"):
                     continue
                 raw_sp = inline_c.get("source_path")
@@ -1212,7 +1199,7 @@ def build_tiered_context_slice(
         candidate_comp_targets: list[str] = list(primary_cids)
         for cid in primary_cids:
             c_entry = matched_components.get(cid) or {}
-            for inline_c in (c_entry.get("components") or []):
+            for inline_c in c_entry.get("components") or []:
                 if isinstance(inline_c, dict) and inline_c.get("id"):
                     ic_id = str(inline_c["id"])
                     if ic_id not in candidate_comp_targets:
@@ -1236,9 +1223,7 @@ def build_tiered_context_slice(
             matched_capabilities.setdefault(row["id"], cap_data)
             direct_edge_cap_ids.add(row["id"])
 
-    domains = {
-        c.get("domain") for c in [matched_components[cid] for cid in primary_cids]
-    }
+    domains = {c.get("domain") for c in [matched_components[cid] for cid in primary_cids]}
     domains.discard("")
     domains.discard(None)
     if domains:
@@ -1249,7 +1234,7 @@ def build_tiered_context_slice(
         )
         all_matched_comp_ids = set(matched_components.keys())
         for c_entry in matched_components.values():
-            for inline_c in (c_entry.get("components") or []):
+            for inline_c in c_entry.get("components") or []:
                 if isinstance(inline_c, dict) and inline_c.get("id"):
                     all_matched_comp_ids.add(str(inline_c["id"]))
         for row in cursor.fetchall():
@@ -1443,9 +1428,7 @@ def build_tiered_context_slice(
             for comp_item in src.get("components") or []:
                 if isinstance(comp_item, dict):
                     raw_invs.extend(comp_item.get("invariants") or [])
-            inv_lists.append(
-                [inv.get("id") for inv in raw_invs if isinstance(inv, dict) and inv.get("id")]
-            )
+            inv_lists.append([inv.get("id") for inv in raw_invs if isinstance(inv, dict) and inv.get("id")])
         max_len = max((len(lst) for lst in inv_lists), default=0)
         for idx in range(max_len):
             for lst in inv_lists:

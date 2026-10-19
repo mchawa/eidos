@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-092
 title: "Simplify Eidos CLI Surface and Standardize Pure Blueprint Specification Scaffolding"
 status: applied

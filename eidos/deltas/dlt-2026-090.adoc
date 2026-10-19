@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-090
 title: "Simplify SpecDelta Schema & Engine, AST Fallback Indexer, Context Slicer, and Delta Catalog"
 status: applied

@@ -1,40 +1,12 @@
 ---
 type: product/system
-schema: schemas/v1/product/system.schema.yaml
 id: SYS-EIDOS-001
 title: "Eidos: Agent-Agnostic Git-Native Development Ecosystem"
+status: active
 archetypes:
   - framework
   - cli_tool
   - library
-
-business_identity:
-  vision: "Provide an open, GitOps-driven AI development ecosystem where product definition, architectural invariants, and autonomous coding agents operate as a unified, living state machine."
-  target_users:
-    - "Product Managers & Technical Founders"
-    - "Software Engineers & Architects"
-    - "Autonomous AI Coding Agents"
-  value_proposition: "Eliminates context drift, stale documentation, and hallucinated code by anchoring product deltas, invariants, and multi-agent execution directly in Git."
-
-technical_profile:
-  primary_languages:
-    - "YAML / AsciiDoc (Spec Layer)"
-    - "Python 3.11+ (CLI & Governance Engine)"
-    - "TypeScript / React 19 (Portal SPA)"
-  runtimes_and_frameworks:
-    - "Python 3.11+ (Typer, Rich, jsonschema, ast-grep-py, SQLite FTS5)"
-    - "Vite / React 19 (Living Web Portal)"
-  deployment_targets:
-    - "Local Workstation (Developer CLI)"
-    - "CI/CD Pipeline Runners"
-  vcs_platforms:
-    - "Git (Local & Remote Repositories)"
-  agent_support:
-    - "Antigravity (agy)"
-    - "Claude Code"
-    - "Cursor / Cline / OpenCode / Aider"
-    - "OpenAI Codex"
-    - "GitHub Copilot"
 
 decisions:
   - id: DEC-SYS-ZERO-AI-SUBSTRATE
@@ -50,6 +22,20 @@ decisions:
 :toc: left
 :icons: font
 :sectnums:
+
+== Business Identity & Vision
+
+* **Vision**: Provide an open, GitOps-driven AI development ecosystem where product definition, architectural invariants, and autonomous coding agents operate as a unified, living state machine.
+* **Value Proposition**: Eliminates context drift, stale documentation, and hallucinated code by anchoring product deltas, invariants, and multi-agent execution directly in Git.
+* **Target Users**: Product Managers & Technical Founders, Software Engineers & Architects, and Autonomous AI Coding Agents.
+
+== Technical Profile
+
+* **Primary Languages**: YAML / AsciiDoc (Spec Layer), Python 3.11+ (CLI & Governance Engine), TypeScript / React 19 (Portal SPA)
+* **Runtimes & Frameworks**: Python 3.11+ (Typer, Rich, jsonschema, ast-grep-py, SQLite FTS5), Vite / React 19 (Living Web Portal)
+* **Deployment Targets**: Local Workstation (Developer CLI), CI/CD Pipeline Runners
+* **VCS Platforms**: Git (Local & Remote Repositories)
+* **Agent Support**: Antigravity (`agy`), Claude Code, Cursor / Cline / OpenCode / Aider, OpenAI Codex, GitHub Copilot
 
 == Executive Summary
 

@@ -1,6 +1,5 @@
 ---
 type: delta/mutation
-schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-071
 title: Isolated project Plugin Install Target, Accurate Fallback Version Path Reporting, AIDER Created-Files Typing, and Retired reconcile.md Command Cleanup
 status: applied

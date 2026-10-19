@@ -1,0 +1,5 @@
+= Architecture: {heading}
+:toc: left
+
+== System Context & Topology
+Describe the C4 system context, container topology, solution strategy, cross-cutting concepts, and deployment view.
