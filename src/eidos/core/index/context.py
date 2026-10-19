@@ -13,6 +13,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+import orjson
+
 from eidos.core.index.query import TASK_SLICE_ENTITY_TYPES
 
 STOP_WORDS = {
@@ -684,6 +686,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
     _STRUCTURAL_STRIP_TABLE = str.maketrans("", "", "{}[]:,\"'`|")
 
     def to_json(self, indent: int = 2) -> str:
+        if indent == 2:
+            return orjson.dumps(self.to_dict(), option=orjson.OPT_INDENT_2).decode("utf-8")
         return json.dumps(self.to_dict(), indent=indent)
 
     @classmethod
@@ -728,26 +732,88 @@ class TieredContextSlice(ArchitecturalContextSlice):
         self.__dict__.pop("_md_char_lb", None)
         self.__dict__.pop("_md_tok_lb", None)
         self.__dict__.pop("_json_char_lb", None)
+        self.__dict__.pop("_md_ok", None)
 
-    @staticmethod
-    def _item_char_upper_bound(item: dict[str, Any]) -> int:
-        return len(json.dumps(item)) + 160
+    def _item_md_and_json_upper_bounds(
+        self, lst: list[dict[str, Any]], item: dict[str, Any], idx: int
+    ) -> tuple[int, int]:
+        cid = str(item.get("id", "") or "")
+        id_len = len(cid)
+        if lst is self.invariants:
+            raw_rule = str(item.get("rule", "") or "")
+            rule_len = min(len(raw_rule), 120) if self._compact_prose else len(raw_rule)
+            tb = str(item.get("test_binding") or "")
+            tb_len = len(tb) if tb and tb != "None" else 0
+            pe_len = 0 if self._compact_prose else len(str(item.get("parent_entity") or ""))
+            md_ub = id_len + rule_len + (tb_len + 20 if tb_len else 0) + 32
+            json_ub = id_len + rule_len + tb_len + pe_len + 135
+            return md_ub, json_ub
+        if lst is self.capabilities:
+            title_len = len(str(item.get("title", "") or cid))
+            dom_len = len(str(item.get("domain", "") or ""))
+            if self._compact_prose or self.tier == "anchor":
+                return id_len + title_len + dom_len + 34, id_len + title_len + dom_len + 115
+            invs_len = sum(
+                len(str(i.get("id", ""))) + len(str(i.get("rule", ""))) + 40
+                for i in (item.get("invariants") or [])
+                if isinstance(i, dict)
+            )
+            return id_len + title_len + dom_len + invs_len + 75, id_len + title_len + dom_len + invs_len + 150
+        if lst is self.policies:
+            title_len = len(str(item.get("title", "") or cid))
+            sev_len = len(str(item.get("severity", "") or ""))
+            return id_len + title_len + sev_len + 24, id_len + title_len + sev_len + 95
+        if lst is self.contracts:
+            title_len = len(str(item.get("title", "") or cid))
+            prot_len = len(str(item.get("protocol", "") or "standard"))
+            cnt_len = len(str(item.get("container", "") or "N/A"))
+            path_len = len(str(item.get("path", "") or ""))
+            return id_len + title_len + prot_len + cnt_len + path_len + 60, (
+                id_len + title_len + prot_len + cnt_len + path_len + 125
+            )
+        if self._compact_decisions and (idx > 0 or (idx < 0 and len(lst) >= 1)):
+            title_len = len(str(item.get("title", "") or cid))
+            sp_len = len(str(item.get("source_path", "") or ""))
+            fp_len = len(str(item.get("file_path", "") or ""))
+            dom_len = len(str(item.get("domain", "") or ""))
+            resp_len = min(len(str(item.get("responsibility", "") or "")), 120)
+            base_ub = id_len + title_len + sp_len + fp_len + dom_len + resp_len
+            return base_ub + 140, base_ub + 260
+        proj = self._project_component(item, idx if idx >= 0 else len(lst))
+        comp_ub = len(orjson.dumps(proj, option=orjson.OPT_INDENT_2)) + 64
+        return comp_ub, comp_ub
 
     def _pop_item(self, lst: list[dict[str, Any]], idx: int = -1) -> None:
         item = lst.pop(idx)
-        ub_removed = self._item_char_upper_bound(item)
+        if lst is self.components and (
+            (len(self.components) == 4 and not self._compact_decisions)
+            or (
+                len(self.components) == 3
+                and any(self._is_secondary_dependency(c.get("id", "")) for c in self.components)
+            )
+        ):
+            self._invalidate_budget_cache()
+            return
+        eid = str(item.get("id", "") or "")
+        reason_ub = 0
+        if eid and not eid.startswith(("DOM-", "DS-")):
+            removed_reasons = self.matched_reasons.pop(eid, None)
+            if removed_reasons:
+                reason_ub = len(eid) + sum(len(str(r)) + 12 for r in removed_reasons) + 24
+        md_ub, json_ub = self._item_md_and_json_upper_bounds(lst, item, idx)
+        json_ub += reason_ub
         md_lb = self.__dict__.get("_md_char_lb", 0)
         md_tok_lb = self.__dict__.get("_md_tok_lb", 0)
         json_lb = self.__dict__.get("_json_char_lb", 0)
         sig_tail = self._state_signature(0)[1:]
         if md_lb > 0:
-            self.__dict__["_md_char_lb"] = max(0, md_lb - ub_removed)
+            self.__dict__["_md_char_lb"] = max(0, md_lb - md_ub)
             self.__dict__["_md_lb_sig"] = sig_tail
         if md_tok_lb > 0:
-            self.__dict__["_md_tok_lb"] = max(0, md_tok_lb - (ub_removed // 3 + 1))
+            self.__dict__["_md_tok_lb"] = max(0, md_tok_lb - (md_ub // 3 + 1))
             self.__dict__["_md_lb_sig"] = sig_tail
         if json_lb > 0:
-            self.__dict__["_json_char_lb"] = max(0, json_lb - ub_removed)
+            self.__dict__["_json_char_lb"] = max(0, json_lb - json_ub)
             self.__dict__["_md_lb_sig"] = sig_tail
         self.__dict__.pop("_cached_sig", None)
 
@@ -763,20 +829,30 @@ class TieredContextSlice(ArchitecturalContextSlice):
             self.__dict__["_cached_sig"] = sig
             self.__dict__["_cached_exceeds"] = True
             return True
-        md_text = self.to_markdown()
-        md_len = len(md_text)
-        md_tokens = self._estimate_text_tokens(md_text)
-        self._prune_matched_reasons()
-        self.__dict__["_md_char_lb"] = md_len
-        self.__dict__["_md_tok_lb"] = md_tokens
-        self.__dict__["_md_lb_sig"] = sig[1:]
-        if md_tokens > budget or max(1, md_len // 4) > budget:
-            self.__dict__["_cached_sig"] = sig
-            self.__dict__["_cached_exceeds"] = True
-            return True
+        if not (has_lb_sig and self.__dict__.get("_md_ok")):
+            md_text = self.to_markdown()
+            md_len = len(md_text)
+            self._prune_matched_reasons()
+            self.__dict__["_md_char_lb"] = md_len
+            self.__dict__["_md_lb_sig"] = sig[1:]
+            if max(1, md_len // 4) > budget:
+                self.__dict__["_md_tok_lb"] = md_len // 4
+                self.__dict__["_cached_sig"] = sig
+                self.__dict__["_cached_exceeds"] = True
+                return True
+            md_tokens = self._estimate_text_tokens(md_text)
+            self.__dict__["_md_tok_lb"] = md_tokens
+            if md_tokens > budget:
+                self.__dict__["_cached_sig"] = sig
+                self.__dict__["_cached_exceeds"] = True
+                return True
+            self.__dict__["_md_ok"] = True
+        else:
+            self._prune_matched_reasons()
+            self.__dict__["_md_lb_sig"] = sig[1:]
         d = self.to_dict()
         # Include 24-byte headroom for post-enforcement query_latency_ms and token_estimate float/int formatting
-        json_len = len(json.dumps(d, indent=2)) + 24
+        json_len = len(orjson.dumps(d, option=orjson.OPT_INDENT_2)) + 24
         self.__dict__["_json_char_lb"] = json_len
         exceeds = (json_len // 4) > budget
         self.__dict__["_cached_sig"] = sig
@@ -932,7 +1008,7 @@ def build_tiered_context_slice(
         )
         for row in cursor.fetchall():
             cid = row["id"]
-            data = json.loads(row["data_json"])
+            data = orjson.loads(row["data_json"])
             data["id"] = cid
             data["title"] = row["title"]
             data.setdefault("file_path", row["file_path"])
@@ -950,7 +1026,7 @@ def build_tiered_context_slice(
             )
             for row in cursor.fetchall():
                 cid = row["id"]
-                data = json.loads(row["data_json"])
+                data = orjson.loads(row["data_json"])
                 data["id"] = cid
                 data["title"] = row["title"]
                 data.setdefault("file_path", row["file_path"])
@@ -1052,7 +1128,7 @@ def build_tiered_context_slice(
                     """,
                     (eid, *rel_types),
                 ).fetchall():
-                    m_data = json.loads(row["data_json"])
+                    m_data = orjson.loads(row["data_json"])
                     m_data["id"] = row["id"]
                     m_data["title"] = row["title"]
                     m_data.setdefault("file_path", row["file_path"])
@@ -1076,7 +1152,7 @@ def build_tiered_context_slice(
                 (parent_cap,),
             ).fetchone()
             if row:
-                c_data = json.loads(row["data_json"])
+                c_data = orjson.loads(row["data_json"])
                 c_data["id"] = row["id"]
                 c_data["title"] = row["title"]
                 c_data.setdefault("file_path", row["file_path"])
@@ -1089,7 +1165,7 @@ def build_tiered_context_slice(
                 (parent_pol,),
             ).fetchone()
             if row:
-                p_data = json.loads(row["data_json"])
+                p_data = orjson.loads(row["data_json"])
                 p_data["id"] = row["id"]
                 p_data["title"] = row["title"]
                 p_data.setdefault("file_path", row["file_path"])
@@ -1103,7 +1179,7 @@ def build_tiered_context_slice(
                     (parent_comp,),
                 ).fetchone()
                 if row:
-                    comp_data = json.loads(row["data_json"])
+                    comp_data = orjson.loads(row["data_json"])
                     comp_data["id"] = row["id"]
                     comp_data["title"] = row["title"]
                     comp_data.setdefault("file_path", row["file_path"])
@@ -1121,7 +1197,7 @@ def build_tiered_context_slice(
             "SELECT id, title, type, domain, file_path, data_json FROM entities WHERE type IN ('tech/container', 'tech/component');"
         )
         for row in cursor.fetchall():
-            c_data = json.loads(row["data_json"])
+            c_data = orjson.loads(row["data_json"])
             c_data["id"] = row["id"]
             c_data["title"] = row["title"]
             c_data.setdefault("file_path", row["file_path"])
@@ -1146,7 +1222,7 @@ def build_tiered_context_slice(
                 tuple(missing_dep_ids),
             )
             for row in cursor.fetchall():
-                c_data = json.loads(row["data_json"])
+                c_data = orjson.loads(row["data_json"])
                 c_data["id"] = row["id"]
                 c_data["title"] = row["title"]
                 c_data.setdefault("file_path", row["file_path"])
@@ -1170,7 +1246,7 @@ def build_tiered_context_slice(
             tuple(primary_cids + primary_cids),
         )
         for row in cursor.fetchall():
-            ctr_data = json.loads(row["data_json"])
+            ctr_data = orjson.loads(row["data_json"])
             ctr_data["id"] = row["id"]
             ctr_data["title"] = row["title"]
             ctr_data.setdefault("file_path", row["file_path"])
@@ -1216,7 +1292,7 @@ def build_tiered_context_slice(
             tuple(candidate_comp_targets + candidate_comp_targets),
         )
         for row in cursor.fetchall():
-            cap_data = json.loads(row["data_json"])
+            cap_data = orjson.loads(row["data_json"])
             cap_data["id"] = row["id"]
             cap_data["title"] = row["title"]
             cap_data.setdefault("file_path", row["file_path"])
@@ -1238,7 +1314,7 @@ def build_tiered_context_slice(
                 if isinstance(inline_c, dict) and inline_c.get("id"):
                     all_matched_comp_ids.add(str(inline_c["id"]))
         for row in cursor.fetchall():
-            cap_data = json.loads(row["data_json"])
+            cap_data = orjson.loads(row["data_json"])
             cap_data["id"] = row["id"]
             cap_data["title"] = row["title"]
             cap_data.setdefault("file_path", row["file_path"])
@@ -1267,7 +1343,7 @@ def build_tiered_context_slice(
             tuple(primary_cids),
         )
         for row in cursor.fetchall():
-            inv_data = json.loads(row["data_json"])
+            inv_data = orjson.loads(row["data_json"])
             inv_data["id"] = row["id"]
             matched_invariants.setdefault(row["id"], inv_data)
             primary_comp_inv_ids.add(row["id"])
@@ -1286,7 +1362,7 @@ def build_tiered_context_slice(
             tuple(cap_ids),
         )
         for row in cursor.fetchall():
-            inv_data = json.loads(row["data_json"])
+            inv_data = orjson.loads(row["data_json"])
             inv_data["id"] = row["id"]
             matched_invariants.setdefault(row["id"], inv_data)
 
@@ -1300,7 +1376,7 @@ def build_tiered_context_slice(
             tuple(cap_ids),
         )
         for row in cursor.fetchall():
-            pol_data = json.loads(row["data_json"])
+            pol_data = orjson.loads(row["data_json"])
             pol_data["id"] = row["id"]
             pol_data["title"] = row["title"]
             pol_data.setdefault("file_path", row["file_path"])
@@ -1311,7 +1387,7 @@ def build_tiered_context_slice(
         for row in cursor.execute(
             "SELECT id, title, type, domain, file_path, data_json FROM entities WHERE type = 'product/policy' ORDER BY id LIMIT 2;"
         ).fetchall():
-            p_data = json.loads(row["data_json"])
+            p_data = orjson.loads(row["data_json"])
             p_data["id"] = row["id"]
             p_data["title"] = row["title"]
             p_data.setdefault("file_path", row["file_path"])
@@ -1329,7 +1405,7 @@ def build_tiered_context_slice(
             (pid,),
         )
         for row in cursor.fetchall():
-            inv_data = json.loads(row["data_json"])
+            inv_data = orjson.loads(row["data_json"])
             inv_data["id"] = row["id"]
             matched_invariants.setdefault(row["id"], inv_data)
 

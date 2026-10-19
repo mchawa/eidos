@@ -7,7 +7,6 @@ attribution, AST symbol persistence, and incremental sync passes.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import re
 import sqlite3
@@ -15,6 +14,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 from eidos.core.index.ast_indexer import AstGrepIndexer, get_ast_indexer
 from eidos.core.index.storage import get_cached_spec_document
@@ -59,6 +60,10 @@ _NON_AST_SYMBOL_KINDS = frozenset(
 )
 
 
+def _json_dumps(obj: Any) -> str:
+    return orjson.dumps(obj, default=str, option=orjson.OPT_NON_STR_KEYS).decode("utf-8")
+
+
 def _normalize_rel_path(path: str) -> str:
     norm = path.strip().replace("\\", "/")
     while norm.startswith("./"):
@@ -98,7 +103,7 @@ class _CodeOwnershipResolver:
         self._declared_components: dict[tuple[str, str], str] = {}
         for row in conn.execute("SELECT id, data_json FROM entities WHERE type = 'tech/container' ORDER BY id;"):
             try:
-                fm = json.loads(row["data_json"])
+                fm = orjson.loads(row["data_json"])
             except (TypeError, ValueError):
                 continue
             for comp in fm.get("components") or []:
@@ -347,7 +352,7 @@ def restore_code_mappings(conn: sqlite3.Connection, entity_id: str) -> None:
     patterns: list[str] = []
     if ent_row and ent_row["data_json"]:
         try:
-            fm = json.loads(ent_row["data_json"])
+            fm = orjson.loads(ent_row["data_json"])
             if isinstance(fm, dict):
                 patterns = extract_entity_paths(fm)
         except (TypeError, ValueError):
@@ -392,6 +397,21 @@ def restore_code_mappings(conn: sqlite3.Connection, entity_id: str) -> None:
     )
 
 
+_SOURCE_AST_MEM_CACHE: dict[tuple[type[Any], str, str], tuple[list[Any], list[str]]] = {}
+_TEST_BINDING_MEM_CACHE: dict[tuple[type[Any], str, str], list[Any]] = {}
+
+
+def _can_use_ast_mem_cache(ast_idx: Any) -> bool:
+    cls = type(ast_idx)
+    inst_dict = getattr(ast_idx, "__dict__", {})
+    return (
+        cls.__module__.startswith("eidos.")
+        and "extract_symbols" not in inst_dict
+        and "extract_imports" not in inst_dict
+        and "extract_test_bindings" not in inst_dict
+    )
+
+
 def index_source_file(
     conn: sqlite3.Connection,
     ast_idx: Any,
@@ -400,6 +420,7 @@ def index_source_file(
     mtime: float,
     sha: str,
     resolver: _CodeOwnershipResolver,
+    raw_bytes: bytes | None = None,
 ) -> None:
     """Index one non-test source file for all its resolved owners (one AST parse)."""
     owners = resolver.owners(rel_path)
@@ -419,12 +440,23 @@ def index_source_file(
             (rel_path, entity_id),
         )
     if owners:
-        try:
-            content = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            content = None
-        symbols = ast_idx.extract_symbols(path, content)
-        imports = ast_idx.extract_imports(path, content) if hasattr(ast_idx, "extract_imports") else []
+        use_cache = bool(sha) and _can_use_ast_mem_cache(ast_idx)
+        cache_key = (type(ast_idx), str(path.resolve()), sha) if use_cache else None
+        cached = _SOURCE_AST_MEM_CACHE.get(cache_key) if cache_key is not None else None
+        if cached is not None:
+            symbols, imports = cached
+        else:
+            if raw_bytes is not None:
+                content: str | None = raw_bytes.decode("utf-8", errors="replace")
+            else:
+                try:
+                    content = path.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    content = None
+            symbols = ast_idx.extract_symbols(path, content)
+            imports = ast_idx.extract_imports(path, content) if hasattr(ast_idx, "extract_imports") else []
+            if cache_key is not None:
+                _SOURCE_AST_MEM_CACHE[cache_key] = (symbols, imports)
     else:
         symbols = []
         imports = []
@@ -485,14 +517,16 @@ def reconcile_code_ownership(
             if not stored or stored == {entity_id for entity_id, _ in owners}:
                 continue
         stat = p_file.stat()
+        raw_bytes = p_file.read_bytes()
         index_source_file(
             conn,
             ast_idx,
             p_file,
             rel_code,
             stat.st_mtime,
-            hashlib.sha256(p_file.read_bytes()).hexdigest(),
+            hashlib.sha256(raw_bytes).hexdigest(),
             resolver,
+            raw_bytes=raw_bytes,
         )
 
 
@@ -805,7 +839,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
         doc_id = row["id"]
         doc_type = row["type"]
         try:
-            fm = json.loads(row["data_json"])
+            fm = orjson.loads(row["data_json"])
         except (TypeError, ValueError):
             continue
         if not isinstance(fm, dict):
@@ -1127,7 +1161,14 @@ def _derive_ast_import_edges(
     )
 
 
-def index_test_bindings(conn: sqlite3.Connection, ast_idx: Any, test_path: Path, rel_test: str) -> None:
+def index_test_bindings(
+    conn: sqlite3.Connection,
+    ast_idx: Any,
+    test_path: Path,
+    rel_test: str,
+    sha: str = "",
+    raw_bytes: bytes | None = None,
+) -> None:
     """Persist 'file::func' -> INV-* test-binding edges for a single test file (DLT-2026-029)."""
     prefix_like = rel_test.replace("%", "\\%").replace("_", "\\_") + "::%"
     conn.execute(
@@ -1142,7 +1183,19 @@ def index_test_bindings(conn: sqlite3.Connection, ast_idx: Any, test_path: Path,
         "DELETE FROM symbol_mappings WHERE symbol = ? AND kind = 'test_binding';",
         (rel_test,),
     )
-    for binding in ast_idx.extract_test_bindings(test_path):
+    use_cache = bool(sha) and _can_use_ast_mem_cache(ast_idx)
+    cache_key = (type(ast_idx), str(test_path.resolve()), sha) if use_cache else None
+    bindings = _TEST_BINDING_MEM_CACHE.get(cache_key) if cache_key is not None else None
+    if bindings is None:
+        content = raw_bytes.decode("utf-8", errors="replace") if raw_bytes is not None else None
+        bindings = (
+            ast_idx.extract_test_bindings(test_path, content)
+            if content is not None
+            else ast_idx.extract_test_bindings(test_path)
+        )
+        if cache_key is not None:
+            _TEST_BINDING_MEM_CACHE[cache_key] = bindings
+    for binding in bindings:
         identifier = f"{rel_test}::{binding.test_name}"
         for inv_id in binding.invariants:
             conn.execute(
@@ -1159,13 +1212,13 @@ def index_test_bindings(conn: sqlite3.Connection, ast_idx: Any, test_path: Path,
             )
             inv_row = conn.execute("SELECT data_json FROM entities WHERE id = ?", (inv_id,)).fetchone()
             if inv_row:
-                idata = json.loads(inv_row["data_json"])
+                idata = orjson.loads(inv_row["data_json"])
                 idata["has_test_coverage"] = True
                 if identifier not in idata.get("matching_tests", []):
                     idata.setdefault("matching_tests", []).append(identifier)
                 conn.execute(
                     "UPDATE entities SET data_json = ? WHERE id = ?",
-                    (json.dumps(idata), inv_id),
+                    (_json_dumps(idata), inv_id),
                 )
 
 
@@ -1240,7 +1293,7 @@ def _reconcile_invariant_coverage(
     for row in inv_rows:
         iid = row["id"]
         try:
-            inv_data = json.loads(row["data_json"])
+            inv_data = orjson.loads(row["data_json"])
         except (TypeError, ValueError):
             continue
         if not isinstance(inv_data, dict):
@@ -1314,7 +1367,7 @@ def _reconcile_invariant_coverage(
             inv_data["matching_tests"] = matching
             conn.execute(
                 "UPDATE entities SET data_json = ? WHERE id = ?;",
-                (json.dumps(inv_data), iid),
+                (_json_dumps(inv_data), iid),
             )
 
 
@@ -1520,6 +1573,7 @@ def sync_index(
                             (new_doc_id, rel_p, rel_p),
                         )
 
+        fresh_base_symbols: dict[str, str] = {}
         for p, rel_p, mtime, sha, doc in parsed_specs:
             doc_id = doc.doc_id or p.stem
             fm = doc.frontmatter or {}
@@ -1573,7 +1627,7 @@ def sync_index(
                     runtime,
                     container_type,
                     rel_p,
-                    json.dumps(fm),
+                    _json_dumps(fm),
                 ),
             )
 
@@ -1636,7 +1690,7 @@ def sync_index(
                         (id, type, title, status, domain, source_path, runtime, container_type, file_path, data_json)
                         VALUES (?, 'invariant', ?, 'active', ?, '', '', '', ?, ?);
                         """,
-                        (iid, rule, domain, rel_p, json.dumps(inv_data)),
+                        (iid, rule, domain, rel_p, _json_dumps(inv_data)),
                     )
 
                     test_str = str(test or "")
@@ -1728,6 +1782,7 @@ def sync_index(
             decompounded = compound_identifier_subtokens(f"{title or ''} {jtbd_or_rule or ''} {body_clean} {symbols}")
             if decompounded:
                 symbols = f"{symbols} {decompounded}".strip()
+            fresh_base_symbols[doc_id] = symbols
 
             conn.execute(
                 """
@@ -1766,7 +1821,8 @@ def sync_index(
                 rel_p = str(p).replace("\\", "/")
 
             mtime = p.stat().st_mtime
-            sha = hashlib.sha256(p.read_bytes()).hexdigest()
+            raw_bytes = p.read_bytes()
+            sha = hashlib.sha256(raw_bytes).hexdigest()
 
             is_test = is_test_code_path(rel_p)
 
@@ -1777,7 +1833,7 @@ def sync_index(
                 stats.indexed_new += 1
 
             if is_test:
-                index_test_bindings(conn, ast_idx, p, rel_p)
+                index_test_bindings(conn, ast_idx, p, rel_p, sha=sha, raw_bytes=raw_bytes)
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
@@ -1786,7 +1842,7 @@ def sync_index(
                     (rel_p, mtime, sha, time.time()),
                 )
             else:
-                index_source_file(conn, ast_idx, p, rel_p, mtime, sha, resolver)
+                index_source_file(conn, ast_idx, p, rel_p, mtime, sha, resolver, raw_bytes=raw_bytes)
                 processed_code.add(rel_p)
 
         if force or spec_updates or specs_deleted:
@@ -1876,7 +1932,12 @@ def sync_index(
                         "SELECT id FROM entities WHERE type IN ('tech/container', 'tech/component');"
                     ).fetchall():
                         fts_target_ids.add(cid)
-            _project_ast_code_symbols_into_fts(conn, target_entity_ids=fts_target_ids)
+            _FRESH_FTS_BASE_SYMBOLS.clear()
+            _FRESH_FTS_BASE_SYMBOLS.update(fresh_base_symbols)
+            try:
+                _project_ast_code_symbols_into_fts(conn, target_entity_ids=fts_target_ids)
+            finally:
+                _FRESH_FTS_BASE_SYMBOLS.clear()
 
         if spec_updates:
             conn.execute(
@@ -1896,7 +1957,7 @@ def sync_index(
                 "SELECT data_json, id FROM entities WHERE type = 'invariant';"
             ).fetchall():
                 try:
-                    idata = json.loads(inv_json or "{}")
+                    idata = orjson.loads(inv_json or "{}")
                 except (TypeError, ValueError):
                     idata = {}
                 tb_str = str(idata.get("test_binding") or "").strip() if isinstance(idata, dict) else ""
@@ -1951,7 +2012,8 @@ def sync_index(
                 or force
                 or needs_unindexed_test_scan
             ):
-                t_sha = hashlib.sha256(tp.read_bytes()).hexdigest()
+                t_raw_bytes = tp.read_bytes()
+                t_sha = hashlib.sha256(t_raw_bytes).hexdigest()
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
@@ -1959,7 +2021,7 @@ def sync_index(
                     """,
                     (rel_t, stat.st_mtime, t_sha, time.time()),
                 )
-                index_test_bindings(conn, ast_idx, tp, rel_t)
+                index_test_bindings(conn, ast_idx, tp, rel_t, sha=t_sha, raw_bytes=t_raw_bytes)
 
         conn.execute(
             """
@@ -2017,6 +2079,9 @@ def sync_index(
     stats.duration_ms = (time.perf_counter() - t0) * 1000
     index._last_synced_check = time.monotonic()
     return stats
+
+
+_FRESH_FTS_BASE_SYMBOLS: dict[str, str] = {}
 
 
 def _project_ast_code_symbols_into_fts(
@@ -2079,27 +2144,32 @@ def _project_ast_code_symbols_into_fts(
     for srow in spec_rows:
         rowid = srow[0]
         entity_id = srow[1]
-        title = str(srow[2] or "")
-        jtbd_or_rule = str(srow[3] or "")
-        body_clean = str(srow[4] or "")
         cur_symbols = str(srow[5] or "")
-        try:
-            fm = json.loads(srow[7] or "{}")
-        except (TypeError, ValueError):
-            fm = {}
-        if not isinstance(fm, dict):
-            fm = {}
+        if entity_id in _FRESH_FTS_BASE_SYMBOLS:
+            base_symbols = _FRESH_FTS_BASE_SYMBOLS[entity_id]
+        else:
+            title = str(srow[2] or "")
+            jtbd_or_rule = str(srow[3] or "")
+            body_clean = str(srow[4] or "")
+            try:
+                fm = orjson.loads(srow[7] or "{}")
+            except (TypeError, ValueError):
+                fm = {}
+            if not isinstance(fm, dict):
+                fm = {}
 
-        symbol_parts: list[str] = [
-            str(m.get("title", "")) for m in (fm.get("components", []) or []) if isinstance(m, dict) and m.get("title")
-        ]
-        symbol_parts.extend(
-            str(m.get("id", "")) for m in (fm.get("components", []) or []) if isinstance(m, dict) and m.get("id")
-        )
-        base_symbols = " ".join(symbol_parts)
-        decompounded = compound_identifier_subtokens(f"{title} {jtbd_or_rule} {body_clean} {base_symbols}")
-        if decompounded:
-            base_symbols = f"{base_symbols} {decompounded}".strip()
+            symbol_parts: list[str] = [
+                str(m.get("title", ""))
+                for m in (fm.get("components", []) or [])
+                if isinstance(m, dict) and m.get("title")
+            ]
+            symbol_parts.extend(
+                str(m.get("id", "")) for m in (fm.get("components", []) or []) if isinstance(m, dict) and m.get("id")
+            )
+            base_symbols = " ".join(symbol_parts)
+            decompounded = compound_identifier_subtokens(f"{title} {jtbd_or_rule} {body_clean} {base_symbols}")
+            if decompounded:
+                base_symbols = f"{base_symbols} {decompounded}".strip()
 
         existing_tokens = set(base_symbols.split())
         new_parts: list[str] = []

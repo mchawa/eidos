@@ -168,6 +168,12 @@ class TestFunctionBinding:
         }
 
 
+_PY_IMPORT_RE = re.compile(
+    r"^[ \t]*(?:import[ \t]+([^\r\n#;]+)|from[ \t]+(\.*[A-Za-z0-9_.]*)[ \t]+import[ \t]+(?:\(([^)]*)\)|([^\r\n#;]+)))",
+    re.MULTILINE,
+)
+
+
 class BaseAstIndexer(ABC):
     """Abstract base class for polyglot AST indexing and symbol extraction."""
 
@@ -206,40 +212,28 @@ class BaseAstIndexer(ABC):
                 imports.append(clean)
 
         if suffix == ".py":
-            try:
-                tree = ast.parse(content, filename=str(p))
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.Import):
-                        for alias in node.names:
-                            if alias.name:
-                                _add(alias.name)
-                    elif isinstance(node, ast.ImportFrom):
-                        prefix = "." * (node.level or 0)
-                        mod = f"{prefix}{node.module or ''}"
-                        if mod:
-                            _add(mod)
-                        for alias in node.names:
-                            if alias.name and alias.name != "*":
-                                if node.module:
-                                    _add(f"{prefix}{node.module}.{alias.name}")
-                                elif prefix:
-                                    _add(f"{prefix}{alias.name}")
-                return imports
-            except (SyntaxError, ValueError):
-                for m in re.finditer(r"^\s*import\s+([A-Za-z0-9_.,\s]+)", content, re.MULTILINE):
-                    for part in m.group(1).split(","):
+            for m in _PY_IMPORT_RE.finditer(content):
+                imp_clause, from_mod, paren_names, line_names = m.groups()
+                if imp_clause is not None:
+                    for part in imp_clause.split(","):
                         tok = part.strip().split()[0] if part.strip() else ""
-                        if tok:
+                        if tok and all(seg.isidentifier() for seg in tok.split(".")):
                             _add(tok)
-                for m in re.finditer(r"^\s*from\s+(\.*[A-Za-z0-9_.]*)\s+import\s+([^\r\n#]+)", content, re.MULTILINE):
-                    mod = m.group(1).strip()
+                else:
+                    mod = from_mod.strip()
+                    stripped_mod = mod.lstrip(".")
+                    if stripped_mod and not all(seg.isidentifier() for seg in stripped_mod.split(".")):
+                        continue
                     if mod:
                         _add(mod)
-                    for part in m.group(2).strip("() ").split(","):
-                        tok = part.strip().split()[0] if part.strip() else ""
-                        if tok and tok != "*":
-                            _add(f"{mod}.{tok}" if not mod.endswith(".") else f"{mod}{tok}")
-                return imports
+                    raw_names = paren_names if paren_names is not None else (line_names or "")
+                    for raw_line in raw_names.splitlines():
+                        clean_line = raw_line.split("#", 1)[0]
+                        for part in clean_line.split(","):
+                            tok = part.strip().split()[0] if part.strip() else ""
+                            if tok and tok != "*" and tok.isidentifier():
+                                _add(f"{mod}.{tok}" if not mod.endswith(".") else f"{mod}{tok}")
+            return imports
 
         if suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"):
             for m in re.finditer(

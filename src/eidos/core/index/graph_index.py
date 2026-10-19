@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import atexit
 import contextlib
-import json
 import sqlite3
 import time
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 from eidos.core.index.ast_indexer import get_ast_indexer, is_ast_grep_available
 from eidos.core.index.context import (
@@ -314,7 +315,7 @@ class ArchitecturalIndex:
         ).fetchall()
         components = []
         for r in rows:
-            data = json.loads(r["data_json"])
+            data = orjson.loads(r["data_json"])
             data["id"] = r["id"]
             data["file_path"] = r["file_path"]
             components.append(data)
@@ -341,7 +342,7 @@ class ArchitecturalIndex:
         rows = conn.execute(query, params).fetchall()
         entities = []
         for r in rows:
-            data = json.loads(r["data_json"])
+            data = orjson.loads(r["data_json"])
             data["id"] = r["id"]
             data["title"] = r["title"]
             data["type"] = r["type"]

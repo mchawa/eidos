@@ -9,10 +9,11 @@ from __future__ import annotations
 import contextlib
 import copy
 import hashlib
-import json
 import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import orjson
 
 if TYPE_CHECKING:
     from eidos.core.spec.models import SpecDocument
@@ -223,7 +224,7 @@ def _reconstruct_spec_doc_from_json(file_path: Path, raw_doc_json: str) -> SpecD
     from eidos.core.spec.models import SpecDocument as _SpecDocument
 
     with contextlib.suppress(ValueError, TypeError, KeyError):
-        doc_data = json.loads(raw_doc_json)
+        doc_data = orjson.loads(raw_doc_json)
         if not isinstance(doc_data, dict):
             return None
         parse_errs = list(doc_data.get("parse_errors", []))

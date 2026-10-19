@@ -6,11 +6,12 @@ symbol/path resolution, and structural repo map generation for sub-millisecond g
 
 from __future__ import annotations
 
-import json
 import re
 import sqlite3
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 from eidos.core.index.ast_indexer import CodeSymbol, get_ast_indexer
 from eidos.core.index.sync import _NON_AST_SYMBOL_KINDS
@@ -269,7 +270,7 @@ def execute_fts_query(
                     "source_path": row["source_path"],
                     "file_path": row["file_path"],
                     "rank": row["rank"],
-                    "data": json.loads(row["data_json"]),
+                    "data": orjson.loads(row["data_json"]),
                 }
             )
         return results
@@ -284,7 +285,7 @@ def _resolve_inline_component_node(
     row_data_json: str,
 ) -> tuple[str, dict[str, Any]]:
     """Extract inline component title and dict when node_id is an inline CMP-* resolved via its parent container."""
-    data = json.loads(row_data_json) if row_data_json else {}
+    data = orjson.loads(row_data_json) if row_data_json else {}
     if row_type == "tech/component" and isinstance(data, dict) and data.get("id") != node_id:
         for comp in data.get("components") or []:
             if isinstance(comp, dict) and comp.get("id") == node_id:
@@ -495,7 +496,7 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
             "type": row["type"],
             "title": row["title"],
             "file_path": row["file_path"],
-            "data": json.loads(row["data_json"]),
+            "data": orjson.loads(row["data_json"]),
         }
         if row["kind"] in ("package_path", "inferred_path") and row["symbol"] != clean:
             sym_len = len(str(row["symbol"]).rstrip("/"))
@@ -529,7 +530,7 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
                             "type": row["type"],
                             "title": row["title"],
                             "file_path": row["file_path"],
-                            "data": json.loads(row["data_json"]),
+                            "data": orjson.loads(row["data_json"]),
                         },
                     )
                 )
