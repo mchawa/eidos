@@ -3568,5 +3568,337 @@ def test_group_b_regressions_b1_through_b8(tmp_path: Path, validator: SpecValida
     assert tracked_b8 == ["src/main.py"]
 
 
+def test_deep_audit_group_b_b1_through_b10(tmp_path):
+    """Verify deep audit Group B fixes (B1 through B10)."""  # eidos:fixture
+    import json
+
+    import pytest
+
+    from eidos.core.spec.models import FrontmatterModel
+    from eidos.core.spec.parser import parse_spec_file
+    from eidos.core.spec.validator import SpecValidator, _resolve_spec_and_repo_roots
+
+    validator = SpecValidator()
+
+    # --- B10: FrontmatterModel & _DictCompatibleModel ---
+    fm_min = FrontmatterModel.model_validate({"id": "POL-MIN", "type": "product/policy", "schema": None})
+    with pytest.raises(KeyError):
+        _ = fm_min["model_fields"]
+    assert fm_min.get("schema") is None
+    assert "id" in fm_min
+    assert "title" not in fm_min
+    assert "components" not in fm_min
+    assert "invariants" not in fm_min
+    assert "mutations" not in fm_min
+    assert "decisions" not in fm_min
+
+    fm_c4 = FrontmatterModel.model_validate(
+        {
+            "id": "CNT-C4",
+            "type": "tech/container",
+            "components": [{"id": "CMP-A", "name": "A"}],
+            "c4_internal_components": [{"id": "CMP-B", "name": "B"}],
+        }
+    )
+    assert [c.id for c in fm_c4.components] == ["CMP-A", "CMP-B"]
+
+    # --- B1: Nested design system.adoc is not classified as root product/system ---
+    repo = tmp_path / "repo_b"
+    eidos_dir = repo / "eidos"
+    ds_brand_dir = eidos_dir / "design" / "systems" / "brand"
+    ds_brand_dir.mkdir(parents=True)
+    (eidos_dir / "system.adoc").write_text(
+        "---\n"
+        "type: product/system\n"
+        "schema: schemas/v1/product/system.schema.yaml\n"
+        "id: SYS-B\n"
+        "title: System B\n"
+        "archetypes: [service]\n"
+        "business_identity:\n"
+        "  vision: Vision\n"
+        "  target_users: [Devs]\n"
+        "  value_proposition: Value\n"
+        "technical_profile:\n"
+        "  primary_languages: [Python]\n"
+        "---\n= System B\n",
+        encoding="utf-8",
+    )
+    empty_ds_sys = ds_brand_dir / "system.adoc"
+    empty_ds_sys.write_text("", encoding="utf-8")
+    parsed_empty_ds = parse_spec_file(empty_ds_sys)
+    assert parsed_empty_ds.doc_type == "unknown"
+    spec_root, _ = _resolve_spec_and_repo_roots(ds_brand_dir, empty_ds_sys)
+    assert spec_root == eidos_dir.resolve()
+    empty_ds_sys.unlink()
+
+    # --- B5: _strip_asciidoc_comments strips block comments with trailing whitespace and empty block comments ---
+    commented_body = (
+        "////   \n"
+        "=== `ghost-cmd`\n"
+        "////  \n"
+        "////\n"
+        "////\n"
+        "=== `real-cmd`\n"
+    )
+    stripped_body = SpecValidator._strip_asciidoc_comments(commented_body)
+    assert "ghost-cmd" not in stripped_body
+    assert "real-cmd" in stripped_body
+
+    # --- B2, B3, B4: Cyclic Typer add_typer, Click sub-group add_command, and CLI section bounds / multi-token subcommands ---
+    src_dir = repo / "src" / "app"
+    tests_dir = repo / "tests"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    ctrs_dir = eidos_dir / "architecture" / "contracts"
+    dom_dir = eidos_dir / "domains" / "core"
+    cap_dir = dom_dir / "capabilities"
+    pol_dir = eidos_dir / "policies"
+    deltas_dir = eidos_dir / "deltas"
+    for d in (src_dir, tests_dir, cnt_dir, ctrs_dir, dom_dir, cap_dir, pol_dir, deltas_dir):
+        d.mkdir(parents=True, exist_ok=True)
+
+    (tests_dir / "test_app.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+    (cnt_dir / "app.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-APP\n"
+        "name: App Container\n"
+        "c4_type: service\n"
+        "technology: Python\n"
+        "description: App\n"
+        "package_path: src/app\n"
+        "components:\n"
+        "  - id: CMP-PLANNED\n"
+        "    name: Planned Comp\n"
+        "    status: planned\n"
+        "    responsibility: Future work\n"
+        "    invariants:\n"
+        "      - id: INV-PLANNED-SKIP\n"
+        "        rule: Planned component invariant\n"
+        "        test_binding: tests/test_app.py::test_not_written_yet\n"
+        "---\n= App Container\n",
+        encoding="utf-8",
+    )
+
+    # B2 & B4: Cyclic Typer app with multi-token subcommands (`portal serve`) and subsequent `== Notes` heading
+    (src_dir / "typer_cycle.py").write_text(
+        "import typer\n"
+        "app = typer.Typer()\n"
+        "portal_app = typer.Typer(name='portal')\n"
+        "app.add_typer(portal_app, name='portal')\n"
+        "portal_app.add_typer(app)\n\n"
+        "@portal_app.command()\n"
+        "def serve():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "typer_cycle.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-TYPER-CYCLE\n"
+        "title: Typer Cycle\n"
+        "protocol: cli_args\n"
+        "owning_container: CNT-APP\n"
+        "specification_file: src/app/typer_cycle.py\n"
+        "---\n= Typer Cycle\n\n"
+        "=== `portal`\n"
+        "* **Sub-commands**:\n"
+        "  - `portal serve`: Starts portal.\n"
+        "  - `portal ghost-sub`: Nonexistent subcommand.\n\n"
+        "== Implementation Notes\n"
+        "- `unrelated-note-token`: Not a subcommand.\n",
+        encoding="utf-8",
+    )
+
+    # B3: Click sub-group mounted via cli.add_command(sub_grp) with subcommand
+    (src_dir / "click_sub.py").write_text(
+        "import click\n\n"
+        "@click.group()\n"
+        "def cli():\n"
+        "    pass\n\n"
+        "@click.group(name='db')\n"
+        "def db_grp():\n"
+        "    pass\n\n"
+        "cli.add_command(db_grp)\n\n"
+        "@db_grp.command()\n"
+        "def migrate():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    (ctrs_dir / "click_sub.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-CLICK-SUB\n"
+        "title: Click Sub\n"
+        "protocol: cli_args\n"
+        "owning_container: CNT-APP\n"
+        "specification_file: src/app/click_sub.py\n"
+        "---\n= Click Sub\n\n"
+        "=== `db`\n"
+        "* **Sub-commands**:\n"
+        "  - `migrate`: Runs migrations.\n",
+        encoding="utf-8",
+    )
+
+    # B9: Capability with parent_domain (no domain) is schema-valid, and contract with owning_component CMP-* is rejected
+    (dom_dir / "domain.adoc").write_text(
+        "---\n"
+        "type: product/domain\n"
+        "schema: schemas/v1/product/domain.schema.yaml\n"
+        "id: DOM-CORE\n"
+        "name: Core\n"
+        "description: Core domain\n"
+        "bounded_context:\n"
+        "  ubiquitous_language: []\n"
+        "---\n= Core\n",
+        encoding="utf-8",
+    )
+    cap_pdom = cap_dir / "cap_pdom.adoc"
+    cap_pdom.write_text(
+        "---\n"
+        "type: product/capability\n"
+        "schema: schemas/v1/product/capability.schema.yaml\n"
+        "id: CAP-PDOM\n"
+        "title: Parent Domain Capability\n"
+        "parent_domain: DOM-CORE\n"
+        "status: active\n"
+        "business:\n"
+        "  jtbd: Deliver value\n"
+        "  personas: [PER-DEV]\n"
+        "technical:\n"
+        "  containers:\n"
+        "    - CNT-APP\n"
+        "---\n= Parent Domain Capability\n",
+        encoding="utf-8",
+    )
+    cap_doc = parse_spec_file(cap_pdom)
+    assert cap_doc.model.effective_domain() == "DOM-CORE"
+    assert validator.validate_document(cap_doc, root_dir=eidos_dir) == []
+
+    bad_ctr_cmp = ctrs_dir / "bad_cmp_owner.adoc"
+    bad_ctr_cmp.write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "schema: schemas/v1/tech/contract.schema.yaml\n"
+        "id: CTR-BAD-OWNER\n"
+        "title: Bad Owner\n"
+        "protocol: rest_openapi\n"
+        "owning_container: eidos/architecture/components/cmp-auth.adoc\n"
+        "---\n= Bad Owner\n",
+        encoding="utf-8",
+    )
+
+    # B6: Delta with .adoc targets for deprecate (CNT), modify/add on ARCH, add on INV without parent, and broken parent .adoc
+    (deltas_dir / "dlt_b6.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-960\n"
+        "title: Delta B6\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: refactor\n"
+        "  motivation: Test B6 path invariants\n"
+        "mutations:\n"
+        "  - operation: deprecate\n"
+        "    target: eidos/architecture/containers/app.adoc\n"
+        "  - operation: remove\n"
+        "    target: eidos/architecture/system-architecture.adoc\n"
+        "  - operation: add\n"
+        "    target: INV-NO-PARENT.adoc\n"
+        "  - operation: add\n"
+        "    target: CMP-NEW\n"
+        "    parent: eidos/architecture/containers/missing_parent.adoc\n"
+        "---\n= Delta B6\n",
+        encoding="utf-8",
+    )
+
+    # B7: Double colons in test_binding
+    (pol_dir / "pol_b7.adoc").write_text(
+        "---\n"
+        "type: product/policy\n"
+        "schema: schemas/v1/product/policy.schema.yaml\n"
+        "id: POL-B7\n"
+        "title: Policy B7\n"
+        "category: quality\n"
+        "rule: Test double colons.\n"
+        "invariants:\n"
+        "  - id: INV-B7-DBL\n"
+        "    rule: Double colons\n"
+        "    test_binding: tests/test_app.py::::test_ok\n"
+        "---\n= Policy B7\n",
+        encoding="utf-8",
+    )
+
+    # B8: Root-level scalar in W3C DTCG tokens.json and cyclic DS-* inheritance deduplication
+    ds_a_dir = eidos_dir / "design" / "systems" / "dsa"
+    ds_b_dir = eidos_dir / "design" / "systems" / "dsb"
+    ds_a_dir.mkdir(parents=True, exist_ok=True)
+    ds_b_dir.mkdir(parents=True, exist_ok=True)
+    (ds_a_dir / "tokens.json").write_text(
+        json.dumps(
+            {
+                "root_scalar_bad": "#123456",
+                "color": {"primary": {"$value": "#000000", "$type": "color"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (ds_a_dir / "system.adoc").write_text(
+        "---\n"
+        "type: design/system\n"
+        "schema: schemas/v1/design/system.schema.yaml\n"
+        "id: DS-A\n"
+        "title: Design A\n"
+        "status: active\n"
+        "inheritance:\n"
+        "  extends: DS-B\n"
+        "tokens:\n"
+        "  manifest: tokens.json\n"
+        "  spec_format: w3c_design_tokens\n"
+        "---\n= Design A\n",
+        encoding="utf-8",
+    )
+    (ds_b_dir / "system.adoc").write_text(
+        "---\n"
+        "type: design/system\n"
+        "schema: schemas/v1/design/system.schema.yaml\n"
+        "id: DS-B\n"
+        "title: Design B\n"
+        "status: draft\n"
+        "inheritance:\n"
+        "  extends: DS-A\n"
+        "---\n= Design B\n",
+        encoding="utf-8",
+    )
+
+    rep = validator.validate_directory(eidos_dir)
+    broken_text = "\n".join(rep.broken_references)
+    schema_err_text = "\n".join(msg for msgs in rep.schema_errors.values() for msg in msgs)
+
+    # B2 & B4: portal serve accepted, portal ghost-sub flagged, unrelated-note-token after == Heading ignored
+    assert "portal serve" not in broken_text
+    assert "portal ghost-sub" in broken_text
+    assert "unrelated-note-token" not in broken_text
+    # B3: Click subcommand migrate under db accepted cleanly
+    assert "CTR-CLICK-SUB" not in broken_text
+    # B6: .adoc path invariants and broken parent reference caught
+    assert "operation 'deprecate' is only supported for CAP-* and POL-* targets" in schema_err_text
+    assert "ARCH-* targets only support operation 'modify'" in schema_err_text
+    assert "adding invariant 'INV-NO-PARENT.adoc' requires a 'parent' specification ID" in schema_err_text
+    assert "cannot locate 'eidos/architecture/containers/missing_parent.adoc'" in broken_text
+    # B7: Double colons caught, and planned inline component invariant skipped
+    assert "Malformed test_binding 'tests/test_app.py::::test_ok'" in broken_text
+    assert "INV-PLANNED-SKIP" not in broken_text
+    # B8: Root scalar token caught, and circular DS-A <-> DS-B reported once
+    assert "token 'root_scalar_bad' is missing required '$value' property" in broken_text
+    assert sum(1 for r in rep.broken_references if "Circular design system inheritance" in r) == 1
+    # B9: Contract with component path owner flagged by INV-INTERFACE-BOUNDARY-GOVERNANCE
+    assert "Contract 'CTR-BAD-OWNER' specifies in-process component" in schema_err_text
+
+
+
 
 

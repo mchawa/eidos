@@ -175,10 +175,34 @@ Describe the exact behavioral diffs, mutations, and invariant updates here.
     elif canonical_key == "capability":
         specs_by_id = _catalog()
         if domain:
-            parent_domain = domain
+            raw_dom = domain.strip()
+            if "/" in raw_dom or "\\" in raw_dom or raw_dom.lower().endswith(".adoc"):
+                dom_path = Path(raw_dom.replace("\\", "/"))
+                parsed_dom_id = ""
+                for cdf in (eidos_dir / dom_path, eidos_dir.parent / dom_path, dom_path):
+                    if cdf.exists() and cdf.is_file():
+                        try:
+                            doc_d = parse_spec_file(cdf)
+                            did = str(doc_d.frontmatter.get("id") or "").strip()
+                            if did:
+                                parsed_dom_id = did
+                                break
+                        except Exception:
+                            pass
+                if dom_path.name.lower() == "domain.adoc" and dom_path.parent.name:
+                    domain_slug = dom_path.parent.name.lower().removeprefix("dom-")
+                elif parsed_dom_id:
+                    domain_slug = parsed_dom_id.lower().removeprefix("dom-")
+                else:
+                    domain_slug = dom_path.stem.lower().removeprefix("dom-")
+                parent_domain = parsed_dom_id or raw_dom
+            else:
+                domain_slug = raw_dom.lower().removeprefix("dom-")
+                parent_domain = raw_dom
         else:
             existing_domains = sorted(did for did, (_, dt, _) in specs_by_id.items() if dt == "product/domain")
             parent_domain = existing_domains[0] if existing_domains else "DOM-CORE"
+            domain_slug = parent_domain.lower().removeprefix("dom-")
 
         cnt_ref = owning_container
         if not cnt_ref:
@@ -191,12 +215,12 @@ Describe the exact behavioral diffs, mutations, and invariant updates here.
         existing_personas = sorted((eidos_dir / "personas").glob("*.adoc")) if (eidos_dir / "personas").exists() else []
         persona_ref = f"eidos/personas/{existing_personas[0].name}" if existing_personas else "PER-USER"
 
-        domain_slug = parent_domain.lower().removeprefix("dom-")
-        domain_dirs = list(eidos_dir.glob(f"domains/*{domain_slug}*"))
-        if domain_dirs and domain_dirs[0].is_dir():
-            dest_dir = domain_dirs[0] / "capabilities"
+        exact_dom_dir = eidos_dir / "domains" / domain_slug
+        if exact_dom_dir.is_dir():
+            dest_dir = exact_dom_dir / "capabilities"
         else:
-            dest_dir = eidos_dir / "domains" / domain_slug / "capabilities"
+            domain_dirs = [d for d in eidos_dir.glob(f"domains/*{domain_slug}*") if d.is_dir()]
+            dest_dir = domain_dirs[0] / "capabilities" if domain_dirs else exact_dom_dir / "capabilities"
         dest_file = dest_dir / f"{slug}.adoc"
         technical: dict[str, Any] = {"containers": [cnt_ref]}
         if owning_component and owning_component != cnt_ref:
@@ -265,20 +289,25 @@ Explain why this non-negotiable architectural or product guardrail exists.
     elif canonical_key == "contract":
         dest_dir = eidos_dir / "architecture" / "contracts"
         dest_file = dest_dir / f"{slug}.adoc"
-        owner_id = owning_container or (
-            owning_component if owning_component and owning_component.startswith("CNT-") else None
-        )
-        if not owner_id:
-            owner_id = _first_of_type("tech/container", "CNT-CORE")
         fm = {
             "type": "tech/contract",
             "schema": "schemas/v1/tech/contract.schema.yaml",
             "id": doc_id,
             "title": title,
             "protocol": protocol,
-            "owning_container": owner_id,
-            "specification_file": specification_file,
         }
+        if owning_container:
+            fm["owning_container"] = owning_container
+            if owning_component and not owning_component.upper().startswith("CNT-"):
+                fm["owning_component"] = owning_component
+        elif owning_component:
+            if owning_component.upper().startswith("CNT-"):
+                fm["owning_container"] = owning_component
+            else:
+                fm["owning_component"] = owning_component
+        else:
+            fm["owning_container"] = _first_of_type("tech/container", "CNT-CORE")
+        fm["specification_file"] = specification_file
         body = f"""= Contract: {heading}
 :toc: left
 
@@ -568,7 +597,15 @@ def promote_component(
         root = Path(repo_root).resolve()
     elif eidos_dir is not None:
         edir_resolved = Path(eidos_dir).resolve()
-        root = edir_resolved.parent if edir_resolved.name == "eidos" else edir_resolved
+        root = (
+            edir_resolved.parent
+            if (
+                edir_resolved.name == "eidos"
+                or (edir_resolved / "architecture").exists()
+                or (edir_resolved / "system.adoc").exists()
+            )
+            else edir_resolved
+        )
     else:
         root = Path.cwd().resolve()
     edir = (Path(eidos_dir) if eidos_dir is not None else (root / "eidos")).resolve()
@@ -588,7 +625,9 @@ def promote_component(
         doc = parse_spec_file(cfile)
         if doc.doc_type != "tech/container" or not doc.frontmatter:
             continue
-        comps = doc.frontmatter.get("components", [])
+        comps = list(doc.frontmatter.get("components") or []) + list(
+            doc.frontmatter.get("c4_internal_components") or []
+        )
         for c in comps:
             if isinstance(c, dict) and c.get("id") == norm_id:
                 if c.get("ref"):
@@ -604,8 +643,8 @@ def promote_component(
 
     c_doc = parse_spec_file(target_container_path)
     c_fm = c_doc.frontmatter or {}
-    container_id = c_fm.get("id", target_container_path.stem)
-    source_path_val = target_comp_data.get("source_path", "")
+    container_id = c_fm.get("id") or target_container_path.stem
+    source_path_val = target_comp_data.get("source_path") or ""
 
     # Place dedicated component specification centrally in eidos/architecture/components/
     components_dir = edir / "architecture" / "components"
@@ -619,15 +658,15 @@ def promote_component(
     )
 
     # Author centralized tech/component specification losslessly via safe YAML serialization
-    comp_name = target_comp_data.get("name", norm_id)
-    responsibility = target_comp_data.get("responsibility", "In-process module logic and domain services.")
+    comp_name = target_comp_data.get("name") or norm_id
+    responsibility = target_comp_data.get("responsibility") or "In-process module logic and domain services."
     promoted_fm: dict[str, Any] = {
         "type": "tech/component",
         "schema": "schemas/v1/tech/component.schema.yaml",
         "id": norm_id,
         "name": comp_name,
         "container": container_id,
-        "status": target_comp_data.get("status", "active"),
+        "status": target_comp_data.get("status") or "active",
         "source_path": source_path_val,
         "responsibility": responsibility,
         "interfaces": target_comp_data.get("interfaces") or {"provides": [], "consumes": []},
@@ -681,7 +720,15 @@ def inline_component(
         root = Path(repo_root).resolve()
     elif eidos_dir is not None:
         edir_resolved = Path(eidos_dir).resolve()
-        root = edir_resolved.parent if edir_resolved.name == "eidos" else edir_resolved
+        root = (
+            edir_resolved.parent
+            if (
+                edir_resolved.name == "eidos"
+                or (edir_resolved / "architecture").exists()
+                or (edir_resolved / "system.adoc").exists()
+            )
+            else edir_resolved
+        )
     else:
         root = Path.cwd().resolve()
     edir = (Path(eidos_dir) if eidos_dir is not None else (root / "eidos")).resolve()
@@ -701,7 +748,9 @@ def inline_component(
         doc = parse_spec_file(cfile)
         if doc.doc_type != "tech/container" or not doc.frontmatter:
             continue
-        comps = doc.frontmatter.get("components", [])
+        comps = list(doc.frontmatter.get("components") or []) + list(
+            doc.frontmatter.get("c4_internal_components") or []
+        )
         for c in comps:
             if isinstance(c, dict) and c.get("id") == norm_id and c.get("ref"):
                 target_container_path = cfile
@@ -714,19 +763,25 @@ def inline_component(
         raise ValueError(f"Component '{norm_id}' is not currently promoted with a dedicated 'ref' in '{containers_dir}'.")
 
     # Locate component specification file
-    comp_file = root / target_ref_path
-    if not comp_file.exists():
-        comp_file = edir / target_ref_path
+    clean_ref = str(target_ref_path).replace("\\", "/").lstrip("./")
+    stripped_ref = clean_ref.removeprefix("eidos/")
+    if edir.name and clean_ref.startswith(f"{edir.name}/"):
+        stripped_ref = clean_ref.removeprefix(f"{edir.name}/")
+    comp_file = root / clean_ref
+    for cand in (root / clean_ref, edir / clean_ref, edir / stripped_ref, edir.parent / clean_ref):
+        if cand.exists() and cand.is_file():
+            comp_file = cand
+            break
     if not comp_file.exists():
         raise FileNotFoundError(f"Referenced component spec file '{comp_file}' does not exist.")
 
     comp_doc = parse_spec_file(comp_file)
     comp_fm = comp_doc.frontmatter or {}
-    name = comp_fm.get("name", norm_id)
-    responsibility = comp_fm.get("responsibility", "In-process module logic.")
+    name = comp_fm.get("name") or norm_id
+    responsibility = comp_fm.get("responsibility") or "In-process module logic."
     if isinstance(responsibility, str):
         responsibility = responsibility.strip()
-    source_path = comp_fm.get("source_path", comp_fm.get("package_path", ""))
+    source_path = comp_fm.get("source_path") or comp_fm.get("package_path") or ""
 
     inline_entry: dict[str, Any] = {
         "id": norm_id,

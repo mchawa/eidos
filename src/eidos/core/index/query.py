@@ -250,7 +250,7 @@ def execute_fts_query(
         cursor.execute(
             f"""
             SELECT
-                e.id, e.type, e.title, e.domain, e.package_path, e.data_json,
+                e.id, e.type, e.title, e.domain, e.package_path, e.file_path, e.data_json,
                 {id_boost_sql}{and_boost_sql}bm25(specs_fts, {weights_sql}) as rank
             FROM specs_fts f
             JOIN entities e ON e.id = f.entity_id
@@ -269,6 +269,7 @@ def execute_fts_query(
                     "title": row["title"],
                     "domain": row["domain"],
                     "package_path": row["package_path"],
+                    "file_path": row["file_path"],
                     "rank": row["rank"],
                     "data": json.loads(row["data_json"]),
                 }

@@ -75,7 +75,12 @@ def _has_function_level_fixture(fslice: str, inv_pattern: re.Pattern[str]) -> bo
         stripped = line.strip()
         if not stripped:
             continue
-        comment_free = stripped.split("#", 1)[0].split("//", 1)[0].rstrip()
+        if stripped.startswith("#["):
+            comment_free = stripped.split("//", 1)[0].rstrip()
+        else:
+            comment_free = stripped.split("#", 1)[0].split("//", 1)[0].rstrip()
+        if not comment_free:
+            continue
         if not seen_fn_decl:
             if decorator_depth > 0 or stripped.startswith("@") or stripped.startswith("#["):
                 decorator_depth += sum(1 for c in comment_free if c in "([{") - sum(
@@ -121,7 +126,16 @@ def _has_function_level_fixture(fslice: str, inv_pattern: re.Pattern[str]) -> bo
         if not stripped:
             idx += 1
             continue
-        if stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("/*"):
+        if stripped.startswith("/*"):
+            while idx < len(lines):
+                cur_line = lines[idx]
+                if "eidos:fixture" in cur_line and not inv_pattern.search(cur_line):
+                    return True
+                idx += 1
+                if "*/" in cur_line:
+                    break
+            continue
+        if stripped.startswith("#") or stripped.startswith("//"):
             if "eidos:fixture" in stripped and not inv_pattern.search(stripped):
                 return True
             idx += 1
@@ -335,6 +349,8 @@ def _verify_single_invariant(
 
     if tb:
         parts = [p.strip() for p in tb.split("::") if p.strip()]
+        if not parts:
+            return []
         tb_file = parts[0].replace("\\", "/")
         tb_func = "::".join(parts[1:]) if len(parts) > 1 else None
         tb_path = repo_root / tb_file
@@ -592,6 +608,12 @@ def extract_invariants_and_verify(
         if not root_dir.exists():
             continue
         for spec_path in sorted(root_dir.rglob("*.adoc")):
+            if (
+                spec_path.name.lower() == "readme.adoc"
+                or spec_path.name.startswith("_")
+                or spec_path.is_symlink()
+            ):
+                continue
             res_spec = spec_path.resolve()
             rel_key: str | None = None
             for base in (resolved_repo_root, resolved_eidos_dir):

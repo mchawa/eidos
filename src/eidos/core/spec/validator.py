@@ -53,6 +53,18 @@ _SPEC_SUBDIRS = frozenset(
         "design",
     }
 )
+_NON_ROOT_SPEC_SUBDIRS = _SPEC_SUBDIRS | frozenset(
+    {
+        "systems",
+        "components",
+        "containers",
+        "contracts",
+        "capabilities",
+        "clients",
+        "screens",
+        "flows",
+    }
+)
 _REPO_MARKERS = (".git", "pyproject.toml", "package.json", "Cargo.toml", "go.mod")
 
 
@@ -112,7 +124,16 @@ def _resolve_spec_and_repo_roots(
         if cand.name in ("eidos", ".spec"):
             return True
         if (cand / "system.adoc").is_file():
-            return True
+            cand_lower = cand.name.lower()
+            ancestor_lowers = [p.lower() for p in cand.parts[:-1]]
+            if cand_lower not in _NON_ROOT_SPEC_SUBDIRS and (
+                cand_lower == "eidos"
+                or (
+                    "eidos" not in ancestor_lowers
+                    and (not cand.parent or cand.parent.name.lower() not in _NON_ROOT_SPEC_SUBDIRS)
+                )
+            ):
+                return True
         if (cand / "architecture").is_dir():
             arch = cand / "architecture"
             if (
@@ -388,10 +409,19 @@ class SpecValidator:
                 st = fp.stat()
             except OSError:
                 return None
+            parent_lower = fp.parent.name.lower()
+            ancestor_lowers = [p.lower() for p in fp.parts[:-1]]
             is_root_system = (
                 fp.name == "system.adoc"
                 and rel_fp_parts == ("system.adoc",)
-                and fp.parent.name.lower() not in _NON_ROOT_SPEC_SUBDIRS
+                and parent_lower not in _NON_ROOT_SPEC_SUBDIRS
+                and (
+                    parent_lower == "eidos"
+                    or (
+                        "eidos" not in ancestor_lowers
+                        and (not fp.parent.parent or fp.parent.parent.name.lower() not in _NON_ROOT_SPEC_SUBDIRS)
+                    )
+                )
             )
             if st.st_size == 0 and is_root_system:
                 return None
@@ -930,17 +960,58 @@ class SpecValidator:
                 if not op_val or not target_val:
                     continue
                 target_upper = target_val.upper()
-                if op_val == "deprecate" and not target_upper.startswith(("CAP-", "POL-")):
+                effective_target_upper = target_upper
+                if target_upper.endswith(".ADOC"):
+                    norm_parts = [p.lower() for p in Path(target_val.replace("\\", "/")).parts]
+                    stem_upper = Path(target_val).stem.upper()
+                    if stem_upper.startswith(
+                        (
+                            "CAP-",
+                            "POL-",
+                            "ARCH-",
+                            "INV-",
+                            "CNT-",
+                            "CMP-",
+                            "CTR-",
+                            "DOM-",
+                            "PER-",
+                            "DS-",
+                            "UIC-",
+                            "SCR-",
+                            "FLOW-",
+                            "CLT-",
+                            "EXP-",
+                        )
+                    ):
+                        effective_target_upper = stem_upper
+                    elif "capabilities" in norm_parts:
+                        effective_target_upper = f"CAP-{stem_upper}"
+                    elif "policies" in norm_parts:
+                        effective_target_upper = f"POL-{stem_upper}"
+                    elif "containers" in norm_parts:
+                        effective_target_upper = f"CNT-{stem_upper}"
+                    elif "contracts" in norm_parts:
+                        effective_target_upper = f"CTR-{stem_upper}"
+                    elif "architecture" in norm_parts and "components" in norm_parts:
+                        effective_target_upper = f"CMP-{stem_upper}"
+                    elif "architecture" in norm_parts and stem_upper in (
+                        "SYSTEM-ARCHITECTURE",
+                        "OVERVIEW",
+                    ):
+                        effective_target_upper = f"ARCH-{stem_upper}"
+                    elif "domains" in norm_parts:
+                        effective_target_upper = f"DOM-{stem_upper}"
+                if op_val == "deprecate" and not effective_target_upper.startswith(("CAP-", "POL-")):
                     _record_err(
                         f"Invalid composable mutation in {doc.file_path.name}: "
                         f"operation 'deprecate' is only supported for CAP-* and POL-* targets (got '{target_val}')."
                     )
-                elif target_upper.startswith("ARCH-") and op_val != "modify":
+                elif effective_target_upper.startswith("ARCH-") and op_val != "modify":
                     _record_err(
                         f"Invalid composable mutation in {doc.file_path.name}: "
                         f"ARCH-* targets only support operation 'modify' (got '{op_val}')."
                     )
-                elif target_upper.startswith("INV-") and op_val == "add":
+                elif effective_target_upper.startswith("INV-") and op_val == "add":
                     has_parent = bool(str(mut.get("parent") or "").strip())
                     if not has_parent:
                         _record_err(
@@ -948,12 +1019,25 @@ class SpecValidator:
                             f"adding invariant '{target_val}' requires a 'parent' specification ID."
                         )
         elif dtype == "tech/contract":
-            owning_ref = fm.get("owning_container") or fm.get("owning_component")
-            if owning_ref and str(owning_ref).startswith("CMP-"):
-                _record_err(
-                    f"INV-INTERFACE-BOUNDARY-GOVERNANCE violation: Contract '{doc.doc_id}' specifies in-process component '{owning_ref}' as owner. "
-                    f"Boundary Protocol Contracts (CTR-*) must be owned by a Container (CNT-*)."
+            for own_field in ("owning_container", "owning_component"):
+                owning_ref = str(fm.get(own_field) or "").strip()
+                if not owning_ref:
+                    continue
+                ref_upper = owning_ref.upper()
+                is_cmp_ref = ref_upper.startswith("CMP-") or (
+                    ref_upper.endswith(".ADOC")
+                    and (
+                        Path(owning_ref).stem.upper().startswith("CMP-")
+                        or "components"
+                        in [p.lower() for p in Path(owning_ref.replace("\\", "/")).parts]
+                    )
                 )
+                if is_cmp_ref:
+                    _record_err(
+                        f"INV-INTERFACE-BOUNDARY-GOVERNANCE violation: Contract '{doc.doc_id}' specifies in-process component '{owning_ref}' as owner. "
+                        f"Boundary Protocol Contracts (CTR-*) must be owned by a Container (CNT-*)."
+                    )
+                    break
         elif dtype == "tech/component":
             if doc.file_path.suffix == ".adoc":
                 spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir, doc.file_path)
@@ -1010,11 +1094,18 @@ class SpecValidator:
                             for mut in v:
                                 if isinstance(mut, dict):
                                     op = str(mut.get("operation") or "").strip().lower()
-                                    if op in ("add", "remove", "deprecate"):
-                                        continue
-                                self._check_dict_references(
-                                    mut, source_file, root_dir, report, doc_type=doc_type
-                                )
+                                    for mk, mv in mut.items():
+                                        if mk in ("expect", "details"):
+                                            continue
+                                        if op not in ("modify", "deprecate") and mk != "parent":
+                                            continue
+                                        self._check_dict_references(
+                                            mv, source_file, root_dir, report, doc_type=doc_type
+                                        )
+                                else:
+                                    self._check_dict_references(
+                                        mut, source_file, root_dir, report, doc_type=doc_type
+                                    )
                         continue
                 self._check_dict_references(v, source_file, root_dir, report, doc_type=doc_type)
         elif isinstance(val, list):
@@ -1317,10 +1408,7 @@ class SpecValidator:
                                     f"UI Component '{doc.doc_id}' has invalid test binding '{tb_val}'"
                                 )
                                 continue
-                            if "::" in tb_val and (
-                                not tb_val.split("::")[0].strip()
-                                or not [p.strip() for p in tb_val.split("::")[1:] if p.strip()]
-                            ):
+                            if "::" in tb_val and any(not p.strip() for p in tb_val.split("::")):
                                 report.broken_references.append(
                                     f"Broken test_bindings.{tb_key} in {doc.file_path.name}: "
                                     f"UI Component '{doc.doc_id}' has Malformed test_binding '{tb_val}' (empty symbol after '::')"
@@ -1340,8 +1428,15 @@ class SpecValidator:
                                     f"UI Component '{doc.doc_id}' references symbol '{'::'.join(sym_parts)}' which does not exist in '{file_part}'"
                                 )
 
-                # Collect invariants from top-level, technical.invariants, and inline components via FrontmatterModel
-                for inv in model.all_invariants():
+                # Collect invariants from top-level, technical.invariants, and active inline components via FrontmatterModel
+                invariants_to_check = list(model.invariants)
+                if model.technical and model.technical.invariants:
+                    invariants_to_check.extend(model.technical.invariants)
+                for comp in model.components:
+                    comp_status = str(comp.status or "active").strip().lower()
+                    if comp_status not in inactive_statuses and comp.invariants:
+                        invariants_to_check.extend(comp.invariants)
+                for inv in invariants_to_check:
                     inv_id = str(inv.id or "unknown")
                     raw_tb = inv.effective_test_binding()
                     if (
@@ -1357,10 +1452,7 @@ class SpecValidator:
                             f"Invariant '{inv_id}' has invalid test_binding '{raw_tb}'"
                         )
                         continue
-                    if "::" in raw_tb and (
-                        not raw_tb.split("::")[0].strip()
-                        or not [p.strip() for p in raw_tb.split("::")[1:] if p.strip()]
-                    ):
+                    if "::" in raw_tb and any(not p.strip() for p in raw_tb.split("::")):
                         report.broken_references.append(
                             f"Broken test_binding in {doc.file_path.name}: "
                             f"Invariant '{inv_id}' has Malformed test_binding '{raw_tb}' (empty symbol after '::')"
@@ -1517,6 +1609,12 @@ class SpecValidator:
                         )
                         if not child_dicts:
                             return
+                    elif not path_prefix and non_meta_scalars:
+                        for bad_key in non_meta_scalars:
+                            report.broken_references.append(
+                                f"Invalid W3C DTCG token in {doc_name} ({m_rel}): "
+                                f"token '{bad_key}' is missing required '$value' property"
+                            )
 
                     for k, v in child_dicts.items():
                         sub = f"{path_prefix}.{k}" if path_prefix else str(k)
@@ -1536,7 +1634,8 @@ class SpecValidator:
             curr: str | None = first_parent
             while curr:
                 if curr in chain:
-                    cycle_key = frozenset(chain)
+                    cycle_start = chain.index(curr)
+                    cycle_key = frozenset(chain[cycle_start:])
                     if cycle_key not in reported_cycles:
                         reported_cycles.add(cycle_key)
                         cycle_str = " -> ".join([*chain, curr])
@@ -1767,18 +1866,25 @@ class SpecValidator:
                     )
                     mounted_sub_apps[sub_var] = sub_name
 
-            root_app_vars = typer_app_vars - set(mounted_sub_apps) or typer_app_vars
+            root_app_vars = (
+                typer_app_vars - set(mounted_sub_apps)
+                or ({"app"} if "app" in typer_app_vars else typer_app_vars)
+            )
 
             def _collect_commands_from_ast(
                 scope_node: ast.AST,
                 target_vars: set[str],
                 full_module_node: ast.AST | None = None,
                 local_imports: dict[str, tuple[str, str]] | None = None,
+                _visited: set[tuple[int, str]] | None = None,
             ) -> tuple[set[str], dict[str, set[str]]]:
                 found: set[str] = set()
                 sub_found: dict[str, set[str]] = {}
                 search_root = full_module_node or scope_node
                 imp_map = local_imports if local_imports is not None else imported_symbol_modules
+                visited = set(_visited) if _visited is not None else set()
+                for tv in target_vars:
+                    visited.add((id(search_root), tv))
                 _, scope_ctor_names = _collect_typer_vars(search_root)
                 for node in ast.walk(scope_node):
                     if (
@@ -1799,16 +1905,21 @@ class SpecValidator:
                         child_cmds: set[str] = set()
                         grandchild_map: dict[str, set[str]] = {}
                         if child_var:
-                            c_cmds, gc_map = _collect_commands_from_ast(
-                                search_root, {child_var}, search_root, imp_map
-                            )
-                            child_cmds.update(c_cmds)
-                            for gk, gv in gc_map.items():
-                                grandchild_map.setdefault(gk, set()).update(gv)
+                            if (id(search_root), child_var) not in visited:
+                                c_cmds, gc_map = _collect_commands_from_ast(
+                                    search_root,
+                                    {child_var},
+                                    search_root,
+                                    imp_map,
+                                    _visited=visited,
+                                )
+                                child_cmds.update(c_cmds)
+                                for gk, gv in gc_map.items():
+                                    grandchild_map.setdefault(gk, set()).update(gv)
                             if child_var in imp_map:
                                 sib_mod, orig_var = imp_map[child_var]
                                 sib_ast = _get_sibling_tree(sib_mod)
-                                if sib_ast is not None:
+                                if sib_ast is not None and (id(sib_ast), orig_var) not in visited:
                                     sib_imp: dict[str, tuple[str, str]] = {}
                                     for sn in ast.walk(sib_ast):
                                         if isinstance(sn, ast.ImportFrom) and sn.module:
@@ -1816,7 +1927,11 @@ class SpecValidator:
                                             for sal in sn.names:
                                                 sib_imp[sal.asname or sal.name] = (sm_leaf, sal.name)
                                     ext_cmds, ext_gc = _collect_commands_from_ast(
-                                        sib_ast, {orig_var}, sib_ast, sib_imp
+                                        sib_ast,
+                                        {orig_var},
+                                        sib_ast,
+                                        sib_imp,
+                                        _visited=visited,
                                     )
                                     child_cmds.update(ext_cmds)
                                     for gk, gv in ext_gc.items():
@@ -1949,7 +2064,7 @@ class SpecValidator:
                             if grp_cmd:
                                 standalone_click_funcs[node.name] = grp_cmd
 
-            # Iteratively discover nested @<group>.group() definitions
+            # Iteratively discover nested @<group>.group() definitions and <group>.add_command(<sub_group>) mounts
             changed = True
             while changed:
                 changed = False
@@ -1972,13 +2087,57 @@ class SpecValidator:
                                 )
                                 if grp_cmd:
                                     sub_click_groups[node.name] = grp_cmd
-                                    commands.add(grp_cmd)
                                     parent_grp = dec_target.value.id
                                     if parent_grp in sub_click_groups:
                                         subcommands_by_group.setdefault(
                                             sub_click_groups[parent_grp], set()
                                         ).add(grp_cmd)
+                                    else:
+                                        commands.add(grp_cmd)
                                     changed = True
+                    elif (
+                        isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id in known_groups
+                        and node.func.attr == "add_command"
+                        and node.args
+                        and isinstance(node.args[0], ast.Name)
+                        and node.args[0].id in root_click_groups
+                    ):
+                        parent_grp = node.func.value.id
+                        target_var = node.args[0].id
+                        explicit_name = next(
+                            (
+                                kw.value.value
+                                for kw in node.keywords
+                                if kw.arg == "name"
+                                and isinstance(kw.value, ast.Constant)
+                                and isinstance(kw.value.value, str)
+                            ),
+                            None,
+                        )
+                        if (
+                            not explicit_name
+                            and len(node.args) >= 2
+                            and isinstance(node.args[1], ast.Constant)
+                            and isinstance(node.args[1].value, str)
+                        ):
+                            explicit_name = node.args[1].value
+                        grp_cmd = (
+                            explicit_name
+                            or standalone_click_funcs.get(target_var)
+                            or target_var.replace("_", "-")
+                        )
+                        root_click_groups.discard(target_var)
+                        sub_click_groups[target_var] = grp_cmd
+                        if parent_grp in sub_click_groups:
+                            subcommands_by_group.setdefault(
+                                sub_click_groups[parent_grp], set()
+                            ).add(grp_cmd)
+                        else:
+                            commands.add(grp_cmd)
+                        changed = True
 
             all_click_groups = root_click_groups | set(sub_click_groups)
 
@@ -2014,12 +2173,13 @@ class SpecValidator:
                                 standalone_click_funcs[node.name] = cmd_name
                                 if is_Group_cmd:
                                     decorated_Group_cmds.add(node.name)
-                                    commands.add(cmd_name)
                                     parent_grp = dec_target.value.id  # type: ignore[union-attr]
                                     if parent_grp in sub_click_groups:
                                         subcommands_by_group.setdefault(
                                             sub_click_groups[parent_grp], set()
                                         ).add(cmd_name)
+                                    else:
+                                        commands.add(cmd_name)
 
             # Inspect <group>.add_command(cmd_obj, name=...) calls
             mounted_via_add_cmd: set[str] = set()
@@ -2060,7 +2220,6 @@ class SpecValidator:
                             or target_var.replace("_", "-")
                         )
                         if resolved_name:
-                            commands.add(resolved_name)
                             if target_var in root_click_groups:
                                 root_click_groups.discard(target_var)
                                 sub_click_groups[target_var] = resolved_name
@@ -2068,12 +2227,15 @@ class SpecValidator:
                                 subcommands_by_group.setdefault(
                                     sub_click_groups[parent_grp], set()
                                 ).add(resolved_name)
+                            else:
+                                commands.add(resolved_name)
                     elif explicit_name:
-                        commands.add(explicit_name)
                         if parent_grp in sub_click_groups:
                             subcommands_by_group.setdefault(
                                 sub_click_groups[parent_grp], set()
                             ).add(explicit_name)
+                        else:
+                            commands.add(explicit_name)
 
             # Include standalone @click.command functions when not mounted via add_command
             for fn_name, cmd_name in standalone_click_funcs.items():
@@ -2114,6 +2276,9 @@ class SpecValidator:
         for idx, hm in enumerate(heading_matches):
             sec_start = hm.end()
             sec_end = heading_matches[idx + 1].start() if idx + 1 < len(heading_matches) else len(clean_body)
+            next_h2 = re.search(r"^==\s+", clean_body[sec_start:sec_end], re.MULTILINE)
+            if next_h2:
+                sec_end = sec_start + next_h2.start()
             sec_body = clean_body[sec_start:sec_end]
 
             candidates = [hm.group(1)]
@@ -2145,17 +2310,34 @@ class SpecValidator:
                             f"Contract drift in {doc.file_path.name}: CLI subcommand '{resolved_cmd} {sub_cmd}' is not documented under '{resolved_cmd}' in contract '{doc.doc_id}'"
                         )
                 sub_sec_m = re.search(
-                    r"\*\s+\*\*Sub-commands\*\*\s*:(.*?)(?=^\*\s+\*\*|\Z)",
+                    r"\*\s+\*\*Sub-commands\*\*\s*:(.*?)(?=^\*\s+\*\*|^={2,}\s+|\Z)",
                     sec_body,
                     re.MULTILINE | re.DOTALL,
                 )
                 sub_bullets_text = sub_sec_m.group(1) if sub_sec_m else sec_body
                 for bullet_m in re.finditer(
-                    r"^\s*-\s+`([a-zA-Z][a-zA-Z0-9_-]*)\b[^`]*`",
+                    r"^\s*-\s+`([^`]+)`",
                     sub_bullets_text,
                     re.MULTILINE,
                 ):
-                    doc_sub = bullet_m.group(1)
+                    bullet_tokens = [
+                        t
+                        for t in bullet_m.group(1).strip().split()
+                        if not t.startswith(("-", "[", "<", "{"))
+                        and not any(ch in t for ch in ("*", "|", ".", "/"))
+                    ]
+                    if not bullet_tokens:
+                        continue
+                    if resolved_cmd in bullet_tokens:
+                        rc_idx = bullet_tokens.index(resolved_cmd)
+                        if rc_idx + 1 < len(bullet_tokens):
+                            doc_sub = bullet_tokens[rc_idx + 1]
+                        else:
+                            continue
+                    else:
+                        doc_sub = bullet_tokens[0]
+                    if not re.match(r"^[a-zA-Z][a-zA-Z0-9_-]*$", doc_sub):
+                        continue
                     if doc_sub not in expected_subs:
                         report.broken_references.append(
                             f"Contract drift in {doc.file_path.name}: documented CLI subcommand '{resolved_cmd} {doc_sub}' in contract '{doc.doc_id}' does not exist in '{cli_file.name}'"
@@ -2164,7 +2346,12 @@ class SpecValidator:
     @staticmethod
     def _strip_asciidoc_comments(body: str) -> str:
         """Strip AsciiDoc block comments (//// ... ////) and single-line comments (// ...) from contract body."""
-        cleaned = re.sub(r"^/{4,}\r?\n.*?\r?\n/{4,}[ \t]*$", "", body, flags=re.MULTILINE | re.DOTALL)
+        cleaned = re.sub(
+            r"^[ \t]*/{4,}[ \t]*\r?\n(?:.*?\r?\n)?[ \t]*/{4,}[ \t]*$",
+            "",
+            body,
+            flags=re.MULTILINE | re.DOTALL,
+        )
         return re.sub(r"^[ \t]*//[^\r\n]*$", "", cleaned, flags=re.MULTILINE)
 
     def _verify_python_protocol_contract(

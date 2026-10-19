@@ -94,9 +94,18 @@ _NON_ROOT_SPEC_SUBDIRS = (
 def _parse_spec_content(path: Path, content: str) -> SpecDocument:
     """Parse an .adoc specification from pre-read content."""
     if not content.strip():
+        parent_lower = path.parent.name.lower()
+        ancestor_lowers = [p.lower() for p in path.parts[:-1]]
         is_root_system = (
             path.name == "system.adoc"
-            and path.parent.name.lower() not in _NON_ROOT_SPEC_SUBDIRS
+            and parent_lower not in _NON_ROOT_SPEC_SUBDIRS
+            and (
+                parent_lower == "eidos"
+                or (
+                    "eidos" not in ancestor_lowers
+                    and (not path.parent.parent or path.parent.parent.name.lower() not in _NON_ROOT_SPEC_SUBDIRS)
+                )
+            )
         )
         if is_root_system:
             return SpecDocument(

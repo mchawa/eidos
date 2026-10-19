@@ -1581,3 +1581,312 @@ def test_a7_a8_a11_catalog_scaffolder_and_design_edge_cases(tmp_path: Path) -> N
     assert not (eidos_dir / "design" / "systems" / "bad").exists()
 
 
+def test_deep_audit_group_a_a1_through_a8(tmp_path):
+    """Verify deep audit Group A fixes (A1 through A8)."""  # eidos:fixture
+    import hashlib
+
+    import pytest
+
+    from eidos.core.lifecycle.audit import AuditEngine
+    from eidos.core.lifecycle.catalog import _set_frontmatter_scalar, find_spec_by_id_or_path
+    from eidos.core.lifecycle.changelog import ChangelogGenerator
+    from eidos.core.lifecycle.delta_engine import (
+        _check_structural_subtarget_precondition,
+        _find_inline_component_dict,
+        _snapshot_delta_baselines,
+    )
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec, inline_component, promote_component
+    from eidos.core.spec.parser import parse_spec_file
+
+    # --- A8: init_repository strips whitespace-only name and title ---
+    ws_a8 = tmp_path / "my-clean-service"
+    ws_a8.mkdir()
+    init_repository(ws_a8, name="   ", title="  My Clean Service  ")
+    sys_doc_a8 = parse_spec_file(ws_a8 / "eidos" / "system.adoc")
+    assert sys_doc_a8.frontmatter["id"] == "SYS-MY-CLEAN-SERVICE"
+    assert sys_doc_a8.frontmatter["title"] == "My Clean Service"
+
+    # --- A5: _set_frontmatter_scalar handles multi-line plain, next-line, and quoted scalars ---
+    raw_multiline = (
+        "---\n"
+        "id: POL-001\n"
+        "title:\n"
+        "  Multi-line title line 1\n"
+        "  line 2\n"
+        "# Preserved column-0 comment\n\n"
+        'summary: "First line\n'
+        '  second line"\n'
+        "status: draft\n"
+        "---\n= Doc\n"
+    )
+    updated_fm = _set_frontmatter_scalar(raw_multiline, "title", "Single Line Title")
+    updated_fm = _set_frontmatter_scalar(updated_fm, "summary", "Clean Summary")
+    assert "Multi-line title" not in updated_fm
+    assert "second line" not in updated_fm
+    assert "# Preserved column-0 comment\n\nsummary: Clean Summary" in updated_fm
+
+    # --- A2 & A3: bare .adoc lookup, capability domain path, design entity refs, contract owning_component ---
+    ws = tmp_path / "ws_a"
+    ws.mkdir()
+    init_repository(ws, name="ws-a", title="WS A")
+    eidos_dir = ws / "eidos"
+    cnt_path = create_spec(eidos_dir, "container", "CNT-API-GATEWAY", "API Gateway")
+    assert find_spec_by_id_or_path(eidos_dir, "cnt-api-gateway.adoc") == cnt_path.resolve()
+
+    dom_path = create_spec(eidos_dir, "domain", "DOM-PAYMENTS", "Payments Domain")
+    cap_path = create_spec(
+        eidos_dir,
+        "capability",
+        "CAP-CHECKOUT",
+        "Checkout",
+        domain=f"eidos/{dom_path.relative_to(eidos_dir).as_posix()}",
+    )
+    assert cap_path.parent == dom_path.parent / "capabilities"
+    assert parse_spec_file(cap_path).frontmatter["domain"] == "DOM-PAYMENTS"
+
+    # Contract with CMP-* owner fails validation and rolls back cleanly
+    with pytest.raises(ValueError, match="INV-INTERFACE-BOUNDARY-GOVERNANCE"):
+        create_spec(
+            eidos_dir,
+            "contract",
+            "CTR-BAD-CMP",
+            "Bad Component Contract",
+            owning_component="CMP-AUTH",
+        )
+
+    # Design specs normalize client_id and resolve .adoc paths for design_system and client_id
+    ds_path = create_spec(
+        eidos_dir,
+        "design-system",
+        "DS-BRAND",
+        "Brand System",
+        client_id="CLT-WEB-SPA",
+    )
+    assert parse_spec_file(ds_path).frontmatter["client_id"] == "web-spa"
+
+    clt_path = create_spec(
+        eidos_dir,
+        "client",
+        "CLT-WEB-SPA",
+        "Web SPA",
+        owning_component="CNT-API-GATEWAY",
+        design_system=f"eidos/{ds_path.relative_to(eidos_dir).as_posix()}",
+    )
+    assert parse_spec_file(clt_path).frontmatter["design_system"] == "DS-BRAND"
+
+    scr_path = create_spec(
+        eidos_dir,
+        "screen",
+        "SCR-HOME",
+        "Home Screen",
+        client_id=f"eidos/{clt_path.relative_to(eidos_dir).as_posix()}",
+    )
+    assert parse_spec_file(scr_path).frontmatter["client"] == "CLT-WEB-SPA"
+
+    flow_path = create_spec(
+        eidos_dir,
+        "flow",
+        "FLOW-CHECKOUT",
+        "Checkout Flow",
+        client_id=f"eidos/{clt_path.relative_to(eidos_dir).as_posix()}",
+    )
+    assert parse_spec_file(flow_path).frontmatter["client"] == "CLT-WEB-SPA"
+
+    # --- A1: _find_inline_component_dict, _snapshot_delta_baselines, and _check_structural_subtarget_precondition ---
+    cmp_promoted = create_spec(
+        eidos_dir,
+        "component",
+        "CMP-PROMOTED",
+        "Promoted Auth",
+        owning_component="CNT-API-GATEWAY",
+    )
+    cnt_path.write_text(
+        "---\n"
+        "type: tech/container\n"
+        "schema: schemas/v1/tech/container.schema.yaml\n"
+        "id: CNT-API-GATEWAY\n"
+        "name: API Gateway\n"
+        "c4_type: service\n"
+        "technology: Python\n"
+        "description: Gateway\n"
+        "invariants:\n"
+        "  - id: INV-TOP-001\n"
+        "    rule: Top rule\n"
+        "technical:\n"
+        "  invariants:\n"
+        "    - id: INV-TECH-001\n"
+        "      rule: Tech rule\n"
+        "components:\n"
+        "  - id: CMP-PROMOTED\n"
+        "    name: Promoted Auth\n"
+        "    ref: eidos/architecture/components/promoted.adoc\n"
+        "c4_internal_components:\n"
+        "  - id: CMP-INLINE-C4\n"
+        "    name: Inline C4\n"
+        "    responsibility: Handle C4\n"
+        "    invariants:\n"
+        "      - id: INV-INLINE-001\n"
+        "        rule: Inline rule\n"
+        "    decisions:\n"
+        "      - id: DEC-INLINE-001\n"
+        "        title: Inline Dec\n"
+        "    contracts:\n"
+        "      provides:\n"
+        "        - CTR-INLINE-001\n"
+        "---\n= API Gateway\n",
+        encoding="utf-8",
+    )
+    cnt_doc = parse_spec_file(cnt_path)
+    cmp_doc = parse_spec_file(cmp_promoted)
+    assert _find_inline_component_dict("CMP-PROMOTED", cnt_doc.frontmatter) is None
+    assert _find_inline_component_dict("CMP-INLINE-C4", cnt_doc.frontmatter) is not None
+
+    from eidos.core.index.storage import open_cache_connection
+
+    _snapshot_delta_baselines(eidos_dir, "DLT-2026-900", overwrite=True)
+    expected_sha = hashlib.sha256(cmp_promoted.read_bytes()).hexdigest()
+    with open_cache_connection(eidos_dir / ".cache" / "index.db") as conn:
+        row = conn.execute(
+            "SELECT baseline_sha256 FROM delta_baselines WHERE delta_id = ? AND target_id = ?",
+            ("DLT-2026-900", "CMP-PROMOTED"),
+        ).fetchone()
+    assert row is not None and row[0] == expected_sha
+
+    specs_by_id = {
+        "CNT-API-GATEWAY": (cnt_path, cnt_doc.doc_type, cnt_doc.frontmatter),
+        "CMP-PROMOTED": (cmp_promoted, cmp_doc.doc_type, cmp_doc.frontmatter),
+    }
+    container_components = {"CMP-PROMOTED": "CNT-API-GATEWAY", "CMP-INLINE-C4": "CNT-API-GATEWAY"}
+
+    # Subtarget precondition checks for INV-*, DEC-*, CTR-* on container and inline CMP-*
+    assert (
+        _check_structural_subtarget_precondition(
+            {"target": "INV-TOP-001", "parent": "CNT-API-GATEWAY"}, specs_by_id, container_components
+        )
+        is True
+    )
+    assert (
+        _check_structural_subtarget_precondition(
+            {"target": "INV-TECH-001", "parent": "CNT-API-GATEWAY"}, specs_by_id, container_components
+        )
+        is True
+    )
+    assert (
+        _check_structural_subtarget_precondition(
+            {"target": "INV-INLINE-001", "parent": "CMP-INLINE-C4"}, specs_by_id, container_components
+        )
+        is True
+    )
+    assert (
+        _check_structural_subtarget_precondition(
+            {"target": "INV-TOP-001", "parent": "CMP-INLINE-C4"}, specs_by_id, container_components
+        )
+        is False
+    )
+    assert (
+        _check_structural_subtarget_precondition(
+            {"target": "DEC-INLINE-001", "parent": "CMP-INLINE-C4"}, specs_by_id, container_components
+        )
+        is True
+    )
+    assert (
+        _check_structural_subtarget_precondition(
+            {"target": "CTR-INLINE-001", "parent": "CMP-INLINE-C4"}, specs_by_id, container_components
+        )
+        is True
+    )
+
+    # --- A4: promote_component from c4_internal_components and inline_component when eidos_dir.name != 'eidos' ---
+    custom_specs = tmp_path / "custom_specs"
+    custom_cnt = custom_specs / "architecture" / "containers" / "core.adoc"
+    custom_cnt.parent.mkdir(parents=True)
+    custom_cnt.write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-CORE\n"
+        "name: Core\n"
+        "c4_internal_components:\n"
+        "  - id: CMP-SUB\n"
+        "    name: null\n"
+        "    responsibility: null\n"
+        "---\n= Core\n",
+        encoding="utf-8",
+    )
+    promoted_sub, _ = promote_component("CMP-SUB", eidos_dir=custom_specs)
+    assert promoted_sub.exists()
+    inlined_cnt, _ = inline_component("CMP-SUB", eidos_dir=custom_specs)
+    assert inlined_cnt == custom_cnt
+    assert not promoted_sub.exists()
+    inlined_doc = parse_spec_file(custom_cnt)
+    all_inlined = list(inlined_doc.frontmatter.get("components") or []) + list(
+        inlined_doc.frontmatter.get("c4_internal_components") or []
+    )
+    assert any(
+        isinstance(c, dict) and c.get("id") == "CMP-SUB" and not c.get("ref")
+        for c in all_inlined
+    )
+
+    # --- A6: ChangelogGenerator with eidos_dir only and null frontmatter values ---
+    null_dlt = eidos_dir / "deltas" / "dlt-2026-901-nulls.adoc"
+    null_dlt.parent.mkdir(parents=True, exist_ok=True)
+    null_dlt.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-901\n"
+        "title: null\n"
+        "status: applied\n"
+        "intent:\n"
+        "  kind: null\n"
+        "  motivation: null\n"
+        "mutations: null\n"
+        "---\n= Null Delta\n",
+        encoding="utf-8",
+    )
+    cgen = ChangelogGenerator(eidos_dir=eidos_dir)
+    assert cgen.root == ws.resolve()
+    md = cgen.generate_changelog()
+    assert "DLT-2026-901" in md
+    assert "None" not in md
+
+    # --- A7: AuditEngine.audit_delta rejects non-delta/broken files and resolves deleted .adoc targets for DOM-* and EXP-* ---
+    auditor = AuditEngine(repo_root=ws, eidos_dir=eidos_dir)
+    non_delta_audit = auditor.audit_delta("CNT-API-GATEWAY")
+    assert non_delta_audit.status == "ERROR"
+    assert non_delta_audit.is_clean is False
+
+    exp_ref_pol = create_spec(
+        eidos_dir,
+        "policy",
+        "POL-EXP-REF",
+        "Policy Referencing Deleted Domain and Exploration",
+        rule="Governs DOM-LEGACY and EXP-OLD.",
+    )
+    assert exp_ref_pol.exists()
+    dlt_del_paths = eidos_dir / "deltas" / "dlt-2026-902-del.adoc"
+    dlt_del_paths.write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "schema: schemas/v1/delta/delta.schema.yaml\n"
+        "id: DLT-2026-902\n"
+        "title: Remove Legacy Domain and Exploration\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: deprecation\n"
+        "  motivation: Remove legacy specs\n"
+        "mutations:\n"
+        "  - operation: remove\n"
+        "    target: eidos/domains/legacy/domain.adoc\n"
+        "  - operation: remove\n"
+        "    target: eidos/explorations/exp-old.adoc\n"
+        "---\n= Remove Legacy\n",
+        encoding="utf-8",
+    )
+    audit_res = auditor.audit_delta("DLT-2026-902")
+    assert audit_res.status == "LEAKS_DETECTED"
+    matched_tokens = {f.matched_term for f in audit_res.unacknowledged_findings}
+    assert "DOM-LEGACY" in matched_tokens
+    assert "EXP-OLD" in matched_tokens
+
+
+

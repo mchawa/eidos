@@ -276,8 +276,17 @@ def _copy_plugin_tree(
             dest = target_dir / rel
             _check_not_symlink(dest, root=target_dir)
             if dest.exists() and not force:
-                if _compute_sha256(dest) == _compute_sha256(item) or dest.name in ("plugin.json", "hooks.json"):
+                if _compute_sha256(dest) == _compute_sha256(item):
                     created.append(dest)
+                elif dest.name == "plugin.json":
+                    with contextlib.suppress(OSError, json.JSONDecodeError, ValueError):
+                        existing_json = json.loads(dest.read_text(encoding="utf-8"))
+                        if isinstance(existing_json, dict) and existing_json.get("name") == "eidos":
+                            created.append(dest)
+                elif dest.name == "hooks.json":
+                    with contextlib.suppress(OSError):
+                        if "eidos" in dest.read_text(encoding="utf-8", errors="ignore"):
+                            created.append(dest)
                 continue
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(item, dest)
@@ -290,7 +299,7 @@ def _copy_plugin_tree(
             with open(target_manifest, encoding="utf-8") as f:
                 data = json.load(f)
             bundled_ver = get_bundled_plugin_version()
-            if data.get("version") != bundled_ver:
+            if isinstance(data, dict) and (force or data.get("name") == "eidos") and data.get("version") != bundled_ver:
                 data["version"] = bundled_ver
                 with open(target_manifest, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2)
@@ -456,8 +465,7 @@ def _ensure_claude_plugin_manifest(target_dir: Path, force: bool = False) -> lis
                         continue
                     manifest_data_to_write = manifest_data
                 else:
-                    existing["version"] = bundled_ver
-                    manifest_data_to_write = existing
+                    manifest_data_to_write = {**existing, **manifest_data}
             except (OSError, json.JSONDecodeError, ValueError):
                 if not force:
                     continue
@@ -832,14 +840,14 @@ def _ensure_copilot_plugin_manifest(target_dir: Path, force: bool = False) -> Pa
                 if not force:
                     return None
             else:
-                existing["version"] = bundled_ver
-                if "extensions" not in existing or not isinstance(existing["extensions"], dict):
-                    existing["extensions"] = {}
-                existing["extensions"]["com.github.copilot"] = {
+                merged_ext = dict(
+                    existing.get("extensions") if isinstance(existing.get("extensions"), dict) else {}
+                )
+                merged_ext["com.github.copilot"] = {
                     "type": "agent_plugin",
                     "skills": "skills",
                 }
-                manifest_data = existing
+                manifest_data = {**existing, **manifest_data, "extensions": merged_ext}
         except (OSError, json.JSONDecodeError, ValueError):
             if not force:
                 return None
@@ -1574,7 +1582,12 @@ def update_plugin(
     Returns:
         (previous_version, current_version, install_results)
     """
-    prev_version = get_installed_plugin_version(project_dir=project_dir, dest_path=dest_path)
+    lookup_dest = dest_path
+    if lookup_dest is None and target in TARGET_ADAPTERS and TARGET_ADAPTERS[target].plugin_subdir:
+        lookup_dest = Path(TARGET_ADAPTERS[target].plugin_subdir)
+    prev_version = get_installed_plugin_version(project_dir=project_dir, dest_path=lookup_dest)
+    if prev_version is None and lookup_dest is not dest_path:
+        prev_version = get_installed_plugin_version(project_dir=project_dir, dest_path=dest_path)
     bundled_version = get_bundled_plugin_version()
     results = install_plugin(target=target, project_dir=project_dir, dest_path=dest_path, force=True, launcher=launcher)
     return prev_version, bundled_version, results

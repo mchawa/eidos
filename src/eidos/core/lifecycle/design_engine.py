@@ -1,10 +1,54 @@
 """Design engine: scaffolds Multi-Design Systems, W3C DTCG tokens, UI components, screens, clients, and flows."""
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 DESIGN_SPEC_KEYS = ("design-system", "ui-component", "screen", "client", "flow")
+
+
+def _resolve_design_entity_ref(
+    raw_val: str,
+    prefix: str,
+    default_filename: str,
+    eidos_dir: Path,
+) -> tuple[str, str]:
+    """Resolve a design entity ID, slug, or .adoc path into (resolved_ref_id, clean_slug)."""
+    raw_clean = raw_val.strip()
+    prefix_lower = prefix.lower()
+    if "/" in raw_clean or "\\" in raw_clean or raw_clean.lower().endswith(".adoc"):
+        rel_path = Path(raw_clean.replace("\\", "/"))
+        candidate_files = [
+            eidos_dir / rel_path,
+            eidos_dir.parent / rel_path,
+            rel_path,
+        ]
+        parsed_id = ""
+        for cf in candidate_files:
+            if cf.exists() and cf.is_file():
+                try:
+                    from eidos.core.spec.parser import parse_spec_file
+
+                    doc = parse_spec_file(cf)
+                    doc_id = str(doc.frontmatter.get("id") or "").strip()
+                    if doc_id:
+                        parsed_id = doc_id
+                        break
+                except Exception:
+                    pass
+        if rel_path.name.lower() == default_filename and rel_path.parent.name:
+            clean_slug = rel_path.parent.name.lower().removeprefix(prefix_lower)
+        elif parsed_id:
+            clean_slug = parsed_id.lower().removeprefix(prefix_lower)
+        else:
+            clean_slug = rel_path.stem.lower().removeprefix(prefix_lower)
+        resolved_id = parsed_id or f"{prefix}{clean_slug.upper()}"
+        return resolved_id, clean_slug
+
+    clean_slug = raw_clean.lower().removeprefix(prefix_lower)
+    resolved_id = raw_clean.upper() if raw_clean.upper().startswith(prefix) else f"{prefix}{clean_slug.upper()}"
+    return resolved_id, clean_slug
 
 
 def build_design_spec(
@@ -60,7 +104,8 @@ def build_design_spec(
             "status": "active",
         }
         if client_id:
-            fm["client_id"] = client_id
+            clean_clt = client_id.strip().lower().removeprefix("clt-")
+            fm["client_id"] = re.sub(r"[^a-z0-9_-]+", "-", clean_clt).strip("-") or clean_clt
             fm["brand_name"] = title
         if extends_system:
             fm["inheritance"] = {"extends": extends_system, "override_mode": "token_and_component"}
@@ -77,36 +122,7 @@ Tokens are defined in W3C DTCG format at `tokens.json`.
     elif canonical_key == "ui-component":
         clean_comp = slug.removeprefix("uic-")
         raw_ds = (design_system or "DS-CORE").strip()
-        if "/" in raw_ds or "\\" in raw_ds or raw_ds.lower().endswith(".adoc"):
-            ds_path = Path(raw_ds.replace("\\", "/"))
-            candidate_ds_files = [
-                eidos_dir / ds_path,
-                eidos_dir.parent / ds_path,
-                ds_path,
-            ]
-            parsed_ds_id = ""
-            for cdf in candidate_ds_files:
-                if cdf.exists() and cdf.is_file():
-                    try:
-                        from eidos.core.spec.parser import parse_spec_file
-
-                        doc = parse_spec_file(cdf)
-                        doc_ds_id = str(doc.frontmatter.get("id") or "").strip()
-                        if doc_ds_id:
-                            parsed_ds_id = doc_ds_id
-                            break
-                    except Exception:
-                        pass
-            if ds_path.name.lower() == "system.adoc" and ds_path.parent.name:
-                sys_slug = ds_path.parent.name.lower().removeprefix("ds-")
-            elif parsed_ds_id:
-                sys_slug = parsed_ds_id.lower().removeprefix("ds-")
-            else:
-                sys_slug = ds_path.stem.lower().removeprefix("ds-")
-            resolved_ds_id = parsed_ds_id or f"DS-{sys_slug.upper()}"
-        else:
-            sys_slug = raw_ds.lower().removeprefix("ds-")
-            resolved_ds_id = raw_ds
+        resolved_ds_id, sys_slug = _resolve_design_entity_ref(raw_ds, "DS-", "system.adoc", eidos_dir)
         dest_dir = eidos_dir / "design" / "systems" / sys_slug / "components"
         dest_file = dest_dir / f"{clean_comp}.adoc"
         fm = {
@@ -144,8 +160,12 @@ Describes variants, interactive states, accessibility contracts, and visual test
 
     elif canonical_key == "screen":
         clean_screen = slug.removeprefix("scr-")
+        resolved_ds_id, _ = _resolve_design_entity_ref(
+            (design_system or "DS-CORE").strip(), "DS-", "system.adoc", eidos_dir
+        )
+        resolved_clt_id = ""
         if client_id:
-            client_slug = client_id.lower().removeprefix("clt-")
+            resolved_clt_id, client_slug = _resolve_design_entity_ref(client_id, "CLT-", "client.adoc", eidos_dir)
             dest_dir = eidos_dir / "design" / "clients" / client_slug / "screens"
         else:
             dest_dir = eidos_dir / "design" / "screens"
@@ -157,13 +177,13 @@ Describes variants, interactive states, accessibility contracts, and visual test
             "title": title,
             "route": route,
         }
-        if client_id:
-            fm["client"] = client_id
+        if resolved_clt_id:
+            fm["client"] = resolved_clt_id
         fm.update(
             {
                 "status": "active",
                 "capabilities": [],
-                "supported_design_systems": [design_system],
+                "supported_design_systems": [resolved_ds_id],
                 "slots": {"main_content": "Primary view content"},
                 "states": [
                     {"name": "loading", "description": "Skeleton loader displayed during data fetch."},
@@ -181,6 +201,9 @@ This specification defines the route, layout slots, and state transitions for {h
 
     elif canonical_key == "client":
         client_slug = slug.removeprefix("clt-")
+        resolved_ds_id, _ = _resolve_design_entity_ref(
+            (design_system or "DS-CORE").strip(), "DS-", "system.adoc", eidos_dir
+        )
         dest_dir = eidos_dir / "design" / "clients" / client_slug
         dest_file = dest_dir / "client.adoc"
         fm = {
@@ -190,7 +213,7 @@ This specification defines the route, layout slots, and state transitions for {h
             "title": title,
             "status": "active",
             "platform": platform,
-            "design_system": design_system,
+            "design_system": resolved_ds_id,
         }
         if owning_container:
             fm["container"] = owning_container
@@ -204,8 +227,9 @@ Describe the runtime platform, bound design system, and implementing container o
 
     elif canonical_key == "flow":
         flow_slug = slug.removeprefix("flow-")
+        resolved_clt_id = ""
         if client_id:
-            client_slug = client_id.lower().removeprefix("clt-")
+            resolved_clt_id, client_slug = _resolve_design_entity_ref(client_id, "CLT-", "client.adoc", eidos_dir)
             dest_dir = eidos_dir / "design" / "clients" / client_slug / "flows"
         else:
             dest_dir = eidos_dir / "design" / "flows"
@@ -216,10 +240,10 @@ Describe the runtime platform, bound design system, and implementing container o
             "id": doc_id,
             "title": title,
             "status": "active",
-            "flow_type": "client_internal" if client_id else "cross_client",
+            "flow_type": "client_internal" if resolved_clt_id else "cross_client",
         }
-        if client_id:
-            fm["client"] = client_id
+        if resolved_clt_id:
+            fm["client"] = resolved_clt_id
         fm.update({"capabilities": [], "steps": [{"step": 1, "title": "Entry point"}]})
         body = f"""= Flow: {heading}
 :toc: left

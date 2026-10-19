@@ -51,7 +51,11 @@ class ChangedFilesClassification:
 _CANDIDATE_BASE_REFS = ("origin/main", "main", "origin/master", "master", "HEAD~1")
 _NESTED_TEST_DIR_NAMES = {"test", "tests", "__tests__"}
 _ROOT_TEST_DIR_NAMES = {"test", "tests", "__tests__", "spec", "specs"}
-_PACKAGE_PATH_LINE_RE = re.compile(r"^package_path:\s*[\"']?([^\"'\n#]+)", re.MULTILINE)
+_PACKAGE_PATH_LINE_RE = re.compile(r"^package_path:[ \t]*[\"']?([^\"'\n#\[\]-][^\"'\n#]*)", re.MULTILINE)
+_PACKAGE_PATH_BLOCK_RE = re.compile(
+    r"^package_path:[ \t]*(.*?)$((?:\r?\n[ \t]+-[ \t]+.*$)*)",
+    re.MULTILINE,
+)
 
 
 def _stdout_str(res: object) -> str:
@@ -564,10 +568,24 @@ def _discover_container_package_paths(eidos_dir: Path) -> list[str]:
     for adoc in cnt_dir.glob("*.adoc"):
         with contextlib.suppress(OSError):
             content = adoc.read_text(encoding="utf-8", errors="replace")
-            for m in _PACKAGE_PATH_LINE_RE.finditer(content):
-                val = m.group(1).strip()
-                if val and val not in pkg_paths:
-                    pkg_paths.append(val)
+            for m in _PACKAGE_PATH_BLOCK_RE.finditer(content):
+                inline_val = m.group(1).split("#", 1)[0].strip()
+                block_items = m.group(2)
+                candidates: list[str] = []
+                if inline_val:
+                    if inline_val.startswith("[") and inline_val.endswith("]"):
+                        candidates.extend(inline_val[1:-1].split(","))
+                    else:
+                        candidates.append(inline_val)
+                if block_items:
+                    for line in block_items.splitlines():
+                        stripped = line.split("#", 1)[0].strip()
+                        if stripped.startswith("-"):
+                            candidates.append(stripped[1:].strip())
+                for cand in candidates:
+                    val = cand.strip().strip("\"'").strip().rstrip("/")
+                    if val and val not in pkg_paths:
+                        pkg_paths.append(val)
     return pkg_paths
 
 

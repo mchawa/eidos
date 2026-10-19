@@ -102,6 +102,8 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
         elif path in ("/health", "/api/health"):
             self._send_json({"status": "ok", "system": "eidos-portal"})
         elif self.static_dir is not None:
+            import mimetypes
+
             static_root = self.static_dir.resolve()
             rel_path = path.lstrip("/")
             full_path = (static_root / rel_path).resolve()
@@ -110,8 +112,9 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
                 return
             if full_path.is_file():
                 payload = full_path.read_bytes()
+                mime_type = mimetypes.guess_type(str(full_path))[0] or "application/octet-stream"
                 self.send_response(HTTPStatus.OK)
-                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Type", mime_type)
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)
@@ -128,7 +131,14 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND, f"Path '{path}' not found.")
             return
 
-        content_length = int(self.headers.get("Content-Length", "0") or 0)
+        try:
+            content_length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            self.send_error(HTTPStatus.BAD_REQUEST, "Invalid Content-Length header.")
+            return
+        if content_length < 0 or content_length > 10 * 1024 * 1024:
+            self.send_error(HTTPStatus.BAD_REQUEST, "Invalid or excessive Content-Length header.")
+            return
         payload: dict[str, Any] = {}
         if content_length > 0:
             raw_body = self.rfile.read(content_length)

@@ -45,6 +45,8 @@ def serve_cmd(
     if not target.exists():
         console.print(f"[bold red]Error:[/bold red] Specifications directory '{target}' not found.")
         raise typer.Exit(code=1)
+    if (target / "eidos").is_dir() and not (target / "system.adoc").is_file():
+        target = target / "eidos"
 
     run_portal_server(eidos_dir=target, host=host, port=port, open_browser=open_browser)
 
@@ -69,6 +71,8 @@ def build_site_cmd(
     if not target.exists():
         console.print(f"[bold red]Error:[/bold red] Specifications directory '{target}' not found.")
         raise typer.Exit(code=1)
+    if (target / "eidos").is_dir() and not (target / "system.adoc").is_file():
+        target = target / "eidos"
 
     generated_dir = build_static_portal(eidos_dir=target, output_dir=out_dir)
     console.print(f"[bold green]✓ Successfully generated static portal at:[/bold green] {generated_dir.resolve()}")

@@ -191,26 +191,24 @@ def _set_frontmatter_scalar(raw_content: str, key: str, value: str) -> str:
         if m is not None:
             found = True
             key_indent = len(line) - len(line.lstrip(" \t"))
-            old_val, trailing_comment = _split_yaml_inline_comment(m.group(2))
+            _old_val, trailing_comment = _split_yaml_inline_comment(m.group(2))
             prefix = m.group(1) if m.group(1).endswith((" ", "\t")) else f"{m.group(1)} "
             out_lines.append(f"{prefix}{safe_val}{trailing_comment}")
             i += 1
-            old_stripped = old_val.strip()
-            if old_stripped[:1] in ("|", ">"):
-                trailing_blanks: list[str] = []
-                while i < n:
-                    nxt = lines[i]
-                    if not nxt.strip():
-                        trailing_blanks.append(nxt)
-                        i += 1
-                        continue
-                    nxt_indent = len(nxt) - len(nxt.lstrip(" \t"))
-                    if nxt_indent > key_indent:
-                        trailing_blanks.clear()
-                        i += 1
-                        continue
-                    break
-                out_lines.extend(trailing_blanks)
+            trailing_blanks: list[str] = []
+            while i < n:
+                nxt = lines[i]
+                if not nxt.strip():
+                    trailing_blanks.append(nxt)
+                    i += 1
+                    continue
+                nxt_indent = len(nxt) - len(nxt.lstrip(" \t"))
+                if nxt_indent > key_indent:
+                    trailing_blanks.clear()
+                    i += 1
+                    continue
+                break
+            out_lines.extend(trailing_blanks)
             continue
         out_lines.append(line)
         i += 1
@@ -244,28 +242,45 @@ def _mutate_frontmatter_components(
             return raw_content
         if not isinstance(parsed_fm, dict):
             return raw_content
-        comps = parsed_fm.get("components")
+        list_key = (
+            "c4_internal_components"
+            if "components" not in parsed_fm and isinstance(parsed_fm.get("c4_internal_components"), list)
+            else "components"
+        )
+        comps = parsed_fm.get(list_key)
         if not isinstance(comps, list):
             comps = []
-            parsed_fm["components"] = comps
+            parsed_fm[list_key] = comps
         if op == "append" and item_dict is not None:
             comps.append(item_dict)
         elif op in ("replace", "replace_with_ref", "replace_inline") and item_dict is not None:
-            for idx_c, c in enumerate(comps):
-                if isinstance(c, dict) and c.get("id") == target_id:
-                    comps[idx_c] = item_dict
+            replaced = False
+            for k in ("components", "c4_internal_components"):
+                k_list = parsed_fm.get(k)
+                if isinstance(k_list, list):
+                    for idx_c, c in enumerate(k_list):
+                        if isinstance(c, dict) and c.get("id") == target_id:
+                            k_list[idx_c] = item_dict
+                            replaced = True
+                            break
+                if replaced:
                     break
         elif op == "remove":
-            parsed_fm["components"] = [
-                c for c in comps if not (isinstance(c, dict) and c.get("id") == target_id)
-            ]
+            for k in ("components", "c4_internal_components"):
+                if isinstance(parsed_fm.get(k), list):
+                    parsed_fm[k] = [
+                        c for c in parsed_fm[k] if not (isinstance(c, dict) and c.get("id") == target_id)
+                    ]
         return dump_spec_document(parsed_fm, body)
 
     lines = raw_yaml.splitlines(keepends=True)
     if lines and not lines[-1].endswith("\n"):
         lines[-1] += "\n"
 
-    comp_idx = next((i for i, ln in enumerate(lines) if re.match(r"^components\s*:", ln)), None)
+    comp_idx = next(
+        (i for i, ln in enumerate(lines) if re.match(r"^(?:components|c4_internal_components)\s*:", ln)),
+        None,
+    )
     if comp_idx is None:
         if op == "append" and item_dict is not None:
             lines.append("components:\n")
@@ -273,7 +288,7 @@ def _mutate_frontmatter_components(
             return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
         return raw_content
 
-    header_m = re.match(r"^(components\s*:\s*)\[\s*\](\s*(?:#.*)?\n?)$", lines[comp_idx])
+    header_m = re.match(r"^((?:components|c4_internal_components)\s*:\s*)\[\s*\](\s*(?:#.*)?\n?)$", lines[comp_idx])
     if header_m:
         if op == "append" and item_dict is not None:
             trailing = header_m.group(2)
@@ -397,16 +412,17 @@ def find_spec_by_id_or_path(eidos_dir: Path, target: str) -> Path | None:
                 if resolved_adoc.is_relative_to(eidos_resolved):
                     return resolved_adoc
 
-    # 2. Search by ID across all .adoc files in eidos_dir
+    # 2. Search by ID or filename across all .adoc files in eidos_dir
     target_lower = target_clean.lower()
+    target_stem_lower = target_lower.removesuffix(".adoc")
     for p in eidos_dir.rglob("*.adoc"):
         if p.is_symlink():
             continue
-        if p.stem.lower() == target_lower:
+        if p.name.lower() == target_lower or p.stem.lower() == target_stem_lower:
             return p.resolve()
         try:
             doc, _, _ = get_cached_spec_document(p)
-            if doc is not None and doc.doc_id and doc.doc_id.lower() == target_lower:
+            if doc is not None and doc.doc_id and doc.doc_id.lower() in (target_lower, target_stem_lower):
                 return p.resolve()
         except OSError:
             continue

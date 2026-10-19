@@ -459,9 +459,18 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         if cnt_invs:
             entity_invariants[cnt_id] = cnt_invs
         cnt_deps = cnt.get("dependencies", {})
-        cnt_int_deps = cnt_deps.get("internal", []) if isinstance(cnt_deps, dict) else []
+        cnt_int_deps = (
+            (cnt_deps.get("internal_containers") or cnt_deps.get("internal") or [])
+            if isinstance(cnt_deps, dict)
+            else []
+        )
         for dep_ref in cnt_int_deps or []:
-            dep_id = _resolve_ref_id(dep_ref)
+            raw_ref = (
+                str(dep_ref.get("container") or dep_ref.get("id") or dep_ref.get("target") or "")
+                if isinstance(dep_ref, dict)
+                else str(dep_ref).split("(", 1)[0].strip()
+            )
+            dep_id = _resolve_ref_id(raw_ref)
             if dep_id:
                 _add_unique(cnt_dependents.setdefault(dep_id, []), cnt_id)
         for ic in cnt.get("internal_components", []):
@@ -472,13 +481,24 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 if ic_invs:
                     entity_invariants[ic_id] = ic_invs
                 ic_deps = ic.get("dependencies", {})
-                ic_int_deps = (
-                    ic_deps.get("internal", [])
-                    if isinstance(ic_deps, dict)
-                    else (ic_deps if isinstance(ic_deps, list) else [])
-                )
-                for dep_ref in ic_int_deps or []:
-                    dep_id = _resolve_ref_id(dep_ref)
+                ic_int_deps: list[Any] = []
+                if isinstance(ic_deps, dict):
+                    for dkey in ("internal", "internal_components", "components"):
+                        dval = ic_deps.get(dkey)
+                        if isinstance(dval, list):
+                            ic_int_deps.extend(dval)
+                elif isinstance(ic_deps, list):
+                    ic_int_deps.extend(ic_deps)
+                ic_ifaces = ic.get("interfaces")
+                if isinstance(ic_ifaces, dict) and isinstance(ic_ifaces.get("consumes"), list):
+                    ic_int_deps.extend(ic_ifaces["consumes"])
+                for dep_ref in ic_int_deps:
+                    raw_ref = (
+                        str(dep_ref.get("id") or dep_ref.get("target") or dep_ref.get("component") or "")
+                        if isinstance(dep_ref, dict)
+                        else str(dep_ref).split("(", 1)[0].strip()
+                    )
+                    dep_id = _resolve_ref_id(raw_ref)
                     if dep_id:
                         _add_unique(comp_dependents.setdefault(dep_id, []), ic_id)
 
@@ -1501,11 +1521,11 @@ def _generate_c4_containers_mermaid(
 
 def _generate_c4_component_mermaid(component: dict[str, Any], all_components: list[dict[str, Any]]) -> str:
     """Generate Mermaid syntax for C4 Level 3 Component Whitebox View of a single container."""
-    cid = component["id"]
-    clean_name = html.escape(str(component.get("name", cid))).replace('"', "'")
-    component.get("container_type", "library")
-    component.get("runtime", "N/A").replace('"', "'")
-    internals = component.get("internal_components", [])
+    cid = str(component.get("id") or "CNT")
+    clean_name = html.escape(str(component.get("name") or cid)).replace('"', "'")
+    str(component.get("container_type") or "library")
+    str(component.get("runtime") or "N/A").replace('"', "'")
+    internals = component.get("internal_components") or []
     box_id = f"subgraph_{cid.replace('-', '_')}"
 
     lines = [
@@ -1526,13 +1546,15 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
         mod_node_by_ref: dict[str, str] = {}
         for idx, mod in enumerate(internals):
             mid = mod.get("id")
-            mname = mod.get("name", f"Module {idx + 1}").replace('"', "'")
-            title_text = f"<b>{html.escape(mid)}: {html.escape(mname)}</b>" if mid else f"<b>{html.escape(mname)}</b>"
-            resp = mod.get("responsibility", "").replace('"', "'")
-            raw_spath = mod.get("source_path", "")
-            spath = (", ".join(str(p) for p in raw_spath) if isinstance(raw_spath, list) else str(raw_spath)).replace(
-                '"', "'"
-            )
+            mname = str(mod.get("name") or f"Module {idx + 1}").replace('"', "'")
+            title_text = f"<b>{html.escape(str(mid))}: {html.escape(mname)}</b>" if mid else f"<b>{html.escape(mname)}</b>"
+            resp = str(mod.get("responsibility") or "").replace('"', "'")
+            raw_spath = mod.get("source_path") or ""
+            spath = (
+                ", ".join(str(p) for p in raw_spath if p is not None)
+                if isinstance(raw_spath, list)
+                else str(raw_spath)
+            ).replace('"', "'")
             mod_id = f"mod_{cid.replace('-', '_')}_{idx}"
             if isinstance(mid, str) and mid.strip():
                 mod_node_by_ref[mid.strip()] = mod_id
@@ -1580,31 +1602,38 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
     lines.append("  end")
 
     # Inbound / Outbound peer container dependencies
-    deps = component.get("dependencies", {})
+    deps = component.get("dependencies") or {}
     int_deps = (
-        (deps.get("internal_containers", []) or deps.get("internal_components", [])) if isinstance(deps, dict) else []
+        (deps.get("internal_containers") or deps.get("internal_components") or []) if isinstance(deps, dict) else []
     )
     for raw_dep in int_deps:
         dep_id = (
             str(raw_dep.get("id") or raw_dep.get("container") or raw_dep.get("target") or "")
             if isinstance(raw_dep, dict)
             else str(raw_dep)
-        )
+        ).split("(", 1)[0].strip()
         if dep_id and dep_id != cid:
-            peer_node = f"peer_{dep_id.replace('-', '_')}"
+            peer_node = f"peer_{re.sub(r'[^a-zA-Z0-9_]', '_', dep_id)}"
             lines.append(
-                f"  {peer_node}[\"<div style='padding:8px 12px;'><b>{dep_id}</b><br/><i>[Peer Container]</i></div>\"]:::peer"
+                f"  {peer_node}[\"<div style='padding:8px 12px;'><b>{html.escape(dep_id)}</b><br/><i>[Peer Container]</i></div>\"]:::peer"
             )
             first_mod = f"mod_{cid.replace('-', '_')}_0" if internals else f"mod_{cid.replace('-', '_')}_main"
             lines.append(f'  {first_mod} ==>|"Consumes / Depends On"| {peer_node}')
 
     # Provided contracts
-    contracts = component.get("contracts", {})
-    provides = contracts.get("provides", []) if isinstance(contracts, dict) else []
-    for ctr_id in provides:
-        ctr_node = f"ctr_{ctr_id.replace('-', '_')}"
+    contracts = component.get("contracts") or {}
+    provides = (contracts.get("provides") or []) if isinstance(contracts, dict) else []
+    for raw_ctr in provides:
+        ctr_id = (
+            str(raw_ctr.get("id") or raw_ctr.get("contract") or raw_ctr.get("target") or "")
+            if isinstance(raw_ctr, dict)
+            else str(raw_ctr)
+        ).split("(", 1)[0].strip()
+        if not ctr_id:
+            continue
+        ctr_node = f"ctr_{re.sub(r'[^a-zA-Z0-9_]', '_', ctr_id)}"
         lines.append(
-            f"  {ctr_node}[\"<div style='padding:8px 12px;'><b>{ctr_id}</b><br/><i>[Interface Contract]</i></div>\"]:::contract"
+            f"  {ctr_node}[\"<div style='padding:8px 12px;'><b>{html.escape(ctr_id)}</b><br/><i>[Interface Contract]</i></div>\"]:::contract"
         )
         last_mod = (
             f"mod_{cid.replace('-', '_')}_{len(internals) - 1}" if internals else f"mod_{cid.replace('-', '_')}_main"
@@ -1616,18 +1645,29 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
 
 def _generate_screen_state_mermaid(screen_id: str, states: list[Any], transitions: list[dict[str, Any]]) -> str:
     """Generate Mermaid stateDiagram-v2 syntax for screen state transitions."""
-    clean_id = screen_id.replace("-", "_")
+    clean_id = re.sub(r"[^a-zA-Z0-9_]", "_", str(screen_id or "screen"))
     lines = ["stateDiagram-v2", "  direction LR"]
     if not states:
         lines.append(f"  [*] --> {clean_id}")
         return "\n".join(lines)
 
-    state_names = [s.get("name", str(s)) if isinstance(s, dict) else str(s) for s in states]
+    def _sanitize_state_id(raw_val: Any, fallback_idx: int = 0) -> str:
+        raw_str = str(raw_val or "").strip()
+        cleaned = re.sub(r"[^a-zA-Z0-9_]", "_", raw_str).strip("_")
+        return cleaned or f"state_{fallback_idx}"
+
+    state_names: list[str] = []
+    for idx, s in enumerate(states):
+        raw_name = (s.get("name") or s.get("id") or f"state_{idx}") if isinstance(s, dict) else (s or f"state_{idx}")
+        state_names.append(_sanitize_state_id(raw_name, idx))
+
     lines.append(f"  [*] --> {state_names[0]}")
-    for t in transitions:
-        src = t.get("from_state", state_names[0])
-        dst = t.get("to_state", state_names[-1])
-        trigger = t.get("action", t.get("event", "action"))
+    for t in transitions or []:
+        if not isinstance(t, dict):
+            continue
+        src = _sanitize_state_id(t.get("from_state") or state_names[0], 0)
+        dst = _sanitize_state_id(t.get("to_state") or state_names[-1], len(state_names) - 1)
+        trigger = str(t.get("action") or t.get("event") or "action").replace("\n", " ")
         lines.append(f"  {src} --> {dst}: {trigger}")
 
     if not transitions and len(state_names) > 1:
@@ -1639,7 +1679,7 @@ def _generate_screen_state_mermaid(screen_id: str, states: list[Any], transition
 
 def _extract_or_generate_flow_mermaid(flow_id: str, flow_type: str, steps: list[dict[str, Any]], body: str) -> str:
     """Extract authored Mermaid block from spec body or generate from steps."""
-    match = re.search(r"\[mermaid\]\s*\n----\s*\n(.*?)\n----", body, re.DOTALL)
+    match = re.search(r"\[mermaid\]\s*\n----\s*\n(.*?)\n----", body or "", re.DOTALL)
     if match:
         return match.group(1).strip()
 
@@ -1650,31 +1690,42 @@ def _extract_or_generate_flow_mermaid(flow_id: str, flow_type: str, steps: list[
         lines = ["sequenceDiagram", "  autonumber"]
         participants: list[str] = []
         for s in steps:
-            clt = s.get("client", "Client")
+            if not isinstance(s, dict):
+                continue
+            clt = str(s.get("client") or "Client")
             if clt not in participants:
                 participants.append(clt)
+        if not participants:
+            participants.append("Client")
         for p in participants:
-            p_clean = p.replace("-", "_")
+            p_clean = re.sub(r"[^a-zA-Z0-9_]", "_", p)
             lines.append(f"  participant {p_clean} as {p}")
         for s in steps:
-            clt = s.get("client", participants[0]).replace("-", "_")
-            title = s.get("title", f"Step {s.get('step', '')}").replace('"', "'")
-            action = s.get("action", "").replace('"', "'")
+            if not isinstance(s, dict):
+                continue
+            clt = re.sub(r"[^a-zA-Z0-9_]", "_", str(s.get("client") or participants[0]))
+            title = str(s.get("title") or f"Step {s.get('step') or ''}").replace('"', "'")
+            action = str(s.get("action") or "").replace('"', "'")
             lines.append(f"  Note over {clt}: {title}")
             lines.append(f"  {clt}->>{clt}: {action}")
         return "\n".join(lines)
     else:
         lines = ["flowchart LR"]
         for i, s in enumerate(steps):
-            step_num = s.get("step", i + 1)
-            title = s.get("title", f"Step {step_num}").replace('"', "'")
-            screen = s.get("screen", "")
+            if not isinstance(s, dict):
+                continue
+            step_num = s.get("step") if s.get("step") is not None else (i + 1)
+            title = str(s.get("title") or f"Step {step_num}").replace('"', "'")
+            screen = str(s.get("screen") or "")
             scr_label = f"<br/><small>{Path(screen).stem}</small>" if screen else ""
             lines.append(f'  step{step_num}["<b>Step {step_num}: {title}</b>{scr_label}"]')
         for i in range(len(steps) - 1):
-            s_curr = steps[i]
-            trigger = s_curr.get("action", "next").replace('"', "'")
+            s_curr = steps[i] if isinstance(steps[i], dict) else {}
+            s_next = steps[i + 1] if isinstance(steps[i + 1], dict) else {}
+            trigger = str(s_curr.get("action") or "next").replace('"', "'")
             if len(trigger) > 28:
                 trigger = trigger[:25] + "..."
-            lines.append(f'  step{steps[i].get("step", i + 1)} -->|"{trigger}"| step{steps[i + 1].get("step", i + 2)}')
+            curr_num = s_curr.get("step") if s_curr.get("step") is not None else (i + 1)
+            next_num = s_next.get("step") if s_next.get("step") is not None else (i + 2)
+            lines.append(f'  step{curr_num} -->|"{trigger}"| step{next_num}')
         return "\n".join(lines)

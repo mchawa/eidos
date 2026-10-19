@@ -267,6 +267,7 @@ class _SpecDiffInspector:
         uncommitted: bool,
         merge_base: str | None = None,
         versions_fn: Any = None,
+        synthetic_diff_mock: bool = False,
     ) -> None:
         self._root = root
         self._base_ref = base_ref
@@ -274,6 +275,7 @@ class _SpecDiffInspector:
         self._uncommitted = uncommitted
         self.merge_base = merge_base
         self._versions_fn = versions_fn
+        self._synthetic_diff_mock = synthetic_diff_mock
         self._versions: dict[str, tuple[str | None, str | None]] = {}
 
     def versions(self, spec: str) -> tuple[str | None, str | None]:
@@ -300,8 +302,10 @@ class _SpecDiffInspector:
         old, new = self.versions(spec)
         if new is None:
             return False
-        if old is None or old == new:
+        if old is None:
             return True
+        if old == new:
+            return self._synthetic_diff_mock
 
         spec_lower = spec.lower()
         if spec_lower.endswith(".json"):

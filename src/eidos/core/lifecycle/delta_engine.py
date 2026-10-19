@@ -256,11 +256,10 @@ def _find_inline_component_dict(
     """Return the inline component dict for comp_id from a container frontmatter, if present."""
     if not isinstance(cnt_fm, dict):
         return None
-    comps = cnt_fm.get("components", []) or cnt_fm.get("c4_internal_components", [])
-    if isinstance(comps, list):
-        for c in comps:
-            if isinstance(c, dict) and c.get("id") == comp_id:
-                return c
+    comps = list(cnt_fm.get("components") or []) + list(cnt_fm.get("c4_internal_components") or [])
+    for c in comps:
+        if isinstance(c, dict) and c.get("id") == comp_id and not c.get("ref"):
+            return c
     return None
 
 
@@ -283,6 +282,8 @@ def _snapshot_delta_baselines(eidos_dir: Path, delta_id: str, overwrite: bool = 
                 rows.append((delta_id, spec_id, sha))
                 rows.append((delta_id, str(spec_path.resolve()), sha))
         for comp_id, cnt_id in container_components.items():
+            if comp_id in specs_by_id:
+                continue
             if cnt_id in specs_by_id:
                 cnt_path, _, cnt_fm = specs_by_id[cnt_id]
                 comp_dict = _find_inline_component_dict(comp_id, cnt_fm)
@@ -781,16 +782,17 @@ def _check_structural_subtarget_precondition(
         return True
 
     if target.startswith("INV-"):
-        owner_spec_id = container_components.get(parent, parent)
+        owner_spec_id = parent if parent in specs_by_id else container_components.get(parent, parent)
         if owner_spec_id not in specs_by_id:
             return False
         _, _, owner_fm = specs_by_id[owner_spec_id]
-        invs = list(
-            (owner_fm or {}).get("invariants", [])
-            or ((owner_fm or {}).get("technical", {}) or {}).get("invariants", [])
-            or []
-        )
-        for comp in (owner_fm or {}).get("components", []) or []:
+        invs: list[Any] = []
+        if parent == owner_spec_id:
+            invs.extend((owner_fm or {}).get("invariants") or [])
+            invs.extend(((owner_fm or {}).get("technical") or {}).get("invariants") or [])
+        for comp in list((owner_fm or {}).get("components") or []) + list(
+            (owner_fm or {}).get("c4_internal_components") or []
+        ):
             if isinstance(comp, dict) and comp.get("invariants") and (
                 parent == owner_spec_id or comp.get("id") == parent
             ):
@@ -807,18 +809,34 @@ def _check_structural_subtarget_precondition(
         )
 
     if target.startswith("CTR-") and parent.startswith(("CNT-", "CMP-")):
-        if parent not in specs_by_id:
+        if parent in specs_by_id:
+            _, _, cnt_fm = specs_by_id[parent]
+            contracts = (cnt_fm or {}).get("contracts", {}) or {}
+            all_ctrs = (
+                (contracts.get("provides") or [])
+                + (contracts.get("consumes") or [])
+                + (contracts.get("requires") or [])
+            )
+            if target in all_ctrs:
+                return True
+        elif parent in container_components and container_components[parent] in specs_by_id:
+            inline_comp = _find_inline_component_dict(parent, specs_by_id[container_components[parent]][2])
+            if inline_comp is not None:
+                for blk_key in ("interfaces", "contracts"):
+                    ifaces = inline_comp.get(blk_key) or {}
+                    if isinstance(ifaces, dict):
+                        all_ifaces = (
+                            (ifaces.get("provides") or [])
+                            + (ifaces.get("consumes") or [])
+                            + (ifaces.get("requires") or [])
+                        )
+                        if target in all_ifaces:
+                            return True
+        else:
             return False
-        _, _, cnt_fm = specs_by_id[parent]
-        contracts = (cnt_fm or {}).get("contracts", {}) or {}
-        all_ctrs = (
-            (contracts.get("provides") or []) + (contracts.get("consumes") or []) + (contracts.get("requires") or [])
-        )
-        if target in all_ctrs:
-            return True
         if target in specs_by_id:
             ctr_fm = specs_by_id[target][2] or {}
-            return (ctr_fm.get("owning_container") or ctr_fm.get("owning_component")) == parent
+            return parent in (ctr_fm.get("owning_container"), ctr_fm.get("owning_component"))
         return False
 
     return True

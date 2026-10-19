@@ -1460,5 +1460,247 @@ package_path: src/core
     assert "Array.isArray(f.clients) && f.clients.length > 1" in design_tsx
 
 
+def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
+    """Comprehensive regression test covering Deep Audit Group D (D1-D7)."""
+    import http.client
+    import json
+    import sqlite3
+    import threading
+    from http.server import HTTPServer
 
+    from typer.testing import CliRunner
 
+    from eidos.cli.main import app
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.spec.models import SpecDocument, ValidationReport
+    from eidos.plugin.hooks import _load_stop_validation_snapshot, _save_stop_validation_snapshot
+    from eidos.plugin.installer import (
+        PluginInstallTarget,
+        _ensure_claude_plugin_manifest,
+        _ensure_copilot_plugin_manifest,
+        install_plugin,
+        update_plugin,
+    )
+    from eidos.portal.generator import (
+        _extract_or_generate_flow_mermaid,
+        _generate_c4_component_mermaid,
+        _generate_screen_state_mermaid,
+        get_portal_data,
+    )
+    from eidos.portal.server import EidosPortalHandler
+
+    init_repository(tmp_path, name="DeepAuditD")
+    eidos_dir = tmp_path / "eidos"
+
+    # D1: get_portal_data populates cnt_dependents and comp_dependents for delta blast_radius
+    cnt_a = eidos_dir / "architecture" / "containers" / "cnt-alpha.adoc"
+    cnt_a.write_text(
+        '---\n'
+        'id: "CNT-ALPHA"\n'
+        'name: "Alpha Container"\n'
+        'type: "tech/container"\n'
+        'status: "active"\n'
+        'tier: "tier_core"\n'
+        'container_type: "service"\n'
+        'runtime: "python3.12"\n'
+        'responsibility: "Alpha service."\n'
+        'dependencies:\n'
+        '  internal:\n'
+        '    - "CNT-BETA"\n'
+        'components:\n'
+        '  - id: "CMP-ALPHA-MOD"\n'
+        '    name: "Alpha Mod"\n'
+        '    responsibility: "Alpha module."\n'
+        '    dependencies:\n'
+        '      internal_components:\n'
+        '        - id: "CMP-BETA-MOD"\n'
+        '---\n'
+        '= Alpha Container\n\nBody.\n',
+        encoding="utf-8",
+    )
+    cnt_b = eidos_dir / "architecture" / "containers" / "cnt-beta.adoc"
+    cnt_b.write_text(
+        '---\n'
+        'id: "CNT-BETA"\n'
+        'name: "Beta Container"\n'
+        'type: "tech/container"\n'
+        'status: "active"\n'
+        'tier: "tier_core"\n'
+        'container_type: "service"\n'
+        'runtime: "python3.12"\n'
+        'responsibility: "Beta service."\n'
+        'components:\n'
+        '  - id: "CMP-BETA-MOD"\n'
+        '    name: "Beta Mod"\n'
+        '    responsibility: "Beta module."\n'
+        '---\n'
+        '= Beta Container\n\nBody.\n',
+        encoding="utf-8",
+    )
+    dlt_file = eidos_dir / "deltas" / "dlt-2026-900-beta.adoc"
+    dlt_file.write_text(
+        '---\n'
+        'id: "DLT-2026-900"\n'
+        'title: "Mutate Beta"\n'
+        'type: "delta/mutation"\n'
+        'status: "proposed"\n'
+        'intent:\n'
+        '  kind: "feature_addition"\n'
+        '  motivation: "Test blast radius dependents."\n'
+        'mutations:\n'
+        '  - op: "modify"\n'
+        '    target: "CMP-BETA-MOD"\n'
+        '    parent: "CNT-BETA"\n'
+        '    summary: "Update beta mod."\n'
+        '---\n'
+        '= Mutate Beta\n\nBody.\n',
+        encoding="utf-8",
+    )
+    portal_data = get_portal_data(eidos_dir)
+    proposed_dlt = next(d for d in portal_data["deltas"]["proposed"] if d["id"] == "DLT-2026-900")
+    assert "CNT-ALPHA" in proposed_dlt["blast_radius"]["impacted_containers"]
+    assert "CMP-ALPHA-MOD" in proposed_dlt["blast_radius"]["impacted_components"]
+
+    # D2 & D7: Non-Eidos plugin.json protection, base field preservation, and update_plugin target lookup
+    proj_dir = tmp_path / "plugin_proj"
+    proj_dir.mkdir()
+    foreign_dir = proj_dir / ".agents" / "plugins" / "eidos"
+    foreign_dir.mkdir(parents=True)
+    foreign_manifest = foreign_dir / "plugin.json"
+    foreign_manifest.write_text(json.dumps({"name": "foreign-plugin", "version": "9.9.9"}), encoding="utf-8")
+    install_plugin(target=PluginInstallTarget.PROJECT, project_dir=proj_dir, force=False)
+    assert json.loads(foreign_manifest.read_text(encoding="utf-8"))["name"] == "foreign-plugin"
+
+    claude_dir = tmp_path / "claude_test"
+    claude_dir.mkdir()
+    (claude_dir / "plugin.json").write_text(
+        json.dumps({"name": "eidos", "version": "0.0.1", "skills": "skills", "agents": "agents"}),
+        encoding="utf-8",
+    )
+    _ensure_claude_plugin_manifest(claude_dir, force=False)
+    merged_claude = json.loads((claude_dir / "plugin.json").read_text(encoding="utf-8"))
+    assert merged_claude["skills"] == "skills"
+    assert merged_claude["agents"] == "agents"
+
+    copilot_dir = tmp_path / "copilot_test"
+    copilot_dir.mkdir()
+    (copilot_dir / "plugin.json").write_text(
+        json.dumps({"name": "eidos", "version": "0.0.1", "customKey": "preserved"}),
+        encoding="utf-8",
+    )
+    _ensure_copilot_plugin_manifest(copilot_dir, force=False)
+    merged_copilot = json.loads((copilot_dir / "plugin.json").read_text(encoding="utf-8"))
+    assert merged_copilot["customKey"] == "preserved"
+
+    codex_proj = tmp_path / "codex_proj"
+    codex_proj.mkdir()
+    install_plugin(target=PluginInstallTarget.CODEX, project_dir=codex_proj, force=True)
+    codex_manifest = codex_proj / ".codex" / "plugin.json"
+    codex_data = json.loads(codex_manifest.read_text(encoding="utf-8"))
+    codex_data["version"] = "0.0.9"
+    codex_manifest.write_text(json.dumps(codex_data), encoding="utf-8")
+    prev_ver, curr_ver, _ = update_plugin(target=PluginInstallTarget.CODEX, project_dir=codex_proj)
+    assert prev_ver == "0.0.9"
+    assert curr_ver != "0.0.9"
+
+    # D3: ExplorationsView.tsx uses valid Badge variants ("primary" and "danger", not "info" or "destructive")
+    repo_root = Path(__file__).resolve().parent.parent
+    exp_tsx = (
+        repo_root / "src" / "eidos" / "portal" / "frontend" / "src" / "components" / "views" / "ExplorationsView.tsx"
+    ).read_text(encoding="utf-8")
+    assert '"info"' not in exp_tsx
+    assert '"destructive"' not in exp_tsx
+
+    # D4: _save_stop_validation_snapshot and _load_stop_validation_snapshot preserve documents
+    cache_dir = eidos_dir / ".cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    db_path = cache_dir / "index.db"
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT)")
+    stub_doc = SpecDocument(
+        file_path=cnt_a,
+        frontmatter={},
+        body="",
+        doc_type="architecture/container",
+        doc_id="CNT-ALPHA",
+        errors=["sample error"],
+    )
+    rep = ValidationReport(
+        documents=[stub_doc],
+        schema_errors={str(cnt_a): ["sample error"]},
+        broken_references=["CNT-ALPHA references non-existent ID 'CNT-MISSING'"],
+    )
+    _save_stop_validation_snapshot(eidos_dir, rep)
+    loaded_rep = _load_stop_validation_snapshot(eidos_dir, max_age_seconds=30.0)
+    assert loaded_rep is not None
+    assert loaded_rep.total_docs == 1
+    assert loaded_rep.documents[0].doc_id == "CNT-ALPHA"
+    assert loaded_rep.documents[0].errors == ["sample error"]
+
+    # D5: EidosPortalHandler MIME types and Content-Length validation
+    static_dir = tmp_path / "static_d5"
+    static_dir.mkdir()
+    (static_dir / "icon.svg").write_text("<svg></svg>", encoding="utf-8")
+    EidosPortalHandler.eidos_dir = eidos_dir
+    EidosPortalHandler.static_dir = static_dir
+    httpd = HTTPServer(("127.0.0.1", 0), EidosPortalHandler)
+    port = httpd.server_address[1]
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("GET", "/icon.svg")
+        resp = conn.getresponse()
+        resp.read()
+        assert resp.status == 200
+        assert "image/svg+xml" in (resp.getheader("Content-Type") or "")
+        conn.close()
+
+        conn2 = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn2.putrequest("POST", "/api/validate")
+        conn2.putheader("Content-Length", "not-an-int")
+        conn2.endheaders()
+        resp2 = conn2.getresponse()
+        resp2.read()
+        assert resp2.status == 400
+        conn2.close()
+    finally:
+        EidosPortalHandler.static_dir = None
+        httpd.shutdown()
+        httpd.server_close()
+
+    # D6: Mermaid generators handle None fields, dict entries in contracts.provides, and spaces/hyphens in state names
+    c4_mermaid = _generate_c4_component_mermaid(
+        {
+            "id": None,
+            "name": None,
+            "container_type": None,
+            "runtime": None,
+            "internal_components": [{"id": "CMP-1", "name": None, "responsibility": None, "source_path": [None, "a.py"]}],
+            "contracts": {"provides": [{"id": "CTR-API-1 (REST)"}]},
+        },
+        [],
+    )
+    assert "ctr_CTR_API_1" in c4_mermaid
+
+    state_mermaid = _generate_screen_state_mermaid(
+        "SCR-TEST",
+        [{"name": "In Progress-State"}, {"name": "Done State"}],
+        [{"from_state": "In Progress-State", "to_state": "Done State", "action": "complete"}],
+    )
+    assert "In_Progress_State --> Done_State: complete" in state_mermaid
+
+    flow_mermaid = _extract_or_generate_flow_mermaid(
+        "FLOW-TEST",
+        "cross_client",
+        [{"step": None, "client": None, "title": None, "action": None}],
+        "",
+    )
+    assert "participant Client as Client" in flow_mermaid
+
+    # D7: eidos portal build --path <repo_root> resolves <repo_root>/eidos automatically
+    runner = CliRunner()
+    out_dir = tmp_path / "portal_dist"
+    res = runner.invoke(app, ["portal", "build", "--path", str(tmp_path), "--out", str(out_dir)])
+    assert res.exit_code == 0, res.output
+    assert (out_dir / "index.html").is_file()

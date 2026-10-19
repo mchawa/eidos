@@ -97,7 +97,21 @@ class ChangelogGenerator:
         eidos_dir: Path | None = None,
         repo_url: str | None = None,
     ) -> None:
-        self.root = Path(repo_root).resolve() if repo_root else Path.cwd().resolve()
+        if repo_root is not None:
+            self.root = Path(repo_root).resolve()
+        elif eidos_dir is not None:
+            edir_res = Path(eidos_dir).resolve()
+            self.root = (
+                edir_res.parent
+                if (
+                    edir_res.name == "eidos"
+                    or (edir_res / "deltas").exists()
+                    or (edir_res / "system.adoc").exists()
+                )
+                else Path.cwd().resolve()
+            )
+        else:
+            self.root = Path.cwd().resolve()
         self.eidos_dir = Path(eidos_dir).resolve() if eidos_dir else (self.root / "eidos").resolve()
         resolved_url = repo_url if repo_url is not None else _resolve_default_repo_url(self.root)
         self.repo_url = resolved_url.rstrip("/")
@@ -214,11 +228,11 @@ class ChangelogGenerator:
                 status = str(fm.get("status", "proposed")).strip().lower()
                 if status != "applied":
                     continue
-                delta_id = fm.get("id", df.stem.upper())
-                title = fm.get("title", "")
-                intent = fm.get("intent", {})
-                kind = intent.get("kind", "feature") if isinstance(intent, dict) else "feature"
-                motivation = intent.get("motivation", "") if isinstance(intent, dict) else ""
+                delta_id = str(fm.get("id") or df.stem.upper())
+                title = str(fm.get("title") or "")
+                intent = fm.get("intent") or {}
+                kind = str(intent.get("kind") or "feature") if isinstance(intent, dict) else "feature"
+                motivation = (intent.get("motivation") or "") if isinstance(intent, dict) else ""
                 if isinstance(motivation, str):
                     # Extract first sentence or summary
                     clean_mot = re.sub(r"\s+", " ", motivation).strip()
@@ -236,7 +250,7 @@ class ChangelogGenerator:
                         "title": title,
                         "status": status,
                         "kind": kind,
-                        "mutations": fm.get("mutations", []),
+                        "mutations": fm.get("mutations") or [],
                         "summary": summary,
                         "motivation": motivation,
                         "file_path": df,
@@ -344,10 +358,10 @@ class ChangelogGenerator:
         """Classify a SpecDelta into Added, Changed, Fixed, Deprecated, or Removed using intent.kind and mutations[].operation."""
         from eidos.core.lifecycle.delta_engine import normalize_delta_mutation
 
-        delta_id = delta["id"]
-        title = delta["title"]
-        summary = delta["summary"]
-        kind = str(delta.get("kind", "feature")).lower()
+        delta_id = str(delta.get("id") or "")
+        title = str(delta.get("title") or "")
+        summary = str(delta.get("summary") or "")
+        kind = str(delta.get("kind") or "feature").lower()
         raw_mutations = delta.get("mutations") or []
         norm_mutations = [normalize_delta_mutation(m) for m in raw_mutations if isinstance(m, dict)]
         operations = [

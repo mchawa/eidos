@@ -3473,3 +3473,225 @@ package_path: src/new_pkg
         assert "src/new_pkg/new_mod.py" in inferred
     finally:
         idx.close()
+
+
+def test_deep_audit_group_c_c1_through_c10(tmp_path: Path) -> None:
+    """Verify deep audit Group C fixes (C1 through C10)."""  # eidos:fixture
+    import os
+    import time
+
+    from eidos.core.index.graph_index import ArchitecturalIndex
+    from eidos.core.spec.models import FrontmatterModel
+    from eidos.vcs.diff import _discover_container_package_paths
+    from eidos.vcs.invariants import (
+        _INV_OR_POL_TOKEN_RE,
+        _has_function_level_fixture,
+        _verify_single_invariant,
+        extract_invariants_and_verify,
+    )
+    from eidos.vcs.structural import _SpecDiffInspector
+
+    # --- C2: _has_function_level_fixture handles Rust #[test], standalone # comments before @decorator, and multi-line /* ... */ ---
+    rust_lines = [
+        "#[test]",
+        "fn test_rust_fixture() {",
+        "    /* multi-line",
+        "       eidos:fixture",
+        "    */",
+        "    let x = \"INV-RUST-001\";",
+        "}",
+    ]
+    assert _has_function_level_fixture("\n".join(rust_lines), _INV_OR_POL_TOKEN_RE) is True
+
+    py_comment_dec_lines = [
+        "# Leading comment before decorator",
+        "@pytest.mark.parametrize('x', [1])",
+        "def test_py_fixture(x):",
+        "    \"\"\"Docstring with eidos:fixture.\"\"\"",
+        "    pass",
+    ]
+    assert _has_function_level_fixture("\n".join(py_comment_dec_lines), _INV_OR_POL_TOKEN_RE) is True
+
+    # --- C6: _discover_container_package_paths handles inline list, YAML block list, and empty key ---
+    cnt_dir_c6 = tmp_path / "c6_eidos" / "architecture" / "containers"
+    cnt_dir_c6.mkdir(parents=True)
+    (cnt_dir_c6 / "inline_list.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-1\npackage_path: [\"src/a\", 'src/b/']\n---\n",
+        encoding="utf-8",
+    )
+    (cnt_dir_c6 / "block_list.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-2\npackage_path:\n  - src/c\n  - src/d  # comment\nstatus: active\n---\n",
+        encoding="utf-8",
+    )
+    (cnt_dir_c6 / "empty_key.adoc").write_text(
+        "---\ntype: tech/container\nid: CNT-3\npackage_path:\nstatus: active\n---\n",
+        encoding="utf-8",
+    )
+    discovered_pkgs = _discover_container_package_paths(tmp_path / "c6_eidos")
+    assert set(discovered_pkgs) == {"src/a", "src/b", "src/c", "src/d"}
+
+    # --- C7: _SpecDiffInspector synthetic_diff_mock=False vs True when old == new ---
+    spec_txt = "---\ntype: tech/container\nid: CNT-X\n---\n= X\n"
+    insp_real = _SpecDiffInspector(
+        tmp_path,
+        None,
+        "HEAD",
+        False,
+        versions_fn=lambda _p: (spec_txt, spec_txt),
+        synthetic_diff_mock=False,
+    )
+    assert insp_real.is_substantive("eidos/architecture/containers/x.adoc") is False
+
+    insp_mock = _SpecDiffInspector(
+        tmp_path,
+        None,
+        "HEAD",
+        False,
+        versions_fn=lambda _p: (spec_txt, spec_txt),
+        synthetic_diff_mock=True,
+    )
+    assert insp_mock.is_substantive("eidos/architecture/containers/x.adoc") is True
+
+    # --- C8: _verify_single_invariant with "::::" and extract_invariants_and_verify skipping README.adoc & _partial.adoc ---
+    assert _verify_single_invariant("INV-1", "::::", tmp_path, {}, {}) == []
+
+    # --- C10: FrontmatterModel.effective_package_paths combines package_path and source_path ---
+    fm_c10 = FrontmatterModel.model_validate(
+        {"id": "CNT-C10", "type": "tech/container", "package_path": "src/pkg", "source_path": ["src/pkg", "src/alt"]}
+    )
+    assert fm_c10.effective_package_paths() == ["src/pkg", "src/alt"]
+
+    # --- C3, C4, C5, C8, C9, C10: ArchitecturalIndex sync, domain invariants, duplicate ID protection, file_path in context/query, symbol_mappings test_binding ---
+    repo = tmp_path / "c_index_repo"
+    eidos_dir = repo / "eidos"
+    dom_dir = eidos_dir / "domains" / "billing"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    cmp_dir = eidos_dir / "architecture" / "components"
+    tests_dir = repo / "tests"
+    src_owned = repo / "src" / "owned_mod"
+    for d in (dom_dir, cnt_dir, cmp_dir, tests_dir, src_owned):
+        d.mkdir(parents=True, exist_ok=True)
+
+    (src_owned / "handler.py").write_text("def handle():\n    return True\n", encoding="utf-8")
+    (tests_dir / "test_billing.py").write_text(
+        "def test_dom_inv():\n    # INV-DOM-BILL-001\n    assert True\n",
+        encoding="utf-8",
+    )
+
+    # C8: README.adoc and _partial.adoc with fake invariants should be ignored by extract_invariants_and_verify
+    (eidos_dir / "README.adoc").write_text(
+        "---\ntype: product/policy\nid: POL-README\ninvariants:\n  - id: INV-README-IGNORE\n    rule: Ignored\n---\n",
+        encoding="utf-8",
+    )
+    (eidos_dir / "_partial.adoc").write_text(
+        "---\ntype: product/policy\nid: POL-PARTIAL\ninvariants:\n  - id: INV-PARTIAL-IGNORE\n    rule: Ignored\n---\n",
+        encoding="utf-8",
+    )
+
+    # C3: Domain with invariant
+    (dom_dir / "domain.adoc").write_text(
+        "---\n"
+        "type: product/domain\n"
+        "id: DOM-BILLING\n"
+        "name: Billing Domain\n"
+        "invariants:\n"
+        "  - id: INV-DOM-BILL-001\n"
+        "    rule: All invoices must balance.\n"
+        "    test_binding: tests/test_billing.py::test_dom_inv\n"
+        "---\n= Billing Domain\n",
+        encoding="utf-8",
+    )
+
+    # C4: Canonical container CNT-BILL + colliding duplicate file
+    cnt_canon = cnt_dir / "01_billing.adoc"
+    cnt_dup = cnt_dir / "02_billing_dup.adoc"
+    cnt_canon.write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-BILL\n"
+        "name: Canonical Billing\n"
+        "package_path: src/owned_mod\n"
+        "components:\n"
+        "  - id: CMP-BILL-MOD\n"
+        "    name: Billing Module\n"
+        "    ref: eidos/architecture/components/bill_mod.adoc\n"
+        "---\n= Canonical Billing\n",
+        encoding="utf-8",
+    )
+    cnt_dup.write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-BILL\n"
+        "name: Duplicate Billing\n"
+        "---\n= Duplicate Billing\n",
+        encoding="utf-8",
+    )
+
+    # C10: Component with non-glob directory owned_path
+    cmp_file = cmp_dir / "bill_mod.adoc"
+    cmp_file.write_text(
+        "---\n"
+        "type: tech/component\n"
+        "id: CMP-BILL-MOD\n"
+        "name: Billing Module\n"
+        "container: CNT-BILL\n"
+        "owned_path: src/owned_mod\n"
+        "responsibility: Handle billing\n"
+        "---\n= Billing Module\n",
+        encoding="utf-8",
+    )
+
+    invs_extracted = {t.invariant_id for t in extract_invariants_and_verify(eidos_dir, repo)}
+    assert "INV-DOM-BILL-001" in invs_extracted
+    assert "INV-README-IGNORE" not in invs_extracted
+    assert "INV-PARTIAL-IGNORE" not in invs_extracted
+
+    idx = ArchitecturalIndex(repo_root=repo, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+        conn = idx._get_connection()
+
+        # C3: INV-DOM-BILL-001 indexed in entities table with source_id == DOM-BILLING and has_test_coverage
+        import json
+
+        inv_ent = conn.execute(
+            "SELECT type, data_json FROM entities WHERE id = 'INV-DOM-BILL-001';"
+        ).fetchone()
+        assert inv_ent is not None and inv_ent[0] == "invariant"
+        inv_meta = json.loads(inv_ent[1])
+        assert inv_meta["source_id"] == "DOM-BILLING" and inv_meta["has_test_coverage"] is True
+
+        # C9: test_binding row present in symbol_mappings
+        tb_rows = conn.execute(
+            "SELECT symbol, entity_id FROM symbol_mappings WHERE kind = 'test_binding' AND entity_id = 'INV-DOM-BILL-001';"
+        ).fetchall()
+        assert ("tests/test_billing.py", "INV-DOM-BILL-001") in [(r[0], r[1]) for r in tb_rows]
+
+        # C4: Delete colliding duplicate file and run incremental sync -> canonical CNT-BILL must remain intact!
+        cnt_dup.unlink()
+        idx.sync(force=False)
+        cnt_row = conn.execute("SELECT title, file_path FROM entities WHERE id = 'CNT-BILL';").fetchone()
+        assert cnt_row is not None and cnt_row[0] == "Canonical Billing"
+
+        # C5: query_fts and get_tiered_context_slice include file_path
+        q_res = idx.query_fts("Billing")
+        assert any(r.get("id") == "CNT-BILL" and r.get("file_path") for r in q_res)
+        ctx_guard = idx.get_tiered_context_slice(component="CNT-BILL", tier="guardrails")
+        assert any(c.get("id") == "CNT-BILL" and c.get("file_path") for c in ctx_guard.components)
+        ctx_deep = idx.get_tiered_context_slice(component="CNT-BILL", tier="deep")
+        assert any(c.get("id") == "CNT-BILL" and c.get("file_path") for c in ctx_deep.components)
+
+        # C10: Creating a new file under non-glob owned_path marks index dirty and maps to CMP-BILL-MOD
+        new_src = src_owned / "sub_handler.py"
+        new_src.write_text("def sub():\n    return 1\n", encoding="utf-8")
+        bump = time.time() + 10.0
+        os.utime(new_src, (bump, bump))
+        assert idx.is_dirty()[0] is True
+        idx.sync(force=False)
+        mapped = conn.execute(
+            "SELECT entity_id FROM symbol_mappings WHERE symbol = 'src/owned_mod/sub_handler.py' AND kind = 'source_path';"
+        ).fetchall()
+        assert "CMP-BILL-MOD" in {r[0] for r in mapped}
+    finally:
+        idx.close()
+

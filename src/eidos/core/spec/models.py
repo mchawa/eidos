@@ -27,45 +27,32 @@ class _DictCompatibleModel(BaseModel):
 
     def __getitem__(self, key: str) -> Any:
         if key in self.__class__.model_fields:
-            val = getattr(self, key)
-            if val is None and key not in self.__pydantic_fields_set__:
+            if key not in self.__pydantic_fields_set__:
                 raise KeyError(key)
-            return val
+            return getattr(self, key)
         for field_name, field_info in self.__class__.model_fields.items():
             if field_info.alias == key:
-                val = getattr(self, field_name)
-                if val is None and field_name not in self.__pydantic_fields_set__:
+                if field_name not in self.__pydantic_fields_set__:
                     raise KeyError(key)
-                return val
+                return getattr(self, field_name)
         if self.__pydantic_extra__ and key in self.__pydantic_extra__:
             return self.__pydantic_extra__[key]
-        if hasattr(self, key):
-            val = getattr(self, key)
-            if not callable(val) and val is not None:
-                return val
         raise KeyError(key)
 
     def get(self, key: str, default: Any = None) -> Any:
         try:
-            val = self[key]
+            return self[key]
         except KeyError:
             return default
-        if (
-            val is None
-            and key not in self.__pydantic_fields_set__
-            and not (self.__pydantic_extra__ and key in self.__pydantic_extra__)
-        ):
-            return default
-        return val
 
     def __contains__(self, key: object) -> bool:
         if not isinstance(key, str):
             return False
-        if key in self.__class__.model_fields and getattr(self, key, None) is not None:
-            return True
+        if key in self.__class__.model_fields:
+            return key in self.__pydantic_fields_set__ and getattr(self, key, None) is not None
         for field_name, field_info in self.__class__.model_fields.items():
-            if field_info.alias == key and getattr(self, field_name, None) is not None:
-                return True
+            if field_info.alias == key:
+                return field_name in self.__pydantic_fields_set__ and getattr(self, field_name, None) is not None
         return bool(self.__pydantic_extra__ and key in self.__pydantic_extra__)
 
 
@@ -277,6 +264,7 @@ _FRONTMATTER_SCALAR_KEYS = (
     "status",
     "version",
     "domain",
+    "parent_domain",
     "domain_binding",
     "container",
     "container_type",
@@ -300,6 +288,7 @@ class FrontmatterModel(_DictCompatibleModel):
     status: str | None = None
     version: str | None = None
     domain: str | None = None
+    parent_domain: str | None = None
     domain_binding: str | None = None
     container: str | None = None
     container_type: str | None = None
@@ -337,37 +326,46 @@ class FrontmatterModel(_DictCompatibleModel):
                     raw[path_key] = _coerce_opt_str(pval)
                 else:
                     raw[path_key] = None
-        comps_raw = raw.get("components")
-        if not comps_raw and isinstance(raw.get("c4_internal_components"), list):
-            comps_raw = raw.get("c4_internal_components")
-        raw["components"] = (
-            [c for c in comps_raw if isinstance(c, (dict, InlineComponentModel))]
-            if isinstance(comps_raw, list)
-            else []
-        )
-        tech_raw = raw.get("technical")
-        raw["technical"] = tech_raw if isinstance(tech_raw, (dict, CapabilityTechnicalModel)) else {}
+        if "components" in raw or "c4_internal_components" in raw:
+            comps_a = raw.get("components")
+            comps_b = raw.get("c4_internal_components")
+            comps_raw: list[Any] = []
+            if isinstance(comps_a, list):
+                comps_raw.extend(comps_a)
+            if isinstance(comps_b, list):
+                comps_raw.extend(comps_b)
+            raw["components"] = [
+                c for c in comps_raw if isinstance(c, (dict, InlineComponentModel))
+            ]
+        if "technical" in raw:
+            tech_raw = raw.get("technical")
+            raw["technical"] = (
+                tech_raw if isinstance(tech_raw, (dict, CapabilityTechnicalModel)) else {}
+            )
         if "intent" in raw:
             intent_raw = raw.get("intent")
             raw["intent"] = intent_raw if isinstance(intent_raw, (dict, DeltaIntentModel)) else None
-        muts_raw = raw.get("mutations")
-        raw["mutations"] = (
-            [m for m in muts_raw if isinstance(m, (dict, DeltaMutationModel))]
-            if isinstance(muts_raw, list)
-            else []
-        )
-        decs_raw = raw.get("decisions")
-        raw["decisions"] = (
-            [d for d in decs_raw if isinstance(d, (dict, DecisionModel))]
-            if isinstance(decs_raw, list)
-            else []
-        )
-        invs_raw = raw.get("invariants")
-        raw["invariants"] = (
-            [i for i in invs_raw if isinstance(i, (dict, str, InvariantModel))]
-            if isinstance(invs_raw, list)
-            else []
-        )
+        if "mutations" in raw:
+            muts_raw = raw.get("mutations")
+            raw["mutations"] = (
+                [m for m in muts_raw if isinstance(m, (dict, DeltaMutationModel))]
+                if isinstance(muts_raw, list)
+                else []
+            )
+        if "decisions" in raw:
+            decs_raw = raw.get("decisions")
+            raw["decisions"] = (
+                [d for d in decs_raw if isinstance(d, (dict, DecisionModel))]
+                if isinstance(decs_raw, list)
+                else []
+            )
+        if "invariants" in raw:
+            invs_raw = raw.get("invariants")
+            raw["invariants"] = (
+                [i for i in invs_raw if isinstance(i, (dict, str, InvariantModel))]
+                if isinstance(invs_raw, list)
+                else []
+            )
         return raw
 
     def source_paths(self) -> list[str]:
@@ -387,12 +385,16 @@ class FrontmatterModel(_DictCompatibleModel):
         return []
 
     def effective_package_paths(self) -> list[str]:
-        """Return package_paths if declared, otherwise fallback to source_paths."""
-        return self.package_paths() or self.source_paths()
+        """Return combined unique package_paths and source_paths."""
+        combined: list[str] = []
+        for p in [*self.package_paths(), *self.source_paths()]:
+            if p not in combined:
+                combined.append(p)
+        return combined
 
     def effective_domain(self) -> str:
-        """Return normalized domain or domain_binding string."""
-        return str(self.domain or self.domain_binding or "").strip()
+        """Return normalized domain, parent_domain, or domain_binding string."""
+        return str(self.domain or self.parent_domain or self.domain_binding or "").strip()
 
     def invariants_with_component(self) -> list[tuple[InvariantModel, str | None]]:
         """Return (InvariantModel, owning_inline_component_id_or_None) across top-level, technical, and inline components."""

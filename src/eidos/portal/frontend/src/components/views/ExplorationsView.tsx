@@ -130,7 +130,7 @@ export function ExplorationsView({
         );
       case "in_progress":
         return (
-          <Badge variant="info" className="capitalize flex items-center gap-1">
+          <Badge variant="primary" className="capitalize flex items-center gap-1">
             <Compass className="h-3 w-3 animate-spin" />
             In Progress
           </Badge>
@@ -144,7 +144,7 @@ export function ExplorationsView({
         );
       case "discarded":
         return (
-          <Badge variant="destructive" className="capitalize flex items-center gap-1">
+          <Badge variant="danger" className="capitalize flex items-center gap-1">
             <XCircle className="h-3 w-3" />
             Discarded
           </Badge>

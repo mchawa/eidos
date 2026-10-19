@@ -157,7 +157,23 @@ class AuditEngine:
                 error_message=f"Failed to parse SpecDelta '{delta_file}': {e}",
             )
 
-        delta_id = delta_doc.frontmatter.get("id", delta_file.stem.upper())
+        if delta_doc.errors or not delta_doc.frontmatter:
+            return DeltaAuditResult(
+                delta_id=delta_id_or_path,
+                status="ERROR",
+                is_clean=False,
+                error_message=f"Failed to parse SpecDelta '{delta_file}': {'; '.join(delta_doc.errors) or 'Missing frontmatter'}",
+            )
+
+        if delta_doc.doc_type != "delta/mutation":
+            return DeltaAuditResult(
+                delta_id=delta_id_or_path,
+                status="ERROR",
+                is_clean=False,
+                error_message=f"Document at '{delta_file}' is not a SpecDelta (type: {delta_doc.doc_type}).",
+            )
+
+        delta_id = delta_doc.frontmatter.get("id") or delta_file.stem.upper()
         targets, search_tokens, tombstone = self._extract_targets_and_tokens(delta_doc)
 
         if not targets and not search_tokens:
@@ -291,7 +307,9 @@ class AuditEngine:
                     if not resolved_id:
                         from eidos.core.lifecycle.delta_engine import resolve_entity_prefix_meta
 
-                        stem_upper = Path(clean_p).stem.upper()
+                        clean_path_obj = Path(clean_p)
+                        stem_upper = clean_path_obj.stem.upper()
+                        parent_upper = clean_path_obj.parent.name.upper()
                         if resolve_entity_prefix_meta(stem_upper) is not None:
                             resolved_id = stem_upper
                         elif "architecture/components/" in clean_p:
@@ -317,6 +335,31 @@ class AuditEngine:
                         elif "/capabilities/" in clean_p:
                             resolved_id = (
                                 stem_upper if stem_upper.startswith("CAP-") else f"CAP-{stem_upper}"
+                            )
+                        elif "domains/" in clean_p:
+                            dom_token = parent_upper if stem_upper == "DOMAIN" and parent_upper else stem_upper
+                            resolved_id = dom_token if dom_token.startswith("DOM-") else f"DOM-{dom_token}"
+                        elif "design/systems/" in clean_p and "/components/" in clean_p:
+                            resolved_id = (
+                                stem_upper if stem_upper.startswith("UIC-") else f"UIC-{stem_upper}"
+                            )
+                        elif "design/systems/" in clean_p:
+                            ds_token = parent_upper if stem_upper == "SYSTEM" and parent_upper else stem_upper
+                            resolved_id = ds_token if ds_token.startswith("DS-") else f"DS-{ds_token}"
+                        elif "/screens/" in clean_p or clean_p.startswith("design/screens/"):
+                            resolved_id = (
+                                stem_upper if stem_upper.startswith("SCR-") else f"SCR-{stem_upper}"
+                            )
+                        elif "/flows/" in clean_p or clean_p.startswith("design/flows/"):
+                            resolved_id = (
+                                stem_upper if stem_upper.startswith("FLOW-") else f"FLOW-{stem_upper}"
+                            )
+                        elif "design/clients/" in clean_p:
+                            clt_token = parent_upper if stem_upper == "CLIENT" and parent_upper else stem_upper
+                            resolved_id = clt_token if clt_token.startswith("CLT-") else f"CLT-{clt_token}"
+                        elif "explorations/" in clean_p:
+                            resolved_id = (
+                                stem_upper if stem_upper.startswith("EXP-") else f"EXP-{stem_upper}"
                             )
                     if resolved_id:
                         targets.add(resolved_id)

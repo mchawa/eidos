@@ -79,9 +79,11 @@ def init_repository(
     # otherwise create 0-byte system.adoc ready for user authoring.
     sys_file = eidos_dir / "system.adoc"
     if name or title:
-        raw_slug = re.sub(r"[^A-Z0-9_-]+", "-", (name or title or "SYSTEM").strip().upper()).strip("-") or "SYSTEM"
+        clean_name = (name or "").strip()
+        clean_title = (title or "").strip()
+        raw_slug = re.sub(r"[^A-Z0-9_-]+", "-", (clean_name or clean_title or "SYSTEM").upper()).strip("-") or "SYSTEM"
         sys_id = raw_slug if raw_slug.startswith("SYS-") else f"SYS-{raw_slug}"
-        sys_title = (title or name or sys_id).strip()
+        sys_title = clean_title or clean_name or sys_id
         sys_fm = {
             "type": "product/system",
             "schema": "schemas/v1/product/system.schema.yaml",

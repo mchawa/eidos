@@ -8,10 +8,12 @@ required:
   - schema
   - id
   - title
-  - domain
   - status
   - business
   - technical
+anyOf:
+  - required: ["domain"]
+  - required: ["parent_domain"]
 properties:
   type:
     type: string

@@ -412,10 +412,20 @@ def _save_stop_validation_snapshot(eidos_dir: Path, report: Any) -> None:
     if not db_path.is_file():
         return
     snap = _compute_adoc_snapshot(eidos_dir)
+    docs_summary = [
+        {
+            "file_path": str(d.file_path),
+            "doc_type": d.doc_type,
+            "doc_id": d.doc_id,
+            "errors": list(d.errors),
+        }
+        for d in getattr(report, "documents", [])
+    ]
     payload = json.dumps(
         {
             "timestamp": time.time(),
             "snapshot": list(snap),
+            "documents": docs_summary,
             "schema_errors": {str(k): list(v) for k, v in report.schema_errors.items()},
             "broken_references": list(report.broken_references),
         }
@@ -432,7 +442,7 @@ def _load_stop_validation_snapshot(eidos_dir: Path, max_age_seconds: float = 5.0
     import sqlite3
     import time
 
-    from eidos.core.spec.models import ValidationReport
+    from eidos.core.spec.models import SpecDocument, ValidationReport
 
     db_path = eidos_dir / ".cache" / "index.db"
     if not db_path.is_file():
@@ -452,7 +462,20 @@ def _load_stop_validation_snapshot(eidos_dir: Path, max_age_seconds: float = 5.0
             return None
         if tuple(data["snapshot"]) != _compute_adoc_snapshot(eidos_dir):
             return None
+        docs = [
+            SpecDocument(
+                file_path=Path(str(d.get("file_path") or "")),
+                frontmatter={},
+                body="",
+                doc_type=str(d.get("doc_type") or "unknown"),
+                doc_id=str(d.get("doc_id") or ""),
+                errors=list(d.get("errors") or []),
+            )
+            for d in (data.get("documents") or [])
+            if isinstance(d, dict)
+        ]
         return ValidationReport(
+            documents=docs,
             schema_errors={str(k): list(v) for k, v in (data.get("schema_errors") or {}).items()},
             broken_references=list(data.get("broken_references") or []),
         )

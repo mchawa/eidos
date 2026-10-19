@@ -310,19 +310,41 @@ def detect_drift(
                         pref_low = eidos_rel_prefix.lower().strip("/")
                         if pref_low and not norm_p.lower().startswith(f"{pref_low}/"):
                             declared_delta_paths.add(f"{pref_low}/{norm_p.lower()}")
-                        for cand_p in (root / norm_p, target_eidos / norm_p):
-                            if cand_p.is_file() and cand_p.suffix.lower() == ".adoc":
-                                t_doc, _, _ = get_cached_spec_document(cand_p)
-                                if t_doc is not None and t_doc.doc_id:
-                                    declared_delta_targets.add(t_doc.doc_id.strip().lower())
-                                break
+                        found_target_doc = False
+                        if effective_uncommitted:
+                            for cand_p in (root / norm_p, target_eidos / norm_p):
+                                if cand_p.is_file() and cand_p.suffix.lower() == ".adoc":
+                                    t_doc, _, _ = get_cached_spec_document(cand_p)
+                                    if t_doc is not None and t_doc.doc_id:
+                                        declared_delta_targets.add(t_doc.doc_id.strip().lower())
+                                        found_target_doc = True
+                                    break
                         else:
-                            if validation_report is not None:
-                                for vdoc in validation_report.documents:
-                                    vfp = str(vdoc.file_path).replace("\\", "/").lower()
-                                    if (vfp == norm_p.lower() or vfp.endswith("/" + norm_p.lower())) and vdoc.doc_id:
-                                        declared_delta_targets.add(vdoc.doc_id.strip().lower())
+                            rel_cands = [norm_p]
+                            if pref_low and not norm_p.lower().startswith(f"{pref_low}/"):
+                                rel_cands.append(f"{pref_low}/{norm_p}")
+                            for rel_cand in rel_cands:
+                                _, new_tc = _fetch_versions(rel_cand)
+                                if new_tc is not None:
+                                    fm_tc, _, _ = extract_frontmatter(new_tc)
+                                    if isinstance(fm_tc, dict) and fm_tc.get("id"):
+                                        declared_delta_targets.add(str(fm_tc["id"]).strip().lower())
+                                        found_target_doc = True
                                         break
+                            if not found_target_doc:
+                                for cand_p in (root / norm_p, target_eidos / norm_p):
+                                    if cand_p.is_file() and cand_p.suffix.lower() == ".adoc":
+                                        t_doc, _, _ = get_cached_spec_document(cand_p)
+                                        if t_doc is not None and t_doc.doc_id:
+                                            declared_delta_targets.add(t_doc.doc_id.strip().lower())
+                                            found_target_doc = True
+                                        break
+                        if not found_target_doc and validation_report is not None:
+                            for vdoc in validation_report.documents:
+                                vfp = str(vdoc.file_path).replace("\\", "/").lower()
+                                if (vfp == norm_p.lower() or vfp.endswith("/" + norm_p.lower())) and vdoc.doc_id:
+                                    declared_delta_targets.add(vdoc.doc_id.strip().lower())
+                                    break
         except OSError:
             pass
 
@@ -364,7 +386,13 @@ def detect_drift(
 
     trivial_records: list[dict[str, Any]] = []
     spec_inspector = _SpecDiffInspector(
-        root, resolved_base_ref, head_ref, effective_uncommitted, merge_base=resolved_mb, versions_fn=_fetch_versions
+        root,
+        resolved_base_ref,
+        head_ref,
+        effective_uncommitted,
+        merge_base=resolved_mb,
+        versions_fn=_fetch_versions,
+        synthetic_diff_mock=synthetic_diff_mock,
     )
     if code_changed:
         for cf, cid, spath in comp_mappings:

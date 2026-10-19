@@ -100,7 +100,7 @@ class _CodeOwnershipResolver:
                 fm = json.loads(row["data_json"])
             except (TypeError, ValueError):
                 continue
-            for comp in fm.get("components", []) or fm.get("c4_internal_components", []) or []:
+            for comp in (fm.get("components") or []) + (fm.get("c4_internal_components") or []):
                 if not isinstance(comp, dict):
                     continue
                 raw = comp.get("source_path")
@@ -119,20 +119,47 @@ class _CodeOwnershipResolver:
                 "SELECT symbol, entity_id FROM symbol_mappings WHERE kind = 'owned_path' ORDER BY entity_id, symbol;"
             )
         ]
+        self._scan_dirs: set[str] = set()
+        for sym, ent_id in self._owned:
+            norm = _normalize_rel_path(sym)
+            if not norm:
+                continue
+            if any(ch in norm for ch in "*?["):
+                prefix_parts = []
+                for part in norm.split("/"):
+                    if any(ch in part for ch in "*?["):
+                        break
+                    prefix_parts.append(part)
+                if prefix_parts:
+                    self._scan_dirs.add("/".join(prefix_parts))
+            else:
+                self._scan_dirs.add(norm)
+                if "." in norm.rsplit("/", 1)[-1]:
+                    self._declared_by.setdefault(norm, set()).add(ent_id)
         self._packages: list[tuple[str, str]] = []
         for r in conn.execute(
             "SELECT symbol, entity_id FROM symbol_mappings WHERE kind = 'package_path' ORDER BY entity_id, symbol;"
         ):
             norm = _normalize_rel_path(r["symbol"])
-            if not norm or any(ch in norm for ch in "*?["):
+            if not norm:
+                continue
+            if any(ch in norm for ch in "*?["):
+                prefix_parts = []
+                for part in norm.split("/"):
+                    if any(ch in part for ch in "*?["):
+                        break
+                    prefix_parts.append(part)
+                if prefix_parts:
+                    self._scan_dirs.add("/".join(prefix_parts))
                 continue
             self._packages.append((norm, r["entity_id"]))
+            self._scan_dirs.add(norm)
             if "." in norm.rsplit("/", 1)[-1]:  # literal file declared as package_path
                 self._declared_by.setdefault(norm, set()).add(r["entity_id"])
 
     def package_dirs(self) -> set[str]:
-        """All literal ``package_path`` entries (callers filter for existing directories)."""
-        return {pp for pp, _ in self._packages}
+        """All literal ``package_path`` entries and non-glob ``owned_path`` prefixes (callers filter for existing directories)."""
+        return set(self._scan_dirs) | {pp for pp, _ in self._packages}
 
     def declared_owners(self, rel_path: str) -> set[str]:
         """Entities that explicitly declare ``rel_path`` as a source/package file."""
@@ -517,10 +544,21 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     cursor.execute("SELECT DISTINCT package_path FROM entities WHERE package_path != '';")
     package_paths.update(row[0].strip() for row in cursor.fetchall())
     cursor.execute(
-        "SELECT DISTINCT symbol FROM symbol_mappings WHERE kind IN ('package_path', 'source_path', 'test_binding');"
+        "SELECT DISTINCT symbol FROM symbol_mappings WHERE kind IN ('package_path', 'source_path', 'owned_path', 'test_binding');"
     )
     package_paths.update(row[0].strip() for row in cursor.fetchall())
-    for pp in sorted(package_paths):
+    for raw_pp in sorted(package_paths):
+        if not raw_pp:
+            continue
+        pp = raw_pp.replace("\\", "/")
+        if any(ch in pp for ch in "*?["):
+            prefix_parts = []
+            for part in pp.split("/"):
+                if any(ch in part for ch in "*?["):
+                    break
+                if part:
+                    prefix_parts.append(part)
+            pp = "/".join(prefix_parts)
         if pp:
             full_pp = os.path.normpath(os.path.join(root_str, pp))
             if os.path.isdir(full_pp):
@@ -978,6 +1016,13 @@ def prune_stale_test_binding_edges(conn: sqlite3.Connection) -> None:
           );
         """
     )
+    conn.execute(
+        """
+        DELETE FROM symbol_mappings
+        WHERE kind = 'test_binding'
+          AND entity_id NOT IN (SELECT id FROM entities WHERE type = 'invariant');
+        """
+    )
 
 
 def delete_spec_fts_rows(conn: sqlite3.Connection, doc_id: str, rel_path: str) -> None:
@@ -1028,6 +1073,12 @@ def _reconcile_invariant_coverage(
             abs_tb = (index.root / tb_file) if tb_file else None
             tb_verified = False
 
+            if tb_file:
+                conn.execute(
+                    "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
+                    (tb_file, iid),
+                )
+
             if tb_func:
                 target_ref = f"{tb_file}::{tb_func}"
                 if target_ref in ast_matches:
@@ -1056,11 +1107,6 @@ def _reconcile_invariant_coverage(
                             "INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);",
                             (iid, target_ref),
                         )
-                if tb_verified and tb_file:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
-                        (tb_file, iid),
-                    )
                 matching = list(dict.fromkeys([target_ref, *ast_matches])) if tb_verified else []
                 has_coverage = tb_verified
             else:
@@ -1074,11 +1120,6 @@ def _reconcile_invariant_coverage(
                             test_content_cache[tb_file] = ""
                     pat = re.compile(rf"\b{re.escape(iid)}\b")
                     tb_verified = bool(pat.search(test_content_cache[tb_file]))
-                if tb_verified and tb_file:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
-                        (tb_file, iid),
-                    )
                 matching = list(dict.fromkeys([tb_file, *ast_matches])) if tb_verified else []
                 has_coverage = tb_verified
         else:
@@ -1143,25 +1184,44 @@ def sync_index(
             elif row and row["doc_id"]:
                 doc_id = row["doc_id"]
                 specs_deleted = True
-                index._delete_spec_fts_rows(conn, doc_id, d_rel)
-                conn.execute(
-                    "DELETE FROM edges WHERE source_id = ? OR target_id = ? "
-                    "OR source_id IN (SELECT id FROM entities WHERE file_path = ? AND type = 'invariant') "
-                    "OR target_id IN (SELECT id FROM entities WHERE file_path = ? AND type = 'invariant') "
-                    "OR source_id IN (SELECT symbol FROM symbol_mappings WHERE entity_id = ? AND kind = 'component_id') "
-                    "OR target_id IN (SELECT symbol FROM symbol_mappings WHERE entity_id = ? AND kind = 'component_id')",
-                    (doc_id, doc_id, d_rel, d_rel, doc_id, doc_id),
-                )
-                conn.execute(
-                    "DELETE FROM symbol_mappings WHERE entity_id = ? OR entity_id IN "
-                    "(SELECT id FROM entities WHERE file_path = ? AND type = 'invariant')",
+                other_owner = conn.execute(
+                    "SELECT 1 FROM entities WHERE id = ? AND file_path != ?;",
                     (doc_id, d_rel),
-                )
-                conn.execute(
-                    "DELETE FROM entities WHERE id = ? OR (file_path = ? AND type = 'invariant')",
-                    (doc_id, d_rel),
-                )
-                conn.execute("DELETE FROM code_symbols WHERE entity_id = ?", (doc_id,))
+                ).fetchone()
+                if other_owner is None:
+                    index._delete_spec_fts_rows(conn, doc_id, d_rel)
+                    conn.execute(
+                        "DELETE FROM edges WHERE source_id = ? OR target_id = ? "
+                        "OR source_id IN (SELECT id FROM entities WHERE file_path = ? AND type = 'invariant') "
+                        "OR target_id IN (SELECT id FROM entities WHERE file_path = ? AND type = 'invariant') "
+                        "OR source_id IN (SELECT symbol FROM symbol_mappings WHERE entity_id = ? AND kind = 'component_id') "
+                        "OR target_id IN (SELECT symbol FROM symbol_mappings WHERE entity_id = ? AND kind = 'component_id')",
+                        (doc_id, doc_id, d_rel, d_rel, doc_id, doc_id),
+                    )
+                    conn.execute(
+                        "DELETE FROM symbol_mappings WHERE entity_id = ? OR entity_id IN "
+                        "(SELECT id FROM entities WHERE file_path = ? AND type = 'invariant')",
+                        (doc_id, d_rel),
+                    )
+                    conn.execute(
+                        "DELETE FROM entities WHERE id = ? OR (file_path = ? AND type = 'invariant')",
+                        (doc_id, d_rel),
+                    )
+                    conn.execute("DELETE FROM code_symbols WHERE entity_id = ?", (doc_id,))
+                else:
+                    conn.execute(
+                        "DELETE FROM specs_fts WHERE entity_id IN (SELECT id FROM entities WHERE file_path = ?);",
+                        (d_rel,),
+                    )
+                    conn.execute(
+                        "DELETE FROM symbol_mappings WHERE entity_id IN "
+                        "(SELECT id FROM entities WHERE file_path = ? AND type = 'invariant');",
+                        (d_rel,),
+                    )
+                    conn.execute(
+                        "DELETE FROM entities WHERE file_path = ?;",
+                        (d_rel,),
+                    )
                 conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
             else:
                 conn.execute("DELETE FROM indexed_files WHERE rel_path = ?", (d_rel,))
@@ -1217,35 +1277,59 @@ def sync_index(
                 old_doc_id = existing_row["doc_id"]
                 if old_doc_id:
                     updated_spec_doc_ids.add(old_doc_id)
-                    index._delete_spec_fts_rows(conn, old_doc_id, rel_p)
-                    conn.execute(
-                        "DELETE FROM symbol_mappings WHERE entity_id = ? OR entity_id IN "
-                        "(SELECT id FROM entities WHERE file_path = ? AND type = 'invariant');",
+                    other_old_owner = conn.execute(
+                        "SELECT 1 FROM entities WHERE id = ? AND file_path != ?;",
                         (old_doc_id, rel_p),
-                    )
-                    conn.execute(
-                        "DELETE FROM entities WHERE (id = ? AND file_path = ?) OR (file_path = ? AND type = 'invariant');",
-                        (old_doc_id, rel_p, rel_p),
-                    )
-                    if old_doc_id != new_doc_id:
-                        any_doc_id_renamed = True
-                        conn.execute("DELETE FROM code_symbols WHERE entity_id = ?;", (old_doc_id,))
+                    ).fetchone()
+                    if other_old_owner is None:
+                        index._delete_spec_fts_rows(conn, old_doc_id, rel_p)
                         conn.execute(
-                            "DELETE FROM edges WHERE source_id = ? OR target_id = ?;",
-                            (old_doc_id, old_doc_id),
+                            "DELETE FROM symbol_mappings WHERE entity_id = ? OR entity_id IN "
+                            "(SELECT id FROM entities WHERE file_path = ? AND type = 'invariant');",
+                            (old_doc_id, rel_p),
+                        )
+                        conn.execute(
+                            "DELETE FROM entities WHERE (id = ? AND file_path = ?) OR (file_path = ? AND type = 'invariant');",
+                            (old_doc_id, rel_p, rel_p),
+                        )
+                        if old_doc_id != new_doc_id:
+                            any_doc_id_renamed = True
+                            conn.execute("DELETE FROM code_symbols WHERE entity_id = ?;", (old_doc_id,))
+                            conn.execute(
+                                "DELETE FROM edges WHERE source_id = ? OR target_id = ?;",
+                                (old_doc_id, old_doc_id),
+                            )
+                    else:
+                        conn.execute(
+                            "DELETE FROM specs_fts WHERE entity_id IN (SELECT id FROM entities WHERE file_path = ?);",
+                            (rel_p,),
+                        )
+                        conn.execute(
+                            "DELETE FROM symbol_mappings WHERE entity_id IN "
+                            "(SELECT id FROM entities WHERE file_path = ? AND type = 'invariant');",
+                            (rel_p,),
+                        )
+                        conn.execute(
+                            "DELETE FROM entities WHERE file_path = ?;",
+                            (rel_p,),
                         )
                 if new_doc_id != old_doc_id:
                     any_doc_id_renamed = True
-                    index._delete_spec_fts_rows(conn, new_doc_id, rel_p)
-                    conn.execute(
-                        "DELETE FROM symbol_mappings WHERE entity_id = ? OR entity_id IN "
-                        "(SELECT id FROM entities WHERE file_path = ? AND type = 'invariant');",
+                    other_new_owner = conn.execute(
+                        "SELECT 1 FROM entities WHERE id = ? AND file_path != ?;",
                         (new_doc_id, rel_p),
-                    )
-                    conn.execute(
-                        "DELETE FROM entities WHERE (id = ? AND file_path = ?) OR (file_path = ? AND type = 'invariant');",
-                        (new_doc_id, rel_p, rel_p),
-                    )
+                    ).fetchone()
+                    if other_new_owner is None:
+                        index._delete_spec_fts_rows(conn, new_doc_id, rel_p)
+                        conn.execute(
+                            "DELETE FROM symbol_mappings WHERE entity_id = ? OR entity_id IN "
+                            "(SELECT id FROM entities WHERE file_path = ? AND type = 'invariant');",
+                            (new_doc_id, rel_p),
+                        )
+                        conn.execute(
+                            "DELETE FROM entities WHERE (id = ? AND file_path = ?) OR (file_path = ? AND type = 'invariant');",
+                            (new_doc_id, rel_p, rel_p),
+                        )
 
         for p, rel_p, mtime, sha, doc in parsed_specs:
             doc_id = doc.doc_id or p.stem
@@ -1349,7 +1433,12 @@ def sync_index(
                         )
 
             invariants_to_index: list[tuple[Any, str | None]] = []
-            if doc_type in ("product/capability", "product/policy", "tech/component", "tech/container") or model.technical.invariants:
+            if (
+                doc_type
+                in ("product/capability", "product/domain", "product/policy", "tech/component", "tech/container")
+                or model.invariants
+                or model.technical.invariants
+            ):
                 invariants_to_index = model.invariants_with_component()
 
             for inv_model, inline_comp_id in invariants_to_index:

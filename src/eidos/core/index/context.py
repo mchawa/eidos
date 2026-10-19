@@ -956,7 +956,7 @@ def build_tiered_context_slice(
         c_clean = component.strip().upper()
         cursor.execute(
             """
-            SELECT id, title, type, domain, data_json
+            SELECT id, title, type, domain, file_path, data_json
             FROM entities
             WHERE type IN ('tech/container', 'tech/component') AND (id = ? OR id LIKE '%' || ? || '%');
             """,
@@ -967,12 +967,13 @@ def build_tiered_context_slice(
             data = json.loads(row["data_json"])
             data["id"] = cid
             data["title"] = row["title"]
+            data.setdefault("file_path", row["file_path"])
             matched_components[cid] = data
             _add_reason(cid, f"Explicit component parameter '{component}'")
         if not matched_components:
             cursor.execute(
                 """
-                SELECT e.id, e.title, e.type, e.domain, e.data_json
+                SELECT e.id, e.title, e.type, e.domain, e.file_path, e.data_json
                 FROM symbol_mappings s
                 JOIN entities e ON e.id = s.entity_id
                 WHERE s.kind = 'component_id' AND UPPER(s.symbol) = ?;
@@ -984,6 +985,7 @@ def build_tiered_context_slice(
                 data = json.loads(row["data_json"])
                 data["id"] = cid
                 data["title"] = row["title"]
+                data.setdefault("file_path", row["file_path"])
                 matched_components[cid] = data
                 _add_reason(cid, f"Inline component parameter '{component}'")
 
@@ -1018,6 +1020,8 @@ def build_tiered_context_slice(
             data = m["data"]
             data["id"] = eid
             data["title"] = m["title"]
+            if m.get("file_path"):
+                data.setdefault("file_path", m["file_path"])
 
             if etype in ("tech/container", "tech/component"):
                 matched_components[eid] = data
@@ -1041,6 +1045,8 @@ def build_tiered_context_slice(
             data = m["data"]
             data["id"] = eid
             data["title"] = m["title"]
+            if m.get("file_path"):
+                data.setdefault("file_path", m["file_path"])
 
             reason = f"FTS lexical match on task (BM25 score: {m['rank']:.2f})"
             if etype in ("tech/container", "tech/component"):
@@ -1071,7 +1077,7 @@ def build_tiered_context_slice(
                 member_ids: list[str] = []
                 for row in cursor.execute(
                     f"""
-                    SELECT e.id, e.title, e.type, e.data_json FROM edges ed
+                    SELECT e.id, e.title, e.type, e.file_path, e.data_json FROM edges ed
                     JOIN entities e ON e.id = ed.target_id
                     WHERE ed.source_id = ? AND ed.rel_type IN ({ph})
                     ORDER BY e.id;
@@ -1081,6 +1087,7 @@ def build_tiered_context_slice(
                     m_data = json.loads(row["data_json"])
                     m_data["id"] = row["id"]
                     m_data["title"] = row["title"]
+                    m_data.setdefault("file_path", row["file_path"])
                     if row["type"] in ("tech/container", "tech/component"):
                         matched_components.setdefault(row["id"], m_data)
                     elif row["type"] == "product/capability":
@@ -1097,38 +1104,41 @@ def build_tiered_context_slice(
         parent_cap = inv_data.get("capability_id")
         if parent_cap and parent_cap not in matched_capabilities:
             row = cursor.execute(
-                "SELECT id, title, type, domain, data_json FROM entities WHERE id = ?;",
+                "SELECT id, title, type, domain, file_path, data_json FROM entities WHERE id = ?;",
                 (parent_cap,),
             ).fetchone()
             if row:
                 c_data = json.loads(row["data_json"])
                 c_data["id"] = row["id"]
                 c_data["title"] = row["title"]
+                c_data.setdefault("file_path", row["file_path"])
                 matched_capabilities[row["id"]] = c_data
                 _add_reason(row["id"], f"Owning capability of matched invariant {iid}")
         parent_pol = inv_data.get("policy_id")
         if parent_pol and parent_pol not in matched_policies:
             row = cursor.execute(
-                "SELECT id, title, type, domain, data_json FROM entities WHERE id = ?;",
+                "SELECT id, title, type, domain, file_path, data_json FROM entities WHERE id = ?;",
                 (parent_pol,),
             ).fetchone()
             if row:
                 p_data = json.loads(row["data_json"])
                 p_data["id"] = row["id"]
                 p_data["title"] = row["title"]
+                p_data.setdefault("file_path", row["file_path"])
                 matched_policies[row["id"]] = p_data
                 _add_reason(row["id"], f"Owning policy of matched invariant {iid}")
         for parent_comp_key in ("component_id", "container_id"):
             parent_comp = inv_data.get(parent_comp_key)
             if parent_comp and parent_comp not in matched_components:
                 row = cursor.execute(
-                    "SELECT id, title, type, domain, data_json FROM entities WHERE id = ?;",
+                    "SELECT id, title, type, domain, file_path, data_json FROM entities WHERE id = ?;",
                     (parent_comp,),
                 ).fetchone()
                 if row:
                     comp_data = json.loads(row["data_json"])
                     comp_data["id"] = row["id"]
                     comp_data["title"] = row["title"]
+                    comp_data.setdefault("file_path", row["file_path"])
                     matched_components[row["id"]] = comp_data
                     _add_reason(row["id"], f"Owning component/container of matched invariant {iid}")
 
@@ -1144,12 +1154,13 @@ def build_tiered_context_slice(
     # 4. Full catalog overview ONLY when no query filters were provided at all.
     if not any_matched and not has_explicit_query:
         cursor.execute(
-            "SELECT id, title, type, domain, data_json FROM entities WHERE type IN ('tech/container', 'tech/component');"
+            "SELECT id, title, type, domain, file_path, data_json FROM entities WHERE type IN ('tech/container', 'tech/component');"
         )
         for row in cursor.fetchall():
             c_data = json.loads(row["data_json"])
             c_data["id"] = row["id"]
             c_data["title"] = row["title"]
+            c_data.setdefault("file_path", row["file_path"])
             matched_components[row["id"]] = c_data
 
     # 5. Forward dependency expansion for primary matched components
@@ -1165,13 +1176,14 @@ def build_tiered_context_slice(
     if missing_dep_ids:
         ph = ",".join("?" for _ in missing_dep_ids)
         cursor.execute(
-            f"SELECT id, title, type, domain, data_json FROM entities WHERE id IN ({ph});",
+            f"SELECT id, title, type, domain, file_path, data_json FROM entities WHERE id IN ({ph});",
             tuple(missing_dep_ids),
         )
         for row in cursor.fetchall():
             c_data = json.loads(row["data_json"])
             c_data["id"] = row["id"]
             c_data["title"] = row["title"]
+            c_data.setdefault("file_path", row["file_path"])
             matched_components[row["id"]] = c_data
             _add_reason(row["id"], "Internal dependency")
 
@@ -1183,7 +1195,7 @@ def build_tiered_context_slice(
         ph = ",".join("?" for _ in primary_cids)
         cursor.execute(
             f"""
-            SELECT id, title, type, domain, data_json FROM entities
+            SELECT id, title, type, domain, file_path, data_json FROM entities
             WHERE type = 'tech/contract' AND (
                 id IN (SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type IN ('provides', 'consumes'))
                 OR id IN (SELECT source_id FROM edges WHERE target_id IN ({ph}) AND rel_type = 'provides')
@@ -1195,6 +1207,7 @@ def build_tiered_context_slice(
             ctr_data = json.loads(row["data_json"])
             ctr_data["id"] = row["id"]
             ctr_data["title"] = row["title"]
+            ctr_data.setdefault("file_path", row["file_path"])
             matched_contracts.setdefault(row["id"], ctr_data)
 
     # Identify any inline C4 Level 3 components whose source_path specifically matches the queried files
@@ -1228,7 +1241,7 @@ def build_tiered_context_slice(
         ph = ",".join("?" for _ in candidate_comp_targets)
         cursor.execute(
             f"""
-            SELECT id, title, type, domain, data_json FROM entities
+            SELECT id, title, type, domain, file_path, data_json FROM entities
             WHERE type = 'product/capability' AND (
                 id IN (SELECT source_id FROM edges WHERE target_id IN ({ph}) AND rel_type IN ('implemented_by', 'implements'))
                 OR id IN (SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type IN ('implements', 'implemented_by'))
@@ -1240,6 +1253,7 @@ def build_tiered_context_slice(
             cap_data = json.loads(row["data_json"])
             cap_data["id"] = row["id"]
             cap_data["title"] = row["title"]
+            cap_data.setdefault("file_path", row["file_path"])
             matched_capabilities.setdefault(row["id"], cap_data)
             direct_edge_cap_ids.add(row["id"])
 
@@ -1250,7 +1264,7 @@ def build_tiered_context_slice(
     if domains:
         ph = ",".join("?" for _ in domains)
         cursor.execute(
-            f"SELECT id, title, type, domain, data_json FROM entities WHERE type = 'product/capability' AND domain IN ({ph});",
+            f"SELECT id, title, type, domain, file_path, data_json FROM entities WHERE type = 'product/capability' AND domain IN ({ph});",
             tuple(domains),
         )
         all_matched_comp_ids = set(matched_components.keys())
@@ -1262,6 +1276,7 @@ def build_tiered_context_slice(
             cap_data = json.loads(row["data_json"])
             cap_data["id"] = row["id"]
             cap_data["title"] = row["title"]
+            cap_data.setdefault("file_path", row["file_path"])
             if direct_edge_cap_ids and row["id"] not in direct_edge_cap_ids:
                 tech_block = cap_data.get("technical") if isinstance(cap_data.get("technical"), dict) else {}
                 bound_targets = {
@@ -1312,7 +1327,7 @@ def build_tiered_context_slice(
 
         cursor.execute(
             f"""
-            SELECT id, title, data_json FROM entities
+            SELECT id, title, file_path, data_json FROM entities
             WHERE type = 'product/policy' AND id IN (
                 SELECT target_id FROM edges WHERE source_id IN ({ph}) AND rel_type = 'governed_by'
             );
@@ -1323,16 +1338,18 @@ def build_tiered_context_slice(
             pol_data = json.loads(row["data_json"])
             pol_data["id"] = row["id"]
             pol_data["title"] = row["title"]
+            pol_data.setdefault("file_path", row["file_path"])
             matched_policies.setdefault(row["id"], pol_data)
 
     # 9. Fallback governing policies if none matched
     if not matched_policies and (any_matched or not has_explicit_query):
         for row in cursor.execute(
-            "SELECT id, title, type, domain, data_json FROM entities WHERE type = 'product/policy' ORDER BY id LIMIT 2;"
+            "SELECT id, title, type, domain, file_path, data_json FROM entities WHERE type = 'product/policy' ORDER BY id LIMIT 2;"
         ).fetchall():
             p_data = json.loads(row["data_json"])
             p_data["id"] = row["id"]
             p_data["title"] = row["title"]
+            p_data.setdefault("file_path", row["file_path"])
             matched_policies[row["id"]] = p_data
 
     # 10. Invariants from governing policies
