@@ -222,17 +222,16 @@ In **Planned Mode**, architectural changes are governed by **SpecDeltas (`eidos/
 
 ---
 
-### 3.5 Agent Plugin Harnesses & Block-Once Lifecycle Hooks (`CNT-EIDOS-PLUGIN`)
+### 3.5 Agent Plugin Harnesses & Stateless Stop Hook (`CNT-EIDOS-PLUGIN`)
 
-Eidos integrates with AI coding assistants through a declarative `TargetAdapter` pipeline (`src/eidos/plugin/installer.py`) and CLI-native lifecycle hooks (`src/eidos/plugin/hooks.py`):
+Eidos integrates with AI coding assistants through a declarative `TargetAdapter` pipeline (`src/eidos/plugin/installer.py`) and a stateless CLI-native `Stop` lifecycle hook (`src/eidos/plugin/hooks.py`):
 
 1. **Manifest-Tracked Multi-Harness Projection (`eidos plugin install`)**:
    * Projects the canonical plugin (`assets/plugin_reference/`) and **4 cohesive Agent Skills** (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) into `.agents/plugins/eidos/`, `.claude/`, `.cursor/`, `.github/`, `.aider/`, `.cline/`, `.opencode/`, and `.codex/`.
    * Records SHA-256 file digests in `.eidos-manifest.json` so `eidos plugin update` and `eidos plugin uninstall` never clobber user-owned files or custom instructions.
-2. **Cross-Harness Hook Normalization (`eidos hook lint` & `eidos hook drift`)**:
-   * AI coding harnesses emit different JSON payloads on `stdin` for lifecycle events (`PreToolUse`, `PostToolUse`, `Stop`). `HookRunner` normalizes payloads across Antigravity, Claude Code, Cursor, Cline, OpenCode, and Codex.
-   * **`eidos hook lint`**: Intercepts file writes (`PreToolUse` / `PostToolUse`) to block unauthorized ADR creation (`docs/adr/`, `ADR-*.md`) and validate modified `.adoc` schemas immediately, and validates the living specification catalog on `Stop`.
-   * **`eidos hook drift` (Stateful Block-Once Stop Gate, `DLT-2026-084`, `DLT-2026-087`)**: Exclusively when an AI agent attempts to conclude its task (`Stop` event), `eidos hook drift --event stop` runs drift detection on the working tree. If drift or schema errors exist, it blocks completion once and returns structured remediation instructions. To prevent infinite retry loops while avoiding stale cross-session state, Eidos records `{hash, timestamp, session_id}` in `eidos/.cache/stop-gate.json` with a 600-second TTL (`EIDOS_STOP_GATE_TTL_SECONDS`)—blocking on the first attempt and releasing with an explicit `systemMessage` warning if the exact same failure fingerprint repeats within the same active session.
+2. **Stateless Unified `Stop` Hook (`eidos hook`)**:
+   * When an AI agent finishes its task (`Stop` event), `eidos hook` runs `detect_drift(uncommitted=True)` once—evaluating specification schemas, cross-reference integrity, invariant test bindings, and spec-to-code synchronization in a single pass.
+   * Returns `{"decision": "allow"}` when clean, or `{"decision": "allow", "systemMessage": "⚠️ ..."}` with actionable remediation guidance when issues exist, requiring zero state files or per-edit subprocesses.
 
 ---
 

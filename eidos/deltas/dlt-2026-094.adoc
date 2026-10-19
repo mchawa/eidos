@@ -1,0 +1,220 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-094
+title: "Consolidate Agent Lifecycle Hooks into a Single Stateless Stop Hook"
+status: applied
+vcs:
+  branch: main
+  base_commit: 3fc3bea15898f8ac3834cf2e5bef096feefa1b95
+intent:
+  kind: enabler
+  motivation: "Reduce src/eidos/plugin/hooks.py from 820 lines to ~65 lines by merging 'eidos-doc-linter' and 'eidos-drift-gate' into a single stateless Stop hook ('eidos hook'), eliminating PreToolUse/PostToolUse per-edit subprocess interception and in-memory edit simulation, deleting the custom SQLite validation snapshot cache (last_stop_validation), and removing all stateful Block-Once SHA-256 fingerprinting and stop-gate.json persistence in favor of a stateless warning ('decision: allow' + 'systemMessage')."
+tombstone:
+  search_tokens:
+    - "INV-AGENT-LINT-HOOK"
+    - "INV-HOOK-BLOCK-ONCE"
+    - "INV-HOOK-FAIL-LOUD"
+    - "eidos-doc-linter"
+    - "stop-gate.json"
+  allowed_reasons:
+    - path: "CHANGELOG.md"
+      reason: "Historical release notes referencing pre-DLT-2026-094 hook architecture."
+    - path: "eidos/deltas/"
+      reason: "Historical SpecDeltas predating DLT-2026-094."
+    - path: "eidos/explorations/"
+      reason: "Historical exploration documents."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Update CNT-EIDOS-PLUGIN in eidos/architecture/containers/plugin.adoc to reflect the single stateless Stop hook ('eidos-drift-gate' invoking 'eidos hook') across CMP-HOOK-MANAGER and CMP-HOOK-RUNNER without PreToolUse/PostToolUse hooks, custom SQLite snapshot caching, or stop-gate.json fingerprinting."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "CMP-HOOK-RUNNER"
+
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+    details: "Replace the 820-line multi-event/stateful hook implementation in src/eidos/plugin/hooks.py with a ~65-line stateless Stop hook (handle_stop_hook, execute_hook) that runs detect_drift(repo_root=ws_root, eidos_dir=eidos_dir, uncommitted=True) once on Stop and returns {'decision': 'allow'} when clean or {'decision': 'allow', 'systemMessage': '...'} when specification validation errors, broken invariant test bindings, or code-to-spec drift are present."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/plugin/hooks.py"
+        responsibility: "stateless"
+
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+    details: "Simplify assets/plugin_reference/hooks.json and hook validation in src/eidos/plugin/validator.py to a single hook ('eidos-drift-gate' on 'Stop' invoking 'eidos hook'), removing 'eidos-doc-linter' and all PreToolUse/PostToolUse matchers."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/plugin/validator.py"
+        responsibility: "eidos-drift-gate"
+
+  - operation: modify
+    target: CNT-EIDOS-CLI
+    details: "Update CNT-EIDOS-CLI in eidos/architecture/containers/cli.adoc (CMP-CLI-APP and CMP-CLI-DOCTOR-HOOKS) to reflect the unified root 'eidos hook [--path PATH]' command."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CMP-CLI-APP
+    details: "Mount 'eidos hook' as a single root-level command via doctor_hook_commands.register(app) and ROOT_COMMAND_ORDER in src/eidos/cli/main.py instead of mounting a multi-subcommand hook_app Typer group."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/cli/main.py"
+          - "src/eidos/cli/_shared.py"
+
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+    details: "Replace the 'eidos hook lint' and 'eidos hook drift' subcommands in src/eidos/cli/doctor_hook_commands.py with a single 'eidos hook [--path PATH]' command invoking execute_hook(repo_root=path)."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/doctor_hook_commands.py"
+        responsibility: "eidos hook"
+
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Update the 'eidos hook' command specification in eidos/architecture/contracts/cli.adoc from a subcommand group (lint, drift) to the single 'eidos hook [--path PATH]' command."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "=== `eidos hook [--path PATH]`"
+        not_contains:
+          - "PreToolUse"
+
+  - operation: modify
+    target: CNT-EIDOS-VCS
+    details: "Update CNT-EIDOS-VCS in eidos/architecture/containers/vcs.adoc to reflect removal of the optional pre-validated validation_report parameter from detect_drift."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: "Remove the unused validation_report parameter from detect_drift in src/eidos/vcs/drift.py that only existed for the deleted SQLite stop-validation snapshot cache."
+    expect:
+      frontmatter:
+        source_path:
+          - "src/eidos/vcs/drift.py"
+          - "src/eidos/vcs/diff.py"
+          - "src/eidos/vcs/invariants.py"
+          - "src/eidos/vcs/structural.py"
+          - "src/eidos/vcs/report.py"
+
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Update CAP-AGENT-001 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc (bumping version to 1.6.0) to reflect the single stateless Stop hook ('eidos hook') and retire redundant lint/block-once invariants."
+    expect:
+      frontmatter:
+        version: "1.6.0"
+        status: "active"
+      body:
+        contains:
+          - "stateless"
+        not_contains:
+          - "stop-gate.json"
+
+  - operation: modify
+    target: INV-AGENT-DRIFT-HOOK
+    details: "Update INV-AGENT-DRIFT-HOOK in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc to verify that the stateless Stop hook ('eidos hook') evaluates specification validity, invariant test bindings, and spec-to-code drift via detect_drift and emits a non-blocking systemMessage warning when issues or internal errors occur."
+    expect:
+      frontmatter:
+        rule: "stateless"
+        test_binding: "tests/test_plugin.py::test_drift_hook_stop_event_drift_detected"
+
+  - operation: remove
+    target: INV-AGENT-LINT-HOOK
+    parent: CAP-AGENT-001
+    details: "Remove INV-AGENT-LINT-HOOK because PreToolUse/PostToolUse per-edit hooks and duplicate Stop lint hooks are retired and SpecValidator directory validation is already executed inside detect_drift (INV-AGENT-DRIFT-HOOK)."
+
+  - operation: remove
+    target: INV-HOOK-BLOCK-ONCE
+    parent: CAP-AGENT-001
+    details: "Remove INV-HOOK-BLOCK-ONCE because the Stop hook is now 100% stateless (emitting decision: allow with systemMessage warning instead of persisting SHA-256 fingerprints in stop-gate.json)."
+
+  - operation: remove
+    target: INV-HOOK-FAIL-LOUD
+    parent: CAP-AGENT-001
+    details: "Consolidate internal error reporting into INV-AGENT-DRIFT-HOOK (stateless Stop hook emits a structured allow decision with systemMessage warning on internal errors)."
+
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+    details: "Synchronize user and conceptual documentation in docs/ with the single stateless Stop hook ('eidos hook')."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update docs/guides/agent-plugin.md and docs/guides/cli.md to document the single stateless 'eidos hook' command and remove eidos-doc-linter, PreToolUse/PostToolUse, and stop-gate.json references."
+    expect:
+      frontmatter:
+        source_path: "docs/guides/cli.md"
+
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Update docs/concepts/how-eidos-works.md to describe the single stateless Stop hook ('eidos hook')."
+    expect:
+      frontmatter:
+        source_path: "docs/concepts/how-eidos-works.md"
+---
+= SpecDelta: Consolidate Agent Lifecycle Hooks into a Single Stateless Stop Hook
+:toc: left
+
+== Problem Statement
+`src/eidos/plugin/hooks.py` grew to **820 lines** due to four layers of accumulated redundancy and over-engineering:
+
+1. **100% Redundant `lint` vs. `drift` Hook Split**:
+   * `assets/plugin_reference/hooks.json` defined two separate hooks (`eidos-doc-linter` -> `eidos hook lint` and `eidos-drift-gate` -> `eidos hook drift`), both running on `Stop`.
+   * However, `detect_drift()` in `src/eidos/vcs/drift.py` **already runs `SpecValidator().validate_directory()`** and verifies all `INV-*` test bindings in addition to checking code-to-spec drift—making `eidos hook lint` on `Stop` completely redundant.
+2. **Custom 100-Line SQLite Snapshot Cache (`last_stop_validation`)**:
+   * Because both `eidos hook lint` and `eidos hook drift` ran back-to-back on `Stop`, `hooks.py` implemented `_compute_adoc_snapshot`, `_save_stop_validation_snapshot`, and `_load_stop_validation_snapshot` (~100 lines of raw `sqlite3` queries against `eidos/.cache/index.db`) just to pass `ValidationReport` from the first `Stop` hook to the second `Stop` hook.
+3. **Per-Edit `PreToolUse` & `PostToolUse` Interception + In-Memory Edit Simulation (~250 lines)**:
+   * `eidos-doc-linter` intercepted every `write_to_file` / `replace_file_content` tool call (`PreToolUse` and `PostToolUse`), probing ~15 payload keys across 6 harnesses and simulating find-and-replace chunk edits in memory (`_extract_tool_edit_request`).
+4. **Stateful SHA-256 Fingerprinting & `stop-gate.json` (~200 lines)**:
+   * To avoid trapping agents in infinite loops when returning `"decision": "continue"`, `hooks.py` hashed all tracked files (`_hash_files`), built tagged item sets, evaluated subset inclusion (`cur_items.issubset(prev_items)`), and persisted TTL/session-scoped state in `eidos/.cache/stop-gate.json`.
+
+== Proposed Specification Changes
+
+=== 1. Single Hook in `hooks.json` & Single CLI Command `eidos hook [--path PATH]` (`CMP-HOOK-MANAGER`, `CMP-CLI-APP`, `CMP-CLI-DOCTOR-HOOKS`, `CTR-EIDOS-CLI`)
+* **`assets/plugin_reference/hooks.json`**:
+  * Remove `eidos-doc-linter` and all `PreToolUse` / `PostToolUse` matchers.
+  * Retain a single `Stop` hook under `eidos-drift-gate`:
+    ```json
+    {
+      "eidos-drift-gate": {
+        "Stop": [
+          {
+            "type": "command",
+            "command": "eidos hook",
+            "timeout": 30
+          }
+        ]
+      }
+    }
+    ```
+* **`eidos hook [--path PATH]` (`src/eidos/cli/doctor_hook_commands.py`, `src/eidos/cli/main.py`)**:
+  * Replace the `hook_app` subcommand group (`eidos hook lint` / `eidos hook drift` and `--event`) with a single flat command `eidos hook [--path PATH]` mounted in `PANEL_PLUGINS`.
+
+=== 2. Stateless ~65-Line Implementation in `src/eidos/plugin/hooks.py` (`CMP-HOOK-RUNNER`, `CMP-DRIFT-DETECTOR`)
+* Delete all `sqlite3` snapshot caching (`_compute_adoc_snapshot`, `_save_stop_validation_snapshot`, `_load_stop_validation_snapshot`), all `hashlib` / `stop-gate.json` state (`_check_and_record_stop_gate`, `_clear_stop_gate`, `_hash_files`, `_extract_session_id`), all `PreToolUse` / `PostToolUse` simulation (`_extract_tool_edit_request`, `is_eidos_doc`, `_validate_doc_content`, `handle_lint_pre_tool_use`, `handle_lint_post_tool_use`), and `_infer_event`.
+* Remove the unused `validation_report` parameter from `detect_drift()` in `src/eidos/vcs/drift.py`.
+* Implement `handle_stop_hook(payload, workspace_root)` and `execute_hook(path, repo_root, stdin_data)`:
+  * Run `detect_drift(repo_root=ws_root, eidos_dir=eidos_dir, uncommitted=True)` once.
+  * When `drift_res.is_clean` is `True`: return `{"decision": "allow"}`.
+  * When validation errors, broken references, uncovered/orphan invariants, or code-to-spec drift are detected (or on internal exception): return `{"decision": "allow", "systemMessage": "⚠️ [Eidos Stop Hook] ..."}` with the concise cause and remediation summary.
+
+=== 3. Capability Invariant & Documentation Consolidation (`CAP-AGENT-001`, `CNT-EIDOS-DOCS`)
+* In `CAP-AGENT-001` (`eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc`, version `1.6.0`):
+  * Update `INV-AGENT-DRIFT-HOOK` to cover the unified stateless `Stop` hook (`eidos hook`).
+  * Remove the 3 redundant hook invariants (`INV-AGENT-LINT-HOOK`, `INV-HOOK-BLOCK-ONCE`, `INV-HOOK-FAIL-LOUD`).
+* Update `docs/guides/agent-plugin.md`, `docs/guides/cli.md`, `docs/concepts/how-eidos-works.md`, and `assets/plugin_reference/README.md`.
+
+== Verification Plan
+* Validate `eidos/deltas/dlt-2026-094.adoc` via `eidos validate eidos --json`.
+* Verify `eidos delta verify DLT-2026-094 --json`, `eidos delta audit DLT-2026-094 --strict --json`, and `eidos drift --uncommitted --json`.

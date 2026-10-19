@@ -1,0 +1,282 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-092
+title: "Simplify Eidos CLI Surface and Standardize Pure Blueprint Specification Scaffolding"
+status: applied
+vcs:
+  branch: main
+  base_commit: 2f55920ef8789747876dec77c29837e369b4ff74
+intent:
+  kind: enabler
+  motivation: "Streamline the Eidos CLI by simplifying eidos spec create and eidos delta create to pure blueprint scaffolders, enforcing strict separation between eidos spec (15 living spec types) and eidos delta (SpecDeltas), removing deprecated/duplicate flags (--with-plugin, --repo-root, duplicate --target, standalone version command, retired draft/planned delta status rows), standardizing --json across context and repo-map, and centralizing CLI path resolution."
+mutations:
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Update CTR-EIDOS-CLI in eidos/architecture/contracts/cli.adoc to reflect: (1) 4-parameter 'eidos spec create <type> <id> --title <title> [--path <path>]' across the 15 living spec types (including exploration); (2) 100% disjoint boundary where 'eidos spec' (create, list, show, delete) operates exclusively on the 15 declarative specification types (excluding/rejecting delta/mutation) and 'eidos delta' exclusively owns SpecDelta lifecycle operations; (3) blueprint 'eidos delta create [id] --title <title> [--kind <kind>] [--slug] [--path <path>]' with auto-detected Git branch; (4) 5-state 'eidos delta status'; (5) removal of standalone 'eidos version', '--with-plugin' on init, '--repo-root' on component promote/inline, and duplicate '--target' on plugin install/uninstall/update; (6) standardized '--json' on 'eidos context' and 'eidos index repo-map'."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "create <type> <id> --title <title> [--path <path>]"
+        not_contains:
+          - "[--implements <id>]"
+
+  - operation: modify
+    target: CNT-EIDOS-CLI
+    details: "Update CNT-EIDOS-CLI in eidos/architecture/containers/cli.adoc across CliApp, SpecCommands, DeltaCommands, InitCommand, ComponentCommands, ContextCommand, IndexCommands, and PluginCommands to reflect the simplified CLI surface and shared path resolution in _shared.py."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "CMP-CLI-SPEC-COMMANDS"
+
+  - operation: modify
+    target: CMP-CLI-APP
+    details: "Remove the redundant standalone 'eidos version' subcommand (retaining 'eidos --version' / '-V' and 'eidos info'), remove 5 no-op module.register(app) calls in src/eidos/cli/main.py, and centralize resolve_cli_eidos_dir(path) in src/eidos/cli/_shared.py."
+    expect:
+      frontmatter:
+        responsibility: "resolve_cli_eidos_dir"
+
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    details: "Simplify spec_create_cmd in src/eidos/cli/spec_commands.py to 'eidos spec create <type> <id> --title <title> [--path <path>]' for the 15 living specification types (including exploration), and enforce a 100% disjoint boundary across 'eidos spec create', 'eidos spec list', 'eidos spec show', and 'eidos spec delete' that excludes/rejects delta/mutation targets (directing users to 'eidos delta')."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/spec_commands.py"
+        responsibility: "blueprint"
+
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+    details: "Simplify delta_create_cmd in src/eidos/cli/delta_commands.py by removing --motivation and --branch flags (auto-detecting vcs.branch from Git HEAD via create_delta), restrict delta_status_cmd to the 5 canonical delta_status states (proposed, in_review, approved, applied, rejected), and ensure delta_delete_cmd exclusively deletes SpecDelta (DLT-*) documents via delete_delta."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/delta_commands.py"
+        responsibility: "create_delta"
+
+  - operation: modify
+    target: CMP-CLI-INIT-COMMAND
+    details: "Remove the deprecated hidden _with_plugin (--with-plugin/--no-plugin) option from init_cmd in src/eidos/cli/init_command.py."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/init_command.py"
+
+  - operation: modify
+    target: CMP-CLI-COMPONENT-COMMANDS
+    details: "Remove the redundant --repo-root option from component_promote_cmd and component_inline_cmd in src/eidos/cli/component_commands.py (auto-resolving repo_root from --path) and remove the no-op register(app) function."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/component_commands.py"
+
+  - operation: modify
+    target: CMP-CLI-CONTEXT-COMMAND
+    details: "Replace --format (markdown|json) with --json (bool = False) on context_cmd in src/eidos/cli/context_command.py and use shared resolve_cli_eidos_dir from _shared.py."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/context_command.py"
+        responsibility: "--json"
+
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+    details: "Replace --format / -f (markdown|json) with --json (bool = False) on index_repo_map_cmd in src/eidos/cli/index_commands.py and remove the no-op register(app) function."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/index_commands.py"
+        responsibility: "repo-map"
+
+  - operation: modify
+    target: CMP-CLI-PLUGIN-COMMANDS
+    details: "Unify target selection in plugin_install, plugin_uninstall, and plugin_update in src/eidos/cli/plugin_commands.py to a single optional positional [TARGET] argument (defaulting to PluginInstallTarget.PROJECT), removing the duplicate --target / -t option and the no-op register(app) function."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/plugin_commands.py"
+
+  - operation: modify
+    target: CMP-CLI-PORTAL-COMMANDS
+    details: "Use shared resolve_cli_eidos_dir from _shared.py and remove the no-op register(app) function in src/eidos/cli/portal_commands.py."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/portal_commands.py"
+
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Update CNT-EIDOS-CORE in eidos/architecture/containers/core.adoc to document pure 15-type blueprint scaffolding and non-delta deletion guard in CMP-LIFECYCLE-SCAFFOLDER, minimal design blueprints in CMP-DESIGN-ENGINE, and standalone create_delta / delete_delta with auto-detected Git branch and 5-state status summary in CMP-DELTA-ENGINE."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "CMP-LIFECYCLE-SCAFFOLDER"
+
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Simplify create_spec(eidos_dir, doc_type_key, raw_id, title) in src/eidos/core/lifecycle/scaffolder.py and normalize_id in catalog.py to scaffold minimal schema-valid blueprints (status: 'draft', or 'proposed' for exploration) for all 15 living specification types (including system and architecture), reject 'delta'/'mutation' in both create_spec and delete_spec (directing to eidos delta create / delete), and auto-resolve required parent references from the catalog or canonical fallbacks (DOM-CORE, CNT-CORE, DS-CORE, PER-USER)."
+    expect:
+      frontmatter:
+        responsibility: "15 living specification types"
+
+  - operation: modify
+    target: CMP-DESIGN-ENGINE
+    details: "Simplify build_design_spec in src/eidos/core/lifecycle/design_engine.py to emit minimal schema-valid blueprints for design-system, ui-component, screen, client, and flow with status: 'draft' and zero non-required boilerplate."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/lifecycle/design_engine.py"
+        responsibility: "minimal"
+
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    details: "Make create_delta and delete_delta in src/eidos/core/lifecycle/delta_engine.py self-contained (auto-detecting vcs.branch from Git HEAD via _resolve_git_branch alongside vcs.base_commit), and remove retired 'draft' and 'planned' buckets from get_delta_status_summary."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/lifecycle/delta_engine.py"
+        responsibility: "create_delta"
+
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Update CAP-PROD-001 in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc to reflect pure blueprint scaffolding across all 15 living specification schemas."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CAP-PROD-002
+    details: "Update CAP-PROD-002 in eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc to reflect standalone SpecDelta blueprint creation (auto-detecting Git branch), 5-state lifecycle status summary, and dedicated delta deletion."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Synchronize bundled agent skills (assets/plugin_reference/skills/eidos/SKILL.md, eidos-spec/SKILL.md, eidos-plan/SKILL.md, and eidos-ops/SKILL.md) with the simplified CLI syntax (--json on context, 4-parameter spec create, blueprint delta create, positional plugin target)."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: "Update bundled skill instructions in assets/plugin_reference/skills/ to match the simplified CLI flags."
+    expect:
+      frontmatter:
+        responsibility: "4 cohesive workflow skills"
+
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+    details: "Synchronize user and conceptual documentation in docs/ with the simplified CLI command surface."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update CLI command reference in docs/guides/cli.md and docs/guides/agent-plugin.md to match the simplified CLI options and commands."
+    expect:
+      frontmatter:
+        source_path: "docs/guides/cli.md"
+        responsibility: "CLI command reference"
+
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Update conceptual guides under docs/concepts/ and quickstart under docs/getting-started/quickstart.md where CLI examples appear."
+    expect:
+      frontmatter:
+        source_path: "docs/concepts/how-eidos-works.md"
+
+  - operation: modify
+    target: CMP-DOCS-GETTING-STARTED
+    details: "Update CLI examples in docs/getting-started/quickstart.md to reflect simplified eidos spec create and eidos delta create commands."
+    expect:
+      frontmatter:
+        source_path: "docs/getting-started/quickstart.md"
+
+decisions:
+  - id: DEC-CLI-BLUEPRINT-SPEC-CREATE
+    title: "Scope eidos spec and eidos delta Strictly to Disjoint Blueprint Lifecycles and Uniform CLI Flags"
+    decision: "Enforce a 100% disjoint boundary between 'eidos spec' (create, list, show, delete across the 15 declarative specification & discovery blueprints, including exploration EXP-* and excluding/rejecting delta/mutation DLT-*) and 'eidos delta' (create, list, status, verify, audit, apply, delete, changelog exclusively for SpecDeltas), simplify 'eidos spec create <TYPE> <ID> --title <TITLE> [--path <PATH>]' and 'eidos delta create [ID] --title <TITLE> [--kind <KIND>] [--slug] [--path <PATH>]' (auto-detecting Git branch), remove redundant/deprecated CLI flags (--with-plugin, --repo-root, duplicate --target, standalone 'eidos version'), and standardize '--json' across all JSON-capable commands including 'eidos context' and 'eidos index repo-map'."
+    rationale: "Keeping exploration (EXP-*) under 'eidos spec' preserves a clean conceptual split: 'eidos spec' manages declarative specifications and discovery blueprints, whereas 'eidos delta' manages executable architectural mutations with verification/audit/apply/changelog machinery. Eliminating 16 type-specific flags on 'spec create', 2 redundant flags on 'delta create', duplicate argument+option bindings on 'plugin', and inconsistent '--format json' flags reduces CLI surface area and ensures authors and AI agents start from clean, minimal, schema-valid blueprints."
+    rejected_alternatives:
+      - option: "Retain the 16 type-specific CLI flags on eidos spec create and --motivation / --branch on eidos delta create"
+        reason_rejected: "Clutters CLI help and injects opinionated boilerplate that must be manually deleted when authoring specifications."
+      - option: "Allow both eidos spec (create/list/show/delete) and eidos delta (create/list/delete) to operate on SpecDeltas (DLT-*)"
+        reason_rejected: "Violates the single canonical command path principle by maintaining duplicate CRUD entrypoints for SpecDeltas."
+      - option: "Move exploration (EXP-*) out of eidos spec or into its own top-level command group"
+        reason_rejected: "Explorations are pure declarative blueprints (create/list/show/delete) with no special execution engine, making them a natural fit for eidos spec."
+      - option: "Retain --format markdown|json on eidos context and eidos index repo-map"
+        reason_rejected: "Creates a two-flag inconsistency where 12 commands use --json and 2 commands require --format json."
+---
+= SpecDelta: Simplify Eidos CLI Surface and Standardize Pure Blueprint Specification Scaffolding
+:toc: left
+
+== Problem Statement
+Across the Eidos CLI (`src/eidos/cli/`), several commands accumulated redundant flags, overlapping responsibilities, and inconsistent option names:
+
+1. **`eidos spec create` Bloat**: Exposed 20 parameters (16 type-specific flags), injected non-required opinionated YAML boilerplate, lacked support for `system` (`SYS-*`) and `architecture` (`ARCH-*`), and duplicated `eidos delta create`.
+2. **Overlapping `spec` and `delta` Lifecycles**: Both `eidos spec` (`create`, `list`, `show`, `delete`) and `eidos delta` (`create`, `list`, `delete`) operated on `DLT-*` files, violating the single canonical command path principle.
+3. **`eidos delta create` & `eidos delta status` Redundancies**: `delta create` required manual `--motivation` and `--branch` flags even though Git `HEAD` branch can be auto-detected alongside `base_commit`, while `delta status` still displayed retired `draft` and `planned` rows removed from `#/$defs/delta_status`.
+4. **Legacy & Duplicate Flags Across Subcommands**:
+   * `eidos init` retained an unused hidden `--with-plugin / --no-plugin` option.
+   * `eidos spec component promote / inline` exposed `--repo-root` in addition to `--path`.
+   * `eidos plugin install / uninstall / update` bound both a positional `[TARGET]` argument and a duplicate `--target / -t` option.
+   * `eidos context` and `eidos index repo-map` used `--format json` instead of `--json`.
+   * Root `eidos` exposed both `eidos --version` (`-V`) and a redundant `eidos version` subcommand.
+   * 5 CLI modules duplicated `eidos_dir` marker resolution and defined no-op `register(app)` functions.
+
+== Proposed Specification Changes
+
+=== 1. 100% Disjoint `eidos spec` (15 Living Spec Types) vs. `eidos delta` (`DLT-*`) Boundary
+* **Conceptual Split**:
+  * `eidos spec` (`create`, `list`, `show`, `delete`, `component`) manages the **15 declarative specification & discovery blueprints** (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`). `exploration` (`EXP-*`) remains in `eidos spec` because its lifecycle is pure blueprint authoring (`create`, `list`, `show`, `delete`).
+  * `eidos delta` (`create`, `list`, `status`, `verify`, `audit`, `apply`, `delete`, `changelog`) exclusively manages **executable architectural mutations** (`DLT-*`).
+* **`eidos spec create <TYPE> <ID> --title <TITLE> [--path <PATH>]`**:
+  * Scaffolds minimal, schema-valid draft blueprints (`status: draft`, or `status: proposed` for `exploration`) across all **15 living specification types**.
+  * Rejects `delta` / `mutation` with an error directing the caller to `eidos delta create`.
+* **`eidos spec list [--type <TYPE>] [--status <STATUS>] [--domain <DOMAIN>] [--path <PATH>] [--json]`**:
+  * Lists only the 15 living specification types (excluding `delta/mutation` documents from default output) and rejects `--type delta` / `--type delta/mutation` with an error directing the caller to `eidos delta list`.
+* **`eidos spec show <ID> [--path <PATH>] [--json]`**:
+  * Displays any of the 15 living specification types and rejects `delta/mutation` (`DLT-*`) documents with an error directing the caller to `eidos delta status <ID>` / `eidos delta verify <ID>`.
+* **`eidos spec delete <ID_OR_PATH> [--path <PATH>] [--force]`**:
+  * Deletes any of the 15 living specification types with cross-reference safety checks, and rejects `delta/mutation` (`DLT-*`) documents with an error directing the caller to `eidos delta delete`.
+* **`eidos delta create [ID] --title <TITLE> [--kind <KIND>] [--slug] [--path <PATH>]`**:
+  * Removes `--motivation / -m` and `--branch / -b` CLI options; auto-detects `vcs.branch` from Git (`HEAD`) alongside `vcs.base_commit` and scaffolds a clean `delta/mutation` blueprint.
+* **`eidos delta delete <ID_OR_PATH> [--path <PATH>] [--force]`**:
+  * Dedicated deletion command for `delta/mutation` (`DLT-*`) specifications via `delete_delta()`, rejecting non-delta specifications with an error directing the caller to `eidos spec delete`.
+* **`eidos delta status [ID] [NEW_STATUS] [--path <PATH>] [--json]`**:
+  * Displays and transitions only the 5 canonical `delta_status` states (`proposed`, `in_review`, `approved`, `applied`, `rejected`).
+
+=== 2. Blueprint Frontmatter Matrix (All 15 Living Spec Types)
+
+[cols="1,2,3", options="header"]
+|===
+| Type (`<TYPE>`) | Canonical Path | Required Blueprint Frontmatter Keys
+| `system` (`SYS-*`) | `eidos/system.adoc` | `type`, `schema`, `id`, `title`, `status: draft`, `archetypes: [service]`, `business_identity: {vision, target_users, value_proposition}`, `technical_profile: {primary_languages: [TBD]}`
+| `architecture` (`ARCH-*`) | `eidos/architecture/system-architecture.adoc` | `type`, `schema`, `id`, `title`, `status: draft`, `topology_style: modular_monolith`, `c4_context: {actors: [<first PER-* \| PER-USER>]}`, `c4_containers: []`, `solution_strategy: [...]`, `cross_cutting_concepts: {}`, `deployment_view: {hosting_model: TBD, ci_cd_engine: TBD}`
+| `domain` (`DOM-*`) | `eidos/domains/<slug>/domain.adoc` | `type`, `schema`, `id`, `title`, `status: draft`, `classification: core`, `boundaries: {responsibilities: [...]}`
+| `capability` (`CAP-*`) | `eidos/domains/<dom>/capabilities/<slug>.adoc` | `type`, `schema`, `id`, `title`, `domain: <first DOM-* \| DOM-CORE>`, `status: draft`, `business: {personas: [<first PER-* \| PER-USER>], jtbd: "..."}`, `technical: {containers: [<first CNT-* \| CNT-CORE>]}`
+| `policy` (`POL-*`) | `eidos/policies/<slug>.adoc` | `type`, `schema`, `id`, `title`, `status: draft`, `category: governance`, `invariants: [{id: INV-<ID>, rule: "..."}]`
+| `persona` (`PER-*`) | `eidos/personas/<slug>.adoc` | `type`, `schema`, `id`, `title`, `status: draft`, `role_type: end_user`, `goals: [...]`, `pain_points: [...]`
+| `exploration` (`EXP-*`) | `eidos/explorations/<slug>.adoc` | `type`, `schema`, `id`, `title`, `status: proposed`, `hypothesis: "..."`, `exit_criteria: {max_duration: 1_week}`
+| `container` (`CNT-*`) | `eidos/architecture/containers/<slug>.adoc` | `type`, `schema`, `id`, `title`, `status: draft`, `container_type: service`, `runtime: Application Runtime`, `source_path: src`
+| `component` (`CMP-*`) | `eidos/architecture/components/<slug>.adoc` | `type`, `schema`, `id`, `title`, `container: <first CNT-* \| CNT-CORE>`, `status: draft`, `responsibility: "..."`, `source_path: src`
+| `contract` (`CTR-*`) | `eidos/architecture/contracts/<slug>.adoc` | `type`, `schema`, `id`, `title`, `status: draft`, `protocol: cli_args`, `container: <first CNT-* \| CNT-CORE>`, `specification_file: src/main.py`
+| `design-system` (`DS-*`) | `eidos/design/systems/<slug>/system.adoc` | `type`, `schema`, `id`, `title`, `status: draft`, `tokens: {spec_format: w3c_design_tokens, manifest: tokens.json}`
+| `ui-component` (`UIC-*`) | `eidos/design/systems/<ds>/components/<slug>.adoc` | `type`, `schema`, `id`, `title`, `design_system: <first DS-* \| DS-CORE>`, `status: draft`
+| `screen` (`SCR-*`) | `eidos/design/screens/<slug>.adoc` | `type`, `schema`, `id`, `title`, `route: /<slug>`, `status: draft`
+| `client` (`CLT-*`) | `eidos/design/clients/<slug>/client.adoc` | `type`, `schema`, `id`, `title`, `status: draft`, `platform: web`, `design_system: <first DS-* \| DS-CORE>`
+| `flow` (`FLOW-*`) | `eidos/design/flows/<slug>.adoc` | `type`, `schema`, `id`, `title`, `status: draft`, `steps: [{step: 1, title: Entry point}]`
+|===
+
+=== 3. Additional CLI Simplifications (#4–#8, #10)
+* **`eidos init` (#4)**: Remove unused hidden `--with-plugin / --no-plugin` option.
+* **`eidos spec component promote / inline` (#5)**: Remove `--repo-root`; auto-resolve `repo_root` from `--path`.
+* **`eidos plugin install / uninstall / update` (#6)**: Keep only optional positional `[TARGET]` (defaulting to `project`) and remove duplicate `--target / -t`.
+* **`eidos context` & `eidos index repo-map` (#7)**: Replace `--format markdown|json` with `--json` (`bool = False`).
+* **Root `eidos` (#8)**: Remove standalone `eidos version` subcommand; keep `eidos --version` / `-V` and `eidos info`.
+* **Shared CLI Resolution (#10)**: Centralize `resolve_cli_eidos_dir(path)` in `src/eidos/cli/_shared.py` and remove the 5 no-op `register(app)` functions.
+
+=== 4. Verification Plan
+* Validate `eidos/deltas/dlt-2026-092.adoc` via `eidos validate eidos --json`.
+* Verify all 15 living specification types scaffold cleanly via `eidos spec create` and that `spec create`/`spec delete` reject deltas while `delta create`/`delta delete` handle deltas exclusively.
+* Verify `eidos delta verify DLT-2026-092 --json` and `eidos drift --uncommitted --json`.
+
+

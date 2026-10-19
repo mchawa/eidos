@@ -1,10 +1,12 @@
 """Tests verifying specification scaffolding, reference checking, and delta lifecycle management (CTR-EIDOS-CLI, POL-002)."""
 
+import pytest
 from pathlib import Path
 
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
+from eidos.core.lifecycle.delta_engine import create_delta
 from eidos.core.lifecycle.scaffolder import (
     apply_delta,
     create_spec,
@@ -26,8 +28,28 @@ def assert_valid_spec(validator: SpecValidator, path: Path):
 
 
 def test_scaffold_all_spec_types(tmp_path):
-    """Verify that create_spec scaffolds syntactically valid documents for every schema type (CTR-EIDOS-CLI, POL-002, INV-SPIKE-ISOLATION)."""
+    """Verify that create_spec scaffolds syntactically valid documents for all 15 living spec types and rejects delta (CTR-EIDOS-CLI, POL-002, INV-SPIKE-ISOLATION)."""
     validator = SpecValidator()
+
+    # 0a. System
+    sys_file = create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="system",
+        raw_id="SYS-AUTH-PLATFORM",
+        title="Auth Platform System",
+    )
+    assert sys_file == tmp_path / "system.adoc"
+    assert_valid_spec(validator, sys_file)
+
+    # 0b. Architecture
+    arch_file = create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="architecture",
+        raw_id="ARCH-AUTH-001",
+        title="Auth Technical Architecture",
+    )
+    assert arch_file == tmp_path / "architecture" / "system-architecture.adoc"
+    assert_valid_spec(validator, arch_file)
 
     # 1. Domain
     dom_file = create_spec(
@@ -45,7 +67,6 @@ def test_scaffold_all_spec_types(tmp_path):
         doc_type_key="capability",
         raw_id="CAP-AUTH-001",
         title="Password Login",
-        domain="DOM-TEST-AUTH",
     )
     assert cap_file.exists()
     assert_valid_spec(validator, cap_file)
@@ -56,37 +77,29 @@ def test_scaffold_all_spec_types(tmp_path):
         doc_type_key="policy",
         raw_id="POL-003-AUTH-LOCK",
         title="Account Lockout Policy",
-        category="security",
-        rule="Lock account after 5 failed attempts.",
     )
     assert pol_file.exists()
     assert_valid_spec(validator, pol_file)
 
-    # 4. Contract
-    ctr_file = create_spec(
-        eidos_dir=tmp_path,
-        doc_type_key="contract",
-        raw_id="CTR-AUTH-REST",
-        title="Auth REST API",
-        protocol="openapi",
-        container="CNT-AUTH-SERVICE",
-        specification_file="src/auth.yaml",
-    )
-    assert ctr_file.exists()
-    assert_valid_spec(validator, ctr_file)
-
-    # 5. Container
+    # 4. Container
     cnt_file = create_spec(
         eidos_dir=tmp_path,
         doc_type_key="container",
         raw_id="CNT-AUTH-SERVICE",
         title="Auth Microservice",
-        container_type="service",
-        runtime="Rust / Axum",
-        source_path="packages/auth",
     )
     assert cnt_file.exists()
     assert_valid_spec(validator, cnt_file)
+
+    # 5. Contract
+    ctr_file = create_spec(
+        eidos_dir=tmp_path,
+        doc_type_key="contract",
+        raw_id="CTR-AUTH-REST",
+        title="Auth REST API",
+    )
+    assert ctr_file.exists()
+    assert_valid_spec(validator, ctr_file)
 
     # 6. Persona
     per_file = create_spec(
@@ -94,19 +107,23 @@ def test_scaffold_all_spec_types(tmp_path):
         doc_type_key="persona",
         raw_id="PER-SECURITY-AUDITOR",
         title="Security Auditor",
-        role_type="auditor",
     )
     assert per_file.exists()
     assert_valid_spec(validator, per_file)
 
-    # 7. Delta
-    dlt_file = create_spec(
+    # 7. Delta is rejected by create_spec (disjoint boundary) and handled by create_delta
+    with pytest.raises(ValueError, match="SpecDeltas"):
+        create_spec(
+            eidos_dir=tmp_path,
+            doc_type_key="delta",
+            raw_id="DLT-2026-999",
+            title="MFA Integration",
+        )
+    dlt_file = create_delta(
         eidos_dir=tmp_path,
-        doc_type_key="delta",
         raw_id="DLT-2026-999",
         title="MFA Integration",
         kind="feature",
-        motivation="Require TOTP MFA.",
     )
     assert dlt_file.exists()
     assert_valid_spec(validator, dlt_file)
@@ -131,8 +148,6 @@ def test_scaffold_all_spec_types(tmp_path):
         doc_type_key="component",
         raw_id="CMP-AUTH-HASH",
         title="Password Hasher",
-        container="CNT-AUTH-SERVICE",
-        source_path="packages/auth/hash.rs",
     )
     assert_valid_spec(validator, cmp_file)
 
@@ -149,7 +164,6 @@ def test_scaffold_all_spec_types(tmp_path):
         doc_type_key="ui-component",
         raw_id="UIC-PASSKEY-BTN",
         title="Passkey Button",
-        design_system="DS-AUTH",
     )
     assert_valid_spec(validator, uic_file)
 
@@ -158,7 +172,6 @@ def test_scaffold_all_spec_types(tmp_path):
         doc_type_key="screen",
         raw_id="SCR-LOGIN",
         title="Login Screen",
-        route="/login",
     )
     assert_valid_spec(validator, scr_file)
 
@@ -167,7 +180,6 @@ def test_scaffold_all_spec_types(tmp_path):
         doc_type_key="client",
         raw_id="CLT-AUTH-WEB",
         title="Auth Web Client",
-        container="CNT-AUTH-SERVICE",
     )
     assert_valid_spec(validator, clt_file)
 
@@ -176,7 +188,6 @@ def test_scaffold_all_spec_types(tmp_path):
         doc_type_key="flow",
         raw_id="FLOW-PASSKEY-LOGIN",
         title="Passkey Login Flow",
-        client_id="CLT-AUTH-WEB",
     )
     assert_valid_spec(validator, flow_file)
 
@@ -201,9 +212,9 @@ def test_list_specs_and_filtering(tmp_path):
 
 def test_spec_deletion_safety_with_references(tmp_path):
     """Verify delete_spec blocks deletion if referenced by other documents, unless forced (CTR-EIDOS-CLI, POL-001)."""
-    # Create container and contract that references it
+    # Create container and contract that auto-references it
     create_spec(tmp_path, "container", "CNT-CORE", "Core Component")
-    create_spec(tmp_path, "contract", "CTR-API", "API Contract", container="CNT-CORE")
+    create_spec(tmp_path, "contract", "CTR-API", "API Contract")
 
     # Attempt delete CNT-CORE without force
     success, msg, refs = delete_spec(tmp_path, "CNT-CORE", force=False)
@@ -219,12 +230,10 @@ def test_spec_deletion_safety_with_references(tmp_path):
 
 def test_delta_lifecycle_apply(tmp_path):
     """Verify SpecDelta transition in flat storage with in-place status update (CTR-EIDOS-CLI, CAP-AGENT-001)."""
-    dlt_file = create_spec(
+    dlt_file = create_delta(
         eidos_dir=tmp_path,
-        doc_type_key="delta",
         raw_id="DLT-2026-100",
         title="Rate Limiter",
-        motivation="DDoS mitigation.",
     )
     assert dlt_file.exists()
     assert dlt_file.name == "dlt-2026-100.adoc"
@@ -246,7 +255,7 @@ def test_delta_lifecycle_apply(tmp_path):
 
 
 def test_cli_spec_commands(tmp_path):
-    """Verify 'eidos spec' CLI command suite (CTR-EIDOS-CLI)."""
+    """Verify 'eidos spec' CLI command suite and disjoint boundary with 'eidos delta' (CTR-EIDOS-CLI)."""
     # 1. Create capability
     res_create = runner.invoke(
         app,
@@ -279,20 +288,36 @@ def test_cli_spec_commands(tmp_path):
     assert res_delete.exit_code == 0
     assert "Successfully deleted" in res_delete.stdout
 
-    # 5. Create delta via 'spec create' without --kind defaults to 'feature' (root 'create' shortcut is removed)
+    # 5. Disjoint boundary: 'spec create delta', 'spec list --type delta', and 'spec delete DLT-*' are rejected
     res_dlt_spec = runner.invoke(
         app,
         ["spec", "create", "delta", "DLT-2026-501", "--title", "Spec Create Delta", "--path", str(tmp_path)],
     )
-    assert res_dlt_spec.exit_code == 0
-    doc_501 = parse_spec_file(tmp_path / "deltas" / "dlt-2026-501.adoc")
-    assert doc_501.frontmatter["intent"]["kind"] == "feature"
+    assert res_dlt_spec.exit_code == 1
+    assert "eidos delta create" in res_dlt_spec.stdout
 
-    res_dlt_short = runner.invoke(
+    res_dlt_list = runner.invoke(
         app,
-        ["create", "delta", "DLT-2026-502", "--title", "Shortcut Create Delta", "--path", str(tmp_path)],
+        ["spec", "list", "--type", "delta", "--path", str(tmp_path)],
     )
-    assert res_dlt_short.exit_code != 0
+    assert res_dlt_list.exit_code == 1
+    assert "eidos delta list" in res_dlt_list.stdout
+
+    create_delta(tmp_path, "DLT-2026-501", title="Delta For Boundary Test")
+    res_dlt_del_via_spec = runner.invoke(
+        app,
+        ["spec", "delete", "DLT-2026-501", "--path", str(tmp_path)],
+    )
+    assert res_dlt_del_via_spec.exit_code == 1
+    assert "eidos delta delete" in res_dlt_del_via_spec.stdout
+
+    create_spec(tmp_path, "container", "CNT-BOUNDARY", "Boundary Container")
+    res_spec_del_via_delta = runner.invoke(
+        app,
+        ["delta", "delete", "CNT-BOUNDARY", "--path", str(tmp_path)],
+    )
+    assert res_spec_del_via_delta.exit_code == 1
+    assert "eidos spec delete" in res_spec_del_via_delta.stdout
 
 
 def test_cli_delta_commands(tmp_path):
@@ -308,8 +333,6 @@ def test_cli_delta_commands(tmp_path):
             "CLI Expansion",
             "--kind",
             "feature",
-            "--motivation",
-            "Add delta management.",
             "--path",
             str(tmp_path),
         ],
@@ -375,8 +398,6 @@ def test_cli_spec_lifecycle_tools(tmp_path):
             "POL-100-CLI",
             "--title",
             "CLI Governed Policy",
-            "--rule",
-            "CLI tools must be tested.",
             "--path",
             str(tmp_path),
         ],
@@ -400,8 +421,6 @@ def test_cli_spec_lifecycle_tools(tmp_path):
             "CLI Delta",
             "--kind",
             "feature",
-            "--motivation",
-            "Test CLI delta.",
             "--path",
             str(tmp_path),
         ],
@@ -505,14 +524,13 @@ def test_init_repository_programmatic(tmp_path):
 def test_init_repository_cli(tmp_path):
     """Verify eidos init CLI command scaffolds without installing plugins (CTR-EIDOS-CLI)."""
     target = tmp_path / "cli_init_target"
-    result = runner.invoke(app, ["init", str(target), "--name", "my-app", "--title", "My Application"])
+    result = runner.invoke(app, ["init", str(target), "--name", "my-app"])
     assert result.exit_code == 0
     assert "Successfully initialized" in result.stdout
     assert (target / "eidos" / ".gitignore").exists()
     assert (target / "eidos" / "system.adoc").exists()
     sys_text = (target / "eidos" / "system.adoc").read_text(encoding="utf-8")
     assert "SYS-MY-APP" in sys_text
-    assert "My Application" in sys_text
     assert (target / "eidos" / "policies" / ".gitkeep").exists()
     assert (target / "eidos" / "architecture" / "containers" / ".gitkeep").exists()
     assert (target / "eidos" / "architecture" / "components" / ".gitkeep").exists()
@@ -561,7 +579,7 @@ def test_init_repository_custom(tmp_path):
 
 
 def test_cli_version_command_and_options():
-    """Verify eidos --version, -V, and version commands (CTR-EIDOS-CLI, POL-002)."""
+    """Verify eidos --version and -V flags work and removed 'eidos version' subcommand fails (CTR-EIDOS-CLI, POL-002)."""
     import eidos
 
     # 1. --version
@@ -574,10 +592,9 @@ def test_cli_version_command_and_options():
     assert res_short.exit_code == 0
     assert f"eidos {eidos.__version__}" in res_short.output
 
-    # 3. version command
+    # 3. version subcommand is removed
     res_cmd = runner.invoke(app, ["version"])
-    assert res_cmd.exit_code == 0
-    assert f"eidos {eidos.__version__}" in res_cmd.output
+    assert res_cmd.exit_code != 0
 
 
 def test_cli_index_update_alias(tmp_path):
@@ -644,13 +661,12 @@ def test_scaffold_design_system_and_tokens(tmp_path):
     assert (core_file.parent / "tokens.json").exists()
     assert_valid_spec(validator, core_file)
 
-    # 2. Client Acme Design System extending Core
+    # 2. Client Acme Design System
     acme_file = create_spec(
         eidos_dir=tmp_path,
         doc_type_key="design-system",
         raw_id="DS-ACME",
         title="Acme Brand System",
-        extends="DS-CORE",
     )
     assert acme_file.exists()
     assert_valid_spec(validator, acme_file)
@@ -666,19 +682,16 @@ def test_scaffold_ui_component(tmp_path):
         doc_type_key="ui-component",
         raw_id="UIC-CORE-BUTTON",
         title="Action Button",
-        design_system="DS-CORE",
     )
     assert btn_file.exists()
     assert_valid_spec(validator, btn_file)
 
-    # Scaffold client override component
+    # Scaffold second component
     hdr_file = create_spec(
         eidos_dir=tmp_path,
         doc_type_key="ui-component",
         raw_id="UIC-ACME-HEADER",
         title="Acme Header",
-        design_system="DS-ACME",
-        implements="UIC-CORE-HEADER",
     )
     assert hdr_file.exists()
     assert_valid_spec(validator, hdr_file)
@@ -694,7 +707,6 @@ def test_scaffold_screen_and_capability_experience(tmp_path):
         doc_type_key="screen",
         raw_id="SCR-CHECKOUT",
         title="Checkout View",
-        route="/checkout",
     )
     assert screen_file.exists()
     assert_valid_spec(validator, screen_file)
@@ -711,7 +723,6 @@ def test_scaffold_screen_and_capability_experience(tmp_path):
         doc_type_key="capability",
         raw_id="CAP-CHK-001",
         title="Express Checkout",
-        domain="DOM-CHECKOUT",
     )
     assert cap_file.exists()
 
@@ -737,8 +748,6 @@ def test_cli_design_spec_scaffolding(tmp_path):
             "SCR-SETTINGS",
             "--title",
             "Settings Screen",
-            "--route",
-            "/settings",
             "--path",
             str(tmp_path),
         ],
@@ -757,10 +766,6 @@ def test_cli_design_spec_scaffolding(tmp_path):
             "DS-TEST",
             "--title",
             "Test System",
-            "--client",
-            "test-client",
-            "--extends",
-            "DS-CORE",
             "--path",
             str(tmp_path),
         ],
@@ -771,35 +776,33 @@ def test_cli_design_spec_scaffolding(tmp_path):
 
 
 def test_create_component_client_flow_and_safe_yaml(tmp_path):
-    """Verify DLT-2026-032: component/client/flow scaffolding routes correctly and YAML-special input stays valid (INV-SPEC-VALIDATION)."""
+    """Verify DLT-2026-032 & DLT-2026-092: component/client/flow scaffolding routes correctly and YAML-special input stays valid (INV-SPEC-VALIDATION)."""
     import yaml
-
 
     create_spec(tmp_path, "container", "CNT-APP", "App Container")
     tricky = 'Quote: "Test" #hash\nsecond line'
 
     cmp_file = create_spec(
-        tmp_path, "component", "CMP-TEST-001", tricky, container="CNT-APP", source_path="src/app/test.py"
+        tmp_path, "component", "CMP-TEST-001", tricky
     )
     assert cmp_file == tmp_path / "architecture" / "components" / "test-001.adoc"
     doc = parse_spec_file(cmp_file)
     assert doc.doc_type == "tech/component"
     assert doc.frontmatter["container"] == "CNT-APP"
     assert doc.frontmatter["title"] == tricky
-    assert doc.frontmatter["source_path"] == "src/app/test.py"
     assert_valid_spec(SpecValidator(), cmp_file)
 
     # Bare IDs receive the correct prefix (no CNT-/CMP- cross-over)
-    bare = create_spec(tmp_path, "tech/component", "BARE", "Bare", container="CNT-APP")
+    bare = create_spec(tmp_path, "tech/component", "BARE", "Bare")
     assert parse_spec_file(bare).doc_id == "CMP-BARE"
 
-    clt_file = create_spec(tmp_path, "client", "CLT-WEB", "Web App", container="CNT-APP")
+    clt_file = create_spec(tmp_path, "client", "CLT-WEB", "Web App")
     assert clt_file == tmp_path / "design" / "clients" / "web" / "client.adoc"
-    assert parse_spec_file(clt_file).frontmatter["container"] == "CNT-APP"
+    assert parse_spec_file(clt_file).frontmatter["design_system"] == "DS-CORE"
     assert_valid_spec(SpecValidator(), clt_file)
 
-    flow_file = create_spec(tmp_path, "flow", "LOGIN", "Login Flow", client_id="CLT-WEB")
-    assert flow_file == tmp_path / "design" / "clients" / "web" / "flows" / "login.adoc"
+    flow_file = create_spec(tmp_path, "flow", "LOGIN", "Login Flow")
+    assert flow_file == tmp_path / "design" / "flows" / "login.adoc"
     flow_doc = parse_spec_file(flow_file)
     assert flow_doc.doc_id == "FLOW-LOGIN"
     assert_valid_spec(SpecValidator(), flow_file)
@@ -808,25 +811,24 @@ def test_create_component_client_flow_and_safe_yaml(tmp_path):
     assert cross_flow == tmp_path / "design" / "flows" / "onboard.adoc"
     assert_valid_spec(SpecValidator(), cross_flow)
 
-    # SpecDelta with quotes/colons/newlines in title and motivation remains valid YAML
-    dlt_file = create_spec(
-        tmp_path, "delta", "DLT-2026-900", 'Fix "quoted": title', motivation='Because: "reasons"\nand more'
+    # SpecDelta with quotes/colons/newlines in title remains valid YAML
+    dlt_file = create_delta(
+        tmp_path, "DLT-2026-900", 'Fix "quoted": title'
     )
     fm_text = dlt_file.read_text(encoding="utf-8").split("---")[1]
     fm = yaml.safe_load(fm_text)
     assert fm["title"] == 'Fix "quoted": title'
-    assert fm["intent"]["motivation"] == 'Because: "reasons"\nand more'
     assert_valid_spec(SpecValidator(), dlt_file)
 
 
 def test_cli_spec_create_component_with_container(tmp_path):
-    """Verify DLT-2026-032: 'eidos spec create component --container' scaffolds a tech/component."""
+    """Verify 'eidos spec create component' scaffolds a tech/component linked to existing container."""
     create_spec(tmp_path, "container", "CNT-CORE", "Core")
     res = runner.invoke(
         app,
         [
             "spec", "create", "component", "CMP-CLI-TEST", "--title", "CLI Test",
-            "--container", "CNT-CORE", "--source-path", "src/core/cli_test.py", "--path", str(tmp_path),
+            "--path", str(tmp_path),
         ],
     )
     assert res.exit_code == 0, res.stdout
@@ -879,6 +881,7 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
     import subprocess
 
     import eidos.core.index.graph_index as gi
+    from eidos.core.spec.parser import dump_spec_document
     from eidos.portal.builder import build_static_portal
 
     repo = tmp_path / "src" / "acme_payments"
@@ -891,9 +894,13 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
     assert initial_report.is_clean, f"Initial eidos init specs failed validation: {initial_report.schema_errors} {initial_report.broken_references}"
 
     create_spec(eidos_dir, "domain", "DOM-PAYMENTS", "Payments Domain")
-    create_spec(eidos_dir, "persona", "PER-USER", "Merchant User", role_type="end_user")
+    create_spec(eidos_dir, "persona", "PER-USER", "Merchant User")
     cnt_file = create_spec(
-        eidos_dir, "container", "CNT-CHECKOUT", "Checkout Service", source_path="services/checkout"
+        eidos_dir, "container", "CNT-CHECKOUT", "Checkout Service"
+    )
+    cnt_file.write_text(
+        cnt_file.read_text(encoding="utf-8").replace("source_path: src", "source_path: services/checkout"),
+        encoding="utf-8",
     )
     assert cnt_file.exists()
     cap_file = create_spec(
@@ -901,15 +908,16 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
         "capability",
         "CAP-PAY-001",
         "Record Ledger Entry",
-        domain="DOM-PAYMENTS",
     )
     cmp_file = create_spec(
         eidos_dir,
         "component",
         "CMP-LEDGER",
         "Ledger Engine",
-        container="CNT-CHECKOUT",
-        source_path="services/checkout/ledger.ts",
+    )
+    cmp_file.write_text(
+        cmp_file.read_text(encoding="utf-8").replace("source_path: src", "source_path: services/checkout/ledger.ts"),
+        encoding="utf-8",
     )
     assert cmp_file.exists()
 
@@ -923,11 +931,15 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
         "def test_positive_ledger_entry():\n    # INV-ACME-POSITIVE-AMOUNT\n    assert True\n",
         encoding="utf-8",
     )
-    cap_text = cap_file.read_text(encoding="utf-8").replace(
-        "  invariants: []",
-        "  invariants:\n    - id: INV-ACME-POSITIVE-AMOUNT\n      rule: Ledger amount must be positive.\n      test_binding: tests/test_ledger.py::test_positive_ledger_entry",
-    )
-    cap_file.write_text(cap_text, encoding="utf-8")
+    cap_doc = parse_spec_file(cap_file)
+    cap_doc.frontmatter["technical"]["invariants"] = [
+        {
+            "id": "INV-ACME-POSITIVE-AMOUNT",
+            "rule": "Ledger amount must be positive.",
+            "test_binding": "tests/test_ledger.py::test_positive_ledger_entry",
+        }
+    ]
+    cap_file.write_text(dump_spec_document(cap_doc.frontmatter, cap_doc.body), encoding="utf-8")
 
     # Initialize git and commit baseline
     subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
@@ -949,7 +961,7 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
 
         res_ctx = runner.invoke(
             app,
-            ["context", "--component", "CNT-CHECKOUT", "--path", str(eidos_dir), "--format", "json"],
+            ["context", "--component", "CNT-CHECKOUT", "--path", str(eidos_dir), "--json"],
         )
         assert res_ctx.exit_code == 0
         assert "CNT-CHECKOUT" in res_ctx.stdout
@@ -1234,13 +1246,25 @@ components:
 
     # 3. Word-bounded find_references_to_spec: CNT-CORE-API must NOT count as a reference to CNT-CORE
     api_cnt = create_spec(eidos_dir, "container", "CNT-CORE-API", title="Core API Container")
-    other_pol = create_spec(eidos_dir, "policy", "POL-REF-CHECK", title="Ref Policy", rule="Applies only to CNT-CORE-API.")
+    other_pol = create_spec(eidos_dir, "policy", "POL-REF-CHECK", title="Ref Policy")
+    other_pol.write_text(
+        other_pol.read_text(encoding="utf-8").replace(
+            "Normative rule for Ref Policy.", "Applies only to CNT-CORE-API."
+        ),
+        encoding="utf-8",
+    )
     _ = (api_cnt, other_pol)
     refs_to_core = find_references_to_spec(eidos_dir, "CNT-CORE", cnt_file)
     assert other_pol.resolve() not in refs_to_core
 
     # Also verify symlinked deltas/by-status/ do not produce duplicate references
-    dlt_ref = create_spec(eidos_dir, "delta", "DLT-2026-888", title="Ref Delta", motivation="Touches CNT-CORE.")
+    dlt_ref = create_delta(eidos_dir, "DLT-2026-888", title="Ref Delta")
+    dlt_ref.write_text(
+        dlt_ref.read_text(encoding="utf-8").replace(
+            "Proposed feature mutation for Ref Delta.", "Touches CNT-CORE."
+        ),
+        encoding="utf-8",
+    )
     refs_with_delta = find_references_to_spec(eidos_dir, "CNT-CORE", cnt_file)
     assert refs_with_delta.count(dlt_ref.resolve()) == 1
     _ = delete_spec
@@ -1259,7 +1283,7 @@ components:
 
 
 def test_design_scaffolder_hygiene_and_dynamic_system_fallback(tmp_path):
-    """DLT-2026-077: ui-component scaffolds status=draft and empty test_bindings; design-system protects existing tokens.json."""
+    """DLT-2026-077 & DLT-2026-092: ui-component scaffolds minimal status=draft blueprint; design-system protects existing tokens.json."""
     import pytest
 
     eidos_dir = tmp_path / "eidos"
@@ -1276,12 +1300,12 @@ def test_design_scaffolder_hygiene_and_dynamic_system_fallback(tmp_path):
         create_spec(eidos_dir, "design-system", "DS-BRAND", title="Duplicate Brand System")
     assert tokens_path.read_text(encoding="utf-8") == custom_tokens
 
-    # 3. Create ui-component without explicit design_system -> dynamically discovers DS-BRAND, sets status: draft and test_bindings: {}
+    # 3. Create ui-component without explicit design_system -> dynamically discovers DS-BRAND, sets status: draft minimal blueprint
     uic_path = create_spec(eidos_dir, "ui-component", "UIC-BRAND-CARD", title="Brand Card")
     uic_doc = parse_spec_file(uic_path)
     assert uic_doc.frontmatter["design_system"] == "DS-BRAND"
     assert uic_doc.frontmatter["status"] == "draft"
-    assert uic_doc.frontmatter["test_bindings"] == {}
+    assert "test_bindings" not in uic_doc.frontmatter
     assert "packages/ui/src" not in uic_path.read_text(encoding="utf-8")
 
 
@@ -1324,13 +1348,18 @@ def test_multiline_scalar_update_and_delete_spec_applied_delta_and_promote_accep
     assert fm2["rule"] == "Single line replaced rule."
 
     # 2. Bug 11b: find_references_to_spec ignores applied/rejected SpecDeltas so delete_spec succeeds
-    pol_path = create_spec(eidos_dir, "policy", "POL-OLD-TEMP", title="Temp Policy", rule="Temp rule.")
-    dlt_path = create_spec(
+    pol_path = create_spec(eidos_dir, "policy", "POL-OLD-TEMP", title="Temp Policy")
+    dlt_path = create_delta(
         eidos_dir,
-        "delta",
         "DLT-2026-950",
         title="Historical Delta",
-        motivation="Previously touched POL-OLD-TEMP.",
+    )
+    dlt_path.write_text(
+        dlt_path.read_text(encoding="utf-8").replace(
+            "Proposed feature mutation for Historical Delta.",
+            "Previously touched POL-OLD-TEMP.",
+        ),
+        encoding="utf-8",
     )
     # While delta is 'proposed', delete_spec without force=True is blocked
     ok_blocked, msg_blocked, refs_blocked = delete_spec(eidos_dir, "POL-OLD-TEMP", force=False)
@@ -1348,8 +1377,9 @@ def test_multiline_scalar_update_and_delete_spec_applied_delta_and_promote_accep
     assert not pol_path.exists()
 
     # 3. Promote an inline component with status: planned and verify schema validation passes
-    cnt_path = create_spec(eidos_dir, "container", "CNT-ACC", title="Accepted Container", source_path="src/acc")
+    cnt_path = create_spec(eidos_dir, "container", "CNT-ACC", title="Accepted Container")
     cnt_doc = parse_spec_file(cnt_path)
+    cnt_doc.frontmatter["source_path"] = "src/acc"
     cnt_doc.frontmatter["components"] = [
         {
             "id": "CMP-ACC-WORKER",
@@ -1469,11 +1499,11 @@ def test_a5_a6_frontmatter_scalar_and_components_surgical_edge_cases() -> None:
 
 
 def test_a7_a8_a11_catalog_scaffolder_and_design_edge_cases(tmp_path: Path) -> None:
-    """A7, A8, A11: path boundary & reference detection, list_specs filters/types, and design_system path / rollback."""
-    import pytest
-
+    """A7, A8, A11: path boundary & reference detection, list_specs filters/types, and design_system path / resolution."""
     from eidos.core.lifecycle.catalog import find_references_to_spec, find_spec_by_id_or_path
+    from eidos.core.lifecycle.design_engine import _resolve_design_entity_ref
     from eidos.core.lifecycle.scaffolder import list_specs
+    from eidos.core.spec.parser import dump_spec_document
 
     eidos_dir = tmp_path / "eidos"
     init_repository(tmp_path, name="TestSys")
@@ -1497,7 +1527,13 @@ def test_a7_a8_a11_catalog_scaffolder_and_design_edge_cases(tmp_path: Path) -> N
         "policy",
         "POL-REFERRER",
         "Referrer Policy",
-        rule="See eidos/policies/pol-target.adoc for details.",
+    )
+    pol_referrer.write_text(
+        pol_referrer.read_text(encoding="utf-8").replace(
+            "Normative rule for Referrer Policy.",
+            "See eidos/policies/pol-target.adoc for details.",
+        ),
+        encoding="utf-8",
     )
     custom_delta = eidos_dir / "deltas" / "custom-audit-name.adoc"
     custom_delta.write_text(
@@ -1532,16 +1568,22 @@ def test_a7_a8_a11_catalog_scaffolder_and_design_edge_cases(tmp_path: Path) -> N
 
     # A8: list_specs supports --type system, --status active (including default-status containers and inline components on draft containers)
     cnt_path = create_spec(eidos_dir, "container", "CNT-API", "API Container")
-    cnt_raw = cnt_path.read_text(encoding="utf-8")
-    # Make container draft, with an active inline component, while another container omits status (defaults to active)
-    cnt_path.write_text(
-        cnt_raw.replace(
-            "components: []",
-            "status: draft\ncomponents:\n  - id: CMP-INLINE-ACT\n    title: Active Inline\n    status: active\n    responsibility: Inline work",
-        ),
+    cnt_doc = parse_spec_file(cnt_path)
+    cnt_doc.frontmatter["status"] = "draft"
+    cnt_doc.frontmatter["components"] = [
+        {
+            "id": "CMP-INLINE-ACT",
+            "title": "Active Inline",
+            "status": "active",
+            "responsibility": "Inline work",
+        }
+    ]
+    cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+    cnt_default_path = create_spec(eidos_dir, "container", "CNT-DEFAULT-ACT", "Default Active Container")
+    cnt_default_path.write_text(
+        cnt_default_path.read_text(encoding="utf-8").replace("status: draft\n", ""),
         encoding="utf-8",
     )
-    create_spec(eidos_dir, "container", "CNT-DEFAULT-ACT", "Default Active Container")
 
     sys_specs = list_specs(eidos_dir, type_filter="system")
     assert any(s["id"] == "SYS-TESTSYS" for s in sys_specs)
@@ -1553,35 +1595,26 @@ def test_a7_a8_a11_catalog_scaffolder_and_design_edge_cases(tmp_path: Path) -> N
     for s in active_specs:
         assert not str(s["relative_path"]).startswith("eidos/")
 
-    # A11a: create_spec for ui-component with a file path as design_system resolves the system slug and ID cleanly
+    # A11a: create_spec resolves the design_system when DS-CORE exists
     uic_from_path = create_spec(
         eidos_dir,
         "ui-component",
         "UIC-PATH-BTN",
         "Path Button",
-        design_system="design/systems/core/system.adoc",
     )
     assert uic_from_path == eidos_dir / "design" / "systems" / "core" / "components" / "path-btn.adoc"
     assert parse_spec_file(uic_from_path).frontmatter["design_system"] == "DS-CORE"
 
-    # A11b: Failed design-system validation rolls back newly created tokens.json and empty directories
-    with pytest.raises(ValueError):
-        create_spec(
-            eidos_dir,
-            "design-system",
-            "DS-BAD",
-            "Bad System",
-            extends="not-a-valid-ds-id",
-        )
-    assert not (eidos_dir / "design" / "systems" / "bad" / "tokens.json").exists()
-    assert not (eidos_dir / "design" / "systems" / "bad").exists()
+    # A11b: _resolve_design_entity_ref resolves path-based design system references cleanly
+    assert _resolve_design_entity_ref("design/systems/core/system.adoc", "DS-", "system.adoc", eidos_dir) == (
+        "DS-CORE",
+        "core",
+    )
 
 
 def test_deep_audit_group_a_a1_through_a8(tmp_path):
     """Verify deep audit Group A fixes (A1 through A8)."""  # eidos:fixture
     import hashlib
-
-    import pytest
 
     from eidos.core.lifecycle.audit import AuditEngine
     from eidos.core.lifecycle.catalog import _set_frontmatter_scalar, find_spec_by_id_or_path
@@ -1622,7 +1655,7 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     assert "second line" not in updated_fm
     assert "# Preserved column-0 comment\n\nsummary: Clean Summary" in updated_fm
 
-    # --- A2 & A3: bare .adoc lookup, capability domain path, design entity refs, contract container ---
+    # --- A2 & A3: bare .adoc lookup, capability domain auto-discovery, design entity refs, contract container ---
     ws = tmp_path / "ws_a"
     ws.mkdir()
     init_repository(ws, name="ws-a", title="WS A")
@@ -1636,28 +1669,16 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
         "capability",
         "CAP-CHECKOUT",
         "Checkout",
-        domain=f"eidos/{dom_path.relative_to(eidos_dir).as_posix()}",
     )
     assert cap_path.parent == dom_path.parent / "capabilities"
     assert parse_spec_file(cap_path).frontmatter["domain"] == "DOM-PAYMENTS"
 
-    # Contract with CMP-* owner fails validation and rolls back cleanly
-    with pytest.raises(ValueError, match="INV-INTERFACE-BOUNDARY-GOVERNANCE"):
-        create_spec(
-            eidos_dir,
-            "contract",
-            "CTR-BAD-CMP",
-            "Bad Component Contract",
-            container="CMP-AUTH",
-        )
-
-    # Design specs route client_id and resolve .adoc paths for design_system and client_id
+    # Design specs auto-discover design_system
     ds_path = create_spec(
         eidos_dir,
         "design-system",
         "DS-BRAND",
         "Brand System",
-        client_id="CLT-WEB-SPA",
     )
     assert ds_path == eidos_dir / "design" / "systems" / "brand" / "system.adoc"
 
@@ -1666,8 +1687,6 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
         "client",
         "CLT-WEB-SPA",
         "Web SPA",
-        container="CNT-API-GATEWAY",
-        design_system=f"eidos/{ds_path.relative_to(eidos_dir).as_posix()}",
     )
     assert parse_spec_file(clt_path).frontmatter["design_system"] == "DS-BRAND"
 
@@ -1676,18 +1695,16 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
         "screen",
         "SCR-HOME",
         "Home Screen",
-        client_id=f"eidos/{clt_path.relative_to(eidos_dir).as_posix()}",
     )
-    assert scr_path.parent == clt_path.parent / "screens"
+    assert scr_path.parent == eidos_dir / "design" / "screens"
 
     flow_path = create_spec(
         eidos_dir,
         "flow",
         "FLOW-CHECKOUT",
         "Checkout Flow",
-        client_id=f"eidos/{clt_path.relative_to(eidos_dir).as_posix()}",
     )
-    assert flow_path.parent == clt_path.parent / "flows"
+    assert flow_path.parent == eidos_dir / "design" / "flows"
 
     # --- A1: _find_inline_component_dict, _snapshot_delta_baselines, and _check_structural_subtarget_precondition ---
     cmp_promoted = create_spec(
@@ -1695,7 +1712,6 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
         "component",
         "CMP-PROMOTED",
         "Promoted Auth",
-        container="CNT-API-GATEWAY",
     )
     cnt_path.write_text(
         "---\n"
@@ -1851,7 +1867,13 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
         "policy",
         "POL-EXP-REF",
         "Policy Referencing Deleted Domain and Exploration",
-        rule="Governs DOM-LEGACY and EXP-OLD.",
+    )
+    exp_ref_pol.write_text(
+        exp_ref_pol.read_text(encoding="utf-8").replace(
+            "Normative rule for Policy Referencing Deleted Domain and Exploration.",
+            "Governs DOM-LEGACY and EXP-OLD.",
+        ),
+        encoding="utf-8",
     )
     assert exp_ref_pol.exists()
     dlt_del_paths = eidos_dir / "deltas" / "dlt-2026-902-del.adoc"

@@ -5,17 +5,9 @@ from pathlib import Path
 
 import typer
 
-from eidos.cli._shared import PANEL_KNOWLEDGE, console
+from eidos.cli._shared import PANEL_KNOWLEDGE, console, resolve_cli_eidos_dir
 from eidos.core.index.graph_index import get_architectural_index
 from eidos.core.workspace.project import find_repo_root
-
-
-def _has_eidos_markers(cand: Path) -> bool:
-    return cand.is_dir() and (
-        (cand / "system.adoc").exists()
-        or any((cand / sub).is_dir() for sub in ("architecture", "domains", "policies", "design", "deltas"))
-        or any(cand.glob("*.adoc"))
-    )
 
 
 def context_cmd(
@@ -43,10 +35,10 @@ def context_cmd(
         "-T",
         help="Context slice verbosity tier: 'anchor' (~140 tokens), 'guardrails' (~260 tokens), 'deep' (~500 tokens). Defaults to 'guardrails'.",
     ),
-    format: str = typer.Option(
-        "markdown",
-        "--format",
-        help="Output format: 'markdown' or 'json' (defaults to 'markdown').",
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output context slice as machine-readable JSON instead of Markdown.",
     ),
     path: Path | None = typer.Option(
         None,
@@ -56,21 +48,10 @@ def context_cmd(
     ),
 ):
     """Extract a compact architectural subgraph slice (C4 components, contracts, capabilities, invariants, policies)."""
-    if path is None:
-        eidos_dir = Path("eidos")
-        if not eidos_dir.exists():
-            repo_eidos = find_repo_root() / "eidos"
-            if repo_eidos.exists():
-                eidos_dir = repo_eidos
-            elif _has_eidos_markers(Path(".")):
-                eidos_dir = Path(".")
-    elif (path / "eidos").is_dir() and not _has_eidos_markers(path):
-        eidos_dir = path / "eidos"
-    else:
-        eidos_dir = path
+    eidos_dir = resolve_cli_eidos_dir(path)
 
     if not eidos_dir.exists():
-        if format.lower() == "json":
+        if json_output:
             typer.echo(json.dumps({"error": f"Directory '{eidos_dir}' not found."}))
         else:
             console.print(f"[bold red]Error:[/bold red] Directory '{eidos_dir}' not found.")
@@ -90,7 +71,7 @@ def context_cmd(
         tier=tier,
     )
 
-    if format.lower() == "json":
+    if json_output:
         typer.echo(slice_result.to_json())
     else:
         typer.echo(slice_result.to_markdown())
@@ -99,3 +80,4 @@ def context_cmd(
 def register(app: typer.Typer) -> None:
     """Attach the root-level commands owned by this module to the root Typer app."""
     app.command("context", rich_help_panel=PANEL_KNOWLEDGE)(context_cmd)
+

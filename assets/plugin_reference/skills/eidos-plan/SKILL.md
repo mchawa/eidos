@@ -66,12 +66,11 @@ In **Planned Mode**, any change that adds/removes a container (`CNT-*`) or compo
 ### 2.1 End-to-End SpecDelta Workflow
 
 ```bash
-# 1. Scaffold a new SpecDelta (ID defaults to collision-free 'auto' across all local/remote Git refs; --slug appends a title slug)
+# 1. Scaffold a new SpecDelta (ID defaults to collision-free 'auto' across all local/remote Git refs; vcs.branch and vcs.base_commit are auto-detected from Git HEAD)
 eidos delta create \
   --title "Add Webhook Signature Verification Contract" \
   --slug \
-  --kind feature \
-  --branch feat/webhook-signatures
+  --kind feature
 
 # 2. Edit the created eidos/deltas/dlt-*.adoc file to declare mutations and structured expect post-conditions
 

@@ -148,7 +148,7 @@ eidos context -f src/eidos/cli/main.py --tier guardrails
 eidos context -c CNT-EIDOS-CORE --tier deep
 
 # Slice context from a natural-language task prompt
-eidos context -t "rate limiting and token expiration" --tier guardrails --format json
+eidos context -t "rate limiting and token expiration" --tier guardrails --json
 ```
 
 ---
@@ -218,7 +218,7 @@ eidos index repo-map
 eidos index repo-map --max-tokens 800
 
 # Output as structured JSON:
-eidos index repo-map --format json
+eidos index repo-map --json
 ```
 
 ### High-Density Compression (~98% Token Reduction)

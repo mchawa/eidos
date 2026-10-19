@@ -404,14 +404,14 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
 
     res_prom = runner.invoke(
         app,
-        ["spec", "component", "promote", "CMP-CORE-PARSER", "--path", str(eidos_dir), "--repo-root", str(repo_root)],
+        ["spec", "component", "promote", "CMP-CORE-PARSER", "--path", str(eidos_dir)],
     )
     assert res_prom.exit_code == 0
     assert promoted_spec.exists()
 
     res_inl = runner.invoke(
         app,
-        ["spec", "component", "inline", "CMP-CORE-PARSER", "--path", str(eidos_dir), "--repo-root", str(repo_root)],
+        ["spec", "component", "inline", "CMP-CORE-PARSER", "--path", str(eidos_dir)],
     )
     assert res_inl.exit_code == 0
     assert not promoted_spec.exists()

@@ -25,8 +25,6 @@ Display the installed Eidos engine version.
 eidos --version
 # Or using shorthand:
 eidos -V
-# Or using command form:
-eidos version
 ```
 
 ---
@@ -157,7 +155,7 @@ eidos context -c CNT-EIDOS-CORE --tier deep
 eidos context -t "Implement Git-native drift detection"
 
 # Output in JSON format
-eidos context -c CNT-EIDOS-CORE --format json
+eidos context -c CNT-EIDOS-CORE --json
 ```
 
 Options:
@@ -168,7 +166,7 @@ Options:
   * `anchor`: Container/component metadata, direct contract signatures, and 1-line `DEC-*` summaries (`<= 300 tokens`).
   * `guardrails`: Adds domain capabilities, active invariants with `test_binding`, policies, and full `DEC-*` rationale (`<= 1,000 tokens`).
   * `deep`: Adds internal C4 modules, in-process APIs, contract schemas, and downstream dependents (`<= 2,500 tokens`).
-* `--format [markdown|json]`: Output serialization format (default: `markdown`).
+* `--json`: Output context slice as machine-readable JSON instead of Markdown.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
 ---
@@ -244,16 +242,16 @@ Generate a token-budgeted structural repo map outline (classes, functions, metho
 # Generate structural repo map with default budget (1500 tokens)
 eidos index repo-map
 
-# Or specify a custom token budget and format:
-eidos index repo-map --max-tokens 2000 --format markdown
+# Or specify a custom token budget:
+eidos index repo-map --max-tokens 2000
 
 # Output as structured JSON for autonomous agent harnesses:
-eidos index repo-map --format json
+eidos index repo-map --json
 ```
 
 Options:
 * `-t, --max-tokens INTEGER`: Maximum context tokens allocated for structural repo map outline (default: `1500`).
-* `-f, --format [markdown|json]`: Output format (default: `markdown`).
+* `--json`: Output structural repo map as machine-readable JSON instead of Markdown.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
 #### `eidos index find-symbol`
@@ -281,20 +279,20 @@ Options:
 ## 4. Living Catalog & Mutations
 
 ### `eidos spec`
-Manage the living specification catalog and C4 Level 3 components: listing, authoring, inspecting, deleting, promoting, and inlining specification documents.
+Manage the living specification catalog and C4 Level 3 components: listing, authoring, inspecting, deleting, promoting, and inlining specification documents across all 15 living specification types (excluding SpecDeltas, which are managed via `eidos delta`).
 
 ```bash
-# List all specifications (including inline C4 Level 3 components)
+# List all living specifications (including inline C4 Level 3 components)
 eidos spec list
 
-# Filter by specification type (e.g. container, component, capability, delta)
+# Filter by specification type (e.g. container, component, capability, exploration)
 eidos spec list --type container
 eidos spec list --type component --json
 
 # Show details of a specific document
 eidos spec show CNT-EIDOS-CORE
 
-# Scaffold a new specification document
+# Scaffold a minimal draft specification blueprint
 eidos spec create component CMP-AUTH-SERVICE --title "Authentication Service"
 
 # Safely delete a specification document
@@ -308,10 +306,10 @@ eidos spec component inline CMP-SPEC-VALIDATOR
 ```
 
 Sub-commands:
-* `list`: Lists all living specifications (including inline C4 Level 3 components) in tabular or JSON format, with optional `--type, -t`, `--status, -s`, `--path, -p`, and `--json` flags.
+* `list`: Lists all living specifications across the 15 blueprint types (including inline C4 Level 3 components) in tabular or JSON format, with optional `--type, -t`, `--status, -s`, `--path, -p`, and `--json` flags.
 * `show <id_or_path>`: Displays detailed frontmatter metadata and preview of a specification document.
-* `create <type> [id] --title <title>`: Scaffolds a new specification document across all 16 schema types with immediate validation (for `delta`, `id` defaults to `auto` and supports `--slug, -s`).
-* `delete <id_or_path>`: Safely deletes a specification document with cross-reference safety checks (`--force, -f` to override).
+* `create <type> <id> --title <title> [--path <path>]`: Scaffolds a minimal, schema-valid draft specification blueprint (`status: draft`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`).
+* `delete <id_or_path>`: Safely deletes a living specification document with cross-reference safety checks (`--force, -f` to override).
 * `component promote <component_id>`: Promotes an inline C4 Level 3 component (`CMP-*`) to a dedicated specification in `eidos/architecture/components/` (linking bottom-up via `container: CNT-*`) and removes the inline entry from the parent container.
 * `component inline <component_id>`: Inlines a promoted C4 Level 3 component (`CMP-*`) back into its parent container manifest.
 
@@ -334,14 +332,12 @@ eidos delta status --json
 eidos delta create \
   --title "Migrate to PostgreSQL 16" \
   --kind enabler \
-  --motivation "Upgrade database runtime and connection pooling." \
   --slug
 
 # Or specify an explicit SpecDelta ID (automatically resolved across all Git refs if colliding):
 eidos delta create DLT-2026-055 \
   --title "Migrate to PostgreSQL 16" \
-  --kind enabler \
-  --motivation "Upgrade database runtime and connection pooling."
+  --kind enabler
 
 # Verify all mutations and closed-schema expect: post-conditions declared in a SpecDelta:
 eidos delta verify DLT-2026-055
@@ -428,7 +424,7 @@ eidos plugin install codex
 eidos plugin install copilot
 
 # Configure hooks to use ephemeral uvx runner instead of global eidos binary:
-eidos plugin install --target all --launcher uvx
+eidos plugin install all --launcher uvx
 
 # Inspect installed vs bundled plugin version
 eidos plugin version
@@ -440,32 +436,28 @@ eidos plugin validate
 eidos plugin info
 
 # Update installed plugin to latest bundled engine version
-eidos plugin update --target all
+eidos plugin update all
 
 # Uninstall plugin files and agent configurations
-eidos plugin uninstall --target all
+eidos plugin uninstall all
 ```
 
 Sub-commands:
-* `install`: Installs the plugin into `.agents/plugins/eidos` and client harness locations via manifest-tracked `TargetAdapter` projections (`--target, -t`, `--project-dir, -p`, `--dest, -d`, `--force`, `--launcher [eidos|uvx]`).
-* `uninstall`: Safely cleans up Eidos plugin files, skills, and client configurations while preserving user-owned files.
+* `install [TARGET]`: Installs the plugin into `.agents/plugins/eidos` and client harness locations via manifest-tracked `TargetAdapter` projections (`--project-dir, -p`, `--dest, -d`, `--force`, `--launcher [eidos|uvx]`).
+* `uninstall [TARGET]`: Safely cleans up Eidos plugin files, skills, and client configurations while preserving user-owned files (`--project-dir, -p`, `--dest, -d`).
 * `version`: Displays and compares bundled vs installed plugin version.
-* `update`: Updates project-scoped plugin to the latest bundled version (`--target, -t`, `--project-dir, -p`, `--dest, -d`, `--launcher [eidos|uvx]`).
+* `update [TARGET]`: Updates project-scoped plugin to the latest bundled version (`--project-dir, -p`, `--dest, -d`, `--launcher [eidos|uvx]`).
 * `validate`: Validates an Agent Plugin against canonical JSON schemas and SemVer 2.0.0 rules.
 * `info`: Displays plugin metadata, skills, hooks, and extensions.
 
 ---
 
 ### `eidos hook`
-CLI-native lifecycle hook handlers invoked by AI coding agent harnesses (`PreToolUse`, `PostToolUse`, and stateful Block-Once `Stop` gate with 600s TTL and session scoping):
+Stateless CLI-native `Stop` lifecycle hook handler invoked by AI coding agent harnesses to verify specification schemas, invariant test bindings, and spec-to-code synchronization:
 
 ```bash
-eidos hook lint --event pre_tool
-eidos hook lint --event post_tool
-eidos hook lint --event stop
-eidos hook drift --event stop
+eidos hook
 ```
 
 Options:
-* `--event, -e TEXT`: Hook lifecycle event (`PreToolUse` / `pre_tool`, `PostToolUse` / `post_tool`, `Stop` / `stop`).
 * `--path, -p PATH`: Repository root or `eidos` directory path.

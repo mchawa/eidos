@@ -245,11 +245,10 @@ def index_repo_map_cmd(
         "-t",
         help="Maximum context tokens allocated for structural repo map outline.",
     ),
-    format_type: str = typer.Option(
-        "markdown",
-        "--format",
-        "-f",
-        help="Output format: markdown (default) or json.",
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output structural repo map as machine-readable JSON instead of Markdown.",
     ),
     path: Path | None = typer.Option(
         None,
@@ -263,7 +262,7 @@ def index_repo_map_cmd(
     idx = get_architectural_index(eidos_dir=eidos_dir)
     repo_map = idx.get_repo_map(max_tokens=max_tokens)
 
-    if format_type.lower() == "json":
+    if json_output:
         console.print_json(data={"repo_map": repo_map, "max_tokens": max_tokens, "estimated_tokens": len(repo_map) // 4})
     else:
         console.print(repo_map)
@@ -320,8 +319,4 @@ def index_find_symbol_cmd(
 
     console.print(table)
 
-
-def register(app: typer.Typer) -> None:
-    """Attach the root-level commands owned by this module to the root Typer app."""
-    return None
 

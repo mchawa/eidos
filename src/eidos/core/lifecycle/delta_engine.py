@@ -15,7 +15,10 @@ from typing import Any
 from eidos.core.index.storage import get_cached_spec_document, open_cache_connection
 from eidos.core.lifecycle.catalog import (
     _build_spec_catalog_with_invariants,
+    _render_spec,
     _set_frontmatter_scalar,
+    _single_line,
+    find_references_to_spec,
     find_spec_by_id_or_path,
 )
 from eidos.core.spec.models import SpecDocument
@@ -328,6 +331,26 @@ def _resolve_git_head_sha(eidos_dir: Path) -> str | None:
     return None
 
 
+def _resolve_git_branch(eidos_dir: Path) -> str | None:
+    """Resolve the current Git branch name for eidos_dir, or None if detached HEAD or not in a Git repository."""
+    repo_root = _resolve_git_repo_root(eidos_dir)
+    if repo_root is None:
+        return None
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        res = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if res.returncode == 0:
+            branch_name = res.stdout.strip()
+            if branch_name and branch_name != "HEAD":
+                return branch_name
+    return None
+
+
 def generate_collision_free_delta_id(
     eidos_dir: Path,
     raw_id: str | None = None,
@@ -477,23 +500,99 @@ def create_delta(
     raw_id: str = "auto",
     title: str = "Untitled SpecDelta",
     kind: str = "feature",
-    motivation: str = "Proposed change motivation.",
     slug_suffix: bool = False,
-    branch: str | None = None,
 ) -> Path:
-    """Create a SpecDelta with automatic collision-free ID resolution and vcs.base_commit baseline capture."""
-    from eidos.core.lifecycle.scaffolder import create_spec
-
-    return create_spec(
-        eidos_dir=eidos_dir,
-        doc_type_key="delta",
+    """Create a SpecDelta blueprint with automatic collision-free ID resolution and Git branch/base_commit capture."""
+    doc_id = generate_collision_free_delta_id(
+        eidos_dir,
         raw_id=raw_id,
         title=title,
-        kind=kind,
-        motivation=motivation,
-        branch=branch,
         slug_suffix=slug_suffix,
     )
+    slug = doc_id.lower().replace("_", "-")
+    heading = _single_line(title)
+    dest_dir = eidos_dir / "deltas"
+    dest_file = dest_dir / f"{slug}.adoc"
+    motivation = f"Proposed {kind} mutation for {heading}."
+
+    fm: dict[str, Any] = {
+        "type": "delta/mutation",
+        "schema": "schemas/v1/delta/delta.schema.yaml",
+        "id": doc_id,
+        "title": title,
+        "status": "proposed",
+        "intent": {"kind": kind, "motivation": motivation},
+        "mutations": [],
+    }
+    branch_name = _resolve_git_branch(eidos_dir)
+    head_sha = _resolve_git_head_sha(eidos_dir)
+    vcs_dict: dict[str, Any] = {}
+    if branch_name:
+        vcs_dict["branch"] = branch_name
+    if head_sha:
+        vcs_dict["base_commit"] = head_sha
+    if vcs_dict:
+        fm["vcs"] = vcs_dict
+
+    body = f"""= SpecDelta: {heading}
+:toc: left
+
+== Problem Statement
+{motivation}
+
+== Proposed Specification Changes
+Describe the exact behavioral diffs, mutations, and invariant updates here.
+"""
+    content = _render_spec(fm, body)
+    if dest_file.exists():
+        raise FileExistsError(f"SpecDelta document already exists at: {dest_file}")
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_file.write_text(content, encoding="utf-8")
+
+    doc = parse_spec_file(dest_file)
+    validator = SpecValidator()
+    errors = validator.validate_document(doc)
+    if errors:
+        dest_file.unlink()
+        err_msg = "; ".join(errors)
+        raise ValueError(f"Generated SpecDelta failed validation: {err_msg}")
+
+    _snapshot_delta_baselines(eidos_dir, doc_id)
+    return dest_file
+
+
+def delete_delta(eidos_dir: Path, target: str, force: bool = False) -> tuple[bool, str, list[Path]]:
+    """Safely delete a SpecDelta (DLT-*) document, rejecting non-delta living specifications."""
+    file_path = find_spec_by_id_or_path(eidos_dir / "deltas", target) or find_spec_by_id_or_path(eidos_dir, target)
+    if not file_path or not file_path.exists():
+        return False, f"SpecDelta '{target}' not found under '{eidos_dir}'.", []
+
+    doc = parse_spec_file(file_path)
+    doc_id = doc.doc_id or file_path.stem
+    if doc.doc_type != "delta/mutation":
+        return (
+            False,
+            f"Document '{doc_id}' is a living specification ({doc.doc_type}), not a SpecDelta. Use 'eidos spec delete {target}' instead.",
+            [],
+        )
+
+    references = find_references_to_spec(eidos_dir, doc_id, file_path)
+    if references and not force:
+        refs_str = ", ".join(p.name for p in references[:5])
+        return (
+            False,
+            f"Cannot delete '{doc_id}': referenced by {len(references)} specification(s) ({refs_str}). Use --force to delete anyway.",
+            references,
+        )
+
+    file_path.unlink()
+    parent = file_path.parent
+    if parent != eidos_dir and parent.exists() and not any(parent.iterdir()):
+        with contextlib.suppress(OSError):
+            parent.rmdir()
+
+    return True, f"Successfully deleted SpecDelta '{doc_id}' ({file_path.name}).", references
 
 
 VALID_DELTA_STATUSES: tuple[str, ...] = (

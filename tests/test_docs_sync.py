@@ -41,7 +41,6 @@ def test_documentation_and_schemas_in_sync():
     cli_doc_text = cli_doc_path.read_text(encoding="utf-8")
 
     expected_commands = [
-        "version",
         "info",
         "doctor",
         "init",

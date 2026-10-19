@@ -1,0 +1,407 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-093
+title: "Streamline v1 Specification Schemas, Move Prose to AsciiDoc Body, and Derive Component Dependencies via AST"
+status: proposed
+vcs:
+  branch: main
+  base_commit: 3fc3bea15898f8ac3834cf2e5bef096feefa1b95
+intent:
+  kind: enabler
+  motivation: "Eliminate over-engineered prose-in-YAML frontmatter blocks across Eidos v1 schemas, make redundant schema/contract fields optional, replace manual component interface blocks with automatic AST import dependency extraction, unify UI component verification on standard invariants, and remove artificial restrictions on SpecDelta mutations and expect.frontmatter assertions."
+tombstone:
+  search_tokens:
+    - "quality_attributes"
+    - "in_process_interfaces"
+    - "business_identity"
+    - "technical_profile"
+    - "ubiquitous_language"
+    - "pricing_tiers"
+    - "questions_to_answer"
+    - "spikes_to_run"
+    - "resulting_delta_id"
+    - "topology_style"
+    - "c4_containers"
+    - "solution_strategy"
+    - "cross_cutting_concepts"
+    - "deployment_view"
+    - "test_bindings"
+    - "applied_at_commit"
+    - "figma_url"
+    - "storybook_url"
+  allowed_reasons:
+    - path: "CHANGELOG.md"
+      reason: "Historical release notes referencing pre-DLT-2026-093 schema fields."
+    - path: "eidos/deltas/"
+      reason: "Historical SpecDeltas predating DLT-2026-093."
+    - path: "eidos/explorations/"
+      reason: "Historical exploration documents."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Streamline all 16 v1 YAML schemas under assets/schemas/v1/ and shared $defs in assets/schemas/v1/common/defs.yaml; remove quality_attributes and interfaces from CNT-EIDOS-CORE frontmatter and move quality attributes to AsciiDoc body."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "Quality Attributes"
+
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Update SpecValidator in src/eidos/core/spec/validator.py to always derive the schema from type via TYPE_TO_SCHEMA_NAME (removing top-level schema from YAML frontmatter), support optional contract specification_file, UI component invariants[].test_binding verification, SYS-* mutation targets, operation 'add' on ARCH-*/SYS-*, operation 'deprecate' across all 14 lifecycle-status specification types, and open expect.frontmatter assertions."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/spec/validator.py"
+
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+    details: "Update FrontmatterModel and InlineComponentModel in src/eidos/core/spec/models.py to reflect optional component responsibility and streamlined frontmatter properties."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/spec/models.py"
+
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Update create_spec, promote_component, and inline_component in src/eidos/core/lifecycle/scaffolder.py and catalog.py to emit streamlined frontmatter blueprints with prose sections in AsciiDoc body and without removed fields."
+    expect:
+      frontmatter:
+        responsibility: "Scaffolds"
+
+  - operation: modify
+    target: CMP-DESIGN-ENGINE
+    details: "Update build_design_spec in src/eidos/core/lifecycle/design_engine.py to scaffold design/ui-component with standard invariants instead of test_bindings and accessibility."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/lifecycle/design_engine.py"
+
+  - operation: modify
+    target: CMP-REPO-INITIALIZER
+    details: "Update init_repository in src/eidos/core/lifecycle/initializer.py to generate streamlined system.adoc, system-architecture.adoc, and domain.adoc frontmatter with narrative sections in AsciiDoc prose."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/lifecycle/initializer.py"
+
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    details: "Update PREFIX_TO_ENTITY_META, verify_delta_mutations, and _normalize_expect_spec in src/eidos/core/lifecycle/delta_engine.py to support SYS-* targets, operation 'deprecate' across all 14 living spec types, operation 'add' on ARCH-*/SYS-*, and direct expect.frontmatter key assertions without requiring a custom wrapper."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/lifecycle/delta_engine.py"
+
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: "Remove quality_attributes and component interfaces blocks from CNT-EIDOS-INDEX frontmatter and document AST-based component dependency extraction."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+    details: "Add polyglot import extraction (extract_imports) to AstGrepIndexer in src/eidos/core/index/ast_indexer.py to resolve cross-component consumption directly from source files."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/ast_indexer.py"
+        responsibility: "extract_imports"
+
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    details: "Update sync_index and rebuild_spec_edges in src/eidos/core/index/sync.py to derive component consumes_api and container depends_on edges automatically via AstGrepIndexer.extract_imports and _CodeOwnershipResolver."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/sync.py"
+        responsibility: "consumes_api"
+
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: "Remove quality_attributes and interfaces.provides formatting from ArchitecturalContextSlice in src/eidos/core/index/context.py."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/context.py"
+
+  - operation: modify
+    target: CNT-EIDOS-VCS
+    details: "Remove quality_attributes and component interfaces blocks from CNT-EIDOS-VCS frontmatter in eidos/architecture/containers/vcs.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CNT-EIDOS-CLI
+    details: "Remove quality_attributes and component interfaces blocks from CNT-EIDOS-CLI frontmatter in eidos/architecture/containers/cli.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+    details: "Remove quality_attributes and component interfaces blocks from CNT-EIDOS-PORTAL frontmatter in eidos/architecture/containers/portal.adoc."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+    details: "Update get_portal_data in src/eidos/portal/generator.py to derive inter-component and inter-container dependencies from the AST/SQLite knowledge graph, read exploration decision.resulting_deltas, and read UI component invariants."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/portal/generator.py"
+
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: "Update portal frontend TypeScript interfaces and views in src/eidos/portal/frontend/src/ and rebuild assets/portal/bundle.html.gz."
+    expect:
+      frontmatter:
+        responsibility: "bundle.html.gz"
+
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Remove quality_attributes and component interfaces blocks from CNT-EIDOS-PLUGIN frontmatter and synchronize bundled agent skills with streamlined v1 schemas."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: "Update YAML frontmatter templates in assets/plugin_reference/skills/ to match streamlined v1 schemas."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/plugin/installer.py"
+
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+    details: "Remove quality_attributes from CNT-EIDOS-DOCS frontmatter and synchronize documentation in docs/ with streamlined v1 schemas."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Update docs/concepts/schema-glossary.md and conceptual guides to reflect streamlined v1 schemas."
+    expect:
+      frontmatter:
+        source_path: "docs/concepts/how-eidos-works.md"
+
+  - operation: modify
+    target: ARCH-EIDOS-001
+    details: "Move topology_style, solution_strategy, cross_cutting_concepts, and deployment_view from eidos/architecture/system-architecture.adoc YAML frontmatter to AsciiDoc prose, and remove redundant c4_containers."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: DOM-SPEC-ENGINE
+    details: "Move boundaries from DOM-SPEC-ENGINE frontmatter into AsciiDoc prose."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: DOM-VCS-LIFECYCLE
+    details: "Move boundaries from DOM-VCS-LIFECYCLE frontmatter into AsciiDoc prose."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: DOM-AGENT-INTELLIGENCE
+    details: "Move boundaries from DOM-AGENT-INTELLIGENCE frontmatter into AsciiDoc prose."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: DOM-EXPERIENCE-PORTAL
+    details: "Move boundaries from DOM-EXPERIENCE-PORTAL frontmatter into AsciiDoc prose."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Move business.jtbd to AsciiDoc prose in CAP-PROD-001, migrate eidos/system.adoc (SYS-EIDOS-001) business_identity and technical_profile to AsciiDoc prose, and document streamlined v1 schema rules."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CAP-PROD-002
+    details: "Move business.jtbd to AsciiDoc prose in CAP-PROD-002 and document expanded SpecDelta target/operation support and open expect.frontmatter assertions."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CAP-PROD-003
+    details: "Move business.jtbd to AsciiDoc prose in CAP-PROD-003 and migrate eidos/explorations/EXP-2026-001..007.adoc narrative fields (hypothesis, questions_to_answer, spikes_to_run, exit_criteria, decision.learnings) to AsciiDoc prose and decision.resulting_delta_id to decision.resulting_deltas."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CAP-VCS-001
+    details: "Move business.jtbd to AsciiDoc prose in CAP-VCS-001."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Move business.jtbd to AsciiDoc prose in CAP-AGENT-001 and document AST import-based component dependency indexing."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CAP-AGENT-002
+    details: "Move business.jtbd to AsciiDoc prose in CAP-AGENT-002."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CAP-EXP-001
+    details: "Move business.jtbd to AsciiDoc prose in CAP-EXP-001."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CAP-EXP-002
+    details: "Move business.jtbd to AsciiDoc prose in CAP-EXP-002 and document UI component invariant bindings."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: PER-AUTONOMOUS-AGENT
+    details: "Move goals, pain_points, and interaction_modes from PER-AUTONOMOUS-AGENT frontmatter into AsciiDoc prose."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: PER-DESIGN-ENGINEER
+    details: "Move goals, pain_points, and interaction_modes from PER-DESIGN-ENGINEER frontmatter into AsciiDoc prose."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: PER-PRODUCT-LEAD
+    details: "Move goals, pain_points, and interaction_modes from PER-PRODUCT-LEAD frontmatter into AsciiDoc prose."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: PER-SOFTWARE-ARCHITECT
+    details: "Move goals, pain_points, and interaction_modes from PER-SOFTWARE-ARCHITECT frontmatter into AsciiDoc prose."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: PER-SOFTWARE-ENGINEER
+    details: "Move goals, pain_points, and interaction_modes from PER-SOFTWARE-ENGINEER frontmatter into AsciiDoc prose."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: UIC-PORTAL-SHELL
+    details: "Migrate UIC-PORTAL-SHELL from test_bindings and accessibility frontmatter to standard invariants and AsciiDoc prose."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: UIC-PORTAL-SIDEBAR
+    details: "Migrate UIC-PORTAL-SIDEBAR from test_bindings and accessibility frontmatter to standard invariants and AsciiDoc prose."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: UIC-PORTAL-READER
+    details: "Migrate UIC-PORTAL-READER from test_bindings and accessibility frontmatter to standard invariants and AsciiDoc prose."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: UIC-PORTAL-METRIC-CARD
+    details: "Migrate UIC-PORTAL-METRIC-CARD from test_bindings and accessibility frontmatter to standard invariants and AsciiDoc prose."
+    expect:
+      frontmatter:
+        status: "active"
+
+decisions:
+  - id: DEC-SCHEMA-PROSE-IN-BODY-AND-AST-EDGES
+    title: "Keep YAML Frontmatter Strictly for Machine-Indexed Metadata and Graph Edges while Moving Prose to AsciiDoc and Deriving Schema and Component Dependencies Automatically"
+    decision: "Remove top-level schema (always deriving schema deterministically from type via TYPE_TO_SCHEMA_NAME) and narrative prose blocks (business_identity, technical_profile, boundaries, ubiquitous_language, business.jtbd, business.pricing_tiers, goals, pain_points, interaction_modes, exploration hypothesis/questions_to_answer/spikes_to_run/exit_criteria/decision.learnings, architecture topology_style/solution_strategy/cross_cutting_concepts/deployment_view/c4_containers, and quality_attributes) from YAML frontmatter into the AsciiDoc body, make contract specification_file optional, generalize external_references to an open string map, unify UI component verification on standard invariants, remove manual component interfaces in favor of AstGrepIndexer.extract_imports, and relax SpecDelta target/operation/expect.frontmatter restrictions."
+    rationale: "YAML frontmatter should only encode machine-validated identifiers, lifecycle statuses, file/test bindings, and semantic cross-references (x-eidos-ref). Because every specification declares a 1:1 'type' mapped in TYPE_TO_SCHEMA_NAME, declaring 'schema' in frontmatter is 100% redundant. Similarly, long-form prose in YAML duplicates the AsciiDoc body and forces placeholder boilerplate during scaffolding, while manual component interface lists duplicate relationships that the polyglot AST indexer can derive deterministically from source code imports."
+    rejected_alternatives:
+      - option: "Retain explicit or optional schema field in YAML frontmatter"
+        reason_rejected: "Every Eidos specification has a canonical 1:1 mapping from type to schema in TYPE_TO_SCHEMA_NAME; keeping schema in frontmatter is pure boilerplate and risks type/schema mismatch."
+      - option: "Retain required narrative fields in YAML frontmatter with placeholder strings"
+        reason_rejected: "Forces authors and scaffolders to duplicate prose across both YAML frontmatter and AsciiDoc sections."
+      - option: "Retain manual interfaces.provides and interfaces.consumes in component YAML frontmatter"
+        reason_rejected: "Duplicates symbol and import graphs that AstGrepIndexer and _CodeOwnershipResolver can extract directly from source_path."
+---
+= SpecDelta: Streamline v1 Specification Schemas, Move Prose to AsciiDoc Body, and Derive Component Dependencies via AST
+:toc: left
+
+== Problem Statement
+
+Although `DLT-2026-091` canonicalized field names across the 16 Eidos v1 schemas (`assets/schemas/v1/`), several schemas still force narrative prose into YAML frontmatter, maintain unused or vendor-locked sub-objects, require manual component dependency lists that duplicate AST analysis, or impose overly restrictive constraints on SpecDelta mutations:
+
+1. **Redundant `schema` Field in Frontmatter (#1)**: All 16 schemas declare `schema: schemas/v1/...` in YAML frontmatter even though `SpecValidator.resolve_schema()` deterministically resolves the schema 1:1 from `type` via `TYPE_TO_SCHEMA_NAME`.
+2. **Bespoke & Unvalidated `quality_attributes` in Frontmatter (#2)**: `#/$defs/quality_attributes` defines 6 fixed fields (including Eidos-specific `max_validation_latency_ms`) that are never verified by `SpecValidator` or `DriftDetector` and belong in AsciiDoc prose.
+3. **Manual Component `interfaces` (`provides` & `consumes`) (#3)**: `#/$defs/in_process_interfaces` asks authors to hand-maintain exported signatures (`provides`) and peer component calls (`consumes`) in YAML even though `AstGrepIndexer` and `_CodeOwnershipResolver` already map every component's `source_path` and can derive cross-component consumption directly from AST imports.
+4. **Vendor-Locked `external_references` (#5)**: `#/$defs/external_design_references` restricts keys to `figma_url` and `storybook_url` (`additionalProperties: false`), rejecting other design and documentation tools.
+5. **Prose-in-YAML Across Product & Architecture Schemas (#7, #8, #9, #10, #11, #12, #13)**:
+   * `product/system.schema.yaml` (#7) requires `business_identity` (`vision`, `target_users`, `value_proposition`) and `technical_profile` (`primary_languages`, `runtimes_and_frameworks`, `deployment_targets`, `vcs_platforms`, `agent_support`), none of which are read by the engine or portal.
+   * `product/domain.schema.yaml` (#8) requires `boundaries` (`responsibilities`, `out_of_scope`) and defines unused `ubiquitous_language` in YAML instead of AsciiDoc prose.
+   * `product/capability.schema.yaml` (#9) requires narrative `business.jtbd` in YAML and defines unused `business.pricing_tiers`.
+   * `product/persona.schema.yaml` (#10) requires `goals` and `pain_points` (plus `interaction_modes`) in YAML instead of AsciiDoc prose.
+   * `product/exploration.schema.yaml` (#11) encodes the entire spike narrative (`hypothesis`, `questions_to_answer`, `spikes_to_run`, `exit_criteria`, `decision.learnings`) in YAML and restricts `decision.resulting_delta_id` to a single string instead of plural `resulting_deltas`.
+   * `tech/architecture.schema.yaml` (#12, #13) requires `topology_style`, `solution_strategy`, `cross_cutting_concepts`, and `deployment_view` (`hosting_model`, `ci_cd_engine`)—all unread by the engine—and duplicates `CNT-*` definitions inside `c4_containers`.
+6. **Mandatory `specification_file` on Contracts (#15)**: `tech/contract.schema.yaml` requires `specification_file`, preventing conceptual, external, or inline AsciiDoc contracts.
+7. **Bespoke `test_bindings` and `accessibility` on UI Components (#18)**: `design/ui-component.schema.yaml` uses a separate 3-key `test_bindings` object and `accessibility` block instead of standard `invariants` (`INV-*` with `test_binding`).
+8. **Unused `vcs` Keys & Overly Restrictive Mutation Rules in `delta.schema.yaml` (#20, #21)**:
+   * `vcs.pr_url` and `vcs.applied_at_commit` (#20) are never read or written anywhere in Eidos.
+   * `mutations[].target` and `parent` omit `SYS-*`; `operation: deprecate` is artificially restricted to `CAP-*` and `POL-*` despite all 14 living schemas supporting `status: deprecated`; `ARCH-*` forbids `operation: add`; and `mutations[].expect.frontmatter` forces non-hardcoded frontmatter keys into a nested `.custom` wrapper (#21).
+
+== Proposed Specification Changes
+
+=== Summary Matrix of Schema Changes
+
+[cols="1,2,2,3", options="header"]
+|===
+| # | Affected Schema(s) | Retired / Modified Frontmatter Fields | New Canonical Behavior
+| **1** | All 16 `*.schema.yaml` | `schema` removed from `required` and `properties` | `schema` is removed from YAML frontmatter and **always derived** deterministically from `type` via `TYPE_TO_SCHEMA_NAME` in `SpecValidator.resolve_schema()`.
+| **2** | `common/defs.yaml`, `tech/container`, `tech/component` | `#/$defs/quality_attributes`, `quality_attributes` | Removed from YAML frontmatter; operational quality attributes are documented in the AsciiDoc body (`== Quality Attributes`).
+| **3** | `common/defs.yaml`, `tech/container`, `tech/component` | `#/$defs/in_process_interfaces`, `interfaces` (`provides`, `consumes`) | Removed from YAML frontmatter; `AstGrepIndexer.extract_imports()` + `_CodeOwnershipResolver` automatically derive `consumes_api` (`CMP-* -> CMP-*`) and `depends_on` (`CNT-* -> CNT-*`) edges from source imports.
+| **5** | `common/defs.yaml`, `design/system`, `design/ui-component`, `design/screen` | `figma_url`, `storybook_url` (`additionalProperties: false`) | `#/$defs/external_design_references` becomes a generic open map (`type: object`, `additionalProperties: { type: string }`) accepting any tool name/URL pair.
+| **7** | `product/system.schema.yaml` | `business_identity`, `technical_profile` | Removed from YAML frontmatter (leaving `type`, `id`, `title`, `status`, `archetypes`, `decisions`); strategic vision and technical profile live in AsciiDoc prose.
+| **8** | `product/domain.schema.yaml` | `boundaries`, `ubiquitous_language` | Removed from YAML frontmatter (leaving `type`, `id`, `title`, `status`, `classification`, `owners`, `decisions`); domain boundaries and glossary live in AsciiDoc prose.
+| **9** | `product/capability.schema.yaml` | `business.jtbd`, `business.pricing_tiers` | Removed from `business` (leaving `business: { personas, policies }`); JTBD narrative lives in the AsciiDoc body.
+| **10** | `product/persona.schema.yaml` | `goals`, `pain_points`, `interaction_modes` | Removed from YAML frontmatter (leaving `type`, `id`, `title`, `status`, `role_type`, `decisions`); goals, pain points, and interaction modes live in AsciiDoc prose.
+| **11** | `product/exploration.schema.yaml` | `hypothesis`, `questions_to_answer`, `spikes_to_run`, `exit_criteria`, `decision.learnings`, `decision.resulting_delta_id` | Narrative spike fields move to the AsciiDoc body; `decision.resulting_delta_id` is replaced by plural `decision.resulting_deltas` (`DLT-*` array) alongside `decision.outcome`.
+| **12** | `tech/architecture.schema.yaml` | `topology_style`, `solution_strategy`, `cross_cutting_concepts`, `deployment_view` | Removed from YAML frontmatter; architectural strategy, cross-cutting concepts, and deployment view live in AsciiDoc prose.
+| **13** | `tech/architecture.schema.yaml` | `c4_containers` | Removed from YAML frontmatter (leaving `type`, `id`, `title`, `status`, `c4_context`, `decisions`); C4 Level 2 containers are discovered directly from `eidos/architecture/containers/*.adoc`.
+| **15** | `tech/contract.schema.yaml` | `specification_file` removed from `required` | `specification_file` is optional, supporting conceptual, external, or inline AsciiDoc contracts.
+| **18** | `design/ui-component.schema.yaml` | `test_bindings`, `accessibility` | Replaced by standard `invariants: [#/$defs/invariant]` (`INV-*` with `test_binding`); accessibility details live in invariants and AsciiDoc prose.
+| **20** | `delta/delta.schema.yaml` | `vcs.pr_url`, `vcs.applied_at_commit` | Removed from `vcs` (retaining `vcs.branch` and `vcs.base_commit`).
+| **21** | `delta/delta.schema.yaml`, `validator.py`, `delta_engine.py` | Restrictive `mutations[].target`, `operation`, and `expect.frontmatter.custom` | Add `SYS-` (`product/system`) to `mutations[].target` and `parent`; allow `deprecate` on all 14 living spec types; allow `add` on `ARCH-*` and `SYS-*`; remove `expect.frontmatter.custom` and allow any frontmatter key directly under `expect.frontmatter` (`additionalProperties: true`).
+|===
+
+== Verification Criteria
+
+1. `uv run eidos validate eidos --json` passes with `0` schema errors and `0` broken references across all specifications.
+2. `uv run eidos delta verify DLT-2026-093 --json` reports all declared mutations as `verified: true`.
+3. `uv run eidos delta audit DLT-2026-093 --strict --json` passes with zero unexempted references to retired frontmatter tokens.
+4. `uv run eidos drift --uncommitted --json` reports `is_clean: true` and `drift_detected: false`.
+5. `uv run pytest` passes across the entire test suite.

@@ -49,8 +49,6 @@ eidos plugin install
 
 # Full installation across all supported AI assistants:
 eidos plugin install all
-# or:
-eidos plugin install --target all
 
 # Targeted installation for a specific assistant:
 eidos plugin install cursor
@@ -60,18 +58,18 @@ eidos plugin install copilot
 
 ### Installation Targets
 
-| Target Flag | Target Path / Config | Description |
+| Target Argument | Target Path / Config | Description |
 | :--- | :--- | :--- |
-| `--target all` | All environments below | Installs plugins and configs for Antigravity, Claude, Cursor, Aider, Cline, OpenCode, Codex, and GitHub Copilot |
-| `--target project` | `.agents/plugins/eidos/` | Standard project-scope installation conforming strictly to `agent-plugins.org v1.0.0` |
-| `--target antigravity` | `.agents/plugins/eidos/` | Installs plugin bundle with rules, 4 skills, hooks, and extensions (agent-plugins.org v1.0.0) |
-| `--target claude` | `.claude/plugins/eidos/`, `.claude/skills/` | Installs Claude Code plugin, 4 flat skills, slash commands (`/validate`, `/drift`), and configures `.claude/settings.json` |
-| `--target cursor` | `.cursor/skills/`, `.cursor/rules/eidos.mdc` | Installs 4 flat skills and Cursor rules (`.mdc`) for CLI execution |
-| `--target copilot` | `.github/plugin/`, `.github/skills/`, `.github/copilot/` | Installs GitHub Copilot plugin (Agent Plugins 1.0), 4 skills, settings, and instructions |
-| `--target aider` | `.aider/skills/`, `.aider.conventions.md`, `.aider.conf.yml` | Installs 4 skills, conventions index, and auto-read configuration |
-| `--target cline` | `.cline/plugins/`, `.cline/skills/` | Installs plugin bundle, 4 flat skills, and AGENTS.md conventions |
-| `--target open-code` | `.opencode/plugins/`, `.opencode/skills/` | Installs plugin bundle, 4 flat skills, and AGENTS.md instructions |
-| `--target codex` | `.codex/plugin.json`, `.codex/skills/`, `.codex/rules.md` | Installs OpenAI Codex plugin bundle with 4 skills and rules |
+| `all` | All environments below | Installs plugins and configs for Antigravity, Claude, Cursor, Aider, Cline, OpenCode, Codex, and GitHub Copilot |
+| `project` | `.agents/plugins/eidos/` | Standard project-scope installation conforming strictly to `agent-plugins.org v1.0.0` |
+| `antigravity` | `.agents/plugins/eidos/` | Installs plugin bundle with rules, 4 skills, hooks, and extensions (agent-plugins.org v1.0.0) |
+| `claude` | `.claude/plugins/eidos/`, `.claude/skills/` | Installs Claude Code plugin, 4 flat skills, slash commands (`/validate`, `/drift`), and configures `.claude/settings.json` |
+| `cursor` | `.cursor/skills/`, `.cursor/rules/eidos.mdc` | Installs 4 flat skills and Cursor rules (`.mdc`) for CLI execution |
+| `copilot` | `.github/plugin/`, `.github/skills/`, `.github/copilot/` | Installs GitHub Copilot plugin (Agent Plugins 1.0), 4 skills, settings, and instructions |
+| `aider` | `.aider/skills/`, `.aider.conventions.md`, `.aider.conf.yml` | Installs 4 skills, conventions index, and auto-read configuration |
+| `cline` | `.cline/plugins/`, `.cline/skills/` | Installs plugin bundle, 4 flat skills, and AGENTS.md conventions |
+| `open-code` | `.opencode/plugins/`, `.opencode/skills/` | Installs plugin bundle, 4 flat skills, and AGENTS.md instructions |
+| `codex` | `.codex/plugin.json`, `.codex/skills/`, `.codex/rules.md` | Installs OpenAI Codex plugin bundle with 4 skills and rules |
 
 ---
 
@@ -88,7 +86,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     Run the installation command in your repository root:
 
     ```bash
-    eidos plugin install --target antigravity
+    eidos plugin install antigravity
     ```
 
     This creates the following directory structure inside your project:
@@ -128,8 +126,6 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ```bash
     eidos plugin install claude
-    # or
-    eidos plugin install --target claude
     ```
 
     This automatically:
@@ -161,8 +157,6 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ```bash
     eidos plugin install cursor
-    # or
-    eidos plugin install --target cursor
     ```
 
     This automatically:
@@ -200,8 +194,6 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     ### 1. Installation
     ```bash
     eidos plugin install copilot
-    # or
-    eidos plugin install --target copilot
     ```
 
     This automatically:
@@ -290,7 +282,7 @@ Select your AI coding assistant below for step-by-step setup instructions and co
     eidos drift --uncommitted --json
 
     # Extract architectural context slice
-    eidos context -f <touched-file> --format json
+    eidos context -f <touched-file> --json
     ```
 
 ---
@@ -301,8 +293,8 @@ AI agents execute Eidos CLI commands directly from terminal / subshell tools. Al
 
 | CLI Command | Flags / Options | Description |
 | :--- | :--- | :--- |
-| `eidos context` | `-f <file>`, `-c <id>`, `-t <task>`, `--tier <tier>`, `--format json` | Slices a compact architectural context subgraph (`anchor`, `guardrails`, `deep`). |
-| `eidos index repo-map` | `--max-tokens <n>`, `--format json` | Generates an AST-compressed structural repository map (~98% token reduction). |
+| `eidos context` | `-f <file>`, `-c <id>`, `-t <task>`, `--tier <tier>`, `--json` | Slices a compact architectural context subgraph (`anchor`, `guardrails`, `deep`). |
+| `eidos index repo-map` | `--max-tokens <n>`, `--json` | Generates an AST-compressed structural repository map (~98% token reduction). |
 | `eidos index find-symbol` | `<query>`, `--limit <n>`, `--json` | Resolves classes, functions, and methods to exact file/line coordinates and owning specs. |
 | `eidos index search` | `"<query>"`, `--limit <n>`, `--json` | Performs two-tier column-weighted BM25 full-text search across living spec titles, rules, and invariants. |
 | `eidos index blast-radius` | `<symbol>`, `--depth 2`, `--json` | Computes transitive dependency and governance blast radius for a symbol or spec path. |
@@ -313,10 +305,10 @@ AI agents execute Eidos CLI commands directly from terminal / subshell tools. Al
 | `eidos doctor` | `--path <path>`, `--json` | Runs workspace health diagnostics across CLI binary, living specs, index, and agent plugin hooks. |
 | `eidos info` | | Returns current engine version, loaded v1 schemas, and supported platforms. |
 | `eidos spec list` | `--type <type>`, `--status <status>`, `--json` | Lists living specifications (including inline C4 Level 3 components `CMP-*`). |
-| `eidos spec create` | `<type> [id] --title <title> [--slug]` | Scaffolds a new specification document across all 16 schema types. |
+| `eidos spec create` | `<type> <id> --title <title> [--path <path>]` | Scaffolds a minimal draft blueprint across all 15 living specification types. |
 | `eidos spec delete` | `<id_or_path> [--force]` | Safely deletes a living specification with cross-reference safety checks. |
 | `eidos spec component` | `[promote\|inline] <id>` | Promotes inline C4 Level 3 components to `eidos/architecture/components/` or inlines them back. |
-| `eidos delta create` | `[id] --title <title> --kind <feature\|enabler\|bug> [--slug]` | Scaffolds a new collision-free SpecDelta mutation document (`DLT-*`) for Planned Mode. |
+| `eidos delta create` | `[id] --title <title> [--kind <feature\|enabler\|bug>] [--slug]` | Scaffolds a new collision-free SpecDelta mutation document (`DLT-*`) for Planned Mode. |
 | `eidos delta verify` | `<id>`, `--json` | Verifies that all declared mutations and closed-schema `expect:` post-conditions hold in the spec catalog. |
 | `eidos delta audit` | `<id>`, `--strict`, `--json` | Audits removed/deprecated entities for dangling references vs. approved tombstones. |
 | `eidos delta apply` | `<id>`, `--verify/--no-verify`, `--json` | Verifies declared mutations by default (`--verify`), validates the SpecDelta, and reconciles it in-place (`status: applied`). |
@@ -327,7 +319,7 @@ AI agents execute Eidos CLI commands directly from terminal / subshell tools. Al
 
 ### Machine-Readable JSON Output Reference
 
-When agents pass `--json` (or `--format json`), Eidos outputs structured JSON payloads designed for programmatic consumption:
+When agents pass `--json`, Eidos outputs structured JSON payloads designed for programmatic consumption:
 
 #### 1. Specification Validation (`eidos validate --json`)
 ```json
@@ -364,7 +356,7 @@ When agents pass `--json` (or `--format json`), Eidos outputs structured JSON pa
 ```
 * **Exit code**: `0` when clean, `1` when unmanaged code changes, trivial comment-only spec edits, or broken test bindings exist.
 
-#### 3. Context Slicing (`eidos context -f src/eidos/cli/main.py --format json`)
+#### 3. Context Slicing (`eidos context -f src/eidos/cli/main.py --json`)
 ```json
 {
   "tier": "guardrails",
@@ -436,16 +428,13 @@ Before presenting work or concluding a task, the agent executes an autonomous ad
 
 ---
 
-## Automated Lifecycle Hooks & the Block-Once Stop Gate (`eidos hook`)
+## Stateless Stop Lifecycle Hook (`eidos hook`)
 
-In agent harnesses that support lifecycle hooks (Google Antigravity, Claude Code, Cursor, Cline, OpenCode, and Codex), Eidos registers two CLI-native hooks in `hooks.json`:
+In agent harnesses that support lifecycle hooks (Google Antigravity, Claude Code, Cursor, Cline, OpenCode, and Codex), Eidos registers a single stateless `Stop` hook in `hooks.json`:
 
-1. **`eidos-doc-linter` (`eidos hook lint`)**:
-   * **PreToolUse Gate**: Intercepts file-creation and write tool calls before execution, blocking attempts to create prohibited standalone ADR files (`docs/adr/`, `ADR-*.md`).
-   * **PostToolUse / Stop Gate**: Automatically validates modified `.adoc` files against their v1 JSON Schemas on file edits (`PostToolUse`) and validates the living specification catalog at task completion (`Stop`), reporting schema errors back to the agent immediately.
-2. **`eidos-drift-gate` (`eidos hook drift`)**:
-   * **Stateful Block-Once Stop Gate (`DLT-2026-084`, `DLT-2026-087`)**: Exclusively when an agent attempts to conclude its task (`Stop` event), `eidos hook drift --event stop` runs `eidos drift --uncommitted`. If unmanaged code drift or broken test bindings are detected, Eidos blocks completion once and injects the exact `remediation_suggestions` into the agent's context so it can self-correct.
-   * **TTL & Session-Scoped Loop Prevention (`eidos/.cache/stop-gate.json`)**: Eidos stores `{hash, timestamp, session_id}` for the current failure fingerprint (expiring after `EIDOS_STOP_GATE_TTL_SECONDS`, default `600s`). If an agent is genuinely blocked by an external constraint and hits the exact same drift fingerprint twice within the same active session, the Block-Once mechanism releases the gate with an explicit `systemMessage` warning so the agent can ask the human user for guidance.
+* **`eidos-drift-gate` (`eidos hook`)**:
+  * **Stateless Unified Check**: When an agent finishes its task (`Stop` event), `eidos hook` runs `detect_drift(uncommitted=True)`, which verifies living specification schemas and cross-references (`SpecValidator`), invariant test bindings (`INV-*`), and spec-to-code synchronization in a single pass.
+  * **Non-Blocking Advisory Warning**: Returns `{"decision": "allow"}` when clean, or `{"decision": "allow", "systemMessage": "⚠️ ..."}` with exact remediation steps when validation errors, broken invariant bindings, or code drift are detected—requiring zero state files, zero per-edit subprocesses, and never trapping agents in infinite retry loops.
 
 ---
 
@@ -484,7 +473,7 @@ Output:
 │     Specification:  agent-plugins.org v1.0.0                                 │
 │            Skills:  eidos, eidos-ops, eidos-plan, eidos-spec                 │
 │       MCP Servers:  None                                                     │
-│   Lifecycle Hooks:  eidos-doc-linter, eidos-drift-gate                       │
+│   Lifecycle Hooks:  eidos-drift-gate                                         │
 │        Extensions:  com.google.antigravity                                   │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
@@ -502,7 +491,7 @@ eidos plugin version
 When upgrading `eidos-ai`, update the project's installed plugin files in-place:
 
 ```bash
-eidos plugin update --target all
+eidos plugin update all
 ```
 
 ### Verify Conformance
@@ -525,7 +514,7 @@ Output:
 │ Overall Status         │ CONFORMANT                                          │
 │ Discovered Skills      │ eidos, eidos-ops, eidos-plan, eidos-spec            │
 │ Configured MCP Servers │ None                                                │
-│ Lifecycle Hooks        │ eidos-doc-linter, eidos-drift-gate                  │
+│ Lifecycle Hooks        │ eidos-drift-gate                                    │
 │ Client Extensions      │ com.google.antigravity                              │
 └────────────────────────┴─────────────────────────────────────────────────────┘
 ```
@@ -538,5 +527,5 @@ Output:
 To cleanly remove plugin files and agent configurations:
 
 ```bash
-eidos plugin uninstall --target all
+eidos plugin uninstall all
 ```

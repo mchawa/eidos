@@ -34,7 +34,6 @@ def test_a1_git_baseline_resolves_dedicated_component_without_cmp_prefix(tmp_pat
         "component",
         "CMP-AUTH",
         "Auth Component",
-        container="CNT-API",
     )
     assert cmp_path.name == "auth.adoc"
 
@@ -46,7 +45,6 @@ def test_a1_git_baseline_resolves_dedicated_component_without_cmp_prefix(tmp_pat
         raw_id="DLT-2026-001",
         title="Harden Auth Component",
         kind="enabler",
-        motivation="Update description in CMP-AUTH.",
     )
     # Set mutation target to CMP-AUTH with modify operation
     dlt_text = dlt_path.read_text(encoding="utf-8")
@@ -143,7 +141,6 @@ def test_a3_recorded_baseline_not_overwritten_by_git_head_when_unmodified(tmp_pa
         raw_id="DLT-2026-002",
         title="Modify API Container",
         kind="enabler",
-        motivation="Update CNT-API container specification.",
     )
     dlt_text = dlt_path.read_text(encoding="utf-8")
     dlt_text = dlt_text.replace(

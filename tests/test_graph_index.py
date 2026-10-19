@@ -1884,8 +1884,8 @@ def test_dlt_2026_083_fts_and_boost_hub_suppression_and_token_calibration(tmp_pa
     init_repository(tmp_path)
     eidos_dir = tmp_path / "eidos"
     create_spec(eidos_dir, "domain", "DOM-SHARED", title="Shared Domain")
-    c1 = create_spec(eidos_dir, "capability", "CAP-ALPHA", title="Alpha Capability", domain="DOM-SHARED")
-    c2 = create_spec(eidos_dir, "capability", "CAP-BETA", title="Beta Capability", domain="DOM-SHARED")
+    c1 = create_spec(eidos_dir, "capability", "CAP-ALPHA", title="Alpha Capability")
+    c2 = create_spec(eidos_dir, "capability", "CAP-BETA", title="Beta Capability")
     assert c1.exists() and c2.exists()
 
     idx = ArchitecturalIndex(db_path=tmp_path / ".eidos_cache" / "index.db", eidos_dir=eidos_dir)
@@ -2026,8 +2026,9 @@ def test_dlt_2026_088_single_pass_scandir_dirty_check(tmp_path: Path) -> None:
 
     init_repository(tmp_path)
     eidos_dir = tmp_path / "eidos"
-    cnt_path = create_spec(eidos_dir, "container", "CNT-SCAN", title="Scan Container", source_path="src")
+    cnt_path = create_spec(eidos_dir, "container", "CNT-SCAN", title="Scan Container")
     cnt_doc = parse_spec_file(cnt_path)
+    cnt_doc.frontmatter["source_path"] = "src"
     cnt_doc.frontmatter["components"] = [
         {
             "id": "CMP-SCAN-MOD",
@@ -2107,8 +2108,9 @@ def test_context_implements_edges_inline_cmp_blast_radius_and_path_resolution(tm
     create_spec(eidos_dir, "domain", "DOM-INTEL", title="Intelligence Domain")
 
     # Container CNT-IDX bound to DOM-ENGINE, with inline component CMP-INLINE-IDX and dict-formatted interfaces (Bug 15b)
-    cnt_idx = create_spec(eidos_dir, "container", "CNT-IDX", title="Index Container", source_path="src/index")
+    cnt_idx = create_spec(eidos_dir, "container", "CNT-IDX", title="Index Container")
     cnt_idx_doc = parse_spec_file(cnt_idx)
+    cnt_idx_doc.frontmatter["source_path"] = "src/index"
     cnt_idx_doc.frontmatter["domain"] = "DOM-ENGINE"
     cnt_idx_doc.frontmatter["interfaces"] = {
         "provides": [{"signature": "POST /v1/index/query"}],
@@ -2125,14 +2127,22 @@ def test_context_implements_edges_inline_cmp_blast_radius_and_path_resolution(tm
     cnt_idx.write_text(dump_spec_document(cnt_idx_doc.frontmatter, cnt_idx_doc.body), encoding="utf-8")
 
     # Broad container CNT-SRC-ROOT (source_path: src) and sibling container CNT-OTHER (source_path: src/other)
-    create_spec(eidos_dir, "container", "CNT-SRC-ROOT", title="Root Src Container", source_path="src")
-    create_spec(eidos_dir, "container", "CNT-OTHER", title="Other Container", source_path="src/other")
+    cnt_root = create_spec(eidos_dir, "container", "CNT-SRC-ROOT", title="Root Src Container")
+    cnt_root_doc = parse_spec_file(cnt_root)
+    cnt_root_doc.frontmatter["source_path"] = "src"
+    cnt_root.write_text(dump_spec_document(cnt_root_doc.frontmatter, cnt_root_doc.body), encoding="utf-8")
+
+    cnt_other = create_spec(eidos_dir, "container", "CNT-OTHER", title="Other Container")
+    cnt_other_doc = parse_spec_file(cnt_other)
+    cnt_other_doc.frontmatter["source_path"] = "src/other"
+    cnt_other.write_text(dump_spec_document(cnt_other_doc.frontmatter, cnt_other_doc.body), encoding="utf-8")
 
     # Cross-domain capability CAP-INTEL-001 in DOM-INTEL implementing CNT-IDX and CMP-INLINE-IDX (Bug 3 & Bug 4)
     cap_intel = create_spec(
-        eidos_dir, "capability", "CAP-INTEL-001", title="Agent Slicing", domain="DOM-INTEL"
+        eidos_dir, "capability", "CAP-INTEL-001", title="Agent Slicing"
     )
     cap_intel_doc = parse_spec_file(cap_intel)
+    cap_intel_doc.frontmatter["domain"] = "DOM-INTEL"
     cap_intel_doc.frontmatter["technical"] = {
         "containers": ["CNT-IDX"],
         "components": ["CMP-INLINE-IDX"],
@@ -2148,9 +2158,10 @@ def test_context_implements_edges_inline_cmp_blast_radius_and_path_resolution(tm
 
     # Unrelated capability CAP-ENGINE-OTHER in DOM-ENGINE bound exclusively to CNT-OTHER
     cap_other = create_spec(
-        eidos_dir, "capability", "CAP-ENGINE-OTHER", title="Other Engine Cap", domain="DOM-ENGINE"
+        eidos_dir, "capability", "CAP-ENGINE-OTHER", title="Other Engine Cap"
     )
     cap_other_doc = parse_spec_file(cap_other)
+    cap_other_doc.frontmatter["domain"] = "DOM-ENGINE"
     cap_other_doc.frontmatter["technical"] = {"containers": ["CNT-OTHER"]}
     cap_other.write_text(dump_spec_document(cap_other_doc.frontmatter, cap_other_doc.body), encoding="utf-8")
 
@@ -2216,8 +2227,11 @@ def test_incremental_spec_sync_skips_unchanged_test_reparse_and_scopes_fts(tmp_p
     init_repository(tmp_path, name="inc-perf-repo")
     eidos_dir = tmp_path / "eidos"
     create_spec(eidos_dir, "domain", "DOM-PERF", title="Perf Domain")
-    create_spec(eidos_dir, "container", "CNT-PERF", title="Perf Container", source_path="src/perf")
-    cap_path = create_spec(eidos_dir, "capability", "CAP-PERF-001", title="Perf Cap", domain="DOM-PERF")
+    cnt_perf = create_spec(eidos_dir, "container", "CNT-PERF", title="Perf Container")
+    cnt_perf_doc = parse_spec_file(cnt_perf)
+    cnt_perf_doc.frontmatter["source_path"] = "src/perf"
+    cnt_perf.write_text(dump_spec_document(cnt_perf_doc.frontmatter, cnt_perf_doc.body), encoding="utf-8")
+    cap_path = create_spec(eidos_dir, "capability", "CAP-PERF-001", title="Perf Cap")
     cap_doc = parse_spec_file(cap_path)
     cap_doc.frontmatter["technical"] = {
         "containers": ["CNT-PERF"],

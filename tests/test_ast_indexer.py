@@ -211,7 +211,7 @@ def test_cli_repo_map_and_find_symbol():
     assert "Structural Code Graph" in res_map.output
 
     # 2. repo-map json
-    res_map_json = runner.invoke(app, ["index", "repo-map", "--format", "json", "--max-tokens", "800"])
+    res_map_json = runner.invoke(app, ["index", "repo-map", "--json", "--max-tokens", "800"])
     assert res_map_json.exit_code == 0
     data = json.loads(res_map_json.output)
     assert "repo_map" in data

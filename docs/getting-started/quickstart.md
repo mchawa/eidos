@@ -115,8 +115,7 @@ For cross-container features or breaking contract changes (**Planned Mode**), sc
 ```bash
 eidos delta create DLT-2026-001 \
   --title "Add Webhook Notification Support" \
-  --kind feature \
-  --motivation "Deliver real-time webhook events for external subscribers."
+  --kind feature
 ```
 
 This scaffolds `eidos/deltas/dlt-2026-001.adoc`. Once your code, spec mutations, and tests are implemented, verify and reconcile the delta in-place:

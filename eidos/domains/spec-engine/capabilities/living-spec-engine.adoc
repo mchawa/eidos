@@ -5,7 +5,7 @@ id: CAP-PROD-001
 title: "Living Baseline Specification Engine"
 domain: DOM-SPEC-ENGINE
 status: active
-version: "1.5.0"
+version: "1.6.0"
 
 business:
   personas:
@@ -95,11 +95,12 @@ Traditional product requirements documents (PRDs) quickly become obsolete. This 
 Through an embedded SQLite Knowledge Graph (`eidos/.cache/index.db`), Eidos bridges human-readable AsciiDoc specifications with sub-millisecond relational queries, full-text lexical search (FTS5 BM25), and zero-drift incremental indexing.
 
 == Key Responsibilities
-* **Living Specification Parsing & Typed `FrontmatterModel`**: Robust extraction of YAML frontmatter combined with AsciiDoc technical specifications and Pydantic `FrontmatterModel` (`SpecDocument.model`) normalization across parser, validator, catalog, and indexing pipelines.
+* **Living Specification Parsing, Blueprint Scaffolding & Typed `FrontmatterModel`**: Robust extraction of YAML frontmatter combined with AsciiDoc technical specifications, minimal 4-parameter blueprint scaffolding (`eidos spec create <TYPE> <ID> --title <TITLE> [--path <PATH>]`) across all 15 declarative specification & discovery blueprint types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`), and Pydantic `FrontmatterModel` (`SpecDocument.model`) normalization across parser, validator, catalog, and indexing pipelines.
 * **Schema Validation, Shared `$defs` (`assets/schemas/v1/common/defs.yaml`), AST-Backed Polyglot `test_binding` Verification & Bidirectional Contract Integrity**: Schema resolution, Draft 2020-12 validation across all 16 specification schemas and shared `$defs` in `assets/schemas/v1/common/defs.yaml`, AST-backed polyglot `test_binding` symbol resolution via `get_ast_indexer().list_test_functions` and `extract_symbols` (supporting parameterized TS/JS `test.each`/`it.each`/`describe.each` and `Deno.test`, Go `t.Run` subtests, and Rust `#[tokio::test]`/`#[rstest]`/`#[test_case]`/`#[async_std::test]` attributes while rejecting comment or string-literal false positives), and bidirectional multi-protocol contract parity verification (`cli_args`, `python_protocol`, `rest_openapi`, `grpc_proto`, `graphql`) detecting both undocumented code operations and phantom contract entries removed from code.
 * **Unified SQLite & In-Memory Cache (`storage.py`)**: Centralized `SCHEMA_VERSION` (`2.5.0`) schema management (`ensure_cache_schema`, `open_cache_connection`) and shared `get_cached_spec_document` / `load_spec_validation_cache` / `load_test_binding_cache` helpers eliminating duplicate inline DDL and redundant multi-pass YAML parsing.
 * **Embedded Knowledge Graph**: Relational indexing linking Personas, Domains, Capabilities, Invariants, Components, Contracts, and SpecDeltas into `eidos/.cache/index.db`.
 * **Zero-Drift Incremental Sync**: Single-pass recursive `os.scandir` mtime and SHA-256 dirty checking (`check_index_dirty`) with pre-filtered `top_code_dirs` boundary checks that keeps the SQLite graph continuously synchronized with the working tree in under 2ms.
 * **Sub-Millisecond Catalog Resolution**: Powering `eidos spec list`, `eidos spec show`, and CLI inspection commands with instant relational queries rather than linear disk scans.
 * **Recursive Blast-Radius & Search**: SQLite recursive Common Table Expressions (CTEs) traversing k-hop impact boundaries and FTS5 full-text search over titles, descriptions, and keywords.
+
 

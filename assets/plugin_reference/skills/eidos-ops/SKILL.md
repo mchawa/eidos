@@ -20,17 +20,17 @@ eidos init --name my-system --title "My System"
 # 1b. Or Eidos Lite profile: minimal baseline (system.adoc, system-architecture.adoc, containers/, capabilities/)
 eidos init --lite --name my-system --title "My System"
 
-# 2. Install AI agent plugin integrations (or pass --with-plugin to 'eidos init')
-eidos plugin install --target project
+# 2. Install AI agent plugin integrations
+eidos plugin install
 # Or install across all supported coding agents (Antigravity, Claude, Cursor, Copilot, Cline, OpenCode, Codex, Aider):
-eidos plugin install --target all
+eidos plugin install all
 
 # 3. Populate C4 Level 1 System Context (eidos/system.adoc) and Arc42 Master Architecture (eidos/architecture/system-architecture.adoc)
 
 # 4. Scaffold initial product domains, personas, and C4 containers (consult 'eidos-spec' for YAML schemas)
 eidos spec create domain DOM-CORE --title "Core Application Domain"
 eidos spec create persona PER-DEVELOPER --title "Application Developer"
-eidos spec create container CNT-APP-API --title "Core Application API" --source-path src/api
+eidos spec create container CNT-APP-API --title "Core Application API"
 
 # 5. Synchronize the knowledge graph index and verify workspace health
 eidos index sync --force

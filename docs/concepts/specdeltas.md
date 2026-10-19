@@ -112,16 +112,12 @@ Previously, modifying an unowned source file could pass drift checks if an unrel
 eidos delta create \
   --title "Add Rate Limiting Contract" \
   --kind feature \
-  --motivation "Protect public API endpoints from burst traffic." \
-  --branch feat/rate-limiting \
   --slug
 
 # Or specify an explicit SpecDelta ID:
 eidos delta create DLT-2026-055 \
   --title "Add Rate Limiting Contract" \
-  --kind feature \
-  --motivation "Protect public API endpoints from burst traffic." \
-  --branch feat/rate-limiting
+  --kind feature
 
 # 2. List all SpecDeltas or view/transition the lifecycle status
 eidos delta list

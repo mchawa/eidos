@@ -11,15 +11,10 @@ from rich.table import Table
 
 import eidos
 from eidos.cli import (
-    component_commands,
     context_command,
-    delta_commands,
     doctor_hook_commands,
     drift_commands,
-    index_commands,
     init_command,
-    plugin_commands,
-    portal_commands,
     spec_commands,
 )
 
@@ -32,6 +27,8 @@ from eidos.cli._shared import (  # noqa: F401
     PANEL_SETUP,
     PANEL_SPECS,
     console,
+    has_eidos_markers,
+    resolve_cli_eidos_dir,
 )
 from eidos.cli.component_commands import component_app, component_inline_cmd, component_promote_cmd  # noqa: F401
 from eidos.cli.context_command import context_cmd  # noqa: F401
@@ -46,7 +43,7 @@ from eidos.cli.delta_commands import (  # noqa: F401
     delta_status_cmd,
     delta_verify_cmd,
 )
-from eidos.cli.doctor_hook_commands import doctor_cmd, hook_app, hook_drift_cmd, hook_lint_cmd  # noqa: F401
+from eidos.cli.doctor_hook_commands import doctor_cmd, hook_cmd  # noqa: F401
 from eidos.cli.drift_commands import drift_cmd  # noqa: F401
 from eidos.cli.index_commands import (  # noqa: F401
     index_app,
@@ -89,7 +86,6 @@ app.add_typer(delta_app, name="delta", rich_help_panel=PANEL_SPECS)
 app.add_typer(index_app, name="index", rich_help_panel=PANEL_KNOWLEDGE)
 app.add_typer(portal_app, name="portal", rich_help_panel=PANEL_PORTAL)
 app.add_typer(plugin_app, name="plugin", rich_help_panel=PANEL_PLUGINS)
-app.add_typer(hook_app, name="hook", rich_help_panel=PANEL_PLUGINS)
 
 
 def version_callback(value: bool):
@@ -111,11 +107,6 @@ def main(
 ):
     """Eidos: Git-Native, Agent-Agnostic Development AI Ecosystem & Lifecycle Orchestrator."""
     pass
-
-
-def version_cmd():
-    """Display the Eidos engine version."""
-    typer.echo(f"eidos {eidos.__version__}")
 
 
 def info():
@@ -144,7 +135,6 @@ def info():
     console.print(Panel(grid, title="[bold blue]Eidos AI Ecosystem[/bold blue]", expand=False))
 
 
-app.command("version", rich_help_panel=PANEL_SETUP)(version_cmd)
 app.command(rich_help_panel=PANEL_SETUP)(info)
 
 # Mount the root-level commands owned by each command module.
@@ -152,24 +142,19 @@ doctor_hook_commands.register(app)
 init_command.register(app)
 spec_commands.register(app)
 drift_commands.register(app)
-portal_commands.register(app)
-component_commands.register(app)
 context_command.register(app)
-index_commands.register(app)
-delta_commands.register(app)
-plugin_commands.register(app)
 
 
 # Canonical root command order. Command modules register in module order, so the dispatcher pins the
 # help layout explicitly instead of relying on import/registration side effects.
 ROOT_COMMAND_ORDER = (
-    "version",
     "info",
     "doctor",
     "init",
     "validate",
     "drift",
     "context",
+    "hook",
 )
 
 
@@ -182,4 +167,5 @@ app.registered_commands.sort(key=lambda c: ROOT_COMMAND_ORDER.index(_command_nam
 
 if __name__ == "__main__":
     app()
+
 

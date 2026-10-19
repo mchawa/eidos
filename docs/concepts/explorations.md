@@ -128,8 +128,7 @@ Document concrete, verifiable numbers directly in the AsciiDoc body:
    ```bash
    eidos delta create DLT-2026-010 \
      --title "Integrate SQLite WAL Cache Engine" \
-     --kind feature \
-     --motivation "Graduated from validated spike EXP-2026-001."
+     --kind feature
    ```
 3. Record the enduring architectural trade-off in the target container's `decisions:` block with `graduated_from: EXP-2026-001`, and implement clean, production-ready code under the SpecDelta checklist.
 

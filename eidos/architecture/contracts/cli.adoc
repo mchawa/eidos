@@ -13,7 +13,7 @@ specification_file: "src/eidos/cli/main.py"
 
 == Command Specifications
 
-=== `eidos --version` / `eidos version`
+=== `eidos --version`
 Displays current Eidos engine version (e.g. `eidos 0.8.0`).
 * **Options**: `--version`, `-V`
 * **Exit Code**: 0
@@ -29,14 +29,14 @@ Validates all specification documents under `PATH` (defaults to `./eidos`) again
   - `0`: All specifications are valid.
   - `1`: One or more validation errors or broken cross-references found.
 
-=== `eidos context [--file PATH] [--component ID] [--task PROMPT] [--tier TIER] [--format FORMAT] [--path PATH]`
+=== `eidos context [--file PATH] [--component ID] [--task PROMPT] [--tier TIER] [--json] [--path PATH]`
 Extracts a compact, token-efficient architectural subgraph context slice (C4 components, bound contracts, domain capabilities, active invariants, and governing policies).
 * **Options**:
   - `--file, -f`: Target source code file path(s).
   - `--component, -c`: Target component identifier (e.g. `CMP-EIDOS-CLI`).
   - `--task, -t`: Free-text task description or prompt.
   - `--tier, -T`: Context tier budget: `anchor` (~140 tokens), `guardrails` (default, ~260-890 tokens), or `deep` (~500-1500 tokens).
-  - `--format`: Output serialization format: `markdown` (default) or `json`.
+  - `--json`: Output context slice as machine-readable JSON instead of Markdown.
   - `--path, -p`: Path to specifications directory (default: `./eidos`).
 * **Exit Codes**:
   - `0`: Slice successfully extracted.
@@ -48,7 +48,7 @@ Manages the embedded SQLite architectural knowledge graph and FTS5 hybrid search
   - `sync [--path <path>] [--force]`: Synchronizes or rebuilds the knowledge graph index.
   - `search <query> [--limit <n>] [--path <path>] [--json]`: Performs BM25 full-text search across titles, requirements, and invariants.
   - `blast-radius <symbol_or_path> [--depth <n>] [--path <path>] [--json]`: Computes the transitive dependency and governance blast radius for a symbol or spec path.
-  - `repo-map [--max-tokens <tokens>] [--format <format>] [--path <path>]`: Generates a token-budgeted structural repo map outline (classes, functions, methods, routes) for AI coding agents.
+  - `repo-map [--max-tokens <tokens>] [--json] [--path <path>]`: Generates a token-budgeted structural repo map outline (classes, functions, methods, routes) for AI coding agents in Markdown or JSON (`--json`).
   - `find-symbol <query> [--limit <n>] [--json] [--path <path>]`: Locates code symbols across polyglot AST source files and links them to associated living component specifications. Each `--json` match carries `file_path` (the owning *specification* path) and a `location` object (`file`, `line_start`, `line_end`, `signature`, `parent_symbol`) pointing at the source definition, or `null` for non-AST matches such as paths and component references. The text table shows a `Location` (`file:line`) column.
 
 === `eidos portal`
@@ -63,33 +63,33 @@ Manages the interactive Living Web Portal and documentation site export.
 === `eidos plugin`
 Manages, validates, installs, updates, and uninstalls Eidos Agent Plugins across supported AI agent environments (Antigravity, Claude Code, Cursor, Aider, Cline, OpenCode, OpenAI Codex, and GitHub Copilot).
 * **Sub-commands**:
-  - `install [TARGET] [--target <target>] [--project-dir <path>] [--dest <path>] [--force]`: Installs the plugin into `.agents/plugins/eidos` (strict `agent-plugins.org` v1.0.0), `.claude/plugins/eidos/` & `.claude/skills/` (Claude Code 6-Layer Plugin Architecture), `.github/plugin/` & `.github/skills/` (Copilot Agent Plugins 1.0), `.cursor/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/skills/`, `.aider/skills/`, and configures client settings and Agent Skills.
-  - `uninstall [TARGET] [--target <target>] [--project-dir <path>] [--dest <path>]`: Uninstalls and cleans up the plugin and tool configurations from project scope.
+  - `install [TARGET] [--project-dir <path>] [--dest <path>] [--force] [--launcher <launcher>]`: Installs the plugin into `.agents/plugins/eidos` (strict `agent-plugins.org` v1.0.0), `.claude/plugins/eidos/` & `.claude/skills/` (Claude Code 6-Layer Plugin Architecture), `.github/plugin/` & `.github/skills/` (Copilot Agent Plugins 1.0), `.cursor/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/skills/`, `.aider/skills/`, and configures client settings and Agent Skills.
+  - `uninstall [TARGET] [--project-dir <path>] [--dest <path>]`: Uninstalls and cleans up the plugin and tool configurations from project scope.
   - `version [--project-dir <path>] [--dest <path>]`: Displays and compares bundled vs installed plugin version and reports SemVer sync status.
-  - `update [TARGET] [--target <target>] [--project-dir <path>] [--dest <path>]`: Updates project-scoped plugin to the latest bundled version and syncs configurations.
+  - `update [TARGET] [--project-dir <path>] [--dest <path>] [--launcher <launcher>]`: Updates project-scoped plugin to the latest bundled version and syncs configurations.
   - `validate [PATH]`: Validates an Agent Plugin against canonical JSON schemas and SemVer 2.0.0 rules.
   - `info [PATH]`: Displays plugin metadata, skills, hooks, and extensions.
 
 === `eidos spec`
-Manages the living specification catalog and C4 Level 3 component topology: listing, authoring, inspecting, deleting, promoting, and inlining specifications.
+Manages the living specification catalog (15 declarative specification & discovery blueprint types, excluding `delta/mutation`) and C4 Level 3 component topology: listing, authoring, inspecting, deleting, promoting, and inlining specifications.
 * **Sub-commands**:
-  - `list [--path <path>] [--type <type>] [--status <status>] [--json]`: Lists all living specifications (including inline C4 Level 3 components `CMP-*` defined inside container manifests) in tabular or JSON format. Supports short or canonical `--type` filters (e.g. `container`, `component`, `capability`, `delta`).
-  - `show <id_or_path> [--path <path>]`: Displays detailed frontmatter metadata and preview of a specification document.
-  - `create <type> [id] --title <title> [--slug] [--container <id>] [--source-path <path>] [--implements <id>] [--extends <id>] [--platform <platform>] [--spec-file <path>] [options]`: Scaffolds a new specification document (capability, domain, policy, contract, container, component, persona, delta, exploration, design-system, ui-component, screen, client, flow; for `delta`, `id` defaults to `auto`, `--slug` / `-s` appends a deterministic title-derived slug suffix, and `--kind` accepts `feature, enabler, bug` and defaults to `feature`) with schema validation and W3C design tokens support.
-  - `delete <id_or_path> [--force]`: Safely deletes a specification document with cross-reference safety checks.
-  - `component promote <component_id> [--path <path>] [--repo-root <path>]`: Promotes an inline C4 Level 3 component to a dedicated specification (`.adoc`) inside `eidos/architecture/components/` (linked via `container:` in the standalone component spec) and removes the inline entry from the container manifest.
-  - `component inline <component_id> [--path <path>] [--repo-root <path>]`: Demotes a dedicated C4 Level 3 component back into its parent container manifest as an inline definition and safely unlinks the dedicated specification file.
+  - `list [--path <path>] [--type <type>] [--status <status>] [--json]`: Lists all living specifications across the 15 living specification types (including inline C4 Level 3 components `CMP-*` defined inside container manifests, excluding SpecDeltas) in tabular or JSON format. Rejects `--type delta` with an error directing the caller to `eidos delta list`.
+  - `show <id_or_path> [--path <path>]`: Displays detailed frontmatter metadata and preview of a living specification document (rejecting `delta/mutation` targets and directing the caller to `eidos delta status` / `eidos delta verify`).
+  - `create <type> <id> --title <title> [--path <path>]`: Scaffolds a minimal, schema-valid draft blueprint (`status: draft`, or `status: proposed` for `exploration`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`), auto-resolving required parent references from the catalog or canonical fallbacks (`DOM-CORE`, `CNT-CORE`, `DS-CORE`, `PER-USER`) and rejecting `delta/mutation` (directing to `eidos delta create`).
+  - `delete <id_or_path> [--path <path>] [--force]`: Safely deletes a living specification document with cross-reference safety checks (rejecting `delta/mutation` targets and directing to `eidos delta delete`).
+  - `component promote <component_id> [--path <path>]`: Promotes an inline C4 Level 3 component to a dedicated specification (`.adoc`) inside `eidos/architecture/components/` (linked via `container:` in the standalone component spec) and removes the inline entry from the container manifest.
+  - `component inline <component_id> [--path <path>]`: Demotes a dedicated C4 Level 3 component back into its parent container manifest as an inline definition and safely unlinks the dedicated specification file.
 
 === `eidos delta`
-Orchestrates SpecDeltas throughout their semantic mutation lifecycle using flat storage (`eidos/deltas/`).
+Orchestrates SpecDeltas (`DLT-*`) throughout their semantic mutation lifecycle using flat storage (`eidos/deltas/`).
 * **Sub-commands**:
-  - `list [--path <path>] [--status <status>] [--json]`: Lists SpecDeltas from flat `eidos/deltas/` with optional status filter (e.g. `--status active`) and `--json` output.
-  - `status [id] [new_status] [--path <path>] [--json]`: Displays lifecycle status dashboard (or transitions a specific SpecDelta's status when `id` and `new_status` are given) and breakdown of in-flight vs. reconciled deltas.
-  - `create [id] --title <title> [--slug] [--kind <kind>] [--motivation <text>] [--branch <branch>]`: Scaffolds a new SpecDelta in flat storage `eidos/deltas/<id>.adoc` with status `proposed` (`id` defaults to `auto`, `--slug` / `-s` appends a title-derived slug suffix, `--kind`: `feature, enabler, bug`; defaults to `feature`).
+  - `list [--path <path>] [--status <status>] [--json]`: Lists SpecDeltas from flat `eidos/deltas/` with optional status filter (`proposed`, `in_review`, `approved`, `applied`, `rejected`, or `active`) and `--json` output.
+  - `status [id] [new_status] [--path <path>] [--json]`: Displays lifecycle status dashboard across the 5 canonical `delta_status` states (`proposed`, `in_review`, `approved`, `applied`, `rejected`) or transitions a specific SpecDelta's status when `id` and `new_status` are given.
+  - `create [id] --title <title> [--kind <kind>] [--slug] [--path <path>]`: Scaffolds a new SpecDelta blueprint in flat storage `eidos/deltas/<id>.adoc` with status `proposed`, auto-detecting `vcs.branch` and `vcs.base_commit` from Git `HEAD` (`id` defaults to `auto`, `--slug` / `-s` appends a title-derived slug suffix, `--kind`: `feature, enabler, bug`; defaults to `feature`).
   - `verify <id_or_path> [--path <path>] [--json]`: Verifies that all semantic mutations declared in a SpecDelta exist in the living specifications catalog.
   - `audit <id_or_path> [--path <path>] [--strict] [--json]`: Performs reverse-dependency blast-radius audit on entities removed or deprecated by the SpecDelta, classifying references into approved (historical, negative tests, cleanup routines, tombstones) vs. unacknowledged active leaks.
   - `apply <id_or_path> [--verify/--no-verify] [--json]`: Verifies declared mutations against the living specification catalog by default (`--verify`, or bypass via `--no-verify`), validates the updated SpecDelta, and updates frontmatter status to `applied`.
-  - `delete <id_or_path> [--force]`: Deletes a SpecDelta file.
+  - `delete <id_or_path> [--path <path>] [--force]`: Deletes a SpecDelta (`DLT-*`) file (rejecting non-delta living specifications and directing to `eidos spec delete`).
   - `changelog [--output <path>] [--unreleased/--no-unreleased] [--docs/--no-docs] [--path <path>]`: Compiles an auditable, Keep a Changelog compliant release history partitioned by Git release tags and applied SpecDeltas (`DLT-*`).
 
 === `eidos drift [--base REF] [--head REF] [--uncommitted] [--markdown FILE] [--json]`
@@ -126,20 +126,20 @@ Runs a comprehensive workspace health and configuration diagnostic across living
   - `0`: All diagnostic checks passed.
   - `1`: One or more critical workspace diagnostics failed.
 
-=== `eidos hook`
-Executes CLI-native agent lifecycle hooks for documentation linting and spec-to-code drift gates across supported AI coding harnesses.
-* **Sub-commands**:
-  - `lint [--event <event>] [--path <path>]`: Evaluates PreToolUse / PostToolUse / Stop documentation and markdown placement policies.
-  - `drift [--event <event>] [--path <path>]`: Evaluates Stop spec-to-code drift gates with Block-Once fingerprint persistence.
+=== `eidos hook [--path PATH]`
+Executes the stateless CLI-native agent lifecycle `Stop` hook across supported AI coding harnesses, verifying specification schemas, invariant test bindings, and spec-to-code drift and emitting a JSON decision (`allow` with optional `systemMessage` warning).
+* **Options**:
+  - `--path, -p`: Path to repository root or `eidos` directory.
 * **Exit Codes**:
   - `0`: Hook evaluation completed (JSON decision emitted to stdout).
 
 == Command Groups (Rich Help Panels)
 
 Every operation has a single canonical command path without top-level shortcuts or intra-group duplicate aliases. Commands are semantically organized into six functional panels in CLI help output (`eidos --help`):
-1. **Setup & Workspace**: `version`, `info`, `doctor`, `init`
+1. **Setup & Workspace**: `info`, `doctor`, `init`
 2. **Governance & Verification**: `validate`, `drift`
 3. **Knowledge Graph & AI Context**: `context`, `index`
 4. **Living Catalog & Mutations**: `spec`, `delta`
 5. **Living Web Portal**: `portal`
 6. **Agent Ecosystem & Plugins**: `plugin`, `hook`
+

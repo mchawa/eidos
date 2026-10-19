@@ -317,24 +317,20 @@ flowchart LR
 You can scaffold and manage design systems, components, and screens directly from the command line:
 
 ```bash
-# 1. Scaffold base design system:
+# 1. Scaffold base design system blueprint:
 eidos spec create design-system DS-CORE --title "Core Product Design System"
 
-# 2. Scaffold a client theme extending the core:
-eidos spec create design-system DS-ACME --title "Acme Enterprise Theme" \
-  --extends DS-CORE
+# 2. Scaffold a client theme blueprint:
+eidos spec create design-system DS-ACME --title "Acme Enterprise Theme"
 
-# 3. Scaffold a UI component:
-eidos spec create ui-component UIC-CORE-BUTTON --title "Primary Action Button" \
-  --system DS-CORE
+# 3. Scaffold a UI component blueprint:
+eidos spec create ui-component UIC-CORE-BUTTON --title "Primary Action Button"
 
-# 4. Scaffold a client-specific component override:
-eidos spec create ui-component UIC-ACME-HEADER --title "Acme Corporate Header" \
-  --system DS-ACME --implements UIC-CORE-HEADER
+# 4. Scaffold a client-specific component override blueprint:
+eidos spec create ui-component UIC-ACME-HEADER --title "Acme Corporate Header"
 
-# 5. Scaffold a product screen:
-eidos spec create screen SCR-CHECKOUT --title "Order Checkout Screen" \
-  --route "/checkout"
+# 5. Scaffold a product screen blueprint:
+eidos spec create screen SCR-CHECKOUT --title "Order Checkout Screen"
 ```
 
 ---

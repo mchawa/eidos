@@ -54,13 +54,13 @@ Never blindly read dozens of files into your context window. Query Eidos first t
 
 ```bash
 # Slice context for a source file you plan to touch
-eidos context -f src/auth/jwt_validator.py --format json
+eidos context -f src/auth/jwt_validator.py --json
 
 # Slice context for a container or component ID
-eidos context -c CNT-AUTH-SERVICE --tier guardrails --format json
+eidos context -c CNT-AUTH-SERVICE --tier guardrails --json
 
 # Slice context from a natural-language task prompt
-eidos context -t "rate limiting and token expiration" --tier deep --format json
+eidos context -t "rate limiting and token expiration" --tier deep --json
 
 # Structural AST repo map, symbol lookup, full-text search & blast radius
 eidos index repo-map --max-tokens 1500
@@ -75,7 +75,7 @@ eidos index blast-radius CNT-AUTH-SERVICE --depth 2 --json
 
 ### Workflow A: Direct Mode Execution (`eidos drift`)
 
-1. **Slice Context**: Run `eidos context -f <touched_file> --format json` to identify the owning container (`CNT-*`), component (`CMP-*`), and bound invariants (`INV-*`).
+1. **Slice Context**: Run `eidos context -f <touched_file> --json` to identify the owning container (`CNT-*`), component (`CMP-*`), and bound invariants (`INV-*`).
 2. **Implement Code & Tests**: Modify source code and update or add automated tests preserving `INV-*` references.
 3. **Co-Evolve Living Specs In-Place** (consult **`eidos-spec`** for YAML schemas):
    * **New internal module or file**: Update `source_path` or `components:` in the owning `CNT-*` / `CMP-*` spec.
@@ -90,7 +90,7 @@ When introducing/removing containers or components, making breaking contract cha
 
 1. **Scaffold SpecDelta**:
    ```bash
-   eidos delta create --title "..." --slug --kind <feature|enabler|bug> --branch <branch>
+   eidos delta create --title "..." --slug --kind <feature|enabler|bug>
    ```
 2. **Declare Mutations**: Populate `mutations:` (with composable `operation`, `target`, optional `parent` for `add` / `remove` of child entities, and structured `expect: { body, frontmatter }` post-conditions) in the created `eidos/deltas/dlt-*.adoc` file. Never add manual `affects:` or `blast_radius:` blocks.
 3. **Implement Code, Specs & Tests**: Apply changes across code, `eidos/`, and `tests/`.

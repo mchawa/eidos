@@ -213,7 +213,6 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
                 valid_events = {"PreToolUse", "PostToolUse", "PreInvocation", "PostInvocation", "Stop", "enabled"}
                 hook_allowed_events = {
                     "eidos-drift-gate": {"Stop"},
-                    "eidos-doc-linter": {"PreToolUse", "PostToolUse", "Stop"},
                 }
                 for hook_name, hook_spec in hooks_data.items():
                     if not isinstance(hook_spec, dict):

@@ -30,16 +30,12 @@ plugin_app = typer.Typer(
 
 @plugin_app.command("install")
 def plugin_install(
-    target: PluginInstallTarget = typer.Option(
-        PluginInstallTarget.PROJECT,
-        "--target",
-        "-t",
-        help="Installation target in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    ),
-    target_arg: Annotated[
-        PluginInstallTarget | None,
-        typer.Argument(help="Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all."),
-    ] = None,
+    target: Annotated[
+        PluginInstallTarget,
+        typer.Argument(
+            help="Installation target in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all."
+        ),
+    ] = PluginInstallTarget.PROJECT,
     project_dir: Path | None = typer.Option(
         None,
         "--project-dir",
@@ -64,7 +60,7 @@ def plugin_install(
     ),
 ):
     """Install the Eidos agent plugin strictly inside project scope (.agents/plugins/eidos, agent-plugins.org v1.0.0)."""
-    resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
+    resolved_target = target if isinstance(target, PluginInstallTarget) else PluginInstallTarget.PROJECT
     resolved_launcher = launcher if isinstance(launcher, str) else "eidos"
     console.print(
         f"[bold cyan]Installing Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{resolved_target.value}[/bold green])...\n"
@@ -97,16 +93,12 @@ def plugin_install(
 
 @plugin_app.command("uninstall")
 def plugin_uninstall(
-    target: PluginInstallTarget = typer.Option(
-        PluginInstallTarget.PROJECT,
-        "--target",
-        "-t",
-        help="Target to remove in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    ),
-    target_arg: Annotated[
-        PluginInstallTarget | None,
-        typer.Argument(help="Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all."),
-    ] = None,
+    target: Annotated[
+        PluginInstallTarget,
+        typer.Argument(
+            help="Target to remove in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all."
+        ),
+    ] = PluginInstallTarget.PROJECT,
     project_dir: Path | None = typer.Option(
         None,
         "--project-dir",
@@ -121,7 +113,7 @@ def plugin_uninstall(
     ),
 ):
     """Uninstall / remove the Eidos agent plugin from project scope."""
-    resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
+    resolved_target = target if isinstance(target, PluginInstallTarget) else PluginInstallTarget.PROJECT
     console.print(
         f"[bold cyan]Uninstalling Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{resolved_target.value}[/bold green])...\n"
     )
@@ -200,16 +192,12 @@ def plugin_version(
 
 @plugin_app.command("update")
 def plugin_update(
-    target: PluginInstallTarget = typer.Option(
-        PluginInstallTarget.PROJECT,
-        "--target",
-        "-t",
-        help="Target to update in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-    ),
-    target_arg: Annotated[
-        PluginInstallTarget | None,
-        typer.Argument(help="Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all."),
-    ] = None,
+    target: Annotated[
+        PluginInstallTarget,
+        typer.Argument(
+            help="Target to update in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all."
+        ),
+    ] = PluginInstallTarget.PROJECT,
     project_dir: Path | None = typer.Option(
         None,
         "--project-dir",
@@ -229,7 +217,7 @@ def plugin_update(
     ),
 ):
     """Update project-scoped Agent Plugin to the latest bundled version."""
-    resolved_target = target_arg if isinstance(target_arg, PluginInstallTarget) else target
+    resolved_target = target if isinstance(target, PluginInstallTarget) else PluginInstallTarget.PROJECT
     resolved_launcher = launcher if isinstance(launcher, str) else "eidos"
     console.print(
         f"[bold cyan]Updating Eidos Agent Plugin[/bold cyan] (scope: [bold green]project[/bold green], target: [bold green]{resolved_target.value}[/bold green])...\n"
@@ -355,8 +343,4 @@ def plugin_info(
 
     console.print(Panel(grid, title="[bold blue]Eidos Agent Plugin Manifest[/bold blue]", expand=False))
 
-
-def register(app: typer.Typer) -> None:
-    """Attach the root-level commands owned by this module to the root Typer app."""
-    return None
 

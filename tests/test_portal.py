@@ -555,25 +555,21 @@ def test_portal_promoted_components_invariants_decisions_and_explorations(tmp_pa
 
 
 def test_dlt_2026_063_hook_digest_short_circuit_and_portal_mtime_cache(tmp_path, monkeypatch, capsys):
-    """Verify PostInvocation hook no-op (DLT-2026-087) and EidosPortalHandler mtime response caching (DLT-2026-063)."""
-    from eidos.plugin.hooks import execute_lint_hook
+    """Verify stateless Stop hook execution (DLT-2026-094) and EidosPortalHandler mtime response caching (DLT-2026-063)."""
+    from eidos.plugin.hooks import execute_hook
     from eidos.portal.server import EidosPortalHandler
 
     eidos_dir = tmp_path / "eidos"
-    pol_dir = eidos_dir / "policies"
+    pol_dir = eidos_dir / "architecture" / "containers"
     pol_dir.mkdir(parents=True)
-    pol_file = pol_dir / "pol-001.adoc"
+    pol_file = pol_dir / "cnt-001.adoc"
     pol_file.write_text(
-        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-001\ntitle: Policy 1\ncategory: governance\nrule: Rule 1\nenforcement:\n  mechanism: lint\n  severity: blocking\n---\n= Policy 1\n",
+        "---\ntype: tech/container\nschema: schemas/v1/tech/container.schema.yaml\nid: CNT-APP\ntitle: App\ncontainer_type: service\nruntime: python\nstatus: active\nsource_path: src\n---\n= App\n",
         encoding="utf-8",
     )
 
-    # 1. PostInvocation is a clean allow no-op and never invokes SpecValidator
-    def _boom(*args, **kwargs):
-        raise AssertionError("SpecValidator should not be called on PostInvocation")
-
-    monkeypatch.setattr("eidos.plugin.hooks.SpecValidator", _boom)
-    rc = execute_lint_hook(event="PostInvocation", repo_root=tmp_path, stdin_data='{"invocationNum": 1}')
+    # 1. Clean workspace returns {"decision": "allow"}
+    rc = execute_hook(repo_root=tmp_path, stdin_data="{}")
     assert rc == 0
     assert json.loads(capsys.readouterr().out) == {"decision": "allow"}
 
@@ -790,15 +786,17 @@ def test_portal_zero_node_subprocess_http_endpoints_mermaid_and_build_assets(tmp
     repo = tmp_path / "portal_ws"
     init_repository(repo, name="portal-ws", title="Portal Test System")
     eidos_dir = repo / "eidos"
-    cnt_file = create_spec(eidos_dir, "container", "CNT-BACKEND", "Backend Service", source_path="src/backend")
-    create_spec(
-        eidos_dir,
-        "component",
-        "CMP-AUTH",
-        "Auth Module",
-        container="CNT-BACKEND",
-        source_path="src/backend/auth.py",
-    )
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+
+    cnt_file = create_spec(eidos_dir, "container", "CNT-BACKEND", "Backend Service")
+    cnt_doc = parse_spec_file(cnt_file)
+    cnt_doc.frontmatter["source_path"] = "src/backend"
+    cnt_file.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+
+    cmp_file = create_spec(eidos_dir, "component", "CMP-AUTH", "Auth Module")
+    cmp_doc = parse_spec_file(cmp_file)
+    cmp_doc.frontmatter["source_path"] = "src/backend/auth.py"
+    cmp_file.write_text(dump_spec_document(cmp_doc.frontmatter, cmp_doc.body), encoding="utf-8")
 
     # 1. Intercept subprocess.run to prove zero node/npm/npx/vite calls during get_portal_data & build_static_portal
     orig_run = subprocess.run
@@ -1467,10 +1465,8 @@ contracts:
 
 def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     """Comprehensive regression test covering Deep Audit Group D (D1-D7)."""
-    import contextlib
     import http.client
     import json
-    import sqlite3
     import threading
     from http.server import HTTPServer
 
@@ -1478,8 +1474,7 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
 
     from eidos.cli.main import app
     from eidos.core.lifecycle.initializer import init_repository
-    from eidos.core.spec.models import SpecDocument, ValidationReport
-    from eidos.plugin.hooks import _load_stop_validation_snapshot, _save_stop_validation_snapshot
+    from eidos.plugin.hooks import handle_stop_hook
     from eidos.plugin.installer import (
         PluginInstallTarget,
         _ensure_claude_plugin_manifest,
@@ -1614,31 +1609,10 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     assert '"info"' not in exp_tsx
     assert '"destructive"' not in exp_tsx
 
-    # D4: _save_stop_validation_snapshot and _load_stop_validation_snapshot preserve documents
-    cache_dir = eidos_dir / ".cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    db_path = cache_dir / "index.db"
-    with contextlib.closing(sqlite3.connect(str(db_path))) as conn, conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT)")
-    stub_doc = SpecDocument(
-        file_path=cnt_a,
-        frontmatter={},
-        body="",
-        doc_type="architecture/container",
-        doc_id="CNT-ALPHA",
-        errors=["sample error"],
-    )
-    rep = ValidationReport(
-        documents=[stub_doc],
-        schema_errors={str(cnt_a): ["sample error"]},
-        broken_references=["CNT-ALPHA references non-existent ID 'CNT-MISSING'"],
-    )
-    _save_stop_validation_snapshot(eidos_dir, rep)
-    loaded_rep = _load_stop_validation_snapshot(eidos_dir, max_age_seconds=30.0)
-    assert loaded_rep is not None
-    assert loaded_rep.total_docs == 1
-    assert loaded_rep.documents[0].doc_id == "CNT-ALPHA"
-    assert loaded_rep.documents[0].errors == ["sample error"]
+    # D4: handle_stop_hook runs statelessly without creating stop-gate.json
+    stop_res = handle_stop_hook({}, tmp_path)
+    assert stop_res["decision"] == "allow"
+    assert not (eidos_dir / ".cache" / "stop-gate.json").exists()
 
     # D5: EidosPortalHandler MIME types and Content-Length validation
     static_dir = tmp_path / "static_d5"

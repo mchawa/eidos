@@ -106,8 +106,8 @@ def test_cli_context_command():
     assert "CNT-EIDOS-CLI" in res_f.output
     assert "C4 Level 2 Containers & Level 3 Components" in res_f.output
 
-    # 2. JSON output with -c and --format json
-    res_json = runner.invoke(app, ["context", "-c", "CNT-EIDOS-CLI", "--format", "json"])
+    # 2. JSON output with -c and --json
+    res_json = runner.invoke(app, ["context", "-c", "CNT-EIDOS-CLI", "--json"])
     assert res_json.exit_code == 0
     data = json.loads(res_json.output)
     assert any(c["id"] == "CNT-EIDOS-CLI" for c in data["components"])
@@ -277,7 +277,7 @@ def test_cli_index_commands():
 def test_context_slice_includes_decisions_and_tiered_markdown():
     """Verify INV-AGENT-CONTEXT-SLICING: eidos context includes container decisions and rejected_alternatives in JSON and formats Markdown by tier."""
     # 1. CLI JSON output for CNT-EIDOS-INDEX
-    res_json = runner.invoke(app, ["context", "--component", "CNT-EIDOS-INDEX", "--format", "json"])
+    res_json = runner.invoke(app, ["context", "--component", "CNT-EIDOS-INDEX", "--json"])
     assert res_json.exit_code == 0
     payload = json.loads(res_json.output)
     index_comp = next((c for c in payload["components"] if c["id"] == "CNT-EIDOS-INDEX"), None)
@@ -360,12 +360,12 @@ def test_inv_context_token_compression():
 
     # 4. Direct task matches preserve BM25 rank order, promote owning capability/policy of matched invariants, and survive over 1-hop expansions under budget pressure
     ranked_sl = get_context_slice(
-        task="hooks should block the stop event only once per failure",
+        task="agent hooks invoke native eidos hook CLI command directly without wrapper scripts",
         tier="guardrails",
     )
     assert ranked_sl.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]
     assert ranked_sl.invariants, "Expected direct invariant matches to survive guardrails token budget"
-    assert ranked_sl.invariants[0]["id"] == "INV-HOOK-BLOCK-ONCE"
+    assert ranked_sl.invariants[0]["id"] == "INV-HOOK-CLI-NATIVE"
     assert any(c["id"] == "CAP-AGENT-001" for c in ranked_sl.capabilities)
 
     repo_map_sl = get_context_slice(

@@ -28,10 +28,12 @@ from eidos.core.lifecycle.delta_engine import (  # noqa: F401  (backwards-compat
     _ensure_eidos_gitignore,
     _evaluate_declarative_postcondition,
     _extract_mutation_target,
+    _resolve_git_branch,
     _resolve_git_head_sha,
     _snapshot_delta_baselines,
     apply_delta,
     create_delta,
+    delete_delta,
     generate_collision_free_delta_id,
     get_delta_status_summary,
     list_deltas,
@@ -48,40 +50,22 @@ def create_spec(
     doc_type_key: str,
     raw_id: str,
     title: str,
-    domain: str | None = None,
-    kind: str = "feature",
-    motivation: str = "Proposed change motivation.",
-    category: str = "governance",
-    rule: str = "Rule statement for this policy.",
-    protocol: str = "cli_args",
-    container: str | None = None,
-    component: str | None = None,
-    specification_file: str = "src/main.py",
-    container_type: str = "service",
-    runtime: str = "Application Runtime",
-    source_path: str = "src",
-    role_type: str = "human_engineer",
-    jtbd: str = "When executing lifecycle commands, I want automated scaffolding so that specs are valid.",
-    client_id: str | None = None,
-    extends: str | None = None,
-    route: str = "/view",
-    design_system: str | None = None,
-    implements: str | None = None,
-    platform: str = "web",
-    branch: str | None = None,
-    slug_suffix: bool = False,
 ) -> Path:
-    """Scaffold a new living specification document with valid schema frontmatter.
+    """Scaffold a minimal, schema-valid living specification blueprint across the 15 living specification types.
 
-    Frontmatter is always built as a Python dict and serialized with ``yaml.safe_dump`` so titles,
-    motivations, and rules containing quotes, colons, or newlines cannot corrupt the YAML (DLT-2026-032).
+    SpecDeltas (DLT-*) are rejected here and must be created via ``create_delta`` / ``eidos delta create``.
     """
-    type_key = doc_type_key.lower().replace("_", "/")
-    # Map short names to standard keys
+    type_key = doc_type_key.strip().lower().replace("_", "/")
+    if type_key in ("delta", "mutation", "delta/mutation"):
+        raise ValueError(
+            "SpecDeltas (DLT-*) cannot be created via 'eidos spec create'. Use 'eidos delta create' instead."
+        )
+
     key_aliases = {
-        "delta": "delta",
-        "mutation": "delta",
-        "delta/mutation": "delta",
+        "system": "system",
+        "product/system": "system",
+        "architecture": "architecture",
+        "tech/architecture": "architecture",
         "capability": "capability",
         "product/capability": "capability",
         "domain": "domain",
@@ -115,15 +99,7 @@ def create_spec(
         supported = ", ".join(sorted(set(key_aliases.values())))
         raise ValueError(f"Unknown specification type '{doc_type_key}'. Supported types: {supported}")
 
-    if canonical_key == "delta":
-        doc_id = generate_collision_free_delta_id(
-            eidos_dir,
-            raw_id=raw_id,
-            title=title,
-            slug_suffix=slug_suffix,
-        )
-    else:
-        doc_id = normalize_id(canonical_key, raw_id)
+    doc_id = normalize_id(canonical_key, raw_id)
     slug = doc_id.lower().replace("_", "-")
     heading = _single_line(title)
     fm: dict[str, Any]
@@ -141,79 +117,72 @@ def create_spec(
     if canonical_key == "design-system":
         tokens_existed = (eidos_dir / "design" / "systems" / slug.removeprefix("ds-") / "tokens.json").exists()
 
-    # Determine destination directory and content
-    if canonical_key == "delta":
-        dest_dir = eidos_dir / "deltas"
-        dest_file = dest_dir / f"{slug}.adoc"
+    if canonical_key == "system":
+        dest_dir = eidos_dir
+        dest_file = dest_dir / "system.adoc"
         fm = {
-            "type": "delta/mutation",
-            "schema": "schemas/v1/delta/delta.schema.yaml",
+            "type": "product/system",
+            "schema": "schemas/v1/product/system.schema.yaml",
             "id": doc_id,
             "title": title,
-            "status": "proposed",
-            "intent": {"kind": kind, "motivation": motivation},
-            "mutations": [],
+            "status": "draft",
+            "archetypes": ["service"],
+            "business_identity": {
+                "vision": f"Core vision and purpose of {heading}.",
+                "target_users": ["Primary users"],
+                "value_proposition": f"Distinct value delivered by {heading}.",
+            },
+            "technical_profile": {
+                "primary_languages": ["TBD"],
+            },
         }
-        head_sha = _resolve_git_head_sha(eidos_dir)
-        vcs_dict: dict[str, Any] = {}
-        if branch:
-            vcs_dict["branch"] = branch
-        if head_sha:
-            vcs_dict["base_commit"] = head_sha
-        if vcs_dict:
-            fm["vcs"] = vcs_dict
-        body = f"""= SpecDelta: {heading}
+        body = f"""= System: {heading}
 :toc: left
 
-== Problem Statement
-{motivation}
+== System Vision & Scope
+Describe the strategic vision, target users, and architectural boundaries of this system.
+"""
 
-== Proposed Specification Changes
-Describe the exact behavioral diffs, mutations, and invariant updates here.
+    elif canonical_key == "architecture":
+        dest_dir = eidos_dir / "architecture"
+        dest_file = dest_dir / "system-architecture.adoc"
+        actor_ref = _first_of_type("product/persona", "PER-USER")
+        fm = {
+            "type": "tech/architecture",
+            "schema": "schemas/v1/tech/architecture.schema.yaml",
+            "id": doc_id,
+            "title": title,
+            "status": "draft",
+            "topology_style": "modular_monolith",
+            "c4_context": {
+                "actors": [actor_ref],
+            },
+            "c4_containers": [],
+            "solution_strategy": [f"Foundational architectural strategy for {heading}."],
+            "cross_cutting_concepts": {},
+            "deployment_view": {
+                "hosting_model": "TBD",
+                "ci_cd_engine": "TBD",
+            },
+        }
+        body = f"""= Architecture: {heading}
+:toc: left
+
+== System Context & Topology
+Describe the C4 system context, container topology, solution strategy, and deployment view.
 """
 
     elif canonical_key == "capability":
         specs_by_id = _catalog()
-        if domain:
-            raw_dom = domain.strip()
-            if "/" in raw_dom or "\\" in raw_dom or raw_dom.lower().endswith(".adoc"):
-                dom_path = Path(raw_dom.replace("\\", "/"))
-                parsed_dom_id = ""
-                for cdf in (eidos_dir / dom_path, eidos_dir.parent / dom_path, dom_path):
-                    if cdf.exists() and cdf.is_file():
-                        try:
-                            doc_d = parse_spec_file(cdf)
-                            did = str(doc_d.frontmatter.get("id") or "").strip()
-                            if did:
-                                parsed_dom_id = did
-                                break
-                        except Exception:
-                            pass
-                if dom_path.name.lower() == "domain.adoc" and dom_path.parent.name:
-                    domain_slug = dom_path.parent.name.lower().removeprefix("dom-")
-                elif parsed_dom_id:
-                    domain_slug = parsed_dom_id.lower().removeprefix("dom-")
-                else:
-                    domain_slug = dom_path.stem.lower().removeprefix("dom-")
-                resolved_domain = parsed_dom_id or raw_dom
-            else:
-                domain_slug = raw_dom.lower().removeprefix("dom-")
-                resolved_domain = raw_dom
-        else:
-            existing_domains = sorted(did for did, (_, dt, _) in specs_by_id.items() if dt == "product/domain")
-            resolved_domain = existing_domains[0] if existing_domains else "DOM-CORE"
-            domain_slug = resolved_domain.lower().removeprefix("dom-")
+        existing_domains = sorted(did for did, (_, dt, _) in specs_by_id.items() if dt == "product/domain")
+        resolved_domain = existing_domains[0] if existing_domains else "DOM-CORE"
+        domain_slug = resolved_domain.lower().removeprefix("dom-")
 
-        cnt_ref = container
-        if not cnt_ref:
-            if component and component.startswith("CNT-"):
-                cnt_ref = component
-            else:
-                existing_cnts = sorted(cid for cid, (_, dt, _) in specs_by_id.items() if dt == "tech/container")
-                cnt_ref = existing_cnts[0] if existing_cnts else "CNT-CORE"
+        existing_cnts = sorted(cid for cid, (_, dt, _) in specs_by_id.items() if dt == "tech/container")
+        cnt_ref = existing_cnts[0] if existing_cnts else "CNT-CORE"
 
-        existing_personas = sorted((eidos_dir / "personas").glob("*.adoc")) if (eidos_dir / "personas").exists() else []
-        persona_ref = f"eidos/personas/{existing_personas[0].name}" if existing_personas else "PER-USER"
+        existing_personas = sorted(pid for pid, (_, dt, _) in specs_by_id.items() if dt == "product/persona")
+        persona_ref = existing_personas[0] if existing_personas else "PER-USER"
 
         exact_dom_dir = eidos_dir / "domains" / domain_slug
         if exact_dom_dir.is_dir():
@@ -222,11 +191,6 @@ Describe the exact behavioral diffs, mutations, and invariant updates here.
             domain_dirs = [d for d in eidos_dir.glob(f"domains/*{domain_slug}*") if d.is_dir()]
             dest_dir = domain_dirs[0] / "capabilities" if domain_dirs else exact_dom_dir / "capabilities"
         dest_file = dest_dir / f"{slug}.adoc"
-        technical: dict[str, Any] = {"containers": [cnt_ref]}
-        if component and component != cnt_ref:
-            technical["components"] = [component]
-        technical["contracts"] = []
-        technical["invariants"] = []
         fm = {
             "type": "product/capability",
             "schema": "schemas/v1/product/capability.schema.yaml",
@@ -234,9 +198,13 @@ Describe the exact behavioral diffs, mutations, and invariant updates here.
             "title": title,
             "domain": resolved_domain,
             "status": "draft",
-            "version": "1.0.0",
-            "business": {"personas": [persona_ref], "jtbd": jtbd},
-            "technical": technical,
+            "business": {
+                "personas": [persona_ref],
+                "jtbd": f"Realize {heading}.",
+            },
+            "technical": {
+                "containers": [cnt_ref],
+            },
         }
         body = f"""= Capability: {heading}
 :toc: left
@@ -254,6 +222,7 @@ Describe the business intent and user outcome realized by this capability.
             "schema": "schemas/v1/product/domain.schema.yaml",
             "id": doc_id,
             "title": title,
+            "status": "draft",
             "classification": "core",
             "boundaries": {"responsibilities": [f"Primary core responsibility of {heading}."]},
         }
@@ -274,13 +243,11 @@ Describe the bounded context, scope, and strategic objectives of this domain.
             "id": doc_id,
             "title": title,
             "status": "draft",
-            "category": category,
-            "severity": "blocking",
+            "category": "governance",
             "invariants": [
                 {
                     "id": inv_id,
-                    "rule": rule,
-                    "test_binding": "TBD",
+                    "rule": f"Normative rule for {heading}.",
                 }
             ],
         }
@@ -294,19 +261,16 @@ Explain why this non-negotiable architectural or product guardrail exists.
     elif canonical_key == "contract":
         dest_dir = eidos_dir / "architecture" / "contracts"
         dest_file = dest_dir / f"{slug}.adoc"
-        cnt_owner = container or (
-            component if component and component.upper().startswith("CNT-") else None
-        )
-        if not cnt_owner:
-            cnt_owner = _first_of_type("tech/container", "CNT-CORE")
+        cnt_owner = _first_of_type("tech/container", "CNT-CORE")
         fm = {
             "type": "tech/contract",
             "schema": "schemas/v1/tech/contract.schema.yaml",
             "id": doc_id,
             "title": title,
-            "protocol": protocol,
+            "status": "draft",
+            "protocol": "cli_args",
             "container": cnt_owner,
-            "specification_file": specification_file,
+            "specification_file": "src/main.py",
         }
         body = f"""= Contract: {heading}
 :toc: left
@@ -323,10 +287,10 @@ Document the endpoints, command line arguments, payloads, or schemas for this co
             "schema": "schemas/v1/tech/container.schema.yaml",
             "id": doc_id,
             "title": title,
-            "container_type": container_type,
-            "runtime": runtime,
-            "source_path": source_path,
-            "components": [],
+            "status": "draft",
+            "container_type": "service",
+            "runtime": "Application Runtime",
+            "source_path": "src",
         }
         body = f"""= Container: {heading}
 :toc: left
@@ -342,11 +306,7 @@ Internal components and modular building blocks contained within this deployable
         # INV-COMPONENT-CENTRALIZATION-MANDATE: dedicated components live in eidos/architecture/components/
         dest_dir = eidos_dir / "architecture" / "components"
         dest_file = dest_dir / f"{slug.removeprefix('cmp-')}.adoc"
-        parent_cnt = container or (
-            component if component and component.startswith("CNT-") else None
-        )
-        if not parent_cnt:
-            parent_cnt = _first_of_type("tech/container", "CNT-CORE")
+        parent_cnt = _first_of_type("tech/container", "CNT-CORE")
         fm = {
             "type": "tech/component",
             "schema": "schemas/v1/tech/component.schema.yaml",
@@ -354,10 +314,8 @@ Internal components and modular building blocks contained within this deployable
             "title": title,
             "container": parent_cnt,
             "status": "draft",
-            "source_path": source_path,
             "responsibility": f"Responsibility of {heading}.",
-            "interfaces": {"provides": [], "consumes": []},
-            "invariants": [],
+            "source_path": "src",
         }
         body = f"""= Component: {heading}
 :toc: left
@@ -377,10 +335,10 @@ Document exported language-level APIs (functions, classes, traits) provided to p
             "schema": "schemas/v1/product/persona.schema.yaml",
             "id": doc_id,
             "title": title,
-            "role_type": role_type,
-            "goals": ["Primary objective of this persona."],
+            "status": "draft",
+            "role_type": "end_user",
+            "goals": [f"Primary objective of {heading}."],
             "pain_points": ["Key friction or inefficiency faced in current workflows."],
-            "interaction_modes": ["CLI commands"],
         }
         body = f"""= Persona: {heading}
 :toc: left
@@ -409,7 +367,7 @@ Document prototyping discoveries, trade-offs, and research findings.
 """
 
     elif canonical_key in DESIGN_SPEC_KEYS:
-        resolved_design_system = design_system or _first_of_type("design/system", "DS-CORE")
+        resolved_design_system = _first_of_type("design/system", "DS-CORE")
         dest_dir, dest_file, fm, body = build_design_spec(
             canonical_key,
             eidos_dir=eidos_dir,
@@ -417,13 +375,7 @@ Document prototyping discoveries, trade-offs, and research findings.
             slug=slug,
             title=title,
             heading=heading,
-            container=container,
-            client_id=client_id,
-            extends=extends,
-            route=route,
             design_system=resolved_design_system,
-            implements=implements,
-            platform=platform,
         )
 
     else:
@@ -455,20 +407,23 @@ Document prototyping discoveries, trade-offs, and research findings.
         err_msg = "; ".join(errors)
         raise ValueError(f"Generated specification failed validation: {err_msg}")
 
-    if canonical_key == "delta":
-        _snapshot_delta_baselines(eidos_dir, doc_id)
-
     return dest_file
 
 
 def delete_spec(eidos_dir: Path, target: str, force: bool = False) -> tuple[bool, str, list[Path]]:
-    """Safely delete a specification document with cross-reference safety checks."""
+    """Safely delete a living specification document with cross-reference safety checks (rejecting SpecDeltas)."""
     file_path = find_spec_by_id_or_path(eidos_dir, target)
     if not file_path:
         return False, f"Specification '{target}' not found under '{eidos_dir}'.", []
 
     doc = parse_spec_file(file_path)
     doc_id = doc.doc_id or file_path.stem
+    if doc.doc_type == "delta/mutation":
+        return (
+            False,
+            f"Document '{doc_id}' is a SpecDelta (delta/mutation). Use 'eidos delta delete {target}' instead.",
+            [],
+        )
 
     references = find_references_to_spec(eidos_dir, doc_id, file_path)
     if references and not force:
@@ -495,7 +450,13 @@ def list_specs(
     type_filter: str | None = None,
     status_filter: str | None = None,
 ) -> list[dict[str, Any]]:
-    """List all specifications (including inline C4 Level 3 components) under eidos_dir with optional filters."""
+    """List all living specifications (including inline C4 Level 3 components, excluding SpecDeltas) under eidos_dir."""
+    type_filter_clean = type_filter.strip().lower().replace("_", "/") if type_filter else None
+    if type_filter_clean in ("delta", "mutation", "delta/mutation"):
+        raise ValueError(
+            "SpecDeltas (DLT-*) are managed via 'eidos delta'. Use 'eidos delta list' instead."
+        )
+
     if not eidos_dir.exists():
         return []
 
@@ -506,23 +467,23 @@ def list_specs(
     all_entities = idx.get_entities()
     results = []
 
-    type_filter_clean = type_filter.strip().lower() if type_filter else None
-    canonical_type = VALID_SPEC_TYPES.get(type_filter_clean) if type_filter_clean else None
+    raw_type_clean = type_filter.strip().lower() if type_filter else None
+    canonical_type = VALID_SPEC_TYPES.get(raw_type_clean) if raw_type_clean else None
     status_filter_clean = status_filter.strip().lower() if status_filter else None
 
     def _matches_type(doc_type: str, eid: str) -> bool:
-        if not type_filter_clean:
+        if not raw_type_clean:
             return True
         if canonical_type:
             return doc_type.lower() == canonical_type
-        return type_filter_clean in doc_type.lower() or type_filter_clean in eid.lower()
+        return raw_type_clean in doc_type.lower() or raw_type_clean in eid.lower()
 
     seen_ids: set[str] = {str(ent.get("id", "")) for ent in all_entities if ent.get("id")}
 
     for ent in all_entities:
         doc_type = ent.get("type", "")
         eid = ent.get("id", "")
-        if doc_type == "invariant":
+        if doc_type in ("invariant", "delta/mutation"):
             continue
 
         status = ent.get("status") or "active"

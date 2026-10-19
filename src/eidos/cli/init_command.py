@@ -38,12 +38,6 @@ def init_cmd(
         "-l",
         help="Initialize progressive Eidos Lite profile (essential baseline: system, containers, capabilities, deltas).",
     ),
-    _with_plugin: bool = typer.Option(
-        False,
-        "--with-plugin/--no-plugin",
-        hidden=True,
-        help="Deprecated: plugins are no longer installed by init.",
-    ),
 ):
     """Initialize a repository with an empty Eidos living specification skeleton."""
     project_dir = target_path or Path.cwd()

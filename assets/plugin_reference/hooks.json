@@ -1,42 +1,9 @@
 {
-  "eidos-doc-linter": {
-    "PreToolUse": [
-      {
-        "matcher": "write_to_file|replace_file_content|multi_replace_file_content|Write|Edit|MultiEdit|str_replace_editor|create_file|edit_file|write_file|replace_in_file",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "eidos hook lint --event PreToolUse",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "write_to_file|replace_file_content|multi_replace_file_content|Write|Edit|MultiEdit|str_replace_editor|create_file|edit_file|write_file|replace_in_file",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "eidos hook lint --event PostToolUse",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "type": "command",
-        "command": "eidos hook lint --event Stop",
-        "timeout": 30
-      }
-    ]
-  },
   "eidos-drift-gate": {
     "Stop": [
       {
         "type": "command",
-        "command": "eidos hook drift --event Stop",
+        "command": "eidos hook",
         "timeout": 30
       }
     ]

@@ -54,16 +54,20 @@ def test_delta_verify_all_satisfied(tmp_path):
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-AUTH", title="Auth Domain")
-    cap_path = create_spec(eidos_dir, "capability", "CAP-AUTH-LOGIN", title="User Login", domain="DOM-AUTH")
+    cap_path = create_spec(eidos_dir, "capability", "CAP-AUTH-LOGIN", title="User Login")
     cnt_path = create_spec(eidos_dir, "container", "CNT-AUTH-SVC", title="Auth Service")
-    pol_path = create_spec(eidos_dir, "policy", "POL-AUTH-PASS", title="Password Policy", rule="Min 8 chars.")
+    pol_path = create_spec(eidos_dir, "policy", "POL-AUTH-PASS", title="Password Policy")
+    pol_path.write_text(
+        pol_path.read_text(encoding="utf-8").replace(
+            "Normative rule for Password Policy.", "Min 8 chars."
+        ),
+        encoding="utf-8",
+    )
 
-    dlt_path = create_spec(
+    dlt_path = create_delta(
         eidos_dir,
-        "delta",
         "DLT-2026-050",
         title="Auth Hardening",
-        motivation="Harden authentication logic.",
     )
     content = dlt_path.read_text(encoding="utf-8")
     mutations_yaml = """mutations:
@@ -124,16 +128,26 @@ def test_delta_verify_declarative_expect_and_patch_invariant(tmp_path):
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-AUTH", title="Auth Domain")
-    cap_path = create_spec(eidos_dir, "capability", "CAP-AUTH-001", title="Auth Cap", domain="DOM-AUTH")
-    pol_path = create_spec(eidos_dir, "policy", "POL-AUTH-001", title="Password Policy", rule="Min 8 chars.")
-
-    cap_text = cap_path.read_text(encoding="utf-8").replace(
-        "invariants: []",
-        'invariants:\n    - id: INV-SPEC-VALIDATION\n      rule: "Initial rule"\n      test_binding: "tests/test_delta_engine.py::test_delta_verify_declarative_expect_and_patch_invariant"',
+    cap_path = create_spec(eidos_dir, "capability", "CAP-AUTH-001", title="Auth Cap")
+    pol_path = create_spec(eidos_dir, "policy", "POL-AUTH-001", title="Password Policy")
+    pol_path.write_text(
+        pol_path.read_text(encoding="utf-8").replace(
+            "Normative rule for Password Policy.", "Min 8 chars."
+        ),
+        encoding="utf-8",
     )
-    cap_path.write_text(cap_text, encoding="utf-8")
 
-    dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-054", title="Declarative & Invariant Patch")
+    cap_doc = parse_spec_file(cap_path)
+    cap_doc.frontmatter["technical"]["invariants"] = [
+        {
+            "id": "INV-SPEC-VALIDATION",
+            "rule": "Initial rule",
+            "test_binding": "tests/test_delta_engine.py::test_delta_verify_declarative_expect_and_patch_invariant",
+        }
+    ]
+    cap_path.write_text(dump_spec_document(cap_doc.frontmatter, cap_doc.body), encoding="utf-8")
+
+    dlt_path = create_delta(eidos_dir, "DLT-2026-054", title="Declarative & Invariant Patch")
     mutations_yaml = """mutations:
   - operation: modify
     target: INV-POL-AUTH-001  # eidos:fixture
@@ -164,7 +178,7 @@ def test_delta_verify_unfulfilled_mutations(tmp_path):
 
     create_spec(eidos_dir, "container", "CNT-STILL-EXISTS", title="Zombie Container")
 
-    dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-051", title="Pending Feature")
+    dlt_path = create_delta(eidos_dir, "DLT-2026-051", title="Pending Feature")
     content = dlt_path.read_text(encoding="utf-8")
     mutations_yaml = """mutations:
   - operation: add
@@ -197,7 +211,7 @@ def test_delta_execute_and_verify_lifecycle(tmp_path):
     create_spec(eidos_dir, "domain", "DOM-BILLING", title="Billing Domain")
     cnt_path = create_spec(eidos_dir, "container", "CNT-BILLING-ENGINE", title="Billing Engine")
 
-    dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-052", title="Billing Expansion")
+    dlt_path = create_delta(eidos_dir, "DLT-2026-052", title="Billing Expansion")
     content = dlt_path.read_text(encoding="utf-8")
     mutations_yaml = """mutations:
   - operation: add
@@ -226,9 +240,9 @@ def test_delta_execute_and_verify_lifecycle(tmp_path):
     assert parse_spec_file(dlt_path).frontmatter.get("status") == "proposed"
 
     # 2. Fulfill the declared mutations in the living specifications
-    create_spec(eidos_dir, "capability", "CAP-INVOICE-GEN", title="Invoice Gen", domain="DOM-BILLING")
-    create_spec(eidos_dir, "policy", "POL-INVOICE-TAX", title="Invoice Tax", rule="Invoices must apply VAT.")
-    create_spec(eidos_dir, "contract", "CTR-INVOICE-API", title="Invoice API", container="CNT-BILLING-ENGINE")
+    create_spec(eidos_dir, "capability", "CAP-INVOICE-GEN", title="Invoice Gen")
+    create_spec(eidos_dir, "policy", "POL-INVOICE-TAX", title="Invoice Tax")
+    create_spec(eidos_dir, "contract", "CTR-INVOICE-API", title="Invoice API")
     (tmp_path / "src").mkdir(parents=True, exist_ok=True)
     (tmp_path / "src" / "invoice_renderer.py").write_text("# renderer\n", encoding="utf-8")
     cnt_doc = parse_spec_file(cnt_path)
@@ -254,7 +268,7 @@ def test_delta_execute_and_verify_lifecycle(tmp_path):
     assert parse_spec_file(dlt_path).frontmatter.get("status") == "applied"
 
     # 4. Pre-commit SpecValidator check in apply_delta: invalid delta schema rejects status: applied transition
-    dlt_invalid = create_spec(eidos_dir, "delta", "DLT-2026-057", title="Schema Validation Gate")
+    dlt_invalid = create_delta(eidos_dir, "DLT-2026-057", title="Schema Validation Gate")
     dlt_invalid.write_text(
         dlt_invalid.read_text(encoding="utf-8").replace(
             "mutations: []",
@@ -275,7 +289,7 @@ def test_delta_apply_cli_with_verify(tmp_path):
 
     create_spec(eidos_dir, "domain", "DOM-NOTIFY", title="Notification Domain")
 
-    dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-053", title="Push Notifications")
+    dlt_path = create_delta(eidos_dir, "DLT-2026-053", title="Push Notifications")
     content = dlt_path.read_text(encoding="utf-8")
     mutations_yaml = """mutations:
   - operation: add
@@ -291,7 +305,7 @@ def test_delta_apply_cli_with_verify(tmp_path):
     assert "Verification failed before apply" in res_fail.output
 
     # Create CAP-PUSH-NOTIFY and apply via CLI with --json
-    create_spec(eidos_dir, "capability", "CAP-PUSH-NOTIFY", title="Push Notify", domain="DOM-NOTIFY")
+    create_spec(eidos_dir, "capability", "CAP-PUSH-NOTIFY", title="Push Notify")
     res_ok = runner.invoke(
         app,
         ["delta", "apply", "DLT-2026-053", "-p", str(eidos_dir), "--verify", "--json"],
@@ -310,46 +324,46 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-CORE", title="Core Domain")
-    cap_path = create_spec(eidos_dir, "capability", "CAP-CORE-001", title="Core Cap", domain="DOM-CORE")
-    other_cap_path = create_spec(eidos_dir, "capability", "CAP-OTHER-001", title="Other Cap", domain="DOM-CORE")
+    cap_path = create_spec(eidos_dir, "capability", "CAP-CORE-001", title="Core Cap")
+    other_cap_path = create_spec(eidos_dir, "capability", "CAP-OTHER-001", title="Other Cap")
     cnt_path = create_spec(eidos_dir, "container", "CNT-CORE-SVC", title="Core Service")
     ctr_path = create_spec(eidos_dir, "contract", "CTR-CORE-API", title="Core API")
-    pol_path = create_spec(eidos_dir, "policy", "POL-CORE-001", title="Core Policy", rule="Initial policy rule.")
-
-    cnt_text = (
-        cnt_path.read_text(encoding="utf-8")
-        .replace(
-            "components: []",
-            (
-                "components:\n"
-                "  - id: CMP-TARGET\n"
-                '    name: "TargetComponent"\n'
-                '    responsibility: "Initial target responsibility."\n'
-                "  - id: CMP-SIBLING\n"
-                '    name: "SiblingComponent"\n'
-                '    responsibility: "Initial sibling responsibility."'
-            ),
-        )
-        .replace(
-            "provides: []",
-            "provides:\n    - CTR-CORE-API",
-        )
-    )
-    cnt_path.write_text(cnt_text, encoding="utf-8")
-
-    cap_text = cap_path.read_text(encoding="utf-8").replace(
-        "invariants: []",
-        (
-            "invariants:\n"
-            "    - id: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE\n"
-            '      rule: "Initial invariant rule."\n'
-            '      test_binding: "tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence"'
+    pol_path = create_spec(eidos_dir, "policy", "POL-CORE-001", title="Core Policy")
+    pol_path.write_text(
+        pol_path.read_text(encoding="utf-8").replace(
+            "Normative rule for Core Policy.", "Initial policy rule."
         ),
+        encoding="utf-8",
     )
-    cap_path.write_text(cap_text, encoding="utf-8")
+
+    cnt_doc = parse_spec_file(cnt_path)
+    cnt_doc.frontmatter["components"] = [
+        {
+            "id": "CMP-TARGET",
+            "name": "TargetComponent",
+            "responsibility": "Initial target responsibility.",
+        },
+        {
+            "id": "CMP-SIBLING",
+            "name": "SiblingComponent",
+            "responsibility": "Initial sibling responsibility.",
+        },
+    ]
+    cnt_doc.frontmatter["contracts"] = {"provides": ["CTR-CORE-API"], "consumes": []}
+    cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+
+    cap_doc = parse_spec_file(cap_path)
+    cap_doc.frontmatter["technical"]["invariants"] = [
+        {
+            "id": "INV-DELTA-VERIFY-MODIFICATION-EVIDENCE",
+            "rule": "Initial invariant rule.",
+            "test_binding": "tests/test_delta_engine.py::test_delta_verify_requires_modification_evidence",
+        }
+    ]
+    cap_path.write_text(dump_spec_document(cap_doc.frontmatter, cap_doc.body), encoding="utf-8")
     _ = other_cap_path
 
-    dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-060", title="Evidence Verification")
+    dlt_path = create_delta(eidos_dir, "DLT-2026-060", title="Evidence Verification")
     mutations_yaml = """mutations:
   - operation: modify
     target: POL-CORE-001
@@ -399,7 +413,7 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
     assert rep2.mutations[1].status == "UNMODIFIED"
 
     # 3. Structural sub-target mismatch reports MISSING even when target entity exists elsewhere
-    dlt_mismatch = create_spec(eidos_dir, "delta", "DLT-2026-061", title="Subtarget Preconditions")
+    dlt_mismatch = create_delta(eidos_dir, "DLT-2026-061", title="Subtarget Preconditions")
     mismatch_yaml = """mutations:
   - operation: modify
     target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
@@ -449,7 +463,7 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
     ]
 
     # 5. Applied delta with an expect: post-condition still evaluates expect: and catches regressions
-    dlt_applied = create_spec(eidos_dir, "delta", "DLT-2026-062", title="Applied Expect Regression")
+    dlt_applied = create_delta(eidos_dir, "DLT-2026-062", title="Applied Expect Regression")
     applied_yaml = """mutations:
   - operation: modify
     target: POL-CORE-001
@@ -471,7 +485,7 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
     assert rep_reg.mutations[1].target == "ARCH-TEST-001"
 
     # 6. All standalone remove operations verify ABSENT_AS_EXPECTED when absent
-    dlt_removals = create_spec(eidos_dir, "delta", "DLT-2026-063", title="Standalone Removals")
+    dlt_removals = create_delta(eidos_dir, "DLT-2026-063", title="Standalone Removals")
     removals_yaml = """mutations:
   - operation: remove
     target: DOM-REMOVED
@@ -505,28 +519,30 @@ def test_delta_schema_operation_coverage_and_git_baseline_fallback(tmp_path):
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-GIT", title="Git Domain")
-    pol_path = create_spec(eidos_dir, "policy", "POL-GIT-001", title="Git Policy", rule="Initial git rule.")
+    pol_path = create_spec(eidos_dir, "policy", "POL-GIT-001", title="Git Policy")
+    pol_path.write_text(
+        pol_path.read_text(encoding="utf-8").replace(
+            "Normative rule for Git Policy.", "Initial git rule."
+        ),
+        encoding="utf-8",
+    )
     cnt_path = create_spec(eidos_dir, "container", "CNT-GIT-SVC", title="Git Service")
-    cnt_path.write_text(
-        cnt_path.read_text(encoding="utf-8").replace(
-            "components: []",
-            'components:\n  - id: CMP-GIT-COMP\n    name: "GitComp"\n    responsibility: "Initial comp."',
-        ),
-        encoding="utf-8",
-    )
-    cap_path = create_spec(eidos_dir, "capability", "CAP-GIT-001", title="Git Cap", domain="DOM-GIT")
-    cap_path.write_text(
-        cap_path.read_text(encoding="utf-8").replace(
-            "invariants: []",
-            (
-                "invariants:\n"
-                "    - id: INV-GIT-001\n"
-                '      rule: "Initial inv rule."\n'
-                '      test_binding: "tests/test_delta_engine.py::test_delta_schema_operation_coverage_and_git_baseline_fallback"'
-            ),
-        ),
-        encoding="utf-8",
-    )
+    cnt_doc = parse_spec_file(cnt_path)
+    cnt_doc.frontmatter["components"] = [
+        {"id": "CMP-GIT-COMP", "name": "GitComp", "responsibility": "Initial comp."}
+    ]
+    cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+
+    cap_path = create_spec(eidos_dir, "capability", "CAP-GIT-001", title="Git Cap")
+    cap_doc = parse_spec_file(cap_path)
+    cap_doc.frontmatter["technical"]["invariants"] = [
+        {
+            "id": "INV-GIT-001",
+            "rule": "Initial inv rule.",
+            "test_binding": "tests/test_delta_engine.py::test_delta_schema_operation_coverage_and_git_baseline_fallback",
+        }
+    ]
+    cap_path.write_text(dump_spec_document(cap_doc.frontmatter, cap_doc.body), encoding="utf-8")
 
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True, capture_output=True)
@@ -534,7 +550,7 @@ def test_delta_schema_operation_coverage_and_git_baseline_fallback(tmp_path):
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "Baseline specs"], cwd=tmp_path, check=True, capture_output=True)
 
-    dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-070", title="Git Fallback Verification")
+    dlt_path = create_delta(eidos_dir, "DLT-2026-070", title="Git Fallback Verification")
     mutations_yaml = """mutations:
   - operation: modify
     target: POL-GIT-001
@@ -576,7 +592,13 @@ def test_delta_vcs_base_commit_and_collision_free_ids(tmp_path):
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "domain", "DOM-COW", title="COW Domain")
-    pol_path = create_spec(eidos_dir, "policy", "POL-COW-001", title="COW Policy", rule="Initial cow rule.")
+    pol_path = create_spec(eidos_dir, "policy", "POL-COW-001", title="COW Policy")
+    pol_path.write_text(
+        pol_path.read_text(encoding="utf-8").replace(
+            "Normative rule for COW Policy.", "Initial cow rule."
+        ),
+        encoding="utf-8",
+    )
 
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True, capture_output=True)
@@ -650,7 +672,7 @@ def test_deep_review_subsystem_3_scaffolder_catalog_delta_and_changelog_edge_cas
     assert 'title: "Updated #channel"' in updated_fm
     assert "status: approved" in updated_fm
 
-    dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-088", title="Draft Gate Delta")
+    dlt_path = create_delta(eidos_dir, "DLT-2026-088", title="Draft Gate Delta")
     dlt_text = dlt_path.read_text(encoding="utf-8")
     dlt_text = _set_frontmatter_scalar(dlt_text, "status", "in_review")
     dlt_text = dlt_text.replace(
@@ -710,33 +732,34 @@ def test_delta_engine_all_mutation_families_and_helpers(tmp_path):
     )
 
     create_spec(eidos_dir, "domain", "DOM-CORE", title="Core Domain")
-    create_spec(eidos_dir, "persona", "PER-DEV", title="Developer", role_type="developer")
-    cnt_path = create_spec(eidos_dir, "container", "CNT-APP", title="App Container", source_path="src/app")
-    cnt_text = cnt_path.read_text(encoding="utf-8").replace(
-        "components: []",
-        "components:\n  - id: CMP-INLINE-WORKER\n    title: Inline Worker\n    responsibility: Process jobs.\n    source_path: src/app/worker.py",
-    )
-    cnt_path.write_text(cnt_text, encoding="utf-8")
+    create_spec(eidos_dir, "persona", "PER-DEV", title="Developer")
+    cnt_path = create_spec(eidos_dir, "container", "CNT-APP", title="App Container")
+    cnt_doc0 = parse_spec_file(cnt_path)
+    cnt_doc0.frontmatter["components"] = [
+        {
+            "id": "CMP-INLINE-WORKER",
+            "title": "Inline Worker",
+            "responsibility": "Process jobs.",
+            "source_path": "src/app/worker.py",
+        }
+    ]
+    cnt_path.write_text(dump_spec_document(cnt_doc0.frontmatter, cnt_doc0.body), encoding="utf-8")
 
-    cap_path = create_spec(eidos_dir, "capability", "CAP-LEGACY-001", title="Legacy Cap", domain="DOM-CORE")
+    cap_path = create_spec(eidos_dir, "capability", "CAP-LEGACY-001", title="Legacy Cap")
     pol_path = create_spec(
         eidos_dir,
         "policy",
         "POL-900-TEST",
         title="Test Policy",
-        category="quality",
-        rule="Enforce test rule.",
     )
     pol_del_path = create_spec(
         eidos_dir,
         "policy",
         "POL-901-DELETE",
         title="Delete Policy",
-        category="quality",
-        rule="To be deleted.",
     )
 
-    dlt1 = create_spec(eidos_dir, "delta", "DLT-2026-910", title="Mutation Families Wave 1")
+    dlt1 = create_delta(eidos_dir, "DLT-2026-910", title="Mutation Families Wave 1")
     dlt1.write_text(
         "---\n"
         "type: delta/mutation\n"
@@ -898,7 +921,7 @@ def test_delta_engine_git_baseline_and_catalog_helpers(tmp_path):
     git_repo = tmp_path / "git_delta_ws"
     eidos_dir = git_repo / "eidos"
     init_repository(git_repo, name="git-delta", title="Git Delta")
-    cnt_file = create_spec(eidos_dir, "container", "CNT-BASE", "Base Container", source_path="src/base")
+    cnt_file = create_spec(eidos_dir, "container", "CNT-BASE", "Base Container")
     doc_cnt = parse_spec_file(cnt_file)
     doc_cnt.frontmatter["components"] = [
         {
@@ -932,7 +955,7 @@ def test_delta_engine_git_baseline_and_catalog_helpers(tmp_path):
     subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "baseline specs"], cwd=git_repo, check=True, capture_output=True)
 
-    dlt_file = create_spec(eidos_dir, "delta", "DLT-910", title="Git Baseline Test", motivation="Test")
+    dlt_file = create_delta(eidos_dir, "DLT-910", title="Git Baseline Test")
     subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "add delta"], cwd=git_repo, check=True, capture_output=True)
 
@@ -1082,7 +1105,7 @@ def test_dlt_2026_079_structured_expect_assertions_and_diagnostics(tmp_path):
     )
     assert any("missing expected list items" in d for d in diag_subset)
 
-    dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-079", title="Structured Expect Test")
+    dlt_path = create_delta(eidos_dir, "DLT-2026-079", title="Structured Expect Test")
     dlt_doc = parse_spec_file(dlt_path)
     dlt_doc.frontmatter["mutations"] = [
         {
@@ -1118,7 +1141,7 @@ def test_dlt_2026_080_cross_ref_collision_resolution_and_cli_slug(tmp_path):
     subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=tmp_path, check=True, capture_output=True)
 
     subprocess.run(["git", "checkout", "-b", "feat/parallel-branch"], cwd=tmp_path, check=True, capture_output=True)
-    d1 = create_spec(eidos_dir, "delta", "DLT-2026-001", title="Parallel Branch Feature")
+    d1 = create_delta(eidos_dir, "DLT-2026-001", title="Parallel Branch Feature")
     assert d1.name == "dlt-2026-001.adoc"
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "Add DLT-2026-001 on parallel branch"], cwd=tmp_path, check=True, capture_output=True)
@@ -1131,7 +1154,7 @@ def test_dlt_2026_080_cross_ref_collision_resolution_and_cli_slug(tmp_path):
     )
     assert resolved_explicit == "DLT-2026-001-MAIN-BRANCH"
 
-    d2 = create_spec(eidos_dir, "delta", "DLT-2026-001", title="Main Branch Feature")
+    d2 = create_delta(eidos_dir, "DLT-2026-001", title="Main Branch Feature")
     assert d2.name == "dlt-2026-001-main-branch.adoc"
 
     cli_runner = CliRunner()
@@ -1150,7 +1173,7 @@ def test_dlt_2026_083_baseline_retention_across_schema_rebuild(tmp_path):
     eidos_dir = tmp_path / "eidos"
 
     create_spec(eidos_dir, "capability", "CAP-AUTH-001", title="Auth Capability")
-    create_spec(eidos_dir, "delta", "DLT-2026-001", title="Add Second Auth Invariant")
+    create_delta(eidos_dir, "DLT-2026-001", title="Add Second Auth Invariant")
 
     db_path = eidos_dir / ".cache" / "index.db"
     conn = open_cache_connection(db_path)
@@ -1296,7 +1319,7 @@ def test_dlt_2026_088_default_verify_apply(tmp_path):
     init_repository(ws)
     eidos_dir = ws / "eidos"
 
-    cnt_ts = create_spec(eidos_dir, "container", "CNT-WEB-UI", title="Web UI", source_path="src/web")
+    cnt_ts = create_spec(eidos_dir, "container", "CNT-WEB-UI", title="Web UI")
     cnt_ts_doc = parse_spec_file(cnt_ts)
     cnt_ts_doc.frontmatter["runtime"] = "TypeScript 5 / Vite"
     cnt_ts_doc.frontmatter["components"] = [
@@ -1347,7 +1370,7 @@ def test_inline_component_invariant_git_baseline_and_pre_create_precedence(tmp_p
     init_repository(ws, name="inline-inv-test")
     eidos_dir = ws / "eidos"
 
-    cnt_path = create_spec(eidos_dir, "container", "CNT-API-GW", title="API Gateway", source_path="src/gw")
+    cnt_path = create_spec(eidos_dir, "container", "CNT-API-GW", title="API Gateway")
     cnt_doc = parse_spec_file(cnt_path)
     cnt_doc.frontmatter["components"] = [
         {
@@ -1366,8 +1389,8 @@ def test_inline_component_invariant_git_baseline_and_pre_create_precedence(tmp_p
     ]
     cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
 
-    pol_a = create_spec(eidos_dir, "policy", "POL-PRE-A", title="Pre Edit Policy A", rule="Original rule A.")
-    pol_b = create_spec(eidos_dir, "policy", "POL-PRE-B", title="Pre Edit Policy B", rule="Original rule B.")
+    pol_a = create_spec(eidos_dir, "policy", "POL-PRE-A", title="Pre Edit Policy A")
+    pol_b = create_spec(eidos_dir, "policy", "POL-PRE-B", title="Pre Edit Policy B")
 
     subprocess.run(["git", "init", "-b", "main"], cwd=ws, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=ws, check=True, capture_output=True)

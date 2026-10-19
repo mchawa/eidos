@@ -4,7 +4,7 @@ from pathlib import Path
 
 import typer
 
-from eidos.cli._shared import console
+from eidos.cli._shared import console, resolve_cli_eidos_dir
 from eidos.portal.builder import build_static_portal
 from eidos.portal.server import run_portal_server
 
@@ -41,12 +41,10 @@ def serve_cmd(
     ),
 ):
     """Launch the interactive Eidos Living Web Portal."""
-    target = target_path or Path("eidos")
+    target = resolve_cli_eidos_dir(target_path)
     if not target.exists():
         console.print(f"[bold red]Error:[/bold red] Specifications directory '{target}' not found.")
         raise typer.Exit(code=1)
-    if (target / "eidos").is_dir() and not (target / "system.adoc").is_file():
-        target = target / "eidos"
 
     run_portal_server(eidos_dir=target, host=host, port=port, open_browser=open_browser)
 
@@ -67,20 +65,13 @@ def build_site_cmd(
     ),
 ):
     """Export the Eidos Living Web Portal as a self-contained static web site."""
-    target = target_path or Path("eidos")
+    target = resolve_cli_eidos_dir(target_path)
     if not target.exists():
         console.print(f"[bold red]Error:[/bold red] Specifications directory '{target}' not found.")
         raise typer.Exit(code=1)
-    if (target / "eidos").is_dir() and not (target / "system.adoc").is_file():
-        target = target / "eidos"
 
     generated_dir = build_static_portal(eidos_dir=target, output_dir=out_dir)
     console.print(f"[bold green]✓ Successfully generated static portal at:[/bold green] {generated_dir.resolve()}")
     console.print(f"  Entrypoint: {generated_dir / 'index.html'}")
     console.print(f"  Data payload: {generated_dir / 'data.json'}")
 
-
-
-def register(app: typer.Typer) -> None:
-    """Attach the root-level commands owned by this module to the root Typer app."""
-    return None

@@ -135,7 +135,6 @@ def detect_drift(
     head_ref: str = "HEAD",
     eidos_dir: Path | None = None,
     uncommitted: bool = False,
-    validation_report: ValidationReport | None = None,
 ) -> DriftCheckResult:
     """Run drift detection: evaluate spec-code synchronization, schema validation, and invariant check."""
     from eidos.core.index.ast_indexer import STYLE_EXTS, classify_design_changes, has_structural_changes
@@ -522,9 +521,8 @@ def detect_drift(
     drift_detected = base_direct_drift or design_drift or uncovered_delta_drift or unmapped_drift
 
     # 4. Specification Schema & Link Integrity Validation
-    if validation_report is None:
-        validator = SpecValidator()
-        validation_report = validator.validate_directory(target_eidos)
+    validator = SpecValidator()
+    validation_report = validator.validate_directory(target_eidos)
 
     # 5. Invariant Traceability & Orphan Invariant Detection (DLT-2026-027, DLT-2026-068)
     cached_tests = _load_or_update_test_binding_cache(root, eidos_dir=target_eidos)

@@ -7,13 +7,12 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from eidos.cli._shared import PANEL_GOVERNANCE, console
+from eidos.cli._shared import PANEL_GOVERNANCE, console, resolve_cli_eidos_dir
 from eidos.cli.component_commands import component_app
 from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
 from eidos.core.lifecycle.scaffolder import create_spec, delete_spec, list_specs
 from eidos.core.spec.parser import parse_spec_file
 from eidos.core.spec.validator import SpecValidator
-from eidos.core.workspace.project import find_repo_root
 
 spec_app = typer.Typer(
     name="spec",
@@ -21,14 +20,6 @@ spec_app = typer.Typer(
     add_completion=False,
 )
 spec_app.add_typer(component_app, name="component")
-
-
-def _has_eidos_markers(cand: Path) -> bool:
-    return cand.is_dir() and (
-        (cand / "system.adoc").exists()
-        or any((cand / sub).is_dir() for sub in ("architecture", "domains", "policies", "design", "deltas"))
-        or any(cand.glob("*.adoc"))
-    )
 
 
 def validate(
@@ -43,16 +34,7 @@ def validate(
     ),
 ):
     """Validate all specification documents against their schemas and verify cross-references."""
-    if target_path is None:
-        target_path = Path("eidos")
-        if not target_path.exists():
-            repo_eidos = find_repo_root() / "eidos"
-            if repo_eidos.exists():
-                target_path = repo_eidos
-            elif _has_eidos_markers(Path(".")):
-                target_path = Path(".")
-    elif (target_path / "eidos").is_dir() and not _has_eidos_markers(target_path):
-        target_path = target_path / "eidos"
+    target_path = resolve_cli_eidos_dir(target_path)
 
     if not target_path.exists():
         if json_output:
@@ -140,13 +122,16 @@ def spec_list_cmd(
         None,
         "--type",
         "-t",
-        help="Filter by spec type (capability, policy, contract, container, component, domain, persona, delta, exploration, design-system, ui-component, screen, client, flow).",
+        help=(
+            "Filter by living spec type (system, architecture, domain, capability, policy, persona, exploration, "
+            "container, component, contract, design-system, ui-component, screen, client, flow)."
+        ),
     ),
     status_filter: str | None = typer.Option(
         None,
         "--status",
         "-s",
-        help="Filter by status (active, draft, proposed, applied).",
+        help="Filter by status (draft, active, deprecated, retired).",
     ),
     json_output: bool = typer.Option(
         False,
@@ -154,8 +139,16 @@ def spec_list_cmd(
         help="Output machine-readable JSON specification list.",
     ),
 ):
-    """List living specifications in the repository."""
-    specs = list_specs(path, type_filter=type_filter, status_filter=status_filter)
+    """List living specifications in the repository (excludes SpecDeltas; use `eidos delta list`)."""
+    try:
+        specs = list_specs(path, type_filter=type_filter, status_filter=status_filter)
+    except ValueError as e:
+        if json_output:
+            typer.echo(json.dumps({"error": str(e)}))
+        else:
+            console.print(f"[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1) from e
+
     if json_output:
         serializable = [
             {
@@ -197,7 +190,7 @@ def spec_list_cmd(
 def spec_show_cmd(
     target: str = typer.Argument(
         ...,
-        help="Document ID, relative path, or filename of the specification.",
+        help="Document ID, relative path, or filename of the living specification.",
     ),
     path: Path = typer.Option(
         Path("eidos"),
@@ -206,13 +199,20 @@ def spec_show_cmd(
         help="Path to eidos specifications directory.",
     ),
 ):
-    """Display frontmatter metadata and preview of a specification document."""
+    """Display frontmatter metadata and preview of a living specification document."""
     file_path = find_spec_by_id_or_path(path, target)
     if not file_path:
         console.print(f"[bold red]Error:[/bold red] Specification '{target}' not found under '{path}'.")
         raise typer.Exit(code=1)
 
     doc = parse_spec_file(file_path)
+    if doc.doc_type == "delta/mutation":
+        console.print(
+            f"[bold red]Error:[/bold red] '{doc.doc_id}' is a SpecDelta (`delta/mutation`). "
+            f"Use `eidos delta status {doc.doc_id}` or `eidos delta verify {doc.doc_id}` instead."
+        )
+        raise typer.Exit(code=1)
+
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style="bold cyan", justify="right")
     grid.add_column(style="white")
@@ -231,19 +231,19 @@ def spec_create_cmd(
     doc_type: str = typer.Argument(
         ...,
         help=(
-            "Specification type: capability, domain, policy, contract, container, component, persona, delta, "
-            "exploration, design-system, ui-component, screen, client, flow."
+            "Living specification type: system, architecture, domain, capability, policy, persona, exploration, "
+            "container, component, contract, design-system, ui-component, screen, client, flow."
         ),
     ),
     doc_id: str = typer.Argument(
-        "auto",
-        help="Unique identifier (e.g. CAP-AUTH-001, POL-003, CTR-PAYMENT-API, or 'auto' for SpecDeltas).",
+        ...,
+        help="Unique specification identifier (e.g. CAP-AUTH-001, POL-003, CTR-PAYMENT-API, EXP-CACHE-001).",
     ),
     title: str = typer.Option(
         ...,
         "--title",
         "-t",
-        help="Human-readable title for the specification document.",
+        help="Human-readable title for the specification blueprint.",
     ),
     path: Path = typer.Option(
         Path("eidos"),
@@ -251,120 +251,18 @@ def spec_create_cmd(
         "-p",
         help="Path to eidos specifications directory.",
     ),
-    domain: str | None = typer.Option(
-        None,
-        "--domain",
-        "-d",
-        help="Parent domain ID for capabilities (e.g. DOM-CORE).",
-    ),
-    kind: str = typer.Option(
-        "feature",
-        "--kind",
-        "-k",
-        help="Mutation kind for SpecDeltas (feature, enabler, bug).",
-    ),
-    motivation: str = typer.Option(
-        "Proposed specification change.",
-        "--motivation",
-        "-m",
-        help="Motivation/problem statement for deltas.",
-    ),
-    slug: bool = typer.Option(
-        False,
-        "--slug",
-        "-s",
-        help="Append a deterministic title-derived slug suffix when creating a SpecDelta.",
-    ),
-    category: str = typer.Option(
-        "governance",
-        "--category",
-        "-c",
-        help="Category for policies (governance, architectural, security, testing).",
-    ),
-    rule: str = typer.Option(
-        "Authoritative rule statement.",
-        "--rule",
-        "-r",
-        help="Rule statement for policies.",
-    ),
-    protocol: str = typer.Option(
-        "cli_args",
-        "--protocol",
-        help="Protocol for contracts (cli_args, openapi, protobuf, graphql, json_rpc_stdio).",
-    ),
-    container: str | None = typer.Option(
-        None,
-        "--container",
-        help="Parent container ID (CNT-*) for components, implementing container for clients, or owner for contracts.",
-    ),
-    source_path: str = typer.Option(
-        "src",
-        "--source-path",
-        help="Source path or glob owned by a container or component (source_path).",
-    ),
-    specification_file: str = typer.Option(
-        "src/main.py",
-        "--spec-file",
-        help="Relative path to raw interface specification file for contracts.",
-    ),
-    client_id: str | None = typer.Option(
-        None,
-        "--client",
-        help="Client ID (CLT-*) for screens/flows, or brand identifier for client-specific design systems.",
-    ),
-    extends: str | None = typer.Option(
-        None,
-        "--extends",
-        help="Base design system ID or path to extend (e.g. DS-CORE).",
-    ),
-    route: str = typer.Option(
-        "/view",
-        "--route",
-        help="URL route or view identifier for screens.",
-    ),
-    design_system: str | None = typer.Option(
-        None,
-        "--system",
-        help="Owning design system ID for UI components, screens, or clients (defaults to primary design/system or DS-CORE).",
-    ),
-    implements: str | None = typer.Option(
-        None,
-        "--implements",
-        help="Base component ID being overridden/specialized by a UI component.",
-    ),
-    platform: str = typer.Option(
-        "web",
-        "--platform",
-        help="Runtime platform for clients (web, mobile-ios, mobile-android, desktop, tui, multi-platform).",
-    ),
 ):
-    """Scaffold a new living specification or SpecDelta."""
+    """Scaffold a minimal, schema-valid draft blueprint (`status: draft`) for any living specification type."""
     try:
         dest_file = create_spec(
             eidos_dir=path,
             doc_type_key=doc_type,
             raw_id=doc_id,
             title=title,
-            domain=domain,
-            kind=kind,
-            motivation=motivation,
-            category=category,
-            rule=rule,
-            protocol=protocol,
-            container=container,
-            specification_file=specification_file,
-            source_path=source_path,
-            client_id=client_id,
-            extends=extends,
-            route=route,
-            design_system=design_system,
-            implements=implements,
-            platform=platform,
-            slug_suffix=slug,
         )
         rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
         parsed_doc = parse_spec_file(dest_file)
-        display_id = parsed_doc.doc_id or (doc_id if doc_id.lower() != "auto" else dest_file.stem.upper())
+        display_id = parsed_doc.doc_id or doc_id
         console.print(
             f"[bold green]✓ Created and validated specification ({display_id}):[/bold green] [bold]{dest_file.name}[/bold]"
         )

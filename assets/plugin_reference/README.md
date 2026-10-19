@@ -5,7 +5,7 @@ This directory contains the official **Eidos Agent Plugin**, structured in stric
 ## Contents
 
 - `plugin.json` — Standard plugin manifest declaring identity, SemVer version, metadata, and client extensions (`com.google.antigravity`).
-- `hooks.json` — Lifecycle hooks (`eidos-doc-linter`, `eidos-drift-gate`) enforcing specification syntax, schema conformance, and spec-to-code synchronization.
+- `hooks.json` — Stateless `Stop` lifecycle hook (`eidos-drift-gate` invoking `eidos hook`) verifying specification validity, invariant test bindings, and spec-to-code synchronization.
 - `skills/` — 4 cohesive workflow-aligned Agent Skills conforming to [agentskills.io](https://agentskills.io):
   - `eidos/SKILL.md` — **Master Orchestrator, Context & Drift**: Workflow routing (Direct vs. Planned Mode), tiered context slicing (`eidos context`), and continuous drift detection (`eidos drift`).
   - `eidos-spec/SKILL.md` — **Living Specification & Invariant Authoring**: Product domains (`DOM-*`), capabilities (`CAP-*`), personas (`PER-*`), Arc42/C4 architecture (`CNT-*`, inline/promoted `CMP-*`, `CTR-*`, embedded `decisions:`), Multi-Design Systems (`DS-*`, W3C tokens, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`), and policies/invariants (`POL-*`, `INV-*` with polyglot `file::func` test bindings).
@@ -14,7 +14,7 @@ This directory contains the official **Eidos Agent Plugin**, structured in stric
 
 ## CLI-First Architecture
 
-Eidos operates via **direct CLI execution** (`eidos validate --json`, `eidos drift --uncommitted --json`, `eidos context --format json`). This eliminates background daemon flakiness in cloud, container, and remote sandbox environments.
+Eidos operates via **direct CLI execution** (`eidos validate --json`, `eidos drift --uncommitted --json`, `eidos context --json`). This eliminates background daemon flakiness in cloud, container, and remote sandbox environments.
 
 ## Usage with Eidos CLI
 
@@ -29,5 +29,5 @@ eidos plugin info
 eidos plugin install
 
 # Upgrade installed plugin and prune legacy skill directories
-eidos plugin update --target all
+eidos plugin update all
 ```

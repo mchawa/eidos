@@ -1,19 +1,18 @@
 [
   {
     "order": [
-      "version",
       "info",
       "doctor",
       "init",
       "validate",
       "drift",
       "context",
+      "hook",
       "spec",
       "delta",
       "index",
       "portal",
-      "plugin",
-      "hook"
+      "plugin"
     ],
     "path": [],
     "help": "Eidos: Git-Native, Agent-Agnostic Development AI Ecosystem & Lifecycle Orchestrator.",
@@ -36,16 +35,6 @@
         "type": "BOOL"
       }
     ]
-  },
-  {
-    "order": [],
-    "path": [
-      "version"
-    ],
-    "help": "Display the Eidos engine version.",
-    "hidden": false,
-    "panel": "Setup & Workspace",
-    "params": []
   },
   {
     "order": [],
@@ -176,22 +165,6 @@
         "required": false,
         "default": "False",
         "help": "Initialize progressive Eidos Lite profile (essential baseline: system, containers, capabilities, deltas).",
-        "panel": null,
-        "envvar": "None",
-        "type": "BOOL"
-      },
-      {
-        "name": "_with_plugin",
-        "opts": [
-          "--with-plugin"
-        ],
-        "secondary": [
-          "--no-plugin"
-        ],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "False",
-        "help": "Deprecated: plugins are no longer installed by init.",
         "panel": null,
         "envvar": "None",
         "type": "BOOL"
@@ -420,18 +393,18 @@
         "type": "STRING"
       },
       {
-        "name": "format",
+        "name": "json_output",
         "opts": [
-          "--format"
+          "--json"
         ],
         "secondary": [],
         "kind": "TyperOption",
         "required": false,
-        "default": "markdown",
-        "help": "Output format: 'markdown' or 'json' (defaults to 'markdown').",
+        "default": "False",
+        "help": "Output context slice as machine-readable JSON instead of Markdown.",
         "panel": null,
         "envvar": "None",
-        "type": "STRING"
+        "type": "BOOL"
       },
       {
         "name": "path",
@@ -444,6 +417,32 @@
         "required": false,
         "default": "None",
         "help": "Path to eidos directory (defaults to ./eidos).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "hook"
+    ],
+    "help": "Execute native Eidos stateless Stop lifecycle hook.",
+    "hidden": false,
+    "panel": "Agent Ecosystem & Plugins",
+    "params": [
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "None",
+        "help": "Repository root or eidos directory path.",
         "panel": null,
         "envvar": "None",
         "type": "<typer.models.TyperPath object>"
@@ -472,7 +471,7 @@
       "spec",
       "list"
     ],
-    "help": "List living specifications in the repository.",
+    "help": "List living specifications in the repository (excludes SpecDeltas; use `eidos delta list`).",
     "hidden": false,
     "panel": null,
     "params": [
@@ -501,7 +500,7 @@
         "kind": "TyperOption",
         "required": false,
         "default": "None",
-        "help": "Filter by spec type (capability, policy, contract, container, component, domain, persona, delta, exploration, design-system, ui-component, screen, client, flow).",
+        "help": "Filter by living spec type (system, architecture, domain, capability, policy, persona, exploration, container, component, contract, design-system, ui-component, screen, client, flow).",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -516,7 +515,7 @@
         "kind": "TyperOption",
         "required": false,
         "default": "None",
-        "help": "Filter by status (active, draft, proposed, applied).",
+        "help": "Filter by status (draft, active, deprecated, retired).",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -543,7 +542,7 @@
       "spec",
       "show"
     ],
-    "help": "Display frontmatter metadata and preview of a specification document.",
+    "help": "Display frontmatter metadata and preview of a living specification document.",
     "hidden": false,
     "panel": null,
     "params": [
@@ -556,7 +555,7 @@
         "kind": "TyperArgument",
         "required": true,
         "default": "None",
-        "help": "Document ID, relative path, or filename of the specification.",
+        "help": "Document ID, relative path, or filename of the living specification.",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -584,7 +583,7 @@
       "spec",
       "create"
     ],
-    "help": "Scaffold a new living specification or SpecDelta.",
+    "help": "Scaffold a minimal, schema-valid draft blueprint (`status: draft`) for any living specification type.",
     "hidden": false,
     "panel": null,
     "params": [
@@ -597,7 +596,7 @@
         "kind": "TyperArgument",
         "required": true,
         "default": "None",
-        "help": "Specification type: capability, domain, policy, contract, container, component, persona, delta, exploration, design-system, ui-component, screen, client, flow.",
+        "help": "Living specification type: system, architecture, domain, capability, policy, persona, exploration, container, component, contract, design-system, ui-component, screen, client, flow.",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -609,9 +608,9 @@
         ],
         "secondary": [],
         "kind": "TyperArgument",
-        "required": false,
-        "default": "auto",
-        "help": "Unique identifier (e.g. CAP-AUTH-001, POL-003, CTR-PAYMENT-API, or 'auto' for SpecDeltas).",
+        "required": true,
+        "default": "None",
+        "help": "Unique specification identifier (e.g. CAP-AUTH-001, POL-003, CTR-PAYMENT-API, EXP-CACHE-001).",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -626,7 +625,7 @@
         "kind": "TyperOption",
         "required": true,
         "default": "None",
-        "help": "Human-readable title for the specification document.",
+        "help": "Human-readable title for the specification blueprint.",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -645,236 +644,6 @@
         "panel": null,
         "envvar": "None",
         "type": "<typer.models.TyperPath object>"
-      },
-      {
-        "name": "domain",
-        "opts": [
-          "--domain",
-          "-d"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Parent domain ID for capabilities (e.g. DOM-CORE).",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "kind",
-        "opts": [
-          "--kind",
-          "-k"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "feature",
-        "help": "Mutation kind for SpecDeltas (feature, enabler, bug).",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "motivation",
-        "opts": [
-          "--motivation",
-          "-m"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "Proposed specification change.",
-        "help": "Motivation/problem statement for deltas.",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "slug",
-        "opts": [
-          "--slug",
-          "-s"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "False",
-        "help": "Append a deterministic title-derived slug suffix when creating a SpecDelta.",
-        "panel": null,
-        "envvar": "None",
-        "type": "BOOL"
-      },
-      {
-        "name": "category",
-        "opts": [
-          "--category",
-          "-c"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "governance",
-        "help": "Category for policies (governance, architectural, security, testing).",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "rule",
-        "opts": [
-          "--rule",
-          "-r"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "Authoritative rule statement.",
-        "help": "Rule statement for policies.",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "protocol",
-        "opts": [
-          "--protocol"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "cli_args",
-        "help": "Protocol for contracts (cli_args, openapi, protobuf, graphql, json_rpc_stdio).",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "container",
-        "opts": [
-          "--container"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Parent container ID (CNT-*) for components, implementing container for clients, or owner for contracts.",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "source_path",
-        "opts": [
-          "--source-path"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "src",
-        "help": "Source path or glob owned by a container or component (source_path).",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "specification_file",
-        "opts": [
-          "--spec-file"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "src/main.py",
-        "help": "Relative path to raw interface specification file for contracts.",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "client_id",
-        "opts": [
-          "--client"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Client ID (CLT-*) for screens/flows, or brand identifier for client-specific design systems.",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "extends",
-        "opts": [
-          "--extends"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Base design system ID or path to extend (e.g. DS-CORE).",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "route",
-        "opts": [
-          "--route"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "/view",
-        "help": "URL route or view identifier for screens.",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "design_system",
-        "opts": [
-          "--system"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Owning design system ID for UI components, screens, or clients (defaults to primary design/system or DS-CORE).",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "implements",
-        "opts": [
-          "--implements"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Base component ID being overridden/specialized by a UI component.",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "platform",
-        "opts": [
-          "--platform"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "web",
-        "help": "Runtime platform for clients (web, mobile-ios, mobile-android, desktop, tui, multi-platform).",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
       }
     ]
   },
@@ -987,20 +756,6 @@
         "panel": null,
         "envvar": "None",
         "type": "<typer.models.TyperPath object>"
-      },
-      {
-        "name": "repo_root",
-        "opts": [
-          "--repo-root"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Path to repository root directory.",
-        "panel": null,
-        "envvar": "None",
-        "type": "<typer.models.TyperPath object>"
       }
     ]
   },
@@ -1043,20 +798,6 @@
         "panel": null,
         "envvar": "None",
         "type": "<typer.models.TyperPath object>"
-      },
-      {
-        "name": "repo_root",
-        "opts": [
-          "--repo-root"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Path to repository root directory.",
-        "panel": null,
-        "envvar": "None",
-        "type": "<typer.models.TyperPath object>"
       }
     ]
   },
@@ -1074,7 +815,7 @@
     "path": [
       "delta"
     ],
-    "help": "Manage SpecDeltas through their mutation lifecycle (list, create, apply, delete).",
+    "help": "Manage SpecDeltas through their mutation lifecycle (list, create, status, verify, audit, apply, delete, changelog).",
     "hidden": false,
     "panel": "Living Catalog & Mutations",
     "params": []
@@ -1114,7 +855,7 @@
         "kind": "TyperOption",
         "required": false,
         "default": "None",
-        "help": "Filter deltas by status (e.g. proposed, in_review, applied, rejected).",
+        "help": "Filter deltas by status (proposed, in_review, approved, applied, rejected).",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -1141,7 +882,7 @@
       "delta",
       "create"
     ],
-    "help": "Create a new SpecDelta in flat storage (eidos/deltas/<id>.adoc).",
+    "help": "Create a new SpecDelta blueprint in flat storage (eidos/deltas/<id>.adoc).",
     "hidden": false,
     "panel": null,
     "params": [
@@ -1185,36 +926,6 @@
         "required": false,
         "default": "feature",
         "help": "Mutation kind: feature, enabler, bug.",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "motivation",
-        "opts": [
-          "--motivation",
-          "-m"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "Problem statement and motivation.",
-        "help": "Problem statement and motivation.",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "branch",
-        "opts": [
-          "--branch",
-          "-b"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Git branch name for vcs.branch.",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -1481,7 +1192,7 @@
         "kind": "TyperArgument",
         "required": false,
         "default": "None",
-        "help": "Optional target lifecycle status when delta_id is given (draft, proposed, planned, in_review, approved, applied, rejected).",
+        "help": "Optional target lifecycle status when delta_id is given (proposed, in_review, approved, applied, rejected).",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -1927,19 +1638,18 @@
         "type": "INT"
       },
       {
-        "name": "format_type",
+        "name": "json_output",
         "opts": [
-          "--format",
-          "-f"
+          "--json"
         ],
         "secondary": [],
         "kind": "TyperOption",
         "required": false,
-        "default": "markdown",
-        "help": "Output format: markdown (default) or json.",
+        "default": "False",
+        "help": "Output structural repo map as machine-readable JSON instead of Markdown.",
         "panel": null,
         "envvar": "None",
-        "type": "STRING"
+        "type": "BOOL"
       },
       {
         "name": "path",
@@ -2183,28 +1893,13 @@
       {
         "name": "target",
         "opts": [
-          "--target",
-          "-t"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "project",
-        "help": "Installation target in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-        "panel": null,
-        "envvar": "None",
-        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-      },
-      {
-        "name": "target_arg",
-        "opts": [
-          "target_arg"
+          "target"
         ],
         "secondary": [],
         "kind": "TyperArgument",
         "required": false,
-        "default": "None",
-        "help": "Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
+        "default": "project",
+        "help": "Installation target in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
         "panel": null,
         "envvar": "None",
         "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
@@ -2284,28 +1979,13 @@
       {
         "name": "target",
         "opts": [
-          "--target",
-          "-t"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "project",
-        "help": "Target to remove in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-        "panel": null,
-        "envvar": "None",
-        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-      },
-      {
-        "name": "target_arg",
-        "opts": [
-          "target_arg"
+          "target"
         ],
         "secondary": [],
         "kind": "TyperArgument",
         "required": false,
-        "default": "None",
-        "help": "Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
+        "default": "project",
+        "help": "Target to remove in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
         "panel": null,
         "envvar": "None",
         "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
@@ -2397,28 +2077,13 @@
       {
         "name": "target",
         "opts": [
-          "--target",
-          "-t"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "project",
-        "help": "Target to update in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
-        "panel": null,
-        "envvar": "None",
-        "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
-      },
-      {
-        "name": "target_arg",
-        "opts": [
-          "target_arg"
+          "target"
         ],
         "secondary": [],
         "kind": "TyperArgument",
         "required": false,
-        "default": "None",
-        "help": "Optional positional target: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
+        "default": "project",
+        "help": "Target to update in project scope: project, antigravity, claude, cursor, aider, cline, open-code, codex, copilot, all.",
         "panel": null,
         "envvar": "None",
         "type": "Choice(['project', 'antigravity', 'claude', 'cursor', 'aider', 'cline', 'open-code', 'opencode', 'codex', 'copilot', 'all'])"
@@ -2515,103 +2180,6 @@
         "required": false,
         "default": "None",
         "help": "Path to plugin directory (defaults to assets/plugin_reference or bundled).",
-        "panel": null,
-        "envvar": "None",
-        "type": "<typer.models.TyperPath object>"
-      }
-    ]
-  },
-  {
-    "order": [
-      "lint",
-      "drift"
-    ],
-    "path": [
-      "hook"
-    ],
-    "help": "Execute native Eidos agent plugin lifecycle hooks (lint, drift).",
-    "hidden": false,
-    "panel": "Agent Ecosystem & Plugins",
-    "params": []
-  },
-  {
-    "order": [],
-    "path": [
-      "hook",
-      "lint"
-    ],
-    "help": "Execute native Eidos specification lint & ADR guard lifecycle hook.",
-    "hidden": false,
-    "panel": null,
-    "params": [
-      {
-        "name": "event",
-        "opts": [
-          "--event",
-          "-e"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "Stop",
-        "help": "Hook lifecycle event (PreToolUse, PostToolUse, Stop).",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "path",
-        "opts": [
-          "--path",
-          "-p"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Repository root or eidos directory path.",
-        "panel": null,
-        "envvar": "None",
-        "type": "<typer.models.TyperPath object>"
-      }
-    ]
-  },
-  {
-    "order": [],
-    "path": [
-      "hook",
-      "drift"
-    ],
-    "help": "Execute native Eidos spec-to-code drift lifecycle hook with Block-Once Stop gate.",
-    "hidden": false,
-    "panel": null,
-    "params": [
-      {
-        "name": "event",
-        "opts": [
-          "--event",
-          "-e"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "Stop",
-        "help": "Hook lifecycle event (Stop).",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
-        "name": "path",
-        "opts": [
-          "--path",
-          "-p"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Repository root or eidos directory path.",
         "panel": null,
         "envvar": "None",
         "type": "<typer.models.TyperPath object>"

@@ -58,15 +58,9 @@ def build_design_spec(
     slug: str,
     title: str,
     heading: str,
-    container: str | None,
-    client_id: str | None,
-    extends: str | None,
-    route: str,
-    design_system: str,
-    implements: str | None,
-    platform: str,
+    design_system: str = "DS-CORE",
 ) -> tuple[Path, Path, dict[str, Any], str]:
-    """Build (dest_dir, dest_file, frontmatter, body) for a design-layer specification type."""
+    """Build (dest_dir, dest_file, frontmatter, body) for a minimal design-layer specification blueprint."""
     dest_dir: Path
     dest_file: Path
     fm: dict[str, Any]
@@ -100,15 +94,9 @@ def build_design_spec(
             "schema": "schemas/v1/design/system.schema.yaml",
             "id": doc_id,
             "title": title,
-            "status": "active",
+            "status": "draft",
+            "tokens": {"spec_format": "w3c_design_tokens", "manifest": "tokens.json"},
         }
-        if client_id:
-            fm["brand_name"] = title
-        if extends:
-            fm["extends"] = extends
-            fm["override_mode"] = "token_and_component"
-        fm["tokens"] = {"spec_format": "w3c_design_tokens", "manifest": "tokens.json"}
-        fm["theme_capabilities"] = {"color_modes": ["light", "dark"], "density_modes": ["comfortable"]}
         body = f"""= Design System: {heading}
 :toc: left
 
@@ -129,26 +117,8 @@ Tokens are defined in W3C DTCG format at `tokens.json`.
             "id": doc_id,
             "title": title,
             "design_system": resolved_ds_id,
+            "status": "draft",
         }
-        if implements:
-            fm["implements"] = implements
-        fm.update(
-            {
-                "status": "draft",
-                "category": "inputs",
-                "variants": [
-                    {"name": "primary", "description": "Default visual emphasis."},
-                    {"name": "secondary", "description": "Subtle visual emphasis."},
-                ],
-                "states": ["default", "hover", "active", "focus", "disabled"],
-                "accessibility": {
-                    "wcag_level": "AA",
-                    "aria_role": "button",
-                    "keyboard_nav": "Enter and Space activate; Tab traverses focus.",
-                },
-                "test_bindings": {},
-            }
-        )
         body = f"""= UI Component: {heading}
 :toc: left
 
@@ -158,25 +128,15 @@ Describes variants, interactive states, accessibility contracts, and visual test
 
     elif canonical_key == "screen":
         clean_screen = slug.removeprefix("scr-")
-        if client_id:
-            _, client_slug = _resolve_design_entity_ref(client_id, "CLT-", "client.adoc", eidos_dir)
-            dest_dir = eidos_dir / "design" / "clients" / client_slug / "screens"
-        else:
-            dest_dir = eidos_dir / "design" / "screens"
+        dest_dir = eidos_dir / "design" / "screens"
         dest_file = dest_dir / f"{clean_screen}.adoc"
         fm = {
             "type": "design/screen",
             "schema": "schemas/v1/design/screen.schema.yaml",
             "id": doc_id,
             "title": title,
-            "route": route,
-            "status": "active",
-            "slots": {"main_content": "Primary view content"},
-            "states": [
-                {"name": "loading", "description": "Skeleton loader displayed during data fetch."},
-                {"name": "active", "description": "Standard interactive screen state."},
-                {"name": "error", "description": "Fallback error message if request fails."},
-            ],
+            "route": f"/{clean_screen}",
+            "status": "draft",
         }
         body = f"""= Screen: {heading}
 :toc: left
@@ -197,13 +157,10 @@ This specification defines the route, layout slots, and state transitions for {h
             "schema": "schemas/v1/design/client.schema.yaml",
             "id": doc_id,
             "title": title,
-            "status": "active",
-            "platform": platform,
+            "status": "draft",
+            "platform": "web",
             "design_system": resolved_ds_id,
         }
-        if container:
-            fm["container"] = container
-        fm.update({"screens": [], "flows": []})
         body = f"""= Client: {heading}
 :toc: left
 
@@ -213,20 +170,14 @@ Describe the runtime platform, bound design system, and implementing container o
 
     elif canonical_key == "flow":
         flow_slug = slug.removeprefix("flow-")
-        resolved_clt_id = ""
-        if client_id:
-            resolved_clt_id, client_slug = _resolve_design_entity_ref(client_id, "CLT-", "client.adoc", eidos_dir)
-            dest_dir = eidos_dir / "design" / "clients" / client_slug / "flows"
-        else:
-            dest_dir = eidos_dir / "design" / "flows"
+        dest_dir = eidos_dir / "design" / "flows"
         dest_file = dest_dir / f"{flow_slug}.adoc"
         fm = {
             "type": "design/flow",
             "schema": "schemas/v1/design/flow.schema.yaml",
             "id": doc_id,
             "title": title,
-            "status": "active",
-            "flow_type": "client_internal" if resolved_clt_id else "cross_client",
+            "status": "draft",
             "steps": [{"step": 1, "title": "Entry point"}],
         }
         body = f"""= Flow: {heading}
@@ -240,3 +191,4 @@ Describe the ordered steps, screen transitions, and outcomes of this interaction
         raise ValueError(f"Unsupported design specification key '{canonical_key}'")
 
     return dest_dir, dest_file, fm, body
+

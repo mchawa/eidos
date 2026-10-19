@@ -12,17 +12,19 @@ from eidos.core.lifecycle.audit import AuditEngine
 from eidos.core.lifecycle.changelog import ChangelogGenerator
 from eidos.core.lifecycle.delta_engine import (
     apply_delta,
+    create_delta,
+    delete_delta,
     get_delta_status_summary,
     list_deltas,
     set_delta_status,
     verify_delta_mutations,
 )
-from eidos.core.lifecycle.scaffolder import create_spec, delete_spec, find_spec_by_id_or_path
+from eidos.core.lifecycle.scaffolder import find_spec_by_id_or_path
 from eidos.core.spec.parser import parse_spec_file
 
 delta_app = typer.Typer(
     name="delta",
-    help="Manage SpecDeltas through their mutation lifecycle (list, create, apply, delete).",
+    help="Manage SpecDeltas through their mutation lifecycle (list, create, status, verify, audit, apply, delete, changelog).",
     add_completion=False,
 )
 
@@ -39,7 +41,7 @@ def delta_list_cmd(
         None,
         "--status",
         "-s",
-        help="Filter deltas by status (e.g. proposed, in_review, applied, rejected).",
+        help="Filter deltas by status (proposed, in_review, approved, applied, rejected).",
     ),
     json_output: bool = typer.Option(
         False,
@@ -108,18 +110,6 @@ def delta_create_cmd(
         "-k",
         help="Mutation kind: feature, enabler, bug.",
     ),
-    motivation: str = typer.Option(
-        "Problem statement and motivation.",
-        "--motivation",
-        "-m",
-        help="Problem statement and motivation.",
-    ),
-    branch: str | None = typer.Option(
-        None,
-        "--branch",
-        "-b",
-        help="Git branch name for vcs.branch.",
-    ),
     slug: bool = typer.Option(
         False,
         "--slug",
@@ -133,16 +123,13 @@ def delta_create_cmd(
         help="Path to eidos directory.",
     ),
 ):
-    """Create a new SpecDelta in flat storage (eidos/deltas/<id>.adoc)."""
+    """Create a new SpecDelta blueprint in flat storage (eidos/deltas/<id>.adoc)."""
     try:
-        dest_file = create_spec(
+        dest_file = create_delta(
             eidos_dir=path,
-            doc_type_key="delta",
             raw_id=delta_id,
             title=title,
             kind=kind,
-            motivation=motivation,
-            branch=branch,
             slug_suffix=slug,
         )
         rel = dest_file.relative_to(path) if dest_file.is_relative_to(path) else dest_file
@@ -407,7 +394,7 @@ def delta_status_cmd(
     ),
     new_status: str | None = typer.Argument(
         None,
-        help="Optional target lifecycle status when delta_id is given (draft, proposed, planned, in_review, approved, applied, rejected).",
+        help="Optional target lifecycle status when delta_id is given (proposed, in_review, approved, applied, rejected).",
     ),
     path: Path = typer.Option(
         Path("eidos"),
@@ -509,8 +496,6 @@ def delta_status_cmd(
     summary_table.add_column("Count", style="bold white", justify="right")
     summary_table.add_column("Description", style="dim")
 
-    summary_table.add_row("Draft", str(len(by_status.get("draft", []))), "Initial work-in-progress deltas")
-    summary_table.add_row("Planned", str(len(by_status.get("planned", []))), "Planned mutations scheduled for work")
     summary_table.add_row("Proposed", str(len(by_status.get("proposed", []))), "Draft mutations awaiting review")
     summary_table.add_row("In Review", str(len(by_status.get("in_review", []))), "Under review by team or agents")
     summary_table.add_row(
@@ -525,9 +510,7 @@ def delta_status_cmd(
     console.print(summary_table)
 
     active_deltas = (
-        by_status.get("draft", [])
-        + by_status.get("planned", [])
-        + by_status.get("proposed", [])
+        by_status.get("proposed", [])
         + by_status.get("in_review", [])
         + by_status.get("approved", [])
     )
@@ -565,7 +548,7 @@ def delta_delete_cmd(
     ),
 ):
     """Delete a SpecDelta file."""
-    success, msg, _ = delete_spec(path, target, force=force)
+    success, msg, _ = delete_delta(path, target, force=force)
     if not success:
         console.print(f"[bold red]✗ Failed to delete SpecDelta:[/bold red] {msg}")
         raise typer.Exit(code=1)
@@ -624,8 +607,3 @@ def delta_changelog_cmd(
     if res.get("docs_file"):
         link_mode = "symlinked" if res.get("symlink_created") else "mirrored"
         console.print(f"  [dim]Documentation {link_mode}: {res['docs_file']}[/dim]")
-
-
-def register(app: typer.Typer) -> None:
-    """Attach the root-level commands owned by this module to the root Typer app."""
-    return None

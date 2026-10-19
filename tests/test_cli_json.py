@@ -37,8 +37,8 @@ def test_cli_drift_json_output():
 
 
 def test_cli_context_json_output():
-    """Verify 'eidos context -f src/eidos/cli/main.py --format json' outputs valid JSON."""
-    result = runner.invoke(app, ["context", "-f", "src/eidos/cli/main.py", "--format", "json"])
+    """Verify 'eidos context -f src/eidos/cli/main.py --json' outputs valid JSON."""
+    result = runner.invoke(app, ["context", "-f", "src/eidos/cli/main.py", "--json"])
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert "components" in data
@@ -144,10 +144,10 @@ def test_cli_command_tree_unchanged():
 
 
 def test_cli_contract_json_and_create_flags(tmp_path):
-    """DLT-2026-077: verify CTR-EIDOS-CLI JSON output flags and creation options."""
+    """DLT-2026-077 & DLT-2026-092: verify CTR-EIDOS-CLI JSON output flags and minimal blueprint creation."""
     eidos_dir = tmp_path / "eidos"
 
-    # 1. Create container, client (--platform), contract (--spec-file), and delta (--branch)
+    # 1. Create container, client, contract, and delta blueprints
     res_cnt = runner.invoke(
         app,
         ["spec", "create", "container", "CNT-API", "--title", "API Service", "--path", str(eidos_dir)],
@@ -163,17 +163,13 @@ def test_cli_contract_json_and_create_flags(tmp_path):
             "CLT-MOBILE",
             "--title",
             "Mobile Client",
-            "--container",
-            "CNT-API",
-            "--platform",
-            "mobile-ios",
             "--path",
             str(eidos_dir),
         ],
     )
     assert res_clt.exit_code == 0
     clt_content = (eidos_dir / "design" / "clients" / "mobile" / "client.adoc").read_text(encoding="utf-8")
-    assert "platform: mobile-ios" in clt_content
+    assert "design_system: DS-CORE" in clt_content
 
     res_ctr = runner.invoke(
         app,
@@ -184,17 +180,13 @@ def test_cli_contract_json_and_create_flags(tmp_path):
             "CTR-OPENAPI",
             "--title",
             "OpenAPI Spec",
-            "--container",
-            "CNT-API",
-            "--spec-file",
-            "api/openapi.yaml",
             "--path",
             str(eidos_dir),
         ],
     )
     assert res_ctr.exit_code == 0
     ctr_content = (eidos_dir / "architecture" / "contracts" / "ctr-openapi.adoc").read_text(encoding="utf-8")
-    assert "specification_file: api/openapi.yaml" in ctr_content
+    assert "container: CNT-API" in ctr_content
 
     res_dlt = runner.invoke(
         app,
@@ -204,22 +196,20 @@ def test_cli_contract_json_and_create_flags(tmp_path):
             "DLT-2026-901",
             "--title",
             "Branch Test Delta",
-            "--branch",
-            "feat/dlt-901",
             "--path",
             str(eidos_dir),
         ],
     )
     assert res_dlt.exit_code == 0
     dlt_content = (eidos_dir / "deltas" / "dlt-2026-901.adoc").read_text(encoding="utf-8")
-    assert "branch: feat/dlt-901" in dlt_content
+    assert "status: proposed" in dlt_content
 
-    # 2. spec list --json
+    # 2. spec list --json (excludes delta/mutation per DLT-2026-092 disjoint boundary)
     res_spec_list = runner.invoke(app, ["spec", "list", "--path", str(eidos_dir), "--json"])
     assert res_spec_list.exit_code == 0
     spec_data = json.loads(res_spec_list.stdout)
-    assert spec_data["count"] == 4
-    assert {s["id"] for s in spec_data["specs"]} == {"CNT-API", "CLT-MOBILE", "CTR-OPENAPI", "DLT-2026-901"}
+    assert spec_data["count"] == 3
+    assert {s["id"] for s in spec_data["specs"]} == {"CNT-API", "CLT-MOBILE", "CTR-OPENAPI"}
 
     # 3. delta list --json
     res_delta_list = runner.invoke(app, ["delta", "list", "--path", str(eidos_dir), "--json"])
@@ -372,7 +362,7 @@ def test_cli_error_exit_codes_and_negative_json_contracts(tmp_path):
     runner.invoke(app, ["spec", "create", "domain", "DOM-REF", "-t", "Ref Domain", "--path", str(ref_ws)])
     runner.invoke(
         app,
-        ["spec", "create", "capability", "CAP-REF-001", "-t", "Ref Cap", "--domain", "DOM-REF", "--path", str(ref_ws)],
+        ["spec", "create", "capability", "CAP-REF-001", "-t", "Ref Cap", "--path", str(ref_ws)],
     )
     # Deleting DOM-REF without --force is blocked because CAP-REF-001 references it
     res_del_blocked = runner.invoke(app, ["spec", "delete", "DOM-REF", "--path", str(ref_ws)])

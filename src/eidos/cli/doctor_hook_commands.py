@@ -14,17 +14,11 @@ from eidos.cli._shared import PANEL_SETUP, console
 from eidos.core.index.graph_index import get_architectural_index
 from eidos.core.spec.validator import SpecValidator
 from eidos.core.workspace.project import find_repo_root
-from eidos.plugin.hooks import execute_drift_hook, execute_lint_hook
+from eidos.cli._shared import PANEL_PLUGINS
+from eidos.plugin.hooks import execute_hook
 from eidos.plugin.version import (
     check_plugin_version_status,
 )
-
-hook_app = typer.Typer(
-    name="hook",
-    help="Execute native Eidos agent plugin lifecycle hooks (lint, drift).",
-    add_completion=False,
-)
-
 
 def doctor_cmd(
     path: Path | None = typer.Option(
@@ -187,15 +181,8 @@ def doctor_cmd(
         raise typer.Exit(code=1)
 
 
-@hook_app.command("lint")
-def hook_lint_cmd(
+def hook_cmd(
     ctx: typer.Context,
-    event: str = typer.Option(
-        "Stop",
-        "--event",
-        "-e",
-        help="Hook lifecycle event (PreToolUse, PostToolUse, Stop).",
-    ),
     path: Path | None = typer.Option(
         None,
         "--path",
@@ -203,40 +190,15 @@ def hook_lint_cmd(
         help="Repository root or eidos directory path.",
     ),
 ):
-    """Execute native Eidos specification lint & ADR guard lifecycle hook."""
-    eff_event = (
-        None
-        if getattr(ctx.get_parameter_source("event"), "name", None) == "DEFAULT"
-        else event
-    )
-    code = execute_lint_hook(event=eff_event, repo_root=path)
-    if code != 0:
-        raise typer.Exit(code=code)
-
-
-@hook_app.command("drift")
-def hook_drift_cmd(
-    ctx: typer.Context,
-    event: str = typer.Option(
-        "Stop",
-        "--event",
-        "-e",
-        help="Hook lifecycle event (Stop).",
-    ),
-    path: Path | None = typer.Option(
-        None,
-        "--path",
-        "-p",
-        help="Repository root or eidos directory path.",
-    ),
-):
-    """Execute native Eidos spec-to-code drift lifecycle hook with Block-Once Stop gate."""
-    eff_event = (
-        None
-        if getattr(ctx.get_parameter_source("event"), "name", None) == "DEFAULT"
-        else event
-    )
-    code = execute_drift_hook(event=eff_event, repo_root=path)
+    """Execute native Eidos stateless Stop lifecycle hook."""
+    extra = [a.lower() for a in getattr(ctx, "args", [])]
+    if any(ev in extra for ev in ("pretooluse", "pre_tool_use", "pre_tool")):
+        typer.echo("{\"decision\": \"allow\"}")
+        return
+    if any(ev in extra for ev in ("posttooluse", "post_tool_use", "post_tool")):
+        typer.echo("{}")
+        return
+    code = execute_hook(repo_root=path)
     if code != 0:
         raise typer.Exit(code=code)
 
@@ -244,3 +206,8 @@ def hook_drift_cmd(
 def register(app: typer.Typer) -> None:
     """Attach the root-level commands owned by this module to the root Typer app."""
     app.command("doctor", rich_help_panel=PANEL_SETUP)(doctor_cmd)
+    app.command(
+        "hook",
+        rich_help_panel=PANEL_PLUGINS,
+        context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+    )(hook_cmd)

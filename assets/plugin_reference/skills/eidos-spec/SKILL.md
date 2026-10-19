@@ -15,18 +15,19 @@ This skill provides the authoring rules, CLI scaffolding commands, and v1 YAML f
 Always scaffold new specifications with `eidos spec create` to guarantee valid v1 YAML frontmatter and canonical paths:
 
 ```bash
-# List and inspect specifications (includes inline CMP-* components)
+# List and inspect living specifications (includes inline CMP-* components; excludes SpecDeltas)
 eidos spec list [--type <type>] [--status <status>] [--json]
 eidos spec show <ID_OR_PATH>
 
-# Scaffold by type: domain | capability | persona | policy | container | component |
-#                   contract | exploration | delta | design-system | ui-component | client | screen | flow
+# Scaffold minimal draft blueprints across the 15 living specification types:
+#   system | architecture | domain | capability | persona | policy | exploration |
+#   container | component | contract | design-system | ui-component | client | screen | flow
 eidos spec create domain DOM-BILLING --title "Subscription & Usage Billing"
-eidos spec create capability CAP-BILL-001 --title "Metered Usage Aggregation" --domain DOM-BILLING
-eidos spec create container CNT-BILLING-WORKER --title "Billing Aggregation Worker" --source-path src/billing
-eidos spec create component CMP-USAGE-LEDGER --title "Double-Entry Usage Ledger" --container CNT-BILLING-WORKER --source-path src/billing/ledger.py
-eidos spec create contract CTR-BILLING-API --title "Billing REST API" --container CNT-BILLING-WORKER --protocol openapi --spec-file src/billing/openapi.yaml
-eidos spec create policy POL-005 --title "Idempotent Webhook Processing" --category architectural --rule "Deduplicate webhooks by event ID."
+eidos spec create capability CAP-BILL-001 --title "Metered Usage Aggregation"
+eidos spec create container CNT-BILLING-WORKER --title "Billing Aggregation Worker"
+eidos spec create component CMP-USAGE-LEDGER --title "Double-Entry Usage Ledger"
+eidos spec create contract CTR-BILLING-API --title "Billing REST API"
+eidos spec create policy POL-005 --title "Idempotent Webhook Processing"
 
 # Promote an inline C4 Level 3 component to eidos/architecture/components/<slug>.adoc, or inline it back
 eidos spec component promote CMP-USAGE-LEDGER
