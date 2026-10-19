@@ -256,6 +256,7 @@ def test_portal_http_server():
         pytest.fail("Expected 404")
     except urllib.error.HTTPError as exc:
         assert exc.code == 404
+        exc.close()
 
 
 def test_cli_build_site_command(tmp_path: Path):
@@ -867,6 +868,7 @@ def test_portal_zero_node_subprocess_http_endpoints_mermaid_and_build_assets(tmp
             with pytest.raises(urllib.error.HTTPError) as exc_info:
                 urllib.request.urlopen(f"http://127.0.0.1:{port}/../../etc/passwd")
             assert exc_info.value.code == 404
+            exc_info.value.close()
         finally:
             httpd.shutdown()
             httpd.server_close()
@@ -1421,6 +1423,7 @@ contracts:
             raise AssertionError("Expected 403 Forbidden on static_dir traversal")
         except urllib.error.HTTPError as err:
             assert err.code == 403
+            err.close()
 
         # POST /api/validate with empty body or matching eidos dir -> 200 OK
         req_ok = urllib.request.Request(
@@ -1444,6 +1447,7 @@ contracts:
             raise AssertionError("Expected 403 Forbidden on mismatched POST /api/validate dir")
         except urllib.error.HTTPError as err:
             assert err.code == 403
+            err.close()
     finally:
         EidosPortalHandler.static_dir = None
         httpd.shutdown()
@@ -1463,6 +1467,7 @@ contracts:
 
 def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     """Comprehensive regression test covering Deep Audit Group D (D1-D7)."""
+    import contextlib
     import http.client
     import json
     import sqlite3
@@ -1613,7 +1618,7 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     cache_dir = eidos_dir / ".cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
     db_path = cache_dir / "index.db"
-    with sqlite3.connect(str(db_path)) as conn:
+    with contextlib.closing(sqlite3.connect(str(db_path))) as conn, conn:
         conn.execute("CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT)")
     stub_doc = SpecDocument(
         file_path=cnt_a,

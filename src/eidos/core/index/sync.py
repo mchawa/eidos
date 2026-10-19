@@ -651,7 +651,8 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                 mtime_refreshes,
             )
 
-    deleted = [Path(rel) for rel in db_files.keys() - disk_files]
+    to_update.sort()
+    deleted = sorted(Path(rel) for rel in db_files.keys() - disk_files)
     is_dirty = len(to_update) > 0 or len(deleted) > 0
     return is_dirty, to_update, deleted
 
@@ -1241,6 +1242,14 @@ def sync_index(
                         (doc_id, d_rel),
                     )
                     conn.execute("DELETE FROM code_symbols WHERE entity_id = ?", (doc_id,))
+                    surviving_rows = conn.execute(
+                        "SELECT rel_path FROM indexed_files WHERE doc_id = ? AND rel_path != ? ORDER BY rel_path;",
+                        (doc_id, d_rel),
+                    ).fetchall()
+                    for (surv_rel,) in surviving_rows:
+                        surv_path = index.root / surv_rel
+                        if surv_path.is_file() and surv_path not in to_update:
+                            to_update.append(surv_path)
                 else:
                     conn.execute(
                         "DELETE FROM specs_fts WHERE entity_id IN (SELECT id FROM entities WHERE file_path = ?);",

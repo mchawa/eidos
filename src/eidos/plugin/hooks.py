@@ -430,7 +430,11 @@ def _save_stop_validation_snapshot(eidos_dir: Path, report: Any) -> None:
             "broken_references": list(report.broken_references),
         }
     )
-    with contextlib.suppress(sqlite3.Error, OSError), sqlite3.connect(str(db_path)) as conn:
+    with (
+        contextlib.suppress(sqlite3.Error, OSError),
+        contextlib.closing(sqlite3.connect(str(db_path))) as conn,
+        conn,
+    ):
         conn.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('last_stop_validation', ?)",
             (payload,),
@@ -449,7 +453,7 @@ def _load_stop_validation_snapshot(eidos_dir: Path, max_age_seconds: float = 5.0
         return None
     with (
         contextlib.suppress(sqlite3.Error, OSError, json.JSONDecodeError, ValueError, KeyError, TypeError),
-        sqlite3.connect(str(db_path)) as conn,
+        contextlib.closing(sqlite3.connect(str(db_path))) as conn,
     ):
         row = conn.execute(
             "SELECT value FROM metadata WHERE key = 'last_stop_validation'"

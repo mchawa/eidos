@@ -155,8 +155,10 @@ def test_a3_recorded_baseline_not_overwritten_by_git_head_when_unmodified(tmp_pa
 
     # Run verify_delta_mutations; delta_baselines must NOT have been overwritten with HEAD's sha
     verify_delta_mutations(eidos_dir, dlt_path.name)
+    import contextlib
+
     db_path = eidos_dir / ".cache" / "index.db"
-    with open_cache_connection(db_path) as conn:
+    with contextlib.closing(open_cache_connection(db_path)) as conn:
         row = conn.execute(
             "SELECT baseline_sha256 FROM delta_baselines WHERE delta_id = ? AND target_id = ?",
             ("DLT-2026-002", "CNT-API"),

@@ -1733,11 +1733,13 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     assert _find_inline_component_dict("CMP-PROMOTED", cnt_doc.frontmatter) is None
     assert _find_inline_component_dict("CMP-INLINE-C4", cnt_doc.frontmatter) is not None
 
+    import contextlib
+
     from eidos.core.index.storage import open_cache_connection
 
     _snapshot_delta_baselines(eidos_dir, "DLT-2026-900", overwrite=True)
     expected_sha = hashlib.sha256(cmp_promoted.read_bytes()).hexdigest()
-    with open_cache_connection(eidos_dir / ".cache" / "index.db") as conn:
+    with contextlib.closing(open_cache_connection(eidos_dir / ".cache" / "index.db")) as conn:
         row = conn.execute(
             "SELECT baseline_sha256 FROM delta_baselines WHERE delta_id = ? AND target_id = ?",
             ("DLT-2026-900", "CMP-PROMOTED"),
