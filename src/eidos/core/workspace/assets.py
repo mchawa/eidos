@@ -3,38 +3,57 @@
 from pathlib import Path
 
 
-def get_assets_root() -> Path:
-    """Locate the root assets directory across local repo checkouts and installed wheels."""
+def _iter_assets_roots() -> list[Path]:
+    """Return ordered candidate assets directories across installed wheels, repo checkouts, and CWD."""
+    candidates: list[Path] = []
+    seen: set[Path] = set()
+
+    def _add(p: Path) -> None:
+        if p.is_dir() and p not in seen:
+            seen.add(p)
+            candidates.append(p)
+
     # 1. Check embedded in package directory (e.g. site-packages/eidos/assets or local editable)
-    pkg_assets = Path(__file__).resolve().parents[2] / "assets"
-    if pkg_assets.is_dir():
-        return pkg_assets
+    _add(Path(__file__).resolve().parents[2] / "assets")
 
     # 2. Check repository root by ascending from this source file
     cur = Path(__file__).resolve().parent
     for _ in range(6):
-        candidate = cur / "assets"
-        if candidate.is_dir():
-            return candidate
+        _add(cur / "assets")
         cur = cur.parent
 
     # 3. Check current working directory
-    cwd_candidate = Path.cwd() / "assets"
-    if cwd_candidate.is_dir():
-        return cwd_candidate
+    _add(Path.cwd() / "assets")
+
+    return candidates
+
+
+def get_assets_root() -> Path:
+    """Locate the root assets directory across local repo checkouts and installed wheels."""
+    candidates = _iter_assets_roots()
+    for candidate in candidates:
+        if (
+            (candidate / "schemas").is_dir()
+            or (candidate / "plugin_reference").is_dir()
+            or (candidate / "portal").is_dir()
+        ):
+            return candidate
+    if candidates:
+        return candidates[0]
 
     raise FileNotFoundError("Could not locate Eidos assets directory in package or repository.")
 
 
 def get_assets_path(subpath: str = "") -> Path:
     """Resolve a specific subpath within the Eidos assets directory."""
-    root = get_assets_root()
     if not subpath:
-        return root
-    target = root / subpath
-    if not target.exists():
-        raise FileNotFoundError(f"Asset path '{subpath}' does not exist inside {root}")
-    return target
+        return get_assets_root()
+    for candidate in _iter_assets_roots():
+        target = candidate / subpath
+        if target.exists():
+            return target
+    root = get_assets_root()
+    raise FileNotFoundError(f"Asset path '{subpath}' does not exist inside {root}")
 
 
 def get_schemas_dir() -> Path:

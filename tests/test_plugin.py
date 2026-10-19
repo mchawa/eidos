@@ -1922,3 +1922,67 @@ def test_group_d1_d2_d3_regressions(tmp_path, monkeypatch):  # eidos:fixture
 
     monkeypatch.chdir(uninit_dir)
     assert find_workspace_root({"cwd": str(repo_ws)}) == repo_ws.resolve()
+
+
+def test_normalize_to_semver_and_bundled_version_sync(monkeypatch):
+    """Verify normalize_to_semver handles PEP 440 / v-prefixed strings and get_bundled_plugin_version stays in sync."""
+    import eidos
+    import eidos.core.workspace.assets as ws_assets
+    from eidos.plugin.version import normalize_to_semver
+
+    assert normalize_to_semver("0.12.0") == "0.12.0"
+    assert normalize_to_semver("v0.12.0") == "0.12.0"
+    assert normalize_to_semver("V1.2.3-rc.1") == "1.2.3-rc.1"
+    assert normalize_to_semver("0.12.1.dev13") == "0.12.1"
+    assert normalize_to_semver("0.12.0.post1") == "0.12.0"
+    assert normalize_to_semver("invalid") is None
+    assert normalize_to_semver(None) is None  # type: ignore[arg-type]
+
+    # When eidos.__version__ is a newer clean SemVer release than plugin.json, get_bundled_plugin_version upgrades to it
+    monkeypatch.setattr(eidos, "__version__", "99.1.0")
+    assert get_bundled_plugin_version() == "99.1.0"
+
+    # When plugin.json lookup fails and eidos.__version__ is PEP 440 .devN, fallback normalizes instead of returning 0.2.0
+    def _fail_dir():
+        raise OSError("missing assets")
+
+    monkeypatch.setattr(ws_assets, "get_plugin_reference_dir", _fail_dir)
+    monkeypatch.setattr(eidos, "__version__", "0.12.1.dev7")
+    assert get_bundled_plugin_version() == "0.12.1"
+
+    monkeypatch.setattr(eidos, "__version__", "not-a-version")
+    assert get_bundled_plugin_version() == "0.2.0"
+
+
+def test_sdist_and_multi_root_plugin_reference_resolution(tmp_path, monkeypatch):
+    """Verify pyproject.toml sdist configuration preserves assets/plugin_reference and get_assets_path probes all candidate roots."""
+    import tomllib
+
+    import eidos.core.workspace.assets as ws_assets
+
+    repo_root = Path(__file__).resolve().parent.parent
+    pyproject_data = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    sdist_cfg = pyproject_data["tool"]["hatch"]["build"]["targets"]["sdist"]
+    assert sdist_cfg.get("skip-excluded-dirs") is True
+    assert "/.agents" in sdist_cfg.get("exclude", [])
+    assert "/plugins" in sdist_cfg.get("exclude", [])
+    assert sdist_cfg.get("force-include", {}).get("assets") == "assets"
+
+    # Verify get_assets_root and get_assets_path skip unrelated empty ancestor 'assets/' dirs when a valid root follows
+    fake_pkg = tmp_path / "decoy_ws" / "sub" / "pkg" / "core" / "workspace" / "assets.py"
+    fake_pkg.parent.mkdir(parents=True, exist_ok=True)
+    # Create an unrelated empty assets/ directory at parents[3] ("decoy_ws/sub/assets")
+    (tmp_path / "decoy_ws" / "sub" / "assets").mkdir(parents=True, exist_ok=True)
+    # Create a valid plugin_reference in CWD assets/
+    valid_cwd = tmp_path / "valid_cwd"
+    valid_plugin_ref = valid_cwd / "assets" / "plugin_reference"
+    valid_plugin_ref.mkdir(parents=True, exist_ok=True)
+    (valid_plugin_ref / "plugin.json").write_text('{"name": "eidos", "version": "0.12.0"}', encoding="utf-8")
+
+    monkeypatch.setattr(ws_assets, "__file__", str(fake_pkg))
+    monkeypatch.chdir(valid_cwd)
+    assert ws_assets.get_assets_root() == (valid_cwd / "assets").resolve()
+    assert ws_assets.get_plugin_reference_dir() == valid_plugin_ref.resolve()
+    assert locate_plugin_bundle() == valid_plugin_ref.resolve()
+
+

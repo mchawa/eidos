@@ -41,7 +41,7 @@ components:
     source_path: "src/eidos/core/lifecycle/delta_engine.py"
   - id: CMP-ASSET-LOCATOR
     title: "AssetLocator"
-    responsibility: "Locates externalized specification schemas (`get_schemas_dir`), AsciiDoc prose templates (`load_prose_template` loading `<name>.template.adoc` beside each `.schema.yaml` under `assets/schemas/v1/`), and canonical plugin reference assets across local checkouts and wheels."
+    responsibility: "Locates externalized specification schemas (`get_schemas_dir`), AsciiDoc prose templates (`get_spec_template_path` and `render_spec_template` loading `<name>.template.adoc` beside each `.schema.yaml` under `assets/schemas/v1/`), and canonical plugin reference assets (`get_plugin_reference_dir`) across ordered candidate asset roots (`_iter_assets_roots` spanning installed wheel `eidos/assets`, repository checkouts, and CWD while preferring verified Eidos asset roots and probing all candidate roots in `get_assets_path`)."
     source_path: "src/eidos/core/workspace/assets.py"
   - id: CMP-PROJECT-RESOLVER
     title: "ProjectResolver"

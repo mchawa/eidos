@@ -60,6 +60,16 @@ version-file = "src/eidos/_version.py"
 [tool.hatch.build.hooks.custom]
 path = "src/eidos/portal/frontend/scripts/hatch_build.py"
 
+[tool.hatch.build.targets.sdist]
+skip-excluded-dirs = true
+exclude = [
+    "/.agents",
+    "/plugins",
+]
+
+[tool.hatch.build.targets.sdist.force-include]
+"assets" = "assets"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/eidos"]
 

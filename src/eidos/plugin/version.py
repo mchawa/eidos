@@ -88,8 +88,29 @@ def compare_semver(v1: str, v2: str) -> int:
     return 0
 
 
+_PEP440_BASE_SEMVER_PATTERN = re.compile(r"^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)")
+
+
+def normalize_to_semver(version: str) -> str | None:
+    """Normalize a SemVer 2.0.0 or PEP 440 version string (e.g. '0.12.1.dev3', 'v0.12.0') to valid SemVer 2.0.0."""
+    if not isinstance(version, str):
+        return None
+    cleaned = version.strip()
+    if is_valid_semver(cleaned):
+        return cleaned
+    if cleaned.startswith(("v", "V")) and is_valid_semver(cleaned[1:]):
+        return cleaned[1:]
+    m = _PEP440_BASE_SEMVER_PATTERN.match(cleaned)
+    if m:
+        return f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
+    return None
+
+
 def get_bundled_plugin_version() -> str:
     """Return the bundled plugin version (synchronized with eidos engine package version)."""
+    pkg_raw = getattr(eidos, "__version__", "0.2.0")
+    pkg_exact_semver = pkg_raw.strip() if isinstance(pkg_raw, str) and is_valid_semver(pkg_raw) else None
+
     # 1. Check canonical plugin bundle (via locate_plugin_bundle)
     try:
         from eidos.core.workspace.assets import get_plugin_reference_dir
@@ -101,14 +122,16 @@ def get_bundled_plugin_version() -> str:
                 data = json.load(f)
                 v = data.get("version")
                 if v and is_valid_semver(v):
+                    if pkg_exact_semver and compare_semver(pkg_exact_semver, v) > 0:
+                        return pkg_exact_semver
                     return v
     except (OSError, json.JSONDecodeError, ValueError):
         pass
 
-    # 2. Fall back to eidos package version
-    pkg_ver = getattr(eidos, "__version__", "0.2.0")
-    if is_valid_semver(pkg_ver):
-        return pkg_ver
+    # 2. Fall back to normalized eidos package version (supports PEP 440 .devN/.postN)
+    normalized_pkg = normalize_to_semver(pkg_raw)
+    if normalized_pkg:
+        return normalized_pkg
     return "0.2.0"
 
 
