@@ -27,23 +27,7 @@ properties:
     type: string
     description: "Short, descriptive summary of the proposed product or technical mutation."
   status:
-    type: string
-    enum:
-      - draft
-      - proposed
-      - planned
-      - in_review
-      - approved
-      - applied
-      - rejected
-    description: "Lifecycle status: draft, proposed, planned, in_review, approved, applied, or rejected."
-    examples:
-      - "proposed"
-      - "planned"
-      - "in_review"
-      - "approved"
-      - "applied"
-      - "rejected"
+    $ref: "#/$defs/delta_status"
   intent:
     type: object
     description: "The strategic motivation and nature of the proposed change."
@@ -177,7 +161,7 @@ properties:
         expect:
           type: object
           additionalProperties: false
-          description: "Optional declarative post-condition assertions (structured body and/or frontmatter blocks) expected on the target specification after applying an add_*, modify_*, extend_*, or patch_* mutation."
+          description: "Optional declarative post-condition assertions (structured body and/or frontmatter blocks) expected on the target specification after applying an add, modify, remove, or deprecate mutation."
           properties:
             body:
               type: object
@@ -207,12 +191,7 @@ properties:
                   type: string
                   description: "Expected component or container responsibility statement (or required substring)."
                 source_path:
-                  oneOf:
-                    - type: string
-                    - type: array
-                      items:
-                        type: string
-                  description: "Expected component source_path (string or subset of paths)."
+                  $ref: "#/$defs/code_paths"
                 rule:
                   type: string
                   description: "Expected policy or invariant rule statement (or required substring)."
@@ -221,24 +200,7 @@ properties:
                   pattern: "^(.+::.+|N/A|TBD)$"
                   description: "Expected invariant test binding (file::func, N/A, or TBD)."
                 status:
-                  type: string
-                  enum:
-                    - draft
-                    - proposed
-                    - planned
-                    - in_review
-                    - approved
-                    - applied
-                    - rejected
-                    - in_progress
-                    - adopted
-                    - discarded
-                    - active
-                    - deprecated
-                    - sunset
-                    - retired
-                    - removed
-                  description: "Expected specification lifecycle status."
+                  $ref: "#/$defs/lifecycle_status"
                 version:
                   type: string
                   pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
@@ -246,6 +208,13 @@ properties:
                 category:
                   type: string
                   description: "Expected policy category."
+                severity:
+                  type: string
+                  enum:
+                    - "blocking"
+                    - "warning"
+                    - "advisory"
+                  description: "Expected policy enforcement severity."
                 custom:
                   type: object
                   additionalProperties: true
@@ -262,45 +231,50 @@ properties:
           type: string
       allowed_reasons:
         type: array
+        description: "Explicit path or file exemptions where references to removed/deprecated entities are permitted."
         items:
           type: object
           additionalProperties: false
           required:
             - path
+            - reason
           properties:
             path:
               type: string
-              description: "Relative path or substring matching exempt files."
-            pattern:
-              type: string
-              description: "Optional regex pattern matching exempt lines within the file."
+              description: "Relative file path or directory prefix where the reference is permitted."
             reason:
               type: string
-              description: "Justification for why this reference is exempt from deletion audit failures."
-        description: "Explicit path/pattern exemptions for legitimate historical or compatibility references."
+              description: "Audit justification explaining why the reference is intentionally retained."
+  graduated_from:
+    type: string
+    pattern: "^(EXP-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Optional ID of the exploration document (EXP-*) that proved the hypothesis behind this delta."
+    x-eidos-ref:
+      target_types:
+        - product/exploration
+      prefixes:
+        - EXP-
+      entity_label: exploration
   vcs:
     type: object
-    description: "Traceability link to human issue tracker and pull request."
+    description: "Git version control binding and verification context."
     additionalProperties: false
     properties:
-      issue:
-        type: string
-        description: "External issue identifier (e.g. '#42', 'PROJ-123')."
-      issue_url:
-        type: string
-        format: uri
-        description: "Direct URL to external issue."
-      pull_request:
-        type: string
-        description: "External pull request / merge request identifier (e.g. '#105')."
-      pull_request_url:
-        type: string
-        format: uri
-        description: "Direct URL to pull request."
       branch:
         type: string
-        description: "Git branch name."
+        description: "Git branch implementing this delta."
       base_commit:
         type: string
-        description: "Optional base Git commit SHA recorded when the SpecDelta was created."
-
+        pattern: "^[0-9a-fA-F]{7,40}$"
+        description: "Git commit SHA snapshot at the time this delta was created, anchoring baseline diff checks."
+      pr_url:
+        type: string
+        description: "Pull Request or Merge Request URL."
+      applied_at_commit:
+        type: string
+        description: "Git commit SHA when this delta was merged and applied to the baseline."
+  decisions:
+    type: array
+    description: "In-place architectural decisions, trade-offs, and rejected alternatives established by this SpecDelta (POL-001)."
+    items:
+      $ref: "#/$defs/decision"

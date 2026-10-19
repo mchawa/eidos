@@ -26,61 +26,20 @@ properties:
     type: string
     description: "Display title of the design system (e.g. 'Core Product Design System', 'Acme Enterprise Theme')."
   status:
-    type: string
-    enum:
-      - draft
-      - proposed
-      - planned
-      - active
-      - deprecated
-      - retired
-    description: "Lifecycle status: draft, proposed, planned, active, deprecated, or retired."
-    examples:
-      - "active"
-      - "proposed"
-      - "planned"
-      - "draft"
-      - "deprecated"
-  client_id:
-    type: string
-    pattern: "^[a-z0-9_-]+$"
-    description: "Optional client, brand, or tenant identifier for multi-client systems (e.g. 'acme', 'globex')."
+    $ref: "#/$defs/lifecycle_status"
   brand_name:
     type: string
     description: "Human-readable client or brand name (e.g. 'Acme Corporation')."
-  extends_system:
+  extends:
+    $ref: "#/$defs/design_system_ref"
+  override_mode:
     type: string
-    pattern: "^(DS-[A-Z0-9_-]+|.*\\.adoc)$"
-    description: "Optional ID or relative path of the parent design system."
-    x-eidos-ref:
-      target_types:
-        - design/system
-      prefixes:
-        - DS-
-      entity_label: entity
-  inheritance:
-    type: object
-    description: "Inheritance topology: allows client design systems to extend a base system and override tokens or components."
-    additionalProperties: false
-    properties:
-      extends:
-        type: string
-        pattern: "^(DS-[A-Z0-9_-]+|.*\\.adoc)$"
-        description: "ID or relative path of the parent design system (e.g. 'DS-CORE' or 'eidos/design/systems/core/system.adoc')."
-        x-eidos-ref:
-          target_types:
-            - design/system
-          prefixes:
-            - DS-
-          entity_label: entity
-      override_mode:
-        type: string
-        pattern: "^[a-z0-9_-]+$"
-        description: "Override strategy: 'token_only' (only token values differ), 'token_and_component' (custom components allowed), or 'standalone'."
-        examples:
-          - "token_only"
-          - "token_and_component"
-          - "standalone"
+    pattern: "^[a-z0-9_-]+$"
+    description: "Optional override strategy when extending a base design system: 'token_only', 'token_and_component', or 'standalone'."
+    examples:
+      - "token_only"
+      - "token_and_component"
+      - "standalone"
   tokens:
     type: object
     description: "W3C Design Tokens Community Group (DTCG) standard tokens manifest and configuration."
@@ -113,13 +72,9 @@ properties:
         items:
           type: string
   external_references:
-    type: object
-    description: "Upstream design tools, team libraries, or documentation portals."
-    additionalProperties: false
-    properties:
-      figma_team_library:
-        type: string
-        description: "URL to Figma team library or file."
-      storybook_url:
-        type: string
-        description: "URL to deployed Storybook or component documentation."
+    $ref: "#/$defs/external_design_references"
+  decisions:
+    type: array
+    description: "In-place design system decisions recorded on this specification (POL-001)."
+    items:
+      $ref: "#/$defs/decision"

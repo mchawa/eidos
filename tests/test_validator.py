@@ -37,7 +37,7 @@ def test_bundled_schemas_loaded(validator):
 
 
 def test_validate_eidos_specifications(validator):
-    """Verify INV-SPEC-VALIDATION, INV-SPEC-GRAPH-INTEGRITY, INV-W3C-DTCG-COMPLIANCE, and INV-CLIENT-DESIGN-BINDING: all living specifications pass schema validation and entity ID graph integrity."""
+    """Verify INV-SPEC-VALIDATION, INV-SPEC-GRAPH-INTEGRITY, INV-W3C-DTCG-COMPLIANCE, INV-CLIENT-DESIGN-BINDING, INV-POL-001-GIT-SOURCE-OF-TRUTH, and INV-POL-002-INVARIANT-TEST-ENFORCEMENT: all living specifications pass schema validation and entity ID graph integrity."""
     eidos_dir = Path("eidos")
     assert eidos_dir.exists(), "eidos/ specification directory does not exist"
 
@@ -73,10 +73,10 @@ def test_delta_affects_validation_broken_references(tmp_path, validator):
         "---\n"
         "type: tech/component\n"
         "id: CMP-TEST-CORE\n"
-        "name: Core\n"
-        "container_type: library\n"
-        "runtime: python\n"
-        "package_path: src/core\n"
+        "title: Core\n"
+        "container: CNT-CORE\n"
+        "responsibility: Core\n"
+        "source_path: src/core\n"
         "---\n"
         "= Core\n"
     )
@@ -112,9 +112,8 @@ def test_delta_affects_validation_broken_references(tmp_path, validator):
     assert "CMP-NONEXISTENT" in broken_str
     assert "CTR-NONEXISTENT" in broken_str
     assert "POL-NONEXISTENT" in broken_str
-    assert "CMP-TEST-CORE" not in broken_str
+    assert "target 'CMP-TEST-CORE'" not in broken_str
     assert "CMP-NEW-ADDED" not in broken_str
-
 
 
 def test_capability_semantic_references_broken(tmp_path, validator):
@@ -130,10 +129,10 @@ def test_capability_semantic_references_broken(tmp_path, validator):
         "---\n"
         "type: tech/component\n"
         "id: CMP-TEST-CORE\n"
-        "name: Core\n"
-        "container_type: library\n"
-        "runtime: python\n"
-        "package_path: src/core\n"
+        "title: Core\n"
+        "container: CNT-CORE\n"
+        "responsibility: Core\n"
+        "source_path: src/core\n"
         "---\n"
         "= Core\n"
     )
@@ -154,14 +153,9 @@ def test_capability_semantic_references_broken(tmp_path, validator):
         "  components:\n"
         "    - CMP-TEST-CORE\n"
         "    - CMP-GHOST\n"
-        "    - packages/local-pkg\n"
         "  contracts:\n"
-        "    interfaces:\n"
-        "      - CTR-GHOST-IFACE\n"
-        "    provides:\n"
-        "      - CTR-GHOST-PROV\n"
-        "    requires:\n"
-        "      - CTR-GHOST-REQ\n"
+        "    - CTR-GHOST-1\n"
+        "    - CTR-GHOST-2\n"
         "---\n"
         "= Cap\n"
     )
@@ -172,15 +166,13 @@ def test_capability_semantic_references_broken(tmp_path, validator):
     assert "DOM-NONEXISTENT" in broken_str
     assert "CNT-GHOST" in broken_str
     assert "CMP-GHOST" in broken_str
-    assert "CTR-GHOST-IFACE" in broken_str
-    assert "CTR-GHOST-PROV" in broken_str
-    assert "CTR-GHOST-REQ" in broken_str
-    assert "CMP-TEST-CORE" not in broken_str
-    assert "packages/local-pkg" not in broken_str
+    assert "CTR-GHOST-1" in broken_str
+    assert "CTR-GHOST-2" in broken_str
+    assert "component 'CMP-TEST-CORE'" not in broken_str
 
 
 def test_component_semantic_references_broken(tmp_path, validator):
-    """Verify Initiative A: Container and Component dependencies, interfaces, and contracts are checked via x-eidos-ref."""
+    """Verify Initiative A: Container and Component interfaces and contracts are checked via x-eidos-ref."""
     eidos_dir = tmp_path / "eidos"
     cnts_dir = eidos_dir / "architecture" / "containers"
     comps_dir = eidos_dir / "architecture" / "components"
@@ -192,18 +184,15 @@ def test_component_semantic_references_broken(tmp_path, validator):
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-TEST-CLI\n"
-        "name: CLI\n"
+        "title: CLI\n"
         "container_type: cli_app\n"
         "runtime: python\n"
-        "package_path: src/cli\n"
-        "domain_binding: DOM-NONEXISTENT\n"
-        "dependencies:\n"
-        "  internal_components:\n"
-        "    - CMP-MISSING-DEP\n"
+        "source_path: src/cli\n"
+        "domain: DOM-NONEXISTENT\n"
         "contracts:\n"
         "  provides:\n"
         "    - CTR-MISSING-PROV\n"
-        "  requires:\n"
+        "  consumes:\n"
         "    - CTR-MISSING-REQ\n"
         "---\n"
         "= CLI\n"
@@ -214,7 +203,7 @@ def test_component_semantic_references_broken(tmp_path, validator):
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-TEST-PARSER\n"
-        "name: Parser\n"
+        "title: Parser\n"
         "container: CNT-MISSING-CONTAINER\n"
         "status: planned\n"
         "responsibility: Parse specs\n"
@@ -229,7 +218,6 @@ def test_component_semantic_references_broken(tmp_path, validator):
     assert not report.is_clean
     broken_str = "\n".join(report.broken_references)
     assert "DOM-NONEXISTENT" in broken_str
-    assert "CMP-MISSING-DEP" in broken_str
     assert "CTR-MISSING-PROV" in broken_str
     assert "CTR-MISSING-REQ" in broken_str
     assert "CNT-MISSING-CONTAINER" in broken_str
@@ -237,7 +225,7 @@ def test_component_semantic_references_broken(tmp_path, validator):
 
 
 def test_contract_and_domain_semantic_references(tmp_path, validator):
-    """Verify Initiative A: Contract owning_component and Domain technical_mapping are validated."""
+    """Verify Initiative A: Contract container and Domain decisions.graduated_from are validated."""
     eidos_dir = tmp_path / "eidos"
     contracts_dir = eidos_dir / "architecture" / "contracts"
     domains_dir = eidos_dir / "domains" / "sub"
@@ -246,33 +234,34 @@ def test_contract_and_domain_semantic_references(tmp_path, validator):
     domains_dir.mkdir(parents=True)
     explorations_dir.mkdir(parents=True)
 
-    # 1. Contract with non-existent owning component
+    # 1. Contract with non-existent owning container
     (contracts_dir / "broken_contract.adoc").write_text(
         "---\n"
         "type: tech/contract\n"
         "id: CTR-TEST-API\n"
         "title: Test API\n"
         "protocol: openapi\n"
-        "owning_component: CMP-NONEXISTENT-OWNER\n"
+        "container: CNT-NONEXISTENT-OWNER\n"
         "specification_file: contracts/api.yaml\n"
         "---\n"
         "= Contract\n"
     )
 
-    # 2. Domain with non-existent dependencies and components
+    # 2. Domain with non-existent exploration in decisions.graduated_from
     (domains_dir / "domain.adoc").write_text(
         "---\n"
         "type: product/domain\n"
         "id: DOM-SUB-001\n"
-        "name: Sub Domain\n"
+        "title: Sub Domain\n"
         "classification: core\n"
         "boundaries:\n"
         "  responsibilities: ['testing']\n"
-        "technical_mapping:\n"
-        "  dependencies:\n"
-        "    - DOM-GHOST-DOMAIN\n"
-        "  components:\n"
-        "    - CMP-GHOST-COMP\n"
+        "decisions:\n"
+        "  - id: DEC-DOM-001\n"
+        "    title: Domain Decision\n"
+        "    decision: Split domain\n"
+        "    rationale: Clear boundary\n"
+        "    graduated_from: EXP-GHOST-SPIKE\n"
         "---\n"
         "= Domain\n"
     )
@@ -297,9 +286,8 @@ def test_contract_and_domain_semantic_references(tmp_path, validator):
     report = validator.validate_directory(eidos_dir)
     assert not report.is_clean
     broken_str = "\n".join(report.broken_references)
-    assert "CMP-NONEXISTENT-OWNER" in broken_str
-    assert "DOM-GHOST-DOMAIN" in broken_str
-    assert "CMP-GHOST-COMP" in broken_str
+    assert "CNT-NONEXISTENT-OWNER" in broken_str
+    assert "EXP-GHOST-SPIKE" in broken_str
     assert "DLT-NONEXISTENT-DELTA" in broken_str
 
 
@@ -313,10 +301,10 @@ def test_duplicate_entity_id_detection(tmp_path, validator):
         "---\n"
         "type: tech/component\n"
         "id: CMP-DUPLICATE-ID\n"
-        "name: First\n"
-        "container_type: service\n"
-        "runtime: python\n"
-        "package_path: src/first\n"
+        "title: First\n"
+        "container: CNT-A\n"
+        "responsibility: First\n"
+        "source_path: src/first\n"
         "---\n"
         "= First\n"
     )
@@ -325,10 +313,10 @@ def test_duplicate_entity_id_detection(tmp_path, validator):
         "---\n"
         "type: tech/component\n"
         "id: CMP-DUPLICATE-ID\n"
-        "name: Second\n"
-        "container_type: service\n"
-        "runtime: python\n"
-        "package_path: src/second\n"
+        "title: Second\n"
+        "container: CNT-A\n"
+        "responsibility: Second\n"
+        "source_path: src/second\n"
         "---\n"
         "= Second\n"
     )
@@ -340,7 +328,7 @@ def test_duplicate_entity_id_detection(tmp_path, validator):
 
 
 def test_client_and_flow_semantic_validation(tmp_path, validator):
-    """Verify Client (CLT-*) and Flow (FLOW-*) references to design systems, containers, and screens."""
+    """Verify Client (CLT-*) and Flow (FLOW-*) references to design systems, containers, and step clients."""
     eidos_dir = tmp_path / "eidos"
     clients_dir = eidos_dir / "design" / "clients" / "test-web"
     flows_dir = clients_dir / "flows"
@@ -362,7 +350,7 @@ def test_client_and_flow_semantic_validation(tmp_path, validator):
         "= Client\n"
     )
 
-    # Broken flow referencing non-existent client
+    # Broken flow referencing non-existent client in steps
     (flows_dir / "flow.adoc").write_text(
         "---\n"
         "type: design/flow\n"
@@ -370,10 +358,10 @@ def test_client_and_flow_semantic_validation(tmp_path, validator):
         "title: Test Flow\n"
         "status: active\n"
         "flow_type: client_internal\n"
-        "client: CLT-GHOST-CLIENT\n"
         "steps:\n"
         "  - step: 1\n"
         "    title: Step 1\n"
+        "    client: CLT-GHOST-CLIENT\n"
         "    action: Action\n"
         "---\n"
         "= Flow\n"
@@ -388,17 +376,26 @@ def test_client_and_flow_semantic_validation(tmp_path, validator):
 
 
 def test_strict_schemas_reject_unknown_fields_and_enforce_enums_and_patterns(tmp_path, validator):
-    """Verify A5: Strict schemas enforce additionalProperties: false, status enums (with planned), and ID regex patterns."""
-    # 1. Verify all 16 bundled schemas enforce additionalProperties: false on root
+    """Verify A5: Strict schemas enforce closed properties, status enums, and ID regex patterns."""
+    # 1. Verify all 16 bundled schemas enforce closed root properties (additionalProperties: false or unevaluatedProperties: false)
     for schema_key, schema_data in validator._schema_cache.items():
         if schema_key.endswith(".schema.yaml"):
-            assert schema_data.get("additionalProperties") is False, (
-                f"Schema {schema_key} missing root additionalProperties: false"
+            is_closed = (
+                schema_data.get("additionalProperties") is False
+                or schema_data.get("unevaluatedProperties") is False
+            )
+            assert is_closed, (
+                f"Schema {schema_key} missing root additionalProperties/unevaluatedProperties: false"
             )
             props = schema_data.get("properties", {})
             if "status" in props:
-                status_enum = props["status"].get("enum", [])
-                assert "planned" in status_enum, f"Schema {schema_key} status enum missing 'planned': {status_enum}"
+                status_prop = props["status"]
+                if "$ref" in status_prop:
+                    ref_name = status_prop["$ref"].split("/")[-1]
+                    status_enum = schema_data.get("$defs", {}).get(ref_name, {}).get("enum", [])
+                else:
+                    status_enum = status_prop.get("enum", [])
+                assert len(status_enum) >= 4, f"Schema {schema_key} status enum missing values: {status_enum}"
 
     # 2. Verify 'status: planned' is accepted on capability, component, design, exploration, and delta
     cap_file = tmp_path / "cap_planned.adoc"
@@ -485,7 +482,7 @@ def test_schema_driven_x_eidos_ref_annotations_present(validator):
 
 
 def test_validator_checks_package_path_specification_file_and_cli_contract_parity(tmp_path, validator):
-    """Verify SpecValidator detects missing package_path, missing specification_file, and undocumented CLI commands."""
+    """Verify SpecValidator detects missing source_path, missing specification_file, and undocumented CLI commands."""
     eidos_dir = tmp_path / "eidos"
     cnts_dir = eidos_dir / "architecture" / "containers"
     ctrs_dir = eidos_dir / "architecture" / "contracts"
@@ -506,10 +503,10 @@ def test_validator_checks_package_path_specification_file_and_cli_contract_parit
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-CLI\n"
-        "name: CLI Container\n"
+        "title: CLI Container\n"
         "container_type: cli\n"
         "runtime: Python 3.12\n"
-        "package_path:\n"
+        "source_path:\n"
         "  - src/cli\n"
         "  - src/missing_pkg\n"
         "components: []\n"
@@ -525,7 +522,7 @@ def test_validator_checks_package_path_specification_file_and_cli_contract_parit
         "id: CTR-CLI\n"
         "title: CLI Contract\n"
         "protocol: cli_args\n"
-        "owning_container: CNT-CLI\n"
+        "container: CNT-CLI\n"
         "specification_file: src/cli/main.py\n"
         "---\n"
         "= CLI Contract\n\n"
@@ -540,7 +537,7 @@ def test_validator_checks_package_path_specification_file_and_cli_contract_parit
         "id: CTR-MISSING\n"
         "title: Missing Contract File\n"
         "protocol: rest_openapi\n"
-        "owning_container: CNT-CLI\n"
+        "container: CNT-CLI\n"
         "specification_file: src/cli/nonexistent_openapi.yaml\n"
         "---\n"
         "= Missing Contract\n",
@@ -615,13 +612,13 @@ def test_decisions_schema_and_cross_reference_validation(tmp_path, validator):
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-TEST-CORE\n"
-        "name: Core\n"
+        "title: Core\n"
         "container_type: library\n"
         "runtime: Python\n"
-        "package_path: src/core\n"
+        "source_path: src/core\n"
         "components:\n"
         "  - id: CMP-INLINE-ONE\n"
-        "    name: InlineOne\n"
+        "    title: InlineOne\n"
         "    responsibility: Does inline work\n"
         "    source_path: src/core/one.py\n"
         "    decisions:\n"
@@ -645,7 +642,7 @@ def test_decisions_schema_and_cross_reference_validation(tmp_path, validator):
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-DEDICATED-ONE\n"
-        "name: DedicatedOne\n"
+        "title: DedicatedOne\n"
         "container: CNT-TEST-CORE\n"
         "status: planned\n"
         "responsibility: Dedicated component\n"
@@ -716,13 +713,17 @@ def test_spec_validation_cache_warm_hit_and_invalidation(tmp_path: Path, monkeyp
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-CACHE-CORE\n"
-        "name: Cache Core\n"
+        "title: Cache Core\n"
         "container_type: library\n"
         "runtime: Python\n"
-        "package_path: src/core\n"
+        "source_path: src/core\n"
         "components:\n"
-        "  - id: CMP-CACHE-WORKER\n"
-        "    ref: eidos/architecture/components/worker.adoc\n"
+        "  - id: CMP-CACHE-ENTRY\n"
+        "    title: Cache Entry\n"
+        "    responsibility: Entry point\n"
+        "    interfaces:\n"
+        "      consumes:\n"
+        "        - eidos/architecture/components/worker.adoc\n"
         "---\n"
         "= Core\n",
         encoding="utf-8",
@@ -732,7 +733,7 @@ def test_spec_validation_cache_warm_hit_and_invalidation(tmp_path: Path, monkeyp
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-CACHE-WORKER\n"
-        "name: CacheWorker\n"
+        "title: CacheWorker\n"
         "container: CNT-CACHE-CORE\n"
         "status: planned\n"
         "responsibility: Executes cached validation work\n"
@@ -799,7 +800,7 @@ def test_spec_validation_cache_warm_hit_and_invalidation(tmp_path: Path, monkeyp
 def test_strict_container_vs_component_target_separation(tmp_path: Path, validator: SpecValidator) -> None:
     """DLT-2026-042 (INV-SPEC-VALIDATION & INV-SPEC-GRAPH-INTEGRITY): Verify strict separation between
     C4 Level 2 Container (CNT-*, tech/container) and Level 3 Component (CMP-*, tech/component) targets
-    across capability, delta, container, domain, and client schemas and runtime x-eidos-ref checks."""
+    across capability, delta, container, and client schemas and runtime x-eidos-ref checks."""
     from eidos.core.spec.parser import parse_spec_file
 
     eidos_dir = tmp_path / "eidos"
@@ -817,15 +818,17 @@ def test_strict_container_vs_component_target_separation(tmp_path: Path, validat
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-CORE\n"
-        "name: Core\n"
+        "title: Core\n"
         "container_type: library\n"
         "runtime: Python\n"
-        "package_path: src/core\n"
-        "dependencies:\n"
-        "  internal_components:\n"
-        "    - CNT-CORE\n"
-        "  internal_containers:\n"
-        "    - CMP-PARSER\n"
+        "source_path: src/core\n"
+        "components:\n"
+        "  - id: CMP-INLINE\n"
+        "    title: Inline\n"
+        "    responsibility: Work\n"
+        "    interfaces:\n"
+        "      consumes:\n"
+        "        - CNT-CORE\n"
         "---\n"
         "= Core\n",
         encoding="utf-8",
@@ -835,7 +838,7 @@ def test_strict_container_vs_component_target_separation(tmp_path: Path, validat
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-PARSER\n"
-        "name: Parser\n"
+        "title: Parser\n"
         "container: CNT-CORE\n"
         "status: planned\n"
         "responsibility: Parse specs\n"
@@ -892,7 +895,6 @@ def test_strict_container_vs_component_target_separation(tmp_path: Path, validat
     assert "target_component" in delta_errs or "action" in delta_errs
     assert "ARCH-CORE-001" not in delta_errs
 
-
     # 3. Client pointing container to CMP-PARSER
     (clients_dir / "client.adoc").write_text(
         "---\n"
@@ -912,11 +914,11 @@ def test_strict_container_vs_component_target_separation(tmp_path: Path, validat
     report = validator.validate_directory(eidos_dir)
     assert not report.is_clean
     broken_text = "\n".join(report.broken_references)
-    # CNT-CORE exists in catalog_ids, yet placing it in technical.components must fail x-eidos-ref prefix/type check!
+    # CNT-CORE exists in catalog_ids, yet placing it in technical.components or interfaces.consumes must fail x-eidos-ref prefix/type check!
     assert "component 'CNT-CORE'" in broken_text and "technical.components" in broken_text
     assert "container 'CMP-PARSER'" in broken_text and "technical.containers" in broken_text
-    assert "component 'CNT-CORE'" in broken_text and "dependencies.internal_components" in broken_text
-    assert "container 'CMP-PARSER'" in broken_text and "dependencies.internal_containers" in broken_text
+    assert "component 'CNT-CORE'" in broken_text and "components.interfaces.consumes" in broken_text
+    assert "container 'CMP-PARSER'" in broken_text and "container" in broken_text
 
 
 def test_delta_schema_enum_taxonomies(tmp_path, validator):
@@ -981,9 +983,9 @@ def test_typed_pydantic_frontmatter_models(tmp_path):
     raw_fm = {
         "id": "CNT-TEST",
         "type": "tech/container",
-        "name": "Test Container",
-        "status": "accepted",
-        "package_path": "src/test",
+        "title": "Test Container",
+        "status": "active",
+        "source_path": "src/test",
         "decisions": [
             {
                 "id": "DEC-TEST-001",
@@ -1008,7 +1010,7 @@ def test_typed_pydantic_frontmatter_models(tmp_path):
     assert isinstance(model, FrontmatterModel)
     assert model.id == "CNT-TEST"
     assert model.type == "tech/container"
-    assert model.name == "Test Container"
+    assert model.title == "Test Container"
     assert len(model.decisions) == 1
     assert model.decisions[0].id == "DEC-TEST-001"
     assert model.decisions[0].rejected_alternatives[0].option == "PostgreSQL"
@@ -1034,13 +1036,10 @@ def test_custom_spec_root_under_parent_src_and_subdirectory_validation(tmp_path:
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-CUSTOM-APP\n"
-        "name: Custom App\n"
+        "title: Custom App\n"
         "container_type: service\n"
         "runtime: Python 3.12\n"
-        "package_path: src/app\n"
-        "components:\n"
-        "  - id: CMP-CUSTOM-WORKER\n"
-        "    ref: specs/architecture/components/worker.adoc\n"
+        "source_path: src/app\n"
         "---\n"
         "= Custom App\n",
         encoding="utf-8",
@@ -1050,7 +1049,7 @@ def test_custom_spec_root_under_parent_src_and_subdirectory_validation(tmp_path:
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-CUSTOM-WORKER\n"
-        "name: Custom Worker\n"
+        "title: Custom Worker\n"
         "container: CNT-CUSTOM-APP\n"
         "status: active\n"
         "source_path: src/app/worker.py\n"
@@ -1144,10 +1143,10 @@ def test_scoped_typer_cli_contract_parity_non_typer_and_positional_add_typer(
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-CLI\n"
-        "name: CLI\n"
+        "title: CLI\n"
         "container_type: cli\n"
         "runtime: Python 3.12\n"
-        "package_path: src/cli\n"
+        "source_path: src/cli\n"
         "---\n"
         "= CLI\n",
         encoding="utf-8",
@@ -1160,7 +1159,7 @@ def test_scoped_typer_cli_contract_parity_non_typer_and_positional_add_typer(
         "id: CTR-CLICK-CLI\n"
         "title: Click CLI Contract\n"
         "protocol: cli_args\n"
-        "owning_container: CNT-CLI\n"
+        "container: CNT-CLI\n"
         "specification_file: src/cli/click_cli.py\n"
         "---\n"
         "= Click CLI Contract\n",
@@ -1175,7 +1174,7 @@ def test_scoped_typer_cli_contract_parity_non_typer_and_positional_add_typer(
         "id: CTR-TYPER-CLI\n"
         "title: Typer CLI Contract\n"
         "protocol: cli_args\n"
-        "owning_container: CNT-CLI\n"
+        "container: CNT-CLI\n"
         "specification_file: src/cli/typer_cli.py\n"
         "---\n"
         "= Typer CLI Contract\n\n"
@@ -1204,7 +1203,7 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
     tmp_path: Path, validator: SpecValidator
 ) -> None:
     """DLT-2026-073 (# eidos:fixture): Verify container/policy invariants, domain/capability/policy/contract decisions,
-    domain ubiquitous_language/owners, contract version/consumers, and delta affects/blast_radius x-eidos-ref."""
+    domain ubiquitous_language/owners, contract version, and delta mutations x-eidos-ref."""
     eidos_dir = tmp_path / "eidos"
     cnts_dir = eidos_dir / "architecture" / "containers"
     ctrs_dir = eidos_dir / "architecture" / "contracts"
@@ -1223,17 +1222,17 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-BILLING\n"
-        "name: Billing Service\n"
+        "title: Billing Service\n"
         "container_type: service\n"
         "runtime: Python 3.12\n"
-        "package_path: src/billing\n"
+        "source_path: src/billing\n"
         "invariants:\n"
         "  - id: INV-CNT-BILLING-001\n"
         "    rule: Container must remain stateless.\n"
         "    test_binding: tests/test_billing.py::test_stateless\n"
         "components:\n"
         "  - id: CMP-BILLING-LEDGER\n"
-        "    name: BillingLedger\n"
+        "    title: BillingLedger\n"
         "    responsibility: Double-entry ledger.\n"
         "    source_path: src/billing\n"
         "    invariants:\n"
@@ -1253,11 +1252,8 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
         "id: POL-001-AUDIT\n"
         "title: Audit Policy\n"
         "category: compliance\n"
-        "enforcement:\n"
-        "  mechanism: ci_cd_gate\n"
-        "  severity: hard_block\n"
+        "severity: blocking\n"
         "status: active\n"
-        "rule: Every ledger mutation must emit an audit event.\n"
         "invariants:\n"
         "  - id: INV-POL-AUDIT-001\n"
         "    rule: Audit events are append-only.\n"
@@ -1278,7 +1274,7 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
         "type: product/domain\n"
         "schema: schemas/v1/product/domain.schema.yaml\n"
         "id: DOM-BILLING\n"
-        "name: Billing Domain\n"
+        "title: Billing Domain\n"
         "classification: core\n"
         "boundaries:\n"
         "  responsibilities:\n"
@@ -1325,7 +1321,7 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
         encoding="utf-8",
     )
 
-    # 5. Contract with version, consumers (x-eidos-ref), and decisions
+    # 5. Contract with version and decisions
     (ctrs_dir / "api.adoc").write_text(
         "---\n"
         "type: tech/contract\n"
@@ -1334,9 +1330,7 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
         "title: Billing REST API\n"
         "version: 1.2.0\n"
         "protocol: rest_openapi\n"
-        "owning_container: CNT-BILLING\n"
-        "consumers:\n"
-        "  - CMP-BILLING-LEDGER\n"
+        "container: CNT-BILLING\n"
         "specification_file: src/billing/api.yaml\n"
         "decisions:\n"
         "  - id: DEC-CTR-001\n"
@@ -1376,7 +1370,6 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
     assert report.schema_errors == {}, f"Unexpected schema errors: {report.schema_errors}"
     broken_text = "\n".join(report.broken_references)
     assert "CMP-MISSING-GHOST" in broken_text
-
 
 
 def test_unified_block_scalar_safe_frontmatter_parser_and_extended_models(tmp_path: Path) -> None:
@@ -1431,13 +1424,13 @@ def test_unified_block_scalar_safe_frontmatter_parser_and_extended_models(tmp_pa
         {
             "id": "CNT-TEST",
             "type": "tech/container",
-            "package_path": ["src/a", "src/b"],
+            "source_path": ["src/a", "src/b"],
             "invariants": [{"id": "INV-CNT-1", "rule": "Top rule", "test_binding": "tests/t.py::test_1"}],
             "decisions": [{"id": "DEC-CNT-1", "title": "T1", "decision": "D1", "rationale": "R1"}],
             "components": [
                 {
                     "id": "CMP-INLINE-1",
-                    "name": "Inline1",
+                    "title": "Inline1",
                     "source_path": "src/a/mod.py",
                     "invariants": [{"id": "INV-CMP-1", "rule": "Comp rule"}],
                     "decisions": [{"id": "DEC-CMP-1", "title": "T2", "decision": "D2", "rationale": "R2"}],
@@ -1452,7 +1445,7 @@ def test_unified_block_scalar_safe_frontmatter_parser_and_extended_models(tmp_pa
 
     doc = parse_spec_file(spec_file)
     model = doc.as_model()
-    assert model.package_paths() == ["src/a", "src/b"]
+    assert model.source_paths() == ["src/a", "src/b"]
     assert model.components[0].id == "CMP-INLINE-1"
     assert model.components[0]["id"] == "CMP-INLINE-1"
     assert model.components[0].source_paths() == ["src/a/mod.py"]
@@ -1560,10 +1553,10 @@ def test_schema_cache_collision_free_and_functional_cli_parity(
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-CLI\n"
-        "name: CLI\n"
+        "title: CLI\n"
         "container_type: cli\n"
         "runtime: Python 3.12\n"
-        "package_path: src/cli\n"
+        "source_path: src/cli\n"
         "---\n"
         "= CLI\n",
         encoding="utf-8",
@@ -1576,7 +1569,7 @@ def test_schema_cache_collision_free_and_functional_cli_parity(
         "id: CTR-CLI\n"
         "title: CLI Contract\n"
         "protocol: cli_args\n"
-        "owning_container: CNT-CLI\n"
+        "container: CNT-CLI\n"
         "specification_file: src/cli/main.py\n"
         "---\n"
         "= CLI Contract\n\n"
@@ -1617,17 +1610,17 @@ def test_component_source_path_ui_test_bindings_and_invariant_test_binding_valid
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-APP\n"
-        "name: App\n"
+        "title: App\n"
         "container_type: service\n"
         "runtime: Python 3.12\n"
-        "package_path: src/app\n"
+        "source_path: src/app\n"
         "components:\n"
         "  - id: CMP-VALID\n"
-        "    name: ValidComp\n"
+        "    title: ValidComp\n"
         "    responsibility: Valid\n"
         "    source_path: src/app/real.py\n"
         "  - id: CMP-BROKEN-SRC\n"
-        "    name: BrokenComp\n"
+        "    title: BrokenComp\n"
         "    responsibility: Broken\n"
         "    source_path: src/app/missing.py\n"
         "---\n"
@@ -1671,11 +1664,8 @@ def test_component_source_path_ui_test_bindings_and_invariant_test_binding_valid
         "id: POL-001-TEST\n"
         "title: Test Policy\n"
         "category: architecture\n"
-        "enforcement:\n"
-        "  mechanism: ci_cd_gate\n"
-        "  severity: hard_block\n"
+        "severity: blocking\n"
         "status: active\n"
-        "rule: Test rule.\n"
         "invariants:\n"
         "  - id: INV-OK\n"
         "    rule: Valid binding\n"
@@ -1705,7 +1695,7 @@ def test_design_system_w3c_dtcg_manifest_and_acyclic_inheritance(
     tmp_path: Path, validator: SpecValidator
 ) -> None:
     """DLT-2026-064 (INV-W3C-DTCG-COMPLIANCE): Verify SpecValidator validates W3C DTCG tokens.manifest
-    existence and $value/$type structure and detects circular inheritance.extends chains."""
+    existence and $value/$type structure and detects circular extends chains."""
     eidos_dir = tmp_path / "eidos"
     ds_a_dir = eidos_dir / "design" / "systems" / "brand_a"
     ds_b_dir = eidos_dir / "design" / "systems" / "brand_b"
@@ -1724,8 +1714,7 @@ def test_design_system_w3c_dtcg_manifest_and_acyclic_inheritance(
         "id: DS-BRAND-A\n"
         "title: Brand A\n"
         "status: active\n"
-        "inheritance:\n"
-        "  extends: DS-BRAND-B\n"
+        "extends: DS-BRAND-B\n"
         "tokens:\n"
         "  spec_format: w3c_design_tokens\n"
         "  manifest: tokens.json\n"
@@ -1742,8 +1731,7 @@ def test_design_system_w3c_dtcg_manifest_and_acyclic_inheritance(
         "id: DS-BRAND-B\n"
         "title: Brand B\n"
         "status: active\n"
-        "inheritance:\n"
-        "  extends: DS-BRAND-A\n"
+        "extends: DS-BRAND-A\n"
         "tokens:\n"
         "  spec_format: w3c_design_tokens\n"
         "  manifest: missing_tokens.json\n"
@@ -1777,10 +1765,10 @@ def test_pluggable_contract_protocol_verifier_registry(
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-API\n"
-        "name: API\n"
+        "title: API\n"
         "container_type: service\n"
         "runtime: Python 3.12\n"
-        "package_path: src/api\n"
+        "source_path: src/api\n"
         "---\n"
         "= API\n",
         encoding="utf-8",
@@ -1800,7 +1788,7 @@ def test_pluggable_contract_protocol_verifier_registry(
         "id: CTR-PY-PROTO\n"
         "title: Payment Gateway Protocol\n"
         "protocol: python_protocol\n"
-        "owning_container: CNT-API\n"
+        "container: CNT-API\n"
         "specification_file: src/api/ports.py\n"
         "---\n"
         "= PaymentGateway\n",
@@ -1822,7 +1810,7 @@ def test_pluggable_contract_protocol_verifier_registry(
         "id: CTR-OPENAPI\n"
         "title: Charges REST API\n"
         "protocol: rest_openapi\n"
-        "owning_container: CNT-API\n"
+        "container: CNT-API\n"
         "specification_file: src/api/openapi.yaml\n"
         "---\n"
         "= Charges REST API\n",
@@ -1841,7 +1829,7 @@ def test_pluggable_contract_protocol_verifier_registry(
         "id: CTR-JSON-SCHEMA\n"
         "title: Invoice Event Schema\n"
         "protocol: json_schema\n"
-        "owning_container: CNT-API\n"
+        "container: CNT-API\n"
         "specification_file: src/api/event.schema.json\n"
         "---\n"
         "= Invoice Event Schema\n",
@@ -1863,7 +1851,7 @@ def test_pluggable_contract_protocol_verifier_registry(
         "id: CTR-GRPC\n"
         "title: Ledger gRPC\n"
         "protocol: grpc_proto\n"
-        "owning_container: CNT-API\n"
+        "container: CNT-API\n"
         "specification_file: src/api/ledger.proto\n"
         "---\n"
         "= LedgerService\n",
@@ -1884,7 +1872,7 @@ def test_pluggable_contract_protocol_verifier_registry(
         "id: CTR-GRAPHQL\n"
         "title: GraphQL Schema\n"
         "protocol: graphql\n"
-        "owning_container: CNT-API\n"
+        "container: CNT-API\n"
         "specification_file: src/api/schema.graphql\n"
         "---\n"
         "= GraphQL Schema\n",
@@ -1914,14 +1902,14 @@ def test_deep_review_subsystem_1_models_workspace_and_validator_edge_cases(tmp_p
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: 42\n"
-        "name: Numeric Container\n"
-        "package_path: src/num\n"
+        "title: Numeric Container\n"
+        "source_path: src/num\n"
         "components:\n"
         "  - id: CMP-NUM\n"
-        "    name: NumComp\n"
+        "    title: NumComp\n"
         "    responsibility: Handles numbers.\n"
-        "    status: accepted\n"
-        "    domain_binding: DOM-CORE\n"
+        "    status: active\n"
+        "    domain: DOM-CORE\n"
         "---\n"
         "= Numeric Container\n",
     )
@@ -1930,8 +1918,8 @@ def test_deep_review_subsystem_1_models_workspace_and_validator_edge_cases(tmp_p
     assert "schema" in doc.model
     with pytest.raises(KeyError):
         _ = doc.model["model_dump"]
-    assert doc.model.components[0].status == "accepted"
-    assert doc.model.components[0].domain_binding == "DOM-CORE"
+    assert doc.model.components[0].status == "active"
+    assert doc.model.components[0].domain == "DOM-CORE"
 
     # 2. Path normalization preserves dotfiles and specificity favors deeper subpackage over parent dir/**
     assert _normalize_rel_path(".github/workflows/ci.yml") == ".github/workflows/ci.yml"
@@ -1952,17 +1940,17 @@ def test_deep_review_subsystem_1_models_workspace_and_validator_edge_cases(tmp_p
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-BILLING\n"
-        "name: Billing Container\n"
+        "title: Billing Container\n"
         "container_type: service\n"
         "runtime: Python 3.12\n"
-        "package_path: src/billing\n"
+        "source_path: src/billing\n"
         "components:\n"
         "  - id: CMP-BILLING-CORE\n"
-        "    name: BillingCore\n"
+        "    title: BillingCore\n"
         "    responsibility: Core billing.\n"
         "    source_path: src/billing/core.py\n"
-        "    status: accepted\n"
-        "    domain_binding: DOM-BILLING\n"
+        "    status: planned\n"
+        "    domain: DOM-BILLING\n"
         "---\n"
         "= Billing Container\n",
         encoding="utf-8",
@@ -1972,20 +1960,17 @@ def test_deep_review_subsystem_1_models_workspace_and_validator_edge_cases(tmp_p
         "type: product/domain\n"
         "schema: schemas/v1/product/domain.schema.yaml\n"
         "id: DOM-BILLING\n"
-        "name: Billing Domain\n"
+        "title: Billing Domain\n"
         "classification: core\n"
         "boundaries:\n"
         "  responsibilities:\n"
         "    - Invoicing\n"
-        "technical_mapping:\n"
-        "  containers:\n"
-        "    - CNT-BILLING\n"
         "---\n"
         "= Billing Domain\n",
         encoding="utf-8",
     )
     validator = SpecValidator()
-    sub_report = validator.validate_directory(dom_dir)
+    sub_report = validator.validate_directory(cnt_dir)
     assert sub_report.is_clean, f"Unexpected errors on subdirectory validation: {sub_report.broken_references}"
     full_report = validator.validate_directory(eidos_dir)
     assert full_report.is_clean, f"Unexpected schema/ref errors: {full_report.schema_errors} {full_report.broken_references}"
@@ -2054,10 +2039,11 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "id: POL-CACHE-001\n"
         "title: Cache Policy\n"
         "category: quality\n"
-        "rule: Validate caching\n"
-        "enforcement:\n"
-        "  severity: blocking\n"
-        "  mechanism: automated_test\n"
+        "severity: blocking\n"
+        "invariants:\n"
+        "  - id: INV-" + "POL-CACHE-1\n"
+        "    rule: Validate caching\n"
+        "    test_binding: N/A\n"
         "---\n"
         "= Cache Policy\n",
         encoding="utf-8",
@@ -2118,10 +2104,10 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-CLEAN\n"
-        "name: Clean Service\n"
+        "title: Clean Service\n"
         "container_type: service\n"
         "runtime: Python 3.12\n"
-        "package_path: src/clean\n"
+        "source_path: src/clean\n"
         "---\n"
         "= Clean Service\n",
         encoding="utf-8",
@@ -2143,7 +2129,7 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "id: CTR-CLEAN-PROTO\n"
         "title: Clean Protocol\n"
         "protocol: python_protocol\n"
-        "owning_container: CNT-CLEAN\n"
+        "container: CNT-CLEAN\n"
         "specification_file: src/clean/ports.py\n"
         "---\n"
         "= Clean Protocol\n\n"
@@ -2161,7 +2147,7 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "id: CTR-BAD-OWNER\n"
         "title: Bad Owner Contract\n"
         "protocol: rest_openapi\n"
-        "owning_component: CMP-ILLEGAL\n"
+        "container: CMP-ILLEGAL\n"
         "specification_file: N/A\n"
         "---\n"
         "= Bad Owner\n",
@@ -2174,8 +2160,8 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-WITH-CTR\n"
-        "name: Component With Contracts\n"
-        "owning_container: CNT-CLEAN\n"
+        "title: Component With Contracts\n"
+        "container: CNT-CLEAN\n"
         "responsibility: Invalid boundary contracts.\n"
         "source_path: src/clean/ports.py\n"
         "contracts:\n"
@@ -2228,7 +2214,7 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "id: CTR-BAD-OA\n"
         "title: Bad OpenAPI\n"
         "protocol: rest_openapi\n"
-        "owning_container: CNT-CLEAN\n"
+        "container: CNT-CLEAN\n"
         "specification_file: src/clean/bad_openapi.yaml\n"
         "---\n"
         "= Bad OpenAPI\n",
@@ -2241,7 +2227,7 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "id: CTR-BAD-JS\n"
         "title: Bad JSON Schema\n"
         "protocol: json_schema\n"
-        "owning_container: CNT-CLEAN\n"
+        "container: CNT-CLEAN\n"
         "specification_file: src/clean/bad_openapi.yaml\n"
         "---\n"
         "= Bad JSON Schema\n",
@@ -2292,7 +2278,7 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "id: POL-BAD-BIND\n"
         "title: Bad Bind\n"
         "category: security\n"
-        "rule: Must bind.\n"
+        "severity: blocking\n"
         "invariants:\n"
         "  - id: INV-BAD-BIND-1\n"
         "    rule: R\n"
@@ -2310,9 +2296,7 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "id: DS-SUB\n"
         "title: Sub Tokens\n"
         "status: planned\n"
-        "extends_system: DS-CLEAN\n"
-        "inheritance:\n"
-        "  extends: ../clean/system.adoc\n"
+        "extends: ../clean/system.adoc\n"
         "tokens:\n"
         "  spec_format: w3c_design_tokens\n"
         "  manifest: missing_planned_tokens.json\n"
@@ -2334,13 +2318,13 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-CLEAN\n"
-        "name: Clean Service\n"
+        "title: Clean Service\n"
         "container_type: service\n"
         "runtime: Python 3.12\n"
-        "package_path: src/clean\n"
+        "source_path: src/clean\n"
         "components:\n"
         "  - id: CMP-CLEAN-INL\n"
-        "    name: Clean Inline\n"
+        "    title: Clean Inline\n"
         "    responsibility: Core\n"
         "    source_path: src/clean/ports.py\n"
         "    invariants:\n"
@@ -2460,10 +2444,10 @@ def test_dlt_2026_082_bidirectional_contract_parity_and_multi_framework_cli(tmp_
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-SVC\n"
-        "name: Service\n"
+        "title: Service\n"
         "container_type: backend_service\n"
         "runtime: Python 3.12\n"
-        "package_path: src/svc\n"
+        "source_path: src/svc\n"
         "---\n"
         "= Service\n",
         encoding="utf-8",
@@ -2490,7 +2474,7 @@ def test_dlt_2026_082_bidirectional_contract_parity_and_multi_framework_cli(tmp_
         "id: CTR-CLI\n"
         "title: CLI Contract\n"
         "protocol: cli_args\n"
-        "owning_container: CNT-SVC\n"
+        "container: CNT-SVC\n"
         "specification_file: src/svc/cli.py\n"
         "---\n"
         "= CLI Contract\n\n"
@@ -2521,7 +2505,7 @@ def test_dlt_2026_082_bidirectional_contract_parity_and_multi_framework_cli(tmp_
         "id: CTR-CLICK\n"
         "title: Click Contract\n"
         "protocol: cli_args\n"
-        "owning_container: CNT-SVC\n"
+        "container: CNT-SVC\n"
         "specification_file: src/svc/click_app.py\n"
         "---\n"
         "= Click Contract\n\n"
@@ -2543,7 +2527,7 @@ def test_dlt_2026_082_bidirectional_contract_parity_and_multi_framework_cli(tmp_
         "id: CTR-ARG\n"
         "title: Argparse Contract\n"
         "protocol: cli_args\n"
-        "owning_container: CNT-SVC\n"
+        "container: CNT-SVC\n"
         "specification_file: src/svc/arg_app.py\n"
         "---\n"
         "= Argparse Contract\n\n"
@@ -2563,7 +2547,7 @@ def test_dlt_2026_082_bidirectional_contract_parity_and_multi_framework_cli(tmp_
         "id: CTR-OA\n"
         "title: OpenAPI Contract\n"
         "protocol: rest_openapi\n"
-        "owning_container: CNT-SVC\n"
+        "container: CNT-SVC\n"
         "specification_file: src/svc/openapi.yaml\n"
         "---\n"
         "= OpenAPI\n\n"
@@ -2582,7 +2566,7 @@ def test_dlt_2026_082_bidirectional_contract_parity_and_multi_framework_cli(tmp_
         "id: CTR-GRPC\n"
         "title: gRPC Contract\n"
         "protocol: grpc_proto\n"
-        "owning_container: CNT-SVC\n"
+        "container: CNT-SVC\n"
         "specification_file: src/svc/svc.proto\n"
         "---\n"
         "= Billing\n\n"
@@ -2601,7 +2585,7 @@ def test_dlt_2026_082_bidirectional_contract_parity_and_multi_framework_cli(tmp_
         "id: CTR-GQL\n"
         "title: GraphQL Contract\n"
         "protocol: graphql\n"
-        "owning_container: CNT-SVC\n"
+        "container: CNT-SVC\n"
         "specification_file: src/svc/schema.graphql\n"
         "---\n"
         "= GraphQL\n\n"
@@ -2622,7 +2606,7 @@ def test_dlt_2026_082_bidirectional_contract_parity_and_multi_framework_cli(tmp_
         "id: CTR-PROTO\n"
         "title: Storage Protocol\n"
         "protocol: python_protocol\n"
-        "owning_container: CNT-SVC\n"
+        "container: CNT-SVC\n"
         "specification_file: src/svc/ports.py\n"
         "---\n"
         "= StoragePort\n\n"
@@ -2661,13 +2645,13 @@ def test_dlt_2026_085_mutations_target_ref_validation_and_schema_rejection(tmp_p
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-CORE\n"
-        "name: Core\n"
+        "title: Core\n"
         "container_type: library\n"
         "runtime: Python 3.12\n"
-        "package_path: src/core\n"
+        "source_path: src/core\n"
         "components:\n"
         "  - id: CMP-EXISTING\n"
-        "    name: Existing\n"
+        "    title: Existing\n"
         "    responsibility: Existing component.\n"
         "    source_path: src/core\n"
         "---\n"
@@ -2753,7 +2737,7 @@ def test_dlt_2026_086_fault_tolerant_frontmatter_model_and_cache_isolation(
     tmp_path: Path, validator: SpecValidator
 ) -> None:
     """DLT-2026-086 (# eidos:fixture): FrontmatterModel gracefully coerces incomplete/malformed nested fields
-    (null technical block, shorthand invariant strings, legacy c4_internal_components, non-dict decisions)
+    (null technical block, shorthand invariant strings, inline components, non-dict decisions)
     without raising pydantic.ValidationError, and get_cached_spec_document isolates post-parse errors."""
     from eidos.core.index.storage import get_cached_spec_document
     from eidos.core.spec.models import FrontmatterModel
@@ -2763,14 +2747,14 @@ def test_dlt_2026_086_fault_tolerant_frontmatter_model_and_cache_isolation(
         {
             "type": "tech/container",
             "id": ["CNT-LIST-ID"],
-            "name": 123,
-            "package_path": ["src/a", "src/b"],
+            "title": 123,
+            "source_path": ["src/a", "src/b"],
             "technical": None,
             "invariants": [
                 "INV-SHORTHAND-001",
-                {"id": "INV-DICT-001", "rule": None, "verification": "tests/test_a.py::test_ok"},
+                {"id": "INV-DICT-001", "rule": None, "test_binding": "tests/test_a.py::test_ok"},
             ],
-            "c4_internal_components": [
+            "components": [
                 {
                     "id": "CMP-LEGACY-INLINE",
                     "source_path": ["src/a/mod.py"],
@@ -2784,12 +2768,12 @@ def test_dlt_2026_086_fault_tolerant_frontmatter_model_and_cache_isolation(
         }
     )
     assert fm.id is None
-    assert fm.name == "123"
-    assert fm.package_paths() == ["src/a", "src/b"]
+    assert fm.title == "123"
+    assert fm.source_paths() == ["src/a", "src/b"]
     assert fm.components[0].source_paths() == ["src/a/mod.py"]
     inv_ids = [inv.id for inv in fm.all_invariants()]
     assert inv_ids == ["INV-SHORTHAND-001", "INV-DICT-001", "INV-CMP-001"]
-    assert fm.invariants[1].effective_test_binding() == "tests/test_a.py::test_ok"
+    assert fm.invariants[1].test_binding == "tests/test_a.py::test_ok"
     assert len(fm.all_decisions()) == 1
     assert fm.all_decisions()[0].rejected_alternatives[0].option == "plain-string-alt"
 
@@ -2831,13 +2815,13 @@ def test_dlt_2026_087_composable_delta_mutation_validation(tmp_path):
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-CORE\n"
-        "name: Core\n"
+        "title: Core\n"
         "container_type: library\n"
         "runtime: Python 3.12\n"
-        "package_path: src/core\n"
+        "source_path: src/core\n"
         "components:\n"
         "  - id: CMP-ENGINE\n"
-        "    name: Engine\n"
+        "    title: Engine\n"
         "    responsibility: Runs core engine\n"
         "    source_path: src/core/engine.py\n"
         "invariants:\n"
@@ -2980,21 +2964,21 @@ def test_warm_cache_idempotence_duplicate_ids_and_non_src_repo_validation(
     (eidos1 / "policies").mkdir(parents=True)
     (eidos1 / "deltas").mkdir(parents=True)
 
-    # Valid domain, capability (status: sunset), policy (status: removed), and promoted component (status: accepted)
+    # Valid domain, capability (status: deprecated), policy (status: retired), and promoted component (status: active)
     (eidos1 / "domains" / "core" / "domain.adoc").write_text(
-        "---\ntype: product/domain\nschema: schemas/v1/product/domain.schema.yaml\nid: DOM-CORE\nname: Core\nstatus: active\n---\n= Core\n",
+        "---\ntype: product/domain\nschema: schemas/v1/product/domain.schema.yaml\nid: DOM-CORE\ntitle: Core\nstatus: active\n---\n= Core\n",
         encoding="utf-8",
     )
     (eidos1 / "domains" / "core" / "capabilities" / "cap.adoc").write_text(
-        "---\ntype: product/capability\nschema: schemas/v1/product/capability.schema.yaml\nid: CAP-SUNSET-001\ntitle: Sunset Cap\ndomain: DOM-CORE\nstatus: sunset\nbusiness:\n  personas: []\n  jtbd: When sunsetting, I want valid status so validation passes.\ntechnical:\n  containers:\n    - CNT-A\n  invariants: []\n---\n= Sunset Cap\n",
+        "---\ntype: product/capability\nschema: schemas/v1/product/capability.schema.yaml\nid: CAP-SUNSET-001\ntitle: Sunset Cap\ndomain: DOM-CORE\nstatus: deprecated\nbusiness:\n  personas: []\n  jtbd: When sunsetting, I want valid status so validation passes.\ntechnical:\n  containers:\n    - CNT-A\n  invariants: []\n---\n= Sunset Cap\n",
         encoding="utf-8",
     )
     (eidos1 / "policies" / "pol.adoc").write_text(
-        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-REMOVED-001\ntitle: Removed Pol\ncategory: security\nstatus: removed\nrule: Old rule.\nenforcement:\n  mechanism: pytest\n  severity: blocking\n---\n= Removed Pol\n",
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-REMOVED-001\ntitle: Removed Pol\ncategory: security\nstatus: retired\nseverity: blocking\ninvariants:\n  - id: INV-" + "POL-RET-1\n    rule: Old rule.\n    test_binding: N/A\n---\n= Removed Pol\n",
         encoding="utf-8",
     )
     (eidos1 / "architecture" / "components" / "accepted-comp.adoc").write_text(
-        "---\ntype: tech/component\nschema: schemas/v1/tech/component.schema.yaml\nid: CMP-ACCEPTED-001\nname: Accepted Comp\ncontainer: CNT-A\nstatus: accepted\nsource_path: src/a\nresponsibility: Accepted component.\n---\n= Accepted Comp\n",
+        "---\ntype: tech/component\nschema: schemas/v1/tech/component.schema.yaml\nid: CMP-ACCEPTED-001\ntitle: Accepted Comp\ncontainer: CNT-A\nstatus: active\nsource_path: src/a\nresponsibility: Accepted component.\n---\n= Accepted Comp\n",
         encoding="utf-8",
     )
 
@@ -3003,12 +2987,12 @@ def test_warm_cache_idempotence_duplicate_ids_and_non_src_repo_validation(
         "---\n"
         "type: tech/container\n"
         "id: CNT-A\n"
-        "name: Container A\n"
+        "title: Container A\n"
         "container_type: service\n"
         "runtime: Python\n"
         "components:\n"
         "  - id: CMP-DUP-001\n"
-        "    name: Dup One\n"
+        "    title: Dup One\n"
         "    responsibility: First duplicate.\n"
         "invariants:\n"
         "  - id: INV-DUP-001\n"
@@ -3021,12 +3005,12 @@ def test_warm_cache_idempotence_duplicate_ids_and_non_src_repo_validation(
         "---\n"
         "type: tech/container\n"
         "id: CNT-B\n"
-        "name: Container B\n"
+        "title: Container B\n"
         "container_type: service\n"
         "runtime: Python\n"
         "components:\n"
         "  - id: CMP-DUP-001\n"
-        "    name: Dup Two\n"
+        "    title: Dup Two\n"
         "    responsibility: Second duplicate.\n"
         "invariants:\n"
         "  - id: INV-DUP-001\n"
@@ -3036,14 +3020,14 @@ def test_warm_cache_idempotence_duplicate_ids_and_non_src_repo_validation(
         encoding="utf-8",
     )
 
-    # Contract with forbidden CMP-* owning_container
+    # Contract with forbidden CMP-* container
     (eidos1 / "architecture" / "contracts" / "bad-ctr.adoc").write_text(
         "---\n"
         "type: tech/contract\n"
         "schema: schemas/v1/tech/contract.schema.yaml\n"
         "id: CTR-BAD-OWNER\n"
         "title: Bad Owner Contract\n"
-        "owning_container: CMP-DUP-001\n"
+        "container: CMP-DUP-001\n"
         "protocol: http\n"
         "specification_file: src/api.py\n"
         "---\n= Bad Owner Contract\n",
@@ -3090,9 +3074,9 @@ def test_warm_cache_idempotence_duplicate_ids_and_non_src_repo_validation(
     broken_joined = "\n".join(rep_warm.broken_references)
     assert "Duplicate entity ID 'CMP-DUP-001'" in broken_joined
     assert "Duplicate entity ID 'INV-DUP-001'" in broken_joined
-    assert "owning_container must start with CNT-" in broken_joined
+    assert "in container must start with CNT-" in broken_joined
 
-    # 2. Bug 9: Non-src/ non-tests/ Go repository where declared package_path and test_binding are broken
+    # 2. Bug 9: Non-src/ non-tests/ Go repository where declared source_path and test_binding are broken
     go_ws = tmp_path / "go_flat_repo"
     go_eidos = go_ws / "eidos"
     (go_eidos / "architecture" / "containers").mkdir(parents=True)
@@ -3107,10 +3091,10 @@ def test_warm_cache_idempotence_duplicate_ids_and_non_src_repo_validation(
         "---\n"
         "type: tech/container\n"
         "id: CNT-GO-SVC\n"
-        "name: Go Server\n"
+        "title: Go Server\n"
         "container_type: service\n"
         "runtime: Go 1.22\n"
-        "package_path: pkg/nonexistent_dir\n"
+        "source_path: pkg/nonexistent_dir\n"
         "invariants:\n"
         "  - id: INV-GO-BROKEN-BINDING\n"
         "    rule: Must bind to an existing Go test.\n"
@@ -3162,7 +3146,7 @@ def test_adoc_path_reference_target_types_validation(tmp_path: Path, validator: 
         "type: product/domain\n"
         "schema: schemas/v1/product/domain.schema.yaml\n"
         "id: DOM-CORE\n"
-        "name: Core\n"
+        "title: Core\n"
         "classification: core\n"
         "boundaries:\n"
         "  responsibilities:\n"
@@ -3176,10 +3160,10 @@ def test_adoc_path_reference_target_types_validation(tmp_path: Path, validator: 
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-CORE\n"
-        "name: Core\n"
+        "title: Core\n"
         "container_type: library\n"
         "runtime: Python\n"
-        "package_path: src\n"
+        "source_path: src\n"
         "---\n= Core\n",
         encoding="utf-8",
     )
@@ -3231,7 +3215,7 @@ def test_group_b_regressions_b1_through_b8(tmp_path: Path, validator: SpecValida
         "type: product/domain\n"
         "schema: schemas/v1/product/domain.schema.yaml\n"
         "id: DOM-B1\n"
-        "name: Domain B1\n"
+        "title: Domain B1\n"
         "---\n= Domain B1\n",
     )
     assert "status" not in doc_omitted.model
@@ -3320,10 +3304,10 @@ def test_group_b_regressions_b1_through_b8(tmp_path: Path, validator: SpecValida
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-APP\n"
-        "name: App\n"
+        "title: App\n"
         "container_type: service\n"
         "runtime: Python 3.12\n"
-        "package_path: src/app\n"
+        "source_path: src/app\n"
         "---\n= App\n",
         encoding="utf-8",
     )
@@ -3340,13 +3324,13 @@ def test_group_b_regressions_b1_through_b8(tmp_path: Path, validator: SpecValida
         "id: CTR-JS-BOOL\n"
         "title: JSON Schema Bool Required\n"
         "protocol: json_schema\n"
-        "owning_container: CNT-APP\n"
+        "container: CNT-APP\n"
         "specification_file: src/app/bool_req.schema.json\n"
         "---\n= JSON Schema\n\nDocuments `order_id`.\n",
         encoding="utf-8",
     )
 
-    # B3: Legacy verification binding + trailing '::' with empty symbol
+    # B3: test_binding with missing symbol + trailing '::' with empty symbol
     (pols_dir / "pol_b3.adoc").write_text(
         "---\n"
         "type: product/policy\n"
@@ -3354,14 +3338,14 @@ def test_group_b_regressions_b1_through_b8(tmp_path: Path, validator: SpecValida
         "id: POL-B3\n"
         "title: Policy B3\n"
         "category: quality\n"
-        "rule: Test B3 bindings.\n"
+        "severity: blocking\n"
         "invariants:\n"
         "  - id: INV-B3-TRAILING\n"  # eidos:fixture
         "    rule: Trailing colons.\n"
         "    test_binding: \"tests/test_app.py::\"\n"
         "  - id: INV-B3-VERIF\n"  # eidos:fixture
-        "    rule: Legacy verification missing symbol.\n"
-        "    verification: \"tests/test_app.py::test_nonexistent_verif\"\n"
+        "    rule: Missing symbol in test_binding.\n"
+        "    test_binding: \"tests/test_app.py::test_nonexistent_verif\"\n"
         "---\n= Policy B3\n",
         encoding="utf-8",
     )
@@ -3409,7 +3393,7 @@ def test_group_b_regressions_b1_through_b8(tmp_path: Path, validator: SpecValida
         "id: CTR-PROTO-B7\n"
         "title: Protocol B7\n"
         "protocol: python_protocol\n"
-        "owning_container: CNT-APP\n"
+        "container: CNT-APP\n"
         "specification_file: src/app/proto_b7.py\n"
         "---\n= Protocol B7\n\n"
         "Provides `ReaderA` and `ReaderB` with `read_chunk(size: int)` in `O(1)` time for `len(x)` bytes.\n"
@@ -3431,7 +3415,7 @@ def test_group_b_regressions_b1_through_b8(tmp_path: Path, validator: SpecValida
         "id: CTR-GQL-B7\n"
         "title: GraphQL B7\n"
         "protocol: graphql\n"
-        "owning_container: CNT-APP\n"
+        "container: CNT-APP\n"
         "specification_file: src/app/schema_b7.graphql\n"
         "---\n= GraphQL B7\n\n"
         "Runs `getItem(id: ID!)` in `O(1)` complexity using `helper(x)`.\n",
@@ -3461,7 +3445,7 @@ def test_group_b_regressions_b1_through_b8(tmp_path: Path, validator: SpecValida
         "id: CTR-TYPER-B7\n"
         "title: Typer B7\n"
         "protocol: cli_args\n"
-        "owning_container: CNT-APP\n"
+        "container: CNT-APP\n"
         "specification_file: src/app/typer_b7.py\n"
         "---\n= Typer B7\n\n"
         "=== `ping`\nPings server.\n\n"
@@ -3496,7 +3480,7 @@ def test_group_b_regressions_b1_through_b8(tmp_path: Path, validator: SpecValida
         "id: CTR-CLICK-B7\n"
         "title: Click B7\n"
         "protocol: cli_args\n"
-        "owning_container: CNT-APP\n"
+        "container: CNT-APP\n"
         "specification_file: src/app/click_b7.py\n"
         "---\n= Click B7\n\n"
         "=== `cache`\n"
@@ -3512,7 +3496,7 @@ def test_group_b_regressions_b1_through_b8(tmp_path: Path, validator: SpecValida
 
     # B2: no crash, and order_id is documented
     assert "bool_req.schema.json" not in broken_b_text
-    # B3: trailing '::' and legacy verification caught
+    # B3: trailing '::' and missing symbol caught
     assert "Malformed test_binding 'tests/test_app.py::' (empty symbol after '::')" in broken_b_text
     assert "test_nonexistent_verif" in broken_b_text
     # B5: deleted_legacy.adoc and removed_comp.adoc are NOT flagged
@@ -3539,14 +3523,11 @@ def test_group_b_regressions_b1_through_b8(tmp_path: Path, validator: SpecValida
 
     extracted_paths = extract_entity_paths(
         {
-            "package_path": ["src/core", "N/A"],
-            "source_path": "TBD",
-            "owned_path": ["src/owned", "NONE"],
+            "source_path": ["src/core", "N/A", "src/owned", "NONE", "TBD"],
             "specification_file": "N/A",
             "components": [
                 {
-                    "source_path": "src/core/comp.py",
-                    "owned_path": ["src/core/owned_comp.py", "TBD"],
+                    "source_path": ["src/core/comp.py", "src/core/owned_comp.py", "TBD"],
                 }
             ],
         }
@@ -3596,8 +3577,7 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         {
             "id": "CNT-C4",
             "type": "tech/container",
-            "components": [{"id": "CMP-A", "name": "A"}],
-            "c4_internal_components": [{"id": "CMP-B", "name": "B"}],
+            "components": [{"id": "CMP-A", "title": "A"}, {"id": "CMP-B", "title": "B"}],
         }
     )
     assert [c.id for c in fm_c4.components] == ["CMP-A", "CMP-B"]
@@ -3662,14 +3642,13 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-APP\n"
-        "name: App Container\n"
-        "c4_type: service\n"
-        "technology: Python\n"
-        "description: App\n"
-        "package_path: src/app\n"
+        "title: App Container\n"
+        "container_type: service\n"
+        "runtime: Python\n"
+        "source_path: src/app\n"
         "components:\n"
         "  - id: CMP-PLANNED\n"
-        "    name: Planned Comp\n"
+        "    title: Planned Comp\n"
         "    status: planned\n"
         "    responsibility: Future work\n"
         "    invariants:\n"
@@ -3699,7 +3678,7 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         "id: CTR-TYPER-CYCLE\n"
         "title: Typer Cycle\n"
         "protocol: cli_args\n"
-        "owning_container: CNT-APP\n"
+        "container: CNT-APP\n"
         "specification_file: src/app/typer_cycle.py\n"
         "---\n= Typer Cycle\n\n"
         "=== `portal`\n"
@@ -3733,7 +3712,7 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         "id: CTR-CLICK-SUB\n"
         "title: Click Sub\n"
         "protocol: cli_args\n"
-        "owning_container: CNT-APP\n"
+        "container: CNT-APP\n"
         "specification_file: src/app/click_sub.py\n"
         "---\n= Click Sub\n\n"
         "=== `db`\n"
@@ -3742,16 +3721,13 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         encoding="utf-8",
     )
 
-    # B9: Capability with parent_domain (no domain) is schema-valid, and contract with owning_component CMP-* is rejected
+    # B9: Capability with domain is schema-valid, and contract with component path owner is rejected
     (dom_dir / "domain.adoc").write_text(
         "---\n"
         "type: product/domain\n"
         "schema: schemas/v1/product/domain.schema.yaml\n"
         "id: DOM-CORE\n"
-        "name: Core\n"
-        "description: Core domain\n"
-        "bounded_context:\n"
-        "  ubiquitous_language: []\n"
+        "title: Core\n"
         "---\n= Core\n",
         encoding="utf-8",
     )
@@ -3762,7 +3738,7 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         "schema: schemas/v1/product/capability.schema.yaml\n"
         "id: CAP-PDOM\n"
         "title: Parent Domain Capability\n"
-        "parent_domain: DOM-CORE\n"
+        "domain: DOM-CORE\n"
         "status: active\n"
         "business:\n"
         "  jtbd: Deliver value\n"
@@ -3774,7 +3750,7 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         encoding="utf-8",
     )
     cap_doc = parse_spec_file(cap_pdom)
-    assert cap_doc.model.effective_domain() == "DOM-CORE"
+    assert cap_doc.model.domain == "DOM-CORE"
     assert validator.validate_document(cap_doc, root_dir=eidos_dir) == []
 
     bad_ctr_cmp = ctrs_dir / "bad_cmp_owner.adoc"
@@ -3785,7 +3761,7 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         "id: CTR-BAD-OWNER\n"
         "title: Bad Owner\n"
         "protocol: rest_openapi\n"
-        "owning_container: eidos/architecture/components/cmp-auth.adoc\n"
+        "container: eidos/architecture/components/cmp-auth.adoc\n"
         "---\n= Bad Owner\n",
         encoding="utf-8",
     )
@@ -3823,7 +3799,7 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         "id: POL-B7\n"
         "title: Policy B7\n"
         "category: quality\n"
-        "rule: Test double colons.\n"
+        "severity: blocking\n"
         "invariants:\n"
         "  - id: INV-B7-DBL\n"
         "    rule: Double colons\n"
@@ -3853,8 +3829,7 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         "id: DS-A\n"
         "title: Design A\n"
         "status: active\n"
-        "inheritance:\n"
-        "  extends: DS-B\n"
+        "extends: DS-B\n"
         "tokens:\n"
         "  manifest: tokens.json\n"
         "  spec_format: w3c_design_tokens\n"
@@ -3868,8 +3843,7 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
         "id: DS-B\n"
         "title: Design B\n"
         "status: draft\n"
-        "inheritance:\n"
-        "  extends: DS-A\n"
+        "extends: DS-A\n"
         "---\n= Design B\n",
         encoding="utf-8",
     )

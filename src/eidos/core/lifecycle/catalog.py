@@ -242,35 +242,21 @@ def _mutate_frontmatter_components(
             return raw_content
         if not isinstance(parsed_fm, dict):
             return raw_content
-        list_key = (
-            "c4_internal_components"
-            if "components" not in parsed_fm and isinstance(parsed_fm.get("c4_internal_components"), list)
-            else "components"
-        )
-        comps = parsed_fm.get(list_key)
+        comps = parsed_fm.get("components")
         if not isinstance(comps, list):
             comps = []
-            parsed_fm[list_key] = comps
+            parsed_fm["components"] = comps
         if op == "append" and item_dict is not None:
             comps.append(item_dict)
         elif op in ("replace", "replace_with_ref", "replace_inline") and item_dict is not None:
-            replaced = False
-            for k in ("components", "c4_internal_components"):
-                k_list = parsed_fm.get(k)
-                if isinstance(k_list, list):
-                    for idx_c, c in enumerate(k_list):
-                        if isinstance(c, dict) and c.get("id") == target_id:
-                            k_list[idx_c] = item_dict
-                            replaced = True
-                            break
-                if replaced:
+            for idx_c, c in enumerate(comps):
+                if isinstance(c, dict) and c.get("id") == target_id:
+                    comps[idx_c] = item_dict
                     break
         elif op == "remove":
-            for k in ("components", "c4_internal_components"):
-                if isinstance(parsed_fm.get(k), list):
-                    parsed_fm[k] = [
-                        c for c in parsed_fm[k] if not (isinstance(c, dict) and c.get("id") == target_id)
-                    ]
+            parsed_fm["components"] = [
+                c for c in comps if not (isinstance(c, dict) and c.get("id") == target_id)
+            ]
         return dump_spec_document(parsed_fm, body)
 
     lines = raw_yaml.splitlines(keepends=True)
@@ -278,7 +264,7 @@ def _mutate_frontmatter_components(
         lines[-1] += "\n"
 
     comp_idx = next(
-        (i for i, ln in enumerate(lines) if re.match(r"^(?:components|c4_internal_components)\s*:", ln)),
+        (i for i, ln in enumerate(lines) if re.match(r"^components\s*:", ln)),
         None,
     )
     if comp_idx is None:
@@ -288,7 +274,7 @@ def _mutate_frontmatter_components(
             return f"---\n{''.join(lines).rstrip(chr(10))}\n---\n{body}"
         return raw_content
 
-    header_m = re.match(r"^((?:components|c4_internal_components)\s*:\s*)\[\s*\](\s*(?:#.*)?\n?)$", lines[comp_idx])
+    header_m = re.match(r"^(components\s*:\s*)\[\s*\](\s*(?:#.*)?\n?)$", lines[comp_idx])
     if header_m:
         if op == "append" and item_dict is not None:
             trailing = header_m.group(2)

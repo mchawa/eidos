@@ -1,0 +1,624 @@
+---
+type: delta/mutation
+schema: schemas/v1/delta/delta.schema.yaml
+id: DLT-2026-091
+title: "Harmonize and Canonicalize All v1 Specification Schemas Without Legacy Aliases"
+status: applied
+vcs:
+  branch: main
+  base_commit: e4cc6fbe09ed8e6883fe9103a550f5fe53ce0fb2
+intent:
+  kind: enabler
+  motivation: "Eliminate cross-schema field naming divergences, intra-schema duplicate properties, inconsistent lifecycle status enums, fragmented quality_attributes/external_references shapes, and copy-pasted x-eidos-ref definitions across all 16 Eidos v1 schemas (assets/schemas/v1/) with zero backward-compatibility shims or legacy fallback paths."
+tombstone:
+  search_tokens:
+    - "domain_binding"
+    - "parent_domain"
+    - "owning_container"
+    - "owning_component"
+    - "extends_system"
+    - "implements_component"
+    - "supported_design_systems"
+    - "user_flows"
+    - "c4_internal_components"
+    - "technical_mapping"
+    - "test_bound_invariant"
+    - "consumed_component_ref"
+    - "component_or_symbol_ref"
+    - "figma_team_library"
+    - "figma_node_url"
+    - "figma_frame_url"
+  allowed_reasons:
+    - path: "CHANGELOG.md"
+      reason: "Historical release notes referencing pre-harmonization schema field names."
+    - path: "eidos/deltas/"
+      reason: "Historical applied SpecDeltas predating DLT-2026-091."
+    - path: "eidos/explorations/"
+      reason: "Historical exploration spikes predating DLT-2026-091."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Harmonize all 16 v1 YAML schemas under assets/schemas/v1/ and shared $defs in assets/schemas/v1/common/defs.yaml; migrate CNT-EIDOS-CORE frontmatter from name/package_path/domain_binding to canonical title/source_path/domain and remove dependencies block."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "assets/schemas/v1/common/defs.yaml"
+
+  - operation: modify
+    target: CMP-SPEC-PARSER
+    details: "Resolve SpecDocument.title strictly from FrontmatterModel.title in src/eidos/core/spec/parser.py after retiring top-level name."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/spec/parser.py"
+        responsibility: "title"
+
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    details: "Update SpecValidator in src/eidos/core/spec/validator.py to validate canonicalized v1 schemas, recursive #/$defs/* references, unified source_path / container / domain / extends fields, and specific x-eidos-ref entity_label diagnostics without legacy alias fallbacks."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/spec/validator.py"
+        responsibility: "assets/schemas/v1/common/defs.yaml"
+
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+    details: "Remove legacy alias fields (name on top-level specs, domain_binding, parent_domain, package_path, owning_container, owning_component, verification on InvariantModel, and c4_internal_components) and simplify TechnicalSectionModel.contracts to a flat list of contract references in src/eidos/core/spec/models.py."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/spec/models.py"
+        responsibility: "FrontmatterModel"
+
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Update create_spec, promote_component, inline_component, and catalog helpers in src/eidos/core/lifecycle/scaffolder.py and catalog.py to emit canonical title, domain, container, source_path, flat technical.contracts, and status ('draft') fields across all 16 specification types."
+    expect:
+      frontmatter:
+        responsibility: "Scaffolds all 16 living specification types"
+
+  - operation: modify
+    target: CMP-DESIGN-ENGINE
+    details: "Update build_design_spec in src/eidos/core/lifecycle/design_engine.py to scaffold design/system with top-level extends and override_mode, design/ui-component with implements, and design/screen and design/flow as pure reusable definitions referenced from outside."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/lifecycle/design_engine.py"
+        responsibility: "Multi-Design Systems"
+
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    details: "Remove legacy c4_internal_components, owning_container/owning_component, requires, and sunset/removed status fallbacks in src/eidos/core/lifecycle/delta_engine.py."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/lifecycle/delta_engine.py"
+        responsibility: "SpecDelta lifecycle"
+
+  - operation: modify
+    target: CMP-PROJECT-RESOLVER
+    details: "Update extract_entity_paths in src/eidos/core/workspace/project.py to resolve canonical source_path entries."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/workspace/project.py"
+        responsibility: "extract_entity_paths"
+
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: "Migrate CNT-EIDOS-INDEX frontmatter to canonical title, domain, and source_path fields, remove dependencies block, and update index components to consume canonicalized frontmatter fields."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "IncrementalSyncEngine"
+
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: "Rename entities.package_path to entities.source_path and bump SCHEMA_VERSION to 2.5.0 in src/eidos/core/index/storage.py."
+    expect:
+      frontmatter:
+         responsibility: "2.5.0"
+
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    details: "Update rebuild_spec_edges and _CodeOwnershipResolver in src/eidos/core/index/sync.py to read canonical domain, container, source_path, contracts.consumes, technical.contracts, and top-level extends fields without legacy fallbacks."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/sync.py"
+        responsibility: "rebuild_spec_edges"
+
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+    details: "Update SQLite entity queries in src/eidos/core/index/query.py to project canonical source_path."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/query.py"
+        responsibility: "FTS5"
+
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    details: "Update context slice projection in src/eidos/core/index/context.py to read canonical title, domain, container, and source_path fields."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/context.py"
+        responsibility: "TieredContextSlice"
+
+  - operation: modify
+    target: CNT-EIDOS-VCS
+    details: "Migrate CNT-EIDOS-VCS frontmatter to canonical title, domain, and source_path fields, remove dependencies block, and update VCS drift mappings."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "DriftDetector"
+
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    details: "Update map_code_to_components and structural diff inspection in src/eidos/vcs/ to read canonical container and component source_path, title, and extends fields."
+    expect:
+      frontmatter:
+        responsibility: "detect_drift"
+
+  - operation: modify
+    target: CNT-EIDOS-CLI
+    details: "Migrate CNT-EIDOS-CLI frontmatter to canonical title, domain, and source_path fields, remove dependencies block, and align CLI spec creation options."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "SpecCommands"
+
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    details: "Align eidos spec create CLI options in src/eidos/cli/spec_commands.py with canonical schema field names (--container, --source-path, --implements, --extends)."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/cli/spec_commands.py"
+        responsibility: "spec"
+
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Migrate CTR-EIDOS-CLI frontmatter from owning_container to canonical container and document updated CLI flags."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "eidos spec"
+
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+    details: "Migrate CNT-EIDOS-PORTAL frontmatter to canonical title, domain, and source_path fields, remove dependencies block, and update portal data synthesis."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "PortalGenerator"
+
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+    details: "Simplify get_portal_data in src/eidos/portal/generator.py to read canonical title, domain, container, source_path, extends, and unidirectional design relationships without legacy fallback chains."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/portal/generator.py"
+        responsibility: "Synthesizes living specifications"
+
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+    details: "Update portal frontend TypeScript interfaces and views in src/eidos/portal/frontend/src/ and recompile assets/portal/bundle.html.gz."
+    expect:
+      frontmatter:
+        responsibility: "bundle.html.gz"
+
+  - operation: modify
+    target: CTR-EIDOS-PORTAL
+    details: "Migrate CTR-EIDOS-PORTAL frontmatter from owning_container to canonical container."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "/api/data"
+
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Migrate CNT-EIDOS-PLUGIN frontmatter to canonical title, domain, and source_path fields, remove dependencies block, and update bundled agent skill references."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "PluginInstaller"
+
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: "Update YAML frontmatter examples in assets/plugin_reference/skills/eidos-spec/SKILL.md and eidos/SKILL.md to reflect canonicalized v1 schemas."
+    expect:
+      frontmatter:
+        responsibility: "eidos-spec"
+
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+    details: "Migrate CNT-EIDOS-DOCS frontmatter to canonical title, domain, and source_path fields, remove dependencies block, and synchronize schema documentation."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "CoreConceptsGuides"
+
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+    details: "Update docs/concepts/schema-glossary.md and docs/concepts/living-specs.md to document the harmonized v1 schemas and shared $defs."
+    expect:
+      frontmatter:
+        source_path: "docs/concepts/how-eidos-works.md"
+        responsibility: "Glossary"
+
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update docs/guides/cli.md and docs/guides/agent-plugin.md with canonical schema field examples."
+    expect:
+      frontmatter:
+        source_path: "docs/guides/cli.md"
+        responsibility: "CLI command reference"
+
+  - operation: modify
+    target: ARCH-EIDOS-001
+    details: "Update c4_containers in eidos/architecture/system-architecture.adoc to use canonical container, title, and source_path keys."
+    expect:
+      frontmatter:
+        status: "active"
+      body:
+        contains:
+          - "source_path"
+
+  - operation: modify
+    target: DOM-SPEC-ENGINE
+    details: "Migrate DOM-SPEC-ENGINE frontmatter from name to canonical title, remove technical_mapping block, and add status: active."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: DOM-VCS-LIFECYCLE
+    details: "Migrate DOM-VCS-LIFECYCLE frontmatter from name to canonical title, remove technical_mapping block, and add status: active."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: DOM-AGENT-INTELLIGENCE
+    details: "Migrate DOM-AGENT-INTELLIGENCE frontmatter from name to canonical title, remove technical_mapping block, and add status: active."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: DOM-EXPERIENCE-PORTAL
+    details: "Migrate DOM-EXPERIENCE-PORTAL frontmatter from name to canonical title, remove technical_mapping block, and add status: active."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: PER-AUTONOMOUS-AGENT
+    details: "Migrate PER-AUTONOMOUS-AGENT frontmatter from name to canonical title and add status: active."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: PER-DESIGN-ENGINEER
+    details: "Migrate PER-DESIGN-ENGINEER frontmatter from name to canonical title and add status: active."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: PER-PRODUCT-LEAD
+    details: "Migrate PER-PRODUCT-LEAD frontmatter from name to canonical title and add status: active."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: PER-SOFTWARE-ARCHITECT
+    details: "Migrate PER-SOFTWARE-ARCHITECT frontmatter from name to canonical title and add status: active."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: PER-SOFTWARE-ENGINEER
+    details: "Migrate PER-SOFTWARE-ENGINEER frontmatter from name to canonical title and add status: active."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CLT-WEB-PORTAL
+    details: "Remove reverse-link capabilities field from CLT-WEB-PORTAL frontmatter."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: SCR-PORTAL-HOME
+    details: "Remove reverse-link fields (client, capabilities, supported_design_systems) from SCR-PORTAL-HOME frontmatter."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: SCR-PORTAL-ARCHITECTURE
+    details: "Remove reverse-link fields (client, capabilities, supported_design_systems) from SCR-PORTAL-ARCHITECTURE frontmatter."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: SCR-PORTAL-BUSINESS
+    details: "Remove reverse-link fields (client, capabilities, supported_design_systems) from SCR-PORTAL-BUSINESS frontmatter."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: SCR-PORTAL-CATALOG
+    details: "Remove reverse-link fields (client, capabilities, supported_design_systems) from SCR-PORTAL-CATALOG frontmatter."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: SCR-PORTAL-DELTAS
+    details: "Remove reverse-link fields (client, capabilities, supported_design_systems) from SCR-PORTAL-DELTAS frontmatter."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: SCR-PORTAL-DESIGN
+    details: "Remove reverse-link fields (client, capabilities, supported_design_systems) from SCR-PORTAL-DESIGN frontmatter."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: SCR-PORTAL-EXPLORATIONS
+    details: "Remove reverse-link fields (client, capabilities, supported_design_systems) from SCR-PORTAL-EXPLORATIONS frontmatter."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: FLOW-PORTAL-EXPLORATION
+    details: "Remove top-level reverse-link fields (client, capabilities) from FLOW-PORTAL-EXPLORATION frontmatter."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: FLOW-CLI-SERVE-AND-BROWSE
+    details: "Remove top-level reverse-link fields (clients, capabilities) from FLOW-CLI-SERVE-AND-BROWSE frontmatter."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Bump CAP-PROD-001 to 1.5.0, migrate technical.contracts to a flat array of CTR-* references, and update specification to reflect harmonized v1 schema fields and shared $defs."
+    expect:
+      frontmatter:
+        version: "1.5.0"
+        status: "active"
+      body:
+        contains:
+          - "defs.yaml"
+
+  - operation: modify
+    target: CAP-PROD-002
+    details: "Bump CAP-PROD-002 to 1.9.0, migrate technical.contracts to a flat array of CTR-* references, and update SpecDelta lifecycle status and expect.frontmatter.status specification."
+    expect:
+      frontmatter:
+        version: "1.9.0"
+        status: "active"
+
+  - operation: modify
+    target: CAP-PROD-003
+    details: "Migrate CAP-PROD-003 technical.contracts to a flat array of CTR-* references."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CAP-VCS-001
+    details: "Migrate CAP-VCS-001 technical.contracts to a flat array of CTR-* references."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CAP-AGENT-001
+    details: "Migrate CAP-AGENT-001 technical.contracts to a flat array of CTR-* references."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CAP-AGENT-002
+    details: "Migrate CAP-AGENT-002 technical.contracts to a flat array of CTR-* references."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CAP-EXP-001
+    details: "Migrate CAP-EXP-001 technical.contracts to a flat array of CTR-* references."
+    expect:
+      frontmatter:
+        status: "active"
+
+  - operation: modify
+    target: CAP-EXP-002
+    details: "Bump CAP-EXP-002 to 1.1.0, migrate technical.contracts to a flat array of CTR-* references, and update design specification rules to reflect unidirectional design definitions."
+    expect:
+      frontmatter:
+        version: "1.1.0"
+        status: "active"
+
+  - operation: modify
+    target: POL-001-GIT-SOURCE-OF-TRUTH
+    details: "Migrate POL-001-GIT-SOURCE-OF-TRUTH from top-level rule and enforcement block to canonical status: active, severity: blocking, and test-bound invariants."
+    expect:
+      frontmatter:
+        status: "active"
+        severity: "blocking"
+
+  - operation: modify
+    target: POL-002-INVARIANT-TEST-ENFORCEMENT
+    details: "Migrate POL-002-INVARIANT-TEST-ENFORCEMENT from top-level rule and enforcement block to canonical status: active, severity: blocking, and test-bound invariants."
+    expect:
+      frontmatter:
+        status: "active"
+        severity: "blocking"
+
+  - operation: modify
+    target: POL-003-CONTINUOUS-DOCUMENTATION-SYNC
+    details: "Migrate POL-003-CONTINUOUS-DOCUMENTATION-SYNC from top-level rule and enforcement block to canonical status: active, severity: blocking, and test-bound invariants."
+    expect:
+      frontmatter:
+        status: "active"
+        severity: "blocking"
+
+  - operation: modify
+    target: POL-004-ZERO-AI-CALL-DEPENDENCY
+    details: "Migrate POL-004-ZERO-AI-CALL-DEPENDENCY from top-level rule and enforcement block to canonical status: active, severity: blocking, and test-bound invariants."
+    expect:
+      frontmatter:
+        status: "active"
+        severity: "blocking"
+---
+= SpecDelta: Harmonize and Canonicalize All v1 Specification Schemas Without Legacy Aliases
+:toc: left
+
+== Problem Statement
+
+Across the 16 Eidos v1 YAML schemas (`assets/schemas/v1/`) and shared definitions (`assets/schemas/v1/common/defs.yaml`), identical architectural concepts evolved with divergent property names, duplicate intra-schema aliases, redundant relationship blocks, bidirectional design couplings, inconsistent `status` enums, fragmented sub-object shapes, and copy-pasted `x-eidos-ref` blocks. Maintaining these inconsistencies forces fallback chains across `FrontmatterModel`, `SpecParser`, `SpecValidator`, `LifecycleScaffolder`, `IndexSyncEngine`, `DeltaEngine`, and `PortalGenerator`:
+
+1. **Divergent Display Heading (`title` vs `name`)**:
+   * 12 schemas require `title`, while 4 schemas (`product/domain`, `product/persona`, `tech/container`, `tech/component`) require `name` and reject `title` (`additionalProperties: false`).
+   * Inline `container.components[]` and `architecture.c4_containers[]` also use `name` instead of `title`.
+2. **Divergent Domain Binding (`domain` vs `parent_domain` vs `domain_binding`)**:
+   * `product/capability` uses `domain` (plus a legacy `parent_domain` alias), whereas `tech/container`, `tech/container.components[]`, and `tech/component` use `domain_binding`.
+3. **Divergent Container Ownership (`container` vs `owning_container` vs `owning_component` vs `container_ref` vs `component_ref`)**:
+   * `tech/component` and `design/client` use `container`.
+   * `tech/contract` uses `anyOf: [required: [owning_container], required: [owning_component]]` even though `INV-INTERFACE-BOUNDARY-GOVERNANCE` forbids `CMP-*` from owning boundary contracts.
+   * `tech/architecture.c4_containers[]` uses `container_ref` and legacy `component_ref`.
+   * `tech/component.container` uses `pattern: "^CNT-[A-Z0-9_-]+$"` (forbidding `.adoc` paths), whereas all other container references allow `^(CNT-[A-Z0-9_-]+|.*\.adoc)$`.
+4. **Divergent Code Path Binding (`package_path` vs `source_path`)**:
+   * `tech/container` and `tech/architecture.c4_containers[]` use `package_path`, whereas `tech/component`, `tech/container.components[]`, and `delta.schema.yaml` (`expect.frontmatter.source_path`) use `source_path`.
+5. **Redundant Relationship Blocks (`domain.technical_mapping`, `container.dependencies`, `contract.consumers`, `capability.technical.contracts` sub-object, `container.components` pointer stubs)**:
+   * `product/domain.schema.yaml` defines `technical_mapping: { containers, components, dependencies }` even though `CNT-*` and `CAP-*` already declare `domain: DOM-*` and cross-domain links derive from contracts/components.
+   * `tech/container.schema.yaml` defines `dependencies: { internal_containers, internal_components, external_services }` even though cross-container boundaries are captured through `contracts` (`provides` / `consumes`), in-process calls through component `interfaces.consumes`, and external systems in `architecture.c4_context.external_systems`.
+   * `tech/contract.schema.yaml` defines `consumers: [CNT-* | CMP-*]` even though consumption is already declared via `contracts.consumes` on containers and capabilities.
+   * `product/capability.schema.yaml` over-specifies `technical.contracts` as a nested object (`interfaces`, `provides`, `consumes`, `events_published`, `events_consumed`) instead of a clean flat reference list matching `technical.containers` and `technical.components`.
+   * `tech/container.schema.yaml` mixes inline component definitions and `{ id, ref, title, responsibility }` pointer stubs inside `components[]`, duplicating fields from standalone `tech/component` files that already declare `container: CNT-*`.
+6. **Intra-Schema, Policy & Design-Layer Bidirectional Redundancy**:
+   * `product/policy.schema.yaml` defines top-level `rule: string`, `enforcement: { mechanism, severity }`, and `invariants: [{ id, rule, test_binding }]`, duplicating both the normative rule statement and the programmatic enforcement mechanism (`test_binding`).
+   * `design/system.schema.yaml` defines `client_id`, `extends_system`, and `inheritance: { extends, override_mode }`, coupling a reusable design system to a single client.
+   * `design/ui-component.schema.yaml` defines both `implements` and `implements_component`.
+   * `design/client.schema.yaml`, `design/screen.schema.yaml`, and `design/flow.schema.yaml` maintain bidirectional reverse-links (`capabilities`, `client`, `clients`, `supported_design_systems`, `user_flows`) back to their consumers instead of acting as pure reusable definitions referenced from outside (`product/capability.experience` and `design/client`).
+   * `tech/container.schema.yaml` defines `spec_path` on inline `components[]`, and `models.py`/`sync.py`/`generator.py` still check the legacy `c4_internal_components` key and `InvariantModel.verification`.
+   * `tech/container.contracts` defines both `consumes` and `requires` for consumed `CTR-*` contracts.
+7. **Fragmented `status` Enums, Duplicate Invariant Defs, Sub-Objects, and `x-eidos-ref` Boilerplate**:
+   * Non-workflow living specs split across 3 different `status` enums (6-state, 8-state with `sunset`/`removed`, and 9-state with `accepted`/`sunset`/`removed`), and workflow schemas (`delta`, `exploration`) include unused `draft` and `planned` states alongside `proposed`.
+   * `common/defs.yaml` duplicates `#/$defs/invariant` and `#/$defs/test_bound_invariant` with identical properties (`id`, `rule`, `test_binding`), and defines ad-hoc `component_or_symbol_ref` and `consumed_component_ref` instead of using `#/$defs/component_ref`.
+   * `quality_attributes` in `tech/container` (`stateless`, `idempotent`, `concurrency_model`, `max_memory_mb: integer`) diverges from `tech/component` (`stateless`, `reentrant`, `concurrency_model`, `max_memory_mb: number`, `max_validation_latency_ms: number`).
+   * `states` is `string[]` in `design/ui-component` but `{ name, description }[]` in `design/screen`.
+   * `external_references` uses three different Figma keys (`figma_team_library`, `figma_node_url`, `figma_frame_url`) across `design/system`, `design/ui-component`, and `design/screen`.
+   * `decisions` (`#/$defs/decision`) is missing from `product/persona` and all 5 `design/*` schemas.
+   * `x-eidos-ref.entity_label` uses generic `"entity"` for `DS-*`, `UIC-*`, and inconsistent `"entity"` vs `"screen"` / `"client"` for `SCR-*` and `CLT-*`.
+
+== Proposed Specification Changes
+
+=== 1. Canonical Field Naming & Property Removals Across All 16 Schemas (Zero Legacy Shims)
+
+[cols="1,2,2,2", options="header"]
+|===
+| Concept | Retired Fields / Blocks / Values | Canonical Field / Replacement | Affected Schemas
+| Display Heading | `name` (top-level & `components[]` / `c4_containers[]`) | `title` | `product/domain`, `product/persona`, `tech/container`, `tech/component`, `tech/architecture`
+| Domain Reference (`DOM-*`) | `domain_binding`, `parent_domain` | `domain` (`#/$defs/domain_ref`) | `product/capability`, `tech/container`, `tech/component`
+| Container Reference (`CNT-*`) | `owning_container`, `owning_component`, `container_ref`, `component_ref` | `container` (`#/$defs/container_ref`, `^(CNT-[A-Z0-9_-]+|.*\.adoc)$`) | `tech/component`, `tech/contract`, `design/client`, `tech/architecture`
+| Source Code Path(s) | `package_path` | `source_path` (`#/$defs/code_paths`) | `tech/container`, `tech/component`, `tech/architecture`, `delta/mutation`
+| Domain Technical Mapping | `technical_mapping` (`containers`, `components`, `dependencies`) | **Removed completely** *(derived from `CNT-*.domain`, `CAP-*.domain`, and contracts)* | `product/domain`
+| Container Dependencies | `dependencies` (`internal_containers`, `internal_components`, `external_services`) | **Removed completely** *(captured via `contracts.provides`/`consumes`, component `interfaces.consumes`, and `architecture.c4_context.external_systems`)* | `tech/container`
+| Contract Consumers | `consumers` | **Removed completely** *(captured via `contracts.consumes` on containers and capabilities)* | `tech/contract`
+| Capability Technical References | `technical.contracts: { interfaces, provides, consumes, events_published, events_consumed }`, `component_or_symbol_ref` | `technical.containers` (`#/$defs/container_ref[]`), `technical.components` (`#/$defs/component_ref[]`), `technical.contracts` (`#/$defs/contract_ref[]`) | `product/capability`, `common/defs.yaml`
+| Consumed Contracts (`CTR-*`) | `requires` | `consumes` (`#/$defs/contracts_block`) | `tech/container`
+| Policy Rules & Enforcement | `rule` (top-level), `enforcement: { mechanism, severity }` | Top-level `severity` (`blocking \| warning \| advisory`) + required `invariants` (`#/$defs/invariant[]`, `minItems: 1`) | `product/policy`
+| Design System Inheritance | `client_id`, `extends_system`, `inheritance: { extends, override_mode }` | Top-level `extends` (`#/$defs/design_system_ref`) + optional `override_mode` | `design/system`
+| UI Component Override | `implements_component` | `implements` (`#/$defs/ui_component_ref`) | `design/ui-component`
+| Unidirectional Design Definitions | `client.capabilities`, `screen.{client, capabilities, design_system, supported_design_systems, user_flows}`, `flow.{client, clients, capabilities}` | **Removed completely** *(design entities are pure definitions referenced from `product/capability.experience` and `design/client.{design_system, screens, flows}`)* | `design/client`, `design/screen`, `design/flow`
+| External Design Links | `figma_team_library`, `figma_node_url`, `figma_frame_url` | `figma_url`, `storybook_url` (`#/$defs/external_design_references`) | `design/system`, `design/ui-component`, `design/screen`
+| Inline vs Standalone Components | `components[].spec_path`, `components[].ref` pointer stubs, `c4_internal_components`, `consumed_component_ref` | `container.components[]` strictly for inline `#/$defs/inline_component`; standalone `tech/component` files link bottom-up via `container: CNT-*`; `interfaces.consumes` uses `#/$defs/component_ref` | `common/defs.yaml`, `tech/container`, `tech/component`
+| Invariant Definition & Binding | `#/$defs/test_bound_invariant`, `verification` (model fallback) | `#/$defs/invariant` (`test_binding`) | `common/defs.yaml`, `product/capability`, `models.py`
+| Living Spec Lifecycle Status | `proposed`, `accepted`, `sunset`, `removed` | `draft, planned, active, deprecated, retired` (`#/$defs/lifecycle_status`) | All 14 living-spec schemas (`product/*` except `exploration`, `tech/*`, `design/*`) and `delta/mutation` (`mutations[].expect.frontmatter.status`)
+| SpecDelta Status (`DLT-*`) | `draft`, `planned` | `proposed, in_review, approved, applied, rejected` (`#/$defs/delta_status`) | `delta/mutation`
+| Exploration Status (`EXP-*`) | `draft`, `planned` | `proposed, in_progress, adopted, discarded` (`#/$defs/exploration_status`) | `product/exploration`
+|===
+
+=== 2. Shared `$defs` Consolidation in `assets/schemas/v1/common/defs.yaml`
+
+Expand `assets/schemas/v1/common/defs.yaml` so all 16 schemas reference canonical definitions instead of duplicating inline fragments:
+
+* **Lifecycle & Common Types**:
+  ** `#/$defs/invariant`: Single canonical invariant definition (`required: [id, rule]`, optional `test_binding` enforced by `SpecValidator` when `status == "active"`), retiring `#/$defs/test_bound_invariant`.
+  ** `#/$defs/decision`: Enabled via `decisions:` on all 14 living specification schemas, adding support to `product/persona`, `design/system`, `design/ui-component`, `design/client`, `design/screen`, and `design/flow`.
+  ** `#/$defs/lifecycle_status`: 5-state `enum: [draft, planned, active, deprecated, retired]` used across all 14 non-workflow specification schemas and `delta.schema.yaml` `mutations[].expect.frontmatter.status` (retiring redundant `proposed`, `accepted`, `sunset`, and `removed` values on living specs).
+  ** `#/$defs/delta_status`: 5-state `enum: [proposed, in_review, approved, applied, rejected]` used by `delta/delta.schema.yaml` top-level `status`.
+  ** `#/$defs/exploration_status`: 4-state `enum: [proposed, in_progress, adopted, discarded]` used by `product/exploration.schema.yaml` top-level `status`.
+  ** `#/$defs/inline_component`: Canonical C4 Level 3 component definition (`required: [id, title, responsibility, source_path]`, properties: `id`, `title`, `status`, `domain`, `responsibility`, `source_path`, `interfaces`, `quality_attributes`, `invariants`, `decisions`) shared between `tech/container.schema.yaml` (`components[]`) and `tech/component.schema.yaml` (`allOf: [{ $ref: "#/$defs/inline_component" }]`, `unevaluatedProperties: false`).
+  ** `#/$defs/code_paths`: `oneOf: [{ type: string }, { type: array, items: { type: string } }]` used for `source_path` across `tech/container`, `tech/component`, `tech/architecture.c4_containers[]`, and `delta.schema.yaml` `expect.frontmatter.source_path`.
+  ** `#/$defs/quality_attributes`: Unified `{ stateless, idempotent, reentrant, concurrency_model, max_memory_mb (number), max_validation_latency_ms (number) }` shared by `tech/container` and `#/$defs/inline_component`.
+  ** `#/$defs/in_process_interfaces`: Unified `{ provides: [{ signature, description }], consumes: [$ref: "#/$defs/component_ref"] }` used by `#/$defs/inline_component`.
+  ** `#/$defs/contracts_block`: Unified `{ provides: [$ref: "#/$defs/contract_ref"], consumes: [$ref: "#/$defs/contract_ref"] }` used by `tech/container`.
+  ** `#/$defs/named_descriptor`: `{ type: object, additionalProperties: false, required: [name], properties: { name: { type: string }, description: { type: string } } }` (with `#/$defs/state_entry` supporting `oneOf: [{ type: string }, { $ref: "#/$defs/named_descriptor" }]`) unified across `design/ui-component` (`variants`, `states`) and `design/screen` (`states`).
+  ** `#/$defs/external_design_references`: `{ type: object, additionalProperties: false, properties: { figma_url: { type: string }, storybook_url: { type: string } } }` unified across `design/system`, `design/ui-component`, and `design/screen`.
+* **Canonical `x-eidos-ref` Reference Definitions**:
+  ** `#/$defs/domain_ref` (`DOM-*`, `entity_label: domain`)
+  ** `#/$defs/capability_ref` (`CAP-*`, `entity_label: capability`)
+  ** `#/$defs/persona_ref` (`PER-*`, `entity_label: persona`)
+  ** `#/$defs/policy_ref` (`POL-*`, `entity_label: policy`)
+  ** `#/$defs/container_ref` (`CNT-*`, `entity_label: container`)
+  ** `#/$defs/component_ref` (`CMP-*`, `entity_label: component`)
+  ** `#/$defs/contract_ref` (`CTR-*`, `entity_label: contract`)
+  ** `#/$defs/design_system_ref` (`DS-*`, `entity_label: design system`)
+  ** `#/$defs/ui_component_ref` (`UIC-*`, `entity_label: ui component`)
+  ** `#/$defs/client_ref` (`CLT-*`, `entity_label: client`)
+  ** `#/$defs/screen_ref` (`SCR-*`, `entity_label: screen`)
+  ** `#/$defs/flow_ref` (`FLOW-*`, `entity_label: flow`)
+
+=== 3. Engine, Living Catalog, Portal & Documentation Co-Evolution
+
+1. **`CMP-DOMAIN-MODELS` (`src/eidos/core/spec/models.py`)**:
+   * Remove `name`, `domain_binding`, `package_path`, `owning_container`, `owning_component`, `rule`, and `enforcement` from `FrontmatterModel`, remove `domain_binding`, `name`, and `ref` from `InlineComponentModel`, remove `verification` from `InvariantModel`, simplify `TechnicalSectionModel.contracts` to `list[str]`, and remove `c4_internal_components` fallback normalization.
+2. **`CMP-SPEC-VALIDATOR` (`src/eidos/core/spec/validator.py`)**:
+   * Update `_validate_schema_references` to recursively resolve nested `#/$defs/*` references (including `items: { $ref: "#/$defs/..." }` and `oneOf`/`anyOf` branches), validate `source_path` on containers and components, validate `container` on contracts, and validate top-level `extends` on design systems.
+3. **`CMP-LIFECYCLE-SCAFFOLDER` & `CMP-DESIGN-ENGINE` & `CMP-REPO-INITIALIZER`**:
+   * Emit `title`, `domain`, `container`, `source_path`, `status: "draft"`, `severity`, `invariants`, `extends`, `override_mode`, `implements`, and unidirectional design definitions in all scaffolded specifications and `promote_component` / `inline_component` transformations.
+4. **`CMP-INCREMENTAL-SYNC-ENGINE` (`src/eidos/core/index/sync.py`) & `CMP-PORTAL-GENERATOR` (`src/eidos/portal/generator.py`)**:
+   * Replace all dual-field fallback chains with direct reads of canonical fields, derive container/domain dependency edges, contract consumer edges, and reverse capability/client->screen/flow mappings from canonical unidirectional references, and bump `SCHEMA_VERSION` in `storage.py` so existing SQLite caches rebuild cleanly.
+5. **Repository Specifications (`eidos/**`), Skills (`assets/plugin_reference/**`), and Docs (`docs/**`)**:
+   * Migrate all active specifications in `eidos/`, skill templates in `assets/plugin_reference/skills/` and `.agents/plugins/eidos/skills/`, and `docs/concepts/schema-glossary.md` to the harmonized v1 schemas.
+
+== Verification Criteria
+
+1. `uv run eidos validate eidos --json` passes with `0` schema errors and `0` broken references across all 145 specifications.
+2. `uv run eidos delta verify DLT-2026-091 --json` reports all declared mutations as `verified: true`.
+3. `uv run eidos delta audit DLT-2026-091 --strict --json` passes with zero unexempted references to retired field tokens (`domain_binding`, `parent_domain`, `owning_container`, `owning_component`, `extends_system`, `implements_component`, `supported_design_systems`, `user_flows`, `c4_internal_components`, `technical_mapping`, `internal_containers`, `test_bound_invariant`, `consumed_component_ref`, `component_or_symbol_ref`, `figma_team_library`, `figma_node_url`, `figma_frame_url`).
+4. `uv run eidos drift --uncommitted --json` reports `is_clean: true` and `drift_detected: false`.
+5. `uv run pytest` passes across the entire test suite.

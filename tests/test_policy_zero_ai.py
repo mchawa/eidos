@@ -41,7 +41,7 @@ def _extract_pep508_pkg_name(dep: str) -> str:
 
 
 def test_pyproject_contains_zero_ai_dependencies():
-    """Verify POL-004 and INV-AGENT-ZERO-AI-DEPENDENCY: pyproject.toml does not require any AI/LLM SDK dependencies."""
+    """Verify POL-004, INV-POL-004-ZERO-AI-CALL-DEPENDENCY, and INV-AGENT-ZERO-AI-DEPENDENCY: pyproject.toml does not require any AI/LLM SDK dependencies."""
     repo_root = Path(__file__).parent.parent
     pyproject_path = repo_root / "pyproject.toml"
     assert pyproject_path.exists(), "pyproject.toml not found"
@@ -108,7 +108,7 @@ def test_pol_004_spec_is_valid():
     assert doc.doc_id == "POL-004-ZERO-AI-CALL-DEPENDENCY"
     assert doc.doc_type == "product/policy"
     assert doc.frontmatter.get("category") == "architectural"
-    assert doc.frontmatter.get("enforcement", {}).get("severity") == "blocking"
+    assert doc.frontmatter.get("severity") == "blocking"
 
     validator = SpecValidator()
     errors = validator.validate_document(doc)

@@ -25,7 +25,7 @@ eidos spec create domain DOM-BILLING --title "Subscription & Usage Billing"
 eidos spec create capability CAP-BILL-001 --title "Metered Usage Aggregation" --domain DOM-BILLING
 eidos spec create container CNT-BILLING-WORKER --title "Billing Aggregation Worker" --source-path src/billing
 eidos spec create component CMP-USAGE-LEDGER --title "Double-Entry Usage Ledger" --container CNT-BILLING-WORKER --source-path src/billing/ledger.py
-eidos spec create contract CTR-BILLING-API --title "Billing REST API" --owning-component CNT-BILLING-WORKER --protocol openapi --spec-file src/billing/openapi.yaml
+eidos spec create contract CTR-BILLING-API --title "Billing REST API" --container CNT-BILLING-WORKER --protocol openapi --spec-file src/billing/openapi.yaml
 eidos spec create policy POL-005 --title "Idempotent Webhook Processing" --category architectural --rule "Deduplicate webhooks by event ID."
 
 # Promote an inline C4 Level 3 component to eidos/architecture/components/<slug>.adoc, or inline it back
@@ -54,7 +54,8 @@ eidos validate eidos --json
 type: product/domain
 schema: schemas/v1/product/domain.schema.yaml
 id: DOM-BILLING
-name: "Subscription & Usage Billing"
+title: "Subscription & Usage Billing"
+status: active
 classification: core # core | supporting | generic
 
 boundaries:
@@ -76,7 +77,7 @@ owners:
 
 ### 2.3 Functional Capabilities (`eidos/domains/<slug>/capabilities/<cap>.adoc`)
 
-Binds user value (`jtbd`, `personas`) to technical containers (`CNT-*`), contracts (`CTR-*`), optional UX (`experience: { clients, design_systems, screens, flows, ui_components }`), and test-bound invariants (`INV-*`).
+Binds user value (`jtbd`, `personas`) to technical containers (`CNT-*`), components (`CMP-*`), contracts (`CTR-*`), optional UX (`experience: { clients, design_systems, screens, flows, ui_components }`), and test-bound invariants (`INV-*`).
 
 ```yaml
 ---
@@ -85,7 +86,7 @@ schema: schemas/v1/product/capability.schema.yaml
 id: CAP-BILL-001
 title: "Metered Usage Aggregation"
 domain: DOM-BILLING
-status: active # draft | proposed | planned | active | deprecated | retired
+status: active # draft | planned | active | deprecated | retired
 version: "1.0.0"
 
 business:
@@ -98,9 +99,10 @@ business:
 technical:
   containers:
     - "CNT-BILLING-WORKER"
+  components:
+    - "CMP-BILLING-INGESTOR"
   contracts:
-    interfaces:
-      - "POST /v1/usage/events"
+    - "CTR-BILLING-API"
   invariants:
     - id: INV-BILL-IDEMPOTENCY
       rule: "Duplicate usage events sharing the same idempotency_key within a billing period must be deduplicated without incrementing the customer ledger."
@@ -116,7 +118,8 @@ technical:
 type: product/persona
 schema: schemas/v1/product/persona.schema.yaml
 id: PER-FINANCE-ADMIN
-name: "Enterprise Finance Administrator"
+title: "Enterprise Finance Administrator"
+status: active
 role_type: "admin" # end_user | admin | human_engineer | autonomous_agent
 goals:
   - "Reconcile monthly usage invoices against raw telemetry logs"
@@ -132,7 +135,7 @@ pain_points:
 
 ### 3.1 Arc42 Master Architecture (`eidos/architecture/system-architecture.adoc`)
 * **`type: tech/architecture`** (`schema: schemas/v1/tech/architecture.schema.yaml`, `id: ARCH-*`).
-* **Required keys**: `type`, `schema`, `id`, `title`, `topology_style`, `c4_context: { actors, external_systems }`, `c4_containers` (list of `{ id: CNT-*, name, description }`), `solution_strategy` (list), `cross_cutting_concepts` (object), `deployment_view: { hosting_model, ci_cd_engine }`. Whenever you add or remove a `CNT-*` container, update `c4_containers` in `system-architecture.adoc`.
+* **Required keys**: `type`, `schema`, `id`, `title`, `topology_style`, `c4_context: { actors, external_systems }`, `c4_containers` (list of `{ container: CNT-*, title, container_type, runtime, source_path }`), `solution_strategy` (list), `cross_cutting_concepts` (object), `deployment_view: { hosting_model, ci_cd_engine }`. Whenever you add or remove a `CNT-*` container, update `c4_containers` in `system-architecture.adoc`.
 
 ### 3.2 C4 Level 2 Containers (`eidos/architecture/containers/<name>.adoc`)
 
@@ -141,27 +144,20 @@ pain_points:
 type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
 id: CNT-BILLING-WORKER
-name: "Billing Aggregation Worker"
-container_type: "background_worker" # service | library | cli_app | frontend_spa | background_worker | ml_pipeline | daemon | database | driver
+title: "Billing Aggregation Worker"
+status: active
+container_type: "background_worker" # service | library | cli_app | web_app | background_worker | ml_pipeline | daemon | database | driver
 runtime: "Python 3.12 / FastAPI"
-package_path: "src/billing" # String or list of repo-relative directory/file paths
+source_path: "src/billing" # String or list of repo-relative directory/file paths
 
-domain_binding: DOM-BILLING
+domain: DOM-BILLING
 tier: service # presentation | service | core | persistence | extensibility
 
 components:
   - id: CMP-BILLING-INGESTOR
-    name: "UsageEventIngestor"
+    title: "UsageEventIngestor"
     responsibility: "Validates incoming usage payloads and enforces idempotency keys."
     source_path: "src/billing/ingestor.py"
-  - id: CMP-USAGE-LEDGER
-    ref: "eidos/architecture/components/cmp-usage-ledger.adoc"
-
-dependencies:
-  internal_containers:
-    - "CNT-CORE-DB"
-  external_services:
-    - "Stripe Billing API"
 
 contracts:
   provides:
@@ -186,22 +182,22 @@ quality_attributes:
 = Container: Billing Aggregation Worker
 ```
 
-### 3.3 C4 Level 3 Components: Inline vs. Promoted (`INV-COMPONENT-CENTRALIZATION-MANDATE`)
+### 3.3 C4 Level 3 Components: Inline vs. Standalone (`INV-COMPONENT-CENTRALIZATION-MANDATE`)
 
-1. **Inline Components (Default)**: Defined inside the parent container's `components:` list with `id`, `name`, `responsibility`, and `source_path`.
+1. **Inline Components (Default)**: Defined inside the parent container's `components:` list (`#/$defs/inline_component`) with `id`, `title`, `responsibility`, and `source_path`.
 2. **Promoted Standalone Components (`eidos/architecture/components/<slug>.adoc`)**: Promote complex subsystems via `eidos spec component promote <CMP-ID>`.
-   * **Single-Definition Invariant (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Once promoted, the parent container's `components:` entry MUST use `{id: CMP-*, ref: "eidos/architecture/components/..."}` (with optional cached `name`/`responsibility`)—never duplicate `source_path`, `invariants`, or `decisions` in both places.
+   * **Single-Definition Invariant (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Standalone components reside in `eidos/architecture/components/` and link bottom-up via `container: CNT-*`. They are NOT duplicated in the parent container's `components:` array.
 
 ```yaml
 ---
 type: tech/component
 schema: schemas/v1/tech/component.schema.yaml
 id: CMP-USAGE-LEDGER
-name: "Double-Entry Usage Ledger"
+title: "Double-Entry Usage Ledger"
 container: CNT-BILLING-WORKER
 status: active
 source_path: "src/billing/ledger.py"
-domain_binding: DOM-BILLING
+domain: DOM-BILLING
 responsibility: "Appends immutable credit/debit usage entries and computes point-in-time account balances."
 ---
 = Component: Double-Entry Usage Ledger
@@ -217,11 +213,10 @@ type: tech/contract
 schema: schemas/v1/tech/contract.schema.yaml
 id: CTR-BILLING-API
 title: "Billing Usage Ingestion REST Contract"
+status: active
 version: "1.1.0" # Strictly SemVer 2.0.0
-owning_container: CNT-BILLING-WORKER
+container: CNT-BILLING-WORKER
 specification_file: "src/billing/openapi.yaml"
-consumers:
-  - CNT-API-GATEWAY
 protocol: openapi # openapi | protobuf | graphql | asyncapi | json_schema | json_rpc_stdio | cli_args | python_protocol
 ---
 = Contract: Billing Usage Ingestion REST Contract
@@ -229,22 +224,22 @@ protocol: openapi # openapi | protobuf | graphql | asyncapi | json_schema | json
 
 ### 3.5 Embedded Architectural Decisions (`decisions:` Frontmatter Block)
 
-Record non-obvious trade-offs and rejected alternatives in the `decisions:` array on `product/system`, `product/domain`, `product/capability`, `product/policy`, `tech/architecture`, `tech/container`, `tech/component`, or `tech/contract`:
+Record non-obvious trade-offs and rejected alternatives in the `decisions:` array on any living specification (`product/*`, `tech/*`, `design/*`):
 * **Required fields per entry**: `id` (`DEC-*`), `title`, `decision`, `rationale`, and `rejected_alternatives` (`[{ option, reason_rejected }]`), plus optional `graduated_from` (`EXP-*` or `DLT-*`).
 
 ---
 
 ## 4. Multi-Design Systems & Client UX (`DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`)
 
-For repositories with web, mobile, desktop, or TUI frontends, model UX specifications under `eidos/design/`:
+For repositories with web, mobile, desktop, or TUI frontends, model UX specifications under `eidos/design/` as pure reusable definitions referenced from `product/capability.experience` and `design/client`:
 
 | Type & ID Prefix | Canonical Path | Required Keys | Key Optional Properties |
 | :--- | :--- | :--- | :--- |
-| **`design/system` (`DS-*`)** | `eidos/design/systems/<slug>/system.adoc` | `type`, `schema`, `id`, `title`, `status`, `tokens: { spec_format: "w3c_design_tokens", manifest: "tokens.json" }` | `brand_name`, `extends_system`, `inheritance: { extends, override_mode }`, `theme_capabilities: { color_modes, density_modes }` |
-| **`design/ui-component` (`UIC-*`)** | `eidos/design/systems/<slug>/components/<comp>.adoc` | `type`, `schema`, `id`, `title`, `design_system` (`DS-*`), `status` | `category`, `variants: [{name, description}]`, `states`, `accessibility: {wcag_level, aria_role, keyboard_nav}`, `test_bindings` |
-| **`design/client` (`CLT-*`)** | `eidos/design/clients/<app>/client.adoc` | `type`, `schema`, `id`, `title`, `status`, `platform` (`web`, `mobile-ios`, `mobile-android`, `desktop`, `tui`, `multi-platform`), `design_system` | `container` (`CNT-*`), `capabilities` (`CAP-*`), `screens` (`SCR-*`), `flows` (`FLOW-*`) |
-| **`design/screen` (`SCR-*`)** | `eidos/design/clients/<app>/screens/<screen>.adoc` | `type`, `schema`, `id`, `title`, `route`, `status` | `client` (`CLT-*`), `design_system`, `capabilities`, `supported_design_systems`, `slots`, `states: [{name, description}]`, `user_flows` |
-| **`design/flow` (`FLOW-*`)** | `eidos/design/flows/<flow>.adoc` | `type`, `schema`, `id`, `title`, `status`, `steps: [{step, title, screen, action, outcome}]` | `flow_type` (`client_internal`, `cross_client`), `client`, `clients`, `capabilities` |
+| **`design/system` (`DS-*`)** | `eidos/design/systems/<slug>/system.adoc` | `type`, `schema`, `id`, `title`, `status`, `tokens: { spec_format: "w3c_design_tokens", manifest: "tokens.json" }` | `brand_name`, `extends` (`DS-*`), `override_mode`, `theme_capabilities: { color_modes, density_modes }`, `external_references`, `decisions` |
+| **`design/ui-component` (`UIC-*`)** | `eidos/design/systems/<slug>/components/<comp>.adoc` | `type`, `schema`, `id`, `title`, `design_system` (`DS-*`), `status` | `category`, `implements` (`UIC-*`), `variants: [{name, description}]`, `states`, `accessibility: {wcag_level, aria_role, keyboard_nav}`, `test_bindings`, `external_references`, `decisions` |
+| **`design/client` (`CLT-*`)** | `eidos/design/clients/<app>/client.adoc` | `type`, `schema`, `id`, `title`, `status`, `platform` (`web`, `mobile-ios`, `mobile-android`, `desktop`, `tui`, `multi-platform`), `design_system` | `container` (`CNT-*`), `screens` (`SCR-*`), `flows` (`FLOW-*`), `decisions` |
+| **`design/screen` (`SCR-*`)** | `eidos/design/clients/<app>/screens/<screen>.adoc` | `type`, `schema`, `id`, `title`, `route`, `status` | `slots`, `states: [{name, description}]`, `external_references`, `decisions` |
+| **`design/flow` (`FLOW-*`)** | `eidos/design/flows/<flow>.adoc` | `type`, `schema`, `id`, `title`, `status`, `steps: [{step, title, screen, client, action, outcome}]` | `flow_type` (`client_internal`, `cross_client`), `decisions` |
 
 ---
 
@@ -258,18 +253,20 @@ type: product/policy
 schema: schemas/v1/product/policy.schema.yaml
 id: POL-005-WEBHOOK-IDEMPOTENCY
 title: "Idempotent External Webhook Processing"
+status: active
 category: architectural # governance | architectural | security | compliance | testing | performance | lifecycle
-rule: "All external webhook handlers must deduplicate incoming deliveries by provider event ID before mutating domain state."
-enforcement:
-  mechanism: automated_test # automated_test | ci_gate | schema_validation | lint | architectural_review
-  severity: blocking # blocking | warning | advisory | info
+severity: blocking # blocking | warning | advisory
+invariants:
+  - id: INV-POL-005-WEBHOOK-IDEMPOTENCY
+    rule: "All external webhook handlers must deduplicate incoming deliveries by provider event ID before mutating domain state."
+    test_binding: "tests/billing/test_webhooks.py::test_webhook_idempotency"
 ---
 = Policy: Idempotent External Webhook Processing
 ```
 
 ### 5.2 Polyglot Invariant Test Bindings (`POL-002`)
 
-Every capability invariant (`INV-[A-Z0-9_-]+`) MUST declare:
+Every capability, policy, container, or component invariant (`INV-[A-Z0-9_-]+`) MUST declare:
 1. `test_binding: "<relative_test_file_path>::<test_function_or_Class::method>"` in YAML frontmatter.
 2. An explicit mention of the `INV-*` ID inside the bound test's docstring, comment, assertion message, or test title/display name.
 
@@ -287,5 +284,5 @@ Every capability invariant (`INV-[A-Z0-9_-]+`) MUST declare:
 
 ## 6. Cross-Reference Integrity Rules
 
-* **File Path References** (`personas`, `policies`, `components[].ref`): Must be valid repository-relative paths (`eidos/personas/...`, `eidos/policies/...`, `eidos/architecture/components/...`) pointing to existing `.adoc` files.
-* **Entity ID References** (`domain`, `domain_binding`, `container`, `owning_container`, `consumers`, `internal_containers`, `containers`, `provides`, `consumes`): Must match the exact `id:` declared in the target specification's YAML frontmatter.
+* **File Path References** (`personas`, `policies`, `screens`, `flows`, `clients`): Must be valid repository-relative paths (`eidos/personas/...`, `eidos/policies/...`, `eidos/design/...`) or entity IDs pointing to existing `.adoc` files.
+* **Entity ID References** (`domain`, `container`, `containers`, `components`, `contracts`, `provides`, `consumes`, `extends`, `implements`, `design_system`): Must match the exact `id:` declared in the target specification's YAML frontmatter.

@@ -179,7 +179,7 @@ Manage and query the embedded SQLite architectural knowledge graph and FTS5 lexi
 The index initializes automatically on first use and lazily resynchronizes before every query via sub-5ms `mtime_ns` and `SHA-256` dirty checking, guaranteeing zero drift.
 
 #### `eidos index status`
-Display database cache size, schema version (`2.4.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
+Display database cache size, schema version (`2.5.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
 
 ```bash
 # Display rich visual status and AST telemetry:
@@ -312,7 +312,7 @@ Sub-commands:
 * `show <id_or_path>`: Displays detailed frontmatter metadata and preview of a specification document.
 * `create <type> [id] --title <title>`: Scaffolds a new specification document across all 16 schema types with immediate validation (for `delta`, `id` defaults to `auto` and supports `--slug, -s`).
 * `delete <id_or_path>`: Safely deletes a specification document with cross-reference safety checks (`--force, -f` to override).
-* `component promote <component_id>`: Promotes an inline C4 Level 3 component (`CMP-*`) to a dedicated specification in `eidos/architecture/components/` and updates the parent container with `ref:`.
+* `component promote <component_id>`: Promotes an inline C4 Level 3 component (`CMP-*`) to a dedicated specification in `eidos/architecture/components/` (linking bottom-up via `container: CNT-*`) and removes the inline entry from the parent container.
 * `component inline <component_id>`: Inlines a promoted C4 Level 3 component (`CMP-*`) back into its parent container manifest.
 
 ---

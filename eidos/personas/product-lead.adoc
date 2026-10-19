@@ -2,7 +2,8 @@
 type: product/persona
 schema: schemas/v1/product/persona.schema.yaml
 id: PER-PRODUCT-LEAD
-name: "Product Lead"
+title: "Product Lead"
+status: active
 role_type: product_manager
 goals:
   - "Define and evolve product capabilities (CAP-*) and Jobs-to-be-Done (JTBD) anchored directly in Git."

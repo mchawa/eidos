@@ -2,7 +2,8 @@
 type: product/domain
 schema: schemas/v1/product/domain.schema.yaml
 id: DOM-AGENT-INTELLIGENCE
-name: "Agent Intelligence & Context Slicing Ecosystem"
+title: "Agent Intelligence & Context Slicing Ecosystem"
+status: active
 classification: core
 boundaries:
   responsibilities:
@@ -14,13 +15,6 @@ boundaries:
     - "Executing external LLM processes or sandboxed containers directly (delegated to user CLI or agent platform)."
     - "Living specification AST parsing and graph validation (delegated to DOM-SPEC-ENGINE)."
     - "Web portal HTML rendering (delegated to DOM-EXPERIENCE-PORTAL)."
-technical_mapping:
-  components:
-    - "src/eidos/core/index/context.py"
-    - "src/eidos/cli/main.py"
-    - ".agents/plugins/eidos"
-  dependencies:
-    - "DOM-SPEC-ENGINE"
 ---
 = Domain: Agent Intelligence & Context Slicing Ecosystem
 :toc: left

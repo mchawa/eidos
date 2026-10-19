@@ -95,7 +95,7 @@ Every living specification in `eidos/` is an AsciiDoc (`.adoc`) file headed by a
 1. **Frontmatter Extraction**: `SpecParser` splits the `.adoc` file into structured YAML frontmatter metadata, raw YAML line offsets, and AsciiDoc prose body.
 2. **Shared Definition Injection**: `SpecValidator` loads the canonical JSON/YAML schema referenced by `schema:` from `assets/schemas/v1/` (16 document types across `product/*`, `tech/*`, `design/*`, and `delta/*`) and merges reusable definitions from `assets/schemas/v1/common/defs.yaml`:
    * `#/$defs/decision`: Enforces structure on in-place architectural decisions (`DEC-*`, `title`, `decision`, `rationale`, `rejected_alternatives`, `graduated_from`).
-   * `#/$defs/invariant` & `#/$defs/test_bound_invariant`: Enforces RFC 2119 rules and `test_binding` paths on invariants (`INV-*`).
+   * `#/$defs/invariant`: Enforces RFC 2119 rules and `test_binding` paths on invariants (`INV-*`).
 3. **Content-Hashed Validation Cache (`spec_validation_cache`)**: Validation results are keyed by repo-relative path and SHA-256 content hash inside `eidos/.cache/index.db`. Unchanged specifications skip JSON Schema re-evaluation on subsequent runs.
 
 #### Pass 2: Cross-Document Graph Integrity (`x-eidos-ref`) & Architectural Laws
@@ -109,7 +109,7 @@ After individual documents validate against their JSON Schema, `SpecValidator` v
 
 #### Pass 3: Physical Binding Verification & Bidirectional Multi-Protocol Contract Parity
 When executed within a repository containing a source tree (`src/`), `SpecValidator` verifies that declared living specification bindings exist in the filesystem:
-* **Container Package Path Resolution**: Verifies that every directory declared in `package_path` on active C4 containers (`CNT-*`) exists on disk.
+* **Container Source Path Resolution**: Verifies that every directory or file declared in `source_path` on active C4 containers (`CNT-*`) and components (`CMP-*`) exists on disk.
 * **Contract Specification File Resolution**: Verifies that external specifications (e.g., OpenAPI schemas, protobufs, or CLI entrypoint files) referenced in `specification_file` on active contracts (`CTR-*`) exist on disk.
 * **Bidirectional Multi-Protocol Contract Parity (`DLT-2026-082`)**: Across `cli_args` (supporting recursive Typer `add_typer` sub-apps, Click, and `argparse`), `openapi`, `protobuf`, `graphql`, and `python_protocol` contracts, Eidos verifies parity in both directions—flagging both undocumented operations added in `specification_file` and stale/phantom operations left in `CTR-*` specifications after removal from code.
 * **Applied SpecDelta Fast-Path (`DLT-2026-080`)**: Historical `status: applied` SpecDeltas are cached against both their file SHA-256 and the `delta.schema.yaml` SHA-256 digest so validation remains O(1) for unchanged historical deltas.
@@ -127,7 +127,7 @@ The index engine is decomposed into 5 focused modules under `src/eidos/core/inde
 
 | Module | Component ID | Responsibility |
 | :--- | :--- | :--- |
-| `storage.py` | `CMP-GRAPH-STORAGE` | Canonical authority for `SCHEMA_VERSION` (`2.4.0`), DDL initialization, WAL pragmas, automatic drop-and-rebuild migration on version mismatch, and corruption recovery. |
+| `storage.py` | `CMP-GRAPH-STORAGE` | Canonical authority for `SCHEMA_VERSION` (`2.5.0`), DDL initialization, WAL pragmas, automatic drop-and-rebuild migration on version mismatch, and corruption recovery. |
 | `sync.py` | `CMP-INCREMENTAL-SYNC-ENGINE` | Two-tier `mtime_ns` + `SHA-256` dirty detection, path-keyed entity eviction on ID rename, edge reconstruction, AST symbol FTS projection, and source ownership reconciliation. |
 | `query.py` | `CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE` | Two-tier (`AND` conjunction before `OR` fallback) positional column-weighted FTS5 BM25 search, identifier de-compounding, symbol lookup, and hub-scoped recursive CTE `k`-hop blast-radius traversal. |
 | `context.py` | `CMP-TIERED-CONTEXT-COMPRESSOR` | Rank-ordered, token-budgeted context slicing across `anchor` (`<=300` tokens), `guardrails` (`<=1000` tokens), and `deep` (`<=2500` tokens) tiers with YAML/code-calibrated token estimation. |
@@ -144,11 +144,11 @@ The SQLite database manages 10 coordinated tables (9 domain/cache tables plus sc
 7. **`spec_validation_cache`**: Content-addressed cache of per-file JSON Schema validation verdicts keyed by file SHA-256 and schema SHA-256.
 8. **`test_binding_cache`**: Content-addressed cache of AST-extracted test functions (`func` and `Class::method`) and referenced `INV-*` IDs per test file.
 9. **`delta_baselines`**: Managed SHA-256 baseline snapshots of target specifications for SpecDelta modification evidence and transactional rollback (`DLT-2026-083`).
-10. **`metadata`**: Canonical `SCHEMA_VERSION` (`2.4.0`) and cache lifecycle state.
+10. **`metadata`**: Canonical `SCHEMA_VERSION` (`2.5.0`) and cache lifecycle state.
 
 #### How Lazy Incremental Sync Works (`<5ms`)
 Before every CLI query (`eidos context`, `eidos index`, `eidos spec list`), `_ensure_synced()` runs `check_index_dirty()`:
-1. Walks `eidos/`, `tests/`, and every container/component's declared `package_path` and `source_path`.
+1. Walks `eidos/`, `tests/`, and every container/component's declared `source_path`.
 2. If a file's `mtime_ns` matches `indexed_files`, it is skipped immediately without reading bytes from disk.
 3. If `mtime_ns` changed, Eidos computes the file's `SHA-256`. If the hash matches the stored hash (e.g., after `git checkout` or `touch`), Eidos refreshes `mtime_ns` in-place without re-indexing.
 4. Only genuinely modified, added, or deleted files are re-parsed. If a specification's `id:` was renamed in-place, `sync.py` evicts the old `doc_id` keyed by `file_path` so ghost entities and orphan edges never linger.
@@ -187,8 +187,8 @@ flowchart LR
    * For modified code files across Python, TS/JS, Go, Rust, Java, Kotlin, C/C++, C#, Ruby, PHP, Swift, Vue, and Svelte, `AstSymbolIndexer` compares public AST declarations and signatures between the baseline version and current working tree.
    * If a code change only touches internal implementation comments, docstrings, or function-body-local logic without adding/modifying/removing public symbols or files, Eidos classifies it as a non-structural edit.
 4. **Strict Path-Boundary Ownership Mapping**:
-   * Every modified source file is mapped to its owning C4 component (`CMP-*` via `source_path`) and C4 container (`CNT-*` via `package_path`).
-   * **Unowned Code Detection**: If a structural code file is added or modified outside any declared `package_path`/`source_path`, `eidos drift` flags it as **unowned code drift** unless claimed by a container/component or covered by a substantive root `system.adoc` / `system-architecture.adoc` update.
+   * Every modified source file is mapped to its owning C4 component (`CMP-*` via `source_path`) and C4 container (`CNT-*` via `source_path`).
+   * **Unowned Code Detection**: If a structural code file is added or modified outside any declared `source_path`, `eidos drift` flags it as **unowned code drift** unless claimed by a container/component or covered by a substantive root `system.adoc` / `system-architecture.adoc` update.
 5. **Substantive Spec Diff & Boundary-Aware Anchoring (`DLT-2026-081`)**:
    * To prevent agents or developers from bypassing drift checks by adding a blank line or comment to a `.adoc` file, `StructuralChangeInspector.is_substantive()` normalizes specification diffs by stripping AsciiDoc comments (`//`), YAML comments (`#`), and whitespace.
    * Structural code changes whose only accompanying spec edit is whitespace or comments are flagged under `trivially_covered_files` (`rule: trivial_spec_diff`) and fail the drift check.
@@ -197,7 +197,7 @@ flowchart LR
    * **Planned Mode** (when an active `DLT-*` SpecDelta is modified in the diff): Verifies that all touched containers and components are authorized strictly by the active SpecDelta's composable `mutations[].target` / `mutations[].parent` (and its 1-hop graph ownership neighborhood).
    * **Direct Mode** (no active `DLT-*` in diff): Verifies that for every touched container/component with structural changes, either its own `.adoc` specification or a specification within its **component-scoped 1-hop knowledge graph neighborhood** (`CAP-*`, `CTR-*`, `CNT-*`, `CMP-*`—explicitly excluding global `POL-*` and `PER-*` edges so editing one policy never rubber-stamps the whole repo) was substantively updated.
 7. **Specification Schema & Referential Integrity Gate (`validator.py`)**:
-   * Runs the full 3-pass `SpecValidator` suite over `eidos/`. Before code changes can merge, Eidos guarantees that all specification documents conform to JSON schemas, cross-references resolve, declared container `package_path` and contract `specification_file` targets exist on disk, and contracts maintain bidirectional parity.
+   * Runs the full 3-pass `SpecValidator` suite over `eidos/`. Before code changes can merge, Eidos guarantees that all specification documents conform to JSON schemas, cross-references resolve, declared container `source_path` and contract `specification_file` targets exist on disk, and contracts maintain bidirectional parity.
 8. **Polyglot Static Invariant Test Verification (`invariants.py`, `DLT-2026-078`)**:
    * Scans every `INV-*` invariant across capabilities (`CAP-*`), policies (`POL-*`), containers (`CNT-*`, including inline `CMP-*` components), and promoted components (`CMP-*`).
    * Uses Git-tracked file enumeration (`get_tracked_files`), `test_binding_cache`, and `ast-grep` across **Python (`.py`), TypeScript/JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`), Go (`_test.go`), Rust (`.rs`), Java (`.java`), and Kotlin (`.kt`, `.kts`)** to verify that:

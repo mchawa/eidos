@@ -2,71 +2,95 @@
 type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
 id: CNT-EIDOS-CLI
-name: "Eidos Command-Line Interface"
+title: "Eidos Command-Line Interface"
+status: active
 container_type: "cli_app"
 runtime: "Python 3.12 / Typer / Rich"
-package_path: "src/eidos/cli"
+source_path: "src/eidos/cli"
 
-domain_binding: DOM-SPEC-ENGINE
+domain: DOM-SPEC-ENGINE
 tier: presentation
 
 components:
   - id: CMP-CLI-APP
-    name: "CliApp"
+    title: "CliApp"
     responsibility: "Root command dispatcher, error code translation, eidos info reporting across all 16 bundled v1 schemas, and formatted diagnostic table rendering."
     source_path:
       - "src/eidos/cli/main.py"
       - "src/eidos/cli/_shared.py"
   - id: CMP-CLI-SPEC-COMMANDS
-    name: "SpecCommands"
-    responsibility: "Root specification validation (`eidos validate`, resolving `eidos/` via `find_repo_root` before checking directory existence) and `eidos spec` subcommands for catalog listing (`eidos spec list --json`, including inline `CMP-*` components), showing, creating (across all 16 schemas including component, client with `--platform`, contract with `--spec-file`, flow, and delta with `--kind`: feature, enabler, bug, displaying the generated `DLT-*` ID when `--id auto` is used), deleting living specifications, and mounting the `eidos spec component` subgroup."
+    title: "SpecCommands"
+    responsibility: "Root specification validation (`eidos validate`, resolving `eidos/` via `find_repo_root` before checking directory existence) and `eidos spec` subcommands for catalog listing (`eidos spec list --json`, including inline `CMP-*` components), showing, creating (across all 16 schemas including component, client with `--platform` and `--container`, contract with `--container` and `--spec-file`, container/component with `--source-path`, ui-component with `--implements`, design-system with `--extends`, flow, and delta with `--kind`: feature, enabler, bug, displaying the generated `DLT-*` ID when `--id auto` is used), deleting living specifications, and mounting the `eidos spec component` subgroup."
     source_path: "src/eidos/cli/spec_commands.py"
+    interfaces:
+      consumes:
+        - "CMP-SPEC-VALIDATOR"
+        - "CMP-LIFECYCLE-SCAFFOLDER"
   - id: CMP-CLI-DELTA-COMMANDS
-    name: "DeltaCommands"
-    responsibility: "SpecDelta lifecycle commands (`eidos delta`): status dashboard and status transition (`eidos delta status [ID] [STATUS] --json`, rendering `draft` and `planned` rows and including them in `active_deltas`), listing (`eidos delta list --json`), authoring (`eidos delta create [ID]` defaulting to `'auto'` with `--slug` / `-s`, `--kind`: feature, enabler, bug, and `--branch` / `-b`), verification (rendering per-mutation failure_reason diagnostics when verification fails), deletion auditing, changelog generation (resolving repo_root via find_repo_root for custom --path directories), and default-verified in-place application (`eidos delta apply` with `--verify/--no-verify` defaulting to True)."
+    title: "DeltaCommands"
+    responsibility: "SpecDelta lifecycle commands (`eidos delta`): status dashboard and status transition (`eidos delta status [ID] [STATUS] --json`), listing (`eidos delta list --json`), authoring (`eidos delta create [ID]` defaulting to `'auto'` with `--slug` / `-s`, `--kind`: feature, enabler, bug, and `--branch` / `-b`), verification (rendering per-mutation failure_reason diagnostics when verification fails), deletion auditing, changelog generation (resolving repo_root via find_repo_root for custom --path directories), and default-verified in-place application (`eidos delta apply` with `--verify/--no-verify` defaulting to True)."
     source_path: "src/eidos/cli/delta_commands.py"
+    interfaces:
+      consumes:
+        - "CMP-DELTA-ENGINE"
+        - "CMP-DELTA-AUDITOR"
+        - "CMP-CHANGELOG-GENERATOR"
   - id: CMP-CLI-PLUGIN-COMMANDS
-    name: "PluginCommands"
+    title: "PluginCommands"
     responsibility: "Agent plugin lifecycle commands (`eidos plugin`): install (defaulting to force=False and catching FileExistsError for symlink/overwrite safety), uninstall, version, update, validate, and info."
     source_path: "src/eidos/cli/plugin_commands.py"
+    interfaces:
+      consumes:
+        - "CMP-PLUGIN-INSTALLER"
+        - "CMP-PLUGIN-VALIDATOR"
   - id: CMP-CLI-DRIFT-COMMANDS
-    name: "DriftCommands"
+    title: "DriftCommands"
     responsibility: "Spec-to-code and non-code drift detection (`eidos drift`) across uncommitted working trees and Git commit ranges, resolving both default and custom `--path` (including `--path .` repo roots and subdirectory invocations) via `find_repo_root`, emitting complete machine-readable JSON diagnostics (including unmapped_code_files, validation_errors, uncovered_invariants, and orphan_invariants without stdout banner corruption when combined with --markdown), distinguishing code vs. non-code drift and invariant traceability failures in terminal reports, surfacing explicit Git base resolution errors, and exiting non-zero when --base is invalid or missing in shallow clones."
     source_path: "src/eidos/cli/drift_commands.py"
+    interfaces:
+      consumes:
+        - "CMP-DRIFT-DETECTOR"
   - id: CMP-CLI-INIT-COMMAND
-    name: "InitCommand"
+    title: "InitCommand"
     responsibility: "CLI entrypoint for repository bootstrapping, living spec skeleton generation (including progressive Eidos Lite onboarding profile via --lite), and baseline validation."
     source_path: "src/eidos/cli/init_command.py"
+    interfaces:
+      consumes:
+        - "CMP-REPO-INITIALIZER"
   - id: CMP-CLI-CONTEXT-COMMAND
-    name: "ContextCommand"
+    title: "ContextCommand"
     responsibility: "Extracts compact, token-efficient architectural subgraph slices for AI agents, resolving `eidos/` via `find_repo_root` when invoked from subdirectories."
     source_path: "src/eidos/cli/context_command.py"
+    interfaces:
+      consumes:
+        - "CMP-TIERED-CONTEXT-COMPRESSOR"
   - id: CMP-CLI-INDEX-COMMANDS
-    name: "IndexCommands"
+    title: "IndexCommands"
     responsibility: "Knowledge graph operations (`eidos index`): sync, status inspection, lexical search (`eidos index search --json`), blast-radius impact analysis, and repo-map / find-symbol output including source Location (file:line) for AST symbols."
     source_path: "src/eidos/cli/index_commands.py"
+    interfaces:
+      consumes:
+        - "CMP-FTS-QUERY-ENGINE"
+        - "CMP-GRAPH-TRAVERSAL-ENGINE"
   - id: CMP-CLI-COMPONENT-COMMANDS
-    name: "ComponentCommands"
+    title: "ComponentCommands"
     responsibility: "C4 Level 3 component lifecycle commands under `eidos spec component`: promoting inline components to centralized specs in `eidos/architecture/components/` (`promote`) and inlining dedicated specs back into parent container manifests (`inline`)."
     source_path: "src/eidos/cli/component_commands.py"
+    interfaces:
+      consumes:
+        - "CMP-LIFECYCLE-SCAFFOLDER"
   - id: CMP-CLI-PORTAL-COMMANDS
-    name: "PortalCommands"
+    title: "PortalCommands"
     responsibility: "Living Web Portal commands (`eidos portal`): interactive preview server (`eidos portal serve`) and static site compilation (`eidos portal build`)."
     source_path: "src/eidos/cli/portal_commands.py"
+    interfaces:
+      consumes:
+        - "CMP-PORTAL-SERVER"
+        - "CMP-PORTAL-BUILDER"
   - id: CMP-CLI-DOCTOR-HOOKS
-    name: "DoctorAndHookCommands"
+    title: "DoctorAndHookCommands"
     responsibility: "Installation health diagnostics (`eidos doctor --path`, including `agent_plugin` health in `overall_ok`) with custom specification directory resolution and virtualenv-aware CLI binary checks, plus CLI-native agent lifecycle hook dispatchers (`eidos hook lint` and `eidos hook drift` with `event` defaulting to `None` so standalone CLI invocation without stdin payload runs direct validation/drift and exits non-zero on failure)."
     source_path: "src/eidos/cli/doctor_hook_commands.py"
-
-dependencies:
-  internal_containers:
-    - "CNT-EIDOS-CORE"
-    - "CNT-EIDOS-VCS"
-    - "CNT-EIDOS-INDEX"
-    - "CNT-EIDOS-PLUGIN"
-    - "CNT-EIDOS-PORTAL"
-  external_services:
-    - "Terminal stdout/stderr"
 
 contracts:
   provides:

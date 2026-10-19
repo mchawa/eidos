@@ -1,13 +1,13 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: DomainSchema
-description: "Defines a bounded context (Domain-Driven Design), its architectural boundaries, responsibilities, and components."
+description: "Defines a bounded context (Domain-Driven Design), its strategic classification, and functional boundaries."
 type: object
 additionalProperties: false
 required:
   - type
   - schema
   - id
-  - name
+  - title
   - classification
   - boundaries
 properties:
@@ -22,32 +22,17 @@ properties:
     type: string
     pattern: "^DOM-[A-Z0-9_-]+$"
     description: "Unique domain identifier following the DOM-<NAME> convention (e.g. DOM-PRODUCT-CORE)."
-  name:
+  title:
     type: string
-    description: "Human-readable name of the domain or bounded context."
+    description: "Human-readable title of the domain or bounded context."
   status:
-    type: string
-    enum:
-      - draft
-      - proposed
-      - planned
-      - active
-      - deprecated
-      - retired
-    description: "Optional lifecycle state of the domain specification."
+    $ref: "#/$defs/lifecycle_status"
   classification:
     type: string
     pattern: "^[a-z0-9_-]+$"
     description: >
-      Domain classification. Intentionally open to support any DDD taxonomy.
-      
-      Common conventions include:
-        - core (Differentiating business logic giving competitive advantage)
-        - supporting (Custom internal helper domain tailored to the core)
-        - generic (Standard off-the-shelf capability like auth or billing)
-        - platform (Cross-cutting infrastructure or developer platform)
-        - shared_kernel (Subdomain shared across multiple bounded contexts)
-        - integration (Adapter or gateway domain connecting external legacy systems)
+      Domain classification. Intentionally open to support any DDD taxonomy
+      (e.g. core, supporting, generic, platform, shared_kernel, integration).
     examples:
       - "core"
       - "supporting"
@@ -72,50 +57,6 @@ properties:
         items:
           type: string
           description: "A specific excluded responsibility."
-  technical_mapping:
-    type: object
-    description: "Mapping of this business domain to concrete software packages, repositories, containers, or components (optional)."
-    additionalProperties: false
-    properties:
-      containers:
-        type: array
-        description: "C4 Level 2 containers (CNT-* IDs or container spec paths) that realize this domain."
-        items:
-          type: string
-          pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
-          description: "Container ID (e.g. CNT-CORE) or relative path to container specification."
-          x-eidos-ref:
-            target_types:
-              - tech/container
-            prefixes:
-              - CNT-
-            entity_label: container
-      components:
-        type: array
-        description: "Source code directories, modules, or C4 Level 3 components (CMP-*) that realize this domain."
-        items:
-          type: string
-          description: "Relative path, module name, or component ID (e.g. packages/spec-parser or CMP-SPEC-PARSER)."
-          x-eidos-ref:
-            target_types:
-              - tech/component
-            prefixes:
-              - CMP-
-            allow_non_id_string: true
-            entity_label: component
-      dependencies:
-        type: array
-        description: "Other domain IDs that this domain depends on or communicates with."
-        items:
-          type: string
-          pattern: "^(DOM-[A-Z0-9_-]+|.*\\.adoc)$"
-          description: "Referenced domain ID (e.g. DOM-VCS-SYNC)."
-          x-eidos-ref:
-            target_types:
-              - product/domain
-            prefixes:
-              - DOM-
-            entity_label: domain
   ubiquitous_language:
     oneOf:
       - type: object
@@ -136,4 +77,3 @@ properties:
     description: "In-place domain and architectural decisions recorded on this domain specification (POL-001)."
     items:
       $ref: "#/$defs/decision"
-

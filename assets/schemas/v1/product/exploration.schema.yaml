@@ -27,15 +27,7 @@ properties:
     type: string
     description: "Human-readable title describing the research topic or spike investigation."
   status:
-    type: string
-    enum:
-      - draft
-      - proposed
-      - planned
-      - in_progress
-      - adopted
-      - discarded
-    description: "Exploration lifecycle state: 'draft', 'proposed', 'planned', 'in_progress' (spike active on experimental branch), 'adopted' (hypothesis proven, graduates to SpecDelta), or 'discarded' (infeasible/rejected, archived with learnings)."
+    $ref: "#/$defs/exploration_status"
   hypothesis:
     type: string
     description: "The central testable assumption or question being investigated (e.g. 'Using CRDTs will reduce WebSocket latency by 50%')."

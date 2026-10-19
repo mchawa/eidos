@@ -46,9 +46,8 @@ technical:
     - "CNT-EIDOS-PORTAL"
     - "CNT-EIDOS-CLI"
   contracts:
-    interfaces:
-      - "eidos portal serve [--port <port>]"
-      - "eidos portal build [--out <dir>]"
+    - "CTR-EIDOS-PORTAL"
+    - "CTR-EIDOS-CLI"
   invariants:
     - id: INV-PORTAL-ZERO-NODE-DEP
       rule: "The web portal daemon and static site builder must operate using Python standard library without external Node.js/npm dependencies."

@@ -958,7 +958,7 @@ def test_component_invariants_are_verified(tmp_path):
         """---
 type: tech/component
 id: CMP-BILLING
-name: Billing
+title: Billing
 container: CNT-APP
 source_path: src/billing
 responsibility: Billing
@@ -978,11 +978,11 @@ invariants:
         """---
 type: tech/container
 id: CNT-APP
-name: App
-package_path: src
+title: App
+source_path: src
 components:
   - id: CMP-INLINE
-    name: Inline
+    title: Inline
     source_path: src/inline.py
     invariants:
       - id: INV-CMP-INLINE-OK
@@ -1029,8 +1029,8 @@ def test_exact_delta_target_matching_rejects_substring_and_slug_collisions(tmp_p
 type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
 id: CNT-EIDOS-CORE
-name: Core Engine
-package_path: src/core
+title: Core Engine
+source_path: src/core
 ---
 = Core Engine
 """,
@@ -1043,7 +1043,7 @@ type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-099
 title: Unrelated Score Engine Delta
-status: in_progress
+status: in_review
 intent:
   kind: feature
   motivation: Modify score engine only.
@@ -1094,8 +1094,8 @@ def test_rejected_and_preexisting_applied_deltas_do_not_activate_planned_mode(tm
 type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
 id: CNT-EIDOS-CORE
-name: Core Engine
-package_path: src/core
+title: Core Engine
+source_path: src/core
 components: []
 ---
 = Core Engine
@@ -1176,8 +1176,8 @@ def test_path_in_requires_separator_boundary_and_no_slug_fallback(tmp_path):
 type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
 id: CNT-EIDOS-CORE
-name: Core Engine
-package_path: src/core
+title: Core Engine
+source_path: src/core
 components: []
 ---
 = Core Engine
@@ -1200,8 +1200,10 @@ _SPEC_BASE = """---
 type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
 id: CNT-X
-name: X
-package_path: src/pkg
+title: X
+container_type: service
+runtime: Python
+source_path: src/pkg
 ---
 = X
 
@@ -1240,7 +1242,7 @@ _TRIVIAL_EDITS = {
     "blank_lines": _SPEC_BASE + "\n\n   \n",
     "line_comment": _SPEC_BASE + "\n// touched to appease drift\n",
     "block_comment": _SPEC_BASE + "\n////\nnote about Foo\n////\n",
-    "yaml_comment": _SPEC_BASE.replace("name: X\n", "name: X\n# touched\n"),
+    "yaml_comment": _SPEC_BASE.replace("title: X\n", "title: X\n# touched\n"),
     "rewrap": _SPEC_BASE.replace("Original prose.", "Original\nprose."),
 }
 
@@ -1301,13 +1303,16 @@ _NEW_MODULE = "def new_fn():\n    return 1\n"
 
 
 def test_new_unclaimed_file_requires_anchor(tmp_path, monkeypatch):
-    """INV-DRIFT-DIFF-AWARE-COVERAGE: a new file only owned via package_path needs an anchored owner-spec edit."""
+    """INV-DRIFT-DIFF-AWARE-COVERAGE: a new file only owned via source_path needs an anchored owner-spec edit."""
     new_rel = "src/pkg/new_mod.py"
     unrelated = _SPEC_BASE + "\nSome unrelated documentation sentence.\n"
     stem_only = _SPEC_BASE + "\nIntroduces the new_mod helpers.\n"  # bare stem: generic word, not an anchor
     mentions = _SPEC_BASE + "\nIntroduces `new_mod.py`.\n"
     names_symbol = _SPEC_BASE + "\nAdds `new_fn()` for callers.\n"
-    declares = _SPEC_BASE.replace("package_path: src/pkg\n", "package_path: src/pkg\nsource_path: src/pkg/new_mod.py\n")
+    declares = _SPEC_BASE.replace(
+        "source_path: src/pkg\n",
+        "source_path:\n  - src/pkg\n  - src/pkg/new_mod.py\n",
+    )
 
     def run(sub, new_spec):
         root = tmp_path / sub
@@ -1337,7 +1342,10 @@ def test_new_unclaimed_file_requires_anchor(tmp_path, monkeypatch):
 def test_new_file_already_claimed_by_source_path_only_needs_substantive_edit(tmp_path, monkeypatch):
     """INV-DRIFT-DIFF-AWARE-COVERAGE: files matched by the owner's source_path at the base revision need no anchor."""
     new_rel = "src/pkg/new_mod.py"
-    claimed_base = _SPEC_BASE.replace("package_path: src/pkg\n", "package_path: src/pkg\nsource_path: src/pkg/*.py\n")
+    claimed_base = _SPEC_BASE.replace(
+        "source_path: src/pkg\n",
+        "source_path:\n  - src/pkg\n  - src/pkg/*.py\n",
+    )
     eidos_dir = _diff_aware_env(
         tmp_path,
         monkeypatch,
@@ -1487,8 +1495,11 @@ def test_comment_after_listing_block_is_still_trivial(tmp_path, monkeypatch):
 
 def test_frontmatter_block_scalar_hash_lines_are_content(tmp_path, monkeypatch):
     """INV-DRIFT-DIFF-AWARE-COVERAGE: frontmatter is compared as YAML data, so '#' inside block strings is content."""
-    base = _SPEC_BASE.replace("name: X\n", "name: X\nnotes: |\n  # Overview\n  text\n")
-    edited = base.replace("  # Overview\n", "  # Overview of Foo\n")
+    base = _SPEC_BASE.replace(
+        "title: X\n",
+        "title: X\ncomponents:\n  - id: CMP-X\n    title: X Comp\n    responsibility: |\n      # Overview\n      text\n",
+    )
+    edited = base.replace("      # Overview\n", "      # Overview of Foo\n")
     eidos_dir = _diff_aware_env(
         tmp_path,
         monkeypatch,
@@ -1932,7 +1943,10 @@ def test_src_test_helpers_and_package_path_test_classification(tmp_path, monkeyp
 def test_deleted_unmapped_file_covered_by_substantive_container_spec_update(tmp_path, monkeypatch):
     """DLT-2026-051: deleting a file and removing its ownership from a container spec is covered by the substantive container spec edit."""
     deleted_file = "src/legacy/old_mod.py"
-    spec_old = _SPEC_BASE.replace("package_path: src/pkg\n", "package_path: src/pkg\nsource_path: src/legacy/old_mod.py\n")
+    spec_old = _SPEC_BASE.replace(
+        "source_path: src/pkg\n",
+        "source_path:\n  - src/pkg\n  - src/legacy/old_mod.py\n",
+    )
     spec_new = _SPEC_BASE + "\nRemoved legacy module old_mod.py.\n"
 
     env = _diff_aware_env(
@@ -2036,7 +2050,7 @@ def test_dlt_2026_068_unquoted_git_paths_container_invariants_and_reconcile(tmp_
     diff_files = get_git_diff_files(tmp_path, uncommitted=True)
     assert unicode_rel in diff_files
 
-    # 2. Top-level tech/container invariants and c4_internal_components invariants
+    # 2. Top-level tech/container invariants and components invariants
     eidos_dir = tmp_path / "eidos"
     cnts_dir = eidos_dir / "architecture" / "containers"
     caps_dir = eidos_dir / "domains" / "core" / "capabilities"
@@ -2050,15 +2064,18 @@ def test_dlt_2026_068_unquoted_git_paths_container_invariants_and_reconcile(tmp_
 type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
 id: CNT-PKG
-name: Pkg Container
-package_path: src/pkg
+title: Pkg Container
+container_type: library
+runtime: Python
+source_path: src/pkg
 invariants:
   - id: INV-CNT-TOP-LEVEL
     rule: Container-level invariant
     test_binding: tests/test_pkg.py::test_cnt_top
-c4_internal_components:
+components:
   - id: CMP-C4-INTERNAL
-    name: C4 Internal
+    title: C4 Internal
+    responsibility: Internal module
     source_path: src/pkg/internal.py
     invariants:
       - id: INV-CMP-C4-INTERNAL
@@ -2101,7 +2118,7 @@ technical:
 
 
 def test_dlt_2026_074_design_subgraph_inheritance_and_cross_client_flows():
-    """Verify DLT-2026-074: _collect_design_subgraph traverses inheritance.extends, supported_design_systems, and cross_client flows."""
+    """Verify DLT-2026-074: _collect_design_subgraph traverses extends, design_system, and client flows."""
     from eidos.vcs.structural import _collect_design_subgraph
 
     entities = [
@@ -2109,18 +2126,20 @@ def test_dlt_2026_074_design_subgraph_inheritance_and_cross_client_flows():
             "id": "CLT-WEB",
             "type": "design/client",
             "file_path": "eidos/design/clients/web/client.adoc",
+            "flows": ["FLOW-HANDOFF"],
         },
         {
             "id": "CLT-MOBILE",
             "type": "design/client",
             "file_path": "eidos/design/clients/mobile/client.adoc",
-            "supported_design_systems": ["DS-BRAND"],
+            "design_system": "DS-BRAND",
+            "flows": ["FLOW-HANDOFF"],
         },
         {
             "id": "DS-BRAND",
             "type": "design/system",
             "file_path": "eidos/design/systems/brand/system.adoc",
-            "inheritance": {"extends": "DS-FOUNDATION"},
+            "extends": "DS-FOUNDATION",
         },
         {
             "id": "DS-FOUNDATION",
@@ -2139,7 +2158,6 @@ def test_dlt_2026_074_design_subgraph_inheritance_and_cross_client_flows():
             "type": "design/flow",
             "file_path": "eidos/design/flows/handoff.adoc",
             "flow_type": "cross_client",
-            "clients": ["CLT-WEB", "CLT-MOBILE"],
         },
     ]
 
@@ -2249,10 +2267,10 @@ def test_real_git_structural_and_design_drift_and_cache_mtime_hit(tmp_path):
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-SVC\n"
-        "name: Order Service\n"
+        "title: Order Service\n"
         "container_type: service\n"
         "runtime: Python\n"
-        "package_path: src/svc\n"
+        "source_path: src/svc\n"
         "---\n"
         "= Order Service\n\n"
         "Baseline architecture.\n",
@@ -2297,7 +2315,7 @@ def test_real_git_structural_and_design_drift_and_cache_mtime_hit(tmp_path):
         "id: POL-SVC-001\n"
         "title: Service Policy\n"
         "category: quality\n"
-        "rule: Enforce service invariant.\n"
+        "severity: blocking\n"
         "invariants:\n"
         "  - id: INV-SVC-001\n"
         "    rule: Service handler must be tested.\n"
@@ -2439,7 +2457,7 @@ def test_drift_report_helpers_and_cli_rich_output(tmp_path):
     for d in (cnt_dir, svc_dir, tests_dir):
         d.mkdir(parents=True)
     (cnt_dir / "cnt.adoc").write_text(
-        "---\ntype: tech/container\nschema: schemas/v1/tech/container.schema.yaml\nid: CNT-CLI\nname: CLI\ncontainer_type: service\nruntime: Python\npackage_path: src/svc\n---\n= CLI\n",
+        "---\ntype: tech/container\nschema: schemas/v1/tech/container.schema.yaml\nid: CNT-CLI\ntitle: CLI\ncontainer_type: service\nruntime: Python\nsource_path: src/svc\n---\n= CLI\n",
         encoding="utf-8",
     )
     code_f = svc_dir / "mod.py"
@@ -2524,7 +2542,7 @@ def test_drift_report_helpers_and_cli_rich_output(tmp_path):
         "id: POL-INV-1\n"
         "title: Inv Pol\n"
         "category: quality\n"
-        "rule: Test uncached invariant matching.\n"
+        "severity: blocking\n"
         "invariants:\n"
         "  - id: INV-UNCACHED-1\n"
         "    rule: Qualified func match\n"
@@ -2956,7 +2974,7 @@ def test_class_qualified_test_binding_rejects_wrong_class_fallback(tmp_path: Pat
         "id: POL-CLS-001\n"
         "title: Class Binding Policy\n"
         "category: quality\n"
-        "rule: Verify class-qualified test bindings.\n"
+        "severity: blocking\n"
         "invariants:\n"
         "  - id: INV-CLS-RIGHT\n"
         "    rule: Matches RightClass::test_foo\n"
@@ -2991,15 +3009,12 @@ def test_group_c1_inline_component_1hop_and_promoted_component_parent_container(
 type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
 id: CNT-API
-name: API Container
-package_path: src/api
+title: API Container
+source_path: src/api
 components:
   - id: CMP-INLINE-PAY
-    name: Inline Payments
+    title: Inline Payments
     source_path: src/api/pay.py
-  - id: CMP-PROMOTED-AUTH
-    name: Promoted Auth
-    ref: eidos/architecture/components/auth.adoc
 ---
 = API Container
 
@@ -3045,15 +3060,15 @@ Original payment prose.
     res1 = detect_drift(repo_root=ws1, eidos_dir=env1)
     assert res1.drift_detected is False
 
-    # 2. File owned by promoted CMP-PROMOTED-AUTH (owned_path: src/api/auth/**) covered by parent CNT-API or CAP bound to CNT-API -> clean!
+    # 2. File owned by promoted CMP-PROMOTED-AUTH (source_path: src/api/auth/**) covered by parent CNT-API or CAP bound to CNT-API -> clean!
     cmp_auth_rel = "eidos/architecture/components/auth.adoc"
     cmp_auth_spec = """---
 type: tech/component
 schema: schemas/v1/tech/component.schema.yaml
 id: CMP-PROMOTED-AUTH
-name: Promoted Auth
+title: Promoted Auth
 container: CNT-API
-owned_path: src/api/auth/**
+source_path: src/api/auth/**
 responsibility: Authentication
 ---
 = Promoted Auth
@@ -3167,7 +3182,7 @@ def test_group_c2_fixture_docstrings_decorators_class_top_level_orphans_and_comb
         """---
 type: product/domain
 id: DOM-CORE
-name: Core Domain
+title: Core Domain
 invariants:
   - id: INV-DOM-TOP
     rule: Domain top invariant
@@ -3186,8 +3201,8 @@ technical:
         """---
 type: tech/container
 id: CNT-BOTH
-name: Both Container
-package_path: src
+title: Both Container
+source_path: src
 invariants:
   - id: INV-CNT-TOP
     rule: Container top invariant
@@ -3287,7 +3302,7 @@ mutations:
 
 
 def test_group_c4_incremental_sync_design_eviction_ownership_component_ref_and_consumes_api(tmp_path: Path) -> None:
-    """Verify C4: incremental sync evicts stale styles_container/inferred_path/component_ref and preserves consumes_api edges."""  # eidos:fixture
+    """Verify C4: incremental sync evicts stale styles_container/inferred_path and preserves consumes_api edges."""  # eidos:fixture
     import os
     import time
 
@@ -3313,12 +3328,8 @@ def test_group_c4_incremental_sync_design_eviction_ownership_component_ref_and_c
         """---
 type: tech/container
 id: CNT-WEB
-name: Web Container
-package_path: src/old_pkg
-components:
-  - id: CMP-WORKER
-    name: Worker
-    ref: eidos/architecture/components/worker.adoc
+title: Web Container
+source_path: src/old_pkg
 ---
 = Web Container
 """,
@@ -3329,7 +3340,7 @@ components:
         """---
 type: tech/component
 id: CMP-WORKER
-name: Worker
+title: Worker
 container: CNT-WEB
 source_path: src/new_pkg/new_mod.py
 interfaces:
@@ -3359,8 +3370,7 @@ type: design/system
 id: DS-BRAND
 title: Brand Design System
 status: active
-inheritance:
-  extends: DS-BASE
+extends: DS-BASE
 ---
 = Brand Design System
 """,
@@ -3392,7 +3402,7 @@ design_system: DS-BRAND
         ).fetchall()
         assert ("CMP-WORKER", "AuthService.verify_token(token)") in [(r[0], r[1]) for r in consumes_edges]
 
-        # 2. Initially DS-BASE styles CNT-WEB indirectly via DS-BRAND inheritance, and component_ref exists
+        # 2. Initially DS-BASE styles CNT-WEB indirectly via DS-BRAND inheritance
         styles_cnt = {
             r[0]
             for r in conn.execute(
@@ -3400,12 +3410,8 @@ design_system: DS-BRAND
             ).fetchall()
         }
         assert styles_cnt == {"DS-BRAND", "DS-BASE"}
-        comp_refs = conn.execute(
-            "SELECT symbol, entity_id FROM symbol_mappings WHERE kind = 'component_ref';"
-        ).fetchall()
-        assert ("eidos/architecture/components/worker.adoc", "CMP-WORKER") in [(r[0], r[1]) for r in comp_refs]
 
-        # 3. Incrementally update DS-BRAND (drop extends: DS-BASE) and CNT-WEB (change package_path to src/new_pkg and remove component_ref)
+        # 3. Incrementally update DS-BRAND (drop extends: DS-BASE) and CNT-WEB (change source_path to src/new_pkg)
         ds_brand.write_text(
             """---
 type: design/system
@@ -3421,8 +3427,8 @@ status: active
             """---
 type: tech/container
 id: CNT-WEB
-name: Web Container
-package_path: src/new_pkg
+title: Web Container
+source_path: src/new_pkg
 ---
 = Web Container
 """,
@@ -3442,12 +3448,6 @@ package_path: src/new_pkg
             ).fetchall()
         }
         assert styles_cnt_after == {"DS-BRAND"}
-
-        # Stale component_ref row must be cleaned up
-        comp_refs_after = conn.execute(
-            "SELECT symbol, entity_id FROM symbol_mappings WHERE kind = 'component_ref';"
-        ).fetchall()
-        assert comp_refs_after == []
 
         # Stale src/old_pkg must not remain in source_path or inferred_path; src/new_pkg must be present
         cnt_sources = {
@@ -3516,15 +3516,15 @@ def test_deep_audit_group_c_c1_through_c10(tmp_path: Path) -> None:
     cnt_dir_c6 = tmp_path / "c6_eidos" / "architecture" / "containers"
     cnt_dir_c6.mkdir(parents=True)
     (cnt_dir_c6 / "inline_list.adoc").write_text(
-        "---\ntype: tech/container\nid: CNT-1\npackage_path: [\"src/a\", 'src/b/']\n---\n",
+        "---\ntype: tech/container\nid: CNT-1\nsource_path: [\"src/a\", 'src/b/']\n---\n",
         encoding="utf-8",
     )
     (cnt_dir_c6 / "block_list.adoc").write_text(
-        "---\ntype: tech/container\nid: CNT-2\npackage_path:\n  - src/c\n  - src/d  # comment\nstatus: active\n---\n",
+        "---\ntype: tech/container\nid: CNT-2\nsource_path:\n  - src/c\n  - src/d  # comment\nstatus: active\n---\n",
         encoding="utf-8",
     )
     (cnt_dir_c6 / "empty_key.adoc").write_text(
-        "---\ntype: tech/container\nid: CNT-3\npackage_path:\nstatus: active\n---\n",
+        "---\ntype: tech/container\nid: CNT-3\nsource_path:\nstatus: active\n---\n",
         encoding="utf-8",
     )
     discovered_pkgs = _discover_container_package_paths(tmp_path / "c6_eidos")
@@ -3555,11 +3555,11 @@ def test_deep_audit_group_c_c1_through_c10(tmp_path: Path) -> None:
     # --- C8: _verify_single_invariant with "::::" and extract_invariants_and_verify skipping README.adoc & _partial.adoc ---
     assert _verify_single_invariant("INV-1", "::::", tmp_path, {}, {}) == []
 
-    # --- C10: FrontmatterModel.effective_package_paths combines package_path and source_path ---
+    # --- C10: FrontmatterModel.source_paths deduplicates source_path entries ---
     fm_c10 = FrontmatterModel.model_validate(
-        {"id": "CNT-C10", "type": "tech/container", "package_path": "src/pkg", "source_path": ["src/pkg", "src/alt"]}
+        {"id": "CNT-C10", "type": "tech/container", "source_path": ["src/pkg", "src/pkg", "src/alt"]}
     )
-    assert fm_c10.effective_package_paths() == ["src/pkg", "src/alt"]
+    assert fm_c10.source_paths() == ["src/pkg", "src/alt"]
 
     # --- C3, C4, C5, C8, C9, C10: ArchitecturalIndex sync, domain invariants, duplicate ID protection, file_path in context/query, symbol_mappings test_binding ---
     repo = tmp_path / "c_index_repo"
@@ -3593,7 +3593,7 @@ def test_deep_audit_group_c_c1_through_c10(tmp_path: Path) -> None:
         "---\n"
         "type: product/domain\n"
         "id: DOM-BILLING\n"
-        "name: Billing Domain\n"
+        "title: Billing Domain\n"
         "invariants:\n"
         "  - id: INV-DOM-BILL-001\n"
         "    rule: All invoices must balance.\n"
@@ -3609,12 +3609,8 @@ def test_deep_audit_group_c_c1_through_c10(tmp_path: Path) -> None:
         "---\n"
         "type: tech/container\n"
         "id: CNT-BILL\n"
-        "name: Canonical Billing\n"
-        "package_path: src/owned_mod\n"
-        "components:\n"
-        "  - id: CMP-BILL-MOD\n"
-        "    name: Billing Module\n"
-        "    ref: eidos/architecture/components/bill_mod.adoc\n"
+        "title: Canonical Billing\n"
+        "source_path: src/owned_mod\n"
         "---\n= Canonical Billing\n",
         encoding="utf-8",
     )
@@ -3622,20 +3618,20 @@ def test_deep_audit_group_c_c1_through_c10(tmp_path: Path) -> None:
         "---\n"
         "type: tech/container\n"
         "id: CNT-BILL\n"
-        "name: Duplicate Billing\n"
+        "title: Duplicate Billing\n"
         "---\n= Duplicate Billing\n",
         encoding="utf-8",
     )
 
-    # C10: Component with non-glob directory owned_path
+    # C10: Component with non-glob directory source_path
     cmp_file = cmp_dir / "bill_mod.adoc"
     cmp_file.write_text(
         "---\n"
         "type: tech/component\n"
         "id: CMP-BILL-MOD\n"
-        "name: Billing Module\n"
+        "title: Billing Module\n"
         "container: CNT-BILL\n"
-        "owned_path: src/owned_mod\n"
+        "source_path: src/owned_mod\n"
         "responsibility: Handle billing\n"
         "---\n= Billing Module\n",
         encoding="utf-8",

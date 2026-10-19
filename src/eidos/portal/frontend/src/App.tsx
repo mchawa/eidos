@@ -95,8 +95,8 @@ export function App() {
       seenIds.add(c.id);
       items.push({
         id: c.id,
-        title: c.name,
-        subtitle: c.package_path,
+        title: c.title,
+        subtitle: c.source_path,
         category: "components",
         raw: c,
       });
@@ -139,7 +139,7 @@ export function App() {
       items.push({
         id: pol.id,
         title: pol.title,
-        subtitle: pol.rule,
+        subtitle: pol.invariants?.[0]?.rule || pol.category,
         category: "policies",
         raw: pol,
       });
@@ -150,7 +150,7 @@ export function App() {
       seenIds.add(dom.id);
       items.push({
         id: dom.id,
-        title: dom.name,
+        title: dom.title,
         subtitle: dom.mission,
         category: "domains",
         raw: dom,
@@ -162,7 +162,7 @@ export function App() {
       seenIds.add(cap.id);
       items.push({
         id: cap.id,
-        title: cap.name || cap.title || cap.id,
+        title: cap.title || cap.id,
         subtitle: cap.summary,
         category: "capabilities",
         raw: cap,
@@ -174,7 +174,7 @@ export function App() {
       seenIds.add(per.id);
       items.push({
         id: per.id,
-        title: per.name,
+        title: per.title,
         subtitle: per.role,
         category: "personas",
         raw: per,

@@ -69,7 +69,7 @@ def test_scaffold_all_spec_types(tmp_path):
         raw_id="CTR-AUTH-REST",
         title="Auth REST API",
         protocol="openapi",
-        owning_container="CNT-AUTH-SERVICE",
+        container="CNT-AUTH-SERVICE",
         specification_file="src/auth.yaml",
     )
     assert ctr_file.exists()
@@ -83,7 +83,7 @@ def test_scaffold_all_spec_types(tmp_path):
         title="Auth Microservice",
         container_type="service",
         runtime="Rust / Axum",
-        package_path="packages/auth",
+        source_path="packages/auth",
     )
     assert cnt_file.exists()
     assert_valid_spec(validator, cnt_file)
@@ -131,8 +131,8 @@ def test_scaffold_all_spec_types(tmp_path):
         doc_type_key="component",
         raw_id="CMP-AUTH-HASH",
         title="Password Hasher",
-        owning_container="CNT-AUTH-SERVICE",
-        package_path="packages/auth/hash.rs",
+        container="CNT-AUTH-SERVICE",
+        source_path="packages/auth/hash.rs",
     )
     assert_valid_spec(validator, cmp_file)
 
@@ -159,7 +159,6 @@ def test_scaffold_all_spec_types(tmp_path):
         raw_id="SCR-LOGIN",
         title="Login Screen",
         route="/login",
-        owning_container="CNT-AUTH-SERVICE",
     )
     assert_valid_spec(validator, scr_file)
 
@@ -168,7 +167,7 @@ def test_scaffold_all_spec_types(tmp_path):
         doc_type_key="client",
         raw_id="CLT-AUTH-WEB",
         title="Auth Web Client",
-        owning_container="CNT-AUTH-SERVICE",
+        container="CNT-AUTH-SERVICE",
     )
     assert_valid_spec(validator, clt_file)
 
@@ -204,7 +203,7 @@ def test_spec_deletion_safety_with_references(tmp_path):
     """Verify delete_spec blocks deletion if referenced by other documents, unless forced (CTR-EIDOS-CLI, POL-001)."""
     # Create container and contract that references it
     create_spec(tmp_path, "container", "CNT-CORE", "Core Component")
-    create_spec(tmp_path, "contract", "CTR-API", "API Contract", owning_container="CNT-CORE")
+    create_spec(tmp_path, "contract", "CTR-API", "API Contract", container="CNT-CORE")
 
     # Attempt delete CNT-CORE without force
     success, msg, refs = delete_spec(tmp_path, "CNT-CORE", force=False)
@@ -651,8 +650,7 @@ def test_scaffold_design_system_and_tokens(tmp_path):
         doc_type_key="design-system",
         raw_id="DS-ACME",
         title="Acme Brand System",
-        client_id="acme",
-        extends_system="DS-CORE",
+        extends="DS-CORE",
     )
     assert acme_file.exists()
     assert_valid_spec(validator, acme_file)
@@ -680,7 +678,7 @@ def test_scaffold_ui_component(tmp_path):
         raw_id="UIC-ACME-HEADER",
         title="Acme Header",
         design_system="DS-ACME",
-        implements_component="UIC-CORE-HEADER",
+        implements="UIC-CORE-HEADER",
     )
     assert hdr_file.exists()
     assert_valid_spec(validator, hdr_file)
@@ -781,21 +779,21 @@ def test_create_component_client_flow_and_safe_yaml(tmp_path):
     tricky = 'Quote: "Test" #hash\nsecond line'
 
     cmp_file = create_spec(
-        tmp_path, "component", "CMP-TEST-001", tricky, owning_container="CNT-APP", package_path="src/app/test.py"
+        tmp_path, "component", "CMP-TEST-001", tricky, container="CNT-APP", source_path="src/app/test.py"
     )
     assert cmp_file == tmp_path / "architecture" / "components" / "test-001.adoc"
     doc = parse_spec_file(cmp_file)
     assert doc.doc_type == "tech/component"
     assert doc.frontmatter["container"] == "CNT-APP"
-    assert doc.frontmatter["name"] == tricky
+    assert doc.frontmatter["title"] == tricky
     assert doc.frontmatter["source_path"] == "src/app/test.py"
     assert_valid_spec(SpecValidator(), cmp_file)
 
     # Bare IDs receive the correct prefix (no CNT-/CMP- cross-over)
-    bare = create_spec(tmp_path, "tech/component", "BARE", "Bare", owning_container="CNT-APP")
+    bare = create_spec(tmp_path, "tech/component", "BARE", "Bare", container="CNT-APP")
     assert parse_spec_file(bare).doc_id == "CMP-BARE"
 
-    clt_file = create_spec(tmp_path, "client", "CLT-WEB", "Web App", owning_container="CNT-APP")
+    clt_file = create_spec(tmp_path, "client", "CLT-WEB", "Web App", container="CNT-APP")
     assert clt_file == tmp_path / "design" / "clients" / "web" / "client.adoc"
     assert parse_spec_file(clt_file).frontmatter["container"] == "CNT-APP"
     assert_valid_spec(SpecValidator(), clt_file)
@@ -804,7 +802,6 @@ def test_create_component_client_flow_and_safe_yaml(tmp_path):
     assert flow_file == tmp_path / "design" / "clients" / "web" / "flows" / "login.adoc"
     flow_doc = parse_spec_file(flow_file)
     assert flow_doc.doc_id == "FLOW-LOGIN"
-    assert flow_doc.frontmatter["client"] == "CLT-WEB"
     assert_valid_spec(SpecValidator(), flow_file)
 
     cross_flow = create_spec(tmp_path, "design/flow", "FLOW-ONBOARD", "Onboarding")
@@ -896,7 +893,7 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
     create_spec(eidos_dir, "domain", "DOM-PAYMENTS", "Payments Domain")
     create_spec(eidos_dir, "persona", "PER-USER", "Merchant User", role_type="end_user")
     cnt_file = create_spec(
-        eidos_dir, "container", "CNT-CHECKOUT", "Checkout Service", package_path="services/checkout"
+        eidos_dir, "container", "CNT-CHECKOUT", "Checkout Service", source_path="services/checkout"
     )
     assert cnt_file.exists()
     cap_file = create_spec(
@@ -911,8 +908,8 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
         "component",
         "CMP-LEDGER",
         "Ledger Engine",
-        owning_container="CNT-CHECKOUT",
-        package_path="services/checkout/ledger.ts",
+        container="CNT-CHECKOUT",
+        source_path="services/checkout/ledger.ts",
     )
     assert cmp_file.exists()
 
@@ -992,16 +989,16 @@ def test_frontmatter_mutations_preserve_yaml_comments_and_formatting(tmp_path):
 type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
 id: CNT-CORE # inline id comment
-name: "Core Container"
+title: "Core Container"
 container_type: library
 runtime: Python 3.12
-package_path: src/core
+source_path: src/core
 
 # Internal C4 components list
 components:
   # Parser component comment
   - id: CMP-PARSER
-    name: "Parser"
+    title: "Parser"
     responsibility: "Parses specs."
     source_path: "src/core/parser.py"
 ---
@@ -1010,14 +1007,13 @@ components:
         encoding="utf-8",
     )
 
-    # 1. Promote CMP-PARSER and verify comments remain intact
+    # 1. Promote CMP-PARSER and verify container-level comments remain intact
     promoted_path, _ = promote_component("CMP-PARSER", eidos_dir=eidos_dir, repo_root=tmp_path)
     assert promoted_path.exists()
     cnt_after_promote = cnt_file.read_text(encoding="utf-8")
     assert "# Top-level container comment" in cnt_after_promote
     assert "# inline id comment" in cnt_after_promote
     assert "# Internal C4 components list" in cnt_after_promote
-    assert "# Parser component comment" in cnt_after_promote
 
     # 2. Inline CMP-PARSER back and verify comments still remain intact
     inline_component("CMP-PARSER", eidos_dir=eidos_dir, repo_root=tmp_path)
@@ -1025,7 +1021,7 @@ components:
     assert "# Top-level container comment" in cnt_after_inline
     assert "# inline id comment" in cnt_after_inline
     assert "# Internal C4 components list" in cnt_after_inline
-    assert "# Parser component comment" in cnt_after_inline
+    assert "CMP-PARSER" in cnt_after_inline
 
     # 3. Create a delta with comments and apply it
     dlt_file = deltas_dir / "dlt-2026-777.adoc"
@@ -1188,14 +1184,14 @@ def test_lossless_component_promote_inline_and_word_bounded_references(tmp_path)
 type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
 id: CNT-CORE
-name: "Core Container"
+title: "Core Container"
 container_type: library
 runtime: Python 3.12
-package_path: src
+source_path: src
 
 components:
   - id: CMP-MULTI-SRC
-    name: 'Parser: "Core" Engine'
+    title: 'Parser: "Core" Engine'
     responsibility: "Handles parsing: YAML & AsciiDoc."
     source_path:
       - "src/a.py"
@@ -1221,7 +1217,7 @@ components:
     promoted_doc = parse_spec_file(promoted_path)
     assert not promoted_doc.errors
     assert promoted_doc.frontmatter["source_path"] == ["src/a.py", "src/b.py"]
-    assert promoted_doc.frontmatter["name"] == 'Parser: "Core" Engine'
+    assert promoted_doc.frontmatter["title"] == 'Parser: "Core" Engine'
     assert len(promoted_doc.frontmatter.get("decisions", [])) == 1
     assert promoted_doc.frontmatter["decisions"][0]["id"] == "DEC-COMP-001"
     assert len(promoted_doc.frontmatter.get("invariants", [])) == 1
@@ -1254,12 +1250,12 @@ components:
 
     updated_raw = _set_frontmatter_scalar(
         cnt_file.read_text(encoding="utf-8"),
-        "name",
+        "title",
         'Core: "Engine" #1',
     )
     reparsed = extract_frontmatter(updated_raw)
     assert reparsed[2] is None
-    assert reparsed[0]["name"] == 'Core: "Engine" #1'
+    assert reparsed[0]["title"] == 'Core: "Engine" #1'
 
 
 def test_design_scaffolder_hygiene_and_dynamic_system_fallback(tmp_path):
@@ -1351,14 +1347,14 @@ def test_multiline_scalar_update_and_delete_spec_applied_delta_and_promote_accep
     assert ok_del is True
     assert not pol_path.exists()
 
-    # 3. Promote an inline component with status: accepted and verify schema validation passes
-    cnt_path = create_spec(eidos_dir, "container", "CNT-ACC", title="Accepted Container", package_path="src/acc")
+    # 3. Promote an inline component with status: planned and verify schema validation passes
+    cnt_path = create_spec(eidos_dir, "container", "CNT-ACC", title="Accepted Container", source_path="src/acc")
     cnt_doc = parse_spec_file(cnt_path)
     cnt_doc.frontmatter["components"] = [
         {
             "id": "CMP-ACC-WORKER",
-            "name": "Accepted Worker",
-            "status": "accepted",
+            "title": "Accepted Worker",
+            "status": "planned",
             "source_path": "src/acc/worker.py",
             "responsibility": "Executes accepted background jobs.",
         }
@@ -1371,14 +1367,14 @@ def test_multiline_scalar_update_and_delete_spec_applied_delta_and_promote_accep
     promoted_doc = parse_spec_file(promoted_path)
     val.validate_document(promoted_doc)
     assert not promoted_doc.errors, promoted_doc.errors
-    assert promoted_doc.frontmatter["status"] == "accepted"
+    assert promoted_doc.frontmatter["status"] == "planned"
 
-    # 4. Inline CMP-ACC-WORKER back into CNT-ACC and verify status: accepted is preserved
+    # 4. Inline CMP-ACC-WORKER back into CNT-ACC and verify status: planned is preserved
     inline_component("CMP-ACC-WORKER", eidos_dir=eidos_dir, repo_root=tmp_path)
     cnt_inlined_doc = parse_spec_file(cnt_path)
     val.validate_document(cnt_inlined_doc)
     assert not cnt_inlined_doc.errors, cnt_inlined_doc.errors
-    assert cnt_inlined_doc.frontmatter["components"][0]["status"] == "accepted"
+    assert cnt_inlined_doc.frontmatter["components"][0]["status"] == "planned"
 
 
 def test_a5_a6_frontmatter_scalar_and_components_surgical_edge_cases() -> None:
@@ -1438,7 +1434,7 @@ def test_a5_a6_frontmatter_scalar_and_components_surgical_edge_cases() -> None:
         "components: # inline header comment\n"
         "  # interior comment before item\n"
         "  - id: CMP-ONLY\n"
-        "    name: Only Component\n"
+        "    title: Only Component\n"
         "status: active\n"
         "---\n"
         "= Container\n"
@@ -1450,12 +1446,12 @@ def test_a5_a6_frontmatter_scalar_and_components_surgical_edge_cases() -> None:
     assert fm_rem["components"] == []
     assert "# inline header comment" in after_remove
 
-    # A6b: Flow-style non-empty components list `components: [{id: CMP-FLOW, name: Flow}]`
+    # A6b: Flow-style non-empty components list `components: [{id: CMP-FLOW, title: Flow}]`
     raw_flow = (
         "---\n"
         "type: tech/container\n"
         "id: CNT-FLOW\n"
-        "components: [{id: CMP-FLOW, name: Flow}]\n"
+        "components: [{id: CMP-FLOW, title: Flow}]\n"
         "status: active\n"
         "---\n"
         "= Flow Container\n"
@@ -1464,7 +1460,7 @@ def test_a5_a6_frontmatter_scalar_and_components_surgical_edge_cases() -> None:
         raw_flow,
         "replace",
         "CMP-FLOW",
-        {"id": "CMP-NEW", "name": "New Comp"},
+        {"id": "CMP-NEW", "title": "New Comp"},
     )
     assert after_flow_replace is not None
     fm_flow, _, err_flow = extract_frontmatter(after_flow_replace)
@@ -1541,7 +1537,7 @@ def test_a7_a8_a11_catalog_scaffolder_and_design_edge_cases(tmp_path: Path) -> N
     cnt_path.write_text(
         cnt_raw.replace(
             "components: []",
-            "status: draft\ncomponents:\n  - id: CMP-INLINE-ACT\n    name: Active Inline\n    status: active\n    responsibility: Inline work",
+            "status: draft\ncomponents:\n  - id: CMP-INLINE-ACT\n    title: Active Inline\n    status: active\n    responsibility: Inline work",
         ),
         encoding="utf-8",
     )
@@ -1575,7 +1571,7 @@ def test_a7_a8_a11_catalog_scaffolder_and_design_edge_cases(tmp_path: Path) -> N
             "design-system",
             "DS-BAD",
             "Bad System",
-            extends_system="not-a-valid-ds-id",
+            extends="not-a-valid-ds-id",
         )
     assert not (eidos_dir / "design" / "systems" / "bad" / "tokens.json").exists()
     assert not (eidos_dir / "design" / "systems" / "bad").exists()
@@ -1626,7 +1622,7 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     assert "second line" not in updated_fm
     assert "# Preserved column-0 comment\n\nsummary: Clean Summary" in updated_fm
 
-    # --- A2 & A3: bare .adoc lookup, capability domain path, design entity refs, contract owning_component ---
+    # --- A2 & A3: bare .adoc lookup, capability domain path, design entity refs, contract container ---
     ws = tmp_path / "ws_a"
     ws.mkdir()
     init_repository(ws, name="ws-a", title="WS A")
@@ -1652,10 +1648,10 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
             "contract",
             "CTR-BAD-CMP",
             "Bad Component Contract",
-            owning_component="CMP-AUTH",
+            container="CMP-AUTH",
         )
 
-    # Design specs normalize client_id and resolve .adoc paths for design_system and client_id
+    # Design specs route client_id and resolve .adoc paths for design_system and client_id
     ds_path = create_spec(
         eidos_dir,
         "design-system",
@@ -1663,14 +1659,14 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
         "Brand System",
         client_id="CLT-WEB-SPA",
     )
-    assert parse_spec_file(ds_path).frontmatter["client_id"] == "web-spa"
+    assert ds_path == eidos_dir / "design" / "systems" / "brand" / "system.adoc"
 
     clt_path = create_spec(
         eidos_dir,
         "client",
         "CLT-WEB-SPA",
         "Web SPA",
-        owning_component="CNT-API-GATEWAY",
+        container="CNT-API-GATEWAY",
         design_system=f"eidos/{ds_path.relative_to(eidos_dir).as_posix()}",
     )
     assert parse_spec_file(clt_path).frontmatter["design_system"] == "DS-BRAND"
@@ -1682,7 +1678,7 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
         "Home Screen",
         client_id=f"eidos/{clt_path.relative_to(eidos_dir).as_posix()}",
     )
-    assert parse_spec_file(scr_path).frontmatter["client"] == "CLT-WEB-SPA"
+    assert scr_path.parent == clt_path.parent / "screens"
 
     flow_path = create_spec(
         eidos_dir,
@@ -1691,7 +1687,7 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
         "Checkout Flow",
         client_id=f"eidos/{clt_path.relative_to(eidos_dir).as_posix()}",
     )
-    assert parse_spec_file(flow_path).frontmatter["client"] == "CLT-WEB-SPA"
+    assert flow_path.parent == clt_path.parent / "flows"
 
     # --- A1: _find_inline_component_dict, _snapshot_delta_baselines, and _check_structural_subtarget_precondition ---
     cmp_promoted = create_spec(
@@ -1699,17 +1695,16 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
         "component",
         "CMP-PROMOTED",
         "Promoted Auth",
-        owning_component="CNT-API-GATEWAY",
+        container="CNT-API-GATEWAY",
     )
     cnt_path.write_text(
         "---\n"
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-API-GATEWAY\n"
-        "name: API Gateway\n"
-        "c4_type: service\n"
-        "technology: Python\n"
-        "description: Gateway\n"
+        "title: API Gateway\n"
+        "container_type: service\n"
+        "runtime: Python\n"
         "invariants:\n"
         "  - id: INV-TOP-001\n"
         "    rule: Top rule\n"
@@ -1718,12 +1713,8 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
         "    - id: INV-TECH-001\n"
         "      rule: Tech rule\n"
         "components:\n"
-        "  - id: CMP-PROMOTED\n"
-        "    name: Promoted Auth\n"
-        "    ref: eidos/architecture/components/promoted.adoc\n"
-        "c4_internal_components:\n"
         "  - id: CMP-INLINE-C4\n"
-        "    name: Inline C4\n"
+        "    title: Inline C4\n"
         "    responsibility: Handle C4\n"
         "    invariants:\n"
         "      - id: INV-INLINE-001\n"
@@ -1797,7 +1788,7 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
         is True
     )
 
-    # --- A4: promote_component from c4_internal_components and inline_component when eidos_dir.name != 'eidos' ---
+    # --- A4: promote_component and inline_component when eidos_dir.name != 'eidos' ---
     custom_specs = tmp_path / "custom_specs"
     custom_cnt = custom_specs / "architecture" / "containers" / "core.adoc"
     custom_cnt.parent.mkdir(parents=True)
@@ -1805,10 +1796,10 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
         "---\n"
         "type: tech/container\n"
         "id: CNT-CORE\n"
-        "name: Core\n"
-        "c4_internal_components:\n"
+        "title: Core\n"
+        "components:\n"
         "  - id: CMP-SUB\n"
-        "    name: null\n"
+        "    title: null\n"
         "    responsibility: null\n"
         "---\n= Core\n",
         encoding="utf-8",
@@ -1819,11 +1810,9 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     assert inlined_cnt == custom_cnt
     assert not promoted_sub.exists()
     inlined_doc = parse_spec_file(custom_cnt)
-    all_inlined = list(inlined_doc.frontmatter.get("components") or []) + list(
-        inlined_doc.frontmatter.get("c4_internal_components") or []
-    )
+    all_inlined = list(inlined_doc.frontmatter.get("components") or [])
     assert any(
-        isinstance(c, dict) and c.get("id") == "CMP-SUB" and not c.get("ref")
+        isinstance(c, dict) and c.get("id") == "CMP-SUB"
         for c in all_inlined
     )
 

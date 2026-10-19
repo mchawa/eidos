@@ -237,19 +237,19 @@ def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
     for d in (cnt_dir, deltas_dir, docs_dir, src_dir):
         d.mkdir(parents=True)
 
-    # Active container CNT-KEEP has a frontmatter dependency edge pointing to CNT-OLD
+    # Active container CNT-KEEP has a contract-derived dependency edge pointing to CNT-OLD
     (cnt_dir / "cnt-keep.adoc").write_text(
         "---\n"
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-KEEP\n"
-        "name: Keep Service\n"
+        "title: Keep Service\n"
         "container_type: service\n"
         "runtime: Python\n"
-        "package_path: src/keep\n"
-        "dependencies:\n"
-        "  internal_containers:\n"
-        "    - CNT-OLD\n"
+        "source_path: src/keep\n"
+        "contracts:\n"
+        "  consumes:\n"
+        "    - CTR-OLD\n"
         "---\n"
         "= Keep Service\n\n"
         "Calls xref:cnt-old.adoc[CNT-OLD].\n",
@@ -260,10 +260,13 @@ def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-OLD\n"
-        "name: Old Service\n"
+        "title: Old Service\n"
         "container_type: service\n"
         "runtime: Python\n"
-        "package_path: src/old\n"
+        "source_path: src/old\n"
+        "contracts:\n"
+        "  provides:\n"
+        "    - CTR-OLD\n"
         "---\n"
         "= Old Service\n",
         encoding="utf-8",

@@ -38,7 +38,7 @@ The architectural index requires **zero external database daemons** and **zero t
 
 * Built on Python's standard library **`sqlite3`** in WAL (Write-Ahead Logging) mode, utilizing native SQLite 3.x FTS5 and recursive Common Table Expressions (CTEs).
 * Decomposed across 5 focused internal modules in `src/eidos/core/index/`: `storage.py` (`CMP-GRAPH-STORAGE`), `sync.py` (`CMP-INCREMENTAL-SYNC-ENGINE`), `query.py` (`CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE`), `context.py` (`CMP-TIERED-CONTEXT-COMPRESSOR`), and `ast_indexer.py` (`CMP-AST-SYMBOL-INDEXER`).
-* Stores all relational graph data, AST symbol coordinates, and validation/test/delta caches inside a single self-contained file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.4.0"`).
+* Stores all relational graph data, AST symbol coordinates, and validation/test/delta caches inside a single self-contained file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.5.0"`).
 * Automatically performs drop-and-rebuild migration on schema version upgrades and self-heals on database corruption.
 * The `eidos/.cache/` directory is isolated via `eidos/.gitignore`, keeping Git repositories pristine.
 
@@ -56,7 +56,7 @@ The first time any command requiring architectural context is invoked (`eidos co
 
 ### 2. Zero-Drift Freshness (`_ensure_synced`)
 Before answering any query, search, or context extraction request, the index runs a lazy two-tier freshness check (`check_index_dirty()`):
-* Compares nanosecond file modification timestamps (`mtime_ns`) against `indexed_files` across `eidos/`, `tests/`, and every container/component's declared `package_path` and `source_path`.
+* Compares nanosecond file modification timestamps (`mtime_ns`) against `indexed_files` across `eidos/`, `tests/`, and every container/component's declared `source_path`.
 * If `mtime_ns` changed, computes the file's `SHA-256` digest; if the content hash is unchanged, refreshes `mtime_ns` in-place without re-parsing.
 * Executes in **<5ms** on clean working trees.
 * If any `.adoc` spec, source file, or test file was edited, added, or deleted (or if a specification ID was renamed in-place), Eidos evicts stale entities by the previous `doc_id` stored in `indexed_files` and incrementally re-indexes only the modified files.
@@ -82,7 +82,7 @@ Output:
 ```text
 ╭───────────────── Eidos Architectural Knowledge Graph Index ──────────────────╮
 │        Database Path:  /path/to/project/eidos/.cache/index.db                │
-│       Schema Version:  2.4.0                                                 │
+│       Schema Version:  2.5.0                                                 │
 │           Cache Size:  1008.0 KB                                             │
 │               Status:  SYNCED (Clean) (4.20ms check)                         │
 │       Total Entities:  105                                                   │
@@ -131,9 +131,9 @@ When AI agents work on software engineering tasks, providing entire specificatio
 
 | Tier | Flag / Param | Token Budget Ceiling | Typical Size | Content Included | Recommended Use Case |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Tier 1: Anchor** | `--tier anchor` | **`<= 300 tokens`** | ~140 tokens | Owning `CNT-*` / `CMP-*`, container type, runtime, `package_path`, bound domain, direct `CTR-*` signatures, compact 1-line `DEC-*` decision summaries. | Fast, single-file edits, routine bug fixes, syntax changes. |
+| **Tier 1: Anchor** | `--tier anchor` | **`<= 300 tokens`** | ~140 tokens | Owning `CNT-*` / `CMP-*`, container type, runtime, `source_path`, bound domain, direct `CTR-*` signatures, compact 1-line `DEC-*` decision summaries. | Fast, single-file edits, routine bug fixes, syntax changes. |
 | **Tier 2: Guardrails** *(Default)* | `--tier guardrails` | **`<= 1,000 tokens`** | ~300–900 tokens | Anchor content + domain capabilities (`CAP-*`), active invariants (`INV-*`) with `test_binding`, governing policies (`POL-*`), and full `DEC-*` rationale + rejected alternatives. | Standard feature development, refactorings, policy verification. |
-| **Tier 3: Deep** | `--tier deep` | **`<= 2,500 tokens`** | ~500–1,500 tokens | Guardrails content + C4 Level 3 internal modules (`c4_internal_components`), promoted component in-process APIs (`interfaces.provides`), contract schemas, and downstream dependents. | Complex multi-module features, architecture reviews, SpecDeltas. |
+| **Tier 3: Deep** | `--tier deep` | **`<= 2,500 tokens`** | ~500–1,500 tokens | Guardrails content + C4 Level 3 internal modules (`components`), promoted component in-process APIs (`interfaces.provides`), contract schemas, and downstream dependents. | Complex multi-module features, architecture reviews, SpecDeltas. |
 
 ### CLI Usage:
 

@@ -5,9 +5,6 @@ id: FLOW-PORTAL-EXPLORATION
 title: "Specification Discovery & Inspection Flow"
 status: active
 flow_type: client_internal
-client: "CLT-WEB-PORTAL"
-capabilities:
-  - "eidos/domains/spec-engine/capabilities/living-spec-engine.adoc"
 
 steps:
   - step: 1

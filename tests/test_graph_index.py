@@ -120,7 +120,7 @@ def test_spike_b_zero_drift_on_mutation(tmp_path):
 type: tech/component
 schema: schemas/v1/tech/component.schema.yaml
 id: CMP-TEST-SPIKE
-name: "Test Spike Service"
+title: "Test Spike Service"
 container: "CNT-TEST-SPIKE"
 status: "active"
 source_path: "src/test"
@@ -145,7 +145,7 @@ responsibility: "Test service"
 type: tech/component
 schema: schemas/v1/tech/component.schema.yaml
 id: CMP-TEST-SPIKE
-name: "Mutated Spike Service"
+title: "Mutated Spike Service"
 container: "CNT-TEST-SPIKE"
 status: "active"
 source_path: "src/test_mutated"
@@ -166,9 +166,9 @@ responsibility: "Test service"
     assert sync_stats.updated_modified == 1
 
     conn = idx._get_connection()
-    row = conn.execute("SELECT title, package_path FROM entities WHERE id = 'CMP-TEST-SPIKE';").fetchone()
+    row = conn.execute("SELECT title, source_path FROM entities WHERE id = 'CMP-TEST-SPIKE';").fetchone()
     assert row["title"] == "Mutated Spike Service"
-    assert row["package_path"] == "src/test_mutated"
+    assert row["source_path"] == "src/test_mutated"
 
     idx.close()
 
@@ -320,7 +320,7 @@ def test_code_aware_dirty_checking_and_sync(tmp_path):
 type: tech/component
 schema: schemas/v1/tech/component.schema.yaml
 id: CMP-SAMPLE-SERVICE
-name: Sample Service
+title: Sample Service
 container: CNT-SAMPLE
 status: active
 source_path: src/pkg
@@ -388,7 +388,7 @@ def test_design_client_and_system_path_inference(tmp_path):
     clt_dir.mkdir(parents=True)
     ds_dir.mkdir(parents=True)
 
-    # Create source files across multiple container package_paths
+    # Create source files across multiple container source_paths
     web_src = repo / "apps" / "web" / "src"
     ui_pkg = repo / "packages" / "ui-kit" / "src"
     web_src.mkdir(parents=True)
@@ -396,21 +396,21 @@ def test_design_client_and_system_path_inference(tmp_path):
     (web_src / "App.tsx").write_text("export function App() { return null; }\n", encoding="utf-8")
     (ui_pkg / "Button.tsx").write_text("export function Button() { return null; }\n", encoding="utf-8")
 
-    # Container with array package_path and inline component with source_path
+    # Container with array source_path and inline component with source_path
     (cnt_dir / "web.adoc").write_text(
         """---
 type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
 id: CNT-WEB-APP
-name: "Web Application"
+title: "Web Application"
 container_type: web_app
 runtime: "TypeScript / React"
-package_path:
+source_path:
   - "apps/web/src"
   - "packages/ui-kit/**"
 components:
   - id: CMP-WEB-BUTTON
-    name: "Button Component"
+    title: "Button Component"
     responsibility: "Renders interactive button"
     source_path: "packages/ui-kit/src/Button.tsx"
 ---
@@ -425,7 +425,7 @@ components:
 type: tech/component
 schema: schemas/v1/tech/component.schema.yaml
 id: CMP-WEB-BUTTON
-name: "Button Component"
+title: "Button Component"
 container: CNT-WEB-APP
 responsibility: "Renders interactive button"
 source_path: "packages/ui-kit/src/Button.tsx"
@@ -462,8 +462,6 @@ title: "Brand Design System"
 status: active
 version: "1.0.0"
 tokens_path: "eidos/design/systems/brand/tokens.json"
-clients:
-  - CLT-WEB-CLIENT
 ---
 = Brand Design System
 """,
@@ -509,7 +507,7 @@ def test_test_assertion_edges_persist_after_sync(tmp_path):
 type: tech/component
 schema: schemas/v1/tech/component.schema.yaml
 id: CMP-EDGE-SERVICE
-name: Edge Service
+title: Edge Service
 container: CNT-EDGE
 status: active
 source_path: src/pkg
@@ -567,20 +565,20 @@ def _write_container(
     repo: Path,
     filename: str,
     cnt_id: str,
-    package_path: str | list[str],
+    source_path: str | list[str],
     components: list[tuple[str, str]] | None = None,
 ) -> Path:
     """Write a minimal CNT-* spec; ``components`` is a list of (CMP id, source_path)."""
     containers = repo / "eidos" / "architecture" / "containers"
     containers.mkdir(parents=True, exist_ok=True)
-    if isinstance(package_path, list):
-        pkg_yaml = "package_path:\n" + "".join(f'  - "{p}"\n' for p in package_path)
+    if isinstance(source_path, list):
+        pkg_yaml = "source_path:\n" + "".join(f'  - "{p}"\n' for p in source_path)
     else:
-        pkg_yaml = f'package_path: "{package_path}"\n'
+        pkg_yaml = f'source_path: "{source_path}"\n'
     comp_yaml = ""
     if components:
         comp_yaml = "components:\n" + "".join(
-            f'  - id: {cid}\n    name: "{cid.title()}"\n    responsibility: "r"\n    source_path: "{sp}"\n'
+            f'  - id: {cid}\n    title: "{cid.title()}"\n    responsibility: "r"\n    source_path: "{sp}"\n'
             for cid, sp in components
         )
     path = containers / filename
@@ -589,10 +587,10 @@ def _write_container(
 type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
 id: {cnt_id}
-name: "{cnt_id}"
+title: "{cnt_id}"
 container_type: "library"
 runtime: "Python"
-{pkg_yaml}domain_binding: DOM-X
+{pkg_yaml}domain: DOM-X
 tier: core
 {comp_yaml}---
 = {cnt_id}
@@ -1129,8 +1127,8 @@ def test_task_retrieval_indexes_invariants_and_filters_types(tmp_path):
     )
     _write_retrieval_spec(
         eidos_dir / "architecture" / "containers" / "widget.adoc",
-        "---\ntype: tech/container\nid: CNT-WIDGET\nname: Widget Service\ndomain_binding: DOM-WIDGET\n"
-        "package_path: src/widget\n---\n= Widget Service\n\n"
+        "---\ntype: tech/container\nid: CNT-WIDGET\ntitle: Widget Service\ndomain: DOM-WIDGET\n"
+        "source_path: src/widget\n---\n= Widget Service\n\n"
         "The WidgetRegistryEngine owns registration for every quasar deployment in the fleet.\n",
     )
     cap = _write_retrieval_spec(
@@ -1222,16 +1220,16 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-OLD-NAME\n"
-        "name: Old Container\n"
+        "title: Old Container\n"
         "container_type: library\n"
         "runtime: python\n"
-        "package_path: src/alpha\n"
+        "source_path: src/alpha\n"
         "---\n"
         "= Old Container\n",
         encoding="utf-8",
     )
 
-    # 1. Validator and Drift caches stamp canonical SCHEMA_VERSION (2.4.0), so ArchitecturalIndex does not drop them
+    # 1. Validator and Drift caches stamp canonical SCHEMA_VERSION (2.5.0), so ArchitecturalIndex does not drop them
     validator = SpecValidator()
     validator.validate_directory(eidos_dir)
     extract_invariants_and_verify(eidos_dir, repo)
@@ -1241,7 +1239,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.4.0"
+        assert ver == SCHEMA_VERSION == "2.5.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -1305,10 +1303,10 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
             "type: tech/container\n"
             "schema: schemas/v1/tech/container.schema.yaml\n"
             "id: CNT-NEW-NAME\n"
-            "name: Colliding Container\n"
+            "title: Colliding Container\n"
             "container_type: library\n"
             "runtime: python\n"
-            "package_path: src/beta\n"
+            "source_path: src/beta\n"
             "---\n"
             "= Colliding Container\n",
             encoding="utf-8",
@@ -1517,12 +1515,12 @@ def test_container_inline_component_invariants_ast_fts_projection_and_anchored_t
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-LEDGER-2\n"
-        "name: Secondary Ledger\n"
+        "title: Secondary Ledger\n"
         "container_type: service\n"
         "runtime: Python 3.12\n"
-        "package_path: src/ledger2\n"
-        "dependencies:\n"
-        "  internal_containers:\n"
+        "source_path: src/ledger2\n"
+        "contracts:\n"
+        "  consumes:\n"
         "    - CNT-LEDGER\n"
         "---\n"
         "= Secondary Ledger\n",
@@ -1533,16 +1531,16 @@ def test_container_inline_component_invariants_ast_fts_projection_and_anchored_t
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-LEDGER\n"
-        "name: Primary Ledger\n"
+        "title: Primary Ledger\n"
         "container_type: service\n"
         "runtime: Python 3.12\n"
-        "package_path: src/ledger\n"
+        "source_path: src/ledger\n"
         "invariants:\n"
         "  - id: INV-CNT-LEDGER-TOP\n"
         "    rule: Primary ledger container must enforce idempotency keys.\n"
         "components:\n"
         "  - id: CMP-LEDGER-SETTLER\n"
-        "    name: LedgerSettler\n"
+        "    title: LedgerSettler\n"
         "    responsibility: Settles batches.\n"
         "    source_path: src/ledger/engine.py\n"
         "    invariants:\n"
@@ -1652,14 +1650,10 @@ def test_deep_review_subsystem_2_incremental_edges_fts_and_transient_sqlite_erro
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-SVC\n"
-        "name: Worker Service\n"
+        "title: Worker Service\n"
         "container_type: service\n"
         "runtime: Python 3.12\n"
-        "package_path: src/svc\n"
-        "components:\n"
-        "  - id: CMP-PROMOTED\n"
-        "    name: PromotedWorker\n"
-        "    spec_path: eidos/architecture/components/cmp-promoted.adoc\n"
+        "source_path: src/svc\n"
         "---\n"
         "= Worker Service\n",
         encoding="utf-8",
@@ -1669,7 +1663,7 @@ def test_deep_review_subsystem_2_incremental_edges_fts_and_transient_sqlite_erro
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-PROMOTED\n"
-        "name: PromotedWorker\n"
+        "title: PromotedWorker\n"
         "container: CNT-SVC\n"
         "responsibility: Promoted worker component.\n"
         "source_path: src/svc/worker.py\n"
@@ -1731,7 +1725,7 @@ def test_index_spec_deletion_child_invariants_and_query_coverage(tmp_path):
         "id: POL-CLEANUP-001\n"
         "title: Cleanup Policy\n"
         "category: quality\n"
-        "rule: Clean up child invariant mappings\n"
+        "severity: blocking\n"
         "invariants:\n"
         "  - id: INV-CLEANUP-001\n"
         "    rule: Child invariant rule\n"
@@ -1745,10 +1739,10 @@ def test_index_spec_deletion_child_invariants_and_query_coverage(tmp_path):
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-API\n"
-        "name: API Server\n"
+        "title: API Server\n"
         "container_type: service\n"
         "runtime: Python\n"
-        "package_path: src/api\n"
+        "source_path: src/api\n"
         "---\n"
         "= API Server\n",
         encoding="utf-8",
@@ -1758,12 +1752,12 @@ def test_index_spec_deletion_child_invariants_and_query_coverage(tmp_path):
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-WEB\n"
-        "name: Web App\n"
+        "title: Web App\n"
         "container_type: web_app\n"
         "runtime: TypeScript\n"
-        "package_path: src/web\n"
-        "dependencies:\n"
-        "  internal_containers:\n"
+        "source_path: src/web\n"
+        "contracts:\n"
+        "  consumes:\n"
         "    - CNT-API\n"
         "---\n"
         "= Web App\n",
@@ -1843,10 +1837,10 @@ def test_index_spec_deletion_child_invariants_and_query_coverage(tmp_path):
             "type: tech/container\n"
             "schema: schemas/v1/tech/container.schema.yaml\n"
             "id: CNT-WEB\n"
-            "name: Duplicate Web\n"
+            "title: Duplicate Web\n"
             "container_type: web_app\n"
             "runtime: TypeScript\n"
-            "package_path: src/dup\n"
+            "source_path: src/dup\n"
             "---\n"
             "= Duplicate\n",
             encoding="utf-8",
@@ -2008,9 +2002,9 @@ def test_dlt_2026_086_unified_cache_and_vcs_shim_removal(tmp_path: Path, monkeyp
     assert parse_calls == []
 
     # Mutating returned catalog frontmatter dict must not mutate cached SpecDocument frontmatter
-    specs_by_id["DOM-CACHE-086"][2]["name"] = "Mutated In Caller"
+    specs_by_id["DOM-CACHE-086"][2]["title"] = "Mutated In Caller"
     specs_again, _, _ = catalog_mod._build_spec_catalog(eidos_dir)
-    assert specs_again["DOM-CACHE-086"][2]["name"] == "Cache 086 Domain"
+    assert specs_again["DOM-CACHE-086"][2]["title"] == "Cache 086 Domain"
 
     idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
     try:
@@ -2032,12 +2026,12 @@ def test_dlt_2026_088_single_pass_scandir_dirty_check(tmp_path: Path) -> None:
 
     init_repository(tmp_path)
     eidos_dir = tmp_path / "eidos"
-    cnt_path = create_spec(eidos_dir, "container", "CNT-SCAN", title="Scan Container", package_path="src")
+    cnt_path = create_spec(eidos_dir, "container", "CNT-SCAN", title="Scan Container", source_path="src")
     cnt_doc = parse_spec_file(cnt_path)
     cnt_doc.frontmatter["components"] = [
         {
             "id": "CMP-SCAN-MOD",
-            "name": "ScanMod",
+            "title": "ScanMod",
             "responsibility": "Handles core scanning.",
             "source_path": ["src/core_mod.py", "src_extra/outside_mod.py"],
         }
@@ -2113,9 +2107,9 @@ def test_context_implements_edges_inline_cmp_blast_radius_and_path_resolution(tm
     create_spec(eidos_dir, "domain", "DOM-INTEL", title="Intelligence Domain")
 
     # Container CNT-IDX bound to DOM-ENGINE, with inline component CMP-INLINE-IDX and dict-formatted interfaces (Bug 15b)
-    cnt_idx = create_spec(eidos_dir, "container", "CNT-IDX", title="Index Container", package_path="src/index")
+    cnt_idx = create_spec(eidos_dir, "container", "CNT-IDX", title="Index Container", source_path="src/index")
     cnt_idx_doc = parse_spec_file(cnt_idx)
-    cnt_idx_doc.frontmatter["domain_binding"] = "DOM-ENGINE"
+    cnt_idx_doc.frontmatter["domain"] = "DOM-ENGINE"
     cnt_idx_doc.frontmatter["interfaces"] = {
         "provides": [{"signature": "POST /v1/index/query"}],
         "consumes": [{"signature": "GET /v1/config"}],
@@ -2123,16 +2117,16 @@ def test_context_implements_edges_inline_cmp_blast_radius_and_path_resolution(tm
     cnt_idx_doc.frontmatter["components"] = [
         {
             "id": "CMP-INLINE-IDX",
-            "name": "Inline Indexer",
+            "title": "Inline Indexer",
             "responsibility": "Indexes AST symbols.",
             "source_path": "src/index/worker.py",
         }
     ]
     cnt_idx.write_text(dump_spec_document(cnt_idx_doc.frontmatter, cnt_idx_doc.body), encoding="utf-8")
 
-    # Broad container CNT-SRC-ROOT (package_path: src) and sibling container CNT-OTHER (package_path: src/other)
-    create_spec(eidos_dir, "container", "CNT-SRC-ROOT", title="Root Src Container", package_path="src")
-    create_spec(eidos_dir, "container", "CNT-OTHER", title="Other Container", package_path="src/other")
+    # Broad container CNT-SRC-ROOT (source_path: src) and sibling container CNT-OTHER (source_path: src/other)
+    create_spec(eidos_dir, "container", "CNT-SRC-ROOT", title="Root Src Container", source_path="src")
+    create_spec(eidos_dir, "container", "CNT-OTHER", title="Other Container", source_path="src/other")
 
     # Cross-domain capability CAP-INTEL-001 in DOM-INTEL implementing CNT-IDX and CMP-INLINE-IDX (Bug 3 & Bug 4)
     cap_intel = create_spec(
@@ -2188,8 +2182,8 @@ def test_context_implements_edges_inline_cmp_blast_radius_and_path_resolution(tm
         assert "CNT-IDX" in khop_ids
         assert "CAP-INTEL-001" in khop_ids
 
-        # Bug 5: File path resolution returns longest package_path container (CNT-IDX),
-        # excludes shorter package_path container (CNT-SRC-ROOT), and does NOT match class 'Py' on '.py' suffix
+        # Bug 5: File path resolution returns longest source_path container (CNT-IDX),
+        # excludes shorter source_path container (CNT-SRC-ROOT), and does NOT match class 'Py' on '.py' suffix
         resolved = idx.resolve_symbol_or_path("src/index/worker.py")
         resolved_ids = [m["entity_id"] for m in resolved if m.get("entity_id")]
         assert resolved_ids[0] == "CNT-IDX"
@@ -2222,7 +2216,7 @@ def test_incremental_spec_sync_skips_unchanged_test_reparse_and_scopes_fts(tmp_p
     init_repository(tmp_path, name="inc-perf-repo")
     eidos_dir = tmp_path / "eidos"
     create_spec(eidos_dir, "domain", "DOM-PERF", title="Perf Domain")
-    create_spec(eidos_dir, "container", "CNT-PERF", title="Perf Container", package_path="src/perf")
+    create_spec(eidos_dir, "container", "CNT-PERF", title="Perf Container", source_path="src/perf")
     cap_path = create_spec(eidos_dir, "capability", "CAP-PERF-001", title="Perf Cap", domain="DOM-PERF")
     cap_doc = parse_spec_file(cap_path)
     cap_doc.frontmatter["technical"] = {

@@ -7,7 +7,6 @@ title: 'Formalize First-Principles C4 Architecture: Level 2 Containers (CNT-*) a
 status: applied
 vcs:
   branch: refactor/c4-first-principles-containers-components
-  issue: '#14'
 intent:
   kind: enabler
   motivation: 'The historical conflation of C4 Level 2 Containers and Level 3 Components

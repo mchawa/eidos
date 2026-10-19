@@ -30,15 +30,7 @@ properties:
     type: string
     description: "Human-readable title of the system architecture specification."
   status:
-    type: string
-    enum:
-      - draft
-      - proposed
-      - planned
-      - active
-      - deprecated
-      - retired
-    description: "Optional lifecycle state of the architecture specification."
+    $ref: "#/$defs/lifecycle_status"
   topology_style:
     type: string
     description: "The foundational architectural pattern (e.g. monorepo_orchestrator, microservices, modular_monolith, distributed_mesh, embedded_firmware)."
@@ -53,15 +45,7 @@ properties:
         type: array
         description: "List of existing persona document paths or IDs (type: product/persona) representing human or agent actors interacting with the system."
         items:
-          type: string
-          pattern: "^(PER-[A-Z0-9_-]+|.*\\.adoc)$"
-          description: "Persona ID or relative path to a defined persona (e.g. eidos/personas/product-lead.adoc)."
-          x-eidos-ref:
-            target_types:
-              - product/persona
-            prefixes:
-              - PER-
-            entity_label: persona
+          $ref: "#/$defs/persona_ref"
       external_systems:
         type: array
         description: "Third-party platforms, external APIs, or upstream/downstream services outside system boundaries (optional)."
@@ -86,56 +70,25 @@ properties:
     description: "Arc42 Section 5.1 / C4 Level 2: Container Topology. The high-level deployable units, services, monorepo packages, or applications comprising the system."
     items:
       anyOf:
-        - type: string
-          pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
-          description: "Container ID (CNT-*) or relative path to a tech/container document (e.g. CNT-CORE or eidos/architecture/containers/core.adoc)."
-          x-eidos-ref:
-            target_types:
-              - tech/container
-            prefixes:
-              - CNT-
-            entity_label: container
+        - $ref: "#/$defs/container_ref"
         - type: object
           additionalProperties: false
+          required:
+            - container
           properties:
-            container_ref:
+            container:
+              $ref: "#/$defs/container_ref"
+            title:
               type: string
-              pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
-              description: "Container ID (CNT-*) or relative path to container specification."
-              x-eidos-ref:
-                target_types:
-                  - tech/container
-                prefixes:
-                  - CNT-
-                entity_label: container
-            component_ref:
-              type: string
-              pattern: "^((CNT|CMP)-[A-Z0-9_-]+|.*\\.adoc)$"
-              description: "Legacy alias: Container ID or relative path."
-              x-eidos-ref:
-                target_types:
-                  - tech/container
-                  - tech/component
-                prefixes:
-                  - CNT-
-                  - CMP-
-                entity_label: container
-            name:
-              type: string
-              description: "Display name of the container/package (optional)."
+              description: "Display title of the container/package (optional)."
             container_type:
               type: string
               description: "Type of container: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon, database (optional)."
             runtime:
               type: string
               description: "Execution runtime and primary framework (optional)."
-            package_path:
-              oneOf:
-                - type: string
-                - type: array
-                  items:
-                    type: string
-              description: "Relative source code directory, file path, or glob pattern(s) in the repository (optional)."
+            source_path:
+              $ref: "#/$defs/code_paths"
   solution_strategy:
     type: array
     description: "Arc42 Section 4: Solution Strategy. Fundamental architectural decisions and paradigms shaping the system."
@@ -199,5 +152,3 @@ properties:
     description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on the global architecture specification without standalone ADR files (POL-001)."
     items:
       $ref: "#/$defs/decision"
-
-

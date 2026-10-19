@@ -3,6 +3,7 @@ type: tech/architecture
 schema: schemas/v1/tech/architecture.schema.yaml
 id: ARCH-EIDOS-001
 title: "Eidos Global Technical Architecture"
+status: active
 topology_style: "monorepo_orchestrator"
 
 c4_context:
@@ -18,47 +19,47 @@ c4_context:
       protocol: "CLI Subshell / JSON"
 
 c4_containers:
-  - container_ref: "CNT-EIDOS-CORE"
-    name: "Eidos Living Specification & Design Core Engine"
+  - container: "CNT-EIDOS-CORE"
+    title: "Eidos Living Specification & Design Core Engine"
     container_type: "library"
     runtime: "Python 3.12 / Hatchling / PyYAML / jsonschema"
-    package_path:
+    source_path:
       - "src/eidos/core"
       - "assets/schemas"
-  - container_ref: "CNT-EIDOS-VCS"
-    name: "Eidos Git Drift & Lifecycle Engine"
+  - container: "CNT-EIDOS-VCS"
+    title: "Eidos Git Drift & Lifecycle Engine"
     container_type: "library"
     runtime: "Python 3.12 / Git CLI / AST"
-    package_path: "src/eidos/vcs"
-  - container_ref: "CNT-EIDOS-CLI"
-    name: "Eidos Command-Line Interface"
+    source_path: "src/eidos/vcs"
+  - container: "CNT-EIDOS-CLI"
+    title: "Eidos Command-Line Interface"
     container_type: "cli_app"
     runtime: "Python 3.12 / Typer / Rich"
-    package_path: "src/eidos/cli"
-  - container_ref: "CNT-EIDOS-PLUGIN"
-    name: "Eidos Agent Plugin & Extension Manager"
+    source_path: "src/eidos/cli"
+  - container: "CNT-EIDOS-PLUGIN"
+    title: "Eidos Agent Plugin & Extension Manager"
     container_type: "library"
     runtime: "Python 3.12 / agent-plugins.org v1.0.0"
-    package_path:
+    source_path:
       - "src/eidos/plugin"
       - "assets/plugin_reference"
-  - container_ref: "CNT-EIDOS-PORTAL"
-    name: "Eidos Living Web Portal & Static Site Generator"
+  - container: "CNT-EIDOS-PORTAL"
+    title: "Eidos Living Web Portal & Static Site Generator"
     container_type: "web_app"
     runtime: "Python 3.12 / HTTP / HTML5 / Mermaid.js"
-    package_path:
+    source_path:
       - "src/eidos/portal"
       - "assets/portal"
-  - container_ref: "CNT-EIDOS-INDEX"
-    name: "Eidos Architectural Knowledge Graph & Retrieval Index"
+  - container: "CNT-EIDOS-INDEX"
+    title: "Eidos Architectural Knowledge Graph & Retrieval Index"
     container_type: "library"
     runtime: "Python 3.12 / SQLite3 / FTS5 / CTE"
-    package_path: "src/eidos/core/index"
-  - container_ref: "CNT-EIDOS-DOCS"
-    name: "Eidos User Documentation System"
+    source_path: "src/eidos/core/index"
+  - container: "CNT-EIDOS-DOCS"
+    title: "Eidos User Documentation System"
     container_type: "web_app"
     runtime: "Python 3.12 / Zensical / Markdown / GitHub Pages"
-    package_path: "docs"
+    source_path: "docs"
 
 solution_strategy:
   - "GitOps State Machine: Git repository is the sole source of authoritative truth."
@@ -180,7 +181,7 @@ The C4 Level 2 Container Diagram explicitly renders the inter-container dependen
 * `CNT-EIDOS-INDEX` consumes AST models and frontmatter definitions (`CNT-EIDOS-CORE`).
 
 === 5.3 Level 3 Component Whitebox View & Interface Governance
-Internal component building blocks are declared inline within each container manifest. In Centralized Hybrid Mode (see link:../explorations/EXP-2026-004.adoc[EXP-2026-004]), complex promoted components **reside centrally in `eidos/architecture/components/<component>.adoc`** (linked via `ref:` in the parent container manifest) and point to code via `source_path`. Eidos specifications **never touch or reside within source code directories** (`src/`, `packages/`).
+Internal component building blocks are declared inline within each container manifest. In Centralized Hybrid Mode (see link:../explorations/EXP-2026-004.adoc[EXP-2026-004]), complex promoted components **reside centrally in `eidos/architecture/components/<component>.adoc`** (linked via `container:` in the standalone component manifest) and point to code via `source_path`. Eidos specifications **never touch or reside within source code directories** (`src/`, `packages/`).
 
 Furthermore, interface ownership strictly distinguishes between deployment boundaries and in-memory linkage:
 * **Containers (`CNT-*`)** define **Boundary Protocol Contracts (`CTR-*`)**: Cross-process, network, or CLI protocols (CLI args, REST OpenAPI, gRPC).

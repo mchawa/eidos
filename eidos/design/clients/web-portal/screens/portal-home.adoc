@@ -4,14 +4,7 @@ schema: schemas/v1/design/screen.schema.yaml
 id: SCR-PORTAL-HOME
 title: "Portal Executive Dashboard & Home View"
 route: "/"
-client: "CLT-WEB-PORTAL"
 status: active
-
-capabilities:
-  - "eidos/domains/spec-engine/capabilities/living-spec-engine.adoc"
-
-supported_design_systems:
-  - "eidos/design/systems/core/system.adoc"
 
 slots:
   hero_archetype_banner: "UIC-PORTAL-SHELL"

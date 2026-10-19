@@ -751,20 +751,6 @@
         "type": "STRING"
       },
       {
-        "name": "owning_component",
-        "opts": [
-          "--owning-component"
-        ],
-        "secondary": [],
-        "kind": "TyperOption",
-        "required": false,
-        "default": "None",
-        "help": "Owning component or container ID for contracts.",
-        "panel": null,
-        "envvar": "None",
-        "type": "STRING"
-      },
-      {
         "name": "container",
         "opts": [
           "--container"
@@ -787,7 +773,7 @@
         "kind": "TyperOption",
         "required": false,
         "default": "src",
-        "help": "Source path or glob owned by a container (package_path) or component (source_path).",
+        "help": "Source path or glob owned by a container or component (source_path).",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
@@ -821,7 +807,7 @@
         "type": "STRING"
       },
       {
-        "name": "extends_system",
+        "name": "extends",
         "opts": [
           "--extends"
         ],
@@ -863,7 +849,7 @@
         "type": "STRING"
       },
       {
-        "name": "implements_component",
+        "name": "implements",
         "opts": [
           "--implements"
         ],

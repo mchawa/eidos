@@ -10,10 +10,6 @@ design_system: "DS-CORE"
 
 container: "CNT-EIDOS-PORTAL"
 
-capabilities:
-  - "eidos/domains/spec-engine/capabilities/living-spec-engine.adoc"
-  - "eidos/domains/experience-portal/capabilities/living-web-portal.adoc"
-
 screens:
   - "eidos/design/clients/web-portal/screens/portal-home.adoc"
   - "eidos/design/clients/web-portal/screens/portal-business.adoc"

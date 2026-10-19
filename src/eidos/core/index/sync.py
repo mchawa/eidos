@@ -100,7 +100,7 @@ class _CodeOwnershipResolver:
                 fm = json.loads(row["data_json"])
             except (TypeError, ValueError):
                 continue
-            for comp in (fm.get("components") or []) + (fm.get("c4_internal_components") or []):
+            for comp in fm.get("components") or []:
                 if not isinstance(comp, dict):
                     continue
                 raw = comp.get("source_path")
@@ -541,7 +541,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
             tracked_code_dirs.add(cand)
 
     package_paths: set[str] = set()
-    cursor.execute("SELECT DISTINCT package_path FROM entities WHERE package_path != '';")
+    cursor.execute("SELECT DISTINCT source_path FROM entities WHERE source_path != '';")
     package_paths.update(row[0].strip() for row in cursor.fetchall())
     cursor.execute(
         "SELECT DISTINCT symbol FROM symbol_mappings WHERE kind IN ('package_path', 'source_path', 'owned_path', 'test_binding');"
@@ -765,26 +765,20 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
         if not isinstance(fm, dict):
             continue
 
-        domain = fm.get("domain", fm.get("domain_binding", ""))
+        domain = fm.get("domain", "")
         if domain:
             conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'realizes', NULL);", (doc_id, domain))
             conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'domain_member', NULL);", (domain, doc_id))
-
-        deps = fm.get("dependencies", {})
-        if isinstance(deps, dict):
-            dep_list = deps.get("internal_containers", []) or deps.get("internal_components", [])
-            for dep in dep_list:
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'depends_on', NULL);", (doc_id, dep))
 
         contracts = fm.get("contracts", {})
         if isinstance(contracts, dict):
             for prov in contracts.get("provides", []):
                 conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides', NULL);", (doc_id, prov))
-            for req in contracts.get("requires") or contracts.get("consumes") or []:
+            for req in contracts.get("consumes") or []:
                 conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes', NULL);", (doc_id, req))
 
         if doc_type == "tech/contract":
-            owning = fm.get("owning_container") or fm.get("owning_component")
+            owning = fm.get("container")
             if owning:
                 conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides', NULL);", (owning, doc_id))
                 conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'owned_by', NULL);", (doc_id, owning))
@@ -830,11 +824,11 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                         "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_client', NULL);",
                         (doc_id, clt_ref.strip()),
                     )
-            inh = fm.get("inheritance")
-            if isinstance(inh, dict) and inh.get("extends"):
-                parent_ds = str(inh["extends"]).strip()
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'extends', NULL);", (doc_id, parent_ds))
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'extended_by', NULL);", (parent_ds, doc_id))
+            if fm.get("extends"):
+                parent_ds = str(fm["extends"]).strip()
+                if parent_ds:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'extends', NULL);", (doc_id, parent_ds))
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'extended_by', NULL);", (parent_ds, doc_id))
 
         biz = fm.get("business", {})
         if isinstance(biz, dict):
@@ -846,12 +840,15 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
         tech = fm.get("technical", {})
         invariants = list(fm.get("invariants", []) or [])
         if isinstance(tech, dict):
-            tech_targets = list(tech.get("containers", []) or []) + list(tech.get("components", []) or [])
+            raw_ctrs = tech.get("contracts")
+            ctr_list = raw_ctrs if isinstance(raw_ctrs, list) else []
+            tech_targets = list(tech.get("containers", []) or []) + list(tech.get("components", []) or []) + list(ctr_list)
             for comp_ref in tech_targets:
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements', NULL);", (doc_id, comp_ref))
-                conn.execute(
-                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implemented_by', NULL);", (comp_ref, doc_id)
-                )
+                if isinstance(comp_ref, str) and comp_ref.strip():
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements', NULL);", (doc_id, comp_ref.strip()))
+                    conn.execute(
+                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implemented_by', NULL);", (comp_ref.strip(), doc_id)
+                    )
             invariants.extend(tech.get("invariants", []) or [])
 
         if doc_type == "tech/component":
@@ -869,14 +866,9 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                             "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api', NULL);",
                             (doc_id, consumed.strip()),
                         )
-                    elif isinstance(consumed, dict) and isinstance(consumed.get("signature"), str) and consumed["signature"].strip():
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api', NULL);",
-                            (doc_id, consumed["signature"].strip()),
-                        )
 
         if doc_type == "tech/container":
-            for comp_entry in (fm.get("components") or []) + (fm.get("c4_internal_components") or []):
+            for comp_entry in fm.get("components") or []:
                 if not isinstance(comp_entry, dict):
                     continue
                 cid = comp_entry.get("id")
@@ -886,11 +878,19 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                         (doc_id, cid),
                     )
                     conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (cid, doc_id))
+                    c_ifaces = comp_entry.get("interfaces")
+                    if isinstance(c_ifaces, dict):
+                        for consumed in c_ifaces.get("consumes") or []:
+                            if isinstance(consumed, str) and consumed.strip():
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api', NULL);",
+                                    (cid, consumed.strip()),
+                                )
                     c_contracts = comp_entry.get("contracts")
                     if isinstance(c_contracts, dict):
                         for prov in c_contracts.get("provides", []) or []:
                             conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides', NULL);", (cid, prov))
-                        for req in c_contracts.get("requires") or c_contracts.get("consumes") or []:
+                        for req in c_contracts.get("consumes") or []:
                             conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes', NULL);", (cid, req))
                 for c_inv in comp_entry.get("invariants", []) or []:
                     if isinstance(c_inv, dict) and c_inv.get("id"):
@@ -940,6 +940,39 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             if iid:
                 conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);", (doc_id, iid))
                 conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);", (iid, doc_id))
+
+    conn.execute("DELETE FROM edges WHERE rel_type = 'depends_on';")
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO edges (source_id, target_id, rel_type, metadata_json)
+        SELECT DISTINCT
+            COALESCE(p_src.target_id, c_edge.source_id) AS src_cnt,
+            COALESCE(p_prov.target_id, p_edge.source_id) AS dst_cnt,
+            'depends_on',
+            NULL
+        FROM edges c_edge
+        LEFT JOIN edges p_src ON p_src.source_id = c_edge.source_id AND p_src.rel_type = 'part_of'
+        JOIN edges p_edge ON p_edge.target_id = c_edge.target_id AND p_edge.rel_type = 'provides'
+        LEFT JOIN edges p_prov ON p_prov.source_id = p_edge.source_id AND p_prov.rel_type = 'part_of'
+        WHERE c_edge.rel_type = 'consumes'
+          AND COALESCE(p_src.target_id, c_edge.source_id) LIKE 'CNT-%'
+          AND COALESCE(p_prov.target_id, p_edge.source_id) LIKE 'CNT-%'
+          AND COALESCE(p_src.target_id, c_edge.source_id) != COALESCE(p_prov.target_id, p_edge.source_id)
+        UNION
+        SELECT DISTINCT
+            p_src.target_id AS src_cnt,
+            COALESCE(p_dst.target_id, api_edge.target_id) AS dst_cnt,
+            'depends_on',
+            NULL
+        FROM edges api_edge
+        JOIN edges p_src ON p_src.source_id = api_edge.source_id AND p_src.rel_type = 'part_of'
+        LEFT JOIN edges p_dst ON p_dst.source_id = api_edge.target_id AND p_dst.rel_type = 'part_of'
+        WHERE api_edge.rel_type = 'consumes_api'
+          AND p_src.target_id LIKE 'CNT-%'
+          AND COALESCE(p_dst.target_id, api_edge.target_id) LIKE 'CNT-%'
+          AND p_src.target_id != COALESCE(p_dst.target_id, api_edge.target_id);
+        """
+    )
 
 
 def index_test_bindings(conn: sqlite3.Connection, ast_idx: Any, test_path: Path, rel_test: str) -> None:
@@ -1366,15 +1399,15 @@ def sync_index(
             title = doc.title or model.title or doc_id
             status = model.status or "active"
             domain = model.effective_domain()
-            pkg_list = model.effective_package_paths()
-            package_path = pkg_list[0] if pkg_list else ""
+            pkg_list = model.source_paths()
+            source_path = pkg_list[0] if pkg_list else ""
             runtime = model.runtime or ""
             container_type = model.container_type or ""
 
             conn.execute(
                 """
                 INSERT INTO entities
-                (id, type, title, status, domain, package_path, runtime, container_type, file_path, data_json)
+                (id, type, title, status, domain, source_path, runtime, container_type, file_path, data_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
@@ -1383,7 +1416,7 @@ def sync_index(
                     title,
                     status,
                     domain,
-                    package_path,
+                    source_path,
                     runtime,
                     container_type,
                     rel_p,
@@ -1423,14 +1456,6 @@ def sync_index(
                                 "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_signature');",
                                 (sig.strip(), doc_id),
                             )
-
-            if doc_type == "tech/container":
-                for comp_entry in model.components:
-                    if comp_entry.ref and comp_entry.id:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_ref');",
-                            (comp_entry.ref, comp_entry.id),
-                        )
 
             invariants_to_index: list[tuple[Any, str | None]] = []
             if (
@@ -1479,7 +1504,7 @@ def sync_index(
                     conn.execute(
                         """
                         INSERT OR REPLACE INTO entities
-                        (id, type, title, status, domain, package_path, runtime, container_type, file_path, data_json)
+                        (id, type, title, status, domain, source_path, runtime, container_type, file_path, data_json)
                         VALUES (?, 'invariant', ?, 'active', ?, '', '', '', ?, ?);
                         """,
                         (iid, rule, domain, rel_p, json.dumps(inv_data)),
@@ -1521,9 +1546,9 @@ def sync_index(
                 )
 
             for module in model.components:
-                if module.name:
+                if module.title:
                     conn.execute(
-                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'module_name');", (module.name, doc_id)
+                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'module_name');", (module.title, doc_id)
                     )
                 for mpath in module.source_paths():
                     conn.execute(
@@ -1550,7 +1575,8 @@ def sync_index(
                         "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_command');", (cmd, doc_id)
                     )
 
-            jtbd_or_rule = biz.get("jtbd", fm.get("rule", "")) if isinstance(biz, dict) else fm.get("rule", "")
+            policy_rules = " ".join(inv.rule for inv in model.invariants if inv.rule) if doc_type == "product/policy" else ""
+            jtbd_or_rule = biz.get("jtbd", policy_rules) if isinstance(biz, dict) else policy_rules
             body_clean = re.sub(r"[{}\[\]=:#*`]", " ", doc.body or "")
             decision_ids: list[str] = []
             decision_texts: list[str] = []
@@ -1570,9 +1596,9 @@ def sync_index(
                             decision_texts.append(str(aval).strip())
             if decision_texts:
                 body_clean = f"{body_clean} " + re.sub(r"[{}\[\]=:#*`]", " ", " ".join(decision_texts))
-            keywords = " ".join([doc_id, doc_type, domain, container_type, package_path, *decision_ids])
+            keywords = " ".join([doc_id, doc_type, domain, container_type, source_path, *decision_ids])
             symbol_parts: list[str] = [
-                str(m.name) for m in model.components if m.name
+                str(m.title) for m in model.components if m.title
             ]
             symbol_parts.extend(
                 str(m.id) for m in model.components if m.id
@@ -1611,22 +1637,6 @@ def sync_index(
 
         if spec_updates or specs_deleted:
             conn.execute("DELETE FROM symbol_mappings WHERE kind = 'component_ref';")
-            for (cnt_json,) in conn.execute(
-                "SELECT data_json FROM entities WHERE type = 'tech/container';"
-            ).fetchall():
-                try:
-                    cnt_fm = json.loads(cnt_json or "{}")
-                except (TypeError, ValueError):
-                    continue
-                if isinstance(cnt_fm, dict):
-                    for comp_entry in (cnt_fm.get("components") or []) + (
-                        cnt_fm.get("c4_internal_components") or []
-                    ):
-                        if isinstance(comp_entry, dict) and comp_entry.get("ref") and comp_entry.get("id"):
-                            conn.execute(
-                                "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'component_ref');",
-                                (str(comp_entry["ref"]).strip(), str(comp_entry["id"]).strip()),
-                            )
             inc_ids = (
                 updated_spec_doc_ids
                 if (not force and not specs_deleted and not any_doc_id_renamed and updated_spec_doc_ids)
@@ -1964,13 +1974,13 @@ def _project_ast_code_symbols_into_fts(
             fm = {}
 
         symbol_parts: list[str] = [
-            str(m.get("name", ""))
-            for m in (fm.get("components", []) or fm.get("c4_internal_components", []))
-            if isinstance(m, dict) and m.get("name")
+            str(m.get("title", ""))
+            for m in (fm.get("components", []) or [])
+            if isinstance(m, dict) and m.get("title")
         ]
         symbol_parts.extend(
             str(m.get("id", ""))
-            for m in (fm.get("components", []) or fm.get("c4_internal_components", []))
+            for m in (fm.get("components", []) or [])
             if isinstance(m, dict) and m.get("id")
         )
         if doc_type == "tech/component" and isinstance(fm.get("interfaces"), dict):

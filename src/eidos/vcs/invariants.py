@@ -711,8 +711,8 @@ def get_living_specs_catalog(eidos_dir: Path, repo_root: Path | None = None) -> 
             catalog["components"].append(
                 {
                     "id": eid,
-                    "name": ent.get("name", title),
-                    "package_path": ent.get("package_path", ""),
+                    "title": ent.get("title", title),
+                    "source_path": ent.get("source_path", ""),
                     "runtime": ent.get("runtime", ""),
                     "path": spec_path,
                 }
@@ -723,8 +723,7 @@ def get_living_specs_catalog(eidos_dir: Path, repo_root: Path | None = None) -> 
                     "id": eid,
                     "title": title,
                     "protocol": ent.get("protocol", ""),
-                    "owning_container": ent.get("owning_container") or ent.get("owning_component", ""),
-                    "owning_component": ent.get("owning_container") or ent.get("owning_component", ""),
+                    "container": ent.get("container", ""),
                     "path": spec_path,
                 }
             )
@@ -734,7 +733,7 @@ def get_living_specs_catalog(eidos_dir: Path, repo_root: Path | None = None) -> 
                     "id": eid,
                     "title": title,
                     "category": ent.get("category", ""),
-                    "rule": ent.get("rule", ""),
+                    "severity": ent.get("severity", ""),
                     "path": spec_path,
                 }
             )

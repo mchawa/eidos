@@ -53,26 +53,24 @@ def repo_env(tmp_path):
     tests_dir.mkdir(parents=True)
     (tests_dir / "test_core.py").write_text("def test_parser(): pass\n", encoding="utf-8")
 
-    # Container manifest with 1 inline component and 1 dedicated ref
+    # Container manifest with 1 inline component (promoted components link bottom-up via container: CNT-*)
     (containers_dir / "core.adoc").write_text(
         "---\n"
         "type: tech/container\n"
         "schema: schemas/v1/tech/container.schema.yaml\n"
         "id: CNT-SAMPLE-CORE\n"
-        "name: Sample Core Engine\n"
+        "title: Sample Core Engine\n"
         "container_type: library\n"
         "runtime: Python 3.12+\n"
-        "package_path: src/sample/core\n"
+        "source_path: src/sample/core\n"
         "contracts:\n"
         "  provides:\n"
         "    - CTR-SAMPLE-API\n"
         "components:\n"
         "  - id: CMP-CORE-PARSER\n"
-        "    name: SpecParser\n"
+        "    title: SpecParser\n"
         "    responsibility: Parses specification documents with frontmatter.\n"
         "    source_path: src/sample/core/parser.py\n"
-        "  - id: CMP-CORE-VALIDATOR\n"
-        "    ref: eidos/architecture/components/validator.adoc\n"
         "---\n"
         "= Sample Core Engine\n",
         encoding="utf-8",
@@ -84,7 +82,7 @@ def repo_env(tmp_path):
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-CORE-VALIDATOR\n"
-        "name: Specification Validator\n"
+        "title: Specification Validator\n"
         "container: CNT-SAMPLE-CORE\n"
         "status: active\n"
         "source_path: src/sample/core/validator.py\n"
@@ -115,7 +113,7 @@ def repo_env(tmp_path):
         "id: CTR-SAMPLE-API\n"
         "title: Core API Contract\n"
         "protocol: cli_args\n"
-        "owning_container: CNT-SAMPLE-CORE\n"
+        "container: CNT-SAMPLE-CORE\n"
         "specification_file: src/sample/core/parser.py\n"
         "---\n"
         "= Core API Contract\n",
@@ -148,7 +146,7 @@ def test_spike_1_centralization_mandate_enforcement(repo_env):
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-ILLEGAL-CODE-POLLUTION\n"
-        "name: Illegal Code Pollution\n"
+        "title: Illegal Code Pollution\n"
         "container: CNT-SAMPLE-CORE\n"
         "status: active\n"
         "source_path: src/sample/core/parser.py\n"
@@ -173,7 +171,7 @@ def test_spike_1_centralization_mandate_enforcement(repo_env):
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-MISPLACED-SUBDIR\n"
-        "name: Misplaced Subdir Component\n"
+        "title: Misplaced Subdir Component\n"
         "container: CNT-SAMPLE-CORE\n"
         "status: active\n"
         "source_path: src/sample/core/parser.py\n"
@@ -197,7 +195,7 @@ def test_spike_1_container_affinity_enforcement(repo_env):
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-ORPHAN\n"
-        "name: Orphan Component\n"
+        "title: Orphan Component\n"
         "container: CNT-NONEXISTENT\n"
         "status: active\n"
         "source_path: src/sample/core/parser.py\n"
@@ -211,7 +209,7 @@ def test_spike_1_container_affinity_enforcement(repo_env):
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-WRONG-PARENT\n"
-        "name: Wrong Parent Type\n"
+        "title: Wrong Parent Type\n"
         "container: CTR-SAMPLE-API\n"
         "status: active\n"
         "source_path: src/sample/core/parser.py\n"
@@ -244,7 +242,7 @@ def test_spike_1_interface_boundary_governance_enforcement(repo_env):
         "id: CTR-BAD-OWNER\n"
         "title: Bad Owner Contract\n"
         "protocol: cli_args\n"
-        "owning_container: CMP-CORE-VALIDATOR\n"
+        "container: CMP-CORE-VALIDATOR\n"
         "specification_file: src/sample/core/parser.py\n"
         "---\n"
         "= Bad Owner\n",
@@ -302,7 +300,7 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
     """Spike 3: Verify promote_component and inline_component lifecycle CLI prototype."""
     repo_root, eidos_dir = repo_env
 
-    # Enrich inline CMP-CORE-PARSER with domain_binding, interfaces, and non-default quality_attributes
+    # Enrich inline CMP-CORE-PARSER with domain, interfaces, and non-default quality_attributes
     domains_dir = eidos_dir / "domains"
     domains_dir.mkdir(parents=True, exist_ok=True)
     (domains_dir / "core.adoc").write_text(
@@ -310,7 +308,7 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
         "type: product/domain\n"
         "schema: schemas/v1/product/domain.schema.yaml\n"
         "id: DOM-SAMPLE\n"
-        "name: Sample Domain\n"
+        "title: Sample Domain\n"
         "classification: core\n"
         "boundaries:\n"
         "  responsibilities:\n"
@@ -324,7 +322,7 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
         cnt_file.read_text(encoding="utf-8").replace(
             "    source_path: src/sample/core/parser.py\n",
             "    source_path: src/sample/core/parser.py\n"
-            "    domain_binding: DOM-SAMPLE\n"
+            "    domain: DOM-SAMPLE\n"
             "    interfaces:\n"
             "      provides:\n"
             "        - signature: \"parse_spec_file(path: Path) -> SpecDocument\"\n"
@@ -339,7 +337,7 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
     # Error branches: promoting or inlining nonexistent component raises ValueError
     with pytest.raises(ValueError, match="not found"):
         promote_component("CMP-DOES-NOT-EXIST", eidos_dir=eidos_dir, repo_root=repo_root)
-    with pytest.raises(ValueError, match="not currently promoted"):
+    with pytest.raises(ValueError, match="not found"):
         inline_component("CMP-CORE-PARSER", eidos_dir=eidos_dir, repo_root=repo_root)
 
     # 1. Promote inline component CMP-CORE-PARSER to dedicated specification
@@ -357,18 +355,16 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
     src_adocs = list((repo_root / "src").rglob("*.adoc"))
     assert len(src_adocs) == 0, f"Specs illegally created in src/: {src_adocs}"
 
-    # Verify container was updated with ref:
+    # Verify inline component was removed from container components[] upon promotion
     c_doc = parse_spec_file(container_spec)
-    comps = c_doc.frontmatter["components"]
-    parser_entry = next(c for c in comps if c["id"] == "CMP-CORE-PARSER")
-    assert "ref" in parser_entry
-    assert "architecture/components/core-parser.adoc" in parser_entry["ref"].replace("\\", "/")
+    comps = c_doc.frontmatter.get("components") or []
+    assert not any(c.get("id") == "CMP-CORE-PARSER" for c in comps)
 
-    # Verify promoted spec is valid tech/component and preserved domain_binding, interfaces, quality_attributes
+    # Verify promoted spec is valid tech/component and preserved domain, interfaces, quality_attributes
     promoted_doc = parse_spec_file(promoted_spec)
     assert promoted_doc.doc_type == "tech/component"
     assert promoted_doc.frontmatter["container"] == "CNT-SAMPLE-CORE"
-    assert promoted_doc.frontmatter["domain_binding"] == "DOM-SAMPLE"
+    assert promoted_doc.frontmatter["domain"] == "DOM-SAMPLE"
     assert promoted_doc.frontmatter["quality_attributes"] == {"stateless": False, "reentrant": True}
     assert promoted_doc.frontmatter["interfaces"]["provides"][0]["signature"].startswith("parse_spec_file")
     assert promoted_doc.is_valid
@@ -390,7 +386,7 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
     parser_inlined = next(c for c in c_doc_inlined.frontmatter["components"] if c["id"] == "CMP-CORE-PARSER")
     assert "ref" not in parser_inlined
     assert "source_path" in parser_inlined
-    assert parser_inlined.get("domain_binding") == "DOM-SAMPLE"
+    assert parser_inlined.get("domain") == "DOM-SAMPLE"
     assert parser_inlined.get("quality_attributes") == {"stateless": False, "reentrant": True}
     assert parser_inlined.get("interfaces", {}).get("provides")
 
@@ -432,7 +428,7 @@ def test_spike_4_exit_criteria_token_budget_benchmark(repo_env):
             "type: tech/component\n"
             "schema: schemas/v1/tech/component.schema.yaml\n"
             f"id: CMP-EXTRA-{i}\n"
-            f"name: Extra Component {i}\n"
+            f"title: Extra Component {i}\n"
             "container: CNT-SAMPLE-CORE\n"
             "status: active\n"
             "source_path: src/sample/core/parser.py\n"
@@ -481,7 +477,7 @@ def test_centralization_mandate_parent_path_named_src(tmp_path):
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-SRC-PATH-VALID\n"
-        "name: Valid Component Under Src Parent\n"
+        "title: Valid Component Under Src Parent\n"
         "container: CNT-SAMPLE-CORE\n"
         "status: active\n"
         "source_path: src/sample/core/parser.py\n"

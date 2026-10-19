@@ -59,12 +59,12 @@ def build_design_spec(
     slug: str,
     title: str,
     heading: str,
-    owning_container: str | None,
+    container: str | None,
     client_id: str | None,
-    extends_system: str | None,
+    extends: str | None,
     route: str,
     design_system: str,
-    implements_component: str | None,
+    implements: str | None,
     platform: str,
 ) -> tuple[Path, Path, dict[str, Any], str]:
     """Build (dest_dir, dest_file, frontmatter, body) for a design-layer specification type."""
@@ -104,11 +104,10 @@ def build_design_spec(
             "status": "active",
         }
         if client_id:
-            clean_clt = client_id.strip().lower().removeprefix("clt-")
-            fm["client_id"] = re.sub(r"[^a-z0-9_-]+", "-", clean_clt).strip("-") or clean_clt
             fm["brand_name"] = title
-        if extends_system:
-            fm["inheritance"] = {"extends": extends_system, "override_mode": "token_and_component"}
+        if extends:
+            fm["extends"] = extends
+            fm["override_mode"] = "token_and_component"
         fm["tokens"] = {"spec_format": "w3c_design_tokens", "manifest": "tokens.json"}
         fm["theme_capabilities"] = {"color_modes": ["light", "dark"], "density_modes": ["comfortable"]}
         body = f"""= Design System: {heading}
@@ -132,8 +131,8 @@ Tokens are defined in W3C DTCG format at `tokens.json`.
             "title": title,
             "design_system": resolved_ds_id,
         }
-        if implements_component:
-            fm["implements"] = implements_component
+        if implements:
+            fm["implements"] = implements
         fm.update(
             {
                 "status": "draft",
@@ -160,12 +159,8 @@ Describes variants, interactive states, accessibility contracts, and visual test
 
     elif canonical_key == "screen":
         clean_screen = slug.removeprefix("scr-")
-        resolved_ds_id, _ = _resolve_design_entity_ref(
-            (design_system or "DS-CORE").strip(), "DS-", "system.adoc", eidos_dir
-        )
-        resolved_clt_id = ""
         if client_id:
-            resolved_clt_id, client_slug = _resolve_design_entity_ref(client_id, "CLT-", "client.adoc", eidos_dir)
+            _, client_slug = _resolve_design_entity_ref(client_id, "CLT-", "client.adoc", eidos_dir)
             dest_dir = eidos_dir / "design" / "clients" / client_slug / "screens"
         else:
             dest_dir = eidos_dir / "design" / "screens"
@@ -176,22 +171,14 @@ Describes variants, interactive states, accessibility contracts, and visual test
             "id": doc_id,
             "title": title,
             "route": route,
+            "status": "active",
+            "slots": {"main_content": "Primary view content"},
+            "states": [
+                {"name": "loading", "description": "Skeleton loader displayed during data fetch."},
+                {"name": "active", "description": "Standard interactive screen state."},
+                {"name": "error", "description": "Fallback error message if request fails."},
+            ],
         }
-        if resolved_clt_id:
-            fm["client"] = resolved_clt_id
-        fm.update(
-            {
-                "status": "active",
-                "capabilities": [],
-                "supported_design_systems": [resolved_ds_id],
-                "slots": {"main_content": "Primary view content"},
-                "states": [
-                    {"name": "loading", "description": "Skeleton loader displayed during data fetch."},
-                    {"name": "active", "description": "Standard interactive screen state."},
-                    {"name": "error", "description": "Fallback error message if request fails."},
-                ],
-            }
-        )
         body = f"""= Screen: {heading}
 :toc: left
 
@@ -215,9 +202,9 @@ This specification defines the route, layout slots, and state transitions for {h
             "platform": platform,
             "design_system": resolved_ds_id,
         }
-        if owning_container:
-            fm["container"] = owning_container
-        fm.update({"capabilities": [], "screens": [], "flows": []})
+        if container:
+            fm["container"] = container
+        fm.update({"screens": [], "flows": []})
         body = f"""= Client: {heading}
 :toc: left
 
@@ -241,10 +228,8 @@ Describe the runtime platform, bound design system, and implementing container o
             "title": title,
             "status": "active",
             "flow_type": "client_internal" if resolved_clt_id else "cross_client",
+            "steps": [{"step": 1, "title": "Entry point"}],
         }
-        if resolved_clt_id:
-            fm["client"] = resolved_clt_id
-        fm.update({"capabilities": [], "steps": [{"step": 1, "title": "Entry point"}]})
         body = f"""= Flow: {heading}
 :toc: left
 

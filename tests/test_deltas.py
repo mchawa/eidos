@@ -34,7 +34,7 @@ def test_a1_git_baseline_resolves_dedicated_component_without_cmp_prefix(tmp_pat
         "component",
         "CMP-AUTH",
         "Auth Component",
-        owning_container="CNT-API",
+        container="CNT-API",
     )
     assert cmp_path.name == "auth.adoc"
 
@@ -85,7 +85,7 @@ def test_a2_declarative_postcondition_does_not_fallback_to_frontmatter_when_body
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-EMPTY\n"
-        "name: Empty Body Component\n"
+        "title: Empty Body Component\n"
         "container: CNT-API\n"
         "status: active\n"
         "responsibility: Handle token validation\n"

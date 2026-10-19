@@ -24,11 +24,7 @@ technical:
     - "CNT-EIDOS-CLI"
     - "CNT-EIDOS-CORE"
   contracts:
-    interfaces:
-      - "eidos index status [--path PATH] [--json]"
-      - "eidos index repo-map [--max-tokens TOKENS] [--format json|text]"
-      - "eidos index find-symbol <QUERY> [--json]"
-      - "eidos context [-f FILES] [-c COMPONENT] [-t TASK] [--tier anchor|guardrails|deep] [--format markdown|json]"
+    - "CTR-EIDOS-CLI"
   invariants:
     - id: INV-INDEX-OPTIONAL-AST-FALLBACK
       rule: "The Eidos Architectural Knowledge Graph indexer and drift engine must operate with 100% test pass rate even when ast-grep-py is not installed, falling back gracefully to Python stdlib ast and regex scanning without unhandled exceptions."

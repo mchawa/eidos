@@ -2,7 +2,8 @@
 type: product/persona
 schema: schemas/v1/product/persona.schema.yaml
 id: PER-SOFTWARE-ENGINEER
-name: "Software Engineer"
+title: "Software Engineer"
+status: active
 role_type: software_engineer
 goals:
   - "Ship high-velocity code and maintain flow state without excessive documentation paperwork (Direct Mode)."

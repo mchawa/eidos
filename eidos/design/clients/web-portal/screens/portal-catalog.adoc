@@ -4,14 +4,7 @@ schema: schemas/v1/design/screen.schema.yaml
 id: SCR-PORTAL-CATALOG
 title: "Living Specifications Master Catalog View"
 route: "/catalog"
-client: "CLT-WEB-PORTAL"
 status: active
-
-capabilities:
-  - "eidos/domains/spec-engine/capabilities/living-spec-engine.adoc"
-
-supported_design_systems:
-  - "eidos/design/systems/core/system.adoc"
 
 slots:
   tree_filter_toolbar: "UIC-PORTAL-SHELL"

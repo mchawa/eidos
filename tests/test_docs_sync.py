@@ -10,7 +10,7 @@ import yaml
 
 
 def test_documentation_and_schemas_in_sync():
-    """Verify INV-DOCS-SYNCHRONIZATION and POL-003: All 16 living specification schemas and CLI commands are accurately documented."""
+    """Verify INV-DOCS-SYNCHRONIZATION, INV-POL-003-CONTINUOUS-DOCUMENTATION-SYNC, and POL-003: All 16 living specification schemas and CLI commands are accurately documented."""
     repo_root = Path(__file__).parent.parent
 
     # 1. Verify all canonical v1 schemas are represented in docs/concepts/schema-glossary.md

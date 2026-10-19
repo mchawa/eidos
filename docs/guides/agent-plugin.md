@@ -371,16 +371,16 @@ When agents pass `--json` (or `--format json`), Eidos outputs structured JSON pa
   "components": [
     {
       "id": "CNT-EIDOS-CLI",
-      "name": "Eidos Command-Line Interface",
+      "title": "Eidos Command-Line Interface",
       "type": "tech/container",
-      "package_path": "src/eidos/cli"
+      "source_path": "src/eidos/cli"
     }
   ],
   "contracts": [
     {
       "id": "CTR-EIDOS-CLI",
       "protocol": "cli_args",
-      "owning_container": "CNT-EIDOS-CLI"
+      "container": "CNT-EIDOS-CLI"
     }
   ],
   "capabilities": [

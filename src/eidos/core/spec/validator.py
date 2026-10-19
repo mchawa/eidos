@@ -509,36 +509,6 @@ class SpecValidator:
             if not doc.is_valid:
                 report.schema_errors[str(file_path)] = list(doc.errors)
 
-        # Discover dedicated component specs referenced by containers via 'components[].ref'. Refs resolving
-        # outside 'eidos/architecture/components/' are still loaded so INV-COMPONENT-CENTRALIZATION-MANDATE
-        # can report them as violations (DLT-2026-032).
-        scanned_set = {str(d.file_path.resolve()) for d in report.documents}
-
-        for doc in list(report.documents):
-            if doc.doc_type == "tech/container" and doc.frontmatter:
-                # 1. Check explicit component refs in components array
-                for comp in doc.model.components:
-                    if comp.ref:
-                        ref_str = comp.ref
-                        ref_file = (repo_root / ref_str).resolve()
-                        if not ref_file.exists():
-                            ref_file = (spec_root / ref_str).resolve()
-                        if not ref_file.exists():
-                            ref_file = (root_dir / ref_str).resolve()
-                        if not ref_file.exists():
-                            ref_file = (spec_root / "architecture" / "components" / Path(ref_str).name).resolve()
-                        if not ref_file.exists():
-                            report.broken_references.append(
-                                f"Broken component ref in {doc.file_path.name}: cannot locate '{ref_str}'"
-                            )
-                        elif str(ref_file) not in scanned_set:
-                            comp_doc = _load_or_validate(ref_file)
-                            if comp_doc is not None:
-                                report.documents.append(comp_doc)
-                                scanned_set.add(str(ref_file))
-                                if not comp_doc.is_valid:
-                                    report.schema_errors[str(ref_file)] = list(comp_doc.errors)
-
         deleted_keys = (
             [k for k in cached_rows if k not in seen_rel_keys] if resolved_root == eidos_cache_root else []
         )
@@ -579,7 +549,6 @@ class SpecValidator:
         # Also register inline component IDs and embedded invariant IDs declared within documents in catalog_ids
         # and enforce global uniqueness across the catalog.
         comp_owners: dict[str, SpecDocument] = {}
-        comp_ref_owners: dict[str, SpecDocument] = {}
         inv_owners: dict[str, SpecDocument] = {}
         for doc in report.documents:
             if doc.frontmatter:
@@ -587,32 +556,16 @@ class SpecValidator:
                     for comp in doc.model.components:
                         if not comp.id:
                             continue
-                        if comp.ref:
-                            if comp.id in comp_ref_owners or comp.id in comp_owners:
-                                prev_doc = comp_ref_owners.get(comp.id) or comp_owners.get(comp.id)
-                                prev_name = prev_doc.file_path.name if prev_doc else doc.file_path.name
-                                report.broken_references.append(
-                                    f"Duplicate entity ID '{comp.id}' found in {doc.file_path.name} (already defined in {prev_name})"
-                                )
-                            else:
-                                comp_ref_owners[comp.id] = doc
-                                catalog_ids.add(comp.id)
-                                entity_types.setdefault(comp.id, "tech/component")
+                        if comp.id in comp_owners or comp.id in report.entity_index:
+                            prev_doc = comp_owners.get(comp.id) or report.entity_index.get(comp.id)
+                            prev_name = prev_doc.file_path.name if prev_doc else doc.file_path.name
+                            report.broken_references.append(
+                                f"Duplicate entity ID '{comp.id}' found in {doc.file_path.name} (already defined in {prev_name})"
+                            )
                         else:
-                            if comp.id in comp_owners or comp.id in comp_ref_owners or comp.id in report.entity_index:
-                                prev_doc = (
-                                    comp_owners.get(comp.id)
-                                    or comp_ref_owners.get(comp.id)
-                                    or report.entity_index.get(comp.id)
-                                )
-                                prev_name = prev_doc.file_path.name if prev_doc else doc.file_path.name
-                                report.broken_references.append(
-                                    f"Duplicate entity ID '{comp.id}' found in {doc.file_path.name} (already defined in {prev_name})"
-                                )
-                            else:
-                                comp_owners[comp.id] = doc
-                                catalog_ids.add(comp.id)
-                                entity_types.setdefault(comp.id, "tech/component")
+                            comp_owners[comp.id] = doc
+                            catalog_ids.add(comp.id)
+                            entity_types.setdefault(comp.id, "tech/component")
                 for inv in doc.model.all_invariants():
                     if not inv.id:
                         continue
@@ -758,7 +711,21 @@ class SpecValidator:
                             ref_meta, item, field_path, doc, catalog_ids, report, entity_types, root_dir=root_dir
                         )
 
-        if isinstance(value, dict):
+        if isinstance(value, str):
+            for combiner in ("oneOf", "anyOf", "allOf"):
+                for branch in schema_node.get(combiner, []) or []:
+                    if isinstance(branch, dict):
+                        self._validate_schema_references(
+                            branch,
+                            value,
+                            field_path,
+                            doc,
+                            catalog_ids,
+                            report,
+                            entity_types,
+                            root_dir=root_dir,
+                        )
+        elif isinstance(value, dict):
             props = schema_node.get("properties")
             if isinstance(props, dict):
                 for prop_key, prop_val in value.items():
@@ -776,20 +743,32 @@ class SpecValidator:
                         )
             for combiner in ("oneOf", "anyOf", "allOf"):
                 for branch in schema_node.get(combiner, []) or []:
-                    if isinstance(branch, dict) and isinstance(branch.get("properties"), dict):
-                        for prop_key, prop_val in value.items():
-                            if prop_key in branch["properties"]:
-                                sub_path = f"{field_path}.{prop_key}" if field_path else prop_key
-                                self._validate_schema_references(
-                                    branch["properties"][prop_key],
-                                    prop_val,
-                                    sub_path,
-                                    doc,
-                                    catalog_ids,
-                                    report,
-                                    entity_types,
-                                    root_dir=root_dir,
-                                )
+                    if isinstance(branch, dict):
+                        if "$ref" in branch:
+                            self._validate_schema_references(
+                                branch,
+                                value,
+                                field_path,
+                                doc,
+                                catalog_ids,
+                                report,
+                                entity_types,
+                                root_dir=root_dir,
+                            )
+                        elif isinstance(branch.get("properties"), dict):
+                            for prop_key, prop_val in value.items():
+                                if prop_key in branch["properties"]:
+                                    sub_path = f"{field_path}.{prop_key}" if field_path else prop_key
+                                    self._validate_schema_references(
+                                        branch["properties"][prop_key],
+                                        prop_val,
+                                        sub_path,
+                                        doc,
+                                        catalog_ids,
+                                        report,
+                                        entity_types,
+                                        root_dir=root_dir,
+                                    )
         elif isinstance(value, list):
             items_schema = schema_node.get("items")
             if isinstance(items_schema, dict):
@@ -797,20 +776,21 @@ class SpecValidator:
                     self._validate_schema_references(
                         items_schema, item, field_path, doc, catalog_ids, report, entity_types, root_dir=root_dir
                     )
-                    if not isinstance(item, dict):
-                        for combiner in ("oneOf", "anyOf", "allOf"):
-                            for branch in items_schema.get(combiner, []) or []:
-                                if isinstance(branch, dict):
-                                    self._validate_schema_references(
-                                        branch,
-                                        item,
-                                        field_path,
-                                        doc,
-                                        catalog_ids,
-                                        report,
-                                        entity_types,
-                                        root_dir=root_dir,
-                                    )
+            for combiner in ("oneOf", "anyOf", "allOf"):
+                for branch in schema_node.get(combiner, []) or []:
+                    if isinstance(branch, dict) and (
+                        "$ref" in branch or "items" in branch or "x-eidos-ref" in branch
+                    ):
+                        self._validate_schema_references(
+                            branch,
+                            value,
+                            field_path,
+                            doc,
+                            catalog_ids,
+                            report,
+                            entity_types,
+                            root_dir=root_dir,
+                        )
 
     def _check_eidos_ref(
         self,
@@ -894,7 +874,11 @@ class SpecValidator:
                 if val in exempt_targets:
                     return
 
-            rule_id = ref_meta.get("rule_id")
+            rule_id = ref_meta.get("rule_id") or (
+                "INV-COMPONENT-CONTAINER-AFFINITY"
+                if doc.doc_type == "tech/component" and field_path == "container"
+                else None
+            )
             label = ref_meta.get("entity_label")
             if rule_id:
                 report.broken_references.append(
@@ -1019,10 +1003,8 @@ class SpecValidator:
                             f"adding invariant '{target_val}' requires a 'parent' specification ID."
                         )
         elif dtype == "tech/contract":
-            for own_field in ("owning_container", "owning_component"):
-                owning_ref = str(fm.get(own_field) or "").strip()
-                if not owning_ref:
-                    continue
+            owning_ref = str(fm.get("container") or "").strip()
+            if owning_ref:
                 ref_upper = owning_ref.upper()
                 is_cmp_ref = ref_upper.startswith("CMP-") or (
                     ref_upper.endswith(".ADOC")
@@ -1037,7 +1019,6 @@ class SpecValidator:
                         f"INV-INTERFACE-BOUNDARY-GOVERNANCE violation: Contract '{doc.doc_id}' specifies in-process component '{owning_ref}' as owner. "
                         f"Boundary Protocol Contracts (CTR-*) must be owned by a Container (CNT-*)."
                     )
-                    break
         elif dtype == "tech/component":
             if doc.file_path.suffix == ".adoc":
                 spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir, doc.file_path)
@@ -1217,7 +1198,7 @@ class SpecValidator:
         return bool(re.search(rf"\b{re.escape(leaf_sym)}\b", stripped_source))
 
     def _validate_source_and_contract_paths(self, report: ValidationReport, root_dir: Path) -> None:
-        """Verify container package_path, component source_path, contract specification_file, UI component test_bindings, and invariant test_binding references when source/test trees exist on disk."""
+        """Verify container and component source_path, contract specification_file, UI component test_bindings, and invariant test_binding references when source/test trees exist on disk."""
         spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir)
 
         candidate_paths: list[str] = []
@@ -1226,10 +1207,9 @@ class SpecValidator:
             fm = doc.frontmatter or {}
             model = doc.model
             if doc.doc_type == "tech/container":
-                candidate_paths.extend(model.package_paths())
+                candidate_paths.extend(model.source_paths())
                 for comp in model.components:
-                    if not comp.ref:
-                        candidate_paths.extend(comp.source_paths())
+                    candidate_paths.extend(comp.source_paths())
             elif doc.doc_type == "tech/component":
                 candidate_paths.extend(model.source_paths())
             elif doc.doc_type == "tech/contract":
@@ -1329,9 +1309,7 @@ class SpecValidator:
             "deprecated",
             "retired",
             "discarded",
-            "sunset",
             "rejected",
-            "removed",
         }
         for doc in report.documents:
             fm = doc.frontmatter or {}
@@ -1342,18 +1320,16 @@ class SpecValidator:
 
             if has_source_tree:
                 if doc.doc_type == "tech/container":
-                    for raw_p in model.package_paths():
+                    for raw_p in model.source_paths():
                         if (
                             raw_p.strip().upper() not in ("N/A", "TBD", "NONE")
                             and self._resolve_source_path(repo_root, root_dir, raw_p) is None
                         ):
                             report.broken_references.append(
-                                f"Broken package_path in {doc.file_path.name}: "
+                                f"Broken source_path in {doc.file_path.name}: "
                                 f"Container '{doc.doc_id}' references '{raw_p}' which does not exist on disk"
                             )
                     for comp in model.components:
-                        if comp.ref:
-                            continue
                         comp_status = str(comp.status or "active").strip().lower()
                         if comp_status in inactive_statuses:
                             continue
@@ -1491,7 +1467,7 @@ class SpecValidator:
     )
 
     def _validate_design_systems(self, report: ValidationReport, root_dir: Path) -> None:
-        """Validate design/system W3C DTCG tokens.manifest files and acyclic inheritance.extends chains."""
+        """Validate design/system W3C DTCG tokens.manifest files and acyclic extends chains."""
         spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir)
         inactive_statuses = {
             "planned",
@@ -1500,7 +1476,6 @@ class SpecValidator:
             "deprecated",
             "retired",
             "discarded",
-            "sunset",
             "rejected",
         }
 
@@ -1515,12 +1490,7 @@ class SpecValidator:
             if doc.doc_type != "design/system":
                 continue
             fm = doc.frontmatter or {}
-            parent_ref = ""
-            inh = fm.get("inheritance")
-            if isinstance(inh, dict) and inh.get("extends"):
-                parent_ref = str(inh.get("extends") or "").strip()
-            elif fm.get("extends_system"):
-                parent_ref = str(fm.get("extends_system") or "").strip()
+            parent_ref = str(fm.get("extends") or "").strip()
 
             if parent_ref and isinstance(doc.doc_id, str) and doc.doc_id:
                 parent_id = parent_ref

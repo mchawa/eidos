@@ -135,9 +135,13 @@ export function BusinessView({
       (p) =>
         p.id.toLowerCase().includes(query) ||
         p.title.toLowerCase().includes(query) ||
-        p.rule.toLowerCase().includes(query) ||
         p.category.toLowerCase().includes(query) ||
-        p.enforcement?.mechanism?.toLowerCase().includes(query)
+        p.severity?.toLowerCase().includes(query) ||
+        p.invariants?.some(
+          (inv) =>
+            inv.id.toLowerCase().includes(query) ||
+            inv.rule.toLowerCase().includes(query)
+        )
     );
   }, [policies, query]);
 
@@ -146,7 +150,7 @@ export function BusinessView({
     return domains.filter(
       (d) =>
         d.id.toLowerCase().includes(query) ||
-        d.name.toLowerCase().includes(query) ||
+        d.title.toLowerCase().includes(query) ||
         d.mission?.toLowerCase().includes(query) ||
         d.classification?.toLowerCase().includes(query) ||
         d.boundaries?.responsibilities?.some((r) => r.toLowerCase().includes(query))
@@ -158,7 +162,7 @@ export function BusinessView({
     return personas.filter(
       (p) =>
         p.id.toLowerCase().includes(query) ||
-        p.name.toLowerCase().includes(query) ||
+        p.title.toLowerCase().includes(query) ||
         p.role?.toLowerCase().includes(query) ||
         p.archetype?.toLowerCase().includes(query) ||
         p.goals?.some((g) => g.toLowerCase().includes(query))
@@ -406,10 +410,10 @@ export function BusinessView({
                         >
                           {pol.category}
                         </Badge>
-                        {pol.enforcement?.severity && (
+                        {pol.severity && (
                           <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center gap-1">
                             <Lock className="h-2.5 w-2.5" />
-                            {pol.enforcement.severity}
+                            {pol.severity}
                           </span>
                         )}
                       </div>
@@ -428,27 +432,24 @@ export function BusinessView({
                     </button>
                   </div>
 
-                  {/* Invariant Rule Callout */}
-                  <div className="p-3.5 rounded-xl border border-border/80 bg-muted/20 space-y-1.5">
-                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                      <ShieldCheck className="h-3.5 w-3.5 text-blue-400" />
-                      <span>Invariant Rule</span>
-                    </div>
-                    <p className="text-xs sm:text-sm font-medium text-foreground leading-relaxed">
-                      "{pol.rule}"
-                    </p>
-                  </div>
-
-                  {/* Enforcement Mechanism */}
-                  {pol.enforcement?.mechanism && (
-                    <div className="space-y-1 text-xs">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                        <Lock className="h-2.5 w-2.5" />
-                        Enforcement Gate
-                      </span>
-                      <p className="text-xs text-muted-foreground leading-relaxed font-mono">
-                        {pol.enforcement.mechanism}
+                  {/* Invariants Callout */}
+                  {pol.invariants && pol.invariants.length > 0 && (
+                    <div className="p-3.5 rounded-xl border border-border/80 bg-muted/20 space-y-2">
+                      <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        <div className="flex items-center gap-1.5">
+                          <ShieldCheck className="h-3.5 w-3.5 text-blue-400" />
+                          <span>Policy Invariants ({pol.invariants.length})</span>
+                        </div>
+                        <span className="font-mono text-blue-400">{pol.invariants[0].id}</span>
+                      </div>
+                      <p className="text-xs sm:text-sm font-medium text-foreground leading-relaxed">
+                        "{pol.invariants[0].rule}"
                       </p>
+                      {pol.invariants[0].test_binding && (
+                        <p className="text-[11px] font-mono text-muted-foreground truncate">
+                          {pol.invariants[0].test_binding}
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -460,7 +461,7 @@ export function BusinessView({
                         : "System-wide Governance Policy"}
                     </span>
                     <span className="text-[10px] font-mono text-muted-foreground">
-                      Scope: {pol.enforcement?.scope || "Global"}
+                      {pol.invariants?.length || 0} invariant(s)
                     </span>
                   </div>
                 </Card>
@@ -519,7 +520,7 @@ export function BusinessView({
                         </Badge>
                       </div>
                       <h3 className="text-base font-bold text-foreground">
-                        {dom.name}
+                        {dom.title}
                       </h3>
                     </div>
 
@@ -603,7 +604,7 @@ export function BusinessView({
                             </div>
 
                             <h5 className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">
-                              {cap.name || cap.title}
+                              {cap.title}
                             </h5>
 
                             {cap.summary && (
@@ -668,7 +669,7 @@ export function BusinessView({
 
                 <div className="space-y-0.5">
                   <h4 className="text-sm font-bold text-foreground group-hover:text-purple-400 transition-colors">
-                    {per.name}
+                    {per.title}
                   </h4>
                   <p className="text-xs text-muted-foreground">{per.role}</p>
                 </div>
@@ -768,12 +769,12 @@ export function BusinessView({
           selectedEntity?.type === "policy"
             ? selectedEntity.item.title
             : selectedEntity?.type === "domain"
-            ? selectedEntity.item.name
+            ? selectedEntity.item.title
             : selectedEntity?.type === "capability"
-            ? selectedEntity.item.name || selectedEntity.item.title || "Capability"
+            ? selectedEntity.item.title || "Capability"
             : selectedEntity?.type === "invariant"
             ? selectedEntity.item.title || selectedEntity.item.id
-            : selectedEntity?.item.name || "Persona"
+            : selectedEntity?.item.title || "Persona"
         }
         subtitle={selectedEntity?.item.id}
         maxWidth="6xl"
@@ -786,9 +787,9 @@ export function BusinessView({
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="primary">Policy</Badge>
                   <Badge variant="outline">{selectedEntity.item.category}</Badge>
-                  {selectedEntity.item.enforcement?.severity && (
+                  {selectedEntity.item.severity && (
                     <Badge variant="warning">
-                      {selectedEntity.item.enforcement.severity}
+                      {selectedEntity.item.severity}
                     </Badge>
                   )}
                   {selectedEntity.item.path && (
@@ -798,26 +799,34 @@ export function BusinessView({
                   )}
                 </div>
 
-                {/* Invariant Rule Statement */}
-                <div className="space-y-1.5">
-                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                    <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
-                    Non-Negotiable Invariant Rule
-                  </h4>
-                  <div className="p-3.5 rounded-xl bg-blue-500/10 border-l-3 border-blue-500 text-xs font-medium text-foreground leading-relaxed">
-                    "{selectedEntity.item.rule}"
-                  </div>
-                </div>
-
-                {/* Enforcement Mechanism */}
-                {selectedEntity.item.enforcement && (
-                  <div className="space-y-1.5">
+                {/* Policy Invariants */}
+                {selectedEntity.item.invariants && selectedEntity.item.invariants.length > 0 && (
+                  <div className="space-y-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <Lock className="h-3.5 w-3.5 text-rose-500" />
-                      Enforcement Mechanism & Quality Gate
+                      <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
+                      Enforced Policy Invariants ({selectedEntity.item.invariants.length})
                     </h4>
-                    <div className="p-3 rounded-xl bg-muted/30 border border-border/80 text-xs text-muted-foreground leading-relaxed">
-                      {selectedEntity.item.enforcement.mechanism}
+                    <div className="space-y-2">
+                      {selectedEntity.item.invariants.map((inv, idx) => (
+                        <div
+                          key={inv.id || idx}
+                          className="p-3.5 rounded-xl bg-blue-500/10 border-l-3 border-blue-500 text-xs space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono font-bold text-blue-400">
+                              {inv.id}
+                            </span>
+                            {inv.test_binding && (
+                              <span className="font-mono text-[10px] text-muted-foreground truncate">
+                                {inv.test_binding}
+                              </span>
+                            )}
+                          </div>
+                          <p className="font-medium text-foreground leading-relaxed">
+                            "{inv.rule}"
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -850,7 +859,7 @@ export function BusinessView({
                               {c.id}
                             </span>
                             <span className="text-xs font-medium text-foreground">
-                              {c.name || c.title}
+                              {c.title}
                             </span>
                             <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
                           </button>
@@ -938,68 +947,6 @@ export function BusinessView({
                   </div>
                 )}
 
-                {/* Technical Architecture Mapping */}
-                {selectedEntity.item.technical_mapping && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                      Technical Architecture Mapping
-                    </h4>
-                    <div className="p-3 rounded-xl bg-muted/30 border border-border/80 space-y-2">
-                      {selectedEntity.item.technical_mapping.containers && selectedEntity.item.technical_mapping.containers.length > 0 && (
-                        <div>
-                          <span className="text-[10px] font-bold text-muted-foreground uppercase">
-                            Mapped Containers (C4 Level 2)
-                          </span>
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {selectedEntity.item.technical_mapping.containers.map((c, i) => (
-                              <span
-                                key={i}
-                                className="font-mono text-[10px] px-2 py-0.5 rounded bg-card border border-border text-primary font-bold"
-                              >
-                                {c}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {selectedEntity.item.technical_mapping.components && (
-                        <div>
-                          <span className="text-[10px] font-bold text-muted-foreground uppercase">
-                            Mapped Code Components
-                          </span>
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {selectedEntity.item.technical_mapping.components.map((c, i) => (
-                              <span
-                                key={i}
-                                className="font-mono text-[10px] px-2 py-0.5 rounded bg-card border border-border text-primary"
-                              >
-                                {c}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {selectedEntity.item.technical_mapping.dependencies && (
-                        <div>
-                          <span className="text-[10px] font-bold text-muted-foreground uppercase">
-                            Domain Dependencies
-                          </span>
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {selectedEntity.item.technical_mapping.dependencies.map((d, i) => (
-                              <span
-                                key={i}
-                                className="font-mono text-[10px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20"
-                              >
-                                {d}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
                 {/* Bound Capabilities in this Domain */}
                 {(() => {
                   const domCaps = capabilities.filter(
@@ -1030,7 +977,7 @@ export function BusinessView({
                                 {c.id}
                               </span>
                               <span className="text-xs font-bold text-foreground group-hover:text-primary">
-                                {c.name || c.title}
+                                {c.title}
                               </span>
                             </div>
                             <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-transform" />
@@ -1142,22 +1089,22 @@ export function BusinessView({
                   );
                 })()}
 
-                {/* Interface Contracts & CLI Commands */}
-                {selectedEntity.item.technical?.contracts?.interfaces && (
+                {/* Interface Contracts */}
+                {selectedEntity.item.technical?.contracts && selectedEntity.item.technical.contracts.length > 0 && (
                   <div className="space-y-2">
                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <FileCode className="h-3.5 w-3.5 text-primary" />
-                      Interface Contracts & CLI Interfaces
+                      Interface Contracts (`CTR-*`)
                     </h4>
-                    <div className="p-3 rounded-xl bg-muted/30 border border-border/80 space-y-1.5">
-                      {selectedEntity.item.technical.contracts.interfaces.map(
-                        (iface, i) => (
-                          <div
+                    <div className="p-3 rounded-xl bg-muted/30 border border-border/80 flex flex-wrap gap-1.5">
+                      {selectedEntity.item.technical.contracts.map(
+                        (ctr, i) => (
+                          <span
                             key={i}
-                            className="font-mono text-[11px] p-1.5 rounded bg-card border border-border text-foreground"
+                            className="font-mono text-[10px] px-2 py-0.5 rounded bg-card border border-border text-primary font-bold"
                           >
-                            {iface}
-                          </div>
+                            {ctr}
+                          </span>
                         )
                       )}
                     </div>
@@ -1232,7 +1179,7 @@ export function BusinessView({
                               className="px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors cursor-pointer flex items-center gap-1"
                             >
                               <UserCheck className="h-3 w-3" />
-                              <span>{persona ? persona.name : pRef.split("/").pop()?.replace(".adoc", "")}</span>
+                              <span>{persona ? persona.title : pRef.split("/").pop()?.replace(".adoc", "")}</span>
                             </button>
                           );
                         })}
@@ -1294,10 +1241,10 @@ export function BusinessView({
                   )}
                 </div>
 
-                {/* Role & Name */}
+                {/* Role & Title */}
                 <div className="p-3.5 rounded-xl bg-muted/20 border border-border/80 space-y-1">
                   <h4 className="text-sm font-bold text-foreground">
-                    {selectedEntity.item.name}
+                    {selectedEntity.item.title}
                   </h4>
                   <p className="text-xs text-purple-400 font-medium">
                     {selectedEntity.item.role}

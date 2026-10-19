@@ -22,15 +22,14 @@ Eidos recognizes that software development cannot be burdened by ceremony for ev
 ```mermaid
 stateDiagram-v2
     [*] --> proposed: eidos delta create
-    proposed --> planned: Mutations & post-conditions defined
-    planned --> in_review: Code, specs & tests implemented
+    proposed --> in_review: Code, specs & tests implemented
     in_review --> approved: eidos delta verify & audit pass
     approved --> applied: eidos delta apply
     proposed --> rejected: Superseded or cancelled
     applied --> [*]
 ```
 
-All SpecDeltas reside in **flat storage** under `eidos/deltas/dlt-yyyy-nnn.adoc` so file paths never break across Git commits when statuses change, and can be filtered by lifecycle state (`draft`, `proposed`, `planned`, `in_review`, `approved`, `applied`, `rejected`) via `eidos delta list --status <state>` or `eidos delta status`.
+All SpecDeltas reside in **flat storage** under `eidos/deltas/dlt-yyyy-nnn.adoc` so file paths never break across Git commits when statuses change, and can be filtered by lifecycle state (`proposed`, `in_review`, `approved`, `applied`, `rejected`) via `eidos delta list --status <state>` or `eidos delta status`.
 
 ---
 
@@ -44,7 +43,7 @@ type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-051
 title: "Close Spec-to-Code Drift Detection Bypasses for Unowned Code and 1-Hop Neighborhoods"
-status: applied # draft | proposed | planned | in_review | approved | applied | rejected
+status: applied # proposed | in_review | approved | applied | rejected
 
 intent:
   kind: bug # feature | enabler | bug
@@ -75,7 +74,6 @@ tombstone:
 vcs:
   base_commit: "a1b2c3d"
   branch: "fix/drift-unowned-code"
-  pull_request: "#51"
 ---
 = SpecDelta: Close Spec-to-Code Drift Detection Bypasses
 

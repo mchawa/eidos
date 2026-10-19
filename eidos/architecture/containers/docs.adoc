@@ -2,38 +2,32 @@
 type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
 id: CNT-EIDOS-DOCS
-name: "Eidos User Documentation System"
+title: "Eidos User Documentation System"
+status: active
 container_type: "web_app"
 runtime: "Python 3.12 / Zensical / Markdown / GitHub Pages"
-package_path: "docs"
+source_path: "docs"
 
-domain_binding: DOM-EXPERIENCE-PORTAL
+domain: DOM-EXPERIENCE-PORTAL
 tier: presentation
 
 components:
   - id: CMP-DOCS-GETTING-STARTED
-    name: "GettingStartedGuides"
+    title: "GettingStartedGuides"
     responsibility: "Installation, Quickstart, and initial onboarding documentation."
     source_path: "docs/getting-started/quickstart.md"
   - id: CMP-DOCS-CORE-CONCEPTS
-    name: "CoreConceptsGuides"
+    title: "CoreConceptsGuides"
     responsibility: "In-depth conceptual guides: How Eidos Works (7-container internal architecture, 4-stage execution pipeline, bidirectional contract parity, 10-table SQLite knowledge graph, two-tier FTS5 ranking with AST symbol projection, 14-language polyglot structural diffing, composable operation/target/parent SpecDelta mutations with closed expect post-conditions, and stateful Block-Once Stop Gate), Living Specs, Architectural Index (with CNT-EIDOS-CORE and calibrated token_estimate Python API examples), SpecDeltas, Invariants, Explorations, Design Systems, and the v1 JSON Schema-validated 16-schema Glossary."
     source_path: "docs/concepts/how-eidos-works.md"
   - id: CMP-DOCS-USER-GUIDES
-    name: "UserGuides"
+    title: "UserGuides"
     responsibility: "Operational reference manuals: live-command-validated CLI command reference (including declarative eidos delta verify/apply/audit/changelog workflows), Agent Plugin integration with 4 workflow skills and stateful Stop Gate diagnostics, and Living Portal deployment."
     source_path: "docs/guides/cli.md"
   - id: CMP-DOCS-CONFIG
-    name: "SiteConfiguration"
+    title: "SiteConfiguration"
     responsibility: "Zensical site metadata, theme palettes, navigation hierarchy, and Markdown extension configuration."
     source_path: "zensical.toml"
-
-dependencies:
-  internal_containers:
-    - "CNT-EIDOS-PORTAL"
-  external_services:
-    - "GitHub Pages"
-    - "Web Browsers"
 
 contracts:
   provides: []

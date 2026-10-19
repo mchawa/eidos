@@ -2,7 +2,8 @@
 type: product/domain
 schema: schemas/v1/product/domain.schema.yaml
 id: DOM-EXPERIENCE-PORTAL
-name: "Multi-Design Systems & Living Web Portal"
+title: "Multi-Design Systems & Living Web Portal"
+status: active
 classification: supporting
 boundaries:
   responsibilities:
@@ -15,14 +16,6 @@ boundaries:
     - "Parsing and validating AST schemas (delegated to DOM-SPEC-ENGINE)."
     - "Git drift detection and VCS reconciliation (delegated to DOM-VCS-LIFECYCLE)."
     - "Agent plugin packaging, skills, and intelligence adapters (delegated to DOM-AGENT-INTELLIGENCE)."
-technical_mapping:
-  components:
-    - "src/eidos/portal/server.py"
-    - "src/eidos/portal/generator.py"
-    - "src/eidos/portal/assets.py"
-    - "src/eidos/portal/builder.py"
-  dependencies:
-    - "DOM-SPEC-ENGINE"
 ---
 = Domain: Multi-Design Systems & Living Web Portal
 :toc: left

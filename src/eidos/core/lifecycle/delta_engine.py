@@ -122,12 +122,9 @@ def _ensure_eidos_gitignore(eidos_dir: Path) -> None:
 
 
 ACTIVE_DELTA_STATUSES: tuple[str, ...] = (
-    "draft",
     "proposed",
-    "planned",
     "in_review",
     "approved",
-    "in_progress",
 )
 
 
@@ -135,9 +132,7 @@ def get_delta_status_summary(eidos_dir: Path) -> dict[str, Any]:
     """Get count and listing breakdown of deltas grouped by lifecycle status."""
     deltas = list_deltas(eidos_dir)
     by_status: dict[str, list[dict]] = {
-        "draft": [],
         "proposed": [],
-        "planned": [],
         "in_review": [],
         "approved": [],
         "applied": [],
@@ -256,7 +251,7 @@ def _find_inline_component_dict(
     """Return the inline component dict for comp_id from a container frontmatter, if present."""
     if not isinstance(cnt_fm, dict):
         return None
-    comps = list(cnt_fm.get("components") or []) + list(cnt_fm.get("c4_internal_components") or [])
+    comps = list(cnt_fm.get("components") or [])
     for c in comps:
         if isinstance(c, dict) and c.get("id") == comp_id and not c.get("ref"):
             return c
@@ -502,9 +497,7 @@ def create_delta(
 
 
 VALID_DELTA_STATUSES: tuple[str, ...] = (
-    "draft",
     "proposed",
-    "planned",
     "in_review",
     "approved",
     "applied",
@@ -674,7 +667,7 @@ def _resolve_git_baseline_sha(
                     tech = hist_fm.get("technical")
                     if isinstance(tech, dict) and isinstance(tech.get("invariants"), list):
                         invs.extend(tech["invariants"])
-                    for comp in hist_fm.get("components", []) or hist_fm.get("c4_internal_components", []) or []:
+                    for comp in hist_fm.get("components", []) or []:
                         if isinstance(comp, dict) and isinstance(comp.get("invariants"), list):
                             invs.extend(comp["invariants"])
                     for inv in invs:
@@ -749,7 +742,7 @@ def _parse_spec_content(path: Path, content: str) -> SpecDocument:
     doc_type = frontmatter_dict.get("type", "unknown") if frontmatter_dict else "unknown"
     doc_id = frontmatter_dict.get("id", path.stem) if frontmatter_dict else path.stem
     schema_ref = frontmatter_dict.get("schema") if frontmatter_dict else None
-    title = (frontmatter_dict.get("title") or frontmatter_dict.get("name")) if frontmatter_dict else None
+    title = frontmatter_dict.get("title") if frontmatter_dict else None
 
     doc = SpecDocument(
         file_path=path,
@@ -790,9 +783,7 @@ def _check_structural_subtarget_precondition(
         if parent == owner_spec_id:
             invs.extend((owner_fm or {}).get("invariants") or [])
             invs.extend(((owner_fm or {}).get("technical") or {}).get("invariants") or [])
-        for comp in list((owner_fm or {}).get("components") or []) + list(
-            (owner_fm or {}).get("c4_internal_components") or []
-        ):
+        for comp in list((owner_fm or {}).get("components") or []):
             if isinstance(comp, dict) and comp.get("invariants") and (
                 parent == owner_spec_id or comp.get("id") == parent
             ):
@@ -812,11 +803,7 @@ def _check_structural_subtarget_precondition(
         if parent in specs_by_id:
             _, _, cnt_fm = specs_by_id[parent]
             contracts = (cnt_fm or {}).get("contracts", {}) or {}
-            all_ctrs = (
-                (contracts.get("provides") or [])
-                + (contracts.get("consumes") or [])
-                + (contracts.get("requires") or [])
-            )
+            all_ctrs = (contracts.get("provides") or []) + (contracts.get("consumes") or [])
             if target in all_ctrs:
                 return True
         elif parent in container_components and container_components[parent] in specs_by_id:
@@ -825,18 +812,14 @@ def _check_structural_subtarget_precondition(
                 for blk_key in ("interfaces", "contracts"):
                     ifaces = inline_comp.get(blk_key) or {}
                     if isinstance(ifaces, dict):
-                        all_ifaces = (
-                            (ifaces.get("provides") or [])
-                            + (ifaces.get("consumes") or [])
-                            + (ifaces.get("requires") or [])
-                        )
+                        all_ifaces = (ifaces.get("provides") or []) + (ifaces.get("consumes") or [])
                         if target in all_ifaces:
                             return True
         else:
             return False
         if target in specs_by_id:
             ctr_fm = specs_by_id[target][2] or {}
-            return parent in (ctr_fm.get("owning_container"), ctr_fm.get("owning_component"))
+            return parent == ctr_fm.get("container")
         return False
 
     return True
@@ -873,7 +856,6 @@ _PROSE_EXPECT_FIELDS: frozenset[str] = frozenset(
         "motivation",
         "summary",
         "title",
-        "name",
         "details",
         "jtbd",
     }
@@ -1163,14 +1145,14 @@ def verify_delta_mutations(eidos_dir: Path, delta_id_or_path: str) -> tuple[bool
                 doc_fm = specs_by_id[lookup_target][2] if lookup_target in specs_by_id else {}
                 if not doc_fm and target_path_resolved and target_path_resolved.exists():
                     doc_fm = parse_spec_file(target_path_resolved).frontmatter or {}
-                if str(doc_fm.get("status", "")).lower() in ("deprecated", "sunset", "removed", "retired"):
+                if str(doc_fm.get("status", "")).lower() in ("deprecated", "retired"):
                     verified = True
                     status = "DEPRECATED"
                 else:
                     verified = False
                     status = "ACTIVE_NOT_DEPRECATED"
                     failure_reason = (
-                        f"Target '{lookup_target}' has status '{doc_fm.get('status')}', expected deprecated/sunset/retired."
+                        f"Target '{lookup_target}' has status '{doc_fm.get('status')}', expected deprecated/retired."
                     )
 
         elif op == "remove":

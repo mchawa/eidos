@@ -24,12 +24,7 @@ technical:
     - "CNT-EIDOS-INDEX"
     - "CNT-EIDOS-PLUGIN"
   contracts:
-    interfaces:
-      - "eidos context [--file PATH] [--component ID] [--task PROMPT] [--tier TIER] [--format json]"
-      - "eidos index [status|sync|search|blast-radius] [--json]"
-      - "eidos validate [--json]"
-      - "eidos drift [--uncommitted] [--json]"
-      - "eidos plugin [install|uninstall|update|validate|info] [--target TARGET] [--dest PATH] [--force]"
+    - "CTR-EIDOS-CLI"
   invariants:
     - id: INV-AGENT-ZERO-AI-DEPENDENCY
       rule: "Eidos must never initiate calls to AI/LLM APIs directly, functioning strictly as a deterministic substrate for external coding agents."
@@ -85,7 +80,7 @@ Eidos implements a three-tier context compression model:
 [cols="1,2,3", options="header"]
 |===
 | Tier | Approximate Size | Contents Included
-| `anchor` | ~140 tokens | Owning container (`CNT-*`) and internal component (`CMP-*`), runtime, `package_path`, bound domain, compact `DEC-*` architectural decisions (`title`, `decision`, and rejected option names), and direct interface contract (`CTR-*`) signatures.
+| `anchor` | ~140 tokens | Owning container (`CNT-*`) and internal component (`CMP-*`), runtime, `source_path`, bound domain, compact `DEC-*` architectural decisions (`title`, `decision`, and rejected option names), and direct interface contract (`CTR-*`) signatures.
 | `guardrails` | ~300–900 tokens | Everything in `anchor`, plus bounded `DEC-*` rationale and `rejected_alternatives`, domain capabilities (`CAP-*`), active invariants (`INV-*`) with `test_binding`, and governing policies (`POL-*`).
 | `deep` | ~500–1,500 tokens | Comprehensive architectural audit slice: C4 Level 3 internal building blocks, full contract schemas, full policy texts, full `DEC-*` trade-off records, and downstream dependents.
 |===

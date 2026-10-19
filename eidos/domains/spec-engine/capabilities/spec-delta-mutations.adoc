@@ -5,7 +5,7 @@ id: CAP-PROD-002
 title: "SpecDelta Semantic Mutation Engine"
 domain: DOM-SPEC-ENGINE
 status: active
-version: "1.8.0"
+version: "1.9.0"
 
 business:
   personas:
@@ -22,14 +22,7 @@ technical:
     - "CNT-EIDOS-CORE"
     - "CNT-EIDOS-CLI"
   contracts:
-    interfaces:
-      - "eidos delta create [delta-id] --title <title> [--slug] [--kind feature|enabler|bug] [--branch <branch>]"
-      - "eidos delta list [--status <status>] [--json]"
-      - "eidos delta status [delta-id] [new-status] [--json]"
-      - "eidos delta verify <delta-id> [--json]"
-      - "eidos delta apply <delta-id> [--verify/--no-verify] [--json]"
-      - "eidos delta audit <delta-id> [--strict] [--json]"
-      - "eidos delta changelog [--output <file>] [--unreleased]"
+    - "CTR-EIDOS-CLI"
   invariants:
     - id: INV-MUTATION-REVERSIBILITY
       rule: "Applying a SpecDelta (apply_delta defaulting to verify=True) must enforce declarative mutation verification across all composable operations (add, modify, remove, deprecate) before application, reject unsupported operations, and validate the updated SpecDelta via SpecValidator prior to committing status: applied to disk."

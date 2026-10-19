@@ -26,51 +26,11 @@ properties:
     type: string
     description: "Display title of the component (e.g. 'Primary Button', 'Enterprise Header')."
   design_system:
-    type: string
-    pattern: "^(DS-[A-Z0-9_-]+|.*\\.adoc)$"
-    description: "Owning design system ID or relative path (e.g. 'DS-CORE' or 'eidos/design/systems/core/system.adoc')."
-    x-eidos-ref:
-      target_types:
-        - design/system
-      prefixes:
-        - DS-
-      entity_label: entity
+    $ref: "#/$defs/design_system_ref"
   implements:
-    type: string
-    pattern: "^(UIC-[A-Z0-9_-]+|.*\\.adoc)$"
-    description: "Optional base UI component ID or relative path this component overrides or specializes (e.g. 'UIC-CORE-HEADER')."
-    x-eidos-ref:
-      target_types:
-        - design/ui-component
-      prefixes:
-        - UIC-
-      entity_label: entity
-  implements_component:
-    type: string
-    pattern: "^(UIC-[A-Z0-9_-]+|.*\\.adoc)$"
-    description: "Optional alias for base UI component ID or relative path this component overrides."
-    x-eidos-ref:
-      target_types:
-        - design/ui-component
-      prefixes:
-        - UIC-
-      entity_label: entity
+    $ref: "#/$defs/ui_component_ref"
   status:
-    type: string
-    enum:
-      - draft
-      - proposed
-      - planned
-      - active
-      - deprecated
-      - retired
-    description: "Lifecycle status: draft, proposed, planned, active, deprecated, or retired."
-    examples:
-      - "active"
-      - "proposed"
-      - "planned"
-      - "draft"
-      - "deprecated"
+    $ref: "#/$defs/lifecycle_status"
   category:
     type: string
     pattern: "^[a-z0-9_-]+$"
@@ -79,22 +39,12 @@ properties:
     type: array
     description: "Supported visual or behavioral variants (e.g. primary, secondary, destructive, ghost, outline)."
     items:
-      type: object
-      additionalProperties: false
-      required:
-        - name
-      properties:
-        name:
-          type: string
-          description: "Variant name."
-        description:
-          type: string
-          description: "Usage context and styling intent."
+      $ref: "#/$defs/named_descriptor"
   states:
     type: array
     description: "Supported interactive states: default, hover, active, focus, disabled, loading, skeleton, error."
     items:
-      type: string
+      $ref: "#/$defs/state_entry"
   accessibility:
     type: object
     description: "Non-negotiable accessibility (a11y) invariants and WCAG compliance contracts."
@@ -127,10 +77,9 @@ properties:
         type: string
         description: "Relative path to component test file."
   external_references:
-    type: object
-    description: "Design tool component node links."
-    additionalProperties: false
-    properties:
-      figma_node_url:
-        type: string
-        description: "Direct URL to Figma component or frame."
+    $ref: "#/$defs/external_design_references"
+  decisions:
+    type: array
+    description: "In-place UI component decisions recorded on this specification (POL-001)."
+    items:
+      $ref: "#/$defs/decision"

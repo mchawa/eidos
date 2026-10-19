@@ -1,16 +1,14 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: ComponentSchema
-description: "Defines a dedicated in-process C4 Level 3 Component (CMP-*). Stored centrally in 'eidos/architecture/components/<component>.adoc' with source_path linking to implementation code."
+description: "Defines a dedicated in-process C4 Level 3 Component (CMP-*). Stored centrally in 'eidos/architecture/components/<component>.adoc' with source_path linking to implementation code. Extends #/$defs/inline_component with standalone document metadata."
 type: object
-additionalProperties: false
+allOf:
+  - $ref: "#/$defs/inline_component"
+unevaluatedProperties: false
 required:
   - type
   - schema
-  - id
-  - name
   - container
-  - status
-  - responsibility
 properties:
   type:
     type: string
@@ -19,118 +17,5 @@ properties:
   schema:
     type: string
     description: "Path or URI to this schema file, enabling IDE tooltips and automated validation."
-  id:
-    type: string
-    pattern: "^CMP-[A-Z0-9_-]+$"
-    description: "Unique C4 Level 3 Component identifier following CMP-<NAME> (e.g. CMP-CORE-VALIDATOR)."
-  name:
-    type: string
-    description: "Human-readable display name of the component."
   container:
-    type: string
-    pattern: "^CNT-[A-Z0-9_-]+$"
-    description: "Unique identifier of the parent C4 Level 2 Container (CNT-*) that owns this component."
-    x-eidos-ref:
-      target_types:
-        - tech/container
-      prefixes:
-        - CNT-
-      entity_label: container
-      rule_id: INV-COMPONENT-CONTAINER-AFFINITY
-  status:
-    type: string
-    enum:
-      - draft
-      - proposed
-      - planned
-      - accepted
-      - active
-      - deprecated
-      - sunset
-      - retired
-      - removed
-    description: "Lifecycle status of the component."
-  source_path:
-    oneOf:
-      - type: string
-      - type: array
-        items:
-          type: string
-    description: "Relative file path(s) or glob pattern(s) to the source code implementing this component."
-  domain_binding:
-    type: string
-    pattern: "^(DOM-[A-Z0-9_-]+|.*\\.adoc)$"
-    description: "Optional product domain identifier (DOM-*) this component helps realize."
-    x-eidos-ref:
-      target_types:
-        - product/domain
-      prefixes:
-        - DOM-
-      entity_label: domain
-  responsibility:
-    type: string
-    description: "Detailed description of what domain logic, computation, or operational duties this component encapsulates."
-  interfaces:
-    type: object
-    description: "In-process language protocols and APIs (traits, interfaces, ABCs, function signatures). NOT boundary protocol contracts (CTR-*)."
-    additionalProperties: false
-    properties:
-      provides:
-        type: array
-        description: "List of exported in-process method/function signatures and API capabilities."
-        items:
-          type: object
-          additionalProperties: false
-          required:
-            - signature
-          properties:
-            signature:
-              type: string
-              description: "Language-level method or function signature (e.g. 'validate_document(doc: SpecDocument) -> list[str]')."
-            description:
-              type: string
-              description: "Purpose and operational semantics of this in-process method."
-      consumes:
-        type: array
-        description: "List of peer components (CMP-*), libraries, or internal modules consumed by this component."
-        items:
-          type: string
-          x-eidos-ref:
-            target_types:
-              - tech/component
-            prefixes:
-              - CMP-
-            allow_non_id_string: true
-            entity_label: consumed component
-  quality_attributes:
-    type: object
-    description: "Operational quality attributes, performance ceilings, and concurrency traits."
-    additionalProperties: false
-    properties:
-      stateless:
-        type: boolean
-        description: "Whether the component instances retain no internal mutable state between invocations."
-      reentrant:
-        type: boolean
-        description: "Whether the component is thread-safe and reentrant."
-      concurrency_model:
-        type: string
-        description: "Concurrency paradigm (e.g. 'synchronous', 'async_event_loop', 'thread_safe', 'actor')."
-      max_memory_mb:
-        type: number
-        description: "Maximum allowable memory allocation ceiling in MB."
-      max_validation_latency_ms:
-        type: number
-        description: "Maximum latency ceiling in milliseconds."
-  invariants:
-    type: array
-    description: "Component-specific operational or architectural invariants."
-    items:
-      $ref: "#/$defs/invariant"
-  decisions:
-    type: array
-    description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this C4 Level 3 component specification without standalone ADR files (POL-001)."
-    items:
-      $ref: "#/$defs/decision"
-
-
+    $ref: "#/$defs/container_ref"

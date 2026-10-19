@@ -27,37 +27,17 @@ properties:
     type: string
     description: "Full human-readable display title of the software product or platform."
   status:
-    type: string
-    enum:
-      - draft
-      - proposed
-      - planned
-      - active
-      - deprecated
-      - retired
-    description: "Optional lifecycle state of the system specification."
+    $ref: "#/$defs/lifecycle_status"
   archetypes:
     type: array
     description: >
       Open, extensible list of architectural archetypes, system disciplines, and delivery surfaces
       comprising this product. Never artificially restricted to a closed enum.
-      
-      Common conventions include:
-        - AI & Data: ml_model, inference_service, data_pipeline, agent_swarm, vector_search
-        - Apps & Services: saas_platform, web_app, api_service, mobile_app, desktop_app, daemon
-        - Tooling & Core: cli_tool, library, sdk, framework, compiler, extension_plugin
-        - Systems & Edge: firmware, embedded_system, os_kernel, device_driver, iot_device
-        - Distributed & Web3: p2p_protocol, smart_contract, event_mesh
     minItems: 1
     items:
       type: string
       pattern: "^[a-z0-9_-]+$"
       description: "A machine-readable slug identifying an architectural archetype or delivery surface."
-    examples:
-      - ["framework", "cli_tool", "library"]
-      - ["ml_model", "inference_service", "data_pipeline"]
-      - ["embedded_system", "firmware"]
-      - ["saas_platform", "mobile_app", "api_service"]
   business_identity:
     type: object
     description: "High-level strategic business intent, target market, and value proposition."
@@ -116,5 +96,3 @@ properties:
     description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on the root system specification without standalone ADR files (POL-001)."
     items:
       $ref: "#/$defs/decision"
-
-

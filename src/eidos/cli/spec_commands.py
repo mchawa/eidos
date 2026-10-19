@@ -292,11 +292,6 @@ def spec_create_cmd(
         "--protocol",
         help="Protocol for contracts (cli_args, openapi, protobuf, graphql, json_rpc_stdio).",
     ),
-    owning_component: str | None = typer.Option(
-        None,
-        "--owning-component",
-        help="Owning component or container ID for contracts.",
-    ),
     container: str | None = typer.Option(
         None,
         "--container",
@@ -305,7 +300,7 @@ def spec_create_cmd(
     source_path: str = typer.Option(
         "src",
         "--source-path",
-        help="Source path or glob owned by a container (package_path) or component (source_path).",
+        help="Source path or glob owned by a container or component (source_path).",
     ),
     specification_file: str = typer.Option(
         "src/main.py",
@@ -317,7 +312,7 @@ def spec_create_cmd(
         "--client",
         help="Client ID (CLT-*) for screens/flows, or brand identifier for client-specific design systems.",
     ),
-    extends_system: str | None = typer.Option(
+    extends: str | None = typer.Option(
         None,
         "--extends",
         help="Base design system ID or path to extend (e.g. DS-CORE).",
@@ -332,7 +327,7 @@ def spec_create_cmd(
         "--system",
         help="Owning design system ID for UI components, screens, or clients (defaults to primary design/system or DS-CORE).",
     ),
-    implements_component: str | None = typer.Option(
+    implements: str | None = typer.Option(
         None,
         "--implements",
         help="Base component ID being overridden/specialized by a UI component.",
@@ -356,15 +351,14 @@ def spec_create_cmd(
             category=category,
             rule=rule,
             protocol=protocol,
-            owning_container=container,
-            owning_component=owning_component,
+            container=container,
             specification_file=specification_file,
-            package_path=source_path,
+            source_path=source_path,
             client_id=client_id,
-            extends_system=extends_system,
+            extends=extends,
             route=route,
             design_system=design_system,
-            implements_component=implements_component,
+            implements=implements,
             platform=platform,
             slug_suffix=slug,
         )

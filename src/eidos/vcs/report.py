@@ -60,7 +60,7 @@ def build_drift_remediation_and_summary(
         )
         for ucf in uncovered_unmapped_code[:5]:
             remediation.append(
-                f"• '{ucf}' -> declare ownership via 'package_path'/'source_path' in {eidos_rel_prefix}/architecture/ (or substantively update {eidos_rel_prefix}/system.adoc)."
+                f"• '{ucf}' -> declare ownership via 'source_path' in {eidos_rel_prefix}/architecture/ (or substantively update {eidos_rel_prefix}/system.adoc)."
             )
 
     if design_drift:

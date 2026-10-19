@@ -2,7 +2,8 @@
 type: product/domain
 schema: schemas/v1/product/domain.schema.yaml
 id: DOM-SPEC-ENGINE
-name: "Living Specification & Invariant Core Engine"
+title: "Living Specification & Invariant Core Engine"
+status: active
 classification: core
 boundaries:
   responsibilities:
@@ -15,15 +16,6 @@ boundaries:
     - "Rendering web UI visualizations and design tokens studio (delegated to DOM-EXPERIENCE-PORTAL)."
     - "Agent plugin packaging, skills, and intelligence adapters (delegated to DOM-AGENT-INTELLIGENCE)."
     - "Git diff analysis, drift detection, and PR merge gating (delegated to DOM-VCS-LIFECYCLE)."
-technical_mapping:
-  components:
-    - "src/eidos/core/spec/models.py"
-    - "src/eidos/core/spec/validator.py"
-    - "src/eidos/core/lifecycle/scaffolder.py"
-    - "src/eidos/core/index/graph_index.py"
-    - "src/eidos/cli/main.py"
-  dependencies:
-    - "DOM-VCS-LIFECYCLE"
 ---
 = Domain: Living Specification & Invariant Core Engine
 :toc: left

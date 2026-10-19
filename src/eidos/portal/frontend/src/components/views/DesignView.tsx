@@ -490,7 +490,7 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
               >
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.id} ({c.title || c.name || c.id})
+                    {c.id} ({c.title || c.id})
                   </option>
                 ))}
               </select>
@@ -524,7 +524,7 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
 
               <div>
                 <h4 className="text-sm font-bold text-foreground">
-                  {activeClient.title || activeClient.name || activeClient.id}
+                  {activeClient.title || activeClient.id}
                 </h4>
                 <p className="text-xs text-muted-foreground leading-relaxed mt-1">
                   {activeClient.description || "Responsive living client surface implementation."}
@@ -535,10 +535,10 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-border/60 text-xs">
                 <div className="space-y-1.5">
                   <span className="text-[11px] font-bold text-foreground uppercase tracking-wider block">
-                    Supported Screens ({activeClient.screens?.length || activeClient.supported_screens?.length || screens.length})
+                    Supported Screens ({activeClient.screens?.length || screens.length})
                   </span>
                   <div className="flex flex-wrap gap-1.5">
-                    {(activeClient.screens || activeClient.supported_screens || screens.map((s) => s.id)).map((scr, idx) => {
+                    {(activeClient.screens || screens.map((s) => s.id)).map((scr, idx) => {
                       const scrName = typeof scr === "string" ? scr.split("/").pop()?.replace(".adoc", "").toUpperCase() : scr;
                       return (
                         <span
@@ -640,7 +640,7 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
                     {/* Title & Description */}
                     <div>
                       <h4 className="text-xs font-bold text-foreground">
-                        {comp.title || comp.name || comp.id}
+                        {comp.title || comp.id}
                       </h4>
                       <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">
                         {comp.description || activeVariantObj?.description || "Living reusable UI component spec."}
@@ -804,7 +804,7 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
                     </Badge>
                   </div>
                   <h4 className="text-sm font-bold text-foreground">
-                    {activeScreen.title || activeScreen.name}
+                    {activeScreen.title || activeScreen.id}
                   </h4>
                 </div>
                 <div className="flex items-center gap-2">
@@ -973,7 +973,7 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
                       </div>
                       <div>
                         <h5 className="text-xs font-semibold text-foreground">
-                          {flow.title || flow.name}
+                          {flow.title || flow.id}
                         </h5>
                         <p className="text-[11px] text-muted-foreground mt-0.5">
                           {flow.description || "Living client interaction flow."}
@@ -1061,7 +1061,7 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
                     </div>
                     <div>
                       <h5 className="text-xs font-semibold text-foreground">
-                        {flow.title || flow.name}
+                        {flow.title || flow.id}
                       </h5>
                       <p className="text-[11px] text-muted-foreground mt-0.5">
                         {flow.description || "Omnichannel developer interaction flow."}

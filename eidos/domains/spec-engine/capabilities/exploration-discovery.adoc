@@ -21,9 +21,7 @@ technical:
   containers:
     - "CNT-EIDOS-CORE"
   contracts:
-    interfaces:
-      - "eidos spec create exploration <id> --title <title>"
-      - "eidos delta create <delta-id> --title <title>"
+    - "CTR-EIDOS-CLI"
   invariants:
     - id: INV-SPIKE-ISOLATION
       rule: "Exploration spikes must execute on isolated Git branches and never mutate production specifications directly."

@@ -4,15 +4,7 @@ schema: schemas/v1/design/screen.schema.yaml
 id: SCR-PORTAL-ARCHITECTURE
 title: "Technical Architecture & C4 Topologies View"
 route: "/architecture"
-client: "CLT-WEB-PORTAL"
 status: active
-
-capabilities:
-  - "eidos/domains/spec-engine/capabilities/living-spec-engine.adoc"
-  - "eidos/domains/experience-portal/capabilities/living-web-portal.adoc"
-
-supported_design_systems:
-  - "eidos/design/systems/core/system.adoc"
 
 slots:
   c4_explorer_viewport: "UIC-PORTAL-SHELL"

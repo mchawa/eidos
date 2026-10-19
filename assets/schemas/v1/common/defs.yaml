@@ -1,6 +1,6 @@
 $schema: "https://json-schema.org/draft/2020-12/schema"
 title: EidosCommonSchemaDefs
-description: "Shared JSON Schema $defs for architectural decisions (DEC-*) and invariants (INV-*) injected across Eidos v1 schemas (DLT-2026-050)."
+description: "Shared JSON Schema $defs for decisions, invariants, lifecycle statuses, sub-objects, and typed x-eidos-ref references injected across Eidos v1 schemas (DLT-2026-091)."
 type: object
 additionalProperties: false
 $defs:
@@ -65,30 +65,315 @@ $defs:
       id:
         type: string
         pattern: "^INV-[A-Z0-9_-]+$"
-        description: "Unique invariant identifier following INV-<NAME>."
+        description: "Unique invariant identifier following INV-<NAME> (e.g. INV-SPEC-VALIDATION)."
       rule:
         type: string
         description: "Formal normative requirement statement (RFC 2119)."
       test_binding:
         type: string
-        description: "Relative test path and test function verifying this invariant (e.g. 'tests/test_validator.py::test_rule')."
+        description: "Relative test path and test function verifying this invariant (e.g. 'tests/test_validator.py::test_rule'). Optional during draft, mandatory for active specifications."
 
-  test_bound_invariant:
+  lifecycle_status:
+    type: string
+    enum:
+      - draft
+      - planned
+      - active
+      - deprecated
+      - retired
+    description: "Canonical 5-state lifecycle status for living specifications: draft, planned, active, deprecated, or retired."
+
+  delta_status:
+    type: string
+    enum:
+      - proposed
+      - in_review
+      - approved
+      - applied
+      - rejected
+    description: "Canonical 5-state workflow status for SpecDelta (DLT-*) mutations: proposed, in_review, approved, applied, or rejected."
+
+  exploration_status:
+    type: string
+    enum:
+      - proposed
+      - in_progress
+      - adopted
+      - discarded
+    description: "Canonical 4-state workflow status for technical explorations (EXP-*): proposed, in_progress, adopted, or discarded."
+
+  code_paths:
+    oneOf:
+      - type: string
+      - type: array
+        items:
+          type: string
+    description: "Relative file path(s), directory path(s), or glob pattern(s) from repository root to the implementation source code."
+
+  domain_ref:
+    type: string
+    pattern: "^(DOM-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Domain ID (DOM-*) or relative path to a product/domain specification."
+    x-eidos-ref:
+      target_types:
+        - product/domain
+      prefixes:
+        - DOM-
+      entity_label: domain
+
+  capability_ref:
+    type: string
+    pattern: "^(CAP-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Capability ID (CAP-*) or relative path to a product/capability specification."
+    x-eidos-ref:
+      target_types:
+        - product/capability
+      prefixes:
+        - CAP-
+      entity_label: capability
+
+  persona_ref:
+    type: string
+    pattern: "^(PER-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Persona ID (PER-*) or relative path to a product/persona specification."
+    x-eidos-ref:
+      target_types:
+        - product/persona
+      prefixes:
+        - PER-
+      entity_label: persona
+
+  policy_ref:
+    type: string
+    pattern: "^(POL-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Policy ID (POL-*) or relative path to a product/policy specification."
+    x-eidos-ref:
+      target_types:
+        - product/policy
+      prefixes:
+        - POL-
+      entity_label: policy
+
+  container_ref:
+    type: string
+    pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Container ID (CNT-*) or relative path to a tech/container specification."
+    x-eidos-ref:
+      target_types:
+        - tech/container
+      prefixes:
+        - CNT-
+      entity_label: container
+
+  component_ref:
+    type: string
+    pattern: "^(CMP-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Component ID (CMP-*) or relative path to a tech/component specification."
+    x-eidos-ref:
+      target_types:
+        - tech/component
+      prefixes:
+        - CMP-
+      entity_label: component
+
+  contract_ref:
+    type: string
+    pattern: "^(CTR-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Contract ID (CTR-*) or relative path to a tech/contract specification."
+    x-eidos-ref:
+      target_types:
+        - tech/contract
+      prefixes:
+        - CTR-
+      entity_label: contract
+
+  design_system_ref:
+    type: string
+    pattern: "^(DS-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Design system ID (DS-*) or relative path to a design/system specification."
+    x-eidos-ref:
+      target_types:
+        - design/system
+      prefixes:
+        - DS-
+      entity_label: design system
+
+  ui_component_ref:
+    type: string
+    pattern: "^(UIC-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "UI component ID (UIC-*) or relative path to a design/ui-component specification."
+    x-eidos-ref:
+      target_types:
+        - design/ui-component
+      prefixes:
+        - UIC-
+      entity_label: ui component
+
+  client_ref:
+    type: string
+    pattern: "^(CLT-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Client ID (CLT-*) or relative path to a design/client specification."
+    x-eidos-ref:
+      target_types:
+        - design/client
+      prefixes:
+        - CLT-
+      entity_label: client
+
+  screen_ref:
+    type: string
+    pattern: "^(SCR-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Screen ID (SCR-*) or relative path to a design/screen specification."
+    x-eidos-ref:
+      target_types:
+        - design/screen
+      prefixes:
+        - SCR-
+      entity_label: screen
+
+  flow_ref:
+    type: string
+    pattern: "^(FLOW-[A-Z0-9_-]+|.*\\.adoc)$"
+    description: "Flow ID (FLOW-*) or relative path to a design/flow specification."
+    x-eidos-ref:
+      target_types:
+        - design/flow
+      prefixes:
+        - FLOW-
+      entity_label: flow
+
+  quality_attributes:
+    type: object
+    description: "Operational quality attributes, performance ceilings, and concurrency traits."
+    additionalProperties: false
+    properties:
+      stateless:
+        type: boolean
+        description: "Whether instances retain no internal mutable state between invocations."
+      idempotent:
+        type: boolean
+        description: "Whether mutations or operations are idempotent."
+      reentrant:
+        type: boolean
+        description: "Whether the unit is thread-safe and reentrant."
+      concurrency_model:
+        type: string
+        description: "Concurrency paradigm (e.g. 'synchronous', 'async_event_loop', 'thread_safe', 'actor')."
+      max_memory_mb:
+        type: number
+        description: "Maximum allowable memory allocation ceiling in MB."
+      max_validation_latency_ms:
+        type: number
+        description: "Maximum latency ceiling in milliseconds."
+
+  in_process_interfaces:
+    type: object
+    description: "In-process language protocols and APIs (traits, interfaces, ABCs, function signatures). NOT boundary protocol contracts (CTR-*)."
+    additionalProperties: false
+    properties:
+      provides:
+        type: array
+        description: "List of exported in-process method/function signatures and API capabilities."
+        items:
+          type: object
+          additionalProperties: false
+          required:
+            - signature
+          properties:
+            signature:
+              type: string
+              description: "Language-level method or function signature (e.g. 'validate_document(doc: SpecDocument) -> list[str]')."
+            description:
+              type: string
+              description: "Purpose and operational semantics of this in-process method."
+      consumes:
+        type: array
+        description: "List of peer components (CMP-*) consumed by this component."
+        items:
+          $ref: "#/$defs/component_ref"
+
+  contracts_block:
+    type: object
+    description: "Exposed and consumed boundary interface contracts (CTR-*)."
+    additionalProperties: false
+    properties:
+      provides:
+        type: array
+        description: "Paths or IDs of interface contracts (CTR-*) exposed."
+        items:
+          $ref: "#/$defs/contract_ref"
+      consumes:
+        type: array
+        description: "Paths or IDs of interface contracts (CTR-*) consumed."
+        items:
+          $ref: "#/$defs/contract_ref"
+
+  named_descriptor:
     type: object
     additionalProperties: false
     required:
+      - name
+    properties:
+      name:
+        type: string
+        description: "Identifier or name of the variant or state."
+      description:
+        type: string
+        description: "Visual, behavioral, or usage specification."
+
+  state_entry:
+    oneOf:
+      - type: string
+      - $ref: "#/$defs/named_descriptor"
+
+  external_design_references:
+    type: object
+    description: "Upstream design tools, team libraries, frames, or component documentation portals."
+    additionalProperties: false
+    properties:
+      figma_url:
+        type: string
+        description: "Direct URL to Figma team library, component node, or screen frame."
+      storybook_url:
+        type: string
+        description: "URL to deployed Storybook or interactive component documentation."
+
+  inline_component:
+    type: object
+    description: "Canonical C4 Level 3 component definition shared between inline container components and standalone component specifications."
+    required:
       - id
-      - rule
-      - test_binding
+      - title
+      - responsibility
     properties:
       id:
         type: string
-        pattern: "^INV-[A-Z0-9_-]+$"
-        description: "Unique invariant identifier (e.g. INV-SPEC-VALIDATION)."
-      rule:
+        pattern: "^CMP-[A-Z0-9_-]+$"
+        description: "Unique C4 Level 3 Component identifier following CMP-<NAME> (e.g. CMP-SPEC-PARSER, CMP-AUTH-SERVICE)."
+      title:
         type: string
-        description: "Clear, unambiguous statement of the invariant condition."
-      test_binding:
+        description: "Human-readable display title of the component."
+      status:
+        $ref: "#/$defs/lifecycle_status"
+      domain:
+        $ref: "#/$defs/domain_ref"
+      responsibility:
         type: string
-        description: "Target test file and test function verifying this invariant (e.g. tests/specs/test_schema_validation.py::test_all_specs_conform_to_schema)."
+        description: "What this component does and what domain logic, computation, or operational duties it encapsulates."
+      source_path:
+        $ref: "#/$defs/code_paths"
+      interfaces:
+        $ref: "#/$defs/in_process_interfaces"
+      quality_attributes:
+        $ref: "#/$defs/quality_attributes"
+      invariants:
+        type: array
+        description: "Component-specific operational or architectural invariants."
+        items:
+          $ref: "#/$defs/invariant"
+      decisions:
+        type: array
+        description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this component (POL-001)."
+        items:
+          $ref: "#/$defs/decision"
 

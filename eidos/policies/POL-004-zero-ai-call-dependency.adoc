@@ -3,11 +3,13 @@ type: product/policy
 schema: schemas/v1/product/policy.schema.yaml
 id: POL-004-ZERO-AI-CALL-DEPENDENCY
 title: "Zero AI-Call Dependency (Deterministic Governance Substrate)"
+status: active
 category: architectural
-rule: "Eidos MUST NEVER initiate calls to AI, LLM, or model APIs. Eidos is strictly an authoritative, deterministic specification compiler, validator, and drift verification substrate invoked by external agents and human engineers."
-enforcement:
-  mechanism: "CI dependency auditing (verifying zero AI/LLM SDKs in pyproject.toml), test_policy_zero_ai.py, and architectural drift gating"
-  severity: blocking
+severity: blocking
+invariants:
+  - id: INV-POL-004-ZERO-AI-CALL-DEPENDENCY
+    rule: "Eidos MUST NEVER initiate calls to AI, LLM, or model APIs. Eidos is strictly an authoritative, deterministic specification compiler, validator, and drift verification substrate invoked by external agents and human engineers."
+    test_binding: "tests/test_policy_zero_ai.py::test_pyproject_contains_zero_ai_dependencies"
 ---
 = Policy: Zero AI-Call Dependency (Deterministic Governance Substrate)
 :toc: left

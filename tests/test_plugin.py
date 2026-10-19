@@ -787,10 +787,10 @@ def test_doc_lint_hook_pre_tool_use():
                         "id: POL-999\n"
                         "title: Sample Policy\n"
                         "category: governance\n"
-                        "rule: Sample rule\n"
-                        "enforcement:\n"
-                        "  mechanism: cli\n"
-                        "  severity: blocking\n"
+                        "severity: blocking\n"
+                        "invariants:\n"
+                        "  - id: INV-POL-999\n"  # eidos:fixture
+                        "    rule: Sample rule\n"
                         "---\n"
                     ),
                 },
@@ -865,7 +865,7 @@ def test_doc_lint_hook_stop_event_ignores_code_modifications(tmp_path):
     eidos_dir.mkdir()
     valid_spec = eidos_dir / "policy.adoc"
     valid_spec.write_text(
-        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nrule: Must execute safely\nenforcement:\n  mechanism: lint\n  severity: blocking\n---\n",
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nseverity: blocking\ninvariants:\n  - id: INV-POL-100\n    rule: Must execute safely\n---\n",  # eidos:fixture
         encoding="utf-8",
     )
 
@@ -892,7 +892,7 @@ def test_doc_lint_hook_post_invocation_ignores_code_modifications(tmp_path):
     eidos_dir.mkdir()
     valid_spec = eidos_dir / "policy.adoc"
     valid_spec.write_text(
-        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nrule: Must execute safely\nenforcement:\n  mechanism: lint\n  severity: blocking\n---\n",
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nseverity: blocking\ninvariants:\n  - id: INV-POL-100\n    rule: Must execute safely\n---\n",  # eidos:fixture
         encoding="utf-8",
     )
 
@@ -957,7 +957,7 @@ def test_drift_hook_stop_event_drift_detected(tmp_path):
     eidos_dir.mkdir()
     valid_spec = eidos_dir / "policy.adoc"
     valid_spec.write_text(
-        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nrule: Must execute safely\nenforcement:\n  mechanism: lint\n  severity: blocking\n---\n",
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nseverity: blocking\ninvariants:\n  - id: INV-POL-100\n    rule: Must execute safely\n---\n",  # eidos:fixture
         encoding="utf-8",
     )
 
@@ -992,7 +992,7 @@ def test_drift_hook_stop_event_synchronized(tmp_path):
     eidos_dir.mkdir()
     valid_spec = eidos_dir / "container.adoc"
     valid_spec.write_text(
-        "---\ntype: tech/container\nschema: schemas/v1/tech/container.schema.yaml\nid: CNT-APP\nname: App\ncontainer_type: service\nruntime: python\nstatus: active\npackage_path: src\n---\n= App\n\nProvides `feature.py` (`do_feature`).\n",
+        "---\ntype: tech/container\nschema: schemas/v1/tech/container.schema.yaml\nid: CNT-APP\ntitle: App\ncontainer_type: service\nruntime: python\nstatus: active\nsource_path: src\n---\n= App\n\nProvides `feature.py` (`do_feature`).\n",
         encoding="utf-8",
     )
 
@@ -1059,7 +1059,7 @@ def test_stop_gate_block_once_and_allow_second_attempt(tmp_path, monkeypatch):
     eidos_dir.mkdir()
     valid_spec = eidos_dir / "policy.adoc"
     valid_spec.write_text(
-        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nrule: Must execute safely\nenforcement:\n  mechanism: lint\n  severity: blocking\n---\n",
+        "---\ntype: product/policy\nschema: schemas/v1/product/policy.schema.yaml\nid: POL-100\ntitle: Safe Exec\ncategory: governance\nseverity: blocking\ninvariants:\n  - id: INV-POL-100\n    rule: Must execute safely\n---\n",  # eidos:fixture
         encoding="utf-8",
     )
 
@@ -1185,10 +1185,10 @@ def test_doc_lint_hook_cross_harness_payloads(tmp_path):
         "id: POL-001\n"
         "title: Valid Policy\n"
         "category: governance\n"
-        "rule: Must validate\n"
-        "enforcement:\n"
-        "  mechanism: cli\n"
-        "  severity: blocking\n"
+        "severity: blocking\n"
+        "invariants:\n"
+        "  - id: INV-POL-001\n"  # eidos:fixture
+        "    rule: Must validate\n"
         "---\n"
         "= Policy\n",
         encoding="utf-8",
@@ -1769,10 +1769,7 @@ schema: schemas/v1/product/policy.schema.yaml
 id: POL-001
 title: Sample Policy
 category: governance
-rule: Must enforce invariant
-enforcement:
-  mechanism: test
-  severity: blocking
+severity: blocking
 invariants:
   - id: INV-NONCODE-001
     rule: Bound test must exist
@@ -1918,7 +1915,7 @@ def test_plugin_lint_stop_block_once_json_lint_uninstall_and_semver(tmp_path):
         "type: product/domain\n"
         "schema: schemas/v1/product/domain.schema.yaml\n"
         "id: DOM-VALID\n"
-        "name: Valid Domain\n"
+        "title: Valid Domain\n"
         "mission: Valid domain mission.\n"
         "---\n"
         "= Valid Domain\n",
@@ -2371,7 +2368,7 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
 
     from eidos.core.lifecycle.scaffolder import create_spec
 
-    create_spec(hook_ws / "eidos", "container", "CNT-HOOK", "Hook Svc", package_path="src")
+    create_spec(hook_ws / "eidos", "container", "CNT-HOOK", "Hook Svc", source_path="src")
     subprocess.run(["git", "add", "."], cwd=hook_ws, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "add container"], cwd=hook_ws, check=True, capture_output=True)
     (hook_ws / "src").mkdir(exist_ok=True)
@@ -2458,10 +2455,10 @@ def test_hook_schema_validation_stop_partial_progress_and_non_duplicate_skills(t
         "id: POL-001\n"
         "title: Policy\n"
         "category: governance\n"
-        "rule: Rule\n"
-        "enforcement:\n"
-        "  mechanism: cli\n"
-        "  severity: blocking\n"
+        "severity: blocking\n"
+        "invariants:\n"
+        "  - id: INV-POL-001\n"  # eidos:fixture
+        "    rule: Rule\n"
         "unknown_illegal_field: 123\n"
         "---\n"
     )
@@ -2495,7 +2492,7 @@ def test_hook_schema_validation_stop_partial_progress_and_non_duplicate_skills(t
         "type: product/domain\n"
         "schema: schemas/v1/product/domain.schema.yaml\n"
         "id: DOM-GOOD\n"
-        "name: Good Domain\n"
+        "title: Good Domain\n"
         "classification: core\n"
         "boundaries:\n"
         "  responsibilities:\n"
@@ -2599,7 +2596,7 @@ def test_group_d1_d2_d3_regressions(tmp_path, monkeypatch):  # eidos:fixture
     assert runner.invoke(app, ["context"]).exit_code == 1
     assert not (uninit_dir / ".cache").exists()
 
-    # --- D2.4 & D2.5: spec create auto prints resolved ID; delta status shows Draft and Planned in-flight deltas ---
+    # --- D2.4 & D2.5: spec create auto prints resolved ID; delta status shows In Review and Approved in-flight deltas ---
     eidos_dir = repo_ws / "eidos"
     res_auto = runner.invoke(
         app,
@@ -2611,23 +2608,23 @@ def test_group_d1_d2_d3_regressions(tmp_path, monkeypatch):  # eidos:fixture
 
     assert (
         runner.invoke(
-            app, ["delta", "create", "DLT-2026-801", "--title", "Draft Work", "--path", str(eidos_dir)]
+            app, ["delta", "create", "DLT-2026-801", "--title", "Review Work", "--path", str(eidos_dir)]
         ).exit_code
         == 0
     )
     assert (
         runner.invoke(
-            app, ["delta", "create", "DLT-2026-802", "--title", "Planned Work", "--path", str(eidos_dir)]
+            app, ["delta", "create", "DLT-2026-802", "--title", "Approved Work", "--path", str(eidos_dir)]
         ).exit_code
         == 0
     )
-    assert runner.invoke(app, ["delta", "status", "DLT-2026-801", "draft", "--path", str(eidos_dir)]).exit_code == 0
-    assert runner.invoke(app, ["delta", "status", "DLT-2026-802", "planned", "--path", str(eidos_dir)]).exit_code == 0
+    assert runner.invoke(app, ["delta", "status", "DLT-2026-801", "in_review", "--path", str(eidos_dir)]).exit_code == 0
+    assert runner.invoke(app, ["delta", "status", "DLT-2026-802", "approved", "--path", str(eidos_dir)]).exit_code == 0
 
     res_dash = runner.invoke(app, ["delta", "status", "--path", str(eidos_dir)])
     assert res_dash.exit_code == 0
-    assert "Draft" in res_dash.stdout
-    assert "Planned" in res_dash.stdout
+    assert "In Review" in res_dash.stdout
+    assert "Approved" in res_dash.stdout
     assert "DLT-2026-801" in res_dash.stdout
     assert "DLT-2026-802" in res_dash.stdout
 

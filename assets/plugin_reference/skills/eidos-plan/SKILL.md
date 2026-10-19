@@ -30,7 +30,7 @@ type: product/exploration
 schema: schemas/v1/product/exploration.schema.yaml
 id: EXP-2026-001
 title: "Evaluate Transactional Outbox vs Direct Webhook Dispatch"
-status: in_progress # draft | proposed | planned | in_progress | adopted | discarded
+status: in_progress # proposed | in_progress | adopted | discarded
 
 hypothesis: "A PostgreSQL transactional outbox with SKIP LOCKED polling can deliver 5,000 events/sec with p99 <50ms without introducing Kafka."
 
@@ -92,7 +92,7 @@ eidos delta changelog
 
 > **Critical Schema Rules (`delta.schema.yaml`)**:
 > 1. **Composable `operation` + `target` (+ optional `parent` for `add`/`remove`) is the Sole Mutation Contract**: Declare each mutation with `operation: add | modify | remove | deprecate` and `target: <ENTITY-ID>`. Omit `parent` on `modify` mutations (the catalog already resolves existing entities by ID); only include `parent: <PARENT-ENTITY-ID>` when adding or removing child entities (`INV-*`, inline `CMP-*`, etc.). Never add `affects:` or `blast_radius:` blocks to SpecDelta YAML frontmatter (`additionalProperties: false` rejects them).
-> 2. **Closed `expect:` Schema**: `expect:` only permits `body:` (`contains`, `not_contains`) and `frontmatter:` (`responsibility`, `source_path`, `rule`, `test_binding`, `status`, `version`, `category`, `custom`). Flat top-level keys under `expect:` are rejected.
+> 2. **Closed `expect:` Schema**: `expect:` only permits `body:` (`contains`, `not_contains`) and `frontmatter:` (`responsibility`, `source_path`, `rule`, `test_binding`, `status`, `severity`, `version`, `category`, `custom`). Flat top-level keys under `expect:` are rejected.
 
 ```yaml
 ---
@@ -100,7 +100,7 @@ type: delta/mutation
 schema: schemas/v1/delta/delta.schema.yaml
 id: DLT-2026-015
 title: "Add Webhook Signature Verification Contract and Ingestor Component"
-status: proposed # draft | proposed | planned | in_review | approved | applied | rejected
+status: proposed # proposed | in_review | approved | applied | rejected
 vcs:
   branch: feat/webhook-signatures
 intent:
@@ -162,10 +162,11 @@ mutations:
 For `add` and `modify` mutations, `eidos delta verify` checks both baseline digest modification and `expect:` assertions:
 * **`expect.frontmatter`**:
   * `version: "1.2.0"` — SemVer string match.
-  * `status: "active"` — lifecycle status match.
-  * `source_path: "src/..."` (or list of paths) — exact or list-subset match on `source_path` / `package_path`.
+  * `status: "active"` — lifecycle status match (`draft`, `planned`, `active`, `deprecated`, `retired`).
+  * `severity: "blocking"` — policy severity match (`blocking`, `warning`, `advisory`).
+  * `source_path: "src/..."` (or list of paths) — exact or list-subset match on `source_path`.
   * `responsibility: "substring"` — substring match on container/component `responsibility`.
-  * `rule: "substring"` — substring match on policy/invariant `rule`.
+  * `rule: "substring"` — substring match on invariant `rule`.
   * `test_binding: "tests/...::test_..."` — invariant `test_binding` match (`file::func`, `N/A`, or `TBD`).
   * `category: "security"` — policy `category` match.
   * `custom: { <key>: <expected_value> }` — equality, substring, or list-subset match for any other frontmatter field.
@@ -193,7 +194,7 @@ eidos delta audit <DLT-ID> --strict --json
 2. **Interface Contract & SemVer Compatibility (`CTR-*`)**: Are added/removed CLI flags, endpoints, or RPCs bidirectionally synchronized in `CTR-*` specs with proper SemVer 2.0.0 bumps?
 3. **Governance Policies & Invariant Traceability (`POL-*`, `INV-*`)**: Does the change honor all active `POL-*` policies, and does every new/modified capability behavior have a genuine test bound via `test_binding: file::func`?
 4. **SpecDelta Verification Rigor**: Does every `modify` mutation include structured `expect: { frontmatter, body }` post-conditions?
-5. **Living Specification Purity & Decision Capture (`DEC-*`)**: Zero standalone ADRs; non-obvious trade-offs and `rejected_alternatives` recorded in `decisions:`; promoted `CMP-*` components obey `INV-COMPONENT-CENTRALIZATION-MANDATE` (`{id, ref}` without duplicated `source_path`/`invariants`/`decisions`).
+5. **Living Specification Purity & Decision Capture (`DEC-*`)**: Zero standalone ADRs; non-obvious trade-offs and `rejected_alternatives` recorded in `decisions:`; promoted `CMP-*` components obey `INV-COMPONENT-CENTRALIZATION-MANDATE` (standalone component files in `eidos/architecture/components/` link bottom-up via `container: CNT-*` without duplicating entries in the parent container's `components[]`).
 
 ### Review Report Template
 

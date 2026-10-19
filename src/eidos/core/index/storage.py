@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from eidos.core.spec.models import SpecDocument
 
-# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-086).
-SCHEMA_VERSION = "2.4.0"
+# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-091).
+SCHEMA_VERSION = "2.5.0"
 
 # In-process parsed SpecDocument cache keyed by resolved Path -> (mtime_ns, st_size, sha256, SpecDocument)
 _PARSED_SPEC_MEM_CACHE: dict[Path, tuple[int, int, str, SpecDocument]] = {}
@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS entities (
     title TEXT NOT NULL,
     status TEXT,
     domain TEXT,
-    package_path TEXT,
+    source_path TEXT,
     runtime TEXT,
     container_type TEXT,
     file_path TEXT NOT NULL,

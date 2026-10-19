@@ -110,8 +110,8 @@ export function SpecReader({
 
   // Extract key metadata from frontmatter
   const fm = spec.frontmatter || {};
-  const domainBinding = fm.domain || fm.domain_binding;
-  const containerBinding = fm.container || fm.owning_container;
+  const domainBinding = fm.domain;
+  const containerBinding = fm.container;
   const invariants = fm.blast_radius?.invariants_to_enforce || fm.invariants;
   const vcs = fm.vcs;
 

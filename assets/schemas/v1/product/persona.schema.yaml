@@ -7,7 +7,7 @@ required:
   - type
   - schema
   - id
-  - name
+  - title
   - role_type
   - goals
   - pain_points
@@ -23,29 +23,17 @@ properties:
     type: string
     pattern: "^PER-[A-Z0-9_-]+$"
     description: "Unique persona identifier following the PER-<ROLE> convention (e.g. PER-PRODUCT-LEAD, PER-END-USER)."
-  name:
+  title:
     type: string
-    description: "Descriptive name of the persona role (e.g. 'Product Lead', 'Workspace Admin', 'Shopper', 'Autonomous Agent')."
+    description: "Descriptive title of the persona role (e.g. 'Product Lead', 'Workspace Admin', 'Shopper', 'Autonomous Agent')."
   status:
-    type: string
-    enum:
-      - draft
-      - proposed
-      - planned
-      - active
-      - deprecated
-      - retired
-    description: "Optional lifecycle state of the persona specification."
+    $ref: "#/$defs/lifecycle_status"
   role_type:
     type: string
     pattern: "^[a-z0-9_-]+$"
     description: >
-      Classification of the actor. Intentionally open to support any product domain.
-      
-      Common conventions include:
-        - Product End-Users: end_user, customer, admin, operator, shopper, subscriber, guest, auditor
-        - Internal Builders: product_manager, software_engineer, architect, devops, designer
-        - Automated Systems: autonomous_agent, background_daemon, external_service, webhook_bot
+      Classification of the actor. Intentionally open to support any product domain
+      (e.g. end_user, customer, admin, human_engineer, autonomous_agent).
     examples:
       - "end_user"
       - "admin"
@@ -69,3 +57,8 @@ properties:
     items:
       type: string
       description: "An interface or workflow channel."
+  decisions:
+    type: array
+    description: "In-place product and actor decisions recorded on this persona specification (POL-001)."
+    items:
+      $ref: "#/$defs/decision"

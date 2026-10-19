@@ -3,8 +3,9 @@ type: tech/contract
 schema: schemas/v1/tech/contract.schema.yaml
 id: CTR-EIDOS-CLI
 title: "Eidos Command-Line Interface Contract"
+status: active
 protocol: "cli_args"
-owning_container: "CNT-EIDOS-CLI"
+container: "CNT-EIDOS-CLI"
 specification_file: "src/eidos/cli/main.py"
 ---
 = Contract: Eidos CLI Interface
@@ -74,9 +75,9 @@ Manages the living specification catalog and C4 Level 3 component topology: list
 * **Sub-commands**:
   - `list [--path <path>] [--type <type>] [--status <status>] [--json]`: Lists all living specifications (including inline C4 Level 3 components `CMP-*` defined inside container manifests) in tabular or JSON format. Supports short or canonical `--type` filters (e.g. `container`, `component`, `capability`, `delta`).
   - `show <id_or_path> [--path <path>]`: Displays detailed frontmatter metadata and preview of a specification document.
-  - `create <type> [id] --title <title> [--slug] [--platform <platform>] [--spec-file <path>] [options]`: Scaffolds a new specification document (capability, domain, policy, contract, container, component, persona, delta, exploration, design-system, ui-component, screen, client, flow; for `delta`, `id` defaults to `auto`, `--slug` / `-s` appends a deterministic title-derived slug suffix, and `--kind` accepts `feature, enabler, bug` and defaults to `feature`) with schema validation and W3C design tokens support.
+  - `create <type> [id] --title <title> [--slug] [--container <id>] [--source-path <path>] [--implements <id>] [--extends <id>] [--platform <platform>] [--spec-file <path>] [options]`: Scaffolds a new specification document (capability, domain, policy, contract, container, component, persona, delta, exploration, design-system, ui-component, screen, client, flow; for `delta`, `id` defaults to `auto`, `--slug` / `-s` appends a deterministic title-derived slug suffix, and `--kind` accepts `feature, enabler, bug` and defaults to `feature`) with schema validation and W3C design tokens support.
   - `delete <id_or_path> [--force]`: Safely deletes a specification document with cross-reference safety checks.
-  - `component promote <component_id> [--path <path>] [--repo-root <path>]`: Promotes an inline C4 Level 3 component to a dedicated specification (`.adoc`) inside `eidos/architecture/components/` and updates the container manifest with `ref:`.
+  - `component promote <component_id> [--path <path>] [--repo-root <path>]`: Promotes an inline C4 Level 3 component to a dedicated specification (`.adoc`) inside `eidos/architecture/components/` (linked via `container:` in the standalone component spec) and removes the inline entry from the container manifest.
   - `component inline <component_id> [--path <path>] [--repo-root <path>]`: Demotes a dedicated C4 Level 3 component back into its parent container manifest as an inline definition and safely unlinks the dedicated specification file.
 
 === `eidos delta`

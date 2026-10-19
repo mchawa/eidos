@@ -9,8 +9,7 @@ required:
   - id
   - title
   - category
-  - rule
-  - enforcement
+  - invariants
 properties:
   type:
     type: string
@@ -27,63 +26,30 @@ properties:
     type: string
     description: "Short human-readable title of the policy."
   status:
-    type: string
-    enum:
-      - draft
-      - proposed
-      - planned
-      - active
-      - deprecated
-      - sunset
-      - retired
-      - removed
-    description: "Optional lifecycle state of the policy specification."
+    $ref: "#/$defs/lifecycle_status"
   category:
     type: string
     pattern: "^[a-z0-9_-]+$"
     description: >
-      Policy category. Open and extensible to support any governance or architectural domain.
-      
-      Common conventions include:
-        - governance (Process, ground truth, and workflow rules)
-        - architectural (Design patterns, dependency constraints, layering)
-        - security (Access control, data protection, token rules)
-        - compliance (Regulatory, privacy, GDPR, SOC2 standards)
-        - testing (Verification standards, test coverage gates)
-        - performance (SLAs, resource utilization, latency budgets)
-        - lifecycle (Release gates, deprecation timelines)
+      Policy category. Open and extensible to support any governance or architectural domain
+      (e.g. governance, architectural, security, compliance, testing, performance, lifecycle).
     examples:
       - "governance"
       - "architectural"
       - "security"
       - "compliance"
       - "testing"
-  rule:
+  severity:
     type: string
-    description: "The exact, authoritative rule statement that must be adhered to across the entire ecosystem."
-  enforcement:
-    type: object
-    description: "Specification of how this policy is verified and enforced programmatically."
-    additionalProperties: false
-    required:
-      - mechanism
-      - severity
-    properties:
-      mechanism:
-        type: string
-        description: "The tooling, CI pipeline step, or linter that programmatically evaluates compliance."
-      severity:
-        type: string
-        pattern: "^[a-z0-9_-]+$"
-        description: "Enforcement level: 'blocking' (fails CI / blocks PR), 'warning' (alerts engineers), 'advisory', or 'info'."
-        examples:
-          - "blocking"
-          - "warning"
-          - "advisory"
-          - "info"
+    enum:
+      - "blocking"
+      - "warning"
+      - "advisory"
+    description: "Enforcement level: 'blocking' (fails CI / blocks PR), 'warning' (alerts engineers), or 'advisory'."
   invariants:
     type: array
-    description: "Test-bound invariants enforcing this policy across the codebase."
+    minItems: 1
+    description: "Test-bound invariants (INV-*) defining the authoritative rules and programmatic test bindings for this policy."
     items:
       $ref: "#/$defs/invariant"
   decisions:
@@ -91,4 +57,3 @@ properties:
     description: "In-place architectural and governance decisions recorded on this policy specification (POL-001)."
     items:
       $ref: "#/$defs/decision"
-

@@ -110,7 +110,6 @@ class InvariantModel(_DictCompatibleModel):
     id: str = ""
     rule: str = ""
     test_binding: str | None = None
-    verification: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -124,23 +123,20 @@ class InvariantModel(_DictCompatibleModel):
         raw["rule"] = _coerce_req_str(raw.get("rule"))
         if "test_binding" in raw:
             raw["test_binding"] = _coerce_opt_str(raw.get("test_binding"))
-        if "verification" in raw:
-            raw["verification"] = _coerce_opt_str(raw.get("verification"))
         return raw
 
     def effective_test_binding(self) -> str:
-        """Return normalized test_binding or legacy verification string."""
-        return str(self.test_binding or self.verification or "").strip()
+        """Return normalized test_binding string."""
+        return str(self.test_binding or "").strip()
 
 
 class InlineComponentModel(_DictCompatibleModel):
-    """Typed inline or reference C4 Level 3 component entry inside a container spec (CMP-*)."""
+    """Typed inline C4 Level 3 component entry inside a container spec (CMP-*)."""
 
     id: str = ""
-    name: str | None = None
-    ref: str | None = None
+    title: str | None = None
     status: str | None = None
-    domain_binding: str | None = None
+    domain: str | None = None
     responsibility: str | None = None
     source_path: list[str] | str | None = None
     decisions: list[DecisionModel] = Field(default_factory=list)
@@ -153,7 +149,7 @@ class InlineComponentModel(_DictCompatibleModel):
             return {}
         raw = dict(data)
         raw["id"] = _coerce_req_str(raw.get("id"))
-        for opt_k in ("name", "ref", "status", "domain_binding", "responsibility"):
+        for opt_k in ("title", "status", "domain", "responsibility"):
             if opt_k in raw:
                 raw[opt_k] = _coerce_opt_str(raw.get(opt_k))
         if "source_path" in raw:
@@ -187,6 +183,7 @@ class CapabilityTechnicalModel(_DictCompatibleModel):
 
     containers: list[str] = Field(default_factory=list)
     components: list[str] = Field(default_factory=list)
+    contracts: list[str] = Field(default_factory=list)
     invariants: list[InvariantModel] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -202,6 +199,10 @@ class CapabilityTechnicalModel(_DictCompatibleModel):
         cmps = raw.get("components")
         raw["components"] = (
             [str(c).strip() for c in cmps if _coerce_opt_str(c)] if isinstance(cmps, list) else []
+        )
+        ctrs = raw.get("contracts")
+        raw["contracts"] = (
+            [str(c).strip() for c in ctrs if _coerce_opt_str(c)] if isinstance(ctrs, list) else []
         )
         invs = raw.get("invariants")
         raw["invariants"] = (
@@ -260,20 +261,16 @@ _FRONTMATTER_SCALAR_KEYS = (
     "id",
     "type",
     "title",
-    "name",
     "status",
     "version",
     "domain",
-    "parent_domain",
-    "domain_binding",
     "container",
     "container_type",
     "runtime",
-    "owning_container",
-    "owning_component",
     "protocol",
     "specification_file",
-    "rule",
+    "category",
+    "severity",
     "schema",
 )
 
@@ -284,22 +281,17 @@ class FrontmatterModel(_DictCompatibleModel):
     id: str | None = None
     type: str | None = None
     title: str | None = None
-    name: str | None = None
     status: str | None = None
     version: str | None = None
     domain: str | None = None
-    parent_domain: str | None = None
-    domain_binding: str | None = None
     container: str | None = None
     container_type: str | None = None
     runtime: str | None = None
-    owning_container: str | None = None
-    owning_component: str | None = None
     protocol: str | None = None
     specification_file: str | None = None
-    rule: str | None = None
+    category: str | None = None
+    severity: str | None = None
     schema_: str | None = Field(default=None, alias="schema")
-    package_path: list[str] | str | None = None
     source_path: list[str] | str | None = None
     components: list[InlineComponentModel] = Field(default_factory=list)
     technical: CapabilityTechnicalModel = Field(default_factory=CapabilityTechnicalModel)
@@ -317,26 +309,21 @@ class FrontmatterModel(_DictCompatibleModel):
         for scalar_key in _FRONTMATTER_SCALAR_KEYS:
             if scalar_key in raw:
                 raw[scalar_key] = _coerce_opt_str(raw.get(scalar_key))
-        for path_key in ("package_path", "source_path"):
-            if path_key in raw:
-                pval = raw.get(path_key)
-                if isinstance(pval, list):
-                    raw[path_key] = [str(p).strip() for p in pval if _coerce_opt_str(p)]
-                elif _coerce_opt_str(pval) is not None:
-                    raw[path_key] = _coerce_opt_str(pval)
-                else:
-                    raw[path_key] = None
-        if "components" in raw or "c4_internal_components" in raw:
+        if "source_path" in raw:
+            pval = raw.get("source_path")
+            if isinstance(pval, list):
+                raw["source_path"] = [str(p).strip() for p in pval if _coerce_opt_str(p)]
+            elif _coerce_opt_str(pval) is not None:
+                raw["source_path"] = _coerce_opt_str(pval)
+            else:
+                raw["source_path"] = None
+        if "components" in raw:
             comps_a = raw.get("components")
-            comps_b = raw.get("c4_internal_components")
-            comps_raw: list[Any] = []
-            if isinstance(comps_a, list):
-                comps_raw.extend(comps_a)
-            if isinstance(comps_b, list):
-                comps_raw.extend(comps_b)
-            raw["components"] = [
-                c for c in comps_raw if isinstance(c, (dict, InlineComponentModel))
-            ]
+            raw["components"] = (
+                [c for c in comps_a if isinstance(c, (dict, InlineComponentModel))]
+                if isinstance(comps_a, list)
+                else []
+            )
         if "technical" in raw:
             tech_raw = raw.get("technical")
             raw["technical"] = (
@@ -373,28 +360,12 @@ class FrontmatterModel(_DictCompatibleModel):
         if isinstance(self.source_path, str) and self.source_path.strip():
             return [self.source_path.strip()]
         if isinstance(self.source_path, list):
-            return [str(p).strip() for p in self.source_path if str(p).strip()]
+            return list(dict.fromkeys(str(p).strip() for p in self.source_path if str(p).strip()))
         return []
-
-    def package_paths(self) -> list[str]:
-        """Return normalized list of top-level package_path strings."""
-        if isinstance(self.package_path, str) and self.package_path.strip():
-            return [self.package_path.strip()]
-        if isinstance(self.package_path, list):
-            return [str(p).strip() for p in self.package_path if str(p).strip()]
-        return []
-
-    def effective_package_paths(self) -> list[str]:
-        """Return combined unique package_paths and source_paths."""
-        combined: list[str] = []
-        for p in [*self.package_paths(), *self.source_paths()]:
-            if p not in combined:
-                combined.append(p)
-        return combined
 
     def effective_domain(self) -> str:
-        """Return normalized domain, parent_domain, or domain_binding string."""
-        return str(self.domain or self.parent_domain or self.domain_binding or "").strip()
+        """Return normalized domain string."""
+        return str(self.domain or "").strip()
 
     def invariants_with_component(self) -> list[tuple[InvariantModel, str | None]]:
         """Return (InvariantModel, owning_inline_component_id_or_None) across top-level, technical, and inline components."""

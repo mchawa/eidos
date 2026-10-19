@@ -243,16 +243,23 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
 
         clientSpecs.forEach((clt) => {
           const cltDir = clt.path ? clt.path.substring(0, clt.path.lastIndexOf("/")) : "";
+          const cltScreensList: string[] = Array.isArray(clt.frontmatter?.screens)
+            ? clt.frontmatter.screens
+            : [];
+          const cltFlowsList: string[] = Array.isArray(clt.frontmatter?.flows)
+            ? clt.frontmatter.flows
+            : [];
           const clientScreens = screenSpecs.filter(
             (sc) =>
-              sc.frontmatter?.client === clt.id ||
+              cltScreensList.some((ref) => ref === sc.id || sc.path.endsWith(ref)) ||
               (Boolean(cltDir) && sc.path.startsWith(`${cltDir}/`))
           );
           const clientFlows = flowSpecs.filter(
             (fl) =>
-              fl.frontmatter?.client === clt.id ||
+              cltFlowsList.some((ref) => ref === fl.id || fl.path.endsWith(ref)) ||
               (Boolean(cltDir) && fl.path.startsWith(`${cltDir}/`)) ||
-              fl.frontmatter?.clients?.includes(clt.id)
+              (Array.isArray(fl.frontmatter?.steps) &&
+                fl.frontmatter.steps.some((st: any) => st?.client === clt.id))
           );
           subgroups.push({
             id: `subgroup-${clt.id}`,

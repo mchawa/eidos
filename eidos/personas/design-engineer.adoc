@@ -2,7 +2,8 @@
 type: product/persona
 schema: schemas/v1/product/persona.schema.yaml
 id: PER-DESIGN-ENGINEER
-name: "Design Technologist"
+title: "Design Technologist"
+status: active
 role_type: design_engineer
 goals:
   - "Maintain single-source-of-truth W3C DTCG design tokens without manual Figma token duplication."

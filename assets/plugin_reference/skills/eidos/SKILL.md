@@ -48,7 +48,7 @@ Never blindly read dozens of files into your context window. Query Eidos first t
 
 | Tier | Flag | Budget | Contents Included | When to Use |
 | :--- | :--- | :--- | :--- | :--- |
-| **Anchor** | `--tier anchor` | `~140 tokens` | Owning `CNT-*` / `CMP-*`, runtime, `package_path`, bound domain, compact `DEC-*`, direct `CTR-*` signatures. | Quick single-file bug fixes, minor localized edits. |
+| **Anchor** | `--tier anchor` | `~140 tokens` | Owning `CNT-*` / `CMP-*`, runtime, `source_path`, bound domain, compact `DEC-*`, direct `CTR-*` signatures. | Quick single-file bug fixes, minor localized edits. |
 | **Guardrails** *(Default)* | `--tier guardrails` | `~300–900 tokens` | Anchor + `DEC-*` rationale/alternatives, domain capabilities (`CAP-*`), active invariants (`INV-*`) with `test_binding`, and policies (`POL-*`). | Standard feature work, refactoring, test updates. |
 | **Deep** | `--tier deep` | `~500–1,500 tokens` | Guardrails + C4 Level 3 internal building blocks, full contract schemas, full policies, and downstream dependents. | Cross-container refactors, SpecDelta authoring, architectural reviews. |
 
@@ -78,7 +78,7 @@ eidos index blast-radius CNT-AUTH-SERVICE --depth 2 --json
 1. **Slice Context**: Run `eidos context -f <touched_file> --format json` to identify the owning container (`CNT-*`), component (`CMP-*`), and bound invariants (`INV-*`).
 2. **Implement Code & Tests**: Modify source code and update or add automated tests preserving `INV-*` references.
 3. **Co-Evolve Living Specs In-Place** (consult **`eidos-spec`** for YAML schemas):
-   * **New internal module or file**: Update `package_path`, `source_path`, or `components:` in the owning `CNT-*` / `CMP-*` spec.
+   * **New internal module or file**: Update `source_path` or `components:` in the owning `CNT-*` / `CMP-*` spec.
    * **New package/contract boundary export** (e.g., `__init__.py`, `index.ts`, `mod.rs`, `lib.rs`, `__all__`, or contract `specification_file`): Anchor the new boundary symbol or route in the owning/neighbor spec (`CNT-*`, `CMP-*`, `CTR-*`, or `CAP-*`).
    * **Module-internal helper function**: Covered by a substantive (non-whitespace, non-comment) update to the owning `CNT-*` / `CMP-*` spec—do NOT pollute high-level C4 specs with low-level helper names. Whitespace/comment-only spec edits are rejected (`trivially_covered_files`).
    * **New invariant or design trade-off**: Add `INV-*` (`test_binding: file::func`) to `CAP-*`, or record a `DEC-*` entry under `decisions:` in the owning spec.
@@ -113,7 +113,7 @@ eidos validate eidos --json
 eidos drift --uncommitted --json
 ```
 
-* **`eidos validate`** checks v1 JSON Schemas, `x-eidos-ref` cross-references, `package_path`/`specification_file` paths on disk, and **bidirectional multi-protocol contract parity** (`cli_args`, `openapi`, `protobuf`, `graphql`, `python_protocol`).
+* **`eidos validate`** checks v1 JSON Schemas, `x-eidos-ref` cross-references, `source_path`/`specification_file` paths on disk, and **bidirectional multi-protocol contract parity** (`cli_args`, `openapi`, `protobuf`, `graphql`, `python_protocol`).
 * **`eidos drift`** runs `eidos validate` internally plus Git diff ownership mapping, workflow mode verification (Direct vs. Planned `mutations[].target` / `parent`), substantive spec diff checks, and polyglot `INV-*` `test_binding` verification.
 * **If `is_clean: false` or `drift_detected: true`**: Follow the `remediation_suggestions` array in the JSON output and re-run until exit code is `0`.
 

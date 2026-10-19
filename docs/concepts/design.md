@@ -48,15 +48,15 @@ eidos/design/
 │   │       └── modal.adoc            <- id: UIC-CORE-MODAL
 │   │
 │   └── acme/                         <- White-Label / Client Theme
-│       ├── system.adoc               <- extends_system: "DS-CORE", client_id: "acme"
+│       ├── system.adoc               <- extends: "DS-CORE", override_mode: "token_and_component"
 │       └── tokens.json               <- Brand token overrides
 │
 ├── clients/                          <- Client Applications (CLT-*)
 │   └── web-portal/                   <- Web Client target
 │       ├── client.adoc               <- type: design/client (id: CLT-WEB-PORTAL)
 │       ├── screens/                  <- Client-owned Screens (SCR-*)
-│       │   ├── portal-home.adoc      <- client: "CLT-WEB-PORTAL", route: "/"
-│       │   └── portal-catalog.adoc   <- client: "CLT-WEB-PORTAL", route: "/catalog"
+│       │   ├── portal-home.adoc      <- route: "/"
+│       │   └── portal-catalog.adoc   <- route: "/catalog"
 │       └── flows/                    <- Client-internal user journeys (FLOW-*)
 │           └── spec-exploration.adoc <- flow_type: client_internal
 │
@@ -75,8 +75,8 @@ schema: schemas/v1/design/system.schema.yaml
 id: DS-ACME
 title: "Acme Enterprise Theme"
 status: active
-client_id: "acme"
-extends_system: "DS-CORE"
+extends: "DS-CORE"
+override_mode: "token_and_component"
 tokens:
   spec_format: "w3c_design_tokens"
   manifest: "tokens.json"
@@ -198,7 +198,7 @@ test_bindings:
 
 ## 5. Screen State Machines (`SCR-*`)
 
-Screens (`type: design/screen`) bridge product capabilities with visual layout. They define the URL route, layout slots, supported design systems, and the screen state machine (loading, empty, active, error).
+Screens (`type: design/screen`) define pure reusable view layouts: the URL route, layout slots, and the screen state machine (`loading`, `empty`, `active`, `error`). They are referenced from outside by `design/client.screens`, `design/flow.steps[].screen`, and `product/capability.experience.screens`.
 
 ### Screen Specification Example (`eidos/design/clients/web-store/screens/checkout.adoc`):
 
@@ -209,15 +209,7 @@ schema: schemas/v1/design/screen.schema.yaml
 id: SCR-CHECKOUT
 title: "Order Checkout Screen"
 route: "/checkout"
-client: "CLT-WEB-STORE"
 status: active
-
-capabilities:
-  - "eidos/domains/checkout/capabilities/express-checkout.adoc"
-
-supported_design_systems:
-  - "eidos/design/systems/core/system.adoc"
-  - "eidos/design/systems/acme/system.adoc"
 
 slots:
   express_wallet: "UIC-*-WALLET-BUTTON"
@@ -260,9 +252,6 @@ platform: web
 design_system: "eidos/design/systems/core/system.adoc"
 container: "eidos/architecture/containers/portal.adoc"
 
-capabilities:
-  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
-
 screens:
   - "eidos/design/clients/web-portal/screens/portal-home.adoc"
   - "eidos/design/clients/web-portal/screens/portal-catalog.adoc"
@@ -281,7 +270,7 @@ Single Page Application (SPA) serving as the interactive visualization dashboard
 
 ## 7. Interaction Flows (`FLOW-*`)
 
-Interaction flows (`type: design/flow`) document user journeys across screens and systems. Eidos distinguishes two scopes:
+Interaction flows (`type: design/flow`) define multi-step user journeys across screens and systems (referenced from outside by `design/client.flows` and `product/capability.experience.flows`). Eidos distinguishes two scopes:
 1. **Client-Internal Flows (`flow_type: client_internal`)**: Co-located within the client folder (`eidos/design/clients/<client-name>/flows/`).
 2. **Omnichannel Journeys (`flow_type: cross_client`)**: Top-level interaction flows spanning multiple clients, CLI, and backend boundaries (`eidos/design/flows/`).
 
@@ -295,9 +284,6 @@ id: FLOW-PORTAL-EXPLORATION
 title: "Specification Discovery & Inspection Flow"
 status: active
 flow_type: client_internal
-client: "CLT-WEB-PORTAL"
-capabilities:
-  - "eidos/domains/product-core/capabilities/living-spec-engine.adoc"
 
 steps:
   - step: 1
@@ -336,7 +322,7 @@ eidos spec create design-system DS-CORE --title "Core Product Design System"
 
 # 2. Scaffold a client theme extending the core:
 eidos spec create design-system DS-ACME --title "Acme Enterprise Theme" \
-  --client acme --extends DS-CORE
+  --extends DS-CORE
 
 # 3. Scaffold a UI component:
 eidos spec create ui-component UIC-CORE-BUTTON --title "Primary Action Button" \

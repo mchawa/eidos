@@ -46,13 +46,49 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     sys_doc = next((s for s in specs if s["type"] in ("product/system", "arch/system")), None)
 
     system_title = (
-        (sys_doc["frontmatter"].get("title") or sys_doc["frontmatter"].get("name") if sys_doc else None)
-        or (arch_doc["frontmatter"].get("title") or arch_doc["frontmatter"].get("name") if arch_doc else None)
+        (sys_doc["frontmatter"].get("title") if sys_doc else None)
+        or (arch_doc["frontmatter"].get("title") if arch_doc else None)
         or getattr(project, "system_title", None)
         or getattr(project, "system_name", None)
         or "Living Architecture System"
     )
     system_id = (sys_doc["id"] if sys_doc else None) or getattr(project, "system_id", "SYS-001")
+
+    path_to_id: dict[str, str] = {}
+    for s in specs:
+        sid = s.get("id")
+        spath = str(s.get("path", "")).replace("\\", "/").strip().lstrip("./")
+        if sid and spath:
+            path_to_id[spath.lower()] = sid
+            if spath.lower().startswith("eidos/"):
+                path_to_id[spath[6:].lower()] = sid
+
+    def _resolve_ref_id(raw_val: Any) -> str:
+        val = str(raw_val or "").strip()
+        if not val:
+            return ""
+        norm = val.replace("\\", "/").lstrip("./").lower()
+        return path_to_id.get(norm, val)
+
+    def _add_unique(lst: list[str], item: str) -> None:
+        if item and item not in lst:
+            lst.append(item)
+
+    # Contracts
+    raw_contracts = specs_by_type.get("tech/contract", [])
+    contracts: list[dict[str, Any]] = []
+    for ct in raw_contracts:
+        fm = ct["frontmatter"]
+        contracts.append(
+            {
+                "id": ct["id"],
+                "title": ct["title"],
+                "protocol": fm.get("protocol", "cli_args"),
+                "container": _resolve_ref_id(fm.get("container", "N/A")) or "N/A",
+                "specification_file": fm.get("specification_file", "N/A"),
+                "description": ct["body"],
+            }
+        )
 
     # Components & Containers (C4 Level 2 Containers and Level 3 Promoted Components)
     raw_containers = specs_by_type.get("tech/container", [])
@@ -60,18 +96,17 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
 
     # Index promoted components by their parent container ID
     promoted_by_container: dict[str, list[dict[str, Any]]] = {}
-    all_promoted_list: list[dict[str, Any]] = []
     for pc in raw_promoted_components:
         p_fm = pc.get("frontmatter", {})
-        target_cnt = p_fm.get("container", "")
+        target_cnt = _resolve_ref_id(p_fm.get("container", ""))
         promoted_dict = {
             "id": pc["id"],
-            "name": p_fm.get("name", pc["id"]),
+            "title": p_fm.get("title", pc["id"]),
             "responsibility": p_fm.get("responsibility", ""),
             "source_path": p_fm.get("source_path", ""),
             "file_path": pc.get("path", ""),
             "spec_path": pc.get("path", ""),
-            "domain_binding": p_fm.get("domain_binding", ""),
+            "domain": p_fm.get("domain", ""),
             "interfaces": p_fm.get("interfaces", {}),
             "quality_attributes": p_fm.get("quality_attributes", {}),
             "invariants": p_fm.get("invariants", []),
@@ -80,15 +115,14 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             "is_promoted": True,
             "description": pc.get("body", ""),
         }
-        all_promoted_list.append(promoted_dict)
         if target_cnt:
             promoted_by_container.setdefault(target_cnt, []).append(promoted_dict)
 
     components: list[dict[str, Any]] = []
     for c in raw_containers:
         fm = c["frontmatter"]
-        raw_pkg = fm.get("package_path", "N/A")
-        pkg_path_str = ", ".join(str(p) for p in raw_pkg) if isinstance(raw_pkg, list) else str(raw_pkg)
+        raw_src = fm.get("source_path", "N/A")
+        src_path_str = ", ".join(str(p) for p in raw_src) if isinstance(raw_src, list) else str(raw_src)
 
         # Extract container responsibility / summary from frontmatter or Architectural Boundary
         resp = fm.get("responsibility") or fm.get("summary")
@@ -99,105 +133,36 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         # Internal components (inline + promoted)
         doc_id = c["id"]
         cnt_promoted = promoted_by_container.get(doc_id, [])
-        raw_internal = list(fm.get("components", []) or fm.get("c4_internal_components", []))
+        raw_internal = list(fm.get("components", []) or [])
         internal_components: list[dict[str, Any]] = []
-        matched_promoted_ids: set[str] = set()
+        existing_ids: set[str] = set()
 
         for ic in raw_internal:
             if not isinstance(ic, dict):
                 continue
             ic_copy = dict(ic)
             ic_id = ic_copy.get("id")
-            ref_val = str(ic_copy.get("ref") or ic_copy.get("spec_path") or "").strip().replace("\\", "/").lstrip("./")
-
-            matched_pc: dict[str, Any] | None = None
-            for pc_dict in cnt_promoted + all_promoted_list:
-                pc_path = str(pc_dict.get("file_path", "")).strip().replace("\\", "/").lstrip("./")
-                if ic_id and pc_dict["id"] == ic_id:
-                    matched_pc = pc_dict
-                    break
-                if ref_val and pc_path and (
-                    ref_val == pc_path
-                    or pc_path.endswith(f"/{ref_val}")
-                    or ref_val.endswith(f"/{pc_path}")
-                    or Path(ref_val).stem.lower() == Path(pc_path).stem.lower()
-                ):
-                    matched_pc = pc_dict
-                    break
-
-            if matched_pc is not None:
-                matched_promoted_ids.add(matched_pc["id"])
-                merged_ic = {
-                    **ic_copy,
-                    **matched_pc,
-                    "id": matched_pc["id"],
-                    "name": matched_pc["name"] or ic_copy.get("name", matched_pc["id"]),
-                    "responsibility": matched_pc["responsibility"] or ic_copy.get("responsibility", ""),
-                    "source_path": matched_pc["source_path"] or ic_copy.get("source_path", ""),
-                    "domain_binding": matched_pc["domain_binding"] or ic_copy.get("domain_binding", ""),
-                    "interfaces": matched_pc["interfaces"] or ic_copy.get("interfaces", {}),
-                    "quality_attributes": matched_pc["quality_attributes"] or ic_copy.get("quality_attributes", {}),
-                    "invariants": matched_pc["invariants"] or ic_copy.get("invariants", []),
-                    "decisions": matched_pc["decisions"] or ic_copy.get("decisions", []),
-                    "is_promoted": True,
-                    "file_path": matched_pc["file_path"],
-                    "spec_path": matched_pc["spec_path"],
-                }
-                internal_components.append(merged_ic)
-            elif ic_id:
+            if ic_id:
+                ic_copy["title"] = ic_copy.get("title", ic_id)
                 internal_components.append(ic_copy)
+                existing_ids.add(ic_id)
 
-        # Merge any promoted components belonging to this container not already matched by a ref or id stub
-        existing_ids = {ic.get("id") for ic in internal_components if isinstance(ic, dict)}
         for pc_dict in cnt_promoted:
-            if pc_dict["id"] not in matched_promoted_ids and pc_dict["id"] not in existing_ids:
+            if pc_dict["id"] not in existing_ids:
                 internal_components.append(dict(pc_dict))
                 existing_ids.add(pc_dict["id"])
 
-        raw_deps = fm.get("dependencies", {})
-        if isinstance(raw_deps, dict):
-            raw_int_cnt = raw_deps.get("internal_containers", []) or []
-            norm_int_cnt: list[str] = []
-            for item in raw_int_cnt:
-                if isinstance(item, dict):
-                    cid_val = str(item.get("container") or item.get("id") or item.get("target") or "").strip()
-                    if cid_val:
-                        norm_int_cnt.append(cid_val)
-                elif item:
-                    norm_int_cnt.append(str(item).strip())
-
-            raw_ext_srv = raw_deps.get("external_services", []) or []
-            norm_ext_srv: list[str] = []
-            for item in raw_ext_srv:
-                if isinstance(item, dict):
-                    sname = str(item.get("name") or item.get("service") or "").strip()
-                    srel = str(item.get("relationship") or item.get("description") or "").strip()
-                    if sname:
-                        norm_ext_srv.append(f"{sname} ({srel})" if srel and "(" not in sname else sname)
-                elif item:
-                    norm_ext_srv.append(str(item).strip())
-
-            norm_deps = {
-                **raw_deps,
-                "internal_containers": norm_int_cnt,
-                "internal_container_links": raw_int_cnt,
-                "external_services": norm_ext_srv,
-                "external_service_links": raw_ext_srv,
-            }
-        else:
-            norm_deps = {}
-
         comp_dict = {
             "id": c["id"],
-            "name": fm.get("name", c["id"]),
+            "title": fm.get("title", c["id"]),
             "container_type": fm.get("container_type", "library"),
             "runtime": fm.get("runtime", "N/A"),
-            "package_path": pkg_path_str,
-            "domain_binding": fm.get("domain_binding", "N/A"),
+            "source_path": src_path_str,
+            "domain": fm.get("domain", "N/A"),
             "responsibility": resp,
             "summary": resp,
             "internal_components": internal_components,
-            "dependencies": norm_deps,
+            "dependencies": {"internal_containers": [], "external_services": []},
             "contracts": fm.get("contracts", {}),
             "quality_attributes": fm.get("quality_attributes", {}),
             "invariants": fm.get("invariants", []),
@@ -210,27 +175,60 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         comp_dict["tier_name"] = tier_name
         components.append(comp_dict)
 
-    # Contracts
-    raw_contracts = specs_by_type.get("tech/contract", [])
-    contracts: list[dict[str, Any]] = []
-    for ct in raw_contracts:
-        fm = ct["frontmatter"]
-        contracts.append(
-            {
-                "id": ct["id"],
-                "title": ct["title"],
-                "protocol": fm.get("protocol", "cli_args"),
-                "owning_container": fm.get("owning_container") or fm.get("owning_component", "N/A"),
-                "owning_component": fm.get("owning_container") or fm.get("owning_component", "N/A"),
-                "specification_file": fm.get("specification_file", "N/A"),
-                "description": ct["body"],
-            }
-        )
+    # Derive inter-container dependencies from contracts (consumes -> provides/container) and component interfaces
+    contract_to_provider: dict[str, str] = {}
+    for ct in contracts:
+        if ct.get("id") and ct.get("container") and str(ct["container"]).startswith("CNT-"):
+            contract_to_provider[ct["id"]] = str(ct["container"])
+    comp_to_container: dict[str, str] = {}
+    for cnt in components:
+        cnt_id = cnt["id"]
+        cnt_ctrs = cnt.get("contracts", {})
+        if isinstance(cnt_ctrs, dict):
+            for p_ctr in cnt_ctrs.get("provides", []) or []:
+                p_id = _resolve_ref_id(p_ctr)
+                if p_id:
+                    contract_to_provider[p_id] = cnt_id
+        for ic in cnt.get("internal_components", []):
+            ic_id = ic.get("id")
+            if ic_id:
+                comp_to_container[ic_id] = cnt_id
+
+    for cnt in components:
+        cnt_id = cnt["id"]
+        derived_int_cnts: list[str] = []
+        cnt_ctrs = cnt.get("contracts", {})
+        if isinstance(cnt_ctrs, dict):
+            for c_ctr in cnt_ctrs.get("consumes", []) or []:
+                c_id = _resolve_ref_id(c_ctr)
+                prov_cnt = contract_to_provider.get(c_id)
+                if prov_cnt and prov_cnt != cnt_id:
+                    _add_unique(derived_int_cnts, prov_cnt)
+        for ic in cnt.get("internal_components", []):
+            ifaces = ic.get("interfaces")
+            if isinstance(ifaces, dict) and isinstance(ifaces.get("consumes"), list):
+                for raw_target in ifaces["consumes"]:
+                    t_id = _resolve_ref_id(
+                        raw_target.get("id") or raw_target.get("target") or raw_target.get("component") or ""
+                        if isinstance(raw_target, dict)
+                        else str(raw_target).split("(", 1)[0].strip()
+                    )
+                    if t_id.startswith("CNT-") and t_id != cnt_id:
+                        _add_unique(derived_int_cnts, t_id)
+                    elif t_id in comp_to_container and comp_to_container[t_id] != cnt_id:
+                        _add_unique(derived_int_cnts, comp_to_container[t_id])
+                    elif t_id in contract_to_provider and contract_to_provider[t_id] != cnt_id:
+                        _add_unique(derived_int_cnts, contract_to_provider[t_id])
+        cnt["dependencies"] = {
+            "internal_containers": derived_int_cnts,
+            "external_services": [],
+        }
 
     # 2. Product Domains, Capabilities, Personas, Policies
     domains: list[dict[str, Any]] = []
     for s in specs_by_type.get("product/domain", []):
         d = dict(s["frontmatter"])
+        d["title"] = d.get("title") or s.get("title") or d.get("id", "")
         d["body"] = s.get("body", "")
         d["path"] = s.get("path", "")
         if not d.get("mission"):
@@ -240,7 +238,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             elif d.get("boundaries", {}).get("responsibilities"):
                 d["mission"] = d["boundaries"]["responsibilities"][0]
             else:
-                d["mission"] = f"Bounded strategic context {d.get('name', d.get('id', ''))}."
+                d["mission"] = f"Bounded strategic context {d.get('title', d.get('id', ''))}."
         domains.append(d)
 
     capabilities: list[dict[str, Any]] = []
@@ -248,7 +246,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         c = dict(s["frontmatter"])
         c["body"] = s.get("body", "")
         c["path"] = s.get("path", "")
-        c["name"] = c.get("name") or c.get("title") or c.get("id", "Capability")
+        c["title"] = c.get("title") or s.get("title") or c.get("id", "Capability")
         c["summary"] = c.get("summary") or c.get("business", {}).get("jtbd") or ""
         c["invariants"] = c.get("technical", {}).get("invariants", [])
         capabilities.append(c)
@@ -256,13 +254,14 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     # Link capability IDs to domains if not explicitly set
     for dom in domains:
         dom_id = dom.get("id")
-        bound_cap_ids = [c.get("id") for c in capabilities if c.get("domain") == dom_id]
+        bound_cap_ids = [c.get("id") for c in capabilities if _resolve_ref_id(c.get("domain")) == dom_id]
         if not dom.get("capabilities"):
             dom["capabilities"] = bound_cap_ids
 
     personas: list[dict[str, Any]] = []
     for s in specs_by_type.get("product/persona", []):
         p = dict(s["frontmatter"])
+        p["title"] = p.get("title") or s.get("title") or p.get("id", "Persona")
         p["body"] = s.get("body", "")
         p["path"] = s.get("path", "")
         p["role"] = p.get("role") or (
@@ -283,19 +282,6 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     seen_inv_ids: set[str] = set()
     for pol in policies:
         pid = pol.get("id", "")
-        tb = pol.get("test_binding") or pol.get("enforcement_command") or "N/A"
-        if pid:
-            seen_inv_ids.add(pid)
-        invariants.append(
-            {
-                "id": pid,
-                "title": pol.get("title"),
-                "rule": pol.get("rule", "System policy invariant rule."),
-                "category": pol.get("category", "governance"),
-                "source_type": "policy",
-                "test_binding": tb,
-            }
-        )
         for inv in pol.get("invariants", []) or []:
             if not isinstance(inv, dict):
                 continue
@@ -306,10 +292,11 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                     {
                         "id": iid,
                         "title": iid,
-                        "rule": inv.get("rule", pol.get("rule", "Policy invariant rule.")),
+                        "rule": inv.get("rule", "Policy invariant rule."),
                         "category": pol.get("category", "governance"),
+                        "severity": pol.get("severity", "blocking"),
                         "source_type": f"policy ({pid})",
-                        "test_binding": inv.get("test_binding", tb),
+                        "test_binding": inv.get("test_binding", "N/A"),
                     }
                 )
 
@@ -413,7 +400,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         _append_decisions(pol.get("decisions", []), pol.get("id", "POL"), "policy")
 
     # 3. Multi-Design Systems, Tokens, UI Components, Clients, Flows, and Screens
-    design_data = _extract_design_systems(eidos_path, specs_by_type)
+    design_data = _extract_design_systems(eidos_path, specs_by_type, capabilities, _resolve_ref_id)
     design_systems = design_data.get("systems", [])
     screens = design_data.get("screens", [])
     ui_components = design_data.get("ui_components", [])
@@ -429,27 +416,6 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "rejected": [],
     }
 
-    path_to_id: dict[str, str] = {}
-    for s in specs:
-        sid = s.get("id")
-        spath = str(s.get("path", "")).replace("\\", "/").strip().lstrip("./")
-        if sid and spath:
-            path_to_id[spath.lower()] = sid
-            if spath.lower().startswith("eidos/"):
-                path_to_id[spath[6:].lower()] = sid
-
-    def _resolve_ref_id(raw_val: Any) -> str:
-        val = str(raw_val or "").strip()
-        if not val:
-            return ""
-        norm = val.replace("\\", "/").lstrip("./").lower()
-        return path_to_id.get(norm, val)
-
-    def _add_unique(lst: list[str], item: str) -> None:
-        if item and item not in lst:
-            lst.append(item)
-
-    comp_to_container: dict[str, str] = {}
     comp_dependents: dict[str, list[str]] = {}
     cnt_dependents: dict[str, list[str]] = {}
     entity_invariants: dict[str, list[str]] = {}
@@ -459,37 +425,19 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         if cnt_invs:
             entity_invariants[cnt_id] = cnt_invs
         cnt_deps = cnt.get("dependencies", {})
-        cnt_int_deps = (
-            (cnt_deps.get("internal_containers") or cnt_deps.get("internal") or [])
-            if isinstance(cnt_deps, dict)
-            else []
-        )
+        cnt_int_deps = cnt_deps.get("internal_containers", []) if isinstance(cnt_deps, dict) else []
         for dep_ref in cnt_int_deps or []:
-            raw_ref = (
-                str(dep_ref.get("container") or dep_ref.get("id") or dep_ref.get("target") or "")
-                if isinstance(dep_ref, dict)
-                else str(dep_ref).split("(", 1)[0].strip()
-            )
-            dep_id = _resolve_ref_id(raw_ref)
+            dep_id = _resolve_ref_id(dep_ref)
             if dep_id:
                 _add_unique(cnt_dependents.setdefault(dep_id, []), cnt_id)
         for ic in cnt.get("internal_components", []):
             ic_id = ic.get("id")
             if ic_id:
-                comp_to_container[ic_id] = cnt_id
                 ic_invs = [str(inv["id"]) for inv in ic.get("invariants", []) if isinstance(inv, dict) and inv.get("id")]
                 if ic_invs:
                     entity_invariants[ic_id] = ic_invs
-                ic_deps = ic.get("dependencies", {})
-                ic_int_deps: list[Any] = []
-                if isinstance(ic_deps, dict):
-                    for dkey in ("internal", "internal_components", "components"):
-                        dval = ic_deps.get(dkey)
-                        if isinstance(dval, list):
-                            ic_int_deps.extend(dval)
-                elif isinstance(ic_deps, list):
-                    ic_int_deps.extend(ic_deps)
                 ic_ifaces = ic.get("interfaces")
+                ic_int_deps: list[Any] = []
                 if isinstance(ic_ifaces, dict) and isinstance(ic_ifaces.get("consumes"), list):
                     ic_int_deps.extend(ic_ifaces["consumes"])
                 for dep_ref in ic_int_deps:
@@ -503,9 +451,9 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                         _add_unique(comp_dependents.setdefault(dep_id, []), ic_id)
 
     contract_to_container: dict[str, str] = {
-        ct["id"]: ct["owning_container"]
+        ct["id"]: ct["container"]
         for ct in contracts
-        if ct.get("id") and ct.get("owning_container") and str(ct["owning_container"]).startswith("CNT-")
+        if ct.get("id") and ct.get("container") and str(ct["container"]).startswith("CNT-")
     }
     cap_by_id: dict[str, dict[str, Any]] = {}
     entity_to_caps: dict[str, list[str]] = {}
@@ -517,7 +465,9 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             c_invs = [str(inv["id"]) for inv in tech.get("invariants", []) if isinstance(inv, dict) and inv.get("id")]
             if c_invs:
                 entity_invariants[cid] = c_invs
-            for ref in (tech.get("containers", []) or []) + (tech.get("components", []) or []):
+            raw_ctrs = tech.get("contracts", [])
+            ctr_refs = raw_ctrs if isinstance(raw_ctrs, list) else []
+            for ref in (tech.get("containers", []) or []) + (tech.get("components", []) or []) + ctr_refs:
                 ref_id = _resolve_ref_id(ref)
                 if ref_id:
                     _add_unique(entity_to_caps.setdefault(ref_id, []), cid)
@@ -869,9 +819,37 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
 
 
 def _extract_design_systems(
-    eidos_path: Path, specs_by_type: dict[str, list[dict[str, Any]]]
+    eidos_path: Path,
+    specs_by_type: dict[str, list[dict[str, Any]]],
+    capabilities: list[dict[str, Any]] | None = None,
+    resolve_ref: Any = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Scan and parse multi-design systems, W3C tokens.json, UI components, clients, flows, and screens."""
+    def _res(val: Any) -> str:
+        if resolve_ref is not None:
+            return str(resolve_ref(val))
+        return str(val or "").strip()
+
+    def _add_uniq(lst: list[str], item: str) -> None:
+        if item and item not in lst:
+            lst.append(item)
+
+    # Reverse-map capabilities -> clients, screens, flows
+    clt_to_caps: dict[str, list[str]] = {}
+    scr_to_caps: dict[str, list[str]] = {}
+    flw_to_caps: dict[str, list[str]] = {}
+    for cap in capabilities or []:
+        cid = str(cap.get("id") or "").strip()
+        if not cid:
+            continue
+        exp = cap.get("experience") if isinstance(cap.get("experience"), dict) else {}
+        for ref in exp.get("clients", []) or []:
+            _add_uniq(clt_to_caps.setdefault(_res(ref), []), cid)
+        for ref in exp.get("screens", []) or []:
+            _add_uniq(scr_to_caps.setdefault(_res(ref), []), cid)
+        for ref in exp.get("flows", []) or []:
+            _add_uniq(flw_to_caps.setdefault(_res(ref), []), cid)
+
     systems: list[dict[str, Any]] = []
     design_specs = specs_by_type.get("design/system", [])
 
@@ -886,7 +864,7 @@ def _extract_design_systems(
             else (eidos_path / "design" / "systems" / sys_id.lower().replace("ds-", ""))
         )
         tok_cfg = fm.get("tokens") if isinstance(fm.get("tokens"), dict) else {}
-        manifest_ref = tok_cfg.get("manifest") or fm.get("tokens_path")
+        manifest_ref = tok_cfg.get("manifest")
         tokens_file = sys_dir / "tokens.json"
         if isinstance(manifest_ref, str) and manifest_ref.strip():
             cand_rel = manifest_ref.strip()
@@ -905,60 +883,83 @@ def _extract_design_systems(
             except (json.JSONDecodeError, OSError):
                 tokens_data = {}
 
-        inh = fm.get("inheritance")
-        extends_val = (
-            (inh.get("extends") if isinstance(inh, dict) else None)
-            or fm.get("extends_system")
-            or fm.get("extends")
-        )
         systems.append(
             {
                 "id": sys_id,
                 "title": ds["title"],
-                "client": fm.get("client_id", fm.get("client", "core")),
+                "client": "core",
                 "brand_name": fm.get("brand_name", ds["title"]),
-                "extends": extends_val,
+                "extends": fm.get("extends"),
                 "tokens": tokens_data,
             }
         )
 
     default_ds_id = systems[0]["id"] if systems else "DS-001"
 
-    # Clients
+    # Clients (and reverse-map client -> screens, flows, design_system)
+    scr_to_client: dict[str, str] = {}
+    scr_to_ds: dict[str, str] = {}
+    flw_to_clients: dict[str, list[str]] = {}
+    ds_to_client: dict[str, str] = {}
+
     clients: list[dict[str, Any]] = []
     for clt in specs_by_type.get("design/client", []):
         fm = clt["frontmatter"]
+        clt_id = clt["id"]
+        ds_ref = _res(fm.get("design_system", default_ds_id)) or default_ds_id
+        ds_to_client.setdefault(ds_ref, clt_id)
+        raw_scrs = fm.get("screens", []) or []
+        raw_flws = fm.get("flows", []) or []
+        for s_ref in raw_scrs:
+            s_id = _res(s_ref)
+            if s_id:
+                scr_to_client.setdefault(s_id, clt_id)
+                scr_to_ds.setdefault(s_id, ds_ref)
+        for f_ref in raw_flws:
+            f_id = _res(f_ref)
+            if f_id:
+                _add_uniq(flw_to_clients.setdefault(f_id, []), clt_id)
+
         clients.append(
             {
-                "id": clt["id"],
+                "id": clt_id,
                 "title": clt["title"],
                 "platform": fm.get("platform", "web"),
-                "design_system": fm.get("design_system", default_ds_id),
-                "container": fm.get("container", "N/A"),
-                "capabilities": fm.get("capabilities", []),
-                "screens": fm.get("screens", []),
-                "flows": fm.get("flows", []),
+                "design_system": ds_ref,
+                "container": _res(fm.get("container", "N/A")) or "N/A",
+                "capabilities": clt_to_caps.get(clt_id, []),
+                "screens": raw_scrs,
+                "flows": raw_flws,
                 "body": clt["body"],
             }
         )
+
+    for sys_item in systems:
+        if sys_item["id"] in ds_to_client:
+            sys_item["client"] = ds_to_client[sys_item["id"]]
 
     # Flows
     flows: list[dict[str, Any]] = []
     for fl in specs_by_type.get("design/flow", []):
         fm = fl["frontmatter"]
+        fl_id = fl["id"]
         flow_type = fm.get("flow_type", "client_internal")
         steps = fm.get("steps", [])
         body = fl.get("body", "")
-        mermaid = _extract_or_generate_flow_mermaid(fl["id"], flow_type, steps, body)
+        mermaid = _extract_or_generate_flow_mermaid(fl_id, flow_type, steps, body)
+        derived_clients = list(flw_to_clients.get(fl_id, []))
+        for step in steps or []:
+            if isinstance(step, dict) and step.get("client"):
+                _add_uniq(derived_clients, _res(step["client"]))
         flows.append(
             {
-                "id": fl["id"],
+                "id": fl_id,
                 "title": fl["title"],
                 "status": fm.get("status", "active"),
                 "flow_type": flow_type,
-                "client": fm.get("client"),
-                "clients": fm.get("clients", ([fm["client"]] if fm.get("client") else [])),
-                "capabilities": fm.get("capabilities", []),
+                "client": derived_clients[0] if derived_clients else None,
+                "clients": derived_clients,
+                "capabilities": flw_to_caps.get(fl_id, []),
                 "steps": steps,
                 "mermaid": mermaid,
                 "body": body,
@@ -988,21 +989,19 @@ def _extract_design_systems(
     screens: list[dict[str, Any]] = []
     for scr in specs_by_type.get("design/screen", []):
         fm = scr["frontmatter"]
+        scr_id = scr["id"]
         states = fm.get("states", [])
-        transitions = fm.get("transitions", [])
-        mermaid_state = _generate_screen_state_mermaid(scr["id"], states, transitions)
+        mermaid_state = _generate_screen_state_mermaid(scr_id, states, [])
         screens.append(
             {
-                "id": scr["id"],
+                "id": scr_id,
                 "title": scr["title"],
                 "route": fm.get("route", "/"),
-                "client": fm.get("client", "N/A"),
-                "system_ref": fm.get("supported_design_systems", [default_ds_id])[0]
-                if fm.get("supported_design_systems")
-                else (fm.get("design_system") or default_ds_id),
+                "client": scr_to_client.get(scr_id, "N/A"),
+                "system_ref": scr_to_ds.get(scr_id, default_ds_id),
                 "states": states,
                 "slots": fm.get("slots", {}),
-                "capabilities": fm.get("capabilities", []),
+                "capabilities": scr_to_caps.get(scr_id, []),
                 "mermaid": mermaid_state,
             }
         )
@@ -1040,11 +1039,11 @@ def _generate_c4_context_mermaid(
             ext_node_id = (
                 re.sub(r"[^A-Za-z0-9_]", "_", raw_ext_id) if raw_ext_id else f"EXT_{idx + 1}"
             )
-            ext_name = html.escape(str(ext.get("name") or ext.get("id") or f"External System {idx + 1}")).replace(
+            ext_name = html.escape(str(ext.get("title") or ext.get("name") or ext.get("id") or f"External System {idx + 1}")).replace(
                 '"', "'"
             )
             ext_role = html.escape(
-                str(ext.get("role") or ext.get("relationship") or ext.get("description") or "External Integration")
+                str(ext.get("description") or ext.get("role") or ext.get("relationship") or "External Integration")
             ).replace('"', "'")
             ext_proto = html.escape(str(ext.get("protocol") or ext.get("type") or "External System")).replace(
                 '"', "'"
@@ -1061,10 +1060,10 @@ def _generate_c4_context_mermaid(
 
     for p in personas:
         pid = p.get("id", "PER")
-        pname = html.escape(str(p.get("name", pid))).replace('"', "'")
+        ptitle = html.escape(str(p.get("title", pid))).replace('"', "'")
         node_id = pid.replace("-", "_")
         lines.append(
-            f"  {node_id}[\"<div style='padding:8px 12px;'><b>{pname}</b><br/>Persona Actor<br/><i>[Human / Autonomous Lead]</i></div>\"]:::actor"
+            f"  {node_id}[\"<div style='padding:8px 12px;'><b>{ptitle}</b><br/>Persona Actor<br/><i>[Human / Autonomous Lead]</i></div>\"]:::actor"
         )
 
     lines.append("")
@@ -1151,9 +1150,9 @@ def _classify_container_tier(comp: dict[str, Any]) -> tuple[str, str]:
             return (t_id, meta["name"])
 
     cid = str(comp.get("id", "")).upper()
-    cname = str(comp.get("name", "")).upper()
+    ctitle = str(comp.get("title", "")).upper()
     for t_id, meta in sorted(GENERIC_TIERS.items(), key=lambda x: x[1]["order"]):
-        if any(k in cid or k in cname for k in meta["keywords"]):
+        if any(k in cid or k in ctitle for k in meta["keywords"]):
             return (t_id, meta["name"])
 
     return ("tier_core", GENERIC_TIERS["tier_core"]["name"])
@@ -1215,18 +1214,18 @@ def _generate_c4_containers_mermaid(
         for p in selected_personas:
             pid = p.get("id", "PER")
             node_id = pid.replace("-", "_")
-            pname = html.escape(str(p.get("name", pid))).replace('"', "'")
+            ptitle = html.escape(str(p.get("title", pid))).replace('"', "'")
             prole = html.escape(str(p.get("role", "Actor"))).replace('"', "'")
             ptype = html.escape(
                 str(p.get("archetype", p.get("role_type", "Human Lead"))).replace("_", " ").title()
             ).replace('"', "'")
 
             actor_lines.append(
-                f"  {node_id}[\"<div style='padding:6px 10px;'><b>{pname}</b><br/>{prole}<br/><i>[{ptype}]</i></div>\"]:::actor"
+                f"  {node_id}[\"<div style='padding:6px 10px;'><b>{ptitle}</b><br/>{prole}<br/><i>[{ptype}]</i></div>\"]:::actor"
             )
             actor_nodes_rendered.append(node_id)
 
-            p_text = f"{pid} {pname} {prole} {p.get('role_type', '')}".lower()
+            p_text = f"{pid} {ptitle} {prole} {p.get('role_type', '')}".lower()
             connected = False
 
             for ep in entrypoints:
@@ -1317,11 +1316,11 @@ def _generate_c4_containers_mermaid(
         for c in tier_containers:
             cid = c["id"]
             node_id = cid.replace("-", "_")
-            cname = html.escape(str(c["name"])).replace('"', "'")
+            ctitle = html.escape(str(c.get("title", cid))).replace('"', "'")
             ctype = html.escape(str(c.get("container_type", "container"))).replace('"', "'")
             runtime = html.escape(str(c.get("runtime", "N/A"))).replace('"', "'")
             lines.append(
-                f"      {node_id}[\"<div style='padding:8px 12px;'><b>{html.escape(cid)}</b><br/>{cname}<br/><i>[{ctype} • {runtime}]</i></div>\"]:::{style_class}"
+                f"      {node_id}[\"<div style='padding:8px 12px;'><b>{html.escape(cid)}</b><br/>{ctitle}<br/><i>[{ctype} • {runtime}]</i></div>\"]:::{style_class}"
             )
         lines.append("    end")
 
@@ -1343,7 +1342,7 @@ def _generate_c4_containers_mermaid(
 
         for ext in ext_list:
             if isinstance(ext, dict):
-                raw_name = str(ext.get("name") or ext.get("service") or "").strip()
+                raw_name = str(ext.get("title") or ext.get("name") or ext.get("service") or "").strip()
                 custom_rel = ext.get("relationship") or ext.get("description")
             else:
                 raw_name = str(ext).strip()
@@ -1522,7 +1521,7 @@ def _generate_c4_containers_mermaid(
 def _generate_c4_component_mermaid(component: dict[str, Any], all_components: list[dict[str, Any]]) -> str:
     """Generate Mermaid syntax for C4 Level 3 Component Whitebox View of a single container."""
     cid = str(component.get("id") or "CNT")
-    clean_name = html.escape(str(component.get("name") or cid)).replace('"', "'")
+    clean_title = html.escape(str(component.get("title") or cid)).replace('"', "'")
     str(component.get("container_type") or "library")
     str(component.get("runtime") or "N/A").replace('"', "'")
     internals = component.get("internal_components") or []
@@ -1534,20 +1533,20 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
         "  classDef peer fill:#1e293b,stroke:#475569,color:#94a3b8,stroke-width:1.5px,rx:6px,stroke-dasharray: 4 4;",
         "  classDef contract fill:#064e3b,stroke:#10b981,color:#fff,stroke-width:2px,rx:6px;",
         "",
-        f'  subgraph {box_id} ["📦 Level 2 Container: {html.escape(cid)} ({clean_name})"]',
+        f'  subgraph {box_id} ["📦 Level 2 Container: {html.escape(cid)} ({clean_title})"]',
     ]
 
     if not internals:
         fallback_id = f"mod_{cid.replace('-', '_')}_main"
         lines.append(
-            f"    {fallback_id}[\"<div style='padding:10px 14px;min-width:300px;max-width:420px;white-space:normal;word-break:break-word;'><b>{clean_name}</b><br/><i>Core Container Logic</i></div>\"]:::module"
+            f"    {fallback_id}[\"<div style='padding:10px 14px;min-width:300px;max-width:420px;white-space:normal;word-break:break-word;'><b>{clean_title}</b><br/><i>Core Container Logic</i></div>\"]:::module"
         )
     else:
         mod_node_by_ref: dict[str, str] = {}
         for idx, mod in enumerate(internals):
             mid = mod.get("id")
-            mname = str(mod.get("name") or f"Module {idx + 1}").replace('"', "'")
-            title_text = f"<b>{html.escape(str(mid))}: {html.escape(mname)}</b>" if mid else f"<b>{html.escape(mname)}</b>"
+            mtitle = str(mod.get("title") or f"Module {idx + 1}").replace('"', "'")
+            title_text = f"<b>{html.escape(str(mid))}: {html.escape(mtitle)}</b>" if mid else f"<b>{html.escape(mtitle)}</b>"
             resp = str(mod.get("responsibility") or "").replace('"', "'")
             raw_spath = mod.get("source_path") or ""
             spath = (
@@ -1558,33 +1557,19 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
             mod_id = f"mod_{cid.replace('-', '_')}_{idx}"
             if isinstance(mid, str) and mid.strip():
                 mod_node_by_ref[mid.strip()] = mod_id
-            if isinstance(mname, str) and mname.strip():
-                mod_node_by_ref[mname.strip()] = mod_id
+            if isinstance(mtitle, str) and mtitle.strip():
+                mod_node_by_ref[mtitle.strip()] = mod_id
             lines.append(
                 f"    {mod_id}[\"<div style='padding:10px 14px;text-align:left;min-width:300px;max-width:420px;white-space:normal;word-break:break-word;line-height:1.45;'>"
                 f"{title_text}<br/><small style='color:#93c5fd;font-family:monospace;font-size:10px;'>{html.escape(spath)}</small><br/>"
                 f"<span style='font-size:11px;color:#cbd5e1;'>{html.escape(resp)}</span></div>\"]:::module"
             )
 
-        # Render explicit intra-container component dependencies when declared
+        # Render explicit intra-container component dependencies when declared via interfaces.consumes
         drawn_mod_edges: set[tuple[str, str]] = set()
         for idx, mod in enumerate(internals):
             src_mod_id = f"mod_{cid.replace('-', '_')}_{idx}"
-            raw_deps = mod.get("dependencies")
             dep_targets: list[str] = []
-            if isinstance(raw_deps, dict):
-                for dkey in ("internal", "internal_components", "components"):
-                    dval = raw_deps.get(dkey)
-                    if isinstance(dval, list):
-                        dep_targets.extend(
-                            str(item.get("id") or item.get("target") or "") if isinstance(item, dict) else str(item)
-                            for item in dval
-                        )
-            elif isinstance(raw_deps, list):
-                dep_targets.extend(
-                    str(item.get("id") or item.get("target") or "") if isinstance(item, dict) else str(item)
-                    for item in raw_deps
-                )
             raw_ifaces = mod.get("interfaces")
             if isinstance(raw_ifaces, dict):
                 consumes = raw_ifaces.get("consumes")

@@ -3,8 +3,9 @@ type: tech/contract
 schema: schemas/v1/tech/contract.schema.yaml
 id: CTR-EIDOS-PORTAL
 title: "Eidos Living Web Portal HTTP Interface Contract"
+status: active
 protocol: "http_json"
-owning_container: "CNT-EIDOS-PORTAL"
+container: "CNT-EIDOS-PORTAL"
 specification_file: "src/eidos/portal/server.py"
 ---
 = Contract: Eidos Living Web Portal HTTP Interface

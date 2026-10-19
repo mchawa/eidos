@@ -48,8 +48,8 @@ When introducing Eidos into an **existing codebase**, never invent speculative a
 2. **Author C4 Level 1 & Arc42 Master Architecture**: Populate `eidos/system.adoc` (`SYS-*`) and `eidos/architecture/system-architecture.adoc` (`ARCH-*`, registering all containers in `c4_containers`).
 3. **Extract C4 Level 2 Containers (`CNT-*`) & Level 3 Components (`CMP-*`)**:
    * Create a container in `eidos/architecture/containers/<slug>.adoc` for each deployable service, CLI binary, web app, worker, or library package.
-   * Set `package_path` to the exact repo-relative source path(s) so `eidos drift` and `eidos context` map every source file accurately.
-   * Map major internal modules/classes to inline `components:` entries (`id: CMP-*`, `name`, `responsibility`, `source_path`), or promote complex subsystems via `eidos spec component promote <CMP-ID>`.
+   * Set `source_path` to the exact repo-relative source path(s) so `eidos drift` and `eidos context` map every source file accurately.
+   * Map major internal modules/classes to inline `components:` entries (`id: CMP-*`, `title`, `responsibility`, `source_path`), or promote complex subsystems via `eidos spec component promote <CMP-ID>`.
    * Record non-obvious as-built architectural trade-offs in `decisions:` (`DEC-*`).
 4. **Extract Interface Contracts (`CTR-*`)**: Create contract specs in `eidos/architecture/contracts/<slug>.adoc` for REST/OpenAPI, gRPC/Protobuf, GraphQL, or CLI boundaries (`specification_file`), and link `provides:` / `consumes:` on `CNT-*`.
 5. **Extract Product Domains (`DOM-*`), Personas (`PER-*`) & Capabilities (`CAP-*`)**: Group business logic into bounded contexts (`eidos/domains/<slug>/domain.adoc`), create actor personas (`eidos/personas/<slug>.adoc`), and author capabilities (`eidos/domains/<slug>/capabilities/<cap>.adoc`) linking `personas`, `jtbd`, `policies`, and `technical.containers`.

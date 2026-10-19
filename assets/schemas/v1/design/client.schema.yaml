@@ -27,21 +27,7 @@ properties:
     type: string
     description: "Display title of the client application or platform."
   status:
-    type: string
-    enum:
-      - draft
-      - proposed
-      - planned
-      - active
-      - deprecated
-      - retired
-    description: "Lifecycle status: draft, proposed, planned, active, deprecated, or retired."
-    examples:
-      - "active"
-      - "proposed"
-      - "planned"
-      - "draft"
-      - "deprecated"
+    $ref: "#/$defs/lifecycle_status"
   platform:
     type: string
     description: "Runtime platform surface: web, mobile-ios, mobile-android, desktop, tui, or multi-platform."
@@ -53,58 +39,21 @@ properties:
       - "tui"
       - "multi-platform"
   design_system:
-    type: string
-    pattern: "^(DS-[A-Z0-9_-]+|.*\\.adoc)$"
-    description: "ID or relative path to the primary design system styling this client (e.g. 'DS-CORE' or 'eidos/design/systems/core/system.adoc')."
-    x-eidos-ref:
-      target_types:
-        - design/system
-      prefixes:
-        - DS-
-      entity_label: entity
+    $ref: "#/$defs/design_system_ref"
   container:
-    type: string
-    pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
-    description: "ID or relative path to the C4 Level 2 Container manifest implementing this client (e.g. 'CNT-WEB-PORTAL')."
-    x-eidos-ref:
-      target_types:
-        - tech/container
-      prefixes:
-        - CNT-
-      entity_label: container
-  capabilities:
-    type: array
-    description: "List of product capabilities delivered on this client surface."
-    items:
-      type: string
-      pattern: "^(CAP-[A-Z0-9_-]+|.*\\.adoc)$"
-      x-eidos-ref:
-        target_types:
-          - product/capability
-        prefixes:
-          - CAP-
-        entity_label: capability
+    $ref: "#/$defs/container_ref"
   screens:
     type: array
     description: "List of screen specifications owned and rendered by this client."
     items:
-      type: string
-      pattern: "^(SCR-[A-Z0-9_-]+|.*\\.adoc)$"
-      x-eidos-ref:
-        target_types:
-          - design/screen
-        prefixes:
-          - SCR-
-        entity_label: screen
+      $ref: "#/$defs/screen_ref"
   flows:
     type: array
     description: "List of interaction flow specifications native to this client."
     items:
-      type: string
-      pattern: "^(FLOW-[A-Z0-9_-]+|.*\\.adoc)$"
-      x-eidos-ref:
-        target_types:
-          - design/flow
-        prefixes:
-          - FLOW-
-        entity_label: flow
+      $ref: "#/$defs/flow_ref"
+  decisions:
+    type: array
+    description: "In-place client platform decisions recorded on this specification (POL-001)."
+    items:
+      $ref: "#/$defs/decision"

@@ -137,7 +137,7 @@ def _parse_spec_content(path: Path, content: str) -> SpecDocument:
     doc.doc_type = fm_model.type or "unknown"
     doc.doc_id = fm_model.id or path.stem
     doc.schema_ref = fm_model.schema_
-    doc.title = fm_model.title or fm_model.name
+    doc.title = fm_model.title
 
     if parse_error:
         doc.errors.append(f"Frontmatter parse error: {parse_error}")

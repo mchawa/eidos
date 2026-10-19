@@ -42,18 +42,18 @@ export interface SpecDecision {
 
 export interface SpecComponent {
   id: string;
-  name: string;
+  title: string;
   container_type: string;
   runtime: string;
-  package_path: string;
-  domain_binding?: string;
+  source_path: string;
+  domain?: string;
   tier?: string;
   tier_name?: string;
   responsibility?: string;
   summary?: string;
   internal_components: Array<{
     id: string;
-    name: string;
+    title: string;
     responsibility: string;
     source_path?: string | string[];
     spec_path?: string;
@@ -76,7 +76,6 @@ export interface SpecComponent {
   contracts: {
     provides?: string[];
     consumes?: string[];
-    requires?: string[];
   };
   quality_attributes?: Record<string, any>;
   decisions?: SpecDecision[];
@@ -92,14 +91,14 @@ export interface SpecContract {
   id: string;
   title: string;
   protocol: string;
-  owning_component: string;
+  container: string;
   specification_file: string;
   description?: string;
 }
 
 export interface SpecDomain {
   id: string;
-  name: string;
+  title: string;
   mission: string;
   classification?: string;
   capabilities?: string[];
@@ -107,19 +106,13 @@ export interface SpecDomain {
     responsibilities?: string[];
     out_of_scope?: string[];
   };
-  technical_mapping?: {
-    containers?: string[];
-    components?: string[];
-    dependencies?: string[];
-  };
   body?: string;
   path?: string;
 }
 
 export interface SpecCapability {
   id: string;
-  name: string;
-  title?: string;
+  title: string;
   domain: string;
   summary: string;
   status?: string;
@@ -132,9 +125,7 @@ export interface SpecCapability {
   technical?: {
     containers?: string[];
     components?: string[];
-    contracts?: {
-      interfaces?: string[];
-    };
+    contracts?: string[];
     invariants?: Array<{
       id: string;
       rule: string;
@@ -152,7 +143,7 @@ export interface SpecCapability {
 
 export interface SpecPersona {
   id: string;
-  name: string;
+  title: string;
   role: string;
   role_type?: string;
   archetype: string;
@@ -166,13 +157,15 @@ export interface SpecPersona {
 export interface SpecPolicy {
   id: string;
   title: string;
-  rule: string;
   category: string;
-  test_binding?: string;
-  enforcement?: {
-    mechanism?: string;
-    severity?: string;
-  };
+  severity: string;
+  status?: string;
+  invariants?: Array<{
+    id: string;
+    rule: string;
+    test_binding?: string;
+  }>;
+  decisions?: SpecDecision[];
   body?: string;
   path?: string;
 }
@@ -182,6 +175,7 @@ export interface SpecInvariant {
   title?: string;
   rule: string;
   category: string;
+  severity?: string;
   source_type: "policy" | "capability" | "container" | "component" | string;
   test_binding?: string;
 }
@@ -240,7 +234,6 @@ export interface SpecUIAccessibility {
 
 export interface SpecUIComponent {
   id: string;
-  name?: string;
   title?: string;
   design_system: string;
   category?: string;
@@ -257,7 +250,6 @@ export interface SpecUIComponent {
 
 export interface SpecClient {
   id: string;
-  name?: string;
   title?: string;
   platform?: string;
   client_type?: string;
@@ -265,7 +257,6 @@ export interface SpecClient {
   design_system?: string;
   container?: string;
   capabilities?: string[];
-  supported_screens?: string[];
   screens?: string[];
   flows?: string[];
   description?: string;
@@ -284,7 +275,6 @@ export interface SpecFlowStep {
 
 export interface SpecFlow {
   id: string;
-  name?: string;
   title?: string;
   client?: string | null;
   clients?: string[];
@@ -305,7 +295,6 @@ export interface SpecScreenState {
 
 export interface SpecScreen {
   id: string;
-  name?: string;
   title?: string;
   client?: string;
   route?: string;
@@ -349,7 +338,6 @@ export interface SpecDesignSystemTokens {
 export interface SpecDesignSystem {
   id: string;
   title?: string;
-  name?: string;
   client?: string;
   brand_name?: string;
   extends?: string | null;

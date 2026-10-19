@@ -9,10 +9,8 @@ required:
   - id
   - title
   - protocol
+  - container
   - specification_file
-anyOf:
-  - required: ["owning_container"]
-  - required: ["owning_component"]
 properties:
   type:
     type: string
@@ -29,63 +27,20 @@ properties:
     type: string
     description: "Human-readable title of this interface contract."
   status:
-    type: string
-    enum:
-      - draft
-      - proposed
-      - planned
-      - active
-      - deprecated
-      - retired
-    description: "Optional lifecycle state of the contract specification."
+    $ref: "#/$defs/lifecycle_status"
   protocol:
     type: string
-    description: "Protocol format: openapi, protobuf, graphql, asyncapi, json_schema, json_rpc_stdio, or cli_args."
-  owning_container:
-    type: string
-    pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
-    description: "The container ID (CNT-*) that owns, implements, and provides this contract."
-    x-eidos-ref:
-      target_types:
-        - tech/container
-      prefixes:
-        - CNT-
-      entity_label: container
-  owning_component:
-    type: string
-    pattern: "^((CNT|CMP)-[A-Z0-9_-]+|.*\\.adoc)$"
-    description: "Legacy alias: The container or component ID that owns, implements, and provides this contract."
-    x-eidos-ref:
-      target_types:
-        - tech/container
-        - tech/component
-      prefixes:
-        - CNT-
-        - CMP-
-      entity_label: container/component
+    description: "Protocol format: openapi, protobuf, graphql, asyncapi, json_schema, json_rpc_stdio, python_protocol, or cli_args."
+  container:
+    $ref: "#/$defs/container_ref"
   specification_file:
     type: string
     description: "Relative path from repository root to the raw interface schema file (e.g. contracts/api.openapi.yaml)."
   version:
     type: string
     description: "Optional semantic version of this interface contract (e.g. '1.0.0')."
-  consumers:
-    type: array
-    description: "Optional list of internal containers (CNT-*), components (CMP-*), or external consumer identifiers that consume this contract."
-    items:
-      type: string
-      x-eidos-ref:
-        target_types:
-          - tech/container
-          - tech/component
-        prefixes:
-          - CNT-
-          - CMP-
-        allow_non_id_string: true
-        entity_label: container or component
   decisions:
     type: array
     description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this contract specification (POL-001)."
     items:
       $ref: "#/$defs/decision"
-

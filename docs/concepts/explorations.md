@@ -27,7 +27,7 @@ graph TD
 
 | State | Meaning | Next Step |
 | :--- | :--- | :--- |
-| **`draft` / `proposed` / `planned`** | A technical question, hypothesis, and exit criteria are queued for research. | Engineer or agent checks out prototype branch. |
+| **`proposed`** | A technical question, hypothesis, and exit criteria are queued for research. | Engineer or agent checks out prototype branch. |
 | **`in_progress`** | Experimental code and benchmarks are actively being executed in a spike branch. | Record empirical metrics (p99 latency, memory, ops/sec). |
 | **`adopted`** | The hypothesis is verified; the spike proved feasible and met all exit criteria. | Graduate to a production **SpecDelta (`DLT-*`)** and link via `decision.resulting_delta_id` and `DEC-*` `graduated_from`. |
 | **`discarded`** | The hypothesis failed or the approach was deemed infeasible. | Document failure reasons under `decision.learnings` and archive in Git. |
@@ -44,7 +44,7 @@ type: product/exploration
 schema: schemas/v1/product/exploration.schema.yaml
 id: EXP-2026-001
 title: "Evaluate SQLite in WAL Mode for Edge Node Caching"
-status: adopted # draft | proposed | planned | in_progress | adopted | discarded
+status: adopted # proposed | in_progress | adopted | discarded
 
 hypothesis: "Adopting SQLite with WAL mode and memory-mapped I/O will reduce cache read latency by 60% compared to local Redis, while eliminating external daemon dependencies."
 

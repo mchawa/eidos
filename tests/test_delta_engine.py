@@ -136,7 +136,7 @@ def test_delta_verify_declarative_expect_and_patch_invariant(tmp_path):
     dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-054", title="Declarative & Invariant Patch")
     mutations_yaml = """mutations:
   - operation: modify
-    target: POL-AUTH-001
+    target: INV-POL-AUTH-001  # eidos:fixture
     expect:
       frontmatter:
         rule: "Min 14 chars."
@@ -228,14 +228,14 @@ def test_delta_execute_and_verify_lifecycle(tmp_path):
     # 2. Fulfill the declared mutations in the living specifications
     create_spec(eidos_dir, "capability", "CAP-INVOICE-GEN", title="Invoice Gen", domain="DOM-BILLING")
     create_spec(eidos_dir, "policy", "POL-INVOICE-TAX", title="Invoice Tax", rule="Invoices must apply VAT.")
-    create_spec(eidos_dir, "contract", "CTR-INVOICE-API", title="Invoice API", owning_container="CNT-BILLING-ENGINE")
+    create_spec(eidos_dir, "contract", "CTR-INVOICE-API", title="Invoice API", container="CNT-BILLING-ENGINE")
     (tmp_path / "src").mkdir(parents=True, exist_ok=True)
     (tmp_path / "src" / "invoice_renderer.py").write_text("# renderer\n", encoding="utf-8")
     cnt_doc = parse_spec_file(cnt_path)
     cnt_doc.frontmatter["components"] = [
         {
             "id": "CMP-INVOICE-RENDERER",
-            "name": "InvoiceRenderer",
+            "title": "InvoiceRenderer",
             "responsibility": "Renders invoices to PDF format.",
             "source_path": "src/invoice_renderer.py",
         }
@@ -627,7 +627,7 @@ def test_deep_review_subsystem_3_scaffolder_catalog_delta_and_changelog_edge_cas
         "type: tech/component\n"
         "schema: schemas/v1/tech/component.schema.yaml\n"
         "id: CMP-AAA\n"
-        "name: Alpha Component\n"
+        "title: Alpha Component\n"
         "responsibility: Sorts before containers.\n"
         "---\n"
         "= Alpha Component\n",
@@ -636,7 +636,7 @@ def test_deep_review_subsystem_3_scaffolder_catalog_delta_and_changelog_edge_cas
     create_spec(eidos_dir, "container", "CNT-ZZZ", title="Zeta Container")
     ctr_path = create_spec(eidos_dir, "contract", "CTR-AUTO-OWNER", title="Auto Owner Contract")
     ctr_doc = parse_spec_file(ctr_path)
-    assert ctr_doc.frontmatter.get("owning_container") == "CNT-ZZZ"
+    assert ctr_doc.frontmatter.get("container") == "CNT-ZZZ"
 
     sample_fm = (
         "---\n"
@@ -646,13 +646,13 @@ def test_deep_review_subsystem_3_scaffolder_catalog_delta_and_changelog_edge_cas
         "= Sample\n"
     )
     updated_fm = _set_frontmatter_scalar(sample_fm, "title", '"Updated #channel"')
-    updated_fm = _set_frontmatter_scalar(updated_fm, "status", "accepted")
+    updated_fm = _set_frontmatter_scalar(updated_fm, "status", "approved")
     assert 'title: "Updated #channel"' in updated_fm
-    assert "status: accepted" in updated_fm
+    assert "status: approved" in updated_fm
 
     dlt_path = create_spec(eidos_dir, "delta", "DLT-2026-088", title="Draft Gate Delta")
     dlt_text = dlt_path.read_text(encoding="utf-8")
-    dlt_text = _set_frontmatter_scalar(dlt_text, "status", "draft")
+    dlt_text = _set_frontmatter_scalar(dlt_text, "status", "in_review")
     dlt_text = dlt_text.replace(
         "mutations: []",
         "mutations:\n  - operation: modify\n    target: CNT-ZZZ\n    details: Require TLS 1.3",
@@ -663,7 +663,7 @@ def test_deep_review_subsystem_3_scaffolder_catalog_delta_and_changelog_edge_cas
     assert any(d["id"] == "DLT-2026-088" for d in active_list)
     summary = get_delta_status_summary(eidos_dir)
     assert summary["active_count"] >= 1
-    assert any(d["id"] == "DLT-2026-088" for d in summary["by_status"]["draft"])
+    assert any(d["id"] == "DLT-2026-088" for d in summary["by_status"]["in_review"])
 
     ok_apply, msg_apply, _, _ = set_delta_status(eidos_dir, "DLT-2026-088", "applied")
     assert ok_apply is False
@@ -711,10 +711,10 @@ def test_delta_engine_all_mutation_families_and_helpers(tmp_path):
 
     create_spec(eidos_dir, "domain", "DOM-CORE", title="Core Domain")
     create_spec(eidos_dir, "persona", "PER-DEV", title="Developer", role_type="developer")
-    cnt_path = create_spec(eidos_dir, "container", "CNT-APP", title="App Container", package_path="src/app")
+    cnt_path = create_spec(eidos_dir, "container", "CNT-APP", title="App Container", source_path="src/app")
     cnt_text = cnt_path.read_text(encoding="utf-8").replace(
         "components: []",
-        "components:\n  - id: CMP-INLINE-WORKER\n    name: Inline Worker\n    responsibility: Process jobs.\n    source_path: src/app/worker.py",
+        "components:\n  - id: CMP-INLINE-WORKER\n    title: Inline Worker\n    responsibility: Process jobs.\n    source_path: src/app/worker.py",
     )
     cnt_path.write_text(cnt_text, encoding="utf-8")
 
@@ -743,7 +743,7 @@ def test_delta_engine_all_mutation_families_and_helpers(tmp_path):
         "schema: schemas/v1/delta/delta.schema.yaml\n"
         "id: DLT-2026-910\n"
         "title: Mutation Families Wave 1\n"
-        "status: accepted\n"
+        "status: approved\n"
         "intent:\n"
         "  kind: feature\n"
         "  motivation: Test all composable mutation families.\n"
@@ -851,12 +851,12 @@ def test_delta_engine_all_mutation_families_and_helpers(tmp_path):
     assert _set_frontmatter_scalar("no frontmatter", "status", "active") == "no frontmatter"
     raw_no_comps = "---\ntype: tech/container\nid: CNT-X\n---\n= X\n"
     appended_comps = _mutate_frontmatter_components(
-        raw_no_comps, "append", "CMP-NEW", {"id": "CMP-NEW", "name": "New"}
+        raw_no_comps, "append", "CMP-NEW", {"id": "CMP-NEW", "title": "New"}
     )
     assert "CMP-NEW" in appended_comps
     raw_empty_comps = "---\ntype: tech/container\nid: CNT-X\ncomponents: []\n---\n= X\n"
     appended_from_empty = _mutate_frontmatter_components(
-        raw_empty_comps, "append", "CMP-NEW", {"id": "CMP-NEW", "name": "New"}
+        raw_empty_comps, "append", "CMP-NEW", {"id": "CMP-NEW", "title": "New"}
     )
     assert "CMP-NEW" in appended_from_empty
     assert find_spec_by_id_or_path(eidos_dir, str(pol_path)) == pol_path.resolve()
@@ -883,7 +883,7 @@ def test_delta_engine_git_baseline_and_catalog_helpers(tmp_path):
         "id: CNT-TRAIL\n"
         "components:\n"
         "  - id: CMP-OLD\n"
-        "    name: Old\n"
+        "    title: Old\n"
         "\n"
         "  # comment before next top-level key\n"
         "decisions: []\n"
@@ -891,19 +891,19 @@ def test_delta_engine_git_baseline_and_catalog_helpers(tmp_path):
         "= Trail\n"
     )
     mutated_trail = _mutate_frontmatter_components(
-        raw_with_trailing_key, "append", "CMP-NEW", {"id": "CMP-NEW", "name": "New"}
+        raw_with_trailing_key, "append", "CMP-NEW", {"id": "CMP-NEW", "title": "New"}
     )
     assert "CMP-NEW" in mutated_trail and "decisions: []" in mutated_trail
 
     git_repo = tmp_path / "git_delta_ws"
     eidos_dir = git_repo / "eidos"
     init_repository(git_repo, name="git-delta", title="Git Delta")
-    cnt_file = create_spec(eidos_dir, "container", "CNT-BASE", "Base Container", package_path="src/base")
+    cnt_file = create_spec(eidos_dir, "container", "CNT-BASE", "Base Container", source_path="src/base")
     doc_cnt = parse_spec_file(cnt_file)
     doc_cnt.frontmatter["components"] = [
         {
             "id": "CMP-INLINE-1",
-            "name": "Inline One",
+            "title": "Inline One",
             "responsibility": "Core",
             "source_path": "src/base/inline_one.py",
         }
@@ -992,7 +992,7 @@ def test_dlt_2026_079_structured_expect_assertions_and_diagnostics(tmp_path):
     cnt_doc.frontmatter["components"] = [
         {
             "id": "CMP-ROUTER",
-            "name": "Router",
+            "title": "Router",
             "responsibility": "Routes HTTP requests and enforces rate limits.",
             "source_path": ["src/api/router.py", "src/api/middleware.py", "src/api/ratelimit.py"],
         }
@@ -1296,13 +1296,13 @@ def test_dlt_2026_088_default_verify_apply(tmp_path):
     init_repository(ws)
     eidos_dir = ws / "eidos"
 
-    cnt_ts = create_spec(eidos_dir, "container", "CNT-WEB-UI", title="Web UI", package_path="src/web")
+    cnt_ts = create_spec(eidos_dir, "container", "CNT-WEB-UI", title="Web UI", source_path="src/web")
     cnt_ts_doc = parse_spec_file(cnt_ts)
     cnt_ts_doc.frontmatter["runtime"] = "TypeScript 5 / Vite"
     cnt_ts_doc.frontmatter["components"] = [
         {
             "id": "CMP-HEADER",
-            "name": "Header",
+            "title": "Header",
             "responsibility": "Renders top navigation bar.",
             "source_path": "src/web/header.ts",
         }
@@ -1347,12 +1347,12 @@ def test_inline_component_invariant_git_baseline_and_pre_create_precedence(tmp_p
     init_repository(ws, name="inline-inv-test")
     eidos_dir = ws / "eidos"
 
-    cnt_path = create_spec(eidos_dir, "container", "CNT-API-GW", title="API Gateway", package_path="src/gw")
+    cnt_path = create_spec(eidos_dir, "container", "CNT-API-GW", title="API Gateway", source_path="src/gw")
     cnt_doc = parse_spec_file(cnt_path)
     cnt_doc.frontmatter["components"] = [
         {
             "id": "CMP-AUTH-FILTER",
-            "name": "Auth Filter",
+            "title": "Auth Filter",
             "responsibility": "Validates JWT bearer tokens.",
             "source_path": "src/gw/auth.py",
             "invariants": [
@@ -1383,11 +1383,11 @@ def test_inline_component_invariant_git_baseline_and_pre_create_precedence(tmp_p
     cnt_path.write_text(dump_spec_document(cnt_doc2.frontmatter, cnt_doc2.body), encoding="utf-8")
 
     pol_a_doc = parse_spec_file(pol_a)
-    pol_a_doc.frontmatter["rule"] = "Updated rule A before delta create."
+    pol_a_doc.frontmatter["severity"] = "warning"
     pol_a.write_text(dump_spec_document(pol_a_doc.frontmatter, pol_a_doc.body), encoding="utf-8")
 
     pol_b_doc = parse_spec_file(pol_b)
-    pol_b_doc.frontmatter["rule"] = "Updated rule B before delta create."
+    pol_b_doc.frontmatter["severity"] = "warning"
     pol_b.write_text(dump_spec_document(pol_b_doc.frontmatter, pol_b_doc.body), encoding="utf-8")
 
     # Create delta AFTER specs were already dirtied in working tree (snapshots dirty state into SQLite)
@@ -1409,7 +1409,7 @@ def test_inline_component_invariant_git_baseline_and_pre_create_precedence(tmp_p
             "operation": "modify",
             "target": "POL-PRE-B",
             "details": "Update POL-PRE-B with expect block.",
-            "expect": {"frontmatter": {"rule": "Updated rule B before delta create."}},
+            "expect": {"frontmatter": {"severity": "warning"}},
         },
     ]
     dlt_path.write_text(dump_spec_document(dlt_doc.frontmatter, dlt_doc.body), encoding="utf-8")

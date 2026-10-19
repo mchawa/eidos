@@ -51,7 +51,7 @@ _ADOC_LINE_COMMENT_RE = re.compile(r"^\s*//(?!/)")
 _ADOC_COMMENT_DELIM_RE = re.compile(r"^/{4,}$")
 _ADOC_VERBATIM_DELIM_RE = re.compile(r"^(-{4,}|\.{4,}|\+{4,})$")
 _FRONTMATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", re.DOTALL)
-_OWNERSHIP_KEYS = ("components", "source_path", "owned_path", "package_path")
+_OWNERSHIP_KEYS = ("components", "source_path", "owned_path")
 _MIN_ANCHOR_LEN = 3
 
 
@@ -249,7 +249,7 @@ def _declared_source_patterns(frontmatter: dict[str, Any]) -> list[str]:
 
     for key in ("source_path", "owned_path"):
         _add(frontmatter.get(key))
-    for comp in frontmatter.get("components", []) or frontmatter.get("c4_internal_components", []) or []:
+    for comp in frontmatter.get("components", []) or []:
         if isinstance(comp, dict):
             _add(comp.get("source_path"))
             _add(comp.get("owned_path"))
@@ -334,9 +334,14 @@ class _SpecDiffInspector:
         )
 
     def declares_at_base(self, spec: str, cf: str) -> bool:
-        """True when the spec, at the base revision, already declared ``cf`` via source_path/owned_path."""
+        """True when the spec, at the base revision, already declared ``cf`` via an explicit file or glob pattern."""
         old, _ = self.versions(spec)
-        return any(match_path_pattern(cf, p) > 0 for p in _declared_source_patterns(_spec_frontmatter(old)))
+        cf_norm = cf.replace("\\", "/").strip("/")
+        for p in _declared_source_patterns(_spec_frontmatter(old)):
+            p_norm = p.replace("\\", "/").strip("/")
+            if (any(ch in p_norm for ch in "*?[") or p_norm == cf_norm) and match_path_pattern(cf, p) > 0:
+                return True
+        return False
 
     def is_anchored(
         self,
@@ -412,14 +417,12 @@ def _collect_1hop_spec_targets(
         self_data = (self_node or {}).get("data") or resolved_data_by_id.get(sid) or {}
 
         if self_type == "tech/container" or (not self_type and sid.startswith("CNT-")):
-            for inline_comp in (self_data.get("components") or []) + (
-                self_data.get("c4_internal_components") or []
-            ):
+            for inline_comp in (self_data.get("components") or []):
                 if not isinstance(inline_comp, dict) or not inline_comp.get("id"):
                     continue
                 ic_id = str(inline_comp["id"]).strip()
                 ic_pats: list[str] = []
-                for pkey in ("source_path", "owned_path", "package_path"):
+                for pkey in ("source_path", "owned_path"):
                     raw_p = inline_comp.get(pkey)
                     if isinstance(raw_p, str) and raw_p.strip():
                         ic_pats.append(raw_p.strip())
@@ -443,7 +446,7 @@ def _collect_1hop_spec_targets(
                 nb_data = nb.get("data", {}) or {}
                 is_parent = (nb_id and nb_id == parent_cnt) or any(
                     isinstance(c, dict) and str(c.get("id") or "").strip() == sid
-                    for c in (nb_data.get("components") or []) + (nb_data.get("c4_internal_components") or [])
+                    for c in (nb_data.get("components") or [])
                 )
                 if is_parent and nb_id and nb_id not in seed_ids:
                     seed_ids.add(nb_id)
@@ -464,9 +467,7 @@ def _collect_1hop_spec_targets(
             if nid:
                 allowed_ids.add(nid.lower())
             if ntype == "tech/container" and nid in seed_ids:
-                for inline_comp in (ndata.get("components") or []) + (
-                    ndata.get("c4_internal_components") or []
-                ):
+                for inline_comp in (ndata.get("components") or []):
                     if isinstance(inline_comp, dict) and inline_comp.get("id"):
                         allowed_ids.add(str(inline_comp["id"]).strip().lower())
             nfp = n.get("file_path")
@@ -601,15 +602,10 @@ def _collect_design_subgraph(
         changed = False
         for eid in list(ids):
             e = by_id.get(eid, {})
-            inheritance = e.get("inheritance") if isinstance(e.get("inheritance"), dict) else {}
             candidates: list[Any] = [
                 e.get("design_system"),
-                e.get("extends_system"),
-                inheritance.get("extends"),
+                e.get("extends"),
             ]
-            supported_ds = e.get("supported_design_systems")
-            if isinstance(supported_ds, list):
-                candidates.extend(supported_ds)
             for ref in candidates:
                 if isinstance(ref, str) and ref in by_id and ref not in ids:
                     ids.add(ref)
@@ -617,6 +613,7 @@ def _collect_design_subgraph(
 
     paths: set[str] = set()
     sub_ids: set[str] = set(ids)
+    client_owned_refs: set[str] = set()
     for eid in ids:
         e = by_id[eid]
         fp = str(e.get("file_path") or "").replace("\\", "/")
@@ -631,30 +628,44 @@ def _collect_design_subgraph(
         if e.get("type") == "design/client":
             for key in ("screens", "flows"):
                 for ref in e.get(key, []) or []:
-                    if isinstance(ref, str):
-                        paths.add(ref.replace("\\", "/").lower())
+                    if isinstance(ref, str) and ref.strip():
+                        r_clean = ref.strip().replace("\\", "/")
+                        client_owned_refs.add(r_clean.lower())
+                        if r_clean in by_id:
+                            sub_ids.add(r_clean)
+                            target_fp = str(by_id[r_clean].get("file_path") or "").replace("\\", "/")
+                            if target_fp:
+                                paths.add(target_fp.lower())
+                        else:
+                            paths.add(r_clean.lower())
 
     systems = {i for i in ids if by_id[i].get("type") == "design/system"}
     clients = {i for i in ids if by_id[i].get("type") == "design/client"}
     for e in design_entities:
         eid = e.get("id")
-        if not eid or eid in ids:
+        if not eid or eid in sub_ids:
             continue
         etype = e.get("type")
+        fp = str(e.get("file_path") or "").replace("\\", "/")
+        fp_low = fp.lower()
         member = False
         if etype == "design/ui-component":
-            member = e.get("design_system") in systems or e.get("implements_component") in sub_ids
-        elif etype == "design/screen":
-            member = e.get("client") in clients
-        elif etype == "design/flow":
-            flow_clients = [c for c in (e.get("clients") or []) if isinstance(c, str)]
-            member = e.get("client") in clients or (
-                len(flow_clients) >= 2 and all(c in clients for c in flow_clients)
-            )
+            member = e.get("design_system") in systems or e.get("implements") in sub_ids
+        elif etype in ("design/screen", "design/flow"):
+            if eid.lower() in client_owned_refs or (
+                fp_low and any(fp_low == r or fp_low.endswith("/" + r) for r in client_owned_refs)
+            ):
+                member = True
+            elif etype == "design/flow" and e.get("flow_type") != "cross_client":
+                step_clients = [
+                    str(s.get("client")).strip()
+                    for s in (e.get("steps") or [])
+                    if isinstance(s, dict) and isinstance(s.get("client"), str) and str(s.get("client")).strip()
+                ]
+                member = bool(step_clients) and all(c in clients for c in step_clients)
         if member:
             sub_ids.add(eid)
-            fp = str(e.get("file_path") or "").replace("\\", "/")
-            if fp:
-                paths.add(fp.lower())
+            if fp_low:
+                paths.add(fp_low)
     return paths, sub_ids
 

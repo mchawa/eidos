@@ -25,8 +25,7 @@ technical:
     - "CMP-DRIFT-DETECTOR"
     - "CMP-AST-SYMBOL-INDEXER"
   contracts:
-    interfaces:
-      - "eidos drift [--uncommitted]"
+    - "CTR-EIDOS-CLI"
   invariants:
     - id: INV-DRIFT-DETECTION-ACCURACY
       rule: "The drift detection engine must accurately identify structural code and design token/props modifications, filter linguist-generated/vendored files via single-pass batched check-attr queries, fail closed with explicit errors when an explicit base Git reference cannot be resolved or lacks a merge base, resolve deterministic merge-base commit SHAs for 3-dot diffs and file content extraction without silent fallbacks, require unowned structural code files to trigger drift in Direct and Planned modes unless claimed by a container/component or covered by a substantive system-level specification update, exclude global POL-* and PER-* neighbors from 1-hop component drift satisfaction, verify static test bindings across domain, policy, and architecture component invariants, and enforce component-scoped 1-hop living specification synchronization without global system.adoc bypasses."

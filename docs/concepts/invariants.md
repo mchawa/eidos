@@ -27,11 +27,13 @@ type: product/policy
 schema: schemas/v1/product/policy.schema.yaml
 id: POL-002-INVARIANT-TEST-ENFORCEMENT
 title: "Mandatory Invariant Test Binding"
+status: active
 category: testing
-rule: "Every technical invariant declared in a Capability or SpecDelta must specify a concrete test_binding path. A PR cannot merge if any bound test fails or is missing."
-enforcement:
-  mechanism: "Eidos CI Runner executes test runner targeting all test_binding paths"
-  severity: blocking
+severity: blocking
+invariants:
+  - id: INV-POL-002
+    rule: "Every technical invariant declared in an active specification must specify a concrete test_binding path."
+    test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
 ---
 = Policy: Mandatory Invariant Test Binding
 
@@ -56,8 +58,7 @@ technical:
     - "CMP-SPEC-PARSER"
     - "CMP-SPEC-VALIDATOR"
   contracts:
-    interfaces:
-      - "eidos validate"
+    - "CTR-EIDOS-CLI"
   invariants:
     # 1. Technical Invariant:
     - id: INV-SPEC-VALIDATION

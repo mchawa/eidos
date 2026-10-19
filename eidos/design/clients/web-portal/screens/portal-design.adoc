@@ -4,14 +4,7 @@ schema: schemas/v1/design/screen.schema.yaml
 id: SCR-PORTAL-DESIGN
 title: "Design Systems & Experience View"
 route: "/design"
-client: "CLT-WEB-PORTAL"
 status: active
-
-capabilities:
-  - "eidos/domains/spec-engine/capabilities/living-spec-engine.adoc"
-
-supported_design_systems:
-  - "eidos/design/systems/core/system.adoc"
 
 slots:
   client_application_switcher: "UIC-PORTAL-SHELL"

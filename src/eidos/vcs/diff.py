@@ -51,9 +51,9 @@ class ChangedFilesClassification:
 _CANDIDATE_BASE_REFS = ("origin/main", "main", "origin/master", "master", "HEAD~1")
 _NESTED_TEST_DIR_NAMES = {"test", "tests", "__tests__"}
 _ROOT_TEST_DIR_NAMES = {"test", "tests", "__tests__", "spec", "specs"}
-_PACKAGE_PATH_LINE_RE = re.compile(r"^package_path:[ \t]*[\"']?([^\"'\n#\[\]-][^\"'\n#]*)", re.MULTILINE)
+_PACKAGE_PATH_LINE_RE = re.compile(r"^source_path:[ \t]*[\"']?([^\"'\n#\[\]-][^\"'\n#]*)", re.MULTILINE)
 _PACKAGE_PATH_BLOCK_RE = re.compile(
-    r"^package_path:[ \t]*(.*?)$((?:\r?\n[ \t]+-[ \t]+.*$)*)",
+    r"^source_path:[ \t]*(.*?)$((?:\r?\n[ \t]+-[ \t]+.*$)*)",
     re.MULTILINE,
 )
 

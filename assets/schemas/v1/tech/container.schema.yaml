@@ -7,10 +7,10 @@ required:
   - type
   - schema
   - id
-  - name
+  - title
   - container_type
   - runtime
-  - package_path
+  - source_path
 properties:
   type:
     type: string
@@ -23,271 +23,34 @@ properties:
     type: string
     pattern: "^CNT-[A-Z0-9_-]+$"
     description: "Unique C4 Container identifier following CNT-<NAME> (e.g. CNT-CORE, CNT-CLI)."
-  name:
+  title:
     type: string
-    description: "Human-readable display name of the container/package."
+    description: "Human-readable display title of the container/package."
   status:
-    type: string
-    enum:
-      - draft
-      - proposed
-      - planned
-      - active
-      - deprecated
-      - retired
-    description: "Optional lifecycle state of the container specification."
+    $ref: "#/$defs/lifecycle_status"
   container_type:
     type: string
     description: "The C4 Container classification: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon, database, driver, or custom slug."
   runtime:
     type: string
     description: "Execution environment and primary framework (e.g. 'Python 3.12 / Typer / Hatchling', 'TypeScript / React', 'Rust / Tokio')."
-  package_path:
-    oneOf:
-      - type: string
-      - type: array
-        items:
-          type: string
-    description: >
-      Relative path(s) or glob pattern(s) from repository root to the package source code (e.g. 'src/core' or ['src/plugin', 'assets/plugin_reference']).
-      Container documents always live centrally under 'eidos/architecture/containers/'; living specifications are never placed inside source directories.
-  domain_binding:
-    type: string
-    pattern: "^(DOM-[A-Z0-9_-]+|.*\\.adoc)$"
-    description: "The product domain ID (DOM-*) this technical container primarily realizes (optional)."
-    x-eidos-ref:
-      target_types:
-        - product/domain
-      prefixes:
-        - DOM-
-      entity_label: domain
+  source_path:
+    $ref: "#/$defs/code_paths"
+  domain:
+    $ref: "#/$defs/domain_ref"
   tier:
     type: string
     description: "Architectural tier classification (optional: presentation, service, core, persistence, or custom tier slug)."
   components:
     type: array
-    description: "Arc42 Section 5.2 / C4 Level 3: Component Whitebox View. The internal modules, services, or building blocks that constitute this container."
+    description: "Arc42 Section 5.2 / C4 Level 3: Component Whitebox View. Inline internal modules, services, or building blocks that constitute this container (standalone components declare their parent via 'container' in their own file)."
     items:
-      type: object
-      oneOf:
-        - additionalProperties: false
-          required:
-            - id
-            - name
-            - responsibility
-            - source_path
-          properties:
-            id:
-              type: string
-              pattern: "^CMP-[A-Z0-9_-]+$"
-              description: "Unique C4 Component identifier following CMP-<NAME> (e.g. CMP-SPEC-PARSER, CMP-AUTH-SERVICE)."
-            name:
-              type: string
-              description: "Internal component name (e.g. 'SpecParser', 'SchemaValidator', 'CliEntrypoint')."
-            status:
-              type: string
-              enum:
-                - draft
-                - proposed
-                - planned
-                - accepted
-                - active
-                - deprecated
-                - sunset
-                - retired
-                - removed
-              description: "Optional lifecycle state of this inline component."
-            domain_binding:
-              type: string
-              pattern: "^(DOM-[A-Z0-9_-]+|.*\\.adoc)$"
-              description: "Optional product domain ID (DOM-*) this inline component realizes."
-              x-eidos-ref:
-                target_types:
-                  - product/domain
-                prefixes:
-                  - DOM-
-                entity_label: domain
-            responsibility:
-              type: string
-              description: "What this internal component does and what domain logic it encapsulates."
-            source_path:
-              oneOf:
-                - type: string
-                - type: array
-                  items:
-                    type: string
-              description: "Relative file path(s) or glob(s) to the source file(s) implementing this component (e.g. 'src/core/parser.py')."
-            spec_path:
-              type: string
-              description: "Relative path to an optional dedicated component specification document (for complex components)."
-              x-eidos-ref:
-                target_types:
-                  - tech/component
-                prefixes:
-                  - CMP-
-                entity_label: component
-            decisions:
-              type: array
-              description: "In-place architectural decisions, trade-offs, and rejected alternatives scoped to this inline C4 Level 3 component."
-              items:
-                $ref: "#/$defs/decision"
-            invariants:
-              type: array
-              description: "Test-bound architectural invariants scoped to this inline C4 Level 3 component."
-              items:
-                $ref: "#/$defs/invariant"
-            interfaces:
-              type: object
-              description: "Optional in-process language protocols and APIs (provides/consumes) preserved when inlining a promoted component."
-              additionalProperties: false
-              properties:
-                provides:
-                  type: array
-                  items:
-                    type: object
-                    additionalProperties: false
-                    required:
-                      - signature
-                    properties:
-                      signature:
-                        type: string
-                      description:
-                        type: string
-                consumes:
-                  type: array
-                  items:
-                    type: string
-            quality_attributes:
-              type: object
-              description: "Optional operational quality attributes preserved when inlining a promoted component."
-              additionalProperties: false
-              properties:
-                stateless:
-                  type: boolean
-                reentrant:
-                  type: boolean
-                concurrency_model:
-                  type: string
-                max_memory_mb:
-                  type: number
-                max_validation_latency_ms:
-                  type: number
-        - additionalProperties: false
-          required:
-            - id
-            - ref
-          properties:
-            id:
-              type: string
-              pattern: "^CMP-[A-Z0-9_-]+$"
-              description: "Unique C4 Component identifier following CMP-<NAME> (e.g. CMP-SPEC-PARSER, CMP-AUTH-SERVICE)."
-            ref:
-              type: string
-              description: "Relative file path to the centralized dedicated component specification under 'eidos/architecture/components/' (e.g. 'eidos/architecture/components/validator.adoc'). Specs inside source directories violate INV-COMPONENT-CENTRALIZATION-MANDATE."
-              x-eidos-ref:
-                target_types:
-                  - tech/component
-                prefixes:
-                  - CMP-
-                entity_label: component
-            name:
-              type: string
-              description: "Optional cached display name of the referenced component."
-            responsibility:
-              type: string
-              description: "Optional cached responsibility summary of the referenced component."
-  dependencies:
-    type: object
-    description: "Explicit container dependencies and external platform services (optional)."
-    additionalProperties: false
-    properties:
-      internal_containers:
-        type: array
-        description: "List of other container IDs (CNT-*) in this repository that this container directly depends on or imports."
-        items:
-          type: string
-          pattern: "^(CNT-[A-Z0-9_-]+|.*\\.adoc)$"
-          x-eidos-ref:
-            target_types:
-              - tech/container
-            prefixes:
-              - CNT-
-            entity_label: container
-      internal_components:
-        type: array
-        description: "List of internal component IDs (CMP-*) that this container depends on."
-        items:
-          type: string
-          pattern: "^(CMP-[A-Z0-9_-]+|.*\\.adoc)$"
-          x-eidos-ref:
-            target_types:
-              - tech/component
-            prefixes:
-              - CMP-
-            entity_label: component
-      external_services:
-        type: array
-        description: "External APIs, databases, or brokers consumed (e.g. PostgreSQL, Redis, GitHub API, Git CLI)."
-        items:
-          type: string
+      $ref: "#/$defs/inline_component"
+      unevaluatedProperties: false
   contracts:
-    type: object
-    description: "Exposed and consumed interface contracts (optional)."
-    additionalProperties: false
-    properties:
-      provides:
-        type: array
-        description: "Paths or IDs of interface contracts (CTR-*) exposed by this container."
-        items:
-          type: string
-          pattern: "^(CTR-[A-Z0-9_-]+|.*\\.adoc)$"
-          x-eidos-ref:
-            target_types:
-              - tech/contract
-            prefixes:
-              - CTR-
-            entity_label: contract
-      consumes:
-        type: array
-        description: "Paths or IDs of interface contracts (CTR-*) consumed by this container."
-        items:
-          type: string
-          pattern: "^(CTR-[A-Z0-9_-]+|.*\\.adoc)$"
-          x-eidos-ref:
-            target_types:
-              - tech/contract
-            prefixes:
-              - CTR-
-            entity_label: contract
-      requires:
-        type: array
-        description: "Paths or IDs of interface contracts (CTR-*) required by this container."
-        items:
-          type: string
-          pattern: "^(CTR-[A-Z0-9_-]+|.*\\.adoc)$"
-          x-eidos-ref:
-            target_types:
-              - tech/contract
-            prefixes:
-              - CTR-
-            entity_label: contract
+    $ref: "#/$defs/contracts_block"
   quality_attributes:
-    type: object
-    description: "Arc42 Section 10: Quality Requirements and Operational Invariants (optional)."
-    additionalProperties: false
-    properties:
-      stateless:
-        type: boolean
-        description: "Whether container instances are completely stateless."
-      idempotent:
-        type: boolean
-        description: "Whether mutations handled by this container are idempotent."
-      concurrency_model:
-        type: string
-        description: "Concurrency paradigm (e.g. async_event_loop, multi_thread, multi_process, synchronous_library, actor)."
-      max_memory_mb:
-        type: integer
-        description: "Maximum allowable memory allocation limit in MB."
+    $ref: "#/$defs/quality_attributes"
   invariants:
     type: array
     description: "Test-bound architectural invariants enforced by this C4 Level 2 container."
@@ -298,5 +61,3 @@ properties:
     description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this C4 Level 2 container specification without standalone ADR files (POL-001)."
     items:
       $ref: "#/$defs/decision"
-
-

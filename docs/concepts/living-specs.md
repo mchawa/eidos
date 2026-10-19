@@ -110,24 +110,21 @@ Here is an example of a Container manifest (`eidos/architecture/containers/core.
 type: tech/container
 schema: schemas/v1/tech/container.schema.yaml
 id: CNT-EIDOS-CORE
-name: Eidos Core Engine
+title: Eidos Core Engine
+status: active
 container_type: library
 runtime: "Python 3.12+"
-package_path: "src/eidos/core"
-domain_binding: DOM-SPEC-ENGINE
+source_path: "src/eidos/core"
+domain: DOM-SPEC-ENGINE
 components:
   - id: CMP-SPEC-PARSER
-    name: SpecParser
+    title: SpecParser
     responsibility: "Extracts YAML frontmatter metadata and body text from AsciiDoc documents."
     source_path: "src/eidos/core/spec/parser.py"
 contracts:
   provides:
     - "CTR-EIDOS-CLI"
-dependencies:
-  internal_containers: []
-  external_services:
-    - "pyyaml"
-    - "jsonschema"
+  consumes: []
 ---
 = Container: Eidos Core Engine
 
@@ -139,7 +136,7 @@ and AST graph generation for all Eidos operations.
 * **`type`**: Canonical specification type matching the Eidos schema taxonomy.
 * **`id`**: Globally unique document identifier (`SYS-*`, `DOM-*`, `CAP-*`, `POL-*`, `PER-*`, `EXP-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DS-*`, `UIC-*`, `SCR-*`, `CLT-*`, `FLOW-*`, `DLT-*`).
 * **`schema`**: Reference to the canonical schema file ensuring automated validation and `x-eidos-ref` link checking.
-* **Frontmatter Metadata**: Strongly-typed architectural properties (contracts, dependencies, invariants, decisions, tokens).
+* **Frontmatter Metadata**: Strongly-typed architectural properties (contracts, invariants, decisions, tokens).
 * **Body text**: Rich AsciiDoc documentation that evolves continuously with the code.
 
 ---
@@ -153,11 +150,11 @@ Eidos enforces a strict, first-principles mapping to the canonical **C4 Architec
 | **Level 1** | **System Context** | Root System Spec (`SYS-*`) & Architecture (`ARCH-*`) | System boundaries, human/AI personas (`PER-*`), and external systems |
 | **Level 2** | **Container** | Container Manifests (`CNT-*`, `type: tech/container`) | **Process / Deployable / Package boundary** (CLI app, service, library, SPA, database) |
 | **Level 3** | **Component** | In-Process Modules (`CMP-*`, inline in `CNT-*.adoc` or promoted in `eidos/architecture/components/*.adoc`) | **In-Process / Memory boundary** (internal modules, engines, services, validators) |
-| **Level 4** | **Code** | Source Code & AST Symbols (`package_path`, `source_path`) | Classes, functions, methods, and signatures indexed in `eidos/.cache/index.db` |
+| **Level 4** | **Code** | Source Code & AST Symbols (`source_path`) | Classes, functions, methods, and signatures indexed in `eidos/.cache/index.db` |
 
 ### Centralized Hybrid C4 Level 3 Architecture
 * **80% Inline**: Lightweight internal modules remain inline inside Level 2 container manifests (`eidos/architecture/containers/*.adoc`), keeping macro-architecture clean and saving 87–94% of context tokens.
-* **20% Centralized Promoted Specs**: Complex subsystems with dedicated state, invariants (`INV-*`), or rich in-process interfaces receive standalone `type: tech/component` specifications residing centrally in `eidos/architecture/components/<component>.adoc` (linking to implementation files via `source_path` and referenced in the parent container manifest via `ref:`).
+* **20% Centralized Promoted Specs**: Complex subsystems with dedicated state, invariants (`INV-*`), or rich in-process interfaces receive standalone `type: tech/component` specifications residing centrally in `eidos/architecture/components/<component>.adoc` (linking to implementation files via `source_path` and binding bottom-up to their parent container via `container: CNT-*`).
 * **Strict Centralization Mandate (`INV-COMPONENT-CENTRALIZATION-MANDATE`)**: Dedicated component manifests must always reside centrally under `eidos/architecture/components/`. Specifications must never touch or reside within source code directories (`src/`, `packages/`) so implementation trees remain 100% pure.
 * **Interface Boundary Governance (`INV-INTERFACE-BOUNDARY-GOVERNANCE`)**: Containers (`CNT-*`) own cross-process Boundary Protocol Contracts (`CTR-*`), while components (`CMP-*`) declare local in-process language signatures (`interfaces.provides`).
 * **CLI Automation**: Promote or inline components with a single command using `eidos spec component promote <ID>` and `eidos spec component inline <ID>`.

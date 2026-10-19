@@ -4,14 +4,7 @@ schema: schemas/v1/design/screen.schema.yaml
 id: SCR-PORTAL-DELTAS
 title: "SpecDeltas Evolution & Kanban Pipeline View"
 route: "/deltas"
-client: "CLT-WEB-PORTAL"
 status: active
-
-capabilities:
-  - "eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc"
-
-supported_design_systems:
-  - "eidos/design/systems/core/system.adoc"
 
 slots:
   kanban_board: "UIC-PORTAL-SHELL"

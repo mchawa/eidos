@@ -26,21 +26,7 @@ properties:
     type: string
     description: "Display title of the interaction flow."
   status:
-    type: string
-    enum:
-      - draft
-      - proposed
-      - planned
-      - active
-      - deprecated
-      - retired
-    description: "Lifecycle status: draft, proposed, planned, active, deprecated, or retired."
-    examples:
-      - "active"
-      - "proposed"
-      - "planned"
-      - "draft"
-      - "deprecated"
+    $ref: "#/$defs/lifecycle_status"
   flow_type:
     type: string
     description: "Scope: 'client_internal' (contained in 1 client) or 'cross_client' (omnichannel journey)."
@@ -48,40 +34,6 @@ properties:
       - "client_internal"
       - "cross_client"
     default: "client_internal"
-  clients:
-    type: array
-    description: "List of client IDs or paths participating in this flow."
-    items:
-      type: string
-      pattern: "^(CLT-[A-Z0-9_-]+|.*\\.adoc)$"
-      x-eidos-ref:
-        target_types:
-          - design/client
-        prefixes:
-          - CLT-
-        entity_label: client
-  client:
-    type: string
-    pattern: "^(CLT-[A-Z0-9_-]+|.*\\.adoc)$"
-    description: "Primary client ID if flow is client-internal."
-    x-eidos-ref:
-      target_types:
-        - design/client
-      prefixes:
-        - CLT-
-      entity_label: entity
-  capabilities:
-    type: array
-    description: "List of product capability IDs or paths delivered by this flow."
-    items:
-      type: string
-      pattern: "^(CAP-[A-Z0-9_-]+|.*\\.adoc)$"
-      x-eidos-ref:
-        target_types:
-          - product/capability
-        prefixes:
-          - CAP-
-        entity_label: capability
   steps:
     type: array
     description: "Ordered sequence of steps composing the user journey."
@@ -122,3 +74,8 @@ properties:
         outcome:
           type: string
           description: "Resulting state or screen transition."
+  decisions:
+    type: array
+    description: "In-place user flow decisions recorded on this specification (POL-001)."
+    items:
+      $ref: "#/$defs/decision"

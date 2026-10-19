@@ -244,14 +244,14 @@ export function ArchitectureView({
         const matched = data.components.find(
           (c) =>
             text.includes(c.id) ||
-            text.includes(c.name) ||
+            text.includes(c.title) ||
             nodeId.includes(c.id.replace(/-/g, "_")) ||
             nodeId.includes(c.id)
         );
         if (matched) {
           node.setAttribute(
             "title",
-            `Click to drill down into ${matched.id} (${matched.name}) Level 3 Components`
+            `Click to drill down into ${matched.id} (${matched.title}) Level 3 Components`
           );
         } else {
           node.setAttribute("title", "Click container to drill down into Level 3: Components");
@@ -285,7 +285,7 @@ export function ArchitectureView({
           const matched = data.components.find(
             (c) =>
               text.includes(c.id) ||
-              text.includes(c.name) ||
+              text.includes(c.title) ||
               nodeId.includes(c.id.replace(/-/g, "_")) ||
               nodeId.includes(c.id)
           );
@@ -439,7 +439,7 @@ export function ArchitectureView({
             >
               {data.components.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.id} ({c.name})
+                  {c.id} ({c.title})
                 </option>
               ))}
             </select>
@@ -632,12 +632,12 @@ export function ArchitectureView({
                       <Badge variant="outline">{comp.container_type}</Badge>
                     </div>
                   </div>
-                  <h4 className="text-sm font-semibold text-foreground">{comp.name}</h4>
+                  <h4 className="text-sm font-semibold text-foreground">{comp.title}</h4>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
-                    <span className="truncate">{comp.package_path}</span>
-                    {comp.domain_binding && comp.domain_binding !== "N/A" && (
+                    <span className="truncate">{comp.source_path}</span>
+                    {comp.domain && comp.domain !== "N/A" && (
                       <span className="px-1.5 py-0.5 rounded bg-muted text-[10px] text-muted-foreground shrink-0 font-semibold">
-                        {comp.domain_binding}
+                        {comp.domain}
                       </span>
                     )}
                   </div>
@@ -728,7 +728,7 @@ export function ArchitectureView({
           setInspectorOpen(open);
           if (!open) onClearSelectedComponent?.();
         }}
-        title={inspectedComponent?.name || "Component Inspector"}
+        title={inspectedComponent?.title || "Component Inspector"}
         subtitle={inspectedComponent?.id}
       >
         <div id="c4InspectorDrawer" className="space-y-5">
@@ -738,7 +738,7 @@ export function ArchitectureView({
                 <Badge variant="primary">{inspectedComponent.container_type}</Badge>
                 <Badge variant="default">{inspectedComponent.runtime}</Badge>
                 <span className="font-mono text-xs text-muted-foreground px-2 py-0.5 rounded bg-muted">
-                  {inspectedComponent.package_path}
+                  {inspectedComponent.source_path}
                 </span>
               </div>
 
@@ -775,7 +775,7 @@ export function ArchitectureView({
                             </Badge>
                           )}
                         </div>
-                        <span className="font-semibold text-foreground">{sub.name}</span>
+                        <span className="font-semibold text-foreground">{sub.title}</span>
                       </div>
                       <p className="text-muted-foreground">{sub.responsibility}</p>
                       {sub.source_path && (
@@ -898,7 +898,7 @@ export function ArchitectureView({
                               if (targetComp) openC4Inspector(targetComp);
                             }}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer"
-                            title={targetComp?.name || depId}
+                            title={targetComp?.title || depId}
                           >
                             <span>{depId}</span>
                             <ChevronRight className="h-3 w-3" />
@@ -941,7 +941,7 @@ export function ArchitectureView({
                                 key={dep.id}
                                 onClick={() => openC4Inspector(dep)}
                                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] bg-muted hover:bg-muted/80 text-foreground transition-colors cursor-pointer"
-                                title={dep.name}
+                                title={dep.title}
                               >
                                 <span>{dep.id}</span>
                                 <ChevronRight className="h-3 w-3" />

@@ -278,20 +278,16 @@ def _append_path_values(target: list[str], raw_val: Any) -> None:
 
 
 def extract_entity_paths(entity_data: dict[str, Any]) -> list[str]:
-    """Extract all declared ownership path patterns from package_path, source_path, owned_path, or specification_file."""
+    """Extract all declared ownership path patterns from source_path, owned_path, or specification_file."""
     patterns: list[str] = []
 
-    for key in ("package_path", "source_path", "owned_path", "specification_file"):
+    for key in ("source_path", "owned_path", "specification_file"):
         _append_path_values(patterns, entity_data.get(key))
 
-    # Also inspect inline C4 Level 3 component source_paths / package_paths / owned_paths
-    for comp in [
-        *(entity_data.get("components") or []),
-        *(entity_data.get("c4_internal_components") or []),
-    ]:
+    # Also inspect inline C4 Level 3 component source_paths / owned_paths
+    for comp in entity_data.get("components") or []:
         if isinstance(comp, dict):
             _append_path_values(patterns, comp.get("source_path"))
-            _append_path_values(patterns, comp.get("package_path"))
             _append_path_values(patterns, comp.get("owned_path"))
 
     return patterns

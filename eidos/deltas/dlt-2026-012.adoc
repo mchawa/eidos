@@ -6,7 +6,6 @@ title: Dynamic Clickable Hierarchical C4 Architecture Explorer (L1-L3)
 status: applied
 vcs:
   branch: feat/interactive-c4-explorer
-  issue: '#12'
 intent:
   kind: feature
   motivation: Current C4 diagrams in the Eidos Web Portal and static site export are

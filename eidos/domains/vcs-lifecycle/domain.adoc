@@ -2,7 +2,8 @@
 type: product/domain
 schema: schemas/v1/product/domain.schema.yaml
 id: DOM-VCS-LIFECYCLE
-name: "Git-Native Lifecycle & Drift Governance"
+title: "Git-Native Lifecycle & Drift Governance"
+status: active
 classification: core
 boundaries:
   responsibilities:
@@ -13,11 +14,6 @@ boundaries:
     - "Parsing and validating specification AST schemas (delegated to DOM-SPEC-ENGINE)."
     - "Agent plugin packaging and skills maintenance (delegated to DOM-AGENT-INTELLIGENCE)."
     - "Serving web portal dashboards (delegated to DOM-EXPERIENCE-PORTAL)."
-technical_mapping:
-  components:
-    - "src/eidos/vcs/drift.py"
-  dependencies:
-    - "DOM-SPEC-ENGINE"
 ---
 = Domain: Git-Native Lifecycle & Drift Governance
 :toc: left

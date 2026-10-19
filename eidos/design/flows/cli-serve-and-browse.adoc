@@ -5,10 +5,6 @@ id: FLOW-CLI-SERVE-AND-BROWSE
 title: "CLI to Living Web Portal Interaction Flow"
 status: active
 flow_type: cross_client
-clients:
-  - "CLT-WEB-PORTAL"
-capabilities:
-  - "eidos/domains/spec-engine/capabilities/living-spec-engine.adoc"
 
 steps:
   - step: 1
