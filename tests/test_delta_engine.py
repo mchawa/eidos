@@ -1175,7 +1175,7 @@ def test_dlt_2026_083_baseline_retention_across_schema_rebuild(tmp_path):
         conn.commit()
         ensure_cache_schema(conn)
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.11.0"
+        assert ver == SCHEMA_VERSION == "2.12.0"
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';").fetchall()}
         assert "retired_legacy_table" not in tables
         assert set(_MANAGED_TABLES) <= tables

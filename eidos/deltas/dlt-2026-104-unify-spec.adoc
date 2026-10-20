@@ -2,7 +2,7 @@
 type: delta/mutation
 id: DLT-2026-104-UNIFY-SPEC
 title: "Unify Spec Catalog and Portal Graph Construction on ArchitecturalIndex"
-status: proposed
+status: applied
 intent:
   kind: enabler
   motivation: "Eliminate triplicated specification graph construction across sync.py, catalog.py (_build_spec_catalog_with_invariants), and portal/generator.py (get_portal_data) by routing catalog lookups, invariant ownership maps, and Portal dependency/blast-radius traversals through the canonical ArchitecturalIndex (index.db)."
@@ -12,7 +12,7 @@ vcs:
 mutations:
   - operation: modify
     target: CMP-GRAPH-STORAGE
-    details: "Expose shared catalog and SpecDelta blast-radius graph query facade methods on ArchitecturalIndex in src/eidos/core/index/graph_index.py so lifecycle and portal consumers can query canonical specification edges and entity catalogs through the index."
+    details: "Bump SCHEMA_VERSION to 2.12.0 in src/eidos/core/index/storage.py (so existing index.db caches rebuild with canonicalized edges and invariant source metadata) and expose shared catalog and SpecDelta blast-radius graph query facade methods on ArchitecturalIndex in src/eidos/core/index/graph_index.py."
     expect:
       frontmatter:
         responsibility: "get_spec_catalog"

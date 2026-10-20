@@ -55,25 +55,36 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     )
     system_id = (sys_doc["id"] if sys_doc else None) or getattr(project, "system_id", "SYS-001")
 
-    path_to_id: dict[str, str] = {}
-    for s in specs:
-        sid = s.get("id")
-        spath = str(s.get("path", "")).replace("\\", "/").strip().lstrip("./")
-        if sid and spath:
-            path_to_id[spath.lower()] = sid
-            if spath.lower().startswith("eidos/"):
-                path_to_id[spath[6:].lower()] = sid
+    from eidos.core.index.graph_index import get_architectural_index
+    from eidos.core.index.sync import build_spec_path_resolver
 
-    def _resolve_ref_id(raw_val: Any) -> str:
-        val = str(raw_val or "").strip()
-        if not val:
-            return ""
-        norm = val.replace("\\", "/").lstrip("./").lower()
-        return path_to_id.get(norm, val)
+    arch_idx = get_architectural_index(eidos_dir=eidos_path, repo_root=eidos_path.parent)
+    arch_idx._ensure_synced()
+    conn = arch_idx._get_connection()
+    _resolve_ref_id = build_spec_path_resolver(conn)
 
     def _add_unique(lst: list[str], item: str) -> None:
         if item and item not in lst:
             lst.append(item)
+
+    ast_consumes_by_comp: dict[str, list[str]] = {}
+    ast_depends_by_cnt: dict[str, list[str]] = {}
+    comp_to_cnt: dict[str, str] = {}
+    dom_to_caps: dict[str, list[str]] = {}
+    for r in conn.execute(
+        "SELECT source_id, target_id, rel_type FROM edges WHERE rel_type IN ('consumes_api', 'depends_on', 'part_of', 'realizes');"
+    ).fetchall():
+        src = str(r["source_id"] or "")
+        dst = str(r["target_id"] or "")
+        rel = r["rel_type"]
+        if rel == "consumes_api":
+            _add_unique(ast_consumes_by_comp.setdefault(src, []), dst)
+        elif rel == "depends_on" and src.startswith("CNT-") and dst.startswith("CNT-") and src != dst:
+            _add_unique(ast_depends_by_cnt.setdefault(src, []), dst)
+        elif rel == "part_of":
+            comp_to_cnt[src] = dst
+        elif rel == "realizes" and src.startswith("CAP-"):
+            _add_unique(dom_to_caps.setdefault(dst, []), src)
 
     # Contracts
     raw_contracts = specs_by_type.get("tech/contract", [])
@@ -91,25 +102,6 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             }
         )
 
-    # Query AST-derived component/container dependencies from the architectural knowledge graph
-    ast_consumes_by_comp: dict[str, list[str]] = {}
-    ast_depends_by_cnt: dict[str, list[str]] = {}
-    try:
-        from eidos.core.index.graph_index import get_architectural_index
-
-        arch_idx = get_architectural_index(eidos_dir=eidos_path, repo_root=eidos_path.parent)
-        arch_idx._ensure_synced()
-        conn = arch_idx._get_connection()
-        for r in conn.execute(
-            "SELECT source_id, target_id, rel_type FROM edges WHERE rel_type IN ('consumes_api', 'depends_on');"
-        ).fetchall():
-            if r["rel_type"] == "consumes_api":
-                _add_unique(ast_consumes_by_comp.setdefault(str(r["source_id"]), []), str(r["target_id"]))
-            elif r["rel_type"] == "depends_on":
-                _add_unique(ast_depends_by_cnt.setdefault(str(r["source_id"]), []), str(r["target_id"]))
-    except Exception:
-        pass
-
     # Components & Containers (C4 Level 2 Containers and Level 3 Promoted Components)
     raw_containers = specs_by_type.get("tech/container", [])
     raw_promoted_components = specs_by_type.get("tech/component", [])
@@ -118,7 +110,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
     promoted_by_container: dict[str, list[dict[str, Any]]] = {}
     for pc in raw_promoted_components:
         p_fm = pc.get("frontmatter", {})
-        target_cnt = _resolve_ref_id(p_fm.get("container", ""))
+        target_cnt = comp_to_cnt.get(pc["id"]) or _resolve_ref_id(p_fm.get("container", ""))
         promoted_dict = {
             "id": pc["id"],
             "title": p_fm.get("title", pc["id"]),
@@ -184,7 +176,10 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             "responsibility": resp,
             "summary": resp,
             "internal_components": internal_components,
-            "dependencies": {"internal_containers": [], "external_services": []},
+            "dependencies": {
+                "internal_containers": list(ast_depends_by_cnt.get(doc_id, [])),
+                "external_services": [],
+            },
             "contracts": fm.get("contracts", {}),
             "invariants": fm.get("invariants", []),
             "decisions": fm.get("decisions", []),
@@ -195,49 +190,6 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         comp_dict["tier"] = tier_id
         comp_dict["tier_name"] = tier_name
         components.append(comp_dict)
-
-    # Derive inter-container dependencies from contracts (consumes -> provides/container) and AST import edges
-    contract_to_provider: dict[str, str] = {}
-    for ct in contracts:
-        if ct.get("id") and ct.get("container") and str(ct["container"]).startswith("CNT-"):
-            contract_to_provider[ct["id"]] = str(ct["container"])
-    comp_to_container: dict[str, str] = {}
-    for cnt in components:
-        cnt_id = cnt["id"]
-        cnt_ctrs = cnt.get("contracts", {})
-        if isinstance(cnt_ctrs, dict):
-            for p_ctr in cnt_ctrs.get("provides", []) or []:
-                p_id = _resolve_ref_id(p_ctr)
-                if p_id:
-                    contract_to_provider[p_id] = cnt_id
-        for ic in cnt.get("internal_components", []):
-            ic_id = ic.get("id")
-            if ic_id:
-                comp_to_container[ic_id] = cnt_id
-
-    for cnt in components:
-        cnt_id = cnt["id"]
-        derived_int_cnts: list[str] = []
-        cnt_ctrs = cnt.get("contracts", {})
-        if isinstance(cnt_ctrs, dict):
-            for c_ctr in cnt_ctrs.get("consumes", []) or []:
-                c_id = _resolve_ref_id(c_ctr)
-                prov_cnt = contract_to_provider.get(c_id)
-                if prov_cnt and prov_cnt != cnt_id:
-                    _add_unique(derived_int_cnts, prov_cnt)
-        for dep_cnt_id in ast_depends_by_cnt.get(cnt_id, []):
-            if dep_cnt_id.startswith("CNT-") and dep_cnt_id != cnt_id:
-                _add_unique(derived_int_cnts, dep_cnt_id)
-        for ic in cnt.get("internal_components", []):
-            for t_id in ic.get("consumes_components", []) or []:
-                if t_id.startswith("CNT-") and t_id != cnt_id:
-                    _add_unique(derived_int_cnts, t_id)
-                elif t_id in comp_to_container and comp_to_container[t_id] != cnt_id:
-                    _add_unique(derived_int_cnts, comp_to_container[t_id])
-        cnt["dependencies"] = {
-            "internal_containers": derived_int_cnts,
-            "external_services": [],
-        }
 
     # 2. Product Domains, Capabilities, Personas, Policies
     domains: list[dict[str, Any]] = []
@@ -252,6 +204,8 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 d["mission"] = m.group(1).strip()
             else:
                 d["mission"] = f"Bounded strategic context {d.get('title', d.get('id', ''))}."
+        if not d.get("capabilities"):
+            d["capabilities"] = list(dom_to_caps.get(str(d.get("id") or ""), []))
         domains.append(d)
 
     capabilities: list[dict[str, Any]] = []
@@ -269,13 +223,6 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             c["summary"] = m_jtbd.group(1).strip() if m_jtbd else ""
         c["invariants"] = c.get("technical", {}).get("invariants", [])
         capabilities.append(c)
-
-    # Link capability IDs to domains if not explicitly set
-    for dom in domains:
-        dom_id = dom.get("id")
-        bound_cap_ids = [c.get("id") for c in capabilities if _resolve_ref_id(c.get("domain")) == dom_id]
-        if not dom.get("capabilities"):
-            dom["capabilities"] = bound_cap_ids
 
     personas: list[dict[str, Any]] = []
     for s in specs_by_type.get("product/persona", []):
@@ -296,89 +243,73 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         pol["path"] = s.get("path", "")
         policies.append(pol)
 
-    # Invariants list
+    # Invariants list (hydrated from indexed invariant entities in ArchitecturalIndex)
     invariants: list[dict[str, Any]] = []
-    seen_inv_ids: set[str] = set()
-    for pol in policies:
-        pid = pol.get("id", "")
-        for inv in pol.get("invariants", []) or []:
-            if not isinstance(inv, dict):
-                continue
-            iid = inv.get("id")
-            if iid and iid not in seen_inv_ids:
-                seen_inv_ids.add(iid)
-                invariants.append(
-                    {
-                        "id": iid,
-                        "title": iid,
-                        "rule": inv.get("rule", "Policy invariant rule."),
-                        "category": pol.get("category", "governance"),
-                        "severity": pol.get("severity", "blocking"),
-                        "source_type": f"policy ({pid})",
-                        "test_binding": inv.get("test_binding", "N/A"),
-                    }
-                )
-
-    for cap in capabilities:
-        cap_id = cap.get("id", "CAP")
-        for inv in cap.get("technical", {}).get("invariants", []) or []:
-            if not isinstance(inv, dict):
-                continue
-            iid = inv.get("id")
-            if iid and iid in seen_inv_ids:
-                continue
-            if iid:
-                seen_inv_ids.add(iid)
+    for inv_ent in arch_idx.get_entities(entity_type="invariant"):
+        iid = str(inv_ent.get("id") or "").strip()
+        if not iid:
+            continue
+        src_doc_type = str(inv_ent.get("source_doc_type") or "")
+        src_id = str(inv_ent.get("source_id") or "")
+        comp_id = inv_ent.get("component_id")
+        rule = inv_ent.get("rule")
+        tb = inv_ent.get("test_binding") or "N/A"
+        if src_doc_type == "product/policy":
             invariants.append(
                 {
                     "id": iid,
                     "title": iid,
-                    "rule": inv.get("rule"),
+                    "rule": rule or "Policy invariant rule.",
+                    "category": inv_ent.get("category") or "governance",
+                    "severity": inv_ent.get("severity") or "blocking",
+                    "source_type": f"policy ({src_id})",
+                    "test_binding": tb,
+                }
+            )
+        elif src_doc_type == "product/capability":
+            invariants.append(
+                {
+                    "id": iid,
+                    "title": iid,
+                    "rule": rule,
                     "category": "capability",
-                    "source_type": f"capability ({cap_id})",
-                    "test_binding": inv.get("test_binding", "N/A"),
+                    "source_type": f"capability ({src_id})",
+                    "test_binding": tb,
                 }
             )
-
-    # Invariants from Containers and Components (DLT-2026-031)
-    for comp in components:
-        for inv in comp.get("invariants", []) or []:
-            if not isinstance(inv, dict):
-                continue
-            iid = inv.get("id")
-            if iid and iid in seen_inv_ids:
-                continue
-            if iid:
-                seen_inv_ids.add(iid)
+        elif src_doc_type == "design/ui-component":
             invariants.append(
                 {
                     "id": iid,
                     "title": iid,
-                    "rule": inv.get("rule", "Container operational invariant."),
-                    "category": "architecture",
-                    "source_type": f"container ({comp['id']})",
-                    "test_binding": inv.get("test_binding", "N/A"),
+                    "rule": rule or "UI component invariant.",
+                    "category": "design",
+                    "source_type": f"ui_component ({src_id})",
+                    "test_binding": tb,
                 }
             )
-        for ic in comp.get("internal_components", []):
-            for inv in ic.get("invariants", []) or []:
-                if not isinstance(inv, dict):
-                    continue
-                iid = inv.get("id")
-                if iid and iid in seen_inv_ids:
-                    continue
-                if iid:
-                    seen_inv_ids.add(iid)
-                invariants.append(
-                    {
-                        "id": iid,
-                        "title": iid,
-                        "rule": inv.get("rule", "Component technical invariant."),
-                        "category": "architecture",
-                        "source_type": f"component ({ic.get('id', comp['id'])})",
-                        "test_binding": inv.get("test_binding", "N/A"),
-                    }
-                )
+        elif comp_id or src_doc_type == "tech/component":
+            invariants.append(
+                {
+                    "id": iid,
+                    "title": iid,
+                    "rule": rule or "Component technical invariant.",
+                    "category": "architecture",
+                    "source_type": f"component ({comp_id or src_id})",
+                    "test_binding": tb,
+                }
+            )
+        else:
+            invariants.append(
+                {
+                    "id": iid,
+                    "title": iid,
+                    "rule": rule or "Container operational invariant.",
+                    "category": "architecture",
+                    "source_type": f"container ({src_id})",
+                    "test_binding": tb,
+                }
+            )
 
     # Embedded architectural decisions (DEC-*) across system, architecture, containers, domains, capabilities, and policies
     all_decisions: list[dict[str, Any]] = []
@@ -419,35 +350,14 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         _append_decisions(pol.get("decisions", []), pol.get("id", "POL"), "policy")
 
     # 3. Multi-Design Systems, Tokens, UI Components, Clients, Flows, and Screens
-    design_data = _extract_design_systems(eidos_path, specs_by_type, capabilities, _resolve_ref_id)
+    design_data = _extract_design_systems(eidos_path, specs_by_type, _resolve_ref_id, conn=conn)
     design_systems = design_data.get("systems", [])
     screens = design_data.get("screens", [])
     ui_components = design_data.get("ui_components", [])
     clients = design_data.get("clients", [])
     flows = design_data.get("flows", [])
 
-    for uic in ui_components:
-        uic_id = uic.get("id", "UIC")
-        for inv in uic.get("invariants", []) or []:
-            if not isinstance(inv, dict):
-                continue
-            iid = inv.get("id")
-            if iid and iid in seen_inv_ids:
-                continue
-            if iid:
-                seen_inv_ids.add(iid)
-            invariants.append(
-                {
-                    "id": iid,
-                    "title": iid,
-                    "rule": inv.get("rule", "UI component invariant."),
-                    "category": "design",
-                    "source_type": f"ui_component ({uic_id})",
-                    "test_binding": inv.get("test_binding", "N/A"),
-                }
-            )
-
-    # 4. SpecDeltas & Kanban status columns (dynamically computes delta affects and blast_radius from mutations[].target_* and graph)
+    # 4. SpecDeltas & Kanban status columns (computes delta affects and blast_radius via ArchitecturalIndex)
     deltas_by_status: dict[str, list[dict[str, Any]]] = {
         "proposed": [],
         "in_review": [],
@@ -456,81 +366,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "rejected": [],
     }
 
-    comp_dependents: dict[str, list[str]] = {}
-    cnt_dependents: dict[str, list[str]] = {}
-    entity_invariants: dict[str, list[str]] = {}
-    for uic in ui_components:
-        uic_id = uic.get("id")
-        if uic_id:
-            uic_invs = [str(inv["id"]) for inv in uic.get("invariants", []) if isinstance(inv, dict) and inv.get("id")]
-            if uic_invs:
-                entity_invariants[uic_id] = uic_invs
-    for cnt in components:
-        cnt_id = cnt["id"]
-        cnt_invs = [str(inv["id"]) for inv in cnt.get("invariants", []) if isinstance(inv, dict) and inv.get("id")]
-        if cnt_invs:
-            entity_invariants[cnt_id] = cnt_invs
-        cnt_deps = cnt.get("dependencies", {})
-        cnt_int_deps = cnt_deps.get("internal_containers", []) if isinstance(cnt_deps, dict) else []
-        for dep_ref in cnt_int_deps or []:
-            dep_id = _resolve_ref_id(dep_ref)
-            if dep_id:
-                _add_unique(cnt_dependents.setdefault(dep_id, []), cnt_id)
-        for ic in cnt.get("internal_components", []):
-            ic_id = ic.get("id")
-            if ic_id:
-                ic_invs = [
-                    str(inv["id"]) for inv in ic.get("invariants", []) if isinstance(inv, dict) and inv.get("id")
-                ]
-                if ic_invs:
-                    entity_invariants[ic_id] = ic_invs
-                for dep_ref in ic.get("consumes_components", []) or []:
-                    dep_id = _resolve_ref_id(dep_ref)
-                    if dep_id:
-                        _add_unique(comp_dependents.setdefault(dep_id, []), ic_id)
-
-    contract_to_container: dict[str, str] = {
-        ct["id"]: ct["container"]
-        for ct in contracts
-        if ct.get("id") and ct.get("container") and str(ct["container"]).startswith("CNT-")
-    }
-    cap_by_id: dict[str, dict[str, Any]] = {}
-    entity_to_caps: dict[str, list[str]] = {}
-    for cap in capabilities:
-        cid = cap.get("id")
-        if cid:
-            cap_by_id[cid] = cap
-            tech = cap.get("technical", {}) or {}
-            c_invs = [str(inv["id"]) for inv in tech.get("invariants", []) if isinstance(inv, dict) and inv.get("id")]
-            if c_invs:
-                entity_invariants[cid] = c_invs
-            raw_ctrs = tech.get("contracts", [])
-            ctr_refs = raw_ctrs if isinstance(raw_ctrs, list) else []
-            for ref in (tech.get("containers", []) or []) + (tech.get("components", []) or []) + ctr_refs:
-                ref_id = _resolve_ref_id(ref)
-                if ref_id:
-                    _add_unique(entity_to_caps.setdefault(ref_id, []), cid)
-
-    for pol in policies:
-        pid = pol.get("id")
-        if pid:
-            p_invs = [str(inv["id"]) for inv in pol.get("invariants", []) if isinstance(inv, dict) and inv.get("id")]
-            entity_invariants[pid] = p_invs or [pid]
-
-    inv_to_owners: dict[str, list[str]] = {}
-    for owner_id, inv_ids in entity_invariants.items():
-        for inv_id in inv_ids:
-            if inv_id != owner_id:
-                _add_unique(inv_to_owners.setdefault(inv_id, []), owner_id)
-
-    client_by_id: dict[str, dict[str, Any]] = {cl["id"]: cl for cl in clients if cl.get("id")}
-    container_to_clients: dict[str, list[dict[str, Any]]] = {}
-    for cl in clients:
-        cnt_ref = cl.get("container")
-        if isinstance(cnt_ref, str) and cnt_ref:
-            container_to_clients.setdefault(cnt_ref, []).append(cl)
-
-    from eidos.core.lifecycle.delta_engine import normalize_delta_mutation, resolve_entity_prefix_meta
+    from eidos.core.lifecycle.delta_engine import normalize_delta_mutation
 
     raw_deltas = specs_by_type.get("delta/mutation", [])
     for d in raw_deltas:
@@ -538,157 +374,12 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         status = str(fm.get("status", "proposed")).lower()
         raw_muts = fm.get("mutations", []) or []
         muts = [normalize_delta_mutation(m) if isinstance(m, dict) else m for m in raw_muts]
-
-        aff_lists: dict[str, list[str]] = {
-            "containers": [],
-            "components": [],
-            "contracts": [],
-            "capabilities": [],
-            "domains": [],
-            "policies": [],
-            "personas": [],
-            "design_systems": [],
-            "screens": [],
-            "ui_components": [],
-            "clients": [],
-            "flows": [],
-        }
-        br_lists: dict[str, list[str]] = {
-            "impacted_containers": [],
-            "impacted_components": [],
-            "impacted_design_systems": [],
-            "impacted_screens": [],
-            "impacted_personas": [],
-            "invariants_to_enforce": [],
-        }
-
-        kind_to_cat = {
-            "container": "containers",
-            "component": "components",
-            "contract": "contracts",
-            "capability": "capabilities",
-            "domain": "domains",
-            "policy": "policies",
-            "persona": "personas",
-            "design_system": "design_systems",
-            "screen": "screens",
-            "ui_component": "ui_components",
-            "client": "clients",
-            "flow": "flows",
-        }
-        seed_entities: list[str] = []
-        for m in muts:
-            if not isinstance(m, dict):
-                continue
-            for ref_field in ("target", "parent"):
-                raw_t = m.get(ref_field)
-                if not raw_t or not isinstance(raw_t, str) or not raw_t.strip():
-                    continue
-                resolved_id = _resolve_ref_id(raw_t.strip())
-                p_meta = resolve_entity_prefix_meta(resolved_id)
-                if p_meta is None:
-                    continue
-                entity_kind = p_meta[1]
-                if entity_kind == "invariant":
-                    if ref_field == "target":
-                        _add_unique(br_lists["invariants_to_enforce"], resolved_id)
-                        for owner_id in inv_to_owners.get(resolved_id, []):
-                            o_meta = resolve_entity_prefix_meta(owner_id)
-                            o_cat = kind_to_cat.get(o_meta[1]) if o_meta else None
-                            if o_cat:
-                                _add_unique(aff_lists[o_cat], owner_id)
-                                _add_unique(seed_entities, owner_id)
-                                if o_cat == "components" and owner_id in comp_to_container:
-                                    _add_unique(aff_lists["containers"], comp_to_container[owner_id])
-                                elif o_cat == "capabilities" and owner_id in cap_by_id:
-                                    dom_id = cap_by_id[owner_id].get("domain")
-                                    if isinstance(dom_id, str) and dom_id:
-                                        _add_unique(aff_lists["domains"], _resolve_ref_id(dom_id))
-                    continue
-                cat = kind_to_cat.get(entity_kind)
-                if not cat:
-                    continue
-                _add_unique(aff_lists[cat], resolved_id)
-                _add_unique(seed_entities, resolved_id)
-                if cat == "components" and resolved_id in comp_to_container:
-                    _add_unique(aff_lists["containers"], comp_to_container[resolved_id])
-                elif cat == "contracts" and resolved_id in contract_to_container:
-                    _add_unique(aff_lists["containers"], contract_to_container[resolved_id])
-                elif cat == "capabilities" and resolved_id in cap_by_id:
-                    dom_id = cap_by_id[resolved_id].get("domain")
-                    if isinstance(dom_id, str) and dom_id:
-                        _add_unique(aff_lists["domains"], _resolve_ref_id(dom_id))
-
-        for cnt_id in aff_lists["containers"]:
-            _add_unique(br_lists["impacted_containers"], cnt_id)
-            for dep_cnt in cnt_dependents.get(cnt_id, []):
-                _add_unique(br_lists["impacted_containers"], dep_cnt)
-            for cl in container_to_clients.get(cnt_id, []):
-                if cl.get("design_system"):
-                    _add_unique(br_lists["impacted_design_systems"], str(cl["design_system"]))
-                for scr_ref in cl.get("screens", []) or []:
-                    _add_unique(br_lists["impacted_screens"], _resolve_ref_id(scr_ref))
-
-        for cmp_id in aff_lists["components"]:
-            _add_unique(br_lists["impacted_components"], cmp_id)
-            for dep_cmp in comp_dependents.get(cmp_id, []):
-                _add_unique(br_lists["impacted_components"], dep_cmp)
-                if dep_cmp in comp_to_container:
-                    _add_unique(br_lists["impacted_containers"], comp_to_container[dep_cmp])
-            if cmp_id in comp_to_container:
-                _add_unique(br_lists["impacted_containers"], comp_to_container[cmp_id])
-
-        for ds_id in aff_lists["design_systems"]:
-            _add_unique(br_lists["impacted_design_systems"], ds_id)
-        for scr_id in aff_lists["screens"]:
-            _add_unique(br_lists["impacted_screens"], scr_id)
-        for per_id in aff_lists["personas"]:
-            _add_unique(br_lists["impacted_personas"], per_id)
-        for cl_id in aff_lists["clients"]:
-            cl_obj = client_by_id.get(cl_id)
-            if cl_obj:
-                if cl_obj.get("container"):
-                    _add_unique(br_lists["impacted_containers"], str(cl_obj["container"]))
-                if cl_obj.get("design_system"):
-                    _add_unique(br_lists["impacted_design_systems"], str(cl_obj["design_system"]))
-                for scr_ref in cl_obj.get("screens", []) or []:
-                    _add_unique(br_lists["impacted_screens"], _resolve_ref_id(scr_ref))
-
-        related_caps = list(aff_lists["capabilities"])
-        for ent_id in seed_entities + aff_lists["containers"] + aff_lists["components"]:
-            for cid in entity_to_caps.get(ent_id, []):
-                _add_unique(related_caps, cid)
-
-        for cap_id in related_caps:
-            cap_obj = cap_by_id.get(cap_id)
-            if not cap_obj:
-                continue
-            tech = cap_obj.get("technical", {}) or {}
-            if cap_id in aff_lists["capabilities"]:
-                for cnt_ref in tech.get("containers", []) or []:
-                    _add_unique(br_lists["impacted_containers"], _resolve_ref_id(cnt_ref))
-                for cmp_ref in tech.get("components", []) or []:
-                    _add_unique(br_lists["impacted_components"], _resolve_ref_id(cmp_ref))
-            bus = cap_obj.get("business", {}) or {}
-            for per_ref in bus.get("personas", []) or []:
-                _add_unique(br_lists["impacted_personas"], _resolve_ref_id(per_ref))
-            exp = cap_obj.get("experience", {}) or {}
-            for scr_ref in exp.get("screens", []) or []:
-                _add_unique(br_lists["impacted_screens"], _resolve_ref_id(scr_ref))
-
-        for seed_id in seed_entities + aff_lists["containers"] + br_lists["impacted_components"]:
-            for inv_id in entity_invariants.get(seed_id, []):
-                _add_unique(br_lists["invariants_to_enforce"], inv_id)
-
-        raw_br = fm.get("blast_radius")
-        if isinstance(raw_br, dict):
-            for k, vals in raw_br.items():
-                if isinstance(vals, list):
-                    for v in vals:
-                        _add_unique(br_lists.setdefault(k, []), _resolve_ref_id(v))
-
-        derived_affects = {k: v for k, v in aff_lists.items() if v}
-        derived_blast_radius = {k: v for k, v in br_lists.items() if v}
+        raw_br = fm.get("blast_radius") if isinstance(fm.get("blast_radius"), dict) else None
+        derived_affects, derived_blast_radius = arch_idx.compute_delta_impact(
+            mutations=muts,
+            raw_blast_radius=raw_br,
+            sync=False,
+        )
 
         delta_item = {
             "id": d["id"],
@@ -849,8 +540,8 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
 def _extract_design_systems(
     eidos_path: Path,
     specs_by_type: dict[str, list[dict[str, Any]]],
-    capabilities: list[dict[str, Any]] | None = None,
     resolve_ref: Any = None,
+    conn: Any = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Scan and parse multi-design systems, W3C tokens.json, UI components, clients, flows, and screens."""
 
@@ -863,21 +554,29 @@ def _extract_design_systems(
         if item and item not in lst:
             lst.append(item)
 
-    # Reverse-map capabilities -> clients, screens, flows
+    # Reverse-map capabilities and clients from persisted knowledge graph edges
     clt_to_caps: dict[str, list[str]] = {}
     scr_to_caps: dict[str, list[str]] = {}
     flw_to_caps: dict[str, list[str]] = {}
-    for cap in capabilities or []:
-        cid = str(cap.get("id") or "").strip()
-        if not cid:
-            continue
-        exp = cap.get("experience") if isinstance(cap.get("experience"), dict) else {}
-        for ref in exp.get("clients", []) or []:
-            _add_uniq(clt_to_caps.setdefault(_res(ref), []), cid)
-        for ref in exp.get("screens", []) or []:
-            _add_uniq(scr_to_caps.setdefault(_res(ref), []), cid)
-        for ref in exp.get("flows", []) or []:
-            _add_uniq(flw_to_caps.setdefault(_res(ref), []), cid)
+    scr_to_client: dict[str, str] = {}
+    flw_to_clients: dict[str, list[str]] = {}
+    if conn is not None:
+        for src_id, dst_id, rel_type in conn.execute(
+            "SELECT source_id, target_id, rel_type FROM edges WHERE rel_type IN ('delivered_by', 'has_screen', 'has_flow');"
+        ).fetchall():
+            src = str(src_id or "").strip()
+            target = str(dst_id or "").strip()
+            if rel_type == "delivered_by":
+                if target.startswith("CLT-"):
+                    _add_uniq(clt_to_caps.setdefault(target, []), src)
+                elif target.startswith("SCR-"):
+                    _add_uniq(scr_to_caps.setdefault(target, []), src)
+                elif target.startswith("FLOW-"):
+                    _add_uniq(flw_to_caps.setdefault(target, []), src)
+            elif rel_type == "has_screen" and src.startswith("CLT-"):
+                scr_to_client.setdefault(target, src)
+            elif rel_type == "has_flow" and src.startswith("CLT-"):
+                _add_uniq(flw_to_clients.setdefault(target, []), src)
 
     systems: list[dict[str, Any]] = []
     design_specs = specs_by_type.get("design/system", [])
@@ -925,10 +624,8 @@ def _extract_design_systems(
 
     default_ds_id = systems[0]["id"] if systems else "DS-001"
 
-    # Clients (and reverse-map client -> screens, flows, design_system)
-    scr_to_client: dict[str, str] = {}
-    scr_to_ds: dict[str, str] = {}
-    flw_to_clients: dict[str, list[str]] = {}
+    # Clients (and map client -> design_system)
+    clt_to_ds: dict[str, str] = {}
     ds_to_client: dict[str, str] = {}
 
     clients: list[dict[str, Any]] = []
@@ -936,18 +633,8 @@ def _extract_design_systems(
         fm = clt["frontmatter"]
         clt_id = clt["id"]
         ds_ref = _res(fm.get("design_system", default_ds_id)) or default_ds_id
+        clt_to_ds[clt_id] = ds_ref
         ds_to_client.setdefault(ds_ref, clt_id)
-        raw_scrs = fm.get("screens", []) or []
-        raw_flws = fm.get("flows", []) or []
-        for s_ref in raw_scrs:
-            s_id = _res(s_ref)
-            if s_id:
-                scr_to_client.setdefault(s_id, clt_id)
-                scr_to_ds.setdefault(s_id, ds_ref)
-        for f_ref in raw_flws:
-            f_id = _res(f_ref)
-            if f_id:
-                _add_uniq(flw_to_clients.setdefault(f_id, []), clt_id)
 
         clients.append(
             {
@@ -957,8 +644,8 @@ def _extract_design_systems(
                 "design_system": ds_ref,
                 "container": _res(fm.get("container", "N/A")) or "N/A",
                 "capabilities": clt_to_caps.get(clt_id, []),
-                "screens": raw_scrs,
-                "flows": raw_flws,
+                "screens": fm.get("screens", []) or [],
+                "flows": fm.get("flows", []) or [],
                 "body": clt["body"],
             }
         )
@@ -977,9 +664,6 @@ def _extract_design_systems(
         body = fl.get("body", "")
         mermaid = _extract_or_generate_flow_mermaid(fl_id, flow_type, steps, body)
         derived_clients = list(flw_to_clients.get(fl_id, []))
-        for step in steps or []:
-            if isinstance(step, dict) and step.get("client"):
-                _add_uniq(derived_clients, _res(step["client"]))
         flows.append(
             {
                 "id": fl_id,
@@ -1003,7 +687,7 @@ def _extract_design_systems(
             {
                 "id": uic["id"],
                 "title": uic["title"],
-                "design_system": fm.get("design_system", default_ds_id),
+                "design_system": _res(fm.get("design_system", default_ds_id)) or default_ds_id,
                 "category": fm.get("category", "layouts"),
                 "status": fm.get("status", "active"),
                 "variants": fm.get("variants", []),
@@ -1020,13 +704,14 @@ def _extract_design_systems(
         scr_id = scr["id"]
         states = fm.get("states", [])
         mermaid_state = _generate_screen_state_mermaid(scr_id, states, [])
+        owning_client = scr_to_client.get(scr_id, "N/A")
         screens.append(
             {
                 "id": scr_id,
                 "title": scr["title"],
                 "route": fm.get("route", "/"),
-                "client": scr_to_client.get(scr_id, "N/A"),
-                "system_ref": scr_to_ds.get(scr_id, default_ds_id),
+                "client": owning_client,
+                "system_ref": clt_to_ds.get(owning_client, default_ds_id),
                 "states": states,
                 "slots": fm.get("slots", {}),
                 "capabilities": scr_to_caps.get(scr_id, []),

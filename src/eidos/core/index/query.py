@@ -14,7 +14,7 @@ from typing import Any
 import orjson
 
 from eidos.core.index.ast_indexer import AstGrepIndexer, CodeSymbol, get_ast_indexer
-from eidos.core.index.sync import _NON_AST_SYMBOL_KINDS
+from eidos.core.index.sync import _NON_AST_SYMBOL_KINDS, build_spec_path_resolver
 from eidos.core.workspace.project import match_path_pattern
 
 # FTS5 ``bm25()`` weights are positional over *every* declared column of ``specs_fts``, including the UNINDEXED
@@ -273,7 +273,9 @@ def execute_fts_query(
         for row in cursor.fetchall():
             data = orjson.loads(row["data_json"])
             raw_sp = data.get("source_path") or data.get("package_path") or ""
-            source_path = raw_sp[0] if isinstance(raw_sp, list) and raw_sp else (raw_sp if isinstance(raw_sp, str) else "")
+            source_path = (
+                raw_sp[0] if isinstance(raw_sp, list) and raw_sp else (raw_sp if isinstance(raw_sp, str) else "")
+            )
             results.append(
                 {
                     "id": row["id"],
@@ -338,7 +340,7 @@ def execute_k_hop_traversal(
             JOIN graph_walk gw ON (e.source_id = gw.node_id OR e.target_id = gw.node_id)
             JOIN all_nodes cur_ent ON cur_ent.id = gw.node_id
             WHERE gw.depth < ?
-              AND (gw.depth = 0 OR cur_ent.type NOT IN ('product/domain', 'design/system', 'delta/mutation'))
+              AND (gw.depth = 0 OR cur_ent.type NOT IN ('product/domain', 'design/system', 'product/persona', 'delta/mutation'))
               AND CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END NOT LIKE 'DLT-%'
               AND ('->' || gw.path || '->') NOT LIKE '%->' || CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END || '->%'
         )
@@ -728,3 +730,330 @@ def generate_repo_map_from_db(conn: sqlite3.Connection, max_tokens: int = 1500) 
         )
 
     return indexer.generate_repo_map(symbols_by_file, max_tokens=max_tokens)
+
+
+def query_spec_catalog_in_db(
+    conn: sqlite3.Connection,
+    eidos_dir: Path,
+    repo_root: Path | None = None,
+) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, str], dict[str, tuple[Path, dict[str, Any]]]]:
+    """Query the specification catalog (specs_by_id, container_components, invariant_map) from indexed entities."""
+    from eidos.core.spec.models import FrontmatterModel
+
+    specs_by_id: dict[str, tuple[Path, str, dict[str, Any]]] = {}
+    container_components: dict[str, str] = {}
+    invariant_map: dict[str, tuple[Path, dict[str, Any]]] = {}
+
+    rows = conn.execute(
+        """
+        SELECT id, type, file_path, data_json
+        FROM entities
+        WHERE type NOT IN ('invariant', 'delta/mutation')
+        ORDER BY file_path, id;
+        """
+    ).fetchall()
+
+    for row in rows:
+        doc_id = str(row["id"] or "").strip()
+        doc_type = str(row["type"] or "").strip()
+        rel_fp = str(row["file_path"] or "").replace("\\", "/").strip().lstrip("./")
+        if not doc_id or not rel_fp:
+            continue
+        try:
+            fm = orjson.loads(row["data_json"])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(fm, dict):
+            continue
+
+        if rel_fp.startswith("eidos/") and eidos_dir.name == "eidos":
+            p = eidos_dir / rel_fp[6:]
+        elif repo_root is not None and (repo_root / rel_fp).exists():
+            p = repo_root / rel_fp
+        else:
+            p = eidos_dir / rel_fp
+
+        specs_by_id[doc_id] = (p, doc_type, fm)
+        model = FrontmatterModel.model_validate(fm)
+        if doc_type == "tech/container":
+            for comp in model.components:
+                if comp.id:
+                    container_components[comp.id] = doc_id
+        for inv in model.all_invariants():
+            if inv.id:
+                invariant_map[inv.id] = (p, inv.model_dump(exclude_none=True))
+
+    return specs_by_id, container_components, invariant_map
+
+
+def compute_delta_impact_in_db(
+    conn: sqlite3.Connection,
+    mutations: list[dict[str, Any]],
+    raw_blast_radius: dict[str, Any] | None = None,
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """Compute SpecDelta (affects, blast_radius) from persisted entities and edges in the knowledge graph."""
+    from eidos.core.lifecycle.delta_engine import normalize_delta_mutation, resolve_entity_prefix_meta
+
+    def _add_unique(lst: list[str], item: str) -> None:
+        if item and item not in lst:
+            lst.append(item)
+
+    _resolve_ref_id = build_spec_path_resolver(conn)
+
+    comp_to_container: dict[str, str] = {}
+    contract_to_container: dict[str, str] = {}
+    cnt_dependents: dict[str, list[str]] = {}
+    comp_dependents: dict[str, list[str]] = {}
+    entity_to_caps: dict[str, list[str]] = {}
+    cap_to_domain: dict[str, str] = {}
+    cap_containers: dict[str, list[str]] = {}
+    cap_components: dict[str, list[str]] = {}
+    cap_personas: dict[str, list[str]] = {}
+    cap_screens: dict[str, list[str]] = {}
+    raw_asserts: dict[str, list[str]] = {}
+
+    cap_ids = {
+        str(r[0]) for r in conn.execute("SELECT id FROM entities WHERE type = 'product/capability';").fetchall() if r[0]
+    }
+    pol_ids = [
+        str(r[0])
+        for r in conn.execute("SELECT id FROM entities WHERE type = 'product/policy' ORDER BY id;").fetchall()
+        if r[0]
+    ]
+    ds_rows = [
+        str(r[0])
+        for r in conn.execute("SELECT id FROM entities WHERE type = 'design/system' ORDER BY id;").fetchall()
+        if r[0]
+    ]
+    default_ds_id = ds_rows[0] if ds_rows else "DS-001"
+    clt_ids = [
+        str(r[0])
+        for r in conn.execute("SELECT id FROM entities WHERE type = 'design/client' ORDER BY id;").fetchall()
+        if r[0]
+    ]
+
+    clt_container: dict[str, str] = {}
+    clt_ds: dict[str, str] = {}
+    clt_screens: dict[str, list[str]] = {}
+
+    for src_id, dst_id, rel_type in conn.execute("SELECT source_id, target_id, rel_type FROM edges;").fetchall():
+        src = str(src_id or "")
+        dst = str(dst_id or "")
+        if not src or not dst:
+            continue
+        if rel_type == "part_of":
+            comp_to_container[src] = dst
+        elif rel_type == "contains_component":
+            comp_to_container.setdefault(dst, src)
+        elif rel_type == "owned_by" and dst.startswith("CNT-"):
+            contract_to_container[src] = dst
+        elif rel_type == "depends_on" and src.startswith("CNT-") and dst.startswith("CNT-") and src != dst:
+            _add_unique(cnt_dependents.setdefault(dst, []), src)
+        elif rel_type == "consumes_api" and src != dst:
+            _add_unique(comp_dependents.setdefault(dst, []), src)
+        elif rel_type == "implements" and src in cap_ids:
+            _add_unique(entity_to_caps.setdefault(dst, []), src)
+            if dst.startswith("CNT-"):
+                _add_unique(cap_containers.setdefault(src, []), dst)
+            elif dst.startswith("CMP-"):
+                _add_unique(cap_components.setdefault(src, []), dst)
+        elif rel_type == "realizes" and src in cap_ids:
+            cap_to_domain[src] = dst
+        elif rel_type == "serves_persona" and src in cap_ids:
+            _add_unique(cap_personas.setdefault(src, []), dst)
+        elif rel_type == "delivered_by" and src in cap_ids and dst.startswith("SCR-"):
+            _add_unique(cap_screens.setdefault(src, []), dst)
+        elif rel_type == "implemented_by" and src in clt_ids:
+            clt_container[src] = dst
+        elif rel_type == "styled_by" and src in clt_ids:
+            clt_ds[src] = dst
+        elif rel_type == "has_screen" and src in clt_ids:
+            _add_unique(clt_screens.setdefault(src, []), dst)
+        elif rel_type == "asserts" and "::" not in src:
+            _add_unique(raw_asserts.setdefault(src, []), dst)
+
+    # Filter out component-scoped invariants that were also rolled up onto parent containers in edges
+    entity_invariants: dict[str, list[str]] = {}
+    for owner_id, inv_list in raw_asserts.items():
+        if owner_id.startswith("CNT-"):
+            comp_invs = {
+                inv_id
+                for cmp_id, cnt_id in comp_to_container.items()
+                if cnt_id == owner_id
+                for inv_id in raw_asserts.get(cmp_id, [])
+            }
+            filtered = [inv_id for inv_id in inv_list if inv_id not in comp_invs]
+            if filtered:
+                entity_invariants[owner_id] = filtered
+        else:
+            entity_invariants[owner_id] = list(inv_list)
+
+    for pid in pol_ids:
+        if pid not in entity_invariants or not entity_invariants[pid]:
+            entity_invariants[pid] = [pid]
+
+    inv_to_owners: dict[str, list[str]] = {}
+    for owner_id, inv_ids in entity_invariants.items():
+        for inv_id in inv_ids:
+            if inv_id != owner_id:
+                _add_unique(inv_to_owners.setdefault(inv_id, []), owner_id)
+
+    client_by_id: dict[str, dict[str, Any]] = {}
+    container_to_clients: dict[str, list[dict[str, Any]]] = {}
+    for cl_id in clt_ids:
+        cnt_ref = clt_container.get(cl_id, "N/A")
+        ds_ref = clt_ds.get(cl_id) or default_ds_id
+        cl_obj = {
+            "id": cl_id,
+            "container": cnt_ref,
+            "design_system": ds_ref,
+            "screens": clt_screens.get(cl_id, []),
+        }
+        client_by_id[cl_id] = cl_obj
+        if cnt_ref and cnt_ref != "N/A":
+            container_to_clients.setdefault(cnt_ref, []).append(cl_obj)
+
+    muts = [normalize_delta_mutation(m) if isinstance(m, dict) else m for m in (mutations or [])]
+
+    aff_lists: dict[str, list[str]] = {
+        "containers": [],
+        "components": [],
+        "contracts": [],
+        "capabilities": [],
+        "domains": [],
+        "policies": [],
+        "personas": [],
+        "design_systems": [],
+        "screens": [],
+        "ui_components": [],
+        "clients": [],
+        "flows": [],
+    }
+    br_lists: dict[str, list[str]] = {
+        "impacted_containers": [],
+        "impacted_components": [],
+        "impacted_design_systems": [],
+        "impacted_screens": [],
+        "impacted_personas": [],
+        "invariants_to_enforce": [],
+    }
+
+    kind_to_cat = {
+        "container": "containers",
+        "component": "components",
+        "contract": "contracts",
+        "capability": "capabilities",
+        "domain": "domains",
+        "policy": "policies",
+        "persona": "personas",
+        "design_system": "design_systems",
+        "screen": "screens",
+        "ui_component": "ui_components",
+        "client": "clients",
+        "flow": "flows",
+    }
+    seed_entities: list[str] = []
+    for m in muts:
+        if not isinstance(m, dict):
+            continue
+        for ref_field in ("target", "parent"):
+            raw_t = m.get(ref_field)
+            if not raw_t or not isinstance(raw_t, str) or not raw_t.strip():
+                continue
+            resolved_id = _resolve_ref_id(raw_t.strip())
+            p_meta = resolve_entity_prefix_meta(resolved_id)
+            if p_meta is None:
+                continue
+            entity_kind = p_meta[1]
+            if entity_kind == "invariant":
+                if ref_field == "target":
+                    _add_unique(br_lists["invariants_to_enforce"], resolved_id)
+                    for owner_id in inv_to_owners.get(resolved_id, []):
+                        o_meta = resolve_entity_prefix_meta(owner_id)
+                        o_cat = kind_to_cat.get(o_meta[1]) if o_meta else None
+                        if o_cat:
+                            _add_unique(aff_lists[o_cat], owner_id)
+                            _add_unique(seed_entities, owner_id)
+                            if o_cat == "components" and owner_id in comp_to_container:
+                                _add_unique(aff_lists["containers"], comp_to_container[owner_id])
+                            elif o_cat == "capabilities" and owner_id in cap_to_domain:
+                                _add_unique(aff_lists["domains"], cap_to_domain[owner_id])
+                continue
+            cat = kind_to_cat.get(entity_kind)
+            if not cat:
+                continue
+            _add_unique(aff_lists[cat], resolved_id)
+            _add_unique(seed_entities, resolved_id)
+            if cat == "components" and resolved_id in comp_to_container:
+                _add_unique(aff_lists["containers"], comp_to_container[resolved_id])
+            elif cat == "contracts" and resolved_id in contract_to_container:
+                _add_unique(aff_lists["containers"], contract_to_container[resolved_id])
+            elif cat == "capabilities" and resolved_id in cap_to_domain:
+                _add_unique(aff_lists["domains"], cap_to_domain[resolved_id])
+
+    for cnt_id in aff_lists["containers"]:
+        _add_unique(br_lists["impacted_containers"], cnt_id)
+        for dep_cnt in cnt_dependents.get(cnt_id, []):
+            _add_unique(br_lists["impacted_containers"], dep_cnt)
+        for cl in container_to_clients.get(cnt_id, []):
+            if cl.get("design_system"):
+                _add_unique(br_lists["impacted_design_systems"], str(cl["design_system"]))
+            for scr_id in cl.get("screens", []) or []:
+                _add_unique(br_lists["impacted_screens"], _resolve_ref_id(scr_id))
+
+    for cmp_id in aff_lists["components"]:
+        _add_unique(br_lists["impacted_components"], cmp_id)
+        for dep_cmp in comp_dependents.get(cmp_id, []):
+            _add_unique(br_lists["impacted_components"], dep_cmp)
+            if dep_cmp in comp_to_container:
+                _add_unique(br_lists["impacted_containers"], comp_to_container[dep_cmp])
+        if cmp_id in comp_to_container:
+            _add_unique(br_lists["impacted_containers"], comp_to_container[cmp_id])
+
+    for ds_id in aff_lists["design_systems"]:
+        _add_unique(br_lists["impacted_design_systems"], ds_id)
+    for scr_id in aff_lists["screens"]:
+        _add_unique(br_lists["impacted_screens"], scr_id)
+    for per_id in aff_lists["personas"]:
+        _add_unique(br_lists["impacted_personas"], per_id)
+    for cl_id in aff_lists["clients"]:
+        cl_obj = client_by_id.get(cl_id)
+        if cl_obj:
+            if cl_obj.get("container") and cl_obj["container"] != "N/A":
+                _add_unique(br_lists["impacted_containers"], str(cl_obj["container"]))
+            if cl_obj.get("design_system"):
+                _add_unique(br_lists["impacted_design_systems"], str(cl_obj["design_system"]))
+            for scr_id in cl_obj.get("screens", []) or []:
+                _add_unique(br_lists["impacted_screens"], _resolve_ref_id(scr_id))
+
+    related_caps = list(aff_lists["capabilities"])
+    for ent_id in seed_entities + aff_lists["containers"] + aff_lists["components"]:
+        for cid in entity_to_caps.get(ent_id, []):
+            _add_unique(related_caps, cid)
+
+    for cap_id in related_caps:
+        if cap_id not in cap_ids:
+            continue
+        if cap_id in aff_lists["capabilities"]:
+            for cnt_id in cap_containers.get(cap_id, []):
+                _add_unique(br_lists["impacted_containers"], cnt_id)
+            for cmp_id in cap_components.get(cap_id, []):
+                _add_unique(br_lists["impacted_components"], cmp_id)
+        for per_id in cap_personas.get(cap_id, []):
+            _add_unique(br_lists["impacted_personas"], per_id)
+        for scr_id in cap_screens.get(cap_id, []):
+            _add_unique(br_lists["impacted_screens"], scr_id)
+
+    for seed_id in seed_entities + aff_lists["containers"] + br_lists["impacted_components"]:
+        for inv_id in entity_invariants.get(seed_id, []):
+            _add_unique(br_lists["invariants_to_enforce"], inv_id)
+
+    if isinstance(raw_blast_radius, dict):
+        for k, vals in raw_blast_radius.items():
+            if isinstance(vals, list):
+                for v in vals:
+                    _add_unique(br_lists.setdefault(k, []), _resolve_ref_id(v))
+
+    derived_affects = {k: v for k, v in aff_lists.items() if v}
+    derived_blast_radius = {k: v for k, v in br_lists.items() if v}
+    return derived_affects, derived_blast_radius

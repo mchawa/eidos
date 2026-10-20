@@ -18,8 +18,8 @@ import orjson
 if TYPE_CHECKING:
     from eidos.core.spec.models import SpecDocument
 
-# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-100).
-SCHEMA_VERSION = "2.11.0"
+# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-104).
+SCHEMA_VERSION = "2.12.0"
 
 # In-process parsed SpecDocument cache keyed by resolved Path -> (mtime_ns, st_size, sha256, SpecDocument)
 _PARSED_SPEC_MEM_CACHE: dict[Path, tuple[int, int, str, SpecDocument]] = {}
@@ -171,7 +171,7 @@ def open_cache_connection(db_path: Path) -> sqlite3.Connection:
     for attempt in range(2):
         conn: sqlite3.Connection | None = None
         try:
-            conn = sqlite3.connect(str(db_path), timeout=10.0)
+            conn = sqlite3.connect(str(db_path), timeout=10.0, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             jm_row = conn.execute("PRAGMA journal_mode;").fetchone()
             if not jm_row or str(jm_row[0]).lower() != "wal":

@@ -29,11 +29,13 @@ from eidos.core.index.query import (
     TASK_SLICE_ENTITY_TYPES,
     build_fts_match_query,
     compound_identifier_subtokens,
+    compute_delta_impact_in_db,
     execute_fts_query,
     execute_incoming_references,
     execute_k_hop_traversal,
     find_symbol_in_db,
     generate_repo_map_from_db,
+    query_spec_catalog_in_db,
     resolve_symbol_or_path_in_db,
     split_identifier,
 )
@@ -161,10 +163,6 @@ class ArchitecturalIndex:
 
     def _ensure_synced(self) -> None:
         """Lazily ensure the index is synchronized (<2ms check when clean)."""
-        now = time.monotonic()
-        last_check = getattr(self, "_last_synced_check", 0.0)
-        if now - last_check < 0.2:
-            return
         dirty_state = self.is_dirty()
         if dirty_state[0]:
             self.sync(dirty_state=dirty_state)
@@ -258,8 +256,7 @@ class ArchitecturalIndex:
         cursor = conn.cursor()
 
         type_counts = {
-            row[0]: row[1]
-            for row in cursor.execute("SELECT type, COUNT(*) FROM entities GROUP BY type;").fetchall()
+            row[0]: row[1] for row in cursor.execute("SELECT type, COUNT(*) FROM entities GROUP BY type;").fetchall()
         }
         total_entities = sum(type_counts.values())
 
@@ -377,6 +374,33 @@ class ArchitecturalIndex:
             data["status"] = str(data.get("status") or r["status"] or "active").strip()
             entities.append(data)
         return entities
+
+    def get_spec_catalog(
+        self,
+        eidos_dir: Path | None = None,
+    ) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, str], dict[str, tuple[Path, dict[str, Any]]]]:
+        """Retrieve (specs_by_id, container_components, invariant_map) from the synchronized knowledge graph."""
+        self._ensure_synced()
+        return query_spec_catalog_in_db(
+            self._get_connection(),
+            eidos_dir=eidos_dir or self.eidos_dir,
+            repo_root=self.root,
+        )
+
+    def compute_delta_impact(
+        self,
+        mutations: list[dict[str, Any]],
+        raw_blast_radius: dict[str, Any] | None = None,
+        sync: bool = True,
+    ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+        """Compute SpecDelta (affects, blast_radius) from the synchronized knowledge graph."""
+        if sync:
+            self._ensure_synced()
+        return compute_delta_impact_in_db(
+            self._get_connection(),
+            mutations=mutations,
+            raw_blast_radius=raw_blast_radius,
+        )
 
 
 # Global singleton instance for high-speed module reuse

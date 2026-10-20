@@ -7,10 +7,7 @@ from typing import Any
 
 import orjson
 
-from eidos.core.index.storage import (
-    get_cached_spec_document,
-    load_spec_validation_cache,
-)
+from eidos.core.index.storage import get_cached_spec_document
 from eidos.core.spec.parser import (
     YamlError,
     dump_spec_document,
@@ -474,55 +471,13 @@ def _build_spec_catalog(
 def _build_spec_catalog_with_invariants(
     eidos_dir: Path,
 ) -> tuple[dict[str, tuple[Path, str, dict[str, Any]]], dict[str, str], dict[str, tuple[Path, dict[str, Any]]]]:
-    """Build lookup indexes including owning file and dict for each invariant via shared SpecDocument cache and FrontmatterModel."""
-    adoc_files: list[Path] = []
-    if eidos_dir.exists():
-        for p in sorted(eidos_dir.rglob("*.adoc")):
-            if "deltas" in p.parts:
-                continue
-            adoc_files.append(p)
+    """Build lookup indexes including owning file and dict for each invariant via ArchitecturalIndex."""
+    if not eidos_dir.exists():
+        return {}, {}, {}
 
     resolved_eidos = eidos_dir.resolve()
     repo_root = resolved_eidos.parent if resolved_eidos.name == "eidos" else resolved_eidos
-    db_path = resolved_eidos / ".cache" / "index.db"
-    cached_rows = load_spec_validation_cache(db_path) if db_path.exists() else {}
+    from eidos.core.index.graph_index import get_architectural_index
 
-    specs_by_id: dict[str, tuple[Path, str, dict[str, Any]]] = {}
-    container_components: dict[str, str] = {}  # comp_id -> container_id
-    invariant_map: dict[str, tuple[Path, dict[str, Any]]] = {}
-
-    for p in adoc_files:
-        try:
-            st = p.stat()
-            res_p = p.resolve()
-            rel_key: str | None = None
-            for base in (repo_root, resolved_eidos):
-                try:
-                    cand = str(res_p.relative_to(base)).replace("\\", "/")
-                    if cand in cached_rows:
-                        rel_key = cand
-                        break
-                except ValueError:
-                    continue
-            doc, _, _ = get_cached_spec_document(
-                p,
-                mtime_ns=st.st_mtime_ns,
-                st_size=st.st_size,
-                cached_row=cached_rows.get(rel_key) if rel_key else None,
-            )
-            if doc is not None:
-                model = doc.model
-                explicit_id = model.id
-                if explicit_id:
-                    specs_by_id[explicit_id] = (p, doc.doc_type, doc.frontmatter)
-                    if doc.doc_type == "tech/container":
-                        for comp in model.components:
-                            if comp.id:
-                                container_components[comp.id] = explicit_id
-                    for inv in model.all_invariants():
-                        if inv.id:
-                            invariant_map[inv.id] = (p, inv.model_dump(exclude_none=True))
-        except OSError:
-            continue
-
-    return specs_by_id, container_components, invariant_map
+    idx = get_architectural_index(eidos_dir=resolved_eidos, repo_root=repo_root)
+    return idx.get_spec_catalog(eidos_dir=eidos_dir)

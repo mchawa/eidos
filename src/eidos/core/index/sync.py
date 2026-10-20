@@ -668,6 +668,35 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     return is_dirty, to_update, deleted
 
 
+def build_spec_path_resolver(conn: sqlite3.Connection) -> Any:
+    """Build a callable resolving relative .adoc paths (with or without 'eidos/' prefix) to canonical entity IDs."""
+    path_to_id: dict[str, str] = {}
+    for p_id, p_fp in conn.execute("SELECT id, file_path FROM entities WHERE type != 'invariant';").fetchall():
+        if p_id and p_fp:
+            clean_fp = str(p_fp).replace("\\", "/").strip().lstrip("./").lower()
+            if clean_fp:
+                path_to_id[clean_fp] = str(p_id)
+                if clean_fp.startswith("eidos/"):
+                    path_to_id[clean_fp[6:]] = str(p_id)
+                else:
+                    path_to_id[f"eidos/{clean_fp}"] = str(p_id)
+
+    def _resolve_ref(raw_val: Any) -> str:
+        val = str(raw_val or "").strip()
+        if not val:
+            return ""
+        norm = val.replace("\\", "/").lstrip("./").lower()
+        if norm in path_to_id:
+            return path_to_id[norm]
+        if "/" in norm or norm.endswith(".adoc"):
+            for cand_path, cand_id in path_to_id.items():
+                if cand_path.endswith(f"/{norm}"):
+                    return cand_id
+        return val
+
+    return _resolve_ref
+
+
 def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | None = None) -> None:
     """Rebuild specification-declared relational edges from persisted entity frontmatter.
 
@@ -675,6 +704,8 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
     ``updated_doc_ids`` (and their child invariants/components) are evicted and rebuilt alongside their
     1-hop neighbors and any previously unresolved edge sources.
     """
+    _resolve_ref = build_spec_path_resolver(conn)
+
     clean_ids = sorted(d for d in (updated_doc_ids or ()) if d)
     if updated_doc_ids is not None and clean_ids:
         ph = ",".join("?" for _ in clean_ids)
@@ -684,13 +715,15 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             WHERE source_id IN ({ph})
               AND rel_type IN (
                   'asserts', 'contains_component', 'implemented_by',
-                  'styled_by', 'styles_container', 'extends'
+                  'styled_by', 'styles_container', 'extends',
+                  'serves_persona', 'delivered_by', 'has_screen', 'has_flow', 'uses_screen'
               )
             UNION
             SELECT source_id FROM edges
             WHERE target_id IN ({ph})
               AND rel_type IN (
-                  'implemented_by', 'styled_by', 'styles_container', 'extends'
+                  'implemented_by', 'styled_by', 'styles_container', 'extends',
+                  'serves_persona', 'delivered_by', 'has_screen', 'has_flow', 'uses_screen'
               )
             UNION
             SELECT symbol FROM symbol_mappings
@@ -775,51 +808,93 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
         if not isinstance(fm, dict):
             continue
 
-        domain = fm.get("domain", "")
+        domain = _resolve_ref(fm.get("domain", ""))
         if domain:
             conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'realizes');", (doc_id, domain))
 
         contracts = fm.get("contracts", {})
         if isinstance(contracts, dict):
-            for prov in contracts.get("provides", []):
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides');", (doc_id, prov))
+            for prov in contracts.get("provides", []) or []:
+                prov_id = _resolve_ref(prov)
+                if prov_id:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides');", (doc_id, prov_id))
             for req in contracts.get("consumes") or []:
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes');", (doc_id, req))
+                req_id = _resolve_ref(req)
+                if req_id:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes');", (doc_id, req_id))
 
         if doc_type == "tech/contract":
-            owning = fm.get("container")
+            owning = _resolve_ref(fm.get("container"))
             if owning:
                 conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides');", (owning, doc_id))
                 conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'owned_by');", (doc_id, owning))
 
         if doc_type == "design/client":
-            cnt_ref = fm.get("container")
-            ds_ref = fm.get("design_system")
-            if cnt_ref and isinstance(cnt_ref, str):
+            cnt_ref = _resolve_ref(fm.get("container"))
+            ds_ref = _resolve_ref(fm.get("design_system"))
+            if cnt_ref:
                 conn.execute(
                     "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implemented_by');",
-                    (doc_id, cnt_ref.strip()),
+                    (doc_id, cnt_ref),
                 )
-            if ds_ref and isinstance(ds_ref, str):
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by');", (doc_id, ds_ref.strip()))
+            if ds_ref:
+                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by');", (doc_id, ds_ref))
+            for scr_ref in fm.get("screens", []) or []:
+                scr_id = _resolve_ref(scr_ref)
+                if scr_id:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'has_screen');", (doc_id, scr_id))
+            for flw_ref in fm.get("flows", []) or []:
+                flw_id = _resolve_ref(flw_ref)
+                if flw_id:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'has_flow');", (doc_id, flw_id))
 
         if doc_type == "design/system":
             for clt_ref in fm.get("clients", []) or []:
-                if isinstance(clt_ref, str) and clt_ref.strip():
+                clt_id = _resolve_ref(clt_ref)
+                if clt_id:
                     conn.execute(
                         "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by');",
-                        (clt_ref.strip(), doc_id),
+                        (clt_id, doc_id),
                     )
             if fm.get("extends"):
-                parent_ds = str(fm["extends"]).strip()
+                parent_ds = _resolve_ref(fm["extends"])
                 if parent_ds:
                     conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'extends');", (doc_id, parent_ds))
 
+        if doc_type == "design/ui-component":
+            ds_ref = _resolve_ref(fm.get("design_system"))
+            if ds_ref:
+                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by');", (doc_id, ds_ref))
+
+        if doc_type == "design/flow":
+            for step in fm.get("steps", []) or []:
+                if not isinstance(step, dict):
+                    continue
+                step_clt = _resolve_ref(step.get("client"))
+                if step_clt:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'has_flow');", (step_clt, doc_id))
+                step_scr = _resolve_ref(step.get("screen"))
+                if step_scr:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'uses_screen');", (doc_id, step_scr))
+
         biz = fm.get("business", {})
         if isinstance(biz, dict):
-            for pol in biz.get("policies", []):
-                pol_ref = str(pol).strip()
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'governed_by');", (doc_id, pol_ref))
+            for pol in biz.get("policies", []) or []:
+                pol_ref = _resolve_ref(pol)
+                if pol_ref:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'governed_by');", (doc_id, pol_ref))
+            for per in biz.get("personas", []) or []:
+                per_ref = _resolve_ref(per)
+                if per_ref:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'serves_persona');", (doc_id, per_ref))
+
+        exp = fm.get("experience", {})
+        if isinstance(exp, dict):
+            for exp_key in ("clients", "design_systems", "screens", "flows", "ui_components"):
+                for exp_ref in exp.get(exp_key, []) or []:
+                    exp_id = _resolve_ref(exp_ref)
+                    if exp_id:
+                        conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'delivered_by');", (doc_id, exp_id))
 
         tech = fm.get("technical", {})
         invariants = list(fm.get("invariants", []) or [])
@@ -830,12 +905,13 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                 list(tech.get("containers", []) or []) + list(tech.get("components", []) or []) + list(ctr_list)
             )
             for comp_ref in tech_targets:
-                if isinstance(comp_ref, str) and comp_ref.strip():
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements');", (doc_id, comp_ref.strip()))
+                target_id = _resolve_ref(comp_ref)
+                if target_id:
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements');", (doc_id, target_id))
             invariants.extend(tech.get("invariants", []) or [])
 
         if doc_type == "tech/component":
-            cnt_id = fm.get("container")
+            cnt_id = _resolve_ref(fm.get("container"))
             if cnt_id:
                 conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component');", (cnt_id, doc_id))
                 conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of');", (doc_id, cnt_id))
@@ -854,9 +930,13 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                     c_contracts = comp_entry.get("contracts")
                     if isinstance(c_contracts, dict):
                         for prov in c_contracts.get("provides", []) or []:
-                            conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides');", (cid, prov))
+                            prov_id = _resolve_ref(prov)
+                            if prov_id:
+                                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides');", (cid, prov_id))
                         for req in c_contracts.get("consumes") or []:
-                            conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes');", (cid, req))
+                            req_id = _resolve_ref(req)
+                            if req_id:
+                                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes');", (cid, req_id))
                 for c_inv in comp_entry.get("invariants", []) or []:
                     if isinstance(c_inv, dict) and c_inv.get("id"):
                         invariants.append(c_inv)
@@ -874,15 +954,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                 for k in ("target", "parent"):
                     v = m.get(k)
                     if isinstance(v, str) and v.strip():
-                        target_val = v.strip()
-                        if target_val.endswith(".adoc") or "/" in target_val:
-                            clean_p = target_val.replace("\\", "/")
-                            p_row = conn.execute(
-                                "SELECT id FROM entities WHERE file_path = ? OR file_path LIKE ? LIMIT 1;",
-                                (clean_p, f"%/{clean_p}"),
-                            ).fetchone()
-                            if p_row:
-                                target_val = p_row["id"]
+                        target_val = _resolve_ref(v)
                         conn.execute(
                             "INSERT OR IGNORE INTO edges VALUES (?, ?, 'affects');",
                             (doc_id, target_val),
@@ -1039,6 +1111,17 @@ def _derive_ast_import_edges(
           AND COALESCE(p_src.target_id, c_edge.source_id) LIKE 'CNT-%'
           AND COALESCE(p_prov.target_id, p_edge.source_id) LIKE 'CNT-%'
           AND COALESCE(p_src.target_id, c_edge.source_id) != COALESCE(p_prov.target_id, p_edge.source_id)
+        UNION
+        SELECT DISTINCT
+            COALESCE(p_src.target_id, c_edge.source_id) AS src_cnt,
+            c_edge.target_id AS dst_cnt,
+            'depends_on'
+        FROM edges c_edge
+        LEFT JOIN edges p_src ON p_src.source_id = c_edge.source_id AND p_src.rel_type = 'part_of'
+        WHERE c_edge.rel_type = 'consumes'
+          AND COALESCE(p_src.target_id, c_edge.source_id) LIKE 'CNT-%'
+          AND c_edge.target_id LIKE 'CNT-%'
+          AND COALESCE(p_src.target_id, c_edge.source_id) != c_edge.target_id
         UNION
         SELECT DISTINCT
             p_src.target_id AS src_cnt,
@@ -1536,6 +1619,9 @@ def sync_index(
                         "rule": rule,
                         "test_binding": test,
                         "source_id": doc_id,
+                        "source_doc_type": doc_type,
+                        "category": fm.get("category") if doc_type == "product/policy" else None,
+                        "severity": fm.get("severity") if doc_type == "product/policy" else None,
                         "capability_id": doc_id if doc_type == "product/capability" else None,
                         "policy_id": doc_id if doc_type == "product/policy" else None,
                         "container_id": (
@@ -1641,9 +1727,7 @@ def sync_index(
             if decision_texts:
                 body_clean = f"{body_clean} " + re.sub(r"[{}\[\]=:#*`]", " ", " ".join(decision_texts))
             inline_cmp_ids = [str(m.id).strip() for m in model.components if m.id and str(m.id).strip()]
-            keywords = " ".join(
-                [doc_id, doc_type, domain, container_type, source_path, *inline_cmp_ids, *decision_ids]
-            )
+            keywords = " ".join([doc_id, doc_type, domain, container_type, source_path, *inline_cmp_ids, *decision_ids])
             symbol_parts: list[str] = [str(m.title) for m in model.components if m.title]
             symbol_parts.extend(inline_cmp_ids)
             symbols = " ".join(symbol_parts)
@@ -1727,7 +1811,8 @@ def sync_index(
                    OR (
                        rel_type = 'styled_by'
                        AND source_id NOT LIKE 'CLT-%'
-                       AND source_id NOT IN (SELECT id FROM entities WHERE type = 'design/client')
+                       AND source_id NOT LIKE 'UIC-%'
+                       AND source_id NOT IN (SELECT id FROM entities WHERE type IN ('design/client', 'design/ui-component'))
                    );
                 """
             )
@@ -1767,9 +1852,7 @@ def sync_index(
                 ).fetchall()
                 for (ds_id,) in ds_rows:
                     conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by');", (cnt_id, ds_id))
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_container');", (ds_id, cnt_id)
-                    )
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_container');", (ds_id, cnt_id))
                     for pat in cnt_paths:
                         conn.execute(
                             "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'inferred_path');",

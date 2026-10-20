@@ -703,7 +703,9 @@ def test_code_symbols_invalidated_on_edit_and_delete(tmp_path):
             m["symbol"] != "SampleService.execute" for m in idx.find_symbol("SampleService.execute")
         )
         assert not conn.execute("SELECT 1 FROM code_symbols WHERE symbol = 'SampleService';").fetchone()
-        assert not conn.execute("SELECT 1 FROM code_symbols WHERE parent_symbol = 'SampleService' AND symbol = 'execute';").fetchone()
+        assert not conn.execute(
+            "SELECT 1 FROM code_symbols WHERE parent_symbol = 'SampleService' AND symbol = 'execute';"
+        ).fetchone()
         assert rows("RenamedService") == [(11, "src/pkg/service.py")]
         helper = next(m for m in idx.find_symbol("helper") if m["symbol"] == "helper")
         assert helper["location"]["line_start"] == 16
@@ -714,9 +716,7 @@ def test_code_symbols_invalidated_on_edit_and_delete(tmp_path):
         assert (
             conn.execute("SELECT COUNT(*) FROM code_symbols WHERE file_path = 'src/pkg/service.py';").fetchone()[0] == 0
         )
-        assert not conn.execute(
-            "SELECT 1 FROM code_symbols WHERE symbol IN ('helper', 'RenamedService');"
-        ).fetchone()
+        assert not conn.execute("SELECT 1 FROM code_symbols WHERE symbol IN ('helper', 'RenamedService');").fetchone()
         assert not any(m["symbol"] == "helper" for m in idx.find_symbol("helper"))
     finally:
         idx.close()
@@ -1230,7 +1230,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.11.0"
+        assert ver == SCHEMA_VERSION == "2.12.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -2275,7 +2275,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    assert SCHEMA_VERSION == "2.11.0"
+    assert SCHEMA_VERSION == "2.12.0"
     assert set(AstGrepIndexer.LANGUAGE_MAP.keys()) | {".proto", ".adoc"} <= _FILE_QUERY_EXTS
 
     # 1. Verify _ENTITY_ID_TOKEN_RE recognizes SYS-*, ARCH-*, PER-*, and underscore IDs
@@ -2377,9 +2377,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
         assert "CMP-INLINE-ORCHESTRATOR" in fts_cnt["keywords"]
         assert "DEC-RUNTIME-SCHEDULER" in fts_cnt["keywords"]
 
-        fts_cmp = conn.execute(
-            "SELECT jtbd_or_rule FROM specs_fts WHERE entity_id = 'CMP-STANDALONE';"
-        ).fetchone()
+        fts_cmp = conn.execute("SELECT jtbd_or_rule FROM specs_fts WHERE entity_id = 'CMP-STANDALONE';").fetchone()
         assert fts_cmp is not None
         assert "Executes standalone background batch compaction tasks" in fts_cmp["jtbd_or_rule"]
 
@@ -2433,3 +2431,239 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
     finally:
         idx.close()
 
+
+def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path) -> None:
+    """Verify DLT-2026-104 SCHEMA_VERSION 2.12.0 migration, build_spec_path_resolver, complete edge coverage, get_spec_catalog, and compute_delta_impact."""  # eidos:fixture
+    from eidos.core.index.storage import SCHEMA_VERSION, ensure_cache_schema
+    from eidos.core.index.sync import build_spec_path_resolver
+    from eidos.core.lifecycle.catalog import _build_spec_catalog_with_invariants
+    from eidos.core.lifecycle.delta_engine import create_delta
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+    from eidos.portal.generator import get_portal_data
+
+    assert SCHEMA_VERSION == "2.12.0"
+    assert _build_spec_catalog_with_invariants(tmp_path / "nonexistent_eidos") == ({}, {}, {})
+
+    init_repository(tmp_path, name="dlt-104-repo")
+    eidos_dir = tmp_path / "eidos"
+
+    dom_path = create_spec(eidos_dir, "domain", "DOM-CORE-104", title="Core 104 Domain")
+    per_path = create_spec(eidos_dir, "persona", "PER-ARCH-104", title="Architect 104")
+    pol_path = create_spec(eidos_dir, "policy", "POL-GOV-104", title="Gov Policy 104")
+    cnt_path = create_spec(eidos_dir, "container", "CNT-API-104", title="API Container 104")
+    cnt_gw_path = create_spec(eidos_dir, "container", "CNT-GW-104", title="Gateway Container 104")
+    ctr_path = create_spec(eidos_dir, "contract", "CTR-API-104", title="API Contract 104")
+    ds_path = create_spec(eidos_dir, "design-system", "DS-BRAND-104", title="Brand DS 104")
+    scr_path = create_spec(eidos_dir, "screen", "SCR-DASH-104", title="Dashboard Screen 104")
+    flw_path = create_spec(eidos_dir, "flow", "FLOW-ONBOARD-104", title="Onboarding Flow 104")
+    uic_path = create_spec(eidos_dir, "ui-component", "UIC-CARD-104", title="Card UI Component 104")
+    clt_path = create_spec(eidos_dir, "client", "CLT-WEB-104", title="Web Client 104")
+    cap_path = create_spec(eidos_dir, "capability", "CAP-DASH-104", title="Dashboard Capability 104")
+
+    ctr_doc = parse_spec_file(ctr_path)
+    ctr_doc.frontmatter["container"] = str(cnt_path.relative_to(eidos_dir))
+    ctr_path.write_text(dump_spec_document(ctr_doc.frontmatter, ctr_doc.body), encoding="utf-8")
+
+    # Configure container with top-level invariant, inline component + invariant, and contract
+    cnt_doc = parse_spec_file(cnt_path)
+    cnt_doc.frontmatter["domain"] = str(dom_path.relative_to(eidos_dir))
+    cnt_doc.frontmatter["contracts"] = {"provides": [str(ctr_path.relative_to(eidos_dir))], "consumes": []}
+    cnt_doc.frontmatter["invariants"] = [
+        {
+            "id": "INV-CNT-UPTIME-104",
+            "rule": "API container must expose health endpoint.",
+        }
+    ]
+    cnt_doc.frontmatter["components"] = [
+        {
+            "id": "CMP-API-HANDLER-104",
+            "title": "API Handler 104",
+            "responsibility": "Handles dashboard API requests.",
+            "invariants": [
+                {
+                    "id": "INV-API-HANDLER-104",
+                    "rule": "Must validate tokens.",
+                }
+            ],
+        }
+    ]
+    cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+
+    # Configure gateway container consuming CNT-API-104 contract
+    cnt_gw_doc = parse_spec_file(cnt_gw_path)
+    cnt_gw_doc.frontmatter["domain"] = str(dom_path.relative_to(eidos_dir))
+    cnt_gw_doc.frontmatter["contracts"] = {"provides": [], "consumes": [str(ctr_path.relative_to(eidos_dir))]}
+    cnt_gw_path.write_text(dump_spec_document(cnt_gw_doc.frontmatter, cnt_gw_doc.body), encoding="utf-8")
+
+    # Configure client, flow, ui-component, and capability using relative .adoc paths to verify canonicalization
+    clt_doc = parse_spec_file(clt_path)
+    clt_doc.frontmatter["container"] = str(cnt_path.relative_to(eidos_dir))
+    clt_doc.frontmatter["design_system"] = str(ds_path.relative_to(eidos_dir))
+    clt_doc.frontmatter["screens"] = [str(scr_path.relative_to(eidos_dir))]
+    clt_doc.frontmatter["flows"] = [str(flw_path.relative_to(eidos_dir))]
+    clt_path.write_text(dump_spec_document(clt_doc.frontmatter, clt_doc.body), encoding="utf-8")
+
+    flw_doc = parse_spec_file(flw_path)
+    flw_doc.frontmatter["steps"] = [
+        {
+            "step": 1,
+            "actor": "PER-ARCH-104",
+            "client": str(clt_path.relative_to(eidos_dir)),
+            "screen": str(scr_path.relative_to(eidos_dir)),
+            "action": "Open dashboard",
+        }
+    ]
+    flw_path.write_text(dump_spec_document(flw_doc.frontmatter, flw_doc.body), encoding="utf-8")
+
+    uic_doc = parse_spec_file(uic_path)
+    uic_doc.frontmatter["design_system"] = str(ds_path.relative_to(eidos_dir))
+    uic_doc.frontmatter["invariants"] = [
+        {
+            "id": "INV-UIC-CARD-104",
+            "rule": "Card must render accessible title.",
+        }
+    ]
+    uic_path.write_text(dump_spec_document(uic_doc.frontmatter, uic_doc.body), encoding="utf-8")
+
+    cap_doc = parse_spec_file(cap_path)
+    cap_doc.frontmatter["domain"] = str(dom_path.relative_to(eidos_dir))
+    cap_doc.frontmatter["business"] = {
+        "personas": [str(per_path.relative_to(eidos_dir))],
+        "policies": [str(pol_path.relative_to(eidos_dir))],
+    }
+    cap_doc.frontmatter["experience"] = {
+        "clients": [str(clt_path.relative_to(eidos_dir))],
+        "design_systems": [str(ds_path.relative_to(eidos_dir))],
+        "screens": [str(scr_path.relative_to(eidos_dir))],
+        "flows": [str(flw_path.relative_to(eidos_dir))],
+        "ui_components": [str(uic_path.relative_to(eidos_dir))],
+    }
+    cap_doc.frontmatter["technical"] = {
+        "containers": [str(cnt_path.relative_to(eidos_dir))],
+        "components": ["CMP-API-HANDLER-104"],
+        "invariants": [
+            {
+                "id": "INV-CAP-DASH-104",
+                "rule": "Dashboard capability must respond within 200ms.",
+            }
+        ],
+    }
+    cap_path.write_text(dump_spec_document(cap_doc.frontmatter, cap_doc.body), encoding="utf-8")
+
+    dlt_path = create_delta(eidos_dir, "DLT-2026-104", title="Modify Handler 104")
+    dlt_doc = parse_spec_file(dlt_path)
+    dlt_doc.frontmatter["mutations"] = [
+        {
+            "operation": "modify",
+            "target": "CMP-API-HANDLER-104",
+            "parent": "CNT-API-104",
+        },
+        {
+            "operation": "modify",
+            "target": "INV-API-HANDLER-104",
+            "parent": "CNT-API-104",
+        },
+        {
+            "operation": "modify",
+            "target": "CTR-API-104",
+        },
+        {
+            "operation": "modify",
+            "target": "CLT-WEB-104",
+        },
+    ]
+    dlt_doc.frontmatter["blast_radius"] = {"impacted_personas": ["PER-ARCH-104"]}
+    dlt_path.write_text(dump_spec_document(dlt_doc.frontmatter, dlt_doc.body), encoding="utf-8")
+
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
+    try:
+        conn = idx._get_connection()
+        # Simulate upgrading from schema_version 2.11.0 -> 2.12.0
+        conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.11.0');")
+        conn.commit()
+        ensure_cache_schema(conn)
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.12.0"
+
+        idx.sync(force=True)
+
+        # 1. Verify build_spec_path_resolver resolves bare, eidos/-prefixed, ./-prefixed, and suffix paths
+        resolver = build_spec_path_resolver(conn)
+        rel_cnt = str(cnt_path.relative_to(eidos_dir)).replace("\\", "/")
+        assert resolver(rel_cnt) == "CNT-API-104"
+        assert resolver(f"eidos/{rel_cnt}") == "CNT-API-104"
+        assert resolver(f"./{rel_cnt}") == "CNT-API-104"
+        assert resolver(cnt_path.name) == "CNT-API-104"
+
+        # 2. Verify path-to-ID canonicalization and complete edge coverage in edges table
+        edge_set = {
+            (r[0], r[1], r[2]) for r in conn.execute("SELECT source_id, target_id, rel_type FROM edges;").fetchall()
+        }
+        assert ("CAP-DASH-104", "DOM-CORE-104", "realizes") in edge_set
+        assert ("CAP-DASH-104", "PER-ARCH-104", "serves_persona") in edge_set
+        assert ("CAP-DASH-104", "POL-GOV-104", "governed_by") in edge_set
+        assert ("CAP-DASH-104", "CLT-WEB-104", "delivered_by") in edge_set
+        assert ("CAP-DASH-104", "SCR-DASH-104", "delivered_by") in edge_set
+        assert ("CAP-DASH-104", "FLOW-ONBOARD-104", "delivered_by") in edge_set
+        assert ("CAP-DASH-104", "UIC-CARD-104", "delivered_by") in edge_set
+        assert ("CAP-DASH-104", "CNT-API-104", "implements") in edge_set
+        assert ("CLT-WEB-104", "CNT-API-104", "implemented_by") in edge_set
+        assert ("CLT-WEB-104", "DS-BRAND-104", "styled_by") in edge_set
+        assert ("CLT-WEB-104", "SCR-DASH-104", "has_screen") in edge_set
+        assert ("CLT-WEB-104", "FLOW-ONBOARD-104", "has_flow") in edge_set
+        assert ("FLOW-ONBOARD-104", "SCR-DASH-104", "uses_screen") in edge_set
+        assert ("UIC-CARD-104", "DS-BRAND-104", "styled_by") in edge_set
+        assert ("CNT-GW-104", "CNT-API-104", "depends_on") in edge_set
+
+        # 3. Verify get_spec_catalog and _build_spec_catalog_with_invariants parity
+        specs_by_id, container_components, invariant_map = _build_spec_catalog_with_invariants(eidos_dir)
+        assert "CNT-API-104" in specs_by_id
+        assert container_components.get("CMP-API-HANDLER-104") == "CNT-API-104"
+        assert "INV-API-HANDLER-104" in invariant_map
+
+        # 4. Verify compute_delta_impact matches get_portal_data delta blast radius and invariant categories
+        aff, br = idx.compute_delta_impact(
+            dlt_doc.frontmatter["mutations"],
+            raw_blast_radius=dlt_doc.frontmatter["blast_radius"],
+        )
+        assert aff == {
+            "components": ["CMP-API-HANDLER-104"],
+            "containers": ["CNT-API-104"],
+            "contracts": ["CTR-API-104"],
+            "clients": ["CLT-WEB-104"],
+        }
+        assert set(br["impacted_containers"]) >= {"CNT-API-104", "CNT-GW-104"}
+        assert "CMP-API-HANDLER-104" in br["impacted_components"]
+        assert "DS-BRAND-104" in br["impacted_design_systems"]
+        assert "SCR-DASH-104" in br["impacted_screens"]
+        assert "PER-ARCH-104" in br["impacted_personas"]
+        assert set(br["invariants_to_enforce"]) >= {"INV-API-HANDLER-104", "INV-CNT-UPTIME-104"}
+
+        portal_data = get_portal_data(eidos_dir)
+        portal_dlt = next(d for d in portal_data["deltas"]["proposed"] if d["id"] == "DLT-2026-104")
+        assert portal_dlt["affects"] == aff
+        assert portal_dlt["blast_radius"] == br
+
+        # Verify portal invariants across all 5 source types (policy, capability, container, component, ui_component)
+        inv_by_id = {inv["id"]: inv for inv in portal_data["invariants"]}
+        assert inv_by_id["INV-POL-GOV-104"]["source_type"] == "policy (POL-GOV-104)"
+        assert inv_by_id["INV-CAP-DASH-104"]["source_type"] == "capability (CAP-DASH-104)"
+        assert inv_by_id["INV-CNT-UPTIME-104"]["source_type"] == "container (CNT-API-104)"
+        assert inv_by_id["INV-API-HANDLER-104"]["source_type"] == "component (CMP-API-HANDLER-104)"
+        assert inv_by_id["INV-UIC-CARD-104"]["source_type"] == "ui_component (UIC-CARD-104)"
+
+        # Verify portal inter-container dependencies, domain capabilities, and design reverse-links
+        gw_comp = next(c for c in portal_data["components"] if c["id"] == "CNT-GW-104")
+        assert gw_comp["dependencies"]["internal_containers"] == ["CNT-API-104"]
+        dom_item = next(d for d in portal_data["domains"] if d["id"] == "DOM-CORE-104")
+        assert "CAP-DASH-104" in dom_item["capabilities"]
+        scr_item = next(s for s in portal_data["screens"] if s["id"] == "SCR-DASH-104")
+        assert scr_item["client"] == "CLT-WEB-104"
+        assert scr_item["system_ref"] == "DS-BRAND-104"
+        assert scr_item["capabilities"] == ["CAP-DASH-104"]
+        flw_item = next(f for f in portal_data["flows"] if f["id"] == "FLOW-ONBOARD-104")
+        assert flw_item["clients"] == ["CLT-WEB-104"]
+        assert flw_item["capabilities"] == ["CAP-DASH-104"]
+    finally:
+        idx.close()
