@@ -836,8 +836,46 @@ _PROSE_EXPECT_FIELDS: frozenset[str] = frozenset(
         "summary",
         "title",
         "details",
+        "decision",
+        "rationale",
     }
 )
+
+
+def _resolve_frontmatter_path(target_dict: dict[str, Any], key_path: str) -> tuple[bool, Any]:
+    """Resolve an exact or dot-separated key path across nested dicts and lists of dicts."""
+    if not isinstance(target_dict, dict):
+        return False, None
+    if key_path in target_dict:
+        return True, target_dict[key_path]
+    if "." not in key_path:
+        return False, None
+    segments = key_path.split(".")
+    if len(segments) < 2 or any(not seg for seg in segments):
+        return False, None
+    current: Any = target_dict
+    for seg in segments:
+        if isinstance(current, dict):
+            if seg not in current:
+                return False, None
+            current = current[seg]
+        elif isinstance(current, list):
+            projected: list[Any] = []
+            found_any = False
+            for elem in current:
+                if isinstance(elem, dict) and seg in elem:
+                    found_any = True
+                    val = elem[seg]
+                    if isinstance(val, list):
+                        projected.extend(val)
+                    else:
+                        projected.append(val)
+            if not found_any:
+                return False, None
+            current = projected
+        else:
+            return False, None
+    return True, current
 
 
 def _strip_spec_comments(raw_text: str) -> str:
@@ -994,9 +1032,15 @@ def _evaluate_declarative_postcondition(
                 return False
 
         for k, exp_v in fm_expectations.items():
-            actual = target_dict.get(k)
+            found_key, actual = _resolve_frontmatter_path(target_dict, k)
+            leaf_key = k.rsplit(".", 1)[-1]
+            is_prose = leaf_key in _PROSE_EXPECT_FIELDS
+            if not found_key and (exp_v is not None or "." in k):
+                if diagnostics is not None:
+                    diagnostics.append(f"frontmatter.{k} expected {exp_v!r}, got None")
+                return False
             if isinstance(exp_v, str) and isinstance(actual, str):
-                if k in _PROSE_EXPECT_FIELDS:
+                if is_prose:
                     if exp_v not in actual and actual != exp_v:
                         if diagnostics is not None:
                             diagnostics.append(f"frontmatter.{k} expected '{exp_v}', got '{actual}'")
@@ -1006,13 +1050,23 @@ def _evaluate_declarative_postcondition(
                         diagnostics.append(f"frontmatter.{k} expected '{exp_v}', got '{actual}'")
                     return False
             elif isinstance(actual, list) and isinstance(exp_v, list):
-                missing_items = [item for item in exp_v if item not in actual]
+                missing_items = [
+                    item
+                    for item in exp_v
+                    if item not in actual
+                    and not (
+                        is_prose and isinstance(item, str) and any(isinstance(a, str) and item in a for a in actual)
+                    )
+                ]
                 if missing_items:
                     if diagnostics is not None:
                         diagnostics.append(f"frontmatter.{k} missing expected list items {missing_items} in {actual}")
                     return False
             elif isinstance(actual, list) and not isinstance(exp_v, list):
-                if exp_v not in actual:
+                matched_in_list = exp_v in actual or (
+                    is_prose and isinstance(exp_v, str) and any(isinstance(a, str) and exp_v in a for a in actual)
+                )
+                if not matched_in_list:
                     if diagnostics is not None:
                         diagnostics.append(f"frontmatter.{k} missing '{exp_v}' in {actual}")
                     return False

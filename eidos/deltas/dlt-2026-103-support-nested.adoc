@@ -1,47 +1,48 @@
 ---
 type: delta/mutation
 id: DLT-2026-103-SUPPORT-NESTED
-title: "Support Nested Dot-Path and Partial Object Matching in SpecDelta expect.frontmatter"
-status: proposed
+title: "Support Nested Dot-Path Key Resolution in SpecDelta expect.frontmatter"
+status: applied
 intent:
   kind: enabler
-  motivation: "Enable SpecDelta mutations[].expect.frontmatter to assert nested frontmatter structures (such as contracts.provides, technical.containers, or partial dict entries inside decisions[] and components[]) via dot-path traversal and recursive dict-subset matching in _evaluate_declarative_postcondition, eliminating the need to copy-paste entire nested YAML dictionaries verbatim."
+  motivation: "Enable SpecDelta mutations[].expect.frontmatter to assert nested frontmatter fields (such as contracts.provides, technical.containers, intent.motivation, or list-projected fields like decisions.id and components.id) via dot-path key resolution in _evaluate_declarative_postcondition, eliminating the need to copy-paste entire nested YAML structures verbatim."
 vcs:
   branch: main
-  base_commit: 0823a463a3591688ed251721de4de5501a77734c
+  base_commit: bfe58db9601ff1d77389be21f99a319c7316760b
 mutations:
   - operation: modify
     target: CMP-DELTA-ENGINE
-    details: "Extend _evaluate_declarative_postcondition in src/eidos/core/lifecycle/delta_engine.py to resolve dot-separated keys (e.g., contracts.provides, technical.containers) and perform recursive dict-subset matching when comparing expected dict or list[dict] structures (such as decisions[] or components[]) against target specification frontmatter."
+    details: "Extend _evaluate_declarative_postcondition in src/eidos/core/lifecycle/delta_engine.py to resolve dot-separated keys (e.g., contracts.provides, technical.containers, decisions.id) across nested dicts and lists of dicts, and evaluate _PROSE_EXPECT_FIELDS (including decision and rationale) against the leaf key name."
     expect:
       frontmatter:
-        responsibility: "dot-path and recursive dict-subset frontmatter expectations"
+        responsibility: "dot-path frontmatter expectations"
   - operation: modify
     target: CAP-PROD-002
-    details: "Update SpecDelta Semantic Mutation Engine capability to document nested dot-path and partial object/dict-subset matching in expect.frontmatter."
+    details: "Update SpecDelta Semantic Mutation Engine capability to document nested dot-path key resolution in expect.frontmatter."
     expect:
       body:
         contains:
           - "dot-path"
   - operation: modify
     target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
-    details: "Extend INV-DELTA-VERIFY-MODIFICATION-EVIDENCE rule and test_delta_verify_requires_modification_evidence to cover nested dot-path and dict-subset frontmatter post-conditions."
+    details: "Extend INV-DELTA-VERIFY-MODIFICATION-EVIDENCE rule and test_delta_verify_requires_modification_evidence to cover nested dot-path frontmatter post-conditions."
     expect:
       frontmatter:
         rule: "dot-path"
 ---
-= SpecDelta: Support Nested Dot-Path and Partial Object Matching in SpecDelta expect.frontmatter
+= SpecDelta: Support Nested Dot-Path Key Resolution in SpecDelta expect.frontmatter
 :toc: left
 
 == Problem Statement
-In `src/eidos/core/lifecycle/delta_engine.py`, `_evaluate_declarative_postcondition` currently resolves `expect.frontmatter` keys via a shallow 1-level lookup (`actual = target_dict.get(k)`) and falls back to strict full-dictionary equality (`actual != exp_v`). Consequently:
+In `src/eidos/core/lifecycle/delta_engine.py`, `_evaluate_declarative_postcondition` currently resolves `expect.frontmatter` keys via a shallow 1-level lookup (`actual = target_dict.get(k)`). Consequently:
 
-1. **Nested dictionaries cannot be queried by path**: Assertions on `contracts.provides` (`CNT-*`), `technical.containers` (`CAP-*`), or `tokens.manifest` (`DS-*`) require matching the entire parent dictionary (`contracts`, `technical`, `tokens`) key-for-key, because `target_dict.get("contracts.provides")` returns `None`.
-2. **Arrays of structured objects require verbatim duplication**: Asserting that a specific `DEC-*` decision or inline `CMP-*` component was added to `decisions:` or `components:` fails `item not in actual` unless the author duplicates the entire multi-line dictionary (including `rationale` and `rejected_alternatives`) inside `expect.frontmatter`.
+1. **Nested dictionaries cannot be queried by dot-path**: Assertions on `contracts.provides` (`CNT-*`), `technical.containers` (`CAP-*`), `intent.motivation` (`DLT-*`), or `tokens.manifest` (`DS-*`) fail because `target_dict.get("contracts.provides")` returns `None`.
+2. **Arrays of structured objects cannot be queried by field dot-path**: Asserting that a specific `DEC-*` decision or inline `CMP-*` component exists in `decisions:` or `components:` (e.g., `decisions.id: "DEC-VCS-STATIC-INVARIANT-TRACEABILITY"`) fails unless the entire multi-line dictionary is duplicated verbatim.
 
 == Proposed Specification & Engine Changes
 1. **Dot-Path Key Resolution (`_resolve_frontmatter_path`)**:
-   * When a key `k` in `expect.frontmatter` (or `expect.frontmatter.custom`) is not an exact top-level key in `target_dict` and contains `.`, traverse nested dictionaries segment-by-segment (e.g., `"contracts.provides"` -> `target_dict["contracts"]["provides"]`, `"technical.containers"` -> `target_dict["technical"]["containers"]`).
-2. **Recursive Dict-Subset & Object-List Matching (`_matches_expected_value`)**:
-   * When `exp_v` is a `dict` and `actual` is a `dict`, recursively verify that every `(sub_k, sub_v)` declared in `exp_v` is satisfied in `actual` (allowing partial dictionary assertions without specifying unrelated sibling keys).
-   * When `exp_v` is a `list` (or single `dict`) and `actual` is a `list` of dicts (e.g., `decisions`, `components`, `invariants`), consider an expected dict item matched if at least one element in `actual` satisfies recursive dict-subset matching (for example, `decisions: [{ id: "DEC-VCS-STATIC-INVARIANT-TRACEABILITY" }]`).
+   * When a key `k` in `expect.frontmatter` is not an exact top-level key in `target_dict` and contains `.`, resolve it segment-by-segment:
+     - When the current value is a `dict`, advance to `current[segment]`.
+     - When the current value is a `list` of dicts (such as `decisions`, `components`, or `invariants`), project `segment` across matching dict elements (flattening nested lists if `segment` itself points to a list field), allowing flat dot-paths like `decisions.id: "DEC-..."` or `components.id: "CMP-..."`.
+2. **Leaf-Key Prose Substring Matching (`_PROSE_EXPECT_FIELDS`)**:
+   * Check the leaf segment (`k.rsplit(".", 1)[-1]`) against `_PROSE_EXPECT_FIELDS` (adding `"decision"` and `"rationale"`) so dot-paths targeting prose fields (e.g., `intent.motivation`, `decisions.rationale`, `components.responsibility`) support substring matching just like top-level `responsibility` and `rule` fields.

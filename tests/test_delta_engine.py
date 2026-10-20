@@ -510,6 +510,127 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
     assert ok_rem is True
     assert [m.status for m in rep_rem.mutations] == ["ABSENT_AS_EXPECTED"] * 5
 
+    # 7. Nested dot-path key resolution across dicts and lists of dicts (DLT-2026-103)
+    from eidos.core.lifecycle.delta_engine import (
+        _evaluate_declarative_postcondition,
+        _resolve_frontmatter_path,
+    )
+
+    cnt_doc_nested = parse_spec_file(cnt_path)
+    cnt_doc_nested.frontmatter["decisions"] = [
+        {
+            "id": "DEC-CORE-CACHE-103",
+            "title": "Use SQLite Cache",
+            "decision": "Persist graph index in SQLite WAL.",
+            "rationale": "Guarantees zero external runtime dependencies.",
+        }
+    ]
+    cnt_doc_nested.frontmatter["components"][0]["source_path"] = ["src/a.py", "src/b.py"]
+    cnt_doc_nested.frontmatter["literal.key"] = "exact_val"
+    cnt_path.write_text(dump_spec_document(cnt_doc_nested.frontmatter, cnt_doc_nested.body), encoding="utf-8")
+
+    dlt_nested = create_delta(eidos_dir, "DLT-2026-103", title="Nested Dot-Path Expect")
+    dlt_nested_doc = parse_spec_file(dlt_nested)
+    dlt_nested_doc.frontmatter["mutations"] = [
+        {
+            "operation": "modify",
+            "target": "CNT-CORE-SVC",
+            "expect": {
+                "frontmatter": {
+                    "contracts.provides": "CTR-CORE-API",
+                    "decisions.id": "DEC-CORE-CACHE-103",
+                    "decisions.decision": "SQLite WAL",
+                    "decisions.rationale": "zero external runtime dependencies",
+                    "components.responsibility": ["Updated target responsibility"],
+                    "components.source_path": "src/b.py",
+                    "literal.key": "exact_val",
+                    "absent_top_level_key": None,
+                }
+            },
+        }
+    ]
+    dlt_nested.write_text(dump_spec_document(dlt_nested_doc.frontmatter, dlt_nested_doc.body), encoding="utf-8")
+
+    ok_nested, msg_nested, rep_nested = verify_delta_mutations(eidos_dir, "DLT-2026-103")
+    assert ok_nested is True, msg_nested
+    assert rep_nested.mutations[0].status == "MODIFIED"
+
+    # Edge cases: empty dot-path segments ("contracts..provides", ".contracts", "contracts.")
+    specs_lookup = {"CNT-CORE-SVC": (cnt_path, "container", cnt_doc_nested.frontmatter)}
+    for malformed_key in ("contracts..provides", ".contracts", "contracts.", ".."):
+        found_seg, val_seg = _resolve_frontmatter_path(cnt_doc_nested.frontmatter, malformed_key)
+        assert found_seg is False
+        assert val_seg is None
+        diag_seg: list[str] = []
+        ok_seg = _evaluate_declarative_postcondition(
+            {"expect": {"frontmatter": {malformed_key: "CTR-CORE-API"}}},
+            "CNT-CORE-SVC",
+            specs_lookup,
+            {},
+            {},
+            diagnostics=diag_seg,
+        )
+        assert ok_seg is False
+        assert any(f"frontmatter.{malformed_key}" in d for d in diag_seg)
+
+    # Edge case: non-dict / scalar intermediate segment (traversing through a string value)
+    found_scalar, val_scalar = _resolve_frontmatter_path(cnt_doc_nested.frontmatter, "title.sub")
+    assert found_scalar is False
+    assert val_scalar is None
+    diag_scalar: list[str] = []
+    ok_scalar = _evaluate_declarative_postcondition(
+        {"expect": {"frontmatter": {"title.sub": "val"}}},
+        "CNT-CORE-SVC",
+        specs_lookup,
+        {},
+        {},
+        diagnostics=diag_scalar,
+    )
+    assert ok_scalar is False
+    assert any("frontmatter.title.sub expected 'val', got None" in d for d in diag_scalar)
+
+    # Edge case: non-dict target guard in _resolve_frontmatter_path
+    assert _resolve_frontmatter_path(None, "a.b") == (False, None)  # type: ignore[arg-type]
+
+    # Edge case: top-level null (None) succeeds when key is absent, but unresolved dot-path null fails
+    ok_top_none = _evaluate_declarative_postcondition(
+        {"expect": {"frontmatter": {"absent_top_level_key": None}}},
+        "CNT-CORE-SVC",
+        specs_lookup,
+        {},
+        {},
+    )
+    assert ok_top_none is True
+
+    diag_dot_none: list[str] = []
+    ok_dot_none = _evaluate_declarative_postcondition(
+        {"expect": {"frontmatter": {"absent_parent.child": None}}},
+        "CNT-CORE-SVC",
+        specs_lookup,
+        {},
+        {},
+        diagnostics=diag_dot_none,
+    )
+    assert ok_dot_none is False
+    assert any("frontmatter.absent_parent.child" in d for d in diag_dot_none)
+
+    # Verify non-matching dot-path and missing intermediate dot-path fail with clear diagnostics
+    dlt_nested_doc.frontmatter["mutations"][0]["expect"]["frontmatter"]["decisions.id"] = "DEC-DOES-NOT-EXIST"
+    dlt_nested.write_text(dump_spec_document(dlt_nested_doc.frontmatter, dlt_nested_doc.body), encoding="utf-8")
+    ok_nested_fail, _, rep_nested_fail = verify_delta_mutations(eidos_dir, "DLT-2026-103")
+    assert ok_nested_fail is False
+    assert "frontmatter.decisions.id" in (rep_nested_fail.mutations[0].failure_reason or "")
+
+    dlt_nested_doc.frontmatter["mutations"][0]["expect"]["frontmatter"] = {
+        "nonexistent.nested.path": "val",
+    }
+    dlt_nested.write_text(dump_spec_document(dlt_nested_doc.frontmatter, dlt_nested_doc.body), encoding="utf-8")
+    ok_nested_missing, _, rep_nested_missing = verify_delta_mutations(eidos_dir, "DLT-2026-103")
+    assert ok_nested_missing is False
+    assert "frontmatter.nonexistent.nested.path expected 'val', got None" in (
+        rep_nested_missing.mutations[0].failure_reason or ""
+    )
+
 
 def test_delta_schema_operation_coverage_and_git_baseline_fallback(tmp_path):
     """Verify 100% composable operation coverage and Git-backed baseline SHA fallback when SQLite cache is absent."""
