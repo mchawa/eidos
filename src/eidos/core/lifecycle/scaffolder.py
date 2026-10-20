@@ -645,3 +645,289 @@ def inline_component(
     comp_file.unlink(missing_ok=True)
 
     return target_container_path, comp_file
+
+
+def _resolve_schema_node(node: dict[str, Any], defs: dict[str, Any]) -> dict[str, Any]:
+    """Resolve top-level $ref to #/$defs/... if present while preserving sibling annotations."""
+    if not isinstance(node, dict):
+        return {}
+    ref = node.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/$defs/"):
+        def_key = ref.removeprefix("#/$defs/")
+        resolved = dict(defs.get(def_key) or {})
+        for k, v in node.items():
+            if k != "$ref":
+                resolved[k] = v
+        return resolved
+    return dict(node)
+
+
+def _extract_id_prefix(id_pattern: str) -> str:
+    """Extract the canonical entity ID prefix (e.g. 'CAP-') from a schema regex pattern."""
+    cleaned = id_pattern.strip().lstrip("^").lstrip("(")
+    if "-" in cleaned:
+        prefix_token = cleaned.split("-", 1)[0]
+        if prefix_token.isalnum():
+            return f"{prefix_token.upper()}-"
+    return ""
+
+
+def _derive_short_type(canonical_type: str) -> str:
+    """Derive the CLI short type alias from a canonical schema type string."""
+    if canonical_type == "design/system":
+        return "design-system"
+    if canonical_type == "delta/mutation":
+        return "delta"
+    return canonical_type.split("/")[-1]
+
+
+def _synthesize_example_value(
+    key: str,
+    prop_schema: dict[str, Any],
+    defs: dict[str, Any],
+    *,
+    id_prefix: str = "",
+    include_optional: bool = False,
+) -> Any:
+    """Synthesize a schema-conforming example value directly from a v1 JSON Schema property definition."""
+    resolved = _resolve_schema_node(prop_schema, defs)
+
+    if "const" in resolved:
+        return resolved["const"]
+    if isinstance(resolved.get("examples"), list) and resolved["examples"]:
+        return resolved["examples"][0]
+    if "default" in resolved:
+        return resolved["default"]
+    if isinstance(resolved.get("enum"), list) and resolved["enum"]:
+        enums = resolved["enum"]
+        return "active" if "active" in enums else enums[0]
+
+    ref_meta = resolved.get("x-eidos-ref")
+    if isinstance(ref_meta, dict) and isinstance(ref_meta.get("prefixes"), list) and ref_meta["prefixes"]:
+        first_pfx = str(ref_meta["prefixes"][0])
+        chosen_pfx = "CNT-" if "CNT-" in ref_meta["prefixes"] else first_pfx
+        return f"{chosen_pfx}EXAMPLE-001"
+
+    prop_type = resolved.get("type")
+    if not prop_type and "oneOf" in resolved:
+        for branch in resolved.get("oneOf") or []:
+            if isinstance(branch, dict):
+                return _synthesize_example_value(key, branch, defs, id_prefix=id_prefix)
+
+    if prop_type == "string":
+        pattern = str(resolved.get("pattern") or "")
+        pfx = _extract_id_prefix(pattern) or (id_prefix if key == "id" else "")
+        if pfx:
+            return f"{pfx}EXAMPLE-001"
+        if key == "test_binding":
+            return "tests/test_example.py::test_invariant"
+        if key == "version":
+            return "1.0.0"
+        if key == "base_commit":
+            return "a1b2c3d"
+        if key == "route":
+            return "/example"
+        if key in ("source_path", "specification_file"):
+            return "src/example"
+        if key == "manifest":
+            return "tokens.json"
+        if pattern == "^[a-z0-9_-]+$":
+            return "core"
+        return f"Example {key.replace('_', ' ')}"
+
+    if prop_type == "integer":
+        return 1
+
+    if prop_type == "boolean":
+        return True
+
+    if prop_type == "array":
+        items_schema = resolved.get("items")
+        if isinstance(items_schema, dict):
+            return [_synthesize_example_value(key, items_schema, defs, include_optional=False)]
+        return []
+
+    if prop_type == "object":
+        sub_props = resolved.get("properties")
+        if isinstance(sub_props, dict) and sub_props:
+            req_keys = list(resolved.get("required") or [])
+            keys_to_emit = list(sub_props.keys()) if (include_optional or not req_keys) else req_keys
+            return {
+                sk: _synthesize_example_value(sk, sub_props[sk], defs, include_optional=False)
+                for sk in keys_to_emit
+                if sk in sub_props
+            }
+        return {"example": "https://example.com"}
+
+    return f"example_{key}"
+
+
+def _describe_property_schema(prop_schema: dict[str, Any], defs: dict[str, Any], is_required: bool) -> dict[str, Any]:
+    """Extract a concise, agent-friendly descriptor for a single frontmatter property."""
+    resolved = _resolve_schema_node(prop_schema, defs)
+    prop_type = resolved.get("type")
+    if not prop_type and "oneOf" in resolved:
+        branches = [_resolve_schema_node(b, defs) for b in resolved.get("oneOf", []) if isinstance(b, dict)]
+        branch_types: list[str] = []
+        for b in branches:
+            bt = b.get("type")
+            if bt == "array" and isinstance(b.get("items"), dict):
+                it = _resolve_schema_node(b["items"], defs).get("type", "any")
+                branch_types.append(f"array<{it}>")
+            elif isinstance(bt, str):
+                branch_types.append(bt)
+        prop_type = " | ".join(branch_types) if branch_types else "oneOf"
+
+    desc_info: dict[str, Any] = {
+        "required": is_required,
+        "type": prop_type or "any",
+        "description": str(resolved.get("description") or "").strip(),
+    }
+    if "const" in resolved:
+        desc_info["const"] = resolved["const"]
+    if "enum" in resolved:
+        desc_info["enum"] = list(resolved["enum"])
+    if "pattern" in resolved:
+        desc_info["pattern"] = resolved["pattern"]
+    if isinstance(resolved.get("examples"), list) and resolved["examples"]:
+        desc_info["examples"] = list(resolved["examples"])
+    ref_meta = resolved.get("x-eidos-ref")
+    if isinstance(ref_meta, dict) and ref_meta.get("prefixes"):
+        desc_info["ref_prefixes"] = list(ref_meta["prefixes"])
+
+    if prop_type == "object":
+        sub_props = resolved.get("properties") or {}
+        if isinstance(sub_props, dict) and sub_props:
+            desc_info["required_keys"] = list(resolved.get("required") or [])
+            desc_info["allowed_keys"] = list(sub_props.keys())
+            desc_info["additional_properties"] = resolved.get("additionalProperties", True)
+    elif prop_type == "array" and isinstance(resolved.get("items"), dict):
+        items_resolved = _resolve_schema_node(resolved["items"], defs)
+        items_type = items_resolved.get("type")
+        if not items_type and "oneOf" in items_resolved:
+            items_type = "string | object"
+        desc_info["items_type"] = items_type or "any"
+        if isinstance(items_resolved.get("x-eidos-ref"), dict) and items_resolved["x-eidos-ref"].get("prefixes"):
+            desc_info["ref_prefixes"] = list(items_resolved["x-eidos-ref"]["prefixes"])
+        item_props = items_resolved.get("properties") or {}
+        if isinstance(item_props, dict) and item_props:
+            desc_info["item_required_keys"] = list(items_resolved.get("required") or [])
+            desc_info["item_allowed_keys"] = list(item_props.keys())
+            desc_info["item_additional_properties"] = items_resolved.get("additionalProperties", True)
+
+    return desc_info
+
+
+def get_spec_schema_info(doc_type_key: str | None = None) -> dict[str, Any] | list[dict[str, Any]]:
+    """Load and inspect bundled v1 YAML schemas directly from ``assets/schemas/v1/``.
+
+    If ``doc_type_key`` is None, returns a summary list across all 16 bundled schemas.
+    Otherwise resolves ``doc_type_key`` by short type alias (e.g. ``"capability"``, ``"container"``, ``"delta"``)
+    or canonical type (e.g. ``"product/capability"``, ``"tech/container"``, ``"delta/mutation"``) and returns
+    detailed property constraints and a schema-synthesized example YAML frontmatter block.
+    """
+    from eidos.core.spec.parser import safe_dump_yaml
+    from eidos.core.spec.validator import TYPE_TO_SCHEMA_NAME
+
+    validator = SpecValidator()
+
+    def _build_single_schema_info(canonical_type: str) -> dict[str, Any]:
+        schema_rel = TYPE_TO_SCHEMA_NAME[canonical_type]
+        raw_schema = validator._schema_cache.get(schema_rel) or {}
+        defs = raw_schema.get("$defs") if isinstance(raw_schema.get("$defs"), dict) else {}
+
+        merged_required: list[str] = []
+        merged_props: dict[str, Any] = {}
+
+        # Flatten allOf (e.g. tech/component inherits #/$defs/inline_component from common/defs.yaml)
+        for branch in raw_schema.get("allOf") or []:
+            if isinstance(branch, dict):
+                resolved_branch = _resolve_schema_node(branch, defs)
+                for req_k in resolved_branch.get("required") or []:
+                    if req_k not in merged_required:
+                        merged_required.append(req_k)
+                branch_props = resolved_branch.get("properties") or {}
+                if isinstance(branch_props, dict):
+                    merged_props.update(branch_props)
+
+        for req_k in raw_schema.get("required") or []:
+            if req_k not in merged_required:
+                merged_required.append(req_k)
+
+        own_props = raw_schema.get("properties") or {}
+        if isinstance(own_props, dict):
+            merged_props.update(own_props)
+
+        priority_keys = ["type", "id", "title", "status"]
+        ordered_keys: list[str] = [k for k in priority_keys if k in merged_props]
+        for k in merged_required:
+            if k not in ordered_keys and k in merged_props:
+                ordered_keys.append(k)
+        for k in merged_props:
+            if k not in ordered_keys:
+                ordered_keys.append(k)
+
+        merged_required = [k for k in ordered_keys if k in merged_required]
+        optional_keys = [k for k in ordered_keys if k not in merged_required]
+        prop_descriptors: dict[str, dict[str, Any]] = {
+            k: _describe_property_schema(merged_props[k], defs, k in merged_required) for k in ordered_keys
+        }
+
+        status_desc = prop_descriptors.get("status") or {}
+        status_values = status_desc.get("enum") or []
+        id_desc = prop_descriptors.get("id") or {}
+        id_pattern = str(id_desc.get("pattern") or "")
+        id_prefix = _extract_id_prefix(id_pattern)
+        short_type = _derive_short_type(canonical_type)
+
+        # Synthesize example frontmatter directly from the loaded schema properties
+        example_dict: dict[str, Any] = {}
+        keys_for_example = list(merged_required)
+        if "status" in merged_props and "status" not in keys_for_example:
+            keys_for_example.insert(min(3, len(keys_for_example)), "status")
+        for k in keys_for_example:
+            example_dict[k] = _synthesize_example_value(
+                k,
+                merged_props[k],
+                defs,
+                id_prefix=id_prefix,
+                include_optional=(k in ("technical", "c4_context")),
+            )
+
+        yaml_body = safe_dump_yaml(example_dict).strip()
+        example_fm_str = f"---\n{yaml_body}\n---"
+
+        return {
+            "type": canonical_type,
+            "short_type": short_type,
+            "schema_path": f"assets/schemas/v1/{schema_rel}",
+            "id_prefix": id_prefix,
+            "id_pattern": id_pattern,
+            "description": str(raw_schema.get("description") or "").strip(),
+            "additional_properties": bool(
+                raw_schema.get("additionalProperties", False)
+                if "additionalProperties" in raw_schema
+                else raw_schema.get("unevaluatedProperties", False)
+            ),
+            "status_values": status_values,
+            "required": merged_required,
+            "optional": optional_keys,
+            "properties": prop_descriptors,
+            "example_frontmatter": example_fm_str,
+        }
+
+    all_schemas = [_build_single_schema_info(ctype) for ctype in TYPE_TO_SCHEMA_NAME]
+
+    if doc_type_key is None or not doc_type_key.strip():
+        return all_schemas
+
+    cleaned = doc_type_key.strip()
+    lower_key = cleaned.lower().replace("_", "-")
+    canonical_type = VALID_SPEC_TYPES.get(lower_key) or VALID_SPEC_TYPES.get(cleaned.lower())
+
+    by_canonical = {s["type"]: s for s in all_schemas}
+    if canonical_type and canonical_type in by_canonical:
+        return by_canonical[canonical_type]
+
+    supported = ", ".join(sorted(s["short_type"] for s in all_schemas))
+    raise ValueError(f"Unknown specification schema type '{doc_type_key}'. Supported types: {supported}")

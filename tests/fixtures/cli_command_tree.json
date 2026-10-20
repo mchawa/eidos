@@ -455,12 +455,13 @@
       "show",
       "create",
       "delete",
+      "schema",
       "component"
     ],
     "path": [
       "spec"
     ],
-    "help": "Manage living specifications and C4 components (list, show, create, delete, component).",
+    "help": "Manage living specifications and C4 components (list, show, schema, create, delete, component).",
     "hidden": false,
     "panel": "Living Catalog & Mutations",
     "params": []
@@ -697,6 +698,46 @@
         "required": false,
         "default": "False",
         "help": "Force deletion even if other specifications reference this document.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "spec",
+      "schema"
+    ],
+    "help": "Inspect bundled v1 YAML frontmatter schema constraints, required/optional keys, and valid templates.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "doc_type",
+        "opts": [
+          "doc_type"
+        ],
+        "secondary": [],
+        "kind": "TyperArgument",
+        "required": false,
+        "default": "None",
+        "help": "Specification type to inspect (e.g. capability, container, component, contract, policy, exploration, delta). Omit to list all 16 schemas.",
+        "panel": null,
+        "envvar": "None",
+        "type": "STRING"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output machine-readable JSON schema specification and example YAML frontmatter.",
         "panel": null,
         "envvar": "None",
         "type": "BOOL"

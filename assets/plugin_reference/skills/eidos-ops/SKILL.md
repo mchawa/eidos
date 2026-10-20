@@ -27,7 +27,8 @@ eidos plugin install all
 
 # 3. Populate C4 Level 1 System Context (eidos/system.adoc) and Arc42 Master Architecture (eidos/architecture/system-architecture.adoc)
 
-# 4. Scaffold initial product domains, personas, and C4 containers (consult 'eidos-spec' for YAML schemas)
+# 4. Scaffold initial product domains, personas, and C4 containers (consult 'eidos-spec' or run 'eidos spec schema <type>' for YAML schemas)
+eidos spec schema
 eidos spec create domain DOM-CORE --title "Core Application Domain"
 eidos spec create persona PER-DEVELOPER --title "Application Developer"
 eidos spec create container CNT-APP-API --title "Core Application API"
@@ -52,7 +53,7 @@ When introducing Eidos into an **existing codebase**, never invent speculative a
    * Map major internal modules/classes to inline `components:` entries (`id: CMP-*`, `title`, `responsibility`, `source_path`), or promote complex subsystems via `eidos spec component promote <CMP-ID>`.
    * Record non-obvious as-built architectural trade-offs in `decisions:` (`DEC-*`).
 4. **Extract Interface Contracts (`CTR-*`)**: Create contract specs in `eidos/architecture/contracts/<slug>.adoc` for REST/OpenAPI, gRPC/Protobuf, GraphQL, or CLI boundaries (`specification_file`), and link `provides:` / `consumes:` on `CNT-*`.
-5. **Extract Product Domains (`DOM-*`), Personas (`PER-*`) & Capabilities (`CAP-*`)**: Group business logic into bounded contexts (`eidos/domains/<slug>/domain.adoc`), create actor personas (`eidos/personas/<slug>.adoc`), and author capabilities (`eidos/domains/<slug>/capabilities/<cap>.adoc`) linking `personas`, `jtbd`, `policies`, and `technical.containers`.
+5. **Extract Product Domains (`DOM-*`), Personas (`PER-*`) & Capabilities (`CAP-*`)**: Group business logic into bounded contexts (`eidos/domains/<slug>/domain.adoc`), create actor personas (`eidos/personas/<slug>.adoc`), and author capabilities (`eidos/domains/<slug>/capabilities/<cap>.adoc`) linking `business.personas`, `business.policies`, and `technical.containers` in YAML frontmatter (authoring Jobs-to-be-Done in the AsciiDoc prose body).
 6. **Extract Frontend Design Systems & Client Flows (If Applicable)**: For web/mobile/desktop/TUI clients, scaffold `DS-*` (`tokens.json`), `UIC-*`, `CLT-*`, `SCR-*`, and `FLOW-*` under `eidos/design/`.
 7. **Bind Existing Automated Tests to Capability Invariants (`INV-*`)**: Scan `tests/` for critical business and security rules, declare `INV-*` entries with `test_binding: "<test_file>::<test_func>"` on the owning capability, and add the `INV-*` ID to each bound test's docstring or comment (`POL-002`).
 8. **Synchronize & Verify Zero Drift**:

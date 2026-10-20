@@ -72,6 +72,7 @@ eidos delta create \
   --kind feature
 
 # 2. Edit the created eidos/deltas/dlt-*.adoc file to declare mutations and structured expect post-conditions
+#    (Run `eidos spec schema delta` to inspect exact SpecDelta frontmatter keys and closed sub-schemas)
 
 # 3. Implement code changes, update living specs in eidos/, and bind tests
 

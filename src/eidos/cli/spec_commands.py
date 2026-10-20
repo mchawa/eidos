@@ -10,13 +10,13 @@ from rich.table import Table
 from eidos.cli._shared import PANEL_GOVERNANCE, console, resolve_cli_eidos_dir
 from eidos.cli.component_commands import component_app
 from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
-from eidos.core.lifecycle.scaffolder import create_spec, delete_spec, list_specs
+from eidos.core.lifecycle.scaffolder import create_spec, delete_spec, get_spec_schema_info, list_specs
 from eidos.core.spec.parser import parse_spec_file
 from eidos.core.spec.validator import SpecValidator
 
 spec_app = typer.Typer(
     name="spec",
-    help="Manage living specifications and C4 components (list, show, create, delete, component).",
+    help="Manage living specifications and C4 components (list, show, schema, create, delete, component).",
     add_completion=False,
 )
 spec_app.add_typer(component_app, name="component")
@@ -311,6 +311,129 @@ def spec_delete_cmd(
     console.print(f"[bold green]✓[/bold green] {msg}")
     if refs:
         console.print(f"[yellow]Warning:[/yellow] Deleted despite {len(refs)} reference(s) (--force used).")
+
+
+@spec_app.command("schema")
+def spec_schema_cmd(
+    doc_type: str | None = typer.Argument(
+        None,
+        help=(
+            "Specification type to inspect (e.g. capability, container, "
+            "component, contract, policy, exploration, delta). Omit to list all 16 schemas."
+        ),
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output machine-readable JSON schema specification and example YAML frontmatter.",
+    ),
+):
+    """Inspect bundled v1 YAML frontmatter schema constraints, required/optional keys, and valid templates."""
+    try:
+        info = get_spec_schema_info(doc_type)
+    except ValueError as e:
+        if json_output:
+            typer.echo(orjson.dumps({"error": str(e)}).decode("utf-8"))
+        else:
+            console.print(f"[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1) from e
+
+    if isinstance(info, list):
+        if json_output:
+            summary_list = [
+                {
+                    "type": s["type"],
+                    "short_type": s["short_type"],
+                    "id_prefix": s["id_prefix"],
+                    "schema_path": s["schema_path"],
+                    "status_values": s["status_values"],
+                    "required": s["required"],
+                    "optional": s["optional"],
+                    "additional_properties": s["additional_properties"],
+                }
+                for s in info
+            ]
+            typer.echo(
+                orjson.dumps({"count": len(summary_list), "schemas": summary_list}, option=orjson.OPT_INDENT_2).decode(
+                    "utf-8"
+                )
+            )
+            return
+
+        table = Table(
+            title=f"Eidos v1 Specification Schemas ({len(info)} types)",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        table.add_column("Short Alias", style="bold cyan")
+        table.add_column("Canonical Type", style="yellow")
+        table.add_column("Prefix", style="green")
+        table.add_column("Required Keys", style="white")
+        table.add_column("Optional Keys", style="dim")
+
+        for s in info:
+            table.add_row(
+                s["short_type"],
+                s["type"],
+                f"{s['id_prefix']}*",
+                ", ".join(s["required"]),
+                ", ".join(s["optional"]) or "—",
+            )
+        console.print(table)
+        console.print("\n[dim]Tip: Run `eidos spec schema <type> [--json]` for nested keys and YAML templates.[/dim]")
+        return
+
+    if json_output:
+        typer.echo(orjson.dumps(info, option=orjson.OPT_INDENT_2).decode("utf-8"))
+        return
+
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="bold cyan", justify="right")
+    grid.add_column(style="white")
+    grid.add_row("Canonical Type:", f"[bold yellow]{info['type']}[/bold yellow] (alias: `{info['short_type']}`)")
+    grid.add_row("ID Pattern:", f"`{info['id_pattern']}`")
+    grid.add_row("Schema File:", f"`{info['schema_path']}`")
+    grid.add_row("Status Values:", ", ".join(info["status_values"]) if info["status_values"] else "N/A")
+    grid.add_row("Required Keys:", ", ".join(info["required"]))
+    grid.add_row("Optional Keys:", ", ".join(info["optional"]) or "None")
+    grid.add_row("Strict Schema:", "additionalProperties: false (unknown keys rejected)")
+    console.print(Panel(grid, title=f"[bold blue]Schema: {info['type']}[/bold blue]", expand=False))
+
+    prop_table = Table(title="Frontmatter Properties", show_header=True, header_style="bold magenta")
+    prop_table.add_column("Property", style="bold cyan")
+    prop_table.add_column("Req", justify="center")
+    prop_table.add_column("Type / Constraints", style="yellow")
+    prop_table.add_column("Nested Keys / Description", style="white")
+
+    for prop_name, pdesc in info["properties"].items():
+        req_badge = "[bold green]yes[/bold green]" if pdesc.get("required") else "[dim]no[/dim]"
+        t_str = str(pdesc.get("type", "any"))
+        if pdesc.get("items_type"):
+            t_str = f"array<{pdesc['items_type']}>"
+        if pdesc.get("const"):
+            t_str += f" = '{pdesc['const']}'"
+        elif pdesc.get("enum"):
+            t_str += f" ({' | '.join(str(x) for x in pdesc['enum'])})"
+        elif pdesc.get("ref_prefixes"):
+            t_str += f" ({', '.join(p + '*' for p in pdesc['ref_prefixes'])})"
+
+        nested_parts: list[str] = []
+        if pdesc.get("allowed_keys"):
+            req_sub = set(pdesc.get("required_keys") or [])
+            sub_fmt = [f"{k}*" if k in req_sub else k for k in pdesc["allowed_keys"]]
+            nested_parts.append(f"[bold]Keys:[/bold] {', '.join(sub_fmt)}")
+        elif pdesc.get("item_allowed_keys"):
+            req_sub = set(pdesc.get("item_required_keys") or [])
+            sub_fmt = [f"{k}*" if k in req_sub else k for k in pdesc["item_allowed_keys"]]
+            nested_parts.append(f"[bold]Item keys:[/bold] {', '.join(sub_fmt)}")
+        if pdesc.get("description"):
+            nested_parts.append(pdesc["description"])
+
+        prop_table.add_row(prop_name, req_badge, t_str, " — ".join(nested_parts))
+
+    console.print(prop_table)
+    console.print("\n[bold cyan]Example Schema-Valid YAML Frontmatter:[/bold cyan]")
+    typer.echo(info["example_frontmatter"])
 
 
 def register(app: typer.Typer) -> None:

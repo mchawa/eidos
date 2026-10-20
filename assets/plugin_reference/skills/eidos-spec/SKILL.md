@@ -10,14 +10,19 @@ This skill provides the authoring rules, CLI scaffolding commands, and v1 YAML f
 
 ---
 
-## 1. CLI Scaffolding & Inspection (`eidos spec`)
+## 1. CLI Scaffolding & Schema Introspection (`eidos spec`)
 
-Always scaffold new specifications with `eidos spec create` to guarantee valid v1 YAML frontmatter and canonical paths:
+Never hand-author `.adoc` specification files from scratch. Always scaffold new specifications with `eidos spec create` and inspect schema constraints with `eidos spec schema` to guarantee valid v1 YAML frontmatter and canonical paths:
 
 ```bash
 # List and inspect living specifications (includes inline CMP-* components; excludes SpecDeltas)
 eidos spec list [--type <type>] [--status <status>] [--json]
 eidos spec show <ID_OR_PATH>
+
+# Inspect v1 YAML frontmatter schemas, required/optional keys, nested sub-keys, and valid YAML examples
+eidos spec schema
+eidos spec schema capability
+eidos spec schema container --json
 
 # Scaffold minimal draft blueprints across the 15 living specification types:
 #   system | architecture | domain | capability | persona | policy | exploration |
@@ -40,13 +45,40 @@ eidos spec delete <ID_OR_PATH>
 eidos validate eidos --json
 ```
 
+### 1.1 Frontmatter Guardrails & Common Pitfalls (`additionalProperties: false`)
+
+All 16 Eidos v1 schemas enforce `additionalProperties: false` (or `unevaluatedProperties: false` on `tech/component`) at both the top level and every nested object. Avoid these frequent frontmatter mistakes:
+
+| Pitfall / Construct | Correct Schema Placement & Allowed Keys | What Fails Validation |
+| :--- | :--- | :--- |
+| **`invariants:` placement** | • **`product/capability` (`CAP-*`)**: Nested under `technical.invariants` (`technical: { containers, components, contracts, invariants }`).<br>• **`product/policy` (`POL-*`), `tech/container` (`CNT-*`), `tech/component` (`CMP-*`), `design/ui-component` (`UIC-*`)**: Top-level `invariants:` array. | Putting top-level `invariants:` on `CAP-*`, or putting `invariants:` on `DOM-*`, `SYS-*`, `ARCH-*`, `CTR-*`, or `PER-*`. |
+| **`invariant` item keys** | Exactly `{ id, rule, test_binding }` (`id` matching `^INV-[A-Z0-9_-]+$` and `rule` required; `test_binding` required on `CAP-*` invariants by `POL-002`). | Adding `title`, `description`, `severity`, `category`, or `status` inside an `invariants:` item. |
+| **`decisions:` item keys** | Available on living specs (`product/*`, `tech/*`, `design/*`) and `delta/mutation`. Each item allows **only** `{ id, title, decision, rationale, rejected_alternatives, graduated_from }` where `rejected_alternatives` items allow **only** `{ option, reason_rejected }`. | Adding `status`, `date`, `consequences`, `context`, or `pros`/`cons` inside a `decisions:` item, or using `decisions:` on `product/exploration` (`EXP-*` uses singular `decision: { outcome, resulting_deltas }`). |
+| **`contracts:` shape** | • **`tech/container` (`CNT-*`)**: Object `{ provides: [CTR-*], consumes: [CTR-*] }`.<br>• **`product/capability` (`CAP-*`)**: Flat array under `technical.contracts: [CTR-*]`.<br>• **`tech/component` (`CMP-*`)**: Not a frontmatter key (contracts belong to the container boundary). | Passing a flat array to `CNT-*.contracts`, or adding `contracts:` to `CMP-*`. |
+| **`components:` shape** | • **`tech/container` (`CNT-*`)**: Array of **inline component objects** (`{ id, title, status, domain, responsibility, source_path, invariants, decisions }`).<br>• **`product/capability` (`CAP-*`)**: Array of **component ID strings** under `technical.components: [CMP-*]`. | Listing string IDs under `CNT-*.components`, or duplicating a promoted standalone `eidos/architecture/components/*.adoc` component inside `CNT-*.components` (`INV-COMPONENT-CENTRALIZATION-MANDATE`). |
+| **`status` enum values** | • **Living specs (`SYS-*`, `DOM-*`, `CAP-*`, `POL-*`, `PER-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DS-*`, `UIC-*`, `SCR-*`, `CLT-*`, `FLOW-*`)**: `draft \| planned \| active \| deprecated \| retired`.<br>• **Explorations (`EXP-*`)**: `proposed \| in_progress \| adopted \| discarded`.<br>• **SpecDeltas (`DLT-*`)**: `proposed \| in_review \| approved \| applied \| rejected`. | Using `proposed` or `applied` on a living spec, or using `active` or `draft` on `EXP-*` / `DLT-*`. |
+| **Prose-only sections** | Jobs-to-be-Done (JTBD), functional requirements, acceptance criteria, ubiquitous language tables, and Arc42 narratives belong in the **AsciiDoc body** (`== ...`), never as custom YAML keys. | Adding `jtbd:`, `requirements:`, `summary:`, `description:`, or `owners:` (only `DOM-*` has `owners:`) to YAML frontmatter. |
+
 ---
 
 ## 2. Product Layer (`SYS-*`, `DOM-*`, `CAP-*`, `PER-*`)
 
 ### 2.1 System Context (`eidos/system.adoc`)
 * **`type: product/system`** (`id: SYS-*`).
-* **Required keys**: `type`, `id`, `title`, `archetypes` (list); optional `status`, `decisions`. Business vision, target users, value proposition, and technical profile are authored in the AsciiDoc prose body.
+* **Required keys**: `type`, `id`, `title`, `archetypes` (non-empty list of system archetype slugs); optional `status`, `decisions`. Business vision, target users, value proposition, and technical profile are authored in the AsciiDoc prose body.
+
+```yaml
+---
+type: product/system
+id: SYS-BILLING-PLATFORM
+title: "Enterprise Usage Billing Platform"
+status: active
+archetypes:
+  - backend-service
+  - event-driven-pipeline
+---
+= System: Enterprise Usage Billing Platform
+```
 
 ### 2.2 Bounded Context Domains (`eidos/domains/<slug>/domain.adoc`)
 
@@ -118,6 +150,22 @@ role_type: "admin" # end_user | admin | human_engineer | autonomous_agent
 ### 3.1 Arc42 Master Architecture (`eidos/architecture/system-architecture.adoc`)
 * **`type: tech/architecture`** (`id: ARCH-*`).
 * **Required keys**: `type`, `id`, `title`, `c4_context: { actors, external_systems }`; optional `status`, `decisions`. Solution strategy, C4 Level 2 container narrative, cross-cutting concepts, deployment view, and quality requirements are authored in the AsciiDoc prose body (C4 Level 2 container topology is derived automatically from `CNT-*` specs).
+
+```yaml
+---
+type: tech/architecture
+id: ARCH-BILLING-PLATFORM
+title: "Billing Platform System Architecture"
+status: active
+c4_context:
+  actors:
+    - PER-FINANCE-ADMIN
+  external_systems:
+    - name: "Stripe Payment Gateway"
+      role: "External payment processor receiving finalized invoice charges."
+---
+= Architecture: Billing Platform System Architecture
+```
 
 ### 3.2 C4 Level 2 Containers (`eidos/architecture/containers/<name>.adoc`)
 
@@ -241,6 +289,8 @@ invariants:
 Every capability, policy, container, or component invariant (`INV-[A-Z0-9_-]+`) MUST declare:
 1. `test_binding: "<relative_test_file_path>::<test_function_or_Class::method>"` in YAML frontmatter.
 2. An explicit mention of the `INV-*` ID inside the bound test's docstring, comment, assertion message, or test title/display name.
+
+> **Intentional Design Choice (`DEC-VCS-STATIC-INVARIANT-TRACEABILITY`)**: Eidos verifies `test_binding` strictly via **static bidirectional reference traceability** (`file::func` symbol existence + `INV-*` token presence). Eidos is intentionally **not** responsible for running tests or inspecting AST `assert` statements (that belongs to native CI test runners like `pytest`, `vitest`, `go test`, `cargo test`, and `JUnit`). Never flag static-only test verification as an architectural gap in Eidos.
 
 | Language | `test_binding` Format | How to Reference `INV-*` in Test Source |
 | :--- | :--- | :--- |

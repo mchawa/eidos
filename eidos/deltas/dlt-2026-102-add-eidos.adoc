@@ -1,0 +1,56 @@
+---
+type: delta/mutation
+id: DLT-2026-102-ADD-EIDOS
+title: Add eidos spec schema CLI introspection and frontmatter authoring guardrails
+status: applied
+intent:
+  kind: feature
+  motivation: "Eliminate agent YAML frontmatter trial-and-error by exposing dynamic v1 schema introspection (`eidos spec schema [TYPE] [--json]`) loaded directly from `assets/schemas/v1/` and tightening bundled Agent Skills with explicit `additionalProperties: false` guardrails and complete `SYS-*` / `ARCH-*` YAML examples."
+mutations:
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Add dynamic schema introspection and example frontmatter synthesis (`get_spec_schema_info`) loaded directly from `assets/schemas/v1/` in `src/eidos/core/lifecycle/scaffolder.py`."
+    expect:
+      frontmatter:
+        responsibility: "get_spec_schema_info"
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    details: "Add `eidos spec schema [type] [--json]` subcommand (`spec_schema_cmd`) in `src/eidos/cli/spec_commands.py`."
+    expect:
+      frontmatter:
+        responsibility: "eidos spec schema"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Document `schema [type] [--json]` under `eidos spec` subcommands in `eidos/architecture/contracts/cli.adoc`."
+    expect:
+      body:
+        contains:
+          - "schema [type] [--json]"
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    details: "Synchronize bundled Agent Skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) with `eidos spec schema` introspection, `SYS-*` and `ARCH-*` YAML frontmatter templates, explicit `additionalProperties: false` pitfall guardrails, and corrected `business.personas` / `business.policies` brownfield extraction guidance."
+    expect:
+      frontmatter:
+        responsibility: "eidos spec schema"
+  - operation: modify
+    target: CAP-PROD-001
+    details: "Document dynamic v1 schema introspection (`eidos spec schema`) in `CAP-PROD-001` and bump capability version to `1.7.0`."
+    expect:
+      frontmatter:
+        version: "1.7.0"
+      body:
+        contains:
+          - "eidos spec schema"
+vcs:
+  branch: main
+  base_commit: 0823a463a3591688ed251721de4de5501a77734c
+---
+= SpecDelta: Add eidos spec schema CLI introspection and frontmatter authoring guardrails
+:toc: left
+
+== Problem Statement
+When authoring or updating living specifications (`.adoc`) and SpecDeltas (`DLT-*`), AI coding agents sometimes guess YAML frontmatter keys (such as placing `invariants:` at the top level of `CAP-*` instead of `technical.invariants`, adding `jtbd:` to YAML frontmatter, or misremembering closed sub-object keys on `decisions:` and `contracts:`) and only discover the error after `eidos validate` fails.
+
+== Proposed Specification Changes
+1. **Dynamic Schema Introspection (`CMP-LIFECYCLE-SCAFFOLDER` & `CMP-CLI-SPEC-COMMANDS`)**: Add `get_spec_schema_info(doc_type_key)` in `src/eidos/core/lifecycle/scaffolder.py` and `eidos spec schema [type] [--json]` in `src/eidos/cli/spec_commands.py` (`CTR-EIDOS-CLI`), loading all 16 v1 YAML schemas directly from `assets/schemas/v1/` (`SpecValidator()._schema_cache`), flattening `allOf` / `$ref` descriptors, and synthesizing schema-valid YAML frontmatter templates.
+2. **Bundled Agent Skill Hardening (`CMP-PLUGIN-INSTALLER`)**: Update `assets/plugin_reference/skills/{eidos,eidos-spec,eidos-plan,eidos-ops}/SKILL.md` with `eidos spec schema` instructions, an explicit `additionalProperties: false` Frontmatter Guardrails & Common Pitfalls table, schema-validated `SYS-*` and `ARCH-*` YAML examples, and corrected `business.personas` / `business.policies` brownfield extraction guidance.

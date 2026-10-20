@@ -292,6 +292,11 @@ eidos spec list --type component --json
 # Show details of a specific document
 eidos spec show CNT-EIDOS-CORE
 
+# Inspect bundled v1 YAML frontmatter schemas, required/optional keys, and valid YAML examples
+eidos spec schema
+eidos spec schema capability
+eidos spec schema container --json
+
 # Scaffold a minimal draft specification blueprint
 eidos spec create component CMP-AUTH-SERVICE --title "Authentication Service"
 
@@ -308,6 +313,7 @@ eidos spec component inline CMP-SPEC-VALIDATOR
 Sub-commands:
 * `list`: Lists all living specifications across the 15 blueprint types (including inline C4 Level 3 components) in tabular or JSON format, with optional `--type, -t`, `--status, -s`, `--path, -p`, and `--json` flags.
 * `show <id_or_path>`: Displays detailed frontmatter metadata and preview of a specification document.
+* `schema [type] [--json]`: Dynamically loads and inspects bundled v1 YAML frontmatter schemas from `assets/schemas/v1/` across all 16 specification types (omit `[type]` to list all 16 schemas, or pass a short alias like `capability` or canonical type like `product/capability`), displaying required/optional keys, nested object/array item constraints, and schema-synthesized YAML frontmatter templates.
 * `create <type> <id> --title <title> [--path <path>]`: Scaffolds a minimal, schema-valid draft specification blueprint (`status: draft`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`).
 * `delete <id_or_path>`: Safely deletes a living specification document with cross-reference safety checks (`--force, -f` to override).
 * `component promote <component_id>`: Promotes an inline C4 Level 3 component (`CMP-*`) to a dedicated specification in `eidos/architecture/components/` (linking bottom-up via `container: CNT-*`) and removes the inline entry from the parent container.

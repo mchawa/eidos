@@ -21,7 +21,7 @@ You MUST follow these workflows and guardrails whenever you inspect, plan, imple
 4. **Mandatory Invariant-Test Traceability (`POL-002`)**:
    Every capability invariant (`INV-*`) must declare a `test_binding` (`path/to/test_file::test_function`), and the bound test function must explicitly reference the `INV-*` ID in its docstring, comment, or marker.
 5. **CLI-First Determinism (`POL-004`)**:
-   Always use Eidos CLI commands (`--json` supported) rather than guessing schemas, editing cache files in `eidos/.cache/`, or manually wiring symlinks.
+   Always use Eidos CLI commands (`--json` supported) rather than guessing schemas, editing cache files in `eidos/.cache/`, or manually wiring symlinks. Never create `.adoc` specification or SpecDelta files by hand from scratch—always scaffold via `eidos spec create <type> <ID> --title "..."` or `eidos delta create --title "..." --slug --kind <kind>`, and inspect exact required/optional keys and closed sub-schemas via `eidos spec schema <type> [--json]` before adding nested frontmatter blocks.
 6. **Zero Unreconciled Drift**:
    Never conclude a task with failing specification schemas or unmanaged code-to-spec drift.
 7. **Mandatory Autonomous Pre-Completion Review**:
@@ -77,11 +77,11 @@ eidos index blast-radius CNT-AUTH-SERVICE --depth 2 --json
 
 1. **Slice Context**: Run `eidos context -f <touched_file> --json` to identify the owning container (`CNT-*`), component (`CMP-*`), and bound invariants (`INV-*`).
 2. **Implement Code & Tests**: Modify source code and update or add automated tests preserving `INV-*` references.
-3. **Co-Evolve Living Specs In-Place** (consult **`eidos-spec`** for YAML schemas):
+3. **Co-Evolve Living Specs In-Place** (consult **`eidos-spec`** or run `eidos spec schema <type> [--json]` for exact YAML schemas):
    * **New internal module or file**: Update `source_path` or `components:` in the owning `CNT-*` / `CMP-*` spec.
    * **New package/contract boundary export** (e.g., `__init__.py`, `index.ts`, `mod.rs`, `lib.rs`, `__all__`, or contract `specification_file`): Anchor the new boundary symbol or route in the owning/neighbor spec (`CNT-*`, `CMP-*`, `CTR-*`, or `CAP-*`).
    * **Module-internal helper function**: Covered by a substantive (non-whitespace, non-comment) update to the owning `CNT-*` / `CMP-*` spec—do NOT pollute high-level C4 specs with low-level helper names. Whitespace/comment-only spec edits are rejected (`trivially_covered_files`).
-   * **New invariant or design trade-off**: Add `INV-*` (`test_binding: file::func`) to `CAP-*`, or record a `DEC-*` entry under `decisions:` in the owning spec.
+   * **New invariant or design trade-off**: Add `INV-*` (`test_binding: file::func`) to `CAP-*` (`technical.invariants`) or top-level `invariants:` (`POL-*`/`CNT-*`/`CMP-*`), or record a `DEC-*` entry under `decisions:` in the owning spec.
 4. **Verify Zero Drift**: Run `eidos drift --uncommitted --json`.
 
 ### Workflow B: Planned Mode Execution (Load `eidos-plan`)
@@ -92,7 +92,7 @@ When introducing/removing containers or components, making breaking contract cha
    ```bash
    eidos delta create --title "..." --slug --kind <feature|enabler|bug>
    ```
-2. **Declare Mutations**: Populate `mutations:` (with composable `operation`, `target`, optional `parent` for `add` / `remove` of child entities, and structured `expect: { body, frontmatter }` post-conditions) in the created `eidos/deltas/dlt-*.adoc` file. Never add manual `affects:` or `blast_radius:` blocks.
+2. **Declare Mutations**: Populate `mutations:` (with composable `operation`, `target`, optional `parent` for `add` / `remove` of child entities, and structured `expect: { body, frontmatter }` post-conditions; run `eidos spec schema delta` to inspect allowed keys) in the created `eidos/deltas/dlt-*.adoc` file. Never add manual `affects:` or `blast_radius:` blocks.
 3. **Implement Code, Specs & Tests**: Apply changes across code, `eidos/`, and `tests/`.
 4. **Verify & Apply**:
    ```bash
@@ -155,6 +155,6 @@ eidos/
 ```
 
 Load the companion skill matching your task:
-* **`eidos-spec`**: YAML schemas and scaffolding (`eidos spec create/list/show/delete/component`) for `DOM-*`, `CAP-*`, `PER-*`, `SYS-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DEC-*`, `DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`, `POL-*`, and polyglot `INV-*` test bindings.
+* **`eidos-spec`**: YAML schemas and scaffolding (`eidos spec create/schema/list/show/delete/component`) for `DOM-*`, `CAP-*`, `PER-*`, `SYS-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DEC-*`, `DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`, `POL-*`, and polyglot `INV-*` test bindings.
 * **`eidos-plan`**: Technical spikes (`EXP-*`), SpecDelta lifecycle (`eidos delta create/verify/audit/apply/changelog`), declarative `expect:` post-conditions, and 5-dimension Staff Architectural Reviews.
 * **`eidos-ops`**: Greenfield initialization (`eidos init [--lite]`), 8-phase brownfield codebase extraction, and Living Web Portal operations (`eidos portal serve/build`).

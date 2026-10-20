@@ -1851,3 +1851,66 @@ def test_deep_audit_group_a_a1_through_a8(tmp_path):
     matched_tokens = {f.matched_term for f in audit_res.unacknowledged_findings}
     assert "DOM-LEGACY" in matched_tokens
     assert "EXP-OLD" in matched_tokens
+
+
+def test_spec_schema_introspection_loads_from_assets_and_synthesizes_valid_examples(tmp_path):
+    """Verify get_spec_schema_info and 'eidos spec schema' dynamically load all 16 v1 schemas from assets/schemas/v1/."""
+    import orjson
+
+    from eidos.core.lifecycle.scaffolder import get_spec_schema_info
+
+    all_schemas = get_spec_schema_info()
+    assert isinstance(all_schemas, list)
+    assert len(all_schemas) == 16
+
+    validator = SpecValidator()
+    seen_types = set()
+    for schema_info in all_schemas:
+        ctype = schema_info["type"]
+        seen_types.add(ctype)
+        assert schema_info["schema_path"].startswith("assets/schemas/v1/")
+        assert schema_info["additional_properties"] is False
+        assert "type" in schema_info["required"]
+        assert "id" in schema_info["required"]
+        assert "title" in schema_info["required"]
+        assert schema_info["id_prefix"].endswith("-")
+
+        # Synthesized example_frontmatter must parse and validate cleanly against the v1 JSON Schema
+        synthetic_path = (
+            tmp_path / "eidos" / "architecture" / "components" / "example.adoc"
+            if ctype == "tech/component"
+            else tmp_path / "example.adoc"
+        )
+        synthetic_path.parent.mkdir(parents=True, exist_ok=True)
+        synthetic_path.write_text(f"{schema_info['example_frontmatter']}\n= Example\n", encoding="utf-8")
+        doc = parse_spec_file(synthetic_path)
+        validator.validate_document(doc)
+        assert doc.is_valid, f"Synthesized example for {ctype} failed schema validation: {doc.validation_errors}"
+
+        # Lookup by short_type and canonical type must resolve to the same schema
+        by_short = get_spec_schema_info(schema_info["short_type"])
+        by_canon = get_spec_schema_info(ctype)
+        assert isinstance(by_short, dict) and by_short["type"] == ctype
+        assert isinstance(by_canon, dict) and by_canon["type"] == ctype
+
+    # Verify CLI 'eidos spec schema' summary and single-type inspection (both Rich and --json)
+    res_all_json = runner.invoke(app, ["spec", "schema", "--json"])
+    assert res_all_json.exit_code == 0
+    payload_all = orjson.loads(res_all_json.stdout)
+    assert payload_all["count"] == 16
+
+    res_cap_json = runner.invoke(app, ["spec", "schema", "capability", "--json"])
+    assert res_cap_json.exit_code == 0
+    payload_cap = orjson.loads(res_cap_json.stdout)
+    assert payload_cap["type"] == "product/capability"
+    assert "invariants" in payload_cap["properties"]["technical"]["allowed_keys"]
+
+    res_rich = runner.invoke(app, ["spec", "schema", "component"])
+    assert res_rich.exit_code == 0
+    assert "tech/component" in res_rich.stdout
+    assert "container" in res_rich.stdout
+
+    res_invalid = runner.invoke(app, ["spec", "schema", "nonexistent-type", "--json"])
+    assert res_invalid.exit_code == 1
+    assert "Unknown specification schema type" in orjson.loads(res_invalid.stdout)["error"]
+
