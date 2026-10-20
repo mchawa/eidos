@@ -46,8 +46,7 @@ class _CachedTestFile:
     file_path: str
     mtime_ns: int
     sha256: str
-    has_fixture: bool
-    functions: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+    functions: dict[str, list[str]] = field(default_factory=dict)
     file_tokens: set[str] = field(default_factory=set)
 
 
@@ -152,33 +151,52 @@ def _build_cached_test_file_entry(
     sha256: str,
     ast_idx: Any,
 ) -> tuple[_CachedTestFile, str, str]:
-    """Extract test functions, fixture-filtered INV tokens, and file-level tokens in a single AST pass for caching."""
+    """Extract test functions and file-level tokens in a single AST pass for caching."""
     from eidos.core.index.ast_indexer import INVARIANT_PATTERN
 
     has_fixture = "eidos:fixture" in tcontent
     raw_funcs = ast_idx.list_test_functions(rel, tcontent)
-    functions: dict[str, dict[str, list[str]]] = {}
+    functions: dict[str, list[str]] = {}
     for fname, fslice in raw_funcs.items():
-        fn_tokens = list(dict.fromkeys(_INV_OR_POL_TOKEN_RE.findall(fslice)))
-        fixture_invs: list[str] = []
-        if has_fixture and not _has_function_level_fixture(fslice, INVARIANT_PATTERN):
-            for line in fslice.splitlines():
-                if "eidos:fixture" in line:
-                    continue
-                for inv_id in INVARIANT_PATTERN.findall(line):
-                    if inv_id not in fixture_invs:
-                        fixture_invs.append(inv_id)
-        functions[fname] = {
-            "tokens": fn_tokens,
-            "fixture_invs": fixture_invs,
-        }
+        if not has_fixture:
+            fn_tokens = list(dict.fromkeys(_INV_OR_POL_TOKEN_RE.findall(fslice)))
+        elif _has_function_level_fixture(fslice, INVARIANT_PATTERN):
+            fn_tokens = list(
+                dict.fromkeys(
+                    tok
+                    for line in fslice.splitlines()
+                    if "eidos:fixture" not in line
+                    for tok in _INV_OR_POL_TOKEN_RE.findall(line)
+                    if tok.startswith("POL-")
+                )
+            )
+        else:
+            fn_tokens = list(
+                dict.fromkeys(
+                    tok
+                    for line in fslice.splitlines()
+                    if "eidos:fixture" not in line
+                    for tok in _INV_OR_POL_TOKEN_RE.findall(line)
+                )
+            )
+        if fn_tokens:
+            functions[fname] = fn_tokens
 
-    file_tokens_list = list(dict.fromkeys(_INV_OR_POL_TOKEN_RE.findall(tcontent)))
+    if not has_fixture:
+        file_tokens_list = list(dict.fromkeys(_INV_OR_POL_TOKEN_RE.findall(tcontent)))
+    else:
+        file_tokens_list = list(
+            dict.fromkeys(
+                tok
+                for line in tcontent.splitlines()
+                if "eidos:fixture" not in line
+                for tok in _INV_OR_POL_TOKEN_RE.findall(line)
+            )
+        )
     entry = _CachedTestFile(
         file_path=rel,
         mtime_ns=mtime_ns,
         sha256=sha256,
-        has_fixture=has_fixture,
         functions=functions,
         file_tokens=set(file_tokens_list),
     )
@@ -246,7 +264,7 @@ def _load_or_update_test_binding_cache(
 
     result: dict[str, _CachedTestFile] = {}
     seen_rels: set[str] = set()
-    to_upsert: list[tuple[str, int, str, int, str, str]] = []
+    to_upsert: list[tuple[str, int, str, str, str]] = []
     ast_idx: Any = None
 
     for rel, file_path, mtime_ns in sorted(discovered, key=lambda item: item[0]):
@@ -258,7 +276,6 @@ def _load_or_update_test_binding_cache(
                     file_path=rel,
                     mtime_ns=mtime_ns,
                     sha256=row["sha256"],
-                    has_fixture=bool(row["has_fixture"]),
                     functions=orjson.loads(row["functions_json"]),
                     file_tokens=set(orjson.loads(row["file_tokens_json"])),
                 )
@@ -276,7 +293,6 @@ def _load_or_update_test_binding_cache(
                     file_path=rel,
                     mtime_ns=mtime_ns,
                     sha256=sha256,
-                    has_fixture=bool(row["has_fixture"]),
                     functions=orjson.loads(row["functions_json"]),
                     file_tokens=set(orjson.loads(row["file_tokens_json"])),
                 )
@@ -285,7 +301,6 @@ def _load_or_update_test_binding_cache(
                         rel,
                         mtime_ns,
                         sha256,
-                        int(bool(row["has_fixture"])),
                         row["functions_json"],
                         row["file_tokens_json"],
                     )
@@ -307,7 +322,6 @@ def _load_or_update_test_binding_cache(
                 rel,
                 mtime_ns,
                 sha256,
-                1 if entry.has_fixture else 0,
                 functions_json,
                 file_tokens_json,
             )
@@ -366,17 +380,17 @@ def _verify_single_invariant(
 
         if isinstance(entry, _CachedTestFile):
             if tb_func:
-                candidate_metas: list[dict[str, list[str]]] = []
+                candidate_token_lists: list[list[str]] = []
                 if tb_func in entry.functions:
-                    candidate_metas.append(entry.functions[tb_func])
+                    candidate_token_lists.append(entry.functions[tb_func])
                 elif "::" not in tb_func:
                     suffix = f"::{parts[-1]}"
-                    candidate_metas.extend(
-                        meta for k, meta in entry.functions.items() if k == parts[-1] or k.endswith(suffix)
+                    candidate_token_lists.extend(
+                        toks for k, toks in entry.functions.items() if k == parts[-1] or k.endswith(suffix)
                     )
-                if not candidate_metas:
+                if not candidate_token_lists:
                     return []
-                if not any(iid in meta.get("tokens", []) for meta in candidate_metas):
+                if not any(iid in toks for toks in candidate_token_lists):
                     return []
                 return list(dict.fromkeys([f"{tb_file}::{tb_func}", *inv_to_test_funcs.get(iid, [])]))
             if iid in entry.file_tokens:
@@ -439,22 +453,14 @@ def detect_orphan_invariants(
             cached_tests = _load_or_update_test_binding_cache(repo_root, eidos_dir=eidos_dir)
         for tpath, entry in sorted(cached_tests.items()):
             qualified_invs_by_suffix: dict[str, set[str]] = {}
-            for fname, func_meta in entry.functions.items():
+            for fname, fn_tokens in entry.functions.items():
                 if "::" in fname:
                     sfx = fname.rsplit("::", 1)[-1]
-                    invs = (
-                        func_meta.get("fixture_invs", [])
-                        if entry.has_fixture
-                        else [t for t in func_meta.get("tokens", []) if INVARIANT_PATTERN.fullmatch(t)]
-                    )
+                    invs = [t for t in fn_tokens if INVARIANT_PATTERN.fullmatch(t)]
                     qualified_invs_by_suffix.setdefault(sfx, set()).update(invs)
-            for fname, func_meta in entry.functions.items():
+            for fname, fn_tokens in entry.functions.items():
                 accounted = qualified_invs_by_suffix.get(fname, set()) if "::" not in fname else set()
-                invs = (
-                    func_meta.get("fixture_invs", [])
-                    if entry.has_fixture
-                    else [t for t in func_meta.get("tokens", []) if INVARIANT_PATTERN.fullmatch(t)]
-                )
+                invs = [t for t in fn_tokens if INVARIANT_PATTERN.fullmatch(t)]
                 for inv_id in invs:
                     if inv_id in accounted:
                         continue
@@ -516,9 +522,9 @@ def extract_invariants_and_verify(
 
     inv_to_test_funcs: dict[str, list[str]] = {}
     for entry in cached_tests.values():
-        for fname, func_meta in entry.functions.items():
+        for fname, fn_tokens in entry.functions.items():
             ident = f"{entry.file_path}::{fname}"
-            for ref in func_meta.get("tokens", []):
+            for ref in fn_tokens:
                 inv_to_test_funcs.setdefault(ref, []).append(ident)
 
     def _spec_rel(path: Path) -> str:

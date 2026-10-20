@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from eidos.core.spec.models import SpecDocument
 
 # Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-100).
-SCHEMA_VERSION = "2.10.0"
+SCHEMA_VERSION = "2.11.0"
 
 # In-process parsed SpecDocument cache keyed by resolved Path -> (mtime_ns, st_size, sha256, SpecDocument)
 _PARSED_SPEC_MEM_CACHE: dict[Path, tuple[int, int, str, SpecDocument]] = {}
@@ -63,7 +63,6 @@ CREATE TABLE IF NOT EXISTS test_binding_cache (
     file_path TEXT PRIMARY KEY,
     mtime_ns INTEGER NOT NULL,
     sha256 TEXT NOT NULL,
-    has_fixture INTEGER NOT NULL DEFAULT 0,
     functions_json TEXT NOT NULL,
     file_tokens_json TEXT NOT NULL
 );
@@ -357,7 +356,7 @@ def load_test_binding_cache(db_path: Path) -> dict[str, sqlite3.Row]:
     cached_rows: dict[str, sqlite3.Row] = {}
     with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn:
         for row in conn.execute(
-            "SELECT file_path, mtime_ns, sha256, has_fixture, functions_json, file_tokens_json FROM test_binding_cache;"
+            "SELECT file_path, mtime_ns, sha256, functions_json, file_tokens_json FROM test_binding_cache;"
         ):
             cached_rows[row["file_path"]] = row
     return cached_rows
@@ -365,7 +364,7 @@ def load_test_binding_cache(db_path: Path) -> dict[str, sqlite3.Row]:
 
 def save_test_binding_cache(
     db_path: Path,
-    to_upsert: list[tuple[str, int, str, int, str, str]],
+    to_upsert: list[tuple[str, int, str, str, str]],
     deleted_keys: list[str] | None = None,
 ) -> None:
     """Upsert and prune ``test_binding_cache`` entries via canonical ``open_cache_connection``."""
@@ -381,8 +380,8 @@ def save_test_binding_cache(
             conn.executemany(
                 """
                 INSERT OR REPLACE INTO test_binding_cache
-                (file_path, mtime_ns, sha256, has_fixture, functions_json, file_tokens_json)
-                VALUES (?, ?, ?, ?, ?, ?);
+                (file_path, mtime_ns, sha256, functions_json, file_tokens_json)
+                VALUES (?, ?, ?, ?, ?);
                 """,
                 to_upsert,
             )

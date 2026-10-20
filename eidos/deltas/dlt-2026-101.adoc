@@ -1,0 +1,37 @@
+---
+type: delta/mutation
+id: DLT-2026-101
+title: "Remove has_fixture Column and fixture_invs Nesting from test_binding_cache in index.db"
+status: applied
+
+intent:
+  kind: enabler
+  motivation: "Eliminate test-fixture artifacts (the has_fixture column and per-function {'fixture_invs': ..., 'tokens': ...} wrapper) and empty-token function entries from test_binding_cache in eidos/.cache/index.db so functions_json is a flat {func_name: [tokens]} map containing only functions with invariant/policy references."
+
+vcs:
+  branch: "main"
+  base_commit: "584f13dde2956e173ccab8220dc6e703cf4173c0"
+
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    parent: CNT-EIDOS-INDEX
+    details: "Bump SCHEMA_VERSION to 2.11.0 and remove the has_fixture column from test_binding_cache DDL, load_test_binding_cache, and save_test_binding_cache in src/eidos/core/index/storage.py."
+    expect:
+      body:
+        contains:
+          - "2.11.0"
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    parent: CNT-EIDOS-VCS
+    details: "Filter fixture lines at extraction time in _build_cached_test_file_entry and persist functions_json as a flat dict[str, list[str]] of non-empty function token lists without has_fixture or fixture_invs in src/eidos/vcs/invariants.py."
+    expect:
+      body:
+        contains:
+          - "`{func: [tokens]}` in `test_binding_cache`"
+---
+= SpecDelta: Remove has_fixture Column and fixture_invs Nesting from test_binding_cache in index.db
+:toc: left
+
+== Summary & Motivation
+Removes `has_fixture` from `test_binding_cache` (`SCHEMA_VERSION = "2.11.0"`) and flattens `functions_json` from `{"func": {"fixture_invs": [...], "tokens": [...]}}` into `{"func": ["INV-..."]}` (omitting functions with zero tokens), so test-fixture conventions have zero footprint in `eidos/.cache/index.db`.

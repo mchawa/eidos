@@ -878,7 +878,7 @@ def test_engine_genericity_zero_self_references():
 
 
 def test_foreign_repo_end_to_end_workflow(tmp_path):
-    """Verify INV-FOREIGN-REPO-E2E: a non-Eidos polyglot repository initialized with eidos init runs the full lifecycle cleanly."""  # eidos:fixture
+    """Verify INV-FOREIGN-REPO-E2E: a non-Eidos polyglot repository initialized with eidos init runs the full lifecycle cleanly."""
     import subprocess
 
     import eidos.core.index.graph_index as gi
@@ -931,13 +931,13 @@ def test_foreign_repo_end_to_end_workflow(tmp_path):
     tests_dir = repo / "tests"
     tests_dir.mkdir(parents=True, exist_ok=True)
     (tests_dir / "test_ledger.py").write_text(
-        "def test_positive_ledger_entry():\n    # INV-ACME-POSITIVE-AMOUNT\n    assert True\n",
+        "def test_positive_ledger_entry():\n    # INV-ACME-POSITIVE-AMOUNT\n    assert True\n",  # eidos:fixture
         encoding="utf-8",
     )
     cap_doc = parse_spec_file(cap_file)
     cap_doc.frontmatter["technical"]["invariants"] = [
         {
-            "id": "INV-ACME-POSITIVE-AMOUNT",
+            "id": "INV-ACME-POSITIVE-AMOUNT",  # eidos:fixture
             "rule": "Ledger amount must be positive.",
             "test_binding": "tests/test_ledger.py::test_positive_ledger_entry",
         }
