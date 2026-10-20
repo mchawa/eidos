@@ -1,0 +1,70 @@
+---
+type: delta/mutation
+id: DLT-2026-104-UNIFY-SPEC
+title: "Unify Spec Catalog and Portal Graph Construction on ArchitecturalIndex"
+status: proposed
+intent:
+  kind: enabler
+  motivation: "Eliminate triplicated specification graph construction across sync.py, catalog.py (_build_spec_catalog_with_invariants), and portal/generator.py (get_portal_data) by routing catalog lookups, invariant ownership maps, and Portal dependency/blast-radius traversals through the canonical ArchitecturalIndex (index.db)."
+vcs:
+  branch: main
+  base_commit: 0823a463a3591688ed251721de4de5501a77734c
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: "Expose shared catalog and SpecDelta blast-radius graph query facade methods on ArchitecturalIndex in src/eidos/core/index/graph_index.py so lifecycle and portal consumers can query canonical specification edges and entity catalogs through the index."
+    expect:
+      frontmatter:
+        responsibility: "get_spec_catalog"
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    details: "Normalize .adoc relative path references to canonical entity IDs and persist complete unidirectional specification relationship edges in rebuild_spec_edges (including capability business.personas, capability experience.{clients,design_systems,screens,flows,ui_components}, design system extends, UI component styled_by, client screens/flows, and flow step clients/screens) in src/eidos/core/index/sync.py, updating incremental child_rows eviction to cover all new edge types."
+    expect:
+      frontmatter:
+        responsibility: "path-to-ID edge canonicalization"
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+    details: "Expose shared catalog and SpecDelta affects / blast-radius graph query helpers (query_spec_catalog_in_db, compute_delta_impact_in_db) in src/eidos/core/index/query.py so lifecycle and portal consumers do not re-implement k-hop or incoming-reference traversals in Python dicts."
+    expect:
+      frontmatter:
+        responsibility: "compute_delta_impact_in_db"
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Delegate _build_spec_catalog_with_invariants in src/eidos/core/lifecycle/catalog.py to ArchitecturalIndex / synced index records (with safe fallback for uninitialized or subdirectory paths) rather than walking eidos_dir and rebuilding specs_by_id, container_components, and invariant_map from scratch."
+    expect:
+      frontmatter:
+        responsibility: "ArchitecturalIndex-backed _build_spec_catalog_with_invariants"
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+    details: "Refactor get_portal_data and _extract_design_systems in src/eidos/portal/generator.py to query ArchitecturalIndex for path-to-ID resolution, contract/container/component dependency edges, deduplicated invariants, design reverse-links, and SpecDelta affects / blast_radius computation, removing ~400 lines of bespoke in-memory graph construction."
+    expect:
+      frontmatter:
+        responsibility: "compute_delta_impact"
+---
+= SpecDelta: Unify Spec Catalog and Portal Graph Construction on ArchitecturalIndex
+:toc: left
+
+== Problem Statement
+Currently, Eidos constructs the specification entity and relationship graph in three separate places:
+
+1. **`ArchitecturalIndex` (`src/eidos/core/index/sync.py` + `query.py` + `graph_index.py`)**: Scans `eidos/**/*.adoc` and populates `entities`, `edges` (`realizes`, `provides`, `consumes`, `owned_by`, `implemented_by`, `contains_component`, `part_of`, `asserts`, `consumes_api`, `depends_on`), `symbol_mappings`, and `code_symbols` inside `eidos/.cache/index.db`, providing CTE-based `execute_k_hop_traversal` and `execute_incoming_references`. However, `rebuild_spec_edges` currently only resolves `.adoc` path targets for `delta/mutation` specs (inserting raw path strings for capabilities and design specs) and omits several `design/*` and `product/capability` relationship edges.
+2. **`_build_spec_catalog_with_invariants` (`src/eidos/core/lifecycle/catalog.py`, lines 474–528)**: Re-walks `eidos_dir.rglob("*.adoc")` and manually constructs `specs_by_id`, `container_components`, and `invariant_map` in Python dictionaries for `delta_engine.py`.
+3. **`get_portal_data` & `_extract_design_systems` (`src/eidos/portal/generator.py`, lines 14–1043)**: Runs `SpecValidator().validate_directory()` and then executes ~550 lines of bespoke Python loops to rebuild `path_to_id`, `_resolve_ref_id`, `contract_to_provider`, `comp_to_container`, inter-container dependencies, deduplicated invariant maps across 5 spec types, capability-to-design reverse maps (`clt_to_caps`, `scr_to_caps`, `flw_to_caps`, `scr_to_client`, `scr_to_ds`, `flw_to_clients`), and hand-rolled reverse-dependency maps (`comp_dependents`, `cnt_dependents`, `entity_invariants`, `entity_to_caps`, `inv_to_owners`, `container_to_clients`) for SpecDelta `affects` and `blast_radius`.
+
+This triplication creates a 4-file maintenance tax whenever an entity relationship changes and allows `eidos index blast-radius` (CLI) and `get_portal_data` (Web Portal) to diverge on edge traversal semantics.
+
+== Proposed Specification & Engine Changes
+1. **Path-to-ID Canonicalization & Complete Edge Coverage in `CMP-INCREMENTAL-SYNC-ENGINE` (`sync.py`)**:
+   * Normalize `.adoc` relative path references (both `eidos/...` and bare relative paths) to canonical entity IDs across all specification types in `rebuild_spec_edges`.
+   * Persist all unidirectional specification edges needed by both the CLI and Web Portal:
+     - `product/capability` -> `business.personas` (`serves_persona`), `business.policies` (`governed_by`), and `experience.{clients, design_systems, screens, flows, ui_components}` (`delivered_by` / `uses_design`).
+     - `design/system` -> `extends` (`extends`) and `clients` (`styled_by`).
+     - `design/ui-component` -> `design_system` (`styled_by`).
+     - `design/client` -> `container` (`implemented_by`), `design_system` (`styled_by`), `screens` (`has_screen`), and `flows` (`has_flow`).
+     - `design/flow` -> `steps[].client` and `steps[].screen`.
+   * Update the `child_rows` incremental eviction query in `rebuild_spec_edges` so all newly indexed `rel_type` edges are cleanly evicted and rebuilt on single-spec incremental edits.
+2. **Shared Catalog & Delta Blast-Radius Queries (`query.py`, `graph_index.py`, `catalog.py`)**:
+   * Expose `query_spec_catalog_in_db` and `compute_delta_impact_in_db` in `src/eidos/core/index/query.py` (`CMP-GRAPH-TRAVERSAL-ENGINE`) and corresponding facade methods (`get_spec_catalog`, `compute_delta_impact`) on `ArchitecturalIndex` in `src/eidos/core/index/graph_index.py` (`CMP-GRAPH-STORAGE`).
+   * Route `_build_spec_catalog_with_invariants` in `src/eidos/core/lifecycle/catalog.py` (`CMP-LIFECYCLE-SCAFFOLDER`) through the synced `ArchitecturalIndex` / `spec_validation_cache` (with safe fallback for uninitialized or custom subdirectory roots) so entity lookup, `container_components`, and `invariant_map` are derived from a single source.
+3. **Eliminate Bespoke Graph Re-Computation in `CMP-PORTAL-GENERATOR` (`portal/generator.py`)**:
+   * Replace the ad-hoc `path_to_id`, `contract_to_provider`, `comp_to_container`, invariant collection, design reverse-mapping, and 230-line SpecDelta `affects` / `blast_radius` loops in `src/eidos/portal/generator.py` with direct queries against `get_architectural_index(eidos_dir=eidos_path)`.

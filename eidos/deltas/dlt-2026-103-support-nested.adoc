@@ -1,0 +1,47 @@
+---
+type: delta/mutation
+id: DLT-2026-103-SUPPORT-NESTED
+title: "Support Nested Dot-Path and Partial Object Matching in SpecDelta expect.frontmatter"
+status: proposed
+intent:
+  kind: enabler
+  motivation: "Enable SpecDelta mutations[].expect.frontmatter to assert nested frontmatter structures (such as contracts.provides, technical.containers, or partial dict entries inside decisions[] and components[]) via dot-path traversal and recursive dict-subset matching in _evaluate_declarative_postcondition, eliminating the need to copy-paste entire nested YAML dictionaries verbatim."
+vcs:
+  branch: main
+  base_commit: 0823a463a3591688ed251721de4de5501a77734c
+mutations:
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    details: "Extend _evaluate_declarative_postcondition in src/eidos/core/lifecycle/delta_engine.py to resolve dot-separated keys (e.g., contracts.provides, technical.containers) and perform recursive dict-subset matching when comparing expected dict or list[dict] structures (such as decisions[] or components[]) against target specification frontmatter."
+    expect:
+      frontmatter:
+        responsibility: "dot-path and recursive dict-subset frontmatter expectations"
+  - operation: modify
+    target: CAP-PROD-002
+    details: "Update SpecDelta Semantic Mutation Engine capability to document nested dot-path and partial object/dict-subset matching in expect.frontmatter."
+    expect:
+      body:
+        contains:
+          - "dot-path"
+  - operation: modify
+    target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+    details: "Extend INV-DELTA-VERIFY-MODIFICATION-EVIDENCE rule and test_delta_verify_requires_modification_evidence to cover nested dot-path and dict-subset frontmatter post-conditions."
+    expect:
+      frontmatter:
+        rule: "dot-path"
+---
+= SpecDelta: Support Nested Dot-Path and Partial Object Matching in SpecDelta expect.frontmatter
+:toc: left
+
+== Problem Statement
+In `src/eidos/core/lifecycle/delta_engine.py`, `_evaluate_declarative_postcondition` currently resolves `expect.frontmatter` keys via a shallow 1-level lookup (`actual = target_dict.get(k)`) and falls back to strict full-dictionary equality (`actual != exp_v`). Consequently:
+
+1. **Nested dictionaries cannot be queried by path**: Assertions on `contracts.provides` (`CNT-*`), `technical.containers` (`CAP-*`), or `tokens.manifest` (`DS-*`) require matching the entire parent dictionary (`contracts`, `technical`, `tokens`) key-for-key, because `target_dict.get("contracts.provides")` returns `None`.
+2. **Arrays of structured objects require verbatim duplication**: Asserting that a specific `DEC-*` decision or inline `CMP-*` component was added to `decisions:` or `components:` fails `item not in actual` unless the author duplicates the entire multi-line dictionary (including `rationale` and `rejected_alternatives`) inside `expect.frontmatter`.
+
+== Proposed Specification & Engine Changes
+1. **Dot-Path Key Resolution (`_resolve_frontmatter_path`)**:
+   * When a key `k` in `expect.frontmatter` (or `expect.frontmatter.custom`) is not an exact top-level key in `target_dict` and contains `.`, traverse nested dictionaries segment-by-segment (e.g., `"contracts.provides"` -> `target_dict["contracts"]["provides"]`, `"technical.containers"` -> `target_dict["technical"]["containers"]`).
+2. **Recursive Dict-Subset & Object-List Matching (`_matches_expected_value`)**:
+   * When `exp_v` is a `dict` and `actual` is a `dict`, recursively verify that every `(sub_k, sub_v)` declared in `exp_v` is satisfied in `actual` (allowing partial dictionary assertions without specifying unrelated sibling keys).
+   * When `exp_v` is a `list` (or single `dict`) and `actual` is a `list` of dicts (e.g., `decisions`, `components`, `invariants`), consider an expected dict item matched if at least one element in `actual` satisfies recursive dict-subset matching (for example, `decisions: [{ id: "DEC-VCS-STATIC-INVARIANT-TRACEABILITY" }]`).
