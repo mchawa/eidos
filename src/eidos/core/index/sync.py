@@ -23,6 +23,42 @@ from eidos.core.workspace.project import extract_entity_paths, match_path_patter
 
 _CODE_EXTS = frozenset(AstGrepIndexer.LANGUAGE_MAP.keys())
 
+_GOVERNED_TEXT_EXTS = _CODE_EXTS | frozenset({".md", ".toml", ".json", ".yaml", ".yml"})
+
+_BINARY_OR_ARCHIVE_EXTS = frozenset(
+    {
+        ".pyc",
+        ".db",
+        ".sqlite",
+        ".sqlite3",
+        ".lock",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".ico",
+        ".wasm",
+        ".gz",
+        ".tar",
+        ".zip",
+        ".tgz",
+    }
+)
+
+_EXCLUDED_FILENAMES = frozenset(
+    {
+        "pnpm-lock.yaml",
+        "package-lock.json",
+        "yarn.lock",
+        "Cargo.lock",
+        "uv.lock",
+        "poetry.lock",
+        "composer.lock",
+        "Gemfile.lock",
+    }
+)
+
+_FILE_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{3,}")
+
 _EXCLUDED_CODE_DIRS = frozenset(
     {
         ".git",
@@ -68,6 +104,31 @@ def _normalize_rel_path(path: str) -> str:
     while norm.startswith("./"):
         norm = norm[2:]
     return norm.rstrip("/")
+
+
+def _is_governed_source_file(path_str: str) -> bool:
+    """Return True if ``path_str`` has a governed source/text extension and is not a lockfile or archive."""
+    base = os.path.basename(path_str)
+    if not base or base.startswith(".") or base in _EXCLUDED_FILENAMES:
+        return False
+    _, ext = os.path.splitext(base)
+    if ext.lower() not in _GOVERNED_TEXT_EXTS:
+        return False
+    parts = base.lower().split(".")[1:]
+    return not any(f".{p}" in _BINARY_OR_ARCHIVE_EXTS for p in parts)
+
+
+def _upsert_file_tokens_fts(conn: sqlite3.Connection, rel_path: str, doc_type: str, text: str) -> None:
+    """Replace the FTS5 token row for ``rel_path`` with deduplicated identifier/entity tokens."""
+    conn.execute("DELETE FROM file_tokens_fts WHERE rel_path = ?;", (rel_path,))
+    if not text:
+        return
+    unique_tokens = dict.fromkeys(m.group(0).lower() for m in _FILE_TOKEN_RE.finditer(text))
+    if unique_tokens:
+        conn.execute(
+            "INSERT INTO file_tokens_fts (rel_path, doc_type, tokens) VALUES (?, ?, ?);",
+            (rel_path, doc_type, " ".join(unique_tokens)),
+        )
 
 
 @dataclass
@@ -251,6 +312,9 @@ def is_test_code_path(rel_path: str) -> bool:
     """Return True for test files (by polyglot test naming convention or by a tests/test/__tests__ directory segment)."""
     parts = rel_path.replace("\\", "/").split("/")
     name = parts[-1]
+    _, ext = os.path.splitext(name)
+    if ext and ext.lower() not in _CODE_EXTS:
+        return False
     return (
         name.startswith("test_")
         or any(name.endswith(sfx) for sfx in _POLYGLOT_TEST_SUFFIXES)
@@ -329,7 +393,11 @@ def restore_code_mappings(conn: sqlite3.Connection, entity_id: str) -> None:
         ).fetchall()
         if r[0]
     ]
-    valid_files = [fp for fp in cand_files if any(match_path_pattern(fp, pat) > 0 for pat in patterns)]
+    valid_files = [
+        fp
+        for fp in cand_files
+        if os.path.splitext(fp)[1].lower() in _CODE_EXTS and any(match_path_pattern(fp, pat) > 0 for pat in patterns)
+    ]
     for fp in valid_files:
         conn.execute(
             "INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind) VALUES (?, ?, 'source_path');",
@@ -362,10 +430,11 @@ def index_source_file(
     resolver: _CodeOwnershipResolver,
     raw_bytes: bytes | None = None,
 ) -> None:
-    """Index one non-test source file for all its resolved owners (one AST parse)."""
+    """Index one non-test source or governed text file for all its resolved owners (one AST parse)."""
     owners = resolver.owners(rel_path)
     owner_ids = {entity_id for entity_id, _ in owners}
-    keep = resolver.declared_owners(rel_path) | owner_ids
+    is_ast_code = path.suffix.lower() in _CODE_EXTS
+    keep = (resolver.declared_owners(rel_path) | owner_ids) if is_ast_code else resolver.declared_owners(rel_path)
     for stale in conn.execute(
         "SELECT entity_id FROM symbol_mappings WHERE symbol = ? AND kind = 'source_path';", (rel_path,)
     ).fetchall():
@@ -374,25 +443,28 @@ def index_source_file(
                 "DELETE FROM symbol_mappings WHERE symbol = ? AND entity_id = ? AND kind = 'source_path';",
                 (rel_path, stale["entity_id"]),
             )
-    for entity_id in sorted(owner_ids):
-        conn.execute(
-            "INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind) VALUES (?, ?, 'source_path');",
-            (rel_path, entity_id),
-        )
-    if owners:
+    if is_ast_code:
+        for entity_id in sorted(owner_ids):
+            conn.execute(
+                "INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind) VALUES (?, ?, 'source_path');",
+                (rel_path, entity_id),
+            )
+
+    if raw_bytes is not None:
+        content: str | None = raw_bytes.decode("utf-8", errors="replace")
+    else:
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            content = None
+
+    if owners and is_ast_code:
         use_cache = bool(sha) and _can_use_ast_mem_cache(ast_idx)
         cache_key = (type(ast_idx), str(path.resolve()), sha) if use_cache else None
         cached = _SOURCE_AST_MEM_CACHE.get(cache_key) if cache_key is not None else None
         if cached is not None:
             symbols, imports = cached
         else:
-            if raw_bytes is not None:
-                content: str | None = raw_bytes.decode("utf-8", errors="replace")
-            else:
-                try:
-                    content = path.read_text(encoding="utf-8", errors="replace")
-                except OSError:
-                    content = None
             symbols = ast_idx.extract_symbols(path, content)
             imports = ast_idx.extract_imports(path, content) if hasattr(ast_idx, "extract_imports") else []
             if cache_key is not None:
@@ -408,6 +480,7 @@ def index_source_file(
         """,
         (rel_path, mtime, sha, owners[0][0] if owners else "source"),
     )
+    _upsert_file_tokens_fts(conn, rel_path, "code/source", content or "")
 
 
 def reconcile_code_ownership(
@@ -427,7 +500,7 @@ def reconcile_code_ownership(
             dirnames[:] = sorted(d for d in dirnames if d not in _EXCLUDED_CODE_DIRS and not d.startswith("."))
             for fn in sorted(filenames):
                 p_file = Path(dirpath) / fn
-                if p_file.suffix not in _CODE_EXTS:
+                if not _is_governed_source_file(fn):
                     continue
                 try:
                     rel_code = str(p_file.relative_to(index.root)).replace("\\", "/")
@@ -439,10 +512,15 @@ def reconcile_code_ownership(
         r["rel_path"]: r["doc_id"]
         for r in conn.execute("SELECT rel_path, doc_id FROM indexed_files WHERE doc_type = 'code/source';")
     }
-    for rel_code in sorted(set(manifest) | resolver.declared_files()):
+    spec_files = {
+        _normalize_rel_path(r[0])
+        for r in conn.execute("SELECT DISTINCT symbol FROM symbol_mappings WHERE kind = 'specification_file';")
+        if r[0] and not any(ch in str(r[0]) for ch in "*?[")
+    }
+    for rel_code in sorted(set(manifest) | resolver.declared_files() | spec_files):
         if rel_code not in candidates:
             abs_known = (index.root / rel_code).resolve()
-            if abs_known.is_file() and abs_known.suffix in _CODE_EXTS:
+            if abs_known.is_file() and _is_governed_source_file(abs_known.name):
                 candidates[rel_code] = abs_known
 
     for rel_code, p_file in sorted(candidates.items()):
@@ -542,8 +620,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
 
     _scan_eidos_dir(str(index.eidos_dir))
 
-    # 2. Tracked code and test files
-    code_exts = _CODE_EXTS
+    # 2. Tracked code, test, and governed text files
     excluded_dirs = _EXCLUDED_CODE_DIRS
     tracked_code_dirs: set[str] = set()
     explicit_code_files: list[str] = []
@@ -555,7 +632,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
 
     package_paths: set[str] = set()
     cursor.execute(
-        "SELECT DISTINCT symbol FROM symbol_mappings WHERE kind IN ('package_path', 'source_path', 'owned_path', 'test_binding');"
+        "SELECT DISTINCT symbol FROM symbol_mappings WHERE kind IN ('package_path', 'source_path', 'owned_path', 'test_binding', 'specification_file');"
     )
     package_paths.update(row[0].strip() for row in cursor.fetchall())
     for raw_pp in sorted(package_paths):
@@ -586,8 +663,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     top_code_prefixes = tuple(d + os.sep for d in top_code_dirs if os.path.isdir(d))
 
     def _is_covered_by_top_code_dirs(abs_path: str) -> bool:
-        _, ext = os.path.splitext(abs_path)
-        if ext not in code_exts:
+        if not _is_governed_source_file(abs_path):
             return False
         for pref in top_code_prefixes:
             if abs_path.startswith(pref):
@@ -597,17 +673,15 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
         return False
 
     for full_pp in explicit_code_files:
-        if not _is_covered_by_top_code_dirs(full_pp) and os.path.isfile(full_pp):
-            _, ext = os.path.splitext(full_pp)
-            if ext in code_exts:
-                rel_code = _rel_path(full_pp)
-                if rel_code not in disk_files:
-                    disk_files.add(rel_code)
-                    try:
-                        stat = os.stat(full_pp)
-                    except OSError:
-                        continue
-                    _check_file_str(full_pp, rel_code, stat.st_mtime)
+        if not _is_covered_by_top_code_dirs(full_pp) and os.path.isfile(full_pp) and _is_governed_source_file(full_pp):
+            rel_code = _rel_path(full_pp)
+            if rel_code not in disk_files:
+                disk_files.add(rel_code)
+                try:
+                    stat = os.stat(full_pp)
+                except OSError:
+                    continue
+                _check_file_str(full_pp, rel_code, stat.st_mtime)
 
     for rel_tracked in list(db_files.keys()):
         if not rel_tracked.endswith(".adoc") and rel_tracked not in disk_files:
@@ -635,8 +709,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                             continue
                     except OSError:
                         continue
-                    _, ext = os.path.splitext(name)
-                    if ext not in code_exts:
+                    if not _is_governed_source_file(name):
                         continue
                     full_file = entry.path
                     rel_code = _rel_path(full_file)
@@ -1259,11 +1332,11 @@ def index_test_bindings(
         "DELETE FROM symbol_mappings WHERE symbol = ? AND kind = 'test_binding';",
         (rel_test,),
     )
+    content = raw_bytes.decode("utf-8", errors="replace") if raw_bytes is not None else None
     use_cache = bool(sha) and _can_use_ast_mem_cache(ast_idx)
     cache_key = (type(ast_idx), str(test_path.resolve()), sha) if use_cache else None
     bindings = _TEST_BINDING_MEM_CACHE.get(cache_key) if cache_key is not None else None
     if bindings is None:
-        content = raw_bytes.decode("utf-8", errors="replace") if raw_bytes is not None else None
         bindings = (
             ast_idx.extract_test_bindings(test_path, content)
             if content is not None
@@ -1271,6 +1344,13 @@ def index_test_bindings(
         )
         if cache_key is not None:
             _TEST_BINDING_MEM_CACHE[cache_key] = bindings
+    token_text = content
+    if token_text is None:
+        try:
+            token_text = test_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            token_text = ""
+    _upsert_file_tokens_fts(conn, rel_test, "code/test", token_text)
     for binding in bindings:
         identifier = f"{rel_test}::{binding.test_name}"
         for inv_id in binding.invariants:
@@ -1445,6 +1525,7 @@ def sync_index(
             conn.execute("DELETE FROM symbol_mappings;")
             conn.execute("DELETE FROM code_symbols;")
             conn.execute("DELETE FROM specs_fts;")
+            conn.execute("DELETE FROM file_tokens_fts;")
 
     if force or dirty_state is None:
         dirty, to_update, deleted = index.is_dirty()
@@ -1465,6 +1546,7 @@ def sync_index(
         for d in deleted:
             d_rel = str(d).replace("\\", "/")
             row = conn.execute("SELECT doc_id, doc_type FROM indexed_files WHERE rel_path = ?", (d_rel,)).fetchone()
+            conn.execute("DELETE FROM file_tokens_fts WHERE rel_path = ?;", (d_rel,))
             if row and row["doc_type"] in ("code/source", "code/test"):
                 code_deleted = True
                 store_code_symbols(conn, d_rel, [], [])
@@ -1638,6 +1720,11 @@ def sync_index(
             else:
                 stats.indexed_new += 1
 
+            try:
+                spec_raw_text = p.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                spec_raw_text = f"{_json_dumps(fm)}\n{doc.title or ''}\n{doc.body or ''}"
+
             collision = conn.execute(
                 "SELECT file_path FROM entities WHERE id = ? AND file_path != ?;",
                 (doc_id, rel_p),
@@ -1654,6 +1741,7 @@ def sync_index(
                     """,
                     (rel_p, mtime, sha, doc_id, doc_type),
                 )
+                _upsert_file_tokens_fts(conn, rel_p, doc_type, spec_raw_text)
                 continue
 
             title = doc.title or model.title or doc_id
@@ -1855,6 +1943,7 @@ def sync_index(
                 """,
                 (rel_p, mtime, sha, doc_id, doc_type),
             )
+            _upsert_file_tokens_fts(conn, rel_p, doc_type, spec_raw_text)
 
         if spec_updates or specs_deleted:
             inc_ids = (

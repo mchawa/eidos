@@ -220,7 +220,7 @@ tombstone:
 
 
 def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
-    """Verify active GraphViolation detection, inline_exempt, historical_ledger, cleanup_routine, active_docs_leak, and --strict CLI exit code."""
+    """Verify active GraphViolation detection, inline_exempt, historical_ledger, cleanup_routine, governed container leak classification, and --strict CLI exit code."""
     import eidos.core.index.graph_index as gi
 
     eidos_dir = tmp_path / "eidos"
@@ -239,7 +239,9 @@ def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
         "title: Keep Service\n"
         "container_type: service\n"
         "runtime: Python\n"
-        "source_path: src/keep\n"
+        "source_path:\n"
+        "  - src/keep\n"
+        "  - docs\n"
         "contracts:\n"
         "  consumes:\n"
         "    - CTR-OLD\n"
@@ -304,7 +306,7 @@ def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
         "def remove_legacy(): return 'CNT-OLD'\n",
         encoding="utf-8",
     )
-    # Unacknowledged documentation leak in docs/guide.md
+    # Unacknowledged leak in governed container path docs/guide.md
     (docs_dir / "guide.md").write_text(
         "See CNT-OLD architecture details.\n",
         encoding="utf-8",
@@ -322,8 +324,12 @@ def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
         assert "cleanup_routine" in approved_by_class
 
         unack_by_class = {f.classification for f in res.unacknowledged_findings}
-        assert "active_docs_leak" in unack_by_class
+        assert "active_code_leak" in unack_by_class
         assert "active_spec_leak" in unack_by_class
+        assert any(
+            f.file_path == "docs/guide.md" and f.classification == "active_code_leak"
+            for f in res.unacknowledged_findings
+        )
 
         # CLI --strict exits with code 1 when leaks/violations are detected
         res_strict = runner.invoke(app, ["delta", "audit", "DLT-2026-996", "--path", str(eidos_dir), "--strict"])
@@ -555,6 +561,98 @@ def test_a9_audit_path_targets_explorations_rejected_deltas_and_tombstone_patter
         assert approved_files.get("eidos/deltas/dlt-2026-010.adoc") == "historical_ledger"
         assert approved_files.get("src/compat.py") == "tombstone_exempt"
         assert approved_files.get("src/brackets.py") == "tombstone_exempt"
+    finally:
+        if gi._INDEX_INSTANCE is not None:
+            gi._INDEX_INSTANCE.close()
+            gi._INDEX_INSTANCE = None
+
+
+def test_dlt_2026_107_index_driven_spec_scoped_deletion_audit(tmp_path):
+    """DLT-2026-107: Verify file_tokens_fts index-driven discovery, unowned file exclusion (POL-001),
+    polyglot container source_path & contract specification_file governance, and dotted token matching."""
+    import eidos.core.index.graph_index as gi
+
+    eidos_dir = tmp_path / "eidos"
+    cnt_dir = eidos_dir / "architecture" / "containers"
+    ctr_dir = eidos_dir / "architecture" / "contracts"
+    deltas_dir = eidos_dir / "deltas"
+    cmd_dir = tmp_path / "cmd" / "server"
+    schemas_dir = tmp_path / "schemas"
+    unowned_dir = tmp_path / "unowned_scratch"
+    for d in (cnt_dir, ctr_dir, deltas_dir, cmd_dir, schemas_dir, unowned_dir):
+        d.mkdir(parents=True)
+
+    # 1. Polyglot Go container owning cmd/server
+    (cnt_dir / "cnt-go-api.adoc").write_text(
+        "---\n"
+        "type: tech/container\n"
+        "id: CNT-GO-API\n"
+        "title: Go API Server\n"
+        "container_type: service\n"
+        "runtime: Go 1.22\n"
+        "source_path: cmd/server\n"
+        "---\n"
+        "= Go API Server\n",
+        encoding="utf-8",
+    )
+    # 2. Contract declaring specification_file: schemas/openapi.yaml
+    (ctr_dir / "ctr-api.adoc").write_text(
+        "---\n"
+        "type: tech/contract\n"
+        "id: CTR-API\n"
+        "title: OpenAPI Contract\n"
+        "protocol: REST\n"
+        "specification_file: schemas/openapi.yaml\n"
+        "---\n"
+        "= OpenAPI Contract\n",
+        encoding="utf-8",
+    )
+    # 3. SpecDelta removing CMP-LEGACY-TOKEN with dotted and member search tokens
+    (deltas_dir / "dlt-2026-107-test.adoc").write_text(
+        "---\n"
+        "type: delta/mutation\n"
+        "id: DLT-2026-107-TEST\n"
+        "title: Retire Legacy Token\n"
+        "status: proposed\n"
+        "intent:\n"
+        "  kind: enabler\n"
+        "  motivation: Retire CMP-LEGACY-TOKEN.\n"
+        "mutations:\n"
+        "  - operation: remove\n"
+        "    target: CMP-LEGACY-TOKEN\n"
+        "tombstone:\n"
+        "  search_tokens:\n"
+        "    - legacy_token_call\n"
+        "---\n"
+        "= Retire Legacy Token\n",
+        encoding="utf-8",
+    )
+
+    # Governed Go file with dotted call self.legacy_token_call()
+    (cmd_dir / "main.go").write_text(
+        "package main\nfunc run() { svc.legacy_token_call() }\n",
+        encoding="utf-8",
+    )
+    # Governed contract specification_file with sentence-ending period "CMP-LEGACY-TOKEN."
+    (schemas_dir / "openapi.yaml").write_text(
+        "info:\n  description: Managed by CMP-LEGACY-TOKEN.\n",
+        encoding="utf-8",
+    )
+    # Unowned files outside eidos/ governance (must NOT be flagged)
+    (tmp_path / "README.md").write_text("Mentions CMP-LEGACY-TOKEN in unowned root README.\n", encoding="utf-8")
+    (unowned_dir / "notes.py").write_text("x = 'CMP-LEGACY-TOKEN'\n", encoding="utf-8")
+
+    try:
+        engine = AuditEngine(repo_root=tmp_path, eidos_dir=eidos_dir)
+        res = engine.audit_delta("DLT-2026-107-TEST")
+        assert res.status == "LEAKS_DETECTED"
+        unack_files = {f.file_path: f.classification for f in res.unacknowledged_findings}
+        assert unack_files == {
+            "cmd/server/main.go": "active_code_leak",
+            "schemas/openapi.yaml": "active_code_leak",
+        }
+        assert "README.md" not in unack_files
+        assert "unowned_scratch/notes.py" not in unack_files
     finally:
         if gi._INDEX_INSTANCE is not None:
             gi._INDEX_INSTANCE.close()

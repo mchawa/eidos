@@ -10,7 +10,6 @@ Implements INV-DELTA-DELETION-AUDIT:
 
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -19,7 +18,7 @@ from typing import Any, ClassVar
 import orjson
 
 from eidos.core.index.graph_index import get_architectural_index
-from eidos.core.index.sync import is_test_code_path
+from eidos.core.index.sync import _FILE_TOKEN_RE, is_test_code_path
 from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
 from eidos.core.spec.parser import parse_spec_file
 
@@ -188,9 +187,11 @@ class AuditEngine:
                 summary={"approved": 0, "unacknowledged": 0, "graph_violations": 0},
             )
 
-        # Phase 1: Graph-level foreign key checks (fail loudly if index cannot be read)
+        # Phase 1: Sync index once and verify graph-level foreign key integrity (fail loudly if index cannot be read)
         try:
-            graph_violations = self._check_graph_integrity(targets, delta_id)
+            index = get_architectural_index(repo_root=self.repo_root, eidos_dir=self.eidos_dir)
+            index.sync()
+            graph_violations = self._check_graph_integrity(targets, delta_id, index=index)
         except Exception as exc:
             return DeltaAuditResult(
                 delta_id=delta_id,
@@ -201,12 +202,13 @@ class AuditEngine:
                 error_message=f"Graph integrity verification failed: {exc}",
             )
 
-        # Phase 2: Semantic reference scan and classification
+        # Phase 2: Index-driven semantic reference scan and classification
         approved, unacknowledged = self._scan_and_classify_references(
             targets=targets,
             search_tokens=search_tokens,
             delta_file=delta_file,
             tombstone=tombstone,
+            index=index,
         )
 
         is_clean = len(graph_violations) == 0 and len(unacknowledged) == 0
@@ -393,11 +395,17 @@ class AuditEngine:
 
         return targets, search_tokens, tombstone if isinstance(tombstone, dict) else {}
 
-    def _check_graph_integrity(self, targets: set[str], delta_id: str) -> list[GraphViolation]:
+    def _check_graph_integrity(
+        self,
+        targets: set[str],
+        delta_id: str,
+        index: Any = None,
+    ) -> list[GraphViolation]:
         """Check SQLite knowledge graph for any active incoming edges pointing to deleted targets."""
         violations: list[GraphViolation] = []
-        index = get_architectural_index(repo_root=self.repo_root, eidos_dir=self.eidos_dir)
-        index.sync()
+        if index is None:
+            index = get_architectural_index(repo_root=self.repo_root, eidos_dir=self.eidos_dir)
+            index.sync()
         for target in targets:
             refs = index.get_incoming_references(target)
             for r in refs:
@@ -429,17 +437,56 @@ class AuditEngine:
             return re.compile(rf"(?<![A-Za-z0-9_-]){re.escape(term)}(?![A-Za-z0-9_-])")
         return re.compile(rf"(?<![A-Za-z0-9_]){re.escape(term)}(?![A-Za-z0-9_])")
 
+    @staticmethod
+    def _build_file_tokens_fts_query(all_terms: list[str]) -> tuple[str, bool]:
+        """Build an FTS5 MATCH expression from target IDs and search tokens.
+
+        Returns ``(fts_query, has_unindexed_short_term)``. Dotted or path terms
+        (e.g. ``pkg.symbol`` or ``architecture/components/old-auth.adoc``) are split
+        into ``AND``-joined ``[A-Za-z0-9_-]{3,}`` sub-token clauses.
+        """
+        clauses: list[str] = []
+        has_short_term = False
+        for term in all_terms:
+            subtokens = list(
+                dict.fromkeys(m.group(0).lower().replace('"', '""') for m in _FILE_TOKEN_RE.finditer(term))
+            )
+            if not subtokens:
+                has_short_term = True
+                continue
+            if len(subtokens) == 1:
+                clause = f'"{subtokens[0]}"'
+            else:
+                clause = "(" + " AND ".join(f'"{st}"' for st in subtokens) + ")"
+            if clause not in clauses:
+                clauses.append(clause)
+        return " OR ".join(clauses), has_short_term
+
     def _scan_and_classify_references(
         self,
         targets: set[str],
         search_tokens: set[str],
         delta_file: Path,
         tombstone: dict[str, Any],
+        index: Any = None,
     ) -> tuple[list[AuditFinding], list[AuditFinding]]:
-        """Scan text files in repository and classify all occurrences with word-bounded multi-term matching."""
+        """Query index.db (file_tokens_fts & indexed_files) for governed candidate files and classify matches."""
         all_terms = sorted(targets | search_tokens)
         if not all_terms:
             return [], []
+
+        if index is None:
+            index = get_architectural_index(repo_root=self.repo_root, eidos_dir=self.eidos_dir)
+            index.sync()
+
+        conn = index._get_connection()
+
+        # Pre-load entity (type, status) by file_path in O(1) from index.db
+        entity_meta_by_file: dict[str, tuple[str, str]] = {}
+        for row in conn.execute("SELECT file_path, type, status FROM entities WHERE type != 'invariant';").fetchall():
+            fp = str(row["file_path"] or "").replace("\\", "/")
+            if fp:
+                entity_meta_by_file[fp] = (str(row["type"] or ""), str(row["status"] or "").strip().lower())
 
         compiled_terms = [(term, self._compile_term_pattern(term)) for term in all_terms]
         delta_resolved = delta_file.resolve()
@@ -448,49 +495,51 @@ class AuditEngine:
             if delta_resolved.is_relative_to(self.repo_root)
             else Path(delta_file.name)
         )
+        delta_rel_str = str(delta_rel).replace("\\", "/")
 
         approved: list[AuditFinding] = []
         unacknowledged: list[AuditFinding] = []
 
         allowed_reasons = tombstone.get("allowed_reasons", []) if isinstance(tombstone, dict) else []
 
-        candidate_files: list[tuple[Path, Path]] = []
-        used_git_tracked = False
-        if (self.repo_root / ".git").exists():
-            from eidos.vcs.diff import get_tracked_files
+        candidate_map: dict[str, str] = {}
+        fts_query, has_short_term = self._build_file_tokens_fts_query(all_terms)
+        if fts_query and not has_short_term:
+            for row in conn.execute(
+                "SELECT rel_path, doc_type FROM file_tokens_fts WHERE tokens MATCH ? ORDER BY rel_path;",
+                (fts_query,),
+            ).fetchall():
+                rel_s = str(row["rel_path"] or "").replace("\\", "/")
+                if rel_s:
+                    candidate_map[rel_s] = str(row["doc_type"] or "code/source")
+        else:
+            for row in conn.execute("SELECT rel_path, doc_type FROM indexed_files ORDER BY rel_path;").fetchall():
+                rel_s = str(row["rel_path"] or "").replace("\\", "/")
+                if rel_s:
+                    candidate_map[rel_s] = str(row["doc_type"] or "code/source")
 
-            tracked_rels = get_tracked_files(self.repo_root)
-            if tracked_rels:
-                used_git_tracked = True
-                for rel_str in tracked_rels:
-                    rel_p = Path(rel_str)
-                    if any(part in self.IGNORE_DIRS for part in rel_p.parts):
-                        continue
-                    if rel_p.name.startswith("."):
-                        continue
-                    fpath = self.repo_root / rel_p
-                    suffixes_lower = {s.lower() for s in fpath.suffixes}
-                    if fpath.suffix.lower() in self.IGNORE_EXTS or (suffixes_lower & self.IGNORE_EXTS):
-                        continue
-                    candidate_files.append((fpath, rel_p))
+        if delta_rel_str not in candidate_map and (self.repo_root / delta_rel).is_file():
+            candidate_map[delta_rel_str] = "delta/mutation"
 
-        if not used_git_tracked:
-            for root, dirs, files in os.walk(self.repo_root):
-                dirs[:] = [d for d in dirs if d not in self.IGNORE_DIRS]
-                for fname in files:
-                    if fname.startswith("."):
-                        continue
-                    fpath = Path(root) / fname
-                    suffixes_lower = {s.lower() for s in fpath.suffixes}
-                    if fpath.suffix.lower() in self.IGNORE_EXTS or (suffixes_lower & self.IGNORE_EXTS):
-                        continue
-                    try:
-                        rel_p = fpath.relative_to(self.repo_root)
-                    except ValueError:
-                        continue
-                    candidate_files.append((fpath, rel_p))
+        for entry in allowed_reasons:
+            if isinstance(entry, dict):
+                allowed_p = str(entry.get("path") or "").strip().replace("\\", "/").lstrip("./")
+                if allowed_p and allowed_p not in candidate_map:
+                    abs_allowed = self.repo_root / allowed_p
+                    if abs_allowed.is_file():
+                        candidate_map[allowed_p] = (
+                            "unknown"
+                            if allowed_p.startswith("eidos/")
+                            else ("code/test" if is_test_code_path(allowed_p) else "code/source")
+                        )
 
-        for fpath, rel_p in candidate_files:
+        for rel_s in sorted(candidate_map):
+            doc_type = candidate_map[rel_s]
+            rel_p = Path(rel_s)
+            fpath = self.repo_root / rel_p
+            suffixes_lower = {s.lower() for s in fpath.suffixes}
+            if fpath.suffix.lower() in self.IGNORE_EXTS or (suffixes_lower & self.IGNORE_EXTS):
+                continue
             try:
                 with open(fpath, encoding="utf-8", errors="ignore") as f:
                     lines = f.readlines()
@@ -508,6 +557,8 @@ class AuditEngine:
                             delta_rel=delta_rel,
                             allowed_reasons=allowed_reasons,
                             prev_line=lines[idx - 2].strip() if idx > 1 else "",
+                            doc_type=doc_type,
+                            entity_meta_by_file=entity_meta_by_file,
                         )
                         if finding.is_approved:
                             approved.append(finding)
@@ -525,6 +576,8 @@ class AuditEngine:
         delta_rel: Path,
         allowed_reasons: list[dict[str, Any]],
         prev_line: str,
+        doc_type: str = "",
+        entity_meta_by_file: dict[str, tuple[str, str]] | None = None,
     ) -> AuditFinding:
         """Classify a single occurrence into approved (exempt) or unacknowledged (leak)."""
         rel_str = str(rel_path).replace("\\", "/")
@@ -543,9 +596,21 @@ class AuditEngine:
             )
 
         # 2. Historical Applied/Rejected Deltas, Explorations & Release Changelogs
+        ent_meta = (entity_meta_by_file or {}).get(rel_str)
+        is_historical_entity = False
+        if ent_meta is not None:
+            ent_type, ent_status = ent_meta
+            if ent_type == "product/exploration" or (
+                ent_type == "delta/mutation" and ent_status in ("applied", "rejected")
+            ):
+                is_historical_entity = True
+        elif (rel_str.startswith("eidos/deltas/") and self._is_delta_applied(rel_path)) or rel_str.startswith(
+            "eidos/explorations/"
+        ):
+            is_historical_entity = True
+
         if (
-            (rel_str.startswith("eidos/deltas/") and self._is_delta_applied(rel_path))
-            or rel_str.startswith("eidos/explorations/")
+            is_historical_entity
             or rel_str in ("CHANGELOG.md", "docs/changelog.md")
             or rel_str.endswith("CHANGELOG.md")
             or rel_str.endswith("changelog.md")
@@ -624,7 +689,7 @@ class AuditEngine:
             )
 
         # 5. Tests in polyglot test suites
-        if rel_str.startswith("tests/") or is_test_code_path(rel_str):
+        if doc_type == "code/test" or rel_str.startswith("tests/") or is_test_code_path(rel_str):
             # Check if this is audit/test tooling or inspecting the audit results
             if (
                 any(term in line_text for term in ("targets_audited", "audit_delta", "AuditEngine", "DeltaAuditResult"))
@@ -706,8 +771,8 @@ class AuditEngine:
                 risk_level="low",
             )
 
-        # 7. Documentation Rationale / Educational Context
-        if rel_str.startswith("docs/"):
+        # 7. Documentation Rationale / Educational Context in governed Markdown docs
+        if rel_str.startswith("docs/") or rel_path.suffix.lower() == ".md":
             rationale_indicators = (
                 "decommissioned",
                 "deprecated",
@@ -735,7 +800,7 @@ class AuditEngine:
         # --- UNACKNOWLEDGED LEAKS ---
 
         # 8. Active Living Specification Leak (Highest Risk)
-        if rel_str.startswith("eidos/"):
+        if rel_str.startswith("eidos/") or (doc_type and doc_type not in ("code/source", "code/test")):
             return AuditFinding(
                 file_path=rel_str,
                 line_number=line_number,
@@ -747,42 +812,16 @@ class AuditEngine:
                 risk_level="critical",
             )
 
-        # 9. Active Code Leak in Engine
-        if rel_str.startswith("src/"):
-            return AuditFinding(
-                file_path=rel_str,
-                line_number=line_number,
-                matched_term=matched_term,
-                line_snippet=line_text[:80],
-                classification="active_code_leak",
-                is_approved=False,
-                reason=f"Source code '{rel_str}' still references removed entity '{matched_term}'",
-                risk_level="high",
-            )
-
-        # 10. Active Documentation Leak
-        if rel_str.startswith("docs/") or rel_path.name.lower().startswith("readme"):
-            return AuditFinding(
-                file_path=rel_str,
-                line_number=line_number,
-                matched_term=matched_term,
-                line_snippet=line_text[:80],
-                classification="active_docs_leak",
-                is_approved=False,
-                reason=f"User documentation '{rel_str}' still references removed entity '{matched_term}'",
-                risk_level="medium",
-            )
-
-        # 11. Unclassified Active Leak
+        # 9. Active Code / Governed Container Source Leak
         return AuditFinding(
             file_path=rel_str,
             line_number=line_number,
             matched_term=matched_term,
             line_snippet=line_text[:80],
-            classification="unclassified_leak",
+            classification="active_code_leak",
             is_approved=False,
-            reason=f"Unacknowledged reference to '{matched_term}' in '{rel_str}'",
-            risk_level="medium",
+            reason=f"Governed source or test file '{rel_str}' still references removed entity '{matched_term}'",
+            risk_level="high",
         )
 
     def _is_delta_applied(self, delta_path: Path) -> bool:

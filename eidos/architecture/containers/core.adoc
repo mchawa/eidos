@@ -53,7 +53,7 @@ components:
     source_path: "src/eidos/core/spec/models.py"
   - id: CMP-DELTA-AUDITOR
     title: "DeltaAuditor"
-    responsibility: "Audits reverse-dependency blast radius for entities deprecated or removed by SpecDeltas across composable (operation: remove | deprecate, target, parent, resolving .adoc path targets and excluding replacement target entities mentioned in details) mutations and all living specification prefixes (CNT-*, CMP-*, CTR-*, CAP-*, POL-*, DOM-*, PER-*, DS-*, SCR-*, UIC-*, CLT-*, FLOW-*, INV-*) using gitignore-aware file enumeration (get_tracked_files), word-bounded multi-term and regex-safe tombstone pattern matching, polyglot test classification (is_test_code_path), historical exploration (EXP-*) and closed (applied/rejected) delta exemptions, compressed archive exclusion (.gz), and synced fail-loud graph foreign-key verification with `orjson` JSON report serialization."
+    responsibility: "Audits reverse-dependency blast radius for entities deprecated or removed by SpecDeltas across composable (operation: remove | deprecate, target, parent, resolving .adoc path targets and excluding replacement target entities mentioned in details) mutations and all living specification prefixes (CNT-*, CMP-*, CTR-*, CAP-*, POL-*, DOM-*, PER-*, DS-*, SCR-*, UIC-*, CLT-*, FLOW-*, INV-*) by reusing the single synced ArchitecturalIndex (index.db), pre-filtering governed candidate files via the FTS5 file_tokens_fts table (_build_file_tokens_fts_query splitting dotted/path tokens into AND-joined sub-tokens), resolving applied/rejected delta and exploration statuses in O(1) from persisted entities rows, classifying active_spec_leak vs. active_code_leak by indexed_files.doc_type and container ownership, applying word-bounded multi-term and regex-safe tombstone pattern matching, polyglot test classification (is_test_code_path), compressed archive exclusion (.gz), and fail-loud graph foreign-key verification with `orjson` JSON report serialization."
     source_path: "src/eidos/core/lifecycle/audit.py"
   - id: CMP-CHANGELOG-GENERATOR
     title: "ChangelogGenerator"
@@ -79,6 +79,16 @@ decisions:
       - option: "Continue expanding the 44-value verb-noun action enum or dual anyOf schema"
         reason_rejected: "Requires O(verbs * entity_types) schema and consumer branches for every entity."
     graduated_from: DLT-2026-087
+  - id: DEC-AUDIT-INDEX-SCOPED-DISCOVERY
+    title: "Drive SpecDelta Deletion Auditing Exclusively from index.db Governed Files"
+    decision: "Maintain an inverted FTS5 token table (file_tokens_fts) in eidos/.cache/index.db across all files tracked in indexed_files and query it in AuditEngine._scan_and_classify_references instead of shelling out to git ls-files or walking unowned repository directories."
+    rationale: "Eliminates Git subprocess dependencies and O(N) full-repo file reads during deletion audits, honors POL-001 by scoping leak detection strictly to files governed by eidos/ specifications (eidos/, container source_path/owned_path, contract specification_file, and test suites), and classifies code vs. spec leaks accurately across polyglot directory layouts without hardcoded src/ or docs/ path prefixes."
+    rejected_alternatives:
+      - option: "Shell out to git grep or git ls-files (get_tracked_files)"
+        reason_rejected: "Couples AuditEngine to Git subprocesses and scans unowned files outside the living specification boundary."
+      - option: "Hardcode docs/ and README.md leak classifications in AuditEngine"
+        reason_rejected: "Leaks Eidos's own dogfooded repository structure into the core engine instead of deriving governance from declared container source_path entries."
+    graduated_from: DLT-2026-107-INDEX-DRIVEN
 
 contracts:
   provides: []
@@ -106,7 +116,7 @@ This container represents the foundational library under `src/eidos/core/` (`spe
 | `CMP-ASSET-LOCATOR` | **AssetLocator** | Resolves bundled schemas, `.template.adoc` prose templates, and plugin assets across packages and repos | `src/eidos/core/workspace/assets.py`
 | `CMP-PROJECT-RESOLVER` | **ProjectResolver** | Zero-config repository root discovery across all standard specification subdirectories and path ownership matching | `src/eidos/core/workspace/project.py`
 | `CMP-DOMAIN-MODELS` | **DomainModels** | Typed Pydantic frontmatter models and domain models for living specification entities and validation reports | `src/eidos/core/spec/models.py`
-| `CMP-DELTA-AUDITOR` | **DeltaAuditor** | Reverse-dependency blast-radius auditor for SpecDelta removals across all living spec entity prefixes with term-scoped tombstone pattern matching and `orjson` JSON report serialization | `src/eidos/core/lifecycle/audit.py`
+| `CMP-DELTA-AUDITOR` | **DeltaAuditor** | Index-driven reverse-dependency blast-radius auditor (`file_tokens_fts` and `indexed_files` under `DEC-AUDIT-INDEX-SCOPED-DISCOVERY`) for SpecDelta removals across all living spec entity prefixes with term-scoped tombstone pattern matching and `orjson` JSON report serialization | `src/eidos/core/lifecycle/audit.py`
 | `CMP-CHANGELOG-GENERATOR` | **ChangelogGenerator** | Compiles applied SpecDeltas (deterministically classified via `intent.kind` and `mutations[].operation`) and Git release history into a portable Keep a Changelog ledger | `src/eidos/core/lifecycle/changelog.py`
 |===
 

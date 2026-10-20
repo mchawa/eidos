@@ -18,8 +18,8 @@ import orjson
 if TYPE_CHECKING:
     from eidos.core.spec.models import SpecDocument
 
-# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-106).
-SCHEMA_VERSION = "2.14.0"
+# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-107).
+SCHEMA_VERSION = "2.15.0"
 
 # In-process parsed SpecDocument cache keyed by resolved Path -> (mtime_ns, st_size, sha256, SpecDocument)
 _PARSED_SPEC_MEM_CACHE: dict[Path, tuple[int, int, str, SpecDocument]] = {}
@@ -34,6 +34,7 @@ _MANAGED_TABLES = (
     "spec_validation_cache",
     "test_binding_cache",
     "specs_fts",
+    "file_tokens_fts",
     "metadata",
 )
 
@@ -128,6 +129,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS specs_fts USING fts5(
     symbols,
     tokenize='porter unicode61'
 );
+
+-- FTS5 inverted token table for O(1) governed file reference discovery (DLT-2026-107)
+CREATE VIRTUAL TABLE IF NOT EXISTS file_tokens_fts USING fts5(
+    rel_path UNINDEXED,
+    doc_type UNINDEXED,
+    tokens,
+    tokenize="unicode61 tokenchars '-_'"
+);
 """
 
 
@@ -142,7 +151,7 @@ def _unlink_cache_files(db_path: Path) -> None:
 def ensure_cache_schema(conn: sqlite3.Connection) -> None:
     """Ensure ``conn`` has the canonical ``SCHEMA_VERSION`` tables, dropping stale managed tables on version mismatch."""
     existing_tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';")}
-    user_tables = {t for t in existing_tables if not t.startswith(("sqlite_", "specs_fts_"))}
+    user_tables = {t for t in existing_tables if not t.startswith(("sqlite_", "specs_fts_", "file_tokens_fts_"))}
     if user_tables == set(_MANAGED_TABLES) and "metadata" in existing_tables:
         row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()
         if row and row[0] == SCHEMA_VERSION:

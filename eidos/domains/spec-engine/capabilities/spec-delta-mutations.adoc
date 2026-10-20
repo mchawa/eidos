@@ -4,7 +4,7 @@ id: CAP-PROD-002
 title: "SpecDelta Semantic Mutation Engine"
 domain: DOM-SPEC-ENGINE
 status: active
-version: "2.1.0"
+version: "2.2.0"
 
 business:
   personas:
@@ -29,7 +29,7 @@ technical:
       rule: "Removing a capability via SpecDelta must archive the spec with a tombstone entry rather than silently deleting history."
       test_binding: "tests/test_audit.py::test_delta_audit_tombstone_exemption"
     - id: INV-DELTA-DELETION-AUDIT
-      rule: "SpecDeltas with deletion or deprecation mutations must pass context-aware blast-radius auditing with word-bounded multi-term token matching, polyglot negative-test classification, fail-loud graph foreign-key verification, and zero unacknowledged active leaks."
+      rule: "SpecDeltas with deletion or deprecation mutations must pass index-driven, spec-scoped blast-radius auditing via index.db (file_tokens_fts and indexed_files) with word-bounded multi-term token matching, doc_type-based leak classification across governed specification, source_path, and test files, polyglot negative-test classification, fail-loud graph foreign-key verification, and zero unacknowledged active leaks."
       test_binding: "tests/test_audit.py::test_delta_deletion_audit_clean"
     - id: INV-DELTA-CHANGELOG-GENERATION
       rule: "eidos delta changelog must compile an auditable, SpecDelta-backed changelog partitioned by git release tags via batched Git ancestry queries, strictly filtering to applied SpecDeltas (excluding proposed, draft, and rejected deltas), deduplicating Unreleased delta commits, and emitting zero hallucinated mutations."
@@ -56,4 +56,5 @@ Replaces traditional essay-style RFCs with declarative, machine-verifiable mutat
 * **Default-Verified Application (`eidos delta apply [--verify/--no-verify]`)**: Enforces declarative mutation verification by default (`verify=True` unless `--no-verify` is explicitly supplied), verifies all composable `(operation, target_prefix)` pairs (explicitly rejecting unsupported operations), and validates the updated `status: applied` SpecDelta via `SpecValidator` prior to committing to disk (`INV-MUTATION-REVERSIBILITY`).
 * **Modification-Evidence Verification (`eidos delta verify`)**: Verifies `modify` mutations only on positive evidence of change to the targeted entity (a satisfied closed-schema declarative `expect:` post-condition supporting structured `body.contains`, `body.not_contains`, and typed `frontmatter.*` assertions with nested dot-path key resolution across dicts and lists of dicts, leaf-key prose substring matching, list-subset matching, and `failure_reason` diagnostics, plus a canonical content digest differing from the recorded `vcs.base_commit` / Git-history baseline via `_resolve_git_baseline_sha` with memoized Git revision and blob resolution), with prefix-aware target extraction, component-entry digest granularity for inline `CMP-*` targets, and parent/sub-target membership treated strictly as a precondition (`INV-DELTA-VERIFY-MODIFICATION-EVIDENCE`).
 * **Subdirectory Archive Partitioning & Slimming (`eidos delta archive [--keep-recent 15]`)**: Retains all active SpecDeltas (`proposed`, `in_review`, `approved`) and the most recent `keep_recent` (default `15`) terminal SpecDeltas (`applied`, `rejected`) in `eidos/deltas/`, while moving older terminal SpecDeltas into `eidos/deltas/archive/` as slimmed, schema-valid `.adoc` files with stripped `mutations[].expect` scaffolding and Git-resolved changelog provenance (`INV-DELTA-EXPLORATION-ARCHIVE-LEDGER`).
+* **Index-Driven Spec-Scoped Deletion Auditing (`eidos delta audit`)**: Pre-filters governed candidate files via the SQLite FTS5 `file_tokens_fts` inverted token table in `eidos/.cache/index.db`, resolves historical `delta/mutation` and `product/exploration` statuses in $O(1)$ from `entities`, and classifies leaks by `indexed_files.doc_type` and container `source_path` ownership (`INV-DELTA-DELETION-AUDIT`).
 

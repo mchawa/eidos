@@ -1,0 +1,175 @@
+---
+type: delta/mutation
+id: DLT-2026-107-INDEX-DRIVEN
+title: Index-Driven Spec-Scoped SpecDelta Deletion Auditing
+status: applied
+intent:
+  kind: enabler
+  motivation: "Replace Git ls-files shell-outs (get_tracked_files), full-repository os.walk scans, and hardcoded src/ / docs/ / README.md path heuristics in AuditEngine with index.db-driven candidate file discovery, FTS5 file-token indexing, and doc_type-based leak classification."
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: "Bump SCHEMA_VERSION in src/eidos/core/index/storage.py from '2.14.0' to '2.15.0' and add the 'file_tokens_fts' virtual table to _MANAGED_TABLES and _CACHE_SCHEMA_DDL (using unicode61 with tokenchars '-_' and UNINDEXED rel_path / doc_type columns) so governed files can be queried for exact identifier and entity-ID tokens in sub-millisecond time."
+    expect:
+      frontmatter:
+        responsibility: "2.15.0"
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    details: "Update check_index_dirty, reconcile_code_ownership, index_source_file, and sync_index in src/eidos/core/index/sync.py to support _GOVERNED_TEXT_EXTS (.md, .toml, .json, .yaml, .yml alongside _CODE_EXTS) inside container/component source_path/owned_path and contract specification_file targets on both warm and cold syncs, and index unique [A-Za-z0-9_-]{3,} tokens into file_tokens_fts across all governed specs, source files, and test suites."
+    expect:
+      frontmatter:
+        responsibility: "file_tokens_fts"
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+    details: "Refactor AuditEngine in src/eidos/core/lifecycle/audit.py to reuse the synced ArchitecturalIndex (index.db), pre-filter candidate files via file_tokens_fts (splitting dotted/path tokens into AND-joined sub-tokens), resolve delta/exploration statuses in O(1) from the entities table instead of re-parsing files from disk, and classify leaks by indexed doc_type and container ownership."
+    expect:
+      frontmatter:
+        responsibility: "file_tokens_fts"
+  - operation: modify
+    target: CNT-EIDOS-CORE
+    details: "Graduate DEC-AUDIT-INDEX-SCOPED-DISCOVERY into the decisions list of CNT-EIDOS-CORE in eidos/architecture/containers/core.adoc."
+    expect:
+      body:
+        contains:
+          - "DEC-AUDIT-INDEX-SCOPED-DISCOVERY"
+  - operation: modify
+    target: CAP-PROD-002
+    details: "Update INV-DELTA-DELETION-AUDIT and SpecDelta capability documentation to reflect index-driven, spec-scoped deletion auditing via index.db (file_tokens_fts and indexed_files) and bump capability version to 2.2.0."
+    expect:
+      frontmatter:
+        version: "2.2.0"
+      body:
+        contains:
+          - "file_tokens_fts"
+  - operation: modify
+    target: INV-DELTA-DELETION-AUDIT
+    details: "Update INV-DELTA-DELETION-AUDIT rule to specify index-driven candidate discovery and doc_type-based leak classification across governed specification, source_path, and test files."
+    expect:
+      frontmatter:
+        rule: "file_tokens_fts"
+        test_binding: "tests/test_audit.py::test_delta_deletion_audit_clean"
+vcs:
+  branch: main
+  base_commit: ad82808f2b84c9f0711d5b3c9faffc3ed88d54b0
+---
+= SpecDelta: Index-Driven Spec-Scoped SpecDelta Deletion Auditing
+:toc: left
+:icons: font
+:sectnums:
+
+== 1. Problem Statement & Motivation
+
+`AuditEngine._scan_and_classify_references` in `src/eidos/core/lifecycle/audit.py` (`CMP-DELTA-AUDITOR`) currently exhibits three architectural weaknesses:
+
+1. **Git Subprocess & Full-Repo `os.walk` Coupling**:
+   * `_scan_and_classify_references` calls `get_tracked_files(self.repo_root)` (which spawns `git ls-files`) or falls back to a full-repository `os.walk(self.repo_root)`.
+   * It then opens **every single file** on disk in Python and runs `M` compiled regexes across `L` lines (`O(N * L * M)`), even though `ArchitecturalIndex` (`eidos/.cache/index.db`) already tracks and hashes all governed files in `indexed_files`.
+2. **Unowned File Scanning Outside `eidos/` Governance (`POL-001`)**:
+   * Walking the entire repository scans files that no living specification in `eidos/` owns or governs (e.g., standalone `README.md`, scratch files, or unowned `docs/` directories in downstream projects).
+3. **Hardcoded Dogfooding Path Heuristics (`src/`, `docs/`, `README.md`)**:
+   * `_classify_occurrence` hardcodes `rel_str.startswith("src/")` for `active_code_leak` and `rel_str.startswith("docs/") or rel_path.name.lower().startswith("readme")` for `active_docs_leak`.
+   * In polyglot repositories (`cmd/`, `internal/`, `pkg/`, `crates/`, `apps/`, `packages/`), source files outside `src/` fall through to `unclassified_leak`, while Eidos's own `docs/` directory is already a declared container (`CNT-EIDOS-DOCS` with `source_path: "docs"`).
+
+---
+
+== 2. Architectural Design
+
+=== 2.1 End-to-End Index-Driven Audit Pipeline
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ 1. Incremental Sync (`CMP-INCREMENTAL-SYNC-ENGINE` in `sync.py`)           │
+│                                                                            │
+│  • Tracks governed files in `indexed_files` on warm & cold syncs:          │
+│    - Living specs: `eidos/**/*.adoc` (`doc_type = <spec_type>`)            │
+│    - Container/component `source_path` & `owned_path` + `src/`             │
+│      (`_GOVERNED_TEXT_EXTS`: `_CODE_EXTS | {.md,.toml,.json,.yaml,.yml}`,  │
+│       `doc_type = 'code/source'`)                                          │
+│    - Contract `specification_file` (`doc_type = 'code/source'`)            │
+│    - Polyglot test suites & `test_binding` files (`doc_type = 'code/test'`)│
+│  • Extracts deduplicated identifier/entity tokens (`[A-Za-z0-9_-]{3,}`)    │
+│    on mtime/SHA-256 change into FTS5 `file_tokens_fts`.                    │
+└─────────────────────────────────────┬──────────────────────────────────────┘
+                                      │
+                                      ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│ 2. Candidate Pre-Filter (`CMP-DELTA-AUDITOR` in `audit.py`)                │
+│                                                                            │
+│  • Reuses the synced `ArchitecturalIndex` (`index.db`) from Phase 1.       │
+│  • Queries `file_tokens_fts` for candidate files matching any target ID    │
+│    or `tombstone.search_tokens` (< 1 ms), splitting dotted or path tokens  │
+│    (`pkg.symbol` or `architecture/components/old.adoc`) into `AND`-joined  │
+│    `[A-Za-z0-9_-]{3,}` FTS5 sub-token queries.                             │
+│  • Pre-loads entity `status` / `type` map from `entities` in O(1).         │
+│  • Zero `git ls-files` subprocesses; zero full-repository `os.walk`.       │
+└─────────────────────────────────────┬──────────────────────────────────────┘
+                                      │
+                                      ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│ 3. Context-Aware Line Classification (`_classify_occurrence`)              │
+│                                                                            │
+│  • Reads ONLY the matched candidate files (plus any explicit tombstone     │
+│    paths) and classifies occurrences using `indexed_files.doc_type`:       │
+│    1. `self_delta`: Current SpecDelta under audit (`approved`)             │
+│    2. `historical_ledger`: Applied/rejected `delta/mutation` (looked up    │
+│       in O(1) from `entities`), `product/exploration`, or `CHANGELOG.md`   │
+│       (`approved`)                                                         │
+│    3. `tombstone_exempt`: Matches `tombstone.allowed_reasons` or inline    │
+│       `# eidos:allow-retired` / `# eidos:tombstone` (`approved`)           │
+│    4. `negative_test` / `documentation_rationale`: `doc_type == 'code/test'`│
+│       with negative assertions or test docstrings/comments (`approved`)    │
+│    5. `cleanup_routine`: Uninstaller / removal helper (`approved`)         │
+│    6. `active_spec_leak`: Active living specification in `eidos/`          │
+│       (`unacknowledged`, `critical`)                                       │
+│    7. `active_code_leak`: Governed `code/source` or non-exempt `code/test` │
+│       across any polyglot layout (`unacknowledged`, `high`)                │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+== 3. Detailed Specification & Engine Changes
+
+=== 3.1 `CMP-GRAPH-STORAGE` (`src/eidos/core/index/storage.py`)
+* Bump `SCHEMA_VERSION` from `"2.14.0"` to `"2.15.0"`.
+* Add `"file_tokens_fts"` to `_MANAGED_TABLES` and define the FTS5 virtual table in `_CACHE_SCHEMA_DDL`:
+  ```sql
+  CREATE VIRTUAL TABLE IF NOT EXISTS file_tokens_fts USING fts5(
+      rel_path UNINDEXED,
+      doc_type UNINDEXED,
+      tokens,
+      tokenize='unicode61 tokenchars "-_"'
+  );
+  ```
+* **Why `tokenchars "-_"` (without `.`)**:
+  - Including `.` in `tokenchars` would merge dotted member calls (`self.old_auth_helper()`) and sentence-ending periods in AsciiDoc/Markdown (`"Retire CMP-OLD-AUTH."`) into single composite tokens, causing exact token queries (`MATCH '"old_auth_helper"'` or `MATCH '"CMP-OLD-AUTH"'`) to miss files.
+  - Using `tokenchars "-_"` aligns FTS5 tokenization directly with `AuditEngine._compile_term_pattern`'s `[A-Za-z0-9_-]` word-boundary semantics.
+
+=== 3.2 `CMP-INCREMENTAL-SYNC-ENGINE` (`src/eidos/core/index/sync.py`)
+* **Governed File Discovery on Both Cold & Warm Syncs (`check_index_dirty`, `reconcile_code_ownership`, & `sync_index`)**:
+  - Define `_GOVERNED_TEXT_EXTS = _CODE_EXTS | {".md", ".toml", ".json", ".yaml", ".yml"}` for files inside explicitly declared container/component `source_path` / `owned_path` or contract `specification_file`.
+  - Apply `_GOVERNED_TEXT_EXTS` in **both** `check_index_dirty` (warm cache) and `reconcile_code_ownership` (cold cache bootstrap, where `.adoc` specs are parsed before container `source_path` directories like `docs/` from `CNT-EIDOS-DOCS` are discovered).
+  - In `index_source_file`, run `ast_idx.extract_symbols` and `extract_imports` only when `path.suffix in _CODE_EXTS` (storing empty `symbols`/`imports` lists for non-AST governed text files like `.md` or `.toml`), while recording the file in `indexed_files` (`doc_type = 'code/source'`) and indexing its tokens into `file_tokens_fts`.
+  - Exclude compressed archives and binaries (`.gz`, `.zip`, `.tar`, `.tgz`, `.wasm`, `.pyc`, etc.) from indexing.
+* **Incremental Token Indexing (`_upsert_file_tokens_fts`)**:
+  - Extract unique tokens matching `[A-Za-z0-9_-]{3,}` from each updated specification (`eidos/**/*.adoc`), source file (`code/source`), and test file (`code/test`) during `sync_index` and `reconcile_code_ownership`, and upsert `(rel_path, doc_type, unique_tokens_str)` into `file_tokens_fts`.
+  - Delete stale rows from `file_tokens_fts` whenever a file is pruned or updated in `indexed_files`, and include `DELETE FROM file_tokens_fts;` in `sync_index(force=True)`.
+
+=== 3.3 `CMP-DELTA-AUDITOR` (`src/eidos/core/lifecycle/audit.py`)
+* **Single Synced Index Pass & $O(1)$ Entity Status Lookup**:
+  - Sync `ArchitecturalIndex` once in `audit_delta` and pass the synced `index` instance to both `_check_graph_integrity` and `_scan_and_classify_references`.
+  - Pre-load `entity_meta_by_file: dict[str, tuple[str, str]]` (`SELECT file_path, type, status FROM entities WHERE type != 'invariant'`) once from `index.db` so `_classify_occurrence` can check whether a `delta/mutation` is `applied`/`rejected` or a `product/exploration` in $O(1)$ from memory without calling `parse_spec_file` from disk on every matched line.
+* **Index-Driven Candidate Selection (`_scan_and_classify_references`)**:
+  - Remove `get_tracked_files` (`git ls-files`) and `os.walk(self.repo_root)`.
+  - For each target ID or `tombstone.search_tokens` entry, extract `[A-Za-z0-9_-]{3,}` sub-tokens:
+    * Single-token terms (e.g., `CMP-OLD-AUTH`, `old_auth_helper`) query `file_tokens_fts WHERE tokens MATCH '"cmp-old-auth"'`.
+    * Compound dotted or path terms (e.g., `architecture/components/old-auth.adoc` or `pkg.old_auth`) split into `AND`-joined FTS5 sub-token queries (`"architecture" AND "components" AND "old-auth" AND "adoc"`), then verify the exact line match via the existing compiled regex `term_re`.
+* **Ownership-Aware Leak Classification (`_classify_occurrence`) & Test Suite Alignment**:
+  - Accept `doc_type: str` from `indexed_files`.
+  - Classify any unexempt reference in an active living specification (`doc_type` not in `('code/source', 'code/test')`) as `active_spec_leak` (`critical`).
+  - Classify any unexempt reference in a governed source or test file (`doc_type in ('code/source', 'code/test')`) as `active_code_leak` (`high`), regardless of whether the file lives under `src/`, `cmd/`, `pkg/`, `crates/`, `apps/`, or a governed documentation container (`CNT-EIDOS-DOCS`).
+  - Update `tests/test_audit.py` (`test_delta_audit_classifications_graph_violation_and_strict_cli`) so the test fixture declares `docs` under container `source_path` governance and asserts the unified `active_code_leak` classification.
+
+=== 3.4 Living Specifications (`core.adoc`, `index.adoc`, `spec-delta-mutations.adoc`)
+* Graduate `DEC-AUDIT-INDEX-SCOPED-DISCOVERY` into `CNT-EIDOS-CORE` (`eidos/architecture/containers/core.adoc`) and update `CMP-DELTA-AUDITOR`, `CMP-GRAPH-STORAGE`, and `CMP-INCREMENTAL-SYNC-ENGINE` responsibilities.
+* Bump `CAP-PROD-002` version from `2.1.0` to `2.2.0` and update `INV-DELTA-DELETION-AUDIT` in `eidos/domains/spec-engine/capabilities/spec-delta-mutations.adoc`.
