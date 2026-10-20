@@ -1,8 +1,8 @@
 """Architectural knowledge graph commands (`eidos index ...`)."""
 
-import json
 from pathlib import Path
 
+import orjson
 import typer
 from rich.panel import Panel
 from rich.table import Table
@@ -158,7 +158,11 @@ def index_search_cmd(
     results = idx.query_fts(query, limit=limit)
 
     if json_output:
-        typer.echo(json.dumps({"query": query, "count": len(results), "results": results}, indent=2))
+        typer.echo(
+            orjson.dumps({"query": query, "count": len(results), "results": results}, option=orjson.OPT_INDENT_2).decode(
+                "utf-8"
+            )
+        )
         return
 
     if not results:

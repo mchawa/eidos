@@ -265,7 +265,19 @@ class ArchitecturalIndex:
 
         symbol_counts = {
             row[0]: row[1]
-            for row in cursor.execute("SELECT kind, COUNT(*) FROM symbol_mappings GROUP BY kind;").fetchall()
+            for row in cursor.execute(
+                """
+                WITH all_mappings(symbol, entity_id, kind) AS (
+                    SELECT symbol, entity_id, kind FROM symbol_mappings
+                    UNION
+                    SELECT symbol, entity_id, kind FROM code_symbols WHERE kind != 'import'
+                    UNION
+                    SELECT parent_symbol || '.' || symbol, entity_id, 'method'
+                    FROM code_symbols WHERE kind != 'import' AND parent_symbol != ''
+                )
+                SELECT kind, COUNT(*) FROM all_mappings GROUP BY kind;
+                """
+            ).fetchall()
         }
         total_symbols = sum(symbol_counts.values())
 

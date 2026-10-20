@@ -3,13 +3,14 @@ and application of composable semantic mutations (CMP-DELTA-ENGINE)."""
 
 import contextlib
 import hashlib
-import json
 import os
 import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 from eidos.core.index.storage import get_cached_spec_document
 from eidos.core.lifecycle.catalog import (
@@ -223,7 +224,9 @@ def _find_inline_component_dict(
 
 def _digest_dict(data: dict[str, Any]) -> str:
     """Compute a deterministic SHA-256 hex digest for a frontmatter sub-dictionary."""
-    return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        orjson.dumps(data, option=orjson.OPT_SORT_KEYS | orjson.OPT_NON_STR_KEYS, default=str)
+    ).hexdigest()
 
 
 def _resolve_git_repo_root(eidos_dir: Path) -> Path | None:

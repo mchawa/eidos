@@ -1,9 +1,9 @@
 """Tests verifying Agent Plugin conformance to agent-plugins.org v1.0.0 and project-scoped CLI installer."""
 
-import json
 import subprocess
 from pathlib import Path
 
+import orjson
 import pytest
 from typer.testing import CliRunner
 
@@ -193,15 +193,13 @@ def test_plugin_install_to_claude_plugin(tmp_path):
     assert (tmp_path / ".claude" / "skills" / "eidos-spec" / "SKILL.md").exists()
     assert len([d for d in (tmp_path / ".claude" / "skills").iterdir() if d.is_dir()]) == 4
 
-    with open(claude_plugin_dir / "plugin.json", encoding="utf-8") as f:
-        manifest = json.load(f)
+    manifest = orjson.loads((claude_plugin_dir / "plugin.json").read_bytes())
     assert manifest["name"] == "eidos"
 
     # Verify settings.json
     settings_file = tmp_path / ".claude" / "settings.json"
     assert settings_file.exists()
-    with open(settings_file, encoding="utf-8") as f:
-        settings = json.load(f)
+    settings = orjson.loads(settings_file.read_bytes())
     assert settings["enabledPlugins"].get("eidos@plugins-dir") is True
     assert any(
         p.get("path") in (".claude/plugins/eidos", "./.claude/plugins/eidos") for p in settings.get("plugins", [])
@@ -232,8 +230,7 @@ def test_plugin_uninstall_claude_plugin(tmp_path):
     assert not claude_plugin_dir.exists()
     assert not (tmp_path / ".claude" / "skills" / "eidos-spec").exists()
     if settings_file.exists():
-        with open(settings_file, encoding="utf-8") as f:
-            settings = json.load(f)
+        settings = orjson.loads(settings_file.read_bytes())
         assert "eidos@plugins-dir" not in settings.get("enabledPlugins", {})
 
 
@@ -357,8 +354,7 @@ def test_plugin_install_and_uninstall_codex(tmp_path):
     assert (codex_dir / "skills" / "eidos" / "SKILL.md").exists()
     assert len([d for d in (codex_dir / "skills").iterdir() if d.is_dir()]) == 4
 
-    with open(codex_dir / "plugin.json", encoding="utf-8") as f:
-        manifest = json.load(f)
+    manifest = orjson.loads((codex_dir / "plugin.json").read_bytes())
     assert manifest["name"] == "eidos"
     assert "com.openai" in manifest["extensions"]
 
@@ -384,8 +380,7 @@ def test_plugin_install_and_uninstall_copilot(tmp_path):
     copilot_plugin = tmp_path / ".github" / "plugin"
     assert (copilot_plugin / "plugin.json").exists()
     assert not (copilot_plugin / "mcp.json").exists()
-    with open(copilot_plugin / "plugin.json", encoding="utf-8") as f:
-        manifest = json.load(f)
+    manifest = orjson.loads((copilot_plugin / "plugin.json").read_bytes())
     assert manifest["name"] == "eidos"
     assert "com.github.copilot" in manifest["extensions"]
 
@@ -399,8 +394,7 @@ def test_plugin_install_and_uninstall_copilot(tmp_path):
     # 3. Copilot settings
     copilot_settings = tmp_path / ".github" / "copilot" / "settings.json"
     assert copilot_settings.exists()
-    with open(copilot_settings, encoding="utf-8") as f:
-        settings = json.load(f)
+    settings = orjson.loads(copilot_settings.read_bytes())
     assert settings["enabledPlugins"].get("eidos") is True
 
     # 4. MCP servers are NOT created
@@ -547,16 +541,16 @@ def test_plugin_manifest_semver_enforcement(tmp_path):
     plugin_dir.mkdir()
 
     # Missing version
-    (plugin_dir / "plugin.json").write_text(
-        json.dumps({"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", "name": "test-plugin"})
+    (plugin_dir / "plugin.json").write_bytes(
+        orjson.dumps({"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", "name": "test-plugin"})
     )
     report_missing = validate_plugin_package(plugin_dir)
     assert not report_missing.is_valid
     assert any("missing required 'version' field" in err for err in report_missing.errors)
 
     # Invalid SemVer
-    (plugin_dir / "plugin.json").write_text(
-        json.dumps(
+    (plugin_dir / "plugin.json").write_bytes(
+        orjson.dumps(
             {
                 "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
                 "name": "test-plugin",
@@ -585,11 +579,9 @@ def test_plugin_version_status_check(tmp_path):
 
     # 3. Outdated
     plugin_json = tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json"
-    with open(plugin_json, encoding="utf-8") as f:
-        data = json.load(f)
+    data = orjson.loads(plugin_json.read_bytes())
     data["version"] = "0.0.9"
-    with open(plugin_json, "w", encoding="utf-8") as f:
-        json.dump(data, f)
+    plugin_json.write_bytes(orjson.dumps(data))
 
     status_outdated = check_plugin_version_status(project_dir=tmp_path)
     assert status_outdated["status"] == "outdated"
@@ -597,8 +589,7 @@ def test_plugin_version_status_check(tmp_path):
 
     # 4. Newer
     data["version"] = "9.9.9"
-    with open(plugin_json, "w", encoding="utf-8") as f:
-        json.dump(data, f)
+    plugin_json.write_bytes(orjson.dumps(data))
 
     status_newer = check_plugin_version_status(project_dir=tmp_path)
     assert status_newer["status"] == "newer"
@@ -621,11 +612,9 @@ def test_cli_plugin_version(tmp_path):
 
     # Outdated
     plugin_json = tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json"
-    with open(plugin_json, encoding="utf-8") as f:
-        data = json.load(f)
+    data = orjson.loads(plugin_json.read_bytes())
     data["version"] = "0.0.8"
-    with open(plugin_json, "w", encoding="utf-8") as f:
-        json.dump(data, f)
+    plugin_json.write_bytes(orjson.dumps(data))
 
     res_outdated = runner.invoke(app, ["plugin", "version", "--project-dir", str(tmp_path)])
     assert res_outdated.exit_code == 0
@@ -640,11 +629,9 @@ def test_cli_plugin_update(tmp_path):
 
     # Mock older installed version
     plugin_json = tmp_path / ".agents" / "plugins" / "eidos" / "plugin.json"
-    with open(plugin_json, encoding="utf-8") as f:
-        data = json.load(f)
+    data = orjson.loads(plugin_json.read_bytes())
     data["version"] = "0.0.5"
-    with open(plugin_json, "w", encoding="utf-8") as f:
-        json.dump(data, f)
+    plugin_json.write_bytes(orjson.dumps(data))
 
     # Run update
     res = runner.invoke(app, ["plugin", "update", "--project-dir", str(tmp_path)])
@@ -654,8 +641,7 @@ def test_cli_plugin_update(tmp_path):
     assert get_bundled_plugin_version() in res.stdout
 
     # Verify plugin.json was updated
-    with open(plugin_json, encoding="utf-8") as f:
-        updated_data = json.load(f)
+    updated_data = orjson.loads(plugin_json.read_bytes())
     assert updated_data["version"] == get_bundled_plugin_version()
 
 
@@ -711,8 +697,7 @@ def test_plugin_hooks_conformance():
     assert report.hooks == ["eidos-drift-gate"]
 
     hooks_file = ref_plugin / "hooks.json"
-    with open(hooks_file, encoding="utf-8") as f:
-        hooks_data = json.load(f)
+    hooks_data = orjson.loads(hooks_file.read_bytes())
 
     assert set(hooks_data.keys()) == {"eidos-drift-gate"}
     drift_gate = hooks_data["eidos-drift-gate"]
@@ -750,16 +735,16 @@ def test_drift_hook_stop_event_drift_detected(tmp_path):
     subprocess.run(["git", "add", "eidos"], cwd=tmp_path, capture_output=True, check=True)
     subprocess.run(["git", "commit", "-m", "init specs"], cwd=tmp_path, capture_output=True, check=True)
 
-    stop_payload = json.dumps(
+    stop_payload = orjson.dumps(
         {
             "executionNum": 1,
             "terminationReason": "model_stop",
             "workspacePaths": [str(tmp_path)],
         }
-    )
+    ).decode("utf-8")
     res = runner.invoke(app, ["hook"], input=stop_payload)
     assert res.exit_code == 0
-    data = json.loads(res.stdout)
+    data = orjson.loads(res.stdout)
     assert data["decision"] == "allow"
     assert "⚠️ [Eidos Stop Hook]" in data["systemMessage"]
     assert "src/feature.py" in data["systemMessage"]
@@ -772,7 +757,7 @@ def test_drift_hook_stop_event_drift_detected(tmp_path):
     )
     res_invalid = runner.invoke(app, ["hook"], input=stop_payload)
     assert res_invalid.exit_code == 0
-    data_invalid = json.loads(res_invalid.stdout)
+    data_invalid = orjson.loads(res_invalid.stdout)
     assert data_invalid["decision"] == "allow"
     assert "Specification validation failed" in data_invalid["systemMessage"]
 
@@ -795,16 +780,16 @@ def test_drift_hook_stop_event_synchronized(tmp_path):
     subprocess.run(["git", "config", "user.email", "agent@eidos.ai"], cwd=tmp_path, capture_output=True, check=True)
     subprocess.run(["git", "config", "user.name", "Eidos Agent"], cwd=tmp_path, capture_output=True, check=True)
 
-    stop_payload = json.dumps(
+    stop_payload = orjson.dumps(
         {
             "executionNum": 1,
             "terminationReason": "model_stop",
             "workspacePaths": [str(tmp_path)],
         }
-    )
+    ).decode("utf-8")
     res = runner.invoke(app, ["hook"], input=stop_payload)
     assert res.exit_code == 0
-    data = json.loads(res.stdout)
+    data = orjson.loads(res.stdout)
     assert data == {"decision": "allow"}
 
 
@@ -853,7 +838,7 @@ def test_cli_doctor_command(tmp_path, monkeypatch):
 
     res_json = runner.invoke(app, ["doctor", "--json"])
     assert res_json.exit_code == 0
-    data = json.loads(res_json.stdout)
+    data = orjson.loads(res_json.stdout)
     assert "healthy" in data
     assert "checks" in data
     assert "cli_binary" in data["checks"]
@@ -864,7 +849,7 @@ def test_cli_doctor_command(tmp_path, monkeypatch):
     monkeypatch.setattr("eidos.cli.doctor_hook_commands.shutil.which", lambda _cmd: None)
     res_venv = runner.invoke(app, ["doctor", "--json"])
     assert res_venv.exit_code == 0
-    venv_data = json.loads(res_venv.stdout)
+    venv_data = orjson.loads(res_venv.stdout)
     assert venv_data["healthy"] is True
     assert venv_data["checks"]["cli_binary"]["ok"] is True
     assert venv_data["checks"]["cli_binary"]["on_path"] is False
@@ -889,7 +874,7 @@ archetypes:
     )
     res_custom = runner.invoke(app, ["doctor", "--path", str(custom_specs), "--json"])
     assert res_custom.exit_code == 0
-    custom_data = json.loads(res_custom.stdout)
+    custom_data = orjson.loads(res_custom.stdout)
     assert custom_data["healthy"] is True
     assert Path(custom_data["checks"]["living_specs"]["eidos_dir"]).resolve() == custom_specs.resolve()
     assert custom_data["checks"]["living_specs"]["valid_docs"] == 1
@@ -899,7 +884,7 @@ def test_hooks_are_cli_native():
     """Verify INV-HOOK-CLI-NATIVE: all hooks in hooks.json invoke 'eidos hook' directly with zero wrapper scripts."""
     ref_plugin = Path("assets/plugin_reference")
     assert not (ref_plugin / "scripts").exists(), "Legacy scripts/ wrapper directory must not exist"
-    hooks_data = json.loads((ref_plugin / "hooks.json").read_text(encoding="utf-8"))
+    hooks_data = orjson.loads((ref_plugin / "hooks.json").read_bytes())
 
     commands: list[str] = []
     for _hook_name, events in hooks_data.items():
@@ -979,8 +964,7 @@ def test_plugin_install_creates_manifest_with_hashes(tmp_path):
     manifest_file = dest / MANIFEST_FILENAME
     assert manifest_file.exists(), f"Expected manifest file at {manifest_file}"
 
-    with open(manifest_file, encoding="utf-8") as f:
-        manifest_data = json.load(f)
+    manifest_data = orjson.loads(manifest_file.read_bytes())
 
     assert manifest_data["version"] == get_bundled_plugin_version()
     assert "files" in manifest_data
@@ -1002,8 +986,7 @@ def test_plugin_install_creates_manifest_with_hashes(tmp_path):
     install_plugin(target=PluginInstallTarget.CODEX, project_dir=codex_root, force=True)
     codex_manifest_file = codex_root / ".codex" / MANIFEST_FILENAME
     assert codex_manifest_file.exists()
-    with open(codex_manifest_file, encoding="utf-8") as f:
-        codex_manifest = json.load(f)
+    codex_manifest = orjson.loads(codex_manifest_file.read_bytes())
     assert "plugin.json" in codex_manifest["files"]
     assert "rules.md" in codex_manifest["files"]
     assert "skills/eidos/SKILL.md" in codex_manifest["files"]
@@ -1014,8 +997,7 @@ def test_plugin_install_creates_manifest_with_hashes(tmp_path):
     install_plugin(target=PluginInstallTarget.COPILOT, project_dir=copilot_root, force=True)
     copilot_manifest_file = copilot_root / ".github" / "plugin" / MANIFEST_FILENAME
     assert copilot_manifest_file.exists()
-    with open(copilot_manifest_file, encoding="utf-8") as f:
-        copilot_manifest = json.load(f)
+    copilot_manifest = orjson.loads(copilot_manifest_file.read_bytes())
     assert "plugin.json" in copilot_manifest["files"]
 
 
@@ -1216,8 +1198,8 @@ def test_plugin_uvx_hook_command_version_pinning(tmp_path):
 
     # 1. Direct function rewrite (bare, unpinned uvx, and older pinned uvx)
     hooks_file = tmp_path / "hooks.json"
-    hooks_file.write_text(
-        json.dumps(
+    hooks_file.write_bytes(
+        orjson.dumps(
             {
                 "hooks": {
                     "PreToolUse": [{"command": "eidos hook lint --event PreToolUse"}],
@@ -1225,9 +1207,8 @@ def test_plugin_uvx_hook_command_version_pinning(tmp_path):
                     "Stop": [{"command": "uvx --from eidos-ai==0.1.0 eidos hook drift"}],
                 }
             },
-            indent=2,
-        ),
-        encoding="utf-8",
+            option=orjson.OPT_INDENT_2,
+        )
     )
 
     success = _rewrite_hook_command_for_target_root(hooks_file)
@@ -1327,16 +1308,15 @@ def test_dlt_2026_071_plugin_installer_and_validator_fixes(tmp_path):
     custom_plugin = tmp_path / "custom_plugin"
     skill_dir = custom_plugin / "skills" / "demo-skill"
     skill_dir.mkdir(parents=True)
-    (custom_plugin / "plugin.json").write_text(
-        json.dumps(
+    (custom_plugin / "plugin.json").write_bytes(
+        orjson.dumps(
             {
                 "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
                 "name": "demo-plugin",
                 "version": "1.0.0",
                 "description": "Demo plugin",
             }
-        ),
-        encoding="utf-8",
+        )
     )
     (skill_dir / "SKILL.md").write_text(
         '---\nname: demo-skill\ndescription: "Handles --- separator in YAML scalar"\n---\n# Demo Skill\n',
@@ -1372,26 +1352,24 @@ def test_plugin_stop_hook_validation_uninstall_and_semver(tmp_path):
     ws = tmp_path / "uninstall_ws"
     (ws / ".claude").mkdir(parents=True)
     (ws / ".vscode").mkdir(parents=True)
-    (ws / ".claude" / "settings.json").write_text(
-        json.dumps(
+    (ws / ".claude" / "settings.json").write_bytes(
+        orjson.dumps(
             {"theme": "dark", "hooks": {"CustomHook": [{"hooks": [{"type": "command", "command": "echo hi"}]}]}}
-        ),
-        encoding="utf-8",
+        )
     )
-    (ws / ".vscode" / "settings.json").write_text(
-        json.dumps({"editor.tabSize": 2, "chat.promptFilesLocations": {"custom/prompts": True}}),
-        encoding="utf-8",
+    (ws / ".vscode" / "settings.json").write_bytes(
+        orjson.dumps({"editor.tabSize": 2, "chat.promptFilesLocations": {"custom/prompts": True}})
     )
     (ws / ".aider.conf.yml").write_text("model: sonnet\nread:\n  - CONVENTIONS.md\n", encoding="utf-8")
 
     install_plugin(target=PluginInstallTarget.ALL, project_dir=ws, force=True)
     uninstall_plugin(target=PluginInstallTarget.ALL, project_dir=ws)
 
-    claude_after = json.loads((ws / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    claude_after = orjson.loads((ws / ".claude" / "settings.json").read_bytes())
     assert claude_after.get("theme") == "dark"
     assert "CustomHook" in claude_after.get("hooks", {})
 
-    vscode_after = json.loads((ws / ".vscode" / "settings.json").read_text(encoding="utf-8"))
+    vscode_after = orjson.loads((ws / ".vscode" / "settings.json").read_bytes())
     assert vscode_after.get("editor.tabSize") == 2
     assert vscode_after.get("chat.promptFilesLocations", {}).get("custom/prompts") is True
 
@@ -1469,16 +1447,15 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     assert not validate_plugin_package(pdir).is_valid
 
     # Bad name, bad version, extensions, invalid mcp_config.json, skills without SKILL.md / bad frontmatter, hooks.json errors
-    (pdir / "plugin.json").write_text(
-        json.dumps(
+    (pdir / "plugin.json").write_bytes(
+        orjson.dumps(
             {
                 "name": "BAD--NAME",
                 "version": "not_semver",
                 "description": "Desc",
                 "extensions": {"com.example": {}},
             }
-        ),
-        encoding="utf-8",
+        )
     )
     (pdir / "mcp_config.json").write_text("{bad mcp config", encoding="utf-8")
     s1 = pdir / "skills" / "empty-skill"
@@ -1490,8 +1467,8 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     (s2 / "SKILL.md").write_text("# No frontmatter\n", encoding="utf-8")
     (s3 / "SKILL.md").write_text("---\n- list_item\n---\n# Body\n", encoding="utf-8")
     (s4 / "SKILL.md").write_text("---\nother: 1\n---\n# Body\n", encoding="utf-8")
-    (pdir / "hooks.json").write_text(
-        json.dumps(
+    (pdir / "hooks.json").write_bytes(
+        orjson.dumps(
             {
                 "bad_hook": "not_a_dict",
                 "eidos-drift-gate": {
@@ -1508,8 +1485,7 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
                     ],
                 },
             }
-        ),
-        encoding="utf-8",
+        )
     )
     rep_bad = validate_plugin_package(pdir)
     assert not rep_bad.is_valid
@@ -1525,9 +1501,8 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
 
     # Also test mcp.json with stdio command containing spaces and non-dict hooks.json
     (pdir / "mcp_config.json").unlink()
-    (pdir / "mcp.json").write_text(
-        json.dumps({"mcpServers": {"srv": {"type": "stdio", "command": "python -m my_server"}}}),
-        encoding="utf-8",
+    (pdir / "mcp.json").write_bytes(
+        orjson.dumps({"mcpServers": {"srv": {"type": "stdio", "command": "python -m my_server"}}})
     )
     (pdir / "hooks.json").write_text("[1, 2, 3]", encoding="utf-8")
     rep_mcp = validate_plugin_package(pdir)
@@ -1588,8 +1563,8 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
         # locate_plugin_bundle CWD fallback (assets/plugin_reference/plugin.json) and FileNotFoundError
         cwd_bundle_ws = tmp_path / "cwd_bundle_ws"
         (cwd_bundle_ws / "assets" / "plugin_reference").mkdir(parents=True)
-        (cwd_bundle_ws / "assets" / "plugin_reference" / "plugin.json").write_text(
-            json.dumps({"name": "eidos", "version": "0.1.0"}), encoding="utf-8"
+        (cwd_bundle_ws / "assets" / "plugin_reference" / "plugin.json").write_bytes(
+            orjson.dumps({"name": "eidos", "version": "0.1.0"})
         )
         os.chdir(cwd_bundle_ws)
         assert locate_plugin_bundle() == (cwd_bundle_ws / "assets" / "plugin_reference").resolve()
@@ -1613,7 +1588,7 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     pdir2 = tmp_path / "pdir2"
     pdir2.mkdir()
     (pdir2 / "plugin.json").write_text("{}", encoding="utf-8")
-    (pdir2 / "mcp_config.json").write_text(json.dumps({"mcpServers": {"eidos": {}}}), encoding="utf-8")
+    (pdir2 / "mcp_config.json").write_bytes(orjson.dumps({"mcpServers": {"eidos": {}}}))
     (pdir2 / "hooks.json").write_text("{invalid_hooks", encoding="utf-8")
     rep_p2 = validate_plugin_package(pdir2)
     assert not rep_p2.is_valid
@@ -1679,11 +1654,11 @@ def test_plugin_validator_version_cli_hooks_and_installer_edge_cases(tmp_path, m
     # 6e. plugin/installer.py: _remove_project_aider_conf / _ensure_claude_plugin_manifest branches
     c_dir = tmp_path / "claude_manifest_edge"
     c_dir.mkdir()
-    (c_dir / "plugin.json").write_text(json.dumps({"name": "not-eidos"}), encoding="utf-8")
+    (c_dir / "plugin.json").write_bytes(orjson.dumps({"name": "not-eidos"}))
     assert _ensure_claude_plugin_manifest(c_dir, force=False) is None
     (c_dir / "plugin.json").write_text("{bad", encoding="utf-8")
     assert _ensure_claude_plugin_manifest(c_dir, force=False) is None
-    (c_dir / "plugin.json").write_text(json.dumps({"name": "eidos", "version": "0.1.0"}), encoding="utf-8")
+    (c_dir / "plugin.json").write_bytes(orjson.dumps({"name": "eidos", "version": "0.1.0"}))
     (c_dir / ".claude-plugin").mkdir(exist_ok=True)
     (c_dir / ".claude-plugin" / "plugin.json").write_text("{bad", encoding="utf-8")
     assert _ensure_claude_plugin_manifest(c_dir, force=True) is not None
@@ -1748,7 +1723,7 @@ def test_target_adapter_manifest_includes_post_install_hook_files(tmp_path):
 
     manifest_path = tmp_path / ".agents" / "plugins" / "eidos" / MANIFEST_FILENAME
     assert manifest_path.exists()
-    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_data = orjson.loads(manifest_path.read_bytes())
     assert "post_hook_generated.json" in manifest_data["files"]
 
 
@@ -1811,7 +1786,7 @@ def test_group_d1_d2_d3_regressions(tmp_path, monkeypatch):  # eidos:fixture
     )
     res_doc = runner.invoke(app, ["doctor", "--json"])
     assert res_doc.exit_code == 1
-    doc_payload = json.loads(res_doc.stdout)
+    doc_payload = orjson.loads(res_doc.stdout)
     assert doc_payload["healthy"] is False
     assert doc_payload["checks"]["agent_plugin"]["ok"] is False
 
@@ -1825,13 +1800,13 @@ def test_group_d1_d2_d3_regressions(tmp_path, monkeypatch):  # eidos:fixture
     )
     res_hook_broken = runner.invoke(app, ["hook", "--path", str(broken_ws)])
     assert res_hook_broken.exit_code == 0
-    broken_out = json.loads(res_hook_broken.stdout)
+    broken_out = orjson.loads(res_hook_broken.stdout)
     assert broken_out["decision"] == "allow"
     assert "Specification validation failed" in broken_out["systemMessage"]
 
     res_hook_missing = runner.invoke(app, ["hook", "--path", str(broken_ws / "nonexistent")])
     assert res_hook_missing.exit_code == 0
-    assert json.loads(res_hook_missing.stdout) == {"decision": "allow"}
+    assert orjson.loads(res_hook_missing.stdout) == {"decision": "allow"}
 
     # --- D2.1 & D2.2: drift --path . and subdirectory auto-discovery for validate, drift, and context ---
     repo_ws = tmp_path / "sub_ws"
@@ -1849,7 +1824,7 @@ def test_group_d1_d2_d3_regressions(tmp_path, monkeypatch):  # eidos:fixture
     # Running drift -u --path <repo_root> resolves repo_root/eidos properly
     res_drift_dot = runner.invoke(app, ["drift", "-u", "--path", str(repo_ws), "--json"])
     assert res_drift_dot.exit_code == 0
-    assert json.loads(res_drift_dot.stdout)["is_clean"] is True
+    assert orjson.loads(res_drift_dot.stdout)["is_clean"] is True
 
     # Running validate, drift, and context from a subdirectory without --path discovers repo_root/eidos
     monkeypatch.chdir(sub_dir)

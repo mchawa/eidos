@@ -6,12 +6,13 @@ specification diffs, and evaluates 1-hop and design subgraph coverage.
 
 from __future__ import annotations
 
-import json
 import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 from eidos.core.spec.parser import safe_load_yaml, split_frontmatter_and_body
 from eidos.core.workspace.project import match_path_pattern
@@ -231,7 +232,7 @@ def _spec_frontmatter(content: str | None) -> dict[str, Any]:
 
 
 def _canonical(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, default=str)
+    return orjson.dumps(value, option=orjson.OPT_SORT_KEYS | orjson.OPT_NON_STR_KEYS, default=str).decode("utf-8")
 
 
 def _declared_source_patterns(frontmatter: dict[str, Any]) -> list[str]:
@@ -308,7 +309,7 @@ class _SpecDiffInspector:
         spec_lower = spec.lower()
         if spec_lower.endswith(".json"):
             try:
-                return _canonical(json.loads(old)) != _canonical(json.loads(new))
+                return _canonical(orjson.loads(old)) != _canonical(orjson.loads(new))
             except Exception:
                 return _normalize_ws(old) != _normalize_ws(new)
 

@@ -1,9 +1,9 @@
 """Agent plugin lifecycle commands (`eidos plugin ...`)."""
 
-import json
 from pathlib import Path
 from typing import Annotated
 
+import orjson
 import typer
 from rich.panel import Panel
 from rich.table import Table
@@ -324,8 +324,7 @@ def plugin_info(
     manifest_file = target_dir / "plugin.json"
     manifest_data = {}
     if manifest_file.exists():
-        with open(manifest_file, encoding="utf-8") as f:
-            manifest_data = json.load(f)
+        manifest_data = orjson.loads(manifest_file.read_bytes())
 
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style="bold cyan", justify="right")

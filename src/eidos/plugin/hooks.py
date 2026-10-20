@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import contextlib
-import json
 import sys
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 from eidos.core.workspace.project import find_repo_root
 from eidos.vcs.drift import detect_drift
@@ -95,8 +96,8 @@ def execute_hook(
         with contextlib.suppress(OSError):
             stdin_data = sys.stdin.read().strip()
     if stdin_data:
-        with contextlib.suppress(json.JSONDecodeError, ValueError):
-            parsed = json.loads(stdin_data)
+        with contextlib.suppress(orjson.JSONDecodeError, ValueError):
+            parsed = orjson.loads(stdin_data)
             if isinstance(parsed, dict):
                 payload = parsed
 
@@ -105,5 +106,5 @@ def execute_hook(
         ws_root = ws_root.parent
 
     res = handle_stop_hook(payload, ws_root)
-    print(json.dumps(res))
+    print(orjson.dumps(res).decode("utf-8"))
     return 0

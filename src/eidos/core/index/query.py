@@ -259,7 +259,7 @@ def execute_fts_query(
         cursor.execute(
             f"""
             SELECT
-                e.id, e.type, e.title, e.domain, e.source_path, e.file_path, e.data_json,
+                e.id, e.type, e.title, e.domain, e.file_path, e.data_json,
                 {id_boost_sql}{and_boost_sql}bm25(specs_fts, {weights_sql}) as rank
             FROM specs_fts f
             JOIN entities e ON e.id = f.entity_id
@@ -271,16 +271,19 @@ def execute_fts_query(
         )
         results = []
         for row in cursor.fetchall():
+            data = orjson.loads(row["data_json"])
+            raw_sp = data.get("source_path") or data.get("package_path") or ""
+            source_path = raw_sp[0] if isinstance(raw_sp, list) and raw_sp else (raw_sp if isinstance(raw_sp, str) else "")
             results.append(
                 {
                     "id": row["id"],
                     "type": row["type"],
                     "title": row["title"],
                     "domain": row["domain"],
-                    "source_path": row["source_path"],
+                    "source_path": source_path,
                     "file_path": row["file_path"],
                     "rank": row["rank"],
-                    "data": orjson.loads(row["data_json"]),
+                    "data": data,
                 }
             )
         return results
@@ -472,8 +475,16 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
     else:
         cursor.execute(
             f"""
+            WITH all_mappings(symbol, entity_id, kind) AS (
+                SELECT symbol, entity_id, kind FROM symbol_mappings
+                UNION
+                SELECT symbol, entity_id, kind FROM code_symbols WHERE kind != 'import'
+                UNION
+                SELECT parent_symbol || '.' || symbol, entity_id, 'method'
+                FROM code_symbols WHERE kind != 'import' AND parent_symbol != ''
+            )
             SELECT s.symbol, s.entity_id, s.kind, e.type, e.title, e.file_path, e.data_json
-            FROM symbol_mappings s
+            FROM all_mappings s
             JOIN entities e ON e.id = s.entity_id
             WHERE s.symbol = ?
                OR (? LIKE {esc_sym} || '/%' ESCAPE '\\' AND s.kind IN ('package_path', 'inferred_path'))
@@ -639,8 +650,16 @@ def find_symbol_in_db(
     q_alt_like = f"%{_escape_like(q_alt)}%"
     cursor.execute(
         """
+        WITH all_mappings(symbol, entity_id, kind) AS (
+            SELECT symbol, entity_id, kind FROM symbol_mappings
+            UNION
+            SELECT symbol, entity_id, kind FROM code_symbols WHERE kind != 'import'
+            UNION
+            SELECT parent_symbol || '.' || symbol, entity_id, 'method'
+            FROM code_symbols WHERE kind != 'import' AND parent_symbol != ''
+        )
         SELECT s.symbol, s.entity_id, s.kind, e.title, e.type, e.file_path
-        FROM symbol_mappings s
+        FROM all_mappings s
         JOIN entities e ON e.id = s.entity_id
         WHERE s.symbol = ?
            OR s.symbol = ?

@@ -1,7 +1,6 @@
 """Tests verifying architectural subgraph context slicing (Initiative G)."""
 
-import json
-
+import orjson
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
@@ -89,7 +88,7 @@ def test_context_slice_markdown_and_json_serialization():
 
     # JSON
     js_str = res.to_json()
-    data = json.loads(js_str)
+    data = orjson.loads(js_str)
     assert "components" in data
     assert "contracts" in data
     assert "capabilities" in data
@@ -109,7 +108,7 @@ def test_cli_context_command():
     # 2. JSON output with -c and --json
     res_json = runner.invoke(app, ["context", "-c", "CNT-EIDOS-CLI", "--json"])
     assert res_json.exit_code == 0
-    data = json.loads(res_json.output)
+    data = orjson.loads(res_json.output)
     assert any(c["id"] == "CNT-EIDOS-CLI" for c in data["components"])
 
     # 3. Task search with -t
@@ -270,7 +269,7 @@ def test_cli_index_commands():
 
     res_blast_json = runner.invoke(app, ["index", "blast-radius", "CNT-EIDOS-CORE", "--depth", "1", "--json"])
     assert res_blast_json.exit_code == 0
-    blast_data = json.loads(res_blast_json.output)
+    blast_data = orjson.loads(res_blast_json.output)
     assert blast_data["entity_id"] == "CNT-EIDOS-CORE"
 
 
@@ -279,7 +278,7 @@ def test_context_slice_includes_decisions_and_tiered_markdown():
     # 1. CLI JSON output for CNT-EIDOS-INDEX
     res_json = runner.invoke(app, ["context", "--component", "CNT-EIDOS-INDEX", "--json"])
     assert res_json.exit_code == 0
-    payload = json.loads(res_json.output)
+    payload = orjson.loads(res_json.output)
     index_comp = next((c for c in payload["components"] if c["id"] == "CNT-EIDOS-INDEX"), None)
     assert index_comp is not None
     decisions = index_comp.get("decisions", [])

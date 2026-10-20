@@ -3,13 +3,13 @@
 import ast
 import contextlib
 import hashlib
-import json
 import re
 import sqlite3
 from pathlib import Path
 from typing import Any, ClassVar
 
 import jsonschema
+import orjson
 
 from eidos.core.index.ast_indexer import AST_DIFF_EXTS, get_ast_indexer
 from eidos.core.spec.models import SpecDocument, ValidationReport
@@ -237,7 +237,9 @@ class SpecValidator:
             for k in sorted(self._schema_cache)
             if k.startswith("schemas/v1/") and "/" in k.removeprefix("schemas/v1/")
         }
-        return hashlib.sha256(json.dumps(canonical, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+        return hashlib.sha256(
+            orjson.dumps(canonical, option=orjson.OPT_SORT_KEYS | orjson.OPT_NON_STR_KEYS, default=str)
+        ).hexdigest()
 
     def _load_bundled_schemas(self):
         """Preload standard schemas recursively from the assets directory or package data."""
@@ -261,7 +263,7 @@ class SpecValidator:
                 content = p.read_text(encoding="utf-8")
                 data = safe_load_yaml(content)
                 if isinstance(data, dict):
-                    if shared_defs and '"#/$defs/' in json.dumps(data):
+                    if shared_defs and b'"#/$defs/' in orjson.dumps(data, option=orjson.OPT_NON_STR_KEYS, default=str):
                         merged_defs = dict(shared_defs)
                         if isinstance(data.get("$defs"), dict):
                             merged_defs.update(data["$defs"])
@@ -343,7 +345,7 @@ class SpecValidator:
             )
 
         seen_rel_keys: set[str] = set()
-        to_upsert: list[tuple[str, int, str, str, str, str]] = []
+        to_upsert: list[tuple[str, int, str, str, str]] = []
         fast_pathed_applied_deltas: set[str] = set()
 
         def _rel_key(fp: Path) -> str:
@@ -396,7 +398,8 @@ class SpecValidator:
 
             if row is not None and row["mtime_ns"] == mtime_ns and row["schema_hash"] == effective_schema_hash:
                 with contextlib.suppress(ValueError, TypeError, KeyError):
-                    schema_errs = list(json.loads(row["schema_errors_json"]))
+                    doc_data = orjson.loads(row["doc_json"])
+                    schema_errs = list(doc_data.get("errors", [])) if isinstance(doc_data, dict) else []
                     cached_doc, _, _ = get_cached_spec_document(
                         fp, mtime_ns=mtime_ns, st_size=st.st_size, cached_row=row
                     )
@@ -418,7 +421,8 @@ class SpecValidator:
 
             if row is not None and row["sha256"] == sha256 and row["schema_hash"] == effective_schema_hash:
                 with contextlib.suppress(ValueError, TypeError, KeyError):
-                    schema_errs = list(json.loads(row["schema_errors_json"]))
+                    doc_data = orjson.loads(row["doc_json"])
+                    schema_errs = list(doc_data.get("errors", [])) if isinstance(doc_data, dict) else []
                     to_upsert.append(
                         (
                             rel_key,
@@ -426,7 +430,6 @@ class SpecValidator:
                             sha256,
                             effective_schema_hash,
                             row["doc_json"],
-                            row["schema_errors_json"],
                         )
                     )
                     doc.errors = list(schema_errs)
@@ -456,8 +459,7 @@ class SpecValidator:
                     mtime_ns,
                     sha256,
                     effective_schema_hash,
-                    json.dumps(doc_payload, sort_keys=True, default=str),
-                    json.dumps(schema_errs),
+                    orjson.dumps(doc_payload, default=str, option=orjson.OPT_SORT_KEYS | orjson.OPT_NON_STR_KEYS).decode("utf-8"),
                 )
             )
             return doc
@@ -1433,7 +1435,7 @@ class SpecValidator:
 
             if spec_fmt == "w3c_design_tokens":
                 try:
-                    token_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    token_data = orjson.loads(manifest_path.read_text(encoding="utf-8"))
                 except (OSError, ValueError) as exc:
                     report.broken_references.append(
                         f"Invalid W3C DTCG tokens.manifest in {doc.file_path.name}: "

@@ -1,8 +1,8 @@
 """Living specification commands: validate and spec CRUD (`eidos spec ...`)."""
 
-import json
 from pathlib import Path
 
+import orjson
 import typer
 from rich.panel import Panel
 from rich.table import Table
@@ -38,7 +38,9 @@ def validate(
 
     if not target_path.exists():
         if json_output:
-            typer.echo(json.dumps({"error": f"Directory '{target_path}' not found.", "is_clean": False}))
+            typer.echo(
+                orjson.dumps({"error": f"Directory '{target_path}' not found.", "is_clean": False}).decode("utf-8")
+            )
             raise typer.Exit(code=1)
         console.print(f"[bold red]Error:[/bold red] Directory '{target_path}' not found.")
         raise typer.Exit(code=1)
@@ -70,7 +72,7 @@ def validate(
                 for doc in report.documents
             ],
         }
-        typer.echo(json.dumps(payload, indent=2))
+        typer.echo(orjson.dumps(payload, option=orjson.OPT_INDENT_2).decode("utf-8"))
         if not report.is_clean:
             raise typer.Exit(code=1)
         return
@@ -144,7 +146,7 @@ def spec_list_cmd(
         specs = list_specs(path, type_filter=type_filter, status_filter=status_filter)
     except ValueError as e:
         if json_output:
-            typer.echo(json.dumps({"error": str(e)}))
+            typer.echo(orjson.dumps({"error": str(e)}).decode("utf-8"))
         else:
             console.print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(code=1) from e
@@ -161,7 +163,11 @@ def spec_list_cmd(
             }
             for s in specs
         ]
-        typer.echo(json.dumps({"count": len(serializable), "specs": serializable}, indent=2))
+        typer.echo(
+            orjson.dumps({"count": len(serializable), "specs": serializable}, option=orjson.OPT_INDENT_2).decode(
+                "utf-8"
+            )
+        )
         return
 
     if not specs:

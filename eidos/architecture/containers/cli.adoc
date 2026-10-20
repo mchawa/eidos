@@ -4,7 +4,7 @@ id: CNT-EIDOS-CLI
 title: "Eidos Command-Line Interface"
 status: active
 container_type: "cli_app"
-runtime: "Python 3.12 / Typer / Rich"
+runtime: "Python 3.12 / Typer / Rich / orjson"
 source_path: "src/eidos/cli"
 
 domain: DOM-SPEC-ENGINE
@@ -19,15 +19,15 @@ components:
       - "src/eidos/cli/_shared.py"
   - id: CMP-CLI-SPEC-COMMANDS
     title: "SpecCommands"
-    responsibility: "Root specification validation (`eidos validate`, resolving `eidos/` via shared `resolve_cli_eidos_dir`) and `eidos spec` subcommands enforcing a 100% disjoint boundary from `eidos delta`: catalog listing (`eidos spec list --json`, including inline `CMP-*` components across the 15 living specification types and rejecting `--type delta`), showing (`eidos spec show`, rejecting `delta/mutation`), minimal blueprint creation (`eidos spec create <type> <id> --title <title> [--path <path>]` across all 15 living specification types including `system`, `architecture`, and `exploration`, rejecting `delta/mutation`), safe deletion (`eidos spec delete`, rejecting `delta/mutation`), and mounting the `eidos spec component` subgroup."
+    responsibility: "Root specification validation (`eidos validate`, resolving `eidos/` via shared `resolve_cli_eidos_dir` and emitting `--json` output via `orjson`) and `eidos spec` subcommands enforcing a 100% disjoint boundary from `eidos delta`: catalog listing (`eidos spec list --json`, including inline `CMP-*` components across the 15 living specification types and rejecting `--type delta`), showing (`eidos spec show`, rejecting `delta/mutation`), minimal blueprint creation (`eidos spec create <type> <id> --title <title> [--path <path>]` across all 15 living specification types including `system`, `architecture`, and `exploration`, rejecting `delta/mutation`), safe deletion (`eidos spec delete`, rejecting `delta/mutation`), and mounting the `eidos spec component` subgroup."
     source_path: "src/eidos/cli/spec_commands.py"
   - id: CMP-CLI-DELTA-COMMANDS
     title: "DeltaCommands"
-    responsibility: "SpecDelta lifecycle commands (`eidos delta`) exclusively owning `DLT-*` documents: 5-state status dashboard and status transition (`eidos delta status [ID] [STATUS] --json` across `proposed`, `in_review`, `approved`, `applied`, `rejected`), listing (`eidos delta list --json`), standalone blueprint authoring (`eidos delta create [ID] --title <title> [--kind <kind>] [--slug] [--path <path>]` via `create_delta` defaulting `ID` to `'auto'` and auto-detecting `vcs.branch` and `vcs.base_commit` from Git `HEAD`), verification (rendering per-mutation `failure_reason` diagnostics), deletion auditing, SpecDelta-only deletion (`eidos delta delete` via `delete_delta`), changelog generation, and default-verified in-place application (`eidos delta apply` with `--verify/--no-verify` defaulting to True)."
+    responsibility: "SpecDelta lifecycle commands (`eidos delta`) exclusively owning `DLT-*` documents with `orjson`-serialized `--json` outputs: 5-state status dashboard and status transition (`eidos delta status [ID] [STATUS] --json` across `proposed`, `in_review`, `approved`, `applied`, `rejected`), listing (`eidos delta list --json`), standalone blueprint authoring (`eidos delta create [ID] --title <title> [--kind <kind>] [--slug] [--path <path>]` via `create_delta` defaulting `ID` to `'auto'` and auto-detecting `vcs.branch` and `vcs.base_commit` from Git `HEAD`), verification (rendering per-mutation `failure_reason` diagnostics), deletion auditing, SpecDelta-only deletion (`eidos delta delete` via `delete_delta`), changelog generation, and default-verified in-place application (`eidos delta apply` with `--verify/--no-verify` defaulting to True)."
     source_path: "src/eidos/cli/delta_commands.py"
   - id: CMP-CLI-PLUGIN-COMMANDS
     title: "PluginCommands"
-    responsibility: "Agent plugin lifecycle commands (`eidos plugin`): `install [TARGET]`, `uninstall [TARGET]`, and `update [TARGET]` with a single optional positional `TARGET` argument defaulting to `PluginInstallTarget.PROJECT` (`force=False` default and `FileExistsError` symlink/overwrite safety), plus `version`, `validate`, and `info`."
+    responsibility: "Agent plugin lifecycle commands (`eidos plugin`) with `orjson` `--json` output: `install [TARGET]`, `uninstall [TARGET]`, and `update [TARGET]` with a single optional positional `TARGET` argument defaulting to `PluginInstallTarget.PROJECT` (`force=False` default and `FileExistsError` symlink/overwrite safety), plus `version`, `validate`, and `info`."
     source_path: "src/eidos/cli/plugin_commands.py"
   - id: CMP-CLI-DRIFT-COMMANDS
     title: "DriftCommands"
@@ -39,11 +39,11 @@ components:
     source_path: "src/eidos/cli/init_command.py"
   - id: CMP-CLI-CONTEXT-COMMAND
     title: "ContextCommand"
-    responsibility: "Extracts compact, token-efficient architectural subgraph slices (`eidos context [--file] [--component] [--task] [--tier] [--json] [--path]`) for AI agents in Markdown or JSON (`--json`), resolving `eidos/` via shared `resolve_cli_eidos_dir`."
+    responsibility: "Extracts compact, token-efficient architectural subgraph slices (`eidos context [--file] [--component] [--task] [--tier] [--json] [--path]`) for AI agents in Markdown or `orjson`-serialized JSON (`--json`), resolving `eidos/` via shared `resolve_cli_eidos_dir`."
     source_path: "src/eidos/cli/context_command.py"
   - id: CMP-CLI-INDEX-COMMANDS
     title: "IndexCommands"
-    responsibility: "Knowledge graph operations (`eidos index`): `sync`, `status --json`, lexical `search --json`, `blast-radius --json`, structural `repo-map [--max-tokens] [--json]`, and `find-symbol --json` output including source Location (file:line) for AST symbols."
+    responsibility: "Knowledge graph operations (`eidos index`) with `orjson`-serialized `--json` outputs: `sync`, `status --json`, lexical `search --json`, `blast-radius --json`, structural `repo-map [--max-tokens] [--json]`, and `find-symbol --json` output including source Location (file:line) for AST symbols."
     source_path: "src/eidos/cli/index_commands.py"
   - id: CMP-CLI-COMPONENT-COMMANDS
     title: "ComponentCommands"
@@ -55,7 +55,7 @@ components:
     source_path: "src/eidos/cli/portal_commands.py"
   - id: CMP-CLI-DOCTOR-HOOKS
     title: "DoctorAndHookCommands"
-    responsibility: "Installation health diagnostics (`eidos doctor --path`, including `agent_plugin` health in `overall_ok`) with custom specification directory resolution and virtualenv-aware CLI binary checks, plus the stateless CLI-native agent lifecycle Stop hook command (`eidos hook [--path]`) without legacy PreToolUse/PostToolUse absorption."
+    responsibility: "Installation health diagnostics (`eidos doctor --path --json` via `orjson`, including `agent_plugin` health in `overall_ok`) with custom specification directory resolution and virtualenv-aware CLI binary checks, plus the stateless CLI-native agent lifecycle Stop hook command (`eidos hook [--path]`) without legacy PreToolUse/PostToolUse absorption."
     source_path: "src/eidos/cli/doctor_hook_commands.py"
 
 contracts:
@@ -75,16 +75,16 @@ This container represents the developer entrypoint under `src/eidos/cli/`. It pr
 |===
 | Component ID | Name | Responsibility | Source Path
 | `CMP-CLI-APP` | **CliApp** | Command dispatcher (`--version`, `info`), shared `resolve_cli_eidos_dir`, error codes, and Rich terminal output | `src/eidos/cli/main.py`, `src/eidos/cli/_shared.py`
-| `CMP-CLI-SPEC-COMMANDS` | **SpecCommands** | Root `validate` and `eidos spec` CRUD commands (`list`, `show`, 4-arg blueprint `create`, `delete`, and `component` subgroup) across the 15 living spec types | `src/eidos/cli/spec_commands.py`
-| `CMP-CLI-DELTA-COMMANDS` | **DeltaCommands** | SpecDelta lifecycle operations (`create`, `list`, 5-state `status`, `verify`, `audit`, `apply`, `delete`, `changelog`) | `src/eidos/cli/delta_commands.py`
-| `CMP-CLI-PLUGIN-COMMANDS` | **PluginCommands** | Agent plugin management (`install [TARGET]`, `uninstall [TARGET]`, `version`, `update [TARGET]`, `validate`, `info`) conforming to agent-plugins.org | `src/eidos/cli/plugin_commands.py`
+| `CMP-CLI-SPEC-COMMANDS` | **SpecCommands** | Root `validate` and `eidos spec` CRUD commands (`list`, `show`, 4-arg blueprint `create`, `delete`, and `component` subgroup) across the 15 living spec types with `orjson` `--json` output | `src/eidos/cli/spec_commands.py`
+| `CMP-CLI-DELTA-COMMANDS` | **DeltaCommands** | SpecDelta lifecycle operations (`create`, `list`, 5-state `status`, `verify`, `audit`, `apply`, `delete`, `changelog`) with `orjson` `--json` output | `src/eidos/cli/delta_commands.py`
+| `CMP-CLI-PLUGIN-COMMANDS` | **PluginCommands** | Agent plugin management (`install [TARGET]`, `uninstall [TARGET]`, `version`, `update [TARGET]`, `validate`, `info`) conforming to agent-plugins.org with `orjson` `--json` output | `src/eidos/cli/plugin_commands.py`
 | `CMP-CLI-DRIFT-COMMANDS` | **DriftCommands** | Spec-to-code drift checking (`eidos drift`) with `--path` repository root resolution and fail-closed base Git ref error reporting | `src/eidos/cli/drift_commands.py`
 | `CMP-CLI-INIT-COMMAND` | **InitCommand** | Repository bootstrapping and skeleton generation (`--lite`) | `src/eidos/cli/init_command.py`
-| `CMP-CLI-CONTEXT-COMMAND` | **ContextCommand** | Token-budgeted architectural context slicing (`--json`) | `src/eidos/cli/context_command.py`
-| `CMP-CLI-INDEX-COMMANDS` | **IndexCommands** | Knowledge graph maintenance, search, `repo-map --json`, `find-symbol --json`, and blast radius queries | `src/eidos/cli/index_commands.py`
+| `CMP-CLI-CONTEXT-COMMAND` | **ContextCommand** | Token-budgeted architectural context slicing (`--json` via `orjson`) | `src/eidos/cli/context_command.py`
+| `CMP-CLI-INDEX-COMMANDS` | **IndexCommands** | Knowledge graph maintenance, search, `repo-map --json`, `find-symbol --json`, and blast radius queries (`orjson`) | `src/eidos/cli/index_commands.py`
 | `CMP-CLI-COMPONENT-COMMANDS` | **ComponentCommands** | C4 Level 3 component promotion (`eidos spec component promote`) and inlining (`eidos spec component inline`) | `src/eidos/cli/component_commands.py`
 | `CMP-CLI-PORTAL-COMMANDS` | **PortalCommands** | Living Web Portal interactive preview (`eidos portal serve`) and static compilation (`eidos portal build`) | `src/eidos/cli/portal_commands.py`
-| `CMP-CLI-DOCTOR-HOOKS` | **DoctorAndHookCommands** | Installation diagnostics and CLI-native agent lifecycle hook dispatchers | `src/eidos/cli/doctor_hook_commands.py`
+| `CMP-CLI-DOCTOR-HOOKS` | **DoctorAndHookCommands** | Installation diagnostics (`orjson` `--json`) and CLI-native agent lifecycle hook dispatchers | `src/eidos/cli/doctor_hook_commands.py`
 |===
 
 == Quality Attributes & Operational Policies

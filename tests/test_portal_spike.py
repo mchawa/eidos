@@ -10,13 +10,13 @@ Verifies:
 """
 
 import gzip
-import json
 import sys
 import threading
 import time
 import urllib.request
 from pathlib import Path
 
+import orjson
 import pytest
 
 
@@ -77,8 +77,7 @@ def test_spike_b_md3_tokens_and_shadcn_bridge(repo_root):
     tokens_file = repo_root / "eidos" / "design" / "systems" / "core" / "tokens.json"
     assert tokens_file.exists(), "W3C DTCG tokens.json must exist"
 
-    with open(tokens_file, encoding="utf-8") as f:
-        tokens_data = json.load(f)
+    tokens_data = orjson.loads(tokens_file.read_bytes())
 
     # Verify core token structures
     assert "color" in tokens_data

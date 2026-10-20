@@ -6,7 +6,6 @@ guardrails (<=1000 tokens), and deep (<=2500 tokens) tiers for AI coding agents.
 
 from __future__ import annotations
 
-import json
 import re
 import time
 from dataclasses import asdict, dataclass, field
@@ -164,7 +163,8 @@ class ArchitecturalContextSlice:
 
     def to_json(self, indent: int = 2) -> str:
         """Serialize slice to JSON."""
-        return json.dumps(self.to_dict(), indent=indent)
+        option = orjson.OPT_INDENT_2 if indent else 0
+        return orjson.dumps(self.to_dict(), option=option).decode("utf-8")
 
     def to_markdown(self) -> str:
         """Render a clean, token-efficient Markdown representation formatted for the requested tier."""
@@ -686,9 +686,8 @@ class TieredContextSlice(ArchitecturalContextSlice):
     _STRUCTURAL_STRIP_TABLE = str.maketrans("", "", "{}[]:,\"'`|")
 
     def to_json(self, indent: int = 2) -> str:
-        if indent == 2:
-            return orjson.dumps(self.to_dict(), option=orjson.OPT_INDENT_2).decode("utf-8")
-        return json.dumps(self.to_dict(), indent=indent)
+        option = orjson.OPT_INDENT_2 if indent else 0
+        return orjson.dumps(self.to_dict(), option=option).decode("utf-8")
 
     @classmethod
     def _estimate_text_tokens(cls, text: str) -> int:
@@ -1111,23 +1110,28 @@ def build_tiered_context_slice(
                     direct_inv_ids.append(eid)
                 _add_reason(eid, reason)
             elif etype in ("product/domain", "design/system"):
-                rel_types = ("domain_member",) if etype == "product/domain" else ("styles_container",)
                 member_reason = (
                     f"Member of FTS-matched domain {eid}"
                     if etype == "product/domain"
                     else f"Styled by FTS-matched design system {eid}"
                 )
-                ph = ",".join("?" for _ in rel_types)
-                member_ids: list[str] = []
-                for row in cursor.execute(
-                    f"""
+                member_sql = (
+                    """
+                    SELECT e.id, e.title, e.type, e.file_path, e.data_json FROM edges ed
+                    JOIN entities e ON e.id = ed.source_id
+                    WHERE ed.target_id = ? AND ed.rel_type = 'realizes'
+                    ORDER BY e.id;
+                    """
+                    if etype == "product/domain"
+                    else """
                     SELECT e.id, e.title, e.type, e.file_path, e.data_json FROM edges ed
                     JOIN entities e ON e.id = ed.target_id
-                    WHERE ed.source_id = ? AND ed.rel_type IN ({ph})
+                    WHERE ed.source_id = ? AND ed.rel_type = 'styles_container'
                     ORDER BY e.id;
-                    """,
-                    (eid, *rel_types),
-                ).fetchall():
+                    """
+                )
+                member_ids: list[str] = []
+                for row in cursor.execute(member_sql, (eid,)).fetchall():
                     m_data = orjson.loads(row["data_json"])
                     m_data["id"] = row["id"]
                     m_data["title"] = row["title"]

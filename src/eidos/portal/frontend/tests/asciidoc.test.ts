@@ -214,7 +214,7 @@ describe("every living specification converts", () => {
 // --- Mermaid sources emitted by the portal generator parse with the bundled mermaid -------------
 
 const PY_DUMP = `
-import json, sys
+import orjson, sys
 from pathlib import Path
 from eidos.portal.generator import get_portal_data
 d = get_portal_data(Path(sys.argv[1]))
@@ -225,7 +225,7 @@ for s in d.get("screens", []):
     if s.get("mermaid"): out["screen:" + s["id"]] = s["mermaid"]
 for f in d.get("flows", []):
     if f.get("mermaid"): out["flow:" + f["id"]] = f["mermaid"]
-print(json.dumps(out))
+print(orjson.dumps(out).decode("utf-8"))
 `;
 
 function loadMermaidSources(): Record<string, string> | null {

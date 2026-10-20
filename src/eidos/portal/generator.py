@@ -1,10 +1,11 @@
 """Unified data generator synthesizing living specifications into the Web Portal data model."""
 
 import html
-import json
 import re
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 from eidos.core.spec.validator import SpecValidator
 from eidos.core.workspace.project import load_project
@@ -907,8 +908,8 @@ def _extract_design_systems(
         tokens_data: dict[str, Any] = {}
         if tokens_file.exists():
             try:
-                tokens_data = json.loads(tokens_file.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
+                tokens_data = orjson.loads(tokens_file.read_text(encoding="utf-8"))
+            except (orjson.JSONDecodeError, ValueError, OSError):
                 tokens_data = {}
 
         systems.append(

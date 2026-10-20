@@ -1,12 +1,12 @@
 """Validator for Agent Plugins conforming to agent-plugins.org v1.0.0."""
 
-import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import jsonschema
+import orjson
 
 from eidos.core.spec.parser import safe_load_yaml
 from eidos.core.workspace.assets import get_agent_plugins_schemas_dir
@@ -48,8 +48,7 @@ def _load_bundled_schema(schema_name: str) -> dict[str, Any]:
         raise FileNotFoundError(f"Bundled schema '{schema_name}' not found: {e}") from e
     if not schema_path.exists():
         raise FileNotFoundError(f"Bundled schema '{schema_name}' not found at {schema_path}")
-    with open(schema_path, encoding="utf-8") as f:
-        return json.load(f)
+    return orjson.loads(schema_path.read_bytes())
 
 
 def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
@@ -71,9 +70,8 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
         return report
 
     try:
-        with open(manifest_path, encoding="utf-8") as f:
-            manifest = json.load(f)
-    except json.JSONDecodeError as e:
+        manifest = orjson.loads(manifest_path.read_bytes())
+    except orjson.JSONDecodeError as e:
         report.add_error(f"Invalid JSON in 'plugin.json': {e}")
         return report
     except Exception as e:
@@ -124,20 +122,18 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
 
     if mcp_config_path.exists():
         try:
-            with open(mcp_config_path, encoding="utf-8") as f:
-                mcp_data = json.load(f)
+            mcp_data = orjson.loads(mcp_config_path.read_bytes())
             servers = mcp_data.get("mcpServers", {})
             if isinstance(servers, dict):
                 report.mcp_servers.extend(list(servers.keys()))
-        except json.JSONDecodeError as e:
+        except orjson.JSONDecodeError as e:
             report.add_error(f"Invalid JSON in 'mcp_config.json': {e}")
         except Exception as e:
             report.add_error(f"Error reading 'mcp_config.json': {e}")
 
     elif mcp_path.exists():
         try:
-            with open(mcp_path, encoding="utf-8") as f:
-                mcp_data = json.load(f)
+            mcp_data = orjson.loads(mcp_path.read_bytes())
 
             mcp_schema = _load_bundled_schema("mcp.schema.json")
             mcp_validator = jsonschema.Draft202012Validator(mcp_schema)
@@ -156,7 +152,7 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
                                 f"MCP server '{s_name}' command '{cmd}' contains spaces. "
                                 "Spec requires a single executable token, not a shell command string."
                             )
-        except json.JSONDecodeError as e:
+        except orjson.JSONDecodeError as e:
             report.add_error(f"Invalid JSON in 'mcp.json': {e}")
         except Exception as e:
             report.add_error(f"Error validating 'mcp.json': {e}")
@@ -204,8 +200,7 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
     hooks_path = plugin_dir / "hooks.json"
     if hooks_path.exists():
         try:
-            with open(hooks_path, encoding="utf-8") as f:
-                hooks_data = json.load(f)
+            hooks_data = orjson.loads(hooks_path.read_bytes())
 
             if not isinstance(hooks_data, dict):
                 report.add_error("Invalid 'hooks.json': root must be a dictionary of hook configurations.")
@@ -246,7 +241,7 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
                             else:
                                 _verify_hook_command(handler, hook_name, event_key, plugin_dir, report)
 
-        except json.JSONDecodeError as e:
+        except orjson.JSONDecodeError as e:
             report.add_error(f"Invalid JSON in 'hooks.json': {e}")
         except Exception as e:
             report.add_error(f"Error reading 'hooks.json': {e}")

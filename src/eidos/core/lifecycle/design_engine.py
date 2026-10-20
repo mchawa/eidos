@@ -1,8 +1,9 @@
 """Design engine: scaffolds Multi-Design Systems, W3C DTCG tokens, UI components, screens, clients, and flows."""
 
-import json
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 from eidos.core.workspace.assets import render_spec_template
 
@@ -89,7 +90,10 @@ def build_design_spec(
                         }
                     }
                 }
-                tokens_file.write_text(json.dumps(base_tokens, indent=2), encoding="utf-8")
+                tokens_file.write_text(
+                    orjson.dumps(base_tokens, option=orjson.OPT_INDENT_2).decode("utf-8"),
+                    encoding="utf-8",
+                )
 
         fm = {
             "type": "design/system",

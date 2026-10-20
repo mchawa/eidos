@@ -10,12 +10,13 @@ Implements INV-DELTA-DELETION-AUDIT:
 
 from __future__ import annotations
 
-import json
 import os
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
+
+import orjson
 
 from eidos.core.index.graph_index import get_architectural_index
 from eidos.core.index.sync import is_test_code_path
@@ -85,7 +86,8 @@ class DeltaAuditResult:
         }
 
     def to_json(self, indent: int = 2) -> str:
-        return json.dumps(self.to_dict(), indent=indent)
+        option = orjson.OPT_INDENT_2 if indent else 0
+        return orjson.dumps(self.to_dict(), option=option).decode("utf-8")
 
 
 class AuditEngine:

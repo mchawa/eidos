@@ -1,9 +1,10 @@
 """Semantic Versioning (SemVer 2.0.0) validation, parsing, and status inspection for Eidos Agent Plugins."""
 
-import json
 import re
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 import eidos
 
@@ -118,14 +119,13 @@ def get_bundled_plugin_version() -> str:
         ref_dir = get_plugin_reference_dir()
         manifest = ref_dir / "plugin.json"
         if manifest.exists():
-            with open(manifest, encoding="utf-8") as f:
-                data = json.load(f)
-                v = data.get("version")
-                if v and is_valid_semver(v):
-                    if pkg_exact_semver and compare_semver(pkg_exact_semver, v) > 0:
-                        return pkg_exact_semver
-                    return v
-    except (OSError, json.JSONDecodeError, ValueError):
+            data = orjson.loads(manifest.read_bytes())
+            v = data.get("version")
+            if v and is_valid_semver(v):
+                if pkg_exact_semver and compare_semver(pkg_exact_semver, v) > 0:
+                    return pkg_exact_semver
+                return v
+    except (OSError, orjson.JSONDecodeError, ValueError):
         pass
 
     # 2. Fall back to normalized eidos package version (supports PEP 440 .devN/.postN)
@@ -174,10 +174,9 @@ def get_installed_plugin_version(project_dir: Path | None = None, dest_path: Pat
     if manifest_path is None:
         return None
     try:
-        with open(manifest_path, encoding="utf-8") as f:
-            data = json.load(f)
-            return data.get("version")
-    except (OSError, json.JSONDecodeError, ValueError):
+        data = orjson.loads(manifest_path.read_bytes())
+        return data.get("version")
+    except (OSError, orjson.JSONDecodeError, ValueError):
         return None
 
 

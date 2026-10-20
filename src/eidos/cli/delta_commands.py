@@ -1,8 +1,8 @@
 """SpecDelta lifecycle commands (`eidos delta ...`)."""
 
-import json
 from pathlib import Path
 
+import orjson
 import typer
 from rich.panel import Panel
 from rich.table import Table
@@ -64,7 +64,11 @@ def delta_list_cmd(
             }
             for d in deltas
         ]
-        typer.echo(json.dumps({"count": len(serializable), "deltas": serializable}, indent=2))
+        typer.echo(
+            orjson.dumps({"count": len(serializable), "deltas": serializable}, option=orjson.OPT_INDENT_2).decode(
+                "utf-8"
+            )
+        )
         return
 
     if not deltas:
@@ -164,9 +168,9 @@ def delta_verify_cmd(
     is_verified, msg, report = verify_delta_mutations(path, target)
     if json_output:
         if report:
-            typer.echo(json.dumps(report.to_dict(), indent=2))
+            typer.echo(orjson.dumps(report.to_dict(), option=orjson.OPT_INDENT_2).decode("utf-8"))
         else:
-            typer.echo(json.dumps({"error": msg, "is_verified": False}))
+            typer.echo(orjson.dumps({"error": msg, "is_verified": False}).decode("utf-8"))
         if not is_verified:
             raise typer.Exit(code=1)
         return
@@ -369,7 +373,7 @@ def delta_apply_cmd(
             "target": target,
             "applied_file": str(applied_file) if applied_file else None,
         }
-        typer.echo(json.dumps(payload, indent=2))
+        typer.echo(orjson.dumps(payload, option=orjson.OPT_INDENT_2).decode("utf-8"))
         if not success:
             raise typer.Exit(code=1)
         return
@@ -418,7 +422,7 @@ def delta_status_cmd(
                 "status": new_status.strip().lower(),
                 "path": str(file_path) if file_path else None,
             }
-            typer.echo(json.dumps(payload, indent=2))
+            typer.echo(orjson.dumps(payload, option=orjson.OPT_INDENT_2).decode("utf-8"))
             if not ok:
                 raise typer.Exit(code=1)
             return
@@ -432,7 +436,11 @@ def delta_status_cmd(
         file_path = find_spec_by_id_or_path(path / "deltas", delta_id) or find_spec_by_id_or_path(path, delta_id)
         if not file_path or not file_path.exists():
             if json_output:
-                typer.echo(json.dumps({"error": f"SpecDelta '{delta_id}' not found."}, indent=2))
+                typer.echo(
+                    orjson.dumps({"error": f"SpecDelta '{delta_id}' not found."}, option=orjson.OPT_INDENT_2).decode(
+                        "utf-8"
+                    )
+                )
             else:
                 console.print(f"[bold red]Error:[/bold red] SpecDelta '{delta_id}' not found.")
             raise typer.Exit(code=1)
@@ -440,15 +448,15 @@ def delta_status_cmd(
         current_status = str(doc.frontmatter.get("status", "proposed")).strip().lower()
         if json_output:
             typer.echo(
-                json.dumps(
+                orjson.dumps(
                     {
                         "id": doc.doc_id,
                         "title": doc.title or "Untitled",
                         "status": current_status,
                         "path": str(file_path),
                     },
-                    indent=2,
-                )
+                    option=orjson.OPT_INDENT_2,
+                ).decode("utf-8")
             )
             return
         console.print(f"[bold cyan]{doc.doc_id}[/bold cyan]: [bold yellow]{current_status}[/bold yellow] — {doc.title}")
@@ -476,14 +484,14 @@ def delta_status_cmd(
             for st, items in by_status.items()
         }
         typer.echo(
-            json.dumps(
+            orjson.dumps(
                 {
                     "total": total,
                     "active_count": active_count,
                     "by_status": serializable_by_status,
                 },
-                indent=2,
-            )
+                option=orjson.OPT_INDENT_2,
+            ).decode("utf-8")
         )
         return
 

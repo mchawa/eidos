@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-import json
 import os
 import re
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 from eidos.core.index.storage import (
     get_cached_spec_document,
@@ -183,8 +184,8 @@ def _build_cached_test_file_entry(
     )
     return (
         entry,
-        json.dumps(functions, sort_keys=True),
-        json.dumps(file_tokens_list),
+        orjson.dumps(functions, option=orjson.OPT_SORT_KEYS).decode("utf-8"),
+        orjson.dumps(file_tokens_list).decode("utf-8"),
     )
 
 
@@ -258,8 +259,8 @@ def _load_or_update_test_binding_cache(
                     mtime_ns=mtime_ns,
                     sha256=row["sha256"],
                     has_fixture=bool(row["has_fixture"]),
-                    functions=json.loads(row["functions_json"]),
-                    file_tokens=set(json.loads(row["file_tokens_json"])),
+                    functions=orjson.loads(row["functions_json"]),
+                    file_tokens=set(orjson.loads(row["file_tokens_json"])),
                 )
                 continue
 
@@ -276,8 +277,8 @@ def _load_or_update_test_binding_cache(
                     mtime_ns=mtime_ns,
                     sha256=sha256,
                     has_fixture=bool(row["has_fixture"]),
-                    functions=json.loads(row["functions_json"]),
-                    file_tokens=set(json.loads(row["file_tokens_json"])),
+                    functions=orjson.loads(row["functions_json"]),
+                    file_tokens=set(orjson.loads(row["file_tokens_json"])),
                 )
                 to_upsert.append(
                     (

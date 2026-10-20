@@ -14,6 +14,7 @@ import sys
 import time
 from pathlib import Path
 
+import orjson
 import pytest
 
 from eidos.core.index.graph_index import (
@@ -164,9 +165,9 @@ responsibility: "Test service"
     assert sync_stats.updated_modified == 1
 
     conn = idx._get_connection()
-    row = conn.execute("SELECT title, source_path FROM entities WHERE id = 'CMP-TEST-SPIKE';").fetchone()
+    row = conn.execute("SELECT title, data_json FROM entities WHERE id = 'CMP-TEST-SPIKE';").fetchone()
     assert row["title"] == "Mutated Spike Service"
-    assert row["source_path"] == "src/test_mutated"
+    assert orjson.loads(row["data_json"])["source_path"] == "src/test_mutated"
 
     idx.close()
 
@@ -701,8 +702,8 @@ def test_code_symbols_invalidated_on_edit_and_delete(tmp_path):
         assert idx.find_symbol("SampleService.execute") == [] or all(
             m["symbol"] != "SampleService.execute" for m in idx.find_symbol("SampleService.execute")
         )
-        assert not conn.execute("SELECT 1 FROM symbol_mappings WHERE symbol = 'SampleService';").fetchone()
-        assert not conn.execute("SELECT 1 FROM symbol_mappings WHERE symbol = 'SampleService.execute';").fetchone()
+        assert not conn.execute("SELECT 1 FROM code_symbols WHERE symbol = 'SampleService';").fetchone()
+        assert not conn.execute("SELECT 1 FROM code_symbols WHERE parent_symbol = 'SampleService' AND symbol = 'execute';").fetchone()
         assert rows("RenamedService") == [(11, "src/pkg/service.py")]
         helper = next(m for m in idx.find_symbol("helper") if m["symbol"] == "helper")
         assert helper["location"]["line_start"] == 16
@@ -714,7 +715,7 @@ def test_code_symbols_invalidated_on_edit_and_delete(tmp_path):
             conn.execute("SELECT COUNT(*) FROM code_symbols WHERE file_path = 'src/pkg/service.py';").fetchone()[0] == 0
         )
         assert not conn.execute(
-            "SELECT 1 FROM symbol_mappings WHERE symbol IN ('helper', 'RenamedService');"
+            "SELECT 1 FROM code_symbols WHERE symbol IN ('helper', 'RenamedService');"
         ).fetchone()
         assert not any(m["symbol"] == "helper" for m in idx.find_symbol("helper"))
     finally:
@@ -956,13 +957,13 @@ def test_shared_source_file_keeps_every_declaring_owner(tmp_path):
             for r in conn.execute("SELECT DISTINCT entity_id FROM code_symbols WHERE file_path = 'shared/common.py';")
         } == {"CNT-BROAD"}
         assert not conn.execute(
-            "SELECT 1 FROM symbol_mappings WHERE entity_id = 'CNT-CLAIMER' AND symbol IN ('Shared', 'Shared.run');"
+            "SELECT 1 FROM code_symbols WHERE entity_id = 'CNT-CLAIMER' AND symbol IN ('Shared', 'run');"
         ).fetchone()
         assert not conn.execute(
             "SELECT 1 FROM symbol_mappings WHERE symbol = 'shared/common.py' AND entity_id = 'CNT-CLAIMER';"
         ).fetchone()
         assert conn.execute(
-            "SELECT 1 FROM symbol_mappings WHERE entity_id = 'CNT-BROAD' AND symbol = 'Shared';"
+            "SELECT 1 FROM code_symbols WHERE entity_id = 'CNT-BROAD' AND symbol = 'Shared';"
         ).fetchone()
     finally:
         idx.close()
@@ -1024,7 +1025,7 @@ def test_ownership_reattributed_when_spec_changes(tmp_path):
         hit = next(m for m in idx.find_symbol("helper") if m["symbol"] == "helper")
         assert hit["entity_id"] == "CNT-NEWOWNER"
         assert not conn.execute(
-            "SELECT 1 FROM symbol_mappings WHERE entity_id = 'CNT-SAMPLE' AND kind = 'function';"
+            "SELECT 1 FROM code_symbols WHERE entity_id = 'CNT-SAMPLE' AND kind = 'function';"
         ).fetchone()
         assert not conn.execute(
             "SELECT 1 FROM symbol_mappings WHERE symbol = 'src/pkg/service.py' AND entity_id = 'CNT-SAMPLE';"
@@ -1229,7 +1230,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.9.0"
+        assert ver == SCHEMA_VERSION == "2.10.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -1318,8 +1319,6 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
 
 def test_sync_invariant_coverage_verifies_function_and_polyglot_tests(tmp_path):
     """Verify sync_index checks AST function existence + invariant tag rather than mere file existence, and indexes polyglot tests."""  # eidos:fixture
-    import json
-
     repo = tmp_path / "inv_cov_repo"
     eidos_dir = repo / "eidos"
     caps_dir = eidos_dir / "domains" / "core" / "capabilities"
@@ -1383,7 +1382,7 @@ technical:
         def _inv_state(iid: str) -> dict:
             row = conn.execute("SELECT data_json FROM entities WHERE id = ?;", (iid,)).fetchone()
             assert row is not None
-            return json.loads(row["data_json"])
+            return orjson.loads(row["data_json"])
 
         cov_ok = _inv_state("INV-SYNC-COVERED")  # eidos:fixture
         assert cov_ok["has_test_coverage"] is True
@@ -1673,8 +1672,6 @@ def test_deep_review_subsystem_2_incremental_edges_fts_and_transient_sqlite_erro
 
 def test_index_spec_deletion_child_invariants_and_query_coverage(tmp_path):
     """Verify child invariant symbol_mappings/edges cleanup on spec update/deletion, lazy _ensure_synced, query helpers, DS-* context, and strict collision."""  # eidos:fixture
-    import json
-
     import pytest
     from typer.testing import CliRunner
 
@@ -1825,7 +1822,7 @@ def test_index_spec_deletion_child_invariants_and_query_coverage(tmp_path):
         runner = CliRunner()
         res_status = runner.invoke(app, ["index", "status", "--json"])
         assert res_status.exit_code == 0
-        status_data = json.loads(res_status.output)
+        status_data = orjson.loads(res_status.output)
         assert "total_entities" in status_data
         assert "entity_counts_by_type" in status_data
     finally:
@@ -2181,7 +2178,6 @@ def test_context_implements_edges_inline_cmp_blast_radius_and_path_resolution(tm
 def test_incremental_spec_sync_skips_unchanged_test_reparse_and_scopes_fts(tmp_path: Path, monkeypatch) -> None:
     """Verify B3: incremental sync on a single .adoc edit restores test_binding symbol_mappings from existing
     asserts edges without re-parsing unchanged test files, and scopes _project_ast_code_symbols_into_fts."""  # eidos:fixture
-    import json
     import os
 
     import eidos.core.index.sync as sync_mod
@@ -2259,7 +2255,7 @@ def test_incremental_spec_sync_skips_unchanged_test_reparse_and_scopes_fts(tmp_p
         # Verify INV-PERF-COV-001 still has has_test_coverage=True and test_binding symbol_mapping
         inv_row = conn.execute("SELECT data_json FROM entities WHERE id = 'INV-PERF-COV-001';").fetchone()
         assert inv_row is not None
-        inv_data = json.loads(inv_row["data_json"])
+        inv_data = orjson.loads(inv_row["data_json"])
         assert inv_data["has_test_coverage"] is True
         tb_map = conn.execute(
             "SELECT symbol FROM symbol_mappings WHERE entity_id = 'INV-PERF-COV-001' AND kind = 'test_binding';"
@@ -2279,7 +2275,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    assert SCHEMA_VERSION == "2.9.0"
+    assert SCHEMA_VERSION == "2.10.0"
     assert set(AstGrepIndexer.LANGUAGE_MAP.keys()) | {".proto", ".adoc"} <= _FILE_QUERY_EXTS
 
     # 1. Verify _ENTITY_ID_TOKEN_RE recognizes SYS-*, ARCH-*, PER-*, and underscore IDs

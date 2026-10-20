@@ -3,7 +3,6 @@
 import contextlib
 import enum
 import hashlib
-import json
 import os
 import re
 import shutil
@@ -11,6 +10,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 from eidos.core.spec.parser import YamlError, safe_dump_yaml, safe_load_yaml
 from eidos.core.workspace.assets import get_plugin_reference_dir
@@ -120,15 +121,14 @@ def _write_installation_manifest(target_dir: Path, created_files: list[Path] | N
     existing_files: dict[str, str] = {}
     if created_files is not None and manifest_file.exists():
         try:
-            with open(manifest_file, encoding="utf-8") as f:
-                old_data = json.load(f)
+            old_data = orjson.loads(manifest_file.read_bytes())
             old_files = old_data.get("files", {})
             if isinstance(old_files, dict):
                 for rel_path, digest in old_files.items():
                     candidate = target_dir / rel_path
                     if candidate.is_file() and not candidate.is_symlink():
                         existing_files[rel_path] = str(digest)
-        except (OSError, json.JSONDecodeError, ValueError):
+        except (OSError, orjson.JSONDecodeError, ValueError):
             existing_files = {}
 
     manifest_data: dict[str, Any] = {
@@ -147,8 +147,7 @@ def _write_installation_manifest(target_dir: Path, created_files: list[Path] | N
             continue
         manifest_data["files"][rel] = _compute_sha256(f)
 
-    with open(manifest_file, "w", encoding="utf-8") as f:
-        json.dump(manifest_data, f, indent=2)
+    manifest_file.write_bytes(orjson.dumps(manifest_data, option=orjson.OPT_INDENT_2))
 
     return manifest_file
 
@@ -220,8 +219,8 @@ def _copy_plugin_tree(
                 if _compute_sha256(dest) == _compute_sha256(item):
                     created.append(dest)
                 elif dest.name == "plugin.json":
-                    with contextlib.suppress(OSError, json.JSONDecodeError, ValueError):
-                        existing_json = json.loads(dest.read_text(encoding="utf-8"))
+                    with contextlib.suppress(OSError, orjson.JSONDecodeError, ValueError):
+                        existing_json = orjson.loads(dest.read_bytes())
                         if isinstance(existing_json, dict) and existing_json.get("name") == "eidos":
                             created.append(dest)
                 elif dest.name == "hooks.json":
@@ -237,14 +236,12 @@ def _copy_plugin_tree(
     target_manifest = target_dir / "plugin.json"
     if target_manifest.exists() and (target_manifest in created or force):
         try:
-            with open(target_manifest, encoding="utf-8") as f:
-                data = json.load(f)
+            data = orjson.loads(target_manifest.read_bytes())
             bundled_ver = get_bundled_plugin_version()
             if isinstance(data, dict) and (force or data.get("name") == "eidos") and data.get("version") != bundled_ver:
                 data["version"] = bundled_ver
-                with open(target_manifest, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2)
-        except (OSError, json.JSONDecodeError, ValueError):
+                target_manifest.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+        except (OSError, orjson.JSONDecodeError, ValueError):
             pass
 
     # Rewrite hook commands if launcher == "uvx"
@@ -322,11 +319,10 @@ def _ensure_claude_plugin_manifest(target_dir: Path, force: bool = False) -> lis
 
     if manifest_file.exists() and not force:
         try:
-            with open(manifest_file, encoding="utf-8") as f:
-                existing_root = json.load(f)
+            existing_root = orjson.loads(manifest_file.read_bytes())
             if not isinstance(existing_root, dict) or existing_root.get("name") != "eidos":
                 return None
-        except (OSError, json.JSONDecodeError, ValueError):
+        except (OSError, orjson.JSONDecodeError, ValueError):
             return None
 
     claude_meta_dir = target_dir / ".claude-plugin"
@@ -363,23 +359,21 @@ def _ensure_claude_plugin_manifest(target_dir: Path, force: bool = False) -> lis
         _check_not_symlink(mfile, root=target_dir)
         if mfile.exists():
             try:
-                with open(mfile, encoding="utf-8") as f:
-                    existing = json.load(f)
+                existing = orjson.loads(mfile.read_bytes())
                 if not isinstance(existing, dict) or existing.get("name") != "eidos":
                     if not force:
                         continue
                     manifest_data_to_write = manifest_data
                 else:
                     manifest_data_to_write = {**existing, **manifest_data}
-            except (OSError, json.JSONDecodeError, ValueError):
+            except (OSError, orjson.JSONDecodeError, ValueError):
                 if not force:
                     continue
                 manifest_data_to_write = manifest_data
         else:
             manifest_data_to_write = manifest_data
 
-        with open(mfile, "w", encoding="utf-8") as f:
-            json.dump(manifest_data_to_write, f, indent=2)
+        mfile.write_bytes(orjson.dumps(manifest_data_to_write, option=orjson.OPT_INDENT_2))
         created.append(mfile)
 
     return created if created else None
@@ -443,9 +437,8 @@ def _update_project_claude_settings(file_path: Path, plugin_id: str = "eidos") -
     data = {}
     if file_path.exists():
         try:
-            with open(file_path, encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, json.JSONDecodeError, ValueError):
+            data = orjson.loads(file_path.read_bytes())
+        except (OSError, orjson.JSONDecodeError, ValueError):
             data = {}
 
     if "plugins" not in data or not isinstance(data["plugins"], list):
@@ -467,8 +460,7 @@ def _update_project_claude_settings(file_path: Path, plugin_id: str = "eidos") -
     if plugin_id:
         data["enabledPlugins"][plugin_id] = True
 
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
     return True
 
 
@@ -477,9 +469,8 @@ def _remove_project_claude_settings(file_path: Path, plugin_id: str = "eidos") -
     if not file_path.exists():
         return False
     try:
-        with open(file_path, encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, json.JSONDecodeError, ValueError):
+        data = orjson.loads(file_path.read_bytes())
+    except (OSError, orjson.JSONDecodeError, ValueError):
         return False
 
     changed = False
@@ -518,8 +509,7 @@ def _remove_project_claude_settings(file_path: Path, plugin_id: str = "eidos") -
             with contextlib.suppress(OSError):
                 parent.rmdir()
     else:
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        file_path.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
     return True
 
 
@@ -734,8 +724,7 @@ def _ensure_copilot_plugin_manifest(target_dir: Path, force: bool = False) -> Pa
 
     if manifest_file.exists():
         try:
-            with open(manifest_file, encoding="utf-8") as f:
-                existing = json.load(f)
+            existing = orjson.loads(manifest_file.read_bytes())
             if not isinstance(existing, dict) or existing.get("name") != "eidos":
                 if not force:
                     return None
@@ -746,12 +735,11 @@ def _ensure_copilot_plugin_manifest(target_dir: Path, force: bool = False) -> Pa
                     "skills": "skills",
                 }
                 manifest_data = {**existing, **manifest_data, "extensions": merged_ext}
-        except (OSError, json.JSONDecodeError, ValueError):
+        except (OSError, orjson.JSONDecodeError, ValueError):
             if not force:
                 return None
 
-    with open(manifest_file, "w", encoding="utf-8") as f:
-        json.dump(manifest_data, f, indent=2)
+    manifest_file.write_bytes(orjson.dumps(manifest_data, option=orjson.OPT_INDENT_2))
 
     return manifest_file
 
@@ -763,9 +751,8 @@ def _update_project_copilot_settings(settings_file: Path) -> bool:
     data = {}
     if settings_file.exists():
         try:
-            with open(settings_file, encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, json.JSONDecodeError, ValueError):
+            data = orjson.loads(settings_file.read_bytes())
+        except (OSError, orjson.JSONDecodeError, ValueError):
             data = {}
 
     if "plugins" not in data or not isinstance(data["plugins"], list):
@@ -781,8 +768,7 @@ def _update_project_copilot_settings(settings_file: Path) -> bool:
         data["enabledPlugins"] = {}
     data["enabledPlugins"]["eidos"] = True
 
-    with open(settings_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    settings_file.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
     return True
 
 
@@ -791,9 +777,8 @@ def _remove_project_copilot_settings(settings_file: Path) -> bool:
     if not settings_file.exists():
         return False
     try:
-        with open(settings_file, encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, json.JSONDecodeError, ValueError):
+        data = orjson.loads(settings_file.read_bytes())
+    except (OSError, orjson.JSONDecodeError, ValueError):
         return False
 
     changed = False
@@ -825,8 +810,7 @@ def _remove_project_copilot_settings(settings_file: Path) -> bool:
             with contextlib.suppress(OSError):
                 parent.rmdir()
     else:
-        with open(settings_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        settings_file.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
     return True
 
 
@@ -860,8 +844,7 @@ def _ensure_codex_plugin_manifest(target_dir: Path, force: bool = False) -> Path
 
     if manifest_file.exists():
         try:
-            with open(manifest_file, encoding="utf-8") as f:
-                existing = json.load(f)
+            existing = orjson.loads(manifest_file.read_bytes())
             if not isinstance(existing, dict) or existing.get("name") != "eidos":
                 if not force:
                     return None
@@ -874,12 +857,11 @@ def _ensure_codex_plugin_manifest(target_dir: Path, force: bool = False) -> Path
                     "skills": "skills",
                 }
                 manifest_data = existing
-        except (OSError, json.JSONDecodeError, ValueError):
+        except (OSError, orjson.JSONDecodeError, ValueError):
             if not force:
                 return None
 
-    with open(manifest_file, "w", encoding="utf-8") as f:
-        json.dump(manifest_data, f, indent=2)
+    manifest_file.write_bytes(orjson.dumps(manifest_data, option=orjson.OPT_INDENT_2))
 
     return manifest_file
 
@@ -913,10 +895,9 @@ def _uninstall_from_manifest(target_dir: Path) -> bool:
 
     removed_any = False
     try:
-        with open(manifest_file, encoding="utf-8") as f:
-            data = json.load(f)
+        data = orjson.loads(manifest_file.read_bytes())
         files_dict = data.get("files", {})
-    except (OSError, json.JSONDecodeError, ValueError):
+    except (OSError, orjson.JSONDecodeError, ValueError):
         files_dict = {}
 
     for rel_path in sorted(files_dict.keys(), reverse=True):

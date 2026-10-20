@@ -4,7 +4,7 @@ id: CNT-EIDOS-PORTAL
 title: "Eidos Living Web Portal & Static Site Generator"
 status: active
 container_type: "web_app"
-runtime: "Python 3.12 / HTTP / React 19 / Tailwind v4 / MD3 / Mermaid.js (bundled) / Asciidoctor.js (bundled)"
+runtime: "Python 3.12 / HTTP / orjson / React 19 / Tailwind v4 / MD3 / Mermaid.js (bundled) / Asciidoctor.js (bundled)"
 source_path:
   - "src/eidos/portal"
   - "assets/portal"
@@ -15,15 +15,15 @@ tier: presentation
 components:
   - id: CMP-PORTAL-SERVER
     title: "PortalServer"
-    responsibility: "Hosts lightweight local multi-threaded HTTP server exposing web UI and JSON endpoints (lazily loading HTML/SVG assets via get_portal_html_template and get_portal_favicon_svg, validating static paths via is_relative_to and resolving custom eidos_dir targets in /api/validate and /api/drift) with thread-safe (_cache_lock) eidos_dir file mtime snapshot response caching on EidosPortalHandler."
+    responsibility: "Hosts lightweight local multi-threaded HTTP server exposing web UI and `orjson`-serialized JSON endpoints (lazily loading HTML/SVG assets via get_portal_html_template and get_portal_favicon_svg, validating static paths via is_relative_to and resolving custom eidos_dir targets in /api/validate and /api/drift) with thread-safe (_cache_lock) eidos_dir file mtime snapshot response caching on EidosPortalHandler."
     source_path: "src/eidos/portal/server.py"
   - id: CMP-PORTAL-GENERATOR
     title: "PortalGenerator"
-    responsibility: "Synthesizes living specifications (including arch/system, all declared personas without truncation, deduplicated policy/capability/container/component/UI-component invariants, product DEC-* decisions with both source_entity and source_id, promoted tech/component domain and AST-derived component consumes_api and container depends_on edges from get_architectural_index, exploration decision.resulting_deltas, AsciiDoc section extraction for domain boundaries/capability JTBD/exploration spikes, and tokens.manifest / extends design systems) into unified portal data model with HTML-escaped project-agnostic C4 Level 1 external_systems context diagrams, hierarchical C4 Level 2 container topologies, C4 Level 3 component whitebox diagrams connecting intra-container component dependencies (both inline and promoted), contract- and AST-derived inter-container dependency connections, auto-generated Mermaid diagrams, and dynamically computes delta affects and blast_radius strictly from normalized composable (operation + target + parent) mutations and the living specification graph."
+    responsibility: "Synthesizes living specifications (including arch/system, all declared personas without truncation, deduplicated policy/capability/container/component/UI-component invariants, product DEC-* decisions with both source_entity and source_id, promoted tech/component domain and AST-derived component consumes_api and container depends_on edges from get_architectural_index, exploration decision.resulting_deltas, AsciiDoc section extraction for domain boundaries/capability JTBD/exploration spikes, and `orjson`-parsed tokens.manifest / extends design systems) into unified portal data model with HTML-escaped project-agnostic C4 Level 1 external_systems context diagrams, hierarchical C4 Level 2 container topologies, C4 Level 3 component whitebox diagrams connecting intra-container component dependencies (both inline and promoted), contract- and AST-derived inter-container dependency connections, auto-generated Mermaid diagrams, and dynamically computes delta affects and blast_radius strictly from normalized composable (operation + target + parent) mutations and the living specification graph."
     source_path: "src/eidos/portal/generator.py"
   - id: CMP-PORTAL-BUILDER
     title: "StaticSiteBuilder"
-    responsibility: "Compiles self-contained static documentation portals for GitHub Pages and GitLab Pages (via get_portal_html_template and get_portal_favicon_svg) and escapes inline </script> and U+2028/U+2029 sequences when embedding window.__EIDOS_DATA__ into index.html."
+    responsibility: "Compiles self-contained static documentation portals for GitHub Pages and GitLab Pages (via get_portal_html_template and get_portal_favicon_svg, writing `orjson`-serialized data.json) and escapes inline </script> and U+2028/U+2029 sequences when embedding window.__EIDOS_DATA__ into index.html."
     source_path: "src/eidos/portal/builder.py"
   - id: CMP-PORTAL-ASSETS
     title: "PortalAssets"
@@ -50,9 +50,9 @@ This container represents the graphical web interface under `src/eidos/portal/` 
 [cols="1,1,2,2", options="header"]
 |===
 | Component ID | Name | Responsibility | Source Path
-| `CMP-PORTAL-SERVER` | **PortalServer** | Multi-threaded HTTP daemon hosting the portal UI and REST endpoints | `src/eidos/portal/server.py`
-| `CMP-PORTAL-GENERATOR` | **PortalGenerator** | Synthesizes specs, C4 Mermaid graphs, and SpecDelta Kanban state | `src/eidos/portal/generator.py`
-| `CMP-PORTAL-BUILDER` | **StaticSiteBuilder** | Exports zero-dependency static documentation sites for GitHub/GitLab Pages | `src/eidos/portal/builder.py`
+| `CMP-PORTAL-SERVER` | **PortalServer** | Multi-threaded HTTP daemon hosting the portal UI and `orjson`-serialized REST endpoints | `src/eidos/portal/server.py`
+| `CMP-PORTAL-GENERATOR` | **PortalGenerator** | Synthesizes specs, `orjson`-parsed design tokens, C4 Mermaid graphs, and SpecDelta Kanban state | `src/eidos/portal/generator.py`
+| `CMP-PORTAL-BUILDER` | **StaticSiteBuilder** | Exports zero-dependency static documentation sites (`orjson` `data.json` and embedded `window.__EIDOS_DATA__`) for GitHub/GitLab Pages | `src/eidos/portal/builder.py`
 | `CMP-PORTAL-ASSETS` | **PortalAssets** | Loads the pre-compiled single-file React 19 / Tailwind CSS v4 / MD3 SPA from `assets/portal/bundle.html.gz` and `assets/portal/favicon.svg`, synchronized by `build_assets.py` and `hatch_build.py` (5 MiB uncompressed budget) | `src/eidos/portal/assets.py`, `src/eidos/portal/frontend/scripts/build_assets.py`, `src/eidos/portal/frontend/scripts/hatch_build.py`
 |===
 

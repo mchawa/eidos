@@ -3380,7 +3380,7 @@ def test_group_b_regressions_b1_through_b8(tmp_path: Path, validator: SpecValida
 
 def test_deep_audit_group_b_b1_through_b10(tmp_path):
     """Verify deep audit Group B fixes (B1 through B10)."""  # eidos:fixture
-    import json
+    import orjson
 
     from eidos.core.spec.models import FrontmatterModel
     from eidos.core.spec.parser import parse_spec_file
@@ -3604,14 +3604,13 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
     ds_b_dir = eidos_dir / "design" / "systems" / "dsb"
     ds_a_dir.mkdir(parents=True, exist_ok=True)
     ds_b_dir.mkdir(parents=True, exist_ok=True)
-    (ds_a_dir / "tokens.json").write_text(
-        json.dumps(
+    (ds_a_dir / "tokens.json").write_bytes(
+        orjson.dumps(
             {
                 "root_scalar_bad": "#123456",
                 "color": {"primary": {"$value": "#000000", "$type": "color"}},
             }
-        ),
-        encoding="utf-8",
+        )
     )
     (ds_a_dir / "system.adoc").write_text(
         "---\n"

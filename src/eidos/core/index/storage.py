@@ -18,8 +18,8 @@ import orjson
 if TYPE_CHECKING:
     from eidos.core.spec.models import SpecDocument
 
-# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-099).
-SCHEMA_VERSION = "2.9.0"
+# Canonical schema version shared across ArchitecturalIndex, SpecValidator, and DriftDetector (DLT-2026-100).
+SCHEMA_VERSION = "2.10.0"
 
 # In-process parsed SpecDocument cache keyed by resolved Path -> (mtime_ns, st_size, sha256, SpecDocument)
 _PARSED_SPEC_MEM_CACHE: dict[Path, tuple[int, int, str, SpecDocument]] = {}
@@ -48,8 +48,7 @@ CREATE TABLE IF NOT EXISTS indexed_files (
     mtime REAL NOT NULL,
     sha256 TEXT NOT NULL,
     doc_id TEXT,
-    doc_type TEXT,
-    last_indexed REAL NOT NULL
+    doc_type TEXT
 );
 
 CREATE TABLE IF NOT EXISTS spec_validation_cache (
@@ -57,8 +56,7 @@ CREATE TABLE IF NOT EXISTS spec_validation_cache (
     mtime_ns INTEGER NOT NULL,
     sha256 TEXT NOT NULL,
     schema_hash TEXT NOT NULL,
-    doc_json TEXT NOT NULL,
-    schema_errors_json TEXT NOT NULL
+    doc_json TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS test_binding_cache (
@@ -76,9 +74,6 @@ CREATE TABLE IF NOT EXISTS entities (
     title TEXT NOT NULL,
     status TEXT,
     domain TEXT,
-    source_path TEXT,
-    runtime TEXT,
-    container_type TEXT,
     file_path TEXT NOT NULL,
     data_json TEXT NOT NULL
 );
@@ -89,7 +84,6 @@ CREATE TABLE IF NOT EXISTS edges (
     source_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
     rel_type TEXT NOT NULL,
-    metadata_json TEXT,
     PRIMARY KEY (source_id, target_id, rel_type)
 );
 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
@@ -327,7 +321,7 @@ def load_spec_validation_cache(db_path: Path) -> dict[str, sqlite3.Row]:
     cached_rows: dict[str, sqlite3.Row] = {}
     with contextlib.suppress(OSError, sqlite3.Error), contextlib.closing(open_cache_connection(db_path)) as conn:
         for row in conn.execute(
-            "SELECT file_path, mtime_ns, sha256, schema_hash, doc_json, schema_errors_json FROM spec_validation_cache;"
+            "SELECT file_path, mtime_ns, sha256, schema_hash, doc_json FROM spec_validation_cache;"
         ):
             cached_rows[row["file_path"]] = row
     return cached_rows
@@ -335,7 +329,7 @@ def load_spec_validation_cache(db_path: Path) -> dict[str, sqlite3.Row]:
 
 def save_spec_validation_cache(
     db_path: Path,
-    to_upsert: list[tuple[str, int, str, str, str, str]],
+    to_upsert: list[tuple[str, int, str, str, str]],
     deleted_keys: list[str] | None = None,
 ) -> None:
     """Upsert and prune ``spec_validation_cache`` entries via canonical ``open_cache_connection``."""
@@ -351,8 +345,8 @@ def save_spec_validation_cache(
             conn.executemany(
                 """
                 INSERT OR REPLACE INTO spec_validation_cache
-                (file_path, mtime_ns, sha256, schema_hash, doc_json, schema_errors_json)
-                VALUES (?, ?, ?, ?, ?, ?);
+                (file_path, mtime_ns, sha256, schema_hash, doc_json)
+                VALUES (?, ?, ?, ?, ?);
                 """,
                 to_upsert,
             )

@@ -1,7 +1,8 @@
 """Static site documentation generator exporting the Living Web Portal to a standalone folder."""
 
-import json
 from pathlib import Path
+
+import orjson
 
 from eidos.portal.assets import get_portal_favicon_svg, get_portal_html_template
 from eidos.portal.generator import get_portal_data
@@ -18,11 +19,12 @@ def build_static_portal(eidos_dir: Path, output_dir: Path) -> Path:
 
     # 2. Write standalone data.json
     data_file = out_path / "data.json"
-    with open(data_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    data_file.write_bytes(orjson.dumps(data, option=orjson.OPT_INDENT_2))
 
     # 3. Inject data into index.html for zero-fetch offline loading (escape closing </script> and line separators)
-    safe_json = json.dumps(data).replace("</", "<\\/").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+    safe_json = (
+        orjson.dumps(data).decode("utf-8").replace("</", "<\\/").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+    )
     injected_data_script = f"<script>window.__EIDOS_DATA__ = {safe_json};</script>\n</head>"
     static_html = get_portal_html_template().replace("</head>", injected_data_script, 1)
 

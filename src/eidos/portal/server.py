@@ -1,6 +1,5 @@
 """Local HTTP server hosting the interactive Eidos Living Web Portal."""
 
-import json
 import logging
 import threading
 import urllib.parse
@@ -9,6 +8,8 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 from eidos.core.spec.validator import SpecValidator
 from eidos.portal.assets import get_portal_favicon_svg, get_portal_html_template
@@ -143,10 +144,10 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
         if content_length > 0:
             raw_body = self.rfile.read(content_length)
             try:
-                parsed = json.loads(raw_body.decode("utf-8"))
+                parsed = orjson.loads(raw_body)
                 if isinstance(parsed, dict):
                     payload = parsed
-            except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            except (UnicodeDecodeError, orjson.JSONDecodeError, ValueError):
                 self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON payload.")
                 return
 
@@ -182,7 +183,7 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def _send_json(self, data: dict[str, Any]) -> None:
-        payload = json.dumps(data, indent=2).encode("utf-8")
+        payload = orjson.dumps(data, option=orjson.OPT_INDENT_2)
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))

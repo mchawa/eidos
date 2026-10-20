@@ -1,8 +1,8 @@
 """Tests for Eidos PR verification gate, drift detection, and spec reconciliation."""
 
-import json
 from pathlib import Path
 
+import orjson
 import pytest
 from typer.testing import CliRunner
 
@@ -1433,7 +1433,7 @@ def test_cli_drift_json_reports_trivially_covered_files(tmp_path, monkeypatch):
     )
     monkeypatch.chdir(tmp_path)
     res = runner.invoke(app, ["drift", "--json"])
-    data = json.loads(res.output)
+    data = orjson.loads(res.output)
     assert data["drift_detected"] is True
     assert data["trivially_covered_files"][0]["file"] == "src/pkg/svc.py"
     assert data["trivially_covered_files"][0]["rule"] == "trivial_spec_diff"
@@ -3629,11 +3629,9 @@ def test_deep_audit_group_c_c1_through_c10(tmp_path: Path) -> None:
         conn = idx._get_connection()
 
         # C3: INV-DOM-BILL-001 indexed in entities table with source_id == DOM-BILLING and has_test_coverage
-        import json
-
         inv_ent = conn.execute("SELECT type, data_json FROM entities WHERE id = 'INV-DOM-BILL-001';").fetchone()
         assert inv_ent is not None and inv_ent[0] == "invariant"
-        inv_meta = json.loads(inv_ent[1])
+        inv_meta = orjson.loads(inv_ent[1])
         assert inv_meta["source_id"] == "DOM-BILLING" and inv_meta["has_test_coverage"] is True
 
         # C9: test_binding row present in symbol_mappings

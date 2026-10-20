@@ -1,6 +1,5 @@
 """Tests for the Eidos Living Web Portal, generator, HTTP server, and static site builder."""
 
-import json
 import re
 import threading
 import time
@@ -10,6 +9,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
 
+import orjson
 import pytest
 from typer.testing import CliRunner
 
@@ -183,8 +183,7 @@ def test_static_portal_builder(tmp_path: Path):
     assert index_html.count("window.__EIDOS_DATA__ =") == 1
     assert "</script>\n</head>" in index_html
 
-    with open(data_file, encoding="utf-8") as f:
-        json_data = json.load(f)
+    json_data = orjson.loads(data_file.read_bytes())
     assert json_data["overview"]["system_id"] == "SYS-EIDOS-001"
     assert json_data["overview"]["clients_count"] >= 1
     assert json_data["overview"]["flows_count"] >= 2
@@ -216,25 +215,25 @@ def test_portal_http_server():
     with urllib.request.urlopen(f"{base_url}/api/data") as res:
         assert res.status == 200
         assert "application/json" in res.headers.get("Content-Type", "")
-        payload = json.loads(res.read().decode("utf-8"))
+        payload = orjson.loads(res.read())
         assert payload["overview"]["system_id"] == "SYS-EIDOS-001"
 
     # 3. GET /api/overview
     with urllib.request.urlopen(f"{base_url}/api/overview") as res:
         assert res.status == 200
-        ov = json.loads(res.read().decode("utf-8"))
+        ov = orjson.loads(res.read())
         assert ov["total_specs"] >= 30
 
     # 4. GET /api/validate
     with urllib.request.urlopen(f"{base_url}/api/validate") as res:
         assert res.status == 200
-        val = json.loads(res.read().decode("utf-8"))
+        val = orjson.loads(res.read())
         assert val["is_clean"] is True
 
     # 5. GET /health
     with urllib.request.urlopen(f"{base_url}/health") as res:
         assert res.status == 200
-        h = json.loads(res.read().decode("utf-8"))
+        h = orjson.loads(res.read())
         assert h["status"] == "ok"
 
     # 6. GET /favicon.svg
@@ -293,8 +292,7 @@ def test_portal_reading_ergonomics():
     """Verify reading-friendly design system tokens and prose reading ergonomics (INV-PORTAL-READING-ERGONOMICS)."""
     # 1. Verify W3C tokens in tokens.json
     tokens_path = Path("eidos/design/systems/core/tokens.json")
-    with open(tokens_path, encoding="utf-8") as f:
-        tokens = json.load(f)
+    tokens = orjson.loads(tokens_path.read_bytes())
 
     prose_tokens = tokens["typography"]["prose"]
     assert prose_tokens["body"]["$value"] == "16px"
@@ -570,7 +568,7 @@ def test_dlt_2026_063_hook_digest_short_circuit_and_portal_mtime_cache(tmp_path,
     # 1. Clean workspace returns {"decision": "allow"}
     rc = execute_hook(repo_root=tmp_path, stdin_data="{}")
     assert rc == 0
-    assert json.loads(capsys.readouterr().out) == {"decision": "allow"}
+    assert orjson.loads(capsys.readouterr().out) == {"decision": "allow"}
 
     # 2. EidosPortalHandler caches _get_cached_portal_data until a spec file changes
     calls = {"count": 0}
@@ -819,7 +817,7 @@ def test_portal_zero_node_subprocess_http_endpoints_mermaid_and_build_assets(tmp
         assert res_build == out_dir.resolve()
         assert (out_dir / "index.html").exists()
         assert (out_dir / "favicon.svg").exists()
-        built_data = json.loads((out_dir / "data.json").read_text(encoding="utf-8"))
+        built_data = orjson.loads((out_dir / "data.json").read_bytes())
         assert built_data["diagrams"]["c4_containers"]
 
         # 2. Live HTTP server endpoints: /api/health, /api/data?foo=1, /api/validate (cache hit + invalidation), 404 traversal
@@ -836,18 +834,18 @@ def test_portal_zero_node_subprocess_http_endpoints_mermaid_and_build_assets(tmp
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health") as resp:
                 assert resp.status == 200
-                health = json.loads(resp.read().decode("utf-8"))
+                health = orjson.loads(resp.read())
                 assert health["status"] == "ok"
 
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/data?cache_bust=123") as resp:
                 assert resp.status == 200
-                api_data = json.loads(resp.read().decode("utf-8"))
+                api_data = orjson.loads(resp.read())
                 assert api_data["overview"]["total_specs"] >= 2
 
             # First /api/validate populates cache; second hits cache
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/validate") as resp:
                 assert resp.status == 200
-                val1 = json.loads(resp.read().decode("utf-8"))
+                val1 = orjson.loads(resp.read())
                 assert "is_clean" in val1
             assert EidosPortalHandler._cached_validation_res is not None
             first_key = EidosPortalHandler._cached_validation_key
@@ -1460,7 +1458,6 @@ contracts:
 def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     """Comprehensive regression test covering Deep Audit Group D (D1-D7)."""
     import http.client
-    import json
     import threading
     from http.server import HTTPServer
 
@@ -1564,38 +1561,36 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     foreign_dir = proj_dir / ".agents" / "plugins" / "eidos"
     foreign_dir.mkdir(parents=True)
     foreign_manifest = foreign_dir / "plugin.json"
-    foreign_manifest.write_text(json.dumps({"name": "foreign-plugin", "version": "9.9.9"}), encoding="utf-8")
+    foreign_manifest.write_bytes(orjson.dumps({"name": "foreign-plugin", "version": "9.9.9"}))
     install_plugin(target=PluginInstallTarget.PROJECT, project_dir=proj_dir, force=False)
-    assert json.loads(foreign_manifest.read_text(encoding="utf-8"))["name"] == "foreign-plugin"
+    assert orjson.loads(foreign_manifest.read_bytes())["name"] == "foreign-plugin"
 
     claude_dir = tmp_path / "claude_test"
     claude_dir.mkdir()
-    (claude_dir / "plugin.json").write_text(
-        json.dumps({"name": "eidos", "version": "0.0.1", "skills": "skills", "agents": "agents"}),
-        encoding="utf-8",
+    (claude_dir / "plugin.json").write_bytes(
+        orjson.dumps({"name": "eidos", "version": "0.0.1", "skills": "skills", "agents": "agents"})
     )
     _ensure_claude_plugin_manifest(claude_dir, force=False)
-    merged_claude = json.loads((claude_dir / "plugin.json").read_text(encoding="utf-8"))
+    merged_claude = orjson.loads((claude_dir / "plugin.json").read_bytes())
     assert merged_claude["skills"] == "skills"
     assert merged_claude["agents"] == "agents"
 
     copilot_dir = tmp_path / "copilot_test"
     copilot_dir.mkdir()
-    (copilot_dir / "plugin.json").write_text(
-        json.dumps({"name": "eidos", "version": "0.0.1", "customKey": "preserved"}),
-        encoding="utf-8",
+    (copilot_dir / "plugin.json").write_bytes(
+        orjson.dumps({"name": "eidos", "version": "0.0.1", "customKey": "preserved"})
     )
     _ensure_copilot_plugin_manifest(copilot_dir, force=False)
-    merged_copilot = json.loads((copilot_dir / "plugin.json").read_text(encoding="utf-8"))
+    merged_copilot = orjson.loads((copilot_dir / "plugin.json").read_bytes())
     assert merged_copilot["customKey"] == "preserved"
 
     codex_proj = tmp_path / "codex_proj"
     codex_proj.mkdir()
     install_plugin(target=PluginInstallTarget.CODEX, project_dir=codex_proj, force=True)
     codex_manifest = codex_proj / ".codex" / "plugin.json"
-    codex_data = json.loads(codex_manifest.read_text(encoding="utf-8"))
+    codex_data = orjson.loads(codex_manifest.read_bytes())
     codex_data["version"] = "0.0.9"
-    codex_manifest.write_text(json.dumps(codex_data), encoding="utf-8")
+    codex_manifest.write_bytes(orjson.dumps(codex_data))
     prev_ver, curr_ver, _ = update_plugin(target=PluginInstallTarget.CODEX, project_dir=codex_proj)
     assert prev_ver == "0.0.9"
     assert curr_ver != "0.0.9"

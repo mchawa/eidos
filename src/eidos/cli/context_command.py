@@ -1,8 +1,8 @@
 """Token-budgeted architectural context slicing command (`eidos context`)."""
 
-import json
 from pathlib import Path
 
+import orjson
 import typer
 
 from eidos.cli._shared import PANEL_KNOWLEDGE, console, resolve_cli_eidos_dir
@@ -52,7 +52,7 @@ def context_cmd(
 
     if not eidos_dir.exists():
         if json_output:
-            typer.echo(json.dumps({"error": f"Directory '{eidos_dir}' not found."}))
+            typer.echo(orjson.dumps({"error": f"Directory '{eidos_dir}' not found."}).decode("utf-8"))
         else:
             console.print(f"[bold red]Error:[/bold red] Directory '{eidos_dir}' not found.")
         raise typer.Exit(code=1)

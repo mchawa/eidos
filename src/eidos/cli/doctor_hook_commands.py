@@ -1,11 +1,11 @@
 """Installation health diagnostics (`eidos doctor`) and CLI-native agent lifecycle hooks (`eidos hook ...`)."""
 
-import json
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+import orjson
 import typer
 from rich.table import Table
 
@@ -127,7 +127,7 @@ def doctor_cmd(
     overall_ok = cli_ok and git_ok and (not specs_exist or (specs_valid and index_ok)) and checks["agent_plugin"]["ok"]
 
     if json_output:
-        typer.echo(json.dumps({"healthy": overall_ok, "checks": checks}, indent=2))
+        typer.echo(orjson.dumps({"healthy": overall_ok, "checks": checks}, option=orjson.OPT_INDENT_2).decode("utf-8"))
         if not overall_ok:
             raise typer.Exit(code=1)
         return

@@ -265,11 +265,7 @@ def store_code_symbols(
     symbols: list[Any],
     imports: list[str] | None = None,
 ) -> None:
-    """Replace all persisted symbols of one source file (delete-then-insert) and keep lookups consistent."""
-    previous = conn.execute(
-        "SELECT DISTINCT entity_id, kind, symbol, parent_symbol FROM code_symbols WHERE file_path = ? AND kind != 'import';",
-        (rel_path,),
-    ).fetchall()
+    """Replace all persisted symbols of one source file (delete-then-insert)."""
     conn.execute("DELETE FROM code_symbols WHERE file_path = ?;", (rel_path,))
 
     for position, (entity_id, component_id) in enumerate(owners):
@@ -296,15 +292,6 @@ def store_code_symbols(
                     is_prim,
                 ),
             )
-            conn.execute(
-                "INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind) VALUES (?, ?, ?);",
-                (sym.name, entity_id, sym.kind),
-            )
-            if parent:
-                conn.execute(
-                    "INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind) VALUES (?, ?, 'method');",
-                    (f"{parent}.{sym.name}", entity_id),
-                )
         for imp in imports or ():
             if imp:
                 conn.execute(
@@ -317,36 +304,9 @@ def store_code_symbols(
                     (rel_path, imp, entity_id, component_id, is_prim),
                 )
 
-    for old in previous:
-        old_entity, old_kind, old_symbol, old_parent = (
-            old["entity_id"],
-            old["kind"],
-            old["symbol"],
-            old["parent_symbol"],
-        )
-        if not conn.execute(
-            "SELECT 1 FROM code_symbols WHERE entity_id = ? AND kind = ? AND symbol = ? LIMIT 1;",
-            (old_entity, old_kind, old_symbol),
-        ).fetchone():
-            conn.execute(
-                "DELETE FROM symbol_mappings WHERE symbol = ? AND entity_id = ? AND kind = ?;",
-                (old_symbol, old_entity, old_kind),
-            )
-        if (
-            old_parent
-            and not conn.execute(
-                "SELECT 1 FROM code_symbols WHERE entity_id = ? AND parent_symbol = ? AND symbol = ? LIMIT 1;",
-                (old_entity, old_parent, old_symbol),
-            ).fetchone()
-        ):
-            conn.execute(
-                "DELETE FROM symbol_mappings WHERE symbol = ? AND entity_id = ? AND kind = 'method';",
-                (f"{old_parent}.{old_symbol}", old_entity),
-            )
-
 
 def restore_code_mappings(conn: sqlite3.Connection, entity_id: str) -> None:
-    """Re-create ``symbol_mappings`` rows for an entity from persisted code state (no source re-parsing)."""
+    """Re-create ``source_path`` rows in ``symbol_mappings`` for an entity from persisted code state."""
     ent_row = conn.execute("SELECT data_json FROM entities WHERE id = ?;", (entity_id,)).fetchone()
     patterns: list[str] = []
     if ent_row and ent_row["data_json"]:
@@ -370,30 +330,11 @@ def restore_code_mappings(conn: sqlite3.Connection, entity_id: str) -> None:
         if r[0]
     ]
     valid_files = [fp for fp in cand_files if any(match_path_pattern(fp, pat) > 0 for pat in patterns)]
-    if not valid_files:
-        return
-    ph = ",".join("?" for _ in valid_files)
     for fp in valid_files:
         conn.execute(
             "INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind) VALUES (?, ?, 'source_path');",
             (fp, entity_id),
         )
-    conn.execute(
-        f"""
-        INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind)
-        SELECT symbol, entity_id, kind FROM code_symbols
-        WHERE entity_id = ? AND kind != 'import' AND file_path IN ({ph});
-        """,
-        (entity_id, *valid_files),
-    )
-    conn.execute(
-        f"""
-        INSERT OR IGNORE INTO symbol_mappings (symbol, entity_id, kind)
-        SELECT parent_symbol || '.' || symbol, entity_id, 'method' FROM code_symbols
-        WHERE entity_id = ? AND kind != 'import' AND parent_symbol != '' AND file_path IN ({ph});
-        """,
-        (entity_id, *valid_files),
-    )
 
 
 _SOURCE_AST_MEM_CACHE: dict[tuple[type[Any], str, str], tuple[list[Any], list[str]]] = {}
@@ -462,10 +403,10 @@ def index_source_file(
     store_code_symbols(conn, rel_path, owners, symbols, imports=imports)
     conn.execute(
         """
-        INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-        VALUES (?, ?, ?, ?, 'code/source', ?);
+        INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type)
+        VALUES (?, ?, ?, ?, 'code/source');
         """,
-        (rel_path, mtime, sha, owners[0][0] if owners else "source", time.time()),
+        (rel_path, mtime, sha, owners[0][0] if owners else "source"),
     )
 
 
@@ -538,8 +479,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
 
     disk_files: set[str] = set()
     to_update: list[Path] = []
-    mtime_refreshes: list[tuple[float, float, str]] = []
-    now_ts = time.time()
+    mtime_refreshes: list[tuple[float, str]] = []
 
     if not index.eidos_dir.exists():
         deleted = [Path(rel) for rel in db_files]
@@ -570,7 +510,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
             if digest != cached[1]:
                 to_update.append(Path(full_str))
             else:
-                mtime_refreshes.append((st_mtime, now_ts, rel_key))
+                mtime_refreshes.append((st_mtime, rel_key))
                 db_files[rel_key] = (st_mtime, cached[1])
 
     # 1. Living specifications in eidos/ (.adoc)
@@ -614,8 +554,6 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
             tracked_code_dirs.add(cand)
 
     package_paths: set[str] = set()
-    cursor.execute("SELECT DISTINCT source_path FROM entities WHERE source_path != '';")
-    package_paths.update(row[0].strip() for row in cursor.fetchall())
     cursor.execute(
         "SELECT DISTINCT symbol FROM symbol_mappings WHERE kind IN ('package_path', 'source_path', 'owned_path', 'test_binding');"
     )
@@ -720,7 +658,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     if mtime_refreshes:
         with conn:
             conn.executemany(
-                "UPDATE indexed_files SET mtime = ?, last_indexed = ? WHERE rel_path = ?;",
+                "UPDATE indexed_files SET mtime = ? WHERE rel_path = ?;",
                 mtime_refreshes,
             )
 
@@ -745,15 +683,14 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             SELECT target_id FROM edges
             WHERE source_id IN ({ph})
               AND rel_type IN (
-                  'asserts', 'contains_component', 'implemented_by', 'implements_client',
-                  'styled_by', 'styles_client', 'styles_container', 'extends', 'extended_by'
+                  'asserts', 'contains_component', 'implemented_by',
+                  'styled_by', 'styles_container', 'extends'
               )
             UNION
             SELECT source_id FROM edges
             WHERE target_id IN ({ph})
               AND rel_type IN (
-                  'implemented_by', 'implements_client',
-                  'styled_by', 'styles_client', 'styles_container', 'extends', 'extended_by'
+                  'implemented_by', 'styled_by', 'styles_container', 'extends'
               )
             UNION
             SELECT symbol FROM symbol_mappings
@@ -809,10 +746,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             f"""
             DELETE FROM edges
             WHERE (source_id IN ({evict_ph}) OR target_id IN ({evict_ph}))
-              AND NOT (
-                  (rel_type = 'asserts' AND instr(source_id, '::') > 0)
-                  OR (rel_type = 'bound_to' AND instr(target_id, '::') > 0)
-              );
+              AND NOT (rel_type = 'asserts' AND instr(source_id, '::') > 0);
             """,
             (*evict_ids, *evict_ids),
         )
@@ -825,10 +759,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
         conn.execute(
             """
             DELETE FROM edges
-            WHERE NOT (
-                (rel_type = 'asserts' AND instr(source_id, '::') > 0)
-                OR (rel_type = 'bound_to' AND instr(target_id, '::') > 0)
-            );
+            WHERE NOT (rel_type = 'asserts' AND instr(source_id, '::') > 0);
             """
         )
         rows = conn.execute(
@@ -846,73 +777,49 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
 
         domain = fm.get("domain", "")
         if domain:
-            conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'realizes', NULL);", (doc_id, domain))
-            conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'domain_member', NULL);", (domain, doc_id))
+            conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'realizes');", (doc_id, domain))
 
         contracts = fm.get("contracts", {})
         if isinstance(contracts, dict):
             for prov in contracts.get("provides", []):
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides', NULL);", (doc_id, prov))
+                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides');", (doc_id, prov))
             for req in contracts.get("consumes") or []:
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes', NULL);", (doc_id, req))
+                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes');", (doc_id, req))
 
         if doc_type == "tech/contract":
             owning = fm.get("container")
             if owning:
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides', NULL);", (owning, doc_id))
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'owned_by', NULL);", (doc_id, owning))
+                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides');", (owning, doc_id))
+                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'owned_by');", (doc_id, owning))
 
         if doc_type == "design/client":
             cnt_ref = fm.get("container")
             ds_ref = fm.get("design_system")
             if cnt_ref and isinstance(cnt_ref, str):
                 conn.execute(
-                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implemented_by', NULL);",
+                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implemented_by');",
                     (doc_id, cnt_ref.strip()),
                 )
-                conn.execute(
-                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements_client', NULL);",
-                    (cnt_ref.strip(), doc_id),
-                )
             if ds_ref and isinstance(ds_ref, str):
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);", (doc_id, ds_ref.strip()))
-                conn.execute(
-                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_client', NULL);",
-                    (ds_ref.strip(), doc_id),
-                )
-            if cnt_ref and isinstance(cnt_ref, str) and ds_ref and isinstance(ds_ref, str):
-                conn.execute(
-                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);",
-                    (cnt_ref.strip(), ds_ref.strip()),
-                )
-                conn.execute(
-                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_container', NULL);",
-                    (ds_ref.strip(), cnt_ref.strip()),
-                )
+                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by');", (doc_id, ds_ref.strip()))
 
         if doc_type == "design/system":
             for clt_ref in fm.get("clients", []) or []:
                 if isinstance(clt_ref, str) and clt_ref.strip():
                     conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);",
+                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by');",
                         (clt_ref.strip(), doc_id),
-                    )
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_client', NULL);",
-                        (doc_id, clt_ref.strip()),
                     )
             if fm.get("extends"):
                 parent_ds = str(fm["extends"]).strip()
                 if parent_ds:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'extends', NULL);", (doc_id, parent_ds))
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'extended_by', NULL);", (parent_ds, doc_id))
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'extends');", (doc_id, parent_ds))
 
         biz = fm.get("business", {})
         if isinstance(biz, dict):
             for pol in biz.get("policies", []):
                 pol_ref = str(pol).strip()
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'governed_by', NULL);", (doc_id, pol_ref))
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'governs', NULL);", (pol_ref, doc_id))
+                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'governed_by');", (doc_id, pol_ref))
 
         tech = fm.get("technical", {})
         invariants = list(fm.get("invariants", []) or [])
@@ -924,19 +831,14 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             )
             for comp_ref in tech_targets:
                 if isinstance(comp_ref, str) and comp_ref.strip():
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements', NULL);", (doc_id, comp_ref.strip())
-                    )
-                    conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'implemented_by', NULL);", (comp_ref.strip(), doc_id)
-                    )
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'implements');", (doc_id, comp_ref.strip()))
             invariants.extend(tech.get("invariants", []) or [])
 
         if doc_type == "tech/component":
             cnt_id = fm.get("container")
             if cnt_id:
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);", (cnt_id, doc_id))
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (doc_id, cnt_id))
+                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component');", (cnt_id, doc_id))
+                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of');", (doc_id, cnt_id))
 
         if doc_type == "tech/container":
             for comp_entry in fm.get("components") or []:
@@ -945,28 +847,24 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                 cid = comp_entry.get("id")
                 if cid:
                     conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component', NULL);",
+                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_component');",
                         (doc_id, cid),
                     )
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of', NULL);", (cid, doc_id))
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of');", (cid, doc_id))
                     c_contracts = comp_entry.get("contracts")
                     if isinstance(c_contracts, dict):
                         for prov in c_contracts.get("provides", []) or []:
-                            conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides', NULL);", (cid, prov))
+                            conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides');", (cid, prov))
                         for req in c_contracts.get("consumes") or []:
-                            conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes', NULL);", (cid, req))
+                            conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes');", (cid, req))
                 for c_inv in comp_entry.get("invariants", []) or []:
                     if isinstance(c_inv, dict) and c_inv.get("id"):
                         invariants.append(c_inv)
                         if cid:
                             c_iid = c_inv["id"]
                             conn.execute(
-                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);",
+                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts');",
                                 (cid, c_iid),
-                            )
-                            conn.execute(
-                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);",
-                                (c_iid, cid),
                             )
 
         if doc_type == "delta/mutation":
@@ -986,7 +884,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                             if p_row:
                                 target_val = p_row["id"]
                         conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'affects', NULL);",
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'affects');",
                             (doc_id, target_val),
                         )
                         for c_row in conn.execute(
@@ -994,15 +892,14 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                             (target_val,),
                         ).fetchall():
                             conn.execute(
-                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'affects', NULL);",
+                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'affects');",
                                 (doc_id, c_row["entity_id"]),
                             )
 
         for inv in invariants:
             iid = inv.get("id") if isinstance(inv, dict) else None
             if iid:
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);", (doc_id, iid))
-                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);", (iid, doc_id))
+                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts');", (doc_id, iid))
 
     _derive_ast_import_edges(conn)
 
@@ -1115,7 +1012,7 @@ def _derive_ast_import_edges(
 
         if src_cmp and dst_cmp and src_cmp != dst_cmp:
             conn.execute(
-                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api', NULL);",
+                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes_api');",
                 (src_cmp, dst_cmp),
             )
         if src_cnt and dst_cnt and src_cnt != dst_cnt and src_cnt.startswith("CNT-") and dst_cnt.startswith("CNT-"):
@@ -1124,17 +1021,16 @@ def _derive_ast_import_edges(
     conn.execute("DELETE FROM edges WHERE rel_type = 'depends_on';")
     for src_cnt, dst_cnt in sorted(ast_cnt_deps):
         conn.execute(
-            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'depends_on', NULL);",
+            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'depends_on');",
             (src_cnt, dst_cnt),
         )
     conn.execute(
         """
-        INSERT OR IGNORE INTO edges (source_id, target_id, rel_type, metadata_json)
+        INSERT OR IGNORE INTO edges (source_id, target_id, rel_type)
         SELECT DISTINCT
             COALESCE(p_src.target_id, c_edge.source_id) AS src_cnt,
             COALESCE(p_prov.target_id, p_edge.source_id) AS dst_cnt,
-            'depends_on',
-            NULL
+            'depends_on'
         FROM edges c_edge
         LEFT JOIN edges p_src ON p_src.source_id = c_edge.source_id AND p_src.rel_type = 'part_of'
         JOIN edges p_edge ON p_edge.target_id = c_edge.target_id AND p_edge.rel_type = 'provides'
@@ -1147,8 +1043,7 @@ def _derive_ast_import_edges(
         SELECT DISTINCT
             p_src.target_id AS src_cnt,
             COALESCE(p_dst.target_id, api_edge.target_id) AS dst_cnt,
-            'depends_on',
-            NULL
+            'depends_on'
         FROM edges api_edge
         JOIN edges p_src ON p_src.source_id = api_edge.source_id AND p_src.rel_type = 'part_of'
         LEFT JOIN edges p_dst ON p_dst.source_id = api_edge.target_id AND p_dst.rel_type = 'part_of'
@@ -1175,10 +1070,6 @@ def index_test_bindings(
         (prefix_like,),
     )
     conn.execute(
-        "DELETE FROM edges WHERE rel_type = 'bound_to' AND target_id LIKE ? ESCAPE '\\';",
-        (prefix_like,),
-    )
-    conn.execute(
         "DELETE FROM symbol_mappings WHERE symbol = ? AND kind = 'test_binding';",
         (rel_test,),
     )
@@ -1198,12 +1089,8 @@ def index_test_bindings(
         identifier = f"{rel_test}::{binding.test_name}"
         for inv_id in binding.invariants:
             conn.execute(
-                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);",
+                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts');",
                 (identifier, inv_id),
-            )
-            conn.execute(
-                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);",
-                (inv_id, identifier),
             )
             conn.execute(
                 "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'test_binding');",
@@ -1233,21 +1120,6 @@ def prune_stale_test_binding_edges(conn: sqlite3.Connection) -> None:
             target_id NOT IN (SELECT id FROM entities)
             OR instr(source_id, '::') = 0
             OR substr(source_id, 1, instr(source_id, '::') - 1) NOT IN (
-                SELECT rel_path FROM indexed_files WHERE doc_type = 'code/test'
-            )
-          );
-        """
-    )
-    conn.execute(
-        """
-        DELETE FROM edges
-        WHERE rel_type = 'bound_to'
-          AND target_id NOT IN (SELECT id FROM entities)
-          AND target_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id')
-          AND (
-            source_id NOT IN (SELECT id FROM entities)
-            OR instr(target_id, '::') = 0
-            OR substr(target_id, 1, instr(target_id, '::') - 1) NOT IN (
                 SELECT rel_path FROM indexed_files WHERE doc_type = 'code/test'
             )
           );
@@ -1335,12 +1207,8 @@ def _reconcile_invariant_coverage(
                         tb_verified = any(pat.search(body) for body in candidate_bodies)
                     if tb_verified:
                         conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts', NULL);",
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts');",
                             (target_ref, iid),
-                        )
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'bound_to', NULL);",
-                            (iid, target_ref),
                         )
                 matching = list(dict.fromkeys([target_ref, *ast_matches])) if tb_verified else []
                 has_coverage = tb_verified
@@ -1595,10 +1463,10 @@ def sync_index(
                     raise ValueError(msg)
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-                    VALUES (?, ?, ?, ?, ?, ?);
+                    INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type)
+                    VALUES (?, ?, ?, ?, ?);
                     """,
-                    (rel_p, mtime, sha, doc_id, doc_type, time.time()),
+                    (rel_p, mtime, sha, doc_id, doc_type),
                 )
                 continue
 
@@ -1607,14 +1475,13 @@ def sync_index(
             domain = model.effective_domain()
             pkg_list = model.source_paths()
             source_path = pkg_list[0] if pkg_list else ""
-            runtime = model.runtime or ""
             container_type = model.container_type or ""
 
             conn.execute(
                 """
                 INSERT INTO entities
-                (id, type, title, status, domain, source_path, runtime, container_type, file_path, data_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                (id, type, title, status, domain, file_path, data_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     doc_id,
@@ -1622,9 +1489,6 @@ def sync_index(
                     title,
                     status,
                     domain,
-                    source_path,
-                    runtime,
-                    container_type,
                     rel_p,
                     _json_dumps(fm),
                 ),
@@ -1686,8 +1550,8 @@ def sync_index(
                     conn.execute(
                         """
                         INSERT OR REPLACE INTO entities
-                        (id, type, title, status, domain, source_path, runtime, container_type, file_path, data_json)
-                        VALUES (?, 'invariant', ?, 'active', ?, '', '', '', ?, ?);
+                        (id, type, title, status, domain, file_path, data_json)
+                        VALUES (?, 'invariant', ?, 'active', ?, ?, ?);
                         """,
                         (iid, rule, domain, rel_p, _json_dumps(inv_data)),
                     )
@@ -1798,10 +1662,10 @@ def sync_index(
 
             conn.execute(
                 """
-                INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-                VALUES (?, ?, ?, ?, ?, ?);
+                INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type)
+                VALUES (?, ?, ?, ?, ?);
                 """,
-                (rel_p, mtime, sha, doc_id, doc_type, time.time()),
+                (rel_p, mtime, sha, doc_id, doc_type),
             )
 
         if spec_updates or specs_deleted:
@@ -1839,10 +1703,10 @@ def sync_index(
                 index_test_bindings(conn, ast_idx, p, rel_p, sha=sha, raw_bytes=raw_bytes)
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-                    VALUES (?, ?, ?, 'tests', 'code/test', ?);
+                    INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type)
+                    VALUES (?, ?, ?, 'tests', 'code/test');
                     """,
-                    (rel_p, mtime, sha, time.time()),
+                    (rel_p, mtime, sha),
                 )
             else:
                 index_source_file(conn, ast_idx, p, rel_p, mtime, sha, resolver, raw_bytes=raw_bytes)
@@ -1895,16 +1759,16 @@ def sync_index(
                         SELECT target_id FROM edges WHERE source_id = ? AND rel_type = 'styled_by'
                         UNION
                         SELECT e.target_id FROM edges e JOIN ds_tree d ON e.source_id = d.ds_id
-                        WHERE e.rel_type IN ('extends', 'extended_by')
+                        WHERE e.rel_type = 'extends'
                     )
                     SELECT DISTINCT ds_id FROM ds_tree;
                     """,
                     (clt_id,),
                 ).fetchall()
                 for (ds_id,) in ds_rows:
-                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by', NULL);", (cnt_id, ds_id))
+                    conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'styled_by');", (cnt_id, ds_id))
                     conn.execute(
-                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_container', NULL);", (ds_id, cnt_id)
+                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'styles_container');", (ds_id, cnt_id)
                     )
                     for pat in cnt_paths:
                         conn.execute(
@@ -2019,10 +1883,10 @@ def sync_index(
                 t_sha = hashlib.sha256(t_raw_bytes).hexdigest()
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type, last_indexed)
-                    VALUES (?, ?, ?, 'tests', 'code/test', ?);
+                    INSERT OR REPLACE INTO indexed_files (rel_path, mtime, sha256, doc_id, doc_type)
+                    VALUES (?, ?, ?, 'tests', 'code/test');
                     """,
-                    (rel_t, stat.st_mtime, t_sha, time.time()),
+                    (rel_t, stat.st_mtime, t_sha),
                 )
                 index_test_bindings(conn, ast_idx, tp, rel_t, sha=t_sha, raw_bytes=t_raw_bytes)
 
@@ -2039,8 +1903,7 @@ def sync_index(
                 LIMIT 1
             )
             WHERE target_id NOT IN (SELECT id FROM entities)
-              AND target_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id')
-              AND rel_type != 'bound_to';
+              AND target_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id');
             """
         )
         conn.execute(
@@ -2048,7 +1911,7 @@ def sync_index(
             DELETE FROM edges
             WHERE target_id NOT IN (SELECT id FROM entities)
               AND target_id NOT IN (SELECT symbol FROM symbol_mappings WHERE kind = 'component_id')
-              AND rel_type NOT IN ('bound_to', 'consumes_api');
+              AND rel_type != 'consumes_api';
             """
         )
         conn.execute(

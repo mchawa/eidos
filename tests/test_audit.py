@@ -1,7 +1,6 @@
 """Tests verifying SpecDelta Deletion and Deprecation Blast-Radius Audit (INV-DELTA-DELETION-AUDIT)."""
 
-import json
-
+import orjson
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
@@ -139,7 +138,7 @@ def test_cli_delta_audit():
     # Test --json flag
     res_json = runner.invoke(app, ["delta", "audit", "DLT-2026-016", "--json"])
     assert res_json.exit_code == 0
-    payload = json.loads(res_json.stdout)
+    payload = orjson.loads(res_json.stdout)
     assert payload["status"] == "PASSED"
     assert payload["is_clean"] is True
     assert "CNT-EIDOS-MCP" in payload["targets_audited"]
@@ -333,7 +332,7 @@ def test_delta_audit_classifications_graph_violation_and_strict_cli(tmp_path):
         # CLI on missing delta exits with code 1 and outputs JSON error payload
         res_missing = runner.invoke(app, ["delta", "audit", "DLT-2026-404", "--path", str(eidos_dir), "--json"])
         assert res_missing.exit_code == 1
-        missing_payload = json.loads(res_missing.stdout)
+        missing_payload = orjson.loads(res_missing.stdout)
         assert missing_payload["status"] == "ERROR"
     finally:
         if gi._INDEX_INSTANCE is not None:

@@ -7,11 +7,11 @@ Enforces:
 - POL-004-ZERO-AI-CALL-DEPENDENCY
 """
 
-import json
 import sys
 import time
 from pathlib import Path
 
+import orjson
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
@@ -217,7 +217,7 @@ def test_cli_repo_map_and_find_symbol():
     # 2. repo-map json
     res_map_json = runner.invoke(app, ["index", "repo-map", "--json", "--max-tokens", "800"])
     assert res_map_json.exit_code == 0
-    data = json.loads(res_map_json.output)
+    data = orjson.loads(res_map_json.output)
     assert "repo_map" in data
     assert "estimated_tokens" in data
 
@@ -229,7 +229,7 @@ def test_cli_repo_map_and_find_symbol():
     # 4. find-symbol json
     res_sym_json = runner.invoke(app, ["index", "find-symbol", "ArchitecturalIndex", "--json"])
     assert res_sym_json.exit_code == 0
-    sym_data = json.loads(res_sym_json.output)
+    sym_data = orjson.loads(res_sym_json.output)
     assert sym_data["count"] > 0
     assert any(m["entity_id"] == "CNT-EIDOS-INDEX" for m in sym_data["matches"])
 
@@ -961,7 +961,7 @@ def test_ast_imports_ignore_docstrings_and_rust_lifetime_signatures():
     indexer = AstGrepIndexer()
 
     py_src = (
-        "import json\n"
+        "import orjson\n"
         "from eidos.core import parser\n\n"
         'def helper():\n'
         '    """Example:\n'
@@ -971,7 +971,7 @@ def test_ast_imports_ignore_docstrings_and_rust_lifetime_signatures():
         "    return 1\n"
     )
     py_imps = indexer.extract_imports("src/mod.py", py_src)
-    assert "json" in py_imps
+    assert "orjson" in py_imps
     assert "eidos.core" in py_imps
     assert "eidos.core.parser" in py_imps
     assert "fake_docstring_mod" not in py_imps

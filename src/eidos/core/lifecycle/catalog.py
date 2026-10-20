@@ -5,6 +5,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+import orjson
+
 from eidos.core.index.storage import (
     get_cached_spec_document,
     load_spec_validation_cache,
@@ -123,8 +125,6 @@ _YAML_KEYWORD_SCALARS: frozenset[str] = frozenset(
 
 def _format_yaml_scalar_value(value: str) -> str:
     """Safely format a scalar string for in-place single-line YAML insertion without corrupting frontmatter."""
-    import json
-
     val = str(value)
     if (
         len(val) >= 2
@@ -156,7 +156,7 @@ def _format_yaml_scalar_value(value: str) -> str:
         except YamlError:
             needs_quoting = True
     if needs_quoting:
-        return json.dumps(val, ensure_ascii=False)
+        return orjson.dumps(val).decode("utf-8")
     return val
 
 

@@ -1,7 +1,6 @@
 """Verify machine-readable CLI --json output for AI agents."""
 
-import json
-
+import orjson
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
@@ -13,7 +12,7 @@ def test_cli_validate_json_output():
     """Verify 'eidos validate --json' outputs valid machine-readable JSON."""
     result = runner.invoke(app, ["validate", "eidos", "--json"])
     assert result.exit_code == 0
-    data = json.loads(result.output)
+    data = orjson.loads(result.output)
     assert data["is_clean"] is True
     assert data["total_docs"] >= 60
     assert data["valid_docs"] == data["total_docs"]
@@ -28,7 +27,7 @@ def test_cli_drift_json_output():
     """Verify 'eidos drift --uncommitted --json' outputs structured JSON."""
     result = runner.invoke(app, ["drift", "--uncommitted", "--json"])
     assert result.exit_code == 0
-    data = json.loads(result.output)
+    data = orjson.loads(result.output)
     assert "drift_detected" in data
     assert "workflow_mode" in data
     assert "valid_specs" in data
@@ -40,7 +39,7 @@ def test_cli_context_json_output():
     """Verify 'eidos context -f src/eidos/cli/main.py --json' outputs valid JSON."""
     result = runner.invoke(app, ["context", "-f", "src/eidos/cli/main.py", "--json"])
     assert result.exit_code == 0
-    data = json.loads(result.output)
+    data = orjson.loads(result.output)
     assert "components" in data
     assert "contracts" in data
     assert any(c["id"] == "CNT-EIDOS-CLI" for c in data["components"])
@@ -50,7 +49,7 @@ def test_cli_index_status_json_output():
     """Verify 'eidos index status --json' outputs structured JSON with AST telemetry."""
     result = runner.invoke(app, ["index", "status", "--json"])
     assert result.exit_code == 0
-    data = json.loads(result.output)
+    data = orjson.loads(result.output)
     assert "db_path" in data
     assert "schema_version" in data
     assert "total_entities" in data
@@ -74,7 +73,7 @@ def test_cli_index_blast_radius_json_output():
     """Verify 'eidos index blast-radius <entity> --depth <n> --json' outputs structured JSON."""
     result = runner.invoke(app, ["index", "blast-radius", "CNT-EIDOS-CORE", "--depth", "1", "--json"])
     assert result.exit_code == 0
-    data = json.loads(result.output)
+    data = orjson.loads(result.output)
     assert data["entity_id"] == "CNT-EIDOS-CORE"
     assert data["depth"] == 1
     assert data["count"] > 0
@@ -125,7 +124,7 @@ def _walk_command_tree(cmd, path: list[str]) -> list[dict]:
     ]
     for name, sub in subs.items():
         rows += _walk_command_tree(sub, [*path, name])
-    return json.loads(json.dumps(rows, default=norm))
+    return orjson.loads(orjson.dumps(rows, default=norm))
 
 
 def test_cli_command_tree_unchanged():
@@ -135,9 +134,9 @@ def test_cli_command_tree_unchanged():
 
     import typer
 
-    snapshot = json.loads((Path(__file__).parent / "fixtures" / "cli_command_tree.json").read_text(encoding="utf-8"))
+    snapshot = orjson.loads((Path(__file__).parent / "fixtures" / "cli_command_tree.json").read_text(encoding="utf-8"))
     current = _walk_command_tree(typer.main.get_command(app), [])
-    normalized = json.loads(re.sub(r" at 0x[0-9a-f]+", "", json.dumps(current)))
+    normalized = orjson.loads(re.sub(r" at 0x[0-9a-f]+", "", orjson.dumps(current).decode("utf-8")))
     assert normalized == snapshot
 
 
@@ -205,14 +204,14 @@ def test_cli_contract_json_and_create_flags(tmp_path):
     # 2. spec list --json (excludes delta/mutation per DLT-2026-092 disjoint boundary)
     res_spec_list = runner.invoke(app, ["spec", "list", "--path", str(eidos_dir), "--json"])
     assert res_spec_list.exit_code == 0
-    spec_data = json.loads(res_spec_list.stdout)
+    spec_data = orjson.loads(res_spec_list.stdout)
     assert spec_data["count"] == 3
     assert {s["id"] for s in spec_data["specs"]} == {"CNT-API", "CLT-MOBILE", "CTR-OPENAPI"}
 
     # 3. delta list --json
     res_delta_list = runner.invoke(app, ["delta", "list", "--path", str(eidos_dir), "--json"])
     assert res_delta_list.exit_code == 0
-    delta_list_data = json.loads(res_delta_list.stdout)
+    delta_list_data = orjson.loads(res_delta_list.stdout)
     assert delta_list_data["count"] == 1
     assert delta_list_data["deltas"][0]["id"] == "DLT-2026-901"
     assert delta_list_data["deltas"][0]["status"] == "proposed"
@@ -223,13 +222,13 @@ def test_cli_contract_json_and_create_flags(tmp_path):
         ["delta", "status", "DLT-2026-901", "in_review", "--path", str(eidos_dir), "--json"],
     )
     assert res_set_status.exit_code == 0
-    set_status_data = json.loads(res_set_status.stdout)
+    set_status_data = orjson.loads(res_set_status.stdout)
     assert set_status_data["success"] is True
     assert set_status_data["status"] == "in_review"
 
     res_status_dash = runner.invoke(app, ["delta", "status", "--path", str(eidos_dir), "--json"])
     assert res_status_dash.exit_code == 0
-    dash_data = json.loads(res_status_dash.stdout)
+    dash_data = orjson.loads(res_status_dash.stdout)
     assert dash_data["active_count"] == 1
     assert len(dash_data["by_status"]["in_review"]) == 1
 
@@ -240,7 +239,7 @@ def test_cli_contract_json_and_create_flags(tmp_path):
         runner.invoke(app, ["index", "sync", "--path", str(eidos_dir)])
         res_search = runner.invoke(app, ["index", "search", "OpenAPI", "--path", str(eidos_dir), "--json"])
         assert res_search.exit_code == 0
-        search_data = json.loads(res_search.stdout)
+        search_data = orjson.loads(res_search.stdout)
         assert search_data["query"] == "OpenAPI"
         assert search_data["count"] >= 1
         assert any(r["id"] == "CTR-OPENAPI" for r in search_data["results"])
@@ -248,7 +247,7 @@ def test_cli_contract_json_and_create_flags(tmp_path):
         # 6. 1-arg delta status lookup (--json)
         res_single_status = runner.invoke(app, ["delta", "status", "DLT-2026-901", "--path", str(eidos_dir), "--json"])
         assert res_single_status.exit_code == 0
-        single_status_data = json.loads(res_single_status.stdout)
+        single_status_data = orjson.loads(res_single_status.stdout)
         assert single_status_data["id"] == "DLT-2026-901"
         assert single_status_data["status"] == "in_review"
     finally:
@@ -270,7 +269,7 @@ def test_cli_error_exit_codes_and_negative_json_contracts(tmp_path):
     # 1. validate --json on broken directory returns exit_code 1 and valid JSON with is_clean=False
     res_val = runner.invoke(app, ["validate", str(eidos_dir), "--json"])
     assert res_val.exit_code == 1
-    val_data = json.loads(res_val.stdout)
+    val_data = orjson.loads(res_val.stdout)
     assert val_data["is_clean"] is False
     assert val_data["valid_docs"] == 0
 
@@ -281,7 +280,7 @@ def test_cli_error_exit_codes_and_negative_json_contracts(tmp_path):
     # 3. drift --base invalid-ref --json returns exit_code 1 and JSON error payload
     res_drift_err = runner.invoke(app, ["drift", "--base", "nonexistent-git-ref-999999", "--json"])
     assert res_drift_err.exit_code == 1
-    drift_err_data = json.loads(res_drift_err.stdout)
+    drift_err_data = orjson.loads(res_drift_err.stdout)
     assert "Cannot resolve base Git reference" in drift_err_data["error"]
 
     # 4. delta status / verify / apply on missing delta return exit_code 1 and JSON error payload
@@ -289,15 +288,15 @@ def test_cli_error_exit_codes_and_negative_json_contracts(tmp_path):
         app, ["delta", "status", "DLT-2026-404", "in_review", "--path", str(eidos_dir), "--json"]
     )
     assert res_dlt_status_err.exit_code == 1
-    assert json.loads(res_dlt_status_err.stdout)["success"] is False
+    assert orjson.loads(res_dlt_status_err.stdout)["success"] is False
 
     res_dlt_ver_err = runner.invoke(app, ["delta", "verify", "DLT-2026-404", "--path", str(eidos_dir), "--json"])
     assert res_dlt_ver_err.exit_code == 1
-    assert json.loads(res_dlt_ver_err.stdout)["is_verified"] is False
+    assert orjson.loads(res_dlt_ver_err.stdout)["is_verified"] is False
 
     res_dlt_app_err = runner.invoke(app, ["delta", "apply", "DLT-2026-404", "--path", str(eidos_dir), "--json"])
     assert res_dlt_app_err.exit_code == 1
-    assert json.loads(res_dlt_app_err.stdout)["success"] is False
+    assert orjson.loads(res_dlt_app_err.stdout)["success"] is False
 
     # 5. spec show / delete / promote / inline on missing entity return exit_code 1
     assert runner.invoke(app, ["spec", "show", "CNT-MISSING", "--path", str(eidos_dir)]).exit_code == 1
@@ -315,7 +314,7 @@ def test_cli_error_exit_codes_and_negative_json_contracts(tmp_path):
     assert runner.invoke(app, ["validate", str(missing_dir)]).exit_code == 1
     res_missing_json = runner.invoke(app, ["validate", str(missing_dir), "--json"])
     assert res_missing_json.exit_code == 1
-    assert json.loads(res_missing_json.stdout)["is_clean"] is False
+    assert orjson.loads(res_missing_json.stdout)["is_clean"] is False
     # Add broken reference to eidos_dir and run non-JSON validate
     (eidos_dir / "domains" / "bad.adoc").write_text(
         "---\n"

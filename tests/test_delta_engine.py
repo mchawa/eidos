@@ -1,11 +1,11 @@
 """Tests verifying the Deterministic Composable SpecDelta Engine (eidos delta verify & apply)."""
 
-import json
 import os
 import shutil
 import subprocess
 from pathlib import Path
 
+import orjson
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
@@ -123,7 +123,7 @@ def test_delta_verify_all_satisfied(tmp_path):
 
     res_json = runner.invoke(app, ["delta", "verify", "DLT-2026-050", "-p", str(eidos_dir), "--json"])
     assert res_json.exit_code == 0
-    data = json.loads(res_json.output)
+    data = orjson.loads(res_json.output)
     assert data["is_verified"] is True
     assert data["total_mutations"] == 4
 
@@ -316,7 +316,7 @@ def test_delta_apply_cli_with_verify(tmp_path):
         ["delta", "apply", "DLT-2026-053", "-p", str(eidos_dir), "--verify", "--json"],
     )
     assert res_ok.exit_code == 0
-    data = json.loads(res_ok.output)
+    data = orjson.loads(res_ok.output)
     assert data["success"] is True
 
     dlt_doc = parse_spec_file(dlt_path)
@@ -1175,7 +1175,7 @@ def test_dlt_2026_083_baseline_retention_across_schema_rebuild(tmp_path):
         conn.commit()
         ensure_cache_schema(conn)
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.9.0"
+        assert ver == SCHEMA_VERSION == "2.10.0"
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table';").fetchall()}
         assert "retired_legacy_table" not in tables
         assert set(_MANAGED_TABLES) <= tables

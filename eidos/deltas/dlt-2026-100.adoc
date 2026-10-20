@@ -1,0 +1,213 @@
+---
+type: delta/mutation
+id: DLT-2026-100
+title: "Normalize index.db Schema, Eliminate Cross-Table AST/Edge Duplication, and Standardize JSON Serialization on orjson"
+status: applied
+
+intent:
+  kind: enabler
+  motivation: "Eliminate dead and duplicate columns across spec_validation_cache (schema_errors_json), edges (metadata_json), indexed_files (last_indexed), and entities (source_path, runtime, container_type), remove AST symbol duplication between code_symbols and symbol_mappings, drop synthetic reverse edge rows (bound_to, domain_member, governs, implements_client, styles_client, extended_by) in eidos/.cache/index.db, and replace all remaining stdlib json usage across core, vcs, cli, portal, plugin, and tests with orjson."
+
+vcs:
+  branch: "main"
+  base_commit: "f914ae3bce70939463c9d9c5c65f4753cf14ea0f"
+
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    parent: CNT-EIDOS-INDEX
+    details: "Bump SCHEMA_VERSION to 2.10.0 in src/eidos/core/index/storage.py, remove dead/duplicate columns (spec_validation_cache.schema_errors_json, edges.metadata_json, indexed_files.last_indexed, entities.source_path/runtime/container_type), and combine symbol_mappings and code_symbols counts in get_index_status."
+    expect:
+      body:
+        contains:
+          - "2.10.0"
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    parent: CNT-EIDOS-INDEX
+    details: "Persist AST symbols exclusively in code_symbols without duplicating AST rows into symbol_mappings, drop synthetic reverse edge inserts (bound_to, domain_member, governs, implements_client, styles_client, extended_by), and update indexed_files/entities/edges inserts in src/eidos/core/index/sync.py."
+    expect:
+      body:
+        contains:
+          - "stores AST symbols exclusively in `code_symbols`"
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+    parent: CNT-EIDOS-INDEX
+    details: "Derive source_path from data_json in execute_fts_query and query unified all_mappings CTE over symbol_mappings and code_symbols in find_symbol_in_db in src/eidos/core/index/query.py."
+    expect:
+      body:
+        contains:
+          - "`all_mappings` CTE"
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+    parent: CNT-EIDOS-INDEX
+    details: "Query unified all_mappings CTE over symbol_mappings and code_symbols in resolve_symbol_or_path_in_db in src/eidos/core/index/query.py."
+    expect:
+      body:
+        contains:
+          - "`all_mappings` CTE"
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+    parent: CNT-EIDOS-INDEX
+    details: "Expand FTS-matched product/domain entities via incoming realizes edges and use orjson for JSON token-budget verification in src/eidos/core/index/context.py."
+    expect:
+      body:
+        contains:
+          - "incoming `realizes` edges"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    parent: CNT-EIDOS-CORE
+    details: "Read and persist cached validation errors directly inside doc_json using orjson without a duplicate schema_errors_json column and parse JSON schemas/tokens via orjson in src/eidos/core/spec/validator.py."
+    expect:
+      body:
+        contains:
+          - "without a duplicate `schema_errors_json` column"
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    parent: CNT-EIDOS-CORE
+    details: "Replace stdlib json.dumps with orjson.dumps in _format_yaml_scalar_value and list flow fallbacks in src/eidos/core/lifecycle/catalog.py."
+    expect:
+      body:
+        contains:
+          - "`orjson` flow-fallback list mutations"
+  - operation: modify
+    target: CMP-DESIGN-ENGINE
+    parent: CNT-EIDOS-CORE
+    details: "Serialize baseline W3C DTCG tokens.json with orjson in src/eidos/core/lifecycle/design_engine.py."
+    expect:
+      body:
+        contains:
+          - "`orjson` W3C DTCG `tokens.json`"
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    parent: CNT-EIDOS-CORE
+    details: "Format declarative frontmatter postcondition failure diagnostics with orjson in src/eidos/core/lifecycle/delta_engine.py."
+    expect:
+      body:
+        contains:
+          - "`orjson`-formatted verification"
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+    parent: CNT-EIDOS-CORE
+    details: "Serialize DeletionAuditReport.to_json() with orjson in src/eidos/core/lifecycle/audit.py."
+    expect:
+      body:
+        contains:
+          - "`orjson` JSON report serialization"
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    parent: CNT-EIDOS-VCS
+    details: "Use orjson for design token manifest diffing in src/eidos/vcs/structural.py and test_binding_cache serialization in src/eidos/vcs/invariants.py."
+    expect:
+      body:
+        contains:
+          - "`orjson`-backed static invariant test verification"
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    parent: CNT-EIDOS-CLI
+    details: "Serialize eidos validate --json and eidos spec list --json output with orjson in src/eidos/cli/spec_commands.py."
+    expect:
+      body:
+        contains:
+          - "with `orjson` `--json` output"
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+    parent: CNT-EIDOS-CLI
+    details: "Serialize eidos delta list --json and eidos delta status --json output with orjson in src/eidos/cli/delta_commands.py."
+    expect:
+      body:
+        contains:
+          - "with `orjson` `--json` output"
+  - operation: modify
+    target: CMP-CLI-PLUGIN-COMMANDS
+    parent: CNT-EIDOS-CLI
+    details: "Serialize eidos plugin --json outputs with orjson in src/eidos/cli/plugin_commands.py."
+    expect:
+      body:
+        contains:
+          - "with `orjson` `--json` output"
+  - operation: modify
+    target: CMP-CLI-CONTEXT-COMMAND
+    parent: CNT-EIDOS-CLI
+    details: "Serialize eidos context --json output with orjson in src/eidos/cli/context_command.py."
+    expect:
+      body:
+        contains:
+          - "`--json` via `orjson`"
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+    parent: CNT-EIDOS-CLI
+    details: "Serialize eidos index status/search/blast-radius/repo-map/find-symbol --json outputs with orjson in src/eidos/cli/index_commands.py."
+    expect:
+      body:
+        contains:
+          - "(`orjson`)"
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+    parent: CNT-EIDOS-CLI
+    details: "Serialize eidos doctor --json output with orjson in src/eidos/cli/doctor_hook_commands.py."
+    expect:
+      body:
+        contains:
+          - "(`orjson` `--json`)"
+  - operation: modify
+    target: CMP-PORTAL-SERVER
+    parent: CNT-EIDOS-PORTAL
+    details: "Serialize Portal HTTP JSON responses with orjson in src/eidos/portal/server.py."
+    expect:
+      body:
+        contains:
+          - "`orjson`-serialized REST endpoints"
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+    parent: CNT-EIDOS-PORTAL
+    details: "Parse design system tokens.manifest with orjson in src/eidos/portal/generator.py."
+    expect:
+      body:
+        contains:
+          - "`orjson`-parsed design tokens"
+  - operation: modify
+    target: CMP-PORTAL-BUILDER
+    parent: CNT-EIDOS-PORTAL
+    details: "Serialize static portal data.json and embedded window.__EIDOS_DATA__ with orjson in src/eidos/portal/builder.py."
+    expect:
+      body:
+        contains:
+          - "`orjson` `data.json`"
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+    parent: CNT-EIDOS-PLUGIN
+    details: "Parse and serialize .eidos-manifest.json, plugin.json, hooks.json, and settings JSON/JSONC files with orjson in src/eidos/plugin/installer.py and src/eidos/plugin/version.py."
+    expect:
+      body:
+        contains:
+          - "`orjson` manifest-tracked"
+  - operation: modify
+    target: CMP-PLUGIN-VALIDATOR
+    parent: CNT-EIDOS-PLUGIN
+    details: "Parse plugin.json with orjson in src/eidos/plugin/validator.py."
+    expect:
+      body:
+        contains:
+          - "`orjson`-parsed JSON Schema conformance"
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+    parent: CNT-EIDOS-PLUGIN
+    details: "Parse hooks.json with orjson in src/eidos/plugin/validator.py."
+    expect:
+      body:
+        contains:
+          - "`hooks.json` parsed via `orjson`"
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+    parent: CNT-EIDOS-PLUGIN
+    details: "Serialize Stop hook response JSON with orjson in src/eidos/plugin/hooks.py."
+    expect:
+      body:
+        contains:
+          - "`eidos hook` with `orjson` output"
+---
+= SpecDelta: Normalize index.db Schema, Eliminate Cross-Table AST/Edge Duplication, and Standardize JSON Serialization on orjson
+:toc: left
+
+== Summary & Motivation
+Simplifies `eidos/.cache/index.db` (`SCHEMA_VERSION = "2.10.0"`) by removing 6 dead/duplicate columns across 4 tables, eliminating AST symbol duplication between `code_symbols` and `symbol_mappings`, dropping 6 synthetic reverse edge types from `edges`, and replacing all remaining stdlib `json` serialization/deserialization calls across `src/eidos/` and `tests/` with `orjson`.
