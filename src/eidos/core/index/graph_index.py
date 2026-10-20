@@ -18,7 +18,7 @@ from typing import Any
 
 import orjson
 
-from eidos.core.index.ast_indexer import get_ast_indexer, is_ast_grep_available
+from eidos.core.index.ast_indexer import get_ast_indexer
 from eidos.core.index.context import (
     TIER_TOKEN_BUDGETS,
     TieredContextSlice,
@@ -34,7 +34,6 @@ from eidos.core.index.query import (
     execute_k_hop_traversal,
     find_symbol_in_db,
     generate_repo_map_from_db,
-    resolve_symbol_locations_in_db,
     resolve_symbol_or_path_in_db,
     split_identifier,
 )
@@ -79,6 +78,32 @@ __all__ = [
 ]
 
 
+def _is_inside_plugin_or_assets(path: Path) -> bool:
+    return any(p in path.parts for p in (".agents", "plugins", "assets"))
+
+
+def _resolve_index_paths(
+    repo_root: Path | None = None,
+    eidos_dir: Path | None = None,
+    db_path: Path | None = None,
+) -> tuple[Path, Path, Path]:
+    """Resolve canonical (repo_root, eidos_dir, db_path) triples uniformly."""
+    resolved_eidos_arg = Path(eidos_dir).resolve() if eidos_dir is not None else None
+    if repo_root is not None:
+        target_root = Path(repo_root).resolve()
+    elif resolved_eidos_arg is not None and (
+        (resolved_eidos_arg / "system.adoc").exists()
+        or (resolved_eidos_arg.name == "eidos" and not _is_inside_plugin_or_assets(resolved_eidos_arg))
+    ):
+        target_root = resolved_eidos_arg.parent
+    else:
+        target_root = find_repo_root(resolved_eidos_arg)
+
+    target_eidos = resolved_eidos_arg if resolved_eidos_arg is not None else (target_root / "eidos").resolve()
+    target_db = Path(db_path).resolve() if db_path is not None else (target_eidos / ".cache" / "index.db").resolve()
+    return target_root, target_eidos, target_db
+
+
 class ArchitecturalIndex:
     """Embedded SQLite Architectural Knowledge Graph & Hybrid Retrieval Index."""
 
@@ -90,25 +115,13 @@ class ArchitecturalIndex:
         repo_root: Path | None = None,
         eidos_dir: Path | None = None,
     ) -> None:
-        if repo_root is not None:
-            self.root = Path(repo_root).resolve()
-        elif (eidos_dir is not None and (Path(eidos_dir) / "system.adoc").exists()) or (
-            eidos_dir is not None
-            and Path(eidos_dir).name == "eidos"
-            and not any(p in Path(eidos_dir).parts for p in (".agents", "plugins", "assets"))
-        ):
-            self.root = Path(eidos_dir).resolve().parent
-        else:
-            self.root = find_repo_root(Path(eidos_dir).resolve() if eidos_dir else None)
-
-        self.eidos_dir = (eidos_dir or (self.root / "eidos")).resolve()
-
-        if db_path is not None:
-            self.db_path = Path(db_path).resolve()
-        else:
-            cache_dir = self.eidos_dir / ".cache"
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            self.db_path = cache_dir / "index.db"
+        self.root, self.eidos_dir, self.db_path = _resolve_index_paths(
+            repo_root=repo_root,
+            eidos_dir=eidos_dir,
+            db_path=db_path,
+        )
+        if db_path is None:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         self._conn: sqlite3.Connection | None = None
         self._init_db()
@@ -204,10 +217,6 @@ class ArchitecturalIndex:
         self._ensure_synced()
         return find_symbol_in_db(self._get_connection(), query, limit=limit)
 
-    def _symbol_locations(self, entity_id: str, kind: str, symbol: str) -> list[dict[str, Any]]:
-        """Resolve persisted source coordinates (one entry per definition) for an AST symbol mapping."""
-        return resolve_symbol_locations_in_db(self._get_connection(), entity_id, kind, symbol)
-
     def get_repo_map(self, max_tokens: int = 1500) -> str:
         """Generate a token-budgeted structural repo map outline across all indexed components for AI coding agents."""
         self._ensure_synced()
@@ -248,36 +257,34 @@ class ArchitecturalIndex:
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        total_entities = cursor.execute("SELECT COUNT(*) FROM entities;").fetchone()[0]
-        total_edges = cursor.execute("SELECT COUNT(*) FROM edges;").fetchone()[0]
-        total_symbols = cursor.execute("SELECT COUNT(*) FROM symbol_mappings;").fetchone()[0]
-        total_files = cursor.execute("SELECT COUNT(*) FROM indexed_files;").fetchone()[0]
+        type_counts = {
+            row[0]: row[1]
+            for row in cursor.execute("SELECT type, COUNT(*) FROM entities GROUP BY type;").fetchall()
+        }
+        total_entities = sum(type_counts.values())
 
-        type_counts = {}
-        for row in cursor.execute("SELECT type, COUNT(*) FROM entities GROUP BY type;").fetchall():
-            type_counts[row[0]] = row[1]
+        symbol_counts = {
+            row[0]: row[1]
+            for row in cursor.execute("SELECT kind, COUNT(*) FROM symbol_mappings GROUP BY kind;").fetchall()
+        }
+        total_symbols = sum(symbol_counts.values())
 
-        symbol_counts = {}
-        for row in cursor.execute("SELECT kind, COUNT(*) FROM symbol_mappings GROUP BY kind;").fetchall():
-            symbol_counts[row[0]] = row[1]
+        total_edges, total_files = cursor.execute(
+            "SELECT (SELECT COUNT(*) FROM edges), (SELECT COUNT(*) FROM indexed_files);"
+        ).fetchone()
 
         test_assert_filter = (
             "rel_type = 'asserts' AND instr(source_id, '::') > 0 AND source_id NOT IN (SELECT id FROM entities)"
         )
-        test_invariant_assertions = cursor.execute(
-            f"SELECT COUNT(*) FROM edges WHERE {test_assert_filter};"
-        ).fetchone()[0]
-        tested_invariants = cursor.execute(
-            f"SELECT COUNT(DISTINCT target_id) FROM edges WHERE {test_assert_filter};"
-        ).fetchone()[0]
+        test_invariant_assertions, tested_invariants = cursor.execute(
+            f"SELECT COUNT(*), COUNT(DISTINCT target_id) FROM edges WHERE {test_assert_filter};"
+        ).fetchone()
 
-        ast_avail = is_ast_grep_available()
         ast_idx = get_ast_indexer()
 
         ast_telemetry = {
-            "engine": "ast-grep (Native AST)" if ast_avail else "python-ast (Standard Library Fallback)",
+            "engine": "ast-grep (Native AST)",
             "engine_class": ast_idx.__class__.__name__,
-            "ast_grep_available": ast_avail,
             "total_symbols": total_symbols,
             "classes": symbol_counts.get("class", 0),
             "functions": symbol_counts.get("function", 0),
@@ -311,13 +318,17 @@ class ArchitecturalIndex:
         self._ensure_synced()
         conn = self._get_connection()
         rows = conn.execute(
-            "SELECT id, title, file_path, data_json FROM entities WHERE type IN ('tech/container', 'tech/component') ORDER BY id;"
+            "SELECT id, title, type, status, domain, file_path, data_json FROM entities WHERE type IN ('tech/container', 'tech/component') ORDER BY id;"
         ).fetchall()
         components = []
         for r in rows:
             data = orjson.loads(r["data_json"])
             data["id"] = r["id"]
+            data["title"] = r["title"]
+            data["type"] = r["type"]
+            data["domain"] = r["domain"]
             data["file_path"] = r["file_path"]
+            data["status"] = str(data.get("status") or r["status"] or "active").strip()
             components.append(data)
         return components
 
@@ -332,11 +343,14 @@ class ArchitecturalIndex:
     ) -> list[dict[str, Any]]:
         """Retrieve entities from the knowledge graph with optional type and status filtering."""
         self._ensure_synced()
-        query = "SELECT id, title, type, domain, file_path, data_json FROM entities WHERE 1=1"
+        query = "SELECT id, title, type, status, domain, file_path, data_json FROM entities WHERE 1=1"
         params: list[Any] = []
         if entity_type:
             query += " AND type = ?"
             params.append(entity_type)
+        if status:
+            query += " AND LOWER(COALESCE(NULLIF(TRIM(status), ''), 'active')) = LOWER(?)"
+            params.append(status.strip())
         query += " ORDER BY type, id;"
         conn = self._get_connection()
         rows = conn.execute(query, params).fetchall()
@@ -348,9 +362,7 @@ class ArchitecturalIndex:
             data["type"] = r["type"]
             data["domain"] = r["domain"]
             data["file_path"] = r["file_path"]
-            ent_status = str(data.get("status") or "active").strip()
-            if status and ent_status.lower() != status.strip().lower():
-                continue
+            data["status"] = str(data.get("status") or r["status"] or "active").strip()
             entities.append(data)
         return entities
 
@@ -367,19 +379,11 @@ def get_architectural_index(
 ) -> ArchitecturalIndex:
     """Get or create singleton ArchitecturalIndex instance."""
     global _INDEX_INSTANCE
-    if repo_root is not None:
-        target_root = Path(repo_root).resolve()
-    elif (eidos_dir is not None and (Path(eidos_dir) / "system.adoc").exists()) or (
-        eidos_dir is not None
-        and Path(eidos_dir).name == "eidos"
-        and not any(p in Path(eidos_dir).parts for p in (".agents", "plugins", "assets"))
-    ):
-        target_root = Path(eidos_dir).resolve().parent
-    else:
-        target_root = find_repo_root(Path(eidos_dir).resolve() if eidos_dir else None)
-
-    target_eidos = (eidos_dir or (target_root / "eidos")).resolve()
-    target_db = Path(db_path).resolve() if db_path is not None else (target_eidos / ".cache" / "index.db").resolve()
+    target_root, target_eidos, target_db = _resolve_index_paths(
+        repo_root=repo_root,
+        eidos_dir=eidos_dir,
+        db_path=db_path,
+    )
     if (
         force_new
         or _INDEX_INSTANCE is None

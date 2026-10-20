@@ -1,0 +1,138 @@
+---
+type: delta/mutation
+id: DLT-2026-097
+title: "Align FTS Query Engine, Graph Traversal, and ArchitecturalIndex Facade with v1 Schemas and AsciiDoc Templates"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Align the SQLite FTS5 query engine (query.py), incremental sync pipeline (sync.py), and ArchitecturalIndex facade (graph_index.py) with the streamlined v1 specification schemas (DLT-2026-091, DLT-2026-093), AsciiDoc prose templates, and unified 17-language AstGrepIndexer (DLT-2026-096) by expanding entity ID prefix recognition and inline CMP-*/DEC-* exact-ID boosting, indexing component responsibility and delta motivation into specs_fts.jtbd_or_rule while stripping AsciiDoc attribute headers (:toc: left), removing retired symbol_mappings kinds (component_ref, interface_method, interface_signature, interface_command), deriving _FILE_QUERY_EXTS from AstGrepIndexer.LANGUAGE_MAP, resolving inline component titles and domain overrides in graph traversals, and eliminating duplicated path resolution and redundant SQL round-trips in ArchitecturalIndex."
+tombstone:
+  search_tokens:
+    - "_symbol_locations"
+    - "interface_method"
+    - "interface_signature"
+    - "interface_command"
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    parent: CNT-EIDOS-INDEX
+    details: "Bump SCHEMA_VERSION to '2.8.0' in src/eidos/core/index/storage.py to rebuild specs_fts and symbol_mappings; unify repository/eidos/db path resolution in src/eidos/core/index/graph_index.py via _resolve_index_paths(repo_root, eidos_dir, db_path) resolving Path(eidos_dir).resolve() before _is_inside_plugin_or_assets checks across ArchitecturalIndex.__init__ and get_architectural_index; hydrate title, type, domain, and default 'active' status in get_components(); push status filtering into SQL in get_entities(); halve SQL queries in get_index_status() from 8 to 4; and remove the dead _symbol_locations shim and unused resolve_symbol_locations_in_db import."
+    expect:
+      frontmatter:
+        responsibility: "SCHEMA_VERSION' ('2.8.0')"
+      body:
+        contains:
+          - "SCHEMA_VERSION` `2.8.0`"
+
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    parent: CNT-EIDOS-INDEX
+    details: "Update sync_index in src/eidos/core/index/sync.py to populate specs_fts.jtbd_or_rule (weight=2.0) with component responsibility (standalone tech/component and inline CNT-*.components[]) and delta/mutation intent.motivation alongside product/policy rules, strip AsciiDoc document attribute lines (^:[A-Za-z0-9_-]+:.*$, e.g. :toc: left from *.template.adoc) when building body_clean for specs_fts.body_text, and remove retired component_ref, interface_method, interface_signature, and interface_command symbol_mappings handling."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/sync.py"
+        responsibility: "strips AsciiDoc document attribute headers"
+
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+    parent: CNT-EIDOS-INDEX
+    details: "Update src/eidos/core/index/query.py to expand _ENTITY_ID_TOKEN_RE to cover all v1 schema entity prefixes (adding SYS-, ARCH-, PER-) and underscore characters ([A-Za-z0-9_-]+), boost owning specifications in execute_fts_query when explicit_ids match inline CMP-* components (symbol_mappings kind='component_id') or embedded DEC-*/INV-* tokens in specs_fts.keywords, and guard find_symbol_in_db against empty normalized queries while ordering by length(s.symbol) ASC and deduplicating method locations."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/query.py"
+        responsibility: "inline CMP-*/DEC-* exact-ID boosting"
+
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+    parent: CNT-EIDOS-INDEX
+    details: "Update src/eidos/core/index/query.py to derive _FILE_QUERY_EXTS dynamically from AstGrepIndexer.LANGUAGE_MAP plus contract/markup extensions (.proto, .graphql, .gql, .sql, .yaml, .yml, .json, .adoc, .md, .toml, .css, .scss, .html), remove retired component_ref and interface_method kinds from resolve_symbol_or_path_in_db, gate the owned_path/inferred_path glob fallback on is_file_query or wildcard queries while deferring orjson.loads(data_json) until after entity deduplication, resolve inline CMP-* component titles and normalize target paths in execute_incoming_references (excluding code/source and code/test rows when resolving doc_id), and preserve inline component domain overrides in execute_k_hop_traversal."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/index/query.py"
+        responsibility: "_FILE_QUERY_EXTS derived from AstGrepIndexer.LANGUAGE_MAP"
+
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+    parent: CNT-EIDOS-CORE
+    details: "Add 'responsibility' to _FRONTMATTER_SCALAR_KEYS and FrontmatterModel in src/eidos/core/spec/models.py so standalone tech/component specifications expose doc.model.responsibility uniformly alongside InlineComponentModel.responsibility."
+    expect:
+      frontmatter:
+        source_path: "src/eidos/core/spec/models.py"
+        responsibility: "responsibility"
+
+  - operation: modify
+    target: INV-AGENT-TASK-RETRIEVAL-COVERAGE
+    parent: CAP-AGENT-001
+    details: "Update INV-AGENT-TASK-RETRIEVAL-COVERAGE in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc to enforce full v1 entity prefix recognition (SYS-*, ARCH-*, PER-*, and underscore IDs), inline CMP-*/DEC-* exact-ID boosting, component responsibility indexing in specs_fts.jtbd_or_rule, and AsciiDoc attribute header stripping."
+    expect:
+      frontmatter:
+        rule: "inline CMP-*/DEC-* exact-ID matches"
+
+  - operation: modify
+    target: CAP-AGENT-001
+    parent: DOM-AGENT-INTELLIGENCE
+    details: "Bump CAP-AGENT-001 version to 1.7.0 in eidos/domains/agent-intelligence/capabilities/agent-adapter.adoc."
+    expect:
+      frontmatter:
+        version: "1.7.0"
+vcs:
+  branch: main
+  base_commit: 1b824873296d34fa5f156546ad9d5d3e348e9d0e
+---
+= SpecDelta: Align FTS Query Engine, Graph Traversal, and ArchitecturalIndex Facade with v1 Schemas and AsciiDoc Templates
+:toc: left
+
+== Problem Statement
+
+Following the v1 specification schema streamlining (`DLT-2026-091`), AsciiDoc prose template externalization and AST dependency derivation (`DLT-2026-093`), and unified 17-language `AstGrepIndexer` adoption (`DLT-2026-096`), several gaps and vestigial paths remain across `src/eidos/core/index/query.py`, `src/eidos/core/index/sync.py`, and `src/eidos/core/index/graph_index.py`:
+
+1. **Incomplete Entity ID Recognition & Inline `CMP-*`/`DEC-*` Boost Blindness (`query.py`)**:
+   * `_ENTITY_ID_TOKEN_RE` omits `SYS-`, `ARCH-`, and `PER-` prefixes and rejects underscore `_` characters even though all v1 schemas permit `^[PREFIX]-[A-Z0-9_-]+$`.
+   * `execute_fts_query` only applies the `-1000.0` exact-ID BM25 boost when `UPPER(e.id) IN (...)`. Because inline C4 Level 3 components (`CNT-*.components[]`) and embedded architectural decisions (`DEC-*`) are indexed into their parent specification's `specs_fts.keywords` rather than as standalone `entities.id` rows, querying an inline `CMP-*` or `DEC-*` ID fails to boost the owning container/component specification.
+
+2. **Underutilized `specs_fts.jtbd_or_rule` Column (`weight=2.0`) & `.template.adoc` Attribute Noise (`sync.py`, `models.py`)**:
+   * After `DLT-2026-093` moved `business.jtbd` out of YAML frontmatter into `capability.template.adoc`, `sync.py` leaves `specs_fts.jtbd_or_rule` (`weight=2.0`) empty for every entity except `product/policy` and child `INV-*` rows. Meanwhile, component `responsibility` (on standalone `tech/component` and inline `CNT-*.components[]`) and `intent.motivation` (on `delta/mutation`) remain in YAML frontmatter without being indexed into `jtbd_or_rule` (and `FrontmatterModel._FRONTMATTER_SCALAR_KEYS` omits `"responsibility"`).
+   * All 16 `assets/schemas/v1/**/*.template.adoc` blueprints include `:toc: left`, which `sync.py` currently indexes into `specs_fts.body_text` as `"toc left"` on every specification.
+
+3. **Retired `symbol_mappings.kind` Values (`query.py`, `sync.py`)**:
+   * `sync.py` and `resolve_symbol_or_path_in_db` still reference retired symbol mapping kinds: `'component_ref'` (retired in `DLT-2026-091`), `'interface_method'` and `'interface_signature'` (retired with `in_process_interfaces` in `DLT-2026-093`), and `'interface_command'` (retired with `contracts.interfaces` in `DLT-2026-091`).
+
+4. **`resolve_symbol_or_path_in_db` Glob Scan Overhead & `_FILE_QUERY_EXTS` Drift (`query.py`)**:
+   * `_FILE_QUERY_EXTS` in `query.py` is hardcoded and missing `.php`, `.vue`, and `.svelte` (supported by `AstGrepIndexer.LANGUAGE_MAP`) as well as contract extensions `.proto`, `.graphql`, and `.gql`.
+   * `resolve_symbol_or_path_in_db` runs a full table scan over `symbol_mappings` (`kind IN ('owned_path', 'inferred_path')`) whenever `"." in clean`, which triggers unnecessarily on dotted code symbol queries (e.g. `SampleService.execute`) where `is_file_query` is `False`, and parses `orjson.loads(row["data_json"])` before `seen_entities` deduplication.
+
+5. **Inline Component Resolution in `execute_incoming_references` & `execute_k_hop_traversal` (`query.py`)**:
+   * `execute_incoming_references` returns the raw `CMP-*` ID (`s.symbol`) as `title` for incoming edges originating from inline components (such as AST-derived `consumes_api` edges added in `DLT-2026-093`) instead of resolving the inline component's human-readable `title`, and does not normalize `./`/`\` prefixes or exclude `code/source` and `code/test` rows when resolving `doc_id` from `indexed_files`.
+   * `execute_k_hop_traversal` overwrites an inline component's `domain` override (`data.get("domain")`) with the parent container's `row["domain"]`.
+   * `find_symbol_in_db` lacks an empty-query guard (`q_norm == ""`) and does not prioritize shorter exact prefix matches (`length(s.symbol) ASC`) or deduplicate method locations when both unqualified `method` and qualified `Class.method` rows exist.
+
+6. **Duplicated Path Resolution, Entity Hydration, and Redundant SQL Queries in `ArchitecturalIndex` (`graph_index.py`)**:
+   * `ArchitecturalIndex.__init__` and `get_architectural_index` duplicate repository/eidos/db path resolution and inspect `Path(eidos_dir).parts` *before* calling `.resolve()`, missing `.agents`, `plugins`, or `assets` parent segments when a relative `eidos_dir` is passed.
+   * `get_components()` selects `title` in SQL but never sets `data["title"]` (nor `type`, `domain`, or default `"active"` `status`), unlike `get_entities()`.
+   * `get_entities()` deserializes `data_json` for every matching row before filtering by `status` in Python instead of filtering directly on the SQL `status` column.
+   * `get_index_status()` executes 8 separate SQL queries where 4 suffice (`total_entities` and `total_symbols` are sums of the grouped counts already fetched, and `test_invariant_assertions` + `tested_invariants` can be fetched in one query).
+   * `ArchitecturalIndex._symbol_locations` is an unused private shim left over from the `query.py` extraction.
+
+== Proposed Specification Changes
+
+* **`CMP-GRAPH-STORAGE` (`CNT-EIDOS-INDEX`)**:
+  - Bump `SCHEMA_VERSION` from `'2.7.0'` to `'2.8.0'` in `src/eidos/core/index/storage.py`.
+  - Extract `_resolve_index_paths(repo_root, eidos_dir, db_path)` in `src/eidos/core/index/graph_index.py`, resolving `Path(eidos_dir).resolve()` prior to `_is_inside_plugin_or_assets` checks and sharing it between `ArchitecturalIndex.__init__` and `get_architectural_index`.
+  - Hydrate `title`, `type`, `domain`, and default `"active"` `status` in `get_components()`, push `status` filtering into SQL in `get_entities()`, reduce `get_index_status()` SQL round-trips from 8 to 4, and remove `_symbol_locations`.
+* **`CMP-INCREMENTAL-SYNC-ENGINE` (`CNT-EIDOS-INDEX`)**:
+  - Index standalone `tech/component` `responsibility`, concatenated inline `CNT-*.components[]` titles/responsibilities, and `delta/mutation` `intent.motivation` into `specs_fts.jtbd_or_rule` (`weight=2.0`).
+  - Strip AsciiDoc document attribute lines (`^:[A-Za-z0-9_-]+:.*$`) when building `body_clean` for `specs_fts.body_text`.
+  - Remove retired `component_ref`, `interface_method`, `interface_signature`, and `interface_command` handling from `sync.py`.
+* **`CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE` (`CNT-EIDOS-INDEX`)**:
+  - Expand `_ENTITY_ID_TOKEN_RE` to include `SYS-`, `ARCH-`, and `PER-` prefixes and `_` characters; boost parent specs in `execute_fts_query` when `explicit_ids` match inline `component_id` symbols or `specs_fts.keywords`.
+  - Derive `_FILE_QUERY_EXTS` dynamically from `AstGrepIndexer.LANGUAGE_MAP` plus contract/markup extensions, remove retired `symbol_mappings.kind` values from `resolve_symbol_or_path_in_db`, gate glob fallback on `is_file_query or "*" in clean`, and defer `orjson.loads` until after deduplication.
+  - Resolve inline component titles and normalize paths in `execute_incoming_references`, preserve inline component `domain` in `execute_k_hop_traversal`, and harden `find_symbol_in_db`.
+* **`CMP-DOMAIN-MODELS` (`CNT-EIDOS-CORE`)**:
+  - Add `"responsibility"` to `_FRONTMATTER_SCALAR_KEYS` and `FrontmatterModel` in `src/eidos/core/spec/models.py`.
+* **`CAP-AGENT-001` & `INV-AGENT-TASK-RETRIEVAL-COVERAGE` (`DOM-AGENT-INTELLIGENCE`)**:
+  - Bump `CAP-AGENT-001` to `1.7.0` and update `INV-AGENT-TASK-RETRIEVAL-COVERAGE` to verify full prefix recognition, inline `CMP-*`/`DEC-*` exact-ID boosting, component `responsibility` indexing in `jtbd_or_rule`, and AsciiDoc attribute stripping.
+
+== Verification Criteria
+
+1. `uv run eidos validate eidos --json` passes with zero schema or cross-reference errors.
+2. `uv run pytest -q` passes across the full test suite, including new assertions in `tests/test_graph_index.py` covering inline `CMP-*`/`DEC-*` exact-ID boosting, `SYS-*`/`ARCH-*`/`PER-*` and underscore ID tokenization, component `responsibility` FTS retrieval, `:toc: left` attribute stripping, inline component incoming reference title resolution, `get_components()` hydration, and relative `eidos_dir` resolution.

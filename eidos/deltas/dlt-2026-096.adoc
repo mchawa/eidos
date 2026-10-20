@@ -1,0 +1,49 @@
+---
+type: delta/mutation
+id: DLT-2026-096
+title: Retire FallbackIndexer Regex Fallback in Favor of Unified AstGrepIndexer and AST Import Extraction
+status: applied
+intent:
+  kind: enabler
+  motivation: "Retire FallbackIndexer, stdlib ast dual-path parsing, is_ast_grep_available/AST_GREP_AVAILABLE flags, and regex import/signature fallbacks in favor of a single unified AstGrepIndexer (SgRoot) pipeline across all 17 supported languages, and synchronize bundled plugin version normalization with PEP 440 package versions."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+    details: "Unify CMP-AST-SYMBOL-INDEXER onto AstGrepIndexer (SgRoot) across all 17 languages (including Python, C/C++, C#, Ruby, PHP, Swift, and Vue/Svelte SFC script blocks), replace regex extract_imports with syntax-tree import extraction, and remove FallbackIndexer, stdlib ast, and is_ast_grep_available."
+    expect:
+      body:
+        contains:
+          - "Unified `AstGrepIndexer` (`SgRoot`) polyglot AST symbol and import extraction across all 17 languages"
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+    details: "Normalize PEP 440 package versions via normalize_to_semver in CMP-PLUGIN-INSTALLER and synchronize assets/plugin_reference/plugin.json to 0.12.0."
+    expect:
+      body:
+        contains:
+          - "PEP 440 SemVer normalization via `normalize_to_semver`"
+  - operation: modify
+    target: CAP-AGENT-002
+    details: "Bump CAP-AGENT-002 to 1.1.0 and update INV-INDEX-OPTIONAL-AST-FALLBACK, INV-INDEX-POLYGLOT-SYMBOL-PRECISION, and INV-INDEX-STATUS-AST-TELEMETRY for unified AstGrepIndexer."
+    expect:
+      frontmatter:
+        version: "1.1.0"
+  - operation: modify
+    target: CAP-VCS-001
+    details: "Bump CAP-VCS-001 to 1.6.0 and update INV-DRIFT-DIFF-AWARE-COVERAGE to reference unified AstGrepIndexer."
+    expect:
+      frontmatter:
+        version: "1.6.0"
+vcs:
+  branch: main
+  base_commit: 34d59888c51615e5123651c3d40d535e6329f86a
+---
+= SpecDelta: Retire FallbackIndexer Regex Fallback in Favor of Unified AstGrepIndexer and AST Import Extraction
+:toc: left
+
+== Problem Statement
+1. `ast-grep-py>=0.50.0` is a required core dependency of Eidos, yet `src/eidos/core/index/ast_indexer.py` retained a legacy 700-LOC `FallbackIndexer` regex engine, a separate Python `stdlib ast` dual path, `is_ast_grep_available()` / `AST_GREP_AVAILABLE` flags, and regex-based `extract_imports()` patterns that matched fake imports inside docstrings and comments.
+2. `src/eidos/plugin/version.py` rejected PEP 440 `.devN` / pre-release versions against strict 3-part SemVer and fell back to `0.2.0`, while `assets/plugin_reference/plugin.json` remained at `0.8.0`.
+
+== Proposed Specification Changes
+* **Unified `AstGrepIndexer` (`CNT-EIDOS-INDEX`, `CAP-AGENT-002`, `CAP-VCS-001`)**: Route all 17 supported languages (including Python `.py`, C/C++ `.c`/`.cpp`/`.h`/`.hpp`, C# `.cs`, Ruby `.rb`, PHP `.php`, Swift `.swift`, and `.vue`/`.svelte` `<script>` blocks) through `SgRoot` in `AstGrepIndexer`. Replace regex `extract_imports` with syntax-tree import extraction, slice declaration headers up to `body.range().start`, handle Rust lifetime single quotes in `_find_body_brace_outside_parens`, and remove `FallbackIndexer`, `stdlib ast`, `AST_GREP_AVAILABLE`, and `is_ast_grep_available()`.
+* **PEP 440 SemVer Normalization (`CNT-EIDOS-PLUGIN`)**: Add `normalize_to_semver()` in `src/eidos/plugin/version.py` and synchronize `assets/plugin_reference/plugin.json` to `0.12.0`.

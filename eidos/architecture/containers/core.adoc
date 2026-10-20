@@ -49,7 +49,7 @@ components:
     source_path: "src/eidos/core/workspace/project.py"
   - id: CMP-DOMAIN-MODELS
     title: "DomainModels"
-    responsibility: "Typed Pydantic frontmatter models (`_SpecBaseModel`, `FrontmatterModel`, `InlineComponentModel` with `title`, optional `responsibility`, `status`, and `domain`, `TechnicalSectionModel` with flat `contracts` list, `DeltaIntentModel`, `DeltaMutationModel` enforcing composable `operation`/`target`/`parent` fields, `DecisionModel`, `InvariantModel`, `RejectedAlternativeModel`) with direct attribute access, helper accessors (`source_paths`, `effective_source_paths`, `effective_domain`, `effective_test_binding`, `all_invariants`, `invariants_with_component`, `all_decisions`), and dataclass domain models representing living specification documents and validation reports."
+    responsibility: "Typed Pydantic frontmatter models (`_SpecBaseModel`, `FrontmatterModel` exposing standalone component `responsibility`, `InlineComponentModel` with `title`, optional `responsibility`, `status`, and `domain`, `TechnicalSectionModel` with flat `contracts` list, `DeltaIntentModel`, `DeltaMutationModel` enforcing composable `operation`/`target`/`parent` fields, `DecisionModel`, `InvariantModel`, `RejectedAlternativeModel`) with direct attribute access, helper accessors (`source_paths`, `effective_source_paths`, `effective_domain`, `effective_test_binding`, `all_invariants`, `invariants_with_component`, `all_decisions`), and dataclass domain models representing living specification documents and validation reports."
     source_path: "src/eidos/core/spec/models.py"
   - id: CMP-DELTA-AUDITOR
     title: "DeltaAuditor"

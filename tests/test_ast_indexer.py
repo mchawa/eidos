@@ -16,7 +16,7 @@ from typer.testing import CliRunner
 
 from eidos.cli.main import app
 from eidos.core.index.ast_indexer import (
-    FallbackIndexer,
+    AstGrepIndexer,
     get_ast_indexer,
 )
 from eidos.core.index.graph_index import get_architectural_index
@@ -25,28 +25,33 @@ runner = CliRunner()
 
 
 def test_inv_index_optional_ast_fallback():
-    """Verify INV-INDEX-OPTIONAL-AST-FALLBACK: Engine functions cleanly with zero unhandled exceptions when ast-grep is absent."""
-    fallback_idx = get_ast_indexer(force_fallback=True)
-    assert isinstance(fallback_idx, FallbackIndexer)
+    """Verify INV-INDEX-OPTIONAL-AST-FALLBACK: Engine extracts Python stdlib ast signatures and falls back to Tree-sitter on broken syntax without unhandled exceptions."""
+    idx = get_ast_indexer()
+    assert isinstance(idx, AstGrepIndexer)
 
     # 1. Test Python symbol extraction on ast_indexer.py
     py_path = Path("src/eidos/core/index/ast_indexer.py")
-    symbols = fallback_idx.extract_symbols(py_path)
+    symbols = idx.extract_symbols(py_path)
     assert len(symbols) >= 10
     names = {s.name for s in symbols}
     assert "CodeSymbol" in names
     assert "TestFunctionBinding" in names
-    assert "FallbackIndexer" in names
+    assert "AstGrepIndexer" in names
 
-    # 2. Test test function extraction on test_policy_zero_ai.py
+    # 2. Test error-tolerant Tree-sitter fallback on broken Python syntax
+    broken_py = "class PartialClass:\n    def ok_func(x):\n        return x\n    def broken(:\n"
+    broken_syms = idx.extract_symbols("broken.py", broken_py)
+    assert {s.name for s in broken_syms} >= {"PartialClass", "ok_func"}
+
+    # 3. Test test function extraction on test_policy_zero_ai.py
     test_path = Path("tests/test_policy_zero_ai.py")
-    test_bindings = fallback_idx.extract_test_bindings(test_path)
+    test_bindings = idx.extract_test_bindings(test_path)
     assert len(test_bindings) >= 2
     tb_names = {t.test_name for t in test_bindings}
     assert "test_pyproject_contains_zero_ai_dependencies" in tb_names
 
-    # 3. Test repo map generation via fallback
-    repo_map = fallback_idx.generate_repo_map({str(py_path): symbols}, max_tokens=1000)
+    # 4. Test repo map generation
+    repo_map = idx.generate_repo_map({str(py_path): symbols}, max_tokens=1000)
     assert "# 🗺️ Structural Code Graph (Repo Map)" in repo_map
     assert "class CodeSymbol" in repo_map
 
@@ -68,7 +73,7 @@ def test_inv_index_polyglot_symbol_precision():
 
     classes = [s for s in py_symbols if s.kind == "class"]
     methods = [s for s in py_symbols if s.kind == "method"]
-    assert len(classes) >= 4
+    assert len(classes) >= 3
     assert len(methods) >= 3
 
     # Check method parent linking
@@ -130,7 +135,7 @@ def test_polyglot_kotlin_and_qualified_class_test_methods():
     assert "OrderServiceTest::validatesOrderInvariant" in kt_funcs
     assert "validatesOrderInvariant" in kt_funcs
 
-    # 2. Qualified Class::method test functions across both AstGrepIndexer and FallbackIndexer
+    # 2. Qualified Class::method test functions
     dup_py = (
         "class TestAlpha:\n"
         "    def test_check(self):\n"
@@ -141,15 +146,14 @@ def test_polyglot_kotlin_and_qualified_class_test_methods():
         "        # INV-BETA-002\n"
         "        assert True\n"
     )
-    for engine in (idx, get_ast_indexer(force_fallback=True)):
-        fn_map = engine.list_test_functions("tests/test_dup.py", dup_py)
-        assert "TestAlpha::test_check" in fn_map and "INV-ALPHA-001" in fn_map["TestAlpha::test_check"]
-        assert "TestBeta::test_check" in fn_map and "INV-BETA-002" in fn_map["TestBeta::test_check"]
-        assert "INV-ALPHA-001" in fn_map["test_check"] and "INV-BETA-002" in fn_map["test_check"]
-        bindings = {b.identifier: b.invariants for b in engine.extract_test_bindings("tests/test_dup.py", dup_py)}
-        assert bindings["tests/test_dup.py::TestAlpha::test_check"] == ["INV-ALPHA-001"]
-        assert bindings["tests/test_dup.py::TestBeta::test_check"] == ["INV-BETA-002"]
-        assert set(bindings["tests/test_dup.py::test_check"]) == {"INV-ALPHA-001", "INV-BETA-002"}
+    fn_map = idx.list_test_functions("tests/test_dup.py", dup_py)
+    assert "TestAlpha::test_check" in fn_map and "INV-ALPHA-001" in fn_map["TestAlpha::test_check"]
+    assert "TestBeta::test_check" in fn_map and "INV-BETA-002" in fn_map["TestBeta::test_check"]
+    assert "INV-ALPHA-001" in fn_map["test_check"] and "INV-BETA-002" in fn_map["test_check"]
+    bindings = {b.identifier: b.invariants for b in idx.extract_test_bindings("tests/test_dup.py", dup_py)}
+    assert bindings["tests/test_dup.py::TestAlpha::test_check"] == ["INV-ALPHA-001"]
+    assert bindings["tests/test_dup.py::TestBeta::test_check"] == ["INV-BETA-002"]
+    assert set(bindings["tests/test_dup.py::test_check"]) == {"INV-ALPHA-001", "INV-BETA-002"}
 
 
 def test_inv_index_ai_repo_map_budget():
@@ -373,12 +377,11 @@ def test_polyglot_language_native_visibility_rules():
     assert ("function", "", "internal_but_no_underscore") not in py_pub
 
 
-def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(monkeypatch, tmp_path):
-    """Verify Rust struct/enum/trait/impl extraction, polyglot test binding extraction, repo-map truncation, and AST_GREP_AVAILABLE=False fallback."""  # eidos:fixture
-    import eidos.core.index.ast_indexer as ast_mod
-    from eidos.core.index.ast_indexer import AstGrepIndexer, FallbackIndexer
+def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(tmp_path):
+    """Verify Rust struct/enum/trait/impl extraction, polyglot test binding extraction, repo-map truncation, and error-tolerant Python parsing."""  # eidos:fixture
+    from eidos.core.index.ast_indexer import AstGrepIndexer
 
-    # 1. Rust struct, enum, trait, and impl method extraction across AstGrepIndexer and FallbackIndexer
+    # 1. Rust struct, enum, trait, and impl method extraction
     rs_code = (
         "pub struct VaultConfig {\n    pub key: String,\n}\n\n"
         "pub enum VaultMode {\n    Strict,\n    Lenient,\n}\n\n"
@@ -400,12 +403,6 @@ def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(monkeypatch, tmp
     assert rs_syms["new"].kind == "method"
     assert rs_syms["new"].parent_symbol == "VaultConfig"
 
-    fb_idx = FallbackIndexer()
-    fb_rs_syms = {s.name: s for s in fb_idx.extract_symbols("src/lib.rs", rs_code)}
-    assert fb_rs_syms["VaultConfig"].kind == "struct"
-    assert fb_rs_syms["VaultMode"].kind == "enum"
-    assert fb_rs_syms["Unlocker"].kind == "interface"
-
     # 2. Polyglot extract_test_bindings across TS, Go, Rust, and Java
     ts_test = "it('enforces token budget', () => {\n  // INV-TS-BUDGET-001\n  expect(true).toBe(true);\n});\n"
     go_test = "package app\n\nfunc TestStoreSync(t *testing.T) {\n    // INV-GO-SYNC-001\n}\n"
@@ -417,37 +414,33 @@ def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(monkeypatch, tmp
         "    }\n"
         "}\n"
     )
-    for engine in (ast_idx, fb_idx):
-        rs_b = engine.extract_test_bindings("src/lib.rs", rs_code)
-        assert any("INV-RS-VAULT-001" in b.invariants for b in rs_b)
-        ts_b = engine.extract_test_bindings("src/app.test.ts", ts_test)
-        assert any("INV-TS-BUDGET-001" in b.invariants for b in ts_b)
-        go_b = engine.extract_test_bindings("pkg/store_test.go", go_test)
-        assert any("INV-GO-SYNC-001" in b.invariants for b in go_b)
-        java_b = engine.extract_test_bindings("src/AuthTest.java", java_test)
-        assert any("INV-JAVA-AUTH-001" in b.invariants for b in java_b)
+    rs_b = ast_idx.extract_test_bindings("src/lib.rs", rs_code)
+    assert any("INV-RS-VAULT-001" in b.invariants for b in rs_b)
+    ts_b = ast_idx.extract_test_bindings("src/app.test.ts", ts_test)
+    assert any("INV-TS-BUDGET-001" in b.invariants for b in ts_b)
+    go_b = ast_idx.extract_test_bindings("pkg/store_test.go", go_test)
+    assert any("INV-GO-SYNC-001" in b.invariants for b in go_b)
+    java_b = ast_idx.extract_test_bindings("src/AuthTest.java", java_test)
+    assert any("INV-JAVA-AUTH-001" in b.invariants for b in java_b)
 
-    # 3. Simulated AST_GREP_AVAILABLE = False delegates Python files cleanly to FallbackIndexer stdlib ast
+    # 3. Python stdlib ast extraction
     py_code = "class VaultConfig:\n    pass\n\ndef test_vault_invariant():\n    # INV-RS-VAULT-001 and POL-001\n    assert True\n"
-    monkeypatch.setattr(ast_mod, "AST_GREP_AVAILABLE", False)
-    assert isinstance(ast_mod.get_ast_indexer(), FallbackIndexer)
     delegated_syms = ast_idx.extract_symbols("src/lib.py", py_code)
     assert any(s.name == "VaultConfig" for s in delegated_syms)
     delegated_bindings = ast_idx.extract_test_bindings("src/lib.py", py_code)
     assert any("INV-RS-VAULT-001" in b.invariants for b in delegated_bindings)
-    monkeypatch.setattr(ast_mod, "AST_GREP_AVAILABLE", True)
 
-    # 4. Broken Python syntax falls back to regex in FallbackIndexer without raising SyntaxError
+    # 4. Broken Python syntax falls back to Tree-sitter SgRoot(content, "python") without raising SyntaxError
     broken_py = "class PartialClass:\n    def ok_func(x):\n        return x\n    def broken(:\n"
-    broken_syms = fb_idx.extract_symbols("broken.py", broken_py)
+    broken_syms = ast_idx.extract_symbols("broken.py", broken_py)
     assert {s.name for s in broken_syms} >= {"PartialClass", "ok_func"}
 
     # 5. Repo map truncation marker under tight token budget
     many_files = {f"src/mod_{i}.py": delegated_syms for i in range(25)}
-    truncated_map = fb_idx.generate_repo_map(many_files, max_tokens=40)
+    truncated_map = ast_idx.generate_repo_map(many_files, max_tokens=40)
     assert "... [remaining modules truncated to preserve context token budget]" in truncated_map
 
-    # 6. FallbackIndexer.extract_symbols on TS, Go, and Java/Kotlin + list_test_functions regex fallback
+    # 6. AstGrepIndexer.extract_symbols on TS, Go, and Kotlin + list_test_functions on broken Python
     ts_src = (
         "export interface UserDto { id: string }\n"
         "export class UserService {\n"
@@ -456,8 +449,8 @@ def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(monkeypatch, tmp
         "function helperFn() { return 2; }\n"
         "export { helperFn as publicHelper, type UserDto as ExportedDto }\n"
     )
-    fb_ts_syms = fb_idx.extract_symbols("src/user.ts", ts_src)
-    assert {s.name for s in fb_ts_syms} >= {"UserDto", "UserService", "helperFn"}
+    ts_syms = ast_idx.extract_symbols("src/user.ts", ts_src)
+    assert {s.name for s in ts_syms} >= {"UserDto", "UserService", "helperFn"}
 
     go_src = (
         "package store\n"
@@ -466,16 +459,16 @@ def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(monkeypatch, tmp
         "func OpenStore() {}\n"
         "func internalHelper() {}\n"
     )
-    fb_go_syms = fb_idx.extract_symbols("pkg/store.go", go_src)
-    assert {s.name for s in fb_go_syms} >= {"Reader", "itemStore", "OpenStore", "internalHelper"}
+    go_syms = ast_idx.extract_symbols("pkg/store.go", go_src)
+    assert {s.name for s in go_syms} >= {"Reader", "itemStore", "OpenStore", "internalHelper"}
 
     kt_src = (
         "interface AuthPort {}\nclass AuthAdapter {\n    fun verifyToken() {}\n    private fun secretHelper() {}\n}\n"
     )
-    fb_kt_syms = fb_idx.extract_symbols("src/Auth.kt", kt_src)
-    assert {s.name for s in fb_kt_syms} >= {"AuthPort", "AuthAdapter", "verifyToken"}
+    kt_syms = ast_idx.extract_symbols("src/Auth.kt", kt_src)
+    assert {s.name for s in kt_syms} >= {"AuthPort", "AuthAdapter", "verifyToken"}
 
-    assert fb_idx.list_test_functions(tmp_path / "does_not_exist_test.py") == {}
+    assert ast_idx.list_test_functions(tmp_path / "does_not_exist_test.py") == {}
     broken_py_tests = (
         "# comment before test_first\n"
         "def test_first():\n"
@@ -484,8 +477,8 @@ def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(monkeypatch, tmp
         "def test_second(:\n"
         "    # INV-SECOND-001\n"
     )
-    fb_listed = fb_idx.list_test_functions("tests/broken_test.py", broken_py_tests)
-    assert "test_first" in fb_listed and "test_second" in fb_listed
+    listed = ast_idx.list_test_functions("tests/broken_test.py", broken_py_tests)
+    assert "test_first" in listed and "test_second" in listed
 
     # 7. _extract_python_dunder_all_from_source, _evaluate_symbol_visibility, and _is_public_symbol edge cases
     from eidos.core.index.ast_indexer import (
@@ -598,10 +591,10 @@ def test_polyglot_rust_java_ts_bindings_and_fallback_delegation(monkeypatch, tmp
 
 
 def test_dlt_2026_083_polyglot_fallback_and_block_comment_stripping(tmp_path):
-    """Verify DLT-2026-083: FallbackIndexer extracts symbols across C/C++/C#/Ruby/PHP/Swift/Vue/Svelte while ignoring block-commented declarations."""
-    from eidos.core.index.ast_indexer import FallbackIndexer
+    """Verify AstGrepIndexer extracts symbols across C/C++/C#/Ruby/PHP/Swift/Vue/Svelte while ignoring block-commented declarations."""
+    from eidos.core.index.ast_indexer import AstGrepIndexer, boundary_symbol_map
 
-    indexer = FallbackIndexer()
+    indexer = AstGrepIndexer()
 
     cpp_file = tmp_path / "engine.hpp"
     cpp_file.write_text(
@@ -654,6 +647,9 @@ def test_dlt_2026_083_polyglot_fallback_and_block_comment_stripping(tmp_path):
         "  end\n"
         "  def _internal_audit\n"
         "  end\n"
+        "  private\n"
+        "  def secret_settlement(amount)\n"
+        "  end\n"
         "end\n",
         encoding="utf-8",
     )
@@ -662,6 +658,7 @@ def test_dlt_2026_083_polyglot_fallback_and_block_comment_stripping(tmp_path):
     assert rb_syms["BillingProcessor"].is_public is True
     assert rb_syms["charge_card"].is_public is True
     assert rb_syms["_internal_audit"].is_public is False
+    assert rb_syms["secret_settlement"].is_public is False
 
     vue_file = tmp_path / "UserCard.vue"
     vue_file.write_text(
@@ -730,10 +727,7 @@ def test_dlt_2026_083_polyglot_fallback_and_block_comment_stripping(tmp_path):
     assert swift_syms["clearCache"].is_public is False
 
     # AstGrepIndexer.list_test_functions on TypeScript/JavaScript/Rust/Go/Java
-    from eidos.core.index.ast_indexer import AstGrepIndexer, boundary_symbol_map
-
-    ag = AstGrepIndexer()
-    ts_funcs = ag.list_test_functions(
+    ts_funcs = indexer.list_test_functions(
         "src/auth.test.ts",
         "// preceding comment\nit('validates token expiry', () => { expect(1).toBe(1); });\nfunction testHelper() {}\n",
     )
@@ -750,8 +744,8 @@ def test_dlt_2026_083_polyglot_fallback_and_block_comment_stripping(tmp_path):
 
 
 def test_decorator_aware_symbol_signatures_and_line_start():
-    """Verify DLT-2026-089: AstGrepIndexer and FallbackIndexer include decorators/attributes in line_start and signature."""
-    from eidos.core.index.ast_indexer import AstGrepIndexer, FallbackIndexer, diff_public_symbols
+    """Verify DLT-2026-089: AstGrepIndexer includes decorators/attributes in line_start and signature."""
+    from eidos.core.index.ast_indexer import AstGrepIndexer, diff_public_symbols
 
     py_v1 = (
         "from dataclasses import dataclass\n\n"
@@ -767,21 +761,19 @@ def test_decorator_aware_symbol_signatures_and_line_start():
     )
     py_v2 = py_v1.replace("@app.command('create')", "@app.command('submit')")
 
-    ag = AstGrepIndexer()
-    fb = FallbackIndexer()
-    for indexer in (ag, fb):
-        syms = {(s.kind, s.parent_symbol or "", s.name): s for s in indexer.extract_symbols("src/orders.py", py_v1)}
-        cls_sym = syms[("class", "", "OrderPayload")]
-        assert cls_sym.line_start == 3
-        assert "@dataclass" in (cls_sym.signature or "")
+    indexer = AstGrepIndexer()
+    syms = {(s.kind, s.parent_symbol or "", s.name): s for s in indexer.extract_symbols("src/orders.py", py_v1)}
+    cls_sym = syms[("class", "", "OrderPayload")]
+    assert cls_sym.line_start == 3
+    assert "@dataclass" in (cls_sym.signature or "")
 
-        meth_sym = syms[("method", "OrderPayload", "normalized_id")]
-        assert meth_sym.line_start == 7
-        assert "@property" in (meth_sym.signature or "")
+    meth_sym = syms[("method", "OrderPayload", "normalized_id")]
+    assert meth_sym.line_start == 7
+    assert "@property" in (meth_sym.signature or "")
 
-        fn_sym = syms[("function", "", "run_order")]
-        assert fn_sym.line_start == 11
-        assert "@app.command" in (fn_sym.signature or "")
+    fn_sym = syms[("function", "", "run_order")]
+    assert fn_sym.line_start == 11
+    assert "@app.command" in (fn_sym.signature or "")
 
     # Modifying only a decorator argument triggers a structural symbol diff in diff_public_symbols
     py_diff = diff_public_symbols(py_v1, py_v2, "src/orders.py")
@@ -796,13 +788,12 @@ def test_decorator_aware_symbol_signatures_and_line_start():
         "}\n"
     )
     ts_v2 = ts_v1.replace("app-header", "app-navbar")
-    for indexer in (ag, fb):
-        ts_syms = {(s.kind, s.parent_symbol or "", s.name): s for s in indexer.extract_symbols("src/header.ts", ts_v1)}
-        hdr = ts_syms[("class", "", "HeaderComponent")]
-        assert hdr.line_start == 1
-        assert hdr.is_public is True
-        assert "@Component" in (hdr.signature or "")
-        assert "class HeaderComponent" in (hdr.signature or "")
+    ts_syms = {(s.kind, s.parent_symbol or "", s.name): s for s in indexer.extract_symbols("src/header.ts", ts_v1)}
+    hdr = ts_syms[("class", "", "HeaderComponent")]
+    assert hdr.line_start == 1
+    assert hdr.is_public is True
+    assert "@Component" in (hdr.signature or "")
+    assert "class HeaderComponent" in (hdr.signature or "")
 
     ts_diff = diff_public_symbols(ts_v1, ts_v2, "src/header.ts")
     assert ("class", "", "HeaderComponent") in ts_diff.changed
@@ -819,12 +810,11 @@ def test_decorator_aware_symbol_signatures_and_line_start():
         "}\n"
     )
     rs_v2 = rs_v1.replace("#[derive(Debug, Clone)]", "#[derive(Debug, Clone, PartialEq)]")
-    for indexer in (ag, fb):
-        rs_syms = {(s.kind, s.parent_symbol or "", s.name): s for s in indexer.extract_symbols("src/token.rs", rs_v1)}
-        rec = rs_syms[("struct", "", "TokenRecord")]
-        assert rec.line_start == 1
-        assert rec.is_public is True
-        assert "#[derive" in (rec.signature or "")
+    rs_syms = {(s.kind, s.parent_symbol or "", s.name): s for s in indexer.extract_symbols("src/token.rs", rs_v1)}
+    rec = rs_syms[("struct", "", "TokenRecord")]
+    assert rec.line_start == 1
+    assert rec.is_public is True
+    assert "#[derive" in (rec.signature or "")
 
     rs_diff = diff_public_symbols(rs_v1, rs_v2, "src/token.rs")
     assert ("struct", "", "TokenRecord") in rs_diff.changed
@@ -832,7 +822,7 @@ def test_decorator_aware_symbol_signatures_and_line_start():
 
 def test_polyglot_parameterized_and_subtest_extraction():
     """Verify DLT-2026-089: test.each/it.each/Deno.test (TS/JS), t.Run (Go), and #[tokio::test]/#[rstest]/#[test_case] (Rust)."""
-    from eidos.core.index.ast_indexer import AstGrepIndexer, FallbackIndexer
+    from eidos.core.index.ast_indexer import AstGrepIndexer
 
     inv_p = "INV" + "-"
     ts_tests = (
@@ -885,51 +875,51 @@ def test_polyglot_parameterized_and_subtest_extraction():
         "}\n"
     )
 
-    for indexer in (AstGrepIndexer(), FallbackIndexer()):
-        # TS/JS
-        ts_fn_map = indexer.list_test_functions("tests/math.test.ts", ts_tests)
-        assert "handles /api/v1: ok" in ts_fn_map
-        assert "adds parameterized %i and %i" in ts_fn_map
-        assert "runs concurrent check" in ts_fn_map
-        assert "deno object test" in ts_fn_map
-        assert "deno string test" in ts_fn_map
-        assert "commented out fake test" not in ts_fn_map
+    indexer = AstGrepIndexer()
+    # TS/JS
+    ts_fn_map = indexer.list_test_functions("tests/math.test.ts", ts_tests)
+    assert "handles /api/v1: ok" in ts_fn_map
+    assert "adds parameterized %i and %i" in ts_fn_map
+    assert "runs concurrent check" in ts_fn_map
+    assert "deno object test" in ts_fn_map
+    assert "deno string test" in ts_fn_map
+    assert "commented out fake test" not in ts_fn_map
 
-        ts_bindings = {b.test_name: b for b in indexer.extract_test_bindings("tests/math.test.ts", ts_tests)}
-        assert ts_bindings["handles /api/v1: ok"].invariants == [f"{inv_p}TS-STD-001"]
-        assert ts_bindings["adds parameterized %i and %i"].invariants == [f"{inv_p}TS-PARAM-001"]
-        assert ts_bindings["runs concurrent check"].invariants == [f"{inv_p}TS-CONC-001"]
-        assert ts_bindings["deno object test"].invariants == [f"{inv_p}DENO-OBJ-001"]
-        assert ts_bindings["deno string test"].invariants == [f"{inv_p}DENO-STR-001"]
+    ts_bindings = {b.test_name: b for b in indexer.extract_test_bindings("tests/math.test.ts", ts_tests)}
+    assert ts_bindings["handles /api/v1: ok"].invariants == [f"{inv_p}TS-STD-001"]
+    assert ts_bindings["adds parameterized %i and %i"].invariants == [f"{inv_p}TS-PARAM-001"]
+    assert ts_bindings["runs concurrent check"].invariants == [f"{inv_p}TS-CONC-001"]
+    assert ts_bindings["deno object test"].invariants == [f"{inv_p}DENO-OBJ-001"]
+    assert ts_bindings["deno string test"].invariants == [f"{inv_p}DENO-STR-001"]
 
-        # Go subtests
-        go_fn_map = indexer.list_test_functions("pkg/auth_test.go", go_tests)
-        assert "TestTokenFlow" in go_fn_map
-        assert "TestTokenFlow/expired_token" in go_fn_map
-        assert "TestTokenFlow::expired_token" in go_fn_map
-        assert "expired_token" in go_fn_map
-        assert "TestCommentedFake" not in go_fn_map
+    # Go subtests
+    go_fn_map = indexer.list_test_functions("pkg/auth_test.go", go_tests)
+    assert "TestTokenFlow" in go_fn_map
+    assert "TestTokenFlow/expired_token" in go_fn_map
+    assert "TestTokenFlow::expired_token" in go_fn_map
+    assert "expired_token" in go_fn_map
+    assert "TestCommentedFake" not in go_fn_map
 
-        go_bindings = {b.test_name: b for b in indexer.extract_test_bindings("pkg/auth_test.go", go_tests)}
-        assert f"{inv_p}GO-SUB-001" in go_bindings["TestTokenFlow/expired_token"].invariants
-        assert f"{inv_p}GO-SUB-001" in go_bindings["TestTokenFlow::expired_token"].invariants
-        assert f"{inv_p}GO-SUB-001" in go_bindings["expired_token"].invariants
+    go_bindings = {b.test_name: b for b in indexer.extract_test_bindings("pkg/auth_test.go", go_tests)}
+    assert f"{inv_p}GO-SUB-001" in go_bindings["TestTokenFlow/expired_token"].invariants
+    assert f"{inv_p}GO-SUB-001" in go_bindings["TestTokenFlow::expired_token"].invariants
+    assert f"{inv_p}GO-SUB-001" in go_bindings["expired_token"].invariants
 
-        # Rust attribute macros
-        rs_fn_map = indexer.list_test_functions("src/worker_test.rs", rs_tests)
-        assert "async_worker_dispatches_job" in rs_fn_map
-        assert "parameterized_rust_case" in rs_fn_map
-        assert "MacroDrivenCase" in rs_fn_map
+    # Rust attribute macros
+    rs_fn_map = indexer.list_test_functions("src/worker_test.rs", rs_tests)
+    assert "async_worker_dispatches_job" in rs_fn_map
+    assert "parameterized_rust_case" in rs_fn_map
+    assert "MacroDrivenCase" in rs_fn_map
 
-        rs_bindings = {b.test_name: b for b in indexer.extract_test_bindings("src/worker_test.rs", rs_tests)}
-        assert f"{inv_p}RS-TOKIO-001" in rs_bindings["async_worker_dispatches_job"].invariants
-        assert f"{inv_p}RS-RSTEST-001" in rs_bindings["parameterized_rust_case"].invariants
-        assert f"{inv_p}RS-TESTCASE-001" in rs_bindings["MacroDrivenCase"].invariants
+    rs_bindings = {b.test_name: b for b in indexer.extract_test_bindings("src/worker_test.rs", rs_tests)}
+    assert f"{inv_p}RS-TOKIO-001" in rs_bindings["async_worker_dispatches_job"].invariants
+    assert f"{inv_p}RS-RSTEST-001" in rs_bindings["parameterized_rust_case"].invariants
+    assert f"{inv_p}RS-TESTCASE-001" in rs_bindings["MacroDrivenCase"].invariants
 
 
 def test_ts_js_arrow_functions_and_function_expressions_extraction():
-    """Verify Bug 15c: AstGrepIndexer and FallbackIndexer extract TS/JS arrow functions and function expressions."""
-    from eidos.core.index.ast_indexer import AstGrepIndexer, FallbackIndexer, diff_public_symbols
+    """Verify Bug 15c: AstGrepIndexer extracts TS/JS arrow functions and function expressions."""
+    from eidos.core.index.ast_indexer import AstGrepIndexer, diff_public_symbols
 
     ts_code_v1 = (
         "export const fetchUserProfile = async (userId: string): Promise<string> => {\n"
@@ -943,22 +933,453 @@ def test_ts_js_arrow_functions_and_function_expressions_extraction():
     )
     ts_code_v2 = ts_code_v1.replace("userId: string", "userId: string, includeMeta: boolean = false")
 
-    for indexer in (AstGrepIndexer(), FallbackIndexer()):
-        syms = {s.name: s for s in indexer.extract_symbols("src/profile.ts", ts_code_v1)}
-        assert "fetchUserProfile" in syms
-        assert syms["fetchUserProfile"].kind == "function"
-        assert syms["fetchUserProfile"].is_public is True
+    indexer = AstGrepIndexer()
+    syms = {s.name: s for s in indexer.extract_symbols("src/profile.ts", ts_code_v1)}
+    assert "fetchUserProfile" in syms
+    assert syms["fetchUserProfile"].kind == "function"
+    assert syms["fetchUserProfile"].is_public is True
 
-        assert "computeCartTotal" in syms
-        assert syms["computeCartTotal"].kind == "function"
-        assert syms["computeCartTotal"].is_public is True
+    assert "computeCartTotal" in syms
+    assert syms["computeCartTotal"].kind == "function"
+    assert syms["computeCartTotal"].is_public is True
 
-        assert "internalFormatter" in syms
-        assert syms["internalFormatter"].kind == "function"
-        assert syms["internalFormatter"].is_public is False
+    assert "internalFormatter" in syms
+    assert syms["internalFormatter"].kind == "function"
+    assert syms["internalFormatter"].is_public is False
 
-        # Nested arrow callback inside fetchUserProfile must not be extracted as a top-level symbol
-        assert "nestedMapper" not in syms
+    # Nested arrow callback inside fetchUserProfile must not be extracted as a top-level symbol
+    assert "nestedMapper" not in syms
 
     diff = diff_public_symbols(ts_code_v1, ts_code_v2, "src/profile.ts")
     assert ("function", "", "fetchUserProfile") in diff.changed
+
+
+def test_ast_imports_ignore_docstrings_and_rust_lifetime_signatures():
+    """Verify DLT-2026-096: AST-based extract_imports ignores docstring/comment fake imports and Rust lifetime headers strip body blocks cleanly."""
+    from eidos.core.index.ast_indexer import AstGrepIndexer, has_structural_changes
+
+    indexer = AstGrepIndexer()
+
+    py_src = (
+        "import json\n"
+        "from eidos.core import parser\n\n"
+        'def helper():\n'
+        '    """Example:\n'
+        "    import fake_docstring_mod\n"
+        "    from fake.pkg import PhantomSymbol\n"
+        '    """\n'
+        "    return 1\n"
+    )
+    py_imps = indexer.extract_imports("src/mod.py", py_src)
+    assert "json" in py_imps
+    assert "eidos.core" in py_imps
+    assert "eidos.core.parser" in py_imps
+    assert "fake_docstring_mod" not in py_imps
+    assert "fake.pkg" not in py_imps
+    assert "fake.pkg.PhantomSymbol" not in py_imps
+
+    ts_src = (
+        "import { api } from './client';\n"
+        "// import { ghost } from './commented-out';\n"
+        "const doc = `import { fake } from './template-literal'`;\n"
+    )
+    ts_imps = indexer.extract_imports("src/app.ts", ts_src)
+    assert ts_imps == ["./client"]
+
+    rs_v1 = "pub fn parse<'a>(input: &'a str) -> &'a str {\n    input.trim()\n}\n"
+    rs_v2 = "pub fn parse<'a>(input: &'a str) -> &'a str {\n    input\n}\n"
+    rs_syms = indexer.extract_symbols("src/lib.rs", rs_v1)
+    assert len(rs_syms) == 1
+    assert rs_syms[0].signature == "pub fn parse<'a>(input: &'a str) -> &'a str"
+    # Body-only edit inside a Rust function with an odd number of lifetime single quotes is non-structural
+    assert has_structural_changes(rs_v1, rs_v2, "src/lib.rs") == (False, [])
+
+
+def test_deep_review_polyglot_ast_refinements():
+    """Verify deep-review refinements across polyglot imports, SFC test unwrapping, docstrings, __all__ +=, Ruby singleton visibility, 15-param headers, and AST UI contracts."""
+    from eidos.core.index.ast_indexer import (
+        AstGrepIndexer,
+        boundary_symbol_map,
+        classify_design_changes,
+    )
+
+    indexer = AstGrepIndexer()
+    inv_p = "INV" + "-"
+
+    # 1. Polyglot extract_imports for C#, Ruby, PHP, Swift, and Rust grouped use trees
+    cs_imps = indexer.extract_imports(
+        "src/Auth.cs",
+        "using System;\nusing System.Collections.Generic;\nusing Alias = System.Text.StringBuilder;\n",
+    )
+    assert cs_imps == ["System", "System.Collections.Generic", "System.Text.StringBuilder"]
+
+    rb_imps = indexer.extract_imports(
+        "app/service.rb",
+        "require 'json'\nrequire_relative './helper'\n",
+    )
+    assert rb_imps == ["json", "./helper"]
+
+    php_imps = indexer.extract_imports(
+        "src/Service.php",
+        "<?php\nuse App\\Models\\User;\nuse App\\Services\\{AuthService, BillingService as Billing};\nrequire_once 'config.php';\n",
+    )
+    assert php_imps == ["App\\Models\\User", "App\\Services\\AuthService", "App\\Services\\BillingService", "config.php"]
+
+    sw_imps = indexer.extract_imports("src/Auth.swift", "import Foundation\nimport struct Foundation.URL\n")
+    assert sw_imps == ["Foundation", "Foundation.URL"]
+
+    rs_imps = indexer.extract_imports("src/lib.rs", "use crate::core::{foo, bar};\n")
+    assert rs_imps == ["crate::core"]
+
+    # 2. Vue / Svelte SFC <script> unwrapping in list_test_functions and extract_test_bindings
+    vue_sfc = (
+        "<template>\n  <div>{{ label }}</div>\n</template>\n"
+        "<script setup lang=\"ts\">\n"
+        "it('renders vue component label', () => {\n"
+        f"  // {inv_p}VUE-SFC-001\n"
+        "});\n"
+        "</script>\n"
+    )
+    vue_tests = indexer.list_test_functions("src/Button.spec.vue", vue_sfc)
+    assert "renders vue component label" in vue_tests
+    vue_bindings = indexer.extract_test_bindings("src/Button.spec.vue", vue_sfc)
+    assert len(vue_bindings) == 1
+    assert vue_bindings[0].invariants == [f"{inv_p}VUE-SFC-001"]
+    assert vue_bindings[0].line_start == 5
+
+    # 3. Python docstring escape sequences & augmented __all__ += [...]
+    py_code = (
+        '__all__ = ["exported_a"]\n'
+        '__all__ += ["exported_b"]\n\n'
+        "def exported_a():\n"
+        '    """Docstring with \\"escaped quotes\\" intact."""\n'
+        "    return 1\n\n"
+        "def exported_b():\n"
+        "    return 2\n\n"
+        "def internal_c():\n"
+        "    return 3\n"
+    )
+    py_syms = {s.name: s for s in indexer.extract_symbols("src/pkg.py", py_code)}
+    assert '\\"escaped quotes\\"' in (py_syms["exported_a"].docstring or "")
+    assert py_syms["exported_a"].is_public is True
+    assert py_syms["exported_b"].is_public is True
+    assert py_syms["internal_c"].is_public is False
+
+    # 4. Ruby singleton_method (`def self.build`) after bare `private` remains public
+    rb_code = (
+        "class Factory\n"
+        "  private\n"
+        "  def secret_helper\n"
+        "  end\n"
+        "  def self.build\n"
+        "  end\n"
+        "end\n"
+    )
+    rb_syms = {s.name: s for s in indexer.extract_symbols("app/factory.rb", rb_code)}
+    assert rb_syms["secret_helper"].is_public is False
+    assert rb_syms["build"].is_public is True
+
+    # 5. Multi-line function signature (>12 parameters) preserves closing parenthesis
+    long_py = (
+        "def configure(\n"
+        + "".join(f"    param_{i}: int = {i},\n" for i in range(15))
+        + ") -> bool:\n    return True\n"
+    )
+    long_syms = indexer.extract_symbols("src/config.py", long_py)
+    assert len(long_syms) == 1
+    assert long_syms[0].signature is not None
+    assert long_syms[0].signature.endswith(") -> bool")
+
+    # 6. Rust grouped `pub use` in boundary_symbol_map and comment-immune TS UI contract classification
+    rs_bmap = boundary_symbol_map("pub use crate::models::{UserRecord, Account as Acc};\n", "src/lib.rs")
+    assert ("export", "", "UserRecord") in rs_bmap
+    assert ("export", "", "Acc") in rs_bmap
+
+    tsx_v1 = (
+        "export interface CardProps {\n"
+        "  style?: { color: string };\n"
+        "  title: string;\n"
+        "}\n"
+        "export function Card(p: CardProps) { return null; }\n"
+    )
+    tsx_v2 = tsx_v1 + "// export function CommentedOutFake() {}\n"
+    cat, reasons = classify_design_changes(tsx_v1, tsx_v2, "src/Card.tsx")
+    assert cat == "body_only"
+    assert reasons == []
+
+
+def test_all_ast_languages_and_corner_cases(tmp_path: Path) -> None:
+    """Comprehensive verification across all 17 AstGrepIndexer languages (20 extensions) and corner cases."""
+    from eidos.core.index.ast_indexer import (
+        AstGrepIndexer,
+        _extract_ts_exported_names,
+        _strip_leading_decorators_from_signature,
+    )
+
+    indexer = AstGrepIndexer()
+    inv_p = "INV" + "-"
+    pol_p = "POL" + "-"
+
+    # 1. Verify all 20 extensions in LANGUAGE_MAP map to the 17 supported AST grammars
+    expected_exts = {
+        ".py",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".rs",
+        ".go",
+        ".java",
+        ".kt",
+        ".kts",
+        ".c",
+        ".cpp",
+        ".h",
+        ".hpp",
+        ".cs",
+        ".rb",
+        ".php",
+        ".swift",
+        ".vue",
+        ".svelte",
+    }
+    assert set(AstGrepIndexer.LANGUAGE_MAP.keys()) == expected_exts
+
+    # 2. Missing files and unsupported extensions gracefully return empty results
+    missing_py = tmp_path / "nonexistent.py"
+    assert indexer.extract_symbols(missing_py) == []
+    assert indexer.extract_imports(missing_py) == []
+    assert indexer.list_test_functions(missing_py) == {}
+    assert indexer.extract_test_bindings(missing_py) == []
+
+    assert indexer.extract_symbols("README.txt", "hello") == []
+    assert indexer.extract_imports("README.txt", "hello") == []
+    assert indexer.list_test_functions("README.txt", "hello") == {}
+    assert indexer.extract_test_bindings("README.txt", "hello") == []
+
+    # 3. Remaining extract_imports languages & corner cases (Go, Java, Kotlin, C/C++, Python aliases, JS/Vue require/dynamic import)
+    py_imp_file = tmp_path / "imports_sample.py"
+    py_imp_file.write_text(
+        "import os as operating_system\nfrom pkg.mod import Alpha as A\nfrom pkg.star import *\n",
+        encoding="utf-8",
+    )
+    assert indexer.extract_imports(py_imp_file) == ["os", "pkg.mod", "pkg.mod.Alpha", "pkg.star"]
+
+    go_imps = indexer.extract_imports(
+        "main.go",
+        'package main\nimport (\n    "fmt"\n    "github.com/org/repo/internal"\n)\n',
+    )
+    assert go_imps == ["fmt", "github.com/org/repo/internal"]
+
+    java_imps = indexer.extract_imports(
+        "App.java",
+        "import java.util.List;\nimport com.example.domain.*;\n",
+    )
+    assert java_imps == ["java.util.List", "com.example.domain.*"]
+
+    kt_imps = indexer.extract_imports(
+        "App.kts",
+        "import kotlin.collections.List\nimport com.example.Order as Ord;\n",
+    )
+    assert kt_imps == ["kotlin.collections.List", "com.example.Order"]
+
+    cpp_imps = indexer.extract_imports(
+        "engine.c",
+        '#include <stdio.h>\n#include "engine/header.h"\n',
+    )
+    assert cpp_imps == ["stdio.h", "engine/header.h"]
+
+    js_imps = indexer.extract_imports(
+        "bundle.js",
+        "const cjs = require('./cjs-mod');\nconst lazy = import('./lazy-mod');\nexport { x } from './reexp-mod';\n",
+    )
+    assert js_imps == ["./reexp-mod", "./cjs-mod", "./lazy-mod"]
+
+    # 4. Polyglot test discovery (list_test_functions & extract_test_bindings) across C#, C/C++, Ruby, PHP, Swift, Svelte, Deno
+    cs_test_src = (
+        "public class BillingTests {\n"
+        "    [Fact]\n"
+        "    public void ValidatesInvoiceTotal() {\n"
+        f"        // {inv_p}CS-FACT-001 and {pol_p}002\n"
+        "    }\n"
+        "    [Theory]\n"
+        "    public void ValidatesCurrencyRate(int rate) {\n"
+        f"        // {inv_p}CS-THEORY-001\n"
+        "    }\n"
+        "}\n"
+    )
+    cs_funcs = indexer.list_test_functions("BillingTests.cs", cs_test_src)
+    assert "BillingTests::ValidatesInvoiceTotal" in cs_funcs
+    assert "ValidatesCurrencyRate" in cs_funcs
+    cs_binds = {b.test_name: b for b in indexer.extract_test_bindings("BillingTests.cs", cs_test_src)}
+    assert cs_binds["BillingTests::ValidatesInvoiceTotal"].invariants == [f"{inv_p}CS-FACT-001"]
+    assert cs_binds["BillingTests::ValidatesInvoiceTotal"].policies == [f"{pol_p}002"]
+    assert cs_binds["ValidatesCurrencyRate"].invariants == [f"{inv_p}CS-THEORY-001"]
+    assert cs_binds["ValidatesCurrencyRate"].to_dict()["test_name"] == "ValidatesCurrencyRate"
+
+    c_test_src = (
+        "void test_arena_allocator(void) {\n"
+        f"    /* {inv_p}C-ARENA-001 */\n"
+        "}\n"
+    )
+    assert "test_arena_allocator" in indexer.list_test_functions("arena_test.c", c_test_src)
+    c_binds = indexer.extract_test_bindings("arena_test.c", c_test_src)
+    assert len(c_binds) == 1 and c_binds[0].invariants == [f"{inv_p}C-ARENA-001"]
+
+    rb_test_src = (
+        "class LedgerTest\n"
+        "  def test_double_entry\n"
+        f"    # {inv_p}RB-LEDGER-001\n"
+        "  end\n"
+        "  def self.test_suite_boot\n"
+        f"    # {inv_p}RB-BOOT-001\n"
+        "  end\n"
+        "end\n"
+    )
+    rb_funcs = indexer.list_test_functions("ledger_test.rb", rb_test_src)
+    assert "LedgerTest::test_double_entry" in rb_funcs
+    assert "LedgerTest::test_suite_boot" in rb_funcs
+    rb_binds = {b.test_name: b for b in indexer.extract_test_bindings("ledger_test.rb", rb_test_src)}
+    assert rb_binds["LedgerTest::test_double_entry"].invariants == [f"{inv_p}RB-LEDGER-001"]
+    assert rb_binds["test_suite_boot"].invariants == [f"{inv_p}RB-BOOT-001"]
+
+    php_test_src = (
+        "<?php\n"
+        "class PaymentTest {\n"
+        "    public function testCapturePayment() {\n"
+        f"        // {inv_p}PHP-PAY-001\n"
+        "    }\n"
+        "}\n"
+        "function test_standalone_webhook() {\n"
+        f"    // {inv_p}PHP-HOOK-001\n"
+        "}\n"
+    )
+    php_funcs = indexer.list_test_functions("PaymentTest.php", php_test_src)
+    assert "PaymentTest::testCapturePayment" in php_funcs
+    assert "test_standalone_webhook" in php_funcs
+    php_binds = {b.test_name: b for b in indexer.extract_test_bindings("PaymentTest.php", php_test_src)}
+    assert php_binds["PaymentTest::testCapturePayment"].invariants == [f"{inv_p}PHP-PAY-001"]
+    assert php_binds["test_standalone_webhook"].invariants == [f"{inv_p}PHP-HOOK-001"]
+
+    swift_test_src = (
+        "class KeychainTests {\n"
+        "    func testKeyRotation() {\n"
+        f"        // {inv_p}SWIFT-KEY-001\n"
+        "    }\n"
+        "}\n"
+    )
+    swift_funcs = indexer.list_test_functions("KeychainTests.swift", swift_test_src)
+    assert "KeychainTests::testKeyRotation" in swift_funcs
+    swift_binds = {b.test_name: b for b in indexer.extract_test_bindings("KeychainTests.swift", swift_test_src)}
+    assert swift_binds["KeychainTests::testKeyRotation"].invariants == [f"{inv_p}SWIFT-KEY-001"]
+
+    svelte_test_src = (
+        "<script lang=\"ts\">\n"
+        "Deno.test(function denoNamedFnTest() {\n"
+        f"  // {inv_p}SVELTE-DENO-001\n"
+        "});\n"
+        "</script>\n"
+    )
+    svelte_funcs = indexer.list_test_functions("Widget.test.svelte", svelte_test_src)
+    assert "denoNamedFnTest" in svelte_funcs
+    svelte_binds = indexer.extract_test_bindings("Widget.test.svelte", svelte_test_src)
+    assert len(svelte_binds) == 1 and svelte_binds[0].invariants == [f"{inv_p}SVELTE-DENO-001"]
+
+    # 5. Corner cases in C/C++, C#, Ruby, PHP, Swift, Go, Rust, and TS symbol extraction & visibility
+    c_src = (
+        "struct ForwardDeclaredOnly;\n"
+        "struct Packet {\n    int id;\n};\n"
+        "enum PacketState { PKT_NEW, PKT_SENT };\n"
+        "char *alloc_packet_buffer(int size) {\n    return 0;\n}\n"
+        "static int _hidden_c_helper(void) {\n    return 0;\n}\n"
+    )
+    c_syms = {s.name: s for s in indexer.extract_symbols("packet.c", c_src)}
+    assert "ForwardDeclaredOnly" not in c_syms
+    assert c_syms["Packet"].kind == "struct"
+    assert c_syms["PacketState"].kind == "enum"
+    assert c_syms["alloc_packet_buffer"].is_public is True
+    assert c_syms["_hidden_c_helper"].is_public is False
+    assert c_syms["Packet"].to_dict()["name"] == "Packet"
+
+    cs_src = (
+        "public interface IRepository {}\n"
+        "public struct Money {}\n"
+        "public enum Currency { USD, EUR }\n"
+        "public record InvoiceRecord(string Id);\n"
+        "public class AccountService {\n"
+        "    public void _internalHook() {}\n"
+        "}\n"
+    )
+    cs_syms = {s.name: s for s in indexer.extract_symbols("Account.cs", cs_src)}
+    assert cs_syms["IRepository"].kind == "interface"
+    assert cs_syms["Money"].kind == "struct"
+    assert cs_syms["Currency"].kind == "enum"
+    assert cs_syms["InvoiceRecord"].kind == "class"
+    assert cs_syms["_internalHook"].is_public is False
+
+    rb_src = (
+        "module BillingMod\n"
+        "  private def inline_private_helper\n  end\n"
+        "  private_class_method def self.hidden_class_factory\n  end\n"
+        "end\n"
+    )
+    rb_syms = {s.name: s for s in indexer.extract_symbols("billing_mod.rb", rb_src)}
+    assert rb_syms["BillingMod"].kind == "class"
+    assert rb_syms["inline_private_helper"].is_public is False
+    assert rb_syms["hidden_class_factory"].is_public is False
+
+    php_syms = {
+        s.name: s
+        for s in indexer.extract_symbols(
+            "Hooks.php",
+            "<?php\ntrait Loggable {}\nfunction _private_php_fn() {}\n",
+        )
+    }
+    assert php_syms["Loggable"].kind == "interface"
+    assert php_syms["_private_php_fn"].is_public is False
+
+    swift_syms = {
+        s.name: s
+        for s in indexer.extract_symbols(
+            "Internal.swift",
+            "public func _underscoreSwiftFn() {}\ninternal func moduleInternalFn() {}\n",
+        )
+    }
+    assert swift_syms["_underscoreSwiftFn"].is_public is False
+    assert swift_syms["moduleInternalFn"].is_public is False
+
+    go_syms = {
+        s.name: s
+        for s in indexer.extract_symbols(
+            "types.go",
+            "package pkg\ntype TokenID string\nfunc (r *ExternalReceiver) Handle() {}\n",
+        )
+    }
+    assert go_syms["TokenID"].kind == "class"
+    assert go_syms["Handle"].parent_symbol == "ExternalReceiver"
+
+    rs_syms = {
+        s.name: s
+        for s in indexer.extract_symbols(
+            "impls.rs",
+            "struct PrivateHolder;\nimpl PrivateHolder {\n    pub fn inside_private(&self) {}\n}\n"
+            "impl<T> ExternalGeneric<T> {\n    #[doc = \"escaped \\\" [bracket]\"]\n    pub fn ext_method(&self) {}\n}\n",
+        )
+    }
+    assert rs_syms["inside_private"].is_public is False
+    assert rs_syms["ext_method"].parent_symbol == "ExternalGeneric"
+    assert rs_syms["ext_method"].is_public is True
+
+    # 6. Decorator stripping with escaped quotes/parens and TS namespace/default exports
+    stripped_sig = _strip_leading_decorators_from_signature(
+        '@route("/api/v1/items(\\"id\\")") #[attr("a\\"b]")] pub fn handle_item()'
+    )
+    assert stripped_sig == "pub fn handle_item()"
+
+    ts_exp = _extract_ts_exported_names(
+        "export * as nsUtils from './utils';\nconst DefaultWidget = () => null;\nexport default DefaultWidget;\n"
+    )
+    assert "nsUtils" in ts_exp
+    assert "DefaultWidget" in ts_exp
+
+

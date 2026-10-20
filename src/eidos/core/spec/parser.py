@@ -7,7 +7,11 @@ from typing import Any
 import yaml
 
 try:
+    import yaml._yaml as _c_yaml
     from yaml import CSafeLoader as _YamlSafeLoader
+
+    if getattr(_c_yaml, "MappingNode", None) is not yaml.MappingNode:  # pragma: no cover
+        from yaml import SafeLoader as _YamlSafeLoader
 except ImportError:  # pragma: no cover
     from yaml import SafeLoader as _YamlSafeLoader
 

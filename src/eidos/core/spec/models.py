@@ -227,6 +227,7 @@ _FRONTMATTER_SCALAR_KEYS = (
     "container",
     "container_type",
     "runtime",
+    "responsibility",
     "protocol",
     "specification_file",
     "category",
@@ -246,6 +247,7 @@ class FrontmatterModel(_SpecBaseModel):
     container: str | None = None
     container_type: str | None = None
     runtime: str | None = None
+    responsibility: str | None = None
     protocol: str | None = None
     specification_file: str | None = None
     category: str | None = None

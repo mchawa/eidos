@@ -1,7 +1,7 @@
 """Polyglot AST Symbol Indexer and Structural AI Code Graph Engine.
 
 Key features:
-- High-performance polyglot AST parsing via ast-grep (ast-grep-py) with Python stdlib ast fallback.
+- High-performance polyglot AST parsing via ast-grep (ast-grep-py).
 - Granular reverse code-to-spec symbol mapping (classes, functions, methods, interfaces).
 - Syntax-aware test function extraction for capability invariants (INV-*) and policies (POL-*).
 - Token-budgeted structural repo map generation for AI coding assistants.
@@ -9,25 +9,26 @@ Key features:
 
 from __future__ import annotations
 
-import ast
+import inspect
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 
-# Detect ast-grep-py availability
-try:
-    from ast_grep_py import SgRoot
-
-    AST_GREP_AVAILABLE = True
-except ImportError:
-    AST_GREP_AVAILABLE = False
-
+from ast_grep_py import SgRoot
 
 INVARIANT_PATTERN = re.compile(r"\b(INV-[A-Z0-9_-]+)\b")
 POLICY_PATTERN = re.compile(r"\b(POL-[A-Z0-9_-]+)\b")
 _RUST_TEST_ATTR_RE = re.compile(r"#\[\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*(?:test|rstest|test_case)\b")
+_SCRIPT_BLOCK_RE = re.compile(r"<script\b[^>]*>(.*?)</script>", re.DOTALL | re.IGNORECASE)
+_RUST_LIFETIME_AT_START_RE = re.compile(r"^'[A-Za-z_][A-Za-z0-9_]*(?![A-Za-z0-9_'-])")
+
+
+def _extract_sfc_script_blocks(content: str) -> list[tuple[str, int]]:
+    """Extract (script_body, line_offset_0based) blocks from a .vue or .svelte single-file component."""
+    blocks = [(m.group(1), content[: m.start(1)].count("\n")) for m in _SCRIPT_BLOCK_RE.finditer(content)]
+    return blocks if blocks else [(content, 0)]
 
 
 def _find_body_brace_outside_parens(text: str) -> int:
@@ -49,6 +50,9 @@ def _find_body_brace_outside_parens(text: str) -> int:
                 in_quote = None
             continue
         if ch in ("'", '"', "`"):
+            # Do not treat Rust lifetime annotations (e.g. <'a>, &'a str) as opening a single-quoted string
+            if ch == "'" and _RUST_LIFETIME_AT_START_RE.match(text[idx:]):
+                continue
             in_quote = ch
             continue
         if ch == "(":
@@ -83,7 +87,7 @@ def _extract_header_signature(node_text: str) -> str:
             and (stripped.endswith(":") or _find_body_brace_outside_parens(stripped) != -1)
         ):
             break
-        if len(first_lines) >= 10:
+        if len(first_lines) >= 60:
             break
     header = " ".join(first_lines)
     # Strip trailing body start outside parentheses
@@ -92,7 +96,10 @@ def _extract_header_signature(node_text: str) -> str:
         header = header[:brace_idx].strip()
     elif header.endswith(":"):
         header = header[:-1].strip()
-    return re.sub(r"\s+", " ", header)
+    header = re.sub(r"\s+", " ", header)
+    header = re.sub(r"\(\s+", "(", header)
+    header = re.sub(r",\s*\)", ")", header)
+    return re.sub(r"\s+\)", ")", header)
 
 
 def _extract_preceding_context(lines: list[str], start_line_1based: int) -> str:
@@ -168,12 +175,6 @@ class TestFunctionBinding:
         }
 
 
-_PY_IMPORT_RE = re.compile(
-    r"^[ \t]*(?:import[ \t]+([^\r\n#;]+)|from[ \t]+(\.*[A-Za-z0-9_.]*)[ \t]+import[ \t]+(?:\(([^)]*)\)|([^\r\n#;]+)))",
-    re.MULTILINE,
-)
-
-
 class BaseAstIndexer(ABC):
     """Abstract base class for polyglot AST indexing and symbol extraction."""
 
@@ -193,7 +194,7 @@ class BaseAstIndexer(ABC):
         pass
 
     def extract_imports(self, file_path: Path | str, content: str | None = None) -> list[str]:
-        """Extract imported module/package specifiers from a source file across supported languages."""
+        """Extract imported module/package specifiers from a source file via syntax trees across supported languages."""
         p = Path(file_path)
         suffix = p.suffix.lower()
         if content is None:
@@ -212,60 +213,200 @@ class BaseAstIndexer(ABC):
                 imports.append(clean)
 
         if suffix == ".py":
-            for m in _PY_IMPORT_RE.finditer(content):
-                imp_clause, from_mod, paren_names, line_names = m.groups()
-                if imp_clause is not None:
-                    for part in imp_clause.split(","):
-                        tok = part.strip().split()[0] if part.strip() else ""
-                        if tok and all(seg.isidentifier() for seg in tok.split(".")):
-                            _add(tok)
-                else:
-                    mod = from_mod.strip()
-                    stripped_mod = mod.lstrip(".")
-                    if stripped_mod and not all(seg.isidentifier() for seg in stripped_mod.split(".")):
-                        continue
+            try:
+                py_root = SgRoot(content, "python").root()
+                for imp_node in py_root.find_all(kind="import_statement"):
+                    for ch in imp_node.children():
+                        if ch.kind() == "dotted_name":
+                            _add(ch.text())
+                        elif ch.kind() == "aliased_import":
+                            n_field = ch.field("name")
+                            if n_field is not None:
+                                _add(n_field.text())
+                for from_node in py_root.find_all(kind="import_from_statement"):
+                    mod_field = from_node.field("module_name")
+                    mod = mod_field.text().strip() if mod_field is not None else ""
                     if mod:
                         _add(mod)
-                    raw_names = paren_names if paren_names is not None else (line_names or "")
-                    for raw_line in raw_names.splitlines():
-                        clean_line = raw_line.split("#", 1)[0]
-                        for part in clean_line.split(","):
-                            tok = part.strip().split()[0] if part.strip() else ""
-                            if tok and tok != "*" and tok.isidentifier():
-                                _add(f"{mod}.{tok}" if not mod.endswith(".") else f"{mod}{tok}")
+                    past_import_kw = False
+                    for ch in from_node.children():
+                        if ch.kind() == "import":
+                            past_import_kw = True
+                        elif past_import_kw:
+                            tok = ""
+                            if ch.kind() == "dotted_name":
+                                tok = ch.text().strip()
+                            elif ch.kind() == "aliased_import":
+                                n_field = ch.field("name")
+                                tok = n_field.text().strip() if n_field is not None else ""
+                            if tok and tok != "*":
+                                _add(f"{mod}.{tok}" if mod and not mod.endswith(".") else f"{mod}{tok}")
+            except (RuntimeError, ValueError):
+                pass
             return imports
 
         if suffix in (".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"):
-            for m in re.finditer(
-                r"""(?:import|export)\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]|require\s*\(\s*['"]([^'"]+)['"]\s*\)|import\s*\(\s*['"]([^'"]+)['"]\s*\)""",
-                content,
-            ):
-                spec = m.group(1) or m.group(2) or m.group(3)
-                if spec:
-                    _add(spec)
+            ts_lang = (
+                "tsx"
+                if suffix in (".tsx", ".jsx", ".vue", ".svelte")
+                else ("typescript" if suffix == ".ts" else "javascript")
+            )
+            blocks = _extract_sfc_script_blocks(content) if suffix in (".vue", ".svelte") else [(content, 0)]
+            for block_text, _ in blocks:
+                try:
+                    ts_root = SgRoot(block_text, ts_lang).root()
+                except (RuntimeError, ValueError):
+                    continue
+                for stmt in ts_root.find_all(kind="import_statement") + ts_root.find_all(kind="export_statement"):
+                    src = stmt.field("source")
+                    if src is not None:
+                        _add(src.text().strip("'\"`"))
+                for call in ts_root.find_all(kind="call_expression"):
+                    fn = call.field("function")
+                    fn_txt = fn.text().strip() if fn is not None else ""
+                    if fn_txt in ("require", "import") or any(ch.kind() == "import" for ch in call.children()):
+                        args = call.field("arguments")
+                        if args is not None:
+                            first_arg = next(
+                                (ch for ch in args.children() if ch.text() not in ("(", ")", ",")),
+                                None,
+                            )
+                            if first_arg is not None:
+                                raw = first_arg.text().strip()
+                                if raw.startswith(("'", '"', "`")) and len(raw) >= 2:
+                                    _add(raw.strip("'\"`"))
             return imports
 
         if suffix == ".go":
-            for m in re.finditer(r'^\s*import\s+(?:[A-Za-z0-9_.]+\s+)?"([^"]+)"', content, re.MULTILINE):
-                _add(m.group(1))
-            for block in re.finditer(r"\bimport\s*\((.*?)\)", content, re.DOTALL):
-                for m in re.finditer(r'"([^"]+)"', block.group(1)):
-                    _add(m.group(1))
+            try:
+                go_root = SgRoot(content, "go").root()
+                for spec in go_root.find_all(kind="import_spec"):
+                    path_node = spec.field("path")
+                    if path_node is not None:
+                        _add(path_node.text().strip('"`'))
+            except (RuntimeError, ValueError):
+                pass
             return imports
 
         if suffix == ".rs":
-            for m in re.finditer(r"\buse\s+([A-Za-z0-9_:]+)", content):
-                _add(m.group(1))
+            try:
+                rs_root = SgRoot(content, "rust").root()
+                for udecl in rs_root.find_all(kind="use_declaration"):
+                    arg = udecl.field("argument")
+                    if arg is not None:
+                        m = re.match(r"^([A-Za-z0-9_:]+)", arg.text().strip())
+                        if m:
+                            clean_rs = m.group(1).rstrip(":")
+                            if clean_rs:
+                                _add(clean_rs)
+            except (RuntimeError, ValueError):
+                pass
             return imports
 
-        if suffix in (".java", ".kt", ".kts"):
-            for m in re.finditer(r"^\s*import\s+(?:static\s+)?([A-Za-z0-9_.*]+)", content, re.MULTILINE):
-                _add(m.group(1))
+        if suffix == ".java":
+            try:
+                java_root = SgRoot(content, "java").root()
+                for idecl in java_root.find_all(kind="import_declaration"):
+                    has_wildcard = any(ch.kind() == "asterisk" for ch in idecl.children())
+                    target = next(
+                        (ch.text().strip() for ch in idecl.children() if ch.kind() in ("scoped_identifier", "identifier")),
+                        "",
+                    )
+                    if target:
+                        _add(f"{target}.*" if has_wildcard else target)
+            except (RuntimeError, ValueError):
+                pass
+            return imports
+
+        if suffix in (".kt", ".kts"):
+            try:
+                kt_root = SgRoot(content, "kotlin").root()
+                for ihdr in kt_root.find_all(kind="import_header"):
+                    txt = re.sub(r"^import\s+", "", ihdr.text().strip())
+                    txt = txt.split(" as ", 1)[0].strip().rstrip(";")
+                    if txt:
+                        _add(txt)
+            except (RuntimeError, ValueError):
+                pass
             return imports
 
         if suffix in (".c", ".cpp", ".h", ".hpp"):
-            for m in re.finditer(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', content, re.MULTILINE):
-                _add(m.group(1))
+            try:
+                cpp_root = SgRoot(content, "cpp").root()
+                for inc in cpp_root.find_all(kind="preproc_include"):
+                    path_node = inc.field("path")
+                    if path_node is not None:
+                        _add(path_node.text().strip('<>"'))
+            except (RuntimeError, ValueError):
+                pass
+            return imports
+
+        if suffix == ".cs":
+            try:
+                cs_root = SgRoot(content, "csharp").root()
+                for udir in cs_root.find_all(kind="using_directive"):
+                    targets = [ch.text().strip() for ch in udir.children() if ch.kind() in ("qualified_name", "identifier")]
+                    if targets:
+                        _add(targets[-1])
+            except (RuntimeError, ValueError):
+                pass
+            return imports
+
+        if suffix == ".rb":
+            try:
+                rb_root = SgRoot(content, "ruby").root()
+                for call in rb_root.find_all(kind="call"):
+                    m_field = call.field("method")
+                    if m_field is None or m_field.text().strip() not in ("require", "require_relative"):
+                        continue
+                    args = call.field("arguments")
+                    if args is not None:
+                        for str_node in args.find_all(kind="string"):
+                            sc = "".join(c.text() for c in str_node.children() if c.kind() == "string_content")
+                            if sc:
+                                _add(sc)
+            except (RuntimeError, ValueError):
+                pass
+            return imports
+
+        if suffix == ".php":
+            try:
+                php_root = SgRoot(content, "php").root()
+                for udecl in php_root.find_all(kind="namespace_use_declaration"):
+                    prefix_ns = next((ch.text().strip() for ch in udecl.children() if ch.kind() == "namespace_name"), "")
+                    clauses = list(udecl.find_all(kind="namespace_use_clause"))
+                    for clause in clauses:
+                        raw_clause = clause.text().strip().split(" as ", 1)[0].strip().lstrip("\\")
+                        if raw_clause:
+                            _add(f"{prefix_ns}\\{raw_clause}" if prefix_ns else raw_clause)
+                for req_kind in (
+                    "require_expression",
+                    "require_once_expression",
+                    "include_expression",
+                    "include_once_expression",
+                ):
+                    for req in php_root.find_all(kind=req_kind):
+                        for s_kind in ("string", "encapsed_string"):
+                            for s_node in req.find_all(kind=s_kind):
+                                val = s_node.text().strip("'\"")
+                                if val:
+                                    _add(val)
+            except (RuntimeError, ValueError):
+                pass
+            return imports
+
+        if suffix == ".swift":
+            try:
+                sw_root = SgRoot(content, "swift").root()
+                for idecl in sw_root.find_all(kind="import_declaration"):
+                    target = next(
+                        (ch.text().strip() for ch in idecl.children() if ch.kind() in ("identifier", "simple_identifier")),
+                        "",
+                    )
+                    if target:
+                        _add(target)
+            except (RuntimeError, ValueError):
+                pass
             return imports
 
         return imports
@@ -312,8 +453,31 @@ class BaseAstIndexer(ABC):
         return "\n".join(lines).strip()
 
 
+def _extract_python_docstring(node: Any) -> str | None:
+    """Extract and cleandoc the Python docstring from a class_definition or function_definition SgNode."""
+    body = node.field("body")
+    if body is None:
+        return None
+    first_stmt = next((ch for ch in body.children() if ch.kind() not in ("comment", ":", "newline")), None)
+    if first_stmt is None:
+        return None
+    str_node = (
+        first_stmt
+        if first_stmt.kind() == "string"
+        else (
+            next((ch for ch in first_stmt.children() if ch.kind() == "string"), None)
+            if first_stmt.kind() == "expression_statement"
+            else None
+        )
+    )
+    if str_node is None:
+        return None
+    raw = "".join(c.text() for c in str_node.children() if c.kind() in ("string_content", "escape_sequence"))
+    return inspect.cleandoc(raw)
+
+
 class AstGrepIndexer(BaseAstIndexer):
-    """High-performance AST indexer backed by ast-grep (Rust / Tree-sitter core)."""
+    """High-performance polyglot AST indexer backed by ast-grep (Tree-sitter core)."""
 
     LANGUAGE_MAP: ClassVar[dict[str, str]] = {
         ".py": "python",
@@ -328,7 +492,7 @@ class AstGrepIndexer(BaseAstIndexer):
         ".kts": "kotlin",
         ".c": "c",
         ".cpp": "cpp",
-        ".h": "c",
+        ".h": "cpp",
         ".hpp": "cpp",
         ".cs": "csharp",
         ".rb": "ruby",
@@ -338,33 +502,71 @@ class AstGrepIndexer(BaseAstIndexer):
         ".svelte": "svelte",
     }
 
-    _FALLBACK_SIGNATURE_LANGS: ClassVar[frozenset[str]] = frozenset(
-        {"c", "cpp", "csharp", "ruby", "php", "swift", "vue", "svelte"}
+    _C_CONTROL_KEYWORDS: ClassVar[frozenset[str]] = frozenset(
+        {"if", "for", "while", "switch", "return", "sizeof", "catch", "else", "do"}
     )
 
     def _get_lang(self, path: Path) -> str | None:
         return self.LANGUAGE_MAP.get(path.suffix.lower())
 
     @staticmethod
-    def _node_name(node: Any) -> str | None:
+    def _node_name(node: Any, lang: str = "") -> str | None:
+        if lang in ("c", "cpp") and node.kind() in ("function_definition", "declaration", "field_declaration"):
+            fdecl = node.field("declarator")
+            while fdecl is not None and fdecl.kind() != "function_declarator":
+                fdecl = fdecl.field("declarator") or next(
+                    (c for c in fdecl.children() if c.kind() == "function_declarator"),
+                    None,
+                )
+            if fdecl is not None:
+                inner = fdecl.field("declarator")
+                while inner is not None and inner.kind() not in (
+                    "identifier",
+                    "field_identifier",
+                    "qualified_identifier",
+                    "destructor_name",
+                ):
+                    inner = inner.field("declarator") or next(
+                        (
+                            c
+                            for c in inner.children()
+                            if c.kind() in ("identifier", "field_identifier", "qualified_identifier")
+                        ),
+                        None,
+                    )
+                if inner is not None:
+                    name_txt = inner.text().split("::")[-1].strip()
+                    return name_txt if name_txt and name_txt not in AstGrepIndexer._C_CONTROL_KEYWORDS else None
+            return None
         name_field = node.field("name")
         if name_field is not None:
             return name_field.text()
         for child in node.children():
-            if child.kind() in ("type_identifier", "simple_identifier", "identifier"):
+            if child.kind() in ("type_identifier", "simple_identifier", "identifier", "constant", "name"):
                 return child.text()
         return None
 
     @classmethod
-    def _enclosing_class_name(cls, node: Any) -> str | None:
+    def _enclosing_class_name(cls, node: Any, lang: str = "") -> str | None:
+        names: list[str] = []
         anc = node.parent()
         while anc is not None:
-            if anc.kind() in ("class_definition", "class_declaration", "object_declaration"):
-                cname = cls._node_name(anc)
+            if anc.kind() in (
+                "class_definition",
+                "class_declaration",
+                "object_declaration",
+                "class_specifier",
+                "struct_specifier",
+                "struct_declaration",
+                "record_declaration",
+                "class",
+                "module",
+            ):
+                cname = cls._node_name(anc, lang)
                 if cname:
-                    return cname
+                    names.append(cname)
             anc = anc.parent()
-        return None
+        return "::".join(reversed(names)) if names else None
 
     @staticmethod
     def _extract_decorator_info(node: Any, lang: str = "") -> tuple[int, list[str]]:
@@ -507,40 +709,66 @@ class AstGrepIndexer(BaseAstIndexer):
             subtests.append((sub_name, s_start, s_end, s_text))
         return subtests
 
-    def extract_symbols(self, file_path: Path | str, content: str | None = None) -> list[CodeSymbol]:
-        p = Path(file_path)
-        lang = self._get_lang(p)
-        if not lang or not AST_GREP_AVAILABLE or lang in self._FALLBACK_SIGNATURE_LANGS:
-            return FallbackIndexer().extract_symbols(file_path, content)
-
-        if content is None:
-            try:
-                content = p.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                return []
-
+    def _extract_sg_symbols_from_block(
+        self,
+        rel_path: str,
+        content: str,
+        lang: str,
+        *,
+        line_offset: int = 0,
+        sfc_lang: str | None = None,
+    ) -> list[CodeSymbol]:
         try:
             root = SgRoot(content, lang)
             node = root.root()
         except (RuntimeError, ValueError):
-            return FallbackIndexer().extract_symbols(file_path, content) if lang == "python" else []
+            return []
 
         symbols: list[CodeSymbol] = []
-        rel_path = str(p)
         content_lines = content.splitlines()
-        py_dunder_all = _extract_python_dunder_all_from_source(content) if lang == "python" else None
-        ts_exports = _extract_ts_exported_names(content) if lang in ("typescript", "tsx", "javascript", "jsx") else None
+        py_dunder_all = _extract_python_dunder_all_from_source(content, py_root=node) if lang == "python" else None
+        ts_exports = (
+            _extract_ts_exported_names(content, ts_root=node)
+            if lang in ("typescript", "tsx", "javascript", "jsx")
+            else None
+        )
 
         def _node_header_sig(ast_node: Any, rng_obj: Any) -> str:
             s_ln = rng_obj.start.line
+            s_col = rng_obj.start.column
+            body_node = ast_node.field("body")
+            if body_node is not None:
+                b_start = body_node.range().start
+                b_ln = b_start.line
+                b_col = b_start.column
+                if s_ln == b_ln and s_ln < len(content_lines):
+                    return _extract_header_signature(content_lines[s_ln][s_col:b_col])
+                if b_ln > s_ln and s_ln < len(content_lines):
+                    first = content_lines[s_ln][s_col:]
+                    mid = content_lines[s_ln + 1 : min(b_ln, s_ln + 60)]
+                    last = [content_lines[b_ln][:b_col]] if b_ln < len(content_lines) and b_ln <= s_ln + 60 else []
+                    return _extract_header_signature("\n".join([first, *mid, *last]))
             e_ln = rng_obj.end.line
             if s_ln == e_ln and s_ln < len(content_lines):
                 return _extract_header_signature(ast_node.text())
-            slice_lines = content_lines[s_ln : min(e_ln + 1, s_ln + 12)]
+            slice_lines = content_lines[s_ln : min(e_ln + 1, s_ln + 60)]
             if not slice_lines:
                 return _extract_header_signature(ast_node.text())
-            first = slice_lines[0][rng_obj.start.column :]
+            first = slice_lines[0][s_col:]
             return _extract_header_signature("\n".join([first, *slice_lines[1:]]))
+
+        all_fn_kinds = frozenset(
+            {
+                "function_definition",
+                "function_declaration",
+                "method_definition",
+                "function_item",
+                "method_declaration",
+                "method",
+                "singleton_method",
+                "local_function_statement",
+            }
+        )
 
         # 1. Classes, Structs & Interfaces
         class_kinds = {
@@ -553,13 +781,38 @@ class AstGrepIndexer(BaseAstIndexer):
             "go": ["type_spec"],
             "java": ["class_declaration", "interface_declaration"],
             "kotlin": ["class_declaration", "object_declaration"],
+            "c": ["struct_specifier", "enum_specifier"],
+            "cpp": ["class_specifier", "struct_specifier", "enum_specifier"],
+            "csharp": [
+                "class_declaration",
+                "interface_declaration",
+                "struct_declaration",
+                "enum_declaration",
+                "record_declaration",
+            ],
+            "ruby": ["class", "module"],
+            "php": ["class_declaration", "interface_declaration", "trait_declaration", "enum_declaration"],
+            "swift": ["class_declaration", "protocol_declaration"],
         }.get(lang, [])
 
         class_nodes: dict[str, Any] = {}
         class_is_public: dict[str, bool] = {}
         for ck in class_kinds:
             for m in node.find_all(kind=ck):
-                cname = self._node_name(m)
+                if lang in ("c", "cpp") and not any(
+                    ch.kind() in ("field_declaration_list", "enumerator_list") for ch in m.children()
+                ):
+                    continue
+                anc = m.parent()
+                nested_in_fn = False
+                while anc is not None:
+                    if anc.kind() in all_fn_kinds or (lang == "python" and anc.kind() == "class_definition"):
+                        nested_in_fn = True
+                        break
+                    anc = anc.parent()
+                if nested_in_fn:
+                    continue
+                cname = self._node_name(m, lang)
                 if cname:
                     rng = m.range()
                     dec_start, dec_list = self._extract_decorator_info(m, lang)
@@ -588,6 +841,37 @@ class AstGrepIndexer(BaseAstIndexer):
                         else:
                             kind_label = "class"
                         sig = hdr_sig
+                    elif lang in ("c", "cpp"):
+                        kind_label = (
+                            "struct"
+                            if ck == "struct_specifier"
+                            else ("enum" if ck == "enum_specifier" else "class")
+                        )
+                        sig = hdr_sig
+                    elif lang == "csharp":
+                        kind_label = (
+                            "interface"
+                            if ck == "interface_declaration"
+                            else ("struct" if ck == "struct_declaration" else ("enum" if ck == "enum_declaration" else "class"))
+                        )
+                        sig = hdr_sig
+                    elif lang == "php":
+                        kind_label = (
+                            "interface"
+                            if ck in ("interface_declaration", "trait_declaration")
+                            else ("enum" if ck == "enum_declaration" else "class")
+                        )
+                        sig = hdr_sig
+                    elif lang == "swift":
+                        if ck == "protocol_declaration":
+                            kind_label = "interface"
+                        elif any(c.kind() == "struct" for c in m.children()):
+                            kind_label = "struct"
+                        elif any(c.kind() == "enum" for c in m.children()):
+                            kind_label = "enum"
+                        else:
+                            kind_label = "class"
+                        sig = hdr_sig
                     else:
                         kind_label = "interface" if ("interface" in ck or "type_alias" in ck) else "class"
                         sig = hdr_sig
@@ -599,12 +883,14 @@ class AstGrepIndexer(BaseAstIndexer):
                         missing_decos = [d for d in dec_list if not sig.startswith(d)]
                         if missing_decos:
                             sig = f"{' '.join(missing_decos)} {sig}"
+                    doc = _extract_python_docstring(m) if lang == "python" else None
                     sym = CodeSymbol(
                         name=cname,
                         kind=kind_label,
                         file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=rng.end.line + 1,
+                        line_start=dec_start + line_offset,
+                        line_end=rng.end.line + 1 + line_offset,
+                        docstring=doc,
                         signature=sig,
                     )
                     sym.is_public = _evaluate_symbol_visibility(
@@ -629,17 +915,13 @@ class AstGrepIndexer(BaseAstIndexer):
             "go": ["function_declaration", "method_declaration"],
             "java": ["method_declaration"],
             "kotlin": ["function_declaration"],
+            "c": ["function_definition", "declaration"],
+            "cpp": ["function_definition", "declaration", "field_declaration"],
+            "csharp": ["method_declaration"],
+            "ruby": ["method", "singleton_method"],
+            "php": ["function_definition", "method_declaration"],
+            "swift": ["function_declaration"],
         }.get(lang, [])
-
-        all_fn_kinds = frozenset(
-            {
-                "function_definition",
-                "function_declaration",
-                "method_definition",
-                "function_item",
-                "method_declaration",
-            }
-        )
 
         class_ranges = [
             (cname, cnode.range().start.line, cnode.range().end.line) for cname, cnode in class_nodes.items()
@@ -647,18 +929,27 @@ class AstGrepIndexer(BaseAstIndexer):
 
         for fk in fn_kinds:
             for m in node.find_all(kind=fk):
+                if (
+                    lang in ("c", "cpp")
+                    and fk in ("declaration", "field_declaration")
+                    and not list(m.find_all(kind="function_declarator"))
+                ):
+                    continue
                 # Skip nested local helper functions defined inside another function or method
                 anc = m.parent()
                 nested_in_fn = False
+                enclosing_py_classes = 0
                 while anc is not None:
                     if anc.kind() in all_fn_kinds:
                         nested_in_fn = True
                         break
+                    if lang == "python" and anc.kind() == "class_definition":
+                        enclosing_py_classes += 1
                     anc = anc.parent()
-                if nested_in_fn:
+                if nested_in_fn or enclosing_py_classes > 1:
                     continue
 
-                fname = self._node_name(m)
+                fname = self._node_name(m, lang)
                 if not fname:
                     continue
                 rng = m.range()
@@ -703,7 +994,33 @@ class AstGrepIndexer(BaseAstIndexer):
 
                 kind_label = "method" if parent_cls or "method" in fk else "function"
                 sig = _node_header_sig(m, rng)
-                if lang in ("typescript", "tsx", "javascript", "jsx") and kind_label != "method":
+                if lang == "ruby":
+                    rb_vis = "public"
+                    p_node = m.parent()
+                    if p_node is not None and p_node.kind() == "argument_list":
+                        p_node = p_node.parent()
+                    if p_node is not None and p_node.kind() == "call":
+                        m_field = p_node.field("method")
+                        if m_field is not None:
+                            m_txt = m_field.text().strip()
+                            if m_txt in ("private", "protected", "public"):
+                                rb_vis = m_txt
+                            elif m_txt == "private_class_method":
+                                rb_vis = "private"
+                    elif fk == "method":
+                        prev_sib = m.prev()
+                        while prev_sib is not None:
+                            if prev_sib.kind() == "identifier" and prev_sib.text().strip() in (
+                                "private",
+                                "protected",
+                                "public",
+                            ):
+                                rb_vis = prev_sib.text().strip()
+                                break
+                            prev_sib = prev_sib.prev()
+                    if rb_vis in ("private", "protected") and not sig.startswith(f"{rb_vis} "):
+                        sig = f"{rb_vis} {sig}"
+                elif lang in ("typescript", "tsx", "javascript", "jsx") and kind_label != "method":
                     parent = m.parent()
                     if parent is not None and parent.kind() == "export_statement" and not sig.startswith("export "):
                         sig = f"export {sig}"
@@ -711,12 +1028,14 @@ class AstGrepIndexer(BaseAstIndexer):
                     missing_decos = [d for d in dec_list if not sig.startswith(d)]
                     if missing_decos:
                         sig = f"{' '.join(missing_decos)} {sig}"
+                doc = _extract_python_docstring(m) if lang == "python" else None
                 sym = CodeSymbol(
                     name=fname,
                     kind=kind_label,
                     file_path=rel_path,
-                    line_start=dec_start,
-                    line_end=rng.end.line + 1,
+                    line_start=dec_start + line_offset,
+                    line_end=rng.end.line + 1 + line_offset,
+                    docstring=doc,
                     parent_symbol=parent_cls,
                     signature=sig,
                 )
@@ -763,7 +1082,7 @@ class AstGrepIndexer(BaseAstIndexer):
                     anc = anc.parent()
                 if nested_in_fn_or_cls:
                     continue
-                fname = self._node_name(vdecl)
+                fname = self._node_name(vdecl, lang)
                 if not fname or fname in seen_fn_names:
                     continue
                 seen_fn_names.add(fname)
@@ -775,8 +1094,8 @@ class AstGrepIndexer(BaseAstIndexer):
                     name=fname,
                     kind="function",
                     file_path=rel_path,
-                    line_start=rng.start.line + 1,
-                    line_end=rng.end.line + 1,
+                    line_start=rng.start.line + 1 + line_offset,
+                    line_end=rng.end.line + 1 + line_offset,
                     parent_symbol=None,
                     signature=sig,
                 )
@@ -788,307 +1107,52 @@ class AstGrepIndexer(BaseAstIndexer):
                 )
                 sym.is_boundary_export = _evaluate_boundary_export(sym, py_dunder_all=py_dunder_all)
                 symbols.append(sym)
+
+            if sfc_lang == "vue":
+                for call in node.find_all(kind="call_expression"):
+                    fn_node = call.field("function")
+                    if fn_node is not None and fn_node.text().strip() == "defineProps":
+                        crng = call.range()
+                        csig = _node_header_sig(call, crng)
+                        sym = CodeSymbol(
+                            name="defineProps",
+                            kind="interface",
+                            file_path=rel_path,
+                            line_start=crng.start.line + 1 + line_offset,
+                            line_end=crng.end.line + 1 + line_offset,
+                            signature=csig,
+                            is_public=True,
+                            is_boundary_export=True,
+                        )
+                        symbols.append(sym)
+            elif sfc_lang == "svelte":
+                for exp in node.find_all(kind="export_statement"):
+                    if not re.match(r"^export\s+let\b", exp.text().strip()):
+                        continue
+                    erng = exp.range()
+                    esig = _node_header_sig(exp, erng)
+                    for vd in exp.find_all(kind="variable_declarator"):
+                        pname = self._node_name(vd, lang)
+                        if pname:
+                            sym = CodeSymbol(
+                                name=pname,
+                                kind="interface",
+                                file_path=rel_path,
+                                line_start=erng.start.line + 1 + line_offset,
+                                line_end=erng.end.line + 1 + line_offset,
+                                signature=esig,
+                                is_public=True,
+                                is_boundary_export=True,
+                            )
+                            symbols.append(sym)
+
         return symbols
-
-    def list_test_functions(self, file_path: Path | str, content: str | None = None) -> dict[str, str]:
-        p = Path(file_path)
-        lang = self._get_lang(p)
-        if not lang or not AST_GREP_AVAILABLE or lang in self._FALLBACK_SIGNATURE_LANGS:
-            return FallbackIndexer().list_test_functions(file_path, content)
-
-        if content is None:
-            try:
-                content = p.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                return {}
-
-        try:
-            root = SgRoot(content, lang)
-            node = root.root()
-        except (RuntimeError, ValueError):
-            return FallbackIndexer().list_test_functions(file_path, content) if lang == "python" else {}
-
-        lines = content.splitlines()
-        result: dict[str, str] = {}
-
-        fn_nodes: list[Any] = []
-        if lang == "python":
-            fn_nodes = node.find_all(kind="function_definition")
-        elif lang in ("typescript", "tsx", "javascript", "jsx"):
-            fn_nodes = node.find_all(kind="function_declaration")
-            calls = node.find_all(kind="call_expression")
-            for c in calls:
-                t_title = self._extract_ts_test_call_title(c)
-                if t_title:
-                    rng = c.range()
-                    start_line = rng.start.line + 1
-                    prefix = _extract_preceding_context(lines, start_line)
-                    c_text = f"{prefix}\n{c.text()}" if prefix else c.text()
-                    result[t_title] = f"{result[t_title]}\n{c_text}" if t_title in result else c_text
-        elif lang in ("go", "kotlin"):
-            fn_nodes = node.find_all(kind="function_declaration")
-        elif lang == "rust":
-            fn_nodes = node.find_all(kind="function_item")
-        elif lang == "java":
-            fn_nodes = node.find_all(kind="method_declaration")
-
-        for fn in fn_nodes:
-            fname = self._node_name(fn)
-            if not fname:
-                continue
-            dec_start, dec_list = self._extract_decorator_info(fn, lang)
-            start_line = dec_start
-            parent = fn.parent()
-            if parent and parent.kind() in ("decorated_definition",):
-                base_text = parent.text()
-            elif dec_list and lang == "rust":
-                base_text = f"{chr(10).join(dec_list)}\n{fn.text()}"
-            else:
-                base_text = fn.text()
-            prefix = _extract_preceding_context(lines, start_line)
-            full_text = f"{prefix}\n{base_text}" if prefix else base_text
-
-            is_test = (
-                fname.startswith("test")
-                or fname.endswith("_test")
-                or fname.startswith("Test")
-                or bool(_RUST_TEST_ATTR_RE.search(full_text))
-                or "@Test" in full_text
-            )
-            if is_test:
-                cls_name = self._enclosing_class_name(fn)
-                if cls_name:
-                    qual_key = f"{cls_name}::{fname}"
-                    result[qual_key] = f"{result[qual_key]}\n{full_text}" if qual_key in result else full_text
-                result[fname] = f"{result[fname]}\n{full_text}" if fname in result else full_text
-                if lang == "go":
-                    for sub_name, _, _, sub_text in self._extract_go_subtests(fn, lines):
-                        for skey in (f"{fname}/{sub_name}", f"{fname}::{sub_name}", sub_name):
-                            result[skey] = f"{result[skey]}\n{sub_text}" if skey in result else sub_text
-
-        return result
-
-    def extract_test_bindings(self, file_path: Path | str, content: str | None = None) -> list[TestFunctionBinding]:
-        p = Path(file_path)
-        lang = self._get_lang(p)
-        if not lang or not AST_GREP_AVAILABLE or lang in self._FALLBACK_SIGNATURE_LANGS:
-            return FallbackIndexer().extract_test_bindings(file_path, content)
-
-        if content is None:
-            try:
-                content = p.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                return []
-
-        try:
-            root = SgRoot(content, lang)
-            node = root.root()
-        except (RuntimeError, ValueError):
-            return FallbackIndexer().extract_test_bindings(file_path, content) if lang == "python" else []
-
-        lines = content.splitlines()
-        by_name: dict[str, TestFunctionBinding] = {}
-        rel_path = str(p)
-
-        def _record_binding(tname: str, lstart: int, lend: int, invs: list[str], pols: list[str]) -> None:
-            if tname in by_name:
-                existing = by_name[tname]
-                existing.invariants = sorted(set(existing.invariants) | set(invs))
-                existing.policies = sorted(set(existing.policies) | set(pols))
-                existing.line_end = max(existing.line_end, lend)
-            else:
-                by_name[tname] = TestFunctionBinding(
-                    test_file=rel_path,
-                    test_name=tname,
-                    line_start=lstart,
-                    line_end=lend,
-                    invariants=list(invs),
-                    policies=list(pols),
-                )
-
-        # Detect test function nodes
-        fn_nodes: list[Any] = []
-        if lang == "python":
-            fn_nodes = node.find_all(kind="function_definition")
-        elif lang in ("typescript", "tsx", "javascript", "jsx"):
-            fn_nodes = node.find_all(kind="function_declaration")
-            # Also capture it/test/describe (.each/.concurrent/.only/.skip) and Deno.test call expressions
-            calls = node.find_all(kind="call_expression")
-            for c in calls:
-                t_title = self._extract_ts_test_call_title(c)
-                if t_title:
-                    rng = c.range()
-                    start_line = rng.start.line + 1
-                    prefix = _extract_preceding_context(lines, start_line)
-                    c_text = f"{prefix}\n{c.text()}" if prefix else c.text()
-                    invs = sorted(set(INVARIANT_PATTERN.findall(c_text)))
-                    pols = sorted(set(POLICY_PATTERN.findall(c_text)))
-                    if invs or pols:
-                        _record_binding(t_title, start_line, rng.end.line + 1, invs, pols)
-        elif lang in ("go", "kotlin"):
-            fn_nodes = node.find_all(kind="function_declaration")
-        elif lang == "rust":
-            fn_nodes = node.find_all(kind="function_item")
-        elif lang == "java":
-            fn_nodes = node.find_all(kind="method_declaration")
-
-        for fn in fn_nodes:
-            fname = self._node_name(fn)
-            if not fname:
-                continue
-            rng = fn.range()
-            dec_start, dec_list = self._extract_decorator_info(fn, lang)
-            start_line = dec_start
-            parent = fn.parent()
-            if parent and parent.kind() in ("decorated_definition",):
-                base_text = parent.text()
-            elif dec_list and lang == "rust":
-                base_text = f"{chr(10).join(dec_list)}\n{fn.text()}"
-            else:
-                base_text = fn.text()
-            prefix = _extract_preceding_context(lines, start_line)
-            fn_text = f"{prefix}\n{base_text}" if prefix else base_text
-
-            # Test function naming conventions
-            is_test = (
-                fname.startswith("test_")
-                or fname.endswith("_test")
-                or fname.startswith("Test")  # Go convention
-                or (fname.startswith("test") and lang in ("java", "kotlin"))
-                or bool(_RUST_TEST_ATTR_RE.search(fn_text))
-                or "@Test" in fn_text
-            )
-            if not is_test:
-                continue
-
-            invs = sorted(set(INVARIANT_PATTERN.findall(fn_text)))
-            pols = sorted(set(POLICY_PATTERN.findall(fn_text)))
-
-            if invs or pols:
-                end_line = rng.end.line + 1
-                cls_name = self._enclosing_class_name(fn)
-                if cls_name:
-                    _record_binding(f"{cls_name}::{fname}", start_line, end_line, invs, pols)
-                _record_binding(fname, start_line, end_line, invs, pols)
-
-            if lang == "go":
-                for sub_name, s_start, s_end, sub_text in self._extract_go_subtests(fn, lines):
-                    sub_invs = sorted(set(INVARIANT_PATTERN.findall(sub_text)))
-                    sub_pols = sorted(set(POLICY_PATTERN.findall(sub_text)))
-                    if sub_invs or sub_pols:
-                        _record_binding(f"{fname}/{sub_name}", s_start, s_end, sub_invs, sub_pols)
-                        _record_binding(f"{fname}::{sub_name}", s_start, s_end, sub_invs, sub_pols)
-                        _record_binding(sub_name, s_start, s_end, sub_invs, sub_pols)
-
-        return list(by_name.values())
-
-
-def _python_node_signature(node: ast.AST) -> str:
-    """Build a deterministic signature string for a Python AST ClassDef or FunctionDef (including decorators)."""
-    decos = [f"@{ast.unparse(d)}" for d in (getattr(node, "decorator_list", None) or ())]
-    deco_prefix = f"{' '.join(decos)} " if decos else ""
-    if isinstance(node, ast.ClassDef):
-        bases = [ast.unparse(b) for b in node.bases]
-        base_str = f"({', '.join(bases)})" if bases else ""
-        return f"{deco_prefix}class {node.name}{base_str}"
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
-        args_str = ast.unparse(node.args)
-        ret_str = f" -> {ast.unparse(node.returns)}" if node.returns else ""
-        return f"{deco_prefix}{prefix} {node.name}({args_str}){ret_str}"
-    return ""
-
-
-class FallbackIndexer(BaseAstIndexer):
-    """Python stdlib ast and secondary-language regex indexer (delegating core polyglot languages to AstGrepIndexer)."""
-
-    _AST_GREP_CORE_EXTS: ClassVar[frozenset[str]] = frozenset(
-        {".ts", ".tsx", ".js", ".jsx", ".rs", ".go", ".java", ".kt", ".kts"}
-    )
-
-    PYTHON_FN_REGEX = re.compile(r"^[ \t]*(?:async\s+)?def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(", re.MULTILINE)
-    PYTHON_CLS_REGEX = re.compile(r"^[ \t]*class\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\(|:)", re.MULTILINE)
-
-    TS_FN_REGEX = re.compile(
-        r"^[ \t]*(?:export\s+)?(?:async\s+)?function\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(", re.MULTILINE
-    )
-    TS_ARROW_FN_REGEX = re.compile(
-        r"^(?:export\s+)?(?:const|let|var)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)\s*(?::[^=]+)?=>|[a-zA-Z_][a-zA-Z0-9_]*\s*=>|function\b)",
-        re.MULTILINE,
-    )
-    TS_CLS_REGEX = re.compile(r"^[ \t]*(?:export\s+)?(?:class|interface|type)\s+([a-zA-Z_][a-zA-Z0-9_]*)", re.MULTILINE)
-    C_TYPE_REGEX = re.compile(
-        r"^[ \t]*(?:typedef\s+)?(struct|class|enum)(?:\s+class)?\s+([a-zA-Z_][a-zA-Z0-9_]*)\b",
-        re.MULTILINE,
-    )
-    C_FN_REGEX = re.compile(
-        r"^[ \t]*(?:(?:static|inline|extern|virtual|constexpr|explicit|friend)\s+)*(?:(?:const|unsigned|signed|long|short|struct|class|enum|typename)\s+)*[a-zA-Z_][a-zA-Z0-9_:<>]*[\s\*&]+([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^;{}]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:\{|;|$)",
-        re.MULTILINE,
-    )
-    CS_TYPE_REGEX = re.compile(
-        r"^[ \t]*(?:(?:public|private|protected|internal|static|abstract|sealed|partial|readonly)\s+)*(class|interface|struct|enum|record)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-        re.MULTILINE,
-    )
-    CS_FN_REGEX = re.compile(
-        r"^[ \t]*(?:(?:public|private|protected|internal|static|virtual|override|abstract|async|extern|unsafe|new)\s+)+[a-zA-Z_][a-zA-Z0-9_<>,\.\[\]\?\s]*\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:<[^>]+>)?\s*\(",
-        re.MULTILINE,
-    )
-    RB_CLS_REGEX = re.compile(r"^[ \t]*(class|module)\s+([A-Z][a-zA-Z0-9_:]*)", re.MULTILINE)
-    RB_FN_REGEX = re.compile(r"^[ \t]*def\s+(?:self\.)?([a-zA-Z_][a-zA-Z0-9_!\?=]*)", re.MULTILINE)
-    PHP_CLS_REGEX = re.compile(
-        r"^[ \t]*(?:(?:abstract|final|readonly)\s+)*(class|interface|trait|enum)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-        re.MULTILINE,
-    )
-    PHP_FN_REGEX = re.compile(
-        r"^[ \t]*(?:(?:public|private|protected|static|abstract|final)\s+)*function\s+&?([a-zA-Z_][a-zA-Z0-9_]*)\s*\(",
-        re.MULTILINE,
-    )
-    SWIFT_CLS_REGEX = re.compile(
-        r"^[ \t]*(?:(?:public|private|fileprivate|internal|open|final|indirect)\s+)*(class|struct|enum|protocol|actor)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-        re.MULTILINE,
-    )
-    SWIFT_FN_REGEX = re.compile(
-        r"^[ \t]*(?:(?:public|private|fileprivate|internal|open|static|class|mutating|nonmutating|override)\s+)*func\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:<[^>]+>)?\s*\(",
-        re.MULTILINE,
-    )
-    _C_CONTROL_KEYWORDS: ClassVar[frozenset[str]] = frozenset(
-        {"if", "for", "while", "switch", "return", "sizeof", "catch", "else", "do"}
-    )
-
-    @staticmethod
-    def _strip_block_comments_preserving_lines(text: str) -> str:
-        """Replace C-style /* ... */, HTML <!-- ... -->, and Ruby =begin ... =end block comments with spaces while preserving line numbers."""
-        return re.sub(
-            r"/\*.*?\*/|<!--.*?-->|^=begin\b.*?^=end\b",
-            lambda m: "".join("\n" if ch == "\n" else " " for ch in m.group(0)),
-            text,
-            flags=re.DOTALL | re.MULTILINE,
-        )
-
-    @staticmethod
-    def _leading_decorator_context(lines: list[str], idx_1based: int) -> tuple[int, str]:
-        """Collect contiguous @decorator or #[attribute] lines immediately preceding idx_1based."""
-        collected: list[str] = []
-        start_line = idx_1based
-        i = idx_1based - 2
-        while i >= 0:
-            s = lines[i].strip()
-            if (
-                s.startswith("@") and not s.startswith(("@interface", "@theme", "@keyframes", "@font-face"))
-            ) or s.startswith("#["):
-                collected.append(re.sub(r"\s+", " ", s))
-                start_line = i + 1
-                i -= 1
-            else:
-                break
-        collected.reverse()
-        return start_line, " ".join(collected)
 
     def extract_symbols(self, file_path: Path | str, content: str | None = None) -> list[CodeSymbol]:
         p = Path(file_path)
-        suffix = p.suffix.lower()
-        if suffix in self._AST_GREP_CORE_EXTS and AST_GREP_AVAILABLE:
-            return AstGrepIndexer().extract_symbols(file_path, content)
+        lang = self._get_lang(p)
+        if not lang:
+            return []
 
         if content is None:
             try:
@@ -1097,309 +1161,27 @@ class FallbackIndexer(BaseAstIndexer):
                 return []
 
         rel_path = str(p)
-        symbols: list[CodeSymbol] = []
+        if lang in ("vue", "svelte"):
+            symbols: list[CodeSymbol] = []
+            for block_text, line_offset in _extract_sfc_script_blocks(content):
+                symbols.extend(
+                    self._extract_sg_symbols_from_block(
+                        rel_path,
+                        block_text,
+                        "tsx",
+                        line_offset=line_offset,
+                        sfc_lang=lang,
+                    )
+                )
+            return symbols
 
-        # 1. Pure Python via stdlib ast
-        if suffix == ".py":
-            try:
-                tree = ast.parse(content, filename=rel_path)
-                py_dunder_all = _extract_python_dunder_all(tree)
-                for node in ast.iter_child_nodes(tree):
-                    if isinstance(node, ast.ClassDef):
-                        cls_start = min(
-                            (d.lineno for d in getattr(node, "decorator_list", ()) or ()),
-                            default=node.lineno,
-                        )
-                        cls_sym = CodeSymbol(
-                            name=node.name,
-                            kind="class",
-                            file_path=rel_path,
-                            line_start=cls_start,
-                            line_end=getattr(node, "end_lineno", node.lineno),
-                            docstring=ast.get_docstring(node),
-                            signature=_python_node_signature(node),
-                        )
-                        cls_sym.is_public = _evaluate_symbol_visibility(cls_sym, py_dunder_all=py_dunder_all)
-                        cls_sym.is_boundary_export = _evaluate_boundary_export(cls_sym, py_dunder_all=py_dunder_all)
-                        symbols.append(cls_sym)
-                        for item in node.body:
-                            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                                m_start = min(
-                                    (d.lineno for d in getattr(item, "decorator_list", ()) or ()),
-                                    default=item.lineno,
-                                )
-                                m_sym = CodeSymbol(
-                                    name=item.name,
-                                    kind="method",
-                                    file_path=rel_path,
-                                    line_start=m_start,
-                                    line_end=getattr(item, "end_lineno", item.lineno),
-                                    parent_symbol=node.name,
-                                    docstring=ast.get_docstring(item),
-                                    signature=_python_node_signature(item),
-                                )
-                                m_sym.is_public = _evaluate_symbol_visibility(
-                                    m_sym,
-                                    py_dunder_all=py_dunder_all,
-                                    class_is_public={node.name: bool(cls_sym.is_public)},
-                                )
-                                m_sym.is_boundary_export = _evaluate_boundary_export(m_sym, py_dunder_all=py_dunder_all)
-                                symbols.append(m_sym)
-                    elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        fn_start = min(
-                            (d.lineno for d in getattr(node, "decorator_list", ()) or ()),
-                            default=node.lineno,
-                        )
-                        fn_sym = CodeSymbol(
-                            name=node.name,
-                            kind="function",
-                            file_path=rel_path,
-                            line_start=fn_start,
-                            line_end=getattr(node, "end_lineno", node.lineno),
-                            docstring=ast.get_docstring(node),
-                            signature=_python_node_signature(node),
-                        )
-                        fn_sym.is_public = _evaluate_symbol_visibility(fn_sym, py_dunder_all=py_dunder_all)
-                        fn_sym.is_boundary_export = _evaluate_boundary_export(fn_sym, py_dunder_all=py_dunder_all)
-                        symbols.append(fn_sym)
-                return symbols
-            except (SyntaxError, ValueError):
-                pass
-
-        # 2. Regex extraction for broken Python and secondary languages (_FALLBACK_SIGNATURE_LANGS)
-        clean_content = content if suffix == ".py" else self._strip_block_comments_preserving_lines(content)
-        lines = clean_content.splitlines()
-        ts_exports = (
-            _extract_ts_exported_names(clean_content)
-            if suffix in (".vue", ".svelte", ".ts", ".tsx", ".js", ".jsx")
-            else None
-        )
-        rb_visibility = "public"
-        for idx, line in enumerate(lines, start=1):
-            stripped_line = line.strip()
-            if not stripped_line or stripped_line.startswith(("//", "#", "*")):
-                continue
-            dec_start, dec_prefix = self._leading_decorator_context(lines, idx)
-            sig = _extract_header_signature(line)
-            if dec_prefix and not sig.startswith(dec_prefix):
-                sig = f"{dec_prefix} {sig}"
-            if suffix == ".py":
-                for m in self.PYTHON_CLS_REGEX.finditer(line):
-                    sym = CodeSymbol(
-                        name=m.group(1),
-                        kind="class",
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
-                    symbols.append(sym)
-                for m in self.PYTHON_FN_REGEX.finditer(line):
-                    sym = CodeSymbol(
-                        name=m.group(1),
-                        kind="function",
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
-                    symbols.append(sym)
-            elif suffix in (".vue", ".svelte", ".ts", ".tsx", ".js", ".jsx"):
-                for m in self.TS_CLS_REGEX.finditer(line):
-                    sym = CodeSymbol(
-                        name=m.group(1),
-                        kind="interface" if "interface" in line else "class",
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym, ts_exports=ts_exports)
-                    symbols.append(sym)
-                for fn_re in (self.TS_FN_REGEX, self.TS_ARROW_FN_REGEX):
-                    for m in fn_re.finditer(line):
-                        sym = CodeSymbol(
-                            name=m.group(1),
-                            kind="function",
-                            file_path=rel_path,
-                            line_start=dec_start,
-                            line_end=idx,
-                            signature=sig,
-                        )
-                        sym.is_public = _evaluate_symbol_visibility(sym, ts_exports=ts_exports)
-                        symbols.append(sym)
-                for m in _SVELTE_PROP_RE.finditer(line):
-                    sym = CodeSymbol(
-                        name=m.group(1),
-                        kind="interface",
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = True
-                    symbols.append(sym)
-                if "defineProps" in line:
-                    sym = CodeSymbol(
-                        name="defineProps",
-                        kind="interface",
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = True
-                    symbols.append(sym)
-            elif suffix in (".c", ".cpp", ".h", ".hpp"):
-                type_matched = False
-                for m in self.C_TYPE_REGEX.finditer(line):
-                    type_matched = True
-                    sym = CodeSymbol(
-                        name=m.group(2),
-                        kind="struct" if m.group(1) == "struct" else ("enum" if m.group(1) == "enum" else "class"),
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
-                    symbols.append(sym)
-                if not type_matched:
-                    for m in self.C_FN_REGEX.finditer(line):
-                        fname = m.group(1)
-                        if fname in self._C_CONTROL_KEYWORDS:
-                            continue
-                        sym = CodeSymbol(
-                            name=fname,
-                            kind="function",
-                            file_path=rel_path,
-                            line_start=dec_start,
-                            line_end=idx,
-                            signature=sig,
-                        )
-                        sym.is_public = _evaluate_symbol_visibility(sym)
-                        symbols.append(sym)
-            elif suffix == ".cs":
-                type_matched = False
-                for m in self.CS_TYPE_REGEX.finditer(line):
-                    type_matched = True
-                    kind_raw = m.group(1)
-                    sym = CodeSymbol(
-                        name=m.group(2),
-                        kind="interface"
-                        if kind_raw == "interface"
-                        else ("struct" if kind_raw == "struct" else ("enum" if kind_raw == "enum" else "class")),
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
-                    symbols.append(sym)
-                if not type_matched:
-                    for m in self.CS_FN_REGEX.finditer(line):
-                        fname = m.group(1)
-                        if fname in self._C_CONTROL_KEYWORDS:
-                            continue
-                        sym = CodeSymbol(
-                            name=fname,
-                            kind="function",
-                            file_path=rel_path,
-                            line_start=dec_start,
-                            line_end=idx,
-                            signature=sig,
-                        )
-                        sym.is_public = _evaluate_symbol_visibility(sym)
-                        symbols.append(sym)
-            elif suffix == ".rb":
-                if stripped_line in ("private", "protected", "public"):
-                    rb_visibility = stripped_line
-                    continue
-                for m in self.RB_CLS_REGEX.finditer(line):
-                    rb_visibility = "public"
-                    sym = CodeSymbol(
-                        name=m.group(2),
-                        kind="class",
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
-                    symbols.append(sym)
-                for m in self.RB_FN_REGEX.finditer(line):
-                    rb_sig = sig if rb_visibility == "public" else f"{rb_visibility} {sig}"
-                    sym = CodeSymbol(
-                        name=m.group(1),
-                        kind="function",
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=rb_sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
-                    symbols.append(sym)
-            elif suffix == ".php":
-                for m in self.PHP_CLS_REGEX.finditer(line):
-                    sym = CodeSymbol(
-                        name=m.group(2),
-                        kind="interface"
-                        if m.group(1) in ("interface", "trait")
-                        else ("enum" if m.group(1) == "enum" else "class"),
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
-                    symbols.append(sym)
-                for m in self.PHP_FN_REGEX.finditer(line):
-                    sym = CodeSymbol(
-                        name=m.group(1),
-                        kind="function",
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
-                    symbols.append(sym)
-            elif suffix == ".swift":
-                for m in self.SWIFT_CLS_REGEX.finditer(line):
-                    kind_raw = m.group(1)
-                    sym = CodeSymbol(
-                        name=m.group(2),
-                        kind="interface"
-                        if kind_raw == "protocol"
-                        else ("struct" if kind_raw == "struct" else ("enum" if kind_raw == "enum" else "class")),
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
-                    symbols.append(sym)
-                for m in self.SWIFT_FN_REGEX.finditer(line):
-                    sym = CodeSymbol(
-                        name=m.group(1),
-                        kind="function",
-                        file_path=rel_path,
-                        line_start=dec_start,
-                        line_end=idx,
-                        signature=sig,
-                    )
-                    sym.is_public = _evaluate_symbol_visibility(sym)
-                    symbols.append(sym)
-
-        return symbols
+        return self._extract_sg_symbols_from_block(rel_path, content, lang)
 
     def list_test_functions(self, file_path: Path | str, content: str | None = None) -> dict[str, str]:
         p = Path(file_path)
-        suffix = p.suffix.lower()
-        if suffix in self._AST_GREP_CORE_EXTS and AST_GREP_AVAILABLE:
-            return AstGrepIndexer().list_test_functions(file_path, content)
+        lang = self._get_lang(p)
+        if not lang:
+            return {}
 
         if content is None:
             try:
@@ -1407,87 +1189,90 @@ class FallbackIndexer(BaseAstIndexer):
             except OSError:
                 return {}
 
-        rel_path = str(p)
         result: dict[str, str] = {}
+        sg_lang = "tsx" if lang in ("vue", "svelte") else lang
+        blocks = _extract_sfc_script_blocks(content) if lang in ("vue", "svelte") else [(content, 0)]
 
-        if suffix == ".py":
+        for block_text, _ in blocks:
             try:
-                tree = ast.parse(content, filename=rel_path)
-                lines = content.splitlines()
+                root = SgRoot(block_text, sg_lang)
+                node = root.root()
+            except (RuntimeError, ValueError):
+                continue
 
-                def _visit_py_nodes(nodes: list[ast.stmt], cls_prefix: str | None = None) -> None:
-                    for node in nodes:
-                        if isinstance(node, ast.ClassDef):
-                            next_prefix = f"{cls_prefix}::{node.name}" if cls_prefix else node.name
-                            _visit_py_nodes(node.body, next_prefix)
-                        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                            if node.name.startswith("test_") or node.name.endswith("_test"):
-                                start = (
-                                    min(d.lineno for d in node.decorator_list)
-                                    if getattr(node, "decorator_list", None)
-                                    else node.lineno
-                                )
-                                end = getattr(node, "end_lineno", node.lineno)
-                                prefix = _extract_preceding_context(lines, start)
-                                body = "\n".join(lines[start - 1 : end])
-                                full_text = f"{prefix}\n{body}" if prefix else body
-                                if cls_prefix:
-                                    qual_key = f"{cls_prefix}::{node.name}"
-                                    result[qual_key] = (
-                                        f"{result[qual_key]}\n{full_text}" if qual_key in result else full_text
-                                    )
-                                result[node.name] = (
-                                    f"{result[node.name]}\n{full_text}" if node.name in result else full_text
-                                )
-                            _visit_py_nodes(node.body, cls_prefix)
+            lines = block_text.splitlines()
+            fn_nodes: list[Any] = []
+            if sg_lang == "python":
+                fn_nodes = node.find_all(kind="function_definition")
+            elif sg_lang in ("typescript", "tsx", "javascript", "jsx"):
+                fn_nodes = node.find_all(kind="function_declaration")
+                calls = node.find_all(kind="call_expression")
+                for c in calls:
+                    t_title = self._extract_ts_test_call_title(c)
+                    if t_title:
+                        rng = c.range()
+                        start_line = rng.start.line + 1
+                        prefix = _extract_preceding_context(lines, start_line)
+                        c_text = f"{prefix}\n{c.text()}" if prefix else c.text()
+                        result[t_title] = f"{result[t_title]}\n{c_text}" if t_title in result else c_text
+            elif sg_lang in ("go", "kotlin", "swift"):
+                fn_nodes = node.find_all(kind="function_declaration")
+            elif sg_lang == "rust":
+                fn_nodes = node.find_all(kind="function_item")
+            elif sg_lang in ("java", "csharp"):
+                fn_nodes = node.find_all(kind="method_declaration")
+            elif sg_lang in ("c", "cpp"):
+                fn_nodes = node.find_all(kind="function_definition")
+            elif sg_lang == "ruby":
+                fn_nodes = node.find_all(kind="method") + node.find_all(kind="singleton_method")
+            elif sg_lang == "php":
+                fn_nodes = node.find_all(kind="function_definition") + node.find_all(kind="method_declaration")
 
-                _visit_py_nodes(tree.body)
-                return result
-            except (SyntaxError, ValueError):
-                pass
+            for fn in fn_nodes:
+                fname = self._node_name(fn, sg_lang)
+                if not fname:
+                    continue
+                dec_start, dec_list = self._extract_decorator_info(fn, sg_lang)
+                start_line = dec_start
+                parent = fn.parent()
+                if parent and parent.kind() in ("decorated_definition",):
+                    base_text = parent.text()
+                elif dec_list and sg_lang == "rust":
+                    base_text = f"{chr(10).join(dec_list)}\n{fn.text()}"
+                else:
+                    base_text = fn.text()
+                prefix = _extract_preceding_context(lines, start_line)
+                full_text = f"{prefix}\n{base_text}" if prefix else base_text
 
-        test_fn_pattern = re.compile(
-            r"(?:def\s+|function\s+|fn\s+|fun\s+|func\s+|void\s+)([a-zA-Z0-9_]+)"
-            r"|\b(?:it|test|describe)\s*\(\s*(['\"`])([^\r\n]+?)\2"
-        )
-        lines = content.splitlines()
-        scan_lines = self._strip_block_comments_preserving_lines(content).splitlines()
-        current_test = None
-        current_start = 1
-        collected_lines: list[str] = []
-
-        for idx, line in enumerate(lines, start=1):
-            scan_line = scan_lines[idx - 1] if idx - 1 < len(scan_lines) else line
-            stripped_scan = scan_line.lstrip()
-            m = None if stripped_scan.startswith(("//", "#", "/*", "*")) else test_fn_pattern.search(scan_line)
-            if m:
-                if current_test:
-                    prefix = _extract_preceding_context(lines, current_start)
-                    chunk = "\n".join(collected_lines)
-                    full_chunk = f"{prefix}\n{chunk}" if prefix else chunk
-                    result[current_test] = (
-                        f"{result[current_test]}\n{full_chunk}" if current_test in result else full_chunk
-                    )
-                current_test = (m.group(1) or m.group(3) or "").strip()
-                dec_start, _ = self._leading_decorator_context(lines, idx)
-                current_start = dec_start
-                collected_lines = lines[dec_start - 1 : idx]
-            elif current_test:
-                collected_lines.append(line)
-
-        if current_test:
-            prefix = _extract_preceding_context(lines, current_start)
-            chunk = "\n".join(collected_lines)
-            full_chunk = f"{prefix}\n{chunk}" if prefix else chunk
-            result[current_test] = f"{result[current_test]}\n{full_chunk}" if current_test in result else full_chunk
+                is_test = (
+                    fname.startswith("test_")
+                    or fname.endswith("_test")
+                    or (fname.startswith("Test") and sg_lang != "python")
+                    or (fname.startswith("test") and sg_lang != "python")
+                    or bool(_RUST_TEST_ATTR_RE.search(full_text))
+                    or "@Test" in full_text
+                    or "[Fact]" in full_text
+                    or "[Theory]" in full_text
+                    or "[Test]" in full_text
+                )
+                if is_test:
+                    cls_name = self._enclosing_class_name(fn, sg_lang)
+                    if cls_name:
+                        qual_key = f"{cls_name}::{fname}"
+                        result[qual_key] = f"{result[qual_key]}\n{full_text}" if qual_key in result else full_text
+                    result[fname] = f"{result[fname]}\n{full_text}" if fname in result else full_text
+                    if sg_lang == "go":
+                        for sub_name, _, _, sub_text in self._extract_go_subtests(fn, lines):
+                            for skey in (f"{fname}/{sub_name}", f"{fname}::{sub_name}", sub_name):
+                                result[skey] = f"{result[skey]}\n{sub_text}" if skey in result else sub_text
 
         return result
 
     def extract_test_bindings(self, file_path: Path | str, content: str | None = None) -> list[TestFunctionBinding]:
         p = Path(file_path)
-        suffix = p.suffix.lower()
-        if suffix in self._AST_GREP_CORE_EXTS and AST_GREP_AVAILABLE:
-            return AstGrepIndexer().extract_test_bindings(file_path, content)
+        lang = self._get_lang(p)
+        if not lang:
+            return []
 
         if content is None:
             try:
@@ -1495,8 +1280,8 @@ class FallbackIndexer(BaseAstIndexer):
             except OSError:
                 return []
 
-        rel_path = str(p)
         by_name: dict[str, TestFunctionBinding] = {}
+        rel_path = str(p)
 
         def _record_binding(tname: str, lstart: int, lend: int, invs: list[str], pols: list[str]) -> None:
             if tname in by_name:
@@ -1514,80 +1299,103 @@ class FallbackIndexer(BaseAstIndexer):
                     policies=list(pols),
                 )
 
-        # Python via stdlib ast
-        if suffix == ".py":
+        sg_lang = "tsx" if lang in ("vue", "svelte") else lang
+        blocks = _extract_sfc_script_blocks(content) if lang in ("vue", "svelte") else [(content, 0)]
+
+        for block_text, line_offset in blocks:
             try:
-                tree = ast.parse(content, filename=rel_path)
-                lines = content.splitlines()
+                root = SgRoot(block_text, sg_lang)
+                node = root.root()
+            except (RuntimeError, ValueError):
+                continue
 
-                def _visit_py_bindings(nodes: list[ast.stmt], cls_prefix: str | None = None) -> None:
-                    for node in nodes:
-                        if isinstance(node, ast.ClassDef):
-                            next_prefix = f"{cls_prefix}::{node.name}" if cls_prefix else node.name
-                            _visit_py_bindings(node.body, next_prefix)
-                        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                            if node.name.startswith("test_") or node.name.endswith("_test"):
-                                start = (
-                                    min(d.lineno for d in node.decorator_list)
-                                    if getattr(node, "decorator_list", None)
-                                    else node.lineno
-                                )
-                                end = getattr(node, "end_lineno", node.lineno)
-                                prefix = _extract_preceding_context(lines, start)
-                                body = "\n".join(lines[start - 1 : end])
-                                fn_body_text = f"{prefix}\n{body}" if prefix else body
-                                invs = sorted(set(INVARIANT_PATTERN.findall(fn_body_text)))
-                                pols = sorted(set(POLICY_PATTERN.findall(fn_body_text)))
-                                if invs or pols:
-                                    if cls_prefix:
-                                        _record_binding(f"{cls_prefix}::{node.name}", start, end, invs, pols)
-                                    _record_binding(node.name, start, end, invs, pols)
-                            _visit_py_bindings(node.body, cls_prefix)
+            lines = block_text.splitlines()
+            fn_nodes: list[Any] = []
+            if sg_lang == "python":
+                fn_nodes = node.find_all(kind="function_definition")
+            elif sg_lang in ("typescript", "tsx", "javascript", "jsx"):
+                fn_nodes = node.find_all(kind="function_declaration")
+                calls = node.find_all(kind="call_expression")
+                for c in calls:
+                    t_title = self._extract_ts_test_call_title(c)
+                    if t_title:
+                        rng = c.range()
+                        start_line = rng.start.line + 1
+                        prefix = _extract_preceding_context(lines, start_line)
+                        c_text = f"{prefix}\n{c.text()}" if prefix else c.text()
+                        invs = sorted(set(INVARIANT_PATTERN.findall(c_text)))
+                        pols = sorted(set(POLICY_PATTERN.findall(c_text)))
+                        if invs or pols:
+                            _record_binding(
+                                t_title,
+                                start_line + line_offset,
+                                rng.end.line + 1 + line_offset,
+                                invs,
+                                pols,
+                            )
+            elif sg_lang in ("go", "kotlin", "swift"):
+                fn_nodes = node.find_all(kind="function_declaration")
+            elif sg_lang == "rust":
+                fn_nodes = node.find_all(kind="function_item")
+            elif sg_lang in ("java", "csharp"):
+                fn_nodes = node.find_all(kind="method_declaration")
+            elif sg_lang in ("c", "cpp"):
+                fn_nodes = node.find_all(kind="function_definition")
+            elif sg_lang == "ruby":
+                fn_nodes = node.find_all(kind="method") + node.find_all(kind="singleton_method")
+            elif sg_lang == "php":
+                fn_nodes = node.find_all(kind="function_definition") + node.find_all(kind="method_declaration")
 
-                _visit_py_bindings(tree.body)
-                return list(by_name.values())
-            except (SyntaxError, ValueError):
-                pass
+            for fn in fn_nodes:
+                fname = self._node_name(fn, sg_lang)
+                if not fname:
+                    continue
+                rng = fn.range()
+                dec_start, dec_list = self._extract_decorator_info(fn, sg_lang)
+                start_line = dec_start
+                parent = fn.parent()
+                if parent and parent.kind() in ("decorated_definition",):
+                    base_text = parent.text()
+                elif dec_list and sg_lang == "rust":
+                    base_text = f"{chr(10).join(dec_list)}\n{fn.text()}"
+                else:
+                    base_text = fn.text()
+                prefix = _extract_preceding_context(lines, start_line)
+                fn_text = f"{prefix}\n{base_text}" if prefix else base_text
 
-        # Regex fallback for broken Python and secondary languages
-        test_fn_pattern = re.compile(
-            r"(?:def\s+|function\s+|fn\s+|fun\s+|func\s+|void\s+)([a-zA-Z0-9_]+)"
-            r"|\b(?:it|test|describe)\s*\(\s*(['\"`])([^\r\n]+?)\2"
-        )
-        lines = content.splitlines()
-        scan_lines = self._strip_block_comments_preserving_lines(content).splitlines()
-        current_test = None
-        current_start = 1
-        collected_lines: list[str] = []
+                is_test = (
+                    fname.startswith("test_")
+                    or fname.endswith("_test")
+                    or (fname.startswith("Test") and sg_lang != "python")
+                    or (fname.startswith("test") and sg_lang in ("java", "kotlin", "csharp", "php", "swift", "ruby"))
+                    or bool(_RUST_TEST_ATTR_RE.search(fn_text))
+                    or "@Test" in fn_text
+                    or "[Fact]" in fn_text
+                    or "[Theory]" in fn_text
+                    or "[Test]" in fn_text
+                )
+                if not is_test:
+                    continue
 
-        for idx, line in enumerate(lines, start=1):
-            scan_line = scan_lines[idx - 1] if idx - 1 < len(scan_lines) else line
-            stripped_scan = scan_line.lstrip()
-            m = None if stripped_scan.startswith(("//", "#", "/*", "*")) else test_fn_pattern.search(scan_line)
-            if m:
-                if current_test:
-                    prefix = _extract_preceding_context(lines, current_start)
-                    body = "\n".join(collected_lines)
-                    chunk = f"{prefix}\n{body}" if prefix else body
-                    invs = sorted(set(INVARIANT_PATTERN.findall(chunk)))
-                    pols = sorted(set(POLICY_PATTERN.findall(chunk)))
-                    if invs or pols:
-                        _record_binding(current_test, current_start, idx - 1, invs, pols)
-                current_test = (m.group(1) or m.group(3) or "").strip()
-                dec_start, _ = self._leading_decorator_context(lines, idx)
-                current_start = dec_start
-                collected_lines = lines[dec_start - 1 : idx]
-            elif current_test:
-                collected_lines.append(line)
+                invs = sorted(set(INVARIANT_PATTERN.findall(fn_text)))
+                pols = sorted(set(POLICY_PATTERN.findall(fn_text)))
 
-        if current_test:
-            prefix = _extract_preceding_context(lines, current_start)
-            body = "\n".join(collected_lines)
-            chunk = f"{prefix}\n{body}" if prefix else body
-            invs = sorted(set(INVARIANT_PATTERN.findall(chunk)))
-            pols = sorted(set(POLICY_PATTERN.findall(chunk)))
-            if invs or pols:
-                _record_binding(current_test, current_start, len(lines), invs, pols)
+                if invs or pols:
+                    end_line = rng.end.line + 1 + line_offset
+                    eff_start = start_line + line_offset
+                    cls_name = self._enclosing_class_name(fn, sg_lang)
+                    if cls_name:
+                        _record_binding(f"{cls_name}::{fname}", eff_start, end_line, invs, pols)
+                    _record_binding(fname, eff_start, end_line, invs, pols)
+
+                if sg_lang == "go":
+                    for sub_name, s_start, s_end, sub_text in self._extract_go_subtests(fn, lines):
+                        sub_invs = sorted(set(INVARIANT_PATTERN.findall(sub_text)))
+                        sub_pols = sorted(set(POLICY_PATTERN.findall(sub_text)))
+                        if sub_invs or sub_pols:
+                            _record_binding(f"{fname}/{sub_name}", s_start, s_end, sub_invs, sub_pols)
+                            _record_binding(f"{fname}::{sub_name}", s_start, s_end, sub_invs, sub_pols)
+                            _record_binding(sub_name, s_start, s_end, sub_invs, sub_pols)
 
         return list(by_name.values())
 
@@ -1676,57 +1484,77 @@ def _strip_leading_decorators_from_signature(sig: str) -> str:
     return s
 
 
-def _extract_python_dunder_all(tree: ast.Module) -> set[str] | None:
+_DUNDER_ALL_ASSIGN_RE = re.compile(r"^[ \t]*__all__\s*(?::[^=\n]+)?\+?=", re.MULTILINE)
+
+
+def _extract_python_dunder_all_from_source(content: str, py_root: Any = None) -> set[str] | None:
     """Return explicitly declared __all__ symbol names if defined at Python module top level, else None."""
+    if "__all__" not in content or not _DUNDER_ALL_ASSIGN_RE.search(content):
+        return None
+    if py_root is None:
+        try:
+            py_root = SgRoot(content, "python").root()
+        except (RuntimeError, ValueError):
+            return None
     names: set[str] = set()
     found = False
-    for node in tree.body:
-        value: ast.expr | None = None
-        if isinstance(node, ast.Assign):
-            if any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
-                value = node.value
+    assign_kinds = ("assignment", "augmented_assignment")
+    for stmt in py_root.children():
+        assigns = [stmt] if stmt.kind() in assign_kinds else [c for c in stmt.children() if c.kind() in assign_kinds]
+        for assign in assigns:
+            left = assign.field("left")
+            if left is not None and left.text().strip() == "__all__":
                 found = True
-        elif (
-            isinstance(node, (ast.AnnAssign, ast.AugAssign))
-            and isinstance(node.target, ast.Name)
-            and node.target.id == "__all__"
-        ):
-            value = node.value
-            found = True
-        if isinstance(value, (ast.List, ast.Tuple, ast.Set)):
-            for elt in value.elts:
-                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                    names.add(elt.value)
+                right = assign.field("right")
+                if right is not None and right.kind() in ("list", "tuple", "set"):
+                    for elt in right.children():
+                        if elt.kind() == "string":
+                            sc = "".join(c.text() for c in elt.children() if c.kind() == "string_content")
+                            names.add(sc)
     return names if found else None
 
 
-_DUNDER_ALL_ASSIGN_RE = re.compile(r"^[ \t]*__all__\s*(?::[^=\n]+)?=", re.MULTILINE)
-
-
-def _extract_python_dunder_all_from_source(content: str) -> set[str] | None:
-    if "__all__" not in content or not _DUNDER_ALL_ASSIGN_RE.search(content):
-        return None
-    try:
-        return _extract_python_dunder_all(ast.parse(content))
-    except (SyntaxError, ValueError):
-        return None
-
-
-def _extract_ts_exported_names(content: str) -> set[str]:
-    """Return all identifier names exported via export declarations, export lists, or export default."""
-    exports: set[str] = set(_EXPORT_DECL_RE.findall(content))
-    for group in _EXPORT_LIST_RE.findall(content):
-        for item in group.split(","):
-            raw = item.strip()
-            if not raw:
-                continue
-            parts = [p.strip() for p in raw.split(" as ") if p.strip()]
-            for p in parts:
-                if p.startswith("type "):
-                    p = p[5:].strip()
-                if p:
-                    exports.add(p)
-    exports.update(_EXPORT_DEFAULT_RE.findall(content))
+def _extract_ts_exported_names(content: str, ts_root: Any = None, lang: str = "tsx") -> set[str]:
+    """Return all identifier names exported via export declarations, export lists, or export default via SgRoot."""
+    if ts_root is None:
+        if "export" not in content:
+            return set()
+        try:
+            ts_root = SgRoot(content, lang).root()
+        except (RuntimeError, ValueError):
+            return set()
+    exports: set[str] = set()
+    for exp in ts_root.find_all(kind="export_statement"):
+        for ch in exp.children():
+            ck = ch.kind()
+            if ck in (
+                "function_declaration",
+                "generator_function_declaration",
+                "class_declaration",
+                "abstract_class_declaration",
+                "interface_declaration",
+                "type_alias_declaration",
+                "enum_declaration",
+            ):
+                n = AstGrepIndexer._node_name(ch, lang)
+                if n:
+                    exports.add(n)
+            elif ck in ("lexical_declaration", "variable_declaration"):
+                for vd in ch.find_all(kind="variable_declarator"):
+                    n = AstGrepIndexer._node_name(vd, lang)
+                    if n:
+                        exports.add(n)
+            elif ck == "export_clause":
+                for spec in ch.find_all(kind="export_specifier"):
+                    for id_node in spec.children():
+                        if id_node.kind() in ("identifier", "type_identifier", "property_identifier"):
+                            exports.add(id_node.text().strip())
+            elif ck == "namespace_export":
+                for id_node in ch.children():
+                    if id_node.kind() in ("identifier", "type_identifier"):
+                        exports.add(id_node.text().strip())
+            elif ck in ("identifier", "type_identifier"):
+                exports.add(ch.text().strip())
     return exports
 
 
@@ -1932,7 +1760,12 @@ class PublicSymbolDiff:
         return bool(self.added or self.removed or self.changed)
 
 
-def public_symbol_map(content: str | None, file_path: Path | str) -> dict[tuple[str, str, str], str]:
+def public_symbol_map(
+    content: str | None,
+    file_path: Path | str,
+    *,
+    _symbols: list[CodeSymbol] | None = None,
+) -> dict[tuple[str, str, str], str]:
     """Map ``(kind, parent_symbol, name) -> signature`` of the public symbols in one file version.
 
     ``None`` content (absent file) and files without AST support yield an empty map.
@@ -1941,17 +1774,16 @@ def public_symbol_map(content: str | None, file_path: Path | str) -> dict[tuple[
     suffix = p.suffix.lower()
     if content is None or suffix not in _AST_DIFF_EXTS:
         return {}
-    # For Python, use FallbackIndexer (stdlib ast) for canonical ast.unparse signatures;
-    # for other languages, use get_ast_indexer().
-    indexer: BaseAstIndexer = FallbackIndexer() if suffix == ".py" else get_ast_indexer()
-    return {
-        (s.kind, s.parent_symbol or "", s.name): (s.signature or "")
-        for s in indexer.extract_symbols(p, content)
-        if _is_public_symbol(s)
-    }
+    syms = _symbols if _symbols is not None else get_ast_indexer().extract_symbols(p, content)
+    return {(s.kind, s.parent_symbol or "", s.name): (s.signature or "") for s in syms if _is_public_symbol(s)}
 
 
-def boundary_symbol_map(content: str | None, file_path: Path | str) -> dict[tuple[str, str, str], str]:
+def boundary_symbol_map(
+    content: str | None,
+    file_path: Path | str,
+    *,
+    _symbols: list[CodeSymbol] | None = None,
+) -> dict[tuple[str, str, str], str]:
     """Map ``(kind, parent_symbol, name) -> signature`` of package/contract boundary symbols in one file version (DLT-2026-081)."""
     p = Path(file_path)
     suffix = p.suffix.lower()
@@ -1959,35 +1791,87 @@ def boundary_symbol_map(content: str | None, file_path: Path | str) -> dict[tupl
         return {}
     py_dunder_all: set[str] | None = None
     reexported: dict[tuple[str, str, str], str] = {}
-    if suffix == ".py":
+    fname_lower = p.name.lower()
+    if suffix == ".py" and (fname_lower == "__init__.py" or _symbols is None):
         try:
-            tree = ast.parse(content, filename=str(p))
-            py_dunder_all = _extract_python_dunder_all(tree)
-            if p.name.lower() == "__init__.py":
-                for node in ast.iter_child_nodes(tree):
-                    if isinstance(node, ast.ImportFrom):
-                        for alias in node.names:
-                            bound_name = alias.asname or alias.name
-                            if (
-                                bound_name != "*"
-                                and not bound_name.startswith("_")
-                                and (py_dunder_all is None or bound_name in py_dunder_all)
-                            ):
-                                reexported[("export", "", bound_name)] = f"reexport {bound_name}"
-        except (SyntaxError, ValueError):
+            py_root = SgRoot(content, "python").root()
+            py_dunder_all = _extract_python_dunder_all_from_source(content, py_root=py_root)
+            if fname_lower == "__init__.py":
+                for stmt in py_root.children():
+                    if stmt.kind() == "import_from_statement":
+                        past_import_kw = False
+                        for ch in stmt.children():
+                            if ch.kind() == "import":
+                                past_import_kw = True
+                            elif past_import_kw:
+                                bound_name = ""
+                                if ch.kind() == "dotted_name":
+                                    bound_name = ch.text().strip()
+                                elif ch.kind() == "aliased_import":
+                                    alias_node = ch.field("alias") or ch.field("name")
+                                    if alias_node is not None:
+                                        bound_name = alias_node.text().strip()
+                                if (
+                                    bound_name
+                                    and bound_name != "*"
+                                    and not bound_name.startswith("_")
+                                    and (py_dunder_all is None or bound_name in py_dunder_all)
+                                ):
+                                    reexported[("export", "", bound_name)] = f"reexport {bound_name}"
+        except (RuntimeError, ValueError):
             py_dunder_all = None
-    elif p.name.lower() in ("index.ts", "index.tsx", "index.js", "index.jsx"):
-        for name in _extract_ts_exported_names(content):
+    elif fname_lower in ("index.ts", "index.tsx", "index.js", "index.jsx"):
+        ts_lang = "tsx" if suffix in (".tsx", ".jsx") else ("typescript" if suffix == ".ts" else "javascript")
+        for name in _extract_ts_exported_names(content, lang=ts_lang):
             if not name.startswith("_"):
                 reexported[("export", "", name)] = f"reexport {name}"
-    elif p.name.lower() in ("mod.rs", "lib.rs"):
-        for m in re.finditer(r"^\s*pub\s+use\s+[^;]*::([A-Za-z_][A-Za-z0-9_]*)\s*;", content, re.MULTILINE):
-            reexported[("export", "", m.group(1))] = f"pub use {m.group(1)}"
+    elif fname_lower in ("mod.rs", "lib.rs"):
+        try:
+            rs_root = SgRoot(content, "rust").root()
+            for udecl in rs_root.find_all(kind="use_declaration"):
+                if not any(ch.kind() == "visibility_modifier" for ch in udecl.children()):
+                    continue
+                arg = udecl.field("argument")
+                if arg is None:
+                    continue
+                if arg.kind() == "scoped_identifier":
+                    name_node = arg.field("name")
+                    if name_node is not None:
+                        rname = name_node.text().strip()
+                        if rname and rname != "*":
+                            reexported[("export", "", rname)] = f"pub use {rname}"
+                elif arg.kind() == "use_as_clause":
+                    alias_node = arg.field("alias")
+                    if alias_node is not None:
+                        rname = alias_node.text().strip()
+                        if rname:
+                            reexported[("export", "", rname)] = f"pub use {rname}"
+                else:
+                    for ul in arg.find_all(kind="use_list"):
+                        for item in ul.children():
+                            if item.kind() == "identifier":
+                                rname = item.text().strip()
+                                if rname and rname != "self":
+                                    reexported[("export", "", rname)] = f"pub use {rname}"
+                            elif item.kind() == "use_as_clause":
+                                alias_node = item.field("alias")
+                                if alias_node is not None:
+                                    rname = alias_node.text().strip()
+                                    if rname:
+                                        reexported[("export", "", rname)] = f"pub use {rname}"
+                            elif item.kind() == "scoped_identifier":
+                                name_node = item.field("name")
+                                if name_node is not None:
+                                    rname = name_node.text().strip()
+                                    if rname and rname != "self":
+                                        reexported[("export", "", rname)] = f"pub use {rname}"
+        except (RuntimeError, ValueError):
+            pass
 
-    indexer: BaseAstIndexer = FallbackIndexer() if suffix == ".py" else get_ast_indexer()
+    syms = _symbols if _symbols is not None else get_ast_indexer().extract_symbols(p, content)
     out: dict[tuple[str, str, str], str] = {
         (s.kind, s.parent_symbol or "", s.name): (s.signature or "")
-        for s in indexer.extract_symbols(p, content)
+        for s in syms
         if _is_boundary_export_symbol(s, py_dunder_all=py_dunder_all)
     }
     for k, v in reexported.items():
@@ -2027,11 +1911,18 @@ def diff_public_symbols(
     ``None`` content is treated as an empty file (so every public symbol of an added file is ``added``).
     Files without AST support (non-code extensions) yield an empty diff.
     """
+    p = Path(file_path)
+    suffix = p.suffix.lower()
+    if suffix not in _AST_DIFF_EXTS:
+        return PublicSymbolDiff()
+    indexer = get_ast_indexer()
+    old_syms = indexer.extract_symbols(p, old_content) if old_content is not None else []
+    new_syms = indexer.extract_symbols(p, new_content) if new_content is not None else []
     return diff_symbol_maps(
-        public_symbol_map(old_content, file_path),
-        public_symbol_map(new_content, file_path),
-        old_boundary_map=boundary_symbol_map(old_content, file_path),
-        new_boundary_map=boundary_symbol_map(new_content, file_path),
+        public_symbol_map(old_content, p, _symbols=old_syms),
+        public_symbol_map(new_content, p, _symbols=new_syms),
+        old_boundary_map=boundary_symbol_map(old_content, p, _symbols=old_syms),
+        new_boundary_map=boundary_symbol_map(new_content, p, _symbols=new_syms),
     )
 
 
@@ -2076,13 +1967,6 @@ _CSS_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 _CSS_CUSTOM_PROP_RE = re.compile(r"(--[A-Za-z0-9_-]+)\s*:\s*([^;}{]+)")
 _PREPROC_VAR_RE = re.compile(r"^\s*([$@][A-Za-z0-9_-]+)\s*:\s*([^;]+);", re.MULTILINE)
 _AT_TOKEN_BLOCK_RE = re.compile(r"@(theme|keyframes|font-face)\b([^{]*)\{", re.IGNORECASE)
-_EXPORT_DECL_RE = re.compile(
-    r"\bexport\s+(?:default\s+)?(?:declare\s+)?(?:async\s+)?"
-    r"(?:function\*?|const|let|var|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)"
-)
-_EXPORT_LIST_RE = re.compile(r"\bexport\s*\{([^}]*)\}")
-_EXPORT_DEFAULT_RE = re.compile(r"\bexport\s+default\s+([A-Za-z_$][\w$]*)\s*;?")
-_PROPS_DECL_RE = re.compile(r"\b(interface|type)\s+([A-Za-z_$][\w$]*Props)\b")
 _ROUTE_RE = re.compile(r"""\bpath\s*[:=]\s*\{?\s*["'`]([^"'`]+)["'`]""")
 _SVELTE_PROP_RE = re.compile(r"\bexport\s+let\s+([A-Za-z_$][\w$]*)")
 _VUE_PROPS_RE = re.compile(r"defineProps\s*(?:<([^>]*)>)?\s*\(([^)]*)\)", re.DOTALL)
@@ -2123,24 +2007,24 @@ def _extract_style_tokens(content: str) -> set[str]:
 
 def _extract_ui_contract(content: str, suffix: str) -> dict[str, set[str]]:
     """Extract the public UI contract surface: exported names, *Props shapes, routes, and framework props."""
-    exports: set[str] = set(_EXPORT_DECL_RE.findall(content))
-    for group in _EXPORT_LIST_RE.findall(content):
-        for item in group.split(","):
-            name = item.strip().split(" as ")[-1].strip()
-            if name:
-                exports.add(name)
-    exports.update(_EXPORT_DEFAULT_RE.findall(content))
-
+    exports: set[str] = set()
     props: set[str] = set()
-    for m in _PROPS_DECL_RE.finditer(content):
-        brace_idx = content.find("{", m.end())
-        eq_idx = content.find("=", m.end())
-        if brace_idx != -1 and (eq_idx == -1 or brace_idx <= eq_idx + 3 or m.group(1) == "interface"):
-            body = _balanced_block(content, brace_idx)
-        else:
-            end = content.find(";", m.end())
-            body = content[m.end() : end if end != -1 else len(content)]
-        props.add(f"{m.group(2)}:{_normalize_ws(body)}")
+    blocks = _extract_sfc_script_blocks(content) if suffix in (".vue", ".svelte") else [(content, 0)]
+    ts_lang = "tsx" if suffix in (".tsx", ".jsx", ".vue", ".svelte") else ("typescript" if suffix == ".ts" else "javascript")
+    if suffix != ".html":
+        for block_text, _ in blocks:
+            try:
+                ts_root = SgRoot(block_text, ts_lang).root()
+            except (RuntimeError, ValueError):
+                continue
+            exports.update(_extract_ts_exported_names(block_text, ts_root=ts_root, lang=ts_lang))
+            for k in ("interface_declaration", "type_alias_declaration"):
+                for decl in ts_root.find_all(kind=k):
+                    pname = AstGrepIndexer._node_name(decl, ts_lang)
+                    if pname and pname.endswith("Props"):
+                        body_node = decl.field("body") or decl.field("value")
+                        if body_node is not None:
+                            props.add(f"{pname}:{_normalize_ws(body_node.text())}")
 
     routes = set(_ROUTE_RE.findall(content))
     framework_props: set[str] = set()
@@ -2209,13 +2093,6 @@ def classify_design_changes(
     return "body_only", []
 
 
-def is_ast_grep_available() -> bool:
-    """Check if the high-performance ast-grep engine is installed in the current environment."""
-    return AST_GREP_AVAILABLE
-
-
-def get_ast_indexer(force_fallback: bool = False) -> BaseAstIndexer:
-    """Factory retrieving the optimal AST indexer (AstGrepIndexer or FallbackIndexer)."""
-    if AST_GREP_AVAILABLE and not force_fallback:
-        return AstGrepIndexer()
-    return FallbackIndexer()
+def get_ast_indexer() -> BaseAstIndexer:
+    """Factory retrieving the unified polyglot AST indexer (AstGrepIndexer)."""
+    return AstGrepIndexer()

@@ -272,9 +272,8 @@ def test_index_status_ast_telemetry(temp_index):
     ast = status["ast"]
 
     assert isinstance(ast["engine"], str)
-    assert "ast-grep" in ast["engine"] or "python-ast" in ast["engine"]
-    assert isinstance(ast["engine_class"], str)
-    assert isinstance(ast["ast_grep_available"], bool)
+    assert "ast-grep" in ast["engine"]
+    assert ast["engine_class"] == "AstGrepIndexer"
     assert ast["total_symbols"] > 0
     assert ast["classes"] >= 1
     assert ast["functions"] >= 1
@@ -664,8 +663,7 @@ def test_repo_map_warm_index_does_not_parse_sources(tmp_path, monkeypatch):
         def _boom(self, *args, **kwargs):
             raise AssertionError("extract_symbols must not be called for a warm repo map")
 
-        for cls in (ast_indexer.AstGrepIndexer, ast_indexer.FallbackIndexer):
-            monkeypatch.setattr(cls, "extract_symbols", _boom)
+        monkeypatch.setattr(ast_indexer.AstGrepIndexer, "extract_symbols", _boom)
 
         repo_map = idx.get_repo_map()
         assert repo_map == reference
@@ -1231,7 +1229,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.7.0"
+        assert ver == SCHEMA_VERSION == "2.8.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -2269,3 +2267,173 @@ def test_incremental_spec_sync_skips_unchanged_test_reparse_and_scopes_fts(tmp_p
         assert tb_map is not None and tb_map["symbol"] == "tests/test_perf.py"
     finally:
         idx.close()
+
+
+def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: Path) -> None:
+    """Verify DLT-2026-097 FTS query alignment, inline CMP-*/DEC-* exact-ID boost, traversal overrides, and ArchitecturalIndex facade."""
+    from eidos.core.index.ast_indexer import AstGrepIndexer
+    from eidos.core.index.graph_index import _resolve_index_paths
+    from eidos.core.index.query import _ENTITY_ID_TOKEN_RE, _FILE_QUERY_EXTS
+    from eidos.core.index.storage import SCHEMA_VERSION
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+
+    assert SCHEMA_VERSION == "2.8.0"
+    assert set(AstGrepIndexer.LANGUAGE_MAP.keys()) | {".proto", ".adoc"} <= _FILE_QUERY_EXTS
+
+    # 1. Verify _ENTITY_ID_TOKEN_RE recognizes SYS-*, ARCH-*, PER-*, and underscore IDs
+    matched_ids = {
+        m.group(0).upper()
+        for m in _ENTITY_ID_TOKEN_RE.finditer(
+            "Inspect SYS-EIDOS, ARCH-001, PER-STAFF_ARCH, CMP-INLINE_ENGINE, and DEC-CORE_CHOICE."
+        )
+    }
+    assert matched_ids == {
+        "SYS-EIDOS",
+        "ARCH-001",
+        "PER-STAFF_ARCH",
+        "CMP-INLINE_ENGINE",
+        "DEC-CORE_CHOICE",
+    }
+
+    # 2. Scaffold workspace with standalone component, container with inline component + decision, and capability
+    init_repository(tmp_path, name="dlt-097-repo")
+    eidos_dir = tmp_path / "eidos"
+    create_spec(eidos_dir, "domain", "DOM-CORE", title="Core Domain")
+    cnt_path = create_spec(eidos_dir, "container", "CNT-RUNTIME", title="Runtime Container")
+    cmp_path = create_spec(eidos_dir, "component", "CMP-STANDALONE", title="Standalone Worker")
+
+    cnt_doc = parse_spec_file(cnt_path)
+    cnt_doc.frontmatter["domain"] = "DOM-CORE"
+    cnt_doc.frontmatter["source_path"] = "src/runtime"
+    cnt_doc.frontmatter["components"] = [
+        {
+            "id": "CMP-INLINE-ORCHESTRATOR",
+            "title": "Inline Orchestrator Engine",
+            "responsibility": "Coordinates inline distributed workflow scheduling.",
+            "source_path": "src/runtime/orchestrator.py",
+            "domain": "DOM-OVERRIDE",
+            "status": "active",
+        }
+    ]
+    cnt_doc.frontmatter["decisions"] = [
+        {
+            "id": "DEC-RUNTIME-SCHEDULER",
+            "title": "Use Deterministic Work Stealing",
+            "status": "accepted",
+            "rationale": "Prevents tail latency spikes.",
+        }
+    ]
+    cnt_path.write_text(dump_spec_document(cnt_doc.frontmatter, cnt_doc.body), encoding="utf-8")
+
+    cmp_doc = parse_spec_file(cmp_path)
+    cmp_doc.frontmatter["container"] = "CNT-RUNTIME"
+    cmp_doc.frontmatter["domain"] = "DOM-CORE"
+    cmp_doc.frontmatter["responsibility"] = "Executes standalone background batch compaction tasks."
+    cmp_doc.frontmatter["source_path"] = "src/runtime/standalone.py"
+    cmp_path.write_text(dump_spec_document(cmp_doc.frontmatter, cmp_doc.body), encoding="utf-8")
+
+    cap_path = create_spec(eidos_dir, "capability", "CAP-ORCH", title="Orchestration Capability")
+    cap_doc = parse_spec_file(cap_path)
+    cap_doc.frontmatter["technical"] = {"containers": ["CNT-RUNTIME"]}
+    cap_path.write_text(
+        dump_spec_document(
+            cap_doc.frontmatter,
+            cap_doc.body + "\nDelegates scheduling to CMP-INLINE-ORCHESTRATOR.\n",
+        ),
+        encoding="utf-8",
+    )
+
+    (tmp_path / "src" / "runtime").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "src" / "runtime" / "orchestrator.py").write_text(
+        "class Orchestrator:\n    def dispatch(self):\n        return True\n\n"
+        "class Worker:\n    def dispatch(self):\n        return False\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "runtime" / "standalone.py").write_text(
+        "def run_compaction():\n    return 1\n",
+        encoding="utf-8",
+    )
+
+    # 3. Verify _resolve_index_paths normalizes relative eidos_dir paths
+    resolved_root, resolved_eidos, resolved_db = _resolve_index_paths(
+        repo_root=tmp_path,
+        eidos_dir=eidos_dir,
+        db_path=None,
+    )
+    assert resolved_root == tmp_path.resolve()
+    assert resolved_eidos == eidos_dir.resolve()
+    assert resolved_db == eidos_dir.resolve() / ".cache" / "index.db"
+
+    idx = ArchitecturalIndex(db_path=resolved_db, repo_root=tmp_path, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+        conn = idx._get_connection()
+
+        # 4. Verify :toc: left is stripped from specs_fts.body_text and responsibility is indexed in jtbd_or_rule
+        fts_cnt = conn.execute(
+            "SELECT jtbd_or_rule, body_text, keywords FROM specs_fts WHERE entity_id = 'CNT-RUNTIME';"
+        ).fetchone()
+        assert fts_cnt is not None
+        assert ":toc:" not in fts_cnt["body_text"]
+        assert "Coordinates inline distributed workflow scheduling" in fts_cnt["jtbd_or_rule"]
+        assert "CMP-INLINE-ORCHESTRATOR" in fts_cnt["keywords"]
+        assert "DEC-RUNTIME-SCHEDULER" in fts_cnt["keywords"]
+
+        fts_cmp = conn.execute(
+            "SELECT jtbd_or_rule FROM specs_fts WHERE entity_id = 'CMP-STANDALONE';"
+        ).fetchone()
+        assert fts_cmp is not None
+        assert "Executes standalone background batch compaction tasks" in fts_cmp["jtbd_or_rule"]
+
+        # 5. Verify exact-ID boost (-1000.0) when querying inline CMP-* or embedded DEC-* IDs
+        inline_hits = idx.query_fts("CMP-INLINE-ORCHESTRATOR", limit=3)
+        assert inline_hits
+        assert inline_hits[0]["id"] == "CNT-RUNTIME"
+        assert inline_hits[0]["rank"] < -900.0
+
+        dec_hits = idx.query_fts("DEC-RUNTIME-SCHEDULER", limit=3)
+        assert dec_hits
+        assert dec_hits[0]["id"] == "CNT-RUNTIME"
+        assert dec_hits[0]["rank"] < -900.0
+
+        # 6. Verify execute_incoming_references resolves inline component title and normalizes ./ path
+        conn.execute(
+            "INSERT INTO edges (source_id, target_id, rel_type) VALUES ('CMP-INLINE-ORCHESTRATOR', 'CNT-RUNTIME', 'depends_on');"
+        )
+        conn.commit()
+        rel_cnt = cnt_path.relative_to(tmp_path).as_posix()
+        inc_dot_slash = idx.get_incoming_references(f"./{rel_cnt}")
+        inc_by_src = {r["source_id"]: r for r in inc_dot_slash}
+        assert "CAP-ORCH" in inc_by_src
+        assert "CMP-INLINE-ORCHESTRATOR" in inc_by_src
+        assert inc_by_src["CMP-INLINE-ORCHESTRATOR"]["title"] == "Inline Orchestrator Engine"
+
+        # 7. Verify execute_k_hop_traversal preserves inline component domain override
+        trav = idx.get_k_hop_neighborhood("CNT-RUNTIME", max_depth=1)
+        inline_node = next((n for n in trav if n["id"] == "CMP-INLINE-ORCHESTRATOR"), None)
+        assert inline_node is not None
+        assert inline_node["domain"] == "DOM-OVERRIDE"
+        assert inline_node["title"] == "Inline Orchestrator Engine"
+
+        # 8. Verify find_symbol empty-query guard and method location deduplication
+        assert idx.find_symbol("   ") == []
+        dispatch_hits = [h for h in idx.find_symbol("dispatch") if h["entity_id"] == "CNT-RUNTIME"]
+        assert len(dispatch_hits) == 2
+        assert {h["location"]["line_start"] for h in dispatch_hits if h["location"]} == {2, 6}
+
+        # 9. Verify get_components() hydration and get_entities(status=...) SQL filtering
+        comps = idx.get_components()
+        comp_by_id = {c["id"]: c for c in comps}
+        assert "CMP-STANDALONE" in comp_by_id
+        assert comp_by_id["CMP-STANDALONE"]["title"] == "Standalone Worker"
+        assert comp_by_id["CMP-STANDALONE"]["domain"] == "DOM-CORE"
+        assert comp_by_id["CMP-STANDALONE"]["status"] == "draft"
+
+        draft_entities = idx.get_entities(status="draft")
+        assert any(e["id"] == "CNT-RUNTIME" for e in draft_entities)
+        assert idx.get_entities(status="retired") == []
+    finally:
+        idx.close()
+

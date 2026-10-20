@@ -45,19 +45,18 @@ _NON_AST_SYMBOL_KINDS = frozenset(
     {
         "specification_file",
         "contract_path",
-        "interface_method",
-        "interface_signature",
-        "component_ref",
         "test_binding",
         "package_path",
         "owned_path",
         "module_name",
         "source_path",
         "component_id",
-        "interface_command",
         "inferred_path",
     }
 )
+
+
+_ASCIIDOC_ATTR_LINE_RE = re.compile(r"^:[A-Za-z0-9_-]+:.*$", re.MULTILINE)
 
 
 def _json_dumps(obj: Any) -> str:
@@ -1745,18 +1744,20 @@ def sync_index(
 
             restore_code_mappings(conn, doc_id)
 
-            if isinstance(fm.get("contracts"), dict):
-                for iface in fm["contracts"].get("interfaces", []):
-                    cmd = iface.split()[0]
-                    conn.execute(
-                        "INSERT OR IGNORE INTO symbol_mappings VALUES (?, ?, 'interface_command');", (cmd, doc_id)
-                    )
-
-            policy_rules = (
-                " ".join(inv.rule for inv in model.invariants if inv.rule) if doc_type == "product/policy" else ""
-            )
-            jtbd_or_rule = policy_rules
-            body_clean = re.sub(r"[{}\[\]=:#*`]", " ", doc.body or "")
+            jtbd_parts: list[str] = []
+            if doc_type == "product/policy":
+                jtbd_parts.extend(inv.rule for inv in model.invariants if inv.rule)
+            if model.responsibility:
+                jtbd_parts.append(model.responsibility)
+            for comp in model.components:
+                for cval in (comp.title, comp.responsibility):
+                    if cval and str(cval).strip():
+                        jtbd_parts.append(str(cval).strip())
+            if model.intent and model.intent.motivation:
+                jtbd_parts.append(model.intent.motivation)
+            jtbd_or_rule = " ".join(jtbd_parts)
+            body_no_attrs = _ASCIIDOC_ATTR_LINE_RE.sub(" ", doc.body or "")
+            body_clean = re.sub(r"[{}\[\]=:#*`]", " ", body_no_attrs)
             decision_ids: list[str] = []
             decision_texts: list[str] = []
             for dec in model.all_decisions():
@@ -1775,9 +1776,12 @@ def sync_index(
                             decision_texts.append(str(aval).strip())
             if decision_texts:
                 body_clean = f"{body_clean} " + re.sub(r"[{}\[\]=:#*`]", " ", " ".join(decision_texts))
-            keywords = " ".join([doc_id, doc_type, domain, container_type, source_path, *decision_ids])
+            inline_cmp_ids = [str(m.id).strip() for m in model.components if m.id and str(m.id).strip()]
+            keywords = " ".join(
+                [doc_id, doc_type, domain, container_type, source_path, *inline_cmp_ids, *decision_ids]
+            )
             symbol_parts: list[str] = [str(m.title) for m in model.components if m.title]
-            symbol_parts.extend(str(m.id) for m in model.components if m.id)
+            symbol_parts.extend(inline_cmp_ids)
             symbols = " ".join(symbol_parts)
             decompounded = compound_identifier_subtokens(f"{title or ''} {jtbd_or_rule or ''} {body_clean} {symbols}")
             if decompounded:
@@ -1801,7 +1805,6 @@ def sync_index(
             )
 
         if spec_updates or specs_deleted:
-            conn.execute("DELETE FROM symbol_mappings WHERE kind = 'component_ref';")
             inc_ids = (
                 updated_spec_doc_ids
                 if (not force and not specs_deleted and not any_doc_id_renamed and updated_spec_doc_ids)

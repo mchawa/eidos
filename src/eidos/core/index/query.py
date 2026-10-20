@@ -13,7 +13,7 @@ from typing import Any
 
 import orjson
 
-from eidos.core.index.ast_indexer import CodeSymbol, get_ast_indexer
+from eidos.core.index.ast_indexer import AstGrepIndexer, CodeSymbol, get_ast_indexer
 from eidos.core.index.sync import _NON_AST_SYMBOL_KINDS
 from eidos.core.workspace.project import match_path_pattern
 
@@ -37,7 +37,9 @@ TASK_SLICE_ENTITY_TYPES: tuple[str, ...] = (
 
 _CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 _IDENTIFIER_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
-_ENTITY_ID_TOKEN_RE = re.compile(r"\b(?:CNT|CMP|CAP|INV|CTR|POL|DOM|DEC|DS|UIC|CLT|SCR|FLOW|DLT|EXP)-[A-Za-z0-9-]+\b")
+_ENTITY_ID_TOKEN_RE = re.compile(
+    r"\b(?:SYS|ARCH|CNT|CMP|CAP|INV|CTR|POL|DOM|PER|DEC|DS|UIC|CLT|SCR|FLOW|DLT|EXP)-[A-Za-z0-9_-]+\b"
+)
 
 _FTS_STOP_WORDS: frozenset[str] = frozenset(
     {
@@ -220,7 +222,15 @@ def execute_fts_query(
     id_boost_params: list[str] = []
     if explicit_ids:
         ph = ",".join("?" for _ in explicit_ids)
-        id_boost_sql = f"(CASE WHEN UPPER(e.id) IN ({ph}) THEN -1000.0 ELSE 0.0 END) + "
+        kw_clauses = " OR ".join("(' ' || UPPER(f.keywords) || ' ') LIKE '% ' || ? || ' %'" for _ in explicit_ids)
+        id_boost_sql = (
+            f"(CASE WHEN UPPER(e.id) IN ({ph}) "
+            f"OR e.id IN (SELECT entity_id FROM symbol_mappings WHERE kind = 'component_id' AND UPPER(symbol) IN ({ph})) "
+            f"OR ({kw_clauses}) "
+            f"THEN -1000.0 ELSE 0.0 END) + "
+        )
+        id_boost_params.extend(explicit_ids)
+        id_boost_params.extend(explicit_ids)
         id_boost_params.extend(explicit_ids)
 
     cursor = conn.cursor()
@@ -341,13 +351,14 @@ def execute_k_hop_traversal(
     results = []
     for row in cursor.fetchall():
         title, data = _resolve_inline_component_node(row["node_id"], row["type"], row["title"], row["data_json"])
+        comp_domain = str(data.get("domain") or "").strip() if isinstance(data, dict) else ""
         results.append(
             {
                 "id": row["node_id"],
                 "depth": row["depth"],
                 "type": row["type"],
                 "title": title,
-                "domain": row["domain"],
+                "domain": comp_domain or row["domain"],
                 "file_path": row["file_path"],
                 "data": data,
             }
@@ -360,25 +371,32 @@ def execute_incoming_references(
     target_id_or_path: str,
 ) -> list[dict[str, Any]]:
     """Find all incoming graph edges pointing to an entity ID or file path."""
-    target = target_id_or_path
+    target = target_id_or_path.strip().replace("\\", "/")
+    while target.startswith("./"):
+        target = target[2:]
     row = conn.execute(
-        "SELECT doc_id FROM indexed_files WHERE rel_path = ? OR 'eidos/' || rel_path = ? OR rel_path = 'eidos/' || ?;",
+        """
+        SELECT doc_id FROM indexed_files
+        WHERE (rel_path = ? OR 'eidos/' || rel_path = ? OR rel_path = 'eidos/' || ?)
+          AND doc_type NOT IN ('code/source', 'code/test')
+        LIMIT 1;
+        """,
         (target, target, target),
     ).fetchone()
-    if row:
+    if row and row["doc_id"]:
         target = row["doc_id"]
     rows = conn.execute(
         """
-        WITH all_nodes(id, type, title, file_path) AS (
-            SELECT id, type, title, file_path FROM entities
+        WITH all_nodes(id, type, title, file_path, data_json) AS (
+            SELECT id, type, title, file_path, data_json FROM entities
             UNION ALL
-            SELECT s.symbol, 'tech/component', s.symbol, e.file_path
+            SELECT s.symbol, 'tech/component', s.symbol, e.file_path, e.data_json
             FROM symbol_mappings s
             JOIN entities e ON e.id = s.entity_id
             WHERE s.kind = 'component_id'
               AND s.symbol NOT IN (SELECT id FROM entities)
         )
-        SELECT e.source_id, e.rel_type, ent.type, ent.title, ent.file_path
+        SELECT e.source_id, e.rel_type, ent.type, ent.title, ent.file_path, ent.data_json
         FROM edges e
         JOIN all_nodes ent ON ent.id = e.source_id
         WHERE e.target_id = ?
@@ -386,39 +404,26 @@ def execute_incoming_references(
         """,
         (target,),
     ).fetchall()
-    return [
-        {
-            "source_id": r["source_id"],
-            "rel_type": r["rel_type"],
-            "type": r["type"],
-            "title": r["title"],
-            "file_path": r["file_path"],
-        }
-        for r in rows
-    ]
+    results = []
+    for r in rows:
+        title, _ = _resolve_inline_component_node(r["source_id"], r["type"], r["title"], r["data_json"])
+        results.append(
+            {
+                "source_id": r["source_id"],
+                "rel_type": r["rel_type"],
+                "type": r["type"],
+                "title": title,
+                "file_path": r["file_path"],
+            }
+        )
+    return results
 
 
 _FILE_QUERY_EXTS = frozenset(
-    {
-        ".py",
-        ".ts",
-        ".tsx",
-        ".js",
-        ".jsx",
-        ".go",
-        ".rs",
-        ".java",
-        ".kt",
-        ".kts",
-        ".rb",
-        ".cs",
-        ".swift",
-        ".c",
-        ".h",
-        ".cpp",
+    set(AstGrepIndexer.LANGUAGE_MAP.keys())
+    | {
         ".cc",
         ".cxx",
-        ".hpp",
         ".hxx",
         ".adoc",
         ".yaml",
@@ -430,6 +435,10 @@ _FILE_QUERY_EXTS = frozenset(
         ".sql",
         ".html",
         ".css",
+        ".scss",
+        ".proto",
+        ".graphql",
+        ".gql",
     }
 )
 
@@ -453,7 +462,7 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
             JOIN entities e ON e.id = s.entity_id
             WHERE s.symbol = ?
                OR (? LIKE {esc_sym} || '/%' ESCAPE '\\' AND s.kind IN ('package_path', 'inferred_path'))
-               OR (? LIKE '%/' || {esc_sym} ESCAPE '\\' AND s.kind IN ('source_path', 'inferred_path', 'specification_file', 'component_ref'))
+               OR (? LIKE '%/' || {esc_sym} ESCAPE '\\' AND s.kind IN ('source_path', 'inferred_path', 'specification_file'))
                OR (? LIKE {esc_sym} || '%' ESCAPE '\\' AND s.kind = 'test_binding')
             ORDER BY CASE WHEN s.symbol = ? THEN 0 ELSE 1 END, length(s.symbol) DESC, s.entity_id ASC
             LIMIT 25;
@@ -468,9 +477,9 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
             JOIN entities e ON e.id = s.entity_id
             WHERE s.symbol = ?
                OR (? LIKE {esc_sym} || '/%' ESCAPE '\\' AND s.kind IN ('package_path', 'inferred_path'))
-               OR (? LIKE '%/' || {esc_sym} ESCAPE '\\' AND s.kind IN ('source_path', 'inferred_path', 'specification_file', 'component_ref'))
+               OR (? LIKE '%/' || {esc_sym} ESCAPE '\\' AND s.kind IN ('source_path', 'inferred_path', 'specification_file'))
                OR ((? LIKE '%.' || {esc_sym} ESCAPE '\\' OR ? LIKE '%::' || {esc_sym} ESCAPE '\\')
-                   AND s.kind IN ('interface_method', 'class', 'function', 'method', 'interface', 'struct', 'enum'))
+                   AND s.kind IN ('class', 'function', 'method', 'interface', 'struct', 'enum'))
                OR (? LIKE {esc_sym} || '%' ESCAPE '\\' AND s.kind = 'test_binding')
             ORDER BY CASE WHEN s.symbol = ? THEN 0 ELSE 1 END, length(s.symbol) DESC, s.entity_id ASC
             LIMIT 25;
@@ -496,7 +505,7 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
             "type": row["type"],
             "title": row["title"],
             "file_path": row["file_path"],
-            "data": orjson.loads(row["data_json"]),
+            "_data_json": row["data_json"],
         }
         if row["kind"] in ("package_path", "inferred_path") and row["symbol"] != clean:
             sym_len = len(str(row["symbol"]).rstrip("/"))
@@ -508,7 +517,7 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
             exact_or_direct.append(item)
 
     glob_scored_matches: list[tuple[int, dict[str, Any]]] = []
-    if "/" in clean or "." in clean:
+    if is_file_query or "*" in clean:
         cursor.execute(
             """
             SELECT s.symbol, s.entity_id, s.kind, e.type, e.title, e.file_path, e.data_json
@@ -530,7 +539,7 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
                             "type": row["type"],
                             "title": row["title"],
                             "file_path": row["file_path"],
-                            "data": orjson.loads(row["data_json"]),
+                            "_data_json": row["data_json"],
                         },
                     )
                 )
@@ -565,6 +574,8 @@ def resolve_symbol_or_path_in_db(conn: sqlite3.Connection, query: str) -> list[d
     for item in exact_or_direct + filtered_pattern_items:
         if item["entity_id"] not in seen_entities:
             seen_entities.add(item["entity_id"])
+            raw_json = item.pop("_data_json", None)
+            item["data"] = orjson.loads(raw_json) if raw_json else {}
             results.append(item)
 
     return results
@@ -619,8 +630,10 @@ def find_symbol_in_db(
     limit: int = 20,
 ) -> list[dict[str, Any]]:
     """Locate symbol matches and their associated living component specs across the Code Graph."""
+    q_norm = (query or "").strip()
+    if not q_norm:
+        return []
     cursor = conn.cursor()
-    q_norm = query.strip()
     q_alt = q_norm.replace("-", "_") if "-" in q_norm else q_norm.replace("_", "-")
     q_norm_like = f"%{_escape_like(q_norm)}%"
     q_alt_like = f"%{_escape_like(q_alt)}%"
@@ -633,12 +646,13 @@ def find_symbol_in_db(
            OR s.symbol = ?
            OR s.symbol LIKE ? ESCAPE '\\'
            OR s.symbol LIKE ? ESCAPE '\\'
-        ORDER BY CASE WHEN s.symbol IN (?, ?) THEN 0 ELSE 1 END, s.symbol ASC
+        ORDER BY CASE WHEN s.symbol IN (?, ?) THEN 0 ELSE 1 END, length(s.symbol) ASC, s.symbol ASC
         LIMIT ?;
         """,
         (q_norm, q_alt, q_norm_like, q_alt_like, q_norm, q_alt, limit),
     )
     results: list[dict[str, Any]] = []
+    seen_loc_keys: set[tuple[str, str, str, int]] = set()
     for r in cursor.fetchall():
         base = {
             "symbol": r["symbol"],
@@ -655,7 +669,11 @@ def find_symbol_in_db(
             else resolve_symbol_locations_in_db(conn, r["entity_id"], r["kind"], r["symbol"])
         )
         if locations:
-            results.extend({**base, "location": loc} for loc in locations)
+            for loc in locations:
+                loc_key = (r["entity_id"], r["kind"], str(loc.get("file") or ""), int(loc.get("line_start") or 0))
+                if loc_key not in seen_loc_keys:
+                    seen_loc_keys.add(loc_key)
+                    results.append({**base, "location": loc})
         else:
             results.append({**base, "location": None})
     return results[:limit]
