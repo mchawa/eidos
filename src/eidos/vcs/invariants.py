@@ -47,7 +47,6 @@ class _CachedTestFile:
     sha256: str
     has_fixture: bool
     functions: dict[str, dict[str, list[str]]] = field(default_factory=dict)
-    bindings: list[dict[str, Any]] = field(default_factory=list)
     file_tokens: set[str] = field(default_factory=set)
 
 
@@ -151,8 +150,8 @@ def _build_cached_test_file_entry(
     mtime_ns: int,
     sha256: str,
     ast_idx: Any,
-) -> tuple[_CachedTestFile, str, str, str]:
-    """Extract test functions, fixture-filtered INV tokens, AST bindings, and file-level tokens for caching."""
+) -> tuple[_CachedTestFile, str, str]:
+    """Extract test functions, fixture-filtered INV tokens, and file-level tokens in a single AST pass for caching."""
     from eidos.core.index.ast_indexer import INVARIANT_PATTERN
 
     has_fixture = "eidos:fixture" in tcontent
@@ -173,15 +172,6 @@ def _build_cached_test_file_entry(
             "fixture_invs": fixture_invs,
         }
 
-    raw_bindings = ast_idx.extract_test_bindings(rel, tcontent)
-    bindings = [
-        {
-            "identifier": b.identifier,
-            "invariants": list(b.invariants),
-            "policies": list(b.policies),
-        }
-        for b in raw_bindings
-    ]
     file_tokens_list = list(dict.fromkeys(_INV_OR_POL_TOKEN_RE.findall(tcontent)))
     entry = _CachedTestFile(
         file_path=rel,
@@ -189,13 +179,11 @@ def _build_cached_test_file_entry(
         sha256=sha256,
         has_fixture=has_fixture,
         functions=functions,
-        bindings=bindings,
         file_tokens=set(file_tokens_list),
     )
     return (
         entry,
         json.dumps(functions, sort_keys=True),
-        json.dumps(bindings, sort_keys=True),
         json.dumps(file_tokens_list),
     )
 
@@ -257,7 +245,7 @@ def _load_or_update_test_binding_cache(
 
     result: dict[str, _CachedTestFile] = {}
     seen_rels: set[str] = set()
-    to_upsert: list[tuple[str, int, str, int, str, str, str]] = []
+    to_upsert: list[tuple[str, int, str, int, str, str]] = []
     ast_idx: Any = None
 
     for rel, file_path, mtime_ns in sorted(discovered, key=lambda item: item[0]):
@@ -271,7 +259,6 @@ def _load_or_update_test_binding_cache(
                     sha256=row["sha256"],
                     has_fixture=bool(row["has_fixture"]),
                     functions=json.loads(row["functions_json"]),
-                    bindings=json.loads(row["bindings_json"]),
                     file_tokens=set(json.loads(row["file_tokens_json"])),
                 )
                 continue
@@ -290,7 +277,6 @@ def _load_or_update_test_binding_cache(
                     sha256=sha256,
                     has_fixture=bool(row["has_fixture"]),
                     functions=json.loads(row["functions_json"]),
-                    bindings=json.loads(row["bindings_json"]),
                     file_tokens=set(json.loads(row["file_tokens_json"])),
                 )
                 to_upsert.append(
@@ -300,7 +286,6 @@ def _load_or_update_test_binding_cache(
                         sha256,
                         int(bool(row["has_fixture"])),
                         row["functions_json"],
-                        row["bindings_json"],
                         row["file_tokens_json"],
                     )
                 )
@@ -312,7 +297,7 @@ def _load_or_update_test_binding_cache(
             ast_idx = get_ast_indexer()
 
         tcontent = raw_bytes.decode("utf-8", errors="replace")
-        entry, functions_json, bindings_json, file_tokens_json = _build_cached_test_file_entry(
+        entry, functions_json, file_tokens_json = _build_cached_test_file_entry(
             rel, tcontent, mtime_ns, sha256, ast_idx
         )
         result[rel] = entry
@@ -323,7 +308,6 @@ def _load_or_update_test_binding_cache(
                 sha256,
                 1 if entry.has_fixture else 0,
                 functions_json,
-                bindings_json,
                 file_tokens_json,
             )
         )
@@ -373,7 +357,7 @@ def _verify_single_invariant(
                     ast_idx = get_ast_indexer()
                 st_mtime_ns = tb_path.stat().st_mtime_ns if tb_path.exists() else 0
                 sha256 = hashlib.sha256(raw_bytes).hexdigest()
-                entry, _, _, _ = _build_cached_test_file_entry(tb_file, tcontent, st_mtime_ns, sha256, ast_idx)
+                entry, _, _ = _build_cached_test_file_entry(tb_file, tcontent, st_mtime_ns, sha256, ast_idx)
                 all_tests_content[tb_file] = entry
             else:
                 all_tests_content[tb_file] = tcontent
@@ -453,39 +437,28 @@ def detect_orphan_invariants(
         if cached_tests is None:
             cached_tests = _load_or_update_test_binding_cache(repo_root, eidos_dir=eidos_dir)
         for tpath, entry in sorted(cached_tests.items()):
-            if entry.has_fixture:
-                qualified_invs_by_suffix: dict[str, set[str]] = {}
-                for fname, func_meta in entry.functions.items():
-                    if "::" in fname:
-                        sfx = fname.rsplit("::", 1)[-1]
-                        qualified_invs_by_suffix.setdefault(sfx, set()).update(func_meta.get("fixture_invs", []))
-                for fname, func_meta in entry.functions.items():
-                    accounted = qualified_invs_by_suffix.get(fname, set()) if "::" not in fname else set()
-                    for inv_id in func_meta.get("fixture_invs", []):
-                        if inv_id in accounted:
-                            continue
-                        if inv_id not in known_invariant_ids:
-                            key = (inv_id, f"{tpath}::{fname}")
-                            if key not in seen:
-                                seen.add(key)
-                                orphans.append(key)
-                continue
-
-            qualified_binding_invs: dict[str, set[str]] = {}
-            for b in entry.bindings:
-                if b["identifier"].count("::") >= 2:
-                    sfx = b["identifier"].rsplit("::", 1)[-1]
-                    qualified_binding_invs.setdefault(sfx, set()).update(b.get("invariants", []))
-            for binding in entry.bindings:
-                ident = binding["identifier"]
-                accounted = (
-                    qualified_binding_invs.get(ident.rsplit("::", 1)[-1], set()) if ident.count("::") == 1 else set()
+            qualified_invs_by_suffix: dict[str, set[str]] = {}
+            for fname, func_meta in entry.functions.items():
+                if "::" in fname:
+                    sfx = fname.rsplit("::", 1)[-1]
+                    invs = (
+                        func_meta.get("fixture_invs", [])
+                        if entry.has_fixture
+                        else [t for t in func_meta.get("tokens", []) if INVARIANT_PATTERN.fullmatch(t)]
+                    )
+                    qualified_invs_by_suffix.setdefault(sfx, set()).update(invs)
+            for fname, func_meta in entry.functions.items():
+                accounted = qualified_invs_by_suffix.get(fname, set()) if "::" not in fname else set()
+                invs = (
+                    func_meta.get("fixture_invs", [])
+                    if entry.has_fixture
+                    else [t for t in func_meta.get("tokens", []) if INVARIANT_PATTERN.fullmatch(t)]
                 )
-                for inv_id in binding.get("invariants", []):
+                for inv_id in invs:
                     if inv_id in accounted:
                         continue
                     if inv_id not in known_invariant_ids:
-                        key = (inv_id, ident)
+                        key = (inv_id, f"{tpath}::{fname}")
                         if key not in seen:
                             seen.add(key)
                             orphans.append(key)
@@ -494,55 +467,33 @@ def detect_orphan_invariants(
     ast_idx = get_ast_indexer()
 
     for tpath, tcontent in sorted(all_tests_content.items()):
-        if "eidos:fixture" in tcontent:
-            funcs = ast_idx.list_test_functions(tpath, tcontent)
-            func_fixture_invs: dict[str, list[str]] = {}
-            for fname, fslice in funcs.items():
-                if _has_function_level_fixture(fslice, INVARIANT_PATTERN):
-                    func_fixture_invs[fname] = []
+        has_fixture = "eidos:fixture" in tcontent
+        funcs = ast_idx.list_test_functions(tpath, tcontent)
+        func_invs: dict[str, list[str]] = {}
+        for fname, fslice in funcs.items():
+            if has_fixture and _has_function_level_fixture(fslice, INVARIANT_PATTERN):
+                func_invs[fname] = []
+                continue
+            invs_in_fn: list[str] = []
+            for line in fslice.splitlines():
+                if has_fixture and "eidos:fixture" in line:
                     continue
-                invs_in_fn: list[str] = []
-                for line in fslice.splitlines():
-                    if "eidos:fixture" in line:
-                        continue
-                    for inv_id in INVARIANT_PATTERN.findall(line):
-                        if inv_id not in invs_in_fn:
-                            invs_in_fn.append(inv_id)
-                func_fixture_invs[fname] = invs_in_fn
-            qualified_invs_by_suffix = {}
-            for fname, inv_list in func_fixture_invs.items():
-                if "::" in fname:
-                    sfx = fname.rsplit("::", 1)[-1]
-                    qualified_invs_by_suffix.setdefault(sfx, set()).update(inv_list)
-            for fname, inv_list in func_fixture_invs.items():
-                accounted = qualified_invs_by_suffix.get(fname, set()) if "::" not in fname else set()
-                for inv_id in inv_list:
-                    if inv_id in accounted:
-                        continue
-                    if inv_id not in known_invariant_ids:
-                        key = (inv_id, f"{tpath}::{fname}")
-                        if key not in seen:
-                            seen.add(key)
-                            orphans.append(key)
-            continue
-
-        extracted_bindings = ast_idx.extract_test_bindings(tpath, tcontent)
-        qualified_binding_invs = {}
-        for b in extracted_bindings:
-            if b.identifier.count("::") >= 2:
-                sfx = b.identifier.rsplit("::", 1)[-1]
-                qualified_binding_invs.setdefault(sfx, set()).update(b.invariants)
-        for binding in extracted_bindings:
-            accounted = (
-                qualified_binding_invs.get(binding.identifier.rsplit("::", 1)[-1], set())
-                if binding.identifier.count("::") == 1
-                else set()
-            )
-            for inv_id in binding.invariants:
+                for inv_id in INVARIANT_PATTERN.findall(line):
+                    if inv_id not in invs_in_fn:
+                        invs_in_fn.append(inv_id)
+            func_invs[fname] = invs_in_fn
+        qualified_invs_by_suffix = {}
+        for fname, inv_list in func_invs.items():
+            if "::" in fname:
+                sfx = fname.rsplit("::", 1)[-1]
+                qualified_invs_by_suffix.setdefault(sfx, set()).update(inv_list)
+        for fname, inv_list in func_invs.items():
+            accounted = qualified_invs_by_suffix.get(fname, set()) if "::" not in fname else set()
+            for inv_id in inv_list:
                 if inv_id in accounted:
                     continue
                 if inv_id not in known_invariant_ids:
-                    key = (inv_id, binding.identifier)
+                    key = (inv_id, f"{tpath}::{fname}")
                     if key not in seen:
                         seen.add(key)
                         orphans.append(key)
@@ -564,9 +515,9 @@ def extract_invariants_and_verify(
 
     inv_to_test_funcs: dict[str, list[str]] = {}
     for entry in cached_tests.values():
-        for binding in entry.bindings:
-            ident = binding["identifier"]
-            for ref in list(binding.get("invariants", [])) + list(binding.get("policies", [])):
+        for fname, func_meta in entry.functions.items():
+            ident = f"{entry.file_path}::{fname}"
+            for ref in func_meta.get("tokens", []):
                 inv_to_test_funcs.setdefault(ref, []).append(ident)
 
     def _spec_rel(path: Path) -> str:

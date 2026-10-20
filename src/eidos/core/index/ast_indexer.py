@@ -1177,98 +1177,10 @@ class AstGrepIndexer(BaseAstIndexer):
 
         return self._extract_sg_symbols_from_block(rel_path, content, lang)
 
-    def list_test_functions(self, file_path: Path | str, content: str | None = None) -> dict[str, str]:
-        p = Path(file_path)
-        lang = self._get_lang(p)
-        if not lang:
-            return {}
-
-        if content is None:
-            try:
-                content = p.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                return {}
-
-        result: dict[str, str] = {}
-        sg_lang = "tsx" if lang in ("vue", "svelte") else lang
-        blocks = _extract_sfc_script_blocks(content) if lang in ("vue", "svelte") else [(content, 0)]
-
-        for block_text, _ in blocks:
-            try:
-                root = SgRoot(block_text, sg_lang)
-                node = root.root()
-            except (RuntimeError, ValueError):
-                continue
-
-            lines = block_text.splitlines()
-            fn_nodes: list[Any] = []
-            if sg_lang == "python":
-                fn_nodes = node.find_all(kind="function_definition")
-            elif sg_lang in ("typescript", "tsx", "javascript", "jsx"):
-                fn_nodes = node.find_all(kind="function_declaration")
-                calls = node.find_all(kind="call_expression")
-                for c in calls:
-                    t_title = self._extract_ts_test_call_title(c)
-                    if t_title:
-                        rng = c.range()
-                        start_line = rng.start.line + 1
-                        prefix = _extract_preceding_context(lines, start_line)
-                        c_text = f"{prefix}\n{c.text()}" if prefix else c.text()
-                        result[t_title] = f"{result[t_title]}\n{c_text}" if t_title in result else c_text
-            elif sg_lang in ("go", "kotlin", "swift"):
-                fn_nodes = node.find_all(kind="function_declaration")
-            elif sg_lang == "rust":
-                fn_nodes = node.find_all(kind="function_item")
-            elif sg_lang in ("java", "csharp"):
-                fn_nodes = node.find_all(kind="method_declaration")
-            elif sg_lang in ("c", "cpp"):
-                fn_nodes = node.find_all(kind="function_definition")
-            elif sg_lang == "ruby":
-                fn_nodes = node.find_all(kind="method") + node.find_all(kind="singleton_method")
-            elif sg_lang == "php":
-                fn_nodes = node.find_all(kind="function_definition") + node.find_all(kind="method_declaration")
-
-            for fn in fn_nodes:
-                fname = self._node_name(fn, sg_lang)
-                if not fname:
-                    continue
-                dec_start, dec_list = self._extract_decorator_info(fn, sg_lang)
-                start_line = dec_start
-                parent = fn.parent()
-                if parent and parent.kind() in ("decorated_definition",):
-                    base_text = parent.text()
-                elif dec_list and sg_lang == "rust":
-                    base_text = f"{chr(10).join(dec_list)}\n{fn.text()}"
-                else:
-                    base_text = fn.text()
-                prefix = _extract_preceding_context(lines, start_line)
-                full_text = f"{prefix}\n{base_text}" if prefix else base_text
-
-                is_test = (
-                    fname.startswith("test_")
-                    or fname.endswith("_test")
-                    or (fname.startswith("Test") and sg_lang != "python")
-                    or (fname.startswith("test") and sg_lang != "python")
-                    or bool(_RUST_TEST_ATTR_RE.search(full_text))
-                    or "@Test" in full_text
-                    or "[Fact]" in full_text
-                    or "[Theory]" in full_text
-                    or "[Test]" in full_text
-                )
-                if is_test:
-                    cls_name = self._enclosing_class_name(fn, sg_lang)
-                    if cls_name:
-                        qual_key = f"{cls_name}::{fname}"
-                        result[qual_key] = f"{result[qual_key]}\n{full_text}" if qual_key in result else full_text
-                    result[fname] = f"{result[fname]}\n{full_text}" if fname in result else full_text
-                    if sg_lang == "go":
-                        for sub_name, _, _, sub_text in self._extract_go_subtests(fn, lines):
-                            for skey in (f"{fname}/{sub_name}", f"{fname}::{sub_name}", sub_name):
-                                result[skey] = f"{result[skey]}\n{sub_text}" if skey in result else sub_text
-
-        return result
-
-    def extract_test_bindings(self, file_path: Path | str, content: str | None = None) -> list[TestFunctionBinding]:
+    def _iter_test_function_spans(
+        self, file_path: Path | str, content: str | None = None
+    ) -> list[tuple[str, int, int, str]]:
+        """Yield (test_name, line_start, line_end, full_text) for every test function/subtest in file_path."""
         p = Path(file_path)
         lang = self._get_lang(p)
         if not lang:
@@ -1280,25 +1192,7 @@ class AstGrepIndexer(BaseAstIndexer):
             except OSError:
                 return []
 
-        by_name: dict[str, TestFunctionBinding] = {}
-        rel_path = str(p)
-
-        def _record_binding(tname: str, lstart: int, lend: int, invs: list[str], pols: list[str]) -> None:
-            if tname in by_name:
-                existing = by_name[tname]
-                existing.invariants = sorted(set(existing.invariants) | set(invs))
-                existing.policies = sorted(set(existing.policies) | set(pols))
-                existing.line_end = max(existing.line_end, lend)
-            else:
-                by_name[tname] = TestFunctionBinding(
-                    test_file=rel_path,
-                    test_name=tname,
-                    line_start=lstart,
-                    line_end=lend,
-                    invariants=list(invs),
-                    policies=list(pols),
-                )
-
+        spans: list[tuple[str, int, int, str]] = []
         sg_lang = "tsx" if lang in ("vue", "svelte") else lang
         blocks = _extract_sfc_script_blocks(content) if lang in ("vue", "svelte") else [(content, 0)]
 
@@ -1323,16 +1217,7 @@ class AstGrepIndexer(BaseAstIndexer):
                         start_line = rng.start.line + 1
                         prefix = _extract_preceding_context(lines, start_line)
                         c_text = f"{prefix}\n{c.text()}" if prefix else c.text()
-                        invs = sorted(set(INVARIANT_PATTERN.findall(c_text)))
-                        pols = sorted(set(POLICY_PATTERN.findall(c_text)))
-                        if invs or pols:
-                            _record_binding(
-                                t_title,
-                                start_line + line_offset,
-                                rng.end.line + 1 + line_offset,
-                                invs,
-                                pols,
-                            )
+                        spans.append((t_title, start_line + line_offset, rng.end.line + 1 + line_offset, c_text))
             elif sg_lang in ("go", "kotlin", "swift"):
                 fn_nodes = node.find_all(kind="function_declaration")
             elif sg_lang == "rust":
@@ -1361,42 +1246,64 @@ class AstGrepIndexer(BaseAstIndexer):
                 else:
                     base_text = fn.text()
                 prefix = _extract_preceding_context(lines, start_line)
-                fn_text = f"{prefix}\n{base_text}" if prefix else base_text
+                full_text = f"{prefix}\n{base_text}" if prefix else base_text
 
                 is_test = (
                     fname.startswith("test_")
                     or fname.endswith("_test")
                     or (fname.startswith("Test") and sg_lang != "python")
-                    or (fname.startswith("test") and sg_lang in ("java", "kotlin", "csharp", "php", "swift", "ruby"))
-                    or bool(_RUST_TEST_ATTR_RE.search(fn_text))
-                    or "@Test" in fn_text
-                    or "[Fact]" in fn_text
-                    or "[Theory]" in fn_text
-                    or "[Test]" in fn_text
+                    or (fname.startswith("test") and sg_lang != "python")
+                    or bool(_RUST_TEST_ATTR_RE.search(full_text))
+                    or "@Test" in full_text
+                    or "[Fact]" in full_text
+                    or "[Theory]" in full_text
+                    or "[Test]" in full_text
                 )
                 if not is_test:
                     continue
 
-                invs = sorted(set(INVARIANT_PATTERN.findall(fn_text)))
-                pols = sorted(set(POLICY_PATTERN.findall(fn_text)))
-
-                if invs or pols:
-                    end_line = rng.end.line + 1 + line_offset
-                    eff_start = start_line + line_offset
-                    cls_name = self._enclosing_class_name(fn, sg_lang)
-                    if cls_name:
-                        _record_binding(f"{cls_name}::{fname}", eff_start, end_line, invs, pols)
-                    _record_binding(fname, eff_start, end_line, invs, pols)
+                eff_start = start_line + line_offset
+                end_line = rng.end.line + 1 + line_offset
+                cls_name = self._enclosing_class_name(fn, sg_lang)
+                if cls_name:
+                    spans.append((f"{cls_name}::{fname}", eff_start, end_line, full_text))
+                spans.append((fname, eff_start, end_line, full_text))
 
                 if sg_lang == "go":
                     for sub_name, s_start, s_end, sub_text in self._extract_go_subtests(fn, lines):
-                        sub_invs = sorted(set(INVARIANT_PATTERN.findall(sub_text)))
-                        sub_pols = sorted(set(POLICY_PATTERN.findall(sub_text)))
-                        if sub_invs or sub_pols:
-                            _record_binding(f"{fname}/{sub_name}", s_start, s_end, sub_invs, sub_pols)
-                            _record_binding(f"{fname}::{sub_name}", s_start, s_end, sub_invs, sub_pols)
-                            _record_binding(sub_name, s_start, s_end, sub_invs, sub_pols)
+                        for skey in (f"{fname}/{sub_name}", f"{fname}::{sub_name}", sub_name):
+                            spans.append((skey, s_start + line_offset, s_end + line_offset, sub_text))
 
+        return spans
+
+    def list_test_functions(self, file_path: Path | str, content: str | None = None) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for tname, _lstart, _lend, full_text in self._iter_test_function_spans(file_path, content):
+            result[tname] = f"{result[tname]}\n{full_text}" if tname in result else full_text
+        return result
+
+    def extract_test_bindings(self, file_path: Path | str, content: str | None = None) -> list[TestFunctionBinding]:
+        rel_path = str(Path(file_path))
+        by_name: dict[str, TestFunctionBinding] = {}
+        for tname, lstart, lend, full_text in self._iter_test_function_spans(file_path, content):
+            invs = sorted(set(INVARIANT_PATTERN.findall(full_text)))
+            pols = sorted(set(POLICY_PATTERN.findall(full_text)))
+            if not invs and not pols:
+                continue
+            if tname in by_name:
+                existing = by_name[tname]
+                existing.invariants = sorted(set(existing.invariants) | set(invs))
+                existing.policies = sorted(set(existing.policies) | set(pols))
+                existing.line_end = max(existing.line_end, lend)
+            else:
+                by_name[tname] = TestFunctionBinding(
+                    test_file=rel_path,
+                    test_name=tname,
+                    line_start=lstart,
+                    line_end=lend,
+                    invariants=invs,
+                    policies=pols,
+                )
         return list(by_name.values())
 
 

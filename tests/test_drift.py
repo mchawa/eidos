@@ -1679,7 +1679,7 @@ def test_test_binding_cache_warm_drift_and_invalidation(tmp_path, monkeypatch):
     os.utime(test_beta, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
 
     updated_orphans = detect_orphan_invariants(tmp_path, set(cold_map.keys()), eidos_dir=eidos_dir)
-    assert ast_calls == ["list:tests/test_beta.py", "bind:tests/test_beta.py"]
+    assert ast_calls == ["list:tests/test_beta.py"]
     assert updated_orphans == [("INV-ORPHAN-TWO", "tests/test_beta.py::test_real_orphan")]
 
     # 3. Delete test_alpha.py: row is pruned from test_binding_cache and INV-CACHE-BOUND becomes uncovered
