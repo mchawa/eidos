@@ -1,0 +1,272 @@
+---
+type: product/exploration
+id: EXP-2026-008
+title: "Evaluating Archiving and Compaction Strategies for Historical SpecDeltas and Explorations"
+status: adopted
+decision:
+  outcome: adopted
+  resulting_deltas:
+    - DLT-2026-106-ARCHIVE-AND
+---
+= Exploration: Evaluating Archiving and Compaction Strategies for Historical SpecDeltas and Explorations
+:toc: left
+:icons: font
+:sectnums:
+
+== Core Hypothesis
+Transitioning reconciled (`applied` and `rejected`) SpecDeltas and concluded (`adopted` and `discarded`) Explorations out of the active hot-path root directories (`eidos/deltas/*.adoc` and `eidos/explorations/*.adoc`) beyond the **most recent $X$ terminal items (`--keep-recent 15` default)** into `eidos/deltas/archive/*.adoc` and `eidos/explorations/archive/*.adoc` with in-place AsciiDoc prose and `expect:` block slimming will reduce top-level hot `.adoc` file counts by `> 85%`, achieve **`~88%` byte reduction on archived SpecDeltas** and **`~97%` byte reduction on archived Explorations**, eliminate archived noise from default `eidos index search` FTS5 rankings while keeping active and the 15 most recent items searchable, shrink the Living Web Portal initial JSON payload by `> 60%` (`~1.5 MB` saved at current scale), and preserve `100%` native `.adoc` schema compatibility with `SpecValidator`, collision-free ID generation, `eidos delta changelog`, `EXP-*` <-> `DLT-*` / `DEC-*` cross-reference validation, and `eidos delta audit` historical exemptions without introducing a foreign `.jsonl` file format.
+
+== Questions & Spikes
+* **Spikes**:
+  - `spike-delta-growth-telemetry`: Quantify the exact storage, validation, SQLite graph/FTS5 index, and Web Portal payload footprint of `eidos/deltas/` at `N = 105` SpecDeltas (`2` active, `103` applied) vs. the `54` living specifications in `eidos/`.
+  - `spike-subsystem-coupling-audit`: Audit all six Eidos subsystems that read or validate `delta/mutation` entities (`SpecValidator`, `ArchitecturalIndex` / `sync.py`, `generate_collision_free_delta_id`, `ChangelogGenerator`, `AuditEngine`, and `get_portal_data`) to identify what breaks if old SpecDeltas are moved, compacted, or deleted.
+  - `spike-compaction-vs-partitioning-benchmark`: Benchmark four architectural options—(A) Directory/Release Partitioning (`eidos/deltas/archive/<year-or-tag>/`), (B) Structured Ledger Compaction (`eidos/deltas/archive/ledger.jsonl`), (C) Git-Native Ephemeral Pruning (deleting applied `.adoc` files and reconstructing from Git history), and (D) Hybrid Tiered Archiving (`eidos delta archive`).
+
+== Findings & Learnings
+Empirical profiling of the Eidos repository (`159` total `.adoc` files) reveals that historical `applied` SpecDeltas (`103` files, `690.0 KB`) already outnumber all living product, architecture, design, and policy specifications combined (`54` files, `309.5 KB`) by **`1.94x` in file count** and **`2.23x` in byte volume** after just 10 days of development. Crucially, while `SpecValidator` already caches validated `applied` SpecDeltas in SQLite (`83.6 ms` warm vs. `400.9 ms` cold), historical SpecDeltas dominate **SQLite graph edges (`688/1,206 = 57.0%` are `affects` edges from deltas)**, **SQLite FTS5 index volume (`469.9 KB / 774.8 KB = 60.6%`)**, **FTS5 top-10 search results (`50–70%` of `query_fts` hits on core terms like `validator`, `context`, `drift`, `schema`)**, and **Web Portal payload size (`1,546.7 KB / 2,332.9 KB = 66.3%` due to dual serialization in `pdata["deltas"]` and `pdata["specs"]`)**.
+
+---
+
+== 1. Problem Statement & Empirical Baseline (`spike-delta-growth-telemetry`)
+
+In Eidos, **Planned Mode** (`POL-001`, `POL-003`) mandates that every structural mutation to containers (`CNT-*`), components (`CMP-*`), contracts (`CTR-*`), capabilities (`CAP-*`), or policies (`POL-*`) is governed by a declarative **SpecDelta** (`eidos/deltas/dlt-yyyy-nnn.adoc`).
+
+Once a SpecDelta is verified (`eidos delta verify`) and reconciled (`eidos delta apply`), its `status` transitions to `applied`. At that moment, **the living specifications in `eidos/architecture/`, `eidos/domains/`, `eidos/design/`, and `eidos/policies/` already embody the new truth**, and permanent design rationale is embedded inside the owning specification's `decisions:` (`DEC-*`) frontmatter block.
+
+However, every `applied` SpecDelta remains indefinitely as a full AsciiDoc file in `eidos/deltas/`. Within a single 10-day sprint (`2026-10-11` to `2026-10-20`), `eidos/deltas/` grew from `DLT-2026-001` to `DLT-2026-105`.
+
+=== 1.1 Empirical Footprint at $N = 105$ SpecDeltas (Current Baseline)
+
+| Metric | Living Specs (`CNT`, `CMP`, `CAP`, `DOM`, `POL`, `CTR`, `DS`, `EXP`, etc.) | SpecDeltas (`eidos/deltas/*.adoc`) | SpecDelta Share of Total |
+| :--- | :--- | :--- | :--- |
+| **Document Count** | `54` files | `105` files (`2` active, `103` applied) | **`66.0%`** (`105 / 159`) |
+| **Raw Disk Footprint** | `309.5 KB` (`316,937 B`) | `700.9 KB` (`717,753 B`) | **`69.4%`** (`700.9 / 1,010.4 KB`) |
+| **SQLite `entities` Rows** | `102` rows (incl. `43` `INV-*`) | `105` rows (`delta/mutation`) | **`50.7%`** (`105 / 207`) |
+| **SQLite `edges` Rows** | `518` architectural edges | `688` `affects` edges | **`57.0%`** (`688 / 1,206`) |
+| **SQLite `specs_fts` Text Volume** | `304.9 KB` | `469.9 KB` | **`60.6%`** (`469.9 / 774.8 KB`) |
+| **Web Portal JSON (`get_portal_data`)** | `786.2 KB` | `1,546.7 KB` (`813.3 KB` in `deltas` + `733.4 KB` in `specs`) | **`66.3%`** (`1,546.7 / 2,332.9 KB`) |
+
+=== 1.2 Five Concrete Scaling Bottlenecks
+
+As `eidos/deltas/` scales from $10^2$ to $10^3+$ SpecDeltas over a multi-quarter project, five concrete problems emerge:
+
+1. **FTS5 Lexical Search & Agent Context Pollution (`src/eidos/core/index/sync.py`, `query.py`)**:
+   Every `delta/mutation` document is indexed into `specs_fts` with its full AsciiDoc body, title, and mutation targets (`469.9 KB`, or `60.6%` of the entire FTS5 table). While `get_tiered_context_slice()` excludes `delta/mutation` from graph seed expansion (`query.py:751`), direct full-text search (`eidos index search <query>` / `arch_idx.query_fts()`) is heavily polluted by old SpecDeltas that mention every historical symbol and file:
+   * `query_fts("schema", limit=10)` -> **`7/10` (`70%`)** top results are historical `DLT-*` documents.
+   * `query_fts("validator", limit=10)` -> **`6/10` (`60%`)** top results are historical `DLT-*` documents.
+   * `query_fts("changelog", limit=10)` -> **`6/10` (`60%`)** top results are historical `DLT-*` documents.
+   * `query_fts("context", limit=10)` -> **`5/10` (`50%`)** top results are historical `DLT-*` documents.
+   * `query_fts("drift", limit=10)` -> **`5/10` (`50%`)** top results are historical `DLT-*` documents.
+2. **Web Portal Payload Duplication & Memory Bloat (`src/eidos/portal/generator.py`)**:
+   `get_portal_data()` takes `716.92 ms` and serializes **`2,332.9 KB` (`2.33 MB`)** of JSON. Of that payload, **`1,546.7 KB` (`66.3%`)** is SpecDelta content because every delta is serialized **twice** with its full AsciiDoc `body` and `mutations`: once inside `pdata["specs"]` (`733.4 KB`) and a second time inside `pdata["deltas"]["applied"]` (`813.3 KB`, where `arch_idx.compute_delta_impact()` is also re-executed for every historical delta). At `1,000` deltas, the embedded portal HTML/JSON bundle will exceed `15–20 MB`.
+3. **Human & IDE Directory Fatigue (`eidos/deltas/`)**:
+   A flat directory with `105+` files (`dlt-2026-001.adoc` through `dlt-2026-105-index-c4.adoc`) obscures the `1–3` **active** in-flight SpecDeltas (`proposed`, `in_review`, `approved`) that engineers and reviewers actually care about during daily work.
+4. **Cold Validation & CI Checkout Overhead (`src/eidos/core/spec/validator.py`)**:
+   In CI environments (or fresh worktrees where `.eidos_cache/index.db` is cold), `SpecValidator.validate_directory()` parses and validates all `159` `.adoc` files (`400.88 ms` cold vs. `83.59 ms` warm). Even on warm cache hits, `validate_directory` still walks every file in `eidos/deltas/`, loads `SpecDocument` metadata, and registers all `105` `DLT-*` IDs in `report.entity_index`.
+5. **Post-Reconciliation Dead Weight (`expect:` Post-Conditions & Implementation Checklists)**:
+   Roughly `65–88%` of an `applied` SpecDelta's byte size consists of transitional scaffolding that has zero value after merge: verbose `expect: { body: { contains: [...] }, frontmatter: {...} }` verification blocks and AsciiDoc implementation narratives that duplicate the living container/capability specs.
+
+---
+
+== 2. Subsystem Coupling Audit (`spike-subsystem-coupling-audit`)
+
+Before designing an archiving or compaction mechanism, we traced every code path in `src/eidos/` that touches `eidos/deltas/` or `delta/mutation` documents to determine the exact invariants an archiving solution must preserve:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                  6 Subsystems Coupled to Historical SpecDeltas               │
+├──────────────────────────────┬───────────────────────────────────────────────┤
+│ 1. Collision-Free ID Engine  │ generate_collision_free_delta_id()            │
+│    (delta_engine.py:278)     │ Scans eidos/deltas/*.adoc + Git refs/logs     │
+│                              │ to compute max_seq_by_year (DLT-2026-NNN).    │
+├──────────────────────────────┼───────────────────────────────────────────────┤
+│ 2. Cross-Ref Validator       │ SpecValidator._check_eidos_ref()              │
+│    (validator.py:750)        │ Explorations (EXP-*) declare                  │
+│                              │ decision.resulting_deltas: [DLT-*] with       │
+│                              │ x-eidos-ref -> target_types: [delta/mutation].│
+├──────────────────────────────┼───────────────────────────────────────────────┤
+│ 3. Changelog Compiler        │ ChangelogGenerator.get_applied_deltas()       │
+│    (changelog.py:199)        │ Scans eidos/deltas.rglob("*.adoc") + runs     │
+│                              │ git log -G"^status: applied" to map deltas    │
+│                              │ to Git release tags (v0.1.0 .. Unreleased).   │
+├──────────────────────────────┼───────────────────────────────────────────────┤
+│ 4. Deletion Audit Engine     │ AuditEngine._is_delta_applied()               │
+│    (audit.py:547)            │ Exempts historical applied SpecDeltas in      │
+│                              │ eidos/deltas/ from flagging as "active leaks" │
+│                              │ when auditing removed entities.               │
+├──────────────────────────────┼───────────────────────────────────────────────┤
+│ 5. SQLite Graph & FTS5 Index │ ArchitecturalIndex / sync.py                  │
+│    (sync.py:950, query.py)   │ Indexes delta/mutation entities, 'affects'    │
+│                              │ edges, and specs_fts full-text rows.          │
+├──────────────────────────────┼───────────────────────────────────────────────┤
+│ 6. Living Web Portal         │ get_portal_data()                             │
+│    (portal/generator.py:361) │ Renders Kanban columns (proposed -> applied)  │
+│                              │ and cross-links EXP-* -> DLT-* -> CNT-*.      │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+```
+
+=== 2.1 Critical Coupling Constraints Discovered
+
+1. **Why Naive File Deletion (`git rm eidos/deltas/dlt-*.adoc`) Breaks Validation Today**:
+   In `assets/schemas/v1/common/defs.schema.yaml`, `exploration.schema.yaml` defines `decision.resulting_deltas` with an `x-eidos-ref` pointing to `target_types: [delta/mutation]` and `prefixes: [DLT-]`. In `validator.py:816`, if an `EXP-*` exploration references `DLT-2026-015` in `resulting_deltas` and `DLT-2026-015` is no longer in `catalog_ids`, **`eidos validate` fails with `Broken entity reference`!**
+2. **Why Moving Files Breaks `ChangelogGenerator` Today unless Handled**:
+   `ChangelogGenerator._batch_resolve_delta_commits()` (`changelog.py:143`) runs `git log -G^status[ \t]*:[ \t]*['"]?applied --name-only --format=COMMIT:%H -- eidos/deltas` and maps the commit SHA to the file path at the time `status: applied` was committed. If `dlt-2026-001.adoc` is later moved to `eidos/deltas/archive/2026/dlt-2026-001.adoc` without recording `applied_commit` (or using `--follow` / ID-based commit mapping), `commits_by_path.get(resolved_df)` misses the old path and places all archived deltas under `Unreleased`!
+3. **Why ID Generation Already Survives Archiving/Deletion**:
+   `generate_collision_free_delta_id()` (`delta_engine.py:306–388`) uses `deltas_dir.rglob("*.adoc")` AND scans Git refs (`git ls-tree`) and `git log --all --diff-filter=A`. However, if deltas are compacted into a ledger file, seeding `max_seq_by_year` and `existing_ids` from the archive ledger guarantees `O(1)` deterministic ID generation even in shallow clones (`git clone --depth 1`).
+
+---
+
+== 3. Architectural Options Evaluated (`spike-compaction-vs-partitioning-benchmark`)
+
+We evaluated four distinct architectural approaches for managing the SpecDelta lifecycle after reconciliation (`status: applied` or `status: rejected`).
+
+=== Option A: Hierarchical Cold Subdirectory Partitioning (`eidos/deltas/archive/<period>/`)
+
+Move reconciled `.adoc` files out of the root `eidos/deltas/` directory into time- or release-partitioned subdirectories (e.g., `eidos/deltas/archive/2026-Q4/dlt-2026-001.adoc` or `eidos/deltas/archive/v0.7.0/dlt-2026-001.adoc`), keeping the original `.adoc` files intact on disk.
+
+* **Mechanism**:
+  - `eidos/deltas/*.adoc` holds **only active (`proposed`, `in_review`, `approved`)** SpecDeltas (or current-release unarchived deltas).
+  - `eidos delta archive [--before-tag <tag> | --all-applied]` moves applied/rejected `.adoc` files into `eidos/deltas/archive/<tag-or-year>/` and stamps `vcs.applied_commit` into frontmatter before moving so `ChangelogGenerator` never loses release tag provenance.
+  - `specs_fts` excludes archived deltas from default lexical search (`eidos index search --include-archive` opt-in).
+  - `get_portal_data()` strips `delta/mutation` from `pdata["specs"]` and sends lightweight metadata headers (`id`, `title`, `status`, `kind`, `affects`, `vcs`) for archived deltas instead of full AsciiDoc bodies.
+* **Pros**:
+  - Zero format migration; every historical `.adoc` remains human-readable in standard file browsers.
+  - Existing `deltas_dir.rglob("*.adoc")` in `list_deltas()` and `ChangelogGenerator` continues to discover them with minimal changes.
+* **Cons**:
+  - **Does not reduce repository file count or disk size**: `1,000` deltas still equal `1,000` files (`~7 MB`) in the working tree.
+  - `SpecValidator` and `sync.py` still `rglob` and stat `1,000+` files on every workspace scan unless `eidos/deltas/archive/` is explicitly fast-pathed.
+
+=== Option B: Structured Ledger Compaction (`eidos/deltas/archive.jsonl` or `archive/<year>.jsonl`)
+
+When SpecDeltas are archived, compact them into an append-only, line-oriented JSONL (or YAML) ledger (`eidos/deltas/archive/ledger.jsonl`) and remove the individual `dlt-*.adoc` files from the working tree (their full original `.adoc` prose remains permanently in Git commit history).
+
+* **Empirical Compression Benchmark (`N = 103` applied SpecDeltas in Eidos)**:
+  We benchmarked two compaction tiers against the `103` real applied SpecDeltas in `eidos/deltas/` (`706,509 bytes` / `690.0 KB`):
+  1. **Full-Motivation Ledger (`237.2 KB`, `2.9x` compression, `65.6%` reduction)**: Retains `id`, `title`, `status`, `kind`, full `intent.motivation`, `graduated_from`, `vcs` (`branch`, `base_commit`, `applied_commit`, `release_tag`), and `mutations` (`operation`, `target`, `parent`, `details`), stripping only the AsciiDoc prose body and `expect:` verification blocks.
+  2. **Slim Summary Ledger (`82.6 KB`, `8.4x` compression, `88.0%` reduction)**: Retains `id`, `title`, `status`, `kind`, 1-sentence `summary`, `graduated_from`, `vcs` (`applied_commit`, `release_tag`), and compact `mutations` (`op`, `target`, `parent`).
+* **How Subsystems Interact with the Ledger**:
+  - **Working Tree (`eidos/deltas/`)**: Drops from **`105` files to `3` files** (`2` active `.adoc` files + `1` `archive/ledger.jsonl`).
+  - **Validator (`SpecValidator`)**: Reads `ledger.jsonl` in `< 1.5 ms` via `orjson`, registering all archived `DLT-*` IDs into `catalog_ids` with `entity_type = "delta/mutation"` so `EXP-*` `resulting_deltas` references validate with zero `.adoc` parsing!
+  - **Changelog (`ChangelogGenerator`)**: Reads archived deltas directly from `ledger.jsonl` (which already stores `applied_commit` and `release_tag`), eliminating the slow `git log -G^status: applied` scan for archived entries!
+  - **CLI Inspection (`eidos delta show <DLT-ID>`)**: Displays the structured ledger entry immediately, and supports `--full` to stream the original `.adoc` body from Git history (`git show <applied_commit>:eidos/deltas/<slug>.adoc`) if deep forensic inspection is ever needed.
+* **Pros**:
+  - **Massive reduction in file count (`103` files -> `1` file) and byte size (`88.0%` smaller)**.
+  - `O(1)` single-file `orjson` load (`< 1.5 ms` for `1,000` deltas) instead of `1,000` filesystem `stat()` and YAML frontmatter parses.
+  - Eliminates `git log -G` overhead in `eidos delta changelog`.
+* **Cons**:
+  - Parallel branches running `eidos delta archive` simultaneously could cause append merge conflicts on `ledger.jsonl` unless lines are sorted deterministically by `id` (or archive is run as a release/maintenance step, or auto-merged).
+
+=== Option C: Git-Native Ephemeral Pruning (Delete Applied `.adoc` Files, Reconstruct from Git History)
+
+Treat SpecDeltas strictly as ephemeral PR/branch transition artifacts (like database migration scripts that get squashed). Once applied and merged, `eidos delta prune` deletes the `.adoc` file from `HEAD` without keeping any local ledger file.
+
+* **Pros**:
+  - Zero historical footprint in the working tree.
+* **Cons**:
+  - **Violates `INV-FOREIGN-REPO-E2E` & Shallow Clone Determinism**: In CI pipelines using `git clone --depth 1` (or exported source tarballs without `.git`), `eidos delta changelog`, `EXP-*` `resulting_deltas` cross-reference validation (`validator.py:816`), and collision-free ID sequencing (`generate_collision_free_delta_id`) **break completely** because the deleted `DLT-*` IDs no longer exist in the working tree or shallow Git log.
+  - Requires expensive `git log --all` subprocess invocations on every CLI command that inspects historical deltas.
+
+=== Option D: Hybrid Two-Stage Lifecycle (Active `.adoc` -> Compacted Release/Year Ledger `eidos/deltas/archive/ledger.jsonl`)
+
+Combine the ergonomic benefits of active `.adoc` files during development/unreleased windows with **deterministic JSONL ledger compaction** upon archiving (`eidos delta archive`).
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                Stage 1: In-Flight & Unreleased (Hot Tier)                  │
+│                        eidos/deltas/dlt-yyyy-nnn.adoc                      │
+│                                                                            │
+│  • Status: proposed ──► in_review ──► approved ──► applied (unreleased)    │
+│  • Full AsciiDoc body + declarative expect: { body, frontmatter }          │
+│  • Full SpecValidator + eidos drift + eidos delta verify / audit           │
+└─────────────────────────────────────┬──────────────────────────────────────┘
+                                      │
+                                      │  eidos delta archive
+                                      │  (e.g. on release tag, >N applied,
+                                      │   or explicit --keep-recent K)
+                                      ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                 Stage 2: Archived Ledger (Cold Tier)                       │
+│                     eidos/deltas/archive/ledger.jsonl                      │
+│                                                                            │
+│  • 1 deterministic, ID-sorted JSONL line per archived DLT-* (~800 bytes)   │
+│  • Preserves: id, title, status, kind, motivation/summary, mutations       │
+│    (op/target/parent/details), graduated_from, vcs (commit, branch, tag)   │
+│  • Strips: AsciiDoc implementation prose & post-condition expect: blocks   │
+│  • Removes original eidos/deltas/dlt-*.adoc from working tree (Git keeps   │
+│    full historical blob reachable via vcs.applied_commit)                  │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+== 4. Trade-Off Matrix Across All 4 Options
+
+| Evaluation Dimension | Current Baseline (Flat `eidos/deltas/`) | Option A: Subdirectory Partitioning (`deltas/archive/*.adoc`) | Option B: Pure Immediate Compaction (Compact on `apply`) | Option C: Git-Only Ephemeral Pruning (`git rm` on `apply`) | **Option D: Hybrid Two-Stage Compaction (`eidos delta archive` -> `ledger.jsonl`)** |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Working Tree File Count (at 500 Deltas)** | `500` `.adoc` files | `500` `.adoc` files | `1–3` active + `1` `.jsonl` | `1–3` active `.adoc` files | **`1–10` recent/active `.adoc` + `1` `.jsonl`** |
+| **Disk Footprint (at 500 Deltas)** | `~3.4 MB` | `~3.4 MB` | `~400 KB` (`88%` smaller) | `~20 KB` | **`~450 KB` (`87%` smaller)** |
+| **Shallow Clone (`--depth 1`) Safe?** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ **No (Breaks `validate`, `changelog`, `id` seq)** | **✅ Yes (All IDs & release metadata in `ledger.jsonl`)** |
+| **Preserves Recent Applied `.adoc` for Rollback / PR Audit?** | ✅ Yes | ✅ Yes | ❌ No (compacted immediately on `apply`) | ❌ No | **✅ Yes (`--keep-recent N` or `--released-only`)** |
+| **FTS5 Search (`eidos index search`) Clarity** | ❌ `50–70%` delta noise | ⚠️ Requires path filter | ✅ `0%` delta noise by default | ✅ `0%` delta noise | **✅ `0%` archived noise by default (`--include-archive` opt-in)** |
+| **Web Portal JSON Payload (`get_portal_data`)** | ❌ `2.33 MB` (`66%` deltas) | ⚠️ Still `2.33 MB` unless stripped | ✅ `~880 KB` (`62%` smaller) | ❌ Loses historical delta timeline in Portal | **✅ `~880 KB` (`62%` smaller; full timeline preserved)** |
+| **Git Merge Conflict Risk on Feature Branches** | ✅ Low (`--slug`) | ✅ Low | ⚠️ High if `ledger.jsonl` modified on every feature branch `apply` | ✅ Low | **✅ Low (`archive` run as maintenance/release step, not mid-PR)** |
+
+---
+
+== 5. Proposed Architecture for Option D (Recommended Solution)
+
+=== 5.1 Why Decouple `apply` from `archive`?
+A subtle trap of compacting immediately during `eidos delta apply` (Option B) is that `eidos delta apply` runs **on feature branches before merge** and is inspected by `eidos drift` and `eidos delta audit` during PR review. If `eidos delta apply` immediately deleted `dlt-2026-105.adoc` and appended to a shared `ledger.jsonl`:
+1. Concurrent feature branches would contend on the last line of `ledger.jsonl`.
+2. `eidos delta audit <DLT-ID>` and `eidos delta verify <DLT-ID>` during PR review rely on the full `.adoc` file (`expect:` blocks and `tombstone:` rules).
+
+By keeping recently `applied` SpecDeltas as `.adoc` files during the active development/unreleased window and providing an explicit **`eidos delta archive`** command (with configurable retention such as `--keep-recent 10` or `--released-only`), feature branches never touch `ledger.jsonl` during normal PR work.
+
+=== 5.2 Canonical Schema for `eidos/deltas/archive/ledger.jsonl`
+
+Each line in `eidos/deltas/archive/ledger.jsonl` is a canonical, key-sorted JSON object (`orjson.OPT_SORT_KEYS`) ordered by `id`:
+
+```json
+{"id":"DLT-2026-001","title":"Bootstrap Core Domain and Validation Schemas","status":"applied","kind":"feature","motivation":"Establish foundational living specification schemas and validator.","graduated_from":null,"vcs":{"branch":"main","base_commit":"a1b2c3d","applied_commit":"e4f5a6b","release_tag":"v0.1.0"},"mutations":[{"operation":"add","target":"CNT-EIDOS-CORE"},{"operation":"add","target":"CAP-PROD-001","parent":"DOM-SPEC-ENGINE"}]}
+```
+
+=== 5.3 Five Cohesive Subsystem Enhancements Required
+
+1. **New CLI Command & Lifecycle Routine (`eidos delta archive`)**:
+   * **Flags**:
+     - `--keep-recent <N>` (default: `10`): Keep the $N$ most recent `applied` SpecDeltas as hot `.adoc` files in `eidos/deltas/` so recent merges remain directly inspectable, and compact all older `applied` / `rejected` SpecDeltas into `eidos/deltas/archive/ledger.jsonl`.
+     - `--released-only`: Only archive SpecDeltas whose `applied_commit` is already reachable from a Git release tag (`v*`), keeping `Unreleased` deltas in `eidos/deltas/`.
+     - `--dry-run` / `--json`: Preview exact candidate deltas and byte savings before mutating disk.
+   * **Execution**:
+     - Resolves `applied_commit` and `release_tag` via `ChangelogGenerator` batch commit resolution **before** removing the `.adoc` file, freezing the Git provenance permanently into the ledger entry's `vcs` block.
+     - Appends/merges into `eidos/deltas/archive/ledger.jsonl` sorted by `id` and unlinks the archived `eidos/deltas/dlt-*.adoc` files.
+2. **Fast-Path Catalog Registration in `SpecValidator` (`src/eidos/core/spec/validator.py`)**:
+   * During `_validate_cross_references()`, read `eidos/deltas/archive/ledger.jsonl` (if present) and add all archived `DLT-*` IDs to `catalog_ids` with `entity_types[dlt_id] = "delta/mutation"`.
+   * Result: `EXP-*` explorations with `decision.resulting_deltas: [DLT-2026-015]` pass `x-eidos-ref` validation in `< 1 ms` without needing `dlt-2026-015.adoc` on disk.
+3. **Search & Index Hygiene (`src/eidos/core/index/sync.py`, `query.py`)**:
+   * Keep hot/unarchived SpecDeltas (`eidos/deltas/*.adoc`) in default `specs_fts` (`eidos index search`) so in-flight and recent changes remain searchable, while **excluding archived deltas (`ledger.jsonl`) from default FTS5 search** (with an opt-in `--include-archived` flag when searching historical mutations). This naturally reduces historical delta noise in `query_fts()` by `> 90%` once older deltas are archived!
+   * Skip inserting `affects` edges into SQLite `edges` for archived deltas (or compute them lazily only when requested), cutting SQLite `edges` count by **`> 50%` (`600+` rows saved)**.
+4. **Zero-Git-Log Instant Lookup in `ChangelogGenerator` & `generate_collision_free_delta_id`**:
+   * `ChangelogGenerator.get_applied_deltas()` merges hot `eidos/deltas/*.adoc` with `eidos/deltas/archive/ledger.jsonl`. Because `ledger.jsonl` already stores `vcs.applied_commit` and `vcs.release_tag`, `eidos delta changelog` skips `git log -G` for all archived deltas.
+   * `generate_collision_free_delta_id()` seeds `existing_ids` and `max_seq_by_year` from `ledger.jsonl` in addition to `eidos/deltas/*.adoc`.
+   * `list_deltas()` (`eidos delta list`) defaults to hot/active deltas and accepts `--include-archived` (or `--status archived`) to include ledger records.
+5. **Living Web Portal Payload Slimming (`src/eidos/portal/generator.py`)**:
+   * Stop duplicating `delta/mutation` specs inside `pdata["specs"]` (saving **`733.4 KB`** immediately).
+   * Hydrate `pdata["deltas"]["applied"]` from both hot `.adoc` deltas and `ledger.jsonl` compact entries (without `800 KB` of redundant AsciiDoc bodies), reducing total `get_portal_data()` payload from **`2.33 MB` to `~880 KB` (`62.3%` reduction)**.
+
+---
+
+== 6. Architectural Alignment & Adopted Decisions (2026-10-20 — Graduated to `DLT-2026-106-ARCHIVE-AND`)
+
+Following architectural alignment, `EXP-2026-008` is formally **`adopted`** and graduated to **`DLT-2026-106-ARCHIVE-AND`** with the following locked design decisions:
+
+1. **Subdirectory Partitioning + In-Place `.adoc` Slimming Across Both SpecDeltas (`DLT-*`) and Explorations (`EXP-*`)**:
+   * **SpecDeltas (`eidos/deltas/*.adoc` -> `eidos/deltas/archive/*.adoc`)**: Reconciled (`applied` / `rejected`) SpecDeltas beyond the retention window are moved to `eidos/deltas/archive/*.adoc`, stamped with `vcs.applied_commit` and `vcs.release_tag`, stripped of transitional `mutations[].expect` blocks, and slimmed to a 1-line AsciiDoc heading (**`~88%` byte reduction** while remaining 100% standard `delta/mutation` `.adoc` files).
+   * **Explorations (`eidos/explorations/*.adoc` -> `eidos/explorations/archive/*.adoc`)**: Concluded (`adopted` / `discarded`) Explorations beyond the retention window are moved to `eidos/explorations/archive/*.adoc` and slimmed to a compact `== Core Hypothesis` and `== Findings & Learnings` body (**`~97%` byte reduction** while remaining 100% standard `product/exploration` `.adoc` files).
+2. **Count-Based Retention Window Keeping Last $X$ Applied (`--keep-recent 15` Default)**:
+   * Archiving retains all in-flight items (`proposed`, `in_review`, `approved` for SpecDeltas; `proposed`, `in_progress` for Explorations) plus the **last $X$ (`--keep-recent 15` default) terminal SpecDeltas (`applied`/`rejected`) and terminal Explorations (`adopted`/`discarded`)** ordered deterministically by canonical `(year, seq, id)` as full hot `.adoc` files in `eidos/deltas/` and `eidos/explorations/`.
+   * All older terminal SpecDeltas and Explorations beyond the last `15` (with `--keep-recent 0` supported to archive all terminal items immediately) are moved and slimmed by `eidos delta archive` into `eidos/deltas/archive/` and `eidos/explorations/archive/`.
+3. **Zero Custom Format Parsers — Native `eidos validate`, `eidos delta audit`, & CLI Lookup Compatibility**:
+   * Because archived files remain standard `.adoc` files validated by `delta.schema.yaml` and `exploration.schema.yaml`, `SpecValidator`, `AuditEngine`, `find_spec_by_id_or_path`, and `generate_collision_free_delta_id` work natively without custom `.jsonl` parsers or multi-branch single-file merge conflicts.
+4. **FTS5 Search & Graph Hygiene (`sync.py`)**:
+   * `sync.py` registers archived `eidos/deltas/archive/*.adoc` entities in `entities` for catalog completeness, while skipping `specs_fts` indexing and `affects` graph edge generation for archived SpecDeltas (`"archive" in rel_path.parts`), eliminating `> 85%` of historical delta search noise and `600+` historical `affects` edges.

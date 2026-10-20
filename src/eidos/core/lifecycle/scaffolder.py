@@ -250,6 +250,14 @@ def create_spec(
     elif canonical_key == "exploration":
         dest_dir = eidos_dir / "explorations"
         dest_file = dest_dir / f"{slug}.adoc"
+        archive_dir = dest_dir / "archive"
+        if archive_dir.is_dir():
+            for arch_p in archive_dir.glob("*.adoc"):
+                if arch_p.stem.lower().replace("_", "-") == slug:
+                    raise FileExistsError(f"Specification document already exists in archive at: {arch_p}")
+        if doc_id in _catalog():
+            existing_p = _catalog()[doc_id][0]
+            raise FileExistsError(f"Specification document '{doc_id}' already exists at: {existing_p}")
         fm = {
             "type": "product/exploration",
             "id": doc_id,
@@ -341,6 +349,7 @@ def list_specs(
     eidos_dir: Path,
     type_filter: str | None = None,
     status_filter: str | None = None,
+    include_archived: bool = False,
 ) -> list[dict[str, Any]]:
     """List all living specifications (including inline C4 Level 3 components, excluding SpecDeltas) under eidos_dir."""
     type_filter_clean = type_filter.strip().lower().replace("_", "/") if type_filter else None
@@ -388,6 +397,9 @@ def list_specs(
             cand_p = idx.root / raw_fp
         resolved_p = cand_p.resolve() if cand_p.exists() else cand_p
         rel_p = resolved_p.relative_to(eidos_resolved) if resolved_p.is_relative_to(eidos_resolved) else raw_fp
+        is_archived = "archive" in rel_p.parts
+        if is_archived and not include_archived:
+            continue
 
         if _matches_type(doc_type, eid) and (not status_filter_clean or str(status).lower() == status_filter_clean):
             results.append(
@@ -396,6 +408,7 @@ def list_specs(
                     "type": doc_type,
                     "title": ent.get("title") or "Untitled",
                     "status": status,
+                    "is_archived": is_archived,
                     "path": resolved_p,
                     "relative_path": rel_p,
                 }

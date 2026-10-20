@@ -110,9 +110,9 @@ ACTIVE_DELTA_STATUSES: tuple[str, ...] = (
 )
 
 
-def get_delta_status_summary(eidos_dir: Path) -> dict[str, Any]:
+def get_delta_status_summary(eidos_dir: Path, include_archived: bool = False) -> dict[str, Any]:
     """Get count and listing breakdown of deltas grouped by lifecycle status."""
-    deltas = list_deltas(eidos_dir)
+    deltas = list_deltas(eidos_dir, include_archived=include_archived)
     by_status: dict[str, list[dict]] = {
         "proposed": [],
         "in_review": [],
@@ -127,30 +127,46 @@ def get_delta_status_summary(eidos_dir: Path) -> dict[str, Any]:
         by_status[st].append(d)
 
     active_count = sum(len(by_status.get(s, [])) for s in ACTIVE_DELTA_STATUSES)
+    archive_dir = eidos_dir / "deltas" / "archive"
+    archived_count = (
+        sum(1 for d in deltas if d.get("is_archived"))
+        if include_archived
+        else (len(list(archive_dir.glob("*.adoc"))) if archive_dir.is_dir() else 0)
+    )
 
     return {
         "total": len(deltas),
         "active_count": active_count,
+        "archived_count": archived_count,
         "by_status": by_status,
     }
 
 
-def list_deltas(eidos_dir: Path, status_filter: str | None = None) -> list[dict[str, Any]]:
-    """List all SpecDeltas from eidos/deltas/ with optional status filtering."""
+def list_deltas(
+    eidos_dir: Path,
+    status_filter: str | None = None,
+    include_archived: bool = False,
+) -> list[dict[str, Any]]:
+    """List SpecDeltas from eidos/deltas/ (excluding eidos/deltas/archive/ unless include_archived=True)."""
     deltas_dir = eidos_dir / "deltas"
     results = []
     if not deltas_dir.exists():
         return results
 
     status_filter_clean = status_filter.lower().strip() if status_filter else None
+    candidate_paths = sorted(deltas_dir.rglob("*.adoc") if include_archived else deltas_dir.glob("*.adoc"))
 
-    for p in sorted(deltas_dir.rglob("*.adoc")):
+    for p in candidate_paths:
+        if not p.is_file() or p.is_symlink():
+            continue
         doc, _, _ = get_cached_spec_document(p)
         if doc is None or doc.doc_type != "delta/mutation":
             continue
 
         status = str(doc.frontmatter.get("status", "proposed")).lower().strip()
         is_active = status in ACTIVE_DELTA_STATUSES
+        rel_to_deltas = p.relative_to(deltas_dir) if p.is_relative_to(deltas_dir) else Path(p.name)
+        is_archived = "archive" in rel_to_deltas.parts
 
         if status_filter_clean and (
             (status_filter_clean == "active" and not is_active)
@@ -168,6 +184,7 @@ def list_deltas(eidos_dir: Path, status_filter: str | None = None) -> list[dict[
                 "status": status,
                 "kind": kind,
                 "is_active": is_active,
+                "is_archived": is_archived,
                 "path": p.resolve(),
                 "relative_path": p.relative_to(eidos_dir) if p.is_relative_to(eidos_dir) else p,
             }
@@ -350,7 +367,7 @@ def generate_collision_free_delta_id(
 
             for ref in refs_to_scan[:32]:
                 ls_res = subprocess.run(
-                    ["git", "-C", str(repo_root), "ls-tree", "--name-only", ref, f"{rel_deltas}/"],
+                    ["git", "-C", str(repo_root), "ls-tree", "-r", "--name-only", ref, f"{rel_deltas}/"],
                     capture_output=True,
                     text=True,
                     timeout=5,
@@ -461,8 +478,10 @@ def create_delta(
 
     body = render_spec_template("delta/mutation", heading=heading, motivation=motivation)
     content = _render_spec(fm, body)
-    if dest_file.exists():
-        raise FileExistsError(f"SpecDelta document already exists at: {dest_file}")
+    archived_file = dest_dir / "archive" / f"{slug}.adoc"
+    if dest_file.exists() or archived_file.exists():
+        existing_target = archived_file if archived_file.exists() else dest_file
+        raise FileExistsError(f"SpecDelta document already exists at: {existing_target}")
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_file.write_text(content, encoding="utf-8")
@@ -1467,3 +1486,269 @@ def apply_delta(
         f"Successfully applied SpecDelta '{doc.doc_id}' in-place -> {file_path.name}.",
         file_path,
     )
+
+
+def _sequence_sort_key(doc_id: str, prefix: str) -> tuple[int, int, str]:
+    """Return a deterministic (year, seq, doc_id) sort key for DLT-YYYY-NNN or EXP-YYYY-NNN IDs."""
+    cleaned = str(doc_id or "").strip().upper()
+    m = re.match(rf"^{re.escape(prefix.upper())}-(\d{{4}})-(\d+)(?:-[A-Z0-9_-]+)?$", cleaned)
+    if m:
+        return int(m.group(1)), int(m.group(2)), cleaned
+    return 0, 0, cleaned
+
+
+def archive_explorations(
+    eidos_dir: Path,
+    keep_recent: int = 15,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Move and slim concluded Explorations (adopted/discarded) beyond the last keep_recent items into eidos/explorations/archive/."""
+    if keep_recent < 0:
+        raise ValueError("keep_recent must be >= 0")
+
+    exp_dir = eidos_dir / "explorations"
+    archive_dir = exp_dir / "archive"
+    if not exp_dir.exists():
+        return {
+            "archived_count": 0,
+            "retained_terminal_count": 0,
+            "active_retained_count": 0,
+            "bytes_before": 0,
+            "bytes_after": 0,
+            "bytes_saved": 0,
+            "archived_ids": [],
+            "retained_ids": [],
+        }
+
+    terminal_items: list[tuple[tuple[int, int, str], Path, Any]] = []
+    active_retained_count = 0
+
+    for p in sorted(exp_dir.glob("*.adoc")):
+        if not p.is_file() or p.is_symlink():
+            continue
+        doc, _, _ = get_cached_spec_document(p)
+        if doc is None or doc.doc_type != "product/exploration":
+            continue
+        status = str((doc.frontmatter or {}).get("status", "proposed")).strip().lower()
+        doc_id = str(doc.doc_id or p.stem.upper())
+        if status in ("adopted", "discarded"):
+            terminal_items.append((_sequence_sort_key(doc_id, "EXP"), p, doc))
+        else:
+            active_retained_count += 1
+
+    terminal_items.sort(key=lambda item: item[0])
+    if keep_recent == 0:
+        to_archive = terminal_items
+        retained = []
+    elif len(terminal_items) > keep_recent:
+        to_archive = terminal_items[:-keep_recent]
+        retained = terminal_items[-keep_recent:]
+    else:
+        to_archive = []
+        retained = terminal_items
+
+    bytes_before = 0
+    bytes_after = 0
+    archived_ids: list[str] = []
+    validator = SpecValidator()
+
+    for _, p, doc in to_archive:
+        fm = dict(doc.frontmatter or {})
+        doc_id = str(doc.doc_id or p.stem.upper())
+        title = str(fm.get("title") or doc.title or doc_id)
+        orig_size = p.stat().st_size
+
+        hypothesis = str(fm.get("hypothesis") or "").strip()
+        if not hypothesis:
+            m_hyp = re.search(
+                r"(?:\*Hypothesis:\*|\* \*Hypothesis\*:|^==+\s+[^\n]*Hypothesis[^\n]*)\s*\n+(?:\*\s*\*Hypothesis\*:\s*)?([^=\n][^\n]+)",
+                doc.body or "",
+                re.MULTILINE,
+            )
+            if m_hyp:
+                hypothesis = " ".join(m_hyp.group(1).split())
+
+        findings = str(fm.get("findings") or "").strip()
+        if not findings:
+            m_find = re.search(
+                r"(?:\*Findings:\*|\* \*Findings\*:|^==+\s+[^\n]*(?:Findings|Outcome)[^\n]*)\s*\n+\*?\s*([^=\n][^\n]+)",
+                doc.body or "",
+                re.MULTILINE,
+            )
+            if m_find:
+                findings = " ".join(m_find.group(1).split())
+
+        slim_fm: dict[str, Any] = {
+            "type": "product/exploration",
+            "id": doc_id,
+            "title": title,
+            "status": str(fm.get("status", "adopted")).strip().lower(),
+        }
+        if isinstance(fm.get("decision"), dict) and fm["decision"]:
+            dec_clean = {k: v for k, v in fm["decision"].items() if k in ("outcome", "resulting_deltas")}
+            if dec_clean:
+                slim_fm["decision"] = dec_clean
+
+        body_lines = [f"= Exploration: {_single_line(title)}", ""]
+        if hypothesis:
+            body_lines.extend(["== Core Hypothesis", hypothesis, ""])
+        if findings:
+            body_lines.extend(["== Findings & Learnings", findings, ""])
+        slim_body = "\n".join(body_lines).rstrip() + "\n"
+        slim_content = _render_spec(slim_fm, slim_body)
+        slim_size = len(slim_content.encode("utf-8"))
+
+        dest_p = archive_dir / p.name
+        if not dry_run:
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            slim_doc = _parse_spec_content(dest_p, slim_content)
+            errors = validator.validate_document(slim_doc)
+            if errors:
+                raise ValueError(f"Archived exploration '{doc_id}' failed schema validation: {'; '.join(errors)}")
+            dest_p.write_text(slim_content, encoding="utf-8")
+            p.unlink()
+
+        bytes_before += orig_size
+        bytes_after += slim_size
+        archived_ids.append(doc_id)
+
+    return {
+        "archived_count": len(archived_ids),
+        "retained_terminal_count": len(retained),
+        "active_retained_count": active_retained_count,
+        "bytes_before": bytes_before,
+        "bytes_after": bytes_after,
+        "bytes_saved": max(0, bytes_before - bytes_after),
+        "archived_ids": archived_ids,
+        "retained_ids": [str(it[2].doc_id or it[1].stem.upper()) for it in retained],
+    }
+
+
+def archive_deltas(
+    eidos_dir: Path,
+    keep_recent: int = 15,
+    include_explorations: bool = True,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Move and slim reconciled SpecDeltas (applied/rejected) beyond the last keep_recent items into eidos/deltas/archive/."""
+    if keep_recent < 0:
+        raise ValueError("keep_recent must be >= 0")
+
+    deltas_dir = eidos_dir / "deltas"
+    archive_dir = deltas_dir / "archive"
+    terminal_items: list[tuple[tuple[int, int, str], Path, Any]] = []
+    active_retained_count = 0
+
+    if deltas_dir.exists():
+        for p in sorted(deltas_dir.glob("*.adoc")):
+            if not p.is_file() or p.is_symlink():
+                continue
+            doc, _, _ = get_cached_spec_document(p)
+            if doc is None or doc.doc_type != "delta/mutation":
+                continue
+            status = str((doc.frontmatter or {}).get("status", "proposed")).strip().lower()
+            doc_id = str(doc.doc_id or p.stem.upper())
+            if status in ("applied", "rejected"):
+                terminal_items.append((_sequence_sort_key(doc_id, "DLT"), p, doc))
+            else:
+                active_retained_count += 1
+
+    terminal_items.sort(key=lambda item: item[0])
+    if keep_recent == 0:
+        to_archive = terminal_items
+        retained = []
+    elif len(terminal_items) > keep_recent:
+        to_archive = terminal_items[:-keep_recent]
+        retained = terminal_items[-keep_recent:]
+    else:
+        to_archive = []
+        retained = terminal_items
+
+    bytes_before = 0
+    bytes_after = 0
+    archived_ids: list[str] = []
+
+    if to_archive:
+        validator = SpecValidator()
+
+        for _, p, doc in to_archive:
+            fm = dict(doc.frontmatter or {})
+            doc_id = str(doc.doc_id or p.stem.upper())
+            title = str(fm.get("title") or doc.title or doc_id)
+            orig_size = p.stat().st_size
+
+            slim_muts: list[dict[str, Any]] = []
+            for m in fm.get("mutations") or []:
+                if not isinstance(m, dict):
+                    continue
+                m_copy = {k: v for k, v in m.items() if k not in ("expect", "details")}
+                slim_muts.append(m_copy)
+
+            slim_fm: dict[str, Any] = {
+                "type": "delta/mutation",
+                "id": doc_id,
+                "title": title,
+                "status": str(fm.get("status", "applied")).strip().lower(),
+                "intent": fm.get("intent") or {"kind": "feature", "motivation": title},
+            }
+            if fm.get("graduated_from"):
+                slim_fm["graduated_from"] = fm["graduated_from"]
+            if fm.get("tombstone"):
+                slim_fm["tombstone"] = fm["tombstone"]
+            if fm.get("decisions"):
+                slim_fm["decisions"] = fm["decisions"]
+            if isinstance(fm.get("vcs"), dict) and fm["vcs"]:
+                slim_fm["vcs"] = dict(fm["vcs"])
+
+            slim_fm["mutations"] = slim_muts
+            slim_body = f"= SpecDelta: {_single_line(title)}\n"
+            slim_content = _render_spec(slim_fm, slim_body)
+            slim_size = len(slim_content.encode("utf-8"))
+
+            dest_p = archive_dir / p.name
+            if not dry_run:
+                archive_dir.mkdir(parents=True, exist_ok=True)
+                slim_doc = _parse_spec_content(dest_p, slim_content)
+                errors = validator.validate_document(slim_doc)
+                if errors:
+                    raise ValueError(f"Archived SpecDelta '{doc_id}' failed schema validation: {'; '.join(errors)}")
+                dest_p.write_text(slim_content, encoding="utf-8")
+                p.unlink()
+
+            bytes_before += orig_size
+            bytes_after += slim_size
+            archived_ids.append(doc_id)
+
+    exp_report = (
+        archive_explorations(eidos_dir, keep_recent=keep_recent, dry_run=dry_run)
+        if include_explorations
+        else {
+            "archived_count": 0,
+            "retained_terminal_count": 0,
+            "active_retained_count": 0,
+            "bytes_before": 0,
+            "bytes_after": 0,
+            "bytes_saved": 0,
+            "archived_ids": [],
+            "retained_ids": [],
+        }
+    )
+
+    total_before = bytes_before + exp_report["bytes_before"]
+    total_after = bytes_after + exp_report["bytes_after"]
+    return {
+        "keep_recent": keep_recent,
+        "dry_run": dry_run,
+        "deltas": {
+            "archived_count": len(archived_ids),
+            "retained_terminal_count": len(retained),
+            "active_retained_count": active_retained_count,
+            "bytes_before": bytes_before,
+            "bytes_after": bytes_after,
+            "bytes_saved": max(0, bytes_before - bytes_after),
+            "archived_ids": archived_ids,
+            "retained_ids": [str(it[2].doc_id or it[1].stem.upper()) for it in retained],
+        },
+        "explorations": exp_report,
+        "total_bytes_saved": max(0, total_before - total_after),
+    }

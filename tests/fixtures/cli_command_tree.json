@@ -516,10 +516,24 @@
         "kind": "TyperOption",
         "required": false,
         "default": "None",
-        "help": "Filter by status (draft, active, deprecated, retired).",
+        "help": "Filter by status (draft, active, deprecated, retired, proposed, in_progress, adopted, discarded).",
         "panel": null,
         "envvar": "None",
         "type": "STRING"
+      },
+      {
+        "name": "include_archived",
+        "opts": [
+          "--include-archived"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Include archived specifications partitioned under archive/ subdirectories (e.g. eidos/explorations/archive/).",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
       },
       {
         "name": "json_output",
@@ -851,12 +865,13 @@
       "apply",
       "status",
       "delete",
-      "changelog"
+      "changelog",
+      "archive"
     ],
     "path": [
       "delta"
     ],
-    "help": "Manage SpecDeltas through their mutation lifecycle (list, create, status, verify, audit, apply, delete, changelog).",
+    "help": "Manage SpecDeltas through their mutation lifecycle (list, create, status, verify, audit, apply, archive, delete, changelog).",
     "hidden": false,
     "panel": "Living Catalog & Mutations",
     "params": []
@@ -900,6 +915,20 @@
         "panel": null,
         "envvar": "None",
         "type": "STRING"
+      },
+      {
+        "name": "include_archived",
+        "opts": [
+          "--include-archived"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Include historical SpecDeltas partitioned under eidos/deltas/archive/.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
       },
       {
         "name": "json_output",
@@ -1407,6 +1436,92 @@
         "required": false,
         "default": "None",
         "help": "Path to eidos directory (defaults to ./eidos).",
+        "panel": null,
+        "envvar": "None",
+        "type": "<typer.models.TyperPath object>"
+      }
+    ]
+  },
+  {
+    "order": [],
+    "path": [
+      "delta",
+      "archive"
+    ],
+    "help": "Partition and slim older terminal SpecDeltas and Explorations into archive/ subdirectories.",
+    "hidden": false,
+    "panel": null,
+    "params": [
+      {
+        "name": "keep_recent",
+        "opts": [
+          "--keep-recent",
+          "-k"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "15",
+        "help": "Number of most recent terminal SpecDeltas and Explorations to retain in hot working directories.",
+        "panel": null,
+        "envvar": "None",
+        "type": "INT"
+      },
+      {
+        "name": "explorations",
+        "opts": [
+          "--explorations"
+        ],
+        "secondary": [
+          "--no-explorations"
+        ],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "True",
+        "help": "Also archive terminal Explorations (adopted/discarded) into eidos/explorations/archive/.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
+        "name": "dry_run",
+        "opts": [
+          "--dry-run"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Preview candidate SpecDeltas and Explorations to archive without modifying files on disk.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
+        "name": "json_output",
+        "opts": [
+          "--json"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "False",
+        "help": "Output machine-readable JSON archive summary.",
+        "panel": null,
+        "envvar": "None",
+        "type": "BOOL"
+      },
+      {
+        "name": "path",
+        "opts": [
+          "--path",
+          "-p"
+        ],
+        "secondary": [],
+        "kind": "TyperOption",
+        "required": false,
+        "default": "eidos",
+        "help": "Path to eidos directory.",
         "panel": null,
         "envvar": "None",
         "type": "<typer.models.TyperPath object>"

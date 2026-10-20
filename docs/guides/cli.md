@@ -311,7 +311,7 @@ eidos spec component inline CMP-SPEC-VALIDATOR
 ```
 
 Sub-commands:
-* `list`: Lists all living specifications across the 15 blueprint types (including inline C4 Level 3 components) in tabular or JSON format, with optional `--type, -t`, `--status, -s`, `--path, -p`, and `--json` flags.
+* `list`: Lists all living specifications across the 15 blueprint types (including inline C4 Level 3 components) in tabular or JSON format, with optional `--type, -t`, `--status, -s`, `--include-archived`, `--path, -p`, and `--json` flags.
 * `show <id_or_path>`: Displays detailed frontmatter metadata and preview of a specification document.
 * `schema [type] [--json]`: Dynamically loads and inspects bundled v1 YAML frontmatter schemas from `assets/schemas/v1/` across all 16 specification types (omit `[type]` to list all 16 schemas, or pass a short alias like `capability` or canonical type like `product/capability`), displaying required/optional keys, nested object/array item constraints, and schema-synthesized YAML frontmatter templates.
 * `create <type> <id> --title <title> [--path <path>]`: Scaffolds a minimal, schema-valid draft specification blueprint (`status: draft`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`).
@@ -368,6 +368,10 @@ eidos delta audit DLT-2026-016 --json
 
 # Safely delete an unapplied SpecDelta
 eidos delta delete DLT-2026-055
+
+# Partition and slim older terminal SpecDeltas and Explorations into archive/ subdirectories (retaining last 15)
+eidos delta archive --keep-recent 15
+eidos delta archive --keep-recent 15 --dry-run --json
 
 # Compile an auditable, SpecDelta-backed changelog from Git release tags
 eidos delta changelog

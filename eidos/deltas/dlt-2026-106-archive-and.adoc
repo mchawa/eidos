@@ -1,0 +1,211 @@
+---
+type: delta/mutation
+id: DLT-2026-106-ARCHIVE-AND
+title: "Archive and Slim Historical SpecDeltas and Explorations in Subdirectories Keeping Last 15"
+status: applied
+graduated_from: EXP-2026-008
+intent:
+  kind: feature
+  motivation: "Prevent top-level directory clutter, FTS5 lexical search pollution (50-70% historical delta noise), and Web Portal payload bloat (1.55 MB / 66.3% duplicate delta JSON) by moving reconciled SpecDeltas (applied/rejected) and concluded Explorations (adopted/discarded) beyond the 15 most recent items (--keep-recent 15 default) into eidos/deltas/archive/ and eidos/explorations/archive/ with in-place AsciiDoc prose and expect: block slimming (~88% byte reduction), while keeping every archived record as a standard schema-valid AsciiDoc specification."
+vcs:
+  branch: main
+  base_commit: f6424c18987b4a2fd8a836413c7d88fc46331595
+mutations:
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    details: "Implement archive_deltas and archive_explorations with a --keep-recent 15 default (keep_recent=15, keeping all active items plus the 15 most recent terminal SpecDeltas/Explorations ordered by canonical sequence ID in eidos/deltas/ and eidos/explorations/, and moving older terminal items into eidos/deltas/archive/*.adoc and eidos/explorations/archive/*.adoc with stripped expect: blocks and slimmed AsciiDoc summary bodies), guard create_delta against archived IDs, and support include_archived in list_deltas and get_delta_status_summary."
+    expect:
+      frontmatter:
+        responsibility: "archive_deltas"
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    details: "Exclude archived SpecDeltas under eidos/deltas/archive/ from specs_fts lexical indexing and historical affects graph edges in sync.py while retaining entity catalog registration and active/recent (last 15) FTS5 search coverage."
+    expect:
+      frontmatter:
+        responsibility: "deltas/archive"
+  - operation: modify
+    target: CMP-CHANGELOG-GENERATOR
+    details: "Resolve Git commit and release tag ancestry for archived SpecDeltas in eidos/deltas/archive/ by mapping the earliest commit that introduced status: applied across deltas/<name>.adoc and deltas/archive/<name>.adoc in _batch_resolve_delta_commits."
+    expect:
+      frontmatter:
+        responsibility: "deltas/archive"
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    details: "Filter archived explorations (eidos/explorations/archive/*.adoc) out of default list_specs unless include_archived=True, and guard create_spec against recreating archived EXP-* IDs."
+    expect:
+      frontmatter:
+        responsibility: "include_archived"
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+    details: "Add 'eidos delta archive [--keep-recent 15] [--explorations/--no-explorations] [--dry-run] [--json] [--path]' to move and slim reconciled SpecDeltas (and concluded Explorations by default) beyond the 15 most recent items into archive/ subdirectories, and add '--include-archived' to 'eidos delta list'."
+    expect:
+      frontmatter:
+        responsibility: "archive"
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    details: "Add '--include-archived' option to 'eidos spec list' to include archived specifications under eidos/explorations/archive/."
+    expect:
+      frontmatter:
+        responsibility: "include-archived"
+  - operation: modify
+    target: CTR-EIDOS-CLI
+    details: "Document 'eidos delta archive' (--keep-recent 15 default, --explorations/--no-explorations, --dry-run, --json) and '--include-archived' on 'eidos delta list' and 'eidos spec list' in the CLI contract specification."
+    expect:
+      body:
+        contains:
+          - "archive [--keep-recent"
+          - "--include-archived"
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+    details: "Replace duplicate full AsciiDoc bodies on applied/rejected delta/mutation entries in pdata['specs'] with compact motivation summaries and fast-path archived SpecDelta impact calculation in get_portal_data, eliminating ~733 KB of duplicate delta prose while preserving full CatalogView and xref navigation."
+    expect:
+      frontmatter:
+        responsibility: "deltas/archive"
+  - operation: modify
+    target: CAP-PROD-002
+    details: "Extend SpecDelta Semantic Mutation Engine capability to cover --keep-recent 15 subdirectory archiving and in-place .adoc slimming (eidos delta archive) and bump version to 2.1.0."
+    expect:
+      frontmatter:
+        version: "2.1.0"
+      body:
+        contains:
+          - "eidos/deltas/archive/"
+  - operation: add
+    target: INV-DELTA-EXPLORATION-ARCHIVE-LEDGER
+    parent: CAP-PROD-002
+    details: "Add invariant INV-DELTA-EXPLORATION-ARCHIVE-LEDGER verifying that SpecDeltas and Explorations beyond the keep_recent window (15 by default) are moved into archive/ subdirectories and slimmed in-place as schema-valid .adoc documents while preserving SpecValidator x-eidos-ref resolution, collision-free ID sequencing, FTS5 search hygiene, and ChangelogGenerator parity."
+    expect:
+      frontmatter:
+        rule: "eidos/deltas/archive/"
+        test_binding: "tests/test_delta_engine.py::test_delta_and_exploration_archive_lifecycle"
+  - operation: modify
+    target: CAP-PROD-003
+    details: "Extend Product Exploration & Hypothesis Spikes capability to cover --keep-recent 15 post-conclusion archiving and slimming into eidos/explorations/archive/*.adoc and bump version to 1.2.0."
+    expect:
+      frontmatter:
+        version: "1.2.0"
+      body:
+        contains:
+          - "eidos/explorations/archive/"
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+    details: "Update CLI command reference (docs/guides/cli.md) to document 'eidos delta archive' and '--include-archived' options."
+    expect:
+      frontmatter:
+        responsibility: "archive/changelog"
+---
+= SpecDelta: Archive and Slim Historical SpecDeltas and Explorations in Subdirectories Keeping Last 15
+:toc: left
+:icons: font
+:sectnums:
+
+== 1. Problem Statement & Motivation
+
+As proven in `EXP-2026-008`, Eidos repositories accumulate reconciled **SpecDeltas (`eidos/deltas/dlt-*.adoc`)** and concluded **Explorations (`eidos/explorations/exp-*.adoc`)** rapidly:
+
+1. **Working-Tree & Byte Dominance**: Within 10 days of development, `104` applied SpecDeltas (`~695 KB`) and `7` concluded Explorations (`107.7 KB`) already outnumber all `54` living specifications (`309.5 KB`) by **`> 2.0x` in file count** and **`> 2.5x` in byte size**.
+2. **FTS5 Search Pollution**: Historical SpecDeltas account for **`60.6%` (`469.9 KB`)** of `specs_fts` and **`50–70%` of top-10 search hits** on core terms (`validator`, `context`, `drift`, `schema`, `changelog`).
+3. **Web Portal Payload Duplication**: `get_portal_data()` serializes `2.33 MB` of JSON, of which `1.55 MB` (`66.3%`) is SpecDelta prose serialized twice (`pdata["specs"]` and `pdata["deltas"]`).
+
+Rather than introducing a foreign `.jsonl` file format that requires custom parsers across five subsystems and produces unreadable single-line Git diffs, **Option 3 (Subdirectory Partitioning + In-Place `.adoc` Slimming)** keeps every archived SpecDelta and Exploration as a **100% standard, schema-valid Eidos `.adoc` file** inside `eidos/deltas/archive/` and `eidos/explorations/archive/`, retains the **last 15 (`--keep-recent 15` default)** resolved items as full `.adoc` files in the root directories, and strips transitional `expect:` blocks and verbose multi-page implementation prose from archived files (**`~88%` byte reduction**).
+
+---
+
+== 2. Architectural Design (`EXP-2026-008` Option 3 Graduated Solution)
+
+=== 2.1 Two-Tier `--keep-recent 15` Subdirectory & In-Place Slimming Lifecycle
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│          Hot Tier: Active + Last 15 Resolved (--keep-recent 15)            │
+│        eidos/deltas/dlt-*.adoc   &   eidos/explorations/exp-*.adoc         │
+│                                                                            │
+│  • All in-flight statuses (always retained in root directory):             │
+│    - SpecDeltas: proposed, in_review, approved                             │
+│    - Explorations: proposed, in_progress                                   │
+│  • Most recent 15 terminal items (--keep-recent 15 default, ordered by     │
+│    canonical sequence ID DLT-YYYY-NNN / EXP-YYYY-NNN):                     │
+│    - SpecDeltas: last 15 applied / rejected                                │
+│    - Explorations: last 15 adopted / discarded                             │
+│  • Full AsciiDoc body, full expect: blocks, full FTS5 search indexing      │
+└─────────────────────────────────────┬──────────────────────────────────────┘
+                                      │
+                                      │  eidos delta archive [--keep-recent 15]
+                                      │  (Moves & slims terminal items > last 15)
+                                      ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│             Cold Tier: Slimmed Schema-Valid .adoc Specifications           │
+│       eidos/deltas/archive/dlt-*.adoc   &   eidos/explorations/archive/    │
+│                                                                            │
+│  • 100% valid delta/mutation & product/exploration .adoc files (~650 B)    │
+│  • Strips transitional mutations[].expect & verbose multi-page prose       │
+│  • Stamps vcs.applied_commit & vcs.release_tag into SpecDelta frontmatter  │
+│  • Excluded from specs_fts & historical affects edges in sync.py           │
+│  • Validated natively by SpecValidator, AuditEngine, and CLI status/show   │
+│    with zero custom file-format parsers and zero branch merge conflicts    │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+=== 2.2 Slimmed Archive `.adoc` Format
+
+1. **Archived SpecDelta (`eidos/deltas/archive/dlt-2026-001.adoc`)**:
+   ```asciidoc
+   ---
+   type: delta/mutation
+   id: DLT-2026-001
+   title: Bootstrap Core Domain and Validation Schemas
+   status: applied
+   intent:
+     kind: feature
+     motivation: Establish foundational living specification schemas and validator.
+   vcs:
+     branch: main
+     base_commit: a1b2c3d
+     applied_commit: e4f5a6b
+     release_tag: v0.1.0
+   mutations:
+     - operation: add
+       target: CNT-EIDOS-CORE
+     - operation: add
+       target: CAP-PROD-001
+       parent: DOM-SPEC-ENGINE
+   ---
+   = SpecDelta: Bootstrap Core Domain and Validation Schemas
+   ```
+
+2. **Archived Exploration (`eidos/explorations/archive/exp-2026-001.adoc`)**:
+   ```asciidoc
+   ---
+   type: product/exploration
+   id: EXP-2026-001
+   title: Evaluate Outbox Pattern vs Direct Webhook Dispatch
+   status: adopted
+   decision:
+     outcome: adopted
+     resulting_deltas:
+       - DLT-2026-015
+   ---
+   = Exploration: Evaluate Outbox Pattern vs Direct Webhook Dispatch
+
+   == Core Hypothesis
+   A PostgreSQL transactional outbox can sustain 5,000 events/sec.
+
+   == Findings & Learnings
+   SKIP LOCKED batch size 250 achieved 6,400 events/sec at p99 18ms.
+   ```
+
+=== 2.3 Subsystem Integration
+
+1. **`DeltaEngine` (`src/eidos/core/lifecycle/delta_engine.py`)**:
+   * `archive_deltas(eidos_dir, keep_recent=15, include_explorations=True, dry_run=False)` sorts terminal SpecDeltas (`applied`, `rejected`) in `eidos/deltas/*.adoc` by `(year, seq, doc_id)`, keeps the last `keep_recent` (default `15`), and moves older terminal deltas into `eidos/deltas/archive/<name>.adoc` after resolving `vcs.applied_commit` / `vcs.release_tag`, stripping `mutations[].expect`, and compacting the body to `= SpecDelta: <title>`.
+   * `archive_explorations(eidos_dir, keep_recent=15, dry_run=False)` sorts terminal Explorations (`adopted`, `discarded`) in `eidos/explorations/*.adoc` by `(year, seq, doc_id)`, keeps the last `keep_recent` (default `15`), and moves older terminal explorations into `eidos/explorations/archive/<name>.adoc` with a compact `== Core Hypothesis` + `== Findings & Learnings` body.
+   * `list_deltas(eidos_dir, status_filter=None, include_archived=False)` scans only top-level `eidos/deltas/*.adoc` by default, and includes `eidos/deltas/archive/*.adoc` when `include_archived=True`.
+2. **`SpecValidator` & Schema (`assets/schemas/v1/delta/delta.schema.yaml`)**:
+   * Adds optional `applied_commit` and `release_tag` string fields under `vcs` in `delta.schema.yaml`.
+   * Because archived files are standard `.adoc` documents under `eidos/`, `SpecValidator`, `AuditEngine`, `find_spec_by_id_or_path`, and `generate_collision_free_delta_id` resolve them natively with zero custom format adapters.
+3. **`IncrementalSyncEngine` (`src/eidos/core/index/sync.py`)**:
+   * Skips `specs_fts` indexing and `affects` graph edge generation for archived SpecDeltas in `eidos/deltas/archive/` while still registering their `entities` rows so catalog lookups and `graduated_from` / `graduated_to` references remain intact.
+4. **`ChangelogGenerator` (`src/eidos/core/lifecycle/changelog.py`)**:
+   * Uses `vcs.applied_commit` and `vcs.release_tag` directly from archived SpecDelta frontmatter when compiling `CHANGELOG.md`, bypassing `git log -G` on archived files.
+5. **Living Web Portal (`src/eidos/portal/generator.py`)**:
+   * Replaces duplicate full AsciiDoc `body` strings on `applied`/`rejected` `delta/mutation` entries in `pdata["specs"]` with compact motivation summaries and fast-paths `affects` computation for archived deltas in `eidos/deltas/archive/`.

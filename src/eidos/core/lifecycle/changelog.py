@@ -163,7 +163,12 @@ class ChangelogGenerator:
                     current_sha = line[7:].strip()
                 elif current_sha:
                     full_p = (self.root / line).resolve()
+                    fname = Path(line).name
+                    hot_p = (deltas_dir / fname).resolve()
+                    archive_p = (deltas_dir / "archive" / fname).resolve()
                     commits_by_path[full_p] = current_sha
+                    commits_by_path[hot_p] = current_sha
+                    commits_by_path[archive_p] = current_sha
 
             diff_out = subprocess.check_output(
                 ["git", "diff", "HEAD", "--unified=0", "--", rel_deltas],
@@ -172,13 +177,24 @@ class ChangelogGenerator:
                 stderr=subprocess.DEVNULL,
             )
             diff_file: Path | None = None
-            status_applied_re = re.compile(r"^\+status[ \t]*:[ \t]*['\"]?applied\b", re.IGNORECASE)
+            status_applied_add_re = re.compile(r"^\+status[ \t]*:[ \t]*['\"]?applied\b", re.IGNORECASE)
+            status_applied_del_re = re.compile(r"^-status[ \t]*:[ \t]*['\"]?applied\b", re.IGNORECASE)
+            added_applied_files: list[Path] = []
+            removed_applied_names: set[str] = set()
+            src_file_name = ""
             for raw_line in diff_out.splitlines():
-                if raw_line.startswith("+++ b/"):
+                if raw_line.startswith("--- a/"):
+                    src_file_name = Path(raw_line[6:].strip()).name.lower()
+                elif raw_line.startswith("+++ b/"):
                     rel_f = raw_line[6:].strip()
                     diff_file = (self.root / rel_f).resolve()
-                elif diff_file is not None and status_applied_re.search(raw_line):
-                    commits_by_path.pop(diff_file, None)
+                elif status_applied_del_re.search(raw_line) and src_file_name:
+                    removed_applied_names.add(src_file_name)
+                elif diff_file is not None and status_applied_add_re.search(raw_line):
+                    added_applied_files.append(diff_file)
+            for af in added_applied_files:
+                if af.name.lower() not in removed_applied_names:
+                    commits_by_path.pop(af, None)
         return commits_by_path
 
     def _get_tag_ancestors(self, tag_name: str) -> set[str]:
@@ -204,7 +220,7 @@ class ChangelogGenerator:
 
         delta_files = sorted(
             [p for p in deltas_dir.rglob("*.adoc") if p.is_file() and not p.is_symlink()],
-            key=lambda p: (str(p.relative_to(deltas_dir)).lower(), p.name),
+            key=lambda p: (p.name.lower(), str(p.relative_to(deltas_dir)).lower()),
         )
         batched_commits = self._batch_resolve_delta_commits(deltas_dir)
 
@@ -233,8 +249,7 @@ class ChangelogGenerator:
                 else:
                     summary = ""
 
-                resolved_df = df.resolve()
-                commit = batched_commits.get(resolved_df, "")
+                commit = batched_commits.get(df.resolve(), "")
 
                 results.append(
                     {

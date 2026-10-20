@@ -29,6 +29,7 @@ from eidos.core.lifecycle.delta_engine import (
     _resolve_target_path_and_id,
     _strip_spec_comments,
     apply_delta,
+    archive_deltas,
     create_delta,
     generate_collision_free_delta_id,
     get_delta_status_summary,
@@ -39,7 +40,7 @@ from eidos.core.lifecycle.delta_engine import (
     verify_delta_mutations,
 )
 from eidos.core.lifecycle.initializer import _ensure_eidos_gitignore, init_repository
-from eidos.core.lifecycle.scaffolder import create_spec
+from eidos.core.lifecycle.scaffolder import create_spec, list_specs
 from eidos.core.spec.parser import _parse_spec_content, dump_spec_document, parse_spec_file
 from eidos.core.workspace.assets import get_assets_path
 
@@ -1577,3 +1578,187 @@ def test_inline_component_invariant_git_baseline_and_pre_create_precedence(tmp_p
     ok_cold, msg_cold, rep_cold = verify_delta_mutations(eidos_dir, "DLT-2026-091")
     assert ok_cold is True, msg_cold
     assert [m.status for m in rep_cold.mutations] == ["MODIFIED", "MODIFIED", "MODIFIED"]
+
+
+def test_delta_and_exploration_archive_lifecycle(tmp_path: Path):
+    """Verify INV-DELTA-EXPLORATION-ARCHIVE-LEDGER: subdirectory partitioning, .adoc slimming, and cross-ref integrity."""
+    import pytest
+
+    from eidos.core.index.graph_index import get_architectural_index
+    from eidos.core.spec.validator import SpecValidator
+
+    ws = tmp_path / "archive-ws"
+    init_repository(ws, name="archive-test")
+    eidos_dir = ws / "eidos"
+    create_spec(eidos_dir, "domain", "DOM-CORE", title="Core Domain")
+
+    # Create 4 terminal deltas (DLT-2026-001 .. DLT-2026-004) and 1 active delta (DLT-2026-005)
+    for i in range(1, 5):
+        dlt_id = f"DLT-2026-00{i}"
+        d_file = create_delta(eidos_dir, dlt_id, title=f"Historical Delta {i}")
+        doc = parse_spec_file(d_file)
+        distinct_tokens = {
+            1: "xylophonearchivedalpha",
+            2: "quasararchivedbeta",
+            3: "zephyrhotgamma",
+            4: "pulsarhotdelta",
+        }
+        doc.frontmatter["status"] = "applied" if i < 4 else "rejected"
+        doc.frontmatter["intent"] = {
+            "kind": "feature",
+            "motivation": f"Motivation for {dlt_id} {distinct_tokens[i]}.",
+        }
+        doc.frontmatter["mutations"] = [
+            {
+                "operation": "modify",
+                "target": "DOM-CORE",
+                "details": f"Long mutation details for {dlt_id} that should be stripped on archive.",
+                "expect": {
+                    "body": {"contains": ["Domain"]},
+                    "frontmatter": {"status": "active"},
+                },
+            }
+        ]
+        body = (
+            f"= SpecDelta: Historical Delta {i}\n\n"
+            f"== Motivation & Problem Statement\nMotivation for {dlt_id} {distinct_tokens[i]}.\n\n"
+            f"== Architectural Design\nVerbose design scaffolding for {dlt_id} that gets slimmed.\n"
+        )
+        d_file.write_text(dump_spec_document(doc.frontmatter, body), encoding="utf-8")
+
+    active_dlt = create_delta(eidos_dir, "DLT-2026-005", title="Active Proposed Delta")
+
+    # Create 3 terminal explorations (EXP-2026-001 .. EXP-2026-003) and 1 active exploration (EXP-2026-004)
+    for i in range(1, 4):
+        exp_id = f"EXP-2026-00{i}"
+        e_file = create_spec(eidos_dir, "exploration", exp_id, title=f"Spike {i}")
+        doc = parse_spec_file(e_file)
+        doc.frontmatter["status"] = "adopted" if i < 3 else "discarded"
+        doc.frontmatter["decision"] = {
+            "outcome": doc.frontmatter["status"],
+            "resulting_deltas": [f"DLT-2026-00{i}"],
+        }
+        body = (
+            f"= Exploration: Spike {i}\n\n"
+            f"== Core Hypothesis\nWe believe spike {i} improves latency.\n\n"
+            f"== Experiment Design & Methodology\nVerbose experiment tables and logs to strip.\n\n"
+            f"== Findings & Learnings\n* Observed 3x speedup in spike {i}.\n\n"
+            f"== Decision & Next Steps\nGraduated to DLT-2026-00{i}.\n"
+        )
+        e_file.write_text(dump_spec_document(doc.frontmatter, body), encoding="utf-8")
+
+    active_exp = create_spec(eidos_dir, "exploration", "EXP-2026-004", title="In Progress Spike")
+
+    # Commit and tag v0.1.0 so applied deltas have Git commit and tag ancestry
+    subprocess.run(["git", "init", "-b", "main"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Dev"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "feat: apply initial deltas"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "tag", "v0.1.0"], cwd=ws, check=True, capture_output=True)
+
+    # 1. Dry-run with keep_recent=2 should preview archiving DLT-2026-001, DLT-2026-002 and EXP-2026-001 without moving files
+    dry_res = archive_deltas(eidos_dir, keep_recent=2, include_explorations=True, dry_run=True)
+    assert dry_res["dry_run"] is True
+    assert dry_res["deltas"]["archived_ids"] == ["DLT-2026-001", "DLT-2026-002"]
+    assert dry_res["explorations"]["archived_ids"] == ["EXP-2026-001"]
+    assert not (eidos_dir / "deltas" / "archive").exists()
+    assert not (eidos_dir / "explorations" / "archive").exists()
+
+    # 2. Execute archive via CLI with --keep-recent 2 --json
+    cli_res = runner.invoke(app, ["delta", "archive", "--path", str(eidos_dir), "--keep-recent", "2", "--json"])
+    assert cli_res.exit_code == 0, cli_res.output
+    payload = orjson.loads(cli_res.output)
+    assert payload["deltas"]["archived_count"] == 2
+    assert payload["explorations"]["archived_count"] == 1
+
+    # Verify archived files exist and were slimmed
+    arch_dlt_1 = eidos_dir / "deltas" / "archive" / "dlt-2026-001.adoc"
+    arch_dlt_2 = eidos_dir / "deltas" / "archive" / "dlt-2026-002.adoc"
+    arch_exp_1 = eidos_dir / "explorations" / "archive" / "exp-2026-001.adoc"
+    assert arch_dlt_1.exists() and arch_dlt_2.exists()
+    assert arch_exp_1.exists()
+    assert not (eidos_dir / "deltas" / "dlt-2026-001.adoc").exists()
+    assert not (eidos_dir / "explorations" / "exp-2026-001.adoc").exists()
+
+    # Verify active and recent terminal artifacts remain in hot directories
+    assert active_dlt.exists()
+    assert (eidos_dir / "deltas" / "dlt-2026-003.adoc").exists()
+    assert (eidos_dir / "deltas" / "dlt-2026-004.adoc").exists()
+    assert active_exp.exists()
+    assert (eidos_dir / "explorations" / "exp-2026-002.adoc").exists()
+    assert (eidos_dir / "explorations" / "exp-2026-003.adoc").exists()
+
+    # Verify slimmed SpecDelta frontmatter & body (no applied_commit / release_tag stamped in frontmatter)
+    parsed_arch_dlt = parse_spec_file(arch_dlt_1)
+    assert "expect" not in parsed_arch_dlt.frontmatter["mutations"][0]
+    assert "details" not in parsed_arch_dlt.frontmatter["mutations"][0]
+    assert "applied_commit" not in (parsed_arch_dlt.frontmatter.get("vcs") or {})
+    assert "release_tag" not in (parsed_arch_dlt.frontmatter.get("vcs") or {})
+    assert "Verbose design scaffolding" not in parsed_arch_dlt.body
+    assert "xylophonearchivedalpha" in parsed_arch_dlt.frontmatter["intent"]["motivation"]
+
+    # Verify slimmed Exploration body retains Core Hypothesis and Findings & Learnings
+    parsed_arch_exp = parse_spec_file(arch_exp_1)
+    assert "== Core Hypothesis" in parsed_arch_exp.body
+    assert "== Findings & Learnings" in parsed_arch_exp.body
+    assert "Verbose experiment tables" not in parsed_arch_exp.body
+
+    # 3. SpecValidator validates all specs (including archived ones and resulting_deltas cross-references)
+    report = SpecValidator().validate_directory(eidos_dir)
+    assert report.is_clean, f"Schema errors: {report.schema_errors}, Broken refs: {report.broken_references}"
+
+    # 4. Default list_deltas / list_specs exclude archived items; include_archived=True includes them
+    hot_deltas = list_deltas(eidos_dir)
+    assert [d["id"] for d in hot_deltas] == ["DLT-2026-003", "DLT-2026-004", "DLT-2026-005"]
+    all_deltas = list_deltas(eidos_dir, include_archived=True)
+    assert [d["id"] for d in all_deltas] == [
+        "DLT-2026-001",
+        "DLT-2026-002",
+        "DLT-2026-003",
+        "DLT-2026-004",
+        "DLT-2026-005",
+    ]
+
+    hot_exps = list_specs(eidos_dir, type_filter="exploration")
+    assert [s["id"] for s in hot_exps] == ["EXP-2026-002", "EXP-2026-003", "EXP-2026-004"]
+    all_exps = list_specs(eidos_dir, type_filter="exploration", include_archived=True)
+    assert [s["id"] for s in all_exps] == ["EXP-2026-001", "EXP-2026-002", "EXP-2026-003", "EXP-2026-004"]
+
+    # 5. Duplicate ID creation guards check archive/ subdirectories
+    disambiguated_dlt_id = generate_collision_free_delta_id(eidos_dir, "DLT-2026-001", title="Duplicate Archived Delta")
+    assert disambiguated_dlt_id != "DLT-2026-001"
+    assert disambiguated_dlt_id.startswith("DLT-2026-001-")
+    with pytest.raises(FileExistsError):
+        create_spec(eidos_dir, "exploration", "EXP-2026-001", title="Duplicate Archived Exploration")
+
+    # 6. FTS5 search excludes archived SpecDeltas while retaining hot SpecDeltas, and EXP-2026-001 blast-radius reaches DOM-CORE
+    idx = get_architectural_index(eidos_dir=eidos_dir, repo_root=ws)
+    idx.sync(force=True)
+    fts_arch = idx.query_fts("xylophonearchivedalpha")
+    assert [r["id"] for r in fts_arch] == []
+    fts_hot = idx.query_fts("zephyrhotgamma")
+    assert any(r["id"] == "DLT-2026-003" for r in fts_hot)
+    exp1_br = {n["id"] for n in idx.get_k_hop_neighborhood("EXP-2026-001", max_depth=2)}
+    assert "DOM-CORE" in exp1_br
+
+    # Verify delta status summary reports archived_count
+    st_summary = get_delta_status_summary(eidos_dir)
+    assert st_summary["archived_count"] == 2
+
+    # 7. ChangelogGenerator includes archived SpecDeltas resolved purely via Git history (both uncommitted & committed archive move)
+    cl_gen = ChangelogGenerator(repo_root=ws, eidos_dir=eidos_dir)
+    changelog_md = cl_gen.generate_changelog(include_unreleased=True)
+    assert "DLT-2026-001" in changelog_md
+    assert "DLT-2026-002" in changelog_md
+    assert "DLT-2026-003" in changelog_md
+    assert "## [0.1.0]" in changelog_md
+
+    # Commit the archive move on top of v0.1.0 and verify DLT-2026-001/002 STILL resolve to v0.1.0 (not Unreleased)
+    subprocess.run(["git", "add", "."], cwd=ws, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "chore: archive old deltas"], cwd=ws, check=True, capture_output=True)
+    cl_gen_after = ChangelogGenerator(repo_root=ws, eidos_dir=eidos_dir)
+    changelog_after = cl_gen_after.generate_changelog(include_unreleased=False)
+    assert "## [0.1.0]" in changelog_after
+    assert "DLT-2026-001" in changelog_after
+    assert "DLT-2026-002" in changelog_after

@@ -4,7 +4,7 @@ id: CAP-PROD-003
 title: "Product Exploration & Hypothesis Spikes"
 domain: DOM-SPEC-ENGINE
 status: active
-version: "1.1.0"
+version: "1.2.0"
 
 business:
   personas:
@@ -32,5 +32,5 @@ technical:
 Investigate early ideas, technical feasibility, and architectural benchmarks in sandboxed spikes before committing to formal specifications.
 
 == Intent
-Allows product managers and engineers to conduct high-uncertainty research without being burdened by strict acceptance criteria prematurely. When an exploration validates its hypothesis, it graduates into a formal `SpecDelta`. If discarded, its findings and benchmarks are archived to prevent repeated failed attempts in the future.
+Allows product managers and engineers to conduct high-uncertainty research without being burdened by strict acceptance criteria prematurely. When an exploration validates its hypothesis, it graduates into a formal `SpecDelta`. If discarded or adopted, older terminal explorations beyond the `keep_recent` window are partitioned and slimmed into `eidos/explorations/archive/` (`== Core Hypothesis` and `== Findings & Learnings`) via `eidos delta archive` while preserving `graduated_from` and `decision.resulting_deltas` traceability.
 

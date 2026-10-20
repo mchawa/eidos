@@ -788,7 +788,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
         )
         scope_ph = ",".join("?" for _ in scope_ids)
         rows = conn.execute(
-            f"SELECT id, type, data_json FROM entities WHERE type != 'invariant' AND id IN ({scope_ph}) ORDER BY id;",
+            f"SELECT id, type, file_path, data_json FROM entities WHERE type != 'invariant' AND id IN ({scope_ph}) ORDER BY id;",
             tuple(scope_ids),
         ).fetchall()
     else:
@@ -799,7 +799,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             """
         )
         rows = conn.execute(
-            "SELECT id, type, data_json FROM entities WHERE type != 'invariant' ORDER BY id;"
+            "SELECT id, type, file_path, data_json FROM entities WHERE type != 'invariant' ORDER BY id;"
         ).fetchall()
 
     sys_ids = [
@@ -812,6 +812,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
         for r in conn.execute("SELECT id FROM entities WHERE type = 'tech/container' ORDER BY id;").fetchall()
         if r[0]
     ]
+    archived_delta_targets: dict[str, set[str]] = {}
 
     for row in rows:
         doc_id = row["id"]
@@ -1017,6 +1018,8 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                             )
 
         if doc_type == "delta/mutation":
+            row_fp = f"/{str(row['file_path'] or '').replace(chr(92), '/').lstrip('/')}"
+            is_archived_delta_edge = "/deltas/archive/" in row_fp
             for m in fm.get("mutations", []) or []:
                 if not isinstance(m, dict):
                     continue
@@ -1024,18 +1027,27 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                     v = m.get(k)
                     if isinstance(v, str) and v.strip():
                         target_val = _resolve_ref(v)
-                        conn.execute(
-                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'affects');",
-                            (doc_id, target_val),
-                        )
-                        for c_row in conn.execute(
-                            "SELECT entity_id FROM symbol_mappings WHERE symbol = ? AND kind = 'component_id';",
-                            (target_val,),
-                        ).fetchall():
+                        if not is_archived_delta_edge:
                             conn.execute(
                                 "INSERT OR IGNORE INTO edges VALUES (?, ?, 'affects');",
-                                (doc_id, c_row["entity_id"]),
+                                (doc_id, target_val),
                             )
+                            for c_row in conn.execute(
+                                "SELECT entity_id FROM symbol_mappings WHERE symbol = ? AND kind = 'component_id';",
+                                (target_val,),
+                            ).fetchall():
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'affects');",
+                                    (doc_id, c_row["entity_id"]),
+                                )
+                        elif not str(target_val).startswith("DLT-"):
+                            t_set = archived_delta_targets.setdefault(doc_id, set())
+                            t_set.add(target_val)
+                            for c_row in conn.execute(
+                                "SELECT entity_id FROM symbol_mappings WHERE symbol = ? AND kind = 'component_id';",
+                                (target_val,),
+                            ).fetchall():
+                                t_set.add(c_row["entity_id"])
 
         for inv in invariants:
             iid = inv.get("id") if isinstance(inv, dict) else None
@@ -1052,6 +1064,17 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
           AND e_aff.target_id NOT LIKE 'DLT-%';
         """
     )
+    for arch_dlt_id, t_vals in archived_delta_targets.items():
+        exp_rows = conn.execute(
+            "SELECT DISTINCT source_id FROM edges WHERE target_id = ? AND rel_type = 'graduated_to';",
+            (arch_dlt_id,),
+        ).fetchall()
+        for er in exp_rows:
+            for tv in t_vals:
+                conn.execute(
+                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'graduated_to');",
+                    (er["source_id"], tv),
+                )
 
     _derive_ast_import_edges(conn)
 
@@ -1814,15 +1837,16 @@ def sync_index(
             decompounded = compound_identifier_subtokens(f"{title or ''} {jtbd_or_rule or ''} {body_clean} {symbols}")
             if decompounded:
                 symbols = f"{symbols} {decompounded}".strip()
-            fresh_base_symbols[doc_id] = symbols
-
-            conn.execute(
-                """
-                INSERT INTO specs_fts (entity_id, title, jtbd_or_rule, body_text, keywords, symbols)
-                VALUES (?, ?, ?, ?, ?, ?);
-                """,
-                (doc_id, title, jtbd_or_rule, body_clean, keywords, symbols),
-            )
+            is_archived_delta = doc_type == "delta/mutation" and "/deltas/archive/" in f"/{rel_p.lstrip('/')}"
+            if not is_archived_delta:
+                fresh_base_symbols[doc_id] = symbols
+                conn.execute(
+                    """
+                    INSERT INTO specs_fts (entity_id, title, jtbd_or_rule, body_text, keywords, symbols)
+                    VALUES (?, ?, ?, ?, ?, ?);
+                    """,
+                    (doc_id, title, jtbd_or_rule, body_clean, keywords, symbols),
+                )
 
             conn.execute(
                 """

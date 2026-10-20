@@ -133,7 +133,12 @@ def spec_list_cmd(
         None,
         "--status",
         "-s",
-        help="Filter by status (draft, active, deprecated, retired).",
+        help="Filter by status (draft, active, deprecated, retired, proposed, in_progress, adopted, discarded).",
+    ),
+    include_archived: bool = typer.Option(
+        False,
+        "--include-archived",
+        help="Include archived specifications partitioned under archive/ subdirectories (e.g. eidos/explorations/archive/).",
     ),
     json_output: bool = typer.Option(
         False,
@@ -143,7 +148,12 @@ def spec_list_cmd(
 ):
     """List living specifications in the repository (excludes SpecDeltas; use `eidos delta list`)."""
     try:
-        specs = list_specs(path, type_filter=type_filter, status_filter=status_filter)
+        specs = list_specs(
+            path,
+            type_filter=type_filter,
+            status_filter=status_filter,
+            include_archived=include_archived,
+        )
     except ValueError as e:
         if json_output:
             typer.echo(orjson.dumps({"error": str(e)}).decode("utf-8"))
@@ -158,6 +168,7 @@ def spec_list_cmd(
                 "type": s["type"],
                 "status": s["status"],
                 "title": s["title"],
+                "is_archived": s.get("is_archived", False),
                 "path": str(s["path"]),
                 "relative_path": str(s["relative_path"]),
             }

@@ -13,6 +13,7 @@ from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
 from eidos.core.lifecycle.changelog import ChangelogGenerator
 from eidos.core.lifecycle.delta_engine import (
     apply_delta,
+    archive_deltas,
     create_delta,
     delete_delta,
     get_delta_status_summary,
@@ -24,7 +25,7 @@ from eidos.core.spec.parser import parse_spec_file
 
 delta_app = typer.Typer(
     name="delta",
-    help="Manage SpecDeltas through their mutation lifecycle (list, create, status, verify, audit, apply, delete, changelog).",
+    help="Manage SpecDeltas through their mutation lifecycle (list, create, status, verify, audit, apply, archive, delete, changelog).",
     add_completion=False,
 )
 
@@ -43,6 +44,11 @@ def delta_list_cmd(
         "-s",
         help="Filter deltas by status (proposed, in_review, approved, applied, rejected).",
     ),
+    include_archived: bool = typer.Option(
+        False,
+        "--include-archived",
+        help="Include historical SpecDeltas partitioned under eidos/deltas/archive/.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -50,7 +56,7 @@ def delta_list_cmd(
     ),
 ):
     """List SpecDeltas in active/ and applied/ states."""
-    deltas = list_deltas(path, status_filter=status_filter)
+    deltas = list_deltas(path, status_filter=status_filter, include_archived=include_archived)
     if json_output:
         serializable = [
             {
@@ -59,6 +65,7 @@ def delta_list_cmd(
                 "status": d["status"],
                 "kind": d["kind"],
                 "is_active": d["is_active"],
+                "is_archived": d.get("is_archived", False),
                 "path": str(d["path"]),
                 "relative_path": str(d["relative_path"]),
             }
@@ -84,7 +91,12 @@ def delta_list_cmd(
     table.add_column("Path", style="dim")
 
     for d in deltas:
-        state_str = "[bold green]ACTIVE[/bold green]" if d["is_active"] else "[dim]APPLIED[/dim]"
+        if d["is_active"]:
+            state_str = "[bold green]ACTIVE[/bold green]"
+        elif d.get("is_archived"):
+            state_str = "[dim]ARCHIVED[/dim]"
+        else:
+            state_str = "[dim]APPLIED[/dim]"
         table.add_row(
             d["id"],
             str(d["status"]),
@@ -465,6 +477,7 @@ def delta_status_cmd(
     summary = get_delta_status_summary(path)
     total = summary["total"]
     active_count = summary["active_count"]
+    archived_count = summary.get("archived_count", 0)
     by_status = summary["by_status"]
 
     if json_output:
@@ -488,6 +501,7 @@ def delta_status_cmd(
                 {
                     "total": total,
                     "active_count": active_count,
+                    "archived_count": archived_count,
                     "by_status": serializable_by_status,
                 },
                 option=orjson.OPT_INDENT_2,
@@ -509,6 +523,10 @@ def delta_status_cmd(
     )
     summary_table.add_row("Applied", str(len(by_status.get("applied", []))), "Reconciled into living specifications")
     summary_table.add_row("Rejected", str(len(by_status.get("rejected", []))), "Abandoned or rejected proposals")
+    if archived_count > 0:
+        summary_table.add_row(
+            "Archived", f"[dim]{archived_count}[/dim]", "Partitioned in eidos/deltas/archive/ (--include-archived)"
+        )
     summary_table.add_row(
         "In-Flight (Active)", f"[bold yellow]{active_count}[/bold yellow]", "Total active/unmerged deltas"
     )
@@ -611,3 +629,60 @@ def delta_changelog_cmd(
     if res.get("docs_file"):
         link_mode = "symlinked" if res.get("symlink_created") else "mirrored"
         console.print(f"  [dim]Documentation {link_mode}: {res['docs_file']}[/dim]")
+
+
+@delta_app.command("archive")
+def delta_archive_cmd(
+    keep_recent: int = typer.Option(
+        15,
+        "--keep-recent",
+        "-k",
+        help="Number of most recent terminal SpecDeltas and Explorations to retain in hot working directories.",
+    ),
+    explorations: bool = typer.Option(
+        True,
+        "--explorations/--no-explorations",
+        help="Also archive terminal Explorations (adopted/discarded) into eidos/explorations/archive/.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Preview candidate SpecDeltas and Explorations to archive without modifying files on disk.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Output machine-readable JSON archive summary.",
+    ),
+    path: Path = typer.Option(
+        Path("eidos"),
+        "--path",
+        "-p",
+        help="Path to eidos directory.",
+    ),
+):
+    """Partition and slim older terminal SpecDeltas and Explorations into archive/ subdirectories."""
+    res = archive_deltas(
+        eidos_dir=path,
+        keep_recent=keep_recent,
+        include_explorations=explorations,
+        dry_run=dry_run,
+    )
+    if json_output:
+        typer.echo(orjson.dumps(res, option=orjson.OPT_INDENT_2).decode("utf-8"))
+        return
+
+    mode_label = "[bold yellow](DRY RUN)[/bold yellow] " if dry_run else ""
+    d_rep = res["deltas"]
+    e_rep = res["explorations"]
+    d_count = d_rep["archived_count"]
+    e_count = e_rep["archived_count"]
+    console.print(
+        f"{mode_label}[bold green]✓ Archive Lifecycle Complete:[/bold green] "
+        f"{d_count} SpecDelta(s) and {e_count} Exploration(s) {'selected for archiving' if dry_run else 'archived'} "
+        f"(keep_recent={res['keep_recent']}, saved {res['total_bytes_saved']} bytes)."
+    )
+    if d_rep["archived_ids"]:
+        console.print(f"  [cyan]Archived SpecDeltas:[/cyan] {', '.join(d_rep['archived_ids'])}")
+    if e_rep["archived_ids"]:
+        console.print(f"  [cyan]Archived Explorations:[/cyan] {', '.join(e_rep['archived_ids'])}")

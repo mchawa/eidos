@@ -21,7 +21,7 @@ components:
     source_path: "docs/concepts/how-eidos-works.md"
   - id: CMP-DOCS-USER-GUIDES
     title: "UserGuides"
-    responsibility: "Operational reference manuals: live-command-validated CLI command reference (`docs/guides/cli.md` covering disjoint `eidos spec` vs `eidos delta` lifecycles, 4-parameter `eidos spec create`, `--json` context/repo-map flags, stateless `eidos hook`, and declarative `eidos delta verify/apply/audit/changelog` workflows), Agent Plugin integration with 4 workflow skills and positional `[TARGET]` installation, and Living Portal deployment."
+    responsibility: "Operational reference manuals: live-command-validated CLI command reference (`docs/guides/cli.md` covering disjoint `eidos spec` vs `eidos delta` lifecycles, 4-parameter `eidos spec create`, `--include-archived`, `--json` context/repo-map flags, stateless `eidos hook`, and declarative `eidos delta verify/apply/audit/archive/changelog` workflows), Agent Plugin integration with 4 workflow skills and positional `[TARGET]` installation, and Living Portal deployment."
     source_path: "docs/guides/cli.md"
   - id: CMP-DOCS-CONFIG
     title: "SiteConfiguration"
