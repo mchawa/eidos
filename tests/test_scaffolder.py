@@ -776,7 +776,7 @@ def test_cli_design_spec_scaffolding(tmp_path):
 
 def test_create_component_client_flow_and_safe_yaml(tmp_path):
     """Verify DLT-2026-032 & DLT-2026-092: component/client/flow scaffolding routes correctly and YAML-special input stays valid (INV-SPEC-VALIDATION)."""
-    import yaml
+    from eidos.core.spec.parser import safe_load_yaml
 
     create_spec(tmp_path, "container", "CNT-APP", "App Container")
     tricky = 'Quote: "Test" #hash\nsecond line'
@@ -811,7 +811,7 @@ def test_create_component_client_flow_and_safe_yaml(tmp_path):
     # SpecDelta with quotes/colons/newlines in title remains valid YAML
     dlt_file = create_delta(tmp_path, "DLT-2026-900", 'Fix "quoted": title')
     fm_text = dlt_file.read_text(encoding="utf-8").split("---")[1]
-    fm = yaml.safe_load(fm_text)
+    fm = safe_load_yaml(fm_text)
     assert fm["title"] == 'Fix "quoted": title'
     assert_valid_spec(SpecValidator(), dlt_file)
 

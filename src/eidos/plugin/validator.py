@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 import jsonschema
-import yaml
 
+from eidos.core.spec.parser import safe_load_yaml
 from eidos.core.workspace.assets import get_agent_plugins_schemas_dir
 from eidos.plugin.version import is_valid_semver
 
@@ -180,7 +180,7 @@ def validate_plugin_package(plugin_dir: Path) -> PluginValidationReport:
                             re.DOTALL,
                         )
                         if m_fm:
-                            fm = yaml.safe_load(m_fm.group(1) or "")
+                            fm = safe_load_yaml(m_fm.group(1) or "")
                             if isinstance(fm, dict):
                                 s_name = fm.get("name")
                                 s_desc = fm.get("description")

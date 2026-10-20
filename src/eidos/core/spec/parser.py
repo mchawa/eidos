@@ -4,21 +4,70 @@ import re
 from pathlib import Path
 from typing import Any
 
-import yaml
-
-try:
-    import yaml._yaml as _c_yaml
-    from yaml import CSafeLoader as _YamlSafeLoader
-
-    if getattr(_c_yaml, "MappingNode", None) is not yaml.MappingNode:  # pragma: no cover
-        from yaml import SafeLoader as _YamlSafeLoader
-except ImportError:  # pragma: no cover
-    from yaml import SafeLoader as _YamlSafeLoader
+import fast_yaml
 
 from eidos.core.spec.models import SpecDocument
 
 _OPENING_DELIMITER_RE = re.compile(r"\A---[ \t]*(?:\r?\n|\Z)")
 _CLOSING_DELIMITER_RE = re.compile(r"^---[ \t]*(?:\r?\n|\Z)", re.MULTILINE)
+
+
+class YamlError(ValueError):
+    """Raised when fast_yaml fails to parse or emit a YAML document."""
+
+
+def safe_load_yaml(stream_or_str: str | bytes | Any) -> Any:
+    """Parse a YAML string, bytes buffer, or file-like stream into native Python types via fast_yaml."""
+    raw = stream_or_str.read() if hasattr(stream_or_str, "read") else stream_or_str
+    if raw is None:
+        return None
+    if isinstance(raw, (bytes, bytearray, memoryview)):
+        raw_str = bytes(raw).decode("utf-8", errors="replace")
+    elif isinstance(raw, str):
+        raw_str = raw
+    else:
+        raise YamlError(f"Unsupported YAML input type: {type(raw).__name__}")
+    if not raw_str.strip():
+        return None
+    try:
+        if "\n---" in raw_str:
+            docs = list(fast_yaml.safe_load_all(raw_str))
+            if not docs:
+                return None
+            if len(docs) > 1:
+                raise YamlError("Expected a single document in the YAML stream, found multiple documents")
+            return docs[0]
+        return fast_yaml.safe_load(raw_str)
+    except YamlError:
+        raise
+    except (fast_yaml.YAMLError, ValueError) as exc:
+        raise YamlError(str(exc) or "Invalid YAML syntax") from exc
+
+
+def safe_dump_yaml(data: Any, stream: Any = None, **kwargs: Any) -> str:
+    """Serialize Python data into clean block-style YAML via fast_yaml."""
+    sort_keys = bool(kwargs.get("sort_keys", False))
+    allow_unicode = bool(kwargs.get("allow_unicode", True))
+    default_flow_style = kwargs.get("default_flow_style", False)
+    raw_width = kwargs.get("width", 1000)
+    width = min(max(int(raw_width), 20), 1000) if raw_width is not None else 1000
+    try:
+        out: str = (
+            fast_yaml.safe_dump(
+                data,
+                sort_keys=sort_keys,
+                allow_unicode=allow_unicode,
+                default_flow_style=default_flow_style,
+                width=width,
+            )
+            or ""
+        )
+    except (fast_yaml.YAMLError, ValueError, TypeError) as exc:
+        raise YamlError(str(exc) or "Failed to emit YAML") from exc
+
+    if stream is not None and hasattr(stream, "write"):
+        stream.write(out)
+    return out
 
 
 def split_frontmatter_and_body(content: str) -> tuple[str | None, str]:
@@ -47,11 +96,11 @@ def split_frontmatter_and_body(content: str) -> tuple[str | None, str]:
         for cand in close_matches:
             cand_yaml = rest[: cand.start()].rstrip("\r\n")
             try:
-                parsed = yaml.load(cand_yaml, Loader=_YamlSafeLoader)
+                parsed = safe_load_yaml(cand_yaml)
                 if isinstance(parsed, dict):
                     chosen = cand
                     break
-            except yaml.YAMLError:
+            except YamlError:
                 continue
 
     raw_yaml = rest[: chosen.start()].rstrip("\r\n")
@@ -60,14 +109,8 @@ def split_frontmatter_and_body(content: str) -> tuple[str | None, str]:
 
 
 def dump_spec_document(frontmatter: dict[str, Any], body: str) -> str:
-    """Serialize a frontmatter mapping with yaml.safe_dump and wrap it with an AsciiDoc body."""
-    fm_yaml = yaml.safe_dump(
-        frontmatter,
-        sort_keys=False,
-        allow_unicode=True,
-        default_flow_style=False,
-        width=4096,
-    )
+    """Serialize a frontmatter mapping with safe_dump_yaml and wrap it with an AsciiDoc body."""
+    fm_yaml = safe_dump_yaml(frontmatter)
     return f"---\n{fm_yaml}---\n{body.lstrip(chr(10))}"
 
 
@@ -166,9 +209,9 @@ def extract_frontmatter(content: str) -> tuple[dict | None, str, str | None]:
         return None, content, "No closing frontmatter delimiter ('---')"
 
     try:
-        data = yaml.load(raw_yaml, Loader=_YamlSafeLoader)
+        data = safe_load_yaml(raw_yaml)
         if not isinstance(data, dict):
             return None, body, "Frontmatter must be a YAML mapping (key-value dictionary)"
         return data, body, None
-    except yaml.YAMLError as exc:
+    except YamlError as exc:
         return None, body, str(exc)

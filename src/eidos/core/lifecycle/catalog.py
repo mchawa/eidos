@@ -5,15 +5,16 @@ import re
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from eidos.core.index.storage import (
     get_cached_spec_document,
     load_spec_validation_cache,
 )
 from eidos.core.spec.parser import (
+    YamlError,
     dump_spec_document,
     extract_frontmatter,
+    safe_dump_yaml,
+    safe_load_yaml,
     split_frontmatter_and_body,
 )
 
@@ -132,10 +133,10 @@ def _format_yaml_scalar_value(value: str) -> str:
         and ((val[0] == '"' and val[-1] == '"') or (val[0] == "'" and val[-1] == "'"))
     ):
         try:
-            loaded = yaml.safe_load(val)
+            loaded = safe_load_yaml(val)
             if isinstance(loaded, (str, int, float, bool)):
                 return val
-        except yaml.YAMLError:
+        except YamlError:
             pass
     needs_quoting = (
         not val
@@ -149,10 +150,10 @@ def _format_yaml_scalar_value(value: str) -> str:
     )
     if not needs_quoting:
         try:
-            parsed_scalar = yaml.safe_load(val)
+            parsed_scalar = safe_load_yaml(val)
             if not isinstance(parsed_scalar, str) or parsed_scalar != val:
                 needs_quoting = True
-        except yaml.YAMLError:
+        except YamlError:
             needs_quoting = True
     if needs_quoting:
         return json.dumps(val, ensure_ascii=False)
@@ -230,7 +231,7 @@ def _set_frontmatter_scalar(raw_content: str, key: str, value: str) -> str:
 
 def _format_component_item(item: dict[str, Any], indent: str = "  ") -> str:
     """Serialize a single component list item with the given leading indentation."""
-    dumped = yaml.safe_dump([item], sort_keys=False, allow_unicode=True, default_flow_style=False, width=4096)
+    dumped = safe_dump_yaml([item])
     return "".join((indent + line if line.strip() else line) for line in dumped.splitlines(keepends=True))
 
 
@@ -248,8 +249,8 @@ def _mutate_frontmatter_components(
 
     def _fallback_mutate_parsed() -> str:
         try:
-            parsed_fm = yaml.safe_load(raw_yaml)
-        except yaml.YAMLError:
+            parsed_fm = safe_load_yaml(raw_yaml)
+        except YamlError:
             return raw_content
         if not isinstance(parsed_fm, dict):
             return raw_content
@@ -336,8 +337,8 @@ def _mutate_frontmatter_components(
             stop_line -= 1
         chunk_text = "".join(lines[start_line:stop_line])
         try:
-            parsed_item = yaml.safe_load(chunk_text)
-        except yaml.YAMLError:
+            parsed_item = safe_load_yaml(chunk_text)
+        except YamlError:
             continue
         if (
             isinstance(parsed_item, list)

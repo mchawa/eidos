@@ -6,7 +6,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import yaml
+
+from eidos.core.spec.parser import safe_load_yaml
 
 
 def test_documentation_and_schemas_in_sync():
@@ -23,7 +24,7 @@ def test_documentation_and_schemas_in_sync():
 
     for sf in schema_files:
         with open(sf, encoding="utf-8") as f:
-            schema_data = yaml.safe_load(f)
+            schema_data = safe_load_yaml(f)
 
         doc_type = schema_data.get("properties", {}).get("type", {}).get("const")
         assert doc_type, f"Schema {sf} missing properties.type.const"
@@ -173,7 +174,7 @@ def test_bundled_skill_yaml_templates_conform_to_v1_schemas():
                 continue
             fm_raw, body = split_frontmatter_and_body(block + "\n")
             assert fm_raw is not None, f"Failed to split frontmatter in {skill_md}:\n{block}"
-            fm = yaml.safe_load(fm_raw)
+            fm = safe_load_yaml(fm_raw)
             assert isinstance(fm, dict), f"Frontmatter in {skill_md} is not a mapping"
             doc = SpecDocument(
                 file_path=skill_md,
@@ -197,8 +198,6 @@ def test_schema_glossary_yaml_examples_conform_to_v1_schemas():
     """Verify YAML and AsciiDoc frontmatter examples across all docs/**/*.md validate against v1 JSON Schemas (DLT-2026-077)."""
     import re
 
-    import yaml
-
     from eidos.core.spec.models import SpecDocument
     from eidos.core.spec.parser import split_frontmatter_and_body
     from eidos.core.spec.validator import SpecValidator
@@ -218,7 +217,7 @@ def test_schema_glossary_yaml_examples_conform_to_v1_schemas():
             fm_raw, body = split_frontmatter_and_body(block + "\n")
             if fm_raw is None:
                 continue
-            fm = yaml.safe_load(fm_raw)
+            fm = safe_load_yaml(fm_raw)
             if not isinstance(fm, dict) or "type" not in fm or "id" not in fm:
                 continue
             doc = SpecDocument(

@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import jsonschema
-import yaml
 
 from eidos.core.index.ast_indexer import AST_DIFF_EXTS, get_ast_indexer
 from eidos.core.spec.models import SpecDocument, ValidationReport
+from eidos.core.spec.parser import YamlError, safe_load_yaml
 from eidos.core.workspace.assets import get_v1_schemas_dir
 
 ENTITY_ID_PREFIXES = (
@@ -246,7 +246,7 @@ class SpecValidator:
             common_defs_path = schema_dir / "common" / "defs.yaml"
             shared_defs: dict[str, Any] = {}
             if common_defs_path.is_file():
-                defs_doc = yaml.safe_load(common_defs_path.read_text(encoding="utf-8")) or {}
+                defs_doc = safe_load_yaml(common_defs_path.read_text(encoding="utf-8")) or {}
                 if isinstance(defs_doc, dict) and isinstance(defs_doc.get("$defs"), dict):
                     shared_defs = defs_doc["$defs"]
 
@@ -259,7 +259,7 @@ class SpecValidator:
 
             for p in all_schema_paths:
                 content = p.read_text(encoding="utf-8")
-                data = yaml.safe_load(content)
+                data = safe_load_yaml(content)
                 if isinstance(data, dict):
                     if shared_defs and '"#/$defs/' in json.dumps(data):
                         merged_defs = dict(shared_defs)
@@ -275,7 +275,7 @@ class SpecValidator:
             self.entity_id_prefixes = tuple(sorted(extracted_prefixes))
             self._schema_hash = self._compute_schema_hash()
             self.schema_hash = self._schema_hash
-        except (OSError, yaml.YAMLError) as exc:
+        except (OSError, YamlError) as exc:
             raise RuntimeError(f"Failed to load bundled Eidos schemas: {exc}") from exc
 
     def resolve_schema(self, doc: SpecDocument) -> dict | None:
@@ -2242,8 +2242,8 @@ class SpecValidator:
     def _verify_rest_openapi_contract(self, doc: SpecDocument, spec_file: Path, report: ValidationReport) -> None:
         """Verify bidirectional parity between OpenAPI specification_file paths and documented routes in the contract (DLT-2026-082)."""
         try:
-            data = yaml.safe_load(spec_file.read_text(encoding="utf-8"))
-        except (OSError, yaml.YAMLError) as exc:
+            data = safe_load_yaml(spec_file.read_text(encoding="utf-8"))
+        except (OSError, YamlError) as exc:
             report.broken_references.append(
                 f"Invalid OpenAPI specification_file in {doc.file_path.name}: '{spec_file.name}' failed to parse ({exc})"
             )
@@ -2281,8 +2281,8 @@ class SpecValidator:
     def _verify_json_schema_contract(self, doc: SpecDocument, spec_file: Path, report: ValidationReport) -> None:
         """Verify that JSON Schema specification_file is valid YAML/JSON and its required properties are documented in the contract."""
         try:
-            data = yaml.safe_load(spec_file.read_text(encoding="utf-8"))
-        except (OSError, yaml.YAMLError) as exc:
+            data = safe_load_yaml(spec_file.read_text(encoding="utf-8"))
+        except (OSError, YamlError) as exc:
             report.broken_references.append(
                 f"Invalid JSON Schema specification_file in {doc.file_path.name}: '{spec_file.name}' failed to parse ({exc})"
             )

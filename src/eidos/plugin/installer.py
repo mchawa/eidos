@@ -12,8 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
-
+from eidos.core.spec.parser import YamlError, safe_dump_yaml, safe_load_yaml
 from eidos.core.workspace.assets import get_plugin_reference_dir
 from eidos.plugin.version import (
     get_bundled_plugin_version,
@@ -558,10 +557,10 @@ def _update_project_aider_conf(file_path: Path, conventions_path: str = ".aider.
     if file_path.exists():
         try:
             with open(file_path, encoding="utf-8") as f:
-                loaded = yaml.safe_load(f)
+                loaded = safe_load_yaml(f)
                 if isinstance(loaded, dict):
                     data = loaded
-        except (OSError, yaml.YAMLError):
+        except (OSError, YamlError):
             data = {}
 
     read_list = data.get("read", [])
@@ -574,7 +573,7 @@ def _update_project_aider_conf(file_path: Path, conventions_path: str = ".aider.
     data["read"] = read_list
 
     with open(file_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, sort_keys=False)
+        safe_dump_yaml(data, f)
     return file_path
 
 
@@ -585,10 +584,10 @@ def _remove_project_aider_conf(file_path: Path, conventions_path: str = ".aider.
 
     try:
         with open(file_path, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+            data = safe_load_yaml(f)
         if not isinstance(data, dict):
             return False
-    except (OSError, yaml.YAMLError):
+    except (OSError, YamlError):
         return False
 
     read_list = data.get("read", [])
@@ -603,7 +602,7 @@ def _remove_project_aider_conf(file_path: Path, conventions_path: str = ".aider.
         data.pop("read", None)
 
     with open(file_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, sort_keys=False)
+        safe_dump_yaml(data, f)
     return True
 
 

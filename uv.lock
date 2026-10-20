@@ -212,10 +212,10 @@ name = "eidos-ai"
 source = { editable = "." }
 dependencies = [
     { name = "ast-grep-py" },
+    { name = "fastyaml-rs" },
     { name = "jsonschema" },
     { name = "orjson" },
     { name = "pydantic" },
-    { name = "pyyaml" },
     { name = "rich" },
     { name = "typer" },
 ]
@@ -233,18 +233,33 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "ast-grep-py", specifier = ">=0.50.0" },
+    { name = "fastyaml-rs", specifier = ">=0.7.0" },
     { name = "jsonschema", specifier = ">=4.20.0" },
     { name = "orjson", specifier = ">=3.10.0" },
     { name = "pydantic", specifier = ">=2.7.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
-    { name = "pyyaml", specifier = ">=6.0.1" },
     { name = "rich", specifier = ">=13.7.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4.0" },
     { name = "typer", specifier = ">=0.12.0" },
     { name = "zensical", marker = "extra == 'docs'", specifier = ">=0.0.69" },
 ]
 provides-extras = ["dev", "docs"]
+
+[[package]]
+name = "fastyaml-rs"
+version = "0.7.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c5/56/d4211afc4066fb1867e3ea405079019071c55e7bfc8acea8e8a15155288c/fastyaml_rs-0.7.0.tar.gz", hash = "sha256:10400205d6903fe65d68d55bb64f11a651d05c34262b5915bbc8846ff9703ccd", size = 678052, upload-time = "2026-10-02T15:31:42.534Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dd/4f/2ce93d2583ddfb06d9e9c2e7448e2e6aa36ad4dcc5b1257c1eb0b9a07c05/fastyaml_rs-0.7.0-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:12df8bbd6761a737bc6c7d5338e71c606d111e40f2d065a93eb13c9db1ef1813", size = 1563392, upload-time = "2026-10-02T15:31:29.147Z" },
+    { url = "https://files.pythonhosted.org/packages/28/8d/7320f07a0ebf787130802be03a60513d392a12af740e0d052b5f44d935bd/fastyaml_rs-0.7.0-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:fac750397dd75f7742ce2db25277f03ecb2b7cb7a7438e84260719894832df57", size = 1464010, upload-time = "2026-10-02T15:31:31.417Z" },
+    { url = "https://files.pythonhosted.org/packages/30/80/6429cb824bbd27b823c1eae24f16fdd8f3e7845d92d2da1e485df1e0b7c3/fastyaml_rs-0.7.0-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:d5d4054b29bac30eb1bf1737b22477cf70279f33440206ff2703b6687881f604", size = 1517953, upload-time = "2026-10-02T15:31:33.046Z" },
+    { url = "https://files.pythonhosted.org/packages/52/ce/a45cba4064ea5bbf30f6bcf2ec30d6d9b00332225a73439985e1188d57b4/fastyaml_rs-0.7.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c4f890db4d9f24f13a6687aff2367ed6a07da51a24759cb0e5afde1b42b8cfa0", size = 1635356, upload-time = "2026-10-02T15:31:34.734Z" },
+    { url = "https://files.pythonhosted.org/packages/ba/05/fb4b2341572115e6fffb73d52688da4864ecedbd9f3d54f601bb0f4bd25c/fastyaml_rs-0.7.0-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:fb2f7882ce91eef964495f76c07d21e54bc37754173353da0287673ae5914586", size = 1696795, upload-time = "2026-10-02T15:31:36.91Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/3e/a6927ca227d67f39aecd95da11ffec6d3ab6672f89619a6353e44d0e8ee6/fastyaml_rs-0.7.0-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:f0faaef2a8b7d32f4c97946d047de16649c039d0eac47dc5928bbc88f589b4ce", size = 1857377, upload-time = "2026-10-02T15:31:38.686Z" },
+    { url = "https://files.pythonhosted.org/packages/ba/ac/c9d241e5b76a4eb7bfe3e6a2168a1bf729dd400848493c592602b268ab24/fastyaml_rs-0.7.0-cp310-abi3-win_amd64.whl", hash = "sha256:a385614a94310ec71707a8e738c9fef180fa9ef96c81af33a0456e1275db7d1d", size = 1619065, upload-time = "2026-10-02T15:31:40.592Z" },
+]
 
 [[package]]
 name = "iniconfig"

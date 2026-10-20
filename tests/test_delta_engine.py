@@ -6,7 +6,6 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import yaml
 from typer.testing import CliRunner
 
 from eidos.cli.main import app
@@ -515,8 +514,10 @@ def test_delta_verify_requires_modification_evidence(tmp_path):
 def test_delta_schema_operation_coverage_and_git_baseline_fallback(tmp_path):
     """Verify 100% composable operation coverage and Git-backed baseline SHA fallback when SQLite cache is absent."""
     # eidos:fixture
+    from eidos.core.spec.parser import safe_load_yaml
+
     delta_schema_path = get_assets_path("schemas/v1/delta/delta.schema.yaml")
-    schema_data = yaml.safe_load(delta_schema_path.read_text(encoding="utf-8"))
+    schema_data = safe_load_yaml(delta_schema_path.read_text(encoding="utf-8"))
     schema_ops = set(schema_data["properties"]["mutations"]["items"]["properties"]["operation"]["enum"])
     assert schema_ops == set(SUPPORTED_MUTATION_OPERATIONS)
 

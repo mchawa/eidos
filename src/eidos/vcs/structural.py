@@ -13,9 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import yaml
-
-from eidos.core.spec.parser import split_frontmatter_and_body
+from eidos.core.spec.parser import safe_load_yaml, split_frontmatter_and_body
 from eidos.core.workspace.project import match_path_pattern
 from eidos.vcs.diff import _get_file_versions
 
@@ -220,7 +218,7 @@ def _parse_frontmatter(raw: str | None) -> dict[str, Any] | None:
     if raw is None:
         return {}
     try:
-        data = yaml.safe_load(raw)
+        data = safe_load_yaml(raw)
     except Exception:
         return None
     if data is None:
@@ -316,7 +314,7 @@ class _SpecDiffInspector:
 
         if spec_lower.endswith((".yaml", ".yml")):
             try:
-                return _canonical(yaml.safe_load(old)) != _canonical(yaml.safe_load(new))
+                return _canonical(safe_load_yaml(old)) != _canonical(safe_load_yaml(new))
             except Exception:
                 return _normalize_ws(old) != _normalize_ws(new)
 
