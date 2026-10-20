@@ -24,6 +24,17 @@ components:
 contracts:
   provides: []
   consumes: []
+
+decisions:
+  - id: DEC-VCS-STATIC-INVARIANT-TRACEABILITY
+    title: "Static Reference Traceability Only for Invariant Test Bindings"
+    decision: "Verify INV-* test_binding strictly via static AST/token reference traceability (confirming the bound test file and function/Class::method exist and explicitly reference the INV-* ID), without executing test suites or inspecting runtime/AST assert statements."
+    rationale: "Eidos is a fast, deterministic, language-runner-agnostic architectural governance engine, not a test runner. Delegating runtime assertion execution to native CI test runners (pytest, vitest, go test, cargo test, JUnit) keeps eidos validate and eidos drift sub-second, stateless, and decoupled from project virtualenvs, build toolchains, and external test fixtures."
+    rejected_alternatives:
+      - option: "Execute bound tests inside eidos drift / eidos validate"
+        reason_rejected: "Couples Eidos to polyglot runtime environments, databases, and build toolchains, turning a sub-second static gate into a slow, stateful test runner."
+      - option: "Inspect AST assert statements inside test bodies"
+        reason_rejected: "Brittle across custom assertion helpers, framework-specific matchers, and polyglot DSLs while still unable to prove runtime behavioral correctness without test execution."
 ---
 = Container: Eidos Git Drift & Lifecycle Engine (C4 Level 2 Container & Level 3 Components)
 :toc: left

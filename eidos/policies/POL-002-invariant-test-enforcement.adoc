@@ -9,6 +9,14 @@ invariants:
   - id: INV-POL-002-INVARIANT-TEST-ENFORCEMENT
     rule: "Every technical invariant declared in a Capability, Policy, Container, Component, or SpecDelta must specify a concrete test_binding path. A PR cannot merge if any bound test fails or is missing."
     test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
+decisions:
+  - id: DEC-POL-002-STATIC-TRACEABILITY-BOUNDARY
+    title: "Separation of Static Invariant Traceability from Test Execution"
+    decision: "Scope Eidos invariant verification strictly to static bidirectional reference traceability (file::func existence + explicit INV-* token presence); Eidos is intentionally not responsible for executing tests or inspecting AST assertions."
+    rationale: "Running test suites and evaluating assertions is the responsibility of the repository's native test runner in CI/local workflows, whereas Eidos enforces the structural link between architectural invariants and test symbols."
+    rejected_alternatives:
+      - option: "Run test suites or enforce AST assert heuristics inside Eidos"
+        reason_rejected: "Violates single-responsibility boundaries by duplicating native test runners and introduces language-specific runtime coupling and false positives on custom assertion helpers."
 ---
 = Policy: Mandatory Invariant Test Binding
 :toc: left
