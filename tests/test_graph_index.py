@@ -55,6 +55,23 @@ def test_spike_a_schema_initialization_and_sync(temp_index):
     assert edge_count > 10
     assert fts_count >= 50
 
+    # Verify C4 Level 1 (ARCH-*, SYS-*) and exploration (EXP-*) graph edges & k-hop neighborhood (DLT-2026-105)
+    arch_neighbors = temp_index.get_k_hop_neighborhood("ARCH-EIDOS-001", max_depth=2)
+    arch_hop1_ids = {n["id"] for n in arch_neighbors if n["depth"] == 1}
+    arch_hop2_ids = {n["id"] for n in arch_neighbors if n["depth"] == 2}
+    assert {
+        "SYS-EIDOS-001",
+        "CNT-EIDOS-CORE",
+        "CNT-EIDOS-INDEX",
+        "PER-PRODUCT-LEAD",
+        "PER-AUTONOMOUS-AGENT",
+        "EXP-2026-004",
+    } <= arch_hop1_ids
+    assert {"CMP-GRAPH-STORAGE", "CMP-INCREMENTAL-SYNC-ENGINE", "CTR-EIDOS-CLI", "DOM-SPEC-ENGINE"} <= arch_hop2_ids
+
+    exp_neighbors = temp_index.get_k_hop_neighborhood("EXP-2026-004", max_depth=1)
+    assert "ARCH-EIDOS-001" in {n["id"] for n in exp_neighbors if n["depth"] == 1}
+
 
 def test_spike_a_fts5_bm25_lexical_search(temp_index):
     """Spike A: Verify FTS5 full-text search with BM25 ranking matches synonymous engineering prompts."""
@@ -1230,7 +1247,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.12.0"
+        assert ver == SCHEMA_VERSION == "2.13.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -2275,7 +2292,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    assert SCHEMA_VERSION == "2.12.0"
+    assert SCHEMA_VERSION == "2.13.0"
     assert set(AstGrepIndexer.LANGUAGE_MAP.keys()) | {".proto", ".adoc"} <= _FILE_QUERY_EXTS
 
     # 1. Verify _ENTITY_ID_TOKEN_RE recognizes SYS-*, ARCH-*, PER-*, and underscore IDs
@@ -2433,7 +2450,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
 
 
 def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path) -> None:
-    """Verify DLT-2026-104 SCHEMA_VERSION 2.12.0 migration, build_spec_path_resolver, complete edge coverage, get_spec_catalog, and compute_delta_impact."""  # eidos:fixture
+    """Verify DLT-2026-104 SCHEMA_VERSION migration, build_spec_path_resolver, complete edge coverage, get_spec_catalog, and compute_delta_impact."""  # eidos:fixture
     from eidos.core.index.storage import SCHEMA_VERSION, ensure_cache_schema
     from eidos.core.index.sync import build_spec_path_resolver
     from eidos.core.lifecycle.catalog import _build_spec_catalog_with_invariants
@@ -2443,7 +2460,7 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
     from eidos.portal.generator import get_portal_data
 
-    assert SCHEMA_VERSION == "2.12.0"
+    assert SCHEMA_VERSION == "2.13.0"
     assert _build_spec_catalog_with_invariants(tmp_path / "nonexistent_eidos") == ({}, {}, {})
 
     init_repository(tmp_path, name="dlt-104-repo")
@@ -2580,11 +2597,11 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
     try:
         conn = idx._get_connection()
-        # Simulate upgrading from schema_version 2.11.0 -> 2.12.0
+        # Simulate upgrading from schema_version 2.11.0 -> 2.13.0
         conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.11.0');")
         conn.commit()
         ensure_cache_schema(conn)
-        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.12.0"
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.13.0"
 
         idx.sync(force=True)
 
@@ -2665,5 +2682,126 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
         flw_item = next(f for f in portal_data["flows"] if f["id"] == "FLOW-ONBOARD-104")
         assert flw_item["clients"] == ["CLT-WEB-104"]
         assert flw_item["capabilities"] == ["CAP-DASH-104"]
+    finally:
+        idx.close()
+
+
+def test_dlt_2026_105_c4_level_1_and_exploration_edges(tmp_path: Path) -> None:
+    """Verify DLT-2026-105 C4 Level 1 (ARCH-*, SYS-*) and exploration (EXP-*) graph edges, incremental sync, and hub fan-out prevention."""  # eidos:fixture
+    from eidos.core.lifecycle.delta_engine import create_delta
+    from eidos.core.lifecycle.initializer import init_repository
+    from eidos.core.lifecycle.scaffolder import create_spec
+    from eidos.core.spec.parser import dump_spec_document, parse_spec_file
+
+    init_repository(tmp_path, name="dlt-105-repo")
+    eidos_dir = tmp_path / "eidos"
+
+    per_path = create_spec(eidos_dir, "persona", "PER-LEAD-105", title="Lead Persona 105")
+    exp_path = create_spec(eidos_dir, "exploration", "EXP-2026-105", title="Spike 105")
+    exp2_path = create_spec(eidos_dir, "exploration", "EXP-2026-106", title="Delta-bridged Spike 106")
+    cnt_a_path = create_spec(eidos_dir, "container", "CNT-ALPHA-105", title="Alpha Container 105")
+    create_spec(eidos_dir, "container", "CNT-BETA-105", title="Beta Container 105")
+    dlt_path = create_delta(eidos_dir, "DLT-2026-106", title="Apply Spike 106")
+
+    sys_id = parse_spec_file(eidos_dir / "system.adoc").doc_id
+    arch_path = create_spec(eidos_dir, "architecture", "ARCH-001", title="System Architecture 105")
+    arch_doc = parse_spec_file(arch_path)
+    arch_doc.frontmatter["c4_context"] = {
+        "actors": [str(per_path.relative_to(eidos_dir))],
+        "external_systems": [],
+    }
+    arch_doc.frontmatter["decisions"] = [
+        {
+            "id": "DEC-ARCH-105",
+            "title": "Use Centralized C4",
+            "decision": "Keep C4 centralized.",
+            "rationale": "Token efficiency.",
+            "graduated_from": str(exp_path.relative_to(eidos_dir)),
+        }
+    ]
+    arch_path.write_text(dump_spec_document(arch_doc.frontmatter, arch_doc.body), encoding="utf-8")
+
+    # Configure CNT-ALPHA-105 with inline component decision graduated_from EXP-2026-105
+    cnt_a_doc = parse_spec_file(cnt_a_path)
+    cnt_a_doc.frontmatter["components"] = [
+        {
+            "id": "CMP-ALPHA-WORKER-105",
+            "title": "Alpha Worker 105",
+            "responsibility": "Executes alpha tasks.",
+            "decisions": [
+                {
+                    "id": "DEC-CMP-ALPHA-105",
+                    "title": "Worker Spike Decision",
+                    "decision": "Adopt worker queue.",
+                    "rationale": "Low latency.",
+                    "graduated_from": "EXP-2026-105",
+                }
+            ],
+        }
+    ]
+    cnt_a_path.write_text(dump_spec_document(cnt_a_doc.frontmatter, cnt_a_doc.body), encoding="utf-8")
+
+    # Configure EXP-2026-106 with resulting_deltas -> DLT-2026-106 affecting CNT-BETA-105
+    dlt_doc = parse_spec_file(dlt_path)
+    dlt_doc.frontmatter["mutations"] = [{"operation": "modify", "target": "CNT-BETA-105"}]
+    dlt_path.write_text(dump_spec_document(dlt_doc.frontmatter, dlt_doc.body), encoding="utf-8")
+
+    exp2_doc = parse_spec_file(exp2_path)
+    exp2_doc.frontmatter["status"] = "adopted"
+    exp2_doc.frontmatter["decision"] = {
+        "outcome": "adopted",
+        "resulting_deltas": ["DLT-2026-106"],
+    }
+    exp2_path.write_text(dump_spec_document(exp2_doc.frontmatter, exp2_doc.body), encoding="utf-8")
+
+    idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
+    try:
+        idx.sync(force=True)
+        conn = idx._get_connection()
+
+        edges = {
+            (r[0], r[1], r[2]) for r in conn.execute("SELECT source_id, target_id, rel_type FROM edges;").fetchall()
+        }
+        # 1. Verify C4 Level 1 & exploration edges and absence of reverse (CNT-*, ARCH-*, 'part_of')
+        assert ("ARCH-001", "PER-LEAD-105", "serves_persona") in edges
+        assert ("ARCH-001", sys_id, "describes_system") in edges
+        assert ("ARCH-001", "CNT-ALPHA-105", "contains_container") in edges
+        assert ("ARCH-001", "CNT-BETA-105", "contains_container") in edges
+        assert ("CNT-ALPHA-105", "ARCH-001", "part_of") not in edges
+        assert ("ARCH-001", "EXP-2026-105", "graduated_from") in edges
+        assert ("CNT-ALPHA-105", "EXP-2026-105", "graduated_from") in edges
+        assert ("CMP-ALPHA-WORKER-105", "EXP-2026-105", "graduated_from") in edges
+        assert ("EXP-2026-106", "DLT-2026-106", "graduated_to") in edges
+        assert ("EXP-2026-106", "CNT-BETA-105", "graduated_to") in edges
+
+        # Verify execute_incoming_references excludes synthetic C4 structural edges (contains_container, describes_system)
+        inc_alpha = idx.get_incoming_references("CNT-ALPHA-105")
+        assert all(r["rel_type"] not in ("contains_container", "describes_system") for r in inc_alpha)
+
+        # 2. Verify ARCH-001 k-hop blast radius expands at depth 0
+        arch_br = idx.get_k_hop_neighborhood("ARCH-001", max_depth=2)
+        arch_hop1 = {n["id"] for n in arch_br if n["depth"] == 1}
+        arch_hop2 = {n["id"] for n in arch_br if n["depth"] == 2}
+        assert {sys_id, "PER-LEAD-105", "CNT-ALPHA-105", "CNT-BETA-105", "EXP-2026-105"} <= arch_hop1
+        assert "CMP-ALPHA-WORKER-105" in arch_hop2
+
+        # 3. Verify hub fan-out suppression at depth >= 1: CNT-ALPHA-105 reaches ARCH-001 and EXP-2026-105 at Hop 1,
+        #    but does NOT fan out through ARCH-001 to CNT-BETA-105 or sys_id at Hop 2.
+        cnt_a_br = idx.get_k_hop_neighborhood("CNT-ALPHA-105", max_depth=2)
+        cnt_a_ids = {n["id"] for n in cnt_a_br}
+        assert {"CNT-ALPHA-105", "ARCH-001", "EXP-2026-105", "CMP-ALPHA-WORKER-105"} <= cnt_a_ids
+        assert "CNT-BETA-105" not in cnt_a_ids
+        assert sys_id not in cnt_a_ids
+
+        # 4. Verify EXP-2026-106 blast radius reaches CNT-BETA-105 via graduated_to -> affects bridge
+        exp2_br = idx.get_k_hop_neighborhood("EXP-2026-106", max_depth=1)
+        assert "CNT-BETA-105" in {n["id"] for n in exp2_br if n["depth"] == 1}
+
+        # 5. Verify incremental container creation updates ARCH-001 -> CNT-GAMMA-105 contains_container edge
+        time.sleep(0.01)
+        create_spec(eidos_dir, "container", "CNT-GAMMA-105", title="Gamma Container 105")
+        idx.sync(force=False)
+        arch_br_after = idx.get_k_hop_neighborhood("ARCH-001", max_depth=1)
+        assert "CNT-GAMMA-105" in {n["id"] for n in arch_br_after if n["depth"] == 1}
     finally:
         idx.close()

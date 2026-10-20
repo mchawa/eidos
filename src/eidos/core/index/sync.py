@@ -714,7 +714,8 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             SELECT target_id FROM edges
             WHERE source_id IN ({ph})
               AND rel_type IN (
-                  'asserts', 'contains_component', 'implemented_by',
+                  'asserts', 'contains_component', 'contains_container', 'describes_system',
+                  'graduated_from', 'graduated_to', 'implemented_by',
                   'styled_by', 'styles_container', 'extends',
                   'serves_persona', 'delivered_by', 'has_screen', 'has_flow', 'uses_screen'
               )
@@ -722,6 +723,7 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             SELECT source_id FROM edges
             WHERE target_id IN ({ph})
               AND rel_type IN (
+                  'contains_container', 'describes_system', 'graduated_from', 'graduated_to',
                   'implemented_by', 'styled_by', 'styles_container', 'extends',
                   'serves_persona', 'delivered_by', 'has_screen', 'has_flow', 'uses_screen'
               )
@@ -768,9 +770,10 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             ).fetchall()
             scope_set.update(r[0] for r in ref_rows if r[0])
 
-        # If any design/client or design/system is in scope, include all design/client entities so indirect
-        # (CNT, DS, 'styled_by') / (DS, CNT, 'styles_container') edges stay consistent.
-        clt_rows = conn.execute("SELECT id FROM entities WHERE type = 'design/client';").fetchall()
+        # Include design/client and tech/architecture entities so indirect design and C4 Level 1 edges stay consistent.
+        clt_rows = conn.execute(
+            "SELECT id FROM entities WHERE type IN ('design/client', 'tech/architecture');"
+        ).fetchall()
         if clt_rows:
             scope_set.update(r[0] for r in clt_rows if r[0])
 
@@ -798,6 +801,18 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
         rows = conn.execute(
             "SELECT id, type, data_json FROM entities WHERE type != 'invariant' ORDER BY id;"
         ).fetchall()
+
+    sys_ids = [
+        r[0]
+        for r in conn.execute("SELECT id FROM entities WHERE type = 'product/system' ORDER BY id;").fetchall()
+        if r[0]
+    ]
+    cnt_ids = [
+        r[0]
+        for r in conn.execute("SELECT id FROM entities WHERE type = 'tech/container' ORDER BY id;").fetchall()
+        if r[0]
+    ]
+
     for row in rows:
         doc_id = row["id"]
         doc_type = row["type"]
@@ -811,6 +826,47 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
         domain = _resolve_ref(fm.get("domain", ""))
         if domain:
             conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'realizes');", (doc_id, domain))
+
+        for dec in fm.get("decisions", []) or []:
+            if isinstance(dec, dict) and dec.get("graduated_from"):
+                grad_id = _resolve_ref(dec["graduated_from"])
+                if grad_id:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO edges VALUES (?, ?, 'graduated_from');",
+                        (doc_id, grad_id),
+                    )
+
+        if doc_type == "tech/architecture":
+            c4_ctx = fm.get("c4_context")
+            if isinstance(c4_ctx, dict):
+                for actor_ref in c4_ctx.get("actors", []) or []:
+                    actor_id = _resolve_ref(actor_ref)
+                    if actor_id:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'serves_persona');",
+                            (doc_id, actor_id),
+                        )
+            for sys_id in sys_ids:
+                conn.execute(
+                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'describes_system');",
+                    (doc_id, sys_id),
+                )
+            for cnt_id in cnt_ids:
+                conn.execute(
+                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'contains_container');",
+                    (doc_id, cnt_id),
+                )
+
+        if doc_type == "product/exploration":
+            exp_dec = fm.get("decision")
+            if isinstance(exp_dec, dict):
+                for dlt_ref in exp_dec.get("resulting_deltas", []) or []:
+                    dlt_id = _resolve_ref(dlt_ref)
+                    if dlt_id:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO edges VALUES (?, ?, 'graduated_to');",
+                            (doc_id, dlt_id),
+                        )
 
         contracts = fm.get("contracts", {})
         if isinstance(contracts, dict):
@@ -937,6 +993,19 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                             req_id = _resolve_ref(req)
                             if req_id:
                                 conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes');", (cid, req_id))
+                for c_dec in comp_entry.get("decisions", []) or []:
+                    if isinstance(c_dec, dict) and c_dec.get("graduated_from"):
+                        grad_id = _resolve_ref(c_dec["graduated_from"])
+                        if grad_id:
+                            conn.execute(
+                                "INSERT OR IGNORE INTO edges VALUES (?, ?, 'graduated_from');",
+                                (doc_id, grad_id),
+                            )
+                            if cid:
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO edges VALUES (?, ?, 'graduated_from');",
+                                    (cid, grad_id),
+                                )
                 for c_inv in comp_entry.get("invariants", []) or []:
                     if isinstance(c_inv, dict) and c_inv.get("id"):
                         invariants.append(c_inv)
@@ -972,6 +1041,17 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
             iid = inv.get("id") if isinstance(inv, dict) else None
             if iid:
                 conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'asserts');", (doc_id, iid))
+
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO edges (source_id, target_id, rel_type)
+        SELECT DISTINCT e_exp.source_id, e_aff.target_id, 'graduated_to'
+        FROM edges e_exp
+        JOIN edges e_aff ON e_aff.source_id = e_exp.target_id AND e_aff.rel_type = 'affects'
+        WHERE e_exp.rel_type = 'graduated_to'
+          AND e_aff.target_id NOT LIKE 'DLT-%';
+        """
+    )
 
     _derive_ast_import_edges(conn)
 

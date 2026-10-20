@@ -1,0 +1,73 @@
+---
+type: delta/mutation
+id: DLT-2026-105-INDEX-C4
+title: "Index C4 Level 1 Architecture, System, and Exploration Graph Edges"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: medium
+  motivation: "Connect C4 Level 1 specifications (ARCH-*, SYS-*) and technical explorations (EXP-*) in the SQLite knowledge graph so 'eidos index blast-radius ARCH-EIDOS-001' (and SYS-*/EXP-* queries) traverses connected personas, containers, system roots, and graduated explorations instead of returning an isolated 0-hop node."
+vcs:
+  branch: main
+  base_commit: 16c358f986dc07f2cbdc68b1fdba63a2a1ed9293
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: "Bump SCHEMA_VERSION in src/eidos/core/index/storage.py from '2.12.0' to '2.13.0' so existing local index.db caches automatically rebuild with the new C4 Level 1 (describes_system, contains_container) and exploration/decision (graduated_from, graduated_to) relational edges."
+    expect:
+      frontmatter:
+        responsibility: "2.13.0"
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    details: "Extend rebuild_spec_edges in src/eidos/core/index/sync.py to emit unidirectional relational edges for tech/architecture (c4_context.actors -> serves_persona, system root SYS-* -> describes_system, and C4 Level 2 CNT-* containers -> contains_container without reverse part_of edges that would collide with CMP-* -> CNT-* part_of joins), decisions[].graduated_from across top-level and inline component decisions (graduated_from -> EXP-*/DLT-*), and product/exploration (decision.resulting_deltas -> graduated_to), including tech/architecture in incremental scope_set expansion and updating incremental child_rows eviction for the new edge types."
+    expect:
+      frontmatter:
+        responsibility: "c4_context.actors"
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+    details: "Include tech/architecture and product/system in the hop >= 1 organizational hub fan-out filter in execute_k_hop_traversal (src/eidos/core/index/query.py) so direct blast-radius queries on ARCH-* or SYS-* (depth 0) expand across all containers, personas, and explorations up to depth k without causing every container's blast radius to fan out through ARCH-* to the entire monorepo at hop 2."
+    expect:
+      frontmatter:
+        responsibility: "tech/architecture"
+  - operation: modify
+    target: INV-KNOWLEDGE-GRAPH-CATALOG
+    details: "Extend INV-KNOWLEDGE-GRAPH-CATALOG in eidos/domains/spec-engine/capabilities/living-spec-engine.adoc and tests/test_graph_index.py to verify that C4 Level 1 (ARCH-*, SYS-*) and exploration (EXP-*) entities persist relational graph edges and produce non-isolated k-hop blast-radius neighborhoods."
+    expect:
+      frontmatter:
+        rule: "C4 Level 1"
+---
+= SpecDelta: Index C4 Level 1 Architecture, System, and Exploration Graph Edges
+:toc: left
+
+== Problem Statement
+Running `eidos index blast-radius ARCH-EIDOS-001` currently returns only the 0-hop seed row (`ARCH-EIDOS-001` itself) with zero 1-hop or 2-hop neighbors.
+
+Inspection of `rebuild_spec_edges()` in `src/eidos/core/index/sync.py` and `execute_k_hop_traversal()` in `src/eidos/core/index/query.py` reveals three gaps in specification edge indexing:
+
+1. **`tech/architecture` (`ARCH-*`) has no edge extraction in `rebuild_spec_edges()`**:
+   * `c4_context.actors` (e.g. `eidos/personas/product-lead.adoc`, `eidos/personas/autonomous-agent.adoc` in `eidos/architecture/system-architecture.adoc`) is never resolved or persisted as `serves_persona` edges.
+   * No structural C4 Level 1 -> Level 2 edges connect `ARCH-*` to the repository's `tech/container` (`CNT-*`) specifications or root `product/system` (`SYS-*`) specification.
+   * Because the only edges touching `ARCH-EIDOS-001` in `edges` are `(DLT-*, 'ARCH-EIDOS-001', 'affects')` and `execute_k_hop_traversal()` filters out `DLT-%` nodes, `ARCH-EIDOS-001` is completely isolated in the knowledge graph.
+2. **`decisions[].graduated_from` and `product/exploration` (`EXP-*`) references are unindexed**:
+   * Specifications declaring `decisions[].graduated_from: EXP-*` (such as `DEC-ARCH-CENTRALIZED-HYBRID-C4` -> `EXP-2026-004` on `ARCH-EIDOS-001`, as well as container/component decisions) and explorations declaring `decision.resulting_deltas` produce no edges in `rebuild_spec_edges()`, leaving all `EXP-*` entities isolated (`br=1`).
+3. **Hub fan-out guard at hop $\ge 1$ in `execute_k_hop_traversal()`**:
+   * Once `ARCH-*` and `SYS-*` are linked to all `CNT-*` containers, `execute_k_hop_traversal()` must allow full expansion when `ARCH-*` or `SYS-*` is the 0-hop root (`gw.depth = 0`), while suppressing hub fan-out through `tech/architecture` and `product/system` when reached at `gw.depth >= 1` from a specific container.
+
+== Proposed Specification & Engine Changes
+1. **Schema Version Bump in `CMP-GRAPH-STORAGE` (`src/eidos/core/index/storage.py`)**:
+   * Bump `SCHEMA_VERSION` from `"2.12.0"` to `"2.13.0"` so existing `eidos/.cache/index.db` databases automatically rebuild with the new C4 Level 1 and exploration edge types.
+2. **C4 Level 1 & Exploration Edge Indexing in `CMP-INCREMENTAL-SYNC-ENGINE` (`src/eidos/core/index/sync.py`)**:
+   * For `doc_type == "tech/architecture"`:
+     - Resolve each entry in `c4_context.actors` via `_resolve_ref` and insert `(doc_id, actor_id, 'serves_persona')` edges.
+     - Link `ARCH-*` to `product/system` (`SYS-*`) via unidirectional `(doc_id, sys_id, 'describes_system')` and to each `tech/container` (`CNT-*`) via unidirectional `(doc_id, cnt_id, 'contains_container')` (omitting reverse `(cnt_id, doc_id, 'part_of')` so `part_of` remains exclusively `CMP-* -> CNT-*` for AST dependency and impact queries).
+   * Across all specifications with `decisions` (top-level `decisions[]` and inline `components[].decisions[]`):
+     - Resolve `graduated_from` via `_resolve_ref` and insert `(doc_id, grad_id, 'graduated_from')` (and `(comp_id, grad_id, 'graduated_from')` for inline components) edges.
+   * For `doc_type == "product/exploration"`:
+     - Resolve `decision.resulting_deltas` via `_resolve_ref` and insert `(doc_id, dlt_id, 'graduated_to')` edges.
+   * Include `'tech/architecture'` in the incremental `scope_set` expansion alongside `'design/client'` so adding or editing a container or system spec incrementally refreshes `contains_container` and `describes_system` edges, and include `'describes_system'`, `'contains_container'`, `'graduated_from'`, and `'graduated_to'` in the incremental `child_rows` eviction query in `rebuild_spec_edges()`.
+3. **Hub Fan-Out Prevention at Hop $\ge 1$ in `CMP-GRAPH-TRAVERSAL-ENGINE` (`src/eidos/core/index/query.py`)**:
+   * Add `'tech/architecture'` and `'product/system'` to the `gw.depth = 0 OR cur_ent.type NOT IN (...)` clause in `execute_k_hop_traversal()`.
+4. **Invariant & Test Coverage (`INV-KNOWLEDGE-GRAPH-CATALOG`)**:
+   * Update `INV-KNOWLEDGE-GRAPH-CATALOG` in `eidos/domains/spec-engine/capabilities/living-spec-engine.adoc` and add unit test assertions in `tests/test_graph_index.py` verifying `get_k_hop_neighborhood("ARCH-EIDOS-001", max_depth=2)` returns connected personas, containers, system root, and graduated explorations at Hop 1 and container components/contracts/capabilities at Hop 2.
+

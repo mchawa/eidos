@@ -340,7 +340,13 @@ def execute_k_hop_traversal(
             JOIN graph_walk gw ON (e.source_id = gw.node_id OR e.target_id = gw.node_id)
             JOIN all_nodes cur_ent ON cur_ent.id = gw.node_id
             WHERE gw.depth < ?
-              AND (gw.depth = 0 OR cur_ent.type NOT IN ('product/domain', 'design/system', 'product/persona', 'delta/mutation'))
+              AND (
+                  gw.depth = 0
+                  OR cur_ent.type NOT IN (
+                      'product/domain', 'design/system', 'product/persona',
+                      'delta/mutation', 'tech/architecture', 'product/system', 'product/exploration'
+                  )
+              )
               AND CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END NOT LIKE 'DLT-%'
               AND ('->' || gw.path || '->') NOT LIKE '%->' || CASE WHEN e.source_id = gw.node_id THEN e.target_id ELSE e.source_id END || '->%'
         )
@@ -405,6 +411,7 @@ def execute_incoming_references(
         FROM edges e
         JOIN all_nodes ent ON ent.id = e.source_id
         WHERE e.target_id = ?
+          AND e.rel_type NOT IN ('contains_container', 'describes_system')
         ORDER BY ent.type, e.source_id;
         """,
         (target,),
