@@ -1,6 +1,6 @@
 ---
 name: eidos-ops
-description: Initialize greenfield repositories with Eidos (eidos init), systematically reverse-engineer and extract living specifications from existing brownfield codebases, and serve or build the interactive Eidos Living Web Portal and static documentation site (eidos portal serve, eidos portal build).
+description: Initialize greenfield repositories with Eidos (eidos init), systematically reverse-engineer and extract living specifications from existing brownfield codebases using AST code graph intelligence (eidos index repo-map, eidos index find-symbol, eidos index search, eidos context), and serve or build the interactive Eidos Living Web Portal and static documentation site (eidos portal serve, eidos portal build).
 ---
 # Eidos Operations: Bootstrap, Brownfield Extraction & Web Portal (`eidos-ops`)
 
@@ -45,20 +45,24 @@ eidos doctor --json
 
 When introducing Eidos into an **existing codebase**, never invent speculative architecture. Systematically extract the **actual as-built architecture** across these 8 phases:
 
-1. **Initialize & Inspect Topology**: Run `eidos init` if `eidos/` does not exist. Inspect build manifests (`pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`, `pom.xml`, `docker-compose.yml`, CI workflows) and top-level source directories.
+1. **Initialize & Map AST Codebase Topology**: Run `eidos init` if `eidos/` does not exist. Inspect build manifests (`pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`, `pom.xml`, `docker-compose.yml`, CI workflows) and top-level source directories. As soon as initial `CNT-*` containers and `source_path` bindings are created, run `eidos index sync --force` and use `eidos index repo-map --max-tokens 2000` and `eidos index find-symbol <Name> --json` instead of blind directory walks.
 2. **Author C4 Level 1 & Arc42 Master Architecture**: Populate `eidos/system.adoc` (`SYS-*`) and `eidos/architecture/system-architecture.adoc` (`ARCH-*`, registering C4 Level 1 actors and external systems in `c4_context`).
 3. **Extract C4 Level 2 Containers (`CNT-*`) & Level 3 Components (`CMP-*`)**:
    * Create a container in `eidos/architecture/containers/<slug>.adoc` for each deployable service, CLI binary, web app, worker, or library package.
-   * Set `source_path` to the exact repo-relative source path(s) so `eidos drift` and `eidos context` map every source file accurately.
-   * Map major internal modules/classes to inline `components:` entries (`id: CMP-*`, `title`, `responsibility`, `source_path`), or promote complex subsystems via `eidos spec component promote <CMP-ID>`.
+   * Set `source_path` to the exact repo-relative source path(s) so `eidos drift`, `eidos context`, and `eidos index repo-map` map every source file accurately.
+   * Run `eidos index repo-map --max-tokens 1500` and `eidos index find-symbol <ClassOrFunction> --json` to inspect major internal classes/modules, mapping them to inline `components:` entries (`id: CMP-*`, `title`, `responsibility`, `source_path`), or promote complex subsystems via `eidos spec component promote <CMP-ID>`.
    * Record non-obvious as-built architectural trade-offs in `decisions:` (`DEC-*`).
 4. **Extract Interface Contracts (`CTR-*`)**: Create contract specs in `eidos/architecture/contracts/<slug>.adoc` for REST/OpenAPI, gRPC/Protobuf, GraphQL, or CLI boundaries (`specification_file`), and link `provides:` / `consumes:` on `CNT-*`.
 5. **Extract Product Domains (`DOM-*`), Personas (`PER-*`) & Capabilities (`CAP-*`)**: Group business logic into bounded contexts (`eidos/domains/<slug>/domain.adoc`), create actor personas (`eidos/personas/<slug>.adoc`), and author capabilities (`eidos/domains/<slug>/capabilities/<cap>.adoc`) linking `business.personas`, `business.policies`, and `technical.containers` in YAML frontmatter (authoring Jobs-to-be-Done in the AsciiDoc prose body).
 6. **Extract Frontend Design Systems & Client Flows (If Applicable)**: For web/mobile/desktop/TUI clients, scaffold `DS-*` (`tokens.json`), `UIC-*`, `CLT-*`, `SCR-*`, and `FLOW-*` under `eidos/design/`.
-7. **Bind Existing Automated Tests to Capability Invariants (`INV-*`)**: Scan `tests/` for critical business and security rules, declare `INV-*` entries with `test_binding: "<test_file>::<test_func>"` on the owning capability, and add the `INV-*` ID to each bound test's docstring or comment (`POL-002`).
-8. **Synchronize & Verify Zero Drift**:
+7. **Bind Existing Automated Tests to Capability Invariants (`INV-*`)**: Use `eidos index find-symbol "test_" --json` to locate test functions in `tests/`, declare `INV-*` entries with `test_binding: "<test_file>::<test_func>"` on the owning capability, and add the `INV-*` ID to each bound test's docstring or comment (`POL-002`).
+8. **Synchronize, Inspect Graph & Verify Zero Drift**:
    ```bash
    eidos index sync --force
+   eidos index repo-map --max-tokens 1500
+   eidos index search "core" --json
+   eidos context -c CNT-APP-API --tier guardrails --json
+   eidos index blast-radius CNT-APP-API --depth 2 --json
    eidos validate eidos --json
    eidos drift --uncommitted --json
    ```

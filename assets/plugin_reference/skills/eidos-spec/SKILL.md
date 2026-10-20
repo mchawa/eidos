@@ -1,6 +1,6 @@
 ---
 name: eidos-spec
-description: Author, inspect, and maintain Eidos living specifications across Product (domains DOM-*, capabilities CAP-*, personas PER-*), Arc42/C4 Architecture (containers CNT-*, inline and promoted components CMP-*, contracts CTR-*, embedded decisions DEC-*), Multi-Design Systems (DS-*, W3C tokens, UI components UIC-*, clients CLT-*, screens SCR-*, flows FLOW-*), and Policies/Invariants (POL-*, INV-* with polyglot file::func test bindings). Strictly enforces NO ADRs.
+description: Author, inspect, and maintain Eidos living specifications across Product (domains DOM-*, capabilities CAP-*, personas PER-*), Arc42/C4 Architecture (containers CNT-*, inline and promoted components CMP-*, contracts CTR-*, embedded decisions DEC-*), Multi-Design Systems (DS-*, W3C tokens, UI components UIC-*, clients CLT-*, screens SCR-*, flows FLOW-*), and Policies/Invariants (POL-*, INV-* with polyglot file::func test bindings), grounded by eidos index search, find-symbol, blast-radius, and eidos context. Strictly enforces NO ADRs.
 ---
 # Eidos Specification & Invariant Authoring (`eidos-spec`)
 
@@ -10,11 +10,17 @@ This skill provides the authoring rules, CLI scaffolding commands, and v1 YAML f
 
 ---
 
-## 1. CLI Scaffolding & Schema Introspection (`eidos spec`)
+## 1. CLI Scaffolding, Graph Inspection & Schema Introspection (`eidos spec` & `eidos index`)
 
-Never hand-author `.adoc` specification files from scratch. Always scaffold new specifications with `eidos spec create` and inspect schema constraints with `eidos spec schema` to guarantee valid v1 YAML frontmatter and canonical paths:
+Never hand-author `.adoc` specification files from scratch. Always search existing specifications and symbols first (`eidos index search`, `eidos index find-symbol`, `eidos context`), scaffold new specifications with `eidos spec create`, and inspect schema constraints with `eidos spec schema` to guarantee valid v1 YAML frontmatter and canonical paths:
 
 ```bash
+# Search existing specifications, capabilities, invariants, and code symbols before authoring or modifying specs
+eidos index search "billing" --json
+eidos index find-symbol "UsageEventIngestor" --json
+eidos context -c CNT-BILLING-WORKER --tier guardrails --json
+eidos index blast-radius CNT-BILLING-WORKER --depth 2 --json
+
 # List and inspect living specifications (includes inline CMP-* components; excludes SpecDeltas)
 eidos spec list [--type <type>] [--status <status>] [--json]
 eidos spec show <ID_OR_PATH>
@@ -38,7 +44,7 @@ eidos spec create policy POL-005 --title "Idempotent Webhook Processing"
 eidos spec component promote CMP-USAGE-LEDGER
 eidos spec component inline CMP-USAGE-LEDGER
 
-# Safely delete a specification after checking incoming cross-references
+# Safely delete a specification after checking incoming cross-references (run blast-radius first)
 eidos spec delete <ID_OR_PATH>
 
 # Validate all specifications, cross-references, disk bindings, and bidirectional contract parity

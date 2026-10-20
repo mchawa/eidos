@@ -1,6 +1,6 @@
 ---
 name: eidos
-description: Master architecture and engineering orchestrator for repositories managed by Eidos. Consult before modifying code, proposing architectural changes, adding features, refactoring, or altering living specifications in eidos/. Strictly enforces living specs (NO ADRs), dual workflows (Direct vs. Planned), tiered context slicing (eidos context), continuous drift detection (eidos drift), invariant-test traceability, and mandatory autonomous gap self-review.
+description: Master architecture and engineering orchestrator for repositories managed by Eidos. Consult before modifying code, proposing architectural changes, adding features, refactoring, or altering living specifications in eidos/. Strictly enforces living specs (NO ADRs), dual workflows (Direct vs. Planned), Discovery-First CLI intelligence (eidos context, eidos index repo-map, eidos index find-symbol, eidos index search, eidos index blast-radius), continuous drift detection (eidos drift), invariant-test traceability, and mandatory autonomous gap self-review.
 ---
 # Eidos: Master Architecture & Engineering Orchestrator
 
@@ -20,8 +20,8 @@ You MUST follow these workflows and guardrails whenever you inspect, plan, imple
    Every task operates in either **Direct Mode** (fast, in-place co-evolution) or **Planned Mode** (formal SpecDelta lifecycle). Select the mode *before* writing code.
 4. **Mandatory Invariant-Test Traceability (`POL-002`)**:
    Every capability invariant (`INV-*`) must declare a `test_binding` (`path/to/test_file::test_function`), and the bound test function must explicitly reference the `INV-*` ID in its docstring, comment, or marker.
-5. **CLI-First Determinism (`POL-004`)**:
-   Always use Eidos CLI commands (`--json` supported) rather than guessing schemas, editing cache files in `eidos/.cache/`, or manually wiring symlinks. Never create `.adoc` specification or SpecDelta files by hand from scratch—always scaffold via `eidos spec create <type> <ID> --title "..."` or `eidos delta create --title "..." --slug --kind <kind>`, and inspect exact required/optional keys and closed sub-schemas via `eidos spec schema <type> [--json]` before adding nested frontmatter blocks.
+5. **CLI-First Discovery & Determinism (`POL-004`)**:
+   Always run Eidos knowledge graph and context CLI commands (`eidos context`, `eidos index repo-map`, `eidos index find-symbol`, `eidos index search`, `eidos index blast-radius` with `--json`) *before* falling back to raw file reads or `grep`/`find`. Never create `.adoc` specification or SpecDelta files by hand from scratch—always scaffold via `eidos spec create <type> <ID> --title "..."` or `eidos delta create --title "..." --slug --kind <kind>`, and inspect exact required/optional keys and closed sub-schemas via `eidos spec schema <type> [--json]` before adding nested frontmatter blocks.
 6. **Zero Unreconciled Drift**:
    Never conclude a task with failing specification schemas or unmanaged code-to-spec drift.
 7. **Mandatory Autonomous Pre-Completion Review**:
@@ -29,22 +29,25 @@ You MUST follow these workflows and guardrails whenever you inspect, plan, imple
 
 ---
 
-## 2. Step 1: Select Your Workflow Mode
+## 2. Step 1: Discovery-First Context & Code Graph Intelligence (`eidos context` & `eidos index`)
 
-Before writing or editing source code, classify the user's request:
+**STOP before running blind `grep`, `find`, or reading random files.** Eidos maintains an embedded SQLite + AST knowledge graph (`eidos/.cache/index.db`) that resolves files, symbols, specs, and dependencies in milliseconds at a fraction of the token cost.
 
-| Criteria | ⚡ Direct Mode (In-Place Co-Evolution) | 📐 Planned Mode (SpecDelta Lifecycle) |
+### 2.1 Mandatory Tool Replacement Matrix
+
+Whenever you need to orient in the codebase, locate a symbol, search specifications, or assess impact, **prefer the Eidos CLI command first**—even when the user prompt already attaches a `@[file]` path:
+
+| Instead of doing this... | ALWAYS run this Eidos command FIRST | Why |
 | :--- | :--- | :--- |
-| **Typical Tasks** | Bug fixes, localized refactors, adding a helper/flag within an existing container, doc/test updates, UI polish. | New/removed containers (`CNT-*`) or components (`CMP-*`), breaking contract (`CTR-*`) changes, cross-domain features, new policies (`POL-*`). |
-| **Blast Radius** | Confined to 1 existing container/component; no breaking contract changes. | Spans multiple containers/domains or alters public interfaces/schemas. |
-| **Spec Mechanism** | Update affected `.adoc` specs in `eidos/` directly alongside your code and test edits. | Create a SpecDelta (`eidos delta create`), implement code + spec changes, verify (`eidos delta verify`), and reconcile (`eidos delta apply`). |
-| **Verification** | `eidos drift --uncommitted --json` | `eidos delta verify <ID>`, `eidos delta apply <ID>`, `eidos drift --uncommitted --json` |
+| Running `find` / `ls -R` or reading many files to orient in the repository | `eidos index repo-map --max-tokens 1500` | AST-compressed structural outline (`>= 85%` token reduction) across all containers and modules. |
+| Grepping across source files for a class, function, method, or route | `eidos index find-symbol "<SymbolName>" --json` | Resolves exact `file:line` coordinates, syntax kind, and the owning `CNT-*` / `CMP-*` spec. |
+| Grepping `eidos/` for domain concepts, rules, capabilities, or prior spikes | `eidos index search "<keywords>" --json` | BM25-ranked FTS5 search across all living spec titles, bodies, decisions (`DEC-*`), and invariants (`INV-*`). |
+| Editing or reviewing a file (including user-attached `@[file]` paths) without knowing its governance rules | `eidos context -f <path/to/file> --json` *(or `-t "<task>"` / `-c <ID>`)* | Extracts the owning `CNT-*`/`CMP-*`, active `INV-*` test bindings, `DEC-*` rationale, and `CTR-*` contracts in one call. |
+| Guessing what breaks when modifying a container, component, contract, or capability | `eidos index blast-radius <ENTITY-ID> --depth 2 --json` | Recursive CTE k-hop graph walk revealing upstream/downstream dependents across domains and containers. |
 
----
+### 2.2 Context Slicing Tiers (`eidos context`)
 
-## 3. Step 2: Slice Architectural Context & Code Graph (`eidos context`)
-
-Never blindly read dozens of files into your context window. Query Eidos first to extract a token-budgeted architectural subgraph:
+Choose the `--tier` flag matching your task scope:
 
 | Tier | Flag | Budget | Contents Included | When to Use |
 | :--- | :--- | :--- | :--- | :--- |
@@ -53,21 +56,36 @@ Never blindly read dozens of files into your context window. Query Eidos first t
 | **Deep** | `--tier deep` | `~500–1,500 tokens` | Guardrails + C4 Level 3 internal building blocks, full contract schemas, full policies, and downstream dependents. | Cross-container refactors, SpecDelta authoring, architectural reviews. |
 
 ```bash
-# Slice context for a source file you plan to touch
+# 1. Orient in the codebase with a token-budgeted AST structural repo map
+eidos index repo-map --max-tokens 1500
+
+# 2. Locate exact file:line coordinates and owning C4 component for a code symbol
+eidos index find-symbol "JwtValidator" --json
+
+# 3. Full-text BM25 search across all specifications, capabilities, decisions, and invariants
+eidos index search "authentication" --json
+
+# 4. Slice architectural context for a source file, component ID, or natural-language task
 eidos context -f src/auth/jwt_validator.py --json
-
-# Slice context for a container or component ID
 eidos context -c CNT-AUTH-SERVICE --tier guardrails --json
-
-# Slice context from a natural-language task prompt
 eidos context -t "rate limiting and token expiration" --tier deep --json
 
-# Structural AST repo map, symbol lookup, full-text search & blast radius
-eidos index repo-map --max-tokens 1500
-eidos index find-symbol "JwtValidator" --json
-eidos index search "authentication" --json
+# 5. Compute transitive k-hop dependency and governance blast radius before modifying an entity
 eidos index blast-radius CNT-AUTH-SERVICE --depth 2 --json
 ```
+
+---
+
+## 3. Step 2: Select Your Workflow Mode
+
+Using the ownership and dependency insights from Step 1 (`eidos context` and `eidos index blast-radius`), classify the user's request *before* writing code:
+
+| Criteria | ⚡ Direct Mode (In-Place Co-Evolution) | 📐 Planned Mode (SpecDelta Lifecycle) |
+| :--- | :--- | :--- |
+| **Typical Tasks** | Bug fixes, localized refactors, adding a helper/flag within an existing container, doc/test updates, UI polish. | New/removed containers (`CNT-*`) or components (`CMP-*`), breaking contract (`CTR-*`) changes, cross-domain features, new policies (`POL-*`). |
+| **Blast Radius** | Confined to 1 existing container/component (`eidos index blast-radius`); no breaking contract changes. | Spans multiple containers/domains or alters public interfaces/schemas. |
+| **Spec Mechanism** | Update affected `.adoc` specs in `eidos/` directly alongside your code and test edits. | Create a SpecDelta (`eidos delta create`), implement code + spec changes, verify (`eidos delta verify`), and reconcile (`eidos delta apply`). |
+| **Verification** | `eidos drift --uncommitted --json` | `eidos delta verify <ID>`, `eidos delta apply <ID>`, `eidos drift --uncommitted --json` |
 
 ---
 
@@ -75,7 +93,7 @@ eidos index blast-radius CNT-AUTH-SERVICE --depth 2 --json
 
 ### Workflow A: Direct Mode Execution (`eidos drift`)
 
-1. **Slice Context**: Run `eidos context -f <touched_file> --json` to identify the owning container (`CNT-*`), component (`CMP-*`), and bound invariants (`INV-*`).
+1. **Slice Context & Locate Symbols**: Run `eidos context -f <touched_file> --json` (and `eidos index find-symbol <symbol> --json` or `eidos index search "<keywords>" --json` as needed) to identify the owning container (`CNT-*`), component (`CMP-*`), and bound invariants (`INV-*`).
 2. **Implement Code & Tests**: Modify source code and update or add automated tests preserving `INV-*` references.
 3. **Co-Evolve Living Specs In-Place** (consult **`eidos-spec`** or run `eidos spec schema <type> [--json]` for exact YAML schemas):
    * **New internal module or file**: Update `source_path` or `components:` in the owning `CNT-*` / `CMP-*` spec.
@@ -88,13 +106,18 @@ eidos index blast-radius CNT-AUTH-SERVICE --depth 2 --json
 
 When introducing/removing containers or components, making breaking contract changes, or spanning domains, load the **`eidos-plan`** skill:
 
-1. **Scaffold SpecDelta**:
+1. **Discover Scope & Blast Radius**:
+   ```bash
+   eidos context -t "<feature or architectural change>" --tier deep --json
+   eidos index blast-radius <TARGET-ENTITY-ID> --depth 2 --json
+   ```
+2. **Scaffold SpecDelta**:
    ```bash
    eidos delta create --title "..." --slug --kind <feature|enabler|bug>
    ```
-2. **Declare Mutations**: Populate `mutations:` (with composable `operation`, `target`, optional `parent` for `add` / `remove` of child entities, and structured `expect: { body, frontmatter }` post-conditions; run `eidos spec schema delta` to inspect allowed keys) in the created `eidos/deltas/dlt-*.adoc` file. Never add manual `affects:` or `blast_radius:` blocks.
-3. **Implement Code, Specs & Tests**: Apply changes across code, `eidos/`, and `tests/`.
-4. **Verify & Apply**:
+3. **Declare Mutations**: Populate `mutations:` (with composable `operation`, `target`, optional `parent` for `add` / `remove` of child entities, and structured `expect: { body, frontmatter }` post-conditions; run `eidos spec schema delta` to inspect allowed keys) in the created `eidos/deltas/dlt-*.adoc` file. Never add manual `affects:` or `blast_radius:` blocks.
+4. **Implement Code, Specs & Tests**: Apply changes across code, `eidos/`, and `tests/`.
+5. **Verify & Apply**:
    ```bash
    eidos delta verify <DLT-ID> --json
    eidos delta apply <DLT-ID>

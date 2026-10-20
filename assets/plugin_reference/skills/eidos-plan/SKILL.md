@@ -1,6 +1,6 @@
 ---
 name: eidos-plan
-description: Orchestrate technical discovery spikes (EXP-*), the SpecDelta architectural mutation lifecycle (DLT-*), and Staff Systems Architect 5-dimension reviews in Planned Mode. Use when formulating hypotheses, proposing or applying SpecDeltas (create, verify, audit, apply, changelog), or reviewing PRs and architectural changes.
+description: Orchestrate technical discovery spikes (EXP-*), the SpecDelta architectural mutation lifecycle (DLT-*), and Staff Systems Architect 5-dimension reviews in Planned Mode. Use when formulating hypotheses, running pre-mutation impact analysis (eidos context, eidos index search, eidos index blast-radius, eidos index find-symbol), proposing or applying SpecDeltas (create, verify, audit, apply, changelog), or reviewing PRs and architectural changes.
 ---
 # Eidos Planning, SpecDeltas & Architectural Review (`eidos-plan`)
 
@@ -13,7 +13,7 @@ This skill governs **Planned Mode** workflows in Eidos:
 
 ## 1. Technical Spikes & Feasibility Discovery (`EXP-*`)
 
-When an engineering problem has high uncertainty (e.g., evaluating storage engines, benchmarking a protocol, or prototyping an algorithm), start with an **Exploration** (`eidos/explorations/exp-yyyy-nnn.adoc`) before committing to a SpecDelta.
+When an engineering problem has high uncertainty (e.g., evaluating storage engines, benchmarking a protocol, or prototyping an algorithm), search for prior spikes first and start with an **Exploration** (`eidos/explorations/exp-yyyy-nnn.adoc`) before committing to a SpecDelta.
 
 ```text
 proposed ──► in_progress ──► adopted   (Graduates to SpecDelta(s) DLT-* via decision.resulting_deltas)
@@ -21,6 +21,11 @@ proposed ──► in_progress ──► adopted   (Graduates to SpecDelta(s) DL
 ```
 
 ```bash
+# 1. Search prior explorations, decisions, and specs before starting a new spike
+eidos index search "outbox webhook" --json
+eidos context -t "webhook dispatch and outbox throughput" --tier deep --json
+
+# 2. Scaffold a new Exploration spec
 eidos spec create exploration EXP-2026-001 --title "Evaluate Outbox Pattern vs Direct Webhook Dispatch"
 ```
 
@@ -65,24 +70,30 @@ In **Planned Mode**, any change that adds/removes a container (`CNT-*`) or compo
 ### 2.1 End-to-End SpecDelta Workflow
 
 ```bash
-# 1. Scaffold a new SpecDelta (ID defaults to collision-free 'auto' across all local/remote Git refs; vcs.branch and vcs.base_commit are auto-detected from Git HEAD)
+# 1. Discover affected entities, code symbols, and transitive blast radius BEFORE authoring mutations
+eidos context -t "webhook signature verification" --tier deep --json
+eidos index search "webhook signature" --json
+eidos index find-symbol "WebhookSignatureVerifier" --json
+eidos index blast-radius CNT-BILLING-API --depth 2 --json
+
+# 2. Scaffold a new SpecDelta (ID defaults to collision-free 'auto' across all local/remote Git refs; vcs.branch and vcs.base_commit are auto-detected from Git HEAD)
 eidos delta create \
   --title "Add Webhook Signature Verification Contract" \
   --slug \
   --kind feature
 
-# 2. Edit the created eidos/deltas/dlt-*.adoc file to declare mutations and structured expect post-conditions
+# 3. Edit the created eidos/deltas/dlt-*.adoc file to declare mutations and structured expect post-conditions
 #    (Run `eidos spec schema delta` to inspect exact SpecDelta frontmatter keys and closed sub-schemas)
 
-# 3. Implement code changes, update living specs in eidos/, and bind tests
+# 4. Implement code changes, update living specs in eidos/, and bind tests
 
-# 4. Verify all target entities, baseline modification evidence, and expect: post-conditions
+# 5. Verify all target entities, baseline modification evidence, and expect: post-conditions
 eidos delta verify DLT-2026-015 --json
 
-# 5. Reconcile and apply the SpecDelta (verifies mutations and sets status: applied)
+# 6. Reconcile and apply the SpecDelta (verifies mutations and sets status: applied)
 eidos delta apply DLT-2026-015
 
-# 6. If removing/deprecating entities, audit for dangling references; optionally compile CHANGELOG.md
+# 7. If removing/deprecating entities, audit for dangling references; optionally compile CHANGELOG.md
 eidos delta audit DLT-2026-015 --strict --json
 eidos delta changelog
 ```
@@ -183,7 +194,9 @@ When asked to review a SpecDelta (`DLT-*`), branch/PR diff, or architectural pro
 ```bash
 eidos validate eidos --json
 eidos drift --uncommitted --json
+eidos context -c <TARGET_ENTITY_ID> --tier deep --json
 eidos index blast-radius <TARGET_ENTITY_ID> --depth 2 --json
+eidos index find-symbol <MODIFIED_SYMBOL> --json
 eidos delta verify <DLT-ID> --json
 eidos delta audit <DLT-ID> --strict --json
 ```
