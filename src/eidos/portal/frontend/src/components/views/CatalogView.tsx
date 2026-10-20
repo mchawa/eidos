@@ -67,6 +67,7 @@ export interface HierarchyBranch {
   icon: any;
   color: string;
   badgeBg: string;
+  types: string[];
   subgroups: SubGroupNode[];
   total: number;
   validCount: number;

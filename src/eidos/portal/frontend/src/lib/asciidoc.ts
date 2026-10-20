@@ -54,7 +54,7 @@ const SANITIZE_CONFIG = {
   FORBID_ATTR: ["style", "srcset"],
   // Section ids such as `title` or `location` must survive; heading anchors are part of the contract.
   SANITIZE_DOM: false,
-} as const;
+};
 
 function textOf(html: string): string {
   const tpl = document.createElement("template");

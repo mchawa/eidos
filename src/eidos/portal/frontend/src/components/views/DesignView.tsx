@@ -476,7 +476,7 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
               <select
                 id="designClientSelect"
                 value={selectedClientId}
-                onChange={(e) => handleDesignClientSwitch(e.target.value)}
+                onChange={(e) => setSelectedClientId(e.target.value)}
                 className="bg-card border border-border text-xs rounded-xl px-3 py-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
               >
                 {clients.map((c) => (

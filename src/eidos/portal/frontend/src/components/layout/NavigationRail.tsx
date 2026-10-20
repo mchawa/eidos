@@ -110,7 +110,7 @@ export function NavigationRail({
               </div>
               <button
                 id="sidebarCollapseBtn"
-                onClick={toggleSidebarCollapse}
+                onClick={onToggleCollapse}
                 className="h-7 w-7 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer flex items-center justify-center"
                 title="Collapse sidebar"
                 aria-label="Toggle sidebar"
@@ -121,7 +121,7 @@ export function NavigationRail({
           ) : (
             <button
               id="sidebarCollapseBtn"
-              onClick={toggleSidebarCollapse}
+              onClick={onToggleCollapse}
               className="h-8 w-8 rounded-xl flex items-center justify-center hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-all cursor-pointer relative group"
               title="Expand sidebar"
               aria-label="Toggle sidebar"

@@ -1443,7 +1443,7 @@ contracts:
         httpd.shutdown()
         httpd.server_close()
 
-    # 5. Verify frontend source fixes in ArchitectureView.tsx and DesignView.tsx
+    # 5. Verify frontend source fixes in ArchitectureView.tsx, DesignView.tsx, and BusinessView.tsx
     repo_root = Path(__file__).resolve().parent.parent
     arch_tsx = (
         repo_root / "src" / "eidos" / "portal" / "frontend" / "src" / "components" / "views" / "ArchitectureView.tsx"
@@ -1451,8 +1451,20 @@ contracts:
     design_tsx = (
         repo_root / "src" / "eidos" / "portal" / "frontend" / "src" / "components" / "views" / "DesignView.tsx"
     ).read_text(encoding="utf-8")
+    business_tsx = (
+        repo_root / "src" / "eidos" / "portal" / "frontend" / "src" / "components" / "views" / "BusinessView.tsx"
+    ).read_text(encoding="utf-8")
+    nav_tsx = (
+        repo_root / "src" / "eidos" / "portal" / "frontend" / "src" / "components" / "layout" / "NavigationRail.tsx"
+    ).read_text(encoding="utf-8")
     assert "closeC4Inspector();\n                    drillDownToContainer(inspectedComponent.id);" in arch_tsx
     assert "Array.isArray(f.clients) && f.clients.length > 1" in design_tsx
+    assert "handleDesignClientSwitch" not in design_tsx
+    assert "toggleSidebarCollapse" not in nav_tsx
+    assert "toggleSidebarCollapse" not in PORTAL_HTML_TEMPLATE
+    assert "handleDesignClientSwitch" not in PORTAL_HTML_TEMPLATE
+    assert business_tsx.index('id="businessDomainsSection"') < business_tsx.index('id="businessPoliciesSection"')
+    assert PORTAL_HTML_TEMPLATE.index("businessDomainsSection") < PORTAL_HTML_TEMPLATE.index("businessPoliciesSection")
 
 
 def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):

@@ -6,16 +6,16 @@ route: "/business"
 status: active
 
 slots:
-  personas_grid: "UIC-PORTAL-SHELL"
   domains_table: "UIC-PORTAL-SHELL"
   capabilities_table: "UIC-PORTAL-SHELL"
+  personas_grid: "UIC-PORTAL-SHELL"
   invariants_matrix_table: "UIC-PORTAL-SHELL"
 
 states:
   - name: "loading"
     description: "Skeleton loader displayed during domain retrieval."
   - name: "active"
-    description: "Interactive view presenting personas, product domains, capabilities with JTBD, and policy invariants."
+    description: "Interactive view presenting product domains, capabilities with JTBD, policy invariants, and personas."
   - name: "error"
     description: "Alert state when product specifications are missing or invalid."
 ---
@@ -23,9 +23,10 @@ states:
 :toc: left
 
 == 1. View Purpose & Business Context
-The Business Architecture View (`SCR-PORTAL-BUSINESS`) leads the product-engineering conversation by establishing who the system serves and what problems it solves:
-* **Personas (PER-*)**: Human and AI agent actors operating within the system lifecycle.
+The Business Architecture View (`SCR-PORTAL-BUSINESS`) leads the product-engineering conversation by establishing what problems the system solves, how it is governed, and who it serves:
 * **Domains (DOM-*)**: Bounded contexts, core responsibilities, and strategic classification (core, supporting, generic).
 * **Capabilities (CAP-*)**: Customer Jobs-to-be-Done (JTBD), success metrics, and technical capability anchors.
-* **Invariants & Policies Matrix (POL-*, INV-*)**: System governance policies and non-negotiable invariant test bindings.
+* **Policies (POL-*)**: System-wide governance policies and compliance constraints.
+* **Personas (PER-*)**: Human and AI agent actors operating within the system lifecycle.
+* **Invariants Matrix (INV-*)**: Non-negotiable executable invariant rules and automated test bindings.
 

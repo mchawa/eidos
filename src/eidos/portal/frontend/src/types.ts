@@ -37,6 +37,7 @@ export interface SpecDecision {
   }>;
   graduated_from?: string;
   source_entity?: string;
+  source_id?: string;
   source_type?: string;
 }
 
@@ -102,6 +103,10 @@ export interface SpecDomain {
   mission: string;
   classification?: string;
   capabilities?: string[];
+  boundaries?: {
+    responsibilities?: string[];
+    out_of_scope?: string[];
+  };
   body?: string;
   path?: string;
 }
@@ -114,6 +119,7 @@ export interface SpecCapability {
   status?: string;
   version?: string;
   business?: {
+    jtbd?: string;
     personas?: string[];
     policies?: string[];
   };
@@ -173,6 +179,7 @@ export interface SpecInvariant {
   severity?: string;
   source_type: "policy" | "capability" | "container" | "component" | string;
   test_binding?: string;
+  path?: string;
 }
 
 export interface SpecMutation {

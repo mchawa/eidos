@@ -232,14 +232,6 @@ export function BusinessView({
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => setFilterCategory("policies")}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-500 dark:text-blue-400 text-xs font-medium hover:bg-blue-500/20 transition-colors cursor-pointer"
-            >
-              <ShieldCheck className="h-3.5 w-3.5" />
-              <span>{policies.length} Policies</span>
-            </button>
-            <button
-              type="button"
               onClick={() => setFilterCategory("domains")}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-primary/20 bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors cursor-pointer"
             >
@@ -253,6 +245,14 @@ export function BusinessView({
             >
               <Layers className="h-3.5 w-3.5" />
               <span>{capabilities.length} Capabilities</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterCategory("policies")}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-500 dark:text-blue-400 text-xs font-medium hover:bg-blue-500/20 transition-colors cursor-pointer"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" />
+              <span>{policies.length} Policies</span>
             </button>
             <button
               type="button"
@@ -294,6 +294,18 @@ export function BusinessView({
             </button>
             <button
               type="button"
+              onClick={() => setFilterCategory("domains")}
+              className={cn(
+                "px-3 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer",
+                filterCategory === "domains"
+                  ? "bg-card text-foreground shadow-xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Domains & Capabilities
+            </button>
+            <button
+              type="button"
               onClick={() => setFilterCategory("policies")}
               className={cn(
                 "px-3 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5",
@@ -304,18 +316,6 @@ export function BusinessView({
             >
               <ShieldCheck className="h-3 w-3" />
               <span>System Policies (`POL-*`)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterCategory("domains")}
-              className={cn(
-                "px-3 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer",
-                filterCategory === "domains"
-                  ? "bg-card text-foreground shadow-xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Domains & Capabilities
             </button>
             <button
               type="button"
@@ -368,112 +368,9 @@ export function BusinessView({
         </div>
       </div>
 
-      {/* SECTION 1: SYSTEM GOVERNANCE POLICIES (POL-*) */}
-      {(filterCategory === "all" || filterCategory === "policies") && (
-        <div id="businessPoliciesSection" className="space-y-6 pt-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
-            <div className="space-y-1">
-              <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
-                <ShieldCheck className="h-6 w-6 text-blue-500 shrink-0" />
-                <span>System Governance & Invariant Policies (`POL-*`)</span>
-                <Badge variant="outline" className="text-xs font-mono px-2 py-0.5">
-                  {filteredPolicies.length} Active
-                </Badge>
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Mandatory quality gates, compliance constraints, and zero-drift invariants
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {filteredPolicies.map((pol) => {
-              const boundCapabilities = capabilities.filter((c) =>
-                c.business?.policies?.some((pRef) => pRef.includes(pol.id))
-              );
-
-              return (
-                <Card
-                  key={pol.id}
-                  className="p-5 sm:p-6 space-y-4 border border-border/80 bg-card hover:border-primary/40 transition-colors shadow-xs"
-                >
-                  {/* Policy Header - Identical to Domain Card */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-primary">
-                          {pol.id}
-                        </span>
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] uppercase font-semibold bg-blue-500/10 text-blue-400 border-blue-500/20"
-                        >
-                          {pol.category}
-                        </Badge>
-                        {pol.severity && (
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center gap-1">
-                            <Lock className="h-2.5 w-2.5" />
-                            {pol.severity}
-                          </span>
-                        )}
-                      </div>
-                      <h3 className="text-base font-bold text-foreground">
-                        {pol.title}
-                      </h3>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedEntity({ type: "policy", item: pol })}
-                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-muted/60 hover:bg-muted text-foreground transition-colors cursor-pointer shrink-0 flex items-center gap-1"
-                    >
-                      <span>Inspect Policy</span>
-                      <ChevronRight className="h-3 w-3" />
-                    </button>
-                  </div>
-
-                  {/* Invariants Callout */}
-                  {pol.invariants && pol.invariants.length > 0 && (
-                    <div className="p-3.5 rounded-xl border border-border/80 bg-muted/20 space-y-2">
-                      <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                        <div className="flex items-center gap-1.5">
-                          <ShieldCheck className="h-3.5 w-3.5 text-blue-400" />
-                          <span>Policy Invariants ({pol.invariants.length})</span>
-                        </div>
-                        <span className="font-mono text-blue-400">{pol.invariants[0].id}</span>
-                      </div>
-                      <p className="text-xs sm:text-sm font-medium text-foreground leading-relaxed">
-                        "{pol.invariants[0].rule}"
-                      </p>
-                      {pol.invariants[0].test_binding && (
-                        <p className="text-[11px] font-mono text-muted-foreground truncate">
-                          {pol.invariants[0].test_binding}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Card Footer / Bound Capabilities */}
-                  <div className="pt-3.5 border-t-2 border-border/80 flex items-center justify-between text-xs text-muted-foreground">
-                    <span className="text-[11px] font-mono text-muted-foreground">
-                      {boundCapabilities.length > 0
-                        ? `${boundCapabilities.length} bound capability(ies)`
-                        : "System-wide Governance Policy"}
-                    </span>
-                    <span className="text-[10px] font-mono text-muted-foreground">
-                      {pol.invariants?.length || 0} invariant(s)
-                    </span>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* SECTION 2: BOUNDED PRODUCT DOMAINS & CAPABILITIES (DOM-* & CAP-*) */}
+      {/* SECTION 1: BOUNDED PRODUCT DOMAINS & CAPABILITIES (DOM-* & CAP-*) */}
       {(filterCategory === "all" || filterCategory === "domains") && (
-        <div id="businessDomainsSection" className="space-y-6 pt-12 mt-12 border-t-2 border-border/80">
+        <div id="businessDomainsSection" className="space-y-6 pt-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
             <div className="space-y-1">
               <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
@@ -633,9 +530,124 @@ export function BusinessView({
         </div>
       )}
 
+      {/* SECTION 2: SYSTEM GOVERNANCE POLICIES (POL-*) */}
+      {(filterCategory === "all" || filterCategory === "policies") && (
+        <div
+          id="businessPoliciesSection"
+          className={cn(
+            "space-y-6",
+            filterCategory === "all" ? "pt-12 mt-12 border-t-2 border-border/80" : "pt-6"
+          )}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
+            <div className="space-y-1">
+              <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
+                <ShieldCheck className="h-6 w-6 text-blue-500 shrink-0" />
+                <span>System Governance & Invariant Policies (`POL-*`)</span>
+                <Badge variant="outline" className="text-xs font-mono px-2 py-0.5">
+                  {filteredPolicies.length} Active
+                </Badge>
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Mandatory quality gates, compliance constraints, and zero-drift invariants
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {filteredPolicies.map((pol) => {
+              const boundCapabilities = capabilities.filter((c) =>
+                c.business?.policies?.some((pRef) => pRef.includes(pol.id))
+              );
+
+              return (
+                <Card
+                  key={pol.id}
+                  className="p-5 sm:p-6 space-y-4 border border-border/80 bg-card hover:border-primary/40 transition-colors shadow-xs"
+                >
+                  {/* Policy Header - Identical to Domain Card */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-primary">
+                          {pol.id}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] uppercase font-semibold bg-blue-500/10 text-blue-400 border-blue-500/20"
+                        >
+                          {pol.category}
+                        </Badge>
+                        {pol.severity && (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center gap-1">
+                            <Lock className="h-2.5 w-2.5" />
+                            {pol.severity}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-base font-bold text-foreground">
+                        {pol.title}
+                      </h3>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEntity({ type: "policy", item: pol })}
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-muted/60 hover:bg-muted text-foreground transition-colors cursor-pointer shrink-0 flex items-center gap-1"
+                    >
+                      <span>Inspect Policy</span>
+                      <ChevronRight className="h-3 w-3" />
+                    </button>
+                  </div>
+
+                  {/* Invariants Callout */}
+                  {pol.invariants && pol.invariants.length > 0 && (
+                    <div className="p-3.5 rounded-xl border border-border/80 bg-muted/20 space-y-2">
+                      <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        <div className="flex items-center gap-1.5">
+                          <ShieldCheck className="h-3.5 w-3.5 text-blue-400" />
+                          <span>Policy Invariants ({pol.invariants.length})</span>
+                        </div>
+                        <span className="font-mono text-blue-400">{pol.invariants[0].id}</span>
+                      </div>
+                      <p className="text-xs sm:text-sm font-medium text-foreground leading-relaxed">
+                        "{pol.invariants[0].rule}"
+                      </p>
+                      {pol.invariants[0].test_binding && (
+                        <p className="text-[11px] font-mono text-muted-foreground truncate">
+                          {pol.invariants[0].test_binding}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Card Footer / Bound Capabilities */}
+                  <div className="pt-3.5 border-t-2 border-border/80 flex items-center justify-between text-xs text-muted-foreground">
+                    <span className="text-[11px] font-mono text-muted-foreground">
+                      {boundCapabilities.length > 0
+                        ? `${boundCapabilities.length} bound capability(ies)`
+                        : "System-wide Governance Policy"}
+                    </span>
+                    <span className="text-[10px] font-mono text-muted-foreground">
+                      {pol.invariants?.length || 0} invariant(s)
+                    </span>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* SECTION 3: TARGET ACTOR PERSONAS (PER-*) */}
       {(filterCategory === "all" || filterCategory === "personas") && (
-        <div id="businessPersonasSection" className="space-y-6 pt-12 mt-12 border-t-2 border-border/80">
+        <div
+          id="businessPersonasSection"
+          className={cn(
+            "space-y-6",
+            filterCategory === "all" ? "pt-12 mt-12 border-t-2 border-border/80" : "pt-6"
+          )}
+        >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
             <div className="space-y-1">
               <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
@@ -701,7 +713,13 @@ export function BusinessView({
 
       {/* SECTION 4: GOVERNANCE INVARIANTS & TEST BINDINGS (INV-*) */}
       {(filterCategory === "all" || filterCategory === "invariants") && (
-        <div id="businessInvariantsSection" className="space-y-6 pt-12 mt-12 border-t-2 border-border/80">
+        <div
+          id="businessInvariantsSection"
+          className={cn(
+            "space-y-6",
+            filterCategory === "all" ? "pt-12 mt-12 border-t-2 border-border/80" : "pt-6"
+          )}
+        >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
             <div className="space-y-1">
               <h3 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-3">
