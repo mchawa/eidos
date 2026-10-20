@@ -18,6 +18,12 @@ mutations:
       frontmatter:
         responsibility: "archive_deltas"
   - operation: modify
+    target: CMP-GRAPH-STORAGE
+    details: "Bump SCHEMA_VERSION in src/eidos/core/index/storage.py from '2.13.0' to '2.14.0' so existing local index.db caches rebuild with transitive exploration graduated_to edges and archived SpecDelta FTS5/edge filtering."
+    expect:
+      frontmatter:
+        responsibility: "2.14.0"
+  - operation: modify
     target: CMP-INCREMENTAL-SYNC-ENGINE
     details: "Exclude archived SpecDeltas under eidos/deltas/archive/ from specs_fts lexical indexing and historical affects graph edges in sync.py while retaining entity catalog registration and active/recent (last 15) FTS5 search coverage."
     expect:
