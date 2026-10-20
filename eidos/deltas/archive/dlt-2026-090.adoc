@@ -1,0 +1,82 @@
+---
+type: delta/mutation
+id: DLT-2026-090
+title: "Simplify SpecDelta Schema & Engine, AST Fallback Indexer, Context Slicer, and Delta Catalog"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate five high-maintenance areas of over-engineering across Eidos without backward-compatibility shims: (1) retire the legacy 44-verb action and 15 target_* SpecDelta schema branch in favor of composable (operation, target, parent) mutations; (2) remove mechanical YAML string-splicing spec execution (execute_delta_mutations and eidos delta apply --execute) so apply_delta is strictly declarative verification + SpecValidator pre-commit check + status transition; (3) delegate core ast-grep languages in FallbackIndexer to AstGrepIndexer instead of maintaining duplicate regex extractors; (4) remove dead reconcile_specs and consolidate workspace/context.py (CMP-CONTEXT-SLICER) into index/context.py (CMP-TIERED-CONTEXT-COMPRESSOR); and (5) remove eidos/deltas/by-status/ symlink views and the eidos delta sync-views CLI command."
+tombstone:
+  search_tokens:
+    - CMP-CONTEXT-SLICER
+  allowed_reasons:
+    - path: CHANGELOG.md
+      reason: Historical release notes referencing CMP-CONTEXT-SLICER in prior applied SpecDeltas.
+    - path: eidos/architecture/containers/core.adoc
+      reason: Inline tombstone comment recording the consolidation of CMP-CONTEXT-SLICER into CMP-TIERED-CONTEXT-COMPRESSOR.
+vcs:
+  branch: main
+mutations:
+  - operation: remove
+    target: CMP-CONTEXT-SLICER
+    parent: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+  - operation: modify
+    target: CMP-CHANGELOG-GENERATOR
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: ARCH-EIDOS-001
+  - operation: modify
+    target: DOM-AGENT-INTELLIGENCE
+  - operation: modify
+    target: CAP-PROD-002
+  - operation: modify
+    target: INV-MUTATION-REVERSIBILITY
+  - operation: modify
+    target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+---
+= SpecDelta: Simplify SpecDelta Schema & Engine, AST Fallback Indexer, Context Slicer, and Delta Catalog

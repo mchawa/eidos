@@ -1,0 +1,21 @@
+---
+type: delta/mutation
+id: DLT-2026-017
+title: SpecDelta Deletion and Deprecation Audit Engine (eidos delta audit)
+status: applied
+intent:
+  kind: feature
+  motivation: "Provides a context-aware reverse-dependency blast-radius audit engine ('eidos delta audit') to verify that entities removed or deprecated by a SpecDelta do not leave unacknowledged dangling references or active leaks in living specifications, code generators, documentation, or contracts. Employs semantic classification to distinguish legitimate historical ledgers, negative regression tests, and uninstaller cleanup routines from active leaks, supporting explicit tombstone declarations and machine-readable JSON output for autonomous agent self-healing.\n"
+mutations:
+  - operation: modify
+    target: CAP-PROD-002
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+---
+= SpecDelta: SpecDelta Deletion and Deprecation Audit Engine (eidos delta audit)

@@ -1,0 +1,23 @@
+---
+type: delta/mutation
+id: DLT-2026-055
+title: "Polyglot Public Visibility Heuristics, Anchored Boundary Symbol Coverage, and Substantive SpecDelta Apply"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Eliminate false-positive structural drift on private polyglot functions by enforcing language-native visibility rules in AstGrepIndexer, prevent false-negative 1-hop neighborhood bypasses by requiring symbol anchoring when public boundary symbols are added to existing files, and remove the self-contradictory '// {details}' comment-append fallback in SpecDelta execution."
+vcs:
+  branch: fix/drift-polyglot-visibility-and-anchoring
+mutations:
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+  - operation: modify
+    target: INV-DRIFT-DIFF-AWARE-COVERAGE
+---
+= SpecDelta: Polyglot Public Visibility Heuristics, Anchored Boundary Symbol Coverage, and Substantive SpecDelta Apply

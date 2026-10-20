@@ -1,0 +1,25 @@
+---
+type: delta/mutation
+id: DLT-2026-079
+title: Structured Mutation Post-Condition Assertions (body/frontmatter) and Closed Schema Validation for SpecDeltas
+status: applied
+intent:
+  kind: enabler
+  motivation: "Enforce strict JSON Schema validation for mutations[].expect in delta.schema.yaml by replacing untyped object and additionalProperties: true with a strictly closed schema (additionalProperties: false) separating structured body assertions (contains, not_contains) and typed frontmatter assertions (responsibility, source_path, rule, test_binding, status, version, category, custom), paired with comment-stripped body evaluation, list-subset matching, baseline-modification verification, and failure_reason diagnostics in DeltaEngine and DeltaCommands."
+vcs:
+  branch: feat/structured-delta-expect-assertions
+  base_commit: 21860a2b4c524667f21f69c72de66d8b3baac936
+mutations:
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+  - operation: modify
+    target: CAP-PROD-002
+  - operation: modify
+    target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+    parent: CAP-PROD-002
+---
+= SpecDelta: Structured Mutation Post-Condition Assertions (body/frontmatter) and Closed Schema Validation for SpecDeltas

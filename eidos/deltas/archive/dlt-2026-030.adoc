@@ -1,0 +1,24 @@
+---
+type: delta/mutation
+id: DLT-2026-030
+title: "Strict 1-Hop Drift Scoping: Remove Global System Spec Escape Hatch and Graph-Scope Design Drift"
+status: applied
+intent:
+  kind: bug
+  motivation: "Close two gaps left by DLT-2026-028: (1) the global drift bypass in '_collect_1hop_spec_targets()' where modifying the root system or system-architecture specifications silences structural code drift for every component, and (2) the legacy extension-based 'design_drift' heuristic that ignores the knowledge graph, ignores Planned Mode SpecDelta targets, and treats every CSS edit as structural."
+  bug_classification: spec_violation
+  severity: high
+vcs:
+  branch: fix/strict-1hop-drift-no-system-bypass
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: INV-DRIFT-DETECTION-ACCURACY
+    parent: CAP-VCS-001
+---
+= SpecDelta: Strict 1-Hop Drift Scoping: Remove Global System Spec Escape Hatch and Graph-Scope Design Drift

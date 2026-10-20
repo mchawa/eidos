@@ -1,0 +1,25 @@
+---
+type: delta/mutation
+id: DLT-2026-044
+title: "Remove CLI Shortcuts and Duplicate Aliases, Nest Component Under Spec"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate all root-level CLI shortcut commands, intra-group duplicate aliases, and redundant C4/reconcile commands so every CLI operation has a single canonical command path and 'component' is nested under 'eidos spec component'."
+mutations:
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CAP-PROD-001
+  - operation: modify
+    target: CAP-EXP-001
+  - operation: modify
+    target: CAP-VCS-001
+  - operation: modify
+    target: CAP-AGENT-001
+---
+= SpecDelta: Remove CLI Shortcuts and Duplicate Aliases, Nest Component Under Spec

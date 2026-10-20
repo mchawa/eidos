@@ -1,0 +1,27 @@
+---
+type: delta/mutation
+id: DLT-2026-007
+title: Architectural Decomposition of Monolithic Engine into C4 Level 2 Containers
+status: applied
+intent:
+  kind: enabler
+  motivation: "Decompose monolithic CMP-EIDOS-ENGINE into 4 distinct C4 containers: CMP-EIDOS-CORE, CMP-EIDOS-CLI, CMP-EIDOS-MCP, and CMP-EIDOS-PLUGIN."
+mutations:
+  - operation: modify
+    target: CMP-EIDOS-ENGINE
+  - operation: add
+    target: CMP-EIDOS-CORE
+  - operation: add
+    target: CMP-EIDOS-CLI
+  - operation: add
+    target: CMP-EIDOS-MCP
+  - operation: add
+    target: CMP-EIDOS-PLUGIN
+  - operation: modify
+    target: CMP-EIDOS-CLI
+  - operation: modify
+    target: CMP-EIDOS-MCP
+  - operation: modify
+    target: CMP-EIDOS-CORE
+---
+= SpecDelta: Architectural Decomposition of Monolithic Engine into C4 Level 2 Containers

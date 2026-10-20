@@ -1,0 +1,23 @@
+---
+type: delta/mutation
+id: DLT-2026-026
+title: "100% Generic Engine, Zero-Config Path Standardization, and Graph-Inferred Design Paths"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Make the Eidos runtime engine and bundled agent skills 100% repository-agnostic with zero configuration files by standardizing 'package_path' on containers, 'source_path' on components, inferring design client/system paths via the knowledge graph, and relocating the index cache to 'eidos/.cache/'."
+vcs:
+  branch: feat/generic-engine-zero-config
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: add
+    target: CNT-EIDOS-VCS
+---
+= SpecDelta: 100% Generic Engine, Zero-Config Path Standardization, and Graph-Inferred Design Paths

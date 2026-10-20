@@ -1,0 +1,21 @@
+---
+type: delta/mutation
+id: DLT-2026-024
+title: "Tool-Only Installation, CLI-Native Agent Hooks, and Block-Once Stop Gate"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate virtual-environment coupled hook scripts and project dependency pollution by standardizing Eidos as a standalone developer tool ('uv tool install eidos-ai', 'pipx install eidos-ai', 'uvx --from eidos-ai eidos'), migrating agent lifecycle hooks into native CLI subcommands ('eidos hook lint', 'eidos hook drift'), and enforcing a stateful Block-Once Stop gate."
+vcs:
+  branch: feat/tool-only-install-and-hooks
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CAP-AGENT-001
+---
+= SpecDelta: Tool-Only Installation, CLI-Native Agent Hooks, and Block-Once Stop Gate

@@ -1,0 +1,25 @@
+---
+type: delta/mutation
+id: DLT-2026-014
+title: "Formalize First-Principles C4 Architecture: Level 2 Containers (CNT-*) and Level 3 Components (CMP-*)"
+status: applied
+intent:
+  kind: enabler
+  motivation: "The historical conflation of C4 Level 2 Containers and Level 3 Components under the overloaded 'tech/component' document type and 'CMP-*' prefix causes recurring cognitive dissonance. In early development, breaking compatibility is welcomed to achieve first-principles architectural elegance. We introduce 'type: tech/container' with prefix 'CNT-*' for C4 Level 2 Containers (deployables, libraries, daemons, runtimes), reserve 'CMP-*' strictly for C4 Level 3 in-process Components, rename the architectural directory to 'eidos/architecture/containers/', and update contracts, schemas, CLI commands, and portal views accordingly.\n"
+vcs:
+  branch: refactor/c4-first-principles-containers-components
+mutations:
+  - operation: modify
+    target: ARCH-EIDOS-001
+  - operation: add
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+---
+= SpecDelta: Formalize First-Principles C4 Architecture: Level 2 Containers (CNT-*) and Level 3 Components (CMP-*)

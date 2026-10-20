@@ -1,0 +1,23 @@
+---
+type: delta/mutation
+id: DLT-2026-074
+title: "Project-Agnostic Living Web Portal Views & C4 Context Diagram, Complete Portal & Design Subgraph Extraction, Modal TOC Scroll-Spy, and Frontend SPA Component Mapping"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Remove hardcoded Eidos repository paths, external system nodes (EXT_GIT/EXT_IDE), and IDs ('systems/core', 'web-portal', 'DS-CORE', 'Eidos') from the Portal generator and frontend, complete get_portal_data and _collect_design_subgraph extraction across all schema types and relationships, fix SpecReader modal Sheet TOC scroll-spy, HomeView active delta metrics, and DesignView cross-client flows, and map src/eidos/portal/frontend/src in CNT-EIDOS-PORTAL."
+vcs:
+  branch: fix/portal-genericity-data-graph-and-ui
+mutations:
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: INV-ENGINE-GENERICITY
+---
+= SpecDelta: Project-Agnostic Living Web Portal Views & C4 Context Diagram, Complete Portal & Design Subgraph Extraction, Modal TOC Scroll-Spy, and Frontend SPA Component Mapping

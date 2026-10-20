@@ -1,0 +1,19 @@
+---
+type: delta/mutation
+id: DLT-2026-062
+title: "Word-Bounded Multi-Term Reference Matching, Polyglot Test Classification, Archive Exclusion, and Fail-Loud Graph Checks in DeltaAuditor"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Eliminate substring false positives and early single-term loop breaks in AuditEngine._scan_and_classify_references by evaluating all target terms per line with word-bounded regexes, skip compressed .gz bundles in SKIP_EXTENSIONS, classify polyglot test files via is_test_code_path instead of hardcoding 'tests/', and surface SQLite index errors in _check_graph_integrity instead of silently swallowing exceptions."
+vcs:
+  branch: fix/audit-word-bounds-and-polyglot-tests
+mutations:
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+  - operation: modify
+    target: INV-DELTA-DELETION-AUDIT
+---
+= SpecDelta: Word-Bounded Multi-Term Reference Matching, Polyglot Test Classification, Archive Exclusion, and Fail-Loud Graph Checks in DeltaAuditor

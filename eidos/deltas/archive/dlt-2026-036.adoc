@@ -1,0 +1,21 @@
+---
+type: delta/mutation
+id: DLT-2026-036
+title: Structured Architectural Decisions and Trade-Off Records Embedded in Living Specifications
+status: applied
+intent:
+  kind: feature
+  motivation: "Preserve architectural 'why', rejected alternatives, and trade-offs directly inside living specifications ('product/system', 'tech/architecture', 'tech/container', 'tech/component') via a structured 'decisions:' schema block without reintroducing standalone ADR graveyard files (POL-001)."
+vcs:
+  branch: feat/living-spec-architectural-decisions
+mutations:
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+  - operation: modify
+    target: CMP-CONTEXT-SLICER
+  - operation: modify
+    target: POL-001-GIT-SOURCE-OF-TRUTH
+---
+= SpecDelta: Structured Architectural Decisions and Trade-Off Records Embedded in Living Specifications

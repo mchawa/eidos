@@ -1,0 +1,34 @@
+---
+type: delta/mutation
+id: DLT-2026-083
+title: "Polyglot AST/Diff Parity, Unified SQLite Baselines & Git Enumeration, Weighted Context Slicing, and Lossless YAML Mutations"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Resolve Issues #6, #7, #8, and #9 in a unified engine foundation upgrade: align polyglot AST/diff file extensions, unify delta_baselines into managed SQLite storage and replace full-repo os.walk scans with Git-tracked enumeration and cached catalog lookups, improve context slicing precision via edge-weighted traversal, two-tier FTS queries, and YAML/code-calibrated token estimation, and preserve YAML comments during invariant frontmatter mutations."
+vcs:
+  branch: feat/engine-caching-polyglot-context-yaml
+  base_commit: 21860a2b4c524667f21f69c72de66d8b3baac936
+mutations:
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+  - operation: modify
+    target: CAP-AGENT-001
+---
+= SpecDelta: Polyglot AST/Diff Parity, Unified SQLite Baselines & Git Enumeration, Weighted Context Slicing, and Lossless YAML Mutations

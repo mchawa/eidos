@@ -1,0 +1,24 @@
+---
+type: delta/mutation
+id: DLT-2026-039
+title: Diff-Aware Specification Coverage for Structural Code Additions
+status: applied
+intent:
+  kind: enabler
+  motivation: "Close the 'touch-to-appease' loophole in 'eidos drift': today any change to a 1-hop spec file (a blank line, a '//' comment) silences drift for newly added source files and public symbols. Coverage for structural additions must require a substantive, deterministically checkable spec edit."
+vcs:
+  branch: feat/diff-aware-spec-coverage
+mutations:
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CAP-VCS-001
+  - operation: add
+    target: INV-DRIFT-DIFF-AWARE-COVERAGE
+    parent: CAP-VCS-001
+---
+= SpecDelta: Diff-Aware Specification Coverage for Structural Code Additions

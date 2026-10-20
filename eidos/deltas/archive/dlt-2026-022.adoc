@@ -1,0 +1,21 @@
+---
+type: delta/mutation
+id: DLT-2026-022
+title: Automated Living Architecture Changelog Generation Engine
+status: applied
+intent:
+  kind: feature
+  motivation: "Provide a zero-dependency automated changelog generation engine that parses applied SpecDeltas (DLT-*) and Git release tags into a standard Keep a Changelog compliant CHANGELOG.md and docs/changelog.md, establishing bidirectional traceability between release notes, git tags, and living specifications."
+vcs:
+  branch: feat/automated-delta-changelog
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: CAP-PROD-002
+  - operation: modify
+    target: CTR-EIDOS-CLI
+---
+= SpecDelta: Automated Living Architecture Changelog Generation Engine

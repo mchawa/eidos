@@ -1,0 +1,32 @@
+---
+type: delta/mutation
+id: DLT-2026-088
+title: "Default-Verified SpecDelta Application, Safe Deterministic Mutation Execution, and Single-Pass os.scandir Index Dirty Checking"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Prevent unverified SpecDeltas from silently transitioning to status: applied when running 'eidos delta apply' without flags, eliminate destructive raw-text appending and hardcoded '.py' file extensions during 'eidos delta apply --execute', and remove the redundant double-stat + os.walk bottleneck in check_index_dirty by switching to a single-pass os.scandir traversal."
+vcs:
+  branch: feat/verified-delta-apply-and-scandir-dirty-check
+  base_commit: db3f9fb09920f6845cb395588718bf618cc56772
+mutations:
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    parent: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+    parent: CNT-EIDOS-CLI
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    parent: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CAP-PROD-002
+  - operation: modify
+    target: INV-MUTATION-REVERSIBILITY
+    parent: CAP-PROD-002
+  - operation: modify
+    target: CAP-PROD-001
+---
+= SpecDelta: Default-Verified SpecDelta Application, Safe Deterministic Mutation Execution, and Single-Pass os.scandir Index Dirty Checking

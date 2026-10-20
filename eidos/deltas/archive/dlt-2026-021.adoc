@@ -1,0 +1,31 @@
+---
+type: delta/mutation
+id: DLT-2026-021
+title: "Polyglot AST Symbol Indexing, AI Code Graph, and Granular Invariant Traceability via ast-grep"
+status: applied
+intent:
+  kind: feature
+  motivation: "Integrate ast-grep (ast-grep-py) to empower the Eidos Architectural Knowledge Graph indexer with deep polyglot AST symbol mapping (classes, functions, methods, interface signatures), a high-speed structural AI Code Graph / Repo Map engine, and granular test-function invariant traceability ((test_fn) -[asserts]-> (INV-*)). Replace coarse file-level path heuristics and text substring scanning with deterministic syntax-aware parsing, providing AI coding agents with token-compressed architectural-to-code grounding while maintaining zero external runtime dependencies by default via an optional [project.optional-dependencies] ast extra and graceful fallback to Python standard library ast and regex lexing.\n"
+vcs:
+  branch: feat/ast-grep-indexing
+mutations:
+  - operation: add
+    target: CAP-AGENT-002
+    parent: DOM-AGENT-INTELLIGENCE
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: add
+    target: INV-INDEX-OPTIONAL-AST-FALLBACK
+    parent: CAP-AGENT-002
+  - operation: add
+    target: INV-INDEX-POLYGLOT-SYMBOL-PRECISION
+    parent: CAP-AGENT-002
+  - operation: add
+    target: INV-INDEX-AI-REPO-MAP-BUDGET
+    parent: CAP-AGENT-002
+---
+= SpecDelta: Polyglot AST Symbol Indexing, AI Code Graph, and Granular Invariant Traceability via ast-grep

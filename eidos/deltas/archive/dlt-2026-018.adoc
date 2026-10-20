@@ -1,0 +1,23 @@
+---
+type: delta/mutation
+id: DLT-2026-018
+title: "Modernize Living Web Portal with React 19, Tailwind CSS v4, and Material Design 3 (MD3)"
+status: applied
+intent:
+  kind: feature
+  motivation: "Graduated from validated technical spike EXP-2026-003. Replaces the monolithic vanilla HTML/JS template in assets.py with a pre-compiled, self-contained single-file bundle built with React 19, TypeScript, Tailwind CSS v4, and Material Design 3 (MD3) tonal surfaces. Delivers accessible Radix primitives, instant CMD+K spotlight search, and interactive C4 Mermaid diagrams while strictly preserving the zero-Node.js/npm runtime invariant (INV-PORTAL-ZERO-NODE-DEP) for end-users running 'eidos serve' or 'eidos build-site'.\n"
+vcs:
+  branch: spike/exp-2026-003-portal-uplift
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: UIC-PORTAL-SHELL
+  - operation: modify
+    target: UIC-PORTAL-SIDEBAR
+  - operation: modify
+    target: SCR-PORTAL-ARCHITECTURE
+  - operation: modify
+    target: SCR-PORTAL-DELTAS
+---
+= SpecDelta: Modernize Living Web Portal with React 19, Tailwind CSS v4, and Material Design 3 (MD3)

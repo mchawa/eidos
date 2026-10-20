@@ -1,0 +1,22 @@
+---
+type: delta/mutation
+id: DLT-2026-035
+title: Incremental SQLite Caching for Specification Validation and Static Invariant Verification
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate O(N) full-repository specification parsing and test-suite AST scanning on every 'PostInvocation' and 'Stop' agent lifecycle hook by caching per-file schema validation and test-function invariant bindings in 'eidos/.cache/index.db' keyed by mtime and SHA-256."
+vcs:
+  branch: perf/sqlite-cached-validation-and-invariants
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: INV-AGENT-GRAPH-INDEX-FRESHNESS
+    parent: CAP-AGENT-001
+---
+= SpecDelta: Incremental SQLite Caching for Specification Validation and Static Invariant Verification

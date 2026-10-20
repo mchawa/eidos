@@ -1,0 +1,23 @@
+---
+type: delta/mutation
+id: DLT-2026-060
+title: Unify YAML Frontmatter Delimiter Parsing and Adopt Typed Pydantic Domain Models Across Core Engines
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate the three divergent YAML frontmatter delimiter regexes across parser.py, structural.py, and catalog.py in favor of a single block-scalar-safe parser anchored at file start, and expand Pydantic domain models in models.py so core engines operate on typed attributes rather than raw dictionary lookups."
+vcs:
+  branch: refactor/unified-frontmatter-parser-and-models
+mutations:
+  - operation: modify
+    target: CMP-SPEC-PARSER
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+  - operation: modify
+    target: INV-SPEC-VALIDATION
+---
+= SpecDelta: Unify YAML Frontmatter Delimiter Parsing and Adopt Typed Pydantic Domain Models Across Core Engines

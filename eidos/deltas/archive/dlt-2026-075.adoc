@@ -1,0 +1,21 @@
+---
+type: delta/mutation
+id: DLT-2026-075
+title: Accurate Non-Code Invariant/Delta/Validation Drift Diagnostics in Hooks & CLI and Push-Aware CI Drift Base Resolution
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Ensure handle_drift_stop, execute_drift_hook, generate_remediation_prompt, and eidos drift report accurate root causes when drift is triggered by broken invariant bindings, unverified SpecDelta mutations, or spec validation failures with 0 modified code files, and fix .github/workflows/ci.yml so push events to main diff against github.event.before instead of origin/main (HEAD...HEAD)."
+vcs:
+  branch: fix/drift-hook-diagnostics-and-ci-base
+mutations:
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CMP-CLI-DRIFT-COMMANDS
+---
+= SpecDelta: Accurate Non-Code Invariant/Delta/Validation Drift Diagnostics in Hooks & CLI and Push-Aware CI Drift Base Resolution

@@ -1,0 +1,28 @@
+---
+type: delta/mutation
+id: DLT-2026-034
+title: Persistent AST Symbol Locations and Recursive Multi-Package Code Indexing
+status: applied
+intent:
+  kind: feature
+  motivation: "Persist AST symbol coordinates (file, lines, signature, parent) in the SQLite knowledge graph so 'find-symbol' can report where a symbol is defined and 'repo-map' no longer re-parses every source file, and index every declared container 'package_path' recursively with a deterministic, order-independent ownership precedence."
+vcs:
+  branch: feat/rich-symbol-index
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+  - operation: modify
+    target: INV-KNOWLEDGE-GRAPH-CATALOG
+  - operation: add
+    target: INV-SYMBOL-LOCATION-FIDELITY
+    parent: CAP-AGENT-001
+---
+= SpecDelta: Persistent AST Symbol Locations and Recursive Multi-Package Code Indexing

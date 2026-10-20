@@ -1,0 +1,20 @@
+---
+type: delta/mutation
+id: DLT-2026-020
+title: Hierarchical C4 Level 2 Container Topology and Inter-Container Connection Architecture
+status: applied
+intent:
+  kind: enabler
+  motivation: "Enhance the C4 Level 2 Container Diagram in the Living Web Portal to visually represent the system boundary, tiered architectural hierarchy (presentation, extensibility, core engine, and persistence layers), and explicit inter-container dependency connections and contracts. Currently, the Level 2 diagram generates a flat list of container nodes where every container arbitrarily draws a single generic link to CNT-EIDOS-CORE, omitting true dependency choreographies, architectural layering, and upstream/downstream boundaries. This SpecDelta establishes semantic tier classification, generates nested architectural subgraphs within the system boundary, resolves precise inter-container dependency links with contract-aware labels, exposes external actor and storage touchpoints, and enhances the portal UI with tier badges and dependency matrices."
+vcs:
+  branch: feat/c4-l2-hierarchy-connections
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: SCR-PORTAL-ARCHITECTURE
+  - operation: add
+    target: INV-PORTAL-C4-CONTAINER-HIERARCHY
+    parent: CAP-EXP-001
+---
+= SpecDelta: Hierarchical C4 Level 2 Container Topology and Inter-Container Connection Architecture

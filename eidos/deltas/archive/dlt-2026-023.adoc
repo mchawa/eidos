@@ -1,0 +1,23 @@
+---
+type: delta/mutation
+id: DLT-2026-023
+title: Continuous Code-Aware AST Indexing and Status Telemetry
+status: applied
+intent:
+  kind: feature
+  motivation: "Make the Eidos Architectural Knowledge Graph continuously up-to-date by extending sub-5ms dirty checking to source code files and tests, and enhance 'eidos index status' with rich AST engine telemetry, symbol breakdown by syntax kind, test-to-invariant assertion metrics, and machine-readable '--json' output for autonomous AI coding agents."
+vcs:
+  branch: feat/ast-continuous-indexing
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CAP-AGENT-002
+---
+= SpecDelta: Continuous Code-Aware AST Indexing and Status Telemetry

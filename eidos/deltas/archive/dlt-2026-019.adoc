@@ -1,0 +1,30 @@
+---
+type: delta/mutation
+id: DLT-2026-019
+title: Living Web Portal Reading-Friendly Design Revamp
+status: applied
+intent:
+  kind: enabler
+  motivation: "Revamp the Living Web Portal's typography, document layout, and reading experience to transform dense technical specifications into an effortless, reading-friendly documentation surface. Today, living specifications suffer from microscopic 12-13px typography, indistinguishable heading hierarchy, unconstrained widescreen line measures, cramped modal popups, and raw JSON frontmatter dumps blocking the narrative. This SpecDelta establishes a dedicated prose typographic scale, introduces a reading-first document reader stage (UIC-PORTAL-READER), implements sticky in-page table of contents (TOC) outlines, replaces raw JSON blocks with human-centric specification metadata cards, and adds reader ergonomic controls (measure constraints, font scaling, clean syntax blocks)."
+vcs:
+  branch: revamp/portal-reading-friendly-design
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: DS-CORE
+  - operation: add
+    target: UIC-PORTAL-READER
+  - operation: modify
+    target: UIC-PORTAL-SHELL
+  - operation: modify
+    target: SCR-PORTAL-CATALOG
+  - operation: modify
+    target: SCR-PORTAL-BUSINESS
+  - operation: modify
+    target: SCR-PORTAL-DELTAS
+  - operation: add
+    target: INV-PORTAL-READING-ERGONOMICS
+    parent: CAP-EXP-001
+---
+= SpecDelta: Living Web Portal Reading-Friendly Design Revamp

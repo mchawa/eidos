@@ -1,0 +1,19 @@
+---
+type: delta/mutation
+id: DLT-2026-053
+title: Strict Base Git Reference Validation and Merge-Base Diff Resolution Without Silent Fallbacks
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Prevent 'eidos drift --base <ref>' from silently falling back to '--uncommitted' (and passing on clean CI checkouts) when the base ref is missing or unresolvable, eliminate the fallback from 3-dot ('base...HEAD') to 2-dot ('base HEAD') diff when a branch has zero changes, and compare file contents against the exact merge-base commit."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: CAP-VCS-001
+---
+= SpecDelta: Strict Base Git Reference Validation and Merge-Base Diff Resolution Without Silent Fallbacks

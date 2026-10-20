@@ -1,0 +1,18 @@
+---
+type: delta/mutation
+id: DLT-2026-033
+title: Normalize PreToolUse and PostToolUse Hook Payloads Across AI Agent Harnesses
+status: applied
+intent:
+  kind: enabler
+  motivation: "Ensure 'eidos hook lint' ('PreToolUse' and 'PostToolUse') accurately extracts target file paths and proposed content edits across Antigravity, Claude Code, Cursor, Cline, OpenCode, and OpenAI Codex instead of only matching Antigravity tool payload keys."
+vcs:
+  branch: feat/cross-harness-hook-payload-normalization
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: INV-AGENT-LINT-HOOK
+    parent: CAP-AGENT-001
+---
+= SpecDelta: Normalize PreToolUse and PostToolUse Hook Payloads Across AI Agent Harnesses

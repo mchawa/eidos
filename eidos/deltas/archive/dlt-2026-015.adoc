@@ -1,0 +1,27 @@
+---
+type: delta/mutation
+id: DLT-2026-015
+title: Centralized Hybrid C4 Level 3 Component Manifests
+status: applied
+intent:
+  kind: feature
+  motivation: "Following the conclusion of EXP-2026-004, introduce first-class support for dedicated C4 Level 3 Component specifications (type: tech/component, CMP-*). Components default to inline definitions inside Level 2 Container (CNT-*) manifests for 80% of lightweight modules. High-complexity modules can be promoted into dedicated .adoc specs stored centrally under 'eidos/architecture/components/<component>.adoc' (linking to source code via 'package_path' and referenced in container manifests via 'ref:'). Eidos specifications must NEVER touch or reside within source code directories ('src/', 'packages/'), preserving 100% cleanliness of implementation code.\n"
+vcs:
+  branch: spike/exp-2026-004
+mutations:
+  - operation: add
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CNT-EIDOS-CLI
+---
+= SpecDelta: Centralized Hybrid C4 Level 3 Component Manifests

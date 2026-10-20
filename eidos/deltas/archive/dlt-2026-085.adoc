@@ -1,0 +1,22 @@
+---
+type: delta/mutation
+id: DLT-2026-085
+title: Eliminate Hand-Authored affects and blast_radius from SpecDelta Schema in Favor of Graph-Derived Scope and Impact
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate 3-way entity duplication across mutations, affects, and blast_radius in SpecDelta frontmatter by making mutations[].target_* the single source of truth, removing manual affects and blast_radius blocks from delta.schema.yaml, restricting drift.py Planned Mode target authorization strictly to mutations[].target_*, and computing 0-hop affected entities and k-hop blast radius (including bound invariants) dynamically from the SQLite knowledge graph for the Portal and CLI."
+vcs:
+  branch: feat/graph-derived-delta-scope-and-blast-radius
+  base_commit: 21860a2b4c524667f21f69c72de66d8b3baac936
+mutations:
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+  - operation: modify
+    target: CAP-PROD-002
+---
+= SpecDelta: Eliminate Hand-Authored affects and blast_radius from SpecDelta Schema in Favor of Graph-Derived Scope and Impact

@@ -1,0 +1,24 @@
+---
+type: delta/mutation
+id: DLT-2026-089
+title: Decorator-Aware AST Symbol Signatures and AST-Backed Polyglot Test-Binding Verification
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate the structural drift blind spot where decorator and attribute modifications (@app.command, @staticmethod, @property, @dataclass, #[derive], route/auth annotations) are omitted from CodeSymbol.line_start and CodeSymbol.signature in AstGrepIndexer and FallbackIndexer, while replacing the raw word-boundary regex fallback in SpecValidator._test_symbol_exists with AST-backed polyglot test symbol verification covering parameterized TS/JS (test.each/it.each/Deno.test), Go subtests (t.Run), and Rust attribute test macros (#[tokio::test], #[rstest], #[test_case])."
+vcs:
+  branch: feat/decorator-ast-signatures-and-polyglot-test-bindings
+  base_commit: db3f9fb09920f6845cb395588718bf618cc56772
+mutations:
+  - operation: modify
+    target: CMP-AST-SYMBOL-INDEXER
+    parent: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    parent: CNT-EIDOS-CORE
+  - operation: modify
+    target: CAP-PROD-001
+  - operation: modify
+    target: CAP-VCS-001
+---
+= SpecDelta: Decorator-Aware AST Symbol Signatures and AST-Backed Polyglot Test-Binding Verification

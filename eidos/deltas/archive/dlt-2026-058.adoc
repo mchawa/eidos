@@ -1,0 +1,23 @@
+---
+type: delta/mutation
+id: DLT-2026-058
+title: "FTS5 Stop-Word Filtering, Incremental Spec Edge Sync, and Progressive Context Budget Compression"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate FTS5 stop-word query dilution in build_fts_match_query, scope rebuild_spec_edges to incrementally update modified specification edges instead of wiping all edges globally, and progressively compress verbose prose fields before dropping invariants or policies in _enforce_token_budget."
+vcs:
+  branch: perf/index-fts-incremental-edges-context
+mutations:
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+  - operation: modify
+    target: INV-AGENT-TASK-RETRIEVAL-COVERAGE
+  - operation: modify
+    target: INV-CONTEXT-TOKEN-COMPRESSION
+---
+= SpecDelta: FTS5 Stop-Word Filtering, Incremental Spec Edge Sync, and Progressive Context Budget Compression

@@ -1,0 +1,23 @@
+---
+type: delta/mutation
+id: DLT-2026-012
+title: Dynamic Clickable Hierarchical C4 Architecture Explorer (L1-L3)
+status: applied
+intent:
+  kind: feature
+  motivation: "Current C4 diagrams in the Eidos Web Portal and static site export are static, vertically stacked Level 1 and Level 2 views without interactive drill-down navigation or Level 3 (Component Whitebox) visualization. Users cannot click on systems or containers to explore their internal architecture, building blocks, source paths, or bound contracts."
+vcs:
+  branch: feat/interactive-c4-explorer
+mutations:
+  - operation: modify
+    target: CMP-EIDOS-PORTAL
+  - operation: modify
+    target: SCR-PORTAL-ARCHITECTURE
+  - operation: modify
+    target: CAP-EXP-001
+  - operation: modify
+    target: INV-PORTAL-INTERACTIVE-C4
+  - operation: modify
+    target: ARCH-EIDOS-001
+---
+= SpecDelta: Dynamic Clickable Hierarchical C4 Architecture Explorer (L1-L3)

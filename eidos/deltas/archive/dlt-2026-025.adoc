@@ -1,0 +1,17 @@
+---
+type: delta/mutation
+id: DLT-2026-025
+title: Decommission Unimplemented GitHub and GitLab VCS Bridge
+status: applied
+intent:
+  kind: enabler
+  motivation: "Remove the unimplemented GitHub/GitLab API bridge ('src/eidos/vcs/bridge.py') and update VCS lifecycle specifications so Eidos focuses strictly on local Git-native drift detection and living specification reconciliation."
+vcs:
+  branch: feat/remove-vcs-bridge
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CAP-VCS-001
+---
+= SpecDelta: Decommission Unimplemented GitHub and GitLab VCS Bridge

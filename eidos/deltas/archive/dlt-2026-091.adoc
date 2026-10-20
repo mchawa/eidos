@@ -1,0 +1,157 @@
+---
+type: delta/mutation
+id: DLT-2026-091
+title: Harmonize and Canonicalize All v1 Specification Schemas Without Legacy Aliases
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate cross-schema field naming divergences, intra-schema duplicate properties, inconsistent lifecycle status enums, fragmented quality_attributes/external_references shapes, and copy-pasted x-eidos-ref definitions across all 16 Eidos v1 schemas (assets/schemas/v1/) with zero backward-compatibility shims or legacy fallback paths."
+tombstone:
+  search_tokens:
+    - domain_binding
+    - parent_domain
+    - owning_container
+    - owning_component
+    - extends_system
+    - implements_component
+    - supported_design_systems
+    - user_flows
+    - c4_internal_components
+    - technical_mapping
+    - test_bound_invariant
+    - consumed_component_ref
+    - component_or_symbol_ref
+    - figma_team_library
+    - figma_node_url
+    - figma_frame_url
+  allowed_reasons:
+    - path: CHANGELOG.md
+      reason: Historical release notes referencing pre-harmonization schema field names.
+    - path: eidos/deltas/
+      reason: Historical applied SpecDeltas predating DLT-2026-091.
+    - path: eidos/explorations/
+      reason: Historical exploration spikes predating DLT-2026-091.
+vcs:
+  branch: main
+  base_commit: e4cc6fbe09ed8e6883fe9103a550f5fe53ce0fb2
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-SPEC-PARSER
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+  - operation: modify
+    target: CMP-DESIGN-ENGINE
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+  - operation: modify
+    target: CMP-PROJECT-RESOLVER
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+  - operation: modify
+    target: CTR-EIDOS-PORTAL
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: CNT-EIDOS-DOCS
+  - operation: modify
+    target: CMP-DOCS-CORE-CONCEPTS
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+  - operation: modify
+    target: ARCH-EIDOS-001
+  - operation: modify
+    target: DOM-SPEC-ENGINE
+  - operation: modify
+    target: DOM-VCS-LIFECYCLE
+  - operation: modify
+    target: DOM-AGENT-INTELLIGENCE
+  - operation: modify
+    target: DOM-EXPERIENCE-PORTAL
+  - operation: modify
+    target: PER-AUTONOMOUS-AGENT
+  - operation: modify
+    target: PER-DESIGN-ENGINEER
+  - operation: modify
+    target: PER-PRODUCT-LEAD
+  - operation: modify
+    target: PER-SOFTWARE-ARCHITECT
+  - operation: modify
+    target: PER-SOFTWARE-ENGINEER
+  - operation: modify
+    target: CLT-WEB-PORTAL
+  - operation: modify
+    target: SCR-PORTAL-HOME
+  - operation: modify
+    target: SCR-PORTAL-ARCHITECTURE
+  - operation: modify
+    target: SCR-PORTAL-BUSINESS
+  - operation: modify
+    target: SCR-PORTAL-CATALOG
+  - operation: modify
+    target: SCR-PORTAL-DELTAS
+  - operation: modify
+    target: SCR-PORTAL-DESIGN
+  - operation: modify
+    target: SCR-PORTAL-EXPLORATIONS
+  - operation: modify
+    target: FLOW-PORTAL-EXPLORATION
+  - operation: modify
+    target: FLOW-CLI-SERVE-AND-BROWSE
+  - operation: modify
+    target: CAP-PROD-001
+  - operation: modify
+    target: CAP-PROD-002
+  - operation: modify
+    target: CAP-PROD-003
+  - operation: modify
+    target: CAP-VCS-001
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: CAP-AGENT-002
+  - operation: modify
+    target: CAP-EXP-001
+  - operation: modify
+    target: CAP-EXP-002
+  - operation: modify
+    target: POL-001-GIT-SOURCE-OF-TRUTH
+  - operation: modify
+    target: POL-002-INVARIANT-TEST-ENFORCEMENT
+  - operation: modify
+    target: POL-003-CONTINUOUS-DOCUMENTATION-SYNC
+  - operation: modify
+    target: POL-004-ZERO-AI-CALL-DEPENDENCY
+---
+= SpecDelta: Harmonize and Canonicalize All v1 Specification Schemas Without Legacy Aliases

@@ -79,7 +79,7 @@ def test_pr_check_gate_pass_planned(monkeypatch):
         "eidos.vcs.drift.get_git_diff_files",
         lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
             "src/eidos/core/spec/parser.py",
-            "eidos/deltas/dlt-2026-010.adoc",
+            "eidos/deltas/archive/dlt-2026-010.adoc",
         ],
     )
     monkeypatch.setattr(
@@ -683,7 +683,7 @@ def test_uncovered_delta_drift_detection(monkeypatch):
     monkeypatch.setattr(
         "eidos.vcs.drift.get_git_diff_files",
         lambda repo_root, base_ref=None, head_ref="HEAD", uncommitted=False, merge_base=None: [
-            "eidos/deltas/dlt-2026-001.adoc",
+            "eidos/deltas/archive/dlt-2026-001.adoc",
             "src/eidos/portal/frontend/src/theme/theme.css",
         ],
     )
@@ -938,7 +938,7 @@ def test_planned_mode_design_target_satisfies_design_drift(monkeypatch):
     """Verify DLT-2026-030: an active SpecDelta declaring the bound design system satisfies design drift."""
     _mock_versions(monkeypatch, _TOKEN_CSS)
     # dlt-2026-019 declares target_design_system: DS-CORE
-    _mock_diff(monkeypatch, [THEME, "eidos/deltas/dlt-2026-019.adoc"])
+    _mock_diff(monkeypatch, [THEME, "eidos/deltas/archive/dlt-2026-019.adoc"])
     res = detect_drift(repo_root=Path.cwd(), eidos_dir=Path("eidos"))
     assert res.workflow_mode == "planned"
     assert res.uncovered_design_files == []

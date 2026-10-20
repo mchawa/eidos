@@ -1,0 +1,32 @@
+---
+type: delta/mutation
+id: DLT-2026-086
+title: "Consolidate Overlapping SQLite & In-Memory Caches, Adopt Typed FrontmatterModel, and Remove VCS Test-Mock Introspection Shims"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate triple parsing/caching of specification and test files across catalog.py (_SPEC_CATALOG_CACHE), validator.py (spec_validation_cache), invariants.py (test_binding_cache), and sync.py (indexed_files) by consolidating SQLite file-state caching under storage.py and routing frontmatter access through typed Pydantic FrontmatterModel (SpecDocument.model), while removing runtime inspect.signature (_accepts_kwarg) and sys.modules['eidos.vcs.drift'] monkeypatch introspection shims from production VCS modules."
+vcs:
+  branch: feat/unified-cache-and-vcs-shim-cleanup
+  base_commit: db3f9fb09920f6845cb395588718bf618cc56772
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-SPEC-PARSER
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+  - operation: modify
+    target: CAP-PROD-001
+  - operation: modify
+    target: CAP-VCS-001
+---
+= SpecDelta: Consolidate Overlapping SQLite & In-Memory Caches, Adopt Typed FrontmatterModel, and Remove VCS Test-Mock Introspection Shims

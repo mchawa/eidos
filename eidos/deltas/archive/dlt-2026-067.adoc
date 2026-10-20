@@ -1,0 +1,21 @@
+---
+type: delta/mutation
+id: DLT-2026-067
+title: "Read-Only SQLite Cache Connections, db_path-Aware Index Singleton, and Automatic repo_root Resolution"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Eliminate unconditional SQLite write transactions on read-only cache opens, include db_path and connection cleanup in the get_architectural_index singleton, and automatically resolve repo_root via find_repo_root when custom --path directories are passed."
+vcs:
+  branch: fix/sqlite-cache-readonly-and-index-singleton
+mutations:
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+  - operation: modify
+    target: CMP-PROJECT-RESOLVER
+---
+= SpecDelta: Read-Only SQLite Cache Connections, db_path-Aware Index Singleton, and Automatic repo_root Resolution

@@ -1,0 +1,23 @@
+---
+type: delta/mutation
+id: DLT-2026-011
+title: Integrate Embedded Architectural Knowledge Graph & Hybrid Context Retrieval Index
+status: applied
+intent:
+  kind: feature
+  motivation: Graduated from validated feasibility exploration EXP-2026-002 to transition Eidos context slicing from linear filesystem scanning to an embedded SQLite knowledge graph with FTS5 lexical retrieval and tiered token-budgeted compression.
+vcs:
+  branch: spike/exp-2026-002
+mutations:
+  - operation: modify
+    target: CMP-EIDOS-CORE
+  - operation: modify
+    target: CMP-EIDOS-CLI
+  - operation: modify
+    target: CMP-EIDOS-MCP
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: add
+    target: CAP-AGENT-001
+---
+= SpecDelta: Integrate Embedded Architectural Knowledge Graph & Hybrid Context Retrieval Index

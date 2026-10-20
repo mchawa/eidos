@@ -1,0 +1,17 @@
+---
+type: delta/mutation
+id: DLT-2026-069
+title: HTML-Safe </script> JSON Serialization in Static Web Portal Builder
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: high
+  motivation: Escape closing </script> sequences (and U+2028/U+2029 line separators) when embedding JSON portal state into index.html in build_static_portal so specifications containing literal </script> tags cannot break or inject markup into the static web portal.
+vcs:
+  branch: fix/portal-builder-script-escape
+mutations:
+  - operation: modify
+    target: CMP-PORTAL-BUILDER
+---
+= SpecDelta: HTML-Safe </script> JSON Serialization in Static Web Portal Builder

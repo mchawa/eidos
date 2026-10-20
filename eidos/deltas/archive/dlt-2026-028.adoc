@@ -1,0 +1,19 @@
+---
+type: delta/mutation
+id: DLT-2026-028
+title: Scoped 1-Hop Graph Neighborhood and AST Structural Drift Detection
+status: applied
+intent:
+  kind: enabler
+  motivation: "Replace coarse boolean repository-wide drift checks ('any code changed and no spec changed') with AST structural change detection and 1-hop knowledge graph neighborhood verification so internal body-only refactors do not cause false-positive spec churn and unrelated spec edits cannot mask component drift."
+vcs:
+  branch: feat/scoped-structural-drift
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CAP-VCS-001
+---
+= SpecDelta: Scoped 1-Hop Graph Neighborhood and AST Structural Drift Detection

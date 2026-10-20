@@ -1,0 +1,21 @@
+---
+type: delta/mutation
+id: DLT-2026-082
+title: Bidirectional Contract Parity Verification and Multi-Framework CLI Contract Extraction
+status: applied
+intent:
+  kind: enabler
+  motivation: "Catch stale/phantom contract documentation when endpoints, RPCs, or CLI commands are deleted from source code, and expand CLI contract verification beyond top-level Python Typer commands to cover sub-apps and common polyglot/Python CLI frameworks."
+vcs:
+  branch: feat/bidirectional-contract-parity
+  base_commit: 21860a2b4c524667f21f69c72de66d8b3baac936
+mutations:
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CAP-PROD-001
+  - operation: modify
+    target: INV-SPEC-GRAPH-INTEGRITY
+    parent: CAP-PROD-001
+---
+= SpecDelta: Bidirectional Contract Parity Verification and Multi-Framework CLI Contract Extraction

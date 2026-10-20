@@ -1,0 +1,20 @@
+---
+type: delta/mutation
+id: DLT-2026-045
+title: "Transactional SpecDelta Execution, Complete Action Coverage, and Git-Backed Baseline SHAs"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Uphold INV-MUTATION-REVERSIBILITY by making 'eidos delta apply --execute' atomic with pre-commit schema validation and rollback, handling or explicitly rejecting all schema mutation actions, enforcing target type checks before file deletion, and recovering pre-delta baseline SHAs from Git history when the gitignored SQLite cache is absent."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CAP-PROD-002
+  - operation: modify
+    target: INV-MUTATION-REVERSIBILITY
+    parent: CAP-PROD-002
+---
+= SpecDelta: Transactional SpecDelta Execution, Complete Action Coverage, and Git-Backed Baseline SHAs

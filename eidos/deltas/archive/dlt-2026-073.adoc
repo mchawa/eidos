@@ -1,0 +1,17 @@
+---
+type: delta/mutation
+id: DLT-2026-073
+title: "Unified v1 JSON Schema Parity for Container & Policy Invariants, Cross-Layer Embedded Decisions, Contract Versioning, and SpecDelta Design References"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Align the bundled v1 JSON Schemas (container, policy, domain, capability, contract, and delta) with the living specification engine, knowledge graph indexer, drift detector, and SpecDelta lifecycle so valid invariants, embedded DEC-* decisions, contract SemVer versions/consumers, and design entity references are not rejected by additionalProperties: false."
+vcs:
+  branch: fix/v1-schemas-invariants-decisions-and-delta-refs
+mutations:
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+---
+= SpecDelta: Unified v1 JSON Schema Parity for Container & Policy Invariants, Cross-Layer Embedded Decisions, Contract Versioning, and SpecDelta Design References

@@ -1,0 +1,19 @@
+---
+type: delta/mutation
+id: DLT-2026-048
+title: Unified SQLite Cache Schema Versioning and Path-Keyed Entity Eviction on Spec ID Rename
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: medium
+  motivation: "Eliminate SQLite cache invalidation thrashing caused by validator.py and drift.py stamping schema_version 2.2.0 while graph_index.py expects 2.3.0, and prevent ghost entities and orphan edges when a specification ID is renamed in place."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-VCS
+---
+= SpecDelta: Unified SQLite Cache Schema Versioning and Path-Keyed Entity Eviction on Spec ID Rename

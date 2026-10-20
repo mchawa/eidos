@@ -1,0 +1,17 @@
+---
+type: delta/mutation
+id: DLT-2026-063
+title: Working-Tree Digest Short-Circuit in Agent Hooks and Mtime-Cached Portal HTTP Server
+status: applied
+intent:
+  kind: enabler
+  motivation: "Short-circuit PostInvocation lint and drift hooks in <5ms when the working tree and HEAD SHA are unchanged since the last clean run, and cache portal HTTP API responses by specification directory dirty state so /api/data, /api/overview, and /api/validate do not re-parse all specifications on every HTTP request."
+vcs:
+  branch: perf/hooks-short-circuit-and-portal-server-cache
+mutations:
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+  - operation: modify
+    target: CMP-PORTAL-SERVER
+---
+= SpecDelta: Working-Tree Digest Short-Circuit in Agent Hooks and Mtime-Cached Portal HTTP Server

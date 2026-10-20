@@ -1,0 +1,22 @@
+---
+type: delta/mutation
+id: DLT-2026-040
+title: Require Modification Evidence in SpecDelta Verification
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: medium
+  motivation: "'eidos delta verify' still reports modify_*/extend_*/patch_* mutations as fulfilled without evidence of change: it falls back to filesystem mtimes when no local baseline exists, hashes inline component targets at container-file granularity, accepts structural sub-target membership (capability/invariant, container/component, container/contract) as proof of modification, and resolves composite mutations like patch_invariant to target_capability instead of the action's primary target. CAP-PROD-002 has no invariant requiring modification evidence."
+vcs:
+  branch: fix/delta-verify-modification-evidence
+mutations:
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+  - operation: modify
+    target: CAP-PROD-002
+  - operation: add
+    target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+    parent: CAP-PROD-002
+---
+= SpecDelta: Require Modification Evidence in SpecDelta Verification

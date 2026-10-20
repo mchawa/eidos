@@ -1,0 +1,17 @@
+---
+type: delta/mutation
+id: DLT-2026-005
+title: "Multi-Design System Engine, W3C Tokens, and Product Capability Linkage"
+status: applied
+intent:
+  kind: feature
+  motivation: "Enable multi-tenant/multi-brand design systems with W3C tokens, UI component contracts, screen specs, and bidirectional linking to product capabilities."
+mutations:
+  - operation: modify
+    target: CMP-EIDOS-ENGINE
+  - operation: modify
+    target: CMP-EIDOS-ENGINE
+  - operation: modify
+    target: CAP-AGENT-001
+---
+= SpecDelta: Multi-Design System Engine, W3C Tokens, and Product Capability Linkage

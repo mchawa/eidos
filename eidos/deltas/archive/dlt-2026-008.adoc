@@ -1,0 +1,18 @@
+---
+type: delta/mutation
+id: DLT-2026-008
+title: AI Plugin Lifecycle Hooks for Automated Documentation Linting
+status: applied
+intent:
+  kind: feature
+  motivation: Introduce lifecycle hooks in the AI agent plugin to enforce syntax and schema validation of living documentation on edit and task completion.
+mutations:
+  - operation: modify
+    target: CMP-EIDOS-PLUGIN
+  - operation: add
+    target: INV-AGENT-LINT-HOOK
+    parent: CAP-AGENT-001
+  - operation: modify
+    target: CMP-EIDOS-CLI
+---
+= SpecDelta: AI Plugin Lifecycle Hooks for Automated Documentation Linting

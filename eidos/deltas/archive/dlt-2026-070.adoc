@@ -1,0 +1,17 @@
+---
+type: delta/mutation
+id: DLT-2026-070
+title: eidos doctor Custom --path Support and Virtualenv-Aware CLI Invocation Check
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: medium
+  motivation: Allow eidos doctor to inspect custom specification directories via --path / -p and avoid failing with exit code 1 when invoked inside a virtualenv (uv run / python -m) where eidos is not on the global system PATH.
+vcs:
+  branch: fix/doctor-custom-path-and-venv-check
+mutations:
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+---
+= SpecDelta: eidos doctor Custom --path Support and Virtualenv-Aware CLI Invocation Check

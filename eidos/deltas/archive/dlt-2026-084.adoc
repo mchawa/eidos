@@ -1,0 +1,21 @@
+---
+type: delta/mutation
+id: DLT-2026-084
+title: Stateful Block-Once Stop Gate with TTL/Session Expiry and Explicit Bypass Warning Message
+status: applied
+intent:
+  kind: enabler
+  motivation: Preserve the loop-preventing Block-Once Stop Gate contract (INV-HOOK-BLOCK-ONCE) while fixing stale cross-session fingerprints in stop-gate.json via TTL/session scoping and surfacing an explicit systemMessage warning when a second identical Stop attempt releases the gate.
+vcs:
+  branch: feat/stop-gate-ttl-and-warning
+  base_commit: 21860a2b4c524667f21f69c72de66d8b3baac936
+mutations:
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: INV-HOOK-BLOCK-ONCE
+    parent: CAP-AGENT-001
+---
+= SpecDelta: Stateful Block-Once Stop Gate with TTL/Session Expiry and Explicit Bypass Warning Message

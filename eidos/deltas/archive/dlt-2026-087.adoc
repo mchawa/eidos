@@ -1,0 +1,56 @@
+---
+type: delta/mutation
+id: DLT-2026-087
+title: Composable SpecDelta Mutation Schema (operation + target) and Stop-Scoped Drift Hook Execution
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate the combinatorial 44-value verb-noun mutations[].action enum and 15 type-specific target_*/new_capability_id keys in delta.schema.yaml by introducing an orthogonal composable mutation contract (operation: add | modify | remove | deprecate paired with prefix-aware target and optional parent resolution), while removing the noisy per-turn PostInvocation drift hook (handle_drift_post_invocation) so full detect_drift gating runs strictly at task completion (Stop) and PreToolUse/PostToolUse remain fast single-file AsciiDoc schema linting."
+vcs:
+  branch: feat/composable-delta-mutations-and-stop-scoped-drift-hook
+  base_commit: db3f9fb09920f6845cb395588718bf618cc56772
+mutations:
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    parent: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    parent: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+    parent: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+    parent: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-CHANGELOG-GENERATOR
+    parent: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    parent: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    parent: CNT-EIDOS-VCS
+  - operation: modify
+    target: CMP-PORTAL-GENERATOR
+    parent: CNT-EIDOS-PORTAL
+  - operation: modify
+    target: CMP-HOOK-RUNNER
+    parent: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CMP-HOOK-MANAGER
+    parent: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+    parent: CNT-EIDOS-CLI
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CAP-PROD-002
+  - operation: modify
+    target: CAP-AGENT-001
+  - operation: modify
+    target: INV-HOOK-FAIL-LOUD
+    parent: CAP-AGENT-001
+---
+= SpecDelta: Composable SpecDelta Mutation Schema (operation + target) and Stop-Scoped Drift Hook Execution

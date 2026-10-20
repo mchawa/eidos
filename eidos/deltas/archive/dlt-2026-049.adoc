@@ -1,0 +1,19 @@
+---
+type: delta/mutation
+id: DLT-2026-049
+title: Repo-Relative Path Normalization and Configurable Governance Checks Across Validator and Drift
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: medium
+  motivation: "Eliminate false-positive INV-COMPONENT-CENTRALIZATION-MANDATE failures when a repository resides under a parent directory named 'src', support custom '--path' specification directories in drift classification, and decouple Eidos-repo-specific CLI parity checks from generic foreign-repository validation."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CAP-PROD-001
+---
+= SpecDelta: Repo-Relative Path Normalization and Configurable Governance Checks Across Validator and Drift

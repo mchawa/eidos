@@ -1,0 +1,19 @@
+---
+type: delta/mutation
+id: DLT-2026-037
+title: Consolidate 14 Fragmented Agent Skills into 4 Cohesive Workflow Skills
+status: applied
+intent:
+  kind: enabler
+  motivation: "Reduce AI agent system-prompt skill index bloat and eliminate multi-hop skill file reads by consolidating the 14 fragmented Eidos skills into 4 cohesive workflow-aligned skills ('eidos', 'eidos-spec', 'eidos-plan', 'eidos-ops')."
+vcs:
+  branch: refactor/consolidate-agent-skills
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: CMP-DOCS-USER-GUIDES
+  - operation: modify
+    target: CAP-AGENT-001
+---
+= SpecDelta: Consolidate 14 Fragmented Agent Skills into 4 Cohesive Workflow Skills

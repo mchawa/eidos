@@ -1,0 +1,19 @@
+---
+type: delta/mutation
+id: DLT-2026-057
+title: "Git-Portable SpecDelta Baselines, Collision-Free Delta IDs, and Copy-on-Write Mutation Transactions"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Make SpecDelta verification 100% deterministic across machines and CI without relying on gitignored SQLite .cache/index.db state by recording vcs.base_commit in DLT-* frontmatter, support collision-free branch/slug delta IDs to prevent parallel branch merge conflicts, and replace the full-directory eidos/ RAM snapshot in _MutationTransaction with copy-on-write snapshotting."
+vcs:
+  branch: feat/delta-git-portability-and-cow
+mutations:
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+  - operation: modify
+    target: INV-DELTA-VERIFY-MODIFICATION-EVIDENCE
+  - operation: modify
+    target: INV-MUTATION-REVERSIBILITY
+---
+= SpecDelta: Git-Portable SpecDelta Baselines, Collision-Free Delta IDs, and Copy-on-Write Mutation Transactions

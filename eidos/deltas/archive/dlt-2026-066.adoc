@@ -1,0 +1,21 @@
+---
+type: delta/mutation
+id: DLT-2026-066
+title: "Parameterized Repository Initialization (--name, --title) and Scoped Empty Root System Specification Parser & Validator Exemption"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: medium
+  motivation: "Honor the --name and --title parameters in init_repository when provided, remove the dead with_plugin parameter, and scope the 0-byte / whitespace-only empty-file exemption in both parse_spec_file and SpecValidator._load_or_validate strictly to the root system specification file so empty non-system specification files fail validation."
+vcs:
+  branch: fix/init-repository-params-and-empty-spec-parser
+mutations:
+  - operation: modify
+    target: CMP-REPO-INITIALIZER
+  - operation: modify
+    target: CMP-SPEC-PARSER
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+---
+= SpecDelta: Parameterized Repository Initialization (--name, --title) and Scoped Empty Root System Specification Parser & Validator Exemption

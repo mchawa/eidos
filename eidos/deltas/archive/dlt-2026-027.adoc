@@ -1,0 +1,21 @@
+---
+type: delta/mutation
+id: DLT-2026-027
+title: Strict Static-Only Invariant-to-Test Function Verification
+status: applied
+intent:
+  kind: enabler
+  motivation: "Enforce strict static-only verification of invariant 'test_binding' declarations ('file::func' existence and exact word-boundary '# INV-*' reference within the bound test function) without executing tests or reading test runner artifacts."
+vcs:
+  branch: feat/strict-static-invariant-verification
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: CAP-VCS-001
+---
+= SpecDelta: Strict Static-Only Invariant-to-Test Function Verification

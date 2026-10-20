@@ -1,0 +1,19 @@
+---
+type: delta/mutation
+id: DLT-2026-047
+title: "Enforced Token-Budget Context Slicing, Mtime Refresh on Sync, and Qualified Polyglot AST Indexing"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Align context slicing, incremental graph synchronization, and polyglot AST indexing with their architectural guarantees by enforcing real token truncation across Markdown and JSON slices, updating stored mtime when SHA-256 matches on dirty checks, promoting ast-grep-py to a core dependency, and qualifying test methods by Class::method so duplicate method names across test classes never overwrite each other."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-INDEX
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: POL-002-INVARIANT-TEST-ENFORCEMENT
+  - operation: modify
+    target: CAP-AGENT-002
+---
+= SpecDelta: Enforced Token-Budget Context Slicing, Mtime Refresh on Sync, and Qualified Polyglot AST Indexing

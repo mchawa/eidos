@@ -1,0 +1,19 @@
+---
+type: delta/mutation
+id: DLT-2026-072
+title: "Collision-Free Schema Cache Keying, 16-Schema eidos info, and Functional Typer Root CLI Contract Parity"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: critical
+  motivation: "Eliminate the basename collision between product/system.schema.yaml and design/system.schema.yaml in SpecValidator._load_bundled_schemas and eidos info, sort schema hashing deterministically, and detect functional app.command(...)(fn) and *_commands.register(app) root CLI commands in _verify_cli_contract_commands."
+vcs:
+  branch: fix/spec-validator-schemas-and-cli-parity
+mutations:
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-CLI-APP
+---
+= SpecDelta: Collision-Free Schema Cache Keying, 16-Schema eidos info, and Functional Typer Root CLI Contract Parity

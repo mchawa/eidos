@@ -1,0 +1,20 @@
+---
+type: delta/mutation
+id: DLT-2026-042
+title: Enforce Strict C4 Container (CNT-*) vs Component (CMP-*) Target Separation Across Schemas and Validator
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate lingering C4 Level 2 Container (CNT-*, tech/container) and Level 3 Component (CMP-*, tech/component) conflation in v1 schemas, x-eidos-ref annotations, and SpecValidator reference checks so container fields exclusively target containers and component fields exclusively target components."
+vcs:
+  branch: refactor/strict-container-component-targets
+mutations:
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+  - operation: modify
+    target: INV-SPEC-GRAPH-INTEGRITY
+    parent: CAP-PROD-001
+---
+= SpecDelta: Enforce Strict C4 Container (CNT-*) vs Component (CMP-*) Target Separation Across Schemas and Validator

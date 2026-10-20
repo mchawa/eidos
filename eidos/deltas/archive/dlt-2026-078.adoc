@@ -1,0 +1,23 @@
+---
+type: delta/mutation
+id: DLT-2026-078
+title: "Knowledge Graph Container & Inline-Component Invariant Indexing, AST Symbol FTS5 Projection, and Anchored Graph Traversal"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Index top-level tech/container and inline CMP-* component invariants into SQLite entities, specs_fts, edges, and symbol_mappings; promote owning container/component entities when container/component invariants are directly matched in build_tiered_context_slice; project primary AST code_symbols into specs_fts.symbols for code-aware task/search retrieval; and anchor SQLite LIKE suffix and recursive CTE cycle checks while including source_path in check_index_dirty."
+vcs:
+  branch: fix/index-container-invariants-fts-symbols-and-anchored-traversal
+mutations:
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+  - operation: modify
+    target: CMP-GRAPH-TRAVERSAL-ENGINE
+  - operation: modify
+    target: CMP-TIERED-CONTEXT-COMPRESSOR
+---
+= SpecDelta: Knowledge Graph Container & Inline-Component Invariant Indexing, AST Symbol FTS5 Projection, and Anchored Graph Traversal

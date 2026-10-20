@@ -1,0 +1,17 @@
+---
+type: delta/mutation
+id: DLT-2026-064
+title: Validate Design System W3C DTCG Token Manifests and Acyclic Inheritance in SpecValidator
+status: applied
+intent:
+  kind: feature
+  motivation: "Extend SpecValidator to verify that design/system specifications reference an existing, valid JSON tokens.manifest adhering to W3C DTCG ($value / $type) structure and that inheritance.extends chains across DS-* specifications are acyclic."
+vcs:
+  branch: feat/validate-design-tokens-and-inheritance
+mutations:
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: INV-W3C-DTCG-COMPLIANCE
+---
+= SpecDelta: Validate Design System W3C DTCG Token Manifests and Acyclic Inheritance in SpecValidator

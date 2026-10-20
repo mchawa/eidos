@@ -1,0 +1,23 @@
+---
+type: delta/mutation
+id: DLT-2026-016
+title: Deprecate and Remove MCP Server in Favor of Direct CLI and Progressive Agent Skills
+status: applied
+intent:
+  kind: enabler
+  motivation: "Sunsets the stdio Model Context Protocol (MCP) server (CNT-EIDOS-MCP) and its interface contract (CTR-EIDOS-MCP). Modern AI coding environments (Google Antigravity, Claude Code, Cursor, Cline, GitHub Copilot Agent, Aider) now universally feature native terminal and process execution capabilities. By replacing the background MCP stdio daemon with direct, high-performance CLI commands ('eidos <cmd> --json') coupled with progressive disclosure via Agent Skills (SKILL.md), Eidos eliminates thousands of tokens of upfront JSON Schema prompt overhead, avoids stdio pipe desynchronization issues, and unifies human and AI workflows under a single, testable Unix CLI surface.\n"
+vcs:
+  branch: refactor/cli-only-agent-architecture
+mutations:
+  - operation: remove
+    target: CNT-EIDOS-MCP
+  - operation: remove
+    target: CTR-EIDOS-MCP
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CAP-AGENT-001
+---
+= SpecDelta: Deprecate and Remove MCP Server in Favor of Direct CLI and Progressive Agent Skills

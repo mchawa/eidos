@@ -1,0 +1,17 @@
+---
+type: delta/mutation
+id: DLT-2026-059
+title: "Validate Component source_path, UI Component test_bindings, and Invariant test_binding File & Symbol References in SpecValidator"
+status: applied
+intent:
+  kind: feature
+  motivation: "Extend SpecValidator (eidos validate) so that when a repository source/test tree is present on disk, declared tech/component and inline components[].source_path, design/ui-component test_bindings, and INV-* test_binding references (file::func or file::Class::method) are validated for file and test symbol existence, closing the reference-validation gap in _validate_source_and_contract_paths without performing INV-* token matching."
+vcs:
+  branch: feat/validator-source-and-test-binding-refs
+mutations:
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: INV-SPEC-GRAPH-INTEGRITY
+---
+= SpecDelta: Validate Component source_path, UI Component test_bindings, and Invariant test_binding File & Symbol References in SpecValidator

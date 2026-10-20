@@ -1,0 +1,23 @@
+---
+type: delta/mutation
+id: DLT-2026-051
+title: "Close Spec-to-Code Drift Detection Bypasses for Unowned Code, Non-Addition Diffs, and Scoped 1-Hop Neighborhoods"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Eliminate spec-to-code drift bypasses where unowned source files pass whenever any unrelated spec or SpecDelta is touched, non-addition structural changes pass via trivial comment/whitespace spec edits, editing a shared policy (POL-*) satisfies 1-hop coverage across all linked containers, and production code under docs/ or test_* paths is misclassified."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-VCS
+  - operation: modify
+    target: CAP-VCS-001
+  - operation: modify
+    target: INV-DRIFT-DETECTION-ACCURACY
+    parent: CAP-VCS-001
+  - operation: modify
+    target: INV-DRIFT-DIFF-AWARE-COVERAGE
+    parent: CAP-VCS-001
+---
+= SpecDelta: Close Spec-to-Code Drift Detection Bypasses for Unowned Code, Non-Addition Diffs, and Scoped 1-Hop Neighborhoods

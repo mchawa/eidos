@@ -1,0 +1,17 @@
+---
+type: delta/mutation
+id: DLT-2026-056
+title: Pluggable Contract Protocol Verifier Registry for Multi-Protocol CTR-* Specifications
+status: applied
+intent:
+  kind: feature
+  motivation: "Replace the hardcoded Python Typer-only CLI contract check in SpecValidator with a pluggable protocol verifier registry supporting cli_args, python_protocol, rest_openapi, json_schema, grpc_proto, and graphql so non-Typer CTR-* contracts cannot silently diverge from their specification_file."
+vcs:
+  branch: feat/contract-protocol-verifiers
+mutations:
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+  - operation: modify
+    target: INV-SPEC-GRAPH-INTEGRITY
+---
+= SpecDelta: Pluggable Contract Protocol Verifier Registry for Multi-Protocol CTR-* Specifications

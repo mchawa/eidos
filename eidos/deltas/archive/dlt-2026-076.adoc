@@ -1,0 +1,17 @@
+---
+type: delta/mutation
+id: DLT-2026-076
+title: "Synchronize Bundled Agent Skills (eidos, eidos-spec, eidos-plan, eidos-ops) with v1 JSON Schemas and Canonical Design Paths"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Align all YAML frontmatter templates, property descriptions, enum values, and directory paths in the 4 bundled Agent Skills (assets/plugin_reference/skills/*/SKILL.md) with the v1 JSON Schemas and scaffolder conventions so AI agents following the skills author specifications that pass eidos validate."
+vcs:
+  branch: fix/bundled-skills-schema-and-path-parity
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+---
+= SpecDelta: Synchronize Bundled Agent Skills (eidos, eidos-spec, eidos-plan, eidos-ops) with v1 JSON Schemas and Canonical Design Paths

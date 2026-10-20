@@ -1,0 +1,37 @@
+---
+type: delta/mutation
+id: DLT-2026-043
+title: "Enforce Strict Enum Taxonomies in SpecDelta Schema (intent.kind, bug_classification, severity, and mutations[].action)"
+status: applied
+intent:
+  kind: enabler
+  motivation: "Replace open regex string patterns on SpecDelta categorical fields ('intent.kind', 'intent.bug_classification', 'intent.severity', and 'mutations[].action') in 'assets/schemas/v1/delta/delta.schema.yaml' with strict JSON Schema 'enum' taxonomies—separating strategic intent ('feature', 'enabler', 'bug') from structural mutation actions ('add_*', 'modify_*', 'extend_*', 'patch_*', 'deprecate_*', 'remove_*') and enforcing deterministic schema validation and Keep-a-Changelog classification."
+vcs:
+  branch: refactor/delta-schema-enums
+mutations:
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    parent: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+    parent: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-CHANGELOG-GENERATOR
+    parent: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    parent: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+    parent: CNT-EIDOS-CLI
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+    parent: CNT-EIDOS-CLI
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CTR-EIDOS-CLI
+  - operation: modify
+    target: CAP-PROD-002
+---
+= SpecDelta: Enforce Strict Enum Taxonomies in SpecDelta Schema (intent.kind, bug_classification, severity, and mutations[].action)

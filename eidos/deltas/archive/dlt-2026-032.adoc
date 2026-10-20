@@ -1,0 +1,22 @@
+---
+type: delta/mutation
+id: DLT-2026-032
+title: "Fix Component Spec Scaffolding, Add Client/Flow Scaffolding, and Enforce Safe YAML Serialization"
+status: applied
+intent:
+  kind: bug
+  motivation: "Fix 'create_spec()' routing where 'component' erroneously creates a 'tech/container' spec, add missing 'design/client' ('CLT-*') and 'design/flow' ('FLOW-*') scaffolders, replace unsafe f-string YAML frontmatter generation with 'yaml.safe_dump()', and remove stale co-located 'src/' component references from schemas and validator docstrings."
+  bug_classification: spec_violation
+  severity: high
+vcs:
+  branch: fix/scaffolder-component-routing-safe-yaml
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-CORE
+  - operation: modify
+    target: CNT-EIDOS-CLI
+  - operation: modify
+    target: INV-SPEC-VALIDATION
+    parent: CAP-PROD-001
+---
+= SpecDelta: Fix Component Spec Scaffolding, Add Client/Flow Scaffolding, and Enforce Safe YAML Serialization

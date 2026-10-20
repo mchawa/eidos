@@ -1,0 +1,17 @@
+---
+type: delta/mutation
+id: DLT-2026-001
+title: CLI Spec Document Lifecycle Management and Plugin Multi-Skill Expansion
+status: applied
+intent:
+  kind: feature
+  motivation: "Expand the CLI with commands to create, list, and delete living specifications and manage SpecDelta lifecycles, and expand the Agent Plugin with specialized skills."
+mutations:
+  - operation: modify
+    target: CMP-EIDOS-ENGINE
+  - operation: add
+    target: CMP-EIDOS-ENGINE
+  - operation: modify
+    target: CAP-AGENT-001
+---
+= SpecDelta: CLI Spec Document Lifecycle Management and Plugin Multi-Skill Expansion

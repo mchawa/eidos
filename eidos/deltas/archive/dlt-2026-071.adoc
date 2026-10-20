@@ -1,0 +1,19 @@
+---
+type: delta/mutation
+id: DLT-2026-071
+title: "Isolated project Plugin Install Target, Accurate Fallback Version Path Reporting, AIDER Created-Files Typing, and Retired reconcile.md Command Cleanup"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Prevent PluginInstallTarget.PROJECT from implicitly mutating or deleting .cursor/ and .claude/, remove the retired broken reconcile.md Claude slash command, fix AIDER post_install_hook appending a boolean into InstallResult.created_files, report the actual matched manifest directory in check_plugin_version_status, and use line-anchored YAML frontmatter parsing in _validate_skill_md."
+vcs:
+  branch: fix/plugin-installer-targets-and-validator
+mutations:
+  - operation: modify
+    target: CMP-PLUGIN-INSTALLER
+  - operation: modify
+    target: CMP-PLUGIN-VALIDATOR
+---
+= SpecDelta: Isolated project Plugin Install Target, Accurate Fallback Version Path Reporting, AIDER Created-Files Typing, and Retired reconcile.md Command Cleanup

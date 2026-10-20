@@ -1,0 +1,44 @@
+---
+type: delta/mutation
+id: DLT-2026-038
+title: Modularize Core and CLI God Modules into 1-to-1 C4 Component Modules
+status: applied
+intent:
+  kind: enabler
+  motivation: "Decompose monolithic 'src/eidos/core/scaffolder.py' (2,039 lines) and 'src/eidos/cli/main.py' (2,636 lines) so each declared C4 Level 3 component maps 1-to-1 to a focused Python module, and declare the SpecDelta engine that currently hides inside 'scaffolder.py' as its own component. Pure code motion: no behavior, CLI surface, or JSON output changes."
+vcs:
+  branch: refactor/modularize-core-and-cli
+mutations:
+  - operation: add
+    target: CMP-DELTA-ENGINE
+    parent: CNT-EIDOS-CORE
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+  - operation: modify
+    target: CMP-DESIGN-ENGINE
+  - operation: modify
+    target: CMP-REPO-INITIALIZER
+  - operation: modify
+    target: CMP-CLI-APP
+  - operation: modify
+    target: CMP-CLI-SPEC-COMMANDS
+  - operation: modify
+    target: CMP-CLI-DELTA-COMMANDS
+  - operation: modify
+    target: CMP-CLI-PLUGIN-COMMANDS
+  - operation: modify
+    target: CMP-CLI-DRIFT-COMMANDS
+  - operation: modify
+    target: CMP-CLI-INIT-COMMAND
+  - operation: modify
+    target: CMP-CLI-CONTEXT-COMMAND
+  - operation: modify
+    target: CMP-CLI-INDEX-COMMANDS
+  - operation: modify
+    target: CMP-CLI-COMPONENT-COMMANDS
+  - operation: modify
+    target: CMP-CLI-PORTAL-COMMANDS
+  - operation: modify
+    target: CMP-CLI-DOCTOR-HOOKS
+---
+= SpecDelta: Modularize Core and CLI God Modules into 1-to-1 C4 Component Modules

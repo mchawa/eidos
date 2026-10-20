@@ -387,21 +387,11 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         raw_br = fm.get("blast_radius") if isinstance(fm.get("blast_radius"), dict) else None
         d_path_norm = str(d.get("path", "")).replace("\\", "/")
         is_archived_delta = "deltas/archive/" in d_path_norm
-        if is_archived_delta:
-            derived_affects = list(
-                dict.fromkeys(str(m.get("target")) for m in muts if isinstance(m, dict) and m.get("target"))
-            )
-            derived_blast_radius = raw_br or {
-                "direct": derived_affects,
-                "indirect": [],
-                "invariants_at_risk": [],
-            }
-        else:
-            derived_affects, derived_blast_radius = arch_idx.compute_delta_impact(
-                mutations=muts,
-                raw_blast_radius=raw_br,
-                sync=False,
-            )
+        derived_affects, derived_blast_radius = arch_idx.compute_delta_impact(
+            mutations=muts,
+            raw_blast_radius=raw_br,
+            sync=False,
+        )
 
         delta_item = {
             "id": d["id"],

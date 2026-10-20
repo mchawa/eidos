@@ -1,0 +1,22 @@
+---
+type: delta/mutation
+id: DLT-2026-041
+title: "Air-Gapped Portal Bundle with Embedded Mermaid, Fonts, and Asciidoctor.js Rendering"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: medium
+  motivation: "The Living Web Portal loads Mermaid.js from cdn.jsdelivr.net and web fonts from fonts.googleapis.com, so C4 diagrams break in air-gapped environments, and its regex AsciiDoc renderer fails on standard blocks used by living specs (e.g. '[quote]' in 'eidos/system.adoc'). No invariant currently forbids remote subresources: INV-PORTAL-ZERO-NODE-DEP only covers the Node.js runtime."
+vcs:
+  branch: fix/portal-airgapped-bundle
+mutations:
+  - operation: modify
+    target: CMP-PORTAL-ASSETS
+  - operation: modify
+    target: UIC-PORTAL-READER
+  - operation: add
+    target: INV-PORTAL-AIR-GAPPED-BUNDLE
+    parent: CAP-EXP-001
+---
+= SpecDelta: Air-Gapped Portal Bundle with Embedded Mermaid, Fonts, and Asciidoctor.js Rendering

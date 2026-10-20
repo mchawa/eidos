@@ -1,0 +1,17 @@
+---
+type: delta/mutation
+id: DLT-2026-068
+title: "Unquoted Git Path Resolution, Container-Level Invariant Verification, Single-Pass Test Cache Loading, and reconcile_specs Graph API Fix"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_violation
+  severity: high
+  motivation: "Disable Git C-style octal path quoting in diff/status/ls-files queries, verify top-level container invariants in extract_invariants_and_verify, eliminate duplicate working-tree os.walk scans per drift run, skip unchanged applied deltas in detect_drift, and fix the broken max_hops TypeError in reconcile_specs."
+vcs:
+  branch: fix/vcs-git-quotepath-invariants-and-reconcile
+mutations:
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+---
+= SpecDelta: Unquoted Git Path Resolution, Container-Level Invariant Verification, Single-Pass Test Cache Loading, and reconcile_specs Graph API Fix

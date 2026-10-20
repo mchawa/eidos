@@ -1,0 +1,17 @@
+---
+type: delta/mutation
+id: DLT-2026-013
+title: Remove Deprecated PRCheckResult Backwards Compatibility Alias
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate redundant PRCheckResult backwards compatibility alias from eidos.vcs and drift modules, maintaining dead-code hygiene and streamlining the public VCS API surface."
+vcs:
+  branch: spike/exp-2026-002
+mutations:
+  - operation: modify
+    target: CMP-EIDOS-CORE
+  - operation: modify
+    target: CAP-VCS-001
+---
+= SpecDelta: Remove Deprecated PRCheckResult Backwards Compatibility Alias

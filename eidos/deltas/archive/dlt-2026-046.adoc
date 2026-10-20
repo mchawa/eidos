@@ -1,0 +1,17 @@
+---
+type: delta/mutation
+id: DLT-2026-046
+title: "Manifest-Tracked Plugin Uninstall, Non-Destructive Force Semantics, and Version-Pinned Hook Runner"
+status: applied
+intent:
+  kind: bug
+  bug_classification: spec_gap
+  severity: high
+  motivation: "Prevent 'eidos plugin uninstall' from deleting user-owned directories (.codex/, .github/plugin/, or arbitrary --dest paths), honor the 'force' overwrite flag when installing into existing workspace files, refuse symlinked destinations, and pin the package version in 'uvx' fallback hook commands."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PLUGIN
+  - operation: modify
+    target: CAP-AGENT-001
+---
+= SpecDelta: Manifest-Tracked Plugin Uninstall, Non-Destructive Force Semantics, and Version-Pinned Hook Runner
