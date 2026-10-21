@@ -242,9 +242,9 @@ class ChangelogGenerator:
                 kind = str(intent.get("kind") or "feature") if isinstance(intent, dict) else "feature"
                 motivation = (intent.get("motivation") or "") if isinstance(intent, dict) else ""
                 if isinstance(motivation, str):
-                    # Extract first sentence or summary
+                    # Extract first sentence or summary (avoiding splits on 'vs.' or SemVer '2.0.0')
                     clean_mot = re.sub(r"\s+", " ", motivation).strip()
-                    sentences = re.split(r"(?<=[.!?])\s+", clean_mot)
+                    sentences = re.split(r"(?<!\bvs)(?<!\d\.\d)(?<=[.!?])\s+(?=[A-Z`\"'(])", clean_mot)
                     summary = sentences[0] if sentences else clean_mot
                 else:
                     summary = ""

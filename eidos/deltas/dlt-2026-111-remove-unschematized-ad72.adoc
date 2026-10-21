@@ -5,7 +5,7 @@ title: Remove Unschematized Ghost Frontmatter Key Lookups and Standardize Schema
 status: applied
 intent:
   kind: enabler
-  motivation: Remove legacy and unschematized ghost frontmatter key lookups across ProjectResolver, ChangelogGenerator, DeltaEngine, GraphStorage, IncrementalSyncEngine, FTSQueryEngine, GraphTraversalEngine, TieredContextCompressor, DriftDetector, and PortalGenerator, require top-level status across all 16 v1 schemas, and standardize optional version via a strict SemVer 2.0.0 #/$defs/semver definition in common/defs.yaml.
+  motivation: "Remove legacy and unschematized ghost frontmatter key lookups across ProjectResolver, ChangelogGenerator, DeltaEngine, GraphStorage, IncrementalSyncEngine, FTSQueryEngine, GraphTraversalEngine, TieredContextCompressor, DriftDetector, and PortalGenerator, require top-level status across all 16 v1 schemas, and standardize optional version via a strict SemVer 2.0.0 #/$defs/semver definition in common/defs.yaml."
 mutations:
   - operation: modify
     target: CMP-SPEC-VALIDATOR

@@ -13,7 +13,7 @@ source_path: src/eidos/core/lifecycle/changelog.py
 Compiles applied SpecDeltas (`eidos/deltas/` and `eidos/deltas/archive/`) and Git release tag history into a portable Keep a Changelog (`CHANGELOG.md`) ledger with categorized sections and inline code badges (`INV-DELTA-CHANGELOG-GENERATION`).
 
 == Key Responsibilities & Collaborators
-* **SpecDelta & Tag Ancestry Resolution**: Scans applied SpecDeltas (`status: applied`), maps each delta to its earliest `status: applied` commit via batched `git log -G` queries, and groups entries by SemVer Git release tags or `[Unreleased]`.
+* **SpecDelta & Tag Ancestry Resolution**: Scans applied SpecDeltas (`status: applied`), extracts abbreviation- and SemVer-safe `intent.motivation` summaries, maps each delta to its earliest `status: applied` commit via batched `git log -G` queries, and groups entries by SemVer Git release tags or `[Unreleased]`.
 * **Keep a Changelog Formatting**: Classifies SpecDeltas and conventional commits into `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, and `Security` sections while deduplicating commits already covered by an applied SpecDelta.
 
 == Public Surface
