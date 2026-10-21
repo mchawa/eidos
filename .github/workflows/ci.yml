@@ -103,7 +103,46 @@ jobs:
         run: uv sync --frozen --python ${{ matrix.python-version }} --all-extras --dev
 
       - name: Run test suite with coverage
-        run: uv run pytest -v --cov=src/eidos --cov-report=term-missing
+        run: uv run pytest -v --cov=src/eidos --cov-report=term-missing --cov-report=markdown:coverage.md --junitxml=junit.xml
+
+      - name: Write test summary
+        if: always()
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: |
+          python3 - << 'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import os
+          import pathlib
+          import xml.etree.ElementTree as ET
+
+          py_ver = os.environ.get("PYTHON_VERSION", "")
+          print(f"## Python {py_ver} Test Summary\n")
+
+          junit_path = pathlib.Path("junit.xml")
+          if junit_path.is_file():
+              tree = ET.parse(junit_path)
+              root = tree.getroot()
+              suites = list(root.findall("testsuite")) if root.tag == "testsuites" else [root]
+
+              tests = sum(int(s.attrib.get("tests", 0)) for s in suites)
+              failures = sum(int(s.attrib.get("failures", 0)) for s in suites)
+              errors = sum(int(s.attrib.get("errors", 0)) for s in suites)
+              skipped = sum(int(s.attrib.get("skipped", 0)) for s in suites)
+              duration = sum(float(s.attrib.get("time", 0.0)) for s in suites)
+              passed = tests - failures - errors - skipped
+              status = "✅ Passed" if (failures == 0 and errors == 0 and tests > 0) else "❌ Failed"
+
+              print("| Status | Total | Passed | Failed | Errors | Skipped | Duration |")
+              print("| :--- | :---: | :---: | :---: | :---: | :---: | :---: |")
+              print(f"| {status} | {tests} | {passed} | {failures} | {errors} | {skipped} | {duration:.2f}s |\n")
+          else:
+              print("_No JUnit XML report found._\n")
+
+          cov_path = pathlib.Path("coverage.md")
+          if cov_path.is_file():
+              print("### Code Coverage\n")
+              print(cov_path.read_text(encoding="utf-8").strip())
+          EOF
 
   build-site:
     name: Build Documentation & Living Portal
