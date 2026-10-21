@@ -14,7 +14,11 @@ from typing import Any
 
 import orjson
 
-from eidos.core.index.query import TASK_SLICE_ENTITY_TYPES
+from eidos.core.index.query import (
+    TASK_SLICE_ENTITY_TYPES,
+    execute_fts_query,
+    resolve_symbol_or_path_in_db,
+)
 
 STOP_WORDS = {
     "a",
@@ -1056,7 +1060,7 @@ def build_tiered_context_slice(
                 clean_files.append(c)
 
     for fpath in clean_files:
-        matches = index.resolve_symbol_or_path(fpath)
+        matches = resolve_symbol_or_path_in_db(conn, fpath)
         for m in matches:
             eid = m["entity_id"]
             etype = m["type"]
@@ -1081,7 +1085,7 @@ def build_tiered_context_slice(
     # 3. Resolve by Task prompt (FTS5 lexical search restricted to sliceable entity types, so historical
     #    SpecDeltas, explorations, and personas never consume the top-k candidate slots)
     if task and task.strip():
-        fts_matches = index.query_fts(task, limit=8, include_types=TASK_SLICE_ENTITY_TYPES)
+        fts_matches = execute_fts_query(conn, text=task, limit=8, include_types=TASK_SLICE_ENTITY_TYPES)
         for m in fts_matches:
             eid = m["id"]
             etype = m["type"]

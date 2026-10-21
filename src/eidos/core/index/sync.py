@@ -108,13 +108,21 @@ def _normalize_rel_path(path: str) -> str:
 
 def _is_governed_source_file(path_str: str) -> bool:
     """Return True if ``path_str`` has a governed source/text extension and is not a lockfile or archive."""
-    base = os.path.basename(path_str)
-    if not base or base.startswith(".") or base in _EXCLUDED_FILENAMES:
+    slash = path_str.rfind("/")
+    if "\\" in path_str:
+        slash = max(slash, path_str.rfind("\\"))
+    base = path_str[slash + 1 :] if slash >= 0 else path_str
+    if not base or base[0] == "." or base in _EXCLUDED_FILENAMES:
         return False
-    _, ext = os.path.splitext(base)
-    if ext.lower() not in _GOVERNED_TEXT_EXTS:
+    dot = base.rfind(".")
+    if dot <= 0:
         return False
-    parts = base.lower().split(".")[1:]
+    ext = base[dot:].lower()
+    if ext not in _GOVERNED_TEXT_EXTS:
+        return False
+    if base.find(".") == dot:
+        return True
+    parts = base.lower().split(".")[1:-1]
     return not any(f".{p}" in _BINARY_OR_ARCHIVE_EXTS for p in parts)
 
 
@@ -672,30 +680,6 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
                     return True
         return False
 
-    for full_pp in explicit_code_files:
-        if not _is_covered_by_top_code_dirs(full_pp) and os.path.isfile(full_pp) and _is_governed_source_file(full_pp):
-            rel_code = _rel_path(full_pp)
-            if rel_code not in disk_files:
-                disk_files.add(rel_code)
-                try:
-                    stat = os.stat(full_pp)
-                except OSError:
-                    continue
-                _check_file_str(full_pp, rel_code, stat.st_mtime)
-
-    for rel_tracked in list(db_files.keys()):
-        if not rel_tracked.endswith(".adoc") and rel_tracked not in disk_files:
-            abs_tracked = os.path.normpath(os.path.join(root_str, rel_tracked))
-            if _is_covered_by_top_code_dirs(abs_tracked):
-                continue
-            if os.path.isfile(abs_tracked):
-                disk_files.add(rel_tracked)
-                try:
-                    stat = os.stat(abs_tracked)
-                except OSError:
-                    continue
-                _check_file_str(abs_tracked, rel_tracked, stat.st_mtime)
-
     def _scan_code_dir(dir_path: str) -> None:
         try:
             with os.scandir(dir_path) as it:
@@ -727,6 +711,31 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     for code_dir in top_code_dirs:
         if os.path.isdir(code_dir):
             _scan_code_dir(code_dir)
+
+    for full_pp in explicit_code_files:
+        rel_code = _rel_path(full_pp)
+        if rel_code in disk_files:
+            continue
+        if not _is_covered_by_top_code_dirs(full_pp) and _is_governed_source_file(full_pp) and os.path.isfile(full_pp):
+            disk_files.add(rel_code)
+            try:
+                stat = os.stat(full_pp)
+            except OSError:
+                continue
+            _check_file_str(full_pp, rel_code, stat.st_mtime)
+
+    for rel_tracked in db_files:
+        if not rel_tracked.endswith(".adoc") and rel_tracked not in disk_files:
+            abs_tracked = os.path.normpath(os.path.join(root_str, rel_tracked))
+            if _is_covered_by_top_code_dirs(abs_tracked):
+                continue
+            if os.path.isfile(abs_tracked):
+                disk_files.add(rel_tracked)
+                try:
+                    stat = os.stat(abs_tracked)
+                except OSError:
+                    continue
+                _check_file_str(abs_tracked, rel_tracked, stat.st_mtime)
 
     if mtime_refreshes:
         with conn:
