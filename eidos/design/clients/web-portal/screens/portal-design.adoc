@@ -33,7 +33,7 @@ The Design Systems View (`SCR-PORTAL-DESIGN`) connects business capabilities wit
 * **Empty State Resilience**: Gracefully handles repositories with zero configured design systems by displaying an informational banner and clean onboarding card instead of empty token swatches.
 * **Interaction Flows (FLOW-*)**: Client-internal journeys (`FLOW-PORTAL-EXPLORATION`) and multi-client (`clients.length > 1`) or `cross_client` omnichannel flows (`FLOW-CLI-SERVE-AND-BROWSE`) with dynamic Mermaid diagrams.
 * **Multi-Design Systems Catalog (DS-*)**: Registered design systems, base inheritance, and client brand overrides.
-* **W3C DTCG Tokens Studio**: Visual swatches for brand palettes, neutral surfaces, functional feedback colors, spacing scales, and typography.
+* **W3C DTCG Tokens Studio & Recursive W3C Token Tree**: Visual swatches for brand palettes, neutral surfaces, functional feedback colors, spacing scales, and typography, paired with a generic recursive W3C DTCG token tree explorer with search filtering and multi-system `DS-*` selector tabs.
 * **UI Component Contracts (UIC-*)**: Visual component manifests with variants, supported interaction states, and accessibility invariants (WCAG, ARIA, keyboard navigation).
 * **Screen State Machines (SCR-*)**: Mermaid-powered state machine diagrams detailing screen transitions.
 

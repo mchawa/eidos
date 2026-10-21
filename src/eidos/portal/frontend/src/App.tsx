@@ -11,12 +11,94 @@ import { CommandDialog, type CommandItem } from "@/components/ui/command";
 import type { PortalData } from "@/types";
 import { SPEC_NAV_EVENT, resolveSpecTarget, type SpecNavDetail } from "@/lib/specNav";
 
-export function App() {
-  const [data, setData] = React.useState<PortalData | null>(() => {
-    return window.__EIDOS_DATA__ || null;
+const VALID_TABS = new Set<TabKey>([
+  "home",
+  "business",
+  "design",
+  "architecture",
+  "deltas",
+  "explorations",
+  "catalog",
+]);
+
+function hydratePortalData(raw: PortalData): PortalData {
+  const bodyById = new Map<string, string>();
+  (raw.specs || []).forEach((s) => {
+    if (s.id && typeof s.body === "string") {
+      bodyById.set(s.id, s.body);
+    }
   });
 
-  const [activeTab, setActiveTab] = React.useState<TabKey>("home");
+  const withDesc = <T extends { id: string; description?: string }>(items: T[] = []): T[] =>
+    items.map((item) =>
+      item.description === undefined && bodyById.has(item.id)
+        ? { ...item, description: bodyById.get(item.id) }
+        : item
+    );
+
+  const withBody = <T extends { id: string; body?: string }>(items: T[] = []): T[] =>
+    items.map((item) =>
+      item.body === undefined && bodyById.has(item.id)
+        ? { ...item, body: bodyById.get(item.id) }
+        : item
+    );
+
+  const hydratedComponents = withDesc(raw.components || []).map((c) => ({
+    ...c,
+    internal_components: (c.internal_components || []).map((ic) =>
+      ic.description === undefined && bodyById.has(ic.id)
+        ? { ...ic, description: bodyById.get(ic.id) }
+        : ic
+    ),
+  }));
+
+  const hydratedDeltas: PortalData["deltas"] = {
+    proposed: [],
+    in_review: [],
+    approved: [],
+    applied: [],
+  };
+  for (const [k, list] of Object.entries(raw.deltas || {})) {
+    if (Array.isArray(list)) {
+      hydratedDeltas[k] = withBody(list);
+    }
+  }
+
+  return {
+    ...raw,
+    components: hydratedComponents,
+    contracts: withDesc(raw.contracts || []),
+    domains: withBody(raw.domains || []),
+    capabilities: withBody(raw.capabilities || []),
+    personas: withBody(raw.personas || []),
+    policies: withBody(raw.policies || []),
+    explorations: withBody(raw.explorations || []),
+    clients: withBody(raw.clients || []),
+    flows: withBody(raw.flows || []),
+    ui_components: withBody(raw.ui_components || []),
+    deltas: hydratedDeltas,
+  };
+}
+
+function parseRouteHash(hash: string): { tab: TabKey; entityId?: string } | null {
+  const cleaned = (hash || "").replace(/^#\/?/, "").trim();
+  if (!cleaned) return null;
+  const parts = cleaned.split("/").filter(Boolean);
+  const first = parts[0]?.toLowerCase() as TabKey;
+  if (!VALID_TABS.has(first)) return null;
+  const entityId = parts[1] ? decodeURIComponent(parts[1]) : undefined;
+  return { tab: first, entityId };
+}
+
+export function App() {
+  const isStaticBundle = Boolean(window.__EIDOS_DATA__);
+  const [data, setData] = React.useState<PortalData | null>(() => {
+    return window.__EIDOS_DATA__ ? hydratePortalData(window.__EIDOS_DATA__) : null;
+  });
+
+  const [activeTab, setActiveTabState] = React.useState<TabKey>(() => {
+    return parseRouteHash(window.location.hash)?.tab || "home";
+  });
   // In-portal xref navigation: the reader publishes raw targets, the shell resolves them to a catalog spec.
   const [focusSpec, setFocusSpec] = React.useState<{ id: string; nonce: number } | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState<boolean>(() => {
@@ -31,6 +113,92 @@ export function App() {
   const [selectedComponent, setSelectedComponent] = React.useState<{ id: string; nonce: number } | null>(null);
   const [selectedExploration, setSelectedExploration] = React.useState<{ id: string; nonce: number } | null>(null);
   const [selectedBusiness, setSelectedBusiness] = React.useState<{ id: string; nonce: number } | null>(null);
+  const [selectedDesign, setSelectedDesign] = React.useState<{ id: string; nonce: number } | null>(null);
+  const [liveSyncActive, setLiveSyncActive] = React.useState<boolean>(!isStaticBundle);
+
+  const setActiveTab = React.useCallback((tab: TabKey, entityId?: string) => {
+    setActiveTabState(tab);
+    const nextHash = entityId ? `#/${tab}/${encodeURIComponent(entityId)}` : `#/${tab}`;
+    if (window.location.hash !== nextHash) {
+      window.history.replaceState(null, "", nextHash);
+    }
+  }, []);
+
+  const routeToEntity = React.useCallback(
+    (rawId: string, preferredTab?: TabKey) => {
+      const id = rawId.trim();
+      if (!id) return;
+      const nonce = Date.now();
+      const upper = id.toUpperCase();
+
+      if (preferredTab === "catalog") {
+        setFocusSpec({ id, nonce });
+        setActiveTab("catalog", id);
+        return;
+      }
+
+      if (upper.startsWith("CNT-") || upper.startsWith("CMP-") || upper.startsWith("CTR-")) {
+        setSelectedComponent({ id, nonce });
+        setActiveTab("architecture", id);
+      } else if (upper.startsWith("DLT-")) {
+        setSelectedDelta({ id, nonce });
+        setActiveTab("deltas", id);
+      } else if (upper.startsWith("EXP-")) {
+        setSelectedExploration({ id, nonce });
+        setActiveTab("explorations", id);
+      } else if (
+        upper.startsWith("DOM-") ||
+        upper.startsWith("CAP-") ||
+        upper.startsWith("POL-") ||
+        upper.startsWith("PER-") ||
+        upper.startsWith("INV-")
+      ) {
+        setSelectedBusiness({ id, nonce });
+        setActiveTab("business", id);
+      } else if (
+        upper.startsWith("DS-") ||
+        upper.startsWith("CLT-") ||
+        upper.startsWith("SCR-") ||
+        upper.startsWith("UIC-") ||
+        upper.startsWith("FLOW-")
+      ) {
+        setSelectedDesign({ id, nonce });
+        setActiveTab("design", id);
+      } else {
+        setFocusSpec({ id, nonce });
+        setActiveTab("catalog", id);
+      }
+    },
+    [setActiveTab]
+  );
+
+  // Sync URL hash (#/<tab>/<entity-id>) on initial load and hashchange (DEC-PORTAL-HASH-ROUTING)
+  React.useEffect(() => {
+    const applyHash = () => {
+      const parsed = parseRouteHash(window.location.hash);
+      if (!parsed) return;
+      setActiveTabState(parsed.tab);
+      if (parsed.entityId) {
+        const nonce = Date.now();
+        if (parsed.tab === "architecture") {
+          setSelectedComponent({ id: parsed.entityId, nonce });
+        } else if (parsed.tab === "deltas") {
+          setSelectedDelta({ id: parsed.entityId, nonce });
+        } else if (parsed.tab === "explorations") {
+          setSelectedExploration({ id: parsed.entityId, nonce });
+        } else if (parsed.tab === "business") {
+          setSelectedBusiness({ id: parsed.entityId, nonce });
+        } else if (parsed.tab === "design") {
+          setSelectedDesign({ id: parsed.entityId, nonce });
+        } else if (parsed.tab === "catalog") {
+          setFocusSpec({ id: parsed.entityId, nonce });
+        }
+      }
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, []);
 
   // Sync theme to <html> element
   React.useEffect(() => {
@@ -47,30 +215,70 @@ export function App() {
 
   // Load data from /api/data if not pre-injected in window.__EIDOS_DATA__
   React.useEffect(() => {
-    if (!data) {
+    if (!data && !isStaticBundle) {
       fetch("/api/data")
         .then((res) => res.json())
-        .then((payload: PortalData) => setData(payload))
+        .then((payload: PortalData) => setData(hydratePortalData(payload)))
         .catch((err) => console.warn("Could not load /api/data:", err));
     }
-  }, [data]);
+  }, [data, isStaticBundle]);
 
-  // Resolve xref:/<<ID>>/link:*.adoc[] clicks from the AsciiDoc reader to the spec catalog inspector.
+  // Progressive mtime polling strictly when window.__EIDOS_DATA__ is absent (DEC-PORTAL-PROGRESSIVE-MTIME-POLLING)
+  React.useEffect(() => {
+    if (isStaticBundle) return;
+    let lastSig = "";
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      fetch("/api/version")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((ver) => {
+          if (!ver || cancelled) return;
+          const sig = `${ver.count}:${ver.max_mtime_ns}:${ver.total_size}`;
+          if (lastSig && lastSig !== sig) {
+            fetch("/api/data")
+              .then((r) => r.json())
+              .then((payload: PortalData) => {
+                if (!cancelled) setData(hydratePortalData(payload));
+              })
+              .catch(() => {});
+          }
+          lastSig = sig;
+          setLiveSyncActive(true);
+        })
+        .catch(() => setLiveSyncActive(false));
+    }, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [isStaticBundle]);
+
+  // Resolve xref:/<<ID>>/link:*.adoc[] and cross-entity badge clicks
   React.useEffect(() => {
     if (!data) return;
     const onNavigate = (event: Event) => {
       const { target } = (event as CustomEvent<SpecNavDetail>).detail;
       const spec = resolveSpecTarget(data.specs, target);
-      if (!spec) {
-        console.warn(`Eidos portal: cross-reference '${target}' does not match any loaded specification.`);
+      if (spec) {
+        routeToEntity(spec.id);
         return;
       }
-      setFocusSpec({ id: spec.id, nonce: Date.now() });
-      setActiveTab("catalog");
+      // Also support direct entity IDs (INV-*, CMP-*, DEC-*) that may be embedded inside a parent spec
+      const trimmed = (target || "").trim();
+      if (
+        trimmed.startsWith("INV-") ||
+        trimmed.startsWith("CMP-") ||
+        trimmed.startsWith("CTR-") ||
+        trimmed.startsWith("CNT-")
+      ) {
+        routeToEntity(trimmed);
+        return;
+      }
+      console.warn(`Eidos portal: cross-reference '${target}' does not match any loaded specification.`);
     };
     window.addEventListener(SPEC_NAV_EVENT, onNavigate);
     return () => window.removeEventListener(SPEC_NAV_EVENT, onNavigate);
-  }, [data]);
+  }, [data, routeToEntity]);
 
   const toggleSidebar = () => {
     setSidebarCollapsed((prev) => {
@@ -84,22 +292,70 @@ export function App() {
     setDarkMode((prev) => !prev);
   };
 
-  // Build searchable items for CMD+K spotlight search (deduplicating specialized items against generic specs)
+  // Build searchable items for CMD+K spotlight search with pre-indexed lowercased searchText
   const commandItems: CommandItem[] = React.useMemo(() => {
     if (!data) return [];
     const items: CommandItem[] = [];
     const seenIds = new Set<string>();
+    const extractHeadings = (body?: string) =>
+      (body || "")
+        .split("\n")
+        .filter((l) => l.startsWith("="))
+        .join(" ");
 
-    // C4 Components
+    // C4 Containers & Internal L3 Components
     data.components.forEach((c) => {
       seenIds.add(c.id);
+      const headings = extractHeadings(c.description);
       items.push({
         id: c.id,
         title: c.title,
         subtitle: c.source_path,
+        searchText: `${c.id} ${c.title} ${c.source_path} ${c.responsibility || ""} ${headings}`.toLowerCase(),
         category: "components",
         raw: c,
       });
+      (c.internal_components || []).forEach((ic) => {
+        if (ic.id && !seenIds.has(ic.id)) {
+          seenIds.add(ic.id);
+          items.push({
+            id: ic.id,
+            title: ic.title || ic.id,
+            subtitle: `${c.id} • ${Array.isArray(ic.source_path) ? ic.source_path.join(", ") : ic.source_path || ""}`,
+            searchText: `${ic.id} ${ic.title || ""} ${ic.responsibility || ""} ${c.id}`.toLowerCase(),
+            category: "components",
+            raw: ic,
+          });
+        }
+      });
+    });
+
+    // Boundary Contracts (CTR-*)
+    (data.contracts || []).forEach((ct) => {
+      seenIds.add(ct.id);
+      items.push({
+        id: ct.id,
+        title: ct.title,
+        subtitle: `${ct.protocol} • ${ct.container}`,
+        searchText: `${ct.id} ${ct.title} ${ct.protocol} ${ct.container} ${extractHeadings(ct.description)}`.toLowerCase(),
+        category: "contracts",
+        raw: ct,
+      });
+    });
+
+    // Architectural Decisions (DEC-*)
+    (data.decisions || []).forEach((dec) => {
+      if (dec.id && !seenIds.has(dec.id)) {
+        seenIds.add(dec.id);
+        items.push({
+          id: dec.id,
+          title: dec.title,
+          subtitle: `${dec.source_id || "Architecture"} • ${dec.decision?.slice(0, 80) || ""}`,
+          searchText: `${dec.id} ${dec.title} ${dec.decision || ""} ${dec.rationale || ""} ${dec.source_id || ""}`.toLowerCase(),
+          category: "decisions",
+          raw: dec,
+        });
+      }
     });
 
     // Invariants
@@ -109,6 +365,7 @@ export function App() {
         id: inv.id,
         title: inv.title || inv.category,
         subtitle: inv.rule,
+        searchText: `${inv.id} ${inv.title || ""} ${inv.category || ""} ${inv.rule || ""} ${inv.test_binding || ""}`.toLowerCase(),
         category: "invariants",
         raw: inv,
       });
@@ -128,6 +385,7 @@ export function App() {
         id: d.id,
         title: d.title,
         subtitle: d.status,
+        searchText: `${d.id} ${d.title} ${d.status} ${d.motivation || ""} ${extractHeadings(d.body)}`.toLowerCase(),
         category: "deltas",
         raw: d,
       });
@@ -140,6 +398,7 @@ export function App() {
         id: pol.id,
         title: pol.title,
         subtitle: pol.invariants?.[0]?.rule || pol.category,
+        searchText: `${pol.id} ${pol.title} ${pol.category} ${extractHeadings(pol.body)}`.toLowerCase(),
         category: "policies",
         raw: pol,
       });
@@ -152,6 +411,7 @@ export function App() {
         id: dom.id,
         title: dom.title,
         subtitle: dom.mission,
+        searchText: `${dom.id} ${dom.title} ${dom.mission || ""} ${extractHeadings(dom.body)}`.toLowerCase(),
         category: "domains",
         raw: dom,
       });
@@ -164,6 +424,7 @@ export function App() {
         id: cap.id,
         title: cap.title || cap.id,
         subtitle: cap.summary,
+        searchText: `${cap.id} ${cap.title || ""} ${cap.summary || ""} ${extractHeadings(cap.body)}`.toLowerCase(),
         category: "capabilities",
         raw: cap,
       });
@@ -176,6 +437,7 @@ export function App() {
         id: per.id,
         title: per.title,
         subtitle: per.role,
+        searchText: `${per.id} ${per.title} ${per.role || ""} ${extractHeadings(per.body)}`.toLowerCase(),
         category: "personas",
         raw: per,
       });
@@ -188,9 +450,31 @@ export function App() {
         id: exp.id,
         title: exp.title,
         subtitle: `${exp.status} • ${exp.hypothesis?.slice(0, 80) || ""}`,
+        searchText: `${exp.id} ${exp.title} ${exp.status} ${exp.hypothesis || ""} ${extractHeadings(exp.body)}`.toLowerCase(),
         category: "explorations",
         raw: exp,
       });
+    });
+
+    // Design entities (DS-*, CLT-*, UIC-*, SCR-*, FLOW-*)
+    [
+      ...(data.design_systems || []),
+      ...(data.clients || []),
+      ...(data.ui_components || []),
+      ...(data.screens || []),
+      ...(data.flows || []),
+    ].forEach((de: any) => {
+      if (de.id && !seenIds.has(de.id)) {
+        seenIds.add(de.id);
+        items.push({
+          id: de.id,
+          title: de.title || de.id,
+          subtitle: de.route || de.platform || de.category || de.flow_type || "Design",
+          searchText: `${de.id} ${de.title || ""} ${de.route || ""} ${de.category || ""}`.toLowerCase(),
+          category: "design",
+          raw: de,
+        });
+      }
     });
 
     // Specs not already indexed under a specialized category
@@ -201,6 +485,7 @@ export function App() {
           id: s.id,
           title: s.title,
           subtitle: s.path,
+          searchText: `${s.id} ${s.title} ${s.path} ${extractHeadings(s.body)}`.toLowerCase(),
           category: "specs",
           raw: s,
         });
@@ -212,15 +497,21 @@ export function App() {
 
   const handleCommandSelect = (item: CommandItem) => {
     const nonce = Date.now();
-    if (item.category === "components") {
+    if (item.category === "components" || item.category === "contracts") {
       setSelectedComponent({ id: item.id, nonce });
-      setActiveTab("architecture");
+      setActiveTab("architecture", item.id);
+    } else if (item.category === "decisions") {
+      const srcId = item.raw?.source_id || item.id;
+      routeToEntity(srcId);
     } else if (item.category === "deltas") {
       setSelectedDelta({ id: item.id, nonce });
-      setActiveTab("deltas");
+      setActiveTab("deltas", item.id);
     } else if (item.category === "explorations") {
       setSelectedExploration({ id: item.id, nonce });
-      setActiveTab("explorations");
+      setActiveTab("explorations", item.id);
+    } else if (item.category === "design") {
+      setSelectedDesign({ id: item.id, nonce });
+      setActiveTab("design", item.id);
     } else if (
       item.category === "policies" ||
       item.category === "domains" ||
@@ -229,10 +520,10 @@ export function App() {
       item.category === "invariants"
     ) {
       setSelectedBusiness({ id: item.id, nonce });
-      setActiveTab("business");
+      setActiveTab("business", item.id);
     } else {
       setFocusSpec({ id: item.id, nonce });
-      setActiveTab("catalog");
+      setActiveTab("catalog", item.id);
     }
   };
 
@@ -274,6 +565,16 @@ export function App() {
               {activeTab}
             </span>
           </div>
+          {!isStaticBundle && (
+            <div className="flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground">
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  liveSyncActive ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+                }`}
+              />
+              <span>{liveSyncActive ? "Live Sync" : "Offline"}</span>
+            </div>
+          )}
         </header>
 
         {/* Viewport Content */}
@@ -281,8 +582,15 @@ export function App() {
           {activeTab === "home" && (
             <HomeView
               data={data}
-              onNavigateTab={setActiveTab}
-              onInspectSpec={() => setActiveTab("catalog")}
+              onNavigateTab={(t: TabKey) => setActiveTab(t)}
+              onInspectSpec={(spec: any) => {
+                if (spec?.id) {
+                  setFocusSpec({ id: spec.id, nonce: Date.now() });
+                  setActiveTab("catalog", spec.id);
+                } else {
+                  setActiveTab("catalog");
+                }
+              }}
             />
           )}
           {activeTab === "architecture" && (
@@ -310,7 +618,7 @@ export function App() {
               onClearSelected={() => setSelectedExploration(null)}
               onNavigateDelta={(deltaId) => {
                 setSelectedDelta({ id: deltaId, nonce: Date.now() });
-                setActiveTab("deltas");
+                setActiveTab("deltas", deltaId);
               }}
             />
           )}
@@ -330,7 +638,15 @@ export function App() {
               onClearSelected={() => setSelectedBusiness(null)}
             />
           )}
-          {activeTab === "design" && <DesignView data={data} darkMode={darkMode} />}
+          {activeTab === "design" && (
+            <DesignView
+              data={data}
+              darkMode={darkMode}
+              initialSelectedId={selectedDesign?.id}
+              initialSelectedNonce={selectedDesign?.nonce}
+              onClearSelected={() => setSelectedDesign(null)}
+            />
+          )}
         </div>
       </main>
 

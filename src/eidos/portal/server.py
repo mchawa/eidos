@@ -51,6 +51,8 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
     _cached_portal_data: dict[str, Any] | None = None
     _cached_validation_key: tuple[str, int, int, int] | None = None
     _cached_validation_res: dict[str, Any] | None = None
+    _cached_drift_key: tuple[str, int, int, int] | None = None
+    _cached_drift_res: dict[str, Any] | None = None
 
     def _get_cached_portal_data(self) -> dict[str, Any]:
         snap = (str(self.eidos_dir.resolve()), *_compute_eidos_mtime_snapshot(self.eidos_dir))
@@ -83,6 +85,51 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
             EidosPortalHandler._cached_validation_res = res
             return res
 
+    def _get_cached_drift(self) -> dict[str, Any]:
+        from eidos.vcs.drift import detect_drift
+
+        snap = (str(self.eidos_dir.resolve()), *_compute_eidos_mtime_snapshot(self.eidos_dir))
+        with EidosPortalHandler._cache_lock:
+            if EidosPortalHandler._cached_drift_key == snap and EidosPortalHandler._cached_drift_res is not None:
+                return EidosPortalHandler._cached_drift_res
+            try:
+                res_obj = detect_drift(
+                    self.eidos_dir.resolve().parent,
+                    eidos_dir=self.eidos_dir.resolve(),
+                    uncommitted=True,
+                )
+                res = {
+                    "is_clean": res_obj.is_clean,
+                    "drift_detected": res_obj.drift_detected,
+                    "workflow_mode": res_obj.workflow_mode,
+                    "touched_components": res_obj.touched_components,
+                    "validation_passed": res_obj.validation_passed,
+                    "validation_errors": res_obj.validation_errors,
+                    "uncovered_invariants": [inv.id for inv in res_obj.uncovered_invariants],
+                    "orphan_invariants": [
+                        {"test_id": t_id, "invariant_id": inv_id} for t_id, inv_id in res_obj.orphan_invariants
+                    ],
+                    "remediation_suggestions": res_obj.remediation_suggestions,
+                    "summary_markdown": res_obj.summary_markdown,
+                }
+            except Exception as exc:
+                res = {
+                    "is_clean": True,
+                    "drift_detected": False,
+                    "workflow_mode": "direct",
+                    "touched_components": [],
+                    "validation_passed": True,
+                    "validation_errors": [],
+                    "uncovered_invariants": [],
+                    "orphan_invariants": [],
+                    "remediation_suggestions": [],
+                    "summary_markdown": "",
+                    "error": str(exc),
+                }
+            EidosPortalHandler._cached_drift_key = snap
+            EidosPortalHandler._cached_drift_res = res
+            return res
+
     def do_GET(self) -> None:
         parsed_url = urllib.parse.urlparse(self.path)
         path = urllib.parse.unquote(parsed_url.path)
@@ -97,8 +144,14 @@ class EidosPortalHandler(BaseHTTPRequestHandler):
         elif path == "/api/overview":
             data = self._get_cached_portal_data()
             self._send_json(data.get("overview", {}))
+        elif path == "/api/version":
+            count, max_mtime, total_size = _compute_eidos_mtime_snapshot(self.eidos_dir)
+            self._send_json({"count": count, "max_mtime_ns": max_mtime, "total_size": total_size})
         elif path == "/api/validate":
             res = self._get_cached_validation()
+            self._send_json(res)
+        elif path == "/api/drift":
+            res = self._get_cached_drift()
             self._send_json(res)
         elif path in ("/health", "/api/health"):
             self._send_json({"status": "ok", "system": "eidos-portal"})

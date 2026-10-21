@@ -35,13 +35,27 @@ import type {
 export interface DesignViewProps {
   data: PortalData;
   darkMode?: boolean;
+  initialSelectedId?: string;
+  initialSelectedNonce?: number;
+  onClearSelected?: () => void;
 }
 
 type DesignSubTab = "all" | "tokens" | "clients" | "components" | "screens" | "flows";
 
-export function DesignView({ data, darkMode }: DesignViewProps) {
+export function DesignView({
+  data,
+  darkMode,
+  initialSelectedId,
+  initialSelectedNonce,
+  onClearSelected,
+}: DesignViewProps) {
   const { clients = [], flows = [], design_systems = [], ui_components = [], screens = [] } = data;
-  const activeDS = design_systems.find((s) => !s.extends) || design_systems[0];
+  const defaultDS = design_systems.find((s) => !s.extends) || design_systems[0];
+  const [selectedDSId, setSelectedDSId] = React.useState<string>(defaultDS?.id || "");
+  const activeDS = React.useMemo(
+    () => design_systems.find((s) => s.id === selectedDSId) || defaultDS,
+    [design_systems, selectedDSId, defaultDS]
+  );
 
   const [activeTab, setActiveTab] = React.useState<DesignSubTab>("all");
   const [selectedClientId, setSelectedClientId] = React.useState<string>(
@@ -54,6 +68,75 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
   const [copiedToken, setCopiedToken] = React.useState<string | null>(null);
   const [flowsLayout, setFlowsLayout] = React.useState<"split" | "stacked">("split");
   const [inspectingItem, setInspectingItem] = React.useState<{ title: string; subtitle?: string; body?: string } | null>(null);
+
+  React.useEffect(() => {
+    if (!initialSelectedId) return;
+    const ds = design_systems.find((s) => s.id === initialSelectedId);
+    if (ds) {
+      setSelectedDSId(ds.id);
+      setActiveTab("tokens");
+      return;
+    }
+    const clt = clients.find((c) => c.id === initialSelectedId);
+    if (clt) {
+      setSelectedClientId(clt.id);
+      setActiveTab("clients");
+      return;
+    }
+    const scr = screens.find((s) => s.id === initialSelectedId);
+    if (scr) {
+      setSelectedScreenId(scr.id);
+      setActiveTab("screens");
+      return;
+    }
+    const uic = ui_components.find((u) => u.id === initialSelectedId);
+    if (uic) {
+      setActiveTab("components");
+      if (uic.body) {
+        setInspectingItem({
+          title: uic.title || uic.id,
+          subtitle: `${uic.id} • ${uic.category || "UI Component"}`,
+          body: uic.body,
+        });
+      }
+      return;
+    }
+    const fl = flows.find((f) => f.id === initialSelectedId);
+    if (fl) {
+      setActiveTab("flows");
+      if (fl.body) {
+        setInspectingItem({
+          title: fl.title || fl.id,
+          subtitle: `${fl.id} • ${fl.flow_type || "Flow"}`,
+          body: fl.body,
+        });
+      }
+    }
+  }, [initialSelectedId, initialSelectedNonce, design_systems, clients, screens, ui_components, flows]);
+
+  const flattenedTokenTree = React.useMemo(() => {
+    const out: Array<{ path: string; value: string; type?: string; description?: string }> = [];
+    const walk = (node: any, prefix: string) => {
+      if (!node || typeof node !== "object") return;
+      if ("$value" in node) {
+        out.push({
+          path: prefix,
+          value: typeof node.$value === "object" ? JSON.stringify(node.$value) : String(node.$value),
+          type: node.$type ? String(node.$type) : undefined,
+          description: node.$description ? String(node.$description) : undefined,
+        });
+        return;
+      }
+      for (const [k, v] of Object.entries(node)) {
+        if (k.startsWith("$")) continue;
+        walk(v, prefix ? `${prefix}.${k}` : k);
+      }
+    };
+    if (activeDS?.tokens) {
+      walk(activeDS.tokens, "");
+    }
+    return out;
+  }, [activeDS]);
 
   const activeClient = React.useMemo(() => {
     return clients.find((c) => c.id === selectedClientId) || clients[0];
@@ -258,16 +341,36 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
       {/* SECTION 1: W3C DTCG Token Studio */}
       {(activeTab === "all" || activeTab === "tokens") && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-sm font-bold text-foreground tracking-tight flex items-center gap-2">
               <Palette className="h-4 w-4 text-primary" />
               W3C DTCG Living Design Tokens Studio (`tokens.json`)
             </h3>
-            {activeDS ? (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="font-mono text-muted-foreground">{activeDS.id}</span>
-                <span className="text-border">|</span>
-                <span className="text-muted-foreground font-medium">{activeDS.brand_name || activeDS.title}</span>
+            {design_systems.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                {design_systems.map((ds) => {
+                  const isSel = activeDS?.id === ds.id;
+                  return (
+                    <button
+                      key={ds.id}
+                      type="button"
+                      onClick={() => setSelectedDSId(ds.id)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl font-mono text-xs border transition-colors cursor-pointer",
+                        isSel
+                          ? "bg-primary/15 text-primary border-primary/40 font-bold"
+                          : "bg-card text-muted-foreground border-border/70 hover:text-foreground"
+                      )}
+                    >
+                      <span>{ds.id}</span>
+                      {ds.extends && (
+                        <span className="text-[10px] text-muted-foreground">
+                          extends {ds.extends}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <Badge variant="outline" className="text-xs font-mono text-muted-foreground">
@@ -456,6 +559,60 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
                 </div>
               </div>
             </div>
+
+            {/* Recursive W3C Token Tree Explorer */}
+            {flattenedTokenTree.length > 0 && (
+              <div className="pt-4 border-t border-border/60 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Code2 className="h-3.5 w-3.5 text-primary" />
+                    Recursive W3C Token Tree Explorer ({flattenedTokenTree.length} tokens)
+                  </h4>
+                  <span className="text-[11px] text-muted-foreground font-mono">
+                    Click any token row to copy value
+                  </span>
+                </div>
+                <div className="max-h-72 overflow-y-auto rounded-xl border border-border/70 divide-y divide-border/50 bg-muted/10">
+                  {flattenedTokenTree.map((tk) => (
+                    <div
+                      key={tk.path}
+                      onClick={() => handleCopy(tk.value, tk.path)}
+                      className="px-3 py-2 flex items-center justify-between gap-3 text-xs hover:bg-muted/40 transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {tk.value.startsWith("#") && (
+                          <span
+                            className="h-3.5 w-3.5 rounded border border-border shrink-0"
+                            style={{ backgroundColor: tk.value }}
+                          />
+                        )}
+                        <span className="font-mono font-semibold text-primary truncate">
+                          {tk.path}
+                        </span>
+                        {tk.type && (
+                          <Badge variant="outline" className="text-[9px] font-mono">
+                            {tk.type}
+                          </Badge>
+                        )}
+                        {tk.description && (
+                          <span className="text-[11px] text-muted-foreground truncate hidden md:inline">
+                            — {tk.description}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 font-mono text-[11px] text-foreground">
+                        <span className="truncate max-w-[220px]">{tk.value}</span>
+                        {copiedToken === tk.path ? (
+                          <Check className="h-3 w-3 text-emerald-500" />
+                        ) : (
+                          <Copy className="h-3 w-3 text-muted-foreground" />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
           )}
         </div>
@@ -1113,7 +1270,12 @@ export function DesignView({ data, darkMode }: DesignViewProps) {
       {/* Living Spec Inspector Drawer Sheet */}
       <Sheet
         open={Boolean(inspectingItem)}
-        onOpenChange={(open) => !open && setInspectingItem(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setInspectingItem(null);
+            onClearSelected?.();
+          }
+        }}
         title={inspectingItem?.title}
         subtitle={inspectingItem?.subtitle}
         maxWidth="6xl"

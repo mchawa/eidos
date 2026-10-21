@@ -16,14 +16,16 @@ import {
   Move,
   Sparkles,
   BookOpen,
+  Crosshair,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
 import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
+import { requestSpecNavigation } from "@/lib/specNav";
 import { cn } from "@/lib/utils";
-import type { PortalData, SpecComponent } from "@/types";
+import type { PortalData, SpecComponent, SpecContract } from "@/types";
 
 export interface ArchitectureViewProps {
   data: PortalData;
@@ -66,16 +68,114 @@ export function ArchitectureView({
   const [isExpanded, setIsExpanded] = React.useState<boolean>(false);
   const [inspectorOpen, setInspectorOpen] = React.useState<boolean>(false);
   const [inspectedComponent, setInspectedComponent] = React.useState<SpecComponent | null>(null);
+  const [focusedSubComponentId, setFocusedSubComponentId] = React.useState<string | null>(null);
+  const [inspectedContract, setInspectedContract] = React.useState<SpecContract | null>(null);
+  const [blastTargetId, setBlastTargetId] = React.useState<string>("");
 
   React.useEffect(() => {
-    if (initialComponentId && data.components) {
-      const match = data.components.find((c) => c.id === initialComponentId);
-      if (match) {
-        setInspectedComponent(match);
+    if (!initialComponentId) return;
+    const ctrMatch = (data.contracts || []).find((ct) => ct.id === initialComponentId);
+    if (ctrMatch) {
+      setInspectedContract(ctrMatch);
+      return;
+    }
+    const cntMatch = (data.components || []).find((c) => c.id === initialComponentId);
+    if (cntMatch) {
+      setFocusedSubComponentId(null);
+      setInspectedComponent(cntMatch);
+      setInspectorOpen(true);
+      return;
+    }
+    // Check if initialComponentId is a Level 3 internal component (CMP-*)
+    for (const c of data.components || []) {
+      const sub = (c.internal_components || []).find((ic) => ic.id === initialComponentId);
+      if (sub) {
+        setSelectedContainerId(c.id);
+        setLevelState(3);
+        setFocusedSubComponentId(sub.id);
+        setInspectedComponent(c);
         setInspectorOpen(true);
+        return;
       }
     }
-  }, [initialComponentId, initialComponentNonce, data.components]);
+  }, [initialComponentId, initialComponentNonce, data.components, data.contracts]);
+
+  // Client-side k-hop Blast Radius Simulator over data.edges
+  const blastRadiusReport = React.useMemo(() => {
+    if (!blastTargetId) return null;
+    const edges = data.edges || [];
+    const upstream1 = new Set<string>();
+    const downstream1 = new Set<string>();
+    const upstream2 = new Set<string>();
+    const downstream2 = new Set<string>();
+
+    edges.forEach((e) => {
+      if (e.target === blastTargetId && e.source !== blastTargetId) {
+        upstream1.add(e.source);
+      }
+      if (e.source === blastTargetId && e.target !== blastTargetId) {
+        downstream1.add(e.target);
+      }
+    });
+
+    edges.forEach((e) => {
+      if (upstream1.has(e.target) && e.source !== blastTargetId && !upstream1.has(e.source)) {
+        upstream2.add(e.source);
+      }
+      if (downstream1.has(e.source) && e.target !== blastTargetId && !downstream1.has(e.target)) {
+        downstream2.add(e.target);
+      }
+    });
+
+    const allImpacted = new Set<string>([
+      blastTargetId,
+      ...upstream1,
+      ...downstream1,
+      ...upstream2,
+      ...downstream2,
+    ]);
+
+    return {
+      targetId: blastTargetId,
+      upstream1: Array.from(upstream1),
+      downstream1: Array.from(downstream1),
+      upstream2: Array.from(upstream2),
+      downstream2: Array.from(downstream2),
+      allImpacted,
+    };
+  }, [blastTargetId, data.edges]);
+
+  // Toggle SVG node opacity/outline when Blast Radius Simulator is active (zero Mermaid re-render)
+  React.useEffect(() => {
+    if (!diagramRef.current) return;
+    const nodes = diagramRef.current.querySelectorAll(".node");
+    nodes.forEach((n) => {
+      const el = n as HTMLElement;
+      if (!blastRadiusReport) {
+        el.style.opacity = "1";
+        el.style.filter = "";
+        return;
+      }
+      const txt = el.textContent || "";
+      const nid = el.id || "";
+      let isHit = false;
+      blastRadiusReport.allImpacted.forEach((impId) => {
+        if (
+          txt.includes(impId) ||
+          nid.includes(impId.replace(/-/g, "_")) ||
+          nid.includes(impId)
+        ) {
+          isHit = true;
+        }
+      });
+      el.style.opacity = isHit ? "1" : "0.28";
+      el.style.filter =
+        txt.includes(blastRadiusReport.targetId) ||
+        nid.includes(blastRadiusReport.targetId.replace(/-/g, "_"))
+          ? "drop-shadow(0 0 8px rgba(59,130,246,0.85))"
+          : "";
+    });
+  }, [blastRadiusReport, level, selectedContainerId]);
 
   // Dynamic active tiers from components
   const activeTiers = React.useMemo(() => {
@@ -210,7 +310,8 @@ export function ArchitectureView({
     setZoom(1);
   };
 
-  const openC4Inspector = (comp: SpecComponent) => {
+  const openC4Inspector = (comp: SpecComponent, subCompId?: string | null) => {
+    setFocusedSubComponentId(subCompId || null);
     setInspectedComponent(comp);
     setInspectorOpen(true);
   };
@@ -306,10 +407,23 @@ export function ArchitectureView({
             return;
           }
 
-          // Inspect container / module
+          // Inspect container or specific Level 3 component / contract
+          const ctrClicked = (data.contracts || []).find(
+            (ct) => text.includes(ct.id) || nodeId.includes(ct.id.replace(/-/g, "_"))
+          );
+          if (ctrClicked) {
+            setInspectedContract(ctrClicked);
+            return;
+          }
           const currentComp = data.components.find((c) => c.id === selectedContainerId);
           if (currentComp) {
-            openC4Inspector(currentComp);
+            const matchedSub = (currentComp.internal_components || []).find(
+              (sub, idx) =>
+                (sub.id && text.includes(sub.id)) ||
+                (sub.title && text.includes(sub.title)) ||
+                nodeId.includes(`mod_${selectedContainerId.replace(/-/g, "_")}_${idx}`)
+            );
+            openC4Inspector(currentComp, matchedSub?.id || null);
           }
         }
       });
@@ -574,6 +688,93 @@ export function ArchitectureView({
         />
       </Card>
 
+      {/* Client-Side Blast Radius Simulator Panel */}
+      <Card className="p-4 rounded-2xl bg-card border border-border/80 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Crosshair className="h-4 w-4 text-rose-400" />
+            <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
+              Interactive Blast Radius Simulator (1–2 Hop Graph BFS)
+            </h4>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={blastTargetId}
+              onChange={(e) => setBlastTargetId(e.target.value)}
+              className="bg-muted/50 border border-border text-xs rounded-xl px-3 py-1.5 text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="">Select Container or Component to Simulate Impact...</option>
+              {data.components.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.id} ({c.title})
+                </option>
+              ))}
+              {data.components.flatMap((c) =>
+                (c.internal_components || []).map((ic) => (
+                  <option key={`${c.id}-${ic.id}`} value={ic.id}>
+                    ↳ {ic.id} ({ic.title})
+                  </option>
+                ))
+              )}
+            </select>
+            {blastTargetId && (
+              <button
+                type="button"
+                onClick={() => setBlastTargetId("")}
+                className="px-2.5 py-1 rounded-xl text-xs font-medium bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+
+        {blastRadiusReport && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-border/60 text-xs">
+            <div className="p-3 rounded-xl bg-muted/20 border border-border/60 space-y-1.5">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                1-Hop &amp; 2-Hop Upstream Dependents ({blastRadiusReport.upstream1.length + blastRadiusReport.upstream2.length})
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {[...blastRadiusReport.upstream1, ...blastRadiusReport.upstream2].map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => requestSpecNavigation(id)}
+                    className="px-2 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-mono text-[10px] cursor-pointer"
+                  >
+                    {id}
+                  </button>
+                ))}
+                {blastRadiusReport.upstream1.length + blastRadiusReport.upstream2.length === 0 && (
+                  <span className="text-muted-foreground italic text-[11px]">None</span>
+                )}
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-muted/20 border border-border/60 space-y-1.5">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                1-Hop &amp; 2-Hop Downstream Dependencies ({blastRadiusReport.downstream1.length + blastRadiusReport.downstream2.length})
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {[...blastRadiusReport.downstream1, ...blastRadiusReport.downstream2].map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => requestSpecNavigation(id)}
+                    className="px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 font-mono text-[10px] cursor-pointer"
+                  >
+                    {id}
+                  </button>
+                ))}
+                {blastRadiusReport.downstream1.length + blastRadiusReport.downstream2.length === 0 && (
+                  <span className="text-muted-foreground italic text-[11px]">None</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </Card>
+
       {/* Container Cards List & Prominent Section Divider */}
       <div className="pt-12 mt-10 border-t-2 border-border/80 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
@@ -677,6 +878,50 @@ export function ArchitectureView({
         </div>
       </div>
 
+      {/* Boundary Interface Contracts (CTR-*) Section */}
+      {data.contracts && data.contracts.length > 0 && (
+        <div id="architectureContractsSection" className="space-y-4 pt-6 border-t border-border/60">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
+              <FileCode className="h-4 w-4 text-emerald-400" />
+              Boundary Interface Contracts (`CTR-*`)
+            </h3>
+            <span className="text-xs font-mono text-muted-foreground">
+              {data.contracts.length} contracts
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {data.contracts.map((ctr) => (
+              <Card
+                key={ctr.id}
+                onClick={() => setInspectedContract(ctr)}
+                className="p-4 space-y-2 border-border/80 bg-card hover:border-emerald-500/50 cursor-pointer transition-all flex flex-col justify-between group"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs font-bold text-emerald-400 group-hover:underline">
+                      {ctr.id}
+                    </span>
+                    <Badge variant="outline" className="text-[10px] font-mono">
+                      {ctr.protocol}
+                    </Badge>
+                  </div>
+                  <h4 className="text-xs font-bold text-foreground">{ctr.title}</h4>
+                  <div className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
+                    <span>Provider: {ctr.container}</span>
+                  </div>
+                </div>
+                {ctr.specification_file && ctr.specification_file !== "N/A" && (
+                  <p className="text-[10px] font-mono text-muted-foreground truncate pt-1 border-t border-border/50">
+                    {ctr.specification_file}
+                  </p>
+                )}
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Architectural Decisions (DEC-*) Section */}
       {data.decisions && data.decisions.length > 0 && (
         <div id="architectureDecisionsSection" className="space-y-4">
@@ -763,7 +1008,12 @@ export function ArchitectureView({
                   {(inspectedComponent.internal_components || []).map((sub, i) => (
                     <div
                       key={sub.id || i}
-                      className="p-3 rounded-xl border border-border/70 bg-muted/20 space-y-2 text-xs"
+                      className={cn(
+                        "p-3 rounded-xl border bg-muted/20 space-y-2 text-xs transition-all",
+                        focusedSubComponentId && sub.id === focusedSubComponentId
+                          ? "border-primary ring-2 ring-primary/30 bg-primary/5"
+                          : "border-border/70"
+                      )}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5">
@@ -985,19 +1235,67 @@ export function ArchitectureView({
                     </div>
                   )}
 
-                {/* Boundary Contracts */}
+                {/* Boundary Contracts (Clickable) */}
                 <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="p-3 rounded-xl border border-border/60 bg-muted/20">
-                    <p className="font-semibold text-foreground mb-1">Provides Contracts</p>
-                    <p className="text-muted-foreground font-mono text-[11px]">
-                      {inspectedComponent.contracts?.provides?.join(", ") || "None"}
-                    </p>
+                  <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1">
+                    <p className="font-semibold text-foreground">Provides Contracts</p>
+                    <div className="flex flex-wrap gap-1">
+                      {(inspectedComponent.contracts?.provides || []).length > 0 ? (
+                        (inspectedComponent.contracts?.provides || []).map((cid, idx) => {
+                          const ctrId = String(cid).split("(")[0].trim();
+                          const ctrObj = (data.contracts || []).find((ct) => ct.id === ctrId);
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                if (ctrObj) {
+                                  closeC4Inspector();
+                                  setInspectedContract(ctrObj);
+                                } else {
+                                  requestSpecNavigation(ctrId);
+                                }
+                              }}
+                              className="font-mono text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 cursor-pointer"
+                            >
+                              {ctrId}
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <span className="text-muted-foreground font-mono text-[11px]">None</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="p-3 rounded-xl border border-border/60 bg-muted/20">
-                    <p className="font-semibold text-foreground mb-1">Consumes Contracts</p>
-                    <p className="text-muted-foreground font-mono text-[11px]">
-                      {inspectedComponent.contracts?.consumes?.join(", ") || "None"}
-                    </p>
+                  <div className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-1">
+                    <p className="font-semibold text-foreground">Consumes Contracts</p>
+                    <div className="flex flex-wrap gap-1">
+                      {(inspectedComponent.contracts?.consumes || []).length > 0 ? (
+                        (inspectedComponent.contracts?.consumes || []).map((cid, idx) => {
+                          const ctrId = String(cid).split("(")[0].trim();
+                          const ctrObj = (data.contracts || []).find((ct) => ct.id === ctrId);
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                if (ctrObj) {
+                                  closeC4Inspector();
+                                  setInspectedContract(ctrObj);
+                                } else {
+                                  requestSpecNavigation(ctrId);
+                                }
+                              }}
+                              className="font-mono text-[11px] px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 cursor-pointer"
+                            >
+                              {ctrId}
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <span className="text-muted-foreground font-mono text-[11px]">None</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1063,6 +1361,52 @@ export function ArchitectureView({
             </>
           )}
         </div>
+      </Sheet>
+
+      {/* Boundary Contract Inspector Sheet (CTR-*) */}
+      <Sheet
+        open={Boolean(inspectedContract)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setInspectedContract(null);
+            onClearSelectedComponent?.();
+          }
+        }}
+        title={inspectedContract?.title || "Interface Contract"}
+        subtitle={inspectedContract?.id}
+        maxWidth="4xl"
+      >
+        {inspectedContract && (
+          <div className="space-y-4 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="primary">{inspectedContract.protocol}</Badge>
+              {inspectedContract.container && inspectedContract.container !== "N/A" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cnt = data.components.find((c) => c.id === inspectedContract.container);
+                    setInspectedContract(null);
+                    if (cnt) openC4Inspector(cnt);
+                  }}
+                  className="font-mono text-xs px-2.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 cursor-pointer"
+                >
+                  Provider: {inspectedContract.container}
+                </button>
+              )}
+              {inspectedContract.specification_file &&
+                inspectedContract.specification_file !== "N/A" && (
+                  <span className="font-mono text-muted-foreground px-2 py-0.5 rounded bg-muted">
+                    {inspectedContract.specification_file}
+                  </span>
+                )}
+            </div>
+            {inspectedContract.description && (
+              <div className="p-4 rounded-2xl bg-card border border-border/80">
+                <AsciiDocRenderer content={inspectedContract.description} />
+              </div>
+            )}
+          </div>
+        )}
       </Sheet>
     </div>
   );

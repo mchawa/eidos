@@ -523,8 +523,28 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         "decisions_count": len(all_decisions),
     }
 
+    edges_list = [
+        {
+            "source": str(r["source_id"] or ""),
+            "target": str(r["target_id"] or ""),
+            "type": str(r["rel_type"] or ""),
+        }
+        for r in conn.execute(
+            "SELECT source_id, target_id, rel_type FROM edges ORDER BY source_id, target_id, rel_type;"
+        ).fetchall()
+    ]
+    validation_summary = {
+        "is_clean": report.is_clean,
+        "total_docs": report.total_docs,
+        "valid_docs": report.valid_docs,
+        "schema_errors": report.schema_errors,
+        "broken_references": report.broken_references,
+    }
+
     return {
         "overview": overview,
+        "validation": validation_summary,
+        "edges": edges_list,
         "system_architecture": arch_doc,
         "specs": specs,
         "components": components,

@@ -15,19 +15,19 @@ tier: presentation
 components:
   - id: CMP-PORTAL-SERVER
     title: "PortalServer"
-    responsibility: "Hosts lightweight local multi-threaded HTTP server exposing web UI and `orjson`-serialized JSON endpoints (lazily loading HTML/SVG assets via get_portal_html_template and get_portal_favicon_svg, validating static paths via is_relative_to and resolving custom eidos_dir targets in /api/validate and /api/drift) with thread-safe (_cache_lock) eidos_dir file mtime snapshot response caching on EidosPortalHandler."
+    responsibility: "Hosts lightweight local multi-threaded HTTP server exposing web UI and `orjson`-serialized JSON endpoints (lazily loading HTML/SVG assets via get_portal_html_template and get_portal_favicon_svg, validating static paths via is_relative_to, exposing lightweight `/api/version` mtime snapshot polling and `/api/drift` uncommitted drift summaries, and resolving custom eidos_dir targets in /api/validate and /api/drift) with thread-safe (_cache_lock) eidos_dir file mtime snapshot response caching on EidosPortalHandler."
     source_path: "src/eidos/portal/server.py"
   - id: CMP-PORTAL-GENERATOR
     title: "PortalGenerator"
-    responsibility: "Synthesizes living specifications (including arch/system, all declared personas without truncation, deduplicated policy/capability/container/component/UI-component invariants, product DEC-* decisions with both source_entity and source_id, promoted tech/component domain and AST-derived component consumes_api, container depends_on, and delivered_by edges from get_architectural_index, exploration decision.resulting_deltas, AsciiDoc section extraction for domain boundaries/capability JTBD/exploration spikes, and `orjson`-parsed tokens.manifest / extends design systems) into unified portal data model with HTML-escaped project-agnostic C4 Level 1 external_systems context diagrams, hierarchical C4 Level 2 container topologies, C4 Level 3 component whitebox diagrams connecting intra-container component dependencies (both inline and promoted), contract- and AST-derived inter-container dependency connections, auto-generated Mermaid diagrams, and computes SpecDelta affects and blast_radius via ArchitecturalIndex.compute_delta_impact over normalized composable (operation + target + parent) mutations and the living specification graph (fast-pathing archived SpecDeltas under deltas/archive/ and replacing verbose applied/rejected delta bodies in specs with concise motivation stubs)."
+    responsibility: "Synthesizes living specifications (including arch/system, all declared personas without truncation, deduplicated policy/capability/container/component/UI-component invariants, product DEC-* decisions with both source_entity and source_id, promoted tech/component domain and AST-derived component consumes_api, container depends_on, and delivered_by edges from get_architectural_index, pre-computed static graph `edges` and `validation` diagnostics, exploration decision.resulting_deltas, AsciiDoc section extraction for domain boundaries/capability JTBD/exploration spikes, and `orjson`-parsed tokens.manifest / extends design systems) into unified portal data model with HTML-escaped project-agnostic C4 Level 1 external_systems context diagrams, hierarchical C4 Level 2 container topologies, C4 Level 3 component whitebox diagrams connecting intra-container component dependencies (both inline and promoted), contract- and AST-derived inter-container dependency connections, auto-generated Mermaid diagrams, and computes SpecDelta affects and blast_radius via ArchitecturalIndex.compute_delta_impact over normalized composable (operation + target + parent) mutations and the living specification graph (fast-pathing archived SpecDeltas under deltas/archive/ and replacing verbose applied/rejected delta bodies in specs with concise motivation stubs)."
     source_path: "src/eidos/portal/generator.py"
   - id: CMP-PORTAL-BUILDER
     title: "StaticSiteBuilder"
-    responsibility: "Compiles self-contained static documentation portals for GitHub Pages and GitLab Pages (via get_portal_html_template and get_portal_favicon_svg, writing `orjson`-serialized data.json) and escapes inline </script> and U+2028/U+2029 sequences when embedding window.__EIDOS_DATA__ into index.html."
+    responsibility: "Compiles self-contained static documentation portals for GitHub Pages and GitLab Pages (via get_portal_html_template and get_portal_favicon_svg, writing `orjson`-serialized data.json after stripping redundant entity body/description strings via `_deduplicate_portal_payload`) and escapes inline </script> and U+2028/U+2029 sequences when embedding window.__EIDOS_DATA__ into index.html."
     source_path: "src/eidos/portal/builder.py"
   - id: CMP-PORTAL-ASSETS
     title: "PortalAssets"
-    responsibility: "Delivers pre-compiled single-file React 19, Tailwind v4, Asciidoctor.js, and Mermaid v11 SPA assets (compiled from src/eidos/portal/frontend/src with tsc --noEmit verification, domains-first BusinessView layout, composable operation/target/parent SpecDelta views, streamlined v1 exploration resulting_deltas and UI component invariants views, object-safe C4 dependency rendering, automatic C4 inspector closure on whitebox drill-down, and multi-client omnichannel flow filtering) with zero remote subresources by lazily loading and caching on first access (get_portal_html_template, get_portal_favicon_svg, and PEP 562 __getattr__ for PORTAL_HTML_TEMPLATE and PORTAL_FAVICON_SVG) from deterministic gzip-compressed assets (assets/portal/bundle.html.gz and assets/portal/favicon.svg) rather than a 4.7 MB raw Python string literal, mtime-gated during wheel/sdist builds via a Hatch custom build hook (hatch_build.py) and verified in CI via build_assets.py --check."
+    responsibility: "Delivers pre-compiled single-file React 19, Tailwind v4, Asciidoctor.js, and Mermaid v11 SPA assets (compiled from src/eidos/portal/frontend/src with tsc --noEmit verification, client-side `hydratePortalData` payload re-hydration, `window.location.hash` deep-linking across views/C4 levels/SpecReader drawers, interactive C4 Blast Radius Simulator and Boundary Interface Contracts explorer, Validation & Governance Diagnostics panel, Recursive W3C Token Tree explorer, SpecDeltas Chronological Timeline, domains-first BusinessView layout with clickable `CNT-*`/`CTR-*` technical anchors, composable operation/target/parent SpecDelta views, streamlined v1 exploration resulting_deltas and UI component invariants views, object-safe C4 dependency rendering, automatic C4 inspector closure on whitebox drill-down, and multi-client omnichannel flow filtering) with zero remote subresources by lazily loading and caching on first access (get_portal_html_template, get_portal_favicon_svg, and PEP 562 __getattr__ for PORTAL_HTML_TEMPLATE and PORTAL_FAVICON_SVG) from deterministic gzip-compressed assets (assets/portal/bundle.html.gz and assets/portal/favicon.svg) rather than a 4.7 MB raw Python string literal, mtime-gated during wheel/sdist builds via a Hatch custom build hook (hatch_build.py) and verified in CI via build_assets.py --check."
     source_path:
       - "src/eidos/portal/assets.py"
       - "src/eidos/portal/frontend/scripts/build_assets.py"
@@ -38,12 +38,29 @@ contracts:
   provides:
     - "CTR-EIDOS-PORTAL"
   consumes: []
+
+decisions:
+  - id: DEC-PORTAL-HASH-ROUTING
+    title: "Enforce Hash-Based Deep Linking (#/...) Across Static and Live Portal Deployments"
+    decision: "Synchronize all view switches, C4 drill-down levels, and SpecReader modal inspections with window.location.hash (#/<view>, #/architecture/<container-id>, ?spec=<SPEC-ID>)."
+    rationale: "Static hosting providers (GitHub Pages, GitLab Pages, S3, and local file:// bundles) cannot rewrite arbitrary HTML5 History API paths (/architecture/CNT-EIDOS-CORE) to index.html without custom server rules; hash routing makes every view, container whitebox diagram, and specification modal bookmarkable and shareable with zero server configuration."
+    graduated_from: DLT-2026-108-SCALABLE-STATIC
+  - id: DEC-PORTAL-PAYLOAD-DEDUP-AND-CLIENT-BFS
+    title: "Deduplicate Spec Bodies in Serialized Portal Payload and Pre-Compute Directed Graph Edges"
+    decision: "Strip duplicate body/description strings from specialized entity collections during static serialization (_deduplicate_portal_payload) and re-hydrate them in the browser from data.specs, while exporting pre-computed directed graph edges (data['edges']) and validation diagnostics (data['validation'])."
+    rationale: "Cuts serialized static JSON payload size by ~40-50% while unlocking interactive client-side Blast Radius simulation and validation health diagnostics in 100% static builds."
+    graduated_from: DLT-2026-108-SCALABLE-STATIC
+  - id: DEC-PORTAL-PROGRESSIVE-MTIME-POLLING
+    title: "Progressive Live-Reload Polling via Lightweight /api/version Endpoint"
+    decision: "Expose a lightweight GET /api/version endpoint returning the repository mtime tuple and poll it every 3 seconds only when window.__EIDOS_DATA__ is absent (live server mode), plus GET /api/drift for live uncommitted drift status."
+    rationale: "Live portal sessions automatically refresh when specifications change on disk, while static builds remain 100% network-silent."
+    graduated_from: DLT-2026-108-SCALABLE-STATIC
 ---
 = Container: Eidos Living Web Portal (C4 Level 2 Container & Level 3 Components)
 :toc: left
 
 == Architectural Boundary
-This container represents the graphical web interface under `src/eidos/portal/` and packaged bundle assets under `assets/portal/`. It enables non-IDE stakeholders (product managers, architects, designers, and compliance officers) to visually navigate the living architecture, inspect C4 topologies, monitor SpecDelta lifecycles, and explore multi-design system tokens.
+This container represents the graphical web interface under `src/eidos/portal/` and packaged bundle assets under `assets/portal/`. It enables non-IDE stakeholders (product managers, architects, designers, and compliance officers) to visually navigate the living architecture, inspect C4 topologies, simulate architectural blast radius (`INV-PORTAL-STATIC-SCALABILITY`), monitor SpecDelta lifecycles, and explore multi-design system tokens via hash-based deep linking (`DEC-PORTAL-HASH-ROUTING`).
 
 == Arc42 Section 5.2 / C4 Level 3: Internal Building Blocks
 

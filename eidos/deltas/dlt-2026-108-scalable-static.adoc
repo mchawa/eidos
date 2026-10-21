@@ -1,0 +1,167 @@
+---
+type: delta/mutation
+id: DLT-2026-108-SCALABLE-STATIC
+title: "Scalable Static-First Living Web Portal Enhancements, Payload Deduplication, and Interactive C4 & Contract Explorer"
+status: applied
+intent:
+  kind: feature
+  motivation: "Elevate the Eidos Living Web Portal (CNT-EIDOS-PORTAL) with URL hash deep-linking, client-side k-hop blast radius exploration, first-class CTR-* contract inspection, multi-design system switching with recursive W3C token trees, pre-indexed CMD+K search, cross-entity badge navigation, and progressive live-reload/validation diagnostics while cutting window.__EIDOS_DATA__ payload duplication and guaranteeing O(1)/sub-millisecond scalability for air-gapped static builds (INV-PORTAL-AIR-GAPPED-BUNDLE)."
+mutations:
+  - operation: modify
+    target: CNT-EIDOS-PORTAL
+    details: "Update CMP-PORTAL-GENERATOR, CMP-PORTAL-SERVER, and CMP-PORTAL-ASSETS in eidos/architecture/containers/portal.adoc to export deduplicated spec bodies, knowledge graph edges, and validation diagnostics in get_portal_data, expose /api/version and /api/drift on EidosPortalHandler, graduate DEC-PORTAL-HASH-ROUTING, DEC-PORTAL-PAYLOAD-DEDUP-AND-CLIENT-BFS, and DEC-PORTAL-PROGRESSIVE-MTIME-POLLING, and compile URL hash routing, client-side blast radius simulation, CTR-* contract inspection, multi-DS token tree exploration, and paginated SpecDelta views into the single-file React 19 SPA."
+    expect:
+      body:
+        contains:
+          - "DEC-PORTAL-HASH-ROUTING"
+          - "INV-PORTAL-STATIC-SCALABILITY"
+  - operation: modify
+    target: CTR-EIDOS-PORTAL
+    details: "Document GET /api/version (lightweight mtime snapshot tuple for progressive live auto-reload) and GET /api/drift (uncommitted drift report in live server mode) in eidos/architecture/contracts/portal.adoc."
+    expect:
+      body:
+        contains:
+          - "/api/version"
+          - "/api/drift"
+  - operation: modify
+    target: CAP-EXP-001
+    details: "Bump CAP-EXP-001 version to 1.1.0 and document static-first hash deep-linking, client-side k-hop blast radius simulation, first-class CTR-* contract inspection, pre-indexed CMD+K spotlight search, validation diagnostics drawer, and SpecDelta Kanban pagination."
+    expect:
+      frontmatter:
+        version: "1.1.0"
+      body:
+        contains:
+          - "Blast Radius"
+          - "hash"
+  - operation: add
+    target: INV-PORTAL-STATIC-SCALABILITY
+    parent: CAP-EXP-001
+    details: "Add INV-PORTAL-STATIC-SCALABILITY invariant verifying payload deduplication, graph edge export, and static-first deep-linking."
+    expect:
+      frontmatter:
+        rule: "window.__EIDOS_DATA__"
+        test_binding: "tests/test_portal.py::test_portal_static_scalability_and_deep_linking"
+  - operation: modify
+    target: CAP-EXP-002
+    details: "Bump CAP-EXP-002 version to 1.2.0 and document multi-design system switching with extends lineage and recursive W3C DTCG token tree exploration."
+    expect:
+      frontmatter:
+        version: "1.2.0"
+      body:
+        contains:
+          - "W3C DTCG"
+          - "extends"
+  - operation: modify
+    target: SCR-PORTAL-ARCHITECTURE
+    details: "Extend SCR-PORTAL-ARCHITECTURE to cover the interactive client-side Blast Radius Simulator, Level 3 component direct inspection, and first-class Boundary Contracts (CTR-*) explorer."
+    expect:
+      body:
+        contains:
+          - "Blast Radius Simulator"
+          - "Boundary Interface Contracts"
+  - operation: modify
+    target: SCR-PORTAL-HOME
+    details: "Extend SCR-PORTAL-HOME to include the interactive Validation & Drift Diagnostics Drawer and progressive live-reload status indicator."
+    expect:
+      body:
+        contains:
+          - "Validation & Governance Diagnostics"
+  - operation: modify
+    target: SCR-PORTAL-DESIGN
+    details: "Extend SCR-PORTAL-DESIGN to support multi-design system switching (DS-*) and dynamic recursive W3C DTCG token tree browsing."
+    expect:
+      body:
+        contains:
+          - "Recursive W3C Token Tree"
+  - operation: modify
+    target: SCR-PORTAL-DELTAS
+    details: "Extend SCR-PORTAL-DELTAS with clickable impact/blast-radius entity badges, Applied column pagination, and chronological timeline view toggle."
+    expect:
+      body:
+        contains:
+          - "Chronological Timeline"
+  - operation: modify
+    target: SCR-PORTAL-CATALOG
+    details: "Extend SCR-PORTAL-CATALOG with '/' keyboard shortcut binding, clickable header relationship badges in SpecReader, and full-text metadata/heading search."
+    expect:
+      body:
+        contains:
+          - "SpecReader"
+  - operation: modify
+    target: SCR-PORTAL-BUSINESS
+    details: "Extend SCR-PORTAL-BUSINESS with cross-view clickable badges for realizing containers (CNT-*), components (CMP-*), contracts (CTR-*), and invariants (INV-*)."
+    expect:
+      body:
+        contains:
+          - "CNT-*"
+          - "CTR-*"
+vcs:
+  branch: main
+  base_commit: 9c2a68a6b6144b0b16792066b8e01ad06e3bdc04
+---
+= SpecDelta: Scalable Static-First Living Web Portal Enhancements, Payload Deduplication, and Interactive C4 & Contract Explorer
+:toc: left
+
+== 1. Problem Statement
+While the Eidos Living Web Portal (`CNT-EIDOS-PORTAL`) delivers an air-gapped, single-file React 19 SPA for both `eidos portal serve` and `eidos portal build`, seven high-value UX and scalability gaps currently limit its effectiveness on large repositories:
+
+1. **Ephemeral Navigation State**: Navigation state (`activeTab`, `selectedComponent`, `selectedDelta`, `focusSpec`, `selectedBusiness`, `selectedExploration`) lives exclusively in React state (`App.tsx`). Refreshing the browser resets the view to `home`, and engineers cannot bookmark or share deep links to a specific container, SpecDelta, or specification.
+2. **Duplicate Spec Body Serialization in `window.__EIDOS_DATA__`**: `get_portal_data` in `src/eidos/portal/generator.py` serializes the full AsciiDoc `body` inside `data.specs[]` and duplicates the identical `body` string inside `components[].description`, `contracts[].description`, `domains[].body`, `capabilities[].body`, `personas[].body`, `policies[].body`, `deltas[][].body`, `explorations[].body`, `clients[].body`, `flows[].body`, and `ui_components[].body`.
+3. **Static C4 Level 3 Click Handling & Missing Interactive Blast Radius**: Clicking an internal module node in a C4 Level 3 whitebox diagram opens the parent container's drawer at the top rather than focusing the specific Level 3 component (`CMP-*`), and there is no interactive way to simulate upstream/downstream blast radius for a selected container or component.
+4. **Hidden Boundary Contracts (`CTR-*`)**: `get_portal_data` extracts `data.contracts`, but `ArchitectureView.tsx` has no dedicated Contracts explorer and renders container `Provides` / `Consumes` contracts as non-clickable text.
+5. **Shallow `⌘K` Spotlight Search & Unbound `/` Shortcut**: `CommandDialog` only indexes `id`, `title`, and `subtitle` across 9 categories (omitting `CTR-*` contracts, `DEC-*` decisions, and `DS-*`/`UIC-*`/`SCR-*`/`FLOW-*` design entities) and does not index section headings or decision rationales. In `CatalogView.tsx`, the visual `<kbd>/</kbd>` hint lacks a keydown listener.
+6. **Single-DS Lock & Fixed W3C Token Swatches**: `DesignView.tsx` hardcodes `activeDS` to the first design system and only displays a fixed subset of token keys (`color.brand.*`, `spacing.xs..xl`), hiding additional `DS-*` systems (`extends` chains) and custom W3C DTCG token groups in `tokens.json`.
+7. **Dead-End Entity Badges, Unpaginated Applied Deltas, & Static Validation Badge**: Entity reference pills across `SpecReader.tsx`, `BusinessView.tsx`, and `DeltasView.tsx` are non-clickable `<span>` elements; the `Applied` column in `DeltasView.tsx` mounts all historical cards at once without pagination or a chronological timeline toggle; and the validation badge on `HomeView.tsx` does not open a diagnostic drawer or auto-refresh when files change during `eidos portal serve`.
+
+== 2. Architectural Design & Scalability Guardrails
+
+[cols="1,2,2", options="header"]
+|===
+| Enhancement Area | Static Build (`eidos portal build` / `file://`) | Scalability Mechanism (1,000+ Specs)
+| **1. URL Hash Deep-Linking** | Native `window.location.hash` (`#/<tab>/<entity-id>`) works on `file://` and GitHub/GitLab Pages without server rewrites. | `O(1)` hash parsing and `hashchange` listener.
+| **2. Payload Deduplication** | `get_portal_data` emits `body` once in `data.specs[]` and keeps motivation stubs for `applied`/`rejected` deltas; frontend hydrates `body`/`description` from `specs` by ID on load. | Cuts `window.__EIDOS_DATA__` and `data.json` size by ~40–50% while preserving full backward compatibility for existing consumers.
+| **3. Interactive Blast Radius & L3 Focus** | `get_portal_data` exports the flat SQLite `edges` array (`source_id`, `target_id`, `rel_type`). Browser computes 1–2 hop upstream/downstream impact client-side. | Client-side BFS over `<15 KB` edge array runs in `<0.5 ms`; C4 node highlighting toggles CSS classes on existing SVG nodes without re-running `mermaid.render()`.
+| **4. First-Class `CTR-*` Explorer** | Uses `data.contracts` already embedded in `window.__EIDOS_DATA__`. | Pure React rendering with clickable contract badges across `ArchitectureView` and `BusinessView`.
+| **5. Pre-Indexed `⌘K` & `/` Shortcut** | Pre-computes a compact lowercased search token string per entity inside `useMemo([data])` covering `CTR-*`, `DEC-*`, `UIC-*`, `SCR-*`, `FLOW-*`, and AsciiDoc headings. | Never invokes `Asciidoctor.js` during search; `O(N)` substring scan over pre-built index strings with `.slice(0, 50)` DOM cap completes in `<2 ms`.
+| **6. Multi-DS Switcher & Token Tree** | Uses `data.design_systems` and `tokens.json` already embedded in `window.__EIDOS_DATA__`. | Recursive W3C DTCG (`$value`, `$type`, `$description`) tree explorer renders lazily when the Tokens tab is active.
+| **7. Cross-Entity Navigation, Delta Pagination & Live Reload** | Pre-bakes `validation` diagnostics (`schema_errors`, `broken_references`) into `get_portal_data`; live polling (`GET /api/version`) is strictly disabled when `window.__EIDOS_DATA__` is defined. | Paginates `Applied` SpecDeltas (25 per page + Timeline toggle) and polls a 50-byte mtime tuple in `serve` mode only.
+|===
+
+== 3. Proposed Specification & Code Changes
+
+=== 3.1 Backend Generator & Server (`src/eidos/portal/generator.py`, `src/eidos/portal/server.py`)
+* **`get_portal_data` (`CMP-PORTAL-GENERATOR`)**:
+  - Export `"edges": [{"source": src, "target": dst, "type": rel}, ...]` from `ArchitecturalIndex` (`edges` table) so the frontend can execute instant k-hop blast-radius and dependency traversals offline.
+  - Export `"validation": {"is_clean": report.is_clean, "total_docs": report.total_docs, "valid_docs": report.valid_docs, "schema_errors": report.schema_errors, "broken_references": report.broken_references}` in the root payload so static builds can inspect validation diagnostics offline.
+  - Deduplicate multi-kilobyte AsciiDoc bodies in `build_static_portal` when serializing `window.__EIDOS_DATA__` (or hydrate from `data.specs` on client initialization) while keeping `get_portal_data()` Python return dictionaries backward-compatible for existing unit tests.
+* **`EidosPortalHandler` (`CMP-PORTAL-SERVER`, `CTR-EIDOS-PORTAL`)**:
+  - Add `GET /api/version` returning `{"count": count, "max_mtime_ns": max_mtime, "total_size": total_size}` from `_compute_eidos_mtime_snapshot(self.eidos_dir)`.
+  - Add `GET /api/drift` returning the uncommitted drift summary (`analyze_drift(self.eidos_dir.parent, eidos_dir=self.eidos_dir, uncommitted=True)`), cached by the repository mtime snapshot.
+
+=== 3.2 Frontend SPA (`src/eidos/portal/frontend/src/`)
+* **Universal Hash Router (`App.tsx`)**:
+  - Parse `#/<tab>` and `#/<tab>/<entityId>` on initial load and `hashchange` events, and update the URL hash whenever the user switches tabs or inspects a container, component, contract, SpecDelta, exploration, business entity, design entity, or catalog spec.
+  - When `!window.__EIDOS_DATA__` (live `eidos portal serve` mode), poll `GET /api/version` every 3 seconds and automatically re-fetch `/api/data` when the mtime snapshot changes, showing a subtle `"Live Sync"` indicator in the top header.
+* **C4 Level 3 Direct Focus, Blast Radius Simulator & `CTR-*` Explorer (`ArchitectureView.tsx`)**:
+  - Match clicked C4 Level 3 internal module SVG nodes to their `CMP-*` entry, open the inspector drawer, and scroll directly to and highlight the clicked `CMP-*` card (or open its standalone spec).
+  - Add a **Blast Radius Simulator** toggle and panel in `ArchitectureView` that computes 1-hop and 2-hop upstream/downstream dependents, affected capabilities (`CAP-*`), personas (`PER-*`), contracts (`CTR-*`), and enforced invariants (`INV-*`) from `data.edges`, visually highlighting impacted nodes directly on the C4 SVG canvas via CSS classes.
+  - Add a **Boundary Interface Contracts (`CTR-*`)** section and inspector modal in `ArchitectureView`, and make container `Provides` / `Consumes` contract pills clickable.
+* **Expanded Pre-Indexed `⌘K` Spotlight & `/` Shortcut (`command.tsx`, `CatalogView.tsx`, `App.tsx`)**:
+  - Index `contracts` (`CTR-*`), `decisions` (`DEC-*`), and `design` entities (`DS-*`, `UIC-*`, `CLT-*`, `SCR-*`, `FLOW-*`) in `commandItems`.
+  - Pre-compute a lowercased `searchText` field per item (including AsciiDoc section headings, decision rationales, and invariant rules) in `useMemo` for sub-2ms full-text filtering.
+  - Bind the `/` key (when no `<input>`/`<textarea>` is focused) in `CatalogView.tsx` to focus `#catalogSearchInput`.
+* **Multi-Design System Selector & Recursive W3C Token Tree (`DesignView.tsx`)**:
+  - Add a Design System selector pill bar when `design_systems.length >= 1` displaying `extends` lineage badges.
+  - Add a recursive **W3C Token Tree Explorer** inside the Tokens section that traverses arbitrary nested token groups in `activeDS.tokens` (`$value`, `$type`, `$description`) with one-click copy.
+* **Cross-Entity Navigation, SpecDelta Pagination & Timeline, and Validation Drawer (`HomeView.tsx`, `DeltasView.tsx`, `BusinessView.tsx`, `SpecReader.tsx`)**:
+  - Make `Zero Drift Verified / Drift Attention` on `HomeView.tsx` open a **Validation & Governance Diagnostics Drawer** displaying `validation.schema_errors`, `validation.broken_references`, and any invalid specs.
+  - Add **Kanban / Timeline** view switching and `Applied` column pagination (`PAGE_SIZE = 25` with `"Show More"`) in `DeltasView.tsx`.
+  - Turn entity reference pills (`DOM-*`, `CAP-*`, `CNT-*`, `CMP-*`, `CTR-*`, `INV-*`, `POL-*`, `PER-*`) in `SpecReader.tsx`, `BusinessView.tsx`, and `DeltasView.tsx` into interactive navigation buttons that route directly to the target entity.
+
+== 4. Verification & Test Plan
+* **`INV-PORTAL-STATIC-SCALABILITY`** (`tests/test_portal.py::test_portal_static_scalability_and_deep_linking`):
+  - Verify `get_portal_data` exports `edges` and `validation` diagnostics.
+  - Verify `build_static_portal` deduplicates spec bodies in `window.__EIDOS_DATA__` while preserving full air-gapped static operation (`INV-PORTAL-AIR-GAPPED-BUNDLE`) and staying within the 5 MiB uncompressed bundle budget.
+  - Verify `GET /api/version` and `GET /api/drift` on `EidosPortalHandler`.
+  - Verify `pnpm build:assets` (`tsc --noEmit`, Vite bundle build, and `scripts/build_assets.py --check`) and `vitest` frontend suite pass with zero errors.
+

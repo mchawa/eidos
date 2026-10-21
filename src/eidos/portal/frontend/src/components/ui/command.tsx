@@ -10,6 +10,9 @@ import {
   UserCheck,
   Lightbulb,
   Lock,
+  FileCode,
+  Sparkles,
+  Palette,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,8 +20,12 @@ export interface CommandItem {
   id: string;
   title: string;
   subtitle?: string;
+  searchText?: string;
   category:
     | "components"
+    | "contracts"
+    | "decisions"
+    | "design"
     | "invariants"
     | "deltas"
     | "specs"
@@ -55,13 +62,14 @@ export function CommandDialog({
     }
   }, [open]);
 
-  // Filter items efficiently with query string
+  // Filter items efficiently with query string against pre-indexed searchText
   const filteredItems = React.useMemo(() => {
     if (!query.trim()) return items.slice(0, 50);
     const q = query.toLowerCase();
     return items
       .filter(
         (it) =>
+          (it.searchText && it.searchText.includes(q)) ||
           it.id.toLowerCase().includes(q) ||
           it.title.toLowerCase().includes(q) ||
           (it.subtitle && it.subtitle.toLowerCase().includes(q))
@@ -110,6 +118,12 @@ export function CommandDialog({
     switch (category) {
       case "components":
         return <Box className="h-4 w-4 text-blue-400" />;
+      case "contracts":
+        return <FileCode className="h-4 w-4 text-cyan-400" />;
+      case "decisions":
+        return <Sparkles className="h-4 w-4 text-amber-400" />;
+      case "design":
+        return <Palette className="h-4 w-4 text-pink-400" />;
       case "invariants":
         return <ShieldCheck className="h-4 w-4 text-emerald-400" />;
       case "deltas":

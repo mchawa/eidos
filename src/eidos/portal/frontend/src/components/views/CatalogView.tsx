@@ -141,6 +141,27 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
   const [selectedType, setSelectedType] = React.useState("all");
   const [viewMode, setViewMode] = React.useState<"hierarchy" | "flat">("hierarchy");
   const [inspectedSpec, setInspectedSpec] = React.useState<SpecItem | null>(null);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Bind '/' shortcut to focus #catalogSearchInput when no text input is active
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement ||
+        active instanceof HTMLSelectElement ||
+        (active as HTMLElement | null)?.isContentEditable
+      ) {
+        return;
+      }
+      e.preventDefault();
+      searchInputRef.current?.focus();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // Open the spec targeted by an xref:/<<ID>>/link:*.adoc[] click from the AsciiDoc reader.
   React.useEffect(() => {
@@ -158,6 +179,30 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
     return Array.from(set).sort();
   }, [data.specs]);
 
+  // Pre-compute lowercased heading/metadata search index per spec
+  const specSearchMap = React.useMemo(() => {
+    const map = new Map<string, string>();
+    data.specs.forEach((s) => {
+      const headings = (s.body || "")
+        .split("\n")
+        .filter((line) => line.startsWith("="))
+        .join(" ");
+      const fmSummary = [
+        s.frontmatter?.responsibility,
+        s.frontmatter?.summary,
+        s.frontmatter?.mission,
+        s.frontmatter?.rule,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      map.set(
+        s.id,
+        `${s.id} ${s.title} ${s.path} ${s.type} ${headings} ${fmSummary}`.toLowerCase()
+      );
+    });
+    return map;
+  }, [data.specs]);
+
   // Filter specs
   const filteredSpecs = React.useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -165,12 +210,13 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
       const matchesType = selectedType === "all" || s.type === selectedType;
       const matchesSearch =
         !q ||
+        (specSearchMap.get(s.id)?.includes(q) ?? false) ||
         s.id.toLowerCase().includes(q) ||
         s.title.toLowerCase().includes(q) ||
         s.path.toLowerCase().includes(q);
       return matchesType && matchesSearch;
     });
-  }, [data.specs, searchQuery, selectedType]);
+  }, [data.specs, searchQuery, selectedType, specSearchMap]);
 
   // Construct Multi-Level Hierarchy (Category -> SubGroup/Parent Entity -> Leaf Specifications)
   const hierarchicalBranches = React.useMemo<HierarchyBranch[]>(() => {
@@ -496,6 +542,7 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
           <div className="relative flex-1 min-w-[200px] max-w-md">
             <Search className="h-4 w-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
+              ref={searchInputRef}
               id="catalogSearchInput"
               type="text"
               value={searchQuery}

@@ -46,7 +46,7 @@ Each row preserves structured, tabular alignment across 5 clean columns without 
 * **Type & Category**: Color-coded badges indicating schema archetype.
 * **Invariants / Tests**: Direct count of test bindings and policy invariant coverage.
 * **Status**: Validation health indicator (`● VALID`, `active`, `proposed`).
-* **Seamless Inspection**: Clicking anywhere on a specification row directly opens the rich Spec Inspector Modal, removing the need for a dedicated actions column.
+* **Seamless Inspection**: Clicking anywhere on a specification row directly opens the rich `SpecReader` Inspector Modal with clickable cross-reference links (`CNT-*`, `CMP-*`, `CAP-*`, `DOM-*`, `POL-*`, `INV-*`, `DEC-*`, `DLT-*`), removing the need for a dedicated actions column.
 
 == 4. Real-Time Branch Unfolding & Search Experience
 The enhanced search toolbar provides immediate, responsive discoverability:

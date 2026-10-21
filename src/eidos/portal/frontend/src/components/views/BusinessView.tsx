@@ -22,6 +22,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
 import { AsciiDocRenderer } from "@/components/ui/AsciiDocRenderer";
+import { requestSpecNavigation } from "@/lib/specNav";
 import { cn } from "@/lib/utils";
 import type {
   PortalData,
@@ -1117,12 +1118,17 @@ export function BusinessView({
                     <div className="p-3 rounded-xl bg-muted/30 border border-border/80 flex flex-wrap gap-1.5">
                       {selectedEntity.item.technical.contracts.map(
                         (ctr, i) => (
-                          <span
+                          <button
                             key={i}
-                            className="font-mono text-[10px] px-2 py-0.5 rounded bg-card border border-border text-primary font-bold"
+                            type="button"
+                            onClick={() => {
+                              setSelectedEntity(null);
+                              requestSpecNavigation(String(ctr));
+                            }}
+                            className="font-mono text-[10px] px-2 py-0.5 rounded bg-card border border-border hover:border-primary/50 text-primary font-bold cursor-pointer transition-colors"
                           >
                             {ctr}
-                          </span>
+                          </button>
                         )
                       )}
                     </div>
@@ -1145,12 +1151,17 @@ export function BusinessView({
                           </span>
                           <div className="flex flex-wrap gap-1.5 mt-1">
                             {selectedEntity.item.technical.containers.map((c, i) => (
-                              <span
+                              <button
                                 key={i}
-                                className="font-mono text-[10px] px-2 py-0.5 rounded bg-card border border-border text-primary font-bold"
+                                type="button"
+                                onClick={() => {
+                                  setSelectedEntity(null);
+                                  requestSpecNavigation(String(c));
+                                }}
+                                className="font-mono text-[10px] px-2 py-0.5 rounded bg-card border border-border hover:border-primary/50 text-primary font-bold cursor-pointer transition-colors"
                               >
                                 {c}
-                              </span>
+                              </button>
                             ))}
                           </div>
                         </div>
@@ -1162,12 +1173,17 @@ export function BusinessView({
                           </span>
                           <div className="flex flex-wrap gap-1.5 mt-1">
                             {selectedEntity.item.technical.components.map((c, i) => (
-                              <span
+                              <button
                                 key={i}
-                                className="font-mono text-[10px] px-2 py-0.5 rounded bg-card border border-border text-foreground"
+                                type="button"
+                                onClick={() => {
+                                  setSelectedEntity(null);
+                                  requestSpecNavigation(String(c));
+                                }}
+                                className="font-mono text-[10px] px-2 py-0.5 rounded bg-card border border-border hover:border-primary/50 text-foreground cursor-pointer transition-colors"
                               >
                                 {c}
-                              </span>
+                              </button>
                             ))}
                           </div>
                         </div>

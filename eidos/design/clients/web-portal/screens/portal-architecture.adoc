@@ -36,4 +36,5 @@ The Technical Architecture View (`SCR-PORTAL-ARCHITECTURE`) visualizes the techn
 * **Interactive Breadcrumbs & Navigation**: Seamless drill-down on click, ancestor navigation trail, container quick-switcher dropdown, and level-up controls.
 * **Component Whitebox Inspector**: Slide-over details drawer revealing module responsibilities, string and object-style upstream/downstream container and external service dependencies, source file links, contract bindings, and automatic drawer dismissal when drilling down into whitebox diagrams.
 * **Containers & Modules Matrix (CMP-*)**: Monorepo package manifests and internal C4 modules with direct one-click exploration links.
-* **Interface & Protocol Contracts (CTR-*)**: Formal contract definitions governing CLI, REST, and HTTP interfaces.
+* **Interactive Blast Radius Simulator**: Client-side BFS impact analyzer over pre-computed `data.edges` showing upstream dependencies, downstream dependents, and enforced invariants (`INV-*`) for any selected `CNT-*`, `CMP-*`, `CTR-*`, or `CAP-*` node.
+* **Boundary Interface Contracts (CTR-*)**: Interactive contract explorer surfacing provider containers, consumer containers, protocol badges, specification file links, and full AsciiDoc contract readers.

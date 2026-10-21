@@ -25,7 +25,7 @@ states:
 == 1. View Purpose & Business Context
 The Business Architecture View (`SCR-PORTAL-BUSINESS`) leads the product-engineering conversation by establishing what problems the system solves, how it is governed, and who it serves:
 * **Domains (DOM-*)**: Bounded contexts, core responsibilities, and strategic classification (core, supporting, generic).
-* **Capabilities (CAP-*)**: Customer Jobs-to-be-Done (JTBD), success metrics, and technical capability anchors.
+* **Capabilities (CAP-*)**: Customer Jobs-to-be-Done (JTBD), success metrics, and clickable technical capability anchors (`CNT-*` containers and `CTR-*` contracts) plus experience links (`SCR-*`, `FLOW-*`, `UIC-*`).
 * **Policies (POL-*)**: System-wide governance policies and compliance constraints.
 * **Personas (PER-*)**: Human and AI agent actors operating within the system lifecycle.
 * **Invariants Matrix (INV-*)**: Non-negotiable executable invariant rules and automated test bindings.

@@ -1,8 +1,21 @@
 import * as React from "react";
-import { CheckCircle2, AlertTriangle, Layers, Box, ShieldCheck, GitPullRequest, ArrowRight, Lightbulb } from "lucide-react";
+import {
+  CheckCircle2,
+  AlertTriangle,
+  Layers,
+  Box,
+  ShieldCheck,
+  GitPullRequest,
+  ArrowRight,
+  Lightbulb,
+  FileWarning,
+  Link2Off,
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Sheet } from "@/components/ui/sheet";
+import { requestSpecNavigation } from "@/lib/specNav";
 import type { PortalData } from "@/types";
 
 export interface HomeViewProps {
@@ -12,12 +25,16 @@ export interface HomeViewProps {
 }
 
 export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) {
-  const { overview } = data;
+  const { overview, validation } = data;
+  const [diagnosticsOpen, setDiagnosticsOpen] = React.useState(false);
   const activeDeltasCount =
     (data.deltas?.proposed?.length || 0) +
     (data.deltas?.in_review?.length || 0) +
     (data.deltas?.approved?.length || 0);
   const appliedDeltasCount = data.deltas?.applied?.length || 0;
+  const schemaErrorEntries = Object.entries(validation?.schema_errors || {});
+  const brokenRefs = validation?.broken_references || [];
+  const invalidSpecs = (data.specs || []).filter((s) => s.is_valid === false);
 
   const metricCards = [
     {
@@ -76,9 +93,16 @@ export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) 
             <span className="font-mono text-xs font-semibold px-3 py-1 rounded-full bg-primary/20 text-primary border border-primary/30">
               {overview.system_id}
             </span>
-            <Badge variant={overview.is_clean ? "success" : "warning"}>
-              {overview.is_clean ? "Zero Drift Verified" : "Drift Attention"}
-            </Badge>
+            <button
+              type="button"
+              onClick={() => setDiagnosticsOpen(true)}
+              className="cursor-pointer transition-transform hover:scale-105"
+              title="Open Validation & Governance Diagnostics Drawer"
+            >
+              <Badge variant={overview.is_clean ? "success" : "warning"}>
+                {overview.is_clean ? "Zero Drift Verified" : "Drift Attention"}
+              </Badge>
+            </button>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
             {overview.system_title}
@@ -192,10 +216,144 @@ export function HomeView({ data, onNavigateTab, onInspectSpec }: HomeViewProps) 
                 <p className="font-semibold text-foreground mb-1">Zero ADR Policy</p>
                 <p>Architecture evolves directly in living specs without static decision record graveyards.</p>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDiagnosticsOpen(true)}
+                className="w-full text-xs gap-1.5 mt-1"
+              >
+                <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                Inspect Validation &amp; Governance Diagnostics
+              </Button>
             </div>
           </div>
         </Card>
       </div>
+
+      {/* Validation & Governance Diagnostics Drawer */}
+      <Sheet
+        open={diagnosticsOpen}
+        onOpenChange={setDiagnosticsOpen}
+        title="Validation & Governance Diagnostics"
+        subtitle={`${overview.valid_specs}/${overview.total_specs} Specifications Valid`}
+        maxWidth="3xl"
+      >
+        <div className="space-y-4 text-xs">
+          <div className="p-4 rounded-2xl border border-border/80 bg-muted/20 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              {overview.is_clean ? (
+                <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+              ) : (
+                <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
+              )}
+              <div>
+                <p className="font-bold text-foreground">
+                  {overview.is_clean
+                    ? "All Living Specifications & Cross-References Verified"
+                    : "Schema or Reference Attention Required"}
+                </p>
+                <p className="text-muted-foreground">
+                  {overview.valid_specs} of {overview.total_specs} documents conform to schema contracts •{" "}
+                  {brokenRefs.length} broken cross-reference(s)
+                </p>
+              </div>
+            </div>
+            <Badge variant={overview.is_clean ? "success" : "warning"}>
+              {overview.is_clean ? "CLEAN" : "ATTENTION"}
+            </Badge>
+          </div>
+
+          {schemaErrorEntries.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                <FileWarning className="h-3.5 w-3.5" />
+                Schema Validation Errors ({schemaErrorEntries.length})
+              </h4>
+              <div className="space-y-2">
+                {schemaErrorEntries.map(([path, errs]) => (
+                  <div
+                    key={path}
+                    className="p-3 rounded-xl border border-rose-500/30 bg-rose-500/5 space-y-1"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDiagnosticsOpen(false);
+                        requestSpecNavigation(path);
+                      }}
+                      className="font-mono font-bold text-rose-400 hover:underline cursor-pointer text-left"
+                    >
+                      {path}
+                    </button>
+                    <ul className="list-disc pl-4 text-muted-foreground space-y-0.5">
+                      {(errs || []).map((msg, i) => (
+                        <li key={i}>{msg}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {brokenRefs.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Link2Off className="h-3.5 w-3.5" />
+                Broken Cross-References ({brokenRefs.length})
+              </h4>
+              <div className="space-y-1.5">
+                {brokenRefs.map((ref, idx) => (
+                  <div
+                    key={idx}
+                    className="p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 font-mono text-[11px] text-foreground"
+                  >
+                    {ref}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {invalidSpecs.length > 0 && schemaErrorEntries.length === 0 && (
+            <div className="space-y-2">
+              <h4 className="font-bold text-rose-400 uppercase tracking-wider">
+                Invalid Specification Documents ({invalidSpecs.length})
+              </h4>
+              {invalidSpecs.map((sp) => (
+                <div
+                  key={sp.id}
+                  onClick={() => {
+                    setDiagnosticsOpen(false);
+                    onInspectSpec(sp);
+                  }}
+                  className="p-3 rounded-xl border border-rose-500/30 bg-rose-500/5 cursor-pointer hover:bg-rose-500/10"
+                >
+                  <div className="font-mono font-bold text-rose-400">
+                    {sp.id} ({sp.path})
+                  </div>
+                  {(sp.errors || []).map((e, i) => (
+                    <p key={i} className="text-muted-foreground mt-0.5">
+                      {e}
+                    </p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {overview.is_clean && schemaErrorEntries.length === 0 && brokenRefs.length === 0 && (
+            <div className="p-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 text-center space-y-1.5">
+              <p className="font-semibold text-emerald-400">
+                Zero Schema Errors &amp; Zero Broken Cross-References
+              </p>
+              <p className="text-muted-foreground">
+                Every living specification in this repository satisfies structural validation and invariant binding gates.
+              </p>
+            </div>
+          )}
+        </div>
+      </Sheet>
     </div>
   );
 }

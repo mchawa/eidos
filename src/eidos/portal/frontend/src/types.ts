@@ -383,8 +383,24 @@ export interface SpecItem {
   errors?: string[];
 }
 
+export interface SpecEdge {
+  source: string;
+  target: string;
+  type: string;
+}
+
+export interface SpecValidationSummary {
+  is_clean: boolean;
+  total_docs: number;
+  valid_docs: number;
+  schema_errors: Record<string, string[]>;
+  broken_references: string[];
+}
+
 export interface PortalData {
   overview: SpecOverview;
+  validation?: SpecValidationSummary;
+  edges?: SpecEdge[];
   components: SpecComponent[];
   contracts: SpecContract[];
   domains: SpecDomain[];

@@ -1689,3 +1689,78 @@ def test_deep_audit_group_d_d1_through_d7(tmp_path: Path):
     res = runner.invoke(app, ["portal", "build", "--path", str(tmp_path), "--out", str(out_dir)])
     assert res.exit_code == 0, res.output
     assert (out_dir / "index.html").is_file()
+
+
+def test_portal_static_scalability_and_deep_linking(tmp_path: Path):
+    """Verify INV-PORTAL-STATIC-SCALABILITY (DLT-2026-108-SCALABLE-STATIC):
+    - get_portal_data exports pre-computed directed graph 'edges' and 'validation' diagnostics
+    - build_static_portal deduplicates spec bodies in data.json and window.__EIDOS_DATA__ while keeping specs[].body intact
+    - EidosPortalHandler responds to GET /api/version and GET /api/drift
+    - PORTAL_HTML_TEMPLATE includes hash-routing, hydratePortalData, Blast Radius Simulator, Boundary Interface Contracts,
+      Validation & Governance Diagnostics, and Recursive W3C Token Tree Explorer
+    """
+    import threading
+    import urllib.request
+    from http.server import HTTPServer
+
+    from eidos.portal.builder import _deduplicate_portal_payload, build_static_portal
+    from eidos.portal.generator import get_portal_data
+    from eidos.portal.server import EidosPortalHandler
+
+    raw_data = get_portal_data(Path("eidos"))
+    assert "edges" in raw_data and isinstance(raw_data["edges"], list) and len(raw_data["edges"]) > 0
+    assert all({"source", "target", "type"} <= set(e.keys()) for e in raw_data["edges"])
+    assert "validation" in raw_data and isinstance(raw_data["validation"], dict)
+    assert "is_clean" in raw_data["validation"]
+    assert "schema_errors" in raw_data["validation"]
+    assert "broken_references" in raw_data["validation"]
+
+    # Verify _deduplicate_portal_payload reduces serialized payload size while keeping specs[].body
+    raw_bytes = orjson.dumps(raw_data)
+    dedup_data = _deduplicate_portal_payload(raw_data)
+    dedup_bytes = orjson.dumps(dedup_data)
+    assert len(dedup_bytes) < len(raw_bytes)
+    assert any(s.get("body") for s in dedup_data["specs"])
+    assert all(not c.get("body") for c in dedup_data["capabilities"])
+    assert all(not d.get("body") for d in dedup_data["domains"])
+
+    out_dir = tmp_path / "scalable_static"
+    build_static_portal(Path("eidos"), out_dir)
+    built_json = orjson.loads((out_dir / "data.json").read_bytes())
+    assert "edges" in built_json and len(built_json["edges"]) > 0
+    assert "validation" in built_json and "is_clean" in built_json["validation"]
+    assert all(not c.get("body") for c in built_json["capabilities"])
+
+    # Verify live HTTP server /api/version and /api/drift endpoints
+    EidosPortalHandler.eidos_dir = Path("eidos")
+    EidosPortalHandler._cached_drift_key = None
+    EidosPortalHandler._cached_drift_res = None
+    httpd = HTTPServer(("127.0.0.1", 0), EidosPortalHandler)
+    port = httpd.server_address[1]
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/version", timeout=5) as resp:
+            assert resp.status == 200
+            ver = orjson.loads(resp.read())
+            assert ver["count"] > 0
+            assert ver["max_mtime_ns"] > 0
+            assert ver["total_size"] > 0
+
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/drift", timeout=10) as resp:
+            assert resp.status == 200
+            drift_payload = orjson.loads(resp.read())
+            assert "is_clean" in drift_payload
+            assert "drift_detected" in drift_payload
+            assert "workflow_mode" in drift_payload
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+    # Verify compiled bundle contains DLT-2026-108 UI features & hash routing
+    assert "hashchange" in PORTAL_HTML_TEMPLATE
+    assert "Interactive Blast Radius Simulator" in PORTAL_HTML_TEMPLATE
+    assert "Boundary Interface Contracts" in PORTAL_HTML_TEMPLATE
+    assert "Validation & Governance Diagnostics" in PORTAL_HTML_TEMPLATE
+    assert "Recursive W3C Token Tree" in PORTAL_HTML_TEMPLATE
+    assert "Show More Deltas" in PORTAL_HTML_TEMPLATE

@@ -4,7 +4,7 @@ id: CAP-EXP-002
 title: "Multi-Design Systems, W3C Tokens & Client Surface Management"
 domain: DOM-EXPERIENCE-PORTAL
 status: active
-version: "1.1.0"
+version: "1.2.0"
 
 business:
   personas:
@@ -50,7 +50,7 @@ Govern brand tokens, multi-client application targets, UI component contracts, a
 Visual design systems, component state machines, and client runtimes frequently suffer from token drift and undocumented edge cases. This capability elevates frontend design into a first-class living specification pillar, enabling multi-client applications (`CLT-*`), canonical UI component contracts (`UIC-*`), screen state machines (`SCR-*`), and interaction flows (`FLOW-*`) directly inside Git.
 
 == Key Responsibilities
-* Cataloging base and branded design systems using standard W3C DTCG tokens.
+* Cataloging base and branded design systems (`DS-*`) with `extends` inheritance chains and interactive recursive W3C DTCG token tree inspection.
 * Mapping client targets (web, mobile, desktop, CLI) to their bound design systems and C4 containers.
 * Formalizing multi-step user interaction flows with visual state-transition diagrams.
 

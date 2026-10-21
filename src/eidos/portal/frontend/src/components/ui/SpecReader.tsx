@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { AsciiDocRenderer, useAsciiDocOutline } from "@/components/ui/AsciiDocRenderer";
+import { requestSpecNavigation } from "@/lib/specNav";
 import { cn } from "@/lib/utils";
 
 export interface SpecReaderItem {
@@ -167,20 +168,30 @@ export function SpecReader({
 
         </div>
 
-        {/* High-Level Relationship Badges */}
+        {/* High-Level Relationship Badges (Clickable Cross-Entity Navigation) */}
         {(domainBinding || containerBinding || invariants || vcs) && (
           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/60 text-xs">
             {domainBinding && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-purple-500/10 text-purple-400 border border-purple-500/20 font-medium">
+              <button
+                type="button"
+                onClick={() => requestSpecNavigation(String(domainBinding))}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 font-medium transition-colors cursor-pointer"
+                title={`Navigate to Domain ${domainBinding}`}
+              >
                 <Layers className="h-3.5 w-3.5" />
                 <span>Domain: {domainBinding}</span>
-              </span>
+              </button>
             )}
             {containerBinding && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">
+              <button
+                type="button"
+                onClick={() => requestSpecNavigation(String(containerBinding))}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 font-medium transition-colors cursor-pointer"
+                title={`Navigate to Container ${containerBinding}`}
+              >
                 <FileText className="h-3.5 w-3.5" />
                 <span>Container: {containerBinding}</span>
-              </span>
+              </button>
             )}
             {Array.isArray(invariants) && invariants.length > 0 && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
