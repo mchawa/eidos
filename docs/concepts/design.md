@@ -340,9 +340,10 @@ eidos portal serve --path eidos --port 3000
 ```
 
 The portal compiles all W3C Design Tokens, Client Applications, Screen State Machines, and Interaction Flows into an interactive visual experience:
+* **Multi-Design System Switcher**: Switch between active design systems (`DS-*`) with `extends` lineage badges and inspect inherited or overridden tokens.
 * **Client Switcher**: Switch between client targets (`CLT-*`) to view scoped screen topologies and journeys.
 * **Flow Visualizer**: Interactive step sequences and dynamic Mermaid diagrams for client-internal flows and cross-client journeys.
-* **Token Studio**: Inspect color palettes, spacing ramps, and typography scales across active themes.
+* **Recursive W3C Token Studio**: Browse color palettes, spacing ramps, typography scales, and arbitrary nested W3C DTCG (`$value`, `$type`, `$description`) token trees with one-click copy.
 * **Screen State Machines**: Finite state machine transitions for each route.
 
 

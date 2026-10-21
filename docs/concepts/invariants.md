@@ -61,7 +61,7 @@ technical:
   invariants:
     # 1. Technical Invariant:
     - id: INV-SPEC-VALIDATION
-      rule: "Every .adoc file with a YAML frontmatter across all 16 living specification types must serialize safely via yaml.safe_dump and validate against its referenced JSON/YAML schema."
+      rule: "Every .adoc file with a YAML frontmatter across all 16 living specification types must extract frontmatter cleanly across YAML block scalars containing embedded horizontal rules ('---'), serialize safely via safe_dump_yaml, and validate against its type-derived JSON/YAML schema."
       test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
 
     # 2. Structural Invariant:

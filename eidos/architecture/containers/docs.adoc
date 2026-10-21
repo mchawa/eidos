@@ -13,15 +13,15 @@ tier: presentation
 components:
   - id: CMP-DOCS-GETTING-STARTED
     title: "GettingStartedGuides"
-    responsibility: "Installation, Quickstart (`eidos spec create` 4-parameter blueprint scaffolding and `eidos delta create` workflow examples), and initial onboarding documentation."
+    responsibility: "Installation (`fastyaml-rs`, `orjson`, and 17-language `ast-grep-py`), Quickstart (`eidos spec schema`, `eidos spec create` 4-parameter blueprint scaffolding, and `eidos delta create` workflow examples), and initial onboarding documentation."
     source_path: "docs/getting-started/quickstart.md"
   - id: CMP-DOCS-CORE-CONCEPTS
     title: "CoreConceptsGuides"
-    responsibility: "In-depth conceptual guides: How Eidos Works (7-container internal architecture, 4-stage execution pipeline, bidirectional contract parity, 10-table SQLite knowledge graph with AST-derived component dependencies, two-tier FTS5 ranking with AST symbol projection, 14-language polyglot structural diffing, composable operation/target/parent SpecDelta mutations with structured expect post-conditions, and stateless Stop Hook), Living Specs (15 declarative blueprint types via `eidos spec`), Architectural Index (with `CNT-EIDOS-CORE`, `eidos context --json`, and calibrated `token_estimate` Python API examples), SpecDeltas, Invariants, Explorations, Design Systems, and the streamlined v1 JSON Schema-validated 16-schema Glossary."
+    responsibility: "In-depth conceptual guides: How Eidos Works (7-container internal architecture, 4-stage execution pipeline, bidirectional contract parity, 10-table stateless SQLite knowledge graph at `SCHEMA_VERSION` `2.15.0` with `file_tokens_fts` and AST-derived component dependencies, two-tier FTS5 ranking with AST symbol projection, 17-language `AstGrepIndexer` polyglot structural diffing, composable operation/target/parent SpecDelta mutations with nested dot-path `expect:` post-conditions, index-driven deletion auditing, `--keep-recent 15` two-tier archive slimming, and stateless Stop Hook), Living Specs (15 declarative blueprint types via `eidos spec`), Architectural Index (`CNT-EIDOS-CORE`, `eidos context --json`, and calibrated `token_estimate` Python API examples), SpecDeltas, Invariants, Explorations, Design Systems, and the streamlined v1 JSON Schema-validated 16-schema Glossary."
     source_path: "docs/concepts/how-eidos-works.md"
   - id: CMP-DOCS-USER-GUIDES
     title: "UserGuides"
-    responsibility: "Operational reference manuals: live-command-validated CLI command reference (`docs/guides/cli.md` covering disjoint `eidos spec` vs `eidos delta` lifecycles, 4-parameter `eidos spec create`, `--include-archived`, `--json` context/repo-map flags, stateless `eidos hook`, and declarative `eidos delta verify/apply/audit/archive/changelog` workflows), Agent Plugin integration with 4 workflow skills and positional `[TARGET]` installation, and Living Portal deployment."
+    responsibility: "Operational reference manuals: live-command-validated CLI command reference (`docs/guides/cli.md` covering disjoint `eidos spec` vs `eidos delta` lifecycles, `eidos spec schema`, 4-parameter `eidos spec create`, `--include-archived`, `--json` context/repo-map flags, stateless `eidos hook`, and declarative `eidos delta verify/apply/audit/archive/changelog` workflows), Agent Plugin integration with 4 Discovery-First workflow skills (`v0.15.0`) and positional `[TARGET]` installation, and scalable Static-First Living Portal deployment (URL hash deep-linking, Blast Radius Simulator, `CTR-*` Contract Explorer, and recursive W3C Token Studio)."
     source_path: "docs/guides/cli.md"
   - id: CMP-DOCS-CONFIG
     title: "SiteConfiguration"

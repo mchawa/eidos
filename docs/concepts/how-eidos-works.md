@@ -92,11 +92,11 @@ flowchart TD
 Every living specification in `eidos/` is an AsciiDoc (`.adoc`) file headed by a YAML frontmatter block (`--- ... ---`). When `eidos validate` runs, `SpecParser` and `SpecValidator` execute a **three-pass validation pipeline**:
 
 #### Pass 1: Schema Validation with Shared `$defs` & SQLite Caching
-1. **Frontmatter Extraction**: `SpecParser` splits the `.adoc` file into structured YAML frontmatter metadata, raw YAML line offsets, and AsciiDoc prose body.
-2. **Shared Definition Injection**: `SpecValidator` loads the canonical JSON/YAML schema referenced by `schema:` from `assets/schemas/v1/` (16 document types across `product/*`, `tech/*`, `design/*`, and `delta/*`) and merges reusable definitions from `assets/schemas/v1/common/defs.yaml`:
+1. **Frontmatter Extraction**: `SpecParser` splits the `.adoc` file into structured YAML frontmatter metadata (parsed via Rust-backed `fastyaml-rs`), raw YAML line offsets, and AsciiDoc prose body.
+2. **Shared Definition Injection**: `SpecValidator` loads the canonical JSON/YAML schema derived from `type:` under `assets/schemas/v1/` (16 document types across `product/*`, `tech/*`, `design/*`, and `delta/*`, introspectable via `eidos spec schema [type]`) and merges reusable definitions from `assets/schemas/v1/common/defs.yaml`:
    * `#/$defs/decision`: Enforces structure on in-place architectural decisions (`DEC-*`, `title`, `decision`, `rationale`, `rejected_alternatives`, `graduated_from`).
    * `#/$defs/invariant`: Enforces RFC 2119 rules and `test_binding` paths on invariants (`INV-*`).
-3. **Content-Hashed Validation Cache (`spec_validation_cache`)**: Validation results are keyed by repo-relative path and SHA-256 content hash inside `eidos/.cache/index.db`. Unchanged specifications skip JSON Schema re-evaluation on subsequent runs.
+3. **Content-Hashed Validation Cache (`spec_validation_cache`)**: Validation results and parsed `SpecDocument` payloads are serialized with `orjson` and keyed by repo-relative path, `mtime_ns`, file SHA-256, and schema SHA-256 inside `eidos/.cache/index.db`. Unchanged specifications skip JSON Schema re-evaluation on subsequent runs.
 
 #### Pass 2: Cross-Document Graph Integrity (`x-eidos-ref`) & Architectural Laws
 After individual documents validate against their JSON Schema, `SpecValidator` verifies global graph invariants across the entire catalog:
@@ -105,7 +105,7 @@ After individual documents validate against their JSON Schema, `SpecValidator` v
 * **Centralized Component Governance**:
   * `INV-COMPONENT-CENTRALIZATION-MANDATE`: Dedicated `tech/component` files must reside under `eidos/architecture/components/` and never inside implementation directories (`src/`, `packages/`).
   * `INV-COMPONENT-CONTAINER-AFFINITY`: Every promoted `CMP-*` component must bind to an existing parent `CNT-*` container via `container:`.
-  * `INV-INTERFACE-BOUNDARY-GOVERNANCE`: Containers (`CNT-*`) own cross-process boundary contracts (`CTR-*`), whereas components (`CMP-*`) declare in-process language signatures via `interfaces.provides`.
+  * `INV-INTERFACE-BOUNDARY-GOVERNANCE`: Containers (`CNT-*`) own cross-process boundary contracts (`CTR-*`), whereas components (`CMP-*`) represent internal building blocks whose intra-container `consumes_api` and inter-container `depends_on` relationships are derived automatically via AST import analysis.
 
 #### Pass 3: Physical Binding Verification & Bidirectional Multi-Protocol Contract Parity
 When executed within a repository containing a source tree (`src/`), `SpecValidator` verifies that declared living specification bindings exist in the filesystem:
@@ -127,24 +127,24 @@ The index engine is decomposed into 5 focused modules under `src/eidos/core/inde
 
 | Module | Component ID | Responsibility |
 | :--- | :--- | :--- |
-| `storage.py` | `CMP-GRAPH-STORAGE` | Canonical authority for `SCHEMA_VERSION` (`2.5.0`), DDL initialization, WAL pragmas, automatic drop-and-rebuild migration on version mismatch, and corruption recovery. |
-| `sync.py` | `CMP-INCREMENTAL-SYNC-ENGINE` | Two-tier `mtime_ns` + `SHA-256` dirty detection, path-keyed entity eviction on ID rename, edge reconstruction, AST symbol FTS projection, and source ownership reconciliation. |
-| `query.py` | `CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE` | Two-tier (`AND` conjunction before `OR` fallback) positional column-weighted FTS5 BM25 search, identifier de-compounding, symbol lookup, and hub-scoped recursive CTE `k`-hop blast-radius traversal. |
+| `storage.py` | `CMP-GRAPH-STORAGE` | Canonical authority for `SCHEMA_VERSION` (`2.15.0`), DDL initialization, WAL pragmas, stateless drop-and-rebuild migration on version mismatch, corruption recovery, and unified `orjson`-backed `SpecDocument` / test-binding cache helpers. |
+| `sync.py` | `CMP-INCREMENTAL-SYNC-ENGINE` | Two-tier `mtime_ns` + `SHA-256` dirty detection across `_GOVERNED_TEXT_EXTS`, path-keyed entity eviction on ID rename, canonical unidirectional edge reconstruction (including C4 Level 1 `ARCH-*`/`SYS-*`, exploration `graduated_to`, and AST-derived `consumes_api`/`depends_on` edges), `file_tokens_fts` inverted token indexing, AST symbol FTS projection, and source ownership reconciliation. |
+| `query.py` | `CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE` | Two-tier (`AND` conjunction before `OR` fallback) positional column-weighted FTS5 BM25 search, identifier de-compounding, symbol lookup via unified `all_mappings` CTE, indexed catalog reconstruction (`query_spec_catalog_in_db`), and hub-scoped recursive CTE `k`-hop blast-radius and SpecDelta impact (`compute_delta_impact_in_db`) traversal. |
 | `context.py` | `CMP-TIERED-CONTEXT-COMPRESSOR` | Rank-ordered, token-budgeted context slicing across `anchor` (`<=300` tokens), `guardrails` (`<=1000` tokens), and `deep` (`<=2500` tokens) tiers with YAML/code-calibrated token estimation. |
-| `ast_indexer.py` | `CMP-AST-SYMBOL-INDEXER` | Polyglot AST extraction via `ast-grep-py` (with `python-ast` and signature extractors) across Python, TS/JS, Go, Rust, Java, Kotlin, C/C++, C#, Ruby, PHP, Swift, Vue, and Svelte. |
+| `ast_indexer.py` | `CMP-AST-SYMBOL-INDEXER` | Unified polyglot AST symbol, import, and test-binding extraction via `AstGrepIndexer` (`ast-grep-py` `SgRoot`) across all 17 supported languages (Python, TS, TSX, JS, JSX, Go, Rust, Java, Kotlin, C, C++, C#, Ruby, PHP, Swift, Vue, and Svelte). |
 
 #### Relational & Lexical Schema (`eidos/.cache/index.db`)
-The SQLite database manages 10 coordinated tables (9 domain/cache tables plus schema `metadata`):
-1. **`entities`**: All parsed specification nodes (`SYS-*`, `DOM-*`, `CAP-*`, `POL-*`, `PER-*`, `EXP-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DS-*`, `UIC-*`, `SCR-*`, `CLT-*`, `FLOW-*`, `DLT-*`, plus child `INV-*` nodes across capabilities, policies, containers, and components) with JSON metadata and body prose.
-2. **`edges`**: Directed architectural relationships (`depends_on`, `provides`, `consumes`, `governs`, `asserts`, `implements`, `contains`, `affects`).
-3. **`indexed_files`**: Tracks `rel_path`, `mtime`, `sha256`, `doc_id`, and `doc_type` for incremental synchronization.
-4. **`symbol_mappings`**: Maps file paths, globs, and symbols to owning `CNT-*` and `CMP-*` entities using specificity precedence.
-5. **`code_symbols`**: Persists AST-extracted classes, functions, methods, structs, interfaces, line coordinates (`line_start`, `line_end`), signatures, and boundary-export flags.
-6. **`specs_fts`**: SQLite FTS5 virtual table indexing `entity_id` (`UNINDEXED`), `title`, `jtbd_or_rule`, `body_text`, `keywords`, and de-compounded `symbols` (including projected primary AST `code_symbols` and component `interfaces.provides` signatures).
-7. **`spec_validation_cache`**: Content-addressed cache of per-file JSON Schema validation verdicts keyed by file SHA-256 and schema SHA-256.
-8. **`test_binding_cache`**: Content-addressed cache of AST-extracted test functions (`func` and `Class::method`) and referenced `INV-*` IDs per test file.
-9. **`delta_baselines`**: Managed SHA-256 baseline snapshots of target specifications for SpecDelta modification evidence and transactional rollback (`DLT-2026-083`).
-10. **`metadata`**: Canonical `SCHEMA_VERSION` (`2.5.0`) and cache lifecycle state.
+The SQLite database is a **100% stateless, derived cache (`DEC-INDEX-STATELESS-DERIVED-CACHE`)** managing 10 coordinated tables (9 domain/FTS/cache tables plus schema `metadata`):
+1. **`entities`**: All parsed specification nodes (`SYS-*`, `DOM-*`, `CAP-*`, `POL-*`, `PER-*`, `EXP-*`, `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`, `DS-*`, `UIC-*`, `SCR-*`, `CLT-*`, `FLOW-*`, `DLT-*`, plus child `INV-*` nodes across capabilities, policies, containers, and components) with `orjson`-serialized metadata and body prose.
+2. **`edges`**: Canonical unidirectional architectural relationships (`realizes`, `provides`, `consumes`, `owned_by`, `implemented_by`, `styled_by`, `extends`, `governed_by`, `serves_persona`, `describes_system`, `contains_container`, `graduated_from`, `graduated_to`, `delivered_by`, `has_screen`, `has_flow`, `uses_screen`, `implements`, `contains_component`, `part_of`, `asserts`, `affects`, plus AST-derived `consumes_api` and `depends_on`).
+3. **`indexed_files`**: Tracks `rel_path`, `mtime`, `sha256`, `doc_id`, and `doc_type` across governed specifications, source files, and test suites for incremental synchronization.
+4. **`symbol_mappings`**: Maps specification-declared file paths, globs, and symbols (`source_path`, `package_path`, `owned_path`, `inferred_path`, `component_id`, `module_name`, `contract_path`, `specification_file`, `test_binding`) to owning `CNT-*`, `CMP-*`, `CTR-*`, and `INV-*` entities.
+5. **`code_symbols`**: Persists AST-extracted classes, functions, methods, structs, enums, interfaces, line coordinates (`line_start`, `line_end`), decorator-prefixed signatures, and primary owner flags (`is_primary`).
+6. **`specs_fts`**: SQLite FTS5 virtual table indexing `entity_id` (`UNINDEXED`), `title`, `jtbd_or_rule`, `body_text`, `keywords`, and de-compounded `symbols` (including projected primary AST `code_symbols`, while excluding archived SpecDeltas under `eidos/deltas/archive/` to prevent historical noise).
+7. **`file_tokens_fts`**: SQLite FTS5 virtual table (`unicode61` with `tokenchars '-_'`) indexing unique `[A-Za-z0-9_-]{3,}` identifier and entity tokens per governed file (`rel_path`, `doc_type`) for sub-millisecond SpecDelta deletion auditing (`DLT-2026-107`).
+8. **`spec_validation_cache`**: Content-addressed cache of parsed `SpecDocument` payloads and JSON Schema validation verdicts keyed by `mtime_ns`, file SHA-256, and schema SHA-256.
+9. **`test_binding_cache`**: Content-addressed cache of AST-extracted test functions (`func` and `Class::method`) and referenced `INV-*` / `POL-*` tokens per test file.
+10. **`metadata`**: Canonical `SCHEMA_VERSION` (`2.15.0`) and cache lifecycle state.
 
 #### How Lazy Incremental Sync Works (`<5ms`)
 Before every CLI query (`eidos context`, `eidos index`, `eidos spec list`), `_ensure_synced()` runs `check_index_dirty()`:
@@ -208,17 +208,17 @@ flowchart LR
 
 ---
 
-### 3.4 SpecDelta Engine, Declarative Verification & Tombstone Auditor (`CNT-EIDOS-CORE`)
+### 3.4 SpecDelta Engine, Declarative Verification, Tombstone Auditor & Archive Ledger (`CNT-EIDOS-CORE`)
 
-In **Planned Mode**, architectural changes are governed by **SpecDeltas (`eidos/deltas/dlt-yyyy-nnn.adoc`)** managed by `DeltaEngine` (`delta_engine.py`), `DeltaAuditor` (`audit.py`), and `ChangelogGenerator` (`changelog.py`):
+In **Planned Mode**, architectural changes are governed by **SpecDeltas (`eidos/deltas/dlt-yyyy-nnn.adoc`)** managed by `DeltaEngine` (`delta_engine.py`), `AuditEngine` (`audit.py`), and `ChangelogGenerator` (`changelog.py`):
 
-* **Composable `operation` + `target` Mutations & Graph-Derived Scope (`DLT-2026-085`, `DLT-2026-087`, `DLT-2026-090`)**: Each SpecDelta declares an ordered `mutations:` array using the orthogonal composable contract (`operation: add | modify | remove | deprecate`, `x-eidos-ref` validated `target`, and optional `parent` for `add` / `remove` of child entities, omitted on `modify`)—while 0-hop affected entities (`affects`) and `k`-hop downstream impact (`blast_radius`) are computed dynamically from the SQLite knowledge graph.
-* **Closed-Schema Declarative Post-Conditions (`expect:`, `DLT-2026-079`)**: Mutations specify strictly schema-validated (`additionalProperties: false`) post-conditions under `expect.body` (`contains`, `not_contains`, evaluated against comment-stripped AsciiDoc body text) and `expect.frontmatter` (`responsibility`, `source_path`, `rule`, `test_binding`, `status`, `version`, `category`, `custom`, with list-subset matching). Running `eidos delta verify <ID>` checks that target entities exist (or are absent for `remove` mutations), were substantively changed relative to `vcs.base_commit` / `delta_baselines`, and that all `expect:` assertions hold—emitting granular `failure_reason` diagnostics on mismatch.
-* **Cross-Ref Collision-Safe IDs & Verified In-Place Application (`DLT-2026-080`, `DLT-2026-083`, `DLT-2026-088`)**: `eidos delta create [ID] --slug` scans all local and remote Git refs (`refs/heads/*`, `refs/remotes/*`) to guarantee collision-free `DLT-YYYY-NNN` identifiers across parallel branches and snapshots baseline files in `delta_baselines`. When `eidos delta apply <ID>` runs, `DeltaEngine` verifies all declared mutations by default (`verify=True`), validates the updated SpecDelta with `SpecValidator`, and transitions `status: applied` in place while preserving YAML comments.
-* **Reverse-Dependency Tombstone Auditing (`eidos delta audit <ID>`)**: When a SpecDelta removes or deprecates an entity, `DeltaAuditor` enumerates Git-tracked files (`eidos/`, `src/`, `tests/`, `docs/`) for lingering references and classifies every hit into:
-  * **Approved References**: Historical `DLT-*` / `EXP-*` logs, negative assertions in tests, cleanup routines, or paths matching explicit `tombstone.allowed_reasons` regexes.
-  * **Active Leaks**: Unacknowledged live references that would cause runtime or architectural breakage (`--strict` exits with code `1`).
-* **Flat Storage & Changelog Compilation**: SpecDeltas live flat in `eidos/deltas/` (preventing broken Git history links when status changes) and are queried by lifecycle state via `eidos delta list --status <status>` or `eidos delta status`. `eidos delta changelog` combines Git release tags with applied SpecDeltas (`intent.kind` and `mutations[].operation`) to compile a Keep a Changelog compliant `CHANGELOG.md` and `docs/changelog.md`.
+* **Composable `operation` + `target` Mutations & Graph-Derived Scope (`DLT-2026-085`, `DLT-2026-087`, `DLT-2026-090`, `DLT-2026-104`)**: Each SpecDelta declares an ordered `mutations:` array using the orthogonal composable contract (`operation: add | modify | remove | deprecate`, `x-eidos-ref` validated `target`, and optional `parent` for `add` / `remove` of child entities, omitted on `modify`)—while 0-hop affected entities (`affects`) and `k`-hop downstream impact (`blast_radius`) are computed dynamically via `ArchitecturalIndex.compute_delta_impact`.
+* **Closed-Schema Declarative Post-Conditions & Dot-Path Key Resolution (`expect:`, `DLT-2026-079`, `DLT-2026-103`)**: Mutations specify strictly schema-validated (`additionalProperties: false`) post-conditions under `expect.body` (`contains`, `not_contains`, evaluated against comment-stripped AsciiDoc body text) and `expect.frontmatter` (`responsibility`, `source_path`, `rule`, `test_binding`, `status`, `version`, `category`, `custom`, plus nested dot-path keys such as `contracts.provides`, `technical.containers`, `decisions.id`, or `components.id` across nested dicts and lists of dicts). Running `eidos delta verify <ID>` checks that target entities exist (or are absent for `remove` mutations), were substantively changed relative to the Git baseline (`vcs.base_commit` / `_resolve_git_baseline_sha`), and that all `expect:` assertions hold—emitting granular `failure_reason` diagnostics on mismatch.
+* **Cross-Ref Collision-Safe IDs & Verified In-Place Application (`DLT-2026-080`, `DLT-2026-088`, `DLT-2026-095`)**: `eidos delta create [ID] --slug` scans all local and remote Git refs (`refs/heads/*`, `refs/remotes/*`) plus `eidos/deltas/archive/` to guarantee collision-free `DLT-YYYY-NNN` identifiers across parallel branches and records `vcs.base_commit`. When `eidos delta apply <ID>` runs, `DeltaEngine` verifies all declared mutations by default (`verify=True`), validates the updated SpecDelta with `SpecValidator`, and transitions `status: applied` in place while preserving YAML comments.
+* **Index-Driven Spec-Scoped Deletion Auditing (`eidos delta audit <ID>`, `DLT-2026-107`)**: When a SpecDelta removes or deprecates an entity, `AuditEngine` queries the synced `ArchitecturalIndex` (`file_tokens_fts` and `indexed_files`) in sub-millisecond time—with zero `git ls-files` subprocesses or full-repository `os.walk` scans—and classifies every occurrence across governed files by `doc_type`:
+  * **Approved References**: Current or historical `DLT-*` / `EXP-*` records (`self_delta`, `historical_ledger` resolved in $O(1)$ from `entities`), negative assertions or docstrings in `code/test`, cleanup routines, or matches for `tombstone.allowed_reasons` and inline `# eidos:tombstone` / `# eidos:allow-retired` annotations.
+  * **Active Leaks**: Unacknowledged live references in active specifications (`active_spec_leak`, `critical`) or governed source/test files (`active_code_leak`, `high`; `--strict` exits with code `1`).
+* **Two-Tier `--keep-recent 15` Archive & Slimming Lifecycle (`eidos delta archive`, `DLT-2026-106`)**: To prevent top-level directory clutter, FTS5 search noise, and portal payload bloat as projects mature, `eidos delta archive [--keep-recent 15]` retains all active SpecDeltas/Explorations plus the 15 most recent terminal items (`applied`/`rejected` and `adopted`/`discarded`) in `eidos/deltas/` and `eidos/explorations/`, moving older terminal records into `eidos/deltas/archive/` and `eidos/explorations/archive/` as slimmed, schema-valid `.adoc` files (`~88%` byte reduction, stamping `vcs.applied_commit` and `vcs.release_tag`). `eidos delta changelog` combines Git release tags with applied and archived SpecDeltas to compile a Keep a Changelog compliant `CHANGELOG.md` and `docs/changelog.md`.
 
 ---
 
@@ -227,7 +227,7 @@ In **Planned Mode**, architectural changes are governed by **SpecDeltas (`eidos/
 Eidos integrates with AI coding assistants through a declarative `TargetAdapter` pipeline (`src/eidos/plugin/installer.py`) and a stateless CLI-native `Stop` lifecycle hook (`src/eidos/plugin/hooks.py`):
 
 1. **Manifest-Tracked Multi-Harness Projection (`eidos plugin install`)**:
-   * Projects the canonical plugin (`assets/plugin_reference/`) and **4 cohesive Agent Skills** (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) into `.agents/plugins/eidos/`, `.claude/`, `.cursor/`, `.github/`, `.aider/`, `.cline/`, `.opencode/`, and `.codex/`.
+   * Projects the canonical plugin (`assets/plugin_reference/`) and **4 cohesive Discovery-First Agent Skills** (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`) into `.agents/plugins/eidos/`, `.claude/`, `.cursor/`, `.github/`, `.aider/`, `.cline/`, `.opencode/`, and `.codex/`.
    * Records SHA-256 file digests in `.eidos-manifest.json` so `eidos plugin update` and `eidos plugin uninstall` never clobber user-owned files or custom instructions.
 2. **Stateless Unified `Stop` Hook (`eidos hook`)**:
    * When an AI agent finishes its task (`Stop` event), `eidos hook` runs `detect_drift(uncommitted=True)` once—evaluating specification schemas, cross-reference integrity, invariant test bindings, and spec-to-code synchronization in a single pass.
@@ -235,10 +235,11 @@ Eidos integrates with AI coding assistants through a declarative `TargetAdapter`
 
 ---
 
-### 3.6 Air-Gapped Living Web Portal (`CNT-EIDOS-PORTAL`)
+### 3.6 Scalable Air-Gapped Living Web Portal (`CNT-EIDOS-PORTAL`)
 
 The interactive Living Web Portal (`eidos portal serve` and `eidos portal build`) compiles all 16 specification types and the SQLite knowledge graph into a single-page visual architecture explorer:
 
 * **Zero Node.js Runtime Dependency (`INV-PORTAL-ZERO-NODE-DEP`)**: The frontend (React 19, Tailwind CSS v4, Material Design 3, Mermaid.js v11, and `@asciidoctor/core`) is pre-compiled at package build time into a deterministic gzip-compressed asset (`assets/portal/bundle.html.gz`, `<5 MiB` uncompressed budget).
 * **100% Air-Gapped Bundle (`INV-PORTAL-AIR-GAPPED-BUNDLE`)**: All scripts, stylesheets, and Geist/Geist Mono `woff2` fonts are embedded inline. The generated portal makes zero requests to external CDNs, working offline and over `file://` or internal corporate networks.
-* **Hierarchical C4 Drill-Down (`INV-PORTAL-INTERACTIVE-C4`)**: `PortalGenerator` synthesizes C4 Level 1 System Context, tiered Level 2 Container diagrams with explicit dependency edges, and clickable Level 3 Component Whitebox views with slide-over inspection of in-process APIs, invariants, and embedded `DEC-*` decisions.
+* **Static-First Scalability & Deep Linking (`INV-PORTAL-STATIC-SCALABILITY`, `DLT-2026-108`)**: `StaticSiteBuilder` deduplicates specification bodies in `window.__EIDOS_DATA__` and `data.json` (`~40–50%` payload reduction, re-hydrated client-side from `data.specs`) and exports pre-computed graph `edges` and `validation` diagnostics. Every view, C4 container whitebox, contract, SpecDelta, and SpecReader drawer is synchronized with `window.location.hash` (`#/<view>/<entity-id>`) for zero-config deep linking on static hosts, while `eidos portal serve` provides progressive live auto-reload via lightweight `GET /api/version` mtime polling and `GET /api/drift`.
+* **Hierarchical C4 Drill-Down, Blast Radius Simulator & Contract Explorer (`INV-PORTAL-INTERACTIVE-C4`)**: `PortalGenerator` synthesizes C4 Level 1 System Context, tiered Level 2 Container diagrams with explicit and AST-derived dependency edges, clickable Level 3 Component Whitebox views, an interactive client-side 1–2 hop **Blast Radius Simulator**, a first-class **Boundary Interface Contracts (`CTR-*`)** explorer, and a **Multi-Design System & Recursive W3C Token Tree** browser.

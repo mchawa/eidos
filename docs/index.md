@@ -45,11 +45,11 @@ Modern software development often suffers from two major problems:
 
 * **Living Arc42 & C4 Architecture**: System context (`SYS-*`, `ARCH-*`), containers (`CNT-*`), hybrid inline/promoted components (`CMP-*`), and interface contracts (`CTR-*`) are codified as AsciiDoc with YAML frontmatter.
 * **Strictly No ADRs (`POL-001`)**: Durable design trade-offs and rejected alternatives are recorded in-place via embedded `decisions:` (`DEC-*`) blocks, while architectural transitions are governed by auditable **SpecDeltas** (`DLT-*`).
-* **Embedded SQLite + FTS5 + AST Knowledge Graph**: Auto-synchronizes in `<5ms` (`eidos/.cache/index.db`) to serve token-budgeted 3-tier context slices (`eidos context`), structural repo maps (`eidos index repo-map`), and recursive blast-radius analysis.
+* **Embedded SQLite + FTS5 + AST Knowledge Graph**: Auto-synchronizes in `<5ms` (`eidos/.cache/index.db`) to serve token-budgeted 3-tier context slices (`eidos context`), structural repo maps (`eidos index repo-map`), symbol resolution (`eidos index find-symbol`), and recursive blast-radius analysis.
 * **Bidirectional Polyglot Invariant-Test Traceability (`POL-002`)**: Every capability and policy enforces invariants (`INV-*`, `POL-*`) statically verified against automated tests across Python, TypeScript/JS, Go, Rust, Java, and Kotlin via `eidos drift`.
 * **Multi-Design Systems & W3C Tokens**: White-label and multi-brand design systems (`DS-*`), official W3C DTCG tokens, UI component contracts (`UIC-*`), client manifests (`CLT-*`), screen state machines (`SCR-*`), and interaction flows (`FLOW-*`).
-* **Agent-Agnostic Plugin, 4 Cohesive Skills & Lifecycle Hooks**: Equips AI agents (Google Antigravity, Claude Code, Cursor, GitHub Copilot, Aider, Cline, OpenCode, Codex) with 4 workflow skills and Block-Once drift gates (`eidos hook`).
-* **Interactive Air-Gapped Living Portal**: Generates a self-contained static visual C4 architecture explorer and SpecDelta Kanban dashboard directly from your specs with zero Node.js runtime dependencies.
+* **Agent-Agnostic Plugin, 4 Cohesive Skills & Stateless Stop Hook**: Equips AI agents (Google Antigravity, Claude Code, Cursor, GitHub Copilot, Aider, Cline, OpenCode, Codex) with 4 Discovery-First workflow skills, dynamic schema introspection (`eidos spec schema`), and a stateless `Stop` drift gate (`eidos hook`).
+* **Interactive Air-Gapped Living Portal**: Generates a self-contained static visual C4 architecture explorer with URL hash deep-linking (`#/...`), interactive client-side Blast Radius simulation, first-class Contract (`CTR-*`) inspection, and SpecDelta Kanban/Timeline views directly from your specs with zero Node.js runtime dependencies.
 
 ---
 

@@ -29,7 +29,7 @@ stateDiagram-v2
     applied --> [*]
 ```
 
-All SpecDeltas reside in **flat storage** under `eidos/deltas/dlt-yyyy-nnn.adoc` so file paths never break across Git commits when statuses change, and can be filtered by lifecycle state (`proposed`, `in_review`, `approved`, `applied`, `rejected`) via `eidos delta list --status <state>` or `eidos delta status`.
+All SpecDeltas reside in **flat storage** under `eidos/deltas/dlt-yyyy-nnn.adoc` (with older reconciled items partitioned into `eidos/deltas/archive/` via `eidos delta archive --keep-recent 15`), and can be filtered by lifecycle state (`proposed`, `in_review`, `approved`, `applied`, `rejected`) via `eidos delta list --status <state> [--include-archived]` or `eidos delta status`.
 
 ---
 
@@ -93,14 +93,14 @@ Previously, modifying an unowned source file could pass drift checks if an unrel
    * **Product & Governance**: `DOM-*`, `CAP-*`, `PER-*`, `POL-*`, `INV-*`.
    * **Technical Architecture**: `ARCH-*`, `CNT-*`, `CMP-*`, `CTR-*`.
    * **Design & Experience**: `DS-*`, `UIC-*`, `SCR-*`, `CLT-*`, `FLOW-*`.
-2. **Closed-Schema Declarative Post-Conditions (`expect:`) & Verification (`eidos delta verify`, `DLT-2026-079`)**:
-   Each mutation item can include a strictly schema-validated (`additionalProperties: false`) `expect:` block containing `frontmatter:` assertions (`responsibility`, `source_path`, `rule`, `test_binding`, `status`, `version`, `category`, `custom`, with list-subset matching) and/or `body:` assertions (`contains` / `not_contains`, evaluated after stripping YAML and AsciiDoc comments). `eidos delta verify <ID>` deterministically verifies that `add`/`modify` targets exist and were substantively updated relative to `vcs.base_commit` / `delta_baselines`, `remove` targets are deleted, and all `expect:` assertions pass—reporting specific `failure_reason` diagnostics on any mismatch.
-3. **Cross-Ref Collision-Safe IDs & Verified In-Place Application (`eidos delta create`, `eidos delta apply [--verify/--no-verify]`, `DLT-2026-080`, `DLT-2026-083`, `DLT-2026-088`)**:
-   `eidos delta create` scans all local and remote Git refs (`refs/heads/*`, `refs/remotes/*`) to generate collision-free `DLT-YYYY-NNN` IDs (with optional `--slug` suffixes) and snapshots baseline files into managed `delta_baselines` SQLite storage. `eidos delta apply` verifies all declared mutations against the living specification catalog by default (`--verify`, or bypass via `--no-verify`), validates the updated SpecDelta via `SpecValidator`, and transitions `status: applied` in place.
-4. **Reverse-Dependency Tombstone Auditing (`eidos delta audit`)**:
-   When a SpecDelta removes or deprecates an entity, `DeltaAuditor` enumerates Git-tracked files across specs, code, tests, and docs for lingering references, separating **approved references** (historical deltas/explorations, negative tests, or `tombstone.allowed_reasons`) from **unacknowledged active leaks**.
-5. **Automated Changelog Compilation (`eidos delta changelog`)**:
-   `ChangelogGenerator` combines Git release tags (`v*.*.*`) with applied SpecDeltas (classified via `intent.kind` and `mutations[].operation`) to generate a Keep a Changelog compliant `CHANGELOG.md` and `docs/changelog.md`.
+2. **Closed-Schema Declarative Post-Conditions (`expect:`) & Nested Dot-Path Verification (`eidos delta verify`, `DLT-2026-079`, `DLT-2026-103`)**:
+   Each mutation item can include a strictly schema-validated (`additionalProperties: false`) `expect:` block containing `frontmatter:` assertions (`responsibility`, `source_path`, `rule`, `test_binding`, `status`, `version`, `category`, `custom`, plus nested dot-path keys such as `contracts.provides`, `technical.containers`, `decisions.id`, or `components.id` with list-subset and leaf-key prose substring matching) and/or `body:` assertions (`contains` / `not_contains`, evaluated after stripping YAML and AsciiDoc comments). `eidos delta verify <ID>` deterministically verifies that `add`/`modify` targets exist and were substantively updated relative to `vcs.base_commit` (resolved from Git via `_resolve_git_baseline_sha`), `remove` targets are deleted, and all `expect:` assertions pass—reporting specific `failure_reason` diagnostics on any mismatch.
+3. **Cross-Ref Collision-Safe IDs & Verified In-Place Application (`eidos delta create`, `eidos delta apply [--verify/--no-verify]`, `DLT-2026-080`, `DLT-2026-088`, `DLT-2026-095`)**:
+   `eidos delta create` scans all local and remote Git refs (`refs/heads/*`, `refs/remotes/*`) plus `eidos/deltas/archive/` to generate collision-free `DLT-YYYY-NNN` IDs (with optional `--slug` suffixes) and records `vcs.base_commit` in frontmatter. `eidos delta apply` verifies all declared mutations against the living specification catalog by default (`--verify`, or bypass via `--no-verify`), validates the updated SpecDelta via `SpecValidator`, and transitions `status: applied` in place.
+4. **Index-Driven Spec-Scoped Deletion Auditing (`eidos delta audit`, `DLT-2026-107`)**:
+   When a SpecDelta removes or deprecates an entity, `AuditEngine` queries the synced `ArchitecturalIndex` (`file_tokens_fts` and `indexed_files`) across governed specification, source, and test files for lingering references—separating **approved references** (historical deltas/explorations resolved in $O(1)$ from `entities`, negative tests, cleanup routines, or `tombstone.allowed_reasons` / inline `# eidos:tombstone` exemptions) from **unacknowledged active leaks** (`active_spec_leak` and `active_code_leak`).
+5. **Two-Tier Archive Lifecycle & Automated Changelog Compilation (`eidos delta archive` & `eidos delta changelog`, `DLT-2026-106`)**:
+   `eidos delta archive [--keep-recent 15]` keeps all active SpecDeltas/Explorations plus the 15 most recent terminal items in `eidos/deltas/` and `eidos/explorations/`, moving older terminal items into `eidos/deltas/archive/` and `eidos/explorations/archive/` as slimmed, schema-valid `.adoc` files (`~88%` byte reduction, stamping `vcs.applied_commit` and `vcs.release_tag`). `ChangelogGenerator` combines Git release tags (`v*.*.*`) with applied and archived SpecDeltas (classified via `intent.kind` and `mutations[].operation`) to generate a Keep a Changelog compliant `CHANGELOG.md` and `docs/changelog.md`.
 
 ---
 
@@ -118,8 +118,9 @@ eidos delta create DLT-2026-055 \
   --title "Add Rate Limiting Contract" \
   --kind feature
 
-# 2. List all SpecDeltas or view/transition the lifecycle status
+# 2. List all SpecDeltas (including archived) or view/transition the lifecycle status
 eidos delta list
+eidos delta list --include-archived
 eidos delta status
 eidos delta status DLT-2026-055 in_review
 
@@ -132,7 +133,10 @@ eidos delta audit DLT-2026-055 --strict
 # 5. Reconcile and apply the SpecDelta in-place (verifies mutations by default; optional --no-verify)
 eidos delta apply DLT-2026-055
 
-# 6. Compile CHANGELOG.md and docs/changelog.md from applied SpecDeltas
+# 6. Archive and slim older terminal SpecDeltas and Explorations beyond the 15 most recent
+eidos delta archive --keep-recent 15
+
+# 7. Compile CHANGELOG.md and docs/changelog.md from applied SpecDeltas
 eidos delta changelog
 ```
 

@@ -99,14 +99,20 @@ eidos portal serve --path eidos --port 8080
 ```
 
 Open your browser to `http://localhost:8080` to explore:
-* Interactive hierarchical C4 Level 1–3 diagrams with clickable drill-down.
-* Component dependency graphs, in-process APIs, and embedded architectural decisions (`DEC-*`).
+* Interactive hierarchical C4 Level 1–3 diagrams with clickable drill-down, URL hash deep-linking (`#/...`), and client-side Blast Radius simulation.
+* Component dependency graphs, boundary interface contracts (`CTR-*`), and embedded architectural decisions (`DEC-*`).
 * System capabilities, policy matrices, and test-bound invariants (`INV-*`).
-* SpecDelta Kanban pipelines and W3C Design Token Studio.
+* SpecDelta Kanban/Timeline pipelines and recursive W3C Design Token Studio.
 
 ---
 
 ## Step 4: Evolve Architecture (Direct Mode vs. SpecDelta)
+
+Before authoring or editing any specification frontmatter, you can inspect the exact required/optional keys and valid YAML templates via `eidos spec schema`:
+
+```bash
+eidos spec schema capability
+```
 
 For routine bug fixes or localized changes within an existing container (**Direct Mode**), simply update the code, tests, and owning `.adoc` spec together, then verify with `eidos drift --uncommitted`.
 

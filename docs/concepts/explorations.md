@@ -32,6 +32,9 @@ graph TD
 | **`adopted`** | The hypothesis is verified; the spike proved feasible and met all exit criteria. | Graduate to production **SpecDelta(s) (`DLT-*`)** and link via `decision.resulting_deltas` and `DEC-*` `graduated_from`. |
 | **`discarded`** | The hypothesis failed or the approach was deemed infeasible. | Document failure reasons in the AsciiDoc body and archive in Git. |
 
+> [!TIP]
+> **Two-Tier Archive Lifecycle (`eidos delta archive`, `DLT-2026-106`)**: Active explorations (`proposed`, `in_progress`) and the 15 most recent concluded explorations (`adopted`, `discarded`) remain in `eidos/explorations/` as full documents, while older concluded explorations can be partitioned and slimmed into `eidos/explorations/archive/*.adoc` via `eidos delta archive [--keep-recent 15]` (viewable via `eidos spec list --type exploration --include-archived`).
+
 ---
 
 ## 2. Anatomy of an Exploration Manifest

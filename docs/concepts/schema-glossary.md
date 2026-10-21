@@ -15,20 +15,20 @@ This glossary details all **16 document schemas** (plus shared `$defs` in `commo
 | `product/capability` | `CAP-*` | `domains/<domain>/capabilities/*.adoc` | `product/capability.schema.yaml` | Granular product feature bridging user JTBD with test-bound invariants. |
 | `product/policy` | `POL-*` | `policies/POL-*.adoc` | `product/policy.schema.yaml` | Non-negotiable system invariants, compliance rules, and quality gates. |
 | `product/persona` | `PER-*` | `personas/*.adoc` | `product/persona.schema.yaml` | Human and autonomous AI actor roles, goals, and pain points. |
-| `product/exploration` | `EXP-*` | `explorations/*.adoc` | `product/exploration.schema.yaml` | Technical spikes, hypotheses, and feasibility discovery. |
+| `product/exploration` | `EXP-*` | `explorations/*.adoc` (`archive/`) | `product/exploration.schema.yaml` | Technical spikes, hypotheses, and feasibility discovery. |
 | `tech/architecture` | `ARCH-*` | `architecture/system-architecture.adoc` | `tech/architecture.schema.yaml` | Global Arc42 architecture, C4 Level 1-2 container topology. |
 | `tech/container` | `CNT-*` | `architecture/containers/*.adoc` | `tech/container.schema.yaml` | C4 Level 2 Container manifests, deployables, runtimes, and nested components. |
-| `tech/component` | `CMP-*` | `architecture/components/*.adoc` | `tech/component.schema.yaml` | Promoted C4 Level 3 Component manifests, in-process APIs, and component invariants. |
+| `tech/component` | `CMP-*` | `architecture/components/*.adoc` | `tech/component.schema.yaml` | Promoted C4 Level 3 Component manifests, AST-derived dependencies, and component invariants. |
 | `tech/contract` | `CTR-*` | `architecture/contracts/*.adoc` | `tech/contract.schema.yaml` | Interface protocol contracts (OpenAPI, gRPC, CLI, AsyncAPI, JSON Schema). |
 | `design/system` | `DS-*` | `design/systems/<system>/system.adoc` | `design/system.schema.yaml` | Multi-design system catalog, brand themes, and W3C DTCG tokens. |
 | `design/ui-component` | `UIC-*` | `design/systems/<system>/components/*.adoc` | `design/ui-component.schema.yaml` | UI component contract: variants, states, accessibility, and tests. |
 | `design/screen` | `SCR-*` | `design/clients/<client>/screens/*.adoc` | `design/screen.schema.yaml` | Screen views, routes, layout slots, and interaction state machines. |
 | `design/client` | `CLT-*` | `design/clients/<client>/client.adoc` | `design/client.schema.yaml` | Client application platform, runtime surface, design system binding, and owned screens. |
 | `design/flow` | `FLOW-*` | `design/clients/<client>/flows/*.adoc` | `design/flow.schema.yaml` | Interaction user journeys and cross-client flows with visual Mermaid diagrams. |
-| `delta/mutation` | `DLT-*` | `deltas/dlt-*.adoc` | `delta/delta.schema.yaml` | Planned Mode semantic mutations, `expect:` post-conditions, blast radius, and tombstones. |
+| `delta/mutation` | `DLT-*` | `deltas/dlt-*.adoc` (`archive/`) | `delta/delta.schema.yaml` | Planned Mode semantic mutations, `expect:` post-conditions (including dot-paths), blast radius, and tombstones. |
 
 > [!NOTE]
-> **Shared Definitions (`assets/schemas/v1/common/defs.yaml`)**: Reusable definitions for `#/$defs/decision` (`DEC-*`), `#/$defs/invariant` (`INV-*` with `test_binding`), `#/$defs/inline_component` (`CMP-*`), `#/$defs/lifecycle_status`, `#/$defs/delta_status`, `#/$defs/exploration_status`, `#/$defs/code_paths`, `#/$defs/contracts_block`, `#/$defs/external_design_references`, and `x-eidos-ref` entity references are automatically injected across schemas by `SpecValidator`. Each specification's JSON Schema path is automatically derived from `type`.
+> **Shared Definitions (`assets/schemas/v1/common/defs.yaml`) & CLI Schema Introspection**: Reusable definitions for `#/$defs/decision` (`DEC-*`), `#/$defs/invariant` (`INV-*` with `test_binding`), `#/$defs/inline_component` (`CMP-*`), `#/$defs/lifecycle_status`, `#/$defs/delta_status`, `#/$defs/exploration_status`, `#/$defs/code_paths`, `#/$defs/contracts_block`, `#/$defs/external_design_references`, and `x-eidos-ref` entity references are automatically injected across schemas by `SpecValidator`. Each specification's JSON Schema path is automatically derived from `type`. Run `eidos spec schema [type] [--json]` at any time to inspect required/optional keys, nested sub-schemas, and valid YAML frontmatter templates.
 
 ---
 
@@ -432,9 +432,9 @@ steps:
 ### `delta/mutation`
 * **Schema**: `schemas/v1/delta/delta.schema.yaml`
 * **ID Convention**: `DLT-<YEAR>-<NUMBER>` (e.g., `DLT-2026-005`)
-* **Location**: `eidos/deltas/dlt-*.adoc`
+* **Location**: `eidos/deltas/dlt-*.adoc` (or `eidos/deltas/archive/dlt-*.adoc` after archiving)
 * **Required Properties**: `type`, `id`, `title`, `status`, `intent`, `mutations`
-* **Intent**: Declarative mutation artifact for Planned Mode. Documents planned architectural changes (`intent.kind`: `feature`, `enabler`, or `bug`), composable `mutations[].operation` (`add | modify | remove | deprecate`) paired with prefix-validated `target`, optional `parent` scope for `add` / `remove` of child entities (omitted on `modify`), and optional `expect:` post-conditions, plus `tombstone` deletion audit exemptions (while `affects` and `blast_radius` are derived automatically from the knowledge graph). Reconciled in-place upon completion (`status: applied`).
+* **Intent**: Declarative mutation artifact for Planned Mode. Documents planned architectural changes (`intent.kind`: `feature`, `enabler`, or `bug`), composable `mutations[].operation` (`add | modify | remove | deprecate`) paired with prefix-validated `target`, optional `parent` scope for `add` / `remove` of child entities (omitted on `modify`), and optional `expect:` post-conditions (supporting nested dot-path `frontmatter:` keys and comment-stripped `body:` assertions), plus `tombstone` deletion audit exemptions (while `affects` and `blast_radius` are derived automatically from the knowledge graph). Reconciled in-place upon completion (`status: applied`) and slimmed into `eidos/deltas/archive/` via `eidos delta archive --keep-recent 15` (with `vcs.applied_commit` and `vcs.release_tag`).
 
 ```yaml
 ---

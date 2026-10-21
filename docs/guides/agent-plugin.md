@@ -104,9 +104,9 @@ Select your AI coding assistant below for step-by-step setup instructions and co
 
     ### 2. How Antigravity Uses Eidos
 
-    * **Master Engineering Skill**: Antigravity indexes `skills/eidos/SKILL.md` to guide agent decision-making, strictly enforcing the 5 Eidos architectural invariants (Single Source of Truth, No ADRs, SpecDelta lifecycle, Invariant-Test traceability, and Spec validation) alongside `eidos context` and `eidos drift`.
-    * **Workflow-Aligned Agent Skills**: Antigravity agents invoke `/eidos-spec` to author or inspect living specs and invariants, `/eidos-plan` for explorations, SpecDeltas, and Staff reviews, and `/eidos-ops` for repository initialization, brownfield extraction, and Web Portal operations.
-    * **Quality Hooks**: Quality gates intercept document edits to verify AsciiDoc schemas before changes are finalized.
+    * **Master Engineering Skill**: Antigravity indexes `skills/eidos/SKILL.md` to guide agent decision-making, strictly enforcing the 7 Constitutional Guardrails (Single Source of Truth, Zero ADRs, Dual Workflow Mode Selection, Mandatory Invariant-Test Traceability, CLI-First Discovery & Determinism, Zero Unreconciled Drift, and Mandatory Autonomous Pre-Completion Review) alongside `eidos context`, `eidos index`, and `eidos drift`.
+    * **Workflow-Aligned Agent Skills**: Antigravity agents invoke `/eidos-spec` to author or inspect living specs, schemas (`eidos spec schema`), and invariants, `/eidos-plan` for explorations, SpecDeltas, and Staff reviews, and `/eidos-ops` for repository initialization, brownfield extraction, and Web Portal operations.
+    * **Stateless Stop Hook**: The `eidos-drift-gate` (`eidos hook`) runs at task completion (`Stop`) to verify AsciiDoc schemas, invariant test bindings, and spec-to-code synchronization.
 
 === "Claude Code"
 
@@ -304,14 +304,19 @@ AI agents execute Eidos CLI commands directly from terminal / subshell tools. Al
 | `eidos validate` | `[PATH]`, `--json` | Validates all living specifications against their bundled v1 JSON Schemas, `x-eidos-ref` links, and bidirectional contract parity. |
 | `eidos doctor` | `--path <path>`, `--json` | Runs workspace health diagnostics across CLI binary, living specs, index, and agent plugin hooks. |
 | `eidos info` | | Returns current engine version, loaded v1 schemas, and supported platforms. |
-| `eidos spec list` | `--type <type>`, `--status <status>`, `--json` | Lists living specifications (including inline C4 Level 3 components `CMP-*`). |
+| `eidos spec list` | `--type <type>`, `--status <status>`, `--include-archived`, `--json` | Lists living specifications (including inline C4 Level 3 components `CMP-*`). |
+| `eidos spec show` | `<id_or_path>` | Displays frontmatter metadata and preview of a specification document. |
+| `eidos spec schema` | `[type]`, `--json` | Inspects bundled v1 YAML frontmatter schemas, required/optional keys, nested sub-schemas, and valid templates. |
 | `eidos spec create` | `<type> <id> --title <title> [--path <path>]` | Scaffolds a minimal draft blueprint across all 15 living specification types. |
 | `eidos spec delete` | `<id_or_path> [--force]` | Safely deletes a living specification with cross-reference safety checks. |
 | `eidos spec component` | `[promote\|inline] <id>` | Promotes inline C4 Level 3 components to `eidos/architecture/components/` or inlines them back. |
 | `eidos delta create` | `[id] --title <title> [--kind <feature\|enabler\|bug>] [--slug]` | Scaffolds a new collision-free SpecDelta mutation document (`DLT-*`) for Planned Mode. |
-| `eidos delta verify` | `<id>`, `--json` | Verifies that all declared mutations and closed-schema `expect:` post-conditions hold in the spec catalog. |
-| `eidos delta audit` | `<id>`, `--strict`, `--json` | Audits removed/deprecated entities for dangling references vs. approved tombstones. |
+| `eidos delta list` | `--status <status>`, `--include-archived`, `--json` | Lists SpecDeltas in flat `eidos/deltas/` (and `archive/` when requested). |
+| `eidos delta status` | `[id] [new_status]`, `--json` | Displays SpecDelta status summary or transitions a delta's lifecycle status. |
+| `eidos delta verify` | `<id>`, `--json` | Verifies that all declared mutations and closed-schema `expect:` post-conditions (including dot-paths) hold in the spec catalog. |
+| `eidos delta audit` | `<id>`, `--strict`, `--json` | Audits removed/deprecated entities via `file_tokens_fts` for dangling references vs. approved tombstones. |
 | `eidos delta apply` | `<id>`, `--verify/--no-verify`, `--json` | Verifies declared mutations by default (`--verify`), validates the SpecDelta, and reconciles it in-place (`status: applied`). |
+| `eidos delta archive` | `--keep-recent <n>`, `--dry-run`, `--json` | Partitions and slims older terminal SpecDeltas and Explorations into `archive/` subdirectories. |
 | `eidos delta changelog` | `--stdout`, `--output <file>` | Compiles Keep a Changelog release notes from Git tags and applied SpecDeltas. |
 | `eidos init` | `[PATH]`, `--lite` | Bootstraps a repository with the full catalog or progressive 3-file Eidos Lite profile. |
 
@@ -417,8 +422,8 @@ Every task operates in either **Direct Mode** (fast, in-place co-evolution of co
 ### 4. Mandatory Invariant-Test Traceability (`POL-002`)
 Every capability invariant (`INV-*`) must declare a concrete `test_binding` (`path/to/test_file::test_function` or `path/to/test_file::TestClass::test_method`), and the bound test function must explicitly reference the `INV-*` ID.
 
-### 5. Deterministic Engine Only (`POL-004`)
-Eidos CLI commands are 100% deterministic local operations with zero external AI/LLM runtime calls. Agents always invoke Eidos CLI commands rather than guessing schemas or manually wiring symlinks.
+### 5. CLI-First Discovery & Determinism (`POL-004`)
+Eidos CLI commands are 100% deterministic local operations with zero external AI/LLM runtime calls. Agents always run Eidos knowledge graph and context CLI commands (`eidos context`, `eidos index repo-map`, `eidos index find-symbol`, `eidos index search`, `eidos index blast-radius` with `--json`) before falling back to raw file reads or `grep`/`find`, scaffold via `eidos spec create` / `eidos delta create`, and inspect v1 schemas via `eidos spec schema <type> [--json]`.
 
 ### 6. Zero Unreconciled Drift
 No task may conclude with failing specification schemas (`eidos validate eidos`) or unmanaged code-to-spec drift (`eidos drift --uncommitted`).
@@ -466,7 +471,7 @@ Output:
 ```text
 ╭──────────────────────── Eidos Agent Plugin Manifest ─────────────────────────╮
 │ Plugin Identifier:  eidos                                                    │
-│           Version:  0.8.0                                                    │
+│           Version:  0.15.0                                                   │
 │       Description:  Git-native, agent-agnostic development AI ecosystem and  │
 │                     lifecycle orchestration framework.                       │
 │           License:  MIT                                                      │
@@ -510,7 +515,7 @@ Output:
 ┃ Property               ┃ Value                                               ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
 │ Plugin Name            │ eidos                                               │
-│ Plugin Version         │ 0.8.0                                               │
+│ Plugin Version         │ 0.15.0                                              │
 │ Overall Status         │ CONFORMANT                                          │
 │ Discovered Skills      │ eidos, eidos-ops, eidos-plan, eidos-spec            │
 │ Configured MCP Servers │ None                                                │

@@ -165,7 +165,7 @@ Options:
 * `-T, --tier [anchor|guardrails|deep]`: Context compression budget (default: `guardrails`).
   * `anchor`: Container/component metadata, direct contract signatures, and 1-line `DEC-*` summaries (`<= 300 tokens`).
   * `guardrails`: Adds domain capabilities, active invariants with `test_binding`, policies, and full `DEC-*` rationale (`<= 1,000 tokens`).
-  * `deep`: Adds internal C4 modules, in-process APIs, contract schemas, and downstream dependents (`<= 2,500 tokens`).
+  * `deep`: Adds internal C4 modules, promoted component details, contract schemas, and downstream dependents (`<= 2,500 tokens`).
 * `--json`: Output context slice as machine-readable JSON instead of Markdown.
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
@@ -177,7 +177,7 @@ Manage and query the embedded SQLite architectural knowledge graph and FTS5 lexi
 The index initializes automatically on first use and lazily resynchronizes before every query via sub-5ms `mtime_ns` and `SHA-256` dirty checking, guaranteeing zero drift.
 
 #### `eidos index status`
-Display database cache size, schema version (`2.5.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep` vs `python-ast`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
+Display database cache size, schema version (`2.15.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
 
 ```bash
 # Display rich visual status and AST telemetry:
@@ -236,7 +236,7 @@ Options:
 * `-p, --path PATH`: Path to specifications directory (default: `eidos`).
 
 #### `eidos index repo-map`
-Generate a token-budgeted structural repo map outline (classes, functions, methods, structs, routes) for AI coding agents. Powered by multi-language AST parsing (`ast-grep-py` with Python stdlib fallback), compressing whole codebases into a high-density architectural outline (~98% token compression).
+Generate a token-budgeted structural repo map outline (classes, functions, methods, structs, routes) for AI coding agents. Powered by unified 17-language AST parsing (`AstGrepIndexer` via `ast-grep-py`), compressing whole codebases into a high-density architectural outline (~98% token compression).
 
 ```bash
 # Generate structural repo map with default budget (1500 tokens)
@@ -325,9 +325,10 @@ Sub-commands:
 Orchestrate SpecDeltas throughout their semantic mutation lifecycle using flat storage (`eidos/deltas/`):
 
 ```bash
-# List all SpecDeltas (optional --status filter and --json output)
+# List all SpecDeltas (optional --status filter, --include-archived, and --json output)
 eidos delta list
 eidos delta list --status proposed --json
+eidos delta list --include-archived
 
 # Display delta lifecycle status dashboard or transition a specific delta's status
 eidos delta status

@@ -42,13 +42,12 @@ pipx install eidos-ai
 
 ## Bundled Polyglot AST Engine & Optional Extras
 
-`eidos-ai` bundles **`ast-grep-py` by default** as a core dependency (with automatic fallback to Python's standard library `ast` on platforms without native Tree-sitter wheels), enabling out-of-the-box structural code indexing and test-binding verification across **Python, TypeScript, JavaScript, Go, Rust, Java, and Kotlin**.
+`eidos-ai` bundles **`ast-grep-py` (`SgRoot`), `fastyaml-rs`, and `orjson` by default** as core dependencies, enabling out-of-the-box structural code indexing across 17 languages (Python, TypeScript, TSX, JavaScript, JSX, Go, Rust, Java, Kotlin, C, C++, C#, Ruby, PHP, Swift, Vue, and Svelte) and static test-binding verification across **Python, TypeScript, JavaScript, Go, Rust, Java, and Kotlin**.
 
 Optional extras are available for documentation building and repository development:
 
 | Extra | Description | Installation |
 | :--- | :--- | :--- |
-| `ast` | Compatibility alias for polyglot AST code indexing via `ast-grep-py` (included in default install) | `uv tool install "eidos-ai[ast]"` or `pipx install "eidos-ai[ast]"` |
 | `docs` | Documentation site building with Zensical | `uv tool install "eidos-ai[docs]"` |
 | `dev` | Contributor test suite (`pytest`, `pytest-cov`, `ruff`) | `uv sync --all-extras --dev` |
 

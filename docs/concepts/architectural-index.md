@@ -13,11 +13,11 @@ The index enables sub-3ms architectural queries, intelligent full-text specifica
 ┌────────────────────────────────────────────────────────┐
 │       Embedded SQLite Knowledge Graph (eidos/.cache)    │
 │  ├── entities (CNT, CMP, CTR, CAP, DOM, POL, INV, …)   │
-│  ├── edges (depends_on, provides, governs, asserts, …) │
+│  ├── edges (realizes, provides, consumes_api, …)       │
 │  ├── indexed_files (mtime, sha256, doc_id tracking)    │
 │  ├── symbol_mappings & code_symbols (AST coordinates)  │
 │  ├── spec_validation_cache, test_binding_cache,        │
-│  │   delta_baselines & metadata                        │
+│  │   file_tokens_fts & metadata                        │
 │  └── specs_fts (SQLite FTS5 virtual table with BM25)   │
 └───────────────┬────────────────────────┬───────────────┘
                 │                        │
@@ -38,7 +38,7 @@ The architectural index requires **zero external database daemons** and **zero t
 
 * Built on Python's standard library **`sqlite3`** in WAL (Write-Ahead Logging) mode, utilizing native SQLite 3.x FTS5 and recursive Common Table Expressions (CTEs).
 * Decomposed across 5 focused internal modules in `src/eidos/core/index/`: `storage.py` (`CMP-GRAPH-STORAGE`), `sync.py` (`CMP-INCREMENTAL-SYNC-ENGINE`), `query.py` (`CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE`), `context.py` (`CMP-TIERED-CONTEXT-COMPRESSOR`), and `ast_indexer.py` (`CMP-AST-SYMBOL-INDEXER`).
-* Stores all relational graph data, AST symbol coordinates, and validation/test/delta caches inside a single self-contained file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.5.0"`).
+* Stores all relational graph data, AST symbol coordinates, inverted file token FTS tables, and validation/test caches inside a single self-contained, 100% stateless derived file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.15.0"`).
 * Automatically performs drop-and-rebuild migration on schema version upgrades and self-heals on database corruption.
 * The `eidos/.cache/` directory is isolated via `eidos/.gitignore`, keeping Git repositories pristine.
 
@@ -51,8 +51,8 @@ You never need to remember to run a manual build command before querying.
 ### 1. Automatic On-Demand Bootstrapping
 The first time any command requiring architectural context is invoked (`eidos context`, `eidos index`, `eidos spec list`, or agent skills), Eidos automatically:
 1. Creates `eidos/.cache/` if it does not exist.
-2. Initializes the 10 SQLite tables (`entities`, `edges`, `indexed_files`, `symbol_mappings`, `code_symbols`, `spec_validation_cache`, `test_binding_cache`, `delta_baselines`, `specs_fts`, and `metadata`).
-3. Indexes all living specifications, AST code symbols, and test bindings in ~100ms.
+2. Initializes the 10 SQLite tables (`entities`, `edges`, `indexed_files`, `symbol_mappings`, `code_symbols`, `spec_validation_cache`, `test_binding_cache`, `specs_fts`, `file_tokens_fts`, and `metadata`).
+3. Indexes all living specifications, AST code symbols, governed file tokens, and test bindings in ~100ms.
 
 ### 2. Zero-Drift Freshness (`_ensure_synced`)
 Before answering any query, search, or context extraction request, the index runs a lazy two-tier freshness check (`check_index_dirty()`):
@@ -82,25 +82,25 @@ Output:
 ```text
 ╭───────────────── Eidos Architectural Knowledge Graph Index ──────────────────╮
 │        Database Path:  /path/to/project/eidos/.cache/index.db                │
-│       Schema Version:  2.5.0                                                 │
-│           Cache Size:  1008.0 KB                                             │
-│               Status:  SYNCED (Clean) (4.20ms check)                         │
-│       Total Entities:  105                                                   │
-│          Total Edges:  140                                                   │
-│        Indexed Files:  141                                                   │
+│       Schema Version:  2.15.0                                                │
+│           Cache Size:  5308.0 KB                                             │
+│               Status:  SYNCED (Clean) (1.76ms check)                         │
+│       Total Entities:  208                                                   │
+│          Total Edges:  811                                                   │
+│        Indexed Files:  312                                                   │
 │           AST Engine:  ast-grep (Native AST)                                 │
-│          AST Symbols:  581 (86 classes, 157 funcs, 155 methods, 49 test      │
+│          AST Symbols:  1227 (49 classes, 374 funcs, 361 methods, 59 test     │
 │                        bindings)                                             │
-│ Invariant Assertions:  31 assertions across 31 invariants                    │
+│ Invariant Assertions:  113 assertions across 45 invariants                   │
 ╰──────────────────────────────────────────────────────────────────────────────╯
        Entities by Type        
 ┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
 ┃ Type                ┃ Count ┃
 ┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
-│ delta/mutation      │    23 │
-│ invariant           │    31 │
+│ delta/mutation      │   108 │
+│ invariant           │    45 │
 │ product/capability  │     8 │
-│ tech/container      │     6 │
+│ tech/container      │     7 │
 │ ...                 │   ... │
 └─────────────────────┴───────┘
       AST Code Symbols &      
@@ -108,10 +108,10 @@ Output:
 ┏━━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
 ┃ Syntax Kind        ┃ Count ┃
 ┡━━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
-│ class              │    86 │
-│ function           │   157 │
-│ method             │   155 │
-│ test_binding       │    49 │
+│ class              │    49 │
+│ function           │   374 │
+│ method             │   361 │
+│ test_binding       │    59 │
 │ ...                 │   ... │
 └────────────────────┴───────┘
 ```
@@ -133,7 +133,7 @@ When AI agents work on software engineering tasks, providing entire specificatio
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Tier 1: Anchor** | `--tier anchor` | **`<= 300 tokens`** | ~140 tokens | Owning `CNT-*` / `CMP-*`, container type, runtime, `source_path`, bound domain, direct `CTR-*` signatures, compact 1-line `DEC-*` decision summaries. | Fast, single-file edits, routine bug fixes, syntax changes. |
 | **Tier 2: Guardrails** *(Default)* | `--tier guardrails` | **`<= 1,000 tokens`** | ~300–900 tokens | Anchor content + domain capabilities (`CAP-*`), active invariants (`INV-*`) with `test_binding`, governing policies (`POL-*`), and full `DEC-*` rationale + rejected alternatives. | Standard feature development, refactorings, policy verification. |
-| **Tier 3: Deep** | `--tier deep` | **`<= 2,500 tokens`** | ~500–1,500 tokens | Guardrails content + C4 Level 3 internal modules (`components`), promoted component in-process APIs (`interfaces.provides`), contract schemas, and downstream dependents. | Complex multi-module features, architecture reviews, SpecDeltas. |
+| **Tier 3: Deep** | `--tier deep` | **`<= 2,500 tokens`** | ~500–1,500 tokens | Guardrails content + C4 Level 3 internal modules (`components`), promoted component details, contract schemas, and downstream dependents. | Complex multi-module features, architecture reviews, SpecDeltas. |
 
 ### CLI Usage:
 
@@ -177,7 +177,7 @@ Output:
 
 How lexical retrieval works (`INV-AGENT-TASK-RETRIEVAL-COVERAGE`):
 
-* **Every entity & code symbol is searchable (`DLT-2026-078`)**: child invariants (`INV-*`) across capabilities (`CAP-*`), policies (`POL-*`), containers (`CNT-*`), and inline/promoted components (`CMP-*`) get their own `specs_fts` row (rule text, parent title, test binding), embedded `DEC-*` decisions are indexed alongside their owning container or component, and primary AST `code_symbols` (`class`, `function`, `interface`, `struct`, `enum`) plus component `interfaces.provides` signatures are projected directly into `specs_fts.symbols`.
+* **Every entity & code symbol is searchable (`DLT-2026-078`, `DLT-2026-106`)**: child invariants (`INV-*`) across capabilities (`CAP-*`), policies (`POL-*`), containers (`CNT-*`), and inline/promoted components (`CMP-*`) get their own `specs_fts` row (rule text, parent title, test binding), embedded `DEC-*` decisions are indexed alongside their owning container or component, and primary AST `code_symbols` (`class`, `function`, `interface`, `struct`, `enum`) are projected directly into `specs_fts.symbols` (while archived SpecDeltas under `eidos/deltas/archive/` are excluded from `specs_fts` to keep search results focused on active architecture and recent changes).
 * **Identifier de-compounding & Two-Tier FTS Precision (`DLT-2026-083`)**: `camelCase` / `snake_case` identifiers are split on both index and query sides — `ArchitecturalIndex` is indexed as `architectural index` too, and multi-word queries prioritize high-precision multi-term `AND` conjunction matches before falling back to `OR` expansion.
 * **Column-weighted BM25**: Positional weights `(0, 4, 2, 1, 2, 2)` rank `title` (4) > `jtbd_or_rule` / `keywords` / `symbols` (2) > `body_text` (1), with `0` assigned to the `UNINDEXED` `entity_id` placeholder column.
 * **Slice-scoped candidates, Calibrated Token Budgets & Honest Empty Slices**: `eidos context --task` filters sliceable types (containers, components, contracts, capabilities, policies, invariants, domains, design systems) *inside SQL before `LIMIT`*, so historical SpecDeltas and explorations never consume top-k slots. Matched domains, design systems, and container/component invariants expand to their owning containers, components, and capabilities. Token budgets are enforced using structure-calibrated token estimation (`~3` chars/token for YAML/JSON/code/paths vs `~4` chars/token for prose). If an explicit query matches zero entities, Eidos returns an honest empty slice rather than injecting unrelated alphabetical fallbacks.
@@ -189,7 +189,7 @@ Before modifying an interface, container, component, or domain, compute the tran
 eidos index blast-radius CNT-EIDOS-CORE --depth 2
 ```
 
-This recursively traces all forward and reverse dependencies (`depends_on`, `provides`, `consumes`, `governs`), owning domains, and bound capabilities up to `N` hops away (while preventing hop-2 sibling fan-out through organizational hub nodes like `DOM-*` and `DS-*`), alerting engineers and AI agents to downstream components that could be impacted.
+This recursively traces all forward and reverse dependencies (`realizes`, `provides`, `consumes`, `consumes_api`, `depends_on`, `governed_by`, `implemented_by`), owning domains, and bound capabilities up to `N` hops away (while preventing hop-2 sibling fan-out through organizational hub nodes like `DOM-*`, `DS-*`, `ARCH-*`, and `SYS-*`), alerting engineers and AI agents to downstream components that could be impacted.
 
 ---
 
@@ -197,9 +197,8 @@ This recursively traces all forward and reverse dependencies (`depends_on`, `pro
 
 In addition to living specifications (`eidos/*.adoc`), Eidos indexes source code and test suites across polyglot projects using structural Abstract Syntax Trees (AST):
 
-* **Native AST + Polyglot Signature Engine (`DLT-2026-083`)**: Powered by core dependency `ast-grep-py` (`ast-grep`), pre-bundling Tree-sitter grammars for **Python (`.py`), TypeScript/JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`), Go (`.go`, including `type_spec` and receiver methods), Rust (`.rs`), Java (`.java`), and Kotlin (`.kt`, `.kts`)**, plus structural declaration/signature extractors for **C/C++ (`.c`, `.cpp`, `.h`, `.hpp`), C# (`.cs`), Ruby (`.rb`), PHP (`.php`), Swift (`.swift`), Vue (`.vue`), and Svelte (`.svelte`)**.
-* **Deterministic Stdlib Fallback (`INV-INDEX-OPTIONAL-AST-FALLBACK`)**: On platforms where native `ast-grep-py` wheels are unavailable, Eidos seamlessly falls back to Python's standard library `ast` and regex extractors with zero runtime crashes (`POL-004`).
-* **Persisted Symbol Coordinates (`code_symbols`)**: Extracts classes, structs, enums, interfaces, functions, and methods with exact `line_start`, `line_end`, signatures, and boundary-export flags, mapping them directly to C4 Level 2 containers (`CNT-*`) and C4 Level 3 components (`CMP-*`) in `eidos/.cache/index.db`.
+* **Unified 17-Language `AstGrepIndexer` (`DLT-2026-096`)**: Powered by core dependency `ast-grep-py` (`SgRoot`), providing unified Tree-sitter AST symbol, import (`extract_imports`), and signature extraction across **17 languages**: **Python (`.py`), TypeScript (`.ts`), TSX (`.tsx`), JavaScript (`.js`), JSX (`.jsx`), Go (`.go`, including `type_spec` and receiver methods), Rust (`.rs`), Java (`.java`), Kotlin (`.kt`, `.kts`), C (`.c`), C++ (`.cpp`, `.h`, `.hpp`), C# (`.cs`), Ruby (`.rb`), PHP (`.php`), Swift (`.swift`), Vue (`.vue`), and Svelte (`.svelte`)**.
+* **Persisted Symbol Coordinates (`code_symbols`) & AST-Derived Dependencies**: Extracts classes, structs, enums, interfaces, functions, and methods with exact `line_start`, `line_end`, decorator-prefixed signatures, and primary owner flags, mapping them directly to C4 Level 2 containers (`CNT-*`) and C4 Level 3 components (`CMP-*`) in `eidos/.cache/index.db` and automatically deriving intra-container `consumes_api` and inter-container `depends_on` edges from source imports.
 * **Syntax-Aware Invariant Test Traceability (`POL-002`)**: Binds capability, policy, container, and component invariants (`INV-*`) to both bare test functions (`tests/test_file.py::test_func`) and class-qualified test methods (`tests/test_file.py::TestClass::test_method`) via `test_binding_cache`.
 
 ---
@@ -208,7 +207,7 @@ In addition to living specifications (`eidos/*.adoc`), Eidos indexes source code
 
 AI coding agents struggle with whole-codebase awareness: sending thousands of raw code files exceeds LLM context windows, dilutes attention, and explodes cost.
 
-Eidos provides the **Repo Map Engine** (`eidos index repo-map`), which compiles a high-signal, token-budgeted structural outline of the entire codebase:
+Eidos provides the **Repo Map Engine** (`eidos index repo-map`), which compiles a high-signal, token-budgeted structural outline of the entire codebase directly from persisted `code_symbols`:
 
 ```bash
 # Generate structural repo map with default budget (1500 tokens)
@@ -226,23 +225,24 @@ The repo map summarizes files by their declared classes, methods, and functions 
 
 ```text
 # 🗺️ Structural Code Graph (Repo Map)
-Budget: ~1500 tokens | Generated by Eidos
 
-## src/eidos/core/index/ast_indexer.py
-  class AstSymbol
-  class AstGrepIndexer
-    def is_available(self) -> bool
-    def extract_symbols(self, file_path: Path) -> list[AstSymbol]
-    def extract_test_bindings(self, file_path: Path) -> dict[str, list[str]]
-    def generate_repo_map(self, root_dir: Path, max_tokens: int) -> str
-  class FallbackIndexer
-  def get_ast_indexer() -> AstGrepIndexer | FallbackIndexer
+`src/eidos/core/index/ast_indexer.py`:
+  ├── class CodeSymbol (L122-L148)
+  │     ├── def to_dict (L137)
+  ├── class BaseAstIndexer (L178-L453)
+  │     ├── def extract_symbols (L181)
+  │     ├── def extract_test_bindings (L186)
+  │     ├── def generate_repo_map (L414)
+  ├── class AstGrepIndexer (L479-L1307)
+  │     ├── def extract_symbols (L1151)
+  │     ├── def extract_test_bindings (L1285)
+  ├── def get_ast_indexer (L2003)
 
-## src/eidos/core/index/graph_index.py
-  class ArchitecturalIndex
-    def sync(self, force: bool) -> SyncStats
-    def find_symbol(self, query: str, limit: int) -> list[dict]
-    def get_repo_map(self, max_tokens: int) -> str
+`src/eidos/core/index/graph_index.py`:
+  ├── class ArchitecturalIndex (L109-L403)
+  │     ├── def sync (L171)
+  │     ├── def find_symbol (L213)
+  │     ├── def get_repo_map (L218)
 ```
 
 In benchmarks, 50,000+ tokens of raw source code compress into **under 1,000 tokens** (98.18% compression ratio) while retaining full structural navigability for LLM planning.
