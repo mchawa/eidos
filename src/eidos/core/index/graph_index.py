@@ -55,7 +55,7 @@ from eidos.core.index.sync import (
     check_index_dirty,
     sync_index,
 )
-from eidos.core.workspace.project import find_repo_root
+from eidos.core.workspace.project import find_repo_root, resolve_spec_and_repo_roots
 
 __all__ = [
     "FTS_COLUMN_WEIGHTS",
@@ -80,10 +80,6 @@ __all__ = [
 ]
 
 
-def _is_inside_plugin_or_assets(path: Path) -> bool:
-    return any(p in path.parts for p in (".agents", "plugins", "assets"))
-
-
 def _resolve_index_paths(
     repo_root: Path | None = None,
     eidos_dir: Path | None = None,
@@ -93,15 +89,13 @@ def _resolve_index_paths(
     resolved_eidos_arg = Path(eidos_dir).resolve() if eidos_dir is not None else None
     if repo_root is not None:
         target_root = Path(repo_root).resolve()
-    elif resolved_eidos_arg is not None and (
-        (resolved_eidos_arg / "system.adoc").exists()
-        or (resolved_eidos_arg.name == "eidos" and not _is_inside_plugin_or_assets(resolved_eidos_arg))
-    ):
-        target_root = resolved_eidos_arg.parent
+        target_eidos = resolved_eidos_arg if resolved_eidos_arg is not None else (target_root / "eidos").resolve()
+    elif resolved_eidos_arg is not None:
+        spec_root, target_root = resolve_spec_and_repo_roots(resolved_eidos_arg)
+        target_eidos = resolved_eidos_arg if resolved_eidos_arg.name == "eidos" or not spec_root.exists() else spec_root
     else:
-        target_root = find_repo_root(resolved_eidos_arg)
-
-    target_eidos = resolved_eidos_arg if resolved_eidos_arg is not None else (target_root / "eidos").resolve()
+        target_root = find_repo_root(None)
+        target_eidos = (target_root / "eidos").resolve()
     target_db = Path(db_path).resolve() if db_path is not None else (target_eidos / ".cache" / "index.db").resolve()
     return target_root, target_eidos, target_db
 

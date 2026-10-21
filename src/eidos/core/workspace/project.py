@@ -5,32 +5,86 @@ from __future__ import annotations
 import fnmatch
 import os
 import subprocess
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from eidos.core.spec.parser import parse_spec_file
+from eidos.core.spec.parser import _NON_ROOT_SPEC_SUBDIRS, parse_spec_file
 
 STANDARD_EXCLUDED_DIRS = {
     ".git",
     ".venv",
     "venv",
     "node_modules",
+    "vendor",
+    "third_party",
     "dist",
     "build",
+    "out",
     "target",
+    "coverage",
+    "htmlcov",
     "__pycache__",
     ".eidos",
     ".cache",
     ".spec",
     "site",
+    ".gradle",
     ".idea",
     ".vscode",
+    ".vs",
     ".ruff_cache",
     ".pytest_cache",
     ".mypy_cache",
-    "htmlcov",
+    ".tox",
+    ".nox",
+    ".eggs",
+    ".next",
+    ".nyc_output",
+    ".sass-cache",
 }
+
+_SPEC_SUBDIRS = frozenset(
+    {
+        "architecture",
+        "domains",
+        "product",
+        "policies",
+        "personas",
+        "deltas",
+        "explorations",
+        "design",
+    }
+)
+_REPO_MARKERS = (".git", "pyproject.toml", "package.json", "Cargo.toml", "go.mod")
+
+_NESTED_TEST_DIR_NAMES = {"test", "tests", "__tests__"}
+_ROOT_TEST_DIR_NAMES = {"test", "tests", "__tests__", "spec", "specs"}
+_POLYGLOT_TEST_CODE_EXTS = frozenset(
+    {
+        ".py",
+        ".ts",
+        ".js",
+        ".tsx",
+        ".jsx",
+        ".go",
+        ".rs",
+        ".java",
+        ".kt",
+        ".kts",
+        ".c",
+        ".cpp",
+        ".h",
+        ".hpp",
+        ".cs",
+        ".rb",
+        ".php",
+        ".swift",
+        ".vue",
+        ".svelte",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -106,6 +160,112 @@ def find_repo_root(start_dir: Path | None = None) -> Path:
     return cwd
 
 
+def resolve_spec_and_repo_roots(
+    root_dir: Path | None = None,
+    doc_path: Path | None = None,
+) -> tuple[Path, Path]:
+    """Resolve (spec_root, repo_root) for standard ('eidos/', '.spec/'), custom ('specs/'), or subdirectory paths."""
+    if root_dir is None and doc_path is None:
+        repo = find_repo_root(None)
+        return (repo / "eidos").resolve(), repo
+
+    base = (root_dir if root_dir is not None else (doc_path.parent if doc_path is not None else Path.cwd())).resolve()
+    if _is_inside_plugin_or_assets(base):
+        repo = find_repo_root(base)
+        return (repo / "eidos").resolve(), repo
+
+    # 1. If base itself is a repo root containing a standard child spec directory ('eidos', '.spec', 'specs')
+    for child_name in ("eidos", ".spec", "specs"):
+        child = base / child_name
+        if child.is_dir() and (
+            child_name in ("eidos", ".spec")
+            or (child / "system.adoc").is_file()
+            or any((child / s).is_dir() for s in _SPEC_SUBDIRS)
+        ):
+            return child.resolve(), base
+
+    def _is_spec_root(cand: Path) -> bool:
+        if _is_inside_plugin_or_assets(cand):
+            return False
+        if (cand / "eidos").is_dir() or (cand / ".spec").is_dir():
+            return False
+        if cand.name in ("eidos", ".spec"):
+            return True
+        if (cand / "system.adoc").is_file():
+            cand_lower = cand.name.lower()
+            ancestor_lowers = [p.lower() for p in cand.parts[:-1]]
+            if cand_lower not in _NON_ROOT_SPEC_SUBDIRS and (
+                cand_lower == "eidos"
+                or (
+                    "eidos" not in ancestor_lowers
+                    and (not cand.parent or cand.parent.name.lower() not in _NON_ROOT_SPEC_SUBDIRS)
+                )
+            ):
+                return True
+        if (cand / "architecture").is_dir():
+            arch = cand / "architecture"
+            if (
+                any((arch / sub).is_dir() for sub in ("containers", "components", "contracts"))
+                or any(arch.glob("*.adoc"))
+                or any((cand / sub).is_dir() for sub in _SPEC_SUBDIRS - {"architecture"})
+            ):
+                return True
+        return bool(cand.name in ("specs", "spec") and any((cand / sub).is_dir() for sub in _SPEC_SUBDIRS))
+
+    def _repo_root_for_spec_root(spec_cand: Path) -> Path:
+        if spec_cand.name in ("eidos", ".spec", "specs", "spec"):
+            return spec_cand.parent
+        if (spec_cand / "src").is_dir() or any((spec_cand / m).exists() for m in _REPO_MARKERS):
+            return spec_cand
+        if spec_cand.parent.name.startswith("pytest-"):
+            return spec_cand
+        return spec_cand.parent
+
+    # 2. Walk (base, *base.parents) (and doc_path parents if provided) to find spec_root
+    search_roots = [base]
+    if doc_path is not None:
+        res_doc_parent = doc_path.resolve().parent
+        if res_doc_parent != base:
+            search_roots.append(res_doc_parent)
+
+    for start in search_roots:
+        for depth, cand in enumerate((start, *start.parents)):
+            if depth > 5:
+                break
+            if cand != start:
+                try:
+                    rel_first = start.relative_to(cand).parts[0]
+                except ValueError:
+                    break
+                if rel_first in _SPEC_SUBDIRS and _is_spec_root(cand):
+                    return cand, _repo_root_for_spec_root(cand)
+            elif _is_spec_root(cand):
+                return cand, _repo_root_for_spec_root(cand)
+            if any((cand / m).exists() for m in _REPO_MARKERS):
+                break
+
+    # 3. Check if an immediate or ancestor directory is a repo root with markers
+    for depth, cand in enumerate((base.parent, *base.parents)):
+        if depth > 5:
+            break
+        if any((cand / m).exists() for m in _REPO_MARKERS):
+            try:
+                rel_parts = base.relative_to(cand).parts
+            except ValueError:
+                break
+            if rel_parts and rel_parts[0] not in ("src", "tests", "services", "packages"):
+                spec_root = (cand / rel_parts[0]).resolve()
+                return spec_root, cand
+            break
+
+    # 4. Fallback
+    if base.name in ("eidos", ".spec", "specs", "spec"):
+        return base, base.parent
+    if (base.parent / "src").is_dir() or (base.parent / ".git").exists():
+        return base, base.parent
+    return base, base
+
+
 def load_project(
     start_dir: Path | None = None,
     eidos_dir: Path | None = None,
@@ -114,16 +274,15 @@ def load_project(
     """Resolve project root, eidos directory, cache directory, and system metadata."""
     if repo_root is not None:
         root = Path(repo_root).resolve()
+        resolved_eidos = (Path(eidos_dir) if eidos_dir is not None else (root / "eidos")).resolve()
     elif eidos_dir is not None:
         ed = Path(eidos_dir).resolve()
-        if (ed / "system.adoc").exists() or (ed.name == "eidos" and not _is_inside_plugin_or_assets(ed)):
-            root = ed.parent
-        else:
-            root = find_repo_root(ed)
+        spec_root, root = resolve_spec_and_repo_roots(ed)
+        resolved_eidos = ed if ed.name == "eidos" or not spec_root.exists() else spec_root
     else:
         root = find_repo_root(start_dir)
+        resolved_eidos = (root / "eidos").resolve()
 
-    resolved_eidos = (Path(eidos_dir) if eidos_dir is not None else (root / "eidos")).resolve()
     cache_dir = resolved_eidos / ".cache"
 
     system_id: str | None = None
@@ -204,8 +363,13 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
     if (root / ".git").exists():
         files: set[str] = set()
         try:
+            cmd = (
+                ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"]
+                if include_untracked
+                else ["git", "ls-files", "-z"]
+            )
             tracked = subprocess.run(
-                ["git", "ls-files", "-z"],
+                cmd,
                 cwd=root,
                 capture_output=True,
                 text=True,
@@ -215,19 +379,6 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
                 for item in tracked.stdout.split("\0"):
                     if item and not _has_excluded_dir_part(item) and (root / item).is_file():
                         files.add(item)
-
-                if include_untracked:
-                    untracked = subprocess.run(
-                        ["git", "ls-files", "--others", "--exclude-standard", "-z"],
-                        cwd=root,
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    )
-                    if untracked.returncode == 0:
-                        for item in untracked.stdout.split("\0"):
-                            if item and not _has_excluded_dir_part(item) and (root / item).is_file():
-                                files.add(item)
 
                 if not files:
                     return []
@@ -251,6 +402,101 @@ def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[s
             except ValueError:
                 continue
     return sorted(collected)
+
+
+def is_polyglot_test_file(
+    path: Path | str,
+    repo_root: Path | None = None,
+    package_paths: Iterable[str] | None = None,
+) -> bool:
+    """Determine whether a file path corresponds to an automated test file across polyglot languages."""
+    p = Path(path)
+    name = p.name
+
+    if repo_root is not None:
+        root_res = repo_root.resolve()
+        target_p = (root_res / p).resolve() if not p.is_absolute() else p.resolve()
+        try:
+            rel_path = target_p.relative_to(root_res)
+        except ValueError:
+            rel_path = p
+    elif p.is_absolute():
+        try:
+            rel_path = p.resolve().relative_to(Path.cwd().resolve())
+        except ValueError:
+            rel_path = p
+    else:
+        rel_path = p
+
+    if rel_path.is_absolute():
+        parent_names = [parent.name.lower() for parent in rel_path.parents[:2]]
+        in_test_dir = any(d in _ROOT_TEST_DIR_NAMES for d in parent_names)
+        is_under_src = False
+        nested_test_segment = False
+    else:
+        dir_parts = [part.lower() for part in rel_path.parent.parts]
+        is_under_src = bool(dir_parts and dir_parts[0] == "src")
+        nested_dir_parts: list[str] = dir_parts[1:] if is_under_src else []
+
+        if not is_under_src and package_paths:
+            for raw_pkg in package_paths:
+                norm_pkg = str(raw_pkg).strip().replace("\\", "/").strip("/").lower()
+                if not norm_pkg or norm_pkg == ".":
+                    continue
+                pkg_parts = [pt for pt in norm_pkg.split("/") if pt]
+                if pkg_parts and len(dir_parts) >= len(pkg_parts) and dir_parts[: len(pkg_parts)] == pkg_parts:
+                    is_under_src = True
+                    nested_dir_parts = dir_parts[len(pkg_parts) :]
+                    break
+
+        nested_test_segment = any(seg in _NESTED_TEST_DIR_NAMES for seg in nested_dir_parts)
+        in_test_dir = (
+            nested_test_segment
+            if is_under_src
+            else (
+                bool(dir_parts and dir_parts[0] in _ROOT_TEST_DIR_NAMES)
+                or any(part in _NESTED_TEST_DIR_NAMES for part in dir_parts)
+            )
+        )
+
+    if any(
+        name.endswith(ext)
+        for ext in (
+            ".test.ts",
+            ".spec.ts",
+            ".test.js",
+            ".spec.js",
+            ".test.tsx",
+            ".spec.tsx",
+            ".test.jsx",
+            ".spec.jsx",
+        )
+    ):
+        return True
+
+    if name.endswith("_test.go"):
+        return True
+
+    if name.endswith("_test.rs") or (in_test_dir and p.suffix == ".rs"):
+        return True
+
+    if any(
+        name.endswith(ext)
+        for ext in (
+            "Test.java",
+            "Test.kt",
+            "Spec.kt",
+        )
+    ):
+        return True
+
+    if is_under_src:
+        return bool(nested_test_segment and p.suffix.lower() in _POLYGLOT_TEST_CODE_EXTS)
+
+    if p.suffix == ".py" and (name.startswith("test_") or name.endswith("_test.py")):
+        return True
+
+    return bool(in_test_dir and p.suffix.lower() in _POLYGLOT_TEST_CODE_EXTS)
 
 
 _PLACEHOLDER_PATHS = frozenset({"N/A", "TBD", "NONE"})

@@ -15,8 +15,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from eidos.core.workspace.project import (
+    STANDARD_EXCLUDED_DIRS,
     extract_entity_paths,
+    get_tracked_files,
     is_generated_or_vendored,
+    is_polyglot_test_file,
     matches_owned_paths,
 )
 
@@ -49,8 +52,6 @@ class ChangedFilesClassification:
 
 
 _CANDIDATE_BASE_REFS = ("origin/main", "main", "origin/master", "master", "HEAD~1")
-_NESTED_TEST_DIR_NAMES = {"test", "tests", "__tests__"}
-_ROOT_TEST_DIR_NAMES = {"test", "tests", "__tests__", "spec", "specs"}
 _PACKAGE_PATH_LINE_RE = re.compile(r"^source_path:[ \t]*[\"']?([^\"'\n#\[\]-][^\"'\n#]*)", re.MULTILINE)
 _PACKAGE_PATH_BLOCK_RE = re.compile(
     r"^source_path:[ \t]*(.*?)$((?:\r?\n[ \t]+-[ \t]+.*$)*)",
@@ -324,34 +325,6 @@ def get_git_diff_files(
     return get_git_diff_files(repo_root, uncommitted=True)
 
 
-def get_tracked_files(repo_root: Path, include_untracked: bool = True) -> list[str]:
-    """Retrieve all Git-tracked and non-ignored untracked files in repo_root with core.quotePath=false."""
-    repo = repo_root.resolve()
-    try:
-        cmd = (
-            ["git", "-c", "core.quotePath=false", "ls-files", "--cached", "--others", "--exclude-standard"]
-            if include_untracked
-            else ["git", "-c", "core.quotePath=false", "ls-files"]
-        )
-        res = subprocess.run(
-            cmd,
-            cwd=repo,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if res.returncode == 0:
-            seen: dict[str, None] = {}
-            for line in res.stdout.splitlines():
-                rel = line.strip()
-                if rel and rel not in seen and (repo / rel).is_file():
-                    seen[rel] = None
-            return list(seen)
-    except OSError:
-        pass
-    return []
-
-
 def _has_structural_ast_change(
     old_content: str | None,
     new_content: str | None,
@@ -385,129 +358,6 @@ POLYGLOT_TEST_PATTERNS = [
     "*Spec.kt",
 ]
 
-POLYGLOT_EXCLUDED_DIRS = {
-    ".git",
-    ".venv",
-    "venv",
-    "node_modules",
-    "vendor",
-    "third_party",
-    "dist",
-    "build",
-    "out",
-    "target",
-    "coverage",
-    "htmlcov",
-    "__pycache__",
-    ".eidos",
-    ".spec",
-    "site",
-    ".idea",
-    ".vscode",
-    ".ruff_cache",
-    ".pytest_cache",
-    ".mypy_cache",
-    ".tox",
-    ".next",
-}
-
-
-def is_polyglot_test_file(
-    path: Path | str,
-    repo_root: Path | None = None,
-    package_paths: Iterable[str] | None = None,
-) -> bool:
-    """Determine whether a file path corresponds to an automated test file across polyglot languages."""
-    p = Path(path)
-    name = p.name
-
-    if repo_root is not None:
-        root_res = repo_root.resolve()
-        target_p = (root_res / p).resolve() if not p.is_absolute() else p.resolve()
-        try:
-            rel_path = target_p.relative_to(root_res)
-        except ValueError:
-            rel_path = p
-    elif p.is_absolute():
-        try:
-            rel_path = p.resolve().relative_to(Path.cwd().resolve())
-        except ValueError:
-            rel_path = p
-    else:
-        rel_path = p
-
-    if rel_path.is_absolute():
-        parent_names = [parent.name.lower() for parent in rel_path.parents[:2]]
-        in_test_dir = any(d in _ROOT_TEST_DIR_NAMES for d in parent_names)
-        is_under_src = False
-        nested_test_segment = False
-    else:
-        dir_parts = [part.lower() for part in rel_path.parent.parts]
-        is_under_src = bool(dir_parts and dir_parts[0] == "src")
-        nested_dir_parts: list[str] = dir_parts[1:] if is_under_src else []
-
-        if not is_under_src and package_paths:
-            for raw_pkg in package_paths:
-                norm_pkg = str(raw_pkg).strip().replace("\\", "/").strip("/").lower()
-                if not norm_pkg or norm_pkg == ".":
-                    continue
-                pkg_parts = [pt for pt in norm_pkg.split("/") if pt]
-                if pkg_parts and len(dir_parts) >= len(pkg_parts) and dir_parts[: len(pkg_parts)] == pkg_parts:
-                    is_under_src = True
-                    nested_dir_parts = dir_parts[len(pkg_parts) :]
-                    break
-
-        nested_test_segment = any(seg in _NESTED_TEST_DIR_NAMES for seg in nested_dir_parts)
-        in_test_dir = (
-            nested_test_segment
-            if is_under_src
-            else (
-                bool(dir_parts and dir_parts[0] in _ROOT_TEST_DIR_NAMES)
-                or any(part in _NESTED_TEST_DIR_NAMES for part in dir_parts)
-            )
-        )
-
-    if any(
-        name.endswith(ext)
-        for ext in (
-            ".test.ts",
-            ".spec.ts",
-            ".test.js",
-            ".spec.js",
-            ".test.tsx",
-            ".spec.tsx",
-            ".test.jsx",
-            ".spec.jsx",
-        )
-    ):
-        return True
-
-    if name.endswith("_test.go"):
-        return True
-
-    if name.endswith("_test.rs") or (in_test_dir and p.suffix == ".rs"):
-        return True
-
-    if any(
-        name.endswith(ext)
-        for ext in (
-            "Test.java",
-            "Test.kt",
-            "Spec.kt",
-        )
-    ):
-        return True
-
-    if is_under_src:
-        return bool(
-            nested_test_segment and p.suffix in {".py", ".ts", ".js", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt"}
-        )
-
-    if p.suffix == ".py" and (name.startswith("test_") or name.endswith("_test.py")):
-        return True
-
-    return bool(in_test_dir and p.suffix in {".py", ".ts", ".js", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt"})
-
 
 def collect_polyglot_test_files(repo_root: Path) -> dict[str, str]:
     """Scan the repository for test files across Python, TS/JS, Go, Rust, and Java/Kotlin."""
@@ -522,7 +372,7 @@ def collect_polyglot_test_files(repo_root: Path) -> dict[str, str]:
         if tracked_rels:
             for rel in tracked_rels:
                 rel_parts = Path(rel).parts
-                if any(d in POLYGLOT_EXCLUDED_DIRS or d.startswith(".") for d in rel_parts[:-1]):
+                if any(d in STANDARD_EXCLUDED_DIRS or d.startswith(".") for d in rel_parts[:-1]):
                     continue
                 if is_polyglot_test_file(Path(rel), repo_root=root):
                     try:
@@ -532,7 +382,7 @@ def collect_polyglot_test_files(repo_root: Path) -> dict[str, str]:
             return all_tests_content
 
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in POLYGLOT_EXCLUDED_DIRS and not d.startswith(".")]
+        dirnames[:] = [d for d in dirnames if d not in STANDARD_EXCLUDED_DIRS and not d.startswith(".")]
 
         for fn in filenames:
             file_path = Path(dirpath) / fn
@@ -656,7 +506,7 @@ def classify_changed_files(
             and not is_test
             and not is_doc
             and f.suffix in code_extensions
-            and not any(skip in parts for skip in [".venv", "venv", "node_modules", "dist", "build", "__pycache__"])
+            and not any(skip in STANDARD_EXCLUDED_DIRS for skip in parts[:-1])
         ):
             candidate_code_paths.append(str(rel_f).replace("\\", "/"))
 
@@ -685,7 +535,7 @@ def classify_changed_files(
         rel_str_norm = str(rel_f).replace("\\", "/")
         if (
             f.suffix in code_extensions
-            and not any(skip in parts for skip in [".venv", "venv", "node_modules", "dist", "build", "__pycache__"])
+            and not any(skip in STANDARD_EXCLUDED_DIRS for skip in parts[:-1])
             and rel_str_norm not in vendored_paths
             and str(rel_f) not in vendored_paths
         ):

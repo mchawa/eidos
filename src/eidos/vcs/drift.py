@@ -12,7 +12,6 @@ from eidos.core.spec.parser import extract_frontmatter
 from eidos.core.spec.validator import SpecValidator, ValidationReport
 from eidos.core.workspace.project import is_generated_or_vendored
 from eidos.vcs.diff import (
-    POLYGLOT_EXCLUDED_DIRS,
     POLYGLOT_TEST_PATTERNS,
     ChangedFilesClassification,
     GitResolutionError,
@@ -23,8 +22,6 @@ from eidos.vcs.diff import (
     classify_changed_files,
     collect_polyglot_test_files,
     get_git_diff_files,
-    get_tracked_files,
-    is_polyglot_test_file,
     map_code_to_components,
 )
 from eidos.vcs.invariants import (
@@ -52,7 +49,6 @@ from eidos.vcs.structural import (
 )
 
 __all__ = [
-    "POLYGLOT_EXCLUDED_DIRS",
     "POLYGLOT_TEST_PATTERNS",
     "SYSTEM_LEVEL_SPEC_PATHS",
     "ChangedFilesClassification",
@@ -72,9 +68,7 @@ __all__ = [
     "get_git_diff_files",
     "get_living_specs_catalog",
     "get_system_level_spec_paths",
-    "get_tracked_files",
     "is_generated_or_vendored",
-    "is_polyglot_test_file",
     "map_code_to_components",
 ]
 

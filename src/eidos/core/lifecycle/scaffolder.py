@@ -839,8 +839,8 @@ def get_spec_schema_info(doc_type_key: str | None = None) -> dict[str, Any] | li
     or canonical type (e.g. ``"product/capability"``, ``"tech/container"``, ``"delta/mutation"``) and returns
     detailed property constraints and a schema-synthesized example YAML frontmatter block.
     """
+    from eidos.core.spec.models import TYPE_TO_SCHEMA_NAME
     from eidos.core.spec.parser import safe_dump_yaml
-    from eidos.core.spec.validator import TYPE_TO_SCHEMA_NAME
 
     validator = SpecValidator()
 

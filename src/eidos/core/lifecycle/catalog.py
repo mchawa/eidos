@@ -8,6 +8,7 @@ from typing import Any
 import orjson
 
 from eidos.core.index.storage import get_cached_spec_document
+from eidos.core.spec.models import DOC_TYPE_TO_PREFIX, VALID_SPEC_TYPES
 from eidos.core.spec.parser import (
     YamlError,
     dump_spec_document,
@@ -17,86 +18,12 @@ from eidos.core.spec.parser import (
     split_frontmatter_and_body,
 )
 
-VALID_SPEC_TYPES = {
-    "system": "product/system",
-    "product/system": "product/system",
-    "architecture": "tech/architecture",
-    "tech/architecture": "tech/architecture",
-    "delta": "delta/mutation",
-    "mutation": "delta/mutation",
-    "delta/mutation": "delta/mutation",
-    "capability": "product/capability",
-    "product/capability": "product/capability",
-    "domain": "product/domain",
-    "product/domain": "product/domain",
-    "policy": "product/policy",
-    "product/policy": "product/policy",
-    "contract": "tech/contract",
-    "tech/contract": "tech/contract",
-    "container": "tech/container",
-    "tech/container": "tech/container",
-    "component": "tech/component",
-    "tech/component": "tech/component",
-    "persona": "product/persona",
-    "product/persona": "product/persona",
-    "exploration": "product/exploration",
-    "product/exploration": "product/exploration",
-    "design-system": "design/system",
-    "design_system": "design/system",
-    "design/system": "design/system",
-    "ui-component": "design/ui-component",
-    "ui_component": "design/ui-component",
-    "design/ui-component": "design/ui-component",
-    "screen": "design/screen",
-    "design/screen": "design/screen",
-    "client": "design/client",
-    "design/client": "design/client",
-    "flow": "design/flow",
-    "design/flow": "design/flow",
-}
-
 
 def normalize_id(doc_type_key: str, raw_id: str) -> str:
     """Ensure document ID follows standard prefix conventions."""
     cleaned = raw_id.strip().upper().replace(" ", "-")
-    prefix_map = {
-        "system": "SYS-",
-        "product/system": "SYS-",
-        "architecture": "ARCH-",
-        "tech/architecture": "ARCH-",
-        "delta": "DLT-",
-        "mutation": "DLT-",
-        "delta/mutation": "DLT-",
-        "capability": "CAP-",
-        "product/capability": "CAP-",
-        "domain": "DOM-",
-        "product/domain": "DOM-",
-        "policy": "POL-",
-        "product/policy": "POL-",
-        "contract": "CTR-",
-        "tech/contract": "CTR-",
-        "container": "CNT-",
-        "tech/container": "CNT-",
-        "component": "CMP-",
-        "tech/component": "CMP-",
-        "persona": "PER-",
-        "product/persona": "PER-",
-        "exploration": "EXP-",
-        "product/exploration": "EXP-",
-        "design-system": "DS-",
-        "design_system": "DS-",
-        "design/system": "DS-",
-        "ui-component": "UIC-",
-        "ui_component": "UIC-",
-        "design/ui-component": "UIC-",
-        "screen": "SCR-",
-        "design/screen": "SCR-",
-        "client": "CLT-",
-        "design/client": "CLT-",
-        "flow": "FLOW-",
-        "design/flow": "FLOW-",
-    }
-    pfx = prefix_map.get(doc_type_key.lower())
+    canonical_type = VALID_SPEC_TYPES.get(doc_type_key.lower())
+    pfx = DOC_TYPE_TO_PREFIX.get(canonical_type or "")
     if pfx and not cleaned.startswith(pfx):
         cleaned = f"{pfx}{cleaned}"
     return cleaned

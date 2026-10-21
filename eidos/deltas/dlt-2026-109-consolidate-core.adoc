@@ -1,0 +1,130 @@
+---
+type: delta/mutation
+id: DLT-2026-109-CONSOLIDATE-CORE
+title: Consolidate Core Workspace Resolution, Excluded Directory Sets, and Entity Prefix Registry
+status: applied
+intent:
+  kind: enabler
+  motivation: "Eliminate duplicated workspace/path resolution heuristics, divergent excluded-directory sets, duplicate tracked-file and test-file classifiers, and five separate entity prefix/path inference tables across core, index, and vcs modules."
+mutations:
+  - operation: modify
+    target: CMP-PROJECT-RESOLVER
+    parent: CNT-EIDOS-CORE
+    details: "Establish src/eidos/core/workspace/project.py as the single canonical authority for STANDARD_EXCLUDED_DIRS (unifying and replacing POLYGLOT_EXCLUDED_DIRS, _EXCLUDED_CODE_DIRS, and AuditEngine.IGNORE_DIRS across all polyglot build/vendor directories), single-pass zero-delimited get_tracked_files with optional .gitattributes linguist-generated/vendored filtering, unified workspace/spec root resolution (resolve_spec_and_repo_roots supporting standard, custom --path, and subdirectory spec roots), and canonical polyglot test-file classification (is_polyglot_test_file)."
+    expect:
+      frontmatter:
+        responsibility: "resolve_spec_and_repo_roots"
+  - operation: modify
+    target: CMP-DOMAIN-MODELS
+    parent: CNT-EIDOS-CORE
+    details: "Centralize entity prefix metadata, canonical document types, schema mappings (TYPE_TO_SCHEMA_NAME), ENTITY_ID_PREFIXES, resolve_entity_prefix_meta, and path-to-entity-type inference (infer_entity_type_from_path) into a unified ENTITY_PREFIX_REGISTRY in src/eidos/core/spec/models.py without backward-compatibility re-export shims in consumer modules."
+    expect:
+      frontmatter:
+        responsibility: "ENTITY_PREFIX_REGISTRY"
+  - operation: modify
+    target: CMP-SPEC-PARSER
+    parent: CNT-EIDOS-CORE
+    details: "Resolve SpecDocument.schema_ref in src/eidos/core/spec/parser.py directly via TYPE_TO_SCHEMA_NAME from src/eidos/core/spec/models.py."
+    expect:
+      frontmatter:
+        responsibility: "TYPE_TO_SCHEMA_NAME"
+  - operation: modify
+    target: CMP-SPEC-VALIDATOR
+    parent: CNT-EIDOS-CORE
+    details: "Remove _resolve_spec_and_repo_roots, ENTITY_ID_PREFIXES, and TYPE_TO_SCHEMA_NAME definitions from src/eidos/core/spec/validator.py and import resolve_spec_and_repo_roots from project.py and ENTITY_ID_PREFIXES / TYPE_TO_SCHEMA_NAME from models.py directly."
+    expect:
+      frontmatter:
+        responsibility: "resolve_spec_and_repo_roots"
+  - operation: modify
+    target: CMP-LIFECYCLE-SCAFFOLDER
+    parent: CNT-EIDOS-CORE
+    details: "Import ENTITY_PREFIX_REGISTRY, TYPE_TO_SCHEMA_NAME, and infer_entity_type_from_path from src/eidos/core/spec/models.py in src/eidos/core/lifecycle/catalog.py and src/eidos/core/lifecycle/scaffolder.py instead of maintaining duplicate prefix/path lookup tables."
+    expect:
+      frontmatter:
+        responsibility: "ENTITY_PREFIX_REGISTRY"
+  - operation: modify
+    target: CMP-DELTA-ENGINE
+    parent: CNT-EIDOS-CORE
+    details: "Remove PREFIX_TO_ENTITY_META and resolve_entity_prefix_meta definitions from src/eidos/core/lifecycle/delta_engine.py and import them directly from src/eidos/core/spec/models.py."
+    expect:
+      frontmatter:
+        responsibility: "ENTITY_PREFIX_REGISTRY"
+  - operation: modify
+    target: CMP-DELTA-AUDITOR
+    parent: CNT-EIDOS-CORE
+    details: "Remove AuditEngine.IGNORE_DIRS and inline path-to-entity-ID inference chains in src/eidos/core/lifecycle/audit.py, delegating directly to is_polyglot_test_file in project.py and infer_entity_type_from_path / resolve_entity_prefix_meta in models.py."
+    expect:
+      frontmatter:
+        responsibility: "infer_entity_type_from_path"
+  - operation: modify
+    target: CMP-GRAPH-STORAGE
+    parent: CNT-EIDOS-INDEX
+    details: "Delegate _resolve_index_paths in src/eidos/core/index/graph_index.py to resolve_spec_and_repo_roots in src/eidos/core/workspace/project.py and remove duplicate _is_inside_plugin_or_assets."
+    expect:
+      frontmatter:
+        responsibility: "resolve_spec_and_repo_roots"
+  - operation: modify
+    target: CMP-INCREMENTAL-SYNC-ENGINE
+    parent: CNT-EIDOS-INDEX
+    details: "Remove _EXCLUDED_CODE_DIRS and is_test_code_path from src/eidos/core/index/sync.py and import STANDARD_EXCLUDED_DIRS and is_polyglot_test_file directly from src/eidos/core/workspace/project.py so Rust target/ and Go vendor/ directories are consistently excluded during AST indexing."
+    expect:
+      frontmatter:
+        responsibility: "STANDARD_EXCLUDED_DIRS"
+  - operation: modify
+    target: CMP-FTS-QUERY-ENGINE
+    parent: CNT-EIDOS-INDEX
+    details: "Derive _ENTITY_ID_TOKEN_RE in src/eidos/core/index/query.py dynamically from ENTITY_PREFIX_REGISTRY in src/eidos/core/spec/models.py instead of hardcoding entity prefixes."
+    expect:
+      frontmatter:
+        responsibility: "ENTITY_PREFIX_REGISTRY"
+  - operation: modify
+    target: CMP-DRIFT-DETECTOR
+    parent: CNT-EIDOS-VCS
+    details: "Remove duplicate get_tracked_files, is_polyglot_test_file, and POLYGLOT_EXCLUDED_DIRS definitions from src/eidos/vcs/diff.py, src/eidos/vcs/drift.py, and src/eidos/vcs/invariants.py, importing them directly from src/eidos/core/workspace/project.py."
+    expect:
+      frontmatter:
+        responsibility: "STANDARD_EXCLUDED_DIRS"
+vcs:
+  branch: main
+  base_commit: aa3bd6d52481a6984c6db704df0c93f2c68c453b
+---
+= SpecDelta: Consolidate Core Workspace Resolution, Excluded Directory Sets, and Entity Prefix Registry
+:toc: left
+:icons: font
+:sectnums:
+
+== 1. Problem Statement & Motivation
+
+Core workspace discovery and specification entity metadata are currently duplicated across `CNT-EIDOS-CORE`, `CNT-EIDOS-INDEX`, and `CNT-EIDOS-VCS` with subtle behavioral divergence:
+
+1. **Four Divergent Excluded-Directory Sets**:
+   * `STANDARD_EXCLUDED_DIRS` in `src/eidos/core/workspace/project.py`
+   * `POLYGLOT_EXCLUDED_DIRS` in `src/eidos/vcs/diff.py`
+   * `_EXCLUDED_CODE_DIRS` in `src/eidos/core/index/sync.py`
+   * `AuditEngine.IGNORE_DIRS` in `src/eidos/core/lifecycle/audit.py`
+   * Because `_EXCLUDED_CODE_DIRS` in `sync.py` omits `vendor`, `third_party`, and `target` (which are present in `project.py` and `diff.py`), broad component path mappings in Go or Rust repositories cause `sync_index` to AST-index third-party/build artifacts that `eidos drift` ignores.
+2. **Duplicate `get_tracked_files` & Test-File Classification**:
+   * `project.get_tracked_files` (`src/eidos/core/workspace/project.py`) uses `git ls-files -z` and filters `.gitattributes` `linguist-generated`/`linguist-vendored` files via `is_generated_or_vendored`.
+   * `diff.get_tracked_files` (`src/eidos/vcs/diff.py`) uses newline splitting (`splitlines()`) and omits `.gitattributes` filtering.
+   * Polyglot test detection is split between `is_polyglot_test_file` (`src/eidos/vcs/diff.py`) and `is_test_code_path` (`src/eidos/core/index/sync.py`).
+3. **Five Separate Entity Prefix Tables & Duplicate Path-to-Type Inference**:
+   * Entity prefixes, directory mappings, and type names are separately maintained in `ENTITY_ID_PREFIXES` / `TYPE_TO_SCHEMA_NAME` (`validator.py`), `PREFIX_TO_ENTITY_META` (`delta_engine.py`), `_expected_prefix_for_spec_path` (`catalog.py`), and `_ENTITY_ID_TOKEN_RE` (`query.py`), alongside duplicate `if/elif` chains inferring entity prefixes/IDs from `.adoc` file paths in `catalog.py` and `audit.py`.
+4. **Overlapping Workspace & Spec Root Resolvers**:
+   * `_resolve_spec_and_repo_roots` (`validator.py`), `find_repo_root` / `load_project` (`project.py`), and `_resolve_index_paths` (`graph_index.py`) implement overlapping heuristics for locating `repo_root` and `eidos_dir`.
+
+---
+
+== 2. Proposed Architectural & Specification Changes
+
+=== 2.1 Consolidate Workspace & File Discovery in `CMP-PROJECT-RESOLVER` (`src/eidos/core/workspace/project.py`)
+* **Single `STANDARD_EXCLUDED_DIRS` Set (No Legacy Aliases)**:
+  - Expand `STANDARD_EXCLUDED_DIRS` in `project.py` with the union of all polyglot build/vendor directories (`vendor`, `third_party`, `target`, `.gradle`, `.idea`, `.vscode`, `.vs`, `out`, `coverage`, `.nyc_output`, `.sass-cache`, `.tox`, `.nox`, `.eggs`) and delete `POLYGLOT_EXCLUDED_DIRS`, `_EXCLUDED_CODE_DIRS`, and `AuditEngine.IGNORE_DIRS`.
+* **Canonical `get_tracked_files` & `is_polyglot_test_file` (No Re-export Shims)**:
+  - Delete `get_tracked_files` from `src/eidos/vcs/diff.py` and use `project.get_tracked_files` directly across `diff.py`, `invariants.py`, and tests (using a single `git ls-files --cached --others --exclude-standard -z` subprocess when `include_untracked=True`).
+  - Move `is_polyglot_test_file` into `src/eidos/core/workspace/project.py` and delete both `diff.is_polyglot_test_file` and `sync.is_test_code_path`, updating all callers in `diff.py`, `drift.py`, `invariants.py`, `sync.py`, `audit.py`, and tests to import `is_polyglot_test_file` from `eidos.core.workspace.project`.
+* **Unified `resolve_spec_and_repo_roots(root_dir, doc_path=None)`**:
+  - Move `_resolve_spec_and_repo_roots` from `validator.py` into `project.py` as `resolve_spec_and_repo_roots(root_dir, doc_path=None)`, deleting `_resolve_spec_and_repo_roots` from `validator.py` and `_is_inside_plugin_or_assets` from `graph_index.py`, and delegating `SpecValidator`, `load_project`, and `ArchitecturalIndex._resolve_index_paths` to it (while preserving `_resolve_git_repo_root` in `delta_engine.py` strictly for verifying `.git` presence on/above `eidos_dir`).
+
+=== 2.2 Centralize Entity Prefix & Path Inference in `CMP-DOMAIN-MODELS` (`src/eidos/core/spec/models.py`)
+* Define `ENTITY_PREFIX_REGISTRY`, `ENTITY_ID_PREFIXES`, `PREFIX_TO_ENTITY_META`, and `TYPE_TO_SCHEMA_NAME` in `src/eidos/core/spec/models.py` mapping each canonical prefix (`SYS-`, `ARCH-`, `DOM-`, `CAP-`, `PER-`, `POL-`, `EXP-`, `DLT-`, `CNT-`, `CMP-`, `CTR-`, `DS-`, `UIC-`, `SCR-`, `CLT-`, `FLOW-`, `INV-`, `DEC-`) to its canonical `(entity_kind, doc_type, schema_rel_path)` metadata.
+* Move `resolve_entity_prefix_meta(entity_id_or_path)` and `infer_entity_type_from_path(rel_path)` into `src/eidos/core/spec/models.py`, deleting the duplicate definitions from `validator.py`, `delta_engine.py`, `catalog.py`, `audit.py`, and `query.py` and updating all callers and tests directly.

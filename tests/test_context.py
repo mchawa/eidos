@@ -591,3 +591,57 @@ def test_file_slice_compacts_before_eviction_and_respects_all_tier_budgets() -> 
             inv_ids = [i["id"] for i in sl.invariants]
             assert "CAP-AGENT-002" in cap_ids
             assert any("INDEX" in iid for iid in inv_ids)
+
+
+def test_consolidated_entity_prefix_registry_and_excluded_dirs() -> None:  # eidos:fixture
+    """Verify DLT-2026-109-CONSOLIDATE-CORE: ENTITY_PREFIX_REGISTRY, infer_entity_type_from_path, and STANDARD_EXCLUDED_DIRS."""
+    from eidos.core.spec.models import (
+        DOC_TYPE_TO_PREFIX,
+        ENTITY_ID_PREFIXES,
+        ENTITY_PREFIX_REGISTRY,
+        TYPE_TO_SCHEMA_NAME,
+        VALID_SPEC_TYPES,
+        infer_entity_type_from_path,
+        resolve_entity_prefix_meta,
+    )
+    from eidos.core.workspace.project import STANDARD_EXCLUDED_DIRS, is_polyglot_test_file
+
+    for d in ("vendor", "third_party", "target", "node_modules", ".venv", ".eidos"):
+        assert d in STANDARD_EXCLUDED_DIRS
+
+    assert len(ENTITY_PREFIX_REGISTRY) == 18
+    assert len(TYPE_TO_SCHEMA_NAME) == 16
+    assert DOC_TYPE_TO_PREFIX["tech/component"] == "CMP-"
+    assert VALID_SPEC_TYPES["ui-component"] == "design/ui-component"
+    assert "INV-" in ENTITY_ID_PREFIXES
+    assert resolve_entity_prefix_meta("DLT-2026-001") is None
+    assert resolve_entity_prefix_meta("CNT-CORE") == ("CNT-", "container", "tech/container")
+
+    assert infer_entity_type_from_path("eidos/architecture/components/auth.adoc") == (
+        "CMP-",
+        "tech/component",
+        "CMP-AUTH",
+    )
+    assert infer_entity_type_from_path("eidos/domains/billing/domain.adoc") == (
+        "DOM-",
+        "product/domain",
+        "DOM-BILLING",
+    )
+    assert infer_entity_type_from_path("eidos/design/systems/brand/system.adoc") == (
+        "DS-",
+        "design/system",
+        "DS-BRAND",
+    )
+    assert infer_entity_type_from_path("eidos/design/systems/brand/components/btn.adoc") == (
+        "UIC-",
+        "design/ui-component",
+        "UIC-BTN",
+    )
+    assert infer_entity_type_from_path("eidos/design/clients/web/client.adoc") == (
+        "CLT-",
+        "design/client",
+        "CLT-WEB",
+    )
+    assert infer_entity_type_from_path("eidos/system.adoc") == ("SYS-", "product/system", "SYS-SYSTEM")
+    assert is_polyglot_test_file("tests/test_unit.py") is True
+    assert is_polyglot_test_file("src/app/test_helpers.py") is False

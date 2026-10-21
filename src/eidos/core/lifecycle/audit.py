@@ -18,9 +18,11 @@ from typing import Any, ClassVar
 import orjson
 
 from eidos.core.index.graph_index import get_architectural_index
-from eidos.core.index.sync import _FILE_TOKEN_RE, is_test_code_path
+from eidos.core.index.sync import _FILE_TOKEN_RE
 from eidos.core.lifecycle.catalog import find_spec_by_id_or_path
+from eidos.core.spec.models import infer_entity_type_from_path
 from eidos.core.spec.parser import parse_spec_file
+from eidos.core.workspace.project import is_polyglot_test_file
 
 
 @dataclass
@@ -92,19 +94,6 @@ class DeltaAuditResult:
 class AuditEngine:
     """Performs context-aware reverse blast-radius audits for SpecDeltas."""
 
-    IGNORE_DIRS: ClassVar[set[str]] = {
-        ".git",
-        ".venv",
-        ".pytest_cache",
-        ".ruff_cache",
-        "__pycache__",
-        "node_modules",
-        "dist",
-        "build",
-        "site",
-        ".cache",
-        ".eidos",
-    }
     IGNORE_EXTS: ClassVar[set[str]] = {
         ".pyc",
         ".db",
@@ -307,42 +296,9 @@ class AuditEngine:
                             except Exception:
                                 pass
                     if not resolved_id:
-                        from eidos.core.lifecycle.delta_engine import resolve_entity_prefix_meta
-
-                        clean_path_obj = Path(clean_p)
-                        stem_upper = clean_path_obj.stem.upper()
-                        parent_upper = clean_path_obj.parent.name.upper()
-                        if resolve_entity_prefix_meta(stem_upper) is not None:
-                            resolved_id = stem_upper
-                        elif "architecture/components/" in clean_p:
-                            resolved_id = stem_upper if stem_upper.startswith("CMP-") else f"CMP-{stem_upper}"
-                        elif "architecture/containers/" in clean_p:
-                            resolved_id = stem_upper if stem_upper.startswith("CNT-") else f"CNT-{stem_upper}"
-                        elif "architecture/contracts/" in clean_p:
-                            resolved_id = stem_upper if stem_upper.startswith("CTR-") else f"CTR-{stem_upper}"
-                        elif "policies/" in clean_p:
-                            resolved_id = stem_upper if stem_upper.startswith("POL-") else f"POL-{stem_upper}"
-                        elif "personas/" in clean_p:
-                            resolved_id = stem_upper if stem_upper.startswith("PER-") else f"PER-{stem_upper}"
-                        elif "/capabilities/" in clean_p:
-                            resolved_id = stem_upper if stem_upper.startswith("CAP-") else f"CAP-{stem_upper}"
-                        elif "domains/" in clean_p:
-                            dom_token = parent_upper if stem_upper == "DOMAIN" and parent_upper else stem_upper
-                            resolved_id = dom_token if dom_token.startswith("DOM-") else f"DOM-{dom_token}"
-                        elif "design/systems/" in clean_p and "/components/" in clean_p:
-                            resolved_id = stem_upper if stem_upper.startswith("UIC-") else f"UIC-{stem_upper}"
-                        elif "design/systems/" in clean_p:
-                            ds_token = parent_upper if stem_upper == "SYSTEM" and parent_upper else stem_upper
-                            resolved_id = ds_token if ds_token.startswith("DS-") else f"DS-{ds_token}"
-                        elif "/screens/" in clean_p or clean_p.startswith("design/screens/"):
-                            resolved_id = stem_upper if stem_upper.startswith("SCR-") else f"SCR-{stem_upper}"
-                        elif "/flows/" in clean_p or clean_p.startswith("design/flows/"):
-                            resolved_id = stem_upper if stem_upper.startswith("FLOW-") else f"FLOW-{stem_upper}"
-                        elif "design/clients/" in clean_p:
-                            clt_token = parent_upper if stem_upper == "CLIENT" and parent_upper else stem_upper
-                            resolved_id = clt_token if clt_token.startswith("CLT-") else f"CLT-{clt_token}"
-                        elif "explorations/" in clean_p:
-                            resolved_id = stem_upper if stem_upper.startswith("EXP-") else f"EXP-{stem_upper}"
+                        inferred = infer_entity_type_from_path(clean_p)
+                        if inferred is not None and inferred[0] != "DLT-":
+                            resolved_id = inferred[2]
                     if resolved_id:
                         targets.add(resolved_id)
                         primary_target = resolved_id
@@ -530,7 +486,7 @@ class AuditEngine:
                         candidate_map[allowed_p] = (
                             "unknown"
                             if allowed_p.startswith("eidos/")
-                            else ("code/test" if is_test_code_path(allowed_p) else "code/source")
+                            else ("code/test" if is_polyglot_test_file(allowed_p) else "code/source")
                         )
 
         for rel_s in sorted(candidate_map):
@@ -689,7 +645,7 @@ class AuditEngine:
             )
 
         # 5. Tests in polyglot test suites
-        if doc_type == "code/test" or rel_str.startswith("tests/") or is_test_code_path(rel_str):
+        if doc_type == "code/test" or rel_str.startswith("tests/") or is_polyglot_test_file(rel_str):
             # Check if this is audit/test tooling or inspecting the audit results
             if (
                 any(term in line_text for term in ("targets_audited", "audit_delta", "AuditEngine", "DeltaAuditResult"))

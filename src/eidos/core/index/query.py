@@ -15,6 +15,7 @@ import orjson
 
 from eidos.core.index.ast_indexer import AstGrepIndexer, CodeSymbol, get_ast_indexer
 from eidos.core.index.sync import _NON_AST_SYMBOL_KINDS, build_spec_path_resolver
+from eidos.core.spec.models import ENTITY_PREFIX_REGISTRY, resolve_entity_prefix_meta
 from eidos.core.workspace.project import match_path_pattern
 
 # FTS5 ``bm25()`` weights are positional over *every* declared column of ``specs_fts``, including the UNINDEXED
@@ -38,7 +39,7 @@ TASK_SLICE_ENTITY_TYPES: tuple[str, ...] = (
 _CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 _IDENTIFIER_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 _ENTITY_ID_TOKEN_RE = re.compile(
-    r"\b(?:SYS|ARCH|CNT|CMP|CAP|INV|CTR|POL|DOM|PER|DEC|DS|UIC|CLT|SCR|FLOW|DLT|EXP)-[A-Za-z0-9_-]+\b"
+    rf"\b(?:{'|'.join(re.escape(p.rstrip('-')) for p in ENTITY_PREFIX_REGISTRY)})-[A-Za-z0-9_-]+\b"
 )
 
 _FTS_STOP_WORDS: frozenset[str] = frozenset(
@@ -799,7 +800,7 @@ def compute_delta_impact_in_db(
     raw_blast_radius: dict[str, Any] | None = None,
 ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
     """Compute SpecDelta (affects, blast_radius) from persisted entities and edges in the knowledge graph."""
-    from eidos.core.lifecycle.delta_engine import normalize_delta_mutation, resolve_entity_prefix_meta
+    from eidos.core.lifecycle.delta_engine import normalize_delta_mutation
 
     def _add_unique(lst: list[str], item: str) -> None:
         if item and item not in lst:

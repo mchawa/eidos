@@ -6,7 +6,7 @@ from typing import Any
 
 import fast_yaml
 
-from eidos.core.spec.models import SpecDocument
+from eidos.core.spec.models import TYPE_TO_SCHEMA_NAME, SpecDocument
 
 _OPENING_DELIMITER_RE = re.compile(r"\A---[ \t]*(?:\r?\n|\Z)")
 _CLOSING_DELIMITER_RE = re.compile(r"^---[ \t]*(?:\r?\n|\Z)", re.MULTILINE)
@@ -183,10 +183,11 @@ def _parse_spec_content(path: Path, content: str) -> SpecDocument:
     fm_model = doc.model
     doc.doc_type = fm_model.type or "unknown"
     doc.doc_id = fm_model.id or path.stem
+    schema_rel = TYPE_TO_SCHEMA_NAME.get(doc.doc_type)
     doc.schema_ref = (
-        f"schemas/v1/{doc.doc_type}.schema.yaml"
-        if doc.doc_type != "delta/mutation" and "/" in doc.doc_type
-        else ("schemas/v1/delta/delta.schema.yaml" if doc.doc_type == "delta/mutation" else None)
+        f"schemas/v1/{schema_rel}"
+        if schema_rel is not None
+        else (f"schemas/v1/{doc.doc_type}.schema.yaml" if "/" in doc.doc_type else None)
     )
     doc.title = fm_model.title
 

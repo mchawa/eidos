@@ -2244,19 +2244,19 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         ws_assets.__file__ = orig_file
         os.chdir(orig_cwd)
 
-    # Also cover _resolve_spec_and_repo_roots for custom spec folder inside a .git repo and fallback path (lines 162-177)
-    from eidos.core.spec.validator import _resolve_spec_and_repo_roots
+    # Also cover resolve_spec_and_repo_roots for custom spec folder inside a .git repo and fallback path (lines 162-177)
+    from eidos.core.workspace.project import resolve_spec_and_repo_roots
 
     repo_m = tmp_path / "repo_m"
     (repo_m / ".git").mkdir(parents=True)
     custom_specs = repo_m / "custom_specs"
     custom_specs.mkdir()
-    sr_m, rr_m = _resolve_spec_and_repo_roots(custom_specs)
+    sr_m, rr_m = resolve_spec_and_repo_roots(custom_specs)
     assert sr_m == custom_specs.resolve() and rr_m == repo_m.resolve()
 
     fb_specs = tmp_path / "no_git_root" / "specs"
     fb_specs.mkdir(parents=True)
-    sr_fb, rr_fb = _resolve_spec_and_repo_roots(fb_specs)
+    sr_fb, rr_fb = resolve_spec_and_repo_roots(fb_specs)
     assert sr_fb == fb_specs.resolve() and rr_fb == fb_specs.parent.resolve()
 
 
@@ -3384,7 +3384,8 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
 
     from eidos.core.spec.models import FrontmatterModel
     from eidos.core.spec.parser import parse_spec_file
-    from eidos.core.spec.validator import SpecValidator, _resolve_spec_and_repo_roots
+    from eidos.core.spec.validator import SpecValidator
+    from eidos.core.workspace.project import resolve_spec_and_repo_roots
 
     validator = SpecValidator()
 
@@ -3420,7 +3421,7 @@ def test_deep_audit_group_b_b1_through_b10(tmp_path):
     empty_ds_sys.write_text("", encoding="utf-8")
     parsed_empty_ds = parse_spec_file(empty_ds_sys)
     assert parsed_empty_ds.doc_type == "unknown"
-    spec_root, _ = _resolve_spec_and_repo_roots(ds_brand_dir, empty_ds_sys)
+    spec_root, _ = resolve_spec_and_repo_roots(ds_brand_dir, empty_ds_sys)
     assert spec_root == eidos_dir.resolve()
     empty_ds_sys.unlink()
 

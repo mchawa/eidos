@@ -12,60 +12,20 @@ import jsonschema
 import orjson
 
 from eidos.core.index.ast_indexer import AST_DIFF_EXTS, get_ast_indexer
-from eidos.core.spec.models import SpecDocument, ValidationReport
+from eidos.core.spec.models import (
+    ENTITY_ID_PREFIXES,
+    TYPE_TO_SCHEMA_NAME,
+    SpecDocument,
+    ValidationReport,
+    infer_entity_type_from_path,
+    resolve_entity_prefix_meta,
+)
 from eidos.core.spec.parser import YamlError, safe_load_yaml
 from eidos.core.workspace.assets import get_v1_schemas_dir
-
-ENTITY_ID_PREFIXES = (
-    "CNT-",
-    "CMP-",
-    "CTR-",
-    "CAP-",
-    "DOM-",
-    "POL-",
-    "PER-",
-    "DLT-",
-    "DS-",
-    "UIC-",
-    "SCR-",
-    "CLT-",
-    "FLOW-",
-    "EXP-",
-    "SYS-",
-    "ARCH-",
-    "DEC-",
-    "INV-",
-)
-
+from eidos.core.workspace.project import resolve_spec_and_repo_roots
 
 _ID_PATTERN_PREFIX_RE = re.compile(r"^\^?([A-Z][A-Z0-9]*-)")
 _DYNAMIC_ENTITY_ID_PREFIXES: set[str] = set(ENTITY_ID_PREFIXES)
-
-_SPEC_SUBDIRS = frozenset(
-    {
-        "architecture",
-        "domains",
-        "product",
-        "policies",
-        "personas",
-        "deltas",
-        "explorations",
-        "design",
-    }
-)
-_NON_ROOT_SPEC_SUBDIRS = _SPEC_SUBDIRS | frozenset(
-    {
-        "systems",
-        "components",
-        "containers",
-        "contracts",
-        "capabilities",
-        "clients",
-        "screens",
-        "flows",
-    }
-)
-_REPO_MARKERS = (".git", "pyproject.toml", "package.json", "Cargo.toml", "go.mod")
 
 
 def _extract_prefixes_from_schema(schema: dict[str, Any]) -> set[str]:
@@ -98,126 +58,12 @@ def _extract_prefixes_from_schema(schema: dict[str, Any]) -> set[str]:
     return found
 
 
-def _resolve_spec_and_repo_roots(root_dir: Path | None, doc_path: Path | None = None) -> tuple[Path, Path]:
-    """Resolve (spec_root, repo_root) for standard ('eidos/', '.spec/'), custom ('specs/'), or subdirectory paths."""
-    base = (root_dir if root_dir is not None else (doc_path.parent if doc_path is not None else Path.cwd())).resolve()
-
-    # 1. If base itself is a repo root containing a standard child spec directory ('eidos', '.spec', 'specs')
-    for child_name in ("eidos", ".spec", "specs"):
-        child = base / child_name
-        if child.is_dir() and (
-            child_name in ("eidos", ".spec")
-            or (child / "system.adoc").is_file()
-            or any((child / s).is_dir() for s in _SPEC_SUBDIRS)
-        ):
-            return child.resolve(), base
-
-    def _is_spec_root(cand: Path) -> bool:
-        if (cand / "eidos").is_dir() or (cand / ".spec").is_dir():
-            return False
-        if cand.name in ("eidos", ".spec"):
-            return True
-        if (cand / "system.adoc").is_file():
-            cand_lower = cand.name.lower()
-            ancestor_lowers = [p.lower() for p in cand.parts[:-1]]
-            if cand_lower not in _NON_ROOT_SPEC_SUBDIRS and (
-                cand_lower == "eidos"
-                or (
-                    "eidos" not in ancestor_lowers
-                    and (not cand.parent or cand.parent.name.lower() not in _NON_ROOT_SPEC_SUBDIRS)
-                )
-            ):
-                return True
-        if (cand / "architecture").is_dir():
-            arch = cand / "architecture"
-            if (
-                any((arch / sub).is_dir() for sub in ("containers", "components", "contracts"))
-                or any(arch.glob("*.adoc"))
-                or any((cand / sub).is_dir() for sub in _SPEC_SUBDIRS - {"architecture"})
-            ):
-                return True
-        return bool(cand.name in ("specs", "spec") and any((cand / sub).is_dir() for sub in _SPEC_SUBDIRS))
-
-    def _repo_root_for_spec_root(spec_cand: Path) -> Path:
-        if spec_cand.name in ("eidos", ".spec", "specs", "spec"):
-            return spec_cand.parent
-        if (spec_cand / "src").is_dir() or any((spec_cand / m).exists() for m in _REPO_MARKERS):
-            return spec_cand
-        if spec_cand.parent.name.startswith("pytest-"):
-            return spec_cand
-        return spec_cand.parent
-
-    # 2. Walk (base, *base.parents) (and doc_path parents if provided) to find spec_root
-    search_roots = [base]
-    if doc_path is not None:
-        res_doc_parent = doc_path.resolve().parent
-        if res_doc_parent != base:
-            search_roots.append(res_doc_parent)
-
-    for start in search_roots:
-        for depth, cand in enumerate((start, *start.parents)):
-            if depth > 5:
-                break
-            if cand != start:
-                try:
-                    rel_first = start.relative_to(cand).parts[0]
-                except ValueError:
-                    break
-                if rel_first in _SPEC_SUBDIRS and _is_spec_root(cand):
-                    return cand, _repo_root_for_spec_root(cand)
-            elif _is_spec_root(cand):
-                return cand, _repo_root_for_spec_root(cand)
-            if any((cand / m).exists() for m in _REPO_MARKERS):
-                break
-
-    # 3. Check if an immediate or ancestor directory is a repo root with markers
-    for depth, cand in enumerate((base.parent, *base.parents)):
-        if depth > 5:
-            break
-        if any((cand / m).exists() for m in _REPO_MARKERS):
-            try:
-                rel_parts = base.relative_to(cand).parts
-            except ValueError:
-                break
-            if rel_parts and rel_parts[0] not in ("src", "tests", "services", "packages"):
-                spec_root = (cand / rel_parts[0]).resolve()
-                return spec_root, cand
-            break
-
-    # 4. Fallback
-    if base.name in ("eidos", ".spec", "specs", "spec"):
-        return base, base.parent
-    if (base.parent / "src").is_dir() or (base.parent / ".git").exists():
-        return base, base.parent
-    return base, base
-
-
 def is_entity_id(val: Any) -> bool:
     """Return True if val looks like a standardized Eidos entity ID."""
     if not isinstance(val, str):
         return False
     val_clean = val.strip().upper()
     return any(val_clean.startswith(prefix) for prefix in _DYNAMIC_ENTITY_ID_PREFIXES)
-
-
-TYPE_TO_SCHEMA_NAME = {
-    "product/system": "product/system.schema.yaml",
-    "product/domain": "product/domain.schema.yaml",
-    "product/capability": "product/capability.schema.yaml",
-    "product/policy": "product/policy.schema.yaml",
-    "product/persona": "product/persona.schema.yaml",
-    "product/exploration": "product/exploration.schema.yaml",
-    "delta/mutation": "delta/delta.schema.yaml",
-    "tech/architecture": "tech/architecture.schema.yaml",
-    "tech/container": "tech/container.schema.yaml",
-    "tech/component": "tech/component.schema.yaml",
-    "tech/contract": "tech/contract.schema.yaml",
-    "design/system": "design/system.schema.yaml",
-    "design/ui-component": "design/ui-component.schema.yaml",
-    "design/screen": "design/screen.schema.yaml",
-    "design/client": "design/client.schema.yaml",
-    "design/flow": "design/flow.schema.yaml",
-}
 
 
 class SpecValidator:
@@ -324,7 +170,7 @@ class SpecValidator:
         self.schema_hash = effective_schema_hash
 
         resolved_root = root_dir.resolve()
-        spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir)
+        spec_root, repo_root = resolve_spec_and_repo_roots(root_dir)
         eidos_cache_root = spec_root
         resolved_repo_root = repo_root
         db_path = eidos_cache_root / ".cache" / "index.db"
@@ -459,7 +305,9 @@ class SpecValidator:
                     mtime_ns,
                     sha256,
                     effective_schema_hash,
-                    orjson.dumps(doc_payload, default=str, option=orjson.OPT_SORT_KEYS | orjson.OPT_NON_STR_KEYS).decode("utf-8"),
+                    orjson.dumps(
+                        doc_payload, default=str, option=orjson.OPT_SORT_KEYS | orjson.OPT_NON_STR_KEYS
+                    ).decode("utf-8"),
                 )
             )
             return doc
@@ -564,7 +412,7 @@ class SpecValidator:
         # When validating a subdirectory of an existing spec_root (e.g. eidos/domains), seed
         # catalog_ids and entity_types from sibling specs in spec_root so cross-directory
         # references (such as SYS-* or CNT-*) do not falsely fail.
-        spec_root, _ = _resolve_spec_and_repo_roots(root_dir)
+        spec_root, _ = resolve_spec_and_repo_roots(root_dir)
         resolved_root = root_dir.resolve()
         if (
             spec_root != resolved_root
@@ -767,7 +615,7 @@ class SpecValidator:
             if target_types and root_dir is not None:
                 from eidos.core.index.storage import get_cached_spec_document
 
-                spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir, doc.file_path)
+                spec_root, repo_root = resolve_spec_and_repo_roots(root_dir, doc.file_path)
                 for cand in (
                     repo_root / val,
                     spec_root / val,
@@ -863,8 +711,6 @@ class SpecValidator:
             return
 
         if actual_type and field_path in ("mutations.target", "mutations.parent"):
-            from eidos.core.lifecycle.delta_engine import resolve_entity_prefix_meta
-
             p_meta = resolve_entity_prefix_meta(val)
             if p_meta is not None and actual_type != p_meta[2]:
                 label = ref_meta.get("entity_label") or "entity"
@@ -902,48 +748,9 @@ class SpecValidator:
                 target_upper = target_val.upper()
                 effective_target_upper = target_upper
                 if target_upper.endswith(".ADOC"):
-                    norm_parts = [p.lower() for p in Path(target_val.replace("\\", "/")).parts]
-                    stem_upper = Path(target_val).stem.upper()
-                    if stem_upper.startswith(
-                        (
-                            "SYS-",
-                            "CAP-",
-                            "POL-",
-                            "ARCH-",
-                            "INV-",
-                            "CNT-",
-                            "CMP-",
-                            "CTR-",
-                            "DOM-",
-                            "PER-",
-                            "DS-",
-                            "UIC-",
-                            "SCR-",
-                            "FLOW-",
-                            "CLT-",
-                            "EXP-",
-                        )
-                    ):
-                        effective_target_upper = stem_upper
-                    elif stem_upper == "SYSTEM":
-                        effective_target_upper = "SYS-SYSTEM"
-                    elif "capabilities" in norm_parts:
-                        effective_target_upper = f"CAP-{stem_upper}"
-                    elif "policies" in norm_parts:
-                        effective_target_upper = f"POL-{stem_upper}"
-                    elif "containers" in norm_parts:
-                        effective_target_upper = f"CNT-{stem_upper}"
-                    elif "contracts" in norm_parts:
-                        effective_target_upper = f"CTR-{stem_upper}"
-                    elif "architecture" in norm_parts and "components" in norm_parts:
-                        effective_target_upper = f"CMP-{stem_upper}"
-                    elif "architecture" in norm_parts and stem_upper in (
-                        "SYSTEM-ARCHITECTURE",
-                        "OVERVIEW",
-                    ):
-                        effective_target_upper = f"ARCH-{stem_upper}"
-                    elif "domains" in norm_parts:
-                        effective_target_upper = f"DOM-{stem_upper}"
+                    inferred = infer_entity_type_from_path(target_val)
+                    if inferred is not None:
+                        effective_target_upper = inferred[2]
                 if op_val == "deprecate" and effective_target_upper.startswith("INV-"):
                     _record_err(
                         f"Invalid composable mutation in {doc.file_path.name}: "
@@ -974,7 +781,7 @@ class SpecValidator:
                     )
         elif dtype == "tech/component":
             if doc.file_path.suffix == ".adoc":
-                spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir, doc.file_path)
+                spec_root, repo_root = resolve_spec_and_repo_roots(root_dir, doc.file_path)
                 res_doc = doc.file_path.resolve()
                 try:
                     rel_to_spec = res_doc.relative_to(spec_root.resolve()).parts
@@ -1042,7 +849,7 @@ class SpecValidator:
             for item in val:
                 self._check_dict_references(item, source_file, root_dir, report, doc_type=doc_type)
         elif isinstance(val, str) and val.endswith(".adoc"):
-            spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir, source_file)
+            spec_root, repo_root = resolve_spec_and_repo_roots(root_dir, source_file)
             ref_path_from_repo = repo_root / val
             ref_path_from_spec = spec_root / val
             ref_path_from_root = root_dir / val
@@ -1148,7 +955,7 @@ class SpecValidator:
 
     def _validate_source_and_contract_paths(self, report: ValidationReport, root_dir: Path) -> None:
         """Verify container and component source_path, contract specification_file, and invariant test_binding references when source/test trees exist on disk."""
-        spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir)
+        spec_root, repo_root = resolve_spec_and_repo_roots(root_dir)
 
         candidate_paths: list[str] = []
         candidate_test_files: list[str] = []
@@ -1373,7 +1180,7 @@ class SpecValidator:
 
     def _validate_design_systems(self, report: ValidationReport, root_dir: Path) -> None:
         """Validate design/system W3C DTCG tokens.manifest files and acyclic extends chains."""
-        spec_root, repo_root = _resolve_spec_and_repo_roots(root_dir)
+        spec_root, repo_root = resolve_spec_and_repo_roots(root_dir)
         inactive_statuses = {
             "planned",
             "proposed",

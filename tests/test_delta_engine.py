@@ -35,12 +35,12 @@ from eidos.core.lifecycle.delta_engine import (
     get_delta_status_summary,
     list_deltas,
     normalize_delta_mutation,
-    resolve_entity_prefix_meta,
     set_delta_status,
     verify_delta_mutations,
 )
 from eidos.core.lifecycle.initializer import _ensure_eidos_gitignore, init_repository
 from eidos.core.lifecycle.scaffolder import create_spec, list_specs
+from eidos.core.spec.models import resolve_entity_prefix_meta
 from eidos.core.spec.parser import _parse_spec_content, dump_spec_document, parse_spec_file
 from eidos.core.workspace.assets import get_assets_path
 

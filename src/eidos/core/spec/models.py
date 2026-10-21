@@ -6,6 +6,121 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+ENTITY_PREFIX_REGISTRY: dict[str, tuple[str, str, str | None]] = {
+    "SYS-": ("system", "product/system", "product/system.schema.yaml"),
+    "ARCH-": ("architecture", "tech/architecture", "tech/architecture.schema.yaml"),
+    "DOM-": ("domain", "product/domain", "product/domain.schema.yaml"),
+    "CAP-": ("capability", "product/capability", "product/capability.schema.yaml"),
+    "PER-": ("persona", "product/persona", "product/persona.schema.yaml"),
+    "POL-": ("policy", "product/policy", "product/policy.schema.yaml"),
+    "EXP-": ("exploration", "product/exploration", "product/exploration.schema.yaml"),
+    "DLT-": ("delta", "delta/mutation", "delta/delta.schema.yaml"),
+    "CNT-": ("container", "tech/container", "tech/container.schema.yaml"),
+    "CMP-": ("component", "tech/component", "tech/component.schema.yaml"),
+    "CTR-": ("contract", "tech/contract", "tech/contract.schema.yaml"),
+    "DS-": ("design_system", "design/system", "design/system.schema.yaml"),
+    "UIC-": ("ui_component", "design/ui-component", "design/ui-component.schema.yaml"),
+    "SCR-": ("screen", "design/screen", "design/screen.schema.yaml"),
+    "CLT-": ("client", "design/client", "design/client.schema.yaml"),
+    "FLOW-": ("flow", "design/flow", "design/flow.schema.yaml"),
+    "INV-": ("invariant", "invariant", None),
+    "DEC-": ("decision", "decision", None),
+}
+
+ENTITY_ID_PREFIXES: tuple[str, ...] = tuple(ENTITY_PREFIX_REGISTRY.keys())
+
+PREFIX_TO_ENTITY_META: dict[str, tuple[str, str]] = {
+    prefix: (kind, doc_type)
+    for prefix, (kind, doc_type, _schema) in ENTITY_PREFIX_REGISTRY.items()
+    if prefix not in ("DLT-", "DEC-")
+}
+
+TYPE_TO_SCHEMA_NAME: dict[str, str] = {
+    doc_type: schema_rel
+    for _prefix, (_kind, doc_type, schema_rel) in ENTITY_PREFIX_REGISTRY.items()
+    if schema_rel is not None
+}
+
+DOC_TYPE_TO_PREFIX: dict[str, str] = {
+    doc_type: prefix for prefix, (_kind, doc_type, _schema) in ENTITY_PREFIX_REGISTRY.items()
+}
+
+VALID_SPEC_TYPES: dict[str, str] = {
+    alias: doc_type
+    for _prefix, (kind, doc_type, schema_rel) in ENTITY_PREFIX_REGISTRY.items()
+    if schema_rel is not None
+    for alias in (kind, kind.replace("_", "-"), doc_type, *(("mutation",) if kind == "delta" else ()))
+}
+
+
+def resolve_entity_prefix_meta(entity_id_or_path: str) -> tuple[str, str, str] | None:
+    """Resolve an entity ID (e.g. 'CMP-DELTA-ENGINE') by prefix to (prefix, entity_kind, spec_doc_type)."""
+    cleaned = str(entity_id_or_path or "").strip().upper()
+    if "-" not in cleaned:
+        return None
+    prefix = f"{cleaned.split('-', 1)[0]}-"
+    meta = PREFIX_TO_ENTITY_META.get(prefix)
+    if meta is None:
+        return None
+    return prefix, meta[0], meta[1]
+
+
+def infer_entity_type_from_path(rel_path: str | Path) -> tuple[str, str, str] | None:
+    """Infer (prefix, doc_type, inferred_entity_id) from a specification file path."""
+    clean_p = str(rel_path or "").strip().replace("\\", "/").lstrip("./")
+    if not clean_p:
+        return None
+    if clean_p.startswith("eidos/"):
+        clean_p = clean_p[len("eidos/") :]
+    path_obj = Path(clean_p)
+    stem_upper = path_obj.stem.upper()
+    parent_upper = path_obj.parent.name.upper()
+    norm_parts = [p.lower() for p in path_obj.parts]
+
+    p_meta = resolve_entity_prefix_meta(stem_upper)
+    if p_meta is not None:
+        return p_meta[0], p_meta[2], stem_upper
+
+    def _prefixed(pfx: str, token: str) -> tuple[str, str, str]:
+        return pfx, ENTITY_PREFIX_REGISTRY[pfx][1], token if token.startswith(pfx) else f"{pfx}{token}"
+
+    if "design" in norm_parts and "systems" in norm_parts and "components" in norm_parts:
+        return _prefixed("UIC-", stem_upper)
+    if "design" in norm_parts and "systems" in norm_parts:
+        ds_tok = parent_upper if stem_upper == "SYSTEM" and parent_upper and parent_upper != "SYSTEMS" else stem_upper
+        return _prefixed("DS-", ds_tok)
+    if "screens" in norm_parts:
+        return _prefixed("SCR-", stem_upper)
+    if "flows" in norm_parts:
+        return _prefixed("FLOW-", stem_upper)
+    if "clients" in norm_parts:
+        clt_tok = parent_upper if stem_upper == "CLIENT" and parent_upper and parent_upper != "CLIENTS" else stem_upper
+        return _prefixed("CLT-", clt_tok)
+    if "architecture" in norm_parts and "components" in norm_parts:
+        return _prefixed("CMP-", stem_upper)
+    if "containers" in norm_parts:
+        return _prefixed("CNT-", stem_upper)
+    if "contracts" in norm_parts:
+        return _prefixed("CTR-", stem_upper)
+    if "architecture" in norm_parts:
+        return _prefixed("ARCH-", stem_upper)
+    if "capabilities" in norm_parts:
+        return _prefixed("CAP-", stem_upper)
+    if "policies" in norm_parts:
+        return _prefixed("POL-", stem_upper)
+    if "personas" in norm_parts:
+        return _prefixed("PER-", stem_upper)
+    if "explorations" in norm_parts:
+        return _prefixed("EXP-", stem_upper)
+    if "deltas" in norm_parts:
+        return _prefixed("DLT-", stem_upper)
+    if "domains" in norm_parts:
+        dom_tok = parent_upper if stem_upper == "DOMAIN" and parent_upper and parent_upper != "DOMAINS" else stem_upper
+        return _prefixed("DOM-", dom_tok)
+    if stem_upper == "SYSTEM":
+        return ("SYS-", "product/system", "SYS-SYSTEM")
+    return None
+
 
 def _coerce_opt_str(val: Any) -> str | None:
     if isinstance(val, (str, int, float)) and not isinstance(val, bool):

@@ -21,42 +21,12 @@ from eidos.core.lifecycle.catalog import (
     find_references_to_spec,
     find_spec_by_id_or_path,
 )
+from eidos.core.spec.models import resolve_entity_prefix_meta
 from eidos.core.spec.parser import _parse_spec_content, extract_frontmatter, parse_spec_file
 from eidos.core.spec.validator import SpecValidator
 from eidos.core.workspace.assets import render_spec_template
 
 SUPPORTED_MUTATION_OPERATIONS: frozenset[str] = frozenset({"add", "modify", "remove", "deprecate"})
-
-PREFIX_TO_ENTITY_META: dict[str, tuple[str, str]] = {
-    "SYS-": ("system", "product/system"),
-    "DOM-": ("domain", "product/domain"),
-    "CAP-": ("capability", "product/capability"),
-    "PER-": ("persona", "product/persona"),
-    "POL-": ("policy", "product/policy"),
-    "EXP-": ("exploration", "product/exploration"),
-    "INV-": ("invariant", "invariant"),
-    "ARCH-": ("architecture", "tech/architecture"),
-    "CNT-": ("container", "tech/container"),
-    "CMP-": ("component", "tech/component"),
-    "CTR-": ("contract", "tech/contract"),
-    "DS-": ("design_system", "design/system"),
-    "UIC-": ("ui_component", "design/ui-component"),
-    "SCR-": ("screen", "design/screen"),
-    "CLT-": ("client", "design/client"),
-    "FLOW-": ("flow", "design/flow"),
-}
-
-
-def resolve_entity_prefix_meta(entity_id_or_path: str) -> tuple[str, str, str] | None:
-    """Resolve an entity ID (e.g. 'CMP-DELTA-ENGINE') by prefix to (prefix, entity_kind, spec_doc_type)."""
-    cleaned = str(entity_id_or_path or "").strip().upper()
-    if "-" not in cleaned:
-        return None
-    prefix = f"{cleaned.split('-', 1)[0]}-"
-    meta = PREFIX_TO_ENTITY_META.get(prefix)
-    if meta is None:
-        return None
-    return prefix, meta[0], meta[1]
 
 
 @dataclass

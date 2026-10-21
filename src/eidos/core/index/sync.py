@@ -19,7 +19,12 @@ import orjson
 
 from eidos.core.index.ast_indexer import AstGrepIndexer, get_ast_indexer
 from eidos.core.index.storage import get_cached_spec_document
-from eidos.core.workspace.project import extract_entity_paths, match_path_pattern
+from eidos.core.workspace.project import (
+    STANDARD_EXCLUDED_DIRS,
+    extract_entity_paths,
+    is_polyglot_test_file,
+    match_path_pattern,
+)
 
 _CODE_EXTS = frozenset(AstGrepIndexer.LANGUAGE_MAP.keys())
 
@@ -58,24 +63,6 @@ _EXCLUDED_FILENAMES = frozenset(
 )
 
 _FILE_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{3,}")
-
-_EXCLUDED_CODE_DIRS = frozenset(
-    {
-        ".git",
-        ".venv",
-        "venv",
-        "__pycache__",
-        "node_modules",
-        "dist",
-        "build",
-        ".pytest_cache",
-        ".ruff_cache",
-        ".mypy_cache",
-        ".eidos",
-        "htmlcov",
-        "site",
-    }
-)
 
 _NON_AST_SYMBOL_KINDS = frozenset(
     {
@@ -298,38 +285,6 @@ class _CodeOwnershipResolver:
         return owner, self._resolve_inline_component_for_owner(rel, owner)
 
 
-_POLYGLOT_TEST_SUFFIXES = (
-    "_test.py",
-    ".test.ts",
-    ".spec.ts",
-    ".test.js",
-    ".spec.js",
-    ".test.tsx",
-    ".spec.tsx",
-    ".test.jsx",
-    ".spec.jsx",
-    "_test.go",
-    "_test.rs",
-    "Test.java",
-    "Test.kt",
-    "Spec.kt",
-)
-
-
-def is_test_code_path(rel_path: str) -> bool:
-    """Return True for test files (by polyglot test naming convention or by a tests/test/__tests__ directory segment)."""
-    parts = rel_path.replace("\\", "/").split("/")
-    name = parts[-1]
-    _, ext = os.path.splitext(name)
-    if ext and ext.lower() not in _CODE_EXTS:
-        return False
-    return (
-        name.startswith("test_")
-        or any(name.endswith(sfx) for sfx in _POLYGLOT_TEST_SUFFIXES)
-        or any(part in ("tests", "test", "__tests__") for part in parts[:-1])
-    )
-
-
 def store_code_symbols(
     conn: sqlite3.Connection,
     rel_path: str,
@@ -505,7 +460,7 @@ def reconcile_code_ownership(
         if not abs_pkg.is_dir():
             continue
         for dirpath, dirnames, filenames in os.walk(str(abs_pkg)):
-            dirnames[:] = sorted(d for d in dirnames if d not in _EXCLUDED_CODE_DIRS and not d.startswith("."))
+            dirnames[:] = sorted(d for d in dirnames if d not in STANDARD_EXCLUDED_DIRS and not d.startswith("."))
             for fn in sorted(filenames):
                 p_file = Path(dirpath) / fn
                 if not _is_governed_source_file(fn):
@@ -532,7 +487,7 @@ def reconcile_code_ownership(
                 candidates[rel_code] = abs_known
 
     for rel_code, p_file in sorted(candidates.items()):
-        if rel_code in processed or is_test_code_path(rel_code):
+        if rel_code in processed or is_polyglot_test_file(rel_code):
             continue
         owners = resolver.owners(rel_code)
         if rel_code in manifest and manifest[rel_code] == (owners[0][0] if owners else "source"):
@@ -629,7 +584,7 @@ def check_index_dirty(index: Any) -> tuple[bool, list[Path], list[Path]]:
     _scan_eidos_dir(str(index.eidos_dir))
 
     # 2. Tracked code, test, and governed text files
-    excluded_dirs = _EXCLUDED_CODE_DIRS
+    excluded_dirs = STANDARD_EXCLUDED_DIRS
     tracked_code_dirs: set[str] = set()
     explicit_code_files: list[str] = []
 
@@ -1977,7 +1932,7 @@ def sync_index(
             raw_bytes = p.read_bytes()
             sha = hashlib.sha256(raw_bytes).hexdigest()
 
-            is_test = is_test_code_path(rel_p)
+            is_test = is_polyglot_test_file(rel_p)
 
             existing = conn.execute("SELECT 1 FROM indexed_files WHERE rel_path = ?", (rel_p,)).fetchone()
             if existing:
@@ -2127,7 +2082,7 @@ def sync_index(
             tests_dir = (index.root / std_test_dir).resolve()
             if tests_dir.is_dir():
                 for dirpath, dirnames, filenames in os.walk(str(tests_dir)):
-                    dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_CODE_DIRS and not d.startswith(".")]
+                    dirnames[:] = [d for d in dirnames if d not in STANDARD_EXCLUDED_DIRS and not d.startswith(".")]
                     for fn in filenames:
                         tp = Path(dirpath) / fn
                         if tp.suffix not in _CODE_EXTS:
@@ -2136,7 +2091,7 @@ def sync_index(
                             rel_t = str(tp.relative_to(index.root)).replace("\\", "/")
                         except ValueError:
                             rel_t = str(tp).replace("\\", "/")
-                        if is_test_code_path(rel_t):
+                        if is_polyglot_test_file(rel_t):
                             candidate_test_files.setdefault(rel_t, tp)
 
         for (tb_sym,) in conn.execute(

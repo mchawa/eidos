@@ -23,7 +23,7 @@ from eidos.core.index.storage import (
     load_test_binding_cache,
     save_test_binding_cache,
 )
-from eidos.vcs.diff import POLYGLOT_EXCLUDED_DIRS, is_polyglot_test_file
+from eidos.core.workspace.project import STANDARD_EXCLUDED_DIRS, get_tracked_files, is_polyglot_test_file
 
 
 @dataclass
@@ -231,15 +231,13 @@ def _load_or_update_test_binding_cache(
     discovered: list[tuple[str, Path, int]] = []
     used_git_tracked = False
     if (root / ".git").exists():
-        from eidos.vcs.diff import get_tracked_files
-
         tracked_rels = get_tracked_files(root)
         if tracked_rels:
             used_git_tracked = True
             for rel in tracked_rels:
                 rel_norm = rel.replace("\\", "/")
                 rel_parts = Path(rel_norm).parts
-                if any(d in POLYGLOT_EXCLUDED_DIRS or d.startswith(".") for d in rel_parts[:-1]):
+                if any(d in STANDARD_EXCLUDED_DIRS or d.startswith(".") for d in rel_parts[:-1]):
                     continue
                 file_path = root / rel_norm
                 if is_polyglot_test_file(Path(rel_norm), repo_root=root):
@@ -251,7 +249,7 @@ def _load_or_update_test_binding_cache(
 
     if not used_git_tracked:
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames if d not in POLYGLOT_EXCLUDED_DIRS and not d.startswith(".")]
+            dirnames[:] = [d for d in dirnames if d not in STANDARD_EXCLUDED_DIRS and not d.startswith(".")]
             for fn in filenames:
                 file_path = Path(dirpath) / fn
                 rel = str(file_path.relative_to(root)).replace("\\", "/")

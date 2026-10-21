@@ -251,7 +251,7 @@ def test_is_polyglot_test_file_ancestor_robustness():
     """Verify is_polyglot_test_file does not falsely classify code files when ancestor path has 'test'."""
     from pathlib import Path
 
-    from eidos.vcs.drift import is_polyglot_test_file
+    from eidos.core.workspace.project import is_polyglot_test_file
 
     repo = Path("/home/testuser/work/test-project")
     code_file = repo / "src" / "app.py"
@@ -341,7 +341,7 @@ def test_is_polyglot_test_file_string_and_ancestor_test():
     """Verify is_polyglot_test_file handles str inputs and ignores ancestor /test/ directory components."""
     from pathlib import Path
 
-    from eidos.vcs.drift import is_polyglot_test_file
+    from eidos.core.workspace.project import is_polyglot_test_file
 
     # String input support
     assert is_polyglot_test_file("tests/test_auth.py")
@@ -1907,7 +1907,8 @@ def test_trivial_tokens_json_edit_does_not_cover_design_token_drift(monkeypatch)
 
 def test_src_test_helpers_and_package_path_test_classification(tmp_path, monkeypatch):
     """DLT-2026-051: src/app/test_helpers.py and <package_path>/test_helpers.py are production code, while nested tests/ is test."""
-    from eidos.vcs.drift import classify_changed_files, is_polyglot_test_file
+    from eidos.core.workspace.project import is_polyglot_test_file
+    from eidos.vcs.drift import classify_changed_files
 
     assert is_polyglot_test_file("src/app/test_helpers.py", repo_root=tmp_path) is False
     assert (
@@ -2012,7 +2013,8 @@ def test_dlt_2026_068_unquoted_git_paths_container_invariants_and_reconcile(tmp_
     """Verify DLT-2026-068: unquoted git paths and top-level tech/container invariants."""  # eidos:fixture
     import subprocess
 
-    from eidos.vcs.diff import get_git_diff_files, get_tracked_files
+    from eidos.core.workspace.project import get_tracked_files
+    from eidos.vcs.diff import get_git_diff_files
     from eidos.vcs.drift import extract_invariants_and_verify
 
     def git(*args):
@@ -2155,7 +2157,7 @@ def test_dlt_2026_074_design_subgraph_inheritance_and_cross_client_flows():
 
 def test_nested_spec_subpackage_treated_as_code(tmp_path):
     """Verify nested src/.../spec/*.py subpackages are classified as code_files while root spec/ and nested tests/ are test_files."""
-    from eidos.vcs.drift import is_polyglot_test_file
+    from eidos.core.workspace.project import is_polyglot_test_file
 
     assert is_polyglot_test_file("src/pkg/spec/validator.py", repo_root=tmp_path) is False
     assert is_polyglot_test_file("src/pkg/specs/models.py", repo_root=tmp_path) is False
@@ -2722,12 +2724,12 @@ def test_dlt_2026_085_planned_mode_scope_from_mutations_targets_and_diff_helpers
     mutations[].target (ignoring legacy affects/blast_radius) and cover vcs/diff.py helpers."""
     import subprocess
 
+    from eidos.core.workspace.project import get_tracked_files
     from eidos.vcs.diff import (
         GitResolutionError,
         _has_structural_ast_change,
         collect_polyglot_test_files,
         get_git_diff_files,
-        get_tracked_files,
     )
 
     # 1. DLT-2026-085: Active delta mutating CNT-OTHER does not authorize edits to src/pkg/svc.py (owned by CNT-X),
