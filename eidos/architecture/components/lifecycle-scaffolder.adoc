@@ -12,7 +12,19 @@ source_path:
 :toc: left
 
 == Responsibility
-Scaffolds minimal, schema-valid draft blueprints (`create_spec(eidos_dir, doc_type_key, raw_id, title)`) across all 15 living specification types (`system`, `architecture`, `domain`, `capability`, `policy`, `persona`, `exploration`, `container`, `component`, `contract`, `design-system`, `ui-component`, `screen`, `client`, `flow`) using safe YAML serialization (`dump_spec_document` / `safe_dump_yaml`) and externalized AsciiDoc prose templates (`assets/schemas/v1/**/*.template.adoc` via `load_prose_template`), auto-resolving required parent references from the catalog or canonical fallbacks (`DOM-CORE`, `CNT-CORE`, `DS-CORE`, `PER-USER`), guarding against archived exploration ID collisions under `eidos/explorations/archive/`, and rejecting `delta/mutation` in `create_spec`, `delete_spec`, and `list_specs` (`type_filter='delta'`), dynamically loads and inspects bundled v1 YAML schemas from `assets/schemas/v1/` (`get_spec_schema_info` flattening `allOf`/`$ref` definitions and synthesizing schema-valid example YAML frontmatter across all 16 schemas via `TYPE_TO_SCHEMA_NAME` and `ENTITY_PREFIX_REGISTRY` in `models.py`), builds living spec catalog lookups (ArchitecturalIndex-backed `_build_spec_catalog_with_invariants` delegating to `idx.get_spec_catalog`, and `find_spec_by_id_or_path` scoped strictly to `.adoc` files inside `eidos_dir` using shared `get_cached_spec_document` caching with unambiguous SpecDelta prefix resolution for `DLT-YYYY-NNN` and `DLT-YYYY-NNN-<SLUG>` prefixes), lists non-delta catalog specifications (`list_specs(..., include_archived=False)` excluding `archive/` subdirectories by default unless `include_archived=True`, including default-active specs and short/canonical type filtering including `system` and `architecture`), conducts word-bounded reference safety checks (`find_references_to_spec` matching both bare and `eidos/`-prefixed paths and skipping historical applied/rejected SpecDeltas), and performs quote-, YAML-literal-, and multiline-block-scalar-safe scalar YAML frontmatter mutations (`_format_yaml_scalar_value`, `_set_frontmatter_scalar`). Shared low-level helpers live in `catalog.py` using `DOC_TYPE_TO_PREFIX` and `VALID_SPEC_TYPES` from `ENTITY_PREFIX_REGISTRY`.
+Scaffolds minimal, schema-valid draft blueprints across all 15 living specification types, introspects v1 JSON Schemas (`get_spec_schema_info`), resolves catalog entities, and performs reference-safe specification deletion.
+
+== Key Responsibilities & Collaborators
+* **Blueprint Scaffolding**: Generates schema-valid `.adoc` blueprints (`create_spec`) using `CMP-ASSET-LOCATOR` templates (`*.template.adoc`) and `CMP-DESIGN-ENGINE` for `design/*` specs while auto-resolving parent domain/container references from the live catalog.
+* **Dynamic Schema Introspection**: Flattens v1 JSON Schemas and `$defs` (`get_spec_schema_info`) to synthesize required/optional key metadata and valid YAML frontmatter examples for `eidos spec schema`.
+* **Catalog Lookup & Safe Deletion**: Queries `CMP-GRAPH-STORAGE` (`get_spec_catalog`, `list_specs`) and checks incoming references (`find_references_to_spec`) before deleting a specification (`delete_spec`).
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `create_spec(eidos_dir: Path, doc_type_key: str, raw_id: str, title: str) -> Path`
+* `delete_spec(eidos_dir: Path, target_id_or_path: str, force: bool = False) -> tuple[bool, str, list[str]]`
+* `list_specs(eidos_dir: Path, type_filter: str | None, status_filter: str | None, include_archived: bool) -> list[dict]`
+* `get_spec_schema_info(spec_type: str | None = None) -> dict[str, Any]`
+* `find_spec_by_id_or_path(eidos_dir: Path, target: str)`, `find_references_to_spec(eidos_dir: Path, doc_id: str, rel_path: str)`
+
+== Design Constraints & Operational Notes
+* **Disjoint SpecDelta Boundary**: `create_spec`, `delete_spec`, and `list_specs` explicitly reject `delta/mutation` (`DLT-*`), which is managed exclusively by `CMP-DELTA-ENGINE`.

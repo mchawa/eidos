@@ -10,7 +10,16 @@ source_path: src/eidos/core/spec/models.py
 :toc: left
 
 == Responsibility
-Canonical entity prefix and schema registry (`ENTITY_PREFIX_REGISTRY`, `ENTITY_ID_PREFIXES`, `PREFIX_TO_ENTITY_META`, `TYPE_TO_SCHEMA_NAME`, `DOC_TYPE_TO_PREFIX`, `VALID_SPEC_TYPES`, `resolve_entity_prefix_meta`, `infer_entity_type_from_path`), typed Pydantic frontmatter models (`_SpecBaseModel`, `FrontmatterModel`, `TechnicalSectionModel` with flat `contracts` list, `DeltaIntentModel`, `DeltaMutationModel` enforcing composable `operation`/`target` fields, `DecisionModel`, `InvariantModel`, `RejectedAlternativeModel`) with direct attribute access, helper accessors (`source_paths`, `effective_source_paths`, `effective_domain`, `effective_test_binding`, `all_invariants`, `all_decisions`), and dataclass domain models representing living specification documents and validation reports.
+Defines the canonical entity prefix registry (`ENTITY_PREFIX_REGISTRY`), typed Pydantic frontmatter models (`FrontmatterModel`), and domain data structures representing parsed living specifications and validation reports.
+
+== Key Responsibilities & Collaborators
+* **Single Source of Truth Registry**: Maps all 16 v1 document types (`product/*`, `tech/*`, `design/*`, `delta/mutation`) to their ID prefixes, JSON Schema paths (`TYPE_TO_SCHEMA_NAME`), and canonical directory conventions.
+* **Typed Frontmatter Projection**: Normalizes raw YAML frontmatter dicts into immutable-friendly Pydantic models (`FrontmatterModel`, `InvariantModel`, `DecisionModel`, `DeltaMutationModel`) consumed by `CMP-SPEC-PARSER`, `CMP-SPEC-VALIDATOR`, and `CMP-INCREMENTAL-SYNC-ENGINE`.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `ENTITY_PREFIX_REGISTRY`, `TYPE_TO_SCHEMA_NAME`, `VALID_SPEC_TYPES`
+* `resolve_entity_prefix_meta(target: str)`, `infer_entity_type_from_path(path: str)`
+* `FrontmatterModel`, `SpecDocument`, `ValidationReport`, `InvariantModel`, `DecisionModel`, `DeltaMutationModel`
+
+== Design Constraints & Operational Notes
+* **Lazy Model Construction**: `SpecDocument.model` caches the validated `FrontmatterModel` instance on first access to avoid redundant Pydantic instantiation across validation and indexing passes.

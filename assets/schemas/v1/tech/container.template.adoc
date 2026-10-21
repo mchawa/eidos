@@ -2,7 +2,10 @@
 :toc: left
 
 == Architectural Boundary
-Describe the container boundary, deployment unit, and responsibilities.
+Describe the C4 Level 2 container boundary, deployment/runtime unit, owned domain responsibility, and what explicitly lies outside this boundary.
+
+== Internal Structure & Key Mechanisms
+Summarize the high-level subsystem organization, internal execution pipeline, and collaboration with external interfaces or persistence layers (Arc42 Section 5.2 / Section 6).
 
 == Quality Attributes & Operational Policies
-Document runtime characteristics, concurrency model, and operational guardrails.
+Document runtime characteristics, performance targets, concurrency model, failure-mode posture, and operational guardrails (Arc42 Section 8 / Section 10).

@@ -10,7 +10,17 @@ source_path: src/eidos/core/index/query.py
 :toc: left
 
 == Responsibility
-Full-text lexical search (execute_fts_query deriving source_path strictly from data_json['source_path'], build_fts_match_query with operator='AND'|'OR' support, two-tier multi-term AND coordination boost, English stop-word and single-character noise token filtering, full v1 entity prefix recognition derived from ENTITY_PREFIX_REGISTRY including SYS-*, ARCH-*, PER-* and underscore IDs, and exact entity ID plus CMP-*/DEC-* exact-ID boosting) and symbol/repo-map resolution (find_symbol_in_db querying unified all_mappings CTE over symbol_mappings and code_symbols with empty-query guard, length(s.symbol) ASC ordering, method location deduplication, and escaped SQL LIKE wildcards, resolve_symbol_locations_in_db, generate_repo_map_from_db) with positional column-weighted BM25 (title > rule/keywords/symbols > body; UNINDEXED entity_id placeholder weight first) across titles, rules/responsibilities/motivations, descriptions, embedded architectural decisions, keywords, projected AST code_symbols in specs_fts.symbols, and de-compounded camelCase/snake_case identifier sub-tokens using SQLite FTS5; indexes child INV-* invariants (across capabilities, policies, containers, and components) as first-class FTS rows (purged with their parent spec) and supports include/exclude entity-type filters applied before LIMIT with deterministic id tie-breaking.
+Executes column-weighted SQLite FTS5 BM25 lexical search (`execute_fts_query`), reverse symbol lookup (`find_symbol_in_db`), and token-budgeted structural repository map generation (`generate_repo_map_from_db`) over the indexed knowledge graph.
+
+== Key Responsibilities & Collaborators
+* **Two-Tier Weighted FTS5 Search (`DEC-INDEX-FTS-RETRIEVAL-HYGIENE`)**: Prioritizes high-precision multi-term `AND` queries before `OR` fallback using positional BM25 column weights `(0, 4, 2, 1, 2, 2)` (`title` > `jtbd_or_rule`/`keywords`/`symbols` > `body_text`), identifier de-compounding, and exact `CMP-*`/`DEC-*` entity ID boosting.
+* **Reverse Symbol & Repo Map Resolution**: Resolves AST symbol names (`find_symbol_in_db`, `resolve_symbol_locations_in_db`) across `code_symbols` and `symbol_mappings`, and formats token-budgeted structural outlines (`generate_repo_map_from_db`) from persisted primary `code_symbols` rows without re-parsing source files.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `execute_fts_query(conn: sqlite3.Connection, query: str, limit: int = 10, include_types: set[str] | None = None, exclude_types: set[str] | None = None) -> list[dict[str, Any]]`
+* `build_fts_match_query(query: str, operator: str = "OR") -> str`
+* `find_symbol_in_db(conn: sqlite3.Connection, query: str, limit: int = 20) -> list[dict[str, Any]]`
+* `generate_repo_map_from_db(conn: sqlite3.Connection, max_tokens: int = 1500) -> dict[str, Any]`
+
+== Design Constraints & Operational Notes
+* **SQL-Scoped Type Filtering**: Applies `include_types` and `exclude_types` filters inside SQL *before* `LIMIT` so historical SpecDeltas and explorations never crowd out active architecture entities during `eidos context --task`.

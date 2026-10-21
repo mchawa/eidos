@@ -10,7 +10,14 @@ source_path: src/eidos/plugin/validator.py
 :toc: left
 
 == Responsibility
-Validates plugin packages (`plugin.json` parsed via `orjson`) against agent-plugins.org v1.0.0 with line-anchored SKILL.md YAML frontmatter extraction and enforces SemVer 2.0.0 versioning across host agent environments.
+Validates Eidos Agent Plugin bundles (`plugin.json` and `skills/*/SKILL.md`) against the `agent-plugins.org v1.0.0` specification and SemVer 2.0.0 versioning rules (`INV-PLUGIN-SCHEMA-CONFORMANCE`).
+
+== Key Responsibilities & Collaborators
+* **Manifest & Skill Frontmatter Validation**: Parses `plugin.json` via `orjson`, validates against `assets/schemas/agent_plugins/plugin.schema.json` (via `CMP-ASSET-LOCATOR`), extracts line-anchored YAML frontmatter from `SKILL.md` files, and verifies skill directory naming parity.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `validate_plugin_directory(plugin_dir: Path | None = None) -> PluginValidationReport`
+* `PluginValidationReport`
+
+== Design Constraints & Operational Notes
+* **Strict SemVer 2.0.0 Enforcement**: Rejects non-SemVer version strings in `plugin.json` so downstream agent harnesses can parse plugin metadata reliably.

@@ -10,7 +10,14 @@ source_path: src/eidos/cli/index_commands.py
 :toc: left
 
 == Responsibility
-Knowledge graph operations (`eidos index`) with `orjson`-serialized `--json` outputs: `sync`, `status --json`, lexical `search --json`, `blast-radius --json`, structural `repo-map [--max-tokens] [--json]`, and `find-symbol --json` output including source Location (file:line) for AST symbols.
+Implements the `eidos index` subcommand group (`status`, `sync`, `search`, `blast-radius`, `repo-map`, `find-symbol`) for inspecting and querying the embedded SQLite knowledge graph and polyglot AST symbol index.
+
+== Key Responsibilities & Collaborators
+* **Knowledge Graph CLI Adapter**: Delegates index synchronization and status telemetry to `CMP-GRAPH-STORAGE` and `CMP-INCREMENTAL-SYNC-ENGINE`, BM25 lexical search, symbol resolution, and repo-map generation to `CMP-FTS-QUERY-ENGINE`, and recursive `k`-hop impact analysis to `CMP-GRAPH-TRAVERSAL-ENGINE`.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `index_app: typer.Typer`
+* `index_status(...)`, `index_sync(...)`, `index_search(...)`, `index_blast_radius(...)`, `index_repo_map(...)`, `index_find_symbol(...)`
+
+== Design Constraints & Operational Notes
+* **Deterministic Agent Telemetry**: Supports `--json` (`orjson`) across `status`, `search`, `blast-radius`, `repo-map`, and `find-symbol` (including `file:line` AST symbol coordinates).

@@ -10,7 +10,16 @@ source_path: src/eidos/core/lifecycle/audit.py
 :toc: left
 
 == Responsibility
-Audits reverse-dependency blast radius for entities deprecated or removed by SpecDeltas across composable (operation: remove | deprecate, target, resolving .adoc path targets via infer_entity_type_from_path and excluding replacement target entities mentioned in details) mutations and all living specification prefixes (CNT-*, CMP-*, CTR-*, CAP-*, POL-*, DOM-*, PER-*, DS-*, SCR-*, UIC-*, CLT-*, FLOW-*, INV-*) by reusing the single synced ArchitecturalIndex (index.db), pre-filtering governed candidate files via the FTS5 file_tokens_fts table (_build_file_tokens_fts_query splitting dotted/path tokens into AND-joined sub-tokens), resolving applied/rejected delta and exploration statuses in O(1) from persisted entities rows, classifying active_spec_leak vs. active_code_leak by indexed_files.doc_type and container ownership, applying word-bounded multi-term and regex-safe tombstone pattern matching, polyglot test classification (is_polyglot_test_file), compressed archive exclusion (.gz), and fail-loud graph foreign-key verification with `orjson` JSON report serialization.
+Audits the reverse-dependency blast radius and residual token leaks for entities removed or deprecated by SpecDeltas (`operation: remove | deprecate`), classifying findings into active spec leaks, active code leaks, and historical archive references using the indexed `file_tokens_fts` table.
+
+== Key Responsibilities & Collaborators
+* **Index-Driven Tombstone & Token Scanning (`DEC-AUDIT-INDEX-SCOPED-DISCOVERY`)**: Queries `file_tokens_fts` and `indexed_files` in `CMP-GRAPH-STORAGE` (`index.db`) to locate governed specification, source, and test files referencing removed/deprecated targets or `tombstones.forbidden_patterns` in sub-millisecond time.
+* **Leak Classification & Graph Integrity**: Distinguishes blocking `active_spec_leak` and `active_code_leak` findings from acknowledged historical references (`applied`/`rejected` SpecDeltas and `adopted`/`discarded` Explorations) and verifies zero dangling graph edges.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `AuditEngine(repo_root: Path, eidos_dir: Path | None = None)`
+* `AuditEngine.audit_delta(delta_id_or_path: str, strict: bool = False) -> AuditReport`
+* `AuditReport.to_dict() -> dict[str, Any]`, `AuditReport.to_json() -> str`
+
+== Design Constraints & Operational Notes
+* **Strictly Governed Boundary (`POL-001`)**: Scans only files governed by `eidos/` specifications (`indexed_files` in `index.db`), avoiding Git subprocesses and unowned repository directories.

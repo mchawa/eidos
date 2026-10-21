@@ -10,7 +10,14 @@ source_path: src/eidos/core/lifecycle/initializer.py
 :toc: left
 
 == Responsibility
-Bootstraps repositories with streamlined living specification skeletons (`system.adoc`, `architecture/system-architecture.adoc`, `domain.adoc`, and policies with prose sections in AsciiDoc body), optional parameterized product/system frontmatter in eidos/system.adoc (--name / --title) or 0-byte bare system.adoc (preserving existing non-empty authored system.adoc when --force is run without --name/--title), progressive Eidos Lite onboarding profile (eidos init --lite), immediate validation, and self-contained gitignore (plugins managed via eidos plugin).
+Bootstraps greenfield and brownfield repositories with an Eidos living specification directory skeleton (`eidos/`), self-contained `eidos/.gitignore`, root `system.adoc` descriptor, and immediate schema validation.
+
+== Key Responsibilities & Collaborators
+* **Full vs. Lite Skeleton Provisioning**: Creates either the complete 12-directory Eidos hierarchy or the progressive 3-directory Eidos Lite profile (`--lite`) with `.gitkeep` markers.
+* **System Context & Cache Isolation**: Renders `eidos/system.adoc` (`product/system`) when `--name` or `--title` is provided (or a 0-byte placeholder otherwise), writes `eidos/.gitignore` to exclude `.cache/`, and validates the initialized tree via `CMP-SPEC-VALIDATOR`.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `init_repository(project_dir: Path, name: str | None = None, title: str | None = None, eidos_dir_name: str = "eidos", force: bool = False, lite: bool = False) -> tuple[bool, str, list[Path]]`
+
+== Design Constraints & Operational Notes
+* **Non-Destructive Re-Initialization**: Refuses to overwrite a non-empty `eidos/` directory unless `force=True` is passed, and preserves an already authored `system.adoc` when `--force` is invoked without `--name`/`--title`.

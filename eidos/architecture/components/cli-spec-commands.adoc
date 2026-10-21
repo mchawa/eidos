@@ -10,7 +10,16 @@ source_path: src/eidos/cli/spec_commands.py
 :toc: left
 
 == Responsibility
-Root specification validation (`eidos validate`, resolving `eidos/` via shared `resolve_cli_eidos_dir` and emitting `--json` output via `orjson`) and `eidos spec` subcommands enforcing a 100% disjoint boundary from `eidos delta` for catalog mutations alongside dynamic v1 schema introspection (`eidos spec schema [type] [--json]` via `get_spec_schema_info` across all 16 bundled schemas): catalog listing (`eidos spec list [--include-archived] --json` across all 15 living specification types, excluding `archive/` subdirectories by default unless `--include-archived` is passed, and rejecting `--type delta`), showing (`eidos spec show`, rejecting `delta/mutation`), minimal blueprint creation (`eidos spec create <type> <id> --title <title> [--path <path>]` across all 15 living specification types including `system`, `architecture`, and `exploration`, rejecting `delta/mutation`), and safe deletion (`eidos spec delete`, rejecting `delta/mutation`).
+Implements `eidos validate` and the `eidos spec` subcommand group (`list`, `show`, `schema`, `create`, `delete`) for inspecting, validating, scaffolding, and deleting living catalog specifications across all 15 non-delta specification types.
+
+== Key Responsibilities & Collaborators
+* **Root Validation (`eidos validate`)**: Invokes `CMP-SPEC-VALIDATOR` (`SpecValidator.validate_directory`) and renders Rich validation tables or `orjson` JSON reports (`--json`).
+* **Living Catalog Management (`eidos spec`)**: Delegates `list`, `show`, `schema`, `create`, and `delete` operations to `CMP-LIFECYCLE-SCAFFOLDER` while enforcing a strict disjoint boundary from `eidos delta`.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `register(app: typer.Typer) -> None`, `spec_app: typer.Typer`
+* `validate_command(path: Path, json_output: bool) -> None`
+* `spec_list(...)`, `spec_show(...)`, `spec_schema(...)`, `spec_create(...)`, `spec_delete(...)`
+
+== Design Constraints & Operational Notes
+* **Disjoint Delta Rejection**: Rejects `delta/mutation` (`DLT-*`) in `eidos spec list --type delta`, `show`, `create`, and `delete`, directing callers to `eidos delta`.

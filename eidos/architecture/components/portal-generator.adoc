@@ -10,7 +10,14 @@ source_path: src/eidos/portal/generator.py
 :toc: left
 
 == Responsibility
-Synthesizes living specifications (strictly consuming v1 schematized product/system and tech/architecture documents without legacy arch/system or unschematized frontmatter fallbacks, all declared personas derived from role_type without truncation, deduplicated policy/capability/container/component/UI-component invariants, product DEC-* decisions from top-level decisions lists with both source_entity and source_id, standalone tech/component domain and AST-derived component consumes_api, container depends_on, and delivered_by edges from get_architectural_index, pre-computed static graph `edges` and `validation` diagnostics, exploration decision.outcome and decision.resulting_deltas, AsciiDoc section extraction for container Architectural Boundary, component Responsibility, domain Vision, capability JTBD, and exploration Hypothesis/Findings, and `orjson`-parsed tokens.manifest / extends design systems) into unified portal data model with HTML-escaped project-agnostic C4 Level 1 external_systems context diagrams from tech/architecture, hierarchical C4 Level 2 container topologies, C4 Level 3 component whitebox diagrams connecting intra-container standalone component dependencies, contract- and AST-derived inter-container dependency connections, auto-generated Mermaid diagrams, and computes SpecDelta affects and blast_radius via ArchitecturalIndex.compute_delta_impact over normalized composable (operation + target) mutations and the living specification graph with default intent.kind='feature' (fast-pathing archived SpecDeltas under deltas/archive/ and replacing verbose applied/rejected delta bodies in specs with concise motivation stubs).
+Synthesizes all 16 living specification types, AST-derived component and container dependency graphs, W3C DTCG design token hierarchies, and SpecDelta impact blast radii into the unified Web Portal payload (`get_portal_data`) and auto-generated C4 Level 1–3 Mermaid diagrams.
+
+== Key Responsibilities & Collaborators
+* **Living Architecture & C4 Diagram Synthesis**: Consumes validated specifications from `CMP-SPEC-VALIDATOR` and directed graph edges (`consumes_api`, `depends_on`, `part_of`, `realizes`) from `CMP-GRAPH-STORAGE` to construct C4 Level 1 System Context, Level 2 Container, and Level 3 Component whitebox views and Mermaid diagrams.
+* **Product, Design & SpecDelta Aggregation**: Extracts domain missions, capability JTBDs, `INV-*` traceability records, embedded `DEC-*` decisions, W3C `tokens.json` design systems, and `compute_delta_impact` Kanban/Timeline models.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `get_portal_data(eidos_dir: Path) -> dict[str, Any]`
+
+== Design Constraints & Operational Notes
+* **Archived SpecDelta Slimming**: Replaces verbose bodies on `applied` and `rejected` SpecDeltas in `data.specs` with concise motivation summaries to keep static portal payloads compact.

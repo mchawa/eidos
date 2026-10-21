@@ -40,7 +40,7 @@ decisions:
 == Architectural Boundary
 This container represents the graphical web interface under `src/eidos/portal/` and packaged bundle assets under `assets/portal/`. It enables non-IDE stakeholders (product managers, architects, designers, and compliance officers) to visually navigate the living architecture, inspect C4 topologies, simulate architectural blast radius (`INV-PORTAL-STATIC-SCALABILITY`), monitor SpecDelta lifecycles, and explore multi-design system tokens via hash-based deep linking (`DEC-PORTAL-HASH-ROUTING`).
 
-== Runtime & Static Compilation Architecture
+== Internal Structure & Key Mechanisms
 * **Dual Deployment Modes (`CTR-EIDOS-PORTAL`)**: Operates either as a local multi-threaded HTTP preview server (`eidos portal serve`, exposing `/api/data`, `/api/version`, `/api/drift`, and `/api/specs/{id}` with progressive 3-second mtime live reload) or as a zero-backend static site export (`eidos portal build`, emitting `index.html` and `data.json` for GitHub/GitLab Pages).
 * **Payload Deduplication & Client-Side Graph Traversal (`DEC-PORTAL-PAYLOAD-DEDUP-AND-CLIENT-BFS`)**: Serializes each specification body once in `data.specs`, strips duplicate prose fields from specialized entity collections in static builds, and pre-computes directed graph edges (`data.edges`) and validation diagnostics (`data.validation`) so interactive Blast Radius simulation and C4 drill-down work entirely client-side.
 

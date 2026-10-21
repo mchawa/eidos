@@ -12,7 +12,16 @@ source_path:
 :toc: left
 
 == Responsibility
-Root command dispatcher (`--version` / `-V` callback and `eidos info` reporting across all 16 bundled v1 schemas), error code translation, shared CLI `eidos/` directory resolution (`resolve_cli_eidos_dir` and `has_eidos_markers` in `src/eidos/cli/_shared.py`), and formatted diagnostic table rendering without legacy command re-exports.
+Root Typer CLI application (`src/eidos/cli/main.py`) and shared workspace resolution helpers (`src/eidos/cli/_shared.py`) that mount all subcommand modules, handle `--version` / `eidos info`, and resolve the governing `eidos/` specification directory.
+
+== Key Responsibilities & Collaborators
+* **Root Command Registration**: Mounts `init`, `validate`, `spec`, `delta`, `context`, `index`, `drift`, `portal`, `plugin`, `doctor`, and `hook` subcommand groups onto the root `app` Typer instance (`CTR-EIDOS-CLI`).
+* **Shared Workspace Resolution (`_shared.py`)**: Resolves `--path` arguments and auto-discovers the nearest `eidos/` specification directory (`resolve_cli_eidos_dir`, `has_eidos_markers`) for all CLI command components.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `app: typer.Typer`, `cli_entrypoint() -> None`
+* `info_command() -> None`, `version_callback(value: bool) -> None`
+* `resolve_cli_eidos_dir(path: Path | None) -> Path`, `has_eidos_markers(candidate: Path) -> bool`
+
+== Design Constraints & Operational Notes
+* **Thin Presentation Boundary**: Contains zero domain business logic; delegates all operations to `CNT-EIDOS-CORE`, `CNT-EIDOS-INDEX`, `CNT-EIDOS-VCS`, `CNT-EIDOS-PORTAL`, and `CNT-EIDOS-PLUGIN`.

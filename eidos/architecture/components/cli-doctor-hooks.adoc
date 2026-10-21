@@ -10,7 +10,16 @@ source_path: src/eidos/cli/doctor_hook_commands.py
 :toc: left
 
 == Responsibility
-Installation health diagnostics (`eidos doctor --path --json` via `orjson`, including `agent_plugin` health in `overall_ok`) with custom specification directory resolution and virtualenv-aware CLI binary checks, plus the stateless CLI-native agent lifecycle Stop hook command (`eidos hook [--path]`) without legacy PreToolUse/PostToolUse absorption.
+Exposes `eidos doctor` for workspace environment, Git, SQLite index, and agent plugin health diagnostics, and `eidos hook` for executing the stateless CLI-native agent `Stop` drift gate.
+
+== Key Responsibilities & Collaborators
+* **Workspace Diagnostics (`eidos doctor`)**: Verifies Python runtime, Git binary availability, `eidos/` specification validity (`CMP-SPEC-VALIDATOR`), SQLite index synchronization (`CMP-GRAPH-STORAGE`), and installed agent plugin currency (`CMP-PLUGIN-INSTALLER`).
+* **Stateless Agent Hook Entrypoint (`eidos hook`)**: Invokes `CMP-HOOK-RUNNER` (`execute_hook`) at the end of an agent turn (`Stop`) and writes the JSON hook verdict to stdout.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `register(app: typer.Typer) -> None`
+* `doctor_command(path: Path, json_output: bool) -> None`
+* `hook_command(path: Path | None) -> None`
+
+== Design Constraints & Operational Notes
+* **Non-Blocking Hook Protocol (`DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK`)**: `eidos hook` always exits `0` with a valid JSON `decision` payload so agent harnesses never crash or enter retry loops.

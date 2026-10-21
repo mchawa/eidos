@@ -50,12 +50,12 @@ contracts:
 :toc: left
 
 == Architectural Boundary
-This container represents the foundational library under `src/eidos/core/` (`spec/`, `lifecycle/`, and `workspace/` subpackages) and bundled schemas and AsciiDoc prose templates under `assets/schemas/`. It owns all specification parsing, JSON Schema validation, zero-config project path resolution, minimal blueprint scaffolding across all 15 living specification types, W3C token management, SpecDelta lifecycle state machines, and reference checking.
+This container represents the foundational library under `src/eidos/core/` (`spec/`, `lifecycle/`, and `workspace/` subpackages) and bundled schemas and AsciiDoc prose templates under `assets/schemas/`. It owns all specification parsing, JSON Schema validation, zero-config project path resolution, minimal blueprint scaffolding across all 15 living specification types, W3C token management, SpecDelta lifecycle state machines, and reference checking. It explicitly excludes SQLite persistence and lexical/AST indexing (delegated to `CNT-EIDOS-INDEX`), Git diff and drift evaluation (delegated to `CNT-EIDOS-VCS`), CLI presentation (`CNT-EIDOS-CLI`), and web portal rendering (`CNT-EIDOS-PORTAL`).
 
-== Runtime & Subsystem Organization
+== Internal Structure & Key Mechanisms
 `CNT-EIDOS-CORE` is structured into three internal subpackages plus the packaged `assets/schemas/v1/` schema bundle:
 
-* **Specification Parsing & Validation (`src/eidos/core/spec/`)**: Parses AsciiDoc documents with YAML frontmatter via Rust-backed `fastyaml-rs`, projects frontmatter into typed Pydantic domain models, and validates all 16 v1 document types against JSON Schema Draft 2020-12 (`jsonschema`), recursive `x-eidos-ref` cross-references, bidirectional multi-protocol `CTR-*` contract parity, W3C DTCG token manifests, and AST-verified `INV-*` test bindings.
+* **Specification Parsing & Validation (`src/eidos/core/spec/`)**: Parses AsciiDoc documents with YAML frontmatter via Rust-backed `fastyaml-rs`, projects frontmatter into typed Pydantic domain models (`FrontmatterModel`), and validates all 16 v1 document types against JSON Schema Draft 2020-12 (`jsonschema`), recursive `x-eidos-ref` cross-references, bidirectional multi-protocol `CTR-*` contract parity, W3C DTCG token manifests, and AST-verified `INV-*` test bindings.
 * **Specification & SpecDelta Lifecycle (`src/eidos/core/lifecycle/`)**: Orchestrates greenfield repository initialization (`--lite` and full), minimal draft blueprint generation from externalized `.template.adoc` templates, reference-safe catalog deletion, SpecDelta state transitions (`proposed` -> `in_review` -> `approved` -> `applied` / `rejected`), Git-baseline post-condition verification, index-scoped tombstone deletion auditing, two-tier archiving (`eidos/deltas/archive/`), and Keep a Changelog compilation.
 * **Workspace & Asset Resolution (`src/eidos/core/workspace/`)**: Resolves repository roots (`eidos/`), glob-based `source_path` ownership rules, standard excluded directories, and bundled schema/template assets across editable checkouts and wheel installations.
 

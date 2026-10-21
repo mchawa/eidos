@@ -10,7 +10,18 @@ source_path: src/eidos/core/index/query.py
 :toc: left
 
 == Responsibility
-Recursive Common Table Expression (CTE) traversal and indexed catalog/blast-radius evaluation (execute_k_hop_traversal with delimiter-bounded cycle prevention, MIN(depth) node deduplication, and hop >= 2 organizational hub fan-out suppression across 'product/domain', 'design/system', 'product/persona', 'delta/mutation', 'tech/architecture', 'product/system', and 'product/exploration' nodes, execute_incoming_references matching normalized bare and eidos/-prefixed rel_paths and excluding code/source and code/test rows, resolve_symbol_or_path_in_db querying unified all_mappings CTE over symbol_mappings and code_symbols with _FILE_QUERY_EXTS derived from AstGrepIndexer.LANGUAGE_MAP, longest-prefix source_path filtering, file-query-gated glob fallback, deferred orjson deserialization, and escaped SQL LIKE wildcards, query_spec_catalog_in_db reconstructing `(specs_by_id, invariant_map)` from persisted entities without re-scanning disk, and compute_delta_impact_in_db(conn, mutations) deriving SpecDelta affects and blast_radius purely from indexed entities and edges without unschematized raw_blast_radius overrides) evaluating k-hop blast radius, incoming dependencies, and impact subgraphs in sub-2ms.
+Executes recursive Common Table Expression (CTE) `k`-hop blast-radius traversals (`execute_k_hop_traversal`), incoming reference lookups, file/symbol-to-entity resolution, indexed catalog reconstruction (`query_spec_catalog_in_db`), and SpecDelta impact analysis (`compute_delta_impact_in_db`).
+
+== Key Responsibilities & Collaborators
+* **Hub-Scoped Recursive CTE Blast Radius**: Traverses forward and reverse architectural edges up to `max_depth` hops with delimiter-anchored cycle prevention while suppressing hop >= 2 sibling fan-out through organizational hub nodes (`DOM-*`, `DS-*`, `PER-*`, `ARCH-*`, `SYS-*`, `DLT-*`, `EXP-*`).
+* **Indexed Catalog & SpecDelta Impact**: Reconstructs `(specs_by_id, invariant_map)` directly from `entities` (`query_spec_catalog_in_db`) for `CMP-LIFECYCLE-SCAFFOLDER` and computes direct `affects` and transitive `blast_radius` sets (`compute_delta_impact_in_db`) for `CMP-PORTAL-GENERATOR` and `eidos delta`.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `execute_k_hop_traversal(conn: sqlite3.Connection, start_entity_id: str, max_depth: int = 2) -> list[dict[str, Any]]`
+* `execute_incoming_references(conn: sqlite3.Connection, target_id: str, rel_path: str = "") -> list[str]`
+* `resolve_symbol_or_path_in_db(conn: sqlite3.Connection, symbol_or_path: str) -> list[str]`
+* `query_spec_catalog_in_db(conn: sqlite3.Connection, eidos_dir: Path)`
+* `compute_delta_impact_in_db(conn: sqlite3.Connection, mutations: list[dict[str, Any]]) -> tuple[list[str], list[str]]`
+
+== Design Constraints & Operational Notes
+* **Sub-2ms Traversal Latency**: All graph neighborhood and catalog queries run entirely against indexed SQLite tables without disk scans.

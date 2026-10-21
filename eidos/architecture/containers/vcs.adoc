@@ -29,9 +29,9 @@ decisions:
 :toc: left
 
 == Architectural Boundary
-This container represents the Git-native drift detection and specification reconciliation engine under `src/eidos/vcs/`. It inspects Git commit ranges and uncommitted working-tree diffs, performs structural AST symbol comparison, verifies static invariant test bindings (`file::func`), evaluates 1-hop knowledge graph neighborhoods to detect specification-to-code drift, and renders remediation and Markdown verification reports.
+This container represents the Git-native drift detection and specification reconciliation engine under `src/eidos/vcs/`. It inspects Git commit ranges and uncommitted working-tree diffs, performs structural AST symbol comparison, verifies static invariant test bindings (`file::func`), evaluates 1-hop knowledge graph neighborhoods to detect specification-to-code drift, and renders remediation and Markdown verification reports. It never executes project test runners or mutates Git history.
 
-== Drift Detection & Verification Pipeline
+== Internal Structure & Key Mechanisms
 * **Git Diff & Blob Inspection (`src/eidos/vcs/diff.py`)**: Resolves commit ranges (`--base`, merge-base, or uncommitted working tree + untracked files), classifies touched files into governed source files, living specifications, design token manifests, and polyglot test suites, and batch-reads historical file revisions via a single `git cat-file --batch` subprocess.
 * **Structural & Neighborhood Drift Analysis (`src/eidos/vcs/structural.py`)**: Maps modified source files to their owning `CMP-*` components and `CNT-*` containers via `source_path`, checks whether public AST boundary symbols changed or files were added/deleted, and verifies whether the owning specification (or a 1-hop graph neighbor / active SpecDelta) was substantively updated in the same changeset.
 * **Static Invariant Traceability (`src/eidos/vcs/invariants.py`, `DEC-VCS-STATIC-INVARIANT-TRACEABILITY`)**: Verifies that every `INV-*` `test_binding` (`file::func` or `file::Class::method`) resolves to an existing polyglot test symbol on disk whose body or file explicitly references the `INV-*` identifier, accelerated by `test_binding_cache` in `eidos/.cache/index.db`.

@@ -199,6 +199,16 @@ decisions:
         reason_rejected: "Adds operational infrastructure complexity for a low-contention periodic batch operation."
 ---
 = Container: Billing Aggregation Worker
+:toc: left
+
+== Architectural Boundary
+Describe the C4 Level 2 container boundary, deployment/runtime unit, owned domain responsibility, and what explicitly lies outside this boundary.
+
+== Internal Structure & Key Mechanisms
+Summarize the high-level subsystem organization, internal execution pipeline, and collaboration with external interfaces or persistence layers.
+
+== Quality Attributes & Operational Policies
+Document runtime characteristics, performance targets, concurrency model, and operational guardrails.
 ```
 
 ### 3.3 C4 Level 3 Components (`eidos/architecture/components/<slug>.adoc`)
@@ -216,9 +226,21 @@ source_path: "src/billing/ledger.py"
 domain: DOM-BILLING
 ---
 = Component: Double-Entry Usage Ledger
+:toc: left
 
 == Responsibility
 Appends immutable credit/debit usage entries and computes point-in-time account balances.
+
+== Key Responsibilities & Collaborators
+* **Primary Role**: Maintains double-entry ledger invariants for metered customer usage.
+* **Collaborators**: Invoked by `CMP-BILLING-INGESTOR` and persisted via the billing database adapter.
+
+== Public Surface
+* `UsageLedger.append_entry(event: UsageEvent) -> LedgerEntry`
+* `UsageLedger.get_balance(account_id: str) -> Decimal`
+
+== Design Constraints & Operational Notes
+* **Append-Only Immutability**: Existing ledger rows are never updated in-place; adjustments are recorded as compensating entries.
 ```
 
 ### 3.4 Interface Contracts (`eidos/architecture/contracts/<name>.adoc`)

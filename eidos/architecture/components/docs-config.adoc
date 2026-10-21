@@ -10,7 +10,13 @@ source_path: zensical.toml
 :toc: left
 
 == Responsibility
-Zensical site metadata, theme palettes, navigation hierarchy, and Markdown extension configuration.
+Defines the Zensical static documentation site metadata, theme palettes, navigation hierarchy, and Markdown rendering extensions (`zensical.toml`).
+
+== Key Responsibilities & Collaborators
+* **Navigation & Theme Configuration**: Configures the site structure across `docs/index.md`, `docs/getting-started/`, `docs/concepts/`, `docs/guides/`, and `docs/changelog.md`, alongside syntax highlighting, tabbed content blocks, and search indexing.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `zensical.toml` (`[project]`, `[[project.nav]]`, `[project.theme]`, `[project.markdown_extensions]`)
+
+== Design Constraints & Operational Notes
+* **Strict Build Verification (`INV-DOCS-SYNCHRONIZATION`)**: Validated in CI via `zensical build --strict` (`tests/test_docs_sync.py::test_zensical_strict_build`) to reject broken internal links or missing nav targets.

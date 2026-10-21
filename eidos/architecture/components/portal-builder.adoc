@@ -10,7 +10,15 @@ source_path: src/eidos/portal/builder.py
 :toc: left
 
 == Responsibility
-Compiles self-contained static documentation portals for GitHub Pages and GitLab Pages (via get_portal_html_template and get_portal_favicon_svg, writing `orjson`-serialized data.json after stripping redundant entity body/description strings via `_deduplicate_portal_payload`) and escapes inline </script> and U+2028/U+2029 sequences when embedding window.__EIDOS_DATA__ into index.html.
+Compiles self-contained, zero-backend static documentation portals (`index.html`, `data.json`, `favicon.svg`) for GitHub Pages, GitLab Pages, S3, and offline `file://` inspection (`eidos portal build`).
+
+== Key Responsibilities & Collaborators
+* **Static Payload Deduplication (`DEC-PORTAL-PAYLOAD-DEDUP-AND-CLIENT-BFS`)**: Strips duplicate prose strings from specialized entity collections (`_deduplicate_portal_payload`) so each specification body is serialized once in `data.specs`, hydrated client-side by `CMP-PORTAL-ASSETS`.
+* **Safe Inline Script Embedding**: Injects `window.__EIDOS_DATA__` into the single-file HTML template from `CMP-PORTAL-ASSETS` while escaping `</script>`, `U+2028`, and `U+2029` sequences.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `build_static_portal(eidos_dir: Path, output_dir: Path) -> Path`
+* `_deduplicate_portal_payload(data: dict[str, Any]) -> dict[str, Any]`
+
+== Design Constraints & Operational Notes
+* **100% Static & Network-Silent (`INV-PORTAL-STATIC-SCALABILITY`)**: Emitted static builds contain pre-computed graph edges and validation diagnostics, requiring zero backend API servers or external CDN requests.

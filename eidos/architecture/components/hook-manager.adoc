@@ -10,7 +10,13 @@ source_path: src/eidos/plugin/validator.py
 :toc: left
 
 == Responsibility
-Validates and orchestrates agent lifecycle hooks (`hooks.json` parsed via `orjson`) with version-pinned uvx execution, scoping eidos-drift-gate exclusively to Stop ('eidos hook').
+Validates agent lifecycle hook configurations (`hooks.json`) against the `agent-plugins.org v1.0.0` hooks schema and enforces that `eidos-drift-gate` is scoped exclusively to the `Stop` lifecycle event (`DEC-PLUGIN-STOP-SCOPED-DRIFT-GATE`, `INV-HOOK-CLI-NATIVE`).
+
+== Key Responsibilities & Collaborators
+* **Hook Schema & Command Validation**: Parses `hooks.json` via `orjson`, validates structural conformance against `hooks.schema.json`, and verifies that hook commands invoke `eidos hook` natively without wrapper scripts.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `validate_hooks_file(hooks_path: Path) -> list[str]`
+
+== Design Constraints & Operational Notes
+* **Stop-Only Lifecycle Scope (`DEC-PLUGIN-STOP-SCOPED-DRIFT-GATE`)**: Ensures drift gates run only on `Stop` rather than intermediate `PreToolUse` / `PostToolUse` turns.

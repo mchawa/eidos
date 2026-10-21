@@ -10,7 +10,14 @@ source_path: src/eidos/cli/drift_commands.py
 :toc: left
 
 == Responsibility
-Spec-to-code and non-code drift detection (`eidos drift`) across uncommitted working trees and Git commit ranges, resolving both default and custom `--path` (including `--path .` repo roots and subdirectory invocations) via `find_repo_root`, emitting complete machine-readable JSON diagnostics (including unmapped_code_files, validation_errors, uncovered_invariants, and orphan_invariants without stdout banner corruption when combined with --markdown), distinguishing code vs. non-code drift and invariant traceability failures in terminal reports, surfacing explicit Git base resolution errors, and exiting non-zero when --base is invalid or missing in shallow clones.
+Exposes the `eidos drift` CLI command for verifying zero specification-to-code drift, schema validity, and static invariant test-binding coverage across uncommitted working trees or Git commit ranges.
+
+== Key Responsibilities & Collaborators
+* **Drift Gate CLI Adapter**: Resolves repository and specification roots via `CMP-PROJECT-RESOLVER`, invokes `CMP-DRIFT-DETECTOR` (`detect_drift`, `generate_remediation_prompt`, `generate_verification_markdown`), and renders Rich terminal diagnostics, CI Markdown summaries (`--markdown`), or `orjson` JSON payloads (`--json`).
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `register(app: typer.Typer) -> None`
+* `drift_command(path: Path, base: str, head: str, uncommitted: bool, json_output: bool, markdown: bool, prompt: bool) -> None`
+
+== Design Constraints & Operational Notes
+* **Fail-Closed Exit Semantics**: Exits with code `1` whenever schema validation errors, uncovered/orphan invariants, unmapped structural code files, unverified SpecDelta targets, or invalid `--base` Git references (`DriftError`) are encountered.

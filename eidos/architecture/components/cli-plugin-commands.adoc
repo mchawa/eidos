@@ -10,7 +10,17 @@ source_path: src/eidos/cli/plugin_commands.py
 :toc: left
 
 == Responsibility
-Agent plugin lifecycle commands (`eidos plugin`) with `orjson` `--json` output: `install [TARGET]`, `uninstall [TARGET]`, and `update [TARGET]` with a single optional positional `TARGET` argument defaulting to `PluginInstallTarget.PROJECT` (`force=False` default and `FileExistsError` symlink/overwrite safety), plus `version`, `validate`, and `info`.
+Implements the `eidos plugin` subcommand group (`install`, `uninstall`, `update`, `validate`, `version`, `info`) for distributing and validating the Eidos Agent Plugin across supported AI coding harnesses.
+
+== Key Responsibilities & Collaborators
+* **Plugin Lifecycle Dispatch**: Delegates multi-harness installation, manifest-tracked uninstallation, and version checks to `CMP-PLUGIN-INSTALLER`, and `agent-plugins.org v1.0.0` bundle validation to `CMP-PLUGIN-VALIDATOR` and `CMP-HOOK-MANAGER`.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `plugin_app: typer.Typer`
+* `plugin_install(target: PluginInstallTarget, path: Path, force: bool) -> None`
+* `plugin_uninstall(target: PluginInstallTarget, path: Path) -> None`
+* `plugin_update(target: PluginInstallTarget, path: Path) -> None`
+* `plugin_validate(...)`, `plugin_version(...)`, `plugin_info(...)`
+
+== Design Constraints & Operational Notes
+* **Safe Default Target & Overwrite Guard**: Defaults `[TARGET]` to `project` (`.agents/plugins/eidos`) with `force=False`, refusing to overwrite modified user files unless `--force` is specified.

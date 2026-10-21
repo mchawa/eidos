@@ -14,7 +14,16 @@ source_path:
 :toc: left
 
 == Responsibility
-Delivers pre-compiled single-file React 19, Tailwind v4, Asciidoctor.js, and Mermaid v11 SPA assets (compiled from src/eidos/portal/frontend/src with tsc --noEmit verification, client-side `hydratePortalData` payload re-hydration, `window.location.hash` deep-linking across views/C4 levels/SpecReader drawers, non-passive native wheel zoom listeners preventing page scroll inside Mermaid diagrams, interactive C4 Blast Radius Simulator and Boundary Interface Contracts explorer, Validation & Governance Diagnostics panel, Recursive W3C Token Tree explorer, SpecDeltas Chronological Timeline and Archived status column, Explorations Archived status filter, domains-first BusinessView layout with clickable `CNT-*`/`CTR-*` technical anchors, composable operation/target SpecDelta views, streamlined v1 exploration resulting_deltas and UI component invariants views, object-safe C4 dependency rendering, automatic C4 inspector closure on whitebox drill-down, and multi-client omnichannel flow filtering) with zero remote subresources by lazily loading and caching on first access (get_portal_html_template, get_portal_favicon_svg, and PEP 562 __getattr__ for PORTAL_HTML_TEMPLATE and PORTAL_FAVICON_SVG) from deterministic gzip-compressed assets (assets/portal/bundle.html.gz and assets/portal/favicon.svg) rather than a 4.7 MB raw Python string literal, mtime-gated during wheel/sdist builds via a Hatch custom build hook (hatch_build.py) and verified in CI via build_assets.py --check.
+Packages and lazily loads the pre-compiled single-file React 19, Tailwind v4, Asciidoctor.js, and Mermaid v11 SPA bundle (`assets/portal/bundle.html.gz` and `assets/portal/favicon.svg`) and owns the TypeScript frontend views and asset build verification scripts.
+
+== Key Responsibilities & Collaborators
+* **Lazy Gzip Asset Delivery (`assets.py`)**: Decompresses and caches `assets/portal/bundle.html.gz` and `assets/portal/favicon.svg` on first access (`get_portal_html_template`, `get_portal_favicon_svg`) for `CMP-PORTAL-SERVER` and `CMP-PORTAL-BUILDER`.
+* **Interactive SPA Views (`frontend/src/`)**: Implements URL hash deep-linking (`DEC-PORTAL-HASH-ROUTING`), client-side payload re-hydration (`hydratePortalData`), C4 Level 1–3 whitebox drill-down, interactive Blast Radius Simulator, `CTR-*` Contract Explorer, Validation Diagnostics, SpecDelta Kanban/Timeline, and W3C Token Studio.
+* **Build & Wheel Hook Verification (`build_assets.py`, `hatch_build.py`)**: Compiles the Vite single-file bundle, verifies zero remote URLs (`INV-PORTAL-AIR-GAPPED-BUNDLE`), and synchronizes bundle assets during Hatch wheel builds.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `get_portal_html_template() -> str`, `get_portal_favicon_svg() -> str`
+* `PORTAL_HTML_TEMPLATE: str`, `PORTAL_FAVICON_SVG: str`
+
+== Design Constraints & Operational Notes
+* **Air-Gapped & Zero-Node Runtime (`INV-PORTAL-AIR-GAPPED-BUNDLE`, `INV-PORTAL-ZERO-NODE-DEP`)**: All fonts (`@fontsource` Geist / Geist Mono), Mermaid v11, and Asciidoctor.js are bundled inline; `build_assets.py --check` rejects any remote `http://` or `https://` subresource references.

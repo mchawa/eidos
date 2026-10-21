@@ -10,7 +10,14 @@ source_path: src/eidos/portal/server.py
 :toc: left
 
 == Responsibility
-Hosts lightweight local multi-threaded HTTP server exposing web UI and `orjson`-serialized JSON endpoints (lazily loading HTML/SVG assets via get_portal_html_template and get_portal_favicon_svg, validating static paths via is_relative_to, exposing lightweight `/api/version` mtime snapshot polling and `/api/drift` uncommitted drift summaries, and resolving custom eidos_dir targets in /api/validate and /api/drift) with thread-safe (_cache_lock) eidos_dir file mtime snapshot response caching on EidosPortalHandler.
+Hosts the local multi-threaded HTTP preview server (`eidos portal serve`) exposing the interactive Web Portal SPA and `orjson`-serialized JSON API endpoints (`/api/data`, `/api/version`, `/api/drift`, `/api/validate`, `/api/specs/{id}`) with mtime-snapshot response caching.
+
+== Key Responsibilities & Collaborators
+* **Live API & Progressive Mtime Polling (`DEC-PORTAL-PROGRESSIVE-MTIME-POLLING`)**: Serves pre-compiled SPA assets from `CMP-PORTAL-ASSETS`, caches `CMP-PORTAL-GENERATOR` payloads keyed by `eidos/` file mtime snapshots under a thread lock (`_cache_lock`), and exposes `/api/version` for 3-second browser live reload and `/api/drift` for uncommitted drift status via `CMP-DRIFT-DETECTOR`.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `serve_portal(eidos_dir: Path, host: str = "127.0.0.1", port: int = 8080, open_browser: bool = True) -> None`
+* `EidosPortalHandler`
+
+== Design Constraints & Operational Notes
+* **Path Traversal Guard**: Validates all `/api/specs/{id}` and static asset paths with `Path.is_relative_to` before reading from disk.

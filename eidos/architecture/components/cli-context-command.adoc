@@ -10,7 +10,14 @@ source_path: src/eidos/cli/context_command.py
 :toc: left
 
 == Responsibility
-Extracts compact, token-efficient architectural subgraph slices (`eidos context [--file] [--component] [--task] [--tier] [--json] [--path]`) for AI agents in Markdown or `orjson`-serialized JSON (`--json`), resolving `eidos/` via shared `resolve_cli_eidos_dir`.
+Exposes the `eidos context` CLI command for extracting token-budgeted 3-tier architectural subgraph slices (`anchor`, `guardrails`, `deep`) by file path, component/container ID, or natural-language task prompt.
+
+== Key Responsibilities & Collaborators
+* **Context Slice CLI Adapter**: Parses `--file`, `--component`, `--task`, `--tier`, `--json`, and `--path` options, resolves the workspace via `CMP-CLI-APP` (`resolve_cli_eidos_dir`), and delegates subgraph extraction to `CMP-TIERED-CONTEXT-COMPRESSOR` via `CMP-GRAPH-STORAGE` (`ArchitecturalIndex`).
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `register(app: typer.Typer) -> None`
+* `context_command(files: list[str] | None, component: str | None, task: str | None, tier: str, json_output: bool, path: Path) -> None`
+
+== Design Constraints & Operational Notes
+* **Dual Markdown / JSON Output**: Emits token-budgeted Markdown by default or `orjson`-serialized JSON when `--json` is passed.

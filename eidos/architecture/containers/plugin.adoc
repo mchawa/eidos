@@ -44,7 +44,7 @@ contracts:
 == Architectural Boundary
 This container represents the plugin distribution, hook execution, and validation system under `src/eidos/plugin/` and `assets/plugin_reference/`. It packages living specification skills, commands, and validation rules into standard bundles adhering to `agent-plugins.org v1.0.0` as well as Claude Code, OpenAI Codex, OpenCode, Aider, Cline, Cursor, and GitHub Copilot environments.
 
-== Multi-Harness Distribution & Lifecycle Architecture
+== Internal Structure & Key Mechanisms
 * **Declarative Target Adapter Pipeline**: Synchronizes the 4 bundled workflow skills (`eidos`, `eidos-spec`, `eidos-plan`, `eidos-ops`), `plugin.json` manifests, and `hooks.json` lifecycle configurations across `.agents/plugins/eidos`, `.github/plugin/`, `.github/skills/`, `.claude/plugins/`, `.claude/skills/`, `.cursor/skills/`, `.cline/skills/`, `.opencode/skills/`, `.codex/`, and `.aider/skills/`.
 * **Manifest-Tracked Installation & Safe Uninstallation**: Records installed file relative paths and SHA-256 digests in `.eidos-manifest.json` so `eidos plugin uninstall` removes only Eidos-managed artifacts without disturbing user-authored skills or shared parent directories.
 * **Stateless Single Stop Hook (`DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK`)**: Executes `detect_drift(uncommitted=True)` once at the end of an agent turn (`Stop`) via `eidos hook` and emits a non-blocking `{"decision": "allow", "systemMessage": "..."}` diagnostic payload when validation or drift issues are present.

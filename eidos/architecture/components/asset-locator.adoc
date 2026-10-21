@@ -10,7 +10,18 @@ source_path: src/eidos/core/workspace/assets.py
 :toc: left
 
 == Responsibility
-Locates externalized specification schemas (`get_schemas_dir`), AsciiDoc prose templates (`get_spec_template_path` and `render_spec_template` loading `<name>.template.adoc` beside each `.schema.yaml` under `assets/schemas/v1/`), and canonical plugin reference assets (`get_plugin_reference_dir`) across ordered candidate asset roots (`_iter_assets_roots` spanning installed wheel `eidos/assets`, repository checkouts, and CWD while preferring verified Eidos asset roots and probing all candidate roots in `get_assets_path`).
+Resolves packaged JSON/YAML specification schemas, AsciiDoc prose templates (`*.template.adoc`), and canonical `agent-plugins.org` reference bundles across installed Python wheels, editable repository checkouts, and working directories.
+
+== Key Responsibilities & Collaborators
+* **Multi-Root Asset Discovery**: Probes ordered candidate asset directories (`_iter_assets_roots`) spanning wheel package data, repository ancestors, and `Path.cwd()` to locate verified Eidos asset trees.
+* **Template & Schema Resolution**: Maps canonical and short specification types to their corresponding `.template.adoc` blueprints and v1 schema directories for `CMP-LIFECYCLE-SCAFFOLDER` and `CMP-SPEC-VALIDATOR`.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `get_assets_root() -> Path`, `get_assets_path(subpath: str) -> Path`
+* `get_schemas_dir() -> Path`, `get_v1_schemas_dir() -> Path`, `get_agent_plugins_schemas_dir() -> Path`
+* `get_plugin_reference_dir() -> Path`
+* `get_spec_template_path(doc_type: str) -> Path`, `render_spec_template(doc_type: str, **context: object) -> str`
+
+== Design Constraints & Operational Notes
+* **Zero-Config Packaging Parity**: Works identically whether invoked from an editable Git checkout or an isolated `uv tool` / `pipx` wheel installation.
+* **Fail-Fast Lookup**: Raises `FileNotFoundError` or `ValueError` immediately when a requested asset subpath or template type is unregistered.

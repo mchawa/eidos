@@ -19,14 +19,15 @@ contracts:
 :toc: left
 
 == Architectural Boundary
-This container represents the developer and AI-agent CLI entrypoint under `src/eidos/cli/`. It exposes the `CTR-EIDOS-CLI` interface contract via Typer, providing a single canonical command path per operation for bootstrapping repositories (`eidos init`), authoring and validating living specifications (`eidos validate`, `eidos spec`), querying the knowledge graph and context slices (`eidos index`, `eidos context`), executing drift detection (`eidos drift`), managing SpecDelta lifecycles (`eidos delta`), serving or building the web portal (`eidos portal`), and managing agent plugins and hooks (`eidos plugin`, `eidos hook`, `eidos doctor`).
+This container represents the developer and AI-agent CLI entrypoint under `src/eidos/cli/`. It exposes the `CTR-EIDOS-CLI` interface contract via Typer, providing a single canonical command path per operation for bootstrapping repositories (`eidos init`), authoring and validating living specifications (`eidos validate`, `eidos spec`), querying the knowledge graph and context slices (`eidos index`, `eidos context`), executing drift detection (`eidos drift`), managing SpecDelta lifecycles (`eidos delta`), serving or building the web portal (`eidos portal`), and managing agent plugins and hooks (`eidos plugin`, `eidos hook`, `eidos doctor`). It contains zero domain validation, graph persistence, or Git diff logic of its own, acting strictly as an adapter over `CNT-EIDOS-CORE`, `CNT-EIDOS-INDEX`, `CNT-EIDOS-VCS`, `CNT-EIDOS-PORTAL`, and `CNT-EIDOS-PLUGIN`.
 
-== Command Dispatch & Output Envelope Architecture
-* **Thin Presentation Layer**: CLI command modules parse flags, resolve the target `eidos/` workspace via shared `resolve_cli_eidos_dir`, invoke domain services in `CNT-EIDOS-CORE`, `CNT-EIDOS-INDEX`, `CNT-EIDOS-VCS`, `CNT-EIDOS-PORTAL`, and `CNT-EIDOS-PLUGIN`, and format the results.
-* **Dual Human / Machine Output Modes**: Every inspection, validation, verification, audit, and indexing command supports `--json` backed by `orjson` for deterministic machine consumption alongside Rich terminal tables, trees, and panels for interactive developer sessions.
+== Internal Structure & Key Mechanisms
+* **Thin Presentation Adapter**: Modular Typer command groups parse CLI options, resolve the target `eidos/` workspace via shared `resolve_cli_eidos_dir`, invoke underlying container services, and translate domain outcomes into exit codes.
+* **Dual Human / Machine Output Envelope**: Every inspection, validation, verification, audit, and indexing command supports `--json` backed by `orjson` for deterministic machine consumption alongside Rich terminal tables, trees, and panels for interactive developer sessions.
+* **Disjoint Catalog vs. SpecDelta Boundaries**: Enforces strict separation between living catalog management (`eidos spec`) and architectural mutation workflows (`eidos delta`).
 
 == Quality Attributes & Operational Policies
 * **Deterministic Exit Codes**: Returns `0` on clean execution/validation, `1` on specification validation failures, unverified SpecDelta mutations, strict audit leaks, or detected architectural drift, and `2` on invalid CLI arguments or usage errors.
 * **Zero-Config Workspace Discovery**: Automatically locates the governing `eidos/` directory from any nested working directory or explicit `--path` argument.
-* **Contract Parity (`CTR-EIDOS-CLI`)**: All top-level commands, subcommands, and CLI flags are bidirectionally verified against `eidos/architecture/contracts/cli.adoc` by `SpecValidator`.
+* **Bidirectional Contract Parity (`CTR-EIDOS-CLI`)**: All top-level commands, subcommands, and CLI flags are statically verified against `eidos/architecture/contracts/cli.adoc` by `SpecValidator`.
 

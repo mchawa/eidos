@@ -4,13 +4,23 @@ id: CMP-DOCS-GETTING-STARTED
 title: GettingStartedGuides
 container: CNT-EIDOS-DOCS
 status: active
-source_path: docs/getting-started/quickstart.md
+source_path:
+  - docs/index.md
+  - docs/getting-started
 ---
 = Component: GettingStartedGuides
 :toc: left
 
 == Responsibility
-Installation (`fastyaml-rs`, `orjson`, and 17-language `ast-grep-py`), Quickstart (`eidos spec schema`, `eidos spec create` 4-parameter blueprint scaffolding, and `eidos delta create` workflow examples), and initial onboarding documentation.
+Provides the landing page (`docs/index.md`), installation instructions (`docs/getting-started/installation.md`), and end-to-end 5-minute onboarding quickstart (`docs/getting-started/quickstart.md`).
+
+== Key Responsibilities & Collaborators
+* **Developer Onboarding & Installation**: Documents global CLI installation (`uv tool install eidos-ai`, `pipx`), repository initialization (`eidos init` and `eidos init --lite`), schema introspection (`eidos spec schema`), blueprint scaffolding (`eidos spec create`), and drift verification (`eidos drift`).
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `docs/index.md`
+* `docs/getting-started/installation.md`
+* `docs/getting-started/quickstart.md`
+
+== Design Constraints & Operational Notes
+* **Live CLI & Schema Parity (`POL-003`, `INV-DOCS-SYNCHRONIZATION`)**: Every `eidos ...` command invocation and YAML frontmatter block is continuously verified against the live CLI command tree and v1 JSON Schemas.

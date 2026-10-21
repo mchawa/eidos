@@ -10,7 +10,14 @@ source_path: src/eidos/plugin/hooks.py
 :toc: left
 
 == Responsibility
-Executes the stateless CLI-native Stop hook (handle_stop_hook, execute_hook via 'eidos hook' with `orjson` payload serialization) that runs detect_drift(uncommitted=True) once on Stop and returns {'decision': 'allow'} when clean or {'decision': 'allow', 'systemMessage': '...'} when specification validation errors, uncovered/orphan invariants, or code-to-spec drift are detected.
+Executes the stateless CLI-native `Stop` lifecycle hook (`eidos hook`), running uncommitted drift and validation checks once at the end of an agent turn and emitting a non-blocking JSON verdict (`DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK`).
+
+== Key Responsibilities & Collaborators
+* **Stateless Stop Gate Execution**: Invokes `CMP-DRIFT-DETECTOR` (`detect_drift(uncommitted=True)` and `generate_remediation_prompt`) and returns `{"decision": "allow"}` when clean or `{"decision": "allow", "systemMessage": "..."}` when specification validation, invariant, or drift issues exist.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `handle_stop_hook(repo_root: Path, eidos_dir: Path | None = None) -> dict[str, Any]`
+* `execute_hook(path: Path | None = None) -> dict[str, Any]`
+
+== Design Constraints & Operational Notes
+* **Zero Local Hook State (`DEC-PLUGIN-STATELESS-SINGLE-STOP-HOOK`)**: Maintains no local fingerprint files or SQLite hook snapshots, preventing infinite agent retry loops across coding harnesses.

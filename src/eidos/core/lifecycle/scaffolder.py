@@ -225,11 +225,7 @@ def create_spec(
             "status": "draft",
             "source_path": "src",
         }
-        body = render_spec_template(
-            "tech/component",
-            heading=heading,
-            responsibility=f"Describe the in-process logic this C4 Level 3 component encapsulates within `{parent_cnt}`.",
-        )
+        body = render_spec_template("tech/component", heading=heading)
 
     elif canonical_key == "persona":
         dest_dir = eidos_dir / "personas"

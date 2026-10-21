@@ -2,7 +2,14 @@
 :toc: left
 
 == Responsibility
-{responsibility}
+Describe the in-process role, architectural boundary, and core responsibility of this C4 Level 3 component within its owning container.
+
+== Key Responsibilities & Collaborators
+* **Primary Role**: Summarize core in-process responsibilities within the owning container.
+* **Collaborators**: Document peer components, domain models, or external adapters invoked during execution.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+Document exported language-level APIs (functions, classes, protocols, or entrypoints) provided to peer components.
+
+== Design Constraints & Operational Notes
+Document concurrency assumptions, caching invariants, error-handling semantics, or performance constraints.

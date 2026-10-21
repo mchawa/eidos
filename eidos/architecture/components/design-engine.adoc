@@ -10,7 +10,15 @@ source_path: src/eidos/core/lifecycle/design_engine.py
 :toc: left
 
 == Responsibility
-Emits minimal, schema-valid draft blueprints (`build_design_spec` with `status: 'draft'` and AsciiDoc prose loaded from `assets/schemas/v1/design/*.template.adoc`) for Multi-Design Systems (`design/system`, writing baseline W3C DTCG `tokens.json` via `orjson` only when `system.adoc` does not already exist), UI component contracts (`design/ui-component` with path-aware `design_system` slug resolution and standard `invariants`), screens (`design/screen`), clients (`design/client`), and user flows (`design/flow`) using prefix-safe slug normalization (`.removeprefix`).
+Scaffolds schema-valid draft blueprints (`build_design_spec`) and baseline W3C DTCG `tokens.json` manifests for Multi-Design Systems (`DS-*`), UI components (`UIC-*`), screens (`SCR-*`), clients (`CLT-*`), and user flows (`FLOW-*`).
+
+== Key Responsibilities & Collaborators
+* **Design Blueprint Generation**: Renders frontmatter and `.template.adoc` prose via `CMP-ASSET-LOCATOR` for all 5 `design/*` specification types under `eidos/design/`.
+* **W3C DTCG Token Bootstrapping**: Initializes a baseline W3C Design Tokens Community Group (`tokens.json`) manifest via `orjson` when scaffolding a new `design/system` specification without overwriting pre-existing token files.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `DESIGN_SPEC_KEYS: set[str]`
+* `build_design_spec(eidos_dir: Path, canonical_key: str, doc_id: str, slug: str, title: str, heading: str, first_of_type_fn) -> tuple[Path, Path, dict[str, Any], str]`
+
+== Design Constraints & Operational Notes
+* **Idempotent Token Manifests**: Preserves existing `tokens.json` files when re-scaffolding a `design/system` blueprint.

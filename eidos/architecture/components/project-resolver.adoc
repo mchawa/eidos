@@ -10,7 +10,18 @@ source_path: src/eidos/core/workspace/project.py
 :toc: left
 
 == Responsibility
-Zero-config repository and specification root discovery (find_repo_root and resolve_spec_and_repo_roots recognizing .git, eidos/, .spec/, specs/, and subdirectory spec paths containing system.adoc, architecture/, domains/, policies/, deltas/, or design/), anchored path ownership glob matching (preserving leading dotfile segments, scoring literal directory-prefix specificity ahead of broad wildcards, and extracting declared source_path and specification_file via extract_entity_paths while filtering N/A/TBD/NONE placeholders), canonical polyglot test-file classification (is_polyglot_test_file), single-pass zero-delimited gitignore- and STANDARD_EXCLUDED_DIRS-aware file enumeration (get_tracked_files), and batched gitattributes linguist-generated/vendored file filtering with scalar input normalization.
+Discovers repository and living specification roots (`eidos/`), evaluates glob-based `source_path` ownership specificity, classifies polyglot test suites, and enumerates Git-tracked non-vendored workspace files.
+
+== Key Responsibilities & Collaborators
+* **Workspace & Root Discovery**: Locates governing repository and specification roots (`find_repo_root`, `resolve_spec_and_repo_roots`) across nested subdirectories, custom `--path` targets, and `.git` checkouts.
+* **Path Ownership & Glob Specificity**: Scores literal directory-prefix specificity ahead of wildcards (`match_path_pattern`, `extract_entity_paths`) so `CMP-INCREMENTAL-SYNC-ENGINE` and `CMP-DRIFT-DETECTOR` bind source files deterministically to their most specific `CMP-*` or `CNT-*` owner.
+* **Tracked & Test File Filtering**: Enumerates non-ignored files while excluding `STANDARD_EXCLUDED_DIRS` and `linguist-generated` / `linguist-vendored` `.gitattributes` entries.
 
 == Public Surface
-Document exported language-level APIs (functions, classes, traits) provided to peer components.
+* `find_repo_root(start_path: Path) -> Path`, `resolve_spec_and_repo_roots(path: Path) -> tuple[Path, Path]`
+* `load_project(root_dir: Path) -> EidosProject`
+* `match_path_pattern(rel_path: str, pattern: str) -> int`, `extract_entity_paths(frontmatter: dict) -> list[str]`
+* `is_polyglot_test_file(rel_path: str) -> bool`, `get_tracked_files(repo_root: Path) -> set[str]`
+
+== Design Constraints & Operational Notes
+* **Deterministic Ownership Precedence**: Literal file and directory prefixes always outrank broad glob patterns, and dotfile path segments (e.g., `.github/`) are preserved during normalization.
