@@ -177,7 +177,7 @@ Manage and query the embedded SQLite architectural knowledge graph and FTS5 lexi
 The index initializes automatically on first use and lazily resynchronizes before every query via sub-5ms `mtime_ns` and `SHA-256` dirty checking, guaranteeing zero drift.
 
 #### `eidos index status`
-Display database cache size, schema version (`2.15.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
+Display database cache size, schema version (`2.16.0`), clean/drift synchronization state across specs and code, check latency, entity/edge counts, active AST parser engine (`ast-grep`), symbol breakdown by syntax kind, and test-to-invariant assertion counts. Supports `--json` for programmatic agent inspection.
 
 ```bash
 # Display rich visual status and AST telemetry:

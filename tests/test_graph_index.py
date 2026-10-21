@@ -1247,7 +1247,7 @@ def test_inv_index_incremental_parity(tmp_path, monkeypatch):
     db_path = eidos_dir / ".cache" / "index.db"
     with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
         ver = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0]
-        assert ver == SCHEMA_VERSION == "2.15.0"
+        assert ver == SCHEMA_VERSION == "2.16.0"
         val_rows_before = conn.execute("SELECT COUNT(*) FROM spec_validation_cache;").fetchone()[0]
         assert val_rows_before == 1
 
@@ -2292,7 +2292,7 @@ def test_dlt_2026_097_fts_alignment_inline_boost_and_facade_hydration(tmp_path: 
     from eidos.core.lifecycle.scaffolder import create_spec
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
 
-    assert SCHEMA_VERSION == "2.15.0"
+    assert SCHEMA_VERSION == "2.16.0"
     assert set(AstGrepIndexer.LANGUAGE_MAP.keys()) | {".proto", ".adoc"} <= _FILE_QUERY_EXTS
 
     # 1. Verify _ENTITY_ID_TOKEN_RE recognizes SYS-*, ARCH-*, PER-*, and underscore IDs
@@ -2460,7 +2460,7 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     from eidos.core.spec.parser import dump_spec_document, parse_spec_file
     from eidos.portal.generator import get_portal_data
 
-    assert SCHEMA_VERSION == "2.15.0"
+    assert SCHEMA_VERSION == "2.16.0"
     assert _build_spec_catalog_with_invariants(tmp_path / "nonexistent_eidos") == ({}, {}, {})
 
     init_repository(tmp_path, name="dlt-104-repo")
@@ -2597,11 +2597,11 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
     idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
     try:
         conn = idx._get_connection()
-        # Simulate upgrading from schema_version 2.11.0 -> 2.15.0
+        # Simulate upgrading from schema_version 2.11.0 -> 2.16.0
         conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '2.11.0');")
         conn.commit()
         ensure_cache_schema(conn)
-        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.15.0"
+        assert conn.execute("SELECT value FROM metadata WHERE key = 'schema_version';").fetchone()[0] == "2.16.0"
 
         idx.sync(force=True)
 

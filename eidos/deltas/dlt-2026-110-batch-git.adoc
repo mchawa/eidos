@@ -22,6 +22,13 @@ mutations:
       frontmatter:
         responsibility: "unambiguous SpecDelta prefix resolution"
   - operation: modify
+    target: CMP-GRAPH-STORAGE
+    parent: CNT-EIDOS-INDEX
+    details: "Bump SCHEMA_VERSION in src/eidos/core/index/storage.py from '2.15.0' to '2.16.0' so existing eidos/.cache/index.db instances automatically rebuild and populate test_binding_cache during sync_index."
+    expect:
+      frontmatter:
+        responsibility: "2.16.0"
+  - operation: modify
     target: CMP-AST-SYMBOL-INDEXER
     parent: CNT-EIDOS-INDEX
     details: "Host shared fixture-aware test cache extractor (_has_function_level_fixture and extract_test_file_cache_payload) in src/eidos/core/index/ast_indexer.py so sync.py and invariants.py share a single AST test-parsing implementation without upward container imports."

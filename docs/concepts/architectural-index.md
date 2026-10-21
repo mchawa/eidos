@@ -38,7 +38,7 @@ The architectural index requires **zero external database daemons** and **zero t
 
 * Built on Python's standard library **`sqlite3`** in WAL (Write-Ahead Logging) mode, utilizing native SQLite 3.x FTS5 and recursive Common Table Expressions (CTEs).
 * Decomposed across 5 focused internal modules in `src/eidos/core/index/`: `storage.py` (`CMP-GRAPH-STORAGE`), `sync.py` (`CMP-INCREMENTAL-SYNC-ENGINE`), `query.py` (`CMP-FTS-QUERY-ENGINE` & `CMP-GRAPH-TRAVERSAL-ENGINE`), `context.py` (`CMP-TIERED-CONTEXT-COMPRESSOR`), and `ast_indexer.py` (`CMP-AST-SYMBOL-INDEXER`).
-* Stores all relational graph data, AST symbol coordinates, inverted file token FTS tables, and validation/test caches inside a single self-contained, 100% stateless derived file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.15.0"`).
+* Stores all relational graph data, AST symbol coordinates, inverted file token FTS tables, and validation/test caches inside a single self-contained, 100% stateless derived file: `eidos/.cache/index.db` (canonical `SCHEMA_VERSION = "2.16.0"`).
 * Automatically performs drop-and-rebuild migration on schema version upgrades and self-heals on database corruption.
 * The `eidos/.cache/` directory is isolated via `eidos/.gitignore`, keeping Git repositories pristine.
 
@@ -82,7 +82,7 @@ Output:
 ```text
 ╭───────────────── Eidos Architectural Knowledge Graph Index ──────────────────╮
 │        Database Path:  /path/to/project/eidos/.cache/index.db                │
-│       Schema Version:  2.15.0                                                │
+│       Schema Version:  2.16.0                                                │
 │           Cache Size:  5308.0 KB                                             │
 │               Status:  SYNCED (Clean) (1.76ms check)                         │
 │       Total Entities:  208                                                   │
