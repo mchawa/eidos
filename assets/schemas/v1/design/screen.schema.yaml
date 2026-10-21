@@ -26,6 +26,8 @@ properties:
     description: "URL path, view surface, or deep link identifier (e.g. '/checkout', '/settings/billing', 'App > CheckoutModal')."
   status:
     $ref: "#/$defs/lifecycle_status"
+  version:
+    $ref: "#/$defs/semver"
   slots:
     type: object
     description: "Named layout slots and abstract UI component assignments composing this screen view."

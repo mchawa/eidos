@@ -203,7 +203,7 @@ def _find_inline_component_dict(
         return None
     comps = list(cnt_fm.get("components") or [])
     for c in comps:
-        if isinstance(c, dict) and c.get("id") == comp_id and not c.get("ref"):
+        if isinstance(c, dict) and c.get("id") == comp_id:
             return c
     return None
 
@@ -1446,25 +1446,23 @@ def archive_explorations(
         title = str(fm.get("title") or doc.title or doc_id)
         orig_size = p.stat().st_size
 
-        hypothesis = str(fm.get("hypothesis") or "").strip()
-        if not hypothesis:
-            m_hyp = re.search(
-                r"(?:\*Hypothesis:\*|\* \*Hypothesis\*:|^==+\s+[^\n]*Hypothesis[^\n]*)\s*\n+(?:\*\s*\*Hypothesis\*:\s*)?([^=\n][^\n]+)",
-                doc.body or "",
-                re.MULTILINE,
-            )
-            if m_hyp:
-                hypothesis = " ".join(m_hyp.group(1).split())
+        hypothesis = ""
+        m_hyp = re.search(
+            r"(?:\*Hypothesis:\*|\* \*Hypothesis\*:|^==+\s+[^\n]*Hypothesis[^\n]*)\s*\n+(?:\*\s*\*Hypothesis\*:\s*)?([^=\n][^\n]+)",
+            doc.body or "",
+            re.MULTILINE,
+        )
+        if m_hyp:
+            hypothesis = " ".join(m_hyp.group(1).split())
 
-        findings = str(fm.get("findings") or "").strip()
-        if not findings:
-            m_find = re.search(
-                r"(?:\*Findings:\*|\* \*Findings\*:|^==+\s+[^\n]*(?:Findings|Outcome)[^\n]*)\s*\n+\*?\s*([^=\n][^\n]+)",
-                doc.body or "",
-                re.MULTILINE,
-            )
-            if m_find:
-                findings = " ".join(m_find.group(1).split())
+        findings = ""
+        m_find = re.search(
+            r"(?:\*Findings:\*|\* \*Findings\*:|^==+\s+[^\n]*(?:Findings|Outcome)[^\n]*)\s*\n+\*?\s*([^=\n][^\n]+)",
+            doc.body or "",
+            re.MULTILINE,
+        )
+        if m_find:
+            findings = " ".join(m_find.group(1).split())
 
         slim_fm: dict[str, Any] = {
             "type": "product/exploration",

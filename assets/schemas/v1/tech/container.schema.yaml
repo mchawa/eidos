@@ -7,6 +7,7 @@ required:
   - type
   - id
   - title
+  - status
   - container_type
   - runtime
   - source_path
@@ -24,6 +25,8 @@ properties:
     description: "Human-readable display title of the container/package."
   status:
     $ref: "#/$defs/lifecycle_status"
+  version:
+    $ref: "#/$defs/semver"
   container_type:
     type: string
     description: "The C4 Container classification: service, library, cli_app, frontend_spa, background_worker, ml_pipeline, daemon, database, driver, or custom slug."

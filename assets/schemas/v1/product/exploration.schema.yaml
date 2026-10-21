@@ -22,6 +22,8 @@ properties:
     description: "Human-readable title describing the research topic or spike investigation."
   status:
     $ref: "#/$defs/exploration_status"
+  version:
+    $ref: "#/$defs/semver"
   decision:
     type: object
     description: "Retrospective outcome and transition path upon conclusion of the exploration."

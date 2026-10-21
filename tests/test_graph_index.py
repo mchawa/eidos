@@ -470,8 +470,8 @@ type: design/system
 id: DS-BRAND
 title: "Brand Design System"
 status: active
-version: "1.0.0"
-tokens_path: "eidos/design/systems/brand/tokens.json"
+tokens:
+  manifest: "eidos/design/systems/brand/tokens.json"
 ---
 = Brand Design System
 """,
@@ -2591,7 +2591,6 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
             "target": "CLT-WEB-104",
         },
     ]
-    dlt_doc.frontmatter["blast_radius"] = {"impacted_personas": ["PER-ARCH-104"]}
     dlt_path.write_text(dump_spec_document(dlt_doc.frontmatter, dlt_doc.body), encoding="utf-8")
 
     idx = ArchitecturalIndex(db_path=eidos_dir / ".cache" / "index.db", repo_root=tmp_path, eidos_dir=eidos_dir)
@@ -2642,7 +2641,6 @@ def test_dlt_2026_104_unified_spec_catalog_and_graph_blast_radius(tmp_path: Path
         # 4. Verify compute_delta_impact matches get_portal_data delta blast radius and invariant categories
         aff, br = idx.compute_delta_impact(
             dlt_doc.frontmatter["mutations"],
-            raw_blast_radius=dlt_doc.frontmatter["blast_radius"],
         )
         assert aff == {
             "components": ["CMP-API-HANDLER-104"],

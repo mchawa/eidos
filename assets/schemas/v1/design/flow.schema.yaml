@@ -23,6 +23,8 @@ properties:
     description: "Display title of the interaction flow."
   status:
     $ref: "#/$defs/lifecycle_status"
+  version:
+    $ref: "#/$defs/semver"
   flow_type:
     type: string
     description: "Scope: 'client_internal' (contained in 1 client) or 'cross_client' (omnichannel journey)."

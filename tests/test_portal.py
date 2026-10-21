@@ -477,13 +477,16 @@ def test_portal_promoted_components_invariants_decisions_and_explorations(tmp_pa
         "id: CNT-TEST-API\n"
         "type: tech/container\n"
         "title: Test API Container\n"
-        "responsibility: Serves test traffic.\n"
+        "container_type: service\n"
+        "runtime: python\n"
         "invariants:\n"
         f"  - id: {cnt_inv_id}\n"
         "    rule: Container must validate requests.\n"
         "    test_binding: tests/test_portal.py::test_portal_data_generation\n"
         "---\n"
-        "= Test API\n",
+        "= Test API\n\n"
+        "== Architectural Boundary\n"
+        "Serves test traffic.\n",
         encoding="utf-8",
     )
     (eidos_dir / "architecture" / "components" / "auth.adoc").write_text(
@@ -511,22 +514,25 @@ def test_portal_promoted_components_invariants_decisions_and_explorations(tmp_pa
         "id: EXP-TEST-006\n"
         "type: product/exploration\n"
         "title: Synthetic Spike\n"
-        "status: in_progress\n"
-        "findings:\n"
-        "  - Finding A\n"
-        "  - Finding B\n"
-        "recommendation: Proceed with Delta.\n"
-        "resulting_deltas:\n"
-        "  - DLT-2026-030\n"
-        "  - DLT-2026-031\n"
-        "  - DLT-2026-032\n"
+        "status: adopted\n"
+        "decision:\n"
+        "  outcome: adopted\n"
+        "  resulting_deltas:\n"
+        "    - DLT-2026-030\n"
+        "    - DLT-2026-031\n"
+        "    - DLT-2026-032\n"
         "---\n"
-        "= Synthetic Spike\n",
+        "= Synthetic Spike\n\n"
+        "== Core Hypothesis\n"
+        "Validate synthetic spike hypothesis.\n\n"
+        "== Findings & Learnings\n"
+        "Finding A and Finding B confirmed.\n",
         encoding="utf-8",
     )
 
     syn_data = get_portal_data(eidos_dir)
     syn_cnt = syn_data["components"][0]
+    assert syn_cnt["responsibility"] == "Serves test traffic."
     assert len(syn_cnt["internal_components"]) == 1
     syn_sub = syn_cnt["internal_components"][0]
     assert syn_sub["id"] == "CMP-TEST-AUTH"
@@ -543,10 +549,10 @@ def test_portal_promoted_components_invariants_decisions_and_explorations(tmp_pa
     assert "DEC-CMP-TEST-001" in syn_dec_ids
 
     syn_exp = syn_data["explorations"][0]
-    assert syn_exp["findings"] == ["Finding A", "Finding B"]
-    assert syn_exp["decision"]["learnings"] == ["Finding A", "Finding B"]
-    assert syn_exp["recommendation"] == "Proceed with Delta."
-    assert syn_exp["decision"]["outcome"] == "Proceed with Delta."
+    assert syn_exp["hypothesis"] == "Validate synthetic spike hypothesis."
+    assert syn_exp["findings"] == "Finding A and Finding B confirmed."
+    assert syn_exp["decision"]["learnings"] == "Finding A and Finding B confirmed."
+    assert syn_exp["decision"]["outcome"] == "adopted"
     assert syn_exp["resulting_deltas"] == ["DLT-2026-030", "DLT-2026-031", "DLT-2026-032"]
     assert syn_exp["decision"]["resulting_deltas"] == ["DLT-2026-030", "DLT-2026-031", "DLT-2026-032"]
 
@@ -614,7 +620,7 @@ def test_dlt_2026_069_static_portal_builder_escapes_script_tags(tmp_path):
 
 
 def test_dlt_2026_074_portal_genericity_and_complete_extraction(tmp_path):
-    """Verify DLT-2026-074: arch/system support, nested policy invariants, product DEC-* decisions, tokens.manifest & inheritance.extends, dynamic external_systems C4 context, and dict internal_containers # eidos:fixture."""
+    """Verify DLT-2026-074: product/system & tech/architecture support, nested policy invariants, product DEC-* decisions, tokens.manifest & extends, dynamic external_systems C4 context, and dict internal_containers # eidos:fixture."""
     eidos_dir = tmp_path / "eidos"
     (eidos_dir / "policies").mkdir(parents=True)
     (eidos_dir / "domains" / "billing" / "capabilities").mkdir(parents=True)
@@ -623,17 +629,27 @@ def test_dlt_2026_074_portal_genericity_and_complete_extraction(tmp_path):
 
     (eidos_dir / "system.adoc").write_text(
         """---
-type: arch/system
+type: product/system
 id: SYS-ACME
 title: Acme Cloud
-c4_context:
-  external_systems:
-    - id: EXT-STRIPE
-      name: Stripe Gateway
-      type: external_saas
-      relationship: Processes card charges
 ---
 = Acme Cloud
+""",
+        encoding="utf-8",
+    )
+    (eidos_dir / "architecture" / "system-architecture.adoc").write_text(
+        """---
+type: tech/architecture
+id: ARCH-ACME
+title: Acme Cloud Architecture
+c4_context:
+  actors: []
+  external_systems:
+    - name: Stripe Gateway
+      role: Processes card charges
+      protocol: external_saas
+---
+= Acme Cloud Architecture
 """,
         encoding="utf-8",
     )
@@ -643,7 +659,6 @@ type: product/policy
 id: POL-SEC-01
 title: Security Policy
 category: security
-rule: Enforce TLS
 invariants:
   - id: INV-POL-NESTED-01
     rule: All traffic uses TLS 1.3
@@ -663,7 +678,6 @@ decisions:
 type: product/domain
 id: DOM-BILLING
 title: Billing Domain
-mission: Manage subscriptions
 decisions:
   - id: DEC-DOM-01
     title: Ledger Double Entry
@@ -671,6 +685,9 @@ decisions:
     rationale: Auditability
 ---
 = Billing Domain
+
+== Domain Vision
+Manage subscriptions
 """,
         encoding="utf-8",
     )
@@ -755,8 +772,8 @@ tokens:
     assert ds["tokens"]["color"]["brand"]["primary"]["$value"] == "#ff0055"
 
     c4_ctx = pdata["diagrams"]["c4_context"]
-    assert "EXT_STRIPE" in c4_ctx
     assert "Stripe Gateway" in c4_ctx
+    assert "Processes card charges" in c4_ctx
     assert "EXT_GIT" not in c4_ctx
     assert "EXT_IDE" not in c4_ctx
 
@@ -1284,8 +1301,7 @@ title: System <script> & Title
 type: product/persona
 id: PER-DEV
 title: Dev <Admin> & Lead
-role: Platform <Engineer>
-archetype: human_lead
+role_type: platform_<engineer>_lead
 ---
 = Dev
 """,

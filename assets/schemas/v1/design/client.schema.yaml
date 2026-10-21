@@ -24,6 +24,8 @@ properties:
     description: "Display title of the client application or platform."
   status:
     $ref: "#/$defs/lifecycle_status"
+  version:
+    $ref: "#/$defs/semver"
   platform:
     type: string
     description: "Runtime platform surface: web, mobile-ios, mobile-android, desktop, tui, or multi-platform."

@@ -376,19 +376,17 @@ class ChangelogGenerator:
         desc = f": {summary}" if summary and summary.lower() != title.lower() else ""
         item_text = f"**{title}** (`{delta_id}`){desc}"
 
-        if kind in ("bug", "bugfix", "fix"):
+        if kind == "bug":
             section.fixed.append(item_text)
-        elif (operations and all(op == "remove" for op in operations)) or kind == "removal":
+        elif operations and all(op == "remove" for op in operations):
             section.removed.append(item_text)
-        elif (operations and all(op == "deprecate" for op in operations)) or kind == "deprecation":
+        elif operations and all(op == "deprecate" for op in operations):
             section.deprecated.append(item_text)
-        elif kind in ("feature", "feature_addition", "creation", "architecture"):
+        elif kind == "feature":
             if operations and all(op == "modify" for op in operations):
                 section.changed.append(item_text)
             else:
                 section.added.append(item_text)
-        elif kind in ("enabler", "modification", "refactor", "architectural_refactor", "performance_optimization"):
-            section.changed.append(item_text)
         else:
             section.changed.append(item_text)
 

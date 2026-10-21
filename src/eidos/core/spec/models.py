@@ -219,6 +219,7 @@ class InlineComponentModel(_SpecBaseModel):
     id: str = ""
     title: str | None = None
     status: str | None = None
+    version: str | None = None
     domain: str | None = None
     responsibility: str | None = None
     source_path: list[str] | str | None = None
@@ -232,7 +233,7 @@ class InlineComponentModel(_SpecBaseModel):
             return {}
         raw = dict(data)
         raw["id"] = _coerce_req_str(raw.get("id"))
-        for opt_k in ("title", "status", "domain", "responsibility"):
+        for opt_k in ("title", "status", "version", "domain", "responsibility"):
             if opt_k in raw:
                 raw[opt_k] = _coerce_opt_str(raw.get(opt_k))
         if "source_path" in raw:

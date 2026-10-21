@@ -7,6 +7,7 @@ allOf:
 unevaluatedProperties: false
 required:
   - type
+  - status
   - container
 properties:
   type:

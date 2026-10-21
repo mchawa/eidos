@@ -295,8 +295,8 @@ def load_project(
             fm = doc.frontmatter or {}
             if fm.get("id"):
                 system_id = str(fm["id"]).strip()
-            if fm.get("title") or fm.get("name") or doc.title:
-                system_title = str(fm.get("title") or fm.get("name") or doc.title).strip()
+            if fm.get("title") or doc.title:
+                system_title = str(fm.get("title") or doc.title).strip()
         except OSError:
             pass
 
@@ -516,17 +516,16 @@ def _append_path_values(target: list[str], raw_val: Any) -> None:
 
 
 def extract_entity_paths(entity_data: dict[str, Any]) -> list[str]:
-    """Extract all declared ownership path patterns from source_path, owned_path, or specification_file."""
+    """Extract all declared ownership path patterns from source_path or specification_file."""
     patterns: list[str] = []
 
-    for key in ("source_path", "owned_path", "specification_file"):
+    for key in ("source_path", "specification_file"):
         _append_path_values(patterns, entity_data.get(key))
 
-    # Also inspect inline C4 Level 3 component source_paths / owned_paths
+    # Also inspect inline C4 Level 3 component source_paths
     for comp in entity_data.get("components") or []:
         if isinstance(comp, dict):
             _append_path_values(patterns, comp.get("source_path"))
-            _append_path_values(patterns, comp.get("owned_path"))
 
     return patterns
 

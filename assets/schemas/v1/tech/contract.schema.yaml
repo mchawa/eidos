@@ -7,6 +7,7 @@ required:
   - type
   - id
   - title
+  - status
   - protocol
   - container
 properties:
@@ -32,8 +33,7 @@ properties:
     type: string
     description: "Relative path from repository root to the raw interface schema file (e.g. contracts/api.openapi.yaml)."
   version:
-    type: string
-    description: "Optional semantic version of this interface contract (e.g. '1.0.0')."
+    $ref: "#/$defs/semver"
   decisions:
     type: array
     description: "In-place architectural decisions, trade-offs, and rejected alternatives recorded on this contract specification (POL-001)."

@@ -27,8 +27,7 @@ properties:
   status:
     $ref: "#/$defs/lifecycle_status"
   version:
-    type: string
-    description: "Semantic version of this capability specification (e.g. 1.0.0)."
+    $ref: "#/$defs/semver"
   business:
     type: object
     description: "Business lens: personas served and applicable policies."

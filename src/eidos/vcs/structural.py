@@ -50,7 +50,7 @@ _ADOC_LINE_COMMENT_RE = re.compile(r"^\s*//(?!/)")
 _ADOC_COMMENT_DELIM_RE = re.compile(r"^/{4,}$")
 _ADOC_VERBATIM_DELIM_RE = re.compile(r"^(-{4,}|\.{4,}|\+{4,})$")
 _FRONTMATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*(?:\n|\Z)", re.DOTALL)
-_OWNERSHIP_KEYS = ("components", "source_path", "owned_path")
+_OWNERSHIP_KEYS = ("components", "source_path")
 _MIN_ANCHOR_LEN = 3
 
 
@@ -236,7 +236,7 @@ def _canonical(value: Any) -> str:
 
 
 def _declared_source_patterns(frontmatter: dict[str, Any]) -> list[str]:
-    """Explicit file/glob ownership declared by a spec (top-level and component ``source_path``/``owned_path``)."""
+    """Explicit file/glob ownership declared by a spec (top-level and component ``source_path``)."""
     patterns: list[str] = []
 
     def _add(value: Any) -> None:
@@ -246,12 +246,10 @@ def _declared_source_patterns(frontmatter: dict[str, Any]) -> list[str]:
             for item in value:
                 _add(item)
 
-    for key in ("source_path", "owned_path"):
-        _add(frontmatter.get(key))
+    _add(frontmatter.get("source_path"))
     for comp in frontmatter.get("components", []) or []:
         if isinstance(comp, dict):
             _add(comp.get("source_path"))
-            _add(comp.get("owned_path"))
     return patterns
 
 
@@ -421,12 +419,11 @@ def _collect_1hop_spec_targets(
                     continue
                 ic_id = str(inline_comp["id"]).strip()
                 ic_pats: list[str] = []
-                for pkey in ("source_path", "owned_path"):
-                    raw_p = inline_comp.get(pkey)
-                    if isinstance(raw_p, str) and raw_p.strip():
-                        ic_pats.append(raw_p.strip())
-                    elif isinstance(raw_p, list):
-                        ic_pats.extend(str(x).strip() for x in raw_p if isinstance(x, str) and str(x).strip())
+                raw_p = inline_comp.get("source_path")
+                if isinstance(raw_p, str) and raw_p.strip():
+                    ic_pats.append(raw_p.strip())
+                elif isinstance(raw_p, list):
+                    ic_pats.extend(str(x).strip() for x in raw_p if isinstance(x, str) and str(x).strip())
                 if any(match_path_pattern(cf, pat) > 0 for pat in ic_pats) and ic_id not in seed_ids:
                     seed_ids.add(ic_id)
                     allowed_ids.add(ic_id.lower())
@@ -472,7 +469,7 @@ def _collect_1hop_spec_targets(
             nfp = n.get("file_path")
             if nfp:
                 allowed_paths.add(str(nfp).replace("\\", "/").lower())
-            for pkey in ("file_path", "path", "tokens_path"):
+            for pkey in ("file_path", "path"):
                 pval = ndata.get(pkey)
                 if pval:
                     allowed_paths.add(str(pval).replace("\\", "/").lower())
@@ -616,10 +613,10 @@ def _collect_design_subgraph(
             paths.add(fp.lower())
         if e.get("type") == "design/system":
             tokens = e.get("tokens") if isinstance(e.get("tokens"), dict) else {}
-            for tok in (tokens.get("manifest"), e.get("tokens_path")):
-                if isinstance(tok, str) and tok and fp:
-                    tok_path = tok if "/" in tok else str(Path(fp).parent / tok)
-                    paths.add(tok_path.replace("\\", "/").lower())
+            tok = tokens.get("manifest")
+            if isinstance(tok, str) and tok and fp:
+                tok_path = tok if "/" in tok else str(Path(fp).parent / tok)
+                paths.add(tok_path.replace("\\", "/").lower())
         if e.get("type") == "design/client":
             for key in ("screens", "flows"):
                 for ref in e.get(key, []) or []:

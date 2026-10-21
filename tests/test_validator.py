@@ -554,6 +554,7 @@ def test_decisions_schema_and_cross_reference_validation(tmp_path, validator):
         "type: product/system\n"
         "id: SYS-TEST-001\n"
         "title: Test System\n"
+        "status: active\n"
         "archetypes:\n"
         "  - cli_tool\n"
         "decisions:\n"
@@ -575,6 +576,7 @@ def test_decisions_schema_and_cross_reference_validation(tmp_path, validator):
         "type: tech/container\n"
         "id: CNT-TEST-CORE\n"
         "title: Core\n"
+        "status: active\n"
         "container_type: library\n"
         "runtime: Python\n"
         "source_path: src/core\n"
@@ -622,6 +624,7 @@ def test_decisions_schema_and_cross_reference_validation(tmp_path, validator):
         "type: tech/architecture\n"
         "id: ARCH-TEST-001\n"
         "title: Test Architecture\n"
+        "status: active\n"
         "c4_context:\n"
         "  actors: []\n"
         "decisions:\n"
@@ -664,6 +667,7 @@ def test_spec_validation_cache_warm_hit_and_invalidation(tmp_path: Path, monkeyp
         "type: tech/container\n"
         "id: CNT-CACHE-CORE\n"
         "title: Cache Core\n"
+        "status: active\n"
         "container_type: library\n"
         "runtime: Python\n"
         "source_path: src/core\n"
@@ -968,6 +972,7 @@ def test_custom_spec_root_under_parent_src_and_subdirectory_validation(
         "type: tech/container\n"
         "id: CNT-CUSTOM-APP\n"
         "title: Custom App\n"
+        "status: active\n"
         "container_type: service\n"
         "runtime: Python 3.12\n"
         "source_path: src/app\n"
@@ -1089,6 +1094,7 @@ def test_scoped_typer_cli_contract_parity_non_typer_and_positional_add_typer(
         "type: tech/container\n"
         "id: CNT-CLI\n"
         "title: CLI\n"
+        "status: active\n"
         "container_type: cli\n"
         "runtime: Python 3.12\n"
         "source_path: src/cli\n"
@@ -1102,6 +1108,7 @@ def test_scoped_typer_cli_contract_parity_non_typer_and_positional_add_typer(
         "type: tech/contract\n"
         "id: CTR-CLICK-CLI\n"
         "title: Click CLI Contract\n"
+        "status: active\n"
         "protocol: cli_args\n"
         "container: CNT-CLI\n"
         "specification_file: src/cli/click_cli.py\n"
@@ -1116,6 +1123,7 @@ def test_scoped_typer_cli_contract_parity_non_typer_and_positional_add_typer(
         "type: tech/contract\n"
         "id: CTR-TYPER-CLI\n"
         "title: Typer CLI Contract\n"
+        "status: active\n"
         "protocol: cli_args\n"
         "container: CNT-CLI\n"
         "specification_file: src/cli/typer_cli.py\n"
@@ -1165,6 +1173,7 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
         "type: tech/container\n"
         "id: CNT-BILLING\n"
         "title: Billing Service\n"
+        "status: active\n"
         "container_type: service\n"
         "runtime: Python 3.12\n"
         "source_path: src/billing\n"
@@ -1215,6 +1224,7 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
         "type: product/domain\n"
         "id: DOM-BILLING\n"
         "title: Billing Domain\n"
+        "status: active\n"
         "classification: core\n"
         "owners:\n"
         "  - FinOps Team\n"
@@ -1259,6 +1269,7 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
         "type: tech/contract\n"
         "id: CTR-BILLING-API\n"
         "title: Billing REST API\n"
+        "status: active\n"
         "version: 1.2.0\n"
         "protocol: rest_openapi\n"
         "container: CNT-BILLING\n"
@@ -1300,6 +1311,38 @@ def test_v1_schema_parity_invariants_decisions_contracts_and_delta_refs(
     assert report.schema_errors == {}, f"Unexpected schema errors: {report.schema_errors}"
     broken_text = "\n".join(report.broken_references)
     assert "CMP-MISSING-GHOST" in broken_text
+
+    # 7. Verify strict #/$defs/semver validation rejects non-SemVer strings while accepting pre-release/build metadata
+    from eidos.core.spec.parser import _parse_spec_content
+
+    valid_semver_doc = _parse_spec_content(
+        ctrs_dir / "semver_ok.adoc",
+        "---\n"
+        "type: product/domain\n"
+        "id: DOM-SEMVER\n"
+        "title: SemVer Domain\n"
+        "status: active\n"
+        "version: 2.1.0-alpha.1+build.42\n"
+        "classification: core\n"
+        "---\n"
+        "= SemVer Domain\n",
+    )
+    assert validator.validate_document(valid_semver_doc) == []
+
+    invalid_semver_doc = _parse_spec_content(
+        ctrs_dir / "semver_bad.adoc",
+        "---\n"
+        "type: product/domain\n"
+        "id: DOM-SEMVER-BAD\n"
+        "title: Bad SemVer Domain\n"
+        "status: active\n"
+        "version: v1.2\n"
+        "classification: core\n"
+        "---\n"
+        "= Bad SemVer Domain\n",
+    )
+    semver_errs = "\n".join(validator.validate_document(invalid_semver_doc))
+    assert "v1.2" in semver_errs and "does not match" in semver_errs
 
 
 def test_unified_block_scalar_safe_frontmatter_parser_and_extended_models(tmp_path: Path) -> None:
@@ -1480,6 +1523,7 @@ def test_schema_cache_collision_free_and_functional_cli_parity(tmp_path: Path, v
         "type: tech/container\n"
         "id: CNT-CLI\n"
         "title: CLI\n"
+        "status: active\n"
         "container_type: cli\n"
         "runtime: Python 3.12\n"
         "source_path: src/cli\n"
@@ -1493,6 +1537,7 @@ def test_schema_cache_collision_free_and_functional_cli_parity(tmp_path: Path, v
         "type: tech/contract\n"
         "id: CTR-CLI\n"
         "title: CLI Contract\n"
+        "status: active\n"
         "protocol: cli_args\n"
         "container: CNT-CLI\n"
         "specification_file: src/cli/main.py\n"
@@ -1838,6 +1883,7 @@ def test_deep_review_subsystem_1_models_workspace_and_validator_edge_cases(tmp_p
         "type: tech/container\n"
         "id: CNT-BILLING\n"
         "title: Billing Container\n"
+        "status: active\n"
         "container_type: service\n"
         "runtime: Python 3.12\n"
         "source_path: src/billing\n"
@@ -1857,6 +1903,7 @@ def test_deep_review_subsystem_1_models_workspace_and_validator_edge_cases(tmp_p
         "type: product/domain\n"
         "id: DOM-BILLING\n"
         "title: Billing Domain\n"
+        "status: active\n"
         "classification: core\n"
         "---\n"
         "= Billing Domain\n",
@@ -1932,6 +1979,7 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "type: product/policy\n"
         "id: POL-CACHE-001\n"
         "title: Cache Policy\n"
+        "status: active\n"
         "category: quality\n"
         "severity: blocking\n"
         "invariants:\n"
@@ -1997,6 +2045,7 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "type: tech/container\n"
         "id: CNT-CLEAN\n"
         "title: Clean Service\n"
+        "status: active\n"
         "container_type: service\n"
         "runtime: Python 3.12\n"
         "source_path: src/clean\n"
@@ -2019,6 +2068,7 @@ def test_validator_cache_second_tier_hit_and_parser_dtcg_protocol_edge_cases(tmp
         "type: tech/contract\n"
         "id: CTR-CLEAN-PROTO\n"
         "title: Clean Protocol\n"
+        "status: active\n"
         "protocol: python_protocol\n"
         "container: CNT-CLEAN\n"
         "specification_file: src/clean/ports.py\n"
@@ -2515,6 +2565,7 @@ def test_dlt_2026_085_mutations_target_ref_validation_and_schema_rejection(
         "type: tech/container\n"
         "id: CNT-CORE\n"
         "title: Core\n"
+        "status: active\n"
         "container_type: library\n"
         "runtime: Python 3.12\n"
         "source_path: src/core\n"
@@ -2676,6 +2727,7 @@ def test_dlt_2026_087_composable_delta_mutation_validation(tmp_path):
         "type: tech/container\n"
         "id: CNT-CORE\n"
         "title: Core\n"
+        "status: active\n"
         "container_type: library\n"
         "runtime: Python 3.12\n"
         "source_path: src/core\n"

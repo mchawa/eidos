@@ -1023,16 +1023,6 @@ def rebuild_spec_edges(conn: sqlite3.Connection, updated_doc_ids: set[str] | Non
                         (doc_id, cid),
                     )
                     conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'part_of');", (cid, doc_id))
-                    c_contracts = comp_entry.get("contracts")
-                    if isinstance(c_contracts, dict):
-                        for prov in c_contracts.get("provides", []) or []:
-                            prov_id = _resolve_ref(prov)
-                            if prov_id:
-                                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'provides');", (cid, prov_id))
-                        for req in c_contracts.get("consumes") or []:
-                            req_id = _resolve_ref(req)
-                            if req_id:
-                                conn.execute("INSERT OR IGNORE INTO edges VALUES (?, ?, 'consumes');", (cid, req_id))
                 for c_dec in comp_entry.get("decisions", []) or []:
                     if isinstance(c_dec, dict) and c_dec.get("graduated_from"):
                         grad_id = _resolve_ref(c_dec["graduated_from"])

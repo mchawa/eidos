@@ -523,6 +523,8 @@ def promote_component(
         if isinstance(target_comp_data.get("invariants"), list)
         else [],
     }
+    if isinstance(target_comp_data.get("version"), str) and target_comp_data["version"]:
+        promoted_fm["version"] = target_comp_data["version"]
     if isinstance(target_comp_data.get("domain"), str) and target_comp_data["domain"]:
         promoted_fm["domain"] = target_comp_data["domain"]
     if isinstance(target_comp_data.get("decisions"), list) and target_comp_data["decisions"]:
@@ -635,6 +637,8 @@ def inline_component(
     comp_status = comp_fm.get("status")
     if isinstance(comp_status, str) and comp_status.strip() and comp_status.strip() != "active":
         inline_entry["status"] = comp_status.strip()
+    if isinstance(comp_fm.get("version"), str) and comp_fm["version"]:
+        inline_entry["version"] = comp_fm["version"]
     if isinstance(comp_fm.get("domain"), str) and comp_fm["domain"]:
         inline_entry["domain"] = comp_fm["domain"]
     if isinstance(comp_fm.get("invariants"), list) and comp_fm["invariants"]:

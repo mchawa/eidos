@@ -102,6 +102,13 @@ $defs:
       - discarded
     description: "Canonical 4-state workflow status for technical explorations (EXP-*): proposed, in_progress, adopted, or discarded."
 
+  semver:
+    type: string
+    pattern: "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    description: "Semantic Version 2.0.0 string (MAJOR.MINOR.PATCH with optional pre-release and build metadata, e.g. '1.0.0' or '2.1.0-alpha.1')."
+    examples:
+      - "1.0.0"
+
   code_paths:
     oneOf:
       - type: string
@@ -320,6 +327,8 @@ $defs:
         description: "Human-readable display title of the component."
       status:
         $ref: "#/$defs/lifecycle_status"
+      version:
+        $ref: "#/$defs/semver"
       domain:
         $ref: "#/$defs/domain_ref"
       responsibility:

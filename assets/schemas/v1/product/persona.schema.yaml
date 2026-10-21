@@ -7,6 +7,7 @@ required:
   - type
   - id
   - title
+  - status
   - role_type
 properties:
   type:
@@ -22,6 +23,8 @@ properties:
     description: "Descriptive title of the persona role (e.g. 'Product Lead', 'Workspace Admin', 'Shopper', 'Autonomous Agent')."
   status:
     $ref: "#/$defs/lifecycle_status"
+  version:
+    $ref: "#/$defs/semver"
   role_type:
     type: string
     pattern: "^[a-z0-9_-]+$"

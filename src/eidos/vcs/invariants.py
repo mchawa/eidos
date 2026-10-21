@@ -515,13 +515,12 @@ def get_living_specs_catalog(eidos_dir: Path, repo_root: Path | None = None) -> 
         spec_path = f"{eidos_prefix}/{rel}" if not rel.startswith(f"{eidos_prefix}/") else rel
 
         if dtype == "product/capability":
-            biz = ent.get("business", {})
             catalog["capabilities"].append(
                 {
                     "id": eid,
                     "title": title,
                     "domain": ent.get("domain", ""),
-                    "jtbd": biz.get("jtbd", "") if isinstance(biz, dict) else "",
+                    "jtbd": "",
                     "path": spec_path,
                 }
             )

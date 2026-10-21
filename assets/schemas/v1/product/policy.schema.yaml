@@ -7,6 +7,7 @@ required:
   - type
   - id
   - title
+  - status
   - category
   - invariants
 properties:
@@ -23,6 +24,8 @@ properties:
     description: "Short human-readable title of the policy."
   status:
     $ref: "#/$defs/lifecycle_status"
+  version:
+    $ref: "#/$defs/semver"
   category:
     type: string
     pattern: "^[a-z0-9_-]+$"

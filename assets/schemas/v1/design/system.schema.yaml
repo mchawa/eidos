@@ -23,6 +23,8 @@ properties:
     description: "Display title of the design system (e.g. 'Core Product Design System', 'Acme Enterprise Theme')."
   status:
     $ref: "#/$defs/lifecycle_status"
+  version:
+    $ref: "#/$defs/semver"
   brand_name:
     type: string
     description: "Human-readable client or brand name (e.g. 'Acme Corporation')."

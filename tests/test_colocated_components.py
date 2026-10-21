@@ -61,6 +61,7 @@ def repo_env(tmp_path):
         "type: tech/container\n"
         "id: CNT-SAMPLE-CORE\n"
         "title: Sample Core Engine\n"
+        "status: active\n"
         "container_type: library\n"
         "runtime: Python 3.12+\n"
         "source_path: src/sample/core\n"
@@ -103,6 +104,7 @@ def repo_env(tmp_path):
         "type: tech/contract\n"
         "id: CTR-SAMPLE-API\n"
         "title: Core API Contract\n"
+        "status: active\n"
         "protocol: cli_args\n"
         "container: CNT-SAMPLE-CORE\n"
         "specification_file: src/sample/core/parser.py\n"
@@ -290,7 +292,7 @@ def test_spike_3_promotion_and_inlining_lifecycle(repo_env):
     domains_dir = eidos_dir / "domains"
     domains_dir.mkdir(parents=True, exist_ok=True)
     (domains_dir / "core.adoc").write_text(
-        "---\ntype: product/domain\nid: DOM-SAMPLE\ntitle: Sample Domain\nclassification: core\n---\n= Sample Domain\n",
+        "---\ntype: product/domain\nid: DOM-SAMPLE\ntitle: Sample Domain\nstatus: active\nclassification: core\n---\n= Sample Domain\n",
         encoding="utf-8",
     )
     cnt_file = eidos_dir / "architecture" / "containers" / "core.adoc"

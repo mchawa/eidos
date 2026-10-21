@@ -273,7 +273,7 @@ def execute_fts_query(
         results = []
         for row in cursor.fetchall():
             data = orjson.loads(row["data_json"])
-            raw_sp = data.get("source_path") or data.get("package_path") or ""
+            raw_sp = data.get("source_path") or ""
             source_path = (
                 raw_sp[0] if isinstance(raw_sp, list) and raw_sp else (raw_sp if isinstance(raw_sp, str) else "")
             )
@@ -797,7 +797,6 @@ def query_spec_catalog_in_db(
 def compute_delta_impact_in_db(
     conn: sqlite3.Connection,
     mutations: list[dict[str, Any]],
-    raw_blast_radius: dict[str, Any] | None = None,
 ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
     """Compute SpecDelta (affects, blast_radius) from persisted entities and edges in the knowledge graph."""
     from eidos.core.lifecycle.delta_engine import normalize_delta_mutation
@@ -1055,12 +1054,6 @@ def compute_delta_impact_in_db(
     for seed_id in seed_entities + aff_lists["containers"] + br_lists["impacted_components"]:
         for inv_id in entity_invariants.get(seed_id, []):
             _add_unique(br_lists["invariants_to_enforce"], inv_id)
-
-    if isinstance(raw_blast_radius, dict):
-        for k, vals in raw_blast_radius.items():
-            if isinstance(vals, list):
-                for v in vals:
-                    _add_unique(br_lists.setdefault(k, []), _resolve_ref_id(v))
 
     derived_affects = {k: v for k, v in aff_lists.items() if v}
     derived_blast_radius = {k: v for k, v in br_lists.items() if v}

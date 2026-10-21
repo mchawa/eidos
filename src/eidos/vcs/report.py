@@ -92,7 +92,7 @@ def build_drift_remediation_and_summary(
     unanchored_records = [r for r in trivial_records if r["rule"] == "missing_anchor"]
     if unanchored_records:
         remediation.append(
-            f"Missing Spec Anchor: {len(unanchored_records)} new source file(s) lie outside any declared source_path/owned_path and are not referenced by the owning spec edit."
+            f"Missing Spec Anchor: {len(unanchored_records)} new source file(s) lie outside any declared source_path and are not referenced by the owning spec edit."
         )
         for rec in unanchored_records[:5]:
             remediation.append(

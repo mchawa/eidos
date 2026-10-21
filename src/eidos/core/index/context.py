@@ -125,7 +125,7 @@ def format_decisions_markdown(
                     lines.append(f"    - *Rationale:* {_clip_text(str(dec['rationale']), r_lim)}")
                 for alt in (dec.get("rejected_alternatives") or [])[:max_alts]:
                     if isinstance(alt, dict) and alt.get("option"):
-                        raw_r = str(alt.get("reason") or alt.get("reason_rejected") or "")
+                        raw_r = str(alt.get("reason_rejected") or "")
                         reason = _clip_text(raw_r, alt_lim)
                         lines.append(f"    - *Rejected Alternative:* **{alt['option']}** — {reason}")
         else:
@@ -137,7 +137,7 @@ def format_decisions_markdown(
                 lines.append(f"    - *Rationale:* {r_out}")
             for alt in dec.get("rejected_alternatives") or []:
                 if isinstance(alt, dict) and alt.get("option"):
-                    raw_reason = str(alt.get("reason") or alt.get("reason_rejected") or "")
+                    raw_reason = str(alt.get("reason_rejected") or "")
                     reason = _clip_text(raw_reason, 100) if compact_prose else raw_reason
                     lines.append(f"    - *Rejected Alternative:* **{alt['option']}** — {reason}")
     return lines
@@ -301,7 +301,7 @@ class ArchitecturalContextSlice:
             title = ctr.get("title", cid)
             protocol = ctr.get("protocol", "standard")
             owner = ctr.get("container", "N/A")
-            path = ctr.get("path", "")
+            path = ctr.get("file_path") or ctr.get("specification_file") or ""
             lines.append(f"### `{cid}`: {title}")
             lines.append(f"- **Protocol:** `{protocol}` | **Owner:** `{owner}` | **Path:** `{path}`")
             lines.append("")
@@ -317,7 +317,7 @@ class ArchitecturalContextSlice:
                 domain = cap.get("domain", "")
                 lines.append(f"### `{cid}`: {title}")
                 lines.append(f"- **Domain:** `{domain}`")
-                invs = cap.get("invariants", [])
+                invs = (cap.get("technical") or {}).get("invariants") or []
                 if invs and not compact_prose:
                     lines.append("- **Capability Invariants (`INV-*`):**")
                     for inv in invs:
@@ -598,8 +598,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
         }
         if ctr.get("container"):
             out["container"] = ctr["container"]
-        if self.tier in ("guardrails", "deep") and ctr.get("path"):
-            out["path"] = ctr["path"]
+        ctr_path = ctr.get("file_path") or ctr.get("specification_file")
+        if self.tier in ("guardrails", "deep") and ctr_path:
+            out["path"] = ctr_path
         return out
 
     def _project_capability(self, cap: dict[str, Any]) -> dict[str, Any]:
@@ -609,11 +610,10 @@ class TieredContextSlice(ArchitecturalContextSlice):
             "domain": cap.get("domain", ""),
             "status": cap.get("status", "active"),
         }
-        if self.tier in ("guardrails", "deep") and cap.get("invariants") and not self._compact_prose:
+        cap_invs = (cap.get("technical") or {}).get("invariants") or []
+        if self.tier in ("guardrails", "deep") and cap_invs and not self._compact_prose:
             out["invariants"] = [
-                {"id": inv.get("id", ""), "rule": inv.get("rule", "")}
-                for inv in cap.get("invariants", [])
-                if isinstance(inv, dict)
+                {"id": inv.get("id", ""), "rule": inv.get("rule", "")} for inv in cap_invs if isinstance(inv, dict)
             ]
         return out
 
@@ -627,8 +627,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
         tb = inv.get("test_binding")
         if tb and tb != "None":
             out["test_binding"] = tb
-        if self.tier in ("guardrails", "deep") and inv.get("parent_entity") and not self._compact_prose:
-            out["parent_entity"] = inv["parent_entity"]
+        parent_ent = inv.get("source_id")
+        if self.tier in ("guardrails", "deep") and parent_ent and not self._compact_prose:
+            out["parent_entity"] = parent_ent
         return out
 
     def _project_policy(self, pol: dict[str, Any]) -> dict[str, Any]:
@@ -641,7 +642,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
         return out
 
     def _compress_verbose_fields_in_place(self, primary_cids: set[str]) -> bool:
-        """Progressively compress verbose prose fields (description, rationale, details, responsibility)
+        """Progressively compress verbose prose fields (responsibility)
         to compact 1-line summaries before dropping invariants or policies.
         """
         changed = False
@@ -651,23 +652,9 @@ class TieredContextSlice(ArchitecturalContextSlice):
         for idx, comp in enumerate(self.components):
             cid = comp.get("id", "")
             is_non_primary = idx > 0 or (primary_cids and cid not in primary_cids)
-            for prose_key in ("description", "details", "rationale"):
-                if comp.get(prose_key) and len(str(comp[prose_key])) > 120:
-                    comp[prose_key] = self._compact_summary(str(comp[prose_key]), 120)
-                    changed = True
             if is_non_primary and comp.get("responsibility") and len(str(comp["responsibility"])) > 120:
                 comp["responsibility"] = self._compact_summary(str(comp["responsibility"]), 120)
                 changed = True
-        for cap in self.capabilities:
-            for prose_key in ("description", "details"):
-                if cap.get(prose_key) and len(str(cap[prose_key])) > 120:
-                    cap[prose_key] = self._compact_summary(str(cap[prose_key]), 120)
-                    changed = True
-        for pol in self.policies:
-            for prose_key in ("description", "details", "rationale"):
-                if pol.get(prose_key) and len(str(pol[prose_key])) > 120:
-                    pol[prose_key] = self._compact_summary(str(pol[prose_key]), 120)
-                    changed = True
         if changed:
             self._invalidate_budget_cache()
         return changed
@@ -747,7 +734,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             rule_len = min(len(raw_rule), 120) if self._compact_prose else len(raw_rule)
             tb = str(item.get("test_binding") or "")
             tb_len = len(tb) if tb and tb != "None" else 0
-            pe_len = 0 if self._compact_prose else len(str(item.get("parent_entity") or ""))
+            pe_len = 0 if self._compact_prose else len(str(item.get("source_id") or ""))
             md_ub = id_len + rule_len + (tb_len + 20 if tb_len else 0) + 32
             json_ub = id_len + rule_len + tb_len + pe_len + 135
             return md_ub, json_ub
@@ -758,7 +745,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
                 return id_len + title_len + dom_len + 34, id_len + title_len + dom_len + 115
             invs_len = sum(
                 len(str(i.get("id", ""))) + len(str(i.get("rule", ""))) + 40
-                for i in (item.get("invariants") or [])
+                for i in ((item.get("technical") or {}).get("invariants") or [])
                 if isinstance(i, dict)
             )
             return id_len + title_len + dom_len + invs_len + 75, id_len + title_len + dom_len + invs_len + 150
@@ -770,7 +757,7 @@ class TieredContextSlice(ArchitecturalContextSlice):
             title_len = len(str(item.get("title", "") or cid))
             prot_len = len(str(item.get("protocol", "") or "standard"))
             cnt_len = len(str(item.get("container", "") or "N/A"))
-            path_len = len(str(item.get("path", "") or ""))
+            path_len = len(str(item.get("file_path") or item.get("specification_file") or ""))
             return id_len + title_len + prot_len + cnt_len + path_len + 60, (
                 id_len + title_len + prot_len + cnt_len + path_len + 125
             )

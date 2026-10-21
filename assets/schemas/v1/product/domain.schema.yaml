@@ -7,6 +7,7 @@ required:
   - type
   - id
   - title
+  - status
   - classification
 properties:
   type:
@@ -22,6 +23,8 @@ properties:
     description: "Human-readable title of the domain or bounded context."
   status:
     $ref: "#/$defs/lifecycle_status"
+  version:
+    $ref: "#/$defs/semver"
   classification:
     type: string
     pattern: "^[a-z0-9_-]+$"

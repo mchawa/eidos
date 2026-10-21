@@ -24,6 +24,8 @@ properties:
     description: "Short, descriptive summary of the proposed product or technical mutation."
   status:
     $ref: "#/$defs/delta_status"
+  version:
+    $ref: "#/$defs/semver"
   intent:
     type: object
     description: "The strategic motivation and nature of the proposed change."
@@ -204,9 +206,7 @@ properties:
                 status:
                   $ref: "#/$defs/lifecycle_status"
                 version:
-                  type: string
-                  pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
-                  description: "Expected SemVer version string."
+                  $ref: "#/$defs/semver"
                 category:
                   type: string
                   description: "Expected policy category."

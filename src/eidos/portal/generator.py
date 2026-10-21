@@ -53,14 +53,13 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         specs_by_type.setdefault(doc.doc_type, []).append(item)
 
     # 1. System Overview & Architecture
-    arch_doc = next((s for s in specs if s["type"] in ("tech/architecture", "arch/system")), None)
-    sys_doc = next((s for s in specs if s["type"] in ("product/system", "arch/system")), None)
+    arch_doc = next((s for s in specs if s["type"] == "tech/architecture"), None)
+    sys_doc = next((s for s in specs if s["type"] == "product/system"), None)
 
     system_title = (
         (sys_doc["frontmatter"].get("title") if sys_doc else None)
         or (arch_doc["frontmatter"].get("title") if arch_doc else None)
         or getattr(project, "system_title", None)
-        or getattr(project, "system_name", None)
         or "Living Architecture System"
     )
     system_id = (sys_doc["id"] if sys_doc else None) or getattr(project, "system_id", "SYS-001")
@@ -146,11 +145,9 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         raw_src = fm.get("source_path", "N/A")
         src_path_str = ", ".join(str(p) for p in raw_src) if isinstance(raw_src, list) else str(raw_src)
 
-        # Extract container responsibility / summary from frontmatter or Architectural Boundary
-        resp = fm.get("responsibility") or fm.get("summary")
-        if not resp:
-            m = re.search(r"== Architectural Boundary\s*\n+([^\n=]+(?:\n[^\n=]+)*)", c.get("body", ""))
-            resp = " ".join(m.group(1).split()) if m else f"Core architectural container for {c['id']}."
+        # Extract container responsibility / summary from Architectural Boundary
+        m = re.search(r"== Architectural Boundary\s*\n+([^\n=]+(?:\n[^\n=]+)*)", c.get("body", ""))
+        resp = " ".join(m.group(1).split()) if m else f"Core architectural container for {c['id']}."
 
         # Internal components (inline + promoted)
         doc_id = c["id"]
@@ -208,14 +205,12 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         d["title"] = d.get("title") or s.get("title") or d.get("id", "")
         d["body"] = s.get("body", "")
         d["path"] = s.get("path", "")
-        if not d.get("mission"):
-            m = re.search(r"== Domain Vision\s*\n+([^=\n][^\n]+)", s.get("body", ""))
-            if m:
-                d["mission"] = m.group(1).strip()
-            else:
-                d["mission"] = f"Bounded strategic context {d.get('title', d.get('id', ''))}."
-        if not d.get("capabilities"):
-            d["capabilities"] = list(dom_to_caps.get(str(d.get("id") or ""), []))
+        m = re.search(r"== Domain Vision\s*\n+([^=\n][^\n]+)", s.get("body", ""))
+        if m:
+            d["mission"] = m.group(1).strip()
+        else:
+            d["mission"] = f"Bounded strategic context {d.get('title', d.get('id', ''))}."
+        d["capabilities"] = list(dom_to_caps.get(str(d.get("id") or ""), []))
         domains.append(d)
 
     capabilities: list[dict[str, Any]] = []
@@ -224,13 +219,12 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         c["body"] = s.get("body", "")
         c["path"] = s.get("path", "")
         c["title"] = c.get("title") or s.get("title") or c.get("id", "Capability")
-        if not c.get("summary"):
-            m_jtbd = re.search(
-                r"^==\s+Job To Be Done[^\n]*\n+([^=\n][^\n]+)",
-                s.get("body", ""),
-                re.MULTILINE,
-            )
-            c["summary"] = m_jtbd.group(1).strip() if m_jtbd else ""
+        m_jtbd = re.search(
+            r"^==\s+Job To Be Done[^\n]*\n+([^=\n][^\n]+)",
+            s.get("body", ""),
+            re.MULTILINE,
+        )
+        c["summary"] = m_jtbd.group(1).strip() if m_jtbd else ""
         c["invariants"] = c.get("technical", {}).get("invariants", [])
         capabilities.append(c)
 
@@ -240,10 +234,10 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         p["title"] = p.get("title") or s.get("title") or p.get("id", "Persona")
         p["body"] = s.get("body", "")
         p["path"] = s.get("path", "")
-        p["role"] = p.get("role") or (
+        p["role"] = (
             p.get("role_type", "").replace("_", " ").title() if p.get("role_type") else "Actor Persona"
         )
-        p["archetype"] = p.get("archetype") or p.get("role_type", "persona")
+        p["archetype"] = p.get("role_type", "persona")
         personas.append(p)
 
     policies: list[dict[str, Any]] = []
@@ -352,7 +346,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         _append_decisions(dom.get("decisions", []), dom.get("id", "DOM"), "domain")
     for cap in capabilities:
         _append_decisions(
-            cap.get("decisions", []) or cap.get("technical", {}).get("decisions", []),
+            cap.get("decisions", []),
             cap.get("id", "CAP"),
             "capability",
         )
@@ -384,12 +378,10 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         status = str(fm.get("status", "proposed")).lower()
         raw_muts = fm.get("mutations", []) or []
         muts = [normalize_delta_mutation(m) if isinstance(m, dict) else m for m in raw_muts]
-        raw_br = fm.get("blast_radius") if isinstance(fm.get("blast_radius"), dict) else None
         d_path_norm = str(d.get("path", "")).replace("\\", "/")
         is_archived_delta = "deltas/archive/" in d_path_norm
         derived_affects, derived_blast_radius = arch_idx.compute_delta_impact(
             mutations=muts,
-            raw_blast_radius=raw_br,
             sync=False,
         )
 
@@ -397,7 +389,7 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
             "id": d["id"],
             "title": d["title"],
             "status": status,
-            "kind": fm.get("intent", {}).get("kind", "feature_addition"),
+            "kind": fm.get("intent", {}).get("kind", "feature"),
             "motivation": fm.get("intent", {}).get("motivation", ""),
             "mutations": muts,
             "affects": derived_affects,
@@ -420,35 +412,29 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         raw_dec = fm.get("decision")
         decision_dict: dict[str, Any] = dict(raw_dec) if isinstance(raw_dec, dict) else {}
 
-        hypothesis = fm.get("hypothesis", "")
-        if not hypothesis:
-            m_hyp = re.search(
-                r"(?:\*Hypothesis:\*|^==+\s+[^\n]*Hypothesis[^\n]*)\s*\n+([^=\n][^\n]+)",
-                exp.get("body", ""),
-                re.MULTILINE,
-            )
-            if m_hyp:
-                hypothesis = " ".join(m_hyp.group(1).split())
+        hypothesis = ""
+        m_hyp = re.search(
+            r"(?:\*Hypothesis:\*|^==+\s+[^\n]*Hypothesis[^\n]*)\s*\n+([^=\n][^\n]+)",
+            exp.get("body", ""),
+            re.MULTILINE,
+        )
+        if m_hyp:
+            hypothesis = " ".join(m_hyp.group(1).split())
 
-        findings = fm.get("findings") or decision_dict.get("learnings") or ""
-        if not findings:
-            m_find = re.search(
-                r"(?:\*Findings:\*|^==+\s+[^\n]*Findings[^\n]*)\s*\n+\*?\s*([^\n]+)",
-                exp.get("body", ""),
-                re.MULTILINE,
-            )
-            if m_find:
-                findings = " ".join(m_find.group(1).split())
+        findings = ""
+        m_find = re.search(
+            r"(?:\*Findings:\*|^==+\s+[^\n]*Findings[^\n]*)\s*\n+\*?\s*([^\n]+)",
+            exp.get("body", ""),
+            re.MULTILINE,
+        )
+        if m_find:
+            findings = " ".join(m_find.group(1).split())
 
-        recommendation = fm.get("recommendation") or decision_dict.get("recommendation") or ""
-        outcome = (
-            decision_dict.get("outcome")
-            or fm.get("outcome")
-            or (fm.get("status") if fm.get("status") in ("adopted", "discarded", "pivoted") else "")
-            or recommendation
+        outcome = decision_dict.get("outcome") or (
+            fm.get("status") if fm.get("status") in ("adopted", "discarded", "pivoted") else ""
         )
 
-        raw_res_deltas = fm.get("resulting_deltas") or decision_dict.get("resulting_deltas") or []
+        raw_res_deltas = decision_dict.get("resulting_deltas") or []
         if isinstance(raw_res_deltas, str):
             resulting_deltas = [raw_res_deltas]
         elif isinstance(raw_res_deltas, list):
@@ -459,10 +445,8 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         if outcome:
             decision_dict["outcome"] = outcome
         if findings:
-            decision_dict.setdefault("learnings", findings)
+            decision_dict["learnings"] = findings
             decision_dict["findings"] = findings
-        if recommendation:
-            decision_dict["recommendation"] = recommendation
         if resulting_deltas:
             decision_dict["resulting_deltas"] = resulting_deltas
 
@@ -476,9 +460,9 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
                 "status": fm.get("status", "proposed"),
                 "is_archived": is_archived_exp,
                 "hypothesis": hypothesis,
-                "exit_criteria": fm.get("exit_criteria", {}),
+                "exit_criteria": {},
                 "findings": findings,
-                "recommendation": recommendation,
+                "recommendation": "",
                 "resulting_deltas": resulting_deltas,
                 "decision": decision_dict,
                 "body": exp["body"],
@@ -488,10 +472,8 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
 
     # 6. Dynamic Mermaid Diagrams
     ext_systems = (
-        (arch_doc.get("frontmatter", {}).get("c4_context", {}).get("external_systems", []) if arch_doc else [])
-        or (sys_doc.get("frontmatter", {}).get("c4_context", {}).get("external_systems", []) if sys_doc else [])
-        or []
-    )
+        arch_doc.get("frontmatter", {}).get("c4_context", {}).get("external_systems", []) if arch_doc else []
+    ) or []
     c4_context_mermaid = _generate_c4_context_mermaid(personas, system_id, system_title, external_systems=ext_systems)
     c4_containers_mermaid = _generate_c4_containers_mermaid(
         components,
@@ -653,7 +635,7 @@ def _extract_design_systems(
                 "id": sys_id,
                 "title": ds["title"],
                 "client": "core",
-                "brand_name": fm.get("brand_name", ds["title"]),
+                "brand_name": ds["title"],
                 "extends": fm.get("extends"),
                 "tokens": tokens_data,
             }
@@ -784,21 +766,10 @@ def _generate_c4_context_mermaid(
 
     ext_edges: list[tuple[str, str]] = []
     for idx, ext in enumerate(external_systems or []):
-        if isinstance(ext, dict):
-            raw_ext_id = str(ext.get("id") or "").strip()
-            ext_node_id = re.sub(r"[^A-Za-z0-9_]", "_", raw_ext_id) if raw_ext_id else f"EXT_{idx + 1}"
-            ext_name = html.escape(
-                str(ext.get("title") or ext.get("name") or ext.get("id") or f"External System {idx + 1}")
-            ).replace('"', "'")
-            ext_role = html.escape(
-                str(ext.get("description") or ext.get("role") or ext.get("relationship") or "External Integration")
-            ).replace('"', "'")
-            ext_proto = html.escape(str(ext.get("protocol") or ext.get("type") or "External System")).replace('"', "'")
-        else:
-            ext_node_id = f"EXT_{idx + 1}"
-            ext_name = html.escape(str(ext)).replace('"', "'")
-            ext_role = "External Integration"
-            ext_proto = "External System"
+        ext_node_id = f"EXT_{idx + 1}"
+        ext_name = html.escape(str(ext)).replace('"', "'")
+        ext_role = "External Integration"
+        ext_proto = "External System"
         lines.append(
             f"  {ext_node_id}[\"<div style='padding:8px 12px;'><b>{ext_name}</b><br/>{ext_role}<br/><i>[{ext_proto}]</i></div>\"]:::external"
         )
@@ -1082,18 +1053,10 @@ def _generate_c4_containers_mermaid(
     for c in components:
         c_node = c["id"].replace("-", "_")
         deps = c.get("dependencies", {})
-        ext_list = (
-            (deps.get("external_service_links") or deps.get("external_services", [])) if isinstance(deps, dict) else []
-        )
+        ext_list = deps.get("external_services", []) if isinstance(deps, dict) else []
 
         for ext in ext_list:
-            if isinstance(ext, dict):
-                raw_name = str(ext.get("title") or ext.get("name") or ext.get("service") or "").strip()
-                custom_rel = ext.get("relationship") or ext.get("description")
-            else:
-                raw_name = str(ext).strip()
-                custom_rel = None
-
+            raw_name = str(ext).strip()
             if not raw_name:
                 continue
 
@@ -1117,24 +1080,21 @@ def _generate_c4_containers_mermaid(
                     "sub": html.escape(sub_title[:80] + ("..." if len(sub_title) > 80 else "")),
                 }
 
-            if custom_rel:
-                edge_label = html.escape(custom_rel)
+            name_lower = raw_name.lower()
+            if any(k in name_lower for k in ("git", "vcs", "repo", "filesystem")):
+                edge_label = "Tracks &amp; Syncs Files"
+            elif any(k in name_lower for k in ("sqlite", "postgres", "mysql", "redis", "database", "db")):
+                edge_label = "Persists Relational Data"
+            elif any(k in name_lower for k in ("browser", "chrome", "firefox", "safari")):
+                edge_label = "Serves Web Application"
+            elif any(k in name_lower for k in ("ide", "cursor", "claude", "agent", "editor", "vscode")):
+                edge_label = "Syncs Tooling &amp; Rules"
+            elif any(k in name_lower for k in ("pages", "host", "s3", "cloud", "deploy")):
+                edge_label = "Deploys Static Site"
+            elif any(k in name_lower for k in ("terminal", "shell", "stdout")):
+                edge_label = "Streams Command Output"
             else:
-                name_lower = raw_name.lower()
-                if any(k in name_lower for k in ("git", "vcs", "repo", "filesystem")):
-                    edge_label = "Tracks &amp; Syncs Files"
-                elif any(k in name_lower for k in ("sqlite", "postgres", "mysql", "redis", "database", "db")):
-                    edge_label = "Persists Relational Data"
-                elif any(k in name_lower for k in ("browser", "chrome", "firefox", "safari")):
-                    edge_label = "Serves Web Application"
-                elif any(k in name_lower for k in ("ide", "cursor", "claude", "agent", "editor", "vscode")):
-                    edge_label = "Syncs Tooling &amp; Rules"
-                elif any(k in name_lower for k in ("pages", "host", "s3", "cloud", "deploy")):
-                    edge_label = "Deploys Static Site"
-                elif any(k in name_lower for k in ("terminal", "shell", "stdout")):
-                    edge_label = "Streams Command Output"
-                else:
-                    edge_label = "Integrates With"
+                edge_label = "Integrates With"
 
             clean_edge_l = edge_label.replace('"', "'")
             ext_edge_lines.append(f'  {c_node} -.->|"{clean_edge_l}"| {ext_node_id}')
@@ -1161,22 +1121,12 @@ def _generate_c4_containers_mermaid(
         src_id = c["id"]
         src_node = src_id.replace("-", "_")
         deps = c.get("dependencies", {})
-        int_deps = (
-            (deps.get("internal_container_links") or deps.get("internal_containers", []))
-            if isinstance(deps, dict)
-            else []
-        )
+        int_deps = deps.get("internal_containers", []) if isinstance(deps, dict) else []
         src_contracts = c.get("contracts", {})
         consumes = src_contracts.get("consumes", []) if isinstance(src_contracts, dict) else []
 
         for dep_item in int_deps:
-            if isinstance(dep_item, dict):
-                tgt_id = dep_item.get("container") or dep_item.get("id") or dep_item.get("target")
-                custom_rel = dep_item.get("relationship") or dep_item.get("description") or dep_item.get("label")
-            else:
-                tgt_id = str(dep_item).strip()
-                custom_rel = None
-
+            tgt_id = str(dep_item).strip()
             if not tgt_id or tgt_id not in comps_by_id or tgt_id == src_id:
                 continue
 
@@ -1190,55 +1140,52 @@ def _generate_c4_containers_mermaid(
             tgt_contracts = tgt_c.get("contracts", {})
             tgt_provides = tgt_contracts.get("provides", []) if isinstance(tgt_contracts, dict) else []
 
-            if custom_rel:
-                label = html.escape(custom_rel)
-            else:
-                # 1. Matching consumed contract
-                matching_contracts = [ctr for ctr in consumes if ctr in tgt_provides]
-                if matching_contracts:
-                    ctr_id = matching_contracts[0]
-                    ctr_meta = contracts_by_id.get(ctr_id, {})
-                    proto = ctr_meta.get("protocol")
-                    if proto:
-                        proto_str = proto.replace("_", " ").upper()
-                        label = f"{proto_str} • Consumes [{', '.join(matching_contracts)}]"
-                    else:
-                        label = f"Consumes [{', '.join(matching_contracts)}]"
-                # 2. Target provides a contract
-                elif tgt_provides:
-                    ctr_id = tgt_provides[0]
-                    ctr_meta = contracts_by_id.get(ctr_id, {})
-                    proto = ctr_meta.get("protocol")
-                    if proto:
-                        proto_str = proto.replace("_", " ").upper()
-                        label = f"{proto_str} • [{', '.join(tgt_provides)}]"
-                    else:
-                        label = f"Consumes [{', '.join(tgt_provides)}]"
-                # 3. Database / Storage target
-                elif tgt_c.get("container_type") in ("database", "storage") or any(
-                    k in tgt_id for k in ("INDEX", "DB", "STORAGE", "SQLITE", "SQL")
-                ):
-                    label = "Queries &amp; Stores Data"
-                # 4. Service / Worker target
-                elif tgt_c.get("container_type") in ("worker", "background_worker", "agent", "job", "ml_pipeline"):
-                    label = "Dispatches Tasks &amp; Events"
-                elif tgt_c.get("container_type") in ("service", "microservice", "daemon"):
-                    label = "Service API Calls"
-                # 5. Library / Engine target
-                elif tgt_c.get("container_type") in ("library", "engine", "package", "sdk", "driver", "core"):
-                    runtime_lower = str(tgt_c.get("runtime", "")).lower()
-                    if "python" in runtime_lower or "py" in runtime_lower:
-                        label = "In-Process Python API"
-                    elif "rust" in runtime_lower:
-                        label = "In-Process Rust API"
-                    elif "go" in runtime_lower:
-                        label = "In-Process Go API"
-                    elif any(k in runtime_lower for k in ("typescript", "ts", "node", "javascript")):
-                        label = "In-Process TypeScript API"
-                    else:
-                        label = "In-Process Library API"
+            # 1. Matching consumed contract
+            matching_contracts = [ctr for ctr in consumes if ctr in tgt_provides]
+            if matching_contracts:
+                ctr_id = matching_contracts[0]
+                ctr_meta = contracts_by_id.get(ctr_id, {})
+                proto = ctr_meta.get("protocol")
+                if proto:
+                    proto_str = proto.replace("_", " ").upper()
+                    label = f"{proto_str} • Consumes [{', '.join(matching_contracts)}]"
                 else:
-                    label = "Depends On"
+                    label = f"Consumes [{', '.join(matching_contracts)}]"
+            # 2. Target provides a contract
+            elif tgt_provides:
+                ctr_id = tgt_provides[0]
+                ctr_meta = contracts_by_id.get(ctr_id, {})
+                proto = ctr_meta.get("protocol")
+                if proto:
+                    proto_str = proto.replace("_", " ").upper()
+                    label = f"{proto_str} • [{', '.join(tgt_provides)}]"
+                else:
+                    label = f"Consumes [{', '.join(tgt_provides)}]"
+            # 3. Database / Storage target
+            elif tgt_c.get("container_type") in ("database", "storage") or any(
+                k in tgt_id for k in ("INDEX", "DB", "STORAGE", "SQLITE", "SQL")
+            ):
+                label = "Queries &amp; Stores Data"
+            # 4. Service / Worker target
+            elif tgt_c.get("container_type") in ("worker", "background_worker", "agent", "job", "ml_pipeline"):
+                label = "Dispatches Tasks &amp; Events"
+            elif tgt_c.get("container_type") in ("service", "microservice", "daemon"):
+                label = "Service API Calls"
+            # 5. Library / Engine target
+            elif tgt_c.get("container_type") in ("library", "engine", "package", "sdk", "driver", "core"):
+                runtime_lower = str(tgt_c.get("runtime", "")).lower()
+                if "python" in runtime_lower or "py" in runtime_lower:
+                    label = "In-Process Python API"
+                elif "rust" in runtime_lower:
+                    label = "In-Process Rust API"
+                elif "go" in runtime_lower:
+                    label = "In-Process Go API"
+                elif any(k in runtime_lower for k in ("typescript", "ts", "node", "javascript")):
+                    label = "In-Process TypeScript API"
+                else:
+                    label = "In-Process Library API"
+            else:
+                label = "Depends On"
 
             clean_l = label.replace('"', "'")
             container_edge_lines.append(f'  {src_node} -->|"{clean_l}"| {tgt_node}')
@@ -1328,16 +1275,10 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
 
     # Inbound / Outbound peer container dependencies
     deps = component.get("dependencies") or {}
-    int_deps = (
-        (deps.get("internal_containers") or deps.get("internal_components") or []) if isinstance(deps, dict) else []
-    )
+    int_deps = (deps.get("internal_containers") or []) if isinstance(deps, dict) else []
     for raw_dep in int_deps:
         dep_id = (
-            (
-                str(raw_dep.get("id") or raw_dep.get("container") or raw_dep.get("target") or "")
-                if isinstance(raw_dep, dict)
-                else str(raw_dep)
-            )
+            (str(raw_dep.get("id") or raw_dep.get("container") or "") if isinstance(raw_dep, dict) else str(raw_dep))
             .split("(", 1)[0]
             .strip()
         )
@@ -1354,11 +1295,7 @@ def _generate_c4_component_mermaid(component: dict[str, Any], all_components: li
     provides = (contracts.get("provides") or []) if isinstance(contracts, dict) else []
     for raw_ctr in provides:
         ctr_id = (
-            (
-                str(raw_ctr.get("id") or raw_ctr.get("contract") or raw_ctr.get("target") or "")
-                if isinstance(raw_ctr, dict)
-                else str(raw_ctr)
-            )
+            (str(raw_ctr.get("id") or "") if isinstance(raw_ctr, dict) else str(raw_ctr))
             .split("(", 1)[0]
             .strip()
         )
@@ -1400,7 +1337,7 @@ def _generate_screen_state_mermaid(screen_id: str, states: list[Any], transition
             continue
         src = _sanitize_state_id(t.get("from_state") or state_names[0], 0)
         dst = _sanitize_state_id(t.get("to_state") or state_names[-1], len(state_names) - 1)
-        trigger = str(t.get("action") or t.get("event") or "action").replace("\n", " ")
+        trigger = str(t.get("action") or "action").replace("\n", " ")
         lines.append(f"  {src} --> {dst}: {trigger}")
 
     if not transitions and len(state_names) > 1:

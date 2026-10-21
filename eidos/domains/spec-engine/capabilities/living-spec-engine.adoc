@@ -54,7 +54,7 @@ technical:
     - "CTR-EIDOS-CLI"
   invariants:
     - id: INV-SPEC-VALIDATION
-      rule: "Every .adoc file with a YAML frontmatter across all 16 living specification types must extract frontmatter cleanly across YAML block scalars containing embedded horizontal rules ('---'), serialize safely via safe_dump_yaml, and validate against its type-derived JSON/YAML schema."
+      rule: "Every .adoc file with a YAML frontmatter across all 16 living specification types must extract frontmatter cleanly across YAML block scalars containing embedded horizontal rules ('---'), serialize safely via safe_dump_yaml, and validate against its type-derived JSON/YAML schema (requiring top-level status and validating optional version against #/$defs/semver)."
       test_binding: "tests/test_validator.py::test_validate_eidos_specifications"
     - id: INV-SPEC-GRAPH-INTEGRITY
       rule: "All cross-document references and entity IDs (containers, components, contracts, policies, domains, deltas, decisions) must resolve to valid catalog entity IDs with zero collisions, strictly match the target entity prefix and type declared by x-eidos-ref, resolve declared container and component source_path, optional contract specification_file, UI component invariants[].test_binding, and invariant test_binding (file::func) file and AST-backed polyglot test symbol references on disk (including parameterized TS/JS test.each/it.each/describe.each and Deno.test, Go t.Run subtests, and Rust #[tokio::test]/#[rstest]/#[test_case]/#[async_std::test] attributes while rejecting comment or string-literal false positives), and enforce bidirectional multi-protocol contract parity across CTR-* specifications."

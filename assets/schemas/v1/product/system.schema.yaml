@@ -7,6 +7,7 @@ required:
   - type
   - id
   - title
+  - status
   - archetypes
 properties:
   type:
@@ -22,6 +23,8 @@ properties:
     description: "Full human-readable display title of the software product or platform."
   status:
     $ref: "#/$defs/lifecycle_status"
+  version:
+    $ref: "#/$defs/semver"
   archetypes:
     type: array
     description: >

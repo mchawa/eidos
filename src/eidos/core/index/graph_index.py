@@ -384,7 +384,6 @@ class ArchitecturalIndex:
     def compute_delta_impact(
         self,
         mutations: list[dict[str, Any]],
-        raw_blast_radius: dict[str, Any] | None = None,
         sync: bool = True,
     ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
         """Compute SpecDelta (affects, blast_radius) from the synchronized knowledge graph."""
@@ -393,7 +392,6 @@ class ArchitecturalIndex:
         return compute_delta_impact_in_db(
             self._get_connection(),
             mutations=mutations,
-            raw_blast_radius=raw_blast_radius,
         )
 
 

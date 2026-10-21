@@ -378,7 +378,7 @@ def test_inv_context_token_compression():
     ]
     assert any(c["id"] == "CAP-AGENT-002" for c in repo_map_sl.capabilities)
 
-    # 5. Progressive prose compression compresses verbose descriptions/responsibilities before evicting direct invariants
+    # 5. Progressive prose compression compresses verbose responsibilities before evicting direct invariants
     from eidos.core.index.graph_index import TieredContextSlice
 
     synthetic_sl = TieredContextSlice(
@@ -387,10 +387,9 @@ def test_inv_context_token_compression():
         components=[
             {
                 "id": "CNT-PRIMARY",
-                "name": "Primary",
+                "title": "Primary",
                 "responsibility": "Sentence one of primary responsibility. "
                 + ("Extra prose detail for primary. " * 45),
-                "description": "Sentence one of verbose description. " + ("Extra prose detail for primary. " * 45),
                 "decisions": [
                     {
                         "id": "DEC-SYN-1",
@@ -403,7 +402,7 @@ def test_inv_context_token_compression():
             },
             {
                 "id": "CNT-SECONDARY",
-                "name": "Secondary",
+                "title": "Secondary",
                 "responsibility": "First sentence of secondary responsibility. " + ("Verbose tail sentence. " * 45),
             },
         ],
@@ -416,7 +415,6 @@ def test_inv_context_token_compression():
         direct_inv_ids={"RULE-SYN-0", "RULE-SYN-1", "RULE-SYN-2"},
     )
     assert synthetic_sl._compact_prose is True
-    assert len(synthetic_sl.components[0]["description"]) <= 120
     assert len(synthetic_sl.components[1]["responsibility"]) <= 120
     assert len(synthetic_sl.invariants) == 3
     assert synthetic_sl.token_estimate <= TIER_TOKEN_BUDGETS["guardrails"]

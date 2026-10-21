@@ -865,6 +865,7 @@ def test_cli_doctor_command(tmp_path, monkeypatch):
 type: product/system
 id: SYS-CUSTOM-001
 title: Custom System
+status: active
 archetypes:
   - cli_tool
 ---
@@ -1244,6 +1245,7 @@ def test_dlt_2026_075_non_code_drift_diagnostics_in_hooks_report_and_cli(tmp_pat
 type: product/policy
 id: POL-001
 title: Sample Policy
+status: active
 category: governance
 severity: blocking
 invariants:
@@ -1747,7 +1749,7 @@ def test_hook_schema_validation_and_non_duplicate_skills(tmp_path):
     bad2.unlink()
     good_dom = dom_dir / "good.adoc"
     good_dom.write_text(
-        "---\ntype: product/domain\nid: DOM-GOOD\ntitle: Good Domain\nclassification: core\n---\n= Good Domain\n",
+        "---\ntype: product/domain\nid: DOM-GOOD\ntitle: Good Domain\nstatus: active\nclassification: core\n---\n= Good Domain\n",
         encoding="utf-8",
     )
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
