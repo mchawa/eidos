@@ -201,13 +201,19 @@ export function MermaidDiagram({
     isDraggingRef.current = false;
   };
 
-  const handleWheel = (e: React.WheelEvent) => {
-    // Zoom in/out via mouse wheel
-    e.preventDefault();
-    e.stopPropagation();
-    const delta = e.deltaY < 0 ? 0.12 : -0.12;
-    setZoom((prev) => Math.min(3.5, Math.max(0.35, Number((prev + delta).toFixed(2)))));
-  };
+  // Attach native non-passive wheel listener so scrolling inside the diagram zooms without scrolling the page
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onNativeWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const delta = e.deltaY < 0 ? 0.12 : -0.12;
+      setZoom((prev) => Math.min(3.5, Math.max(0.35, Number((prev + delta).toFixed(2)))));
+    };
+    el.addEventListener("wheel", onNativeWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onNativeWheel);
+  }, []);
 
   return (
     <div
@@ -216,10 +222,9 @@ export function MermaidDiagram({
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      onWheel={handleWheel}
       style={{ minHeight: isExpanded ? expandedHeight : minHeight }}
       className={cn(
-        "relative rounded-xl border border-border/70 bg-card/60 overflow-hidden flex items-center justify-center p-4 select-none cursor-grab active:cursor-grabbing transition-all duration-200",
+        "relative rounded-xl border border-border/70 bg-card/60 overflow-hidden overscroll-contain flex items-center justify-center p-4 select-none cursor-grab active:cursor-grabbing transition-all duration-200",
         className
       )}
     >

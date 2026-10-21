@@ -466,11 +466,15 @@ def get_portal_data(eidos_dir: Path) -> dict[str, Any]:
         if resulting_deltas:
             decision_dict["resulting_deltas"] = resulting_deltas
 
+        exp_path_norm = str(exp.get("path", "")).replace("\\", "/")
+        is_archived_exp = "explorations/archive/" in exp_path_norm
+
         explorations.append(
             {
                 "id": exp["id"],
                 "title": exp["title"],
                 "status": fm.get("status", "proposed"),
+                "is_archived": is_archived_exp,
                 "hypothesis": hypothesis,
                 "exit_criteria": fm.get("exit_criteria", {}),
                 "findings": findings,

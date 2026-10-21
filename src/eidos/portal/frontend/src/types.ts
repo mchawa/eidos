@@ -195,7 +195,8 @@ export interface SpecDelta {
   id: string;
   title: string;
   kind: string;
-  status: "proposed" | "in_review" | "approved" | "applied" | "rejected" | string;
+  status: "proposed" | "in_review" | "approved" | "applied" | "rejected" | "archived" | string;
+  is_archived?: boolean;
   motivation?: string;
   mutations?: SpecMutation[];
   affects?: {
@@ -348,7 +349,8 @@ export interface SpecDesignSystem {
 export interface SpecExploration {
   id: string;
   title: string;
-  status: "proposed" | "in_progress" | "adopted" | "discarded" | string;
+  status: "proposed" | "in_progress" | "adopted" | "discarded" | "archived" | string;
+  is_archived?: boolean;
   hypothesis: string;
   exit_criteria?:
     | {

@@ -16,6 +16,7 @@ import {
   LayoutGrid,
   ListOrdered,
   ChevronDown,
+  Archive,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -63,6 +64,14 @@ export function formatAffectsCategory(category: string): string {
 export function getMutationTarget(m?: SpecMutation | null): string {
   if (!m) return "Target Specification";
   return m.target || m.title || "Target Specification";
+}
+
+export function isDeltaArchived(d: SpecDelta): boolean {
+  return Boolean(
+    d.is_archived ||
+      d.status === "archived" ||
+      (d.path && d.path.replace(/\\/g, "/").includes("deltas/archive/"))
+  );
 }
 
 interface ColumnConfig {
@@ -114,6 +123,14 @@ const STANDARD_COLUMNS: ColumnConfig[] = [
     color: "text-rose-500 dark:text-rose-400",
     bg: "bg-rose-500/10 dark:bg-rose-500/15",
     borderColor: "border-rose-500/20",
+  },
+  {
+    key: "archived",
+    label: "Archived",
+    icon: Archive,
+    color: "text-slate-500 dark:text-slate-400",
+    bg: "bg-slate-500/10 dark:bg-slate-500/15",
+    borderColor: "border-slate-500/20",
   },
 ];
 
@@ -176,16 +193,15 @@ export function DeltasView({
     return cols;
   }, [data.deltas]);
 
-  // Index deltas by status with search filter
+  // Index deltas by status with search filter (routing archived deltas into the 'archived' bucket)
   const deltasByStatus = React.useMemo(() => {
     const raw = data.deltas || {};
     const q = filterText.toLowerCase();
 
-    const filterList = (list: SpecDelta[] = []) => {
-      if (!q) return list;
-      return list.filter(
-        (d) =>
-          d.id.toLowerCase().includes(q) ||
+    const matchesQuery = (d: SpecDelta) => {
+      if (!q) return true;
+      return Boolean(
+        d.id.toLowerCase().includes(q) ||
           d.title.toLowerCase().includes(q) ||
           (d.motivation && d.motivation.toLowerCase().includes(q)) ||
           (d.kind && d.kind.toLowerCase().includes(q)) ||
@@ -195,8 +211,27 @@ export function DeltasView({
 
     const record: Record<string, SpecDelta[]> = {};
     columns.forEach((col) => {
-      record[col.key] = filterList((raw as any)[col.key] || []);
+      record[col.key] = [];
     });
+
+    const seenArchivedIds = new Set<string>();
+    Object.entries(raw).forEach(([statusKey, list]) => {
+      if (!Array.isArray(list)) return;
+      list.forEach((d) => {
+        if (!matchesQuery(d)) return;
+        if (isDeltaArchived(d)) {
+          if (!seenArchivedIds.has(d.id)) {
+            seenArchivedIds.add(d.id);
+            record["archived"] = record["archived"] || [];
+            record["archived"].push(d);
+          }
+        } else {
+          record[statusKey] = record[statusKey] || [];
+          record[statusKey].push(d);
+        }
+      });
+    });
+
     return record;
   }, [data.deltas, filterText, columns]);
 
@@ -331,6 +366,11 @@ export function DeltasView({
                     <span className="font-mono text-xs font-bold text-primary group-hover:underline">
                       {delta.id}
                     </span>
+                    {isDeltaArchived(delta) && (
+                      <Badge variant="outline" className="uppercase font-mono text-[10px] border-slate-500/30 text-slate-400">
+                        archived
+                      </Badge>
+                    )}
                     <Badge variant="outline" className="uppercase font-mono text-[10px]">
                       {delta.status}
                     </Badge>
@@ -389,8 +429,10 @@ export function DeltasView({
           >
             {activeColumns.map((col) => {
               const fullList = deltasByStatus[col.key] || [];
-              const list =
-                col.key === "applied" ? fullList.slice(0, appliedVisibleCount) : fullList;
+              const isPaginatedCol = col.key === "applied" || col.key === "archived";
+              const list = isPaginatedCol
+                ? fullList.slice(0, appliedVisibleCount)
+                : fullList;
               const Icon = col.icon;
               return (
                 <div
@@ -461,7 +503,7 @@ export function DeltasView({
                             )}
                           </Card>
                         ))}
-                        {col.key === "applied" && fullList.length > appliedVisibleCount && (
+                        {isPaginatedCol && fullList.length > appliedVisibleCount && (
                           <button
                             type="button"
                             onClick={() => setAppliedVisibleCount((c) => c + PAGE_SIZE)}
@@ -500,6 +542,11 @@ export function DeltasView({
           <div className="space-y-6">
             {/* Header Badges */}
             <div className="flex flex-wrap items-center gap-2">
+              {isDeltaArchived(selectedDelta) && (
+                <Badge variant="outline" className="uppercase font-mono text-[11px] border-slate-500/30 text-slate-400">
+                  Archived
+                </Badge>
+              )}
               <Badge variant="primary" className="uppercase font-mono text-[11px]">
                 {selectedDelta.status}
               </Badge>

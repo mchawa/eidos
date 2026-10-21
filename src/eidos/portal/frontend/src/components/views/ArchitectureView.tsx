@@ -277,12 +277,19 @@ export function ArchitectureView({
     isDraggingRef.current = false;
   };
 
-  const handleWheel = (e: React.WheelEvent) => {
-    // Zoom with scroll wheel
-    e.preventDefault();
-    const delta = e.deltaY < 0 ? 0.1 : -0.1;
-    setZoom((prev) => Math.min(3.0, Math.max(0.35, Number((prev + delta).toFixed(2)))));
-  };
+  // Attach native non-passive wheel listener so scrolling inside the C4 diagram zooms without scrolling the page
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onNativeWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const delta = e.deltaY < 0 ? 0.1 : -0.1;
+      setZoom((prev) => Math.min(3.0, Math.max(0.35, Number((prev + delta).toFixed(2)))));
+    };
+    el.addEventListener("wheel", onNativeWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onNativeWheel);
+  }, []);
 
   // Compute active diagram definition
   const currentDiagramSource = React.useMemo(() => {
@@ -653,9 +660,8 @@ export function ArchitectureView({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
         className={cn(
-          "p-4 sm:p-6 flex items-center justify-center overflow-hidden bg-card/60 relative select-none transition-all duration-200",
+          "p-4 sm:p-6 flex items-center justify-center overflow-hidden overscroll-contain bg-card/60 relative select-none transition-all duration-200",
           isExpanded ? "h-[800px]" : "h-[580px]"
         )}
       >

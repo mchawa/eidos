@@ -27,6 +27,7 @@ The SpecDeltas View (`SCR-PORTAL-DELTAS`) tracks the atomic lifecycle of archite
 * **Approved**: Verified deltas ready for implementation.
 * **Applied**: Merged and reconciled deltas whose mutations have been integrated into living specs.
 * **Rejected**: Withdrawn or disapproved mutations preserved for transparent historical auditability.
+* **Archived**: Historical SpecDeltas under `deltas/archive/` grouped into a dedicated paginated column and status filter pill while preserving their underlying `applied`/`rejected` outcome badges.
 * **Dynamic Workflow States**: Dynamically surfaces any custom organizational status tag declared in delta frontmatter.
 * **Chronological Timeline & Search Bar**: Dual-mode view switcher toggling between the multi-column Kanban Board and a chronological evolution timeline grouped by date (`applied_at` / `created_at`), paired with instant search filtering across delta IDs, titles, motivations, and target spec IDs.
 * **Detailed AsciiDoc Specification Inspection**: Clicking any card opens a spacious centered modal displaying motivation, declared mutations, calculated blast radius, and the full rendered AsciiDoc specification body (or a `git log` hint for archived deltas).

@@ -31,8 +31,15 @@ eidos init
 # Synchronize SQLite + FTS5 + AST knowledge graph index
 eidos index sync
 
+# Inspect structural repo map or find code symbols and their owning specs
+eidos index repo-map --max-tokens 1500
+eidos index find-symbol "ArchitecturalIndex" --json
+
 # Extract a token-budgeted architectural context slice for a file or task
 eidos context -t "authentication and drift detection"
+
+# Inspect v1 YAML frontmatter schema constraints & templates for any spec type
+eidos spec schema capability
 
 # Validate living specifications
 eidos validate eidos
@@ -75,8 +82,8 @@ eidos/
 │   ├── domains/                   # Bounded contexts (DOM-*) & capabilities with test-bound invariants (CAP-*, INV-*)
 │   ├── architecture/              # Arc42/C4 architecture (ARCH-*), containers (CNT-*), components (CMP-*), contracts (CTR-*)
 │   ├── design/                    # Multi-Design Systems (DS-*), W3C tokens, UI components (UIC-*), clients (CLT-*), screens (SCR-*), flows (FLOW-*)
-│   ├── explorations/              # Hypothesis-driven technical spikes (EXP-*)
-│   └── deltas/                    # In-flight and applied SpecDelta mutations (DLT-*)
+│   ├── explorations/              # Hypothesis-driven technical spikes (EXP-*) & archive/
+│   └── deltas/                    # Active and recent SpecDelta mutations (DLT-*) & archive/
 │
 ├── docs/                          # User documentation site (Zensical)
 └── tests/                         # Engine & invariant verification test suites
@@ -107,6 +114,8 @@ eidos/
 * **Policies**:
   * [`POL-001: Git Source of Truth`](eidos/policies/POL-001-git-as-single-source-of-truth.adoc)
   * [`POL-002: Invariant Test Enforcement`](eidos/policies/POL-002-invariant-test-enforcement.adoc)
+  * [`POL-003: Continuous Documentation Sync`](eidos/policies/POL-003-continuous-documentation-sync.adoc)
+  * [`POL-004: Zero AI Call Dependency`](eidos/policies/POL-004-zero-ai-call-dependency.adoc)
 * **Technical Architecture**:
   * [`Global System Architecture`](eidos/architecture/system-architecture.adoc)
   * [`Containers Directory`](eidos/architecture/containers/)

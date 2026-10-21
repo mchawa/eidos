@@ -1764,3 +1764,7 @@ def test_portal_static_scalability_and_deep_linking(tmp_path: Path):
     assert "Validation & Governance Diagnostics" in PORTAL_HTML_TEMPLATE
     assert "Recursive W3C Token Tree" in PORTAL_HTML_TEMPLATE
     assert "Show More Deltas" in PORTAL_HTML_TEMPLATE
+    assert "overscroll-contain" in PORTAL_HTML_TEMPLATE
+    assert "deltas/archive/" in PORTAL_HTML_TEMPLATE
+    assert "explorations/archive/" in PORTAL_HTML_TEMPLATE
+    assert all("is_archived" in e for e in raw_data["explorations"])

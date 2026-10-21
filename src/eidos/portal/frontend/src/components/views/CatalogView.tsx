@@ -442,12 +442,17 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
           });
         }
       } else if (cat.id === "deltas") {
-        // Multi-level: Group by status (Applied vs In-Review/Proposed)
+        // Multi-level: Group by status (Applied vs Pending vs Archived)
+        const isArch = (s: SpecItem) =>
+          Boolean(
+            s.path && s.path.replace(/\\/g, "/").includes("deltas/archive/")
+          );
+        const archived = catSpecs.filter((s) => isArch(s));
         const applied = catSpecs.filter(
-          (s) => s.frontmatter?.status?.toLowerCase() === "applied"
+          (s) => !isArch(s) && s.frontmatter?.status?.toLowerCase() === "applied"
         );
         const pending = catSpecs.filter(
-          (s) => s.frontmatter?.status?.toLowerCase() !== "applied"
+          (s) => !isArch(s) && s.frontmatter?.status?.toLowerCase() !== "applied"
         );
 
         if (applied.length > 0) {
@@ -467,6 +472,16 @@ export function CatalogView({ data, focusSpecId, focusNonce, onFocusHandled }: C
             badge: "Pending",
             icon: GitBranch,
             specs: pending,
+          });
+        }
+
+        if (archived.length > 0) {
+          subgroups.push({
+            id: "subgroup-deltas-archived",
+            name: `Archived SpecDeltas (${archived.length})`,
+            badge: "Archived",
+            icon: GitBranch,
+            specs: archived,
           });
         }
       }

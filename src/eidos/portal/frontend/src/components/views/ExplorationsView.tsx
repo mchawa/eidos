@@ -15,6 +15,7 @@ import {
   BookOpen,
   Filter,
   Sparkles,
+  Archive,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +55,14 @@ export function getExplorationRecommendation(exp: SpecExploration): string {
   return exp.recommendation || exp.decision?.recommendation || "";
 }
 
+export function isExplorationArchived(exp: SpecExploration): boolean {
+  return Boolean(
+    exp.is_archived ||
+      exp.status === "archived" ||
+      (exp.path && exp.path.replace(/\\/g, "/").includes("explorations/archive/"))
+  );
+}
+
 export function ExplorationsView({
   data,
   onNavigateDelta,
@@ -80,9 +89,12 @@ export function ExplorationsView({
   const filteredExplorations = React.useMemo(() => {
     const q = filterText.toLowerCase();
     return rawExplorations.filter((exp) => {
+      const archived = isExplorationArchived(exp);
       // Status filter
-      if (statusFilter !== "all" && exp.status !== statusFilter) {
-        return false;
+      if (statusFilter === "archived") {
+        if (!archived) return false;
+      } else if (statusFilter !== "all") {
+        if (archived || exp.status !== statusFilter) return false;
       }
       // Text filter
       if (!q) return true;
@@ -108,51 +120,74 @@ export function ExplorationsView({
       in_progress: 0,
       proposed: 0,
       discarded: 0,
+      archived: 0,
     };
     rawExplorations.forEach((e) => {
-      const s = e.status || "proposed";
-      record[s] = (record[s] || 0) + 1;
+      if (isExplorationArchived(e)) {
+        record.archived = (record.archived || 0) + 1;
+      } else {
+        const s = e.status || "proposed";
+        record[s] = (record[s] || 0) + 1;
+      }
     });
     return record;
   }, [rawExplorations]);
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "adopted":
-        return (
-          <Badge variant="success" className="capitalize flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3" />
-            Adopted
-          </Badge>
-        );
-      case "in_progress":
-        return (
-          <Badge variant="primary" className="capitalize flex items-center gap-1">
-            <Compass className="h-3 w-3 animate-spin" />
-            In Progress
-          </Badge>
-        );
-      case "proposed":
-        return (
-          <Badge variant="warning" className="capitalize flex items-center gap-1">
-            <Clock className="h-3 w-3" />
-            Proposed
-          </Badge>
-        );
-      case "discarded":
-        return (
-          <Badge variant="danger" className="capitalize flex items-center gap-1">
-            <XCircle className="h-3 w-3" />
-            Discarded
-          </Badge>
-        );
-      default:
-        return (
-          <Badge variant="outline" className="capitalize">
-            {status}
-          </Badge>
-        );
+  const getStatusBadge = (status: string, isArchived?: boolean) => {
+    const baseBadge = (() => {
+      switch (status) {
+        case "adopted":
+          return (
+            <Badge variant="success" className="capitalize flex items-center gap-1">
+              <CheckCircle2 className="h-3 w-3" />
+              Adopted
+            </Badge>
+          );
+        case "in_progress":
+          return (
+            <Badge variant="primary" className="capitalize flex items-center gap-1">
+              <Compass className="h-3 w-3 animate-spin" />
+              In Progress
+            </Badge>
+          );
+        case "proposed":
+          return (
+            <Badge variant="warning" className="capitalize flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              Proposed
+            </Badge>
+          );
+        case "discarded":
+          return (
+            <Badge variant="danger" className="capitalize flex items-center gap-1">
+              <XCircle className="h-3 w-3" />
+              Discarded
+            </Badge>
+          );
+        case "archived":
+          return null;
+        default:
+          return (
+            <Badge variant="outline" className="capitalize">
+              {status}
+            </Badge>
+          );
+      }
+    })();
+
+    if (!isArchived && status !== "archived") {
+      return baseBadge;
     }
+
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <Badge variant="outline" className="capitalize flex items-center gap-1 border-slate-500/30 text-slate-400">
+          <Archive className="h-3 w-3" />
+          Archived
+        </Badge>
+        {baseBadge}
+      </span>
+    );
   };
 
   return (
@@ -259,6 +294,19 @@ export function ExplorationsView({
               <span>Discarded ({counts.discarded})</span>
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setStatusFilter("archived")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-medium transition-all cursor-pointer border",
+              statusFilter === "archived"
+                ? "bg-slate-500/15 text-slate-500 dark:text-slate-400 border-slate-500/30 font-bold shadow-xs"
+                : "border-border/60 bg-muted/30 text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Archive className="h-3 w-3 text-slate-400" />
+            <span>Archived ({counts.archived || 0})</span>
+          </button>
         </div>
       </div>
 
@@ -285,7 +333,7 @@ export function ExplorationsView({
                       <span className="font-mono text-xs font-bold text-amber-500 dark:text-amber-400 group-hover:underline">
                         {exp.id}
                       </span>
-                      {getStatusBadge(exp.status)}
+                      {getStatusBadge(exp.status, isExplorationArchived(exp))}
                     </div>
                     {deltas.length > 0 && (
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -368,7 +416,7 @@ export function ExplorationsView({
               {/* Top Meta Badges & Resulting Delta Bridge */}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  {getStatusBadge(selectedExp.status)}
+                  {getStatusBadge(selectedExp.status, isExplorationArchived(selectedExp))}
                   {outcome && (
                     <Badge variant="outline" className="font-mono text-xs uppercase">
                       Outcome: {outcome}
